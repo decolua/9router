@@ -5,7 +5,27 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { getNavigation } from "@/constants/docsConfig";
 import { DEFAULT_LANG } from "@/constants/languages";
-import { ChevronDown, ChevronRight, BookOpen, Rocket, Terminal, Monitor, HelpCircle, MessageCircle, Layers, Plug, Cloud, Zap, Wallet, Gift, GitBranch, BarChart3, Code2, Sparkles, Server } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  BookOpen,
+  Rocket,
+  Terminal,
+  Monitor,
+  HelpCircle,
+  MessageCircle,
+  Layers,
+  Plug,
+  Cloud,
+  Zap,
+  Wallet,
+  Gift,
+  GitBranch,
+  BarChart3,
+  Code2,
+  Sparkles,
+  Server,
+} from "lucide-react";
 
 // Icons keyed by structural key (language-independent)
 const SECTION_ICONS = {
@@ -14,7 +34,7 @@ const SECTION_ICONS = {
   features: Zap,
   integration: Plug,
   deployment: Cloud,
-  help: HelpCircle
+  help: HelpCircle,
 };
 
 const ITEM_ICONS = {
@@ -37,17 +57,23 @@ const ITEM_ICONS = {
   localhost: Monitor,
   cloud: Server,
   troubleshooting: HelpCircle,
-  faq: MessageCircle
+  faq: MessageCircle,
 };
 
-export default function DocsSidebar({ isMobile = false, onClose, lang = DEFAULT_LANG }) {
+export default function DocsSidebar({
+  isMobile = false,
+  onClose,
+  lang = DEFAULT_LANG,
+}) {
   const pathname = usePathname();
   const navigation = getNavigation(lang);
   const [openSections, setOpenSections] = useState(() => {
     if (typeof window === "undefined") return [];
     try {
       return JSON.parse(sessionStorage.getItem("sidebarOpen") || "[]");
-    } catch { return []; }
+    } catch {
+      return [];
+    }
   });
 
   useEffect(() => {
@@ -55,10 +81,8 @@ export default function DocsSidebar({ isMobile = false, onClose, lang = DEFAULT_
   }, [openSections]);
 
   const toggleSection = (index) => {
-    setOpenSections(prev =>
-      prev.includes(index)
-        ? prev.filter(i => i !== index)
-        : [...prev, index]
+    setOpenSections((prev) =>
+      prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index],
     );
   };
 
@@ -70,7 +94,9 @@ export default function DocsSidebar({ isMobile = false, onClose, lang = DEFAULT_
   };
 
   return (
-    <aside className={`${isMobile ? 'w-full' : 'w-64'} border-r bg-white border-gray-200 ${isMobile ? 'h-full' : 'h-[calc(100vh-4rem)] sticky top-16'} overflow-y-auto`}>
+    <aside
+      className={`${isMobile ? "w-full" : "w-64"} border-r bg-white border-gray-200 ${isMobile ? "h-full" : "h-[calc(100vh-4rem)] sticky top-16"} overflow-y-auto`}
+    >
       <nav className="p-4 space-y-6">
         {navigation.map((section, sectionIndex) => {
           const SectionIcon = SECTION_ICONS[section.key] || BookOpen;

@@ -15,7 +15,7 @@ describe("PR #1175 - buildOutput filter detection", () => {
       "3 packages are looking for funding",
       "  run `npm fund` for details",
       "4 vulnerabilities (2 moderate, 2 critical)",
-      "Run `npm audit` for details."
+      "Run `npm audit` for details.",
     ].join("\n");
     const filter = autoDetectFilter(input);
     expect(filter).toBe(buildOutput);
@@ -28,7 +28,7 @@ describe("PR #1175 - buildOutput filter detection", () => {
       "   Compiling quote v1.0.40",
       "   Compiling syn v2.0.104",
       "   Compiling my-project v0.1.0 (/home/user/my-project)",
-      "    Finished `dev` profile [unoptimized + debuginfo] target(s) in 12.34s"
+      "    Finished `dev` profile [unoptimized + debuginfo] target(s) in 12.34s",
     ].join("\n");
     const filter = autoDetectFilter(input);
     expect(filter).toBe(buildOutput);
@@ -46,7 +46,7 @@ describe("PR #1175 - buildOutput compression behavior", () => {
       "3 packages are looking for funding",
       "  run `npm fund` for details",
       "4 vulnerabilities (2 moderate, 2 critical)",
-      "Run `npm audit` for details."
+      "Run `npm audit` for details.",
     ].join("\n");
     const out = buildOutput(input);
     // Minimal fix: keep first 3 deprecations verbatim (no truncation needed since count == 3)
@@ -71,7 +71,7 @@ describe("PR #1175 - buildOutput compression behavior", () => {
       "   Compiling tokio v1.45.0",
       "   Compiling hyper v1.6.0",
       "   Compiling my-project v0.1.0 (/home/user/my-project)",
-      "    Finished `dev` profile [unoptimized + debuginfo] target(s) in 12.34s"
+      "    Finished `dev` profile [unoptimized + debuginfo] target(s) in 12.34s",
     ].join("\n");
     const out = buildOutput(input);
     expect(out).toContain("Compiled 10 packages");
@@ -85,9 +85,9 @@ describe("PR #1175 - buildOutput compression behavior", () => {
       "error[E0308]: mismatched types",
       "  --> src/main.rs:5:9",
       "   |",
-      "5  |     let x: u32 = \"hello\";",
+      '5  |     let x: u32 = "hello";',
       "   |            ---   ^^^^^^^ expected `u32`, found `&str`",
-      "error: aborting due to previous error"
+      "error: aborting due to previous error",
     ].join("\n");
     const out = buildOutput(input);
     expect(out).toContain("error[E0308]");
@@ -99,7 +99,7 @@ describe("PR #1175 - buildOutput compression behavior", () => {
       "[INFO] Scanning for projects...",
       "[ERROR] Failed to execute goal",
       "[ERROR] Could not resolve dependencies",
-      "BUILD FAILED"
+      "BUILD FAILED",
     ].join("\n");
     const out = buildOutput(input);
     expect(out).toContain("[ERROR] Failed to execute goal");
@@ -113,7 +113,7 @@ describe("PR #1175 - porcelain regex fix edge cases", () => {
       " M src/a.js",
       " M src/b.js",
       " D src/c.js",
-      "?? new.js"
+      "?? new.js",
     ].join("\n");
     const filter = autoDetectFilter(input);
     expect(filter).toBe(gitStatus);
@@ -124,7 +124,7 @@ describe("PR #1175 - porcelain regex fix edge cases", () => {
       "M  src/a.js",
       "A  src/new.js",
       "?? untracked.js",
-      "M  src/b.js"
+      "M  src/b.js",
     ].join("\n");
     const filter = autoDetectFilter(input);
     expect(filter).toBe(gitStatus);
@@ -134,7 +134,7 @@ describe("PR #1175 - porcelain regex fix edge cases", () => {
     const input = [
       "   Compiling proc-macro2 v1.0.95",
       "   Compiling unicode-ident v1.0.18",
-      "   Compiling quote v1.0.40"
+      "   Compiling quote v1.0.40",
     ].join("\n");
     const filter = autoDetectFilter(input);
     expect(filter).not.toBe(gitStatus);
@@ -146,7 +146,7 @@ describe("PR #1175 - porcelain regex fix edge cases", () => {
       "Your branch is up to date with 'origin/main'.",
       "",
       "Changes not staged for commit:",
-      "\tmodified:   src/a.js"
+      "\tmodified:   src/a.js",
     ].join("\n");
     const filter = autoDetectFilter(input);
     expect(filter).toBe(gitStatus);
@@ -160,7 +160,7 @@ describe("PR #1175 - false positive risks", () => {
       "2026-05-16 10:00:05 INFO Request received: GET /api/users",
       "ERROR: Database connection timeout",
       "2026-05-16 10:00:10 INFO Retrying connection",
-      "2026-05-16 10:00:15 INFO Connection restored"
+      "2026-05-16 10:00:15 INFO Connection restored",
     ].join("\n");
     const filter = autoDetectFilter(input);
     // Document actual behavior — may detect as buildOutput
@@ -177,10 +177,13 @@ describe("PR #1175 - false positive risks", () => {
       "[INFO] Starting application",
       "[INFO]   Compiling templates for view layer",
       "[INFO]   Compiling assets for production",
-      "[INFO] Application ready"
+      "[INFO] Application ready",
     ].join("\n");
     const filter = autoDetectFilter(input);
-    console.log("[compiling-templates] detected:", filter?.filterName || "null");
+    console.log(
+      "[compiling-templates] detected:",
+      filter?.filterName || "null",
+    );
     if (filter === buildOutput) {
       const out = buildOutput(input);
       // Should at least preserve structure (count compiling)
@@ -192,7 +195,7 @@ describe("PR #1175 - false positive risks", () => {
     const input = [
       "Hello world",
       "This is a normal message",
-      "Nothing special here"
+      "Nothing special here",
     ].join("\n");
     const filter = autoDetectFilter(input);
     expect(filter).not.toBe(buildOutput);
@@ -205,7 +208,8 @@ describe("PR #1175 - safety: no data corruption", () => {
   });
 
   it("input with only errors preserves all errors", () => {
-    const input = "npm ERR! code ENOENT\nnpm ERR! syscall open\nnpm ERR! path /tmp/foo";
+    const input =
+      "npm ERR! code ENOENT\nnpm ERR! syscall open\nnpm ERR! path /tmp/foo";
     const out = buildOutput(input);
     expect(out).toContain("npm ERR! code ENOENT");
     expect(out).toContain("npm ERR! syscall open");
@@ -221,7 +225,8 @@ describe("PR #1175 - safety: no data corruption", () => {
 
   it("limits warnings to 5 + summary line", () => {
     const warnings = [];
-    for (let i = 0; i < 10; i++) warnings.push(`npm warn config foo${i} something`);
+    for (let i = 0; i < 10; i++)
+      warnings.push(`npm warn config foo${i} something`);
     const input = warnings.join("\n");
     const out = buildOutput(input);
     expect(out).toContain("npm warn config foo0");

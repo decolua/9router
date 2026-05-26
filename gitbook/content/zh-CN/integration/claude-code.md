@@ -42,11 +42,11 @@ echo $ANTHROPIC_BASE_URL
 
 Claude Code 支持以下模型别名,映射到 9Router 模型:
 
-| 别名 | 模型 | 环境变量 |
-|-------|-------|---------------------|
-| `opus` | Claude Opus 4.5 | `ANTHROPIC_DEFAULT_OPUS_MODEL` |
+| 别名     | 模型              | 环境变量                         |
+| -------- | ----------------- | -------------------------------- |
+| `opus`   | Claude Opus 4.5   | `ANTHROPIC_DEFAULT_OPUS_MODEL`   |
 | `sonnet` | Claude Sonnet 4.5 | `ANTHROPIC_DEFAULT_SONNET_MODEL` |
-| `haiku` | Claude Haiku 4.5 | `ANTHROPIC_DEFAULT_HAIKU_MODEL` |
+| `haiku`  | Claude Haiku 4.5  | `ANTHROPIC_DEFAULT_HAIKU_MODEL`  |
 
 ## 使用示例
 

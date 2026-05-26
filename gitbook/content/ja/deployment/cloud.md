@@ -45,13 +45,13 @@ export NODE_ENV="production"
 
 **環境変数:**
 
-| 変数 | デフォルト | 説明 |
-|----------|---------|-------------|
-| `JWT_SECRET` | 自動生成 | **本番環境では必ず変更!** JWTトークンの署名に使用 |
-| `INITIAL_PASSWORD` | `123456` | ダッシュボードログインパスワード |
-| `DATA_DIR` | `~/.9router` | データベースとデータの保存パス |
-| `NODE_ENV` | `development` | デプロイ時は `production` に設定 |
-| `ENABLE_REQUEST_LOGS` | `false` | デバッグリクエスト/レスポンスログを有効化 |
+| 変数                  | デフォルト    | 説明                                              |
+| --------------------- | ------------- | ------------------------------------------------- |
+| `JWT_SECRET`          | 自動生成      | **本番環境では必ず変更!** JWTトークンの署名に使用 |
+| `INITIAL_PASSWORD`    | `123456`      | ダッシュボードログインパスワード                  |
+| `DATA_DIR`            | `~/.9router`  | データベースとデータの保存パス                    |
+| `NODE_ENV`            | `development` | デプロイ時は `production` に設定                  |
+| `ENABLE_REQUEST_LOGS` | `false`       | デバッグリクエスト/レスポンスログを有効化         |
 
 ### ステップ5: データディレクトリを作成
 
@@ -165,7 +165,7 @@ docker run -d \
 `docker-compose.yml` を作成:
 
 ```yaml
-version: '3.8'
+version: "3.8"
 
 services:
   9router:
@@ -258,7 +258,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_cache_bypass $http_upgrade;
-        
+
         # SSE support - CRITICAL for streaming
         proxy_buffering off;
         proxy_read_timeout 86400;
@@ -272,7 +272,7 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        
+
         # SSE support - CRITICAL for streaming
         proxy_buffering off;
         proxy_read_timeout 86400;

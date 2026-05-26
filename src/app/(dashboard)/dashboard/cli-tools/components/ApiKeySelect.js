@@ -4,7 +4,13 @@ import { useState } from "react";
 
 const CUSTOM_VALUE = "__custom__";
 
-export default function ApiKeySelect({ value, onChange, apiKeys = [], cloudEnabled = false, className = "" }) {
+export default function ApiKeySelect({
+  value,
+  onChange,
+  apiKeys = [],
+  cloudEnabled = false,
+  className = "",
+}) {
   const isCustom = !apiKeys.some((k) => k.key === value) && value !== "";
   const [mode, setMode] = useState(() => {
     if (!value) return apiKeys.length > 0 ? apiKeys[0].key : CUSTOM_VALUE;
@@ -34,8 +40,12 @@ export default function ApiKeySelect({ value, onChange, apiKeys = [], cloudEnabl
 
   if (noKeys && mode !== CUSTOM_VALUE) {
     return (
-      <span className={`min-w-0 rounded bg-surface/40 px-2 py-2 text-xs text-text-muted sm:py-1.5 ${className}`}>
-        {cloudEnabled ? "No API keys - Create one in Keys page" : "sk_9router (default)"}
+      <span
+        className={`min-w-0 rounded bg-surface/40 px-2 py-2 text-xs text-text-muted sm:py-1.5 ${className}`}
+      >
+        {cloudEnabled
+          ? "No API keys - Create one in Keys page"
+          : "sk_9router (default)"}
       </span>
     );
   }
@@ -48,7 +58,9 @@ export default function ApiKeySelect({ value, onChange, apiKeys = [], cloudEnabl
         className="w-full min-w-0 px-2 py-2 bg-surface rounded text-xs border border-border focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5"
       >
         {apiKeys.map((k) => (
-          <option key={k.id} value={k.key}>{k.key}</option>
+          <option key={k.id} value={k.key}>
+            {k.key}
+          </option>
         ))}
         <option value={CUSTOM_VALUE}>Custom...</option>
       </select>

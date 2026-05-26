@@ -7,7 +7,10 @@ export async function POST(request) {
     const { file, content } = await request.json();
 
     if (!file || content === undefined) {
-      return NextResponse.json({ success: false, error: "File and content required" }, { status: 400 });
+      return NextResponse.json(
+        { success: false, error: "File and content required" },
+        { status: 400 },
+      );
     }
 
     // Security: only allow specific filenames
@@ -23,11 +26,14 @@ export async function POST(request) {
     ];
 
     if (!allowedFiles.includes(file)) {
-      return NextResponse.json({ success: false, error: "Invalid file name" }, { status: 400 });
+      return NextResponse.json(
+        { success: false, error: "Invalid file name" },
+        { status: 400 },
+      );
     }
 
     const logsDir = path.join(process.cwd(), "logs", "translator");
-    
+
     // Create directory if not exists
     if (!fs.existsSync(logsDir)) {
       fs.mkdirSync(logsDir, { recursive: true });
@@ -39,6 +45,9 @@ export async function POST(request) {
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Error saving file:", error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: error.message },
+      { status: 500 },
+    );
   }
 }

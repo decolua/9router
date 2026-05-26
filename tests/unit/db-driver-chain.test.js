@@ -15,7 +15,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  try { global._dbAdapter?.instance?.close?.(); } catch {}
+  try {
+    global._dbAdapter?.instance?.close?.();
+  } catch {}
   delete global._dbAdapter;
   if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
   if (originalDataDir === undefined) delete process.env.DATA_DIR;

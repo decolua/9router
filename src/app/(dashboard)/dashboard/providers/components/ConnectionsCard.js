@@ -128,6 +128,7 @@ function ConnectionRow({
     return () => {
       if (t) clearInterval(t);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modelLockUntil]);
 
   useEffect(() => {
@@ -558,7 +559,11 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
   }, [providerId]);
 
   useEffect(() => {
-    fetch_();
+    const timer = setTimeout(() => {
+      void fetch_();
+    }, 0);
+
+    return () => clearTimeout(timer);
   }, [fetch_]);
 
   const saveStrategy = async (strategy, stickyLimit) => {

@@ -21,6 +21,7 @@ Request → 9Router → Tier 1を確認 (サブスクリプション)
 ### 3階層フォールバックシステム
 
 **Tier 1: サブスクリプション (プライマリ)**
+
 - Claude Code (Pro/Max)
 - OpenAI Codex (Plus/Pro)
 - Gemini CLI (月18万無料)
@@ -30,6 +31,7 @@ Request → 9Router → Tier 1を確認 (サブスクリプション)
 **目標**: すでに支払っているサブスクリプションから価値を最大化。
 
 **Tier 2: 低価格 (バックアップ)**
+
 - GLM-4.7 (入力100万あたり$0.60)
 - MiniMax M2.1 (入力100万あたり$0.20)
 - Kimi K2 (月$9固定)
@@ -37,6 +39,7 @@ Request → 9Router → Tier 1を確認 (サブスクリプション)
 **目標**: サブスクリプションクォータ切れ時の超低価格バックアップ (ChatGPT APIより約90%安い)。
 
 **Tier 3: 無料 (緊急時)**
+
 - iFlow (8モデル)
 - Qwen (3モデル)
 - Kiro (Claude無料)
@@ -148,6 +151,7 @@ Dashboard → Settings → Fallback Priority
 ```
 
 カスタム順序の例:
+
 ```
 Tier 1: Gemini CLI → Claude Code → Codex
 Tier 2: MiniMax → GLM → Kimi
@@ -169,12 +173,14 @@ Dashboard → Settings → Notifications
 ### 例1: 基本的な自動フォールバック
 
 **セットアップ:**
+
 ```
 Model: cc/claude-opus-4-5-20251101
 Fallback: 自動 (デフォルト3階層)
 ```
 
 **動作:**
+
 ```
 朝 (新鮮なクォータ):
   Request → cc/claude-opus-4-5 ✅
@@ -194,6 +200,7 @@ Fallback: 自動 (デフォルト3階層)
 ### 例2: 予算意識のルーティング
 
 **セットアップ:**
+
 ```
 Dashboard → Settings:
   Daily budget: $2
@@ -202,6 +209,7 @@ Dashboard → Settings:
 ```
 
 **動作:**
+
 ```
 1〜15日 (予算内):
   Requests → glm/glm-4.7 (低価格階層)
@@ -220,6 +228,7 @@ Dashboard → Settings:
 ### 例3: サブスクリプションのみモード
 
 **セットアップ:**
+
 ```
 Dashboard → Settings:
   Auto Fallback: オフ
@@ -227,6 +236,7 @@ Dashboard → Settings:
 ```
 
 **動作:**
+
 ```
 Request → cc/claude-opus-4-5
   ✅ クォータ利用可 → 成功
@@ -238,12 +248,14 @@ Request → cc/claude-opus-4-5
 ### 例4: 無料のみモード
 
 **セットアップ:**
+
 ```
 Model: if/kimi-k2-thinking
 Fallback: qw/qwen3-coder-plus → kr/claude-sonnet-4.5
 ```
 
 **動作:**
+
 ```
 すべてのリクエスト → 無料階層のみ
 コスト: 永久に$0
@@ -265,6 +277,7 @@ Fallback: qw/qwen3-coder-plus → kr/claude-sonnet-4.5
 ```
 
 **コンボ例:**
+
 ```
 cc/claude-opus-4-5 → glm/glm-4.7 → if/kimi-k2-thinking
 ```
@@ -279,6 +292,7 @@ cc/claude-opus-4-5 → glm/glm-4.7 → if/kimi-k2-thinking
 ```
 
 **コンボ例:**
+
 ```
 gc/gemini-3-flash-preview → glm/glm-4.7 → if/kimi-k2-thinking
 ```
@@ -293,6 +307,7 @@ gc/gemini-3-flash-preview → glm/glm-4.7 → if/kimi-k2-thinking
 ```
 
 **コンボ例:**
+
 ```
 cc/claude-opus-4-5 → cx/gpt-5.2-codex → glm/glm-4.7
 ```
@@ -307,6 +322,7 @@ cc/claude-opus-4-5 → cx/gpt-5.2-codex → glm/glm-4.7
 ```
 
 **コンボ例:**
+
 ```
 cc/claude-opus-4-5 → glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2-thinking
 ```
@@ -319,16 +335,17 @@ cc/claude-opus-4-5 → glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2-think
 
 クォータリセット時間に合わせて使用量を計画:
 
-| プロバイダー | クォータリセット | 戦略 |
-|----------|-------------|----------|
-| **Claude Code** | 5時間 + 週次 | 朝、新鮮なクォータを使用 |
-| **Codex** | 5時間 + 週次 | Claudeクォータ切れ後に使用 |
-| **Gemini CLI** | 日次 (1K) + 月次 (18万) | 一日中使用 |
-| **GLM-4.7** | 毎日午前10時 | 夕方使用、翌朝リセット |
-| **MiniMax M2.1** | 5時間ローリング | いつでも使用、ローリングウィンドウを追跡 |
-| **iFlow/Qwen/Kiro** | 制限なし | 緊急時バックアップ |
+| プロバイダー        | クォータリセット        | 戦略                                     |
+| ------------------- | ----------------------- | ---------------------------------------- |
+| **Claude Code**     | 5時間 + 週次            | 朝、新鮮なクォータを使用                 |
+| **Codex**           | 5時間 + 週次            | Claudeクォータ切れ後に使用               |
+| **Gemini CLI**      | 日次 (1K) + 月次 (18万) | 一日中使用                               |
+| **GLM-4.7**         | 毎日午前10時            | 夕方使用、翌朝リセット                   |
+| **MiniMax M2.1**    | 5時間ローリング         | いつでも使用、ローリングウィンドウを追跡 |
+| **iFlow/Qwen/Kiro** | 制限なし                | 緊急時バックアップ                       |
 
 **日課の例:**
+
 ```
 08:00 - 13:00: Claude Code (新鮮な5時間クォータ)
 13:00 - 18:00: Gemini CLI (1K/日クォータ)
@@ -367,7 +384,7 @@ Dashboard → Analytics:
     - 3000万 Claude Code経由 (サブスクリプション)
     - 1500万 GLM-4.7経由 ($9)
     - 500万 iFlow経由 (無料)
-  
+
   コスト: $9 (vs ChatGPT APIの$1000)
   節約: 99%
 ```
@@ -379,6 +396,7 @@ Dashboard → Analytics:
 **問題: "All providers quota exhausted"**
 
 **解決策:**
+
 1. ダッシュボードクォータトラッカーを確認
 2. クォータリセットを待つ (カウントダウン参照)
 3. フォールバックチェーンに無料階層を追加
@@ -387,6 +405,7 @@ Dashboard → Analytics:
 **問題: "Too many fallback switches"**
 
 **解決策:**
+
 1. プライマリプロバイダーがダウンしているか確認
 2. クォータ上限を増やす (サブスクリプションをアップグレード)
 3. より安いプライマリモデルを使用 (Claudeの代わりにGLM)
@@ -394,6 +413,7 @@ Dashboard → Analytics:
 **問題: "Unexpected costs"**
 
 **解決策:**
+
 1. Dashboard → Analytics → 使用量を確認
 2. 日次/月次予算上限を設定
 3. クリティカルでないタスクは無料階層へ切替

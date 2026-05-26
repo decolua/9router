@@ -1,7 +1,10 @@
 import { describe, it, expect } from "vitest";
 
 import { CursorExecutor } from "../../open-sse/executors/cursor.js";
-import { encodeField, wrapConnectRPCFrame } from "../../open-sse/utils/cursorProtobuf.js";
+import {
+  encodeField,
+  wrapConnectRPCFrame,
+} from "../../open-sse/utils/cursorProtobuf.js";
 
 const LEN = 2;
 
@@ -17,7 +20,9 @@ function cursorResponseFrame({ text = "", thinking = "" }) {
     responseFields.push(encodeField(25, LEN, thinkingMessage));
   }
 
-  const response = Buffer.concat(responseFields.map((field) => Buffer.from(field)));
+  const response = Buffer.concat(
+    responseFields.map((field) => Buffer.from(field)),
+  );
   const envelope = encodeField(2, LEN, response);
   return Buffer.from(wrapConnectRPCFrame(envelope));
 }
@@ -38,9 +43,13 @@ describe("CursorExecutor Composer thinking-field responses", () => {
       thinking: "private reasoning that must not leak</think>OK",
     });
 
-    const response = executor.transformProtobufToJSON(buffer, "cu/composer-2.5", {
-      messages: [{ role: "user", content: "reply OK" }],
-    });
+    const response = executor.transformProtobufToJSON(
+      buffer,
+      "cu/composer-2.5",
+      {
+        messages: [{ role: "user", content: "reply OK" }],
+      },
+    );
     const payload = await response.json();
 
     expect(payload.choices[0].message.content).toBe("OK");
@@ -56,9 +65,13 @@ describe("CursorExecutor Composer thinking-field responses", () => {
       cursorResponseFrame({ thinking: "K" }),
     ]);
 
-    const response = executor.transformProtobufToSSE(buffer, "composer-2.5-fast", {
-      messages: [{ role: "user", content: "reply OK" }],
-    });
+    const response = executor.transformProtobufToSSE(
+      buffer,
+      "composer-2.5-fast",
+      {
+        messages: [{ role: "user", content: "reply OK" }],
+      },
+    );
     const events = parseSSE(await response.text());
     const content = events
       .map((event) => event.choices?.[0]?.delta?.content || "")

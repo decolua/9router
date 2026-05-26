@@ -41,6 +41,7 @@ Dashboard → Providers → Connect [Provider]
 ```
 
 **例: Claude Code**
+
 1. 「Connect Claude Code」をクリック
 2. Claudeアカウントでログイン
 3. 9Routerを認可
@@ -58,6 +59,7 @@ Dashboard → Providers → Add API Key
 ```
 
 **例: GLM-4.7**
+
 1. [Zhipu AI](https://open.bigmodel.cn/)でサインアップ
 2. Coding PlanからAPIキーを取得
 3. Dashboard → Add API Key → Provider: `glm` → キーを貼り付け
@@ -74,6 +76,7 @@ Dashboard → Providers → Connect [Free Provider]
 ```
 
 **例: iFlow**
+
 1. 「Connect iFlow」をクリック
 2. iFlowアカウントでログイン
 3. 認可
@@ -142,6 +145,7 @@ CLIで使用: premium-coding
 ```
 
 **動作:**
+
 1. 最初にClaude Opusを試行(サブスクリプション)
 2. クォータ消費時 → GLM-4.7(超低価格)
 3. 予算上限時 → iFlow(無料)
@@ -154,46 +158,56 @@ CLIで使用: premium-coding
 ### サブスクリプションモデル(最初に最大化)
 
 **Claude Code (`cc/`)** - Pro/Maxサブスクリプション:
+
 - `cc/claude-opus-4-5-20251101` - Claude 4.5 Opus
 - `cc/claude-sonnet-4-5-20250929` - Claude 4.5 Sonnet
 - `cc/claude-haiku-4-5-20251001` - Claude 4.5 Haiku
 
 **Codex (`cx/`)** - Plus/Proサブスクリプション:
+
 - `cx/gpt-5.2-codex` - GPT 5.2 Codex
 - `cx/gpt-5.1-codex-max` - GPT 5.1 Codex Max
 
 **Gemini CLI (`gc/`)** - 月18万無料:
+
 - `gc/gemini-3-flash-preview` - Gemini 3 Flash Preview
 - `gc/gemini-2.5-pro` - Gemini 2.5 Pro
 
 **GitHub Copilot (`gh/`)** - サブスクリプション:
+
 - `gh/gpt-5` - GPT-5
 - `gh/claude-4.5-sonnet` - Claude 4.5 Sonnet
 
 ### 低価格モデル(バックアップ)
 
 **GLM (`glm/`)** - 100万あたり$0.6/$2.2:
+
 - `glm/glm-4.7` - GLM 4.7(毎日午前10時リセット)
 
 **MiniMax (`minimax/`)** - 100万あたり$0.20/$1.00:
+
 - `minimax/MiniMax-M2.1` - MiniMax M2.1(5時間リセット)
 
 **Kimi (`kimi/`)** - 月$9(1000万トークン):
+
 - `kimi/kimi-latest` - Kimi Latest
 
 ### 無料モデル(緊急時)
 
 **iFlow (`if/`)** - 8モデル無料:
+
 - `if/kimi-k2-thinking` - Kimi K2 Thinking
 - `if/qwen3-coder-plus` - Qwen3 Coder Plus
 - `if/glm-4.7` - GLM 4.7
 - `if/deepseek-r1` - DeepSeek R1
 
 **Qwen (`qw/`)** - 3モデル無料:
+
 - `qw/qwen3-coder-plus` - Qwen3 Coder Plus
 - `qw/qwen3-coder-flash` - Qwen3 Coder Flash
 
 **Kiro (`kr/`)** - 2モデル無料:
+
 - `kr/claude-sonnet-4.5` - Claude Sonnet 4.5
 - `kr/claude-haiku-4.5` - Claude Haiku 4.5
 

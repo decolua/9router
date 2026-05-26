@@ -13,16 +13,26 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const langFilter = searchParams.get("lang");
 
-    const connections = await getProviderConnections({ provider: "deepgram", isActive: true });
+    const connections = await getProviderConnections({
+      provider: "deepgram",
+      isActive: true,
+    });
     const apiKey = connections[0]?.apiKey;
-    if (!apiKey) return NextResponse.json({ error: "No Deepgram connection found" }, { status: 400 });
+    if (!apiKey)
+      return NextResponse.json(
+        { error: "No Deepgram connection found" },
+        { status: 400 },
+      );
 
     const res = await fetch("https://api.deepgram.com/v1/models", {
-      headers: { "Authorization": `Token ${apiKey}` },
+      headers: { Authorization: `Token ${apiKey}` },
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      return NextResponse.json({ error: `Deepgram API ${res.status}: ${text || "Failed"}` }, { status: 502 });
+      return NextResponse.json(
+        { error: `Deepgram API ${res.status}: ${text || "Failed"}` },
+        { status: 502 },
+      );
     }
     const data = await res.json();
     const ttsModels = data.tts || [];
@@ -30,14 +40,21 @@ export async function GET(request) {
     const byLang = {};
     for (const m of ttsModels) {
       // Deepgram returns `languages: ["en"]` or sometimes language inferred from canonical_name suffix
-      const langs = Array.isArray(m.languages) && m.languages.length
-        ? m.languages
-        : [m.canonical_name?.split("-").pop() || "en"];
+      const langs =
+        Array.isArray(m.languages) && m.languages.length
+          ? m.languages
+          : [m.canonical_name?.split("-").pop() || "en"];
       for (const code of langs) {
         if (!byLang[code]) {
           byLang[code] = {
             code,
-            name: (() => { try { return langNames.of(code); } catch { return code; } })(),
+            name: (() => {
+              try {
+                return langNames.of(code);
+              } catch {
+                return code;
+              }
+            })(),
             voices: [],
           };
         }
@@ -46,20 +63,28 @@ export async function GET(request) {
           byLang[code].voices.push({
             id: voiceId,
             name: m.name || voiceId,
-            gender: m.metadata?.tags?.find((t) => t === "masculine" || t === "feminine") || "",
+            gender:
+              m.metadata?.tags?.find(
+                (t) => t === "masculine" || t === "feminine",
+              ) || "",
             lang: code,
           });
         }
       }
     }
 
-    const languages = Object.values(byLang).sort((a, b) => a.name.localeCompare(b.name));
+    const languages = Object.values(byLang).sort((a, b) =>
+      a.name.localeCompare(b.name),
+    );
 
     if (langFilter) {
       return NextResponse.json({ voices: byLang[langFilter]?.voices || [] });
     }
     return NextResponse.json({ languages, byLang });
   } catch (err) {
-    return NextResponse.json({ error: err.message || "Failed to fetch voices" }, { status: 502 });
+    return NextResponse.json(
+      { error: err.message || "Failed to fetch voices" },
+      { status: 502 },
+    );
   }
 }

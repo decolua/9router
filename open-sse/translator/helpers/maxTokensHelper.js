@@ -1,4 +1,7 @@
-import { DEFAULT_MAX_TOKENS, DEFAULT_MIN_TOKENS } from "../../config/runtimeConfig.js";
+import {
+  DEFAULT_MAX_TOKENS,
+  DEFAULT_MIN_TOKENS,
+} from "../../config/runtimeConfig.js";
 
 /**
  * Adjust max_tokens based on request context
@@ -18,10 +21,12 @@ export function adjustMaxTokens(body) {
   // Ensure max_tokens > thinking.budget_tokens (Claude API requirement)
   // Claude API requires strictly greater, so add buffer instead of using DEFAULT_MAX_TOKENS
   // which could equal budget_tokens when budget_tokens >= 64000
-  if (body.thinking?.budget_tokens && maxTokens <= body.thinking.budget_tokens) {
+  if (
+    body.thinking?.budget_tokens &&
+    maxTokens <= body.thinking.budget_tokens
+  ) {
     maxTokens = body.thinking.budget_tokens + 1024;
   }
 
   return maxTokens;
 }
-

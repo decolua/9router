@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useCallback, useRef } from "react";
 import {
   ONE_BY_ONE_DELAY_MS,
   sortConnectionsByExpiresAt,
@@ -48,6 +48,15 @@ export function useProviderDetailConnections({
   const [manualRefreshSummary, setManualRefreshSummary] = useState(null);
   const stopOneByOneRef = useRef(false);
   const lastClickedIndexRef = useRef(null);
+  const connectionsRef = useRef([]);
+
+  const applyConnections = useCallback((nextConnections) => {
+    connectionsRef.current = nextConnections;
+    setConnections(nextConnections);
+    setSelectedConnectionIds((prev) =>
+      prev.filter((id) => nextConnections.some((conn) => conn.id === id)),
+    );
+  }, []);
 
   const fetchConnections = useCallback(async () => {
     try {
@@ -65,7 +74,7 @@ export function useProviderDetailConnections({
         const filtered = (connectionsData.connections || []).filter(
           (c) => c.provider === providerId,
         );
-        setConnections(filtered);
+        applyConnections(filtered);
       }
 
       if (proxyPoolsRes.ok) {
@@ -107,7 +116,13 @@ export function useProviderDetailConnections({
     } finally {
       setLoading(false);
     }
-  }, [providerId, isCompatible, onProviderNodeLoaded, onThinkingModeLoaded]);
+  }, [
+    applyConnections,
+    providerId,
+    isCompatible,
+    onProviderNodeLoaded,
+    onThinkingModeLoaded,
+  ]);
 
   const displayedConnections = sortConnectionsByExpiresAt(
     connections,
@@ -260,7 +275,9 @@ export function useProviderDetailConnections({
     try {
       const res = await deleteProviderConnection(connectionId);
       if (res.ok) {
-        setConnections((prev) => prev.filter((c) => c.id !== connectionId));
+        applyConnections(
+          connectionsRef.current.filter((c) => c.id !== connectionId),
+        );
       }
     } catch (error) {
       console.log("Error deleting connection:", error);
@@ -286,7 +303,7 @@ export function useProviderDetailConnections({
       newConnections[index2],
       newConnections[index1],
     ];
-    setConnections(newConnections);
+    applyConnections(newConnections);
 
     try {
       await Promise.all([
@@ -326,8 +343,8 @@ export function useProviderDetailConnections({
       });
       if (!res.ok) return false;
 
-      setConnections((prev) =>
-        prev.map((conn) =>
+      applyConnections(
+        connectionsRef.current.map((conn) =>
           conn.id === connectionId ? { ...conn, providerSpecificData } : conn,
         ),
       );
@@ -384,7 +401,9 @@ export function useProviderDetailConnections({
       if (isShift && lastClickedIndexRef.current !== null) {
         const start = Math.min(lastClickedIndexRef.current, currentIndex);
         const end = Math.max(lastClickedIndexRef.current, currentIndex);
-        const targetIds = displayedConnections.slice(start, end + 1).map((c) => c.id);
+        const targetIds = displayedConnections
+          .slice(start, end + 1)
+          .map((c) => c.id);
 
         let nextSelectedIds;
         if (shouldSelect) {
@@ -419,12 +438,6 @@ export function useProviderDetailConnections({
   const clearSelection = () => {
     setSelectedConnectionIds([]);
   };
-
-  useEffect(() => {
-    setSelectedConnectionIds((prev) =>
-      prev.filter((id) => connections.some((conn) => conn.id === id)),
-    );
-  }, [connections]);
 
   const selectionSummary = getSelectionSummary(
     selectedConnectionIds,
@@ -536,8 +549,8 @@ export function useProviderDetailConnections({
         proxyPoolId: proxyPoolId || null,
       });
       if (res.ok) {
-        setConnections((prev) =>
-          prev.map((c) =>
+        applyConnections(
+          connectionsRef.current.map((c) =>
             c.id === connectionId
               ? {
                   ...c,

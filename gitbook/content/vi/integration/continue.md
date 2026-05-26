@@ -23,6 +23,7 @@ Tích hợp 9Router với extension Continue để mang trợ lý AI trực ti�
 Thêm cấu hình sau vào `config.json`:
 
 **Setup Một Model:**
+
 ```json
 {
   "models": [
@@ -38,6 +39,7 @@ Thêm cấu hình sau vào `config.json`:
 ```
 
 **Setup Nhiều Model:**
+
 ```json
 {
   "models": [
@@ -75,6 +77,7 @@ Thêm cấu hình sau vào `config.json`:
 
 **Cho Cloud 9Router:**
 Thay `apiBase` bằng:
+
 ```json
 "apiBase": "https://9router.com/v1"
 ```
@@ -94,37 +97,44 @@ Thay `apiBase` bằng:
 ## Model có sẵn
 
 ### Claude Models (Anthropic)
+
 - `cc/claude-opus-4-5-20251101` - Mạnh nhất, tốt nhất cho task phức tạp
 - `cc/claude-sonnet-4-20250514` - Cân bằng hiệu năng và tốc độ
 - `cc/claude-haiku-4-20250514` - Nhanh nhất, phù hợp task đơn giản
 
 ### DeepSeek Models
+
 - `cx/deepseek-chat` - Xuất sắc cho tạo code
 - `cx/deepseek-reasoner` - Tốt nhất cho giải quyết vấn đề phức tạp
 
 ### GLM Models (Zhipu AI)
+
 - `glm/glm-4-plus` - Tiếng Trung và tiếng Anh nâng cao
 - `glm/glm-4-flash` - Phản hồi nhanh
 
 ## Ví dụ Sử dụng
 
 ### Giải thích Code
+
 1. Chọn code trong editor
 2. Mở sidebar Continue
 3. Gõ: "Explain this code"
 4. Model: `cc/claude-sonnet-4-20250514`
 
 ### Tạo Code
+
 1. Mở sidebar Continue
 2. Gõ: "Create a React component for user profile card"
 3. Model: `cx/deepseek-chat`
 
 ### Refactoring
+
 1. Chọn code để refactor
 2. Gõ: "Refactor this to use async/await"
 3. Model: `cc/claude-sonnet-4-20250514`
 
 ### Sửa Bug
+
 1. Chọn code có vấn đề
 2. Gõ: "Find and fix the bug in this code"
 3. Model: `cx/deepseek-reasoner`
@@ -204,21 +214,25 @@ Cấu hình context Continue gửi đến model:
 ## Troubleshooting
 
 ### Model không phản hồi
+
 - Kiểm tra 9Router đang chạy: `curl http://localhost:20128/health`
 - Xác minh API key trong config.json
 - Kiểm tra VSCode Developer Console để xem lỗi: `Help` → `Toggle Developer Tools`
 
 ### Chọn sai Model
+
 - Click dropdown model trong sidebar Continue
 - Chọn đúng model 9Router
 - Tên model phải khớp chính xác (case-sensitive)
 
 ### Cấu hình không Load
+
 - Xác minh JSON syntax hợp lệ (dùng JSON validator)
 - Kiểm tra vị trí file: `~/.continue/config.json`
 - Reload cửa sổ VSCode sau khi thay đổi
 
 ### Hiệu năng Chậm
+
 - Chuyển sang model nhanh hơn (haiku, flash)
 - Giảm context size trong contextProviders
 - Kiểm tra độ trễ network đến 9Router
@@ -226,17 +240,20 @@ Cấu hình context Continue gửi đến model:
 ## Best Practices
 
 ### Chiến lược Chọn Model
+
 - **Edit nhanh**: Dùng `cc/claude-haiku-4-20250514`
 - **Tạo code**: Dùng `cx/deepseek-chat`
 - **Refactoring phức tạp**: Dùng `cc/claude-opus-4-5-20251101`
 - **Giải quyết vấn đề**: Dùng `cx/deepseek-reasoner`
 
 ### Quản lý Context
+
 - Chỉ chọn code liên quan trước khi hỏi
 - Dùng prompt cụ thể, rõ ràng
 - Chia task phức tạp thành các bước nhỏ
 
 ### Tối ưu Chi phí
+
 - Dùng model nhanh hơn/rẻ hơn cho task đơn giản
 - Giới hạn context size khi có thể
 - Cache response thường dùng

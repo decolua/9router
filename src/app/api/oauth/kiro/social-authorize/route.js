@@ -15,7 +15,7 @@ export async function GET(request) {
     if (!provider || !["google", "github"].includes(provider)) {
       return NextResponse.json(
         { error: "Invalid provider. Use 'google' or 'github'" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -26,7 +26,7 @@ export async function GET(request) {
     const authUrl = kiroService.buildSocialLoginUrl(
       provider,
       codeChallenge,
-      state
+      state,
     );
 
     return NextResponse.json({

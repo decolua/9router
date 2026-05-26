@@ -5,7 +5,11 @@ import DocsSidebar from "./DocsSidebar";
 import DocsToc from "./DocsToc";
 import { DEFAULT_LANG } from "@/constants/languages";
 
-export default function DocsLayout({ children, headings = [], lang = DEFAULT_LANG }) {
+export default function DocsLayout({
+  children,
+  headings = [],
+  lang = DEFAULT_LANG,
+}) {
   return (
     <div className="min-h-screen flex flex-col bg-[#FCFBF9]">
       <DocsHeader lang={lang} />

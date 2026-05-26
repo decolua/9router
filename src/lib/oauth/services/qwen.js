@@ -151,7 +151,7 @@ export class QwenService {
       const tokens = await this.pollForToken(
         deviceData.device_code,
         codeVerifier,
-        deviceData.interval || 5
+        deviceData.interval || 5,
       );
 
       spinner.text = "Saving tokens to server...";
@@ -167,4 +167,3 @@ export class QwenService {
     }
   }
 }
-

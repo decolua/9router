@@ -45,11 +45,15 @@ function formatRemainingExpiresAt(value) {
 
   if (totalDays >= 1) {
     const remainingHours = Math.floor((diffMs % 86400000) / 3600000);
-    return remainingHours > 0 ? `${totalDays}d${remainingHours}h` : `${totalDays}d`;
+    return remainingHours > 0
+      ? `${totalDays}d${remainingHours}h`
+      : `${totalDays}d`;
   }
   if (totalHours >= 1) {
     const remainingMinutes = Math.floor((diffMs % 3600000) / 60000);
-    return remainingMinutes > 0 ? `${totalHours}h${remainingMinutes}m` : `${totalHours}h`;
+    return remainingMinutes > 0
+      ? `${totalHours}h${remainingMinutes}m`
+      : `${totalHours}h`;
   }
   return `${Math.max(1, totalMinutes)}m`;
 }
@@ -207,7 +211,7 @@ export default function ConnectionRow({
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [modelLockUntil]);
+  }, [modelLockUntil]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Determine effective status (override unavailable if cooldown expired)
   const effectiveStatus =
@@ -274,7 +278,10 @@ export default function ConnectionRow({
       <div className="flex min-w-0 flex-1 items-start gap-2 sm:items-center sm:gap-3">
         {/* Row Number (STT) */}
         {index !== undefined && (
-          <span className="shrink-0 text-xs font-mono font-semibold text-text-muted/60 min-w-[20px] text-center" title={`Row #${index + 1}`}>
+          <span
+            className="shrink-0 text-xs font-mono font-semibold text-text-muted/60 min-w-[20px] text-center"
+            title={`Row #${index + 1}`}
+          >
             {index + 1}
           </span>
         )}

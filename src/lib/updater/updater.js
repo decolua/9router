@@ -24,12 +24,19 @@ const appPort = parseInt(process.env.UPDATER_APP_PORT || "20128", 10);
 function getDataDir() {
   if (process.env.DATA_DIR) return process.env.DATA_DIR;
   if (process.platform === "win32") {
-    return path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "9router");
+    return path.join(
+      process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"),
+      "9router",
+    );
   }
   return path.join(os.homedir(), ".9router");
 }
 const updateDir = path.join(getDataDir(), "update");
-try { fs.mkdirSync(updateDir, { recursive: true }); } catch { /* best effort */ }
+try {
+  fs.mkdirSync(updateDir, { recursive: true });
+} catch {
+  /* best effort */
+}
 const statusFile = path.join(updateDir, "status.json");
 const logFile = path.join(updateDir, "install.log");
 
@@ -51,12 +58,21 @@ function pushLog(line) {
   const trimmed = line.replace(/\r?\n$/, "");
   if (!trimmed) return;
   state.logTail.push(trimmed);
-  if (state.logTail.length > tailLines) state.logTail = state.logTail.slice(-tailLines);
-  try { fs.appendFileSync(logFile, `${trimmed}\n`); } catch { /* best effort */ }
+  if (state.logTail.length > tailLines)
+    state.logTail = state.logTail.slice(-tailLines);
+  try {
+    fs.appendFileSync(logFile, `${trimmed}\n`);
+  } catch {
+    /* best effort */
+  }
 }
 
 function persistStatus() {
-  try { fs.writeFileSync(statusFile, JSON.stringify(state, null, 2)); } catch { /* best effort */ }
+  try {
+    fs.writeFileSync(statusFile, JSON.stringify(state, null, 2));
+  } catch {
+    /* best effort */
+  }
 }
 
 function setPhase(phase) {
@@ -106,7 +122,9 @@ function isAppPortBusy() {
 // Wait for app process to fully exit before running npm (avoids Windows file-lock)
 async function waitForAppExit() {
   setPhase("waitingForExit");
-  pushLog(`[updater] waiting for app to exit (min ${Math.round(waitMinMs / 1000)}s)...`);
+  pushLog(
+    `[updater] waiting for app to exit (min ${Math.round(waitMinMs / 1000)}s)...`,
+  );
 
   // Hard minimum delay: OS needs time to release file handles
   await sleep(waitMinMs);
@@ -131,7 +149,9 @@ function sleep(ms) {
 function runInstall() {
   state.attempt += 1;
   setPhase("installing");
-  pushLog(`[updater] attempt ${state.attempt}/${maxRetries} — npm i -g ${packageName} --prefer-online`);
+  pushLog(
+    `[updater] attempt ${state.attempt}/${maxRetries} — npm i -g ${packageName} --prefer-online`,
+  );
 
   const isWin = process.platform === "win32";
   const cmd = isWin ? "npm.cmd" : "npm";
@@ -174,10 +194,17 @@ function runInstall() {
 
 function openBrowser(url) {
   const platform = process.platform;
-  const cmd = platform === "darwin" ? `open "${url}"`
-    : platform === "win32" ? `start "" "${url}"`
-    : `xdg-open "${url}"`;
-  try { spawn(cmd, { shell: true, detached: true, stdio: "ignore" }).unref(); } catch { /* ignore */ }
+  const cmd =
+    platform === "darwin"
+      ? `open "${url}"`
+      : platform === "win32"
+        ? `start "" "${url}"`
+        : `xdg-open "${url}"`;
+  try {
+    spawn(cmd, { shell: true, detached: true, stdio: "ignore" }).unref();
+  } catch {
+    /* ignore */
+  }
 }
 
 // Wait until app port is listening (server alive again), then open dashboard
@@ -200,7 +227,11 @@ function relaunchApp() {
   const cmd = process.env.UPDATER_RELAUNCH_CMD;
   if (!cmd) return;
   let args = [];
-  try { args = JSON.parse(process.env.UPDATER_RELAUNCH_ARGS || "[]"); } catch { /* noop */ }
+  try {
+    args = JSON.parse(process.env.UPDATER_RELAUNCH_ARGS || "[]");
+  } catch {
+    /* noop */
+  }
   const isWin = process.platform === "win32";
   try {
     const child = spawn(cmd, args, {
@@ -208,10 +239,17 @@ function relaunchApp() {
       stdio: "ignore",
       windowsHide: true,
       shell: isWin,
-      env: { ...process.env, UPDATER_RELAUNCH: "", UPDATER_RELAUNCH_CMD: "", UPDATER_RELAUNCH_ARGS: "" },
+      env: {
+        ...process.env,
+        UPDATER_RELAUNCH: "",
+        UPDATER_RELAUNCH_CMD: "",
+        UPDATER_RELAUNCH_ARGS: "",
+      },
     });
     child.unref();
-    pushLog(`[updater] relaunched: ${cmd} ${args.join(" ")} (pid=${child.pid})`);
+    pushLog(
+      `[updater] relaunched: ${cmd} ${args.join(" ")} (pid=${child.pid})`,
+    );
     // Wait for new app to come up, then auto-open browser so user sees the result
     waitForAppAndOpenBrowser();
   } catch (e) {
@@ -229,7 +267,11 @@ function finalize(success, exitCode, error) {
   if (success) relaunchApp();
   // Linger so browser can poll final status, then exit & close the port
   setTimeout(() => {
-    try { server.close(); } catch { /* ignore */ }
+    try {
+      server.close();
+    } catch {
+      /* ignore */
+    }
     process.exit(success ? 0 : 1);
   }, lingerMs);
 }

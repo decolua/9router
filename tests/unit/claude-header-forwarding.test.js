@@ -50,7 +50,9 @@ describe("claudeHeaderCache", () => {
     const cached = cacheModule.getCachedClaudeHeaders();
     expect(cached).not.toBeNull();
     expect(cached["user-agent"]).toBe("claude-code/2.1.63 node/24.3.0");
-    expect(cached["anthropic-beta"]).toBe("claude-code-20250219,oauth-2025-04-20");
+    expect(cached["anthropic-beta"]).toBe(
+      "claude-code-20250219,oauth-2025-04-20",
+    );
     expect(cached["x-app"]).toBe("cli");
     expect(cached["x-stainless-os"]).toBe("MacOS");
     // Non-identity header must not leak in
@@ -63,7 +65,9 @@ describe("claudeHeaderCache", () => {
       "anthropic-version": "2023-06-01",
     });
     expect(cacheModule.getCachedClaudeHeaders()).not.toBeNull();
-    expect(cacheModule.getCachedClaudeHeaders()["user-agent"]).toBe("claude-cli/1.0.0");
+    expect(cacheModule.getCachedClaudeHeaders()["user-agent"]).toBe(
+      "claude-cli/1.0.0",
+    );
   });
 
   it("caches headers when x-app is 'cli' (regardless of user-agent)", () => {
@@ -126,7 +130,8 @@ describe("DefaultExecutor.buildHeaders() — claude provider", () => {
     const cache = await import("open-sse/utils/claudeHeaderCache.js");
     cache.cacheClaudeHeaders({
       "user-agent": "claude-code/2.1.63 node/24.3.0",
-      "anthropic-beta": "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14",
+      "anthropic-beta":
+        "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14",
       "anthropic-version": "2023-06-01",
       "anthropic-dangerous-direct-browser-access": "true",
       "x-app": "cli",
@@ -151,7 +156,7 @@ describe("DefaultExecutor.buildHeaders() — claude provider", () => {
     // Live values should win over static providers.js values
     expect(headers["user-agent"]).toBe("claude-code/2.1.63 node/24.3.0");
     // Beta flags are MERGED (static + cached) to preserve required flags like oauth
-    const betaFlags = headers["anthropic-beta"].split(",").map(s => s.trim());
+    const betaFlags = headers["anthropic-beta"].split(",").map((s) => s.trim());
     expect(betaFlags).toContain("claude-code-20250219");
     expect(betaFlags).toContain("oauth-2025-04-20");
     expect(betaFlags).toContain("interleaved-thinking-2025-05-14");
@@ -246,13 +251,17 @@ describe("DefaultExecutor.buildHeaders() — anthropic-compatible stripping", ()
         apiKey: "key",
         providerSpecificData: { baseUrl: "https://myproxy.example.com/v1" },
       },
-      true
+      true,
     );
 
     expect(headers["x-app"]).toBeUndefined();
     expect(headers["X-App"]).toBeUndefined();
-    expect(headers["anthropic-dangerous-direct-browser-access"]).toBeUndefined();
-    expect(headers["Anthropic-Dangerous-Direct-Browser-Access"]).toBeUndefined();
+    expect(
+      headers["anthropic-dangerous-direct-browser-access"],
+    ).toBeUndefined();
+    expect(
+      headers["Anthropic-Dangerous-Direct-Browser-Access"],
+    ).toBeUndefined();
   });
 
   it("removes claude-code-20250219 from anthropic-beta for non-Anthropic host", () => {
@@ -262,10 +271,11 @@ describe("DefaultExecutor.buildHeaders() — anthropic-compatible stripping", ()
         apiKey: "key",
         providerSpecificData: { baseUrl: "https://myproxy.example.com/v1" },
       },
-      true
+      true,
     );
 
-    const betaVal = headers["anthropic-beta"] || headers["Anthropic-Beta"] || "";
+    const betaVal =
+      headers["anthropic-beta"] || headers["Anthropic-Beta"] || "";
     expect(betaVal).not.toContain("claude-code-20250219");
   });
 
@@ -278,10 +288,11 @@ describe("DefaultExecutor.buildHeaders() — anthropic-compatible stripping", ()
         apiKey: "key",
         providerSpecificData: { baseUrl: "https://myproxy.example.com/v1" },
       },
-      false
+      false,
     );
 
-    const betaVal = headers["anthropic-beta"] || headers["Anthropic-Beta"] || "";
+    const betaVal =
+      headers["anthropic-beta"] || headers["Anthropic-Beta"] || "";
     // If any beta value remains it should not be empty and should not have the stripped value
     if (betaVal) {
       expect(betaVal).not.toContain("claude-code-20250219");
@@ -295,7 +306,7 @@ describe("DefaultExecutor.buildHeaders() — anthropic-compatible stripping", ()
         apiKey: "key",
         providerSpecificData: { baseUrl: "https://api.anthropic.com/v1" },
       },
-      true
+      true,
     );
 
     // No stripping — anthropic-version should survive
@@ -311,7 +322,7 @@ describe("DefaultExecutor.buildHeaders() — anthropic-compatible stripping", ()
         apiKey: "key",
         providerSpecificData: {},
       },
-      true
+      true,
     );
 
     const hasVersion =
@@ -348,7 +359,10 @@ describe("proxyAwareFetch — api.anthropic.com routing", () => {
       method: "POST",
       // No Accept: text/event-stream → non-streaming path
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "claude-3-5-sonnet-20241022", messages: [] }),
+      body: JSON.stringify({
+        model: "claude-3-5-sonnet-20241022",
+        messages: [],
+      }),
     });
 
     expect(gotScraping).toHaveBeenCalledOnce();

@@ -45,13 +45,13 @@ export NODE_ENV="production"
 
 **环境变量:**
 
-| 变量 | 默认值 | 说明 |
-|----------|---------|-------------|
-| `JWT_SECRET` | 自动生成 | **生产环境必须修改!** 用于 JWT token 签名 |
-| `INITIAL_PASSWORD` | `123456` | 仪表盘登录密码 |
-| `DATA_DIR` | `~/.9router` | 数据库与数据存储路径 |
-| `NODE_ENV` | `development` | 部署时设为 `production` |
-| `ENABLE_REQUEST_LOGS` | `false` | 启用 debug 请求/响应日志 |
+| 变量                  | 默认值        | 说明                                      |
+| --------------------- | ------------- | ----------------------------------------- |
+| `JWT_SECRET`          | 自动生成      | **生产环境必须修改!** 用于 JWT token 签名 |
+| `INITIAL_PASSWORD`    | `123456`      | 仪表盘登录密码                            |
+| `DATA_DIR`            | `~/.9router`  | 数据库与数据存储路径                      |
+| `NODE_ENV`            | `development` | 部署时设为 `production`                   |
+| `ENABLE_REQUEST_LOGS` | `false`       | 启用 debug 请求/响应日志                  |
 
 ### 步骤 5:创建数据目录
 
@@ -165,7 +165,7 @@ docker run -d \
 创建 `docker-compose.yml`:
 
 ```yaml
-version: '3.8'
+version: "3.8"
 
 services:
   9router:
@@ -258,7 +258,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_cache_bypass $http_upgrade;
-        
+
         # SSE support - CRITICAL for streaming
         proxy_buffering off;
         proxy_read_timeout 86400;
@@ -272,7 +272,7 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        
+
         # SSE support - CRITICAL for streaming
         proxy_buffering off;
         proxy_read_timeout 86400;

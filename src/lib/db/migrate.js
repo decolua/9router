@@ -28,19 +28,33 @@ export class MigrationAborted extends Error {
 function importWithAssertion(adapter, tableName, rows, insertFn, rowMeta) {
   const dropped = [];
   for (const row of rows) {
-    try { insertFn(row); }
-    catch (err) { dropped.push({ ...rowMeta(row), reason: err.message }); }
+    try {
+      insertFn(row);
+    } catch (err) {
+      dropped.push({ ...rowMeta(row), reason: err.message });
+    }
   }
-  const inserted = adapter.get(`SELECT COUNT(*) as c FROM ${tableName}`)?.c ?? 0;
+  const inserted =
+    adapter.get(`SELECT COUNT(*) as c FROM ${tableName}`)?.c ?? 0;
   if (inserted !== rows.length) {
-    console.warn(`[DB][migrate] ${tableName} row-count mismatch: expected ${rows.length}, got ${inserted}. Dropped:`, dropped);
-    throw new MigrationAborted(`${tableName} row-count mismatch: expected ${rows.length}, got ${inserted}`, dropped);
+    console.warn(
+      `[DB][migrate] ${tableName} row-count mismatch: expected ${rows.length}, got ${inserted}. Dropped:`,
+      dropped,
+    );
+    throw new MigrationAborted(
+      `${tableName} row-count mismatch: expected ${rows.length}, got ${inserted}`,
+      dropped,
+    );
   }
 }
 
 function readJsonSafe(file) {
   if (!fs.existsSync(file)) return null;
-  try { return JSON.parse(fs.readFileSync(file, "utf-8")); } catch { return null; }
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf-8"));
+  } catch {
+    return null;
+  }
 }
 
 function isFreshDb(adapter) {
@@ -93,17 +107,23 @@ function syncSchemaFromTables(adapter) {
           .replace(/UNIQUE/i, "")
           .trim();
         try {
-          adapter.exec(`ALTER TABLE ${tableName} ADD COLUMN ${colName} ${safeDef}`);
+          adapter.exec(
+            `ALTER TABLE ${tableName} ADD COLUMN ${colName} ${safeDef}`,
+          );
           console.log(`[DB][sync] +column ${tableName}.${colName}`);
         } catch (e) {
-          console.warn(`[DB][sync] add column ${tableName}.${colName} failed: ${e.message}`);
+          console.warn(
+            `[DB][sync] add column ${tableName}.${colName} failed: ${e.message}`,
+          );
         }
       }
     }
 
     // Indexes (idempotent)
     for (const idx of def.indexes || []) {
-      try { adapter.exec(idx); } catch {}
+      try {
+        adapter.exec(idx);
+      } catch {}
     }
   }
 }
@@ -113,59 +133,158 @@ function importLegacyMain(adapter, data) {
   if (!data || typeof data !== "object") return;
 
   if (data.settings) {
-    adapter.run(`INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`, [stringifyJson(data.settings)]);
+    adapter.run(
+      `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
+      [stringifyJson(data.settings)],
+    );
   }
 
-  importWithAssertion(adapter, "providerConnections", data.providerConnections || [], (c) => {
-    const { id, provider, authType, name, email, priority, isActive, createdAt, updatedAt, ...rest } = c;
-    adapter.run(
-      `INSERT OR REPLACE INTO providerConnections(id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, provider, authType || "oauth", name || null, email || null, priority || null, isActive === false ? 0 : 1, stringifyJson(rest), createdAt || new Date().toISOString(), updatedAt || new Date().toISOString()]
-    );
-  }, (c) => ({ id: c.id ?? null, provider: c.provider ?? null, name: c.name ?? null }));
+  importWithAssertion(
+    adapter,
+    "providerConnections",
+    data.providerConnections || [],
+    (c) => {
+      const {
+        id,
+        provider,
+        authType,
+        name,
+        email,
+        priority,
+        isActive,
+        createdAt,
+        updatedAt,
+        ...rest
+      } = c;
+      adapter.run(
+        `INSERT OR REPLACE INTO providerConnections(id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          provider,
+          authType || "oauth",
+          name || null,
+          email || null,
+          priority || null,
+          isActive === false ? 0 : 1,
+          stringifyJson(rest),
+          createdAt || new Date().toISOString(),
+          updatedAt || new Date().toISOString(),
+        ],
+      );
+    },
+    (c) => ({
+      id: c.id ?? null,
+      provider: c.provider ?? null,
+      name: c.name ?? null,
+    }),
+  );
 
-  importWithAssertion(adapter, "providerNodes", data.providerNodes || [], (n) => {
-    const { id, type, name, createdAt, updatedAt, ...rest } = n;
-    adapter.run(
-      `INSERT OR REPLACE INTO providerNodes(id, type, name, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
-      [id, type || null, name || null, stringifyJson(rest), createdAt || new Date().toISOString(), updatedAt || new Date().toISOString()]
-    );
-  }, (n) => ({ id: n.id ?? null, type: n.type ?? null, name: n.name ?? null }));
+  importWithAssertion(
+    adapter,
+    "providerNodes",
+    data.providerNodes || [],
+    (n) => {
+      const { id, type, name, createdAt, updatedAt, ...rest } = n;
+      adapter.run(
+        `INSERT OR REPLACE INTO providerNodes(id, type, name, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          type || null,
+          name || null,
+          stringifyJson(rest),
+          createdAt || new Date().toISOString(),
+          updatedAt || new Date().toISOString(),
+        ],
+      );
+    },
+    (n) => ({ id: n.id ?? null, type: n.type ?? null, name: n.name ?? null }),
+  );
 
-  importWithAssertion(adapter, "proxyPools", data.proxyPools || [], (p) => {
-    const { id, isActive, testStatus, createdAt, updatedAt, ...rest } = p;
-    adapter.run(
-      `INSERT OR REPLACE INTO proxyPools(id, isActive, testStatus, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
-      [id, isActive === false ? 0 : 1, testStatus || "unknown", stringifyJson(rest), createdAt || new Date().toISOString(), updatedAt || new Date().toISOString()]
-    );
-  }, (p) => ({ id: p.id ?? null }));
+  importWithAssertion(
+    adapter,
+    "proxyPools",
+    data.proxyPools || [],
+    (p) => {
+      const { id, isActive, testStatus, createdAt, updatedAt, ...rest } = p;
+      adapter.run(
+        `INSERT OR REPLACE INTO proxyPools(id, isActive, testStatus, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          isActive === false ? 0 : 1,
+          testStatus || "unknown",
+          stringifyJson(rest),
+          createdAt || new Date().toISOString(),
+          updatedAt || new Date().toISOString(),
+        ],
+      );
+    },
+    (p) => ({ id: p.id ?? null }),
+  );
 
-  importWithAssertion(adapter, "apiKeys", data.apiKeys || [], (k) => {
-    adapter.run(
-      `INSERT OR REPLACE INTO apiKeys(id, key, name, machineId, isActive, createdAt) VALUES(?, ?, ?, ?, ?, ?)`,
-      [k.id, k.key, k.name || null, k.machineId || null, k.isActive === false ? 0 : 1, k.createdAt || new Date().toISOString()]
-    );
-  }, (k) => ({ id: k.id ?? null, name: k.name ?? null }));
+  importWithAssertion(
+    adapter,
+    "apiKeys",
+    data.apiKeys || [],
+    (k) => {
+      adapter.run(
+        `INSERT OR REPLACE INTO apiKeys(id, key, name, machineId, isActive, createdAt) VALUES(?, ?, ?, ?, ?, ?)`,
+        [
+          k.id,
+          k.key,
+          k.name || null,
+          k.machineId || null,
+          k.isActive === false ? 0 : 1,
+          k.createdAt || new Date().toISOString(),
+        ],
+      );
+    },
+    (k) => ({ id: k.id ?? null, name: k.name ?? null }),
+  );
 
-  importWithAssertion(adapter, "combos", data.combos || [], (c) => {
-    adapter.run(
-      `INSERT OR REPLACE INTO combos(id, name, kind, models, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
-      [c.id, c.name, c.kind || null, stringifyJson(c.models || []), c.createdAt || new Date().toISOString(), c.updatedAt || new Date().toISOString()]
-    );
-  }, (c) => ({ id: c.id ?? null, name: c.name ?? null }));
+  importWithAssertion(
+    adapter,
+    "combos",
+    data.combos || [],
+    (c) => {
+      adapter.run(
+        `INSERT OR REPLACE INTO combos(id, name, kind, models, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
+        [
+          c.id,
+          c.name,
+          c.kind || null,
+          stringifyJson(c.models || []),
+          c.createdAt || new Date().toISOString(),
+          c.updatedAt || new Date().toISOString(),
+        ],
+      );
+    },
+    (c) => ({ id: c.id ?? null, name: c.name ?? null }),
+  );
 
   for (const [alias, model] of Object.entries(data.modelAliases || {})) {
-    adapter.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('modelAliases', ?, ?)`, [alias, stringifyJson(model)]);
+    adapter.run(
+      `INSERT OR REPLACE INTO kv(scope, key, value) VALUES('modelAliases', ?, ?)`,
+      [alias, stringifyJson(model)],
+    );
   }
   for (const m of data.customModels || []) {
     const k = `${m.providerAlias}|${m.id}|${m.type || "llm"}`;
-    adapter.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('customModels', ?, ?)`, [k, stringifyJson(m)]);
+    adapter.run(
+      `INSERT OR REPLACE INTO kv(scope, key, value) VALUES('customModels', ?, ?)`,
+      [k, stringifyJson(m)],
+    );
   }
   for (const [tool, mappings] of Object.entries(data.mitmAlias || {})) {
-    adapter.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('mitmAlias', ?, ?)`, [tool, stringifyJson(mappings || {})]);
+    adapter.run(
+      `INSERT OR REPLACE INTO kv(scope, key, value) VALUES('mitmAlias', ?, ?)`,
+      [tool, stringifyJson(mappings || {})],
+    );
   }
   for (const [provider, models] of Object.entries(data.pricing || {})) {
-    adapter.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('pricing', ?, ?)`, [provider, stringifyJson(models || {})]);
+    adapter.run(
+      `INSERT OR REPLACE INTO kv(scope, key, value) VALUES('pricing', ?, ?)`,
+      [provider, stringifyJson(models || {})],
+    );
   }
 }
 
@@ -177,18 +296,25 @@ function importLegacyUsage(adapter, data) {
       `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         e.timestamp || new Date().toISOString(),
-        e.provider || null, e.model || null, e.connectionId || null, e.apiKey || null, e.endpoint || null,
+        e.provider || null,
+        e.model || null,
+        e.connectionId || null,
+        e.apiKey || null,
+        e.endpoint || null,
         t.prompt_tokens || t.input_tokens || 0,
         t.completion_tokens || t.output_tokens || 0,
         e.cost || 0,
         e.status || "ok",
         stringifyJson(t),
         stringifyJson({}),
-      ]
+      ],
     );
   }
   for (const [dateKey, day] of Object.entries(data.dailySummary || {})) {
-    adapter.run(`INSERT OR REPLACE INTO usageDaily(dateKey, data) VALUES(?, ?)`, [dateKey, stringifyJson(day)]);
+    adapter.run(
+      `INSERT OR REPLACE INTO usageDaily(dateKey, data) VALUES(?, ?)`,
+      [dateKey, stringifyJson(day)],
+    );
   }
   if (typeof data.totalRequestsLifetime === "number") {
     setMetaSync(adapter, "totalRequestsLifetime", data.totalRequestsLifetime);
@@ -198,7 +324,10 @@ function importLegacyUsage(adapter, data) {
 function importLegacyDisabled(adapter, data) {
   if (!data || typeof data.disabled !== "object") return;
   for (const [provider, ids] of Object.entries(data.disabled)) {
-    adapter.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('disabledModels', ?, ?)`, [provider, stringifyJson(ids || [])]);
+    adapter.run(
+      `INSERT OR REPLACE INTO kv(scope, key, value) VALUES('disabledModels', ?, ?)`,
+      [provider, stringifyJson(ids || [])],
+    );
   }
 }
 
@@ -207,7 +336,15 @@ function importLegacyDetails(adapter, data) {
   for (const r of data.records) {
     adapter.run(
       `INSERT OR REPLACE INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?)`,
-      [r.id, r.timestamp || new Date().toISOString(), r.provider || null, r.model || null, r.connectionId || null, r.status || null, stringifyJson(r)]
+      [
+        r.id,
+        r.timestamp || new Date().toISOString(),
+        r.provider || null,
+        r.model || null,
+        r.connectionId || null,
+        r.status || null,
+        stringifyJson(r),
+      ],
     );
   }
 }
@@ -233,7 +370,12 @@ export async function runMigrationOnce(adapter) {
   const legacyUsage = readJsonSafe(LEGACY_FILES.usage);
   const legacyDisabled = readJsonSafe(LEGACY_FILES.disabled);
   const legacyDetails = readJsonSafe(LEGACY_FILES.details);
-  const hasLegacy = !!(legacyMain || legacyUsage || legacyDisabled || legacyDetails);
+  const hasLegacy = !!(
+    legacyMain ||
+    legacyUsage ||
+    legacyDisabled ||
+    legacyDetails
+  );
 
   if (fresh && hasLegacy && !alreadyImported) {
     const t0 = Date.now();
@@ -251,15 +393,21 @@ export async function runMigrationOnce(adapter) {
       });
     } catch (err) {
       if (err instanceof MigrationAborted) {
-        console.error(`[DB][migrate] aborted: ${err.message} | legacy JSON kept | backup: ${backupDir}`);
+        console.error(
+          `[DB][migrate] aborted: ${err.message} | legacy JSON kept | backup: ${backupDir}`,
+        );
         return;
       }
       throw err;
     }
 
-    try { fs.writeFileSync(MIGRATED_MARKER, new Date().toISOString()); } catch {}
+    try {
+      fs.writeFileSync(MIGRATED_MARKER, new Date().toISOString());
+    } catch {}
     pruneOldBackups();
-    console.log(`[DB][migrate] JSON → SQLite in ${Date.now() - t0}ms | legacy JSON kept at DATA_DIR | backup: ${backupDir}`);
+    console.log(
+      `[DB][migrate] JSON → SQLite in ${Date.now() - t0}ms | legacy JSON kept at DATA_DIR | backup: ${backupDir}`,
+    );
     return;
   }
 
@@ -273,14 +421,20 @@ export async function runMigrationOnce(adapter) {
   const newVer = getAppVersion();
   if (oldVer && oldVer !== newVer) {
     const backupDir = makeBackupDir(`upgrade-${oldVer}-to-${newVer}`);
-    try { backupFile(DATA_FILE, backupDir); } catch {}
+    try {
+      backupFile(DATA_FILE, backupDir);
+    } catch {}
     setMetaSync(adapter, "appVersion", newVer);
     pruneOldBackups();
-    console.log(`[DB][migrate] App ${oldVer} → ${newVer} | schema ${migInfo.from} → ${migInfo.to} | backup: ${backupDir}`);
+    console.log(
+      `[DB][migrate] App ${oldVer} → ${newVer} | schema ${migInfo.from} → ${migInfo.to} | backup: ${backupDir}`,
+    );
   } else if (migInfo.applied > 0) {
     // Schema upgrade without app version bump — still backup
     const backupDir = makeBackupDir(`schema-${migInfo.from}-to-${migInfo.to}`);
-    try { backupFile(DATA_FILE, backupDir); } catch {}
+    try {
+      backupFile(DATA_FILE, backupDir);
+    } catch {}
     pruneOldBackups();
   }
 }

@@ -22,7 +22,11 @@ export function ensureToolCallIds(body) {
 
   for (let i = 0; i < body.messages.length; i++) {
     const msg = body.messages[i];
-    if (msg.role === "assistant" && msg.tool_calls && Array.isArray(msg.tool_calls)) {
+    if (
+      msg.role === "assistant" &&
+      msg.tool_calls &&
+      Array.isArray(msg.tool_calls)
+    ) {
       for (let j = 0; j < msg.tool_calls.length; j++) {
         const tc = msg.tool_calls[j];
         // Validate or regenerate ID for Anthropic compatibility
@@ -34,14 +38,21 @@ export function ensureToolCallIds(body) {
           tc.type = "function";
         }
         // Ensure arguments is JSON string, not object
-        if (tc.function?.arguments && typeof tc.function.arguments !== "string") {
+        if (
+          tc.function?.arguments &&
+          typeof tc.function.arguments !== "string"
+        ) {
           tc.function.arguments = JSON.stringify(tc.function.arguments);
         }
       }
     }
 
     // Validate tool_call_id in tool messages (role: "tool")
-    if (msg.role === "tool" && msg.tool_call_id && !TOOL_ID_PATTERN.test(msg.tool_call_id)) {
+    if (
+      msg.role === "tool" &&
+      msg.tool_call_id &&
+      !TOOL_ID_PATTERN.test(msg.tool_call_id)
+    ) {
       const sanitized = sanitizeToolId(msg.tool_call_id);
       msg.tool_call_id = sanitized || generateToolCallId(i, 0);
     }
@@ -50,12 +61,20 @@ export function ensureToolCallIds(body) {
     if (Array.isArray(msg.content)) {
       for (let k = 0; k < msg.content.length; k++) {
         const block = msg.content[k];
-        if (block.type === "tool_use" && block.id && !TOOL_ID_PATTERN.test(block.id)) {
+        if (
+          block.type === "tool_use" &&
+          block.id &&
+          !TOOL_ID_PATTERN.test(block.id)
+        ) {
           const sanitized = sanitizeToolId(block.id);
           block.id = sanitized || generateToolCallId(i, k, block.name);
         }
         // Validate tool_use_id in tool_result blocks
-        if (block.type === "tool_result" && block.tool_use_id && !TOOL_ID_PATTERN.test(block.tool_use_id)) {
+        if (
+          block.type === "tool_result" &&
+          block.tool_use_id &&
+          !TOOL_ID_PATTERN.test(block.tool_use_id)
+        ) {
           const sanitized = sanitizeToolId(block.tool_use_id);
           block.tool_use_id = sanitized || generateToolCallId(i, k);
         }
@@ -103,7 +122,10 @@ export function hasToolResults(msg, toolCallIds) {
   // Claude format: tool_result blocks in user message content
   if (msg.role === "user" && Array.isArray(msg.content)) {
     for (const block of msg.content) {
-      if (block.type === "tool_result" && toolCallIds.includes(block.tool_use_id)) {
+      if (
+        block.type === "tool_result" &&
+        toolCallIds.includes(block.tool_use_id)
+      ) {
         return true;
       }
     }
@@ -136,7 +158,7 @@ export function fixMissingToolResponses(body) {
         newMessages.push({
           role: "tool",
           tool_call_id: id,
-          content: ""
+          content: "",
         });
       }
     }
@@ -145,4 +167,3 @@ export function fixMissingToolResponses(body) {
   body.messages = newMessages;
   return body;
 }
-

@@ -14,7 +14,8 @@ const getJcodeConfigDir = () => path.join(os.homedir(), ".jcode");
 const getConfigPath = () => path.join(getJcodeConfigDir(), "config.toml");
 
 const getProviderEnvPath = () => {
-  const configDir = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
+  const configDir =
+    process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
   return path.join(configDir, "jcode", "provider-9router.env");
 };
 
@@ -81,8 +82,10 @@ const readProviderEnv = async () => {
         const key = trimmed.slice(0, eqIndex).trim();
         let value = trimmed.slice(eqIndex + 1).trim();
 
-        if ((value.startsWith('"') && value.endsWith('"')) ||
-            (value.startsWith("'") && value.endsWith("'"))) {
+        if (
+          (value.startsWith('"') && value.endsWith('"')) ||
+          (value.startsWith("'") && value.endsWith("'"))
+        ) {
           value = value.slice(1, -1);
         }
 
@@ -113,7 +116,8 @@ export async function GET() {
   if (!isInstalled) {
     return NextResponse.json({
       installed: false,
-      message: "jcode not installed. Install via: curl -fsSL https://raw.githubusercontent.com/1jehuang/jcode/master/scripts/install.sh | bash",
+      message:
+        "jcode not installed. Install via: curl -fsSL https://raw.githubusercontent.com/1jehuang/jcode/master/scripts/install.sh | bash",
     });
   }
 
@@ -135,7 +139,7 @@ export async function POST(request) {
     if (!baseUrl || !apiKey) {
       return NextResponse.json(
         { error: "baseUrl and apiKey are required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -155,7 +159,8 @@ export async function POST(request) {
       auth: "bearer",
       api_key_env: "JCODE_9ROUTER_API_KEY",
       env_file: "provider-9router.env",
-      default_model: models && models.length > 0 ? models[0] : "cc/claude-opus-4-7",
+      default_model:
+        models && models.length > 0 ? models[0] : "cc/claude-opus-4-7",
       requires_api_key: true,
     };
 
@@ -164,7 +169,8 @@ export async function POST(request) {
 
     await writeConfig(config);
 
-    const xdgConfigDir = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
+    const xdgConfigDir =
+      process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
     const jcodeConfigDir = path.join(xdgConfigDir, "jcode");
     await fs.mkdir(jcodeConfigDir, { recursive: true });
 
@@ -174,15 +180,13 @@ export async function POST(request) {
 
     return NextResponse.json({
       success: true,
-      message: "jcode configured successfully. Use: jcode --provider-profile 9router",
+      message:
+        "jcode configured successfully. Use: jcode --provider-profile 9router",
       configPath: getConfigPath(),
     });
   } catch (error) {
     console.error("Error configuring jcode:", error);
-    return NextResponse.json(
-      { error: error.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
@@ -191,7 +195,10 @@ export async function DELETE() {
     const config = await readConfig();
 
     if (!config.providers) {
-      return NextResponse.json({ success: true, message: "No configuration to remove" });
+      return NextResponse.json({
+        success: true,
+        message: "No configuration to remove",
+      });
     }
 
     delete config.providers["9router"];
@@ -208,9 +215,6 @@ export async function DELETE() {
     });
   } catch (error) {
     console.error("Error removing jcode configuration:", error);
-    return NextResponse.json(
-      { error: error.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

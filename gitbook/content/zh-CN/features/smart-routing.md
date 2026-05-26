@@ -21,6 +21,7 @@
 ### 3 层回退系统
 
 **第 1 层:订阅(主力)**
+
 - Claude Code(Pro/Max)
 - OpenAI Codex(Plus/Pro)
 - Gemini CLI(每月免费 180K)
@@ -30,6 +31,7 @@
 **目标**:充分挖掘你已付费订阅的价值。
 
 **第 2 层:低价(备用)**
+
 - GLM-4.7(输入每 1M $0.60)
 - MiniMax M2.1(输入每 1M $0.20)
 - Kimi K2($9/月固定)
@@ -37,6 +39,7 @@
 **目标**:订阅配额用完后的超低价备用(比 ChatGPT API 便宜 ~90%)。
 
 **第 3 层:免费(应急)**
+
 - iFlow(8 个模型)
 - Qwen(3 个模型)
 - Kiro(Claude 免费)
@@ -148,6 +151,7 @@
 ```
 
 自定义顺序示例:
+
 ```
 第 1 层: Gemini CLI → Claude Code → Codex
 第 2 层: MiniMax → GLM → Kimi
@@ -169,12 +173,14 @@
 ### 示例 1:基础自动回退
 
 **设置:**
+
 ```
 Model: cc/claude-opus-4-5-20251101
 Fallback: 自动(默认 3 层)
 ```
 
 **行为:**
+
 ```
 早上(全新配额):
   请求 → cc/claude-opus-4-5 ✅
@@ -194,6 +200,7 @@ Fallback: 自动(默认 3 层)
 ### 示例 2:预算优先路由
 
 **设置:**
+
 ```
 仪表盘 → 设置:
   每日预算: $2
@@ -202,6 +209,7 @@ Fallback: 自动(默认 3 层)
 ```
 
 **行为:**
+
 ```
 1-15 日(预算内):
   请求 → glm/glm-4.7 (低价层)
@@ -220,6 +228,7 @@ Fallback: 自动(默认 3 层)
 ### 示例 3:仅订阅模式
 
 **设置:**
+
 ```
 仪表盘 → 设置:
   Auto Fallback: OFF
@@ -227,6 +236,7 @@ Fallback: 自动(默认 3 层)
 ```
 
 **行为:**
+
 ```
 请求 → cc/claude-opus-4-5
   ✅ 配额可用 → 成功
@@ -238,12 +248,14 @@ Fallback: 自动(默认 3 层)
 ### 示例 4:仅免费模式
 
 **设置:**
+
 ```
 Model: if/kimi-k2-thinking
 Fallback: qw/qwen3-coder-plus → kr/claude-sonnet-4.5
 ```
 
 **行为:**
+
 ```
 所有请求 → 仅免费层
 成本: 永远 $0
@@ -265,6 +277,7 @@ Fallback: qw/qwen3-coder-plus → kr/claude-sonnet-4.5
 ```
 
 **示例组合:**
+
 ```
 cc/claude-opus-4-5 → glm/glm-4.7 → if/kimi-k2-thinking
 ```
@@ -279,6 +292,7 @@ cc/claude-opus-4-5 → glm/glm-4.7 → if/kimi-k2-thinking
 ```
 
 **示例组合:**
+
 ```
 gc/gemini-3-flash-preview → glm/glm-4.7 → if/kimi-k2-thinking
 ```
@@ -293,6 +307,7 @@ gc/gemini-3-flash-preview → glm/glm-4.7 → if/kimi-k2-thinking
 ```
 
 **示例组合:**
+
 ```
 cc/claude-opus-4-5 → cx/gpt-5.2-codex → glm/glm-4.7
 ```
@@ -307,6 +322,7 @@ cc/claude-opus-4-5 → cx/gpt-5.2-codex → glm/glm-4.7
 ```
 
 **示例组合:**
+
 ```
 cc/claude-opus-4-5 → glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2-thinking
 ```
@@ -319,16 +335,17 @@ cc/claude-opus-4-5 → glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2-think
 
 围绕配额重置时间规划使用:
 
-| 提供商 | 配额重置 | 策略 |
-|----------|-------------|----------|
-| **Claude Code** | 5 小时 + 每周 | 早上使用,配额最新鲜 |
-| **Codex** | 5 小时 + 每周 | Claude 配额用完后使用 |
-| **Gemini CLI** | 每日(1K)+ 每月(180K) | 全天均匀使用 |
-| **GLM-4.7** | 每日 10:00 AM | 晚上使用,次日上午重置 |
-| **MiniMax M2.1** | 5 小时滚动 | 任意时间用,跟踪滚动窗口 |
-| **iFlow/Qwen/Kiro** | 无限制 | 应急备用 |
+| 提供商              | 配额重置             | 策略                    |
+| ------------------- | -------------------- | ----------------------- |
+| **Claude Code**     | 5 小时 + 每周        | 早上使用,配额最新鲜     |
+| **Codex**           | 5 小时 + 每周        | Claude 配额用完后使用   |
+| **Gemini CLI**      | 每日(1K)+ 每月(180K) | 全天均匀使用            |
+| **GLM-4.7**         | 每日 10:00 AM        | 晚上使用,次日上午重置   |
+| **MiniMax M2.1**    | 5 小时滚动           | 任意时间用,跟踪滚动窗口 |
+| **iFlow/Qwen/Kiro** | 无限制               | 应急备用                |
 
 **日常安排示例:**
+
 ```
 08:00 - 13:00: Claude Code(全新 5h 配额)
 13:00 - 18:00: Gemini CLI(每日 1K 配额)
@@ -367,7 +384,7 @@ cc/claude-opus-4-5 → glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2-think
     - 30M 通过 Claude Code(订阅)
     - 15M 通过 GLM-4.7($9)
     - 5M 通过 iFlow(免费)
-  
+
   成本: $9(对比 ChatGPT API $1000)
   节省: 99%
 ```
@@ -379,6 +396,7 @@ cc/claude-opus-4-5 → glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2-think
 **问题:"All providers quota exhausted"**
 
 **方案:**
+
 1. 查看仪表盘配额跟踪
 2. 等待配额重置(查看倒计时)
 3. 在回退链中加入免费层
@@ -387,6 +405,7 @@ cc/claude-opus-4-5 → glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2-think
 **问题:"Too many fallback switches"**
 
 **方案:**
+
 1. 检查主提供商是否宕机
 2. 提高配额上限(升级订阅)
 3. 使用更便宜的主模型(用 GLM 代替 Claude)
@@ -394,6 +413,7 @@ cc/claude-opus-4-5 → glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2-think
 **问题:"Unexpected costs"**
 
 **方案:**
+
 1. 仪表盘 → 分析 → 查看使用情况
 2. 设置每日/每月预算上限
 3. 非关键任务切换到免费层

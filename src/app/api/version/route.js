@@ -19,10 +19,13 @@ function fetchLatestVersion() {
             resolve(null);
           }
         });
-      }
+      },
     );
     req.on("error", () => resolve(null));
-    req.on("timeout", () => { req.destroy(); resolve(null); });
+    req.on("timeout", () => {
+      req.destroy();
+      resolve(null);
+    });
   });
 }
 
@@ -39,7 +42,9 @@ function compareVersions(a, b) {
 export async function GET() {
   const latestVersion = await fetchLatestVersion();
   const currentVersion = pkg.version;
-  const hasUpdate = latestVersion ? compareVersions(latestVersion, currentVersion) > 0 : false;
+  const hasUpdate = latestVersion
+    ? compareVersions(latestVersion, currentVersion) > 0
+    : false;
 
   return Response.json({ currentVersion, latestVersion, hasUpdate });
 }

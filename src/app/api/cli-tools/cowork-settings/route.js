@@ -5,7 +5,12 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import crypto from "crypto";
-import { DEFAULT_PLUGINS, LOCAL_STDIO_PLUGINS, ALLOWED_MCP_COMMANDS, buildManagedMcpServers } from "@/shared/constants/coworkPlugins";
+import {
+  DEFAULT_PLUGINS,
+  LOCAL_STDIO_PLUGINS,
+  ALLOWED_MCP_COMMANDS,
+  buildManagedMcpServers,
+} from "@/shared/constants/coworkPlugins";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
 import { DATA_DIR } from "@/lib/dataDir";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
@@ -17,7 +22,8 @@ const LOCAL_MCP_PREFIX = `http://localhost:${APP_PORT}/api/mcp/`;
 
 let cachedCliToken = null;
 const getCliToken = async () => {
-  if (!cachedCliToken) cachedCliToken = await getConsistentMachineId(CLI_TOKEN_SALT);
+  if (!cachedCliToken)
+    cachedCliToken = await getConsistentMachineId(CLI_TOKEN_SALT);
   return cachedCliToken;
 };
 
@@ -57,8 +63,10 @@ const getCandidateRoots = () => {
     return [path.join(base, "Claude-3p"), path.join(base, "Claude")];
   }
   if (os.platform() === "win32") {
-    const localApp = process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local");
-    const roaming = process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming");
+    const localApp =
+      process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local");
+    const roaming =
+      process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming");
     return [
       path.join(localApp, "Claude-3p"),
       path.join(roaming, "Claude-3p"),
@@ -74,10 +82,14 @@ const getCandidateRoots = () => {
 
 const getAppInstallPaths = () => {
   if (os.platform() === "darwin") {
-    return ["/Applications/Claude.app", path.join(os.homedir(), "Applications", "Claude.app")];
+    return [
+      "/Applications/Claude.app",
+      path.join(os.homedir(), "Applications", "Claude.app"),
+    ];
   }
   if (os.platform() === "win32") {
-    const localApp = process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local");
+    const localApp =
+      process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local");
     const programFiles = process.env["ProgramFiles"] || "C:\\Program Files";
     return [
       path.join(localApp, "AnthropicClaude"),
@@ -94,31 +106,38 @@ const resolveAppRootForRead = async () => {
     try {
       await fs.access(path.join(dir, "configLibrary"));
       return dir;
-    } catch { /* try next */ }
+    } catch {
+      /* try next */
+    }
   }
   return candidates[0];
 };
 
 const getWriteRoot = () => getCandidateRoots()[0];
-const getConfigDir = async () => path.join(await resolveAppRootForRead(), "configLibrary");
+const getConfigDir = async () =>
+  path.join(await resolveAppRootForRead(), "configLibrary");
 const getWriteConfigDir = () => path.join(getWriteRoot(), "configLibrary");
 const getMetaPath = async () => path.join(await getConfigDir(), "_meta.json");
 const getWriteMetaPath = () => path.join(getWriteConfigDir(), "_meta.json");
 
 const get1pRoot = () => {
-  if (os.platform() === "darwin") return path.join(os.homedir(), "Library", "Application Support", "Claude");
+  if (os.platform() === "darwin")
+    return path.join(os.homedir(), "Library", "Application Support", "Claude");
   if (os.platform() === "win32") {
-    const roaming = process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming");
+    const roaming =
+      process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming");
     return path.join(roaming, "Claude");
   }
   return path.join(os.homedir(), ".config", "Claude");
 };
 
-const get1pConfigPath = () => path.join(get1pRoot(), "claude_desktop_config.json");
+const get1pConfigPath = () =>
+  path.join(get1pRoot(), "claude_desktop_config.json");
 
 const read1pConfig = async () => {
-  try { return JSON.parse(await fs.readFile(get1pConfigPath(), "utf-8")) || {}; }
-  catch (error) {
+  try {
+    return JSON.parse(await fs.readFile(get1pConfigPath(), "utf-8")) || {};
+  } catch (error) {
     if (error.code === "ENOENT") return {};
     throw error;
   }
@@ -182,7 +201,12 @@ const buildCustomEntries = (customPlugins) => {
   for (const p of customPlugins) {
     if (!p?.name) continue;
     if (p.url) {
-      out.push({ name: p.name, url: p.url, transport: p.transport || "sse", custom: true });
+      out.push({
+        name: p.name,
+        url: p.url,
+        transport: p.transport || "sse",
+        custom: true,
+      });
     } else if (p.command) {
       out.push({
         name: p.name,
@@ -197,14 +221,20 @@ const buildCustomEntries = (customPlugins) => {
 
 const checkInstalled = async () => {
   for (const dir of [...getCandidateRoots(), ...getAppInstallPaths()]) {
-    try { await fs.access(dir); return true; } catch { /* try next */ }
+    try {
+      await fs.access(dir);
+      return true;
+    } catch {
+      /* try next */
+    }
   }
   return false;
 };
 
 const readJson = async (filePath) => {
-  try { return JSON.parse(await fs.readFile(filePath, "utf-8")); }
-  catch (error) {
+  try {
+    return JSON.parse(await fs.readFile(filePath, "utf-8"));
+  } catch (error) {
     if (error.code === "ENOENT") return null;
     throw error;
   }
@@ -231,8 +261,11 @@ const ensureMeta = async () => {
 async function writeSkipApprovals(managedServers) {
   const cfgPath = path.join(getWriteRoot(), "config.json");
   let cfg = {};
-  try { cfg = JSON.parse(await fs.readFile(cfgPath, "utf-8")) || {}; }
-  catch (e) { if (e.code !== "ENOENT") return { error: e.code }; }
+  try {
+    cfg = JSON.parse(await fs.readFile(cfgPath, "utf-8")) || {};
+  } catch (e) {
+    if (e.code !== "ENOENT") return { error: e.code };
+  }
   const skip = {};
   for (const srv of managedServers) {
     if (srv?.name) skip[srv.name] = true;
@@ -247,31 +280,57 @@ export async function GET() {
   try {
     const installed = await checkInstalled();
     if (!installed) {
-      return NextResponse.json({ installed: false, config: null, message: "Claude Desktop (Cowork mode) not detected" });
+      return NextResponse.json({
+        installed: false,
+        config: null,
+        message: "Claude Desktop (Cowork mode) not detected",
+      });
     }
     const meta = await readJson(await getMetaPath());
     const appliedId = meta?.appliedId || null;
     const configDir = await getConfigDir();
-    const configPath = appliedId ? path.join(configDir, `${appliedId}.json`) : null;
+    const configPath = appliedId
+      ? path.join(configDir, `${appliedId}.json`)
+      : null;
     const config = configPath ? await readJson(configPath) : null;
 
     const baseUrl = config?.inferenceGatewayBaseUrl || null;
     const models = Array.isArray(config?.inferenceModels)
-      ? config.inferenceModels.map((m) => (typeof m === "string" ? m : m?.name)).filter(Boolean)
+      ? config.inferenceModels
+          .map((m) => (typeof m === "string" ? m : m?.name))
+          .filter(Boolean)
       : [];
-    const managedMcp = Array.isArray(config?.managedMcpServers) ? config.managedMcpServers : [];
+    const managedMcp = Array.isArray(config?.managedMcpServers)
+      ? config.managedMcpServers
+      : [];
     const has9Router = !!(config?.inferenceProvider === PROVIDER && baseUrl);
 
     // Active local plugins = managedMcp entries whose URL points at our inline bridge.
     const stdioNames = new Set(LOCAL_STDIO_PLUGINS.map((p) => p.name));
     const activeLocalNames = managedMcp
-      .filter((m) => stdioNames.has(m.name) && typeof m.url === "string" && m.url.includes("/api/mcp/"))
+      .filter(
+        (m) =>
+          stdioNames.has(m.name) &&
+          typeof m.url === "string" &&
+          m.url.includes("/api/mcp/"),
+      )
       .map((m) => m.name);
 
     // Custom plugins = bridge entries not in preset LOCAL_STDIO_PLUGINS (custom:true or unknown name).
     const activeCustomPlugins = managedMcp
-      .filter((m) => m.custom || (!stdioNames.has(m.name) && typeof m.url === "string" && m.url.includes("/api/mcp/")))
-      .map((m) => ({ name: m.name, url: m.url, transport: m.transport, custom: true }));
+      .filter(
+        (m) =>
+          m.custom ||
+          (!stdioNames.has(m.name) &&
+            typeof m.url === "string" &&
+            m.url.includes("/api/mcp/")),
+      )
+      .map((m) => ({
+        name: m.name,
+        url: m.url,
+        transport: m.transport,
+        custom: true,
+      }));
 
     return NextResponse.json({
       installed: true,
@@ -283,21 +342,40 @@ export async function GET() {
         baseUrl,
         models,
         provider: config?.inferenceProvider || null,
-        plugins: managedMcp.filter((m) => !m.custom && !(stdioNames.has(m.name) && typeof m.url === "string" && m.url.includes("/api/mcp/"))).map((m) => {
-          // Strip "{name}-" prefix and dedupe so re-applies don't multiply entries.
-          const keys = m.toolPolicy ? Object.keys(m.toolPolicy) : [];
-          const prefix = `${m.name}-`;
-          const bare = new Set();
-          for (const k of keys) {
-            let t = k;
-            while (t.startsWith(prefix)) t = t.slice(prefix.length);
-            bare.add(t);
-          }
-          // If plugin matches a default, prefer default toolNames (curated/correct).
-          const def = DEFAULT_PLUGINS.find((d) => d.name === m.name);
-          const toolNames = def && Array.isArray(def.toolNames) ? def.toolNames : Array.from(bare);
-          return { name: m.name, url: m.url, transport: m.transport, oauth: !!m.oauth, toolNames };
-        }),
+        plugins: managedMcp
+          .filter(
+            (m) =>
+              !m.custom &&
+              !(
+                stdioNames.has(m.name) &&
+                typeof m.url === "string" &&
+                m.url.includes("/api/mcp/")
+              ),
+          )
+          .map((m) => {
+            // Strip "{name}-" prefix and dedupe so re-applies don't multiply entries.
+            const keys = m.toolPolicy ? Object.keys(m.toolPolicy) : [];
+            const prefix = `${m.name}-`;
+            const bare = new Set();
+            for (const k of keys) {
+              let t = k;
+              while (t.startsWith(prefix)) t = t.slice(prefix.length);
+              bare.add(t);
+            }
+            // If plugin matches a default, prefer default toolNames (curated/correct).
+            const def = DEFAULT_PLUGINS.find((d) => d.name === m.name);
+            const toolNames =
+              def && Array.isArray(def.toolNames)
+                ? def.toolNames
+                : Array.from(bare);
+            return {
+              name: m.name,
+              url: m.url,
+              transport: m.transport,
+              oauth: !!m.oauth,
+              toolNames,
+            };
+          }),
         localPlugins: activeLocalNames,
         customPlugins: activeCustomPlugins,
       },
@@ -306,26 +384,40 @@ export async function GET() {
     });
   } catch (error) {
     console.log("Error reading cowork settings:", error);
-    return NextResponse.json({ error: "Failed to read cowork settings" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to read cowork settings" },
+      { status: 500 },
+    );
   }
 }
 
 export async function POST(request) {
   try {
-    const { baseUrl, apiKey, models, plugins, localPlugins, customPlugins } = await request.json();
+    const { baseUrl, apiKey, models, plugins, localPlugins, customPlugins } =
+      await request.json();
 
     if (!baseUrl || !apiKey) {
-      return NextResponse.json({ error: "baseUrl and apiKey are required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "baseUrl and apiKey are required" },
+        { status: 400 },
+      );
     }
-    const modelsArray = Array.isArray(models) ? models.filter((m) => typeof m === "string" && m.trim()) : [];
+    const modelsArray = Array.isArray(models)
+      ? models.filter((m) => typeof m === "string" && m.trim())
+      : [];
     if (modelsArray.length === 0) {
-      return NextResponse.json({ error: "At least one model is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "At least one model is required" },
+        { status: 400 },
+      );
     }
 
     // Respect empty array (user toggled all off); fallback to defaults only when undefined.
     const pluginsArray = Array.isArray(plugins) ? plugins : DEFAULT_PLUGINS;
     const localPluginNames = Array.isArray(localPlugins) ? localPlugins : [];
-    const customPluginsArray = Array.isArray(customPlugins) ? customPlugins : [];
+    const customPluginsArray = Array.isArray(customPlugins)
+      ? customPlugins
+      : [];
 
     // Register custom stdio plugins into bridge + persist for restart survival.
     if (customPluginsArray.length > 0) {
@@ -334,24 +426,43 @@ export async function POST(request) {
         .filter((p) => p && typeof p.command === "string" && p.command.trim())
         .filter((p) => ALLOWED_MCP_COMMANDS.has(path.basename(p.command)))
         .map((p) => ({
-          name: String(p.name || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64),
+          name: String(p.name || "")
+            .replace(/[^a-zA-Z0-9_-]/g, "")
+            .slice(0, 64),
           command: p.command,
           args: Array.isArray(p.args) ? p.args.map(String) : [],
         }))
         .filter((p) => p.name);
       for (const p of stdioCustoms) {
-        try { registerCustomPlugin(p); } catch { /* skip invalid */ }
+        try {
+          registerCustomPlugin(p);
+        } catch {
+          /* skip invalid */
+        }
       }
       try {
         const dir = path.join(DATA_DIR, "mcp");
         await fs.mkdir(dir, { recursive: true });
-        await fs.writeFile(path.join(dir, "customPlugins.json"), JSON.stringify(stdioCustoms, null, 2));
-      } catch { /* ignore */ }
+        await fs.writeFile(
+          path.join(dir, "customPlugins.json"),
+          JSON.stringify(stdioCustoms, null, 2),
+        );
+      } catch {
+        /* ignore */
+      }
     }
 
-    const bridgeEntries = await injectAuthHeaders(buildLocalBridgeEntries(localPluginNames));
-    const customEntries = await injectAuthHeaders(buildCustomEntries(customPluginsArray));
-    const managedMcpServers = [...buildManagedMcpServers(pluginsArray), ...bridgeEntries, ...customEntries];
+    const bridgeEntries = await injectAuthHeaders(
+      buildLocalBridgeEntries(localPluginNames),
+    );
+    const customEntries = await injectAuthHeaders(
+      buildCustomEntries(customPluginsArray),
+    );
+    const managedMcpServers = [
+      ...buildManagedMcpServers(pluginsArray),
+      ...bridgeEntries,
+      ...customEntries,
+    ];
 
     const bootstrapped = await bootstrapDeploymentMode();
     const meta = await ensureMeta();
@@ -364,16 +475,25 @@ export async function POST(request) {
       inferenceGatewayApiKey: apiKey,
       inferenceModels: modelsArray.map((name) => ({ name })),
     };
-    if (managedMcpServers.length > 0) newConfig.managedMcpServers = managedMcpServers;
+    if (managedMcpServers.length > 0)
+      newConfig.managedMcpServers = managedMcpServers;
 
     await fs.writeFile(configPath, JSON.stringify(newConfig, null, 2));
 
     let skipResult = null;
-    try { skipResult = await writeSkipApprovals(managedMcpServers); } catch (e) { skipResult = { error: e.message }; }
+    try {
+      skipResult = await writeSkipApprovals(managedMcpServers);
+    } catch (e) {
+      skipResult = { error: e.message };
+    }
 
     // Best-effort cleanup of legacy 1p mcpServers entries written by earlier versions.
     let localMcpResult = { applied: localPluginNames, via: "3p-sse-bridge" };
-    try { await cleanup1pLegacy(); } catch { /* ignore */ }
+    try {
+      await cleanup1pLegacy();
+    } catch {
+      /* ignore */
+    }
 
     return NextResponse.json({
       success: true,
@@ -387,7 +507,10 @@ export async function POST(request) {
     });
   } catch (error) {
     console.log("Error applying cowork settings:", error);
-    return NextResponse.json({ error: "Failed to apply cowork settings" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to apply cowork settings" },
+      { status: 500 },
+    );
   }
 }
 
@@ -395,16 +518,36 @@ export async function DELETE() {
   try {
     const meta = await readJson(await getMetaPath());
     if (!meta?.appliedId) {
-      return NextResponse.json({ success: true, message: "No active config to reset" });
+      return NextResponse.json({
+        success: true,
+        message: "No active config to reset",
+      });
     }
-    const configPath = path.join(await getConfigDir(), `${meta.appliedId}.json`);
-    try { await fs.writeFile(configPath, JSON.stringify({}, null, 2)); }
-    catch (error) { if (error.code !== "ENOENT") throw error; }
-    try { await writeSkipApprovals([]); } catch { /* ignore */ }
-    try { await cleanup1pLegacy(); } catch { /* ignore */ }
+    const configPath = path.join(
+      await getConfigDir(),
+      `${meta.appliedId}.json`,
+    );
+    try {
+      await fs.writeFile(configPath, JSON.stringify({}, null, 2));
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+    try {
+      await writeSkipApprovals([]);
+    } catch {
+      /* ignore */
+    }
+    try {
+      await cleanup1pLegacy();
+    } catch {
+      /* ignore */
+    }
     return NextResponse.json({ success: true, message: "Cowork config reset" });
   } catch (error) {
     console.log("Error resetting cowork settings:", error);
-    return NextResponse.json({ error: "Failed to reset cowork settings" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to reset cowork settings" },
+      { status: 500 },
+    );
   }
 }

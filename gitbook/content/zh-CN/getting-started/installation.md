@@ -44,6 +44,7 @@ npm install -g 9router
 ```
 
 **优势:**
+
 - ✅ 任意目录均可运行
 - ✅ 命令简单:`9router`
 - ✅ 通过 `npm update -g 9router` 自动更新
@@ -65,6 +66,7 @@ npx 9router
 ```
 
 **优势:**
+
 - ✅ 项目隔离
 - ✅ 项目级版本控制
 - ✅ 不污染全局命名空间
@@ -82,6 +84,7 @@ npm start
 ```
 
 **优势:**
+
 - ✅ 最新开发特性
 - ✅ 可参与开发
 - ✅ 可自定义修改
@@ -97,6 +100,7 @@ npm start
 ```
 
 **发生了什么:**
+
 1. 服务器启动在 `http://localhost:20128`
 2. 仪表盘在浏览器中自动打开
 3. 数据目录创建在 `~/.9router`
@@ -105,9 +109,11 @@ npm start
 ### 仪表盘登录
 
 **默认凭据:**
+
 - 密码:`123456`
 
 **⚠️ 立即修改密码:**
+
 1. 登录仪表盘
 2. 设置 → 修改密码
 3. 使用强密码
@@ -121,6 +127,7 @@ npm start
 ```
 
 **API key 格式示例:**
+
 ```
 9r_1234567890abcdef1234567890abcdef
 ```
@@ -136,6 +143,7 @@ curl http://localhost:20128/health
 ```
 
 **预期响应:**
+
 ```json
 {
   "status": "ok",
@@ -151,6 +159,7 @@ curl http://localhost:20128/v1/models \
 ```
 
 **预期响应:**
+
 ```json
 {
   "object": "list",
@@ -208,6 +217,7 @@ export ENABLE_REQUEST_LOGS="false"
 **默认位置:** `~/.9router`
 
 **内容:**
+
 ```
 ~/.9router/
   ├── db.json           # 数据库(提供商、组合、使用)
@@ -246,6 +256,7 @@ export PORT="3000"
 ### 端口已被占用
 
 **错误:**
+
 ```
 Error: listen EADDRINUSE: address already in use :::20128
 ```
@@ -269,6 +280,7 @@ kill -9 <PID>
 ### 权限被拒绝
 
 **错误:**
+
 ```
 Error: EACCES: permission denied, mkdir '/usr/local/lib/node_modules/9router'
 ```
@@ -289,6 +301,7 @@ npm install -g 9router
 ### Node.js 版本过低
 
 **错误:**
+
 ```
 Error: The engine "node" is incompatible with this module
 ```
@@ -427,7 +440,7 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
         proxy_set_header Host $host;
-        
+
         # SSE support for streaming
         proxy_buffering off;
         proxy_read_timeout 86400;

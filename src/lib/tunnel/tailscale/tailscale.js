@@ -13,7 +13,10 @@ const BIN_DIR = path.join(DATA_DIR, "bin");
 const IS_MAC = os.platform() === "darwin";
 const IS_LINUX = os.platform() === "linux";
 const IS_WINDOWS = os.platform() === "win32";
-const TAILSCALE_BIN = path.join(BIN_DIR, IS_WINDOWS ? "tailscale.exe" : "tailscale");
+const TAILSCALE_BIN = path.join(
+  BIN_DIR,
+  IS_WINDOWS ? "tailscale.exe" : "tailscale",
+);
 
 // Custom socket for userspace-networking mode (no root required)
 const TAILSCALE_DIR = path.join(DATA_DIR, "tailscale");
@@ -42,32 +45,42 @@ function getTailscaledBin() {
   return UNIX_TAILSCALED_CANDIDATES.find((p) => fs.existsSync(p)) || null;
 }
 
-
 // ─── Cache + background refresh (avoid blocking event loop on dead daemon) ──
 const PROBE_TTL_MS = 10000;
 const PROBE_TIMEOUT_MS = 1500;
 
 const binCache = { value: undefined, fetchedAt: 0, refreshing: false };
 const runningCache = { value: false, fetchedAt: 0, refreshing: false };
-const funnelUrlCache = { value: null, port: null, fetchedAt: 0, refreshing: false };
+const funnelUrlCache = {
+  value: null,
+  port: null,
+  fetchedAt: 0,
+  refreshing: false,
+};
 
 function fallbackBin() {
   if (fs.existsSync(TAILSCALE_BIN)) return TAILSCALE_BIN;
-  if (IS_WINDOWS && fs.existsSync(WINDOWS_TAILSCALE_BIN)) return WINDOWS_TAILSCALE_BIN;
-  if (!IS_WINDOWS) return UNIX_TAILSCALE_CANDIDATES.find((p) => fs.existsSync(p)) || null;
+  if (IS_WINDOWS && fs.existsSync(WINDOWS_TAILSCALE_BIN))
+    return WINDOWS_TAILSCALE_BIN;
+  if (!IS_WINDOWS)
+    return UNIX_TAILSCALE_CANDIDATES.find((p) => fs.existsSync(p)) || null;
   return null;
 }
 
 function bgRefreshBin() {
   if (binCache.refreshing) return;
   binCache.refreshing = true;
-  const cmd = IS_WINDOWS ? "where tailscale 2>nul" : "which tailscale 2>/dev/null";
+  const cmd = IS_WINDOWS
+    ? "where tailscale 2>nul"
+    : "which tailscale 2>/dev/null";
   execAsync(cmd, { windowsHide: true, timeout: PROBE_TIMEOUT_MS })
     .then(({ stdout }) => {
       const sys = stdout.trim();
       binCache.value = sys || fallbackBin();
     })
-    .catch(() => { binCache.value = fallbackBin(); })
+    .catch(() => {
+      binCache.value = fallbackBin();
+    })
     .finally(() => {
       binCache.fetchedAt = Date.now();
       binCache.refreshing = false;
@@ -80,7 +93,8 @@ function getTailscaleBin() {
   // First call: synchronously probe common install paths (no exec, no event-loop block)
   if (binCache.value === undefined) {
     if (fs.existsSync(TAILSCALE_BIN)) binCache.value = TAILSCALE_BIN;
-    else if (IS_WINDOWS && fs.existsSync(WINDOWS_TAILSCALE_BIN)) binCache.value = WINDOWS_TAILSCALE_BIN;
+    else if (IS_WINDOWS && fs.existsSync(WINDOWS_TAILSCALE_BIN))
+      binCache.value = WINDOWS_TAILSCALE_BIN;
     else if (!IS_WINDOWS) {
       const found = UNIX_TAILSCALE_CANDIDATES.find((p) => fs.existsSync(p));
       binCache.value = found || null;
@@ -111,7 +125,7 @@ export function isTailscaleLoggedIn() {
       encoding: "utf8",
       windowsHide: true,
       env: { ...process.env, PATH: EXTENDED_PATH },
-      timeout: 5000
+      timeout: 5000,
     });
     const json = JSON.parse(out);
     // BackendState=Running + Self.Online=true → device still exists in tailnet
@@ -130,14 +144,21 @@ function bgRefreshRunning() {
     return;
   }
   runningCache.refreshing = true;
-  execAsync(`"${bin}" ${SOCKET_FLAG.join(" ")} funnel status --json`, { windowsHide: true, timeout: PROBE_TIMEOUT_MS })
+  execAsync(`"${bin}" ${SOCKET_FLAG.join(" ")} funnel status --json`, {
+    windowsHide: true,
+    timeout: PROBE_TIMEOUT_MS,
+  })
     .then(({ stdout }) => {
       try {
         const json = JSON.parse(stdout);
         runningCache.value = Object.keys(json.AllowFunnel || {}).length > 0;
-      } catch { runningCache.value = false; }
+      } catch {
+        runningCache.value = false;
+      }
     })
-    .catch(() => { runningCache.value = false; })
+    .catch(() => {
+      runningCache.value = false;
+    })
     .finally(() => {
       runningCache.fetchedAt = Date.now();
       runningCache.refreshing = false;
@@ -156,12 +177,15 @@ export function isTailscaleRunningStrict() {
   const bin = getTailscaleBin();
   if (!bin) return false;
   try {
-    const out = execSync(`"${bin}" ${SOCKET_FLAG.join(" ")} funnel status --json`, {
-      encoding: "utf8",
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "ignore"],
-      timeout: PROBE_TIMEOUT_MS,
-    });
+    const out = execSync(
+      `"${bin}" ${SOCKET_FLAG.join(" ")} funnel status --json`,
+      {
+        encoding: "utf8",
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "ignore"],
+        timeout: PROBE_TIMEOUT_MS,
+      },
+    );
     const json = JSON.parse(out);
     const running = Object.keys(json.AllowFunnel || {}).length > 0;
     runningCache.value = running;
@@ -177,15 +201,22 @@ function bgRefreshFunnelUrl(port) {
   const bin = getTailscaleBin();
   if (!bin) return;
   funnelUrlCache.refreshing = true;
-  execAsync(`"${bin}" ${SOCKET_FLAG.join(" ")} status --json`, { windowsHide: true, timeout: PROBE_TIMEOUT_MS })
+  execAsync(`"${bin}" ${SOCKET_FLAG.join(" ")} status --json`, {
+    windowsHide: true,
+    timeout: PROBE_TIMEOUT_MS,
+  })
     .then(({ stdout }) => {
       try {
         const json = JSON.parse(stdout);
         const dnsName = json.Self?.DNSName?.replace(/\.$/, "");
         funnelUrlCache.value = dnsName ? `https://${dnsName}` : null;
-      } catch { /* keep prev */ }
+      } catch {
+        /* keep prev */
+      }
     })
-    .catch(() => { /* keep prev */ })
+    .catch(() => {
+      /* keep prev */
+    })
     .finally(() => {
       funnelUrlCache.port = port;
       funnelUrlCache.fetchedAt = Date.now();
@@ -207,12 +238,17 @@ function getActualFunnelUrl() {
     const json = JSON.parse(out);
     const dnsName = json.Self?.DNSName?.replace(/\.$/, "");
     return dnsName ? `https://${dnsName}` : null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 /** Get funnel URL from tailscale status (cached, non-blocking) */
 export function getTailscaleFunnelUrl(port) {
-  if (Date.now() - funnelUrlCache.fetchedAt > PROBE_TTL_MS || funnelUrlCache.port !== port) {
+  if (
+    Date.now() - funnelUrlCache.fetchedAt > PROBE_TTL_MS ||
+    funnelUrlCache.port !== port
+  ) {
     bgRefreshFunnelUrl(port);
   }
   return funnelUrlCache.value;
@@ -243,7 +279,16 @@ export async function installTailscale(sudoPassword, hostname, onProgress) {
 const EXTENDED_PATH = `/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:${process.env.PATH || ""}`;
 
 function hasBrew() {
-  try { execSync("which brew", { stdio: "ignore", windowsHide: true, env: { ...process.env, PATH: EXTENDED_PATH } }); return true; } catch { return false; }
+  try {
+    execSync("which brew", {
+      stdio: "ignore",
+      windowsHide: true,
+      env: { ...process.env, PATH: EXTENDED_PATH },
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function installTailscaleMac(sudoPassword, log) {
@@ -253,7 +298,7 @@ async function installTailscaleMac(sudoPassword, log) {
       const child = spawn("brew", ["install", "tailscale"], {
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
-        env: { ...process.env, PATH: EXTENDED_PATH }
+        env: { ...process.env, PATH: EXTENDED_PATH },
       });
       child.stdout.on("data", (d) => {
         const line = d.toString().trim();
@@ -278,10 +323,14 @@ async function installTailscaleMac(sudoPassword, log) {
 
   log("Downloading Tailscale package...");
   await new Promise((resolve, reject) => {
-    const child = spawn("curl", ["-fL", "--progress-bar", pkgUrl, "-o", pkgPath], {
-      stdio: ["ignore", "pipe", "pipe"],
-      windowsHide: true
-    });
+    const child = spawn(
+      "curl",
+      ["-fL", "--progress-bar", pkgUrl, "-o", pkgPath],
+      {
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true,
+      },
+    );
     child.stderr.on("data", (d) => {
       const line = d.toString().trim();
       if (line) log(line);
@@ -295,23 +344,34 @@ async function installTailscaleMac(sudoPassword, log) {
 
   log("Installing package...");
   await new Promise((resolve, reject) => {
-    const child = spawn("sudo", ["-S", "installer", "-pkg", pkgPath, "-target", "/"], {
-      stdio: ["pipe", "pipe", "pipe"],
-      windowsHide: true
-    });
+    const child = spawn(
+      "sudo",
+      ["-S", "installer", "-pkg", pkgPath, "-target", "/"],
+      {
+        stdio: ["pipe", "pipe", "pipe"],
+        windowsHide: true,
+      },
+    );
     let stderr = "";
-    child.stderr.on("data", (d) => { stderr += d.toString(); });
+    child.stderr.on("data", (d) => {
+      stderr += d.toString();
+    });
     child.stdout.on("data", (d) => {
       const line = d.toString().trim();
       if (line) log(line);
     });
     child.on("close", (c) => {
-      try { execSync(`rm -f ${pkgPath}`, { stdio: "ignore", windowsHide: true }); } catch { /* ignore */ }
+      try {
+        execSync(`rm -f ${pkgPath}`, { stdio: "ignore", windowsHide: true });
+      } catch {
+        /* ignore */
+      }
       if (c === 0) resolve();
       else {
-        const msg = (stderr.includes("incorrect password") || stderr.includes("Sorry"))
-          ? "Wrong sudo password"
-          : stderr || `Exit code ${c}`;
+        const msg =
+          stderr.includes("incorrect password") || stderr.includes("Sorry")
+            ? "Wrong sudo password"
+            : stderr || `Exit code ${c}`;
         reject(new Error(msg));
       }
     });
@@ -328,43 +388,72 @@ async function installTailscaleLinux(sudoPassword, log) {
   }
   log("Downloading install script...");
   return new Promise((resolve, reject) => {
-    const curlChild = spawn("curl", ["-fsSL", "https://tailscale.com/install.sh"], {
-      stdio: ["ignore", "pipe", "pipe"],
-      windowsHide: true
-    });
+    const curlChild = spawn(
+      "curl",
+      ["-fsSL", "https://tailscale.com/install.sh"],
+      {
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true,
+      },
+    );
     let scriptContent = "";
     let curlErr = "";
-    curlChild.stdout.on("data", (d) => { scriptContent += d.toString(); });
-    curlChild.stderr.on("data", (d) => { curlErr += d.toString(); });
+    curlChild.stdout.on("data", (d) => {
+      scriptContent += d.toString();
+    });
+    curlChild.stderr.on("data", (d) => {
+      curlErr += d.toString();
+    });
     curlChild.on("exit", (code) => {
-      if (code !== 0) return reject(new Error(`Failed to download install script: ${curlErr}`));
+      if (code !== 0)
+        return reject(
+          new Error(`Failed to download install script: ${curlErr}`),
+        );
       log("Running install script...");
       // Persist script to temp file → exec by path (NOT via stdin) → sh never reads attacker-controlled stdin
-      const tmpScript = path.join(os.tmpdir(), `tailscale-install-${crypto.randomBytes(8).toString("hex")}.sh`);
+      const tmpScript = path.join(
+        os.tmpdir(),
+        `tailscale-install-${crypto.randomBytes(8).toString("hex")}.sh`,
+      );
       try {
         fs.writeFileSync(tmpScript, scriptContent, { mode: 0o700 });
       } catch (e) {
-        return reject(new Error(`Failed to write install script: ${e.message}`));
+        return reject(
+          new Error(`Failed to write install script: ${e.message}`),
+        );
       }
-      const cleanup = () => { try { fs.unlinkSync(tmpScript); } catch {} };
-      const child = spawn("sudo", ["-S", "sh", tmpScript], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+      const cleanup = () => {
+        try {
+          fs.unlinkSync(tmpScript);
+        } catch {}
+      };
+      const child = spawn("sudo", ["-S", "sh", tmpScript], {
+        stdio: ["pipe", "pipe", "pipe"],
+        windowsHide: true,
+      });
       let stderr = "";
       child.stdout.on("data", (d) => {
         const line = d.toString().trim();
         if (line) log(line);
       });
-      child.stderr.on("data", (d) => { stderr += d.toString(); });
+      child.stderr.on("data", (d) => {
+        stderr += d.toString();
+      });
       child.on("close", (c) => {
         cleanup();
         if (c === 0) resolve();
         else {
-          const msg = (stderr.includes("incorrect password") || stderr.includes("Sorry"))
-            ? "Wrong sudo password"
-            : stderr || `Exit code ${c}`;
+          const msg =
+            stderr.includes("incorrect password") || stderr.includes("Sorry")
+              ? "Wrong sudo password"
+              : stderr || `Exit code ${c}`;
           reject(new Error(msg));
         }
       });
-      child.on("error", (e) => { cleanup(); reject(e); });
+      child.on("error", (e) => {
+        cleanup();
+        reject(e);
+      });
       child.stdin.write(`${sudoPassword}\n`);
       child.stdin.end();
     });
@@ -373,7 +462,8 @@ async function installTailscaleLinux(sudoPassword, log) {
 }
 
 async function installTailscaleWindows(log) {
-  const msiUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi";
+  const msiUrl =
+    "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi";
   const msiPath = path.join(os.tmpdir(), "tailscale-setup.msi");
 
   // Download MSI via curl.exe (built-in on Win10+) — no PowerShell window, streams progress
@@ -381,7 +471,7 @@ async function installTailscaleWindows(log) {
   await new Promise((resolve, reject) => {
     const child = spawn("curl.exe", ["-L", "-#", "-o", msiPath, msiUrl], {
       stdio: ["ignore", "pipe", "pipe"],
-      windowsHide: true
+      windowsHide: true,
     });
     // curl outputs progress to stderr with -# flag
     let lastPct = "";
@@ -393,7 +483,9 @@ async function installTailscaleWindows(log) {
         log(`Downloading... ${lastPct}%`);
       }
     });
-    child.on("close", (c) => c === 0 ? resolve() : reject(new Error("Download failed")));
+    child.on("close", (c) =>
+      c === 0 ? resolve() : reject(new Error("Download failed")),
+    );
     child.on("error", reject);
   });
 
@@ -401,13 +493,26 @@ async function installTailscaleWindows(log) {
   log("Installing Tailscale (UAC prompt may appear)...");
   await new Promise((resolve, reject) => {
     const args = `'/i','${msiPath}','TS_NOLAUNCH=true','/quiet','/norestart'`;
-    const child = spawn("powershell", [
-      "-NoProfile", "-NonInteractive", "-Command",
-      `Start-Process msiexec -ArgumentList ${args} -Verb RunAs -Wait`
-    ], { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
-    child.stderr.on("data", (d) => { const l = d.toString().trim(); if (l) log(l); });
+    const child = spawn(
+      "powershell",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        `Start-Process msiexec -ArgumentList ${args} -Verb RunAs -Wait`,
+      ],
+      { stdio: ["ignore", "pipe", "pipe"], windowsHide: true },
+    );
+    child.stderr.on("data", (d) => {
+      const l = d.toString().trim();
+      if (l) log(l);
+    });
     child.on("close", (c) => {
-      try { fs.unlinkSync(msiPath); } catch { /* ignore */ }
+      try {
+        fs.unlinkSync(msiPath);
+      } catch {
+        /* ignore */
+      }
       c === 0 ? resolve() : reject(new Error(`msiexec failed (code ${c})`));
     });
     child.on("error", reject);
@@ -447,9 +552,12 @@ async function ensureUserOwnedDir(dir) {
           const st = fs.statSync(cur);
           if (st.uid !== uid) return true;
           if (st.isDirectory()) {
-            for (const name of fs.readdirSync(cur)) stack.push(path.join(cur, name));
+            for (const name of fs.readdirSync(cur))
+              stack.push(path.join(cur, name));
           }
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       }
       return false;
     })();
@@ -458,20 +566,37 @@ async function ensureUserOwnedDir(dir) {
 
     // Try direct chown first (works if already owned). Fallback to passwordless sudo.
     try {
-      execSync(`chown -R ${uid}:${gid} "${dir}"`, { stdio: "ignore", timeout: 3000 });
+      execSync(`chown -R ${uid}:${gid} "${dir}"`, {
+        stdio: "ignore",
+        timeout: 3000,
+      });
     } catch {
-      try { execSync(`sudo -n chown -R ${uid}:${gid} "${dir}"`, { stdio: "ignore", timeout: 3000 }); } catch { /* ignore */ }
+      try {
+        execSync(`sudo -n chown -R ${uid}:${gid} "${dir}"`, {
+          stdio: "ignore",
+          timeout: 3000,
+        });
+      } catch {
+        /* ignore */
+      }
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
 /** Check if running daemon uses TUN mode (Funnel TLS requires TUN). */
 function isDaemonTunMode() {
   try {
-    const ps = execSync(`pgrep -af "tailscaled.*${TAILSCALE_SOCKET}"`, { encoding: "utf8", timeout: 2000 }).trim();
+    const ps = execSync(`pgrep -af "tailscaled.*${TAILSCALE_SOCKET}"`, {
+      encoding: "utf8",
+      timeout: 2000,
+    }).trim();
     if (!ps) return null;
     return !ps.includes("--tun=userspace-networking");
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -486,19 +611,34 @@ export async function startDaemonWithPassword(sudoPassword) {
     // until daemon finishes init (avoids "NoState" errors when calling funnel/up too early).
     const bin = getTailscaleBin();
     console.log("[Tailscale] win: net start Tailscale");
-    try { execSync("net start Tailscale", { stdio: "ignore", windowsHide: true, timeout: 10000 }); }
-    catch { /* may need admin, or already running */ }
+    try {
+      execSync("net start Tailscale", {
+        stdio: "ignore",
+        windowsHide: true,
+        timeout: 10000,
+      });
+    } catch {
+      /* may need admin, or already running */
+    }
     if (!bin) return;
     // Poll up to ~10s for backend to leave NoState
     for (let i = 0; i < 20; i++) {
       try {
-        const out = execSync(`"${bin}" status --json`, { encoding: "utf8", windowsHide: true, timeout: 2000 });
+        const out = execSync(`"${bin}" status --json`, {
+          encoding: "utf8",
+          windowsHide: true,
+          timeout: 2000,
+        });
         const j = JSON.parse(out);
         if (j.BackendState && j.BackendState !== "NoState") {
-          console.log(`[Tailscale] win: BackendState=${j.BackendState} after ${i*500}ms`);
+          console.log(
+            `[Tailscale] win: BackendState=${j.BackendState} after ${i * 500}ms`,
+          );
           return;
         }
-      } catch { /* daemon not ready */ }
+      } catch {
+        /* daemon not ready */
+      }
       await new Promise((r) => setTimeout(r, 500));
     }
     console.log("[Tailscale] win: BackendState still NoState after poll");
@@ -513,19 +653,44 @@ export async function startDaemonWithPassword(sudoPassword) {
     try {
       const bin = getTailscaleBin() || "tailscale";
       execSync(`"${bin}" ${SOCKET_FLAG.join(" ")} status --json`, {
-        stdio: "ignore", windowsHide: true,
-        env: { ...process.env, PATH: EXTENDED_PATH }, timeout: 3000
+        stdio: "ignore",
+        windowsHide: true,
+        env: { ...process.env, PATH: EXTENDED_PATH },
+        timeout: 3000,
       });
       return;
-    } catch { /* unresponsive, restart below */ }
+    } catch {
+      /* unresponsive, restart below */
+    }
   }
 
   // Mode mismatch or unresponsive → kill all daemons on our socket
-  try { execSync(`pkill -9 -f "tailscaled.*${TAILSCALE_SOCKET}"`, { stdio: "ignore", timeout: 3000 }); } catch { /* ignore */ }
+  try {
+    execSync(`pkill -9 -f "tailscaled.*${TAILSCALE_SOCKET}"`, {
+      stdio: "ignore",
+      timeout: 3000,
+    });
+  } catch {
+    /* ignore */
+  }
   if (sudoPassword) {
-    try { await execWithPassword(`pkill -9 -f "tailscaled.*${TAILSCALE_SOCKET}"`, sudoPassword); } catch { /* ignore */ }
+    try {
+      await execWithPassword(
+        `pkill -9 -f "tailscaled.*${TAILSCALE_SOCKET}"`,
+        sudoPassword,
+      );
+    } catch {
+      /* ignore */
+    }
   } else {
-    try { execSync(`sudo -n pkill -9 -f "tailscaled.*${TAILSCALE_SOCKET}"`, { stdio: "ignore", timeout: 3000 }); } catch { /* ignore */ }
+    try {
+      execSync(`sudo -n pkill -9 -f "tailscaled.*${TAILSCALE_SOCKET}"`, {
+        stdio: "ignore",
+        timeout: 3000,
+      });
+    } catch {
+      /* ignore */
+    }
   }
   await new Promise((r) => setTimeout(r, 1500));
 
@@ -533,7 +698,7 @@ export async function startDaemonWithPassword(sudoPassword) {
   await ensureUserOwnedDir(TAILSCALE_DIR);
 
   const tailscaledBin = IS_MAC
-    ? (getTailscaledBin() || "/usr/local/bin/tailscaled")
+    ? getTailscaledBin() || "/usr/local/bin/tailscaled"
     : "tailscaled";
   const daemonArgs = [
     `--socket=${TAILSCALE_SOCKET}`,
@@ -577,12 +742,16 @@ function getAuthUrlFromStatus() {
   if (!bin) return null;
   try {
     const out = execSync(`"${bin}" ${SOCKET_FLAG.join(" ")} status --json`, {
-      encoding: "utf8", windowsHide: true, timeout: 2000
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 2000,
     });
     const j = JSON.parse(out);
     if (j.AuthURL) return j.AuthURL;
     return null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -609,14 +778,16 @@ export function startLogin(hostname) {
     const child = spawn(bin, args, {
       stdio: ["ignore", "pipe", "pipe"],
       detached: true,
-      windowsHide: true
+      windowsHide: true,
     });
 
     let resolved = false;
     let output = "";
 
     const parseAuthUrl = (text) => {
-      const match = text.match(/https:\/\/login\.tailscale\.com\/a\/[a-zA-Z0-9]+/);
+      const match = text.match(
+        /https:\/\/login\.tailscale\.com\/a\/[a-zA-Z0-9]+/,
+      );
       return match ? match[0] : null;
     };
 
@@ -694,12 +865,19 @@ export async function startFunnel(port) {
   if (!bin) throw new Error("Tailscale not installed");
 
   // Reset any existing funnel
-  try { execSync(`"${bin}" ${SOCKET_FLAG.join(" ")} funnel --bg reset`, { stdio: "ignore", windowsHide: true }); } catch (e) { /* ignore */ }
+  try {
+    execSync(`"${bin}" ${SOCKET_FLAG.join(" ")} funnel --bg reset`, {
+      stdio: "ignore",
+      windowsHide: true,
+    });
+  } catch (e) {
+    /* ignore */
+  }
 
   return new Promise((resolve, reject) => {
     const child = spawn(bin, tsArgs("funnel", "--bg", `${port}`), {
       stdio: ["ignore", "pipe", "pipe"],
-      windowsHide: true
+      windowsHide: true,
     });
 
     let resolved = false;
@@ -711,7 +889,12 @@ export async function startFunnel(port) {
       // --bg exits after setup, read actual hostname from status
       const url = getActualFunnelUrl() || getTailscaleFunnelUrl(port);
       if (url) resolve({ tunnelUrl: url });
-      else reject(new Error(`Tailscale funnel timed out: ${output.trim() || "no output"}`));
+      else
+        reject(
+          new Error(
+            `Tailscale funnel timed out: ${output.trim() || "no output"}`,
+          ),
+        );
     }, 30000);
 
     // Always resolve via Self.DNSName to get the real hostname (avoids -1 suffix from conflicts)
@@ -726,7 +909,9 @@ export async function startFunnel(port) {
 
       // Wait for the enable URL to arrive in a later chunk
       if (funnelNotEnabled && !resolved) {
-        const enableMatch = output.match(/https:\/\/login\.tailscale\.com\/[^\s]+/);
+        const enableMatch = output.match(
+          /https:\/\/login\.tailscale\.com\/[^\s]+/,
+        );
         if (enableMatch) {
           resolved = true;
           clearTimeout(timeout);
@@ -751,10 +936,15 @@ export async function startFunnel(port) {
       if (resolved) return;
       resolved = true;
       clearTimeout(timeout);
-      console.log(`[Tailscale] funnel exit code=${code} output="${output.trim().slice(0, 200)}"`);
+      console.log(
+        `[Tailscale] funnel exit code=${code} output="${output.trim().slice(0, 200)}"`,
+      );
       const url = parseFunnelUrl() || getTailscaleFunnelUrl(port);
       if (url) resolve({ tunnelUrl: url });
-      else reject(new Error(`tailscale funnel failed (code ${code}): ${output.trim()}`));
+      else
+        reject(
+          new Error(`tailscale funnel failed (code ${code}): ${output.trim()}`),
+        );
     });
 
     child.on("error", (err) => {
@@ -777,7 +967,11 @@ export async function provisionCert(hostname) {
   try {
     await execAsync(
       `"${bin}" ${SOCKET_FLAG.join(" ")} cert --cert-file "${certFile}" --key-file "${keyFile}" "${hostname}"`,
-      { windowsHide: true, env: { ...process.env, PATH: EXTENDED_PATH }, timeout: 30000 }
+      {
+        windowsHide: true,
+        env: { ...process.env, PATH: EXTENDED_PATH },
+        timeout: 30000,
+      },
     );
     console.log(`[Tailscale] cert provisioned for ${hostname}`);
   } catch (e) {
@@ -789,22 +983,53 @@ export async function provisionCert(hostname) {
 export function stopFunnel() {
   const bin = getTailscaleBin();
   if (!bin) return;
-  try { execSync(`"${bin}" ${SOCKET_FLAG.join(" ")} funnel --bg reset`, { stdio: "ignore", windowsHide: true }); } catch (e) { /* ignore */ }
+  try {
+    execSync(`"${bin}" ${SOCKET_FLAG.join(" ")} funnel --bg reset`, {
+      stdio: "ignore",
+      windowsHide: true,
+    });
+  } catch (e) {
+    /* ignore */
+  }
 }
 
 /** Kill tailscaled daemon (runs as root, needs sudo) */
 export async function stopDaemon(sudoPassword) {
   // Try non-sudo first
-  try { execSync("pkill -x tailscaled", { stdio: "ignore", windowsHide: true, timeout: 3000 }); } catch { /* ignore */ }
+  try {
+    execSync("pkill -x tailscaled", {
+      stdio: "ignore",
+      windowsHide: true,
+      timeout: 3000,
+    });
+  } catch {
+    /* ignore */
+  }
 
   // Check if still alive
-  try { execSync("pgrep -x tailscaled", { stdio: "ignore", windowsHide: true, timeout: 2000 }); } catch { return; } // Dead, done
+  try {
+    execSync("pgrep -x tailscaled", {
+      stdio: "ignore",
+      windowsHide: true,
+      timeout: 2000,
+    });
+  } catch {
+    return;
+  } // Dead, done
 
   // Kill with sudo password
   if (!IS_WINDOWS) {
-    try { await execWithPassword("pkill -x tailscaled", sudoPassword || ""); } catch { /* ignore */ }
+    try {
+      await execWithPassword("pkill -x tailscaled", sudoPassword || "");
+    } catch {
+      /* ignore */
+    }
   }
 
   // Cleanup socket
-  try { if (fs.existsSync(TAILSCALE_SOCKET)) fs.unlinkSync(TAILSCALE_SOCKET); } catch { /* ignore */ }
+  try {
+    if (fs.existsSync(TAILSCALE_SOCKET)) fs.unlinkSync(TAILSCALE_SOCKET);
+  } catch {
+    /* ignore */
+  }
 }

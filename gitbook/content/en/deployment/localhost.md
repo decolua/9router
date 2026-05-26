@@ -13,6 +13,7 @@ npm install -g 9router
 ```
 
 **Requirements:**
+
 - Node.js 20 or higher
 - npm 9 or higher
 
@@ -29,6 +30,7 @@ Start 9Router with a single command:
 The dashboard will automatically open in your browser at `http://localhost:3000`
 
 **Default Configuration:**
+
 - **Dashboard**: `http://localhost:3000`
 - **API Endpoint**: `http://localhost:20128/v1`
 - **Data Directory**: `~/.9router`

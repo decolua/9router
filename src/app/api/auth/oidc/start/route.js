@@ -15,7 +15,9 @@ export async function GET(request) {
   try {
     const config = await getOidcRuntimeConfig();
     if (!config) {
-      return NextResponse.redirect(new URL("/login?error=oidc_not_configured", getPublicOrigin(request)));
+      return NextResponse.redirect(
+        new URL("/login?error=oidc_not_configured", getPublicOrigin(request)),
+      );
     }
 
     const discovery = await fetchOidcDiscovery(config.issuerUrl);
@@ -47,6 +49,11 @@ export async function GET(request) {
 
     return NextResponse.redirect(authUrl);
   } catch (error) {
-    return NextResponse.redirect(new URL(`/login?error=${encodeURIComponent(error.message || "oidc_start_failed")}`, getPublicOrigin(request)));
+    return NextResponse.redirect(
+      new URL(
+        `/login?error=${encodeURIComponent(error.message || "oidc_start_failed")}`,
+        getPublicOrigin(request),
+      ),
+    );
   }
 }

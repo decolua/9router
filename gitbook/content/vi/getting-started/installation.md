@@ -44,6 +44,7 @@ npm install -g 9router
 ```
 
 **Lợi ích:**
+
 - ✅ Chạy từ mọi thư mục
 - ✅ Lệnh đơn giản: `9router`
 - ✅ Auto-update với `npm update -g 9router`
@@ -65,6 +66,7 @@ npx 9router
 ```
 
 **Lợi ích:**
+
 - ✅ Cô lập mỗi project
 - ✅ Version control mỗi project
 - ✅ Không làm bẩn global namespace
@@ -82,6 +84,7 @@ npm start
 ```
 
 **Lợi ích:**
+
 - ✅ Tính năng phát triển mới nhất
 - ✅ Đóng góp cho dự án
 - ✅ Tùy chỉnh
@@ -97,6 +100,7 @@ npm start
 ```
 
 **Điều gì xảy ra:**
+
 1. Server khởi động tại `http://localhost:20128`
 2. Dashboard tự động mở trong browser
 3. Data directory được tạo tại `~/.9router`
@@ -105,9 +109,11 @@ npm start
 ### Đăng nhập Dashboard
 
 **Credentials mặc định:**
+
 - Mật khẩu: `123456`
 
 **⚠️ Đổi mật khẩu ngay:**
+
 1. Đăng nhập dashboard
 2. Settings → Change Password
 3. Dùng mật khẩu mạnh
@@ -121,6 +127,7 @@ Dashboard → Settings → API Keys
 ```
 
 **Ví dụ format API key:**
+
 ```
 9r_1234567890abcdef1234567890abcdef
 ```
@@ -136,6 +143,7 @@ curl http://localhost:20128/health
 ```
 
 **Phản hồi dự kiến:**
+
 ```json
 {
   "status": "ok",
@@ -151,6 +159,7 @@ curl http://localhost:20128/v1/models \
 ```
 
 **Phản hồi dự kiến:**
+
 ```json
 {
   "object": "list",
@@ -208,6 +217,7 @@ export ENABLE_REQUEST_LOGS="false"
 **Vị trí mặc định:** `~/.9router`
 
 **Nội dung:**
+
 ```
 ~/.9router/
   ├── db.json           # Database (providers, combos, usage)
@@ -246,6 +256,7 @@ export PORT="3000"
 ### Port đã được dùng
 
 **Lỗi:**
+
 ```
 Error: listen EADDRINUSE: address already in use :::20128
 ```
@@ -269,6 +280,7 @@ kill -9 <PID>
 ### Permission Denied
 
 **Lỗi:**
+
 ```
 Error: EACCES: permission denied, mkdir '/usr/local/lib/node_modules/9router'
 ```
@@ -289,6 +301,7 @@ npm install -g 9router
 ### Node.js Phiên bản quá cũ
 
 **Lỗi:**
+
 ```
 Error: The engine "node" is incompatible with this module
 ```
@@ -427,7 +440,7 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
         proxy_set_header Host $host;
-        
+
         # SSE support for streaming
         proxy_buffering off;
         proxy_read_timeout 86400;

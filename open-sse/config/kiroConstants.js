@@ -91,25 +91,39 @@ REMEMBER: When in doubt, write LESS per operation. Multiple small operations > o
 export function isThinkingEnabled(body, headers, model) {
   if (headers) {
     const beta = pickHeader(headers, "anthropic-beta");
-    if (typeof beta === "string" && beta.toLowerCase().includes("interleaved-thinking")) {
+    if (
+      typeof beta === "string" &&
+      beta.toLowerCase().includes("interleaved-thinking")
+    ) {
       return true;
     }
   }
 
   if (body && typeof body === "object") {
     const thinking = body.thinking;
-    if (thinking && typeof thinking === "object" && thinking.type === "enabled") {
+    if (
+      thinking &&
+      typeof thinking === "object" &&
+      thinking.type === "enabled"
+    ) {
       const budget = Number(thinking.budget_tokens);
       if (!Number.isFinite(budget) || budget > 0) {
         return true;
       }
     }
 
-    const effort = body.reasoning_effort
-      ?? (body.reasoning && typeof body.reasoning === "object" ? body.reasoning.effort : null);
+    const effort =
+      body.reasoning_effort ??
+      (body.reasoning && typeof body.reasoning === "object"
+        ? body.reasoning.effort
+        : null);
     if (typeof effort === "string") {
       const v = effort.toLowerCase();
-      if (v && v !== "none" && (v === "low" || v === "medium" || v === "high" || v === "auto")) {
+      if (
+        v &&
+        v !== "none" &&
+        (v === "low" || v === "medium" || v === "high" || v === "auto")
+      ) {
         return true;
       }
     }
@@ -216,8 +230,13 @@ export function resolveKiroModel(model) {
  *
  * @param {number} [budget=KIRO_THINKING_BUDGET_DEFAULT]
  */
-export function buildThinkingSystemPrefix(budget = KIRO_THINKING_BUDGET_DEFAULT) {
-  const safeBudget = Math.max(1, Math.min(32000, Number(budget) || KIRO_THINKING_BUDGET_DEFAULT));
+export function buildThinkingSystemPrefix(
+  budget = KIRO_THINKING_BUDGET_DEFAULT,
+) {
+  const safeBudget = Math.max(
+    1,
+    Math.min(32000, Number(budget) || KIRO_THINKING_BUDGET_DEFAULT),
+  );
   return `<thinking_mode>enabled</thinking_mode>\n<max_thinking_length>${safeBudget}</max_thinking_length>`;
 }
 
@@ -250,13 +269,16 @@ function containsThinkingModeTag(body) {
       }
     }
   }
-  if (typeof body?.system === "string" && containsTagInText(body.system)) return true;
+  if (typeof body?.system === "string" && containsTagInText(body.system))
+    return true;
   return false;
 }
 
 function containsTagInText(text) {
   if (!text) return false;
   if (!text.includes("<thinking_mode>")) return false;
-  return text.includes("<thinking_mode>enabled</thinking_mode>")
-    || text.includes("<thinking_mode>interleaved</thinking_mode>");
+  return (
+    text.includes("<thinking_mode>enabled</thinking_mode>") ||
+    text.includes("<thinking_mode>interleaved</thinking_mode>")
+  );
 }

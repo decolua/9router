@@ -9,6 +9,7 @@ Create custom model combinations with automatic fallback. Combos let you define 
 Combos are **custom fallback chains** that you create in the dashboard. Instead of using a single model, you define a sequence of models that 9Router tries in order.
 
 **Example:**
+
 ```
 Combo name: premium-coding
 Models:
@@ -18,6 +19,7 @@ Models:
 ```
 
 **Usage in CLI:**
+
 ```
 Model: premium-coding
 ```
@@ -29,6 +31,7 @@ Model: premium-coding
 ## Why Use Combos?
 
 ### 1. Maximize Subscription Value
+
 ```
 cc/claude-opus → glm/glm-4.7 → if/kimi-k2-thinking
 
@@ -37,6 +40,7 @@ cc/claude-opus → glm/glm-4.7 → if/kimi-k2-thinking
 ```
 
 ### 2. Minimize Costs
+
 ```
 glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2-thinking
 
@@ -47,6 +51,7 @@ glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2-thinking
 ```
 
 ### 3. Ensure 24/7 Availability
+
 ```
 cc/claude-opus → cx/gpt-5.2-codex → glm/glm-4.7 → if/kimi-k2-thinking
 
@@ -56,6 +61,7 @@ cc/claude-opus → cx/gpt-5.2-codex → glm/glm-4.7 → if/kimi-k2-thinking
 ```
 
 ### 4. Optimize for Quality
+
 ```
 cc/claude-opus-4-5 → cx/gpt-5.2-codex → gc/gemini-3-pro
 
@@ -84,16 +90,19 @@ Dashboard → Combos → Create New Combo
 ### Step 3: Configure Combo
 
 **Combo Name:**
+
 ```
 premium-coding
 ```
 
 **Description (optional):**
+
 ```
 Subscription first, cheap backup, free emergency
 ```
 
 **Select Models:**
+
 ```
 1. cc/claude-opus-4-5-20251101
 2. glm/glm-4.7
@@ -135,12 +144,14 @@ Models:
 ```
 
 **Usage:**
+
 ```
 Cursor IDE:
   Model: premium-coding
 ```
 
 **Behavior:**
+
 ```
 Morning (fresh quota):
   Request → cc/claude-opus-4-5 ✅
@@ -153,6 +164,7 @@ Evening (GLM quota out):
 ```
 
 **Monthly cost (100M tokens):**
+
 ```
 80M via Claude Code: $0 (subscription)
 15M via GLM: $9
@@ -179,6 +191,7 @@ Models:
 ```
 
 **Usage:**
+
 ```
 Cline:
   Provider: OpenAI Compatible
@@ -187,6 +200,7 @@ Cline:
 ```
 
 **Behavior:**
+
 ```
 Request → glm/glm-4.7
   ✅ Daily quota available → Use GLM ($0.60/1M)
@@ -195,6 +209,7 @@ Request → glm/glm-4.7
 ```
 
 **Monthly cost (100M tokens):**
+
 ```
 70M via GLM: $42
 20M via MiniMax: $4
@@ -221,12 +236,14 @@ Models:
 ```
 
 **Usage:**
+
 ```
 Claude Desktop:
   Model: free-combo
 ```
 
 **Behavior:**
+
 ```
 Request → if/kimi-k2-thinking
   ✅ Available → Use iFlow
@@ -235,6 +252,7 @@ Request → if/kimi-k2-thinking
 ```
 
 **Monthly cost:**
+
 ```
 100M tokens via free providers: $0
 Total: $0 forever
@@ -259,6 +277,7 @@ Models:
 ```
 
 **Usage:**
+
 ```
 Codex CLI:
   export OPENAI_BASE_URL="http://localhost:20128"
@@ -266,6 +285,7 @@ Codex CLI:
 ```
 
 **Behavior:**
+
 ```
 Request → cc/claude-opus-4-5
   ❌ Quota out → cx/gpt-5.2-codex
@@ -295,6 +315,7 @@ Models:
 ```
 
 **Monthly cost (200M tokens):**
+
 ```
 50M via Gemini CLI: $0 (free tier)
 80M via Claude Code: $0 (subscription)
@@ -326,6 +347,7 @@ Models:
 ```
 
 **Daily routine:**
+
 ```
 08:00 - 13:00: Claude Code (fresh 5h quota)
 13:00 - 18:00: Gemini CLI (1K/day quota)
@@ -351,6 +373,7 @@ Settings → Models → Advanced:
 ### Claude Desktop
 
 Edit `~/.claude/config.json`:
+
 ```json
 {
   "anthropic_api_base": "http://localhost:20128/v1",
@@ -510,6 +533,7 @@ Dashboard → Combos → Clone "premium-coding"
 **Issue: Combo not appearing in model list**
 
 **Solution:**
+
 1. Refresh dashboard
 2. Check combo is saved (green checkmark)
 3. Restart CLI tool to refresh model list
@@ -517,6 +541,7 @@ Dashboard → Combos → Clone "premium-coding"
 **Issue: Combo always uses last model (free tier)**
 
 **Solution:**
+
 1. Check quota for primary models (Dashboard → Quota)
 2. Verify API keys are valid (Dashboard → Providers)
 3. Check budget limits not exceeded
@@ -524,6 +549,7 @@ Dashboard → Combos → Clone "premium-coding"
 **Issue: Combo costs more than expected**
 
 **Solution:**
+
 1. Dashboard → Analytics → Review combo usage
 2. Check if primary models are quota-exhausted
 3. Reorder models (put cheaper first)

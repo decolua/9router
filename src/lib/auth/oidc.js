@@ -21,9 +21,7 @@ function normalizeScopes(value) {
 
 export function getPublicOrigin(request) {
   const configuredBaseUrl =
-    process.env.BASE_URL ||
-    process.env.NEXT_PUBLIC_BASE_URL ||
-    "";
+    process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || "";
 
   if (configuredBaseUrl) {
     return trimTrailingSlashes(configuredBaseUrl);
@@ -33,7 +31,11 @@ export function getPublicOrigin(request) {
   const forwardedHost = request?.headers?.get?.("x-forwarded-host") || "";
   const host = forwardedHost || request?.headers?.get?.("host") || "";
   if (host) {
-    const protocol = (forwardedProto || new URL(request.url).protocol || "http:").replace(/:$/, "");
+    const protocol = (
+      forwardedProto ||
+      new URL(request.url).protocol ||
+      "http:"
+    ).replace(/:$/, "");
     return `${protocol}://${host}`.replace(/\/+$/, "");
   }
 
@@ -50,7 +52,11 @@ export function isOidcConfigured(settings) {
 
 export async function getOidcRuntimeConfig() {
   const settings = await getSettings();
-  if (!["oidc", "both"].includes(settings.authMode) || !isOidcConfigured(settings)) return null;
+  if (
+    !["oidc", "both"].includes(settings.authMode) ||
+    !isOidcConfigured(settings)
+  )
+    return null;
 
   const issuerUrl = trimTrailingSlashes(settings.oidcIssuerUrl);
   return {
@@ -58,7 +64,9 @@ export async function getOidcRuntimeConfig() {
     clientId: settings.oidcClientId.trim(),
     clientSecret: settings.oidcClientSecret.trim(),
     scopes: normalizeScopes(settings.oidcScopes),
-    loginLabel: (settings.oidcLoginLabel || DEFAULT_LOGIN_LABEL).trim() || DEFAULT_LOGIN_LABEL,
+    loginLabel:
+      (settings.oidcLoginLabel || DEFAULT_LOGIN_LABEL).trim() ||
+      DEFAULT_LOGIN_LABEL,
   };
 }
 
@@ -66,14 +74,19 @@ export async function fetchOidcDiscovery(issuerUrl) {
   const discoveryUrl = `${trimTrailingSlashes(issuerUrl)}/.well-known/openid-configuration`;
   const res = await fetch(discoveryUrl, { cache: "no-store" });
   if (!res.ok) {
-    throw new Error(`Failed to load OIDC discovery document from ${discoveryUrl}`);
+    throw new Error(
+      `Failed to load OIDC discovery document from ${discoveryUrl}`,
+    );
   }
   return await res.json();
 }
 
 export function createPkcePair() {
   const verifier = crypto.randomBytes(32).toString("base64url");
-  const challenge = crypto.createHash("sha256").update(verifier).digest("base64url");
+  const challenge = crypto
+    .createHash("sha256")
+    .update(verifier)
+    .digest("base64url");
   return { verifier, challenge };
 }
 
@@ -134,7 +147,10 @@ export async function exchangeOidcCode({
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const message = data?.error_description || data?.error || `OIDC token exchange failed (${res.status})`;
+    const message =
+      data?.error_description ||
+      data?.error ||
+      `OIDC token exchange failed (${res.status})`;
     throw new Error(message);
   }
 
@@ -151,7 +167,8 @@ export async function probeOidcClientSecret({
     return {
       tested: false,
       valid: null,
-      message: "No client secret was provided, so secret validation was skipped.",
+      message:
+        "No client secret was provided, so secret validation was skipped.",
     };
   }
 
@@ -183,7 +200,11 @@ export async function probeOidcClientSecret({
     };
   }
 
-  if (error === "invalid_client" || error === "unauthorized_client" || /client.*(invalid|failed|mismatch)/i.test(errorDescription)) {
+  if (
+    error === "invalid_client" ||
+    error === "unauthorized_client" ||
+    /client.*(invalid|failed|mismatch)/i.test(errorDescription)
+  ) {
     return {
       tested: true,
       valid: false,
@@ -192,11 +213,16 @@ export async function probeOidcClientSecret({
     };
   }
 
-  if (error === "invalid_grant" || error === "invalid_code" || /grant|code/i.test(errorDescription)) {
+  if (
+    error === "invalid_grant" ||
+    error === "invalid_code" ||
+    /grant|code/i.test(errorDescription)
+  ) {
     return {
       tested: true,
       valid: true,
-      message: "Client secret was accepted; the token exchange failed only because the test authorization code is invalid.",
+      message:
+        "Client secret was accepted; the token exchange failed only because the test authorization code is invalid.",
       raw: data,
     };
   }
@@ -226,7 +252,14 @@ export async function verifyOidcIdToken({
 }
 
 export function pickOidcDisplayName(payload = {}) {
-  return payload.preferred_username || payload.email || payload.name || payload.given_name || payload.sub || "OIDC user";
+  return (
+    payload.preferred_username ||
+    payload.email ||
+    payload.name ||
+    payload.given_name ||
+    payload.sub ||
+    "OIDC user"
+  );
 }
 
 export function pickOidcEmail(payload = {}) {

@@ -15,8 +15,8 @@ export async function OPTIONS() {
     headers: {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "*"
-    }
+      "Access-Control-Allow-Headers": "*",
+    },
   });
 }
 
@@ -31,7 +31,7 @@ export async function POST(request) {
   const newRequest = new Request(request.url, {
     method: "POST",
     headers: request.headers,
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
   });
   return await handleChat(newRequest);
 }

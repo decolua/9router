@@ -16,33 +16,47 @@ export async function fetchElevenLabsVoices(apiKey) {
   if (!res.ok) throw new Error(`ElevenLabs voices fetch failed: ${res.status}`);
   const data = await res.json();
   // Normalize: derive lang from labels for grouping
-  const voices = (data.voices || []).map((v) => ({ ...v, lang: v.labels?.language || "en" }));
+  const voices = (data.voices || []).map((v) => ({
+    ...v,
+    lang: v.labels?.language || "en",
+  }));
   _voicesCache.set(apiKey, { voices, time: now });
   return voices;
 }
 
-export default {
+const provider = {
   async synthesize(text, model, credentials) {
     if (!credentials?.apiKey) throw new Error("ElevenLabs API key required");
     let modelId = "eleven_flash_v2_5";
     let voiceId = model;
     if (model && model.includes("/")) [modelId, voiceId] = model.split("/");
 
-    const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
-      method: "POST",
-      headers: { "xi-api-key": credentials.apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        text,
-        model_id: modelId,
-        voice_settings: { stability: 0.5, similarity_boost: 0.75 },
-      }),
-    });
+    const res = await fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+      {
+        method: "POST",
+        headers: {
+          "xi-api-key": credentials.apiKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          text,
+          model_id: modelId,
+          voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+        }),
+      },
+    );
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err?.detail?.message || `ElevenLabs TTS failed: ${res.status}`);
+      throw new Error(
+        err?.detail?.message || `ElevenLabs TTS failed: ${res.status}`,
+      );
     }
     const buf = await res.arrayBuffer();
-    if (buf.byteLength < 1024) throw new Error("ElevenLabs TTS returned empty audio");
+    if (buf.byteLength < 1024)
+      throw new Error("ElevenLabs TTS returned empty audio");
     return { base64: Buffer.from(buf).toString("base64"), format: "mp3" };
   },
 };
+
+export default provider;

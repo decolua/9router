@@ -37,6 +37,7 @@ https://9router.com
 ```
 
 **Các bước:**
+
 1. Trong cài đặt Models, tìm field **Base URL**
 2. Nhập: `https://9router.com`
 3. Click **Save**
@@ -75,13 +76,13 @@ Custom Models: gpt-4, claude-opus-4-5, gemini-2.0-flash
 
 Bạn có thể dùng bất kỳ model nào đã cấu hình trong 9Router dashboard. Ví dụ phổ biến:
 
-| Tên Model | Provider | Mô tả |
-|------------|----------|-------------|
-| `gpt-4` | OpenAI | GPT-4 Turbo |
-| `gpt-4o` | OpenAI | GPT-4 Optimized |
-| `claude-opus-4-5` | Anthropic | Claude Opus 4.5 |
+| Tên Model           | Provider  | Mô tả             |
+| ------------------- | --------- | ----------------- |
+| `gpt-4`             | OpenAI    | GPT-4 Turbo       |
+| `gpt-4o`            | OpenAI    | GPT-4 Optimized   |
+| `claude-opus-4-5`   | Anthropic | Claude Opus 4.5   |
 | `claude-sonnet-4-5` | Anthropic | Claude Sonnet 4.5 |
-| `gemini-2.0-flash` | Google | Gemini 2.0 Flash |
+| `gemini-2.0-flash`  | Google    | Gemini 2.0 Flash  |
 
 ## Sử dụng
 

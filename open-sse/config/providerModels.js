@@ -9,7 +9,10 @@ const CODEX_REVIEW_SUFFIX = "-review";
 
 function withCodexReviewModels(models) {
   return models.flatMap((model) => {
-    if ((model.type || "llm") !== "llm" || model.id.endsWith(CODEX_REVIEW_SUFFIX)) {
+    if (
+      (model.type || "llm") !== "llm" ||
+      model.id.endsWith(CODEX_REVIEW_SUFFIX)
+    ) {
       return [model];
     }
 
@@ -28,7 +31,8 @@ function withCodexReviewModels(models) {
 
 export const PROVIDER_MODELS = {
   // OAuth Providers (using alias)
-  cc: [  // Claude Code
+  cc: [
+    // Claude Code
     { id: "claude-opus-4-7", name: "Claude Opus 4.7" },
     { id: "claude-opus-4-6", name: "Claude Opus 4.6" },
     { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
@@ -36,7 +40,8 @@ export const PROVIDER_MODELS = {
     { id: "claude-sonnet-4-5-20250929", name: "Claude 4.5 Sonnet" },
     { id: "claude-haiku-4-5-20251001", name: "Claude 4.5 Haiku" },
   ],
-  cx: withCodexReviewModels([  // OpenAI Codex
+  cx: withCodexReviewModels([
+    // OpenAI Codex
     { id: "gpt-5.5", name: "GPT 5.5" },
     { id: "gpt-5.4", name: "GPT 5.4" },
     // GPT 5.3 Codex - all thinking levels
@@ -58,23 +63,74 @@ export const PROVIDER_MODELS = {
     { id: "gpt-5-codex", name: "GPT 5 Codex" },
     { id: "gpt-5-codex-mini", name: "GPT 5 Codex Mini" },
     // Image models (uses image_generation tool, requires Plus/Pro plan)
-    { id: "gpt-5.5-image", name: "GPT 5.5 Image", type: "image", capabilities: ["text2img", "edit"], params: ["size", "quality", "background", "image_detail", "output_format"] },
-    { id: "gpt-5.4-image", name: "GPT 5.4 Image", type: "image", capabilities: ["text2img", "edit"], params: ["size", "quality", "background", "image_detail", "output_format"] },
-    { id: "gpt-5.3-image", name: "GPT 5.3 Image", type: "image", capabilities: ["text2img", "edit"], params: ["size", "quality", "background", "image_detail", "output_format"] },
-    { id: "gpt-5.2-image", name: "GPT 5.2 Image", type: "image", capabilities: ["text2img", "edit"], params: ["size", "quality", "background", "image_detail", "output_format"] },
+    {
+      id: "gpt-5.5-image",
+      name: "GPT 5.5 Image",
+      type: "image",
+      capabilities: ["text2img", "edit"],
+      params: [
+        "size",
+        "quality",
+        "background",
+        "image_detail",
+        "output_format",
+      ],
+    },
+    {
+      id: "gpt-5.4-image",
+      name: "GPT 5.4 Image",
+      type: "image",
+      capabilities: ["text2img", "edit"],
+      params: [
+        "size",
+        "quality",
+        "background",
+        "image_detail",
+        "output_format",
+      ],
+    },
+    {
+      id: "gpt-5.3-image",
+      name: "GPT 5.3 Image",
+      type: "image",
+      capabilities: ["text2img", "edit"],
+      params: [
+        "size",
+        "quality",
+        "background",
+        "image_detail",
+        "output_format",
+      ],
+    },
+    {
+      id: "gpt-5.2-image",
+      name: "GPT 5.2 Image",
+      type: "image",
+      capabilities: ["text2img", "edit"],
+      params: [
+        "size",
+        "quality",
+        "background",
+        "image_detail",
+        "output_format",
+      ],
+    },
   ]),
-  gc: [  // Gemini CLI
+  gc: [
+    // Gemini CLI
     { id: "gemini-3-flash-preview", name: "Gemini 3 Flash Preview" },
     { id: "gemini-3-pro-preview", name: "Gemini 3 Pro Preview" },
   ],
-  qw: [  // Qwen Code
+  qw: [
+    // Qwen Code
     // { id: "qwen3-coder-next", name: "Qwen3 Coder Next" },
     { id: "qwen3-coder-plus", name: "Qwen3 Coder Plus" },
     { id: "qwen3-coder-flash", name: "Qwen3 Coder Flash" },
     { id: "vision-model", name: "Qwen3 Vision Model" },
     { id: "coder-model", name: "Qwen3.6 Coder Model" },
   ],
-  if: [  // iFlow AI
+  if: [
+    // iFlow AI
     { id: "qwen3-coder-plus", name: "Qwen3 Coder Plus" },
     { id: "qwen3-max", name: "Qwen3 Max" },
     { id: "qwen3-vl-plus", name: "Qwen3 VL Plus" },
@@ -91,7 +147,8 @@ export const PROVIDER_MODELS = {
     { id: "glm-4.7", name: "GLM 4.7" },
     { id: "iflow-rome-30ba3b", name: "iFlow ROME" },
   ],
-  ag: [  // Antigravity - special case: models call different backends
+  ag: [
+    // Antigravity - special case: models call different backends
     { id: "gemini-3-flash-agent", name: "Gemini 3.5 Flash (High)" },
     { id: "gemini-3.5-flash-low", name: "Gemini 3.5 Flash (Medium)" },
     { id: "gemini-pro-agent", name: "Gemini 3.1 Pro (High)" },
@@ -101,7 +158,8 @@ export const PROVIDER_MODELS = {
     { id: "gpt-oss-120b-medium", name: "GPT-OSS 120B (Medium)" },
     { id: "gemini-3-flash", name: "Gemini 3 Flash", thinking: false }, // command model; AG strips thinking
   ],
-  gh: [  // GitHub Copilot - OpenAI models
+  gh: [
+    // GitHub Copilot - OpenAI models
     { id: "gpt-3.5-turbo", name: "GPT-3.5 Turbo" },
     { id: "gpt-4", name: "GPT-4" },
     { id: "gpt-4o", name: "GPT-4o" },
@@ -130,16 +188,29 @@ export const PROVIDER_MODELS = {
     { id: "oswe-vscode-prime", name: "Raptor Mini" },
     { id: "goldeneye-free-auto", name: "GoldenEye" },
     // GitHub Copilot - Embedding models
-    { id: "text-embedding-3-small", name: "Text Embedding 3 Small (GitHub)", type: "embedding" },
-    { id: "text-embedding-3-large", name: "Text Embedding 3 Large (GitHub)", type: "embedding" },
+    {
+      id: "text-embedding-3-small",
+      name: "Text Embedding 3 Small (GitHub)",
+      type: "embedding",
+    },
+    {
+      id: "text-embedding-3-large",
+      name: "Text Embedding 3 Large (GitHub)",
+      type: "embedding",
+    },
   ],
-  kr: [  // Kiro AI
+  kr: [
+    // Kiro AI
     // --- Base Claude variants ---
     // { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
     { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5" },
     { id: "claude-haiku-4.5", name: "Claude Haiku 4.5" },
     { id: "deepseek-3.2", name: "DeepSeek 3.2", strip: ["image", "audio"] },
-    { id: "qwen3-coder-next", name: "Qwen3 Coder Next", strip: ["image", "audio"] },
+    {
+      id: "qwen3-coder-next",
+      name: "Qwen3 Coder Next",
+      strip: ["image", "audio"],
+    },
     { id: "glm-5", name: "GLM 5" },
     { id: "MiniMax-M2.5", name: "MiniMax M2.5" },
     // --- Thinking variants (alias to base; thinking is enabled at request time
@@ -150,12 +221,22 @@ export const PROVIDER_MODELS = {
     //     system prompt to dodge Kiro's 2-3 min server timeout on big writes) ---
     { id: "claude-sonnet-4.5-agentic", name: "Claude Sonnet 4.5 (Agentic)" },
     { id: "claude-haiku-4.5-agentic", name: "Claude Haiku 4.5 (Agentic)" },
-    { id: "claude-sonnet-4.5-thinking-agentic", name: "Claude Sonnet 4.5 (Thinking + Agentic)" },
-    { id: "claude-haiku-4.5-thinking-agentic", name: "Claude Haiku 4.5 (Thinking + Agentic)" },
+    {
+      id: "claude-sonnet-4.5-thinking-agentic",
+      name: "Claude Sonnet 4.5 (Thinking + Agentic)",
+    },
+    {
+      id: "claude-haiku-4.5-thinking-agentic",
+      name: "Claude Haiku 4.5 (Thinking + Agentic)",
+    },
   ],
-  cu: [  // Cursor IDE
+  cu: [
+    // Cursor IDE
     { id: "default", name: "Auto (Server Picks)" },
-    { id: "claude-4.5-opus-high-thinking", name: "Claude 4.5 Opus High Thinking" },
+    {
+      id: "claude-4.5-opus-high-thinking",
+      name: "Claude 4.5 Opus High Thinking",
+    },
     { id: "claude-4.5-opus-high", name: "Claude 4.5 Opus High" },
     { id: "claude-4.5-sonnet-thinking", name: "Claude 4.5 Sonnet Thinking" },
     { id: "claude-4.5-sonnet", name: "Claude 4.5 Sonnet" },
@@ -163,19 +244,24 @@ export const PROVIDER_MODELS = {
     { id: "claude-4.5-opus", name: "Claude 4.5 Opus" },
     { id: "gpt-5.2-codex", name: "GPT 5.2 Codex" },
     { id: "claude-4.6-opus-max", name: "Claude 4.6 Opus Max" },
-    { id: "claude-4.6-sonnet-medium-thinking", name: "Claude 4.6 Sonnet Medium Thinking" },
+    {
+      id: "claude-4.6-sonnet-medium-thinking",
+      name: "Claude 4.6 Sonnet Medium Thinking",
+    },
     { id: "kimi-k2.5", name: "Kimi K2.5" },
     { id: "gemini-3-flash-preview", name: "Gemini 3 Flash Preview" },
     { id: "gpt-5.2", name: "GPT 5.2" },
     { id: "gpt-5.3-codex", name: "GPT 5.3 Codex" },
   ],
-  kmc: [  // Kimi Coding
+  kmc: [
+    // Kimi Coding
     { id: "kimi-k2.6", name: "Kimi K2.6" },
     { id: "kimi-k2.5", name: "Kimi K2.5" },
     { id: "kimi-k2.5-thinking", name: "Kimi K2.5 Thinking" },
     { id: "kimi-latest", name: "Kimi Latest" },
   ],
-  kc: [  // KiloCode
+  kc: [
+    // KiloCode
     { id: "anthropic/claude-sonnet-4-20250514", name: "Claude Sonnet 4" },
     { id: "anthropic/claude-opus-4-20250514", name: "Claude Opus 4" },
     { id: "google/gemini-2.5-pro", name: "Gemini 2.5 Pro" },
@@ -185,7 +271,8 @@ export const PROVIDER_MODELS = {
     { id: "deepseek/deepseek-chat", name: "DeepSeek Chat" },
     { id: "deepseek/deepseek-reasoner", name: "DeepSeek Reasoner" },
   ],
-  "opencode-go": [  // OpenCode Go subscription (API key)
+  "opencode-go": [
+    // OpenCode Go subscription (API key)
     { id: "kimi-k2.6", name: "Kimi K2.6" },
     { id: "kimi-k2.5", name: "Kimi K2.5" },
     { id: "glm-5.1", name: "GLM 5.1" },
@@ -197,7 +284,8 @@ export const PROVIDER_MODELS = {
     { id: "minimax-m2.7", name: "MiniMax M2.7", targetFormat: "claude" },
     { id: "minimax-m2.5", name: "MiniMax M2.5", targetFormat: "claude" },
   ],
-  oc: [  // OpenCode
+  oc: [
+    // OpenCode
     // { id: "nemotron-3-super-free", name: "Nemotron 3 Super" },
     // { id: "qwen3.6-plus-free", name: "Qwen 3.6 Plus" },
     // { id: "big-pickle", name: "Big Pickle", targetFormat: "claude" },
@@ -205,14 +293,18 @@ export const PROVIDER_MODELS = {
     // { id: "trinity-large-preview-free", name: "Trinity Large Preview" },
   ],
 
-  cl: [  // Cline
+  cl: [
+    // Cline
     { id: "anthropic/claude-opus-4.7", name: "Claude Opus 4.7" },
     { id: "anthropic/claude-sonnet-4.6", name: "Claude Sonnet 4.6" },
     { id: "anthropic/claude-opus-4.6", name: "Claude Opus 4.6" },
     { id: "openai/gpt-5.3-codex", name: "GPT-5.3 Codex" },
     { id: "openai/gpt-5.4", name: "GPT-5.4" },
     { id: "google/gemini-3.1-pro-preview", name: "Gemini 3.1 Pro Preview" },
-    { id: "google/gemini-3.1-flash-lite-preview", name: "Gemini 3.1 Flash Lite Preview" },
+    {
+      id: "google/gemini-3.1-flash-lite-preview",
+      name: "Gemini 3.1 Flash Lite Preview",
+    },
     { id: "kwaipilot/kat-coder-pro", name: "KAT Coder Pro" },
   ],
 
@@ -241,21 +333,63 @@ export const PROVIDER_MODELS = {
     { id: "o1", name: "O1" },
     { id: "o1-mini", name: "O1 Mini" },
     // Embedding models
-    { id: "text-embedding-3-large", name: "Text Embedding 3 Large", type: "embedding" },
-    { id: "text-embedding-3-small", name: "Text Embedding 3 Small", type: "embedding" },
-    { id: "text-embedding-ada-002", name: "Text Embedding Ada 002", type: "embedding" },
+    {
+      id: "text-embedding-3-large",
+      name: "Text Embedding 3 Large",
+      type: "embedding",
+    },
+    {
+      id: "text-embedding-3-small",
+      name: "Text Embedding 3 Small",
+      type: "embedding",
+    },
+    {
+      id: "text-embedding-ada-002",
+      name: "Text Embedding Ada 002",
+      type: "embedding",
+    },
     // TTS models
     { id: "tts-1", name: "TTS-1", type: "tts" },
     { id: "tts-1-hd", name: "TTS-1 HD", type: "tts" },
     { id: "gpt-4o-mini-tts", name: "GPT-4o Mini TTS", type: "tts" },
     // STT models
-    { id: "whisper-1", name: "Whisper 1", type: "stt", params: ["language", "response_format", "temperature", "prompt"] },
-    { id: "gpt-4o-transcribe", name: "GPT-4o Transcribe", type: "stt", params: ["language", "response_format", "temperature", "prompt"] },
-    { id: "gpt-4o-mini-transcribe", name: "GPT-4o Mini Transcribe", type: "stt", params: ["language", "response_format", "temperature", "prompt"] },
+    {
+      id: "whisper-1",
+      name: "Whisper 1",
+      type: "stt",
+      params: ["language", "response_format", "temperature", "prompt"],
+    },
+    {
+      id: "gpt-4o-transcribe",
+      name: "GPT-4o Transcribe",
+      type: "stt",
+      params: ["language", "response_format", "temperature", "prompt"],
+    },
+    {
+      id: "gpt-4o-mini-transcribe",
+      name: "GPT-4o Mini Transcribe",
+      type: "stt",
+      params: ["language", "response_format", "temperature", "prompt"],
+    },
     // Image models
-    { id: "gpt-image-1", name: "GPT Image 1", type: "image", params: ["n", "size", "quality", "response_format"] },
-    { id: "dall-e-3", name: "DALL-E 3", type: "image", params: ["size", "quality", "style", "response_format"] },
-    { id: "dall-e-2", name: "DALL-E 2", type: "image", params: ["n", "size", "response_format"] },
+    {
+      id: "gpt-image-1",
+      name: "GPT Image 1",
+      type: "image",
+      params: ["n", "size", "quality", "response_format"],
+    },
+    {
+      id: "dall-e-3",
+      name: "DALL-E 3",
+      type: "image",
+      params: ["size", "quality", "style", "response_format"],
+    },
+    {
+      id: "dall-e-2",
+      name: "DALL-E 2",
+      type: "image",
+      params: ["n", "size", "response_format"],
+    },
   ],
   anthropic: [
     { id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4" },
@@ -265,7 +399,10 @@ export const PROVIDER_MODELS = {
   gemini: [
     // Gemini 3.1 series
     { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro Preview" },
-    { id: "gemini-3.1-flash-lite-preview", name: "Gemini 3.1 Flash Lite Preview" },
+    {
+      id: "gemini-3.1-flash-lite-preview",
+      name: "Gemini 3.1 Flash Lite Preview",
+    },
     // Gemini 3 series
     { id: "gemini-3-flash-preview", name: "Gemini 3 Flash Preview" },
     // Gemini 2.5 series
@@ -278,38 +415,133 @@ export const PROVIDER_MODELS = {
     { id: "gemma-4-31b-it", name: "Gemma 4 31B IT" },
 
     // Embedding models
-    { id: "gemini-embedding-2-preview", name: "Gemini Embedding 2 Preview", type: "embedding" },
-    { id: "gemini-embedding-001", name: "Gemini Embedding 001", type: "embedding" },
+    {
+      id: "gemini-embedding-2-preview",
+      name: "Gemini Embedding 2 Preview",
+      type: "embedding",
+    },
+    {
+      id: "gemini-embedding-001",
+      name: "Gemini Embedding 001",
+      type: "embedding",
+    },
     { id: "text-embedding-005", name: "Text Embedding 005", type: "embedding" },
-    { id: "text-embedding-004", name: "Text Embedding 004 (Legacy)", type: "embedding" },
+    {
+      id: "text-embedding-004",
+      name: "Text Embedding 004 (Legacy)",
+      type: "embedding",
+    },
     // Image models (Nano Banana)
-    { id: "gemini-3.1-flash-image-preview", name: "Gemini 3.1 Flash Image (Nano Banana 2)", type: "image", params: [] },
-    { id: "gemini-3-pro-image-preview", name: "Gemini 3 Pro Image (Nano Banana Pro)", type: "image", params: [] },
-    { id: "gemini-2.5-flash-image", name: "Gemini 2.5 Flash Image (Nano Banana)", type: "image", params: [] },
+    {
+      id: "gemini-3.1-flash-image-preview",
+      name: "Gemini 3.1 Flash Image (Nano Banana 2)",
+      type: "image",
+      params: [],
+    },
+    {
+      id: "gemini-3-pro-image-preview",
+      name: "Gemini 3 Pro Image (Nano Banana Pro)",
+      type: "image",
+      params: [],
+    },
+    {
+      id: "gemini-2.5-flash-image",
+      name: "Gemini 2.5 Flash Image (Nano Banana)",
+      type: "image",
+      params: [],
+    },
     // STT models (multimodal generateContent)
-    { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro (Best)", type: "stt", params: ["language", "prompt"] },
-    { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", type: "stt", params: ["language", "prompt"] },
-    { id: "gemini-2.5-flash-lite", name: "Gemini 2.5 Flash Lite (Cheapest)", type: "stt", params: ["language", "prompt"] },
-    { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", type: "stt", params: ["language", "prompt"] },
+    {
+      id: "gemini-2.5-pro",
+      name: "Gemini 2.5 Pro (Best)",
+      type: "stt",
+      params: ["language", "prompt"],
+    },
+    {
+      id: "gemini-2.5-flash",
+      name: "Gemini 2.5 Flash",
+      type: "stt",
+      params: ["language", "prompt"],
+    },
+    {
+      id: "gemini-2.5-flash-lite",
+      name: "Gemini 2.5 Flash Lite (Cheapest)",
+      type: "stt",
+      params: ["language", "prompt"],
+    },
+    {
+      id: "gemini-2.0-flash",
+      name: "Gemini 2.0 Flash",
+      type: "stt",
+      params: ["language", "prompt"],
+    },
   ],
   openrouter: [
     // Embedding models
-    { id: "openai/text-embedding-3-large", name: "OpenAI Text Embedding 3 Large", type: "embedding" },
-    { id: "openai/text-embedding-3-small", name: "OpenAI Text Embedding 3 Small", type: "embedding" },
-    { id: "openai/text-embedding-ada-002", name: "OpenAI Text Embedding Ada 002", type: "embedding" },
-    { id: "qwen/qwen3-embedding-8b", name: "Qwen3 Embedding 8B", type: "embedding" },
-    { id: "perplexity/pplx-embed-v1-4b", name: "Perplexity Embed V1 4B", type: "embedding" },
-    { id: "perplexity/pplx-embed-v1-0.6b", name: "Perplexity Embed V1 0.6B", type: "embedding" },
-    { id: "nvidia/llama-nemotron-embed-vl-1b-v2:free", name: "NVIDIA Nemotron Embed VL 1B V2 (Free)", type: "embedding" },
+    {
+      id: "openai/text-embedding-3-large",
+      name: "OpenAI Text Embedding 3 Large",
+      type: "embedding",
+    },
+    {
+      id: "openai/text-embedding-3-small",
+      name: "OpenAI Text Embedding 3 Small",
+      type: "embedding",
+    },
+    {
+      id: "openai/text-embedding-ada-002",
+      name: "OpenAI Text Embedding Ada 002",
+      type: "embedding",
+    },
+    {
+      id: "qwen/qwen3-embedding-8b",
+      name: "Qwen3 Embedding 8B",
+      type: "embedding",
+    },
+    {
+      id: "perplexity/pplx-embed-v1-4b",
+      name: "Perplexity Embed V1 4B",
+      type: "embedding",
+    },
+    {
+      id: "perplexity/pplx-embed-v1-0.6b",
+      name: "Perplexity Embed V1 0.6B",
+      type: "embedding",
+    },
+    {
+      id: "nvidia/llama-nemotron-embed-vl-1b-v2:free",
+      name: "NVIDIA Nemotron Embed VL 1B V2 (Free)",
+      type: "embedding",
+    },
     // TTS models
     { id: "openai/gpt-4o-mini-tts", name: "GPT-4o Mini TTS", type: "tts" },
-    { id: "openai/tts-1-hd",        name: "TTS-1 HD",        type: "tts" },
-    { id: "openai/tts-1",           name: "TTS-1",           type: "tts" },
+    { id: "openai/tts-1-hd", name: "TTS-1 HD", type: "tts" },
+    { id: "openai/tts-1", name: "TTS-1", type: "tts" },
     // Image models
-    { id: "openai/dall-e-3", name: "DALL-E 3 (via OpenRouter)", type: "image", params: ["size", "quality", "style", "response_format"] },
-    { id: "openai/gpt-image-1", name: "GPT Image 1 (via OpenRouter)", type: "image", params: ["n", "size", "quality", "response_format"] },
-    { id: "google/imagen-3.0-generate-002", name: "Imagen 3 (via OpenRouter)", type: "image", params: ["n", "size"] },
-    { id: "black-forest-labs/FLUX.1-schnell", name: "FLUX.1 Schnell (via OpenRouter)", type: "image", params: ["n", "size"] },
+    {
+      id: "openai/dall-e-3",
+      name: "DALL-E 3 (via OpenRouter)",
+      type: "image",
+      params: ["size", "quality", "style", "response_format"],
+    },
+    {
+      id: "openai/gpt-image-1",
+      name: "GPT Image 1 (via OpenRouter)",
+      type: "image",
+      params: ["n", "size", "quality", "response_format"],
+    },
+    {
+      id: "google/imagen-3.0-generate-002",
+      name: "Imagen 3 (via OpenRouter)",
+      type: "image",
+      params: ["n", "size"],
+    },
+    {
+      id: "black-forest-labs/FLUX.1-schnell",
+      name: "FLUX.1 Schnell (via OpenRouter)",
+      type: "image",
+      params: ["n", "size"],
+    },
   ],
   glm: [
     { id: "glm-5.1", name: "GLM 5.1" },
@@ -335,7 +567,12 @@ export const PROVIDER_MODELS = {
     { id: "MiniMax-M2.5", name: "MiniMax M2.5" },
     { id: "MiniMax-M2.1", name: "MiniMax M2.1" },
     // Image models
-    { id: "minimax-image-01", name: "MiniMax Image 01", type: "image", params: ["n", "size", "response_format"] },
+    {
+      id: "minimax-image-01",
+      name: "MiniMax Image 01",
+      type: "image",
+      params: ["n", "size", "response_format"],
+    },
   ],
   blackbox: [
     { id: "gpt-4o", name: "GPT-4o" },
@@ -396,28 +633,106 @@ export const PROVIDER_MODELS = {
   "cloudflare-ai": [
     { id: "@cf/meta/llama-3.2-1b-instruct", name: "Llama 3.2 1B Instruct" },
     { id: "@cf/meta/llama-3.2-3b-instruct", name: "Llama 3.2 3B Instruct" },
-    { id: "@cf/meta/llama-3.1-8b-instruct-fp8-fast", name: "Llama 3.1 8B Instruct FP8 Fast" },
-    { id: "@cf/meta/llama-3.1-8b-instruct-awq", name: "Llama 3.1 8B Instruct AWQ" },
-    { id: "@cf/mistralai/mistral-small-3.1-24b-instruct", name: "Mistral Small 3.1 24B Instruct" },
-    { id: "@cf/meta/llama-3.1-70b-instruct-fp8-fast", name: "Llama 3.1 70B Instruct FP8 Fast" },
-    { id: "@cf/meta/llama-3.3-70b-instruct-fp8-fast", name: "Llama 3.3 70B Instruct FP8 Fast" },
-    { id: "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b", name: "DeepSeek R1 Distill Qwen 32B" },
+    {
+      id: "@cf/meta/llama-3.1-8b-instruct-fp8-fast",
+      name: "Llama 3.1 8B Instruct FP8 Fast",
+    },
+    {
+      id: "@cf/meta/llama-3.1-8b-instruct-awq",
+      name: "Llama 3.1 8B Instruct AWQ",
+    },
+    {
+      id: "@cf/mistralai/mistral-small-3.1-24b-instruct",
+      name: "Mistral Small 3.1 24B Instruct",
+    },
+    {
+      id: "@cf/meta/llama-3.1-70b-instruct-fp8-fast",
+      name: "Llama 3.1 70B Instruct FP8 Fast",
+    },
+    {
+      id: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+      name: "Llama 3.3 70B Instruct FP8 Fast",
+    },
+    {
+      id: "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
+      name: "DeepSeek R1 Distill Qwen 32B",
+    },
     { id: "@cf/moonshotai/kimi-k2.5", name: "Kimi K2.5" },
     { id: "@cf/moonshotai/kimi-k2.6", name: "Kimi K2.6" },
     { id: "@cf/zai-org/glm-4.7-flash", name: "GLM 4.7 Flash" },
     { id: "@cf/qwen/qwq-32b", name: "QwQ 32B" },
-    { id: "@cf/qwen/qwen2.5-coder-32b-instruct", name: "Qwen 2.5 Coder 32B Instruct" },
-    { id: "@cf/black-forest-labs/flux-2-klein-9b", name: "FLUX.2 Klein 9B", type: "image", params: ["size"] },
-    { id: "@cf/black-forest-labs/flux-2-klein-4b", name: "FLUX.2 Klein 4B", type: "image", params: ["size"] },
-    { id: "@cf/black-forest-labs/flux-2-dev", name: "FLUX.2 Dev", type: "image", params: ["size"] },
-    { id: "@cf/leonardo/lucid-origin", name: "Lucid Origin", type: "image", params: ["size"] },
-    { id: "@cf/leonardo/phoenix-1.0", name: "Phoenix 1.0", type: "image", params: ["size"] },
-    { id: "@cf/black-forest-labs/flux-1-schnell", name: "FLUX.1 Schnell", type: "image", params: ["size"] },
-    { id: "@cf/bytedance/stable-diffusion-xl-lightning", name: "SDXL Lightning", type: "image", params: ["size"] },
-    { id: "@cf/lykon/dreamshaper-8-lcm", name: "DreamShaper 8 LCM", type: "image", params: ["size"] },
-    { id: "@cf/runwayml/stable-diffusion-v1-5-img2img", name: "Stable Diffusion v1.5 Img2Img", type: "image", params: ["size"], capabilities: ["edit"] },
-    { id: "@cf/runwayml/stable-diffusion-v1-5-inpainting", name: "Stable Diffusion v1.5 Inpainting", type: "image", params: ["size"], capabilities: ["edit", "mask"] },
-    { id: "@cf/stabilityai/stable-diffusion-xl-base-1.0", name: "SDXL Base 1.0", type: "image", params: ["size"] },
+    {
+      id: "@cf/qwen/qwen2.5-coder-32b-instruct",
+      name: "Qwen 2.5 Coder 32B Instruct",
+    },
+    {
+      id: "@cf/black-forest-labs/flux-2-klein-9b",
+      name: "FLUX.2 Klein 9B",
+      type: "image",
+      params: ["size"],
+    },
+    {
+      id: "@cf/black-forest-labs/flux-2-klein-4b",
+      name: "FLUX.2 Klein 4B",
+      type: "image",
+      params: ["size"],
+    },
+    {
+      id: "@cf/black-forest-labs/flux-2-dev",
+      name: "FLUX.2 Dev",
+      type: "image",
+      params: ["size"],
+    },
+    {
+      id: "@cf/leonardo/lucid-origin",
+      name: "Lucid Origin",
+      type: "image",
+      params: ["size"],
+    },
+    {
+      id: "@cf/leonardo/phoenix-1.0",
+      name: "Phoenix 1.0",
+      type: "image",
+      params: ["size"],
+    },
+    {
+      id: "@cf/black-forest-labs/flux-1-schnell",
+      name: "FLUX.1 Schnell",
+      type: "image",
+      params: ["size"],
+    },
+    {
+      id: "@cf/bytedance/stable-diffusion-xl-lightning",
+      name: "SDXL Lightning",
+      type: "image",
+      params: ["size"],
+    },
+    {
+      id: "@cf/lykon/dreamshaper-8-lcm",
+      name: "DreamShaper 8 LCM",
+      type: "image",
+      params: ["size"],
+    },
+    {
+      id: "@cf/runwayml/stable-diffusion-v1-5-img2img",
+      name: "Stable Diffusion v1.5 Img2Img",
+      type: "image",
+      params: ["size"],
+      capabilities: ["edit"],
+    },
+    {
+      id: "@cf/runwayml/stable-diffusion-v1-5-inpainting",
+      name: "Stable Diffusion v1.5 Inpainting",
+      type: "image",
+      params: ["size"],
+      capabilities: ["edit", "mask"],
+    },
+    {
+      id: "@cf/stabilityai/stable-diffusion-xl-base-1.0",
+      name: "SDXL Base 1.0",
+      type: "image",
+      params: ["size"],
+    },
   ],
   byteplus: [
     { id: "seed-2-0-pro-260328", name: "Seed 2.0 Pro" },
@@ -430,8 +745,16 @@ export const PROVIDER_MODELS = {
   ],
   deepseek: [
     { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro" },
-    { id: "deepseek-v4-pro-max", name: "DeepSeek V4 Pro Max", upstreamModelId: "deepseek-v4-pro" },
-    { id: "deepseek-v4-pro-none", name: "DeepSeek V4 Pro No Thinking", upstreamModelId: "deepseek-v4-pro" },
+    {
+      id: "deepseek-v4-pro-max",
+      name: "DeepSeek V4 Pro Max",
+      upstreamModelId: "deepseek-v4-pro",
+    },
+    {
+      id: "deepseek-v4-pro-none",
+      name: "DeepSeek V4 Pro No Thinking",
+      upstreamModelId: "deepseek-v4-pro",
+    },
     { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
     { id: "deepseek-chat", name: "DeepSeek V3.2 Chat" },
     { id: "deepseek-reasoner", name: "DeepSeek V3.2 Reasoner" },
@@ -451,20 +774,43 @@ export const PROVIDER_MODELS = {
   ],
   groq: [
     { id: "llama-3.3-70b-versatile", name: "Llama 3.3 70B" },
-    { id: "meta-llama/llama-4-maverick-17b-128e-instruct", name: "Llama 4 Maverick" },
+    {
+      id: "meta-llama/llama-4-maverick-17b-128e-instruct",
+      name: "Llama 4 Maverick",
+    },
     { id: "qwen/qwen3-32b", name: "Qwen3 32B" },
     { id: "openai/gpt-oss-120b", name: "GPT-OSS 120B" },
     // STT models
-    { id: "whisper-large-v3", name: "Whisper Large v3", type: "stt", params: ["language", "response_format", "temperature", "prompt"] },
-    { id: "whisper-large-v3-turbo", name: "Whisper Large v3 Turbo", type: "stt", params: ["language", "response_format", "temperature", "prompt"] },
-    { id: "distil-whisper-large-v3-en", name: "Distil Whisper Large v3 EN", type: "stt", params: ["language", "response_format", "temperature", "prompt"] },
+    {
+      id: "whisper-large-v3",
+      name: "Whisper Large v3",
+      type: "stt",
+      params: ["language", "response_format", "temperature", "prompt"],
+    },
+    {
+      id: "whisper-large-v3-turbo",
+      name: "Whisper Large v3 Turbo",
+      type: "stt",
+      params: ["language", "response_format", "temperature", "prompt"],
+    },
+    {
+      id: "distil-whisper-large-v3-en",
+      name: "Distil Whisper Large v3 EN",
+      type: "stt",
+      params: ["language", "response_format", "temperature", "prompt"],
+    },
   ],
   xai: [
     { id: "grok-4", name: "Grok 4" },
     { id: "grok-4-fast-reasoning", name: "Grok 4 Fast Reasoning" },
     { id: "grok-code-fast-1", name: "Grok Code Fast" },
     { id: "grok-3", name: "Grok 3" },
-    { id: "grok-2-image-1212", name: "Grok 2 Image", type: "image", params: ["n", "response_format"] },
+    {
+      id: "grok-2-image-1212",
+      name: "Grok 2 Image",
+      type: "image",
+      params: ["n", "response_format"],
+    },
   ],
   mistral: [
     { id: "mistral-large-latest", name: "Mistral Large 3" },
@@ -477,18 +823,39 @@ export const PROVIDER_MODELS = {
     { id: "sonar", name: "Sonar" },
   ],
   together: [
-    { id: "meta-llama/Llama-3.3-70B-Instruct-Turbo", name: "Llama 3.3 70B Turbo" },
+    {
+      id: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+      name: "Llama 3.3 70B Turbo",
+    },
     { id: "deepseek-ai/DeepSeek-R1", name: "DeepSeek R1" },
     { id: "Qwen/Qwen3-235B-A22B", name: "Qwen3 235B" },
-    { id: "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8", name: "Llama 4 Maverick" },
-    { id: "BAAI/bge-large-en-v1.5", name: "BGE Large EN v1.5", type: "embedding" },
-    { id: "togethercomputer/m2-bert-80M-8k-retrieval", name: "M2 BERT 80M 8K", type: "embedding" },
+    {
+      id: "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+      name: "Llama 4 Maverick",
+    },
+    {
+      id: "BAAI/bge-large-en-v1.5",
+      name: "BGE Large EN v1.5",
+      type: "embedding",
+    },
+    {
+      id: "togethercomputer/m2-bert-80M-8k-retrieval",
+      name: "M2 BERT 80M 8K",
+      type: "embedding",
+    },
   ],
   fireworks: [
     { id: "accounts/fireworks/models/deepseek-v3p1", name: "DeepSeek V3.1" },
-    { id: "accounts/fireworks/models/llama-v3p3-70b-instruct", name: "Llama 3.3 70B" },
+    {
+      id: "accounts/fireworks/models/llama-v3p3-70b-instruct",
+      name: "Llama 3.3 70B",
+    },
     { id: "accounts/fireworks/models/qwen3-235b-a22b", name: "Qwen3 235B" },
-    { id: "nomic-ai/nomic-embed-text-v1.5", name: "Nomic Embed Text v1.5", type: "embedding" },
+    {
+      id: "nomic-ai/nomic-embed-text-v1.5",
+      name: "Nomic Embed Text v1.5",
+      type: "embedding",
+    },
   ],
   cerebras: [
     { id: "gpt-oss-120b", name: "GPT OSS 120B" },
@@ -506,13 +873,26 @@ export const PROVIDER_MODELS = {
   nvidia: [
     { id: "minimaxai/minimax-m2.7", name: "Minimax M2.7" },
     { id: "z-ai/glm4.7", name: "GLM 4.7" },
-    { id: "nvidia/nv-embedqa-e5-v5", name: "NV EmbedQA E5 v5", type: "embedding" },
+    {
+      id: "nvidia/nv-embedqa-e5-v5",
+      name: "NV EmbedQA E5 v5",
+      type: "embedding",
+    },
     // STT models
-    { id: "nvidia/parakeet-ctc-1.1b-asr", name: "Parakeet CTC 1.1B", type: "stt", params: ["language"] },
+    {
+      id: "nvidia/parakeet-ctc-1.1b-asr",
+      name: "Parakeet CTC 1.1B",
+      type: "stt",
+      params: ["language"],
+    },
   ],
   nebius: [
     { id: "meta-llama/Llama-3.3-70B-Instruct", name: "Llama 3.3 70B Instruct" },
-    { id: "Qwen/Qwen3-Embedding-8B", name: "Qwen3 Embedding 8B", type: "embedding" },
+    {
+      id: "Qwen/Qwen3-Embedding-8B",
+      name: "Qwen3 Embedding 8B",
+      type: "embedding",
+    },
   ],
   "voyage-ai": [
     { id: "voyage-3-large", name: "Voyage 3 Large", type: "embedding" },
@@ -521,7 +901,11 @@ export const PROVIDER_MODELS = {
     { id: "voyage-code-3", name: "Voyage Code 3", type: "embedding" },
     { id: "voyage-finance-2", name: "Voyage Finance 2", type: "embedding" },
     { id: "voyage-law-2", name: "Voyage Law 2", type: "embedding" },
-    { id: "voyage-multilingual-2", name: "Voyage Multilingual 2", type: "embedding" },
+    {
+      id: "voyage-multilingual-2",
+      name: "Voyage Multilingual 2",
+      type: "embedding",
+    },
   ],
   siliconflow: [
     { id: "deepseek-ai/DeepSeek-V3.2", name: "DeepSeek V3.2" },
@@ -571,14 +955,23 @@ export const PROVIDER_MODELS = {
   ],
   vertex: [
     { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro Preview" },
-    { id: "gemini-3.1-flash-lite-preview", name: "Gemini 3.1 Flash Lite Preview" },
+    {
+      id: "gemini-3.1-flash-lite-preview",
+      name: "Gemini 3.1 Flash Lite Preview",
+    },
     { id: "gemini-3-flash-preview", name: "Gemini 3 Flash Preview" },
     { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
   ],
   "vertex-partner": [
     { id: "deepseek-ai/deepseek-v3.2-maas", name: "DeepSeek V3.2 (Vertex)" },
-    { id: "qwen/qwen3-next-80b-a3b-thinking-maas", name: "Qwen3 Next 80B Thinking (Vertex)" },
-    { id: "qwen/qwen3-next-80b-a3b-instruct-maas", name: "Qwen3 Next 80B Instruct (Vertex)" },
+    {
+      id: "qwen/qwen3-next-80b-a3b-thinking-maas",
+      name: "Qwen3 Next 80B Thinking (Vertex)",
+    },
+    {
+      id: "qwen/qwen3-next-80b-a3b-instruct-maas",
+      name: "Qwen3 Next 80B Instruct (Vertex)",
+    },
     { id: "zai-org/glm-5-maas", name: "GLM-5 (Vertex)" },
   ],
   "grok-web": [
@@ -610,23 +1003,63 @@ export const PROVIDER_MODELS = {
 
   // Image providers
   nanobanana: [
-    { id: "nanobanana-flash", name: "NanoBanana Flash", type: "image", params: ["n", "size"] },
-    { id: "nanobanana-pro", name: "NanoBanana Pro", type: "image", params: ["n", "size"] },
+    {
+      id: "nanobanana-flash",
+      name: "NanoBanana Flash",
+      type: "image",
+      params: ["n", "size"],
+    },
+    {
+      id: "nanobanana-pro",
+      name: "NanoBanana Pro",
+      type: "image",
+      params: ["n", "size"],
+    },
   ],
   sdwebui: [
-    { id: "stable-diffusion-v1-5", name: "Stable Diffusion v1.5", type: "image", params: ["n", "size"] },
-    { id: "sdxl-base-1.0", name: "SDXL Base 1.0", type: "image", params: ["n", "size"] },
+    {
+      id: "stable-diffusion-v1-5",
+      name: "Stable Diffusion v1.5",
+      type: "image",
+      params: ["n", "size"],
+    },
+    {
+      id: "sdxl-base-1.0",
+      name: "SDXL Base 1.0",
+      type: "image",
+      params: ["n", "size"],
+    },
   ],
   comfyui: [
     { id: "flux-dev", name: "FLUX Dev", type: "image", params: ["n", "size"] },
     { id: "sdxl", name: "SDXL", type: "image", params: ["n", "size"] },
   ],
   huggingface: [
-    { id: "black-forest-labs/FLUX.1-schnell", name: "FLUX.1 Schnell", type: "image", params: [] },
-    { id: "stabilityai/stable-diffusion-xl-base-1.0", name: "SDXL Base 1.0", type: "image", params: [] },
+    {
+      id: "black-forest-labs/FLUX.1-schnell",
+      name: "FLUX.1 Schnell",
+      type: "image",
+      params: [],
+    },
+    {
+      id: "stabilityai/stable-diffusion-xl-base-1.0",
+      name: "SDXL Base 1.0",
+      type: "image",
+      params: [],
+    },
     // STT models
-    { id: "openai/whisper-large-v3", name: "Whisper Large v3 (HF)", type: "stt", params: ["language"] },
-    { id: "openai/whisper-small", name: "Whisper Small (HF)", type: "stt", params: ["language"] },
+    {
+      id: "openai/whisper-large-v3",
+      name: "Whisper Large v3 (HF)",
+      type: "stt",
+      params: ["language"],
+    },
+    {
+      id: "openai/whisper-small",
+      name: "Whisper Small (HF)",
+      type: "stt",
+      params: ["language"],
+    },
   ],
 
   // === Free-tier providers (synced from OmniRoute) ===
@@ -641,7 +1074,10 @@ export const PROVIDER_MODELS = {
     { id: "gpt-4o-mini", name: "GPT-4o Mini" },
     { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet" },
     { id: "gemini-2.0-flash-exp", name: "Gemini 2.0 Flash" },
-    { id: "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo", name: "Llama 3.1 70B" },
+    {
+      id: "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
+      name: "Llama 3.1 70B",
+    },
   ],
   novita: [
     { id: "deepseek/deepseek-r1", name: "DeepSeek R1" },
@@ -649,9 +1085,7 @@ export const PROVIDER_MODELS = {
     { id: "meta-llama/llama-3.3-70b-instruct", name: "Llama 3.3 70B" },
     { id: "qwen/qwen-2.5-72b-instruct", name: "Qwen 2.5 72B" },
   ],
-  modal: [
-    { id: "auto", name: "Auto (User-hosted)" },
-  ],
+  modal: [{ id: "auto", name: "Auto (User-hosted)" }],
   reka: [
     { id: "reka-flash-3", name: "Reka Flash 3" },
     { id: "reka-edge-2603", name: "Reka Edge 2603" },
@@ -695,7 +1129,10 @@ export const PROVIDER_MODELS = {
   ],
   kluster: [
     { id: "deepseek-ai/DeepSeek-R1", name: "DeepSeek R1" },
-    { id: "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8", name: "Llama 4 Maverick" },
+    {
+      id: "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+      name: "Llama 4 Maverick",
+    },
     { id: "meta-llama/Llama-4-Scout-17B-16E-Instruct", name: "Llama 4 Scout" },
     { id: "Qwen/Qwen3-235B-A22B-Instruct", name: "Qwen3 235B" },
   ],
@@ -706,7 +1143,10 @@ export const PROVIDER_MODELS = {
   "inference-net": [
     { id: "meta-llama/llama-3.3-70b-instruct/fp-16", name: "Llama 3.3 70B" },
     { id: "deepseek/deepseek-v3-0324", name: "DeepSeek V3" },
-    { id: "mistralai/mistral-nemo-12b-instruct/fp-16", name: "Mistral Nemo 12B" },
+    {
+      id: "mistralai/mistral-nemo-12b-instruct/fp-16",
+      name: "Mistral Nemo 12B",
+    },
   ],
   predibase: [
     { id: "llama-3-2-3b-instruct", name: "Llama 3.2 3B" },
@@ -761,15 +1201,16 @@ export const PROVIDER_MODELS = {
     { id: "deepseek-ai/DeepSeek-R1", name: "DeepSeek R1" },
     { id: "meta-llama/Llama-3.3-70B-Instruct", name: "Llama 3.3 70B" },
   ],
-  publicai: [
-    { id: "auto", name: "Auto (Community)" },
-  ],
+  publicai: [{ id: "auto", name: "Auto (Community)" }],
   "nous-research": [
     { id: "Hermes-4-405B", name: "Hermes 4 405B" },
     { id: "Hermes-4-70B", name: "Hermes 4 70B" },
   ],
   glhf: [
-    { id: "hf:meta-llama/Meta-Llama-3.1-405B-Instruct", name: "Llama 3.1 405B" },
+    {
+      id: "hf:meta-llama/Meta-Llama-3.1-405B-Instruct",
+      name: "Llama 3.1 405B",
+    },
     { id: "hf:meta-llama/Meta-Llama-3.1-70B-Instruct", name: "Llama 3.1 70B" },
     { id: "hf:Qwen/Qwen2.5-72B-Instruct", name: "Qwen 2.5 72B" },
   ],
@@ -777,43 +1218,155 @@ export const PROVIDER_MODELS = {
   deepgram: [
     { id: "nova-3", name: "Nova 3", type: "stt", params: ["language"] },
     { id: "nova-2", name: "Nova 2", type: "stt", params: ["language"] },
-    { id: "whisper-large", name: "Whisper Large", type: "stt", params: ["language"] },
+    {
+      id: "whisper-large",
+      name: "Whisper Large",
+      type: "stt",
+      params: ["language"],
+    },
   ],
   assemblyai: [
-    { id: "universal-3-pro", name: "Universal 3 Pro", type: "stt", params: ["language"] },
-    { id: "universal-2", name: "Universal 2", type: "stt", params: ["language"] },
+    {
+      id: "universal-3-pro",
+      name: "Universal 3 Pro",
+      type: "stt",
+      params: ["language"],
+    },
+    {
+      id: "universal-2",
+      name: "Universal 2",
+      type: "stt",
+      params: ["language"],
+    },
   ],
   "fal-ai": [
-    { id: "fal-ai/flux/schnell", name: "FLUX Schnell", type: "image", params: ["n", "size"] },
-    { id: "fal-ai/flux/dev", name: "FLUX Dev", type: "image", params: ["n", "size"] },
-    { id: "fal-ai/flux-pro/v1.1", name: "FLUX Pro v1.1", type: "image", params: ["n", "size"] },
-    { id: "fal-ai/flux-pro/v1.1-ultra", name: "FLUX Pro v1.1 Ultra", type: "image", params: ["n", "size"] },
-    { id: "fal-ai/recraft-v3", name: "Recraft V3", type: "image", params: ["n", "size", "style"] },
-    { id: "fal-ai/ideogram/v2", name: "Ideogram V2", type: "image", params: ["n", "size", "style"] },
-    { id: "fal-ai/stable-diffusion-v35-large", name: "SD 3.5 Large", type: "image", params: ["n", "size"] },
+    {
+      id: "fal-ai/flux/schnell",
+      name: "FLUX Schnell",
+      type: "image",
+      params: ["n", "size"],
+    },
+    {
+      id: "fal-ai/flux/dev",
+      name: "FLUX Dev",
+      type: "image",
+      params: ["n", "size"],
+    },
+    {
+      id: "fal-ai/flux-pro/v1.1",
+      name: "FLUX Pro v1.1",
+      type: "image",
+      params: ["n", "size"],
+    },
+    {
+      id: "fal-ai/flux-pro/v1.1-ultra",
+      name: "FLUX Pro v1.1 Ultra",
+      type: "image",
+      params: ["n", "size"],
+    },
+    {
+      id: "fal-ai/recraft-v3",
+      name: "Recraft V3",
+      type: "image",
+      params: ["n", "size", "style"],
+    },
+    {
+      id: "fal-ai/ideogram/v2",
+      name: "Ideogram V2",
+      type: "image",
+      params: ["n", "size", "style"],
+    },
+    {
+      id: "fal-ai/stable-diffusion-v35-large",
+      name: "SD 3.5 Large",
+      type: "image",
+      params: ["n", "size"],
+    },
   ],
   "stability-ai": [
-    { id: "stable-image-ultra", name: "Stable Image Ultra", type: "image", params: ["size"] },
-    { id: "stable-image-core", name: "Stable Image Core", type: "image", params: ["size", "style"] },
-    { id: "sd3.5-large", name: "Stable Diffusion 3.5 Large", type: "image", params: ["size"] },
-    { id: "sd3.5-large-turbo", name: "Stable Diffusion 3.5 Large Turbo", type: "image", params: ["size"] },
-    { id: "sd3.5-medium", name: "Stable Diffusion 3.5 Medium", type: "image", params: ["size"] },
+    {
+      id: "stable-image-ultra",
+      name: "Stable Image Ultra",
+      type: "image",
+      params: ["size"],
+    },
+    {
+      id: "stable-image-core",
+      name: "Stable Image Core",
+      type: "image",
+      params: ["size", "style"],
+    },
+    {
+      id: "sd3.5-large",
+      name: "Stable Diffusion 3.5 Large",
+      type: "image",
+      params: ["size"],
+    },
+    {
+      id: "sd3.5-large-turbo",
+      name: "Stable Diffusion 3.5 Large Turbo",
+      type: "image",
+      params: ["size"],
+    },
+    {
+      id: "sd3.5-medium",
+      name: "Stable Diffusion 3.5 Medium",
+      type: "image",
+      params: ["size"],
+    },
   ],
   "black-forest-labs": [
-    { id: "flux-pro-1.1", name: "FLUX Pro 1.1", type: "image", params: ["n", "size"] },
-    { id: "flux-pro-1.1-ultra", name: "FLUX Pro 1.1 Ultra", type: "image", params: ["size"] },
+    {
+      id: "flux-pro-1.1",
+      name: "FLUX Pro 1.1",
+      type: "image",
+      params: ["n", "size"],
+    },
+    {
+      id: "flux-pro-1.1-ultra",
+      name: "FLUX Pro 1.1 Ultra",
+      type: "image",
+      params: ["size"],
+    },
     { id: "flux-pro", name: "FLUX Pro", type: "image", params: ["n", "size"] },
     { id: "flux-dev", name: "FLUX Dev", type: "image", params: ["n", "size"] },
-    { id: "flux-kontext-pro", name: "FLUX Kontext Pro (Edit)", type: "image", params: ["size"], capabilities: ["edit"] },
-    { id: "flux-kontext-max", name: "FLUX Kontext Max (Edit)", type: "image", params: ["size"], capabilities: ["edit"] },
+    {
+      id: "flux-kontext-pro",
+      name: "FLUX Kontext Pro (Edit)",
+      type: "image",
+      params: ["size"],
+      capabilities: ["edit"],
+    },
+    {
+      id: "flux-kontext-max",
+      name: "FLUX Kontext Max (Edit)",
+      type: "image",
+      params: ["size"],
+      capabilities: ["edit"],
+    },
   ],
   recraft: [
-    { id: "recraftv3", name: "Recraft V3", type: "image", params: ["n", "size", "style"] },
-    { id: "recraftv2", name: "Recraft V2", type: "image", params: ["n", "size", "style"] },
+    {
+      id: "recraftv3",
+      name: "Recraft V3",
+      type: "image",
+      params: ["n", "size", "style"],
+    },
+    {
+      id: "recraftv2",
+      name: "Recraft V2",
+      type: "image",
+      params: ["n", "size", "style"],
+    },
   ],
   runwayml: [
     { id: "gen4_image", name: "Gen-4 Image", type: "image", params: ["size"] },
-    { id: "gen4_image_turbo", name: "Gen-4 Image Turbo", type: "image", params: ["size"] },
+    {
+      id: "gen4_image_turbo",
+      name: "Gen-4 Image Turbo",
+      type: "image",
+      params: ["size"],
+    },
     { id: "gen4_turbo", name: "Gen-4 Turbo", type: "video", params: [] },
     { id: "gen3a_turbo", name: "Gen-3 Alpha Turbo", type: "video", params: [] },
   ],
@@ -829,32 +1382,40 @@ export function getDefaultModel(aliasOrId) {
   return models?.[0]?.id || null;
 }
 
-export function isValidModel(aliasOrId, modelId, passthroughProviders = new Set()) {
+export function isValidModel(
+  aliasOrId,
+  modelId,
+  passthroughProviders = new Set(),
+) {
   if (passthroughProviders.has(aliasOrId)) return true;
   const models = PROVIDER_MODELS[aliasOrId];
   if (!models) return false;
-  return models.some(m => m.id === modelId);
+  return models.some((m) => m.id === modelId);
 }
 
 export function findModelName(aliasOrId, modelId) {
   const models = PROVIDER_MODELS[aliasOrId];
   if (!models) return modelId;
-  const found = models.find(m => m.id === modelId);
+  const found = models.find((m) => m.id === modelId);
   return found?.name || modelId;
 }
 
 export function getModelTargetFormat(aliasOrId, modelId) {
   const models = PROVIDER_MODELS[aliasOrId];
   if (!models) return null;
-  const found = models.find(m => m.id === modelId);
+  const found = models.find((m) => m.id === modelId);
   return found?.targetFormat || null;
 }
 
 export function getModelUpstreamId(aliasOrId, modelId) {
   const models = PROVIDER_MODELS[aliasOrId];
-  const found = models?.find(m => m.id === modelId);
+  const found = models?.find((m) => m.id === modelId);
   if (found?.upstreamModelId) return found.upstreamModelId;
-  if (aliasOrId === "cx" && typeof modelId === "string" && modelId.endsWith(CODEX_REVIEW_SUFFIX)) {
+  if (
+    aliasOrId === "cx" &&
+    typeof modelId === "string" &&
+    modelId.endsWith(CODEX_REVIEW_SUFFIX)
+  ) {
     return modelId.slice(0, -CODEX_REVIEW_SUFFIX.length);
   }
   return modelId;
@@ -862,7 +1423,7 @@ export function getModelUpstreamId(aliasOrId, modelId) {
 
 export function getModelQuotaFamily(aliasOrId, modelId) {
   const models = PROVIDER_MODELS[aliasOrId];
-  const found = models?.find(m => m.id === modelId);
+  const found = models?.find((m) => m.id === modelId);
   return found?.quotaFamily || "normal";
 }
 
@@ -887,7 +1448,7 @@ const OAUTH_ALIASES = {
 
 // Derived from PROVIDERS — no need to maintain manually
 export const PROVIDER_ID_TO_ALIAS = Object.fromEntries(
-  Object.keys(PROVIDERS).map(id => [id, OAUTH_ALIASES[id] || id])
+  Object.keys(PROVIDERS).map((id) => [id, OAUTH_ALIASES[id] || id]),
 );
 
 export function getModelsByProviderId(providerId) {
@@ -898,6 +1459,6 @@ export function getModelsByProviderId(providerId) {
 // Get strip list for a model entry (explicit opt-in only)
 // Returns array of content types to strip, e.g. ["image", "audio"]
 export function getModelStrip(alias, modelId) {
-  const entry = PROVIDER_MODELS[alias]?.find(m => m.id === modelId);
+  const entry = PROVIDER_MODELS[alias]?.find((m) => m.id === modelId);
   return entry?.strip || [];
 }

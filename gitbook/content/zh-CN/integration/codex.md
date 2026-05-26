@@ -41,9 +41,9 @@ echo $OPENAI_API_KEY
 
 9Router 提供以下 Codex 模型:
 
-| 模型 ID | 描述 |
-|----------|-------------|
-| `cx/gpt-5.2-codex` | GPT-5.2 Codex - 最新版本 |
+| 模型 ID                | 描述                           |
+| ---------------------- | ------------------------------ |
+| `cx/gpt-5.2-codex`     | GPT-5.2 Codex - 最新版本       |
 | `cx/gpt-5.1-codex-max` | GPT-5.1 Codex Max - 扩展上下文 |
 
 ## 使用示例

@@ -41,9 +41,17 @@ export default function ModelAvailabilityBadge() {
   }, []);
 
   useEffect(() => {
-    fetchStatus();
-    const interval = setInterval(fetchStatus, 30000);
-    return () => clearInterval(interval);
+    const timer = setTimeout(() => {
+      void fetchStatus();
+    }, 0);
+    const interval = setInterval(() => {
+      void fetchStatus();
+    }, 30000);
+
+    return () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+    };
   }, [fetchStatus]);
 
   // Close popover on outside click

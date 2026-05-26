@@ -38,12 +38,16 @@ function injectMessagesSystem(body, prompt) {
     return;
   }
 
-  const arr = Array.isArray(body.messages) ? body.messages
-    : Array.isArray(body.input) ? body.input
-    : null;
+  const arr = Array.isArray(body.messages)
+    ? body.messages
+    : Array.isArray(body.input)
+      ? body.input
+      : null;
   if (!arr) return;
 
-  const idx = arr.findIndex(m => m && (m.role === "system" || m.role === "developer"));
+  const idx = arr.findIndex(
+    (m) => m && (m.role === "system" || m.role === "developer"),
+  );
   if (idx >= 0) {
     appendToOpenAIMessage(arr[idx], prompt);
   } else {
@@ -73,7 +77,10 @@ function injectClaudeSystem(body, prompt) {
     const block = { type: "text", text: prompt };
     let lastCacheIdx = -1;
     for (let i = body.system.length - 1; i >= 0; i--) {
-      if (body.system[i]?.cache_control) { lastCacheIdx = i; break; }
+      if (body.system[i]?.cache_control) {
+        lastCacheIdx = i;
+        break;
+      }
     }
     if (lastCacheIdx >= 0) {
       body.system.splice(lastCacheIdx, 0, block);
@@ -88,8 +95,12 @@ function injectClaudeSystem(body, prompt) {
 // Gemini shape: body.system_instruction | body.systemInstruction | body.request.systemInstruction
 // Each shape: { parts: [{ text }] }
 function injectGeminiSystem(body, prompt) {
-  const target = body.request && typeof body.request === "object" ? body.request : body;
-  const useSnake = Object.prototype.hasOwnProperty.call(target, "system_instruction");
+  const target =
+    body.request && typeof body.request === "object" ? body.request : body;
+  const useSnake = Object.prototype.hasOwnProperty.call(
+    target,
+    "system_instruction",
+  );
   const key = useSnake ? "system_instruction" : "systemInstruction";
   const sys = target[key];
   if (sys && Array.isArray(sys.parts)) {

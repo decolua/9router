@@ -138,7 +138,10 @@ export class CursorService {
           payload += "=";
         }
         const decoded = JSON.parse(
-          Buffer.from(payload.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString()
+          Buffer.from(
+            payload.replace(/-/g, "+").replace(/_/g, "/"),
+            "base64",
+          ).toString(),
         );
         return {
           email: decoded.email || decoded.sub,

@@ -20,7 +20,10 @@ const APP_NAME = "9router";
 function getDataDir() {
   if (process.env.DATA_DIR) return process.env.DATA_DIR;
   if (process.platform === "win32") {
-    return path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), APP_NAME);
+    return path.join(
+      process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"),
+      APP_NAME,
+    );
   }
   return path.join(os.homedir(), `.${APP_NAME}`);
 }
@@ -39,7 +42,11 @@ function loadRawMachineId() {
     const raw = fs.readFileSync(MACHINE_ID_FILE, "utf8").trim();
     if (raw) return raw;
   } catch {}
-  try { return machineIdSync(); } catch { return ""; }
+  try {
+    return machineIdSync();
+  } catch {
+    return "";
+  }
 }
 
 // Random secret shared with server via file → token unpredictable from machineId alone.
@@ -61,7 +68,13 @@ function getCliToken() {
   if (cachedCliToken !== null) return cachedCliToken;
   const raw = loadRawMachineId();
   const secret = loadCliSecret();
-  cachedCliToken = raw ? crypto.createHash("sha256").update(raw + CLI_TOKEN_SALT + secret).digest("hex").substring(0, 16) : "";
+  cachedCliToken = raw
+    ? crypto
+        .createHash("sha256")
+        .update(raw + CLI_TOKEN_SALT + secret)
+        .digest("hex")
+        .substring(0, 16)
+    : "";
   return cachedCliToken;
 }
 
@@ -86,7 +99,7 @@ function configure(options = {}) {
 function makeRequest(method, path, body = null) {
   return new Promise((resolve) => {
     const httpModule = config.protocol === "https:" ? https : http;
-    
+
     const options = {
       hostname: config.host,
       port: config.port,
@@ -114,7 +127,7 @@ function makeRequest(method, path, body = null) {
       res.on("end", () => {
         try {
           const parsed = data ? JSON.parse(data) : {};
-          
+
           // Check if response indicates error
           if (res.statusCode >= 400 || parsed.error) {
             resolve({
@@ -224,10 +237,14 @@ async function getProviderModels(id) {
  */
 async function getOAuthAuthUrl(provider) {
   // Codex requires fixed port 1455 and path /auth/callback
-  const redirectUri = provider === "codex" 
-    ? "http://localhost:1455/auth/callback"
-    : "http://localhost:20128/callback";
-  return makeRequest("GET", `/api/oauth/${provider}/authorize?redirect_uri=${encodeURIComponent(redirectUri)}`);
+  const redirectUri =
+    provider === "codex"
+      ? "http://localhost:1455/auth/callback"
+      : "http://localhost:20128/callback";
+  return makeRequest(
+    "GET",
+    `/api/oauth/${provider}/authorize?redirect_uri=${encodeURIComponent(redirectUri)}`,
+  );
 }
 
 /**
@@ -488,38 +505,38 @@ async function disableTunnel() {
 
 module.exports = {
   configure,
-  
+
   // Providers
   getProviders,
   getProviderById,
   testProvider,
   deleteProvider,
   getProviderModels,
-  
+
   // Connection aliases
   testConnection: testProvider,
   deleteConnection: deleteProvider,
   updateConnection,
-  
+
   // OAuth
   getOAuthAuthUrl,
   exchangeOAuthCode,
   getOAuthDeviceCode,
   pollOAuthToken,
   createApiKeyProvider,
-  
+
   // API Keys
   getApiKeys,
   createApiKey,
   deleteApiKey,
-  
+
   // Combos
   getCombos,
   getComboById,
   createCombo,
   updateCombo,
   deleteCombo,
-  
+
   // CLI Tools
   getCliToolSettings,
   applyCliToolSettings,
@@ -528,12 +545,12 @@ module.exports = {
   // Settings
   getSettings,
   updateSettings,
-  
+
   // Tunnel
   getTunnelStatus,
   enableTunnel,
   disableTunnel,
-  
+
   // Models
   getModels,
   getAvailableModels,

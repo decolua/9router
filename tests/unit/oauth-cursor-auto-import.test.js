@@ -53,14 +53,21 @@ describe("GET /api/oauth/cursor/auto-import", () => {
     vi.clearAllMocks();
     mockDbInstance.__throwOnConstruct = false;
     // Force darwin so macOS-specific logic is exercised
-    Object.defineProperty(process, "platform", { value: "darwin", writable: true });
+    Object.defineProperty(process, "platform", {
+      value: "darwin",
+      writable: true,
+    });
     // Re-import to pick up fresh mocks each run
-    const mod = await import("../../src/app/api/oauth/cursor/auto-import/route.js");
+    const mod =
+      await import("../../src/app/api/oauth/cursor/auto-import/route.js");
     GET = mod.GET;
   });
 
   afterEach(() => {
-    Object.defineProperty(process, "platform", { value: originalPlatform, writable: true });
+    Object.defineProperty(process, "platform", {
+      value: originalPlatform,
+      writable: true,
+    });
   });
 
   // ── macOS path probing ────────────────────────────────────────────────
@@ -71,7 +78,9 @@ describe("GET /api/oauth/cursor/auto-import", () => {
     const response = await GET();
 
     expect(response.body.found).toBe(false);
-    expect(response.body.error).toContain("Cursor database not found in known macOS locations");
+    expect(response.body.error).toContain(
+      "Cursor database not found in known macOS locations",
+    );
   });
 
   it("returns descriptive error if macOS db file exists but cannot be opened", async () => {
@@ -131,7 +140,10 @@ describe("GET /api/oauth/cursor/auto-import", () => {
       // Fuzzy LIKE query
       return {
         all: vi.fn().mockReturnValue([
-          { key: "cursorAuth/someOtherAccessTokenKey", value: "fallback-token" },
+          {
+            key: "cursorAuth/someOtherAccessTokenKey",
+            value: "fallback-token",
+          },
           { key: "storage.someMachineId", value: "fallback-machine" },
         ]),
       };
@@ -159,7 +171,10 @@ describe("GET /api/oauth/cursor/auto-import", () => {
   // ── Backwards-compatible: linux/win32 keep original single-path logic ─
 
   it("linux uses single hardcoded path and original error message", async () => {
-    Object.defineProperty(process, "platform", { value: "linux", writable: true });
+    Object.defineProperty(process, "platform", {
+      value: "linux",
+      writable: true,
+    });
     vi.mocked(fsPromises.access).mockRejectedValue(new Error("ENOENT"));
     mockDbInstance.__throwOnConstruct = true;
 
@@ -167,14 +182,17 @@ describe("GET /api/oauth/cursor/auto-import", () => {
 
     expect(response.body.found).toBe(false);
     expect(response.body.error).toBe(
-      "Cursor database not found. Make sure Cursor IDE is installed and you are logged in."
+      "Cursor database not found. Make sure Cursor IDE is installed and you are logged in.",
     );
     // fs/promises.access should NOT have been called (linux skips probing)
     expect(fsPromises.access).not.toHaveBeenCalled();
   });
 
   it("unsupported platform returns 400", async () => {
-    Object.defineProperty(process, "platform", { value: "freebsd", writable: true });
+    Object.defineProperty(process, "platform", {
+      value: "freebsd",
+      writable: true,
+    });
 
     const response = await GET();
 

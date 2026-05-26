@@ -44,6 +44,7 @@ npm install -g 9router
 ```
 
 **Beneficios:**
+
 - ✅ Ejecuta desde cualquier directorio
 - ✅ Comando simple: `9router`
 - ✅ Auto-actualizaciones con `npm update -g 9router`
@@ -65,6 +66,7 @@ npx 9router
 ```
 
 **Beneficios:**
+
 - ✅ Aislado por proyecto
 - ✅ Control de versiones por proyecto
 - ✅ Sin contaminación del namespace global
@@ -82,6 +84,7 @@ npm start
 ```
 
 **Beneficios:**
+
 - ✅ Últimas características de desarrollo
 - ✅ Contribuir al desarrollo
 - ✅ Modificaciones personalizadas
@@ -97,6 +100,7 @@ npm start
 ```
 
 **Qué sucede:**
+
 1. El servidor inicia en `http://localhost:20128`
 2. El dashboard se abre automáticamente en el navegador
 3. Se crea el directorio de datos en `~/.9router`
@@ -105,9 +109,11 @@ npm start
 ### Login del dashboard
 
 **Credenciales por defecto:**
+
 - Contraseña: `123456`
 
 **⚠️ Cambia la contraseña inmediatamente:**
+
 1. Inicia sesión en el dashboard
 2. Settings → Change Password
 3. Usa una contraseña fuerte
@@ -121,6 +127,7 @@ Dashboard → Settings → API Keys
 ```
 
 **Ejemplo de formato de API key:**
+
 ```
 9r_1234567890abcdef1234567890abcdef
 ```
@@ -136,6 +143,7 @@ curl http://localhost:20128/health
 ```
 
 **Respuesta esperada:**
+
 ```json
 {
   "status": "ok",
@@ -151,6 +159,7 @@ curl http://localhost:20128/v1/models \
 ```
 
 **Respuesta esperada:**
+
 ```json
 {
   "object": "list",
@@ -208,6 +217,7 @@ export ENABLE_REQUEST_LOGS="false"
 **Ubicación por defecto:** `~/.9router`
 
 **Contenido:**
+
 ```
 ~/.9router/
   ├── db.json           # Database (providers, combos, usage)
@@ -246,6 +256,7 @@ export PORT="3000"
 ### Puerto ya en uso
 
 **Error:**
+
 ```
 Error: listen EADDRINUSE: address already in use :::20128
 ```
@@ -269,6 +280,7 @@ kill -9 <PID>
 ### Permiso denegado
 
 **Error:**
+
 ```
 Error: EACCES: permission denied, mkdir '/usr/local/lib/node_modules/9router'
 ```
@@ -289,6 +301,7 @@ npm install -g 9router
 ### Versión de Node.js muy antigua
 
 **Error:**
+
 ```
 Error: The engine "node" is incompatible with this module
 ```
@@ -427,7 +440,7 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
         proxy_set_header Host $host;
-        
+
         # SSE support for streaming
         proxy_buffering off;
         proxy_read_timeout 86400;

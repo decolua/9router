@@ -109,6 +109,7 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 ```
 
 默认 URL：
+
 - 仪表板：`http://localhost:20128/dashboard`
 - OpenAI 兼容 API：`http://localhost:20128/v1`
 
@@ -123,6 +124,7 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 [![9Router + Claude Code Setup](https://img.youtube.com/vi/raEyZPg5xE0/maxresdefault.jpg)](https://www.youtube.com/watch?v=raEyZPg5xE0)
 
 **🎬 观看完整的分步教程：**
+
 - ✅ 9Router 安装与设置
 - ✅ 免费 Claude Sonnet 4.5 配置
 - ✅ Claude Code 集成
@@ -349,18 +351,18 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 
 ## 💡 核心特性
 
-| 特性 | 功能 | 重要性 |
-|---------|--------------|----------------|
-|  **智能 3 层回退** | 自动路由：订阅 → 廉价 → 免费 | 永不停止编程，零停机时间 |
-| 📊 **实时配额追踪** | 实时 Token 计数 + 重置倒计时 | 最大化订阅价值 |
-| 🔄 **格式转换** | OpenAI ↔ Claude ↔ Gemini 无缝转换 | 适用于任何 CLI 工具 |
-| 👥 **多账户支持** | 每个提供商多个账户 | 负载均衡 + 冗余 |
-| 🔄 **自动 Token 刷新** | OAuth token 自动刷新 |需手动重新登录 |
-| 🎨 **自定义组合** | 创建无限模型组合 | 根据需求定制回退策略 |
-| 📝 **请求日志** | 调试模式包含完整请求/响应日志 | 轻松排查问题 |
-| 💾 **云端同步** | 跨设备同步配置 | 到处都是相同的设置 |
-| 📊 **使用分析** | 追踪 Token、成本、趋势 | 优化支出 |
-| 🌐 **随处部署** | 本地主机、VPS、Docker、Cloudflare Workers | 灵活的部署选项 |
+| 特性                   | 功能                                      | 重要性                   |
+| ---------------------- | ----------------------------------------- | ------------------------ |
+| **智能 3 层回退**      | 自动路由：订阅 → 廉价 → 免费              | 永不停止编程，零停机时间 |
+| 📊 **实时配额追踪**    | 实时 Token 计数 + 重置倒计时              | 最大化订阅价值           |
+| 🔄 **格式转换**        | OpenAI ↔ Claude ↔ Gemini 无缝转换         | 适用于任何 CLI 工具      |
+| 👥 **多账户支持**      | 每个提供商多个账户                        | 负载均衡 + 冗余          |
+| 🔄 **自动 Token 刷新** | OAuth token 自动刷新                      | 需手动重新登录           |
+| 🎨 **自定义组合**      | 创建无限模型组合                          | 根据需求定制回退策略     |
+| 📝 **请求日志**        | 调试模式包含完整请求/响应日志             | 轻松排查问题             |
+| 💾 **云端同步**        | 跨设备同步配置                            | 到处都是相同的设置       |
+| 📊 **使用分析**        | 追踪 Token、成本、趋势                    | 优化支出                 |
+| 🌐 **随处部署**        | 本地主机、VPS、Docker、Cloudflare Workers | 灵活的部署选项           |
 
 <details>
 <summary><b>📖 特性详情</b></summary>
@@ -388,6 +390,7 @@ Combo: "my-coding-stack"
 ### 🔄 格式转换
 
 格式间无缝转换：
+
 - **OpenAI** ↔ **Claude** ↔ **Gemini** ↔ **OpenAI Responses**
 - 您的 CLI 工具发送 OpenAI 格式 → 9Router 转换 → 提供商接收原生格式
 - 适用于任何支持自定义 OpenAI 端点的工具
@@ -441,13 +444,13 @@ Combo: "my-coding-stack"
 - 优化您的 AI 支出
 
 > **💡 重要 - 理解仪表板成本：**
-> 
+>
 > 使用分析中显示的“成本”**仅用于追踪和比较目的**。
 > 9Router 本身**从不向您收费**。您只需直接向提供商付款（如果使用付费服务）。
-> 
+>
 > **示例：** 如果您的仪表板在使用 iFlow 模型时显示“$290 总成本”，这代表
 > 您直接使用付费 API 时需要支付的金额。您的实际成本 = **$0**（iFlow 是免费无限制的）。
-> 
+>
 > 将其视为“节省追踪器”，显示您通过使用免费模型或
 > 通过 9Router 路由节省了多少！
 
@@ -464,18 +467,18 @@ Combo: "my-coding-stack"
 
 ## 💰 定价一览
 
-| 层级 | 提供商 | 成本 | 配额重置 | 最适合 |
-|------|----------|------|-------------|----------|
-| **💳 订阅** | Claude Code (Pro) | $20/月 | 5h + 每周 | 已订阅用户 |
-| | Codex (Plus/Pro) | $20-200/月 | 5h + 每周 OpenAI 用户 |
-| | Gemini CLI | **免费** | 180K/月 + 1K/天 | 所有人！ |
-| | GitHub Copilot | $10-19/月 | 每月 | GitHub 用户 |
-| **💰 廉价** | GLM-4.7 | $0.6/1M | 每日 10AM | 预算备份 |
-| | MiniMax M2.1 | $0.2/1M | 5 小时滚动 | 最便宜选项 |
-| | Kimi K2 | $9/月固定 | 10M tokens/月 | 可预测成本 |
-| **🆓 免费** | iFlow | $0 | 无限制 | 8 个模型免费 |
-| | Qwen | $0 | 无限制 | 3 个模型免费 |
-| | Kiro | $0 | 无限制 | Claude 免费 |
+| 层级        | 提供商            | 成本       | 配额重置              | 最适合       |
+| ----------- | ----------------- | ---------- | --------------------- | ------------ |
+| **💳 订阅** | Claude Code (Pro) | $20/月     | 5h + 每周             | 已订阅用户   |
+|             | Codex (Plus/Pro)  | $20-200/月 | 5h + 每周 OpenAI 用户 |
+|             | Gemini CLI        | **免费**   | 180K/月 + 1K/天       | 所有人！     |
+|             | GitHub Copilot    | $10-19/月  | 每月                  | GitHub 用户  |
+| **💰 廉价** | GLM-4.7           | $0.6/1M    | 每日 10AM             | 预算备份     |
+|             | MiniMax M2.1      | $0.2/1M    | 5 小时滚动            | 最便宜选项   |
+|             | Kimi K2           | $9/月固定  | 10M tokens/月         | 可预测成本   |
+| **🆓 免费** | iFlow             | $0         | 无限制                | 8 个模型免费 |
+|             | Qwen              | $0         | 无限制                | 3 个模型免费 |
+|             | Kiro              | $0         | 无限制                | Claude 免费  |
 
 **💡 专业提示：** 从 Gemini CLI（180K 免费/月）+ iFlow（无限制免费）组合开始 = $0 成本！
 
@@ -495,7 +498,7 @@ Combo: "my-coding-stack"
 
 仪表板显示**估算成本**，就像您直接使用付费 API 一样。这**不是计费** - 它是一个比较工具，用于显示您的节省。
 
-**示例场景：```
+\*\*示例场景：```
 仪表板显示：
 • 总请求数：1,662
 • 总 Token 数：47M
@@ -505,6 +508,7 @@ Combo: "my-coding-stack"
 • 提供商：iFlow（免费无限制）
 • 实际付款：$0.00
 • $290 的含义：您通过使用免费模型节省的金额！
+
 ```
 
 **付款规则：**
@@ -523,13 +527,16 @@ Combo: "my-coding-stack"
 
 **解决方案：**
 ```
+
 Combo: "maximize-claude"
-  1. cc/claude-opus-4-6        (use subscription fully)
-  2. glm/glm-4.7               (cheap backup when quota out)
-  3 if/kimi-k2-thinking       (free emergency fallback)
+
+1. cc/claude-opus-4-6 (use subscription fully)
+2. glm/glm-4.7 (cheap backup when quota out)
+   3 if/kimi-k2-thinking (free emergency fallback)
 
 Monthly cost: $20 (subscription) + ~$5 (backup) = $25 total
 vs. $20 + hitting limits = frustration
+
 ```
 
 ### 案例 2：“我想要零成本”
@@ -538,13 +545,16 @@ vs. $20 + hitting limits = frustration
 
 **解决方案：**
 ```
+
 Combo: "free-forever"
-  1. gc/gemini-3-flash         (180K free/month)
-  2. if/kimi-k2-thinking       (unlimited free)
-  3. qw/qwen3-c-plus       (unlimited free)
+
+1. gc/gemini-3-flash (180K free/month)
+2. if/kimi-k2-thinking (unlimited free)
+3. qw/qwen3-c-plus (unlimited free)
 
 Monthly cost: $0
 Quality: Production-ready models
+
 ```
 
 ### 案例 3：“我需要 24/7 编程，无中断”
@@ -553,15 +563,18 @@ Quality: Production-ready models
 
 **解决方案：**
 ```
+
 Combo: "always-on"
-  1. cc/claude-opus-4-6        (best quality)
-  2. cx/gpt-5.2-codex          (second subscription)
-  3. glm/glm-4.7               (cheap, resets daily)
-  4. minimaxMiniMax-M2.1      (cheapest, 5h reset)
-  5. if/kimi-k2-thinking       (free unlimited)
+
+1. cc/claude-opus-4-6 (best quality)
+2. cx/gpt-5.2-codex (second subscription)
+3. glm/glm-4.7 (cheap, resets daily)
+4. minimaxMiniMax-M2.1 (cheapest, 5h reset)
+5. if/kimi-k2-thinking (free unlimited)
 
 Result: 5 layers of fallback = zero downtime
 Monthly cost: $20-200 (subscriptions) + $10-20 (backup)
+
 ```
 
 ### 案例 4：“我想在 OpenClaw 中使用免费 AI”
@@ -570,13 +583,16 @@ Monthly cost: $20-200 (subscriptions) + $10-20 (backup)
 
 **解决方案：**
 ```
+
 Combo: "openclaw-free"
-  1. if/glm-4.7                (unlimited free)
-  2. if/minimax-m2.1           (unlimited free)
-  3. if/kimi-k2-thinking       (unlimited free)
+
+1. if/glm-4.7 (unlimited free)
+2. if/minimax-m2.1 (unlimited free)
+3. if/kimi-k2-thinking (unlimited free)
 
 Monthly cost: $0
 Access via: WhatsApp, Telegram, Slack, Discord, iMessage, Signal...
+
 ```
 
 ---
@@ -634,22 +650,26 @@ Router 只是将您的请求路由到它们 - 没有“陷阱”或未来计费�
 **免费优先策略：**
 
 1. **从 100% 免费组合开始：**
-   ```
-   1. gc/gini-3-flash (180K/month free from Google)
-   2. if/kimi-k2-thinking (unlimited free from iFlow)
-   3. qw/qwen3-coder-plus (unlimited free from Qwen)
-   ```
-   **成本：$0/月**
+```
+
+1.  gc/gini-3-flash (180K/month free from Google)
+2.  if/kimi-k2-thinking (unlimited free from iFlow)
+3.  qw/qwen3-coder-plus (unlimited free from Qwen)
+
+```
+**成本：$0/月**
 
 2. **仅在需要时添加廉价备份：**
-   ```
-   4. glm/glm-4.7 ($0.6/1M tokens)
-   ```
-   **额外成本：仅为您实际使用的付费**
+```
+
+4.  glm/glm-4.7 ($0.6/1M tokens)
+
+````
+**额外成本：仅为您实际使用的付费**
 
 3. **最后使用订阅提供商：**
-   - 仅当您已经拥有它们时
-   - 9Router 通过配额追踪帮助最大化其价值
+- 仅当您已经拥有它们时
+- 9Router 通过配额追踪帮助最大化其价值
 
 **结果：** 大多数用户可以仅使用免费层以 $0/月运行！
 
@@ -690,10 +710,10 @@ Dashboard → Providers → Connect Claude Code
 → 5-hour + weekly quota tracking
 
 Models:
-  cc/claude-opus-4-6
-  cc/claude-sonnet-4-5-20250929
-  cc/claude-haiku-4-5-20251001
-```
+cc/claude-opus-4-6
+cc/claude-sonnet-4-5-20250929
+cc/claude-haiku-4-5-20251001
+````
 
 **专业提示：** 使用 Opus 处理复杂任务，Sonnet 追求速度。9Router 追踪每个模型的配额！
 
@@ -806,13 +826,15 @@ Models:
 ```
 
 ### Kiro（Claude 免费```bash
+
 Dashboard → Connect Kiro
 → AWS Builder ID or Google/GitHub
 → Unlimited usage
 
 Models:
-  kr/claude-sonnet-4.5
-  kr/claude-haiku-4.5
+kr/claude-sonnet-4.5
+kr/claude-haiku-4.5
+
 ```
 
 </details>
@@ -823,33 +845,39 @@ Models:
 ### 示例 1：最大化订阅 → 廉价备份
 
 ```
+
 Dashboard → Combos → Create New
 
 Name: premium-coding
 Models:
-  1. cc/claude-opus-4-6 (Subscription primary)
-  2. glm/glm4.7 (Cheap backup, $0.6/1M)
-  3. minimax/MiniMax-M2.1 (Cheapest fallback, $0.20/1M)
+
+1. cc/claude-opus-4-6 (Subscription primary)
+2. glm/glm4.7 (Cheap backup, $0.6/1M)
+3. minimax/MiniMax-M2.1 (Cheapest fallback, $0.20/1M)
 
 Use in CLI: premium-coding
 
 Monthly cost example (100M tokens):
-  80M via Claude (subscription): $0 extra
-  15M via GLM: $9
-  5M via MiniMax: $1
-  Total: $10 + your subscription
+80M via Claude (subscription): $0 extra
+15M via GLM: $9
+5M via MiniMax: $1
+Total: $10 + your subscription
+
 ```
 
 ### 示例 2：仅免费（零成本）
 
 ```
+
 Name: free-combo
 Models:
-  1. gc/gemini-3-flash-preview (180K free/month)
-  2. if/kimi-k2-thinking (unlimited)
-  3. qw/qwen3-coder-plus (unlimited)
+
+1. gc/gemini-3-flash-preview (180K free/month)
+2. if/kimi-k2-thinking (unlimited)
+3. qw/qwen3-coder-plus (unlimited)
 
 Cost: $0 forever!
+
 ```
 
 </details>
@@ -860,11 +888,13 @@ Cost: $0 forever!
 ### Cursor IDE
 
 ```
+
 Settings → Models → Advanced:
-  OpenAI API Base URL: http://localhost:20128/v1
-  OpenAI API Key: [from 9router dashboard]
-  Model: cc/claude-opus-4-6
-```
+OpenAI API Base URL: http://localhost:20128/v1
+OpenAI API Key: [from 9router dashboard]
+Model: cc/claude-opus-4-6
+
+````
 
 使用组合：`premium-coding`
 
@@ -877,7 +907,7 @@ Settings → Models → Advanced:
   "anthropic_api_base": "http://localhost:20128/v1",
   "anthropic_api_key": "your-9router-api-key"
 }
-```
+````
 
 ### Codex CLI
 
@@ -1000,6 +1030,7 @@ docker run -d \
 ```
 
 容器默认值：
+
 - `PORT=20128`
 - `HOSTNAME=0.0.0.0`
 
@@ -1013,26 +1044,27 @@ docker stop 9router && docker rm 9router
 
 ### 环境变量
 
-| 变量 | 默认值 | 描述 |
-|----------|---------|-------------|
-| `JWT_SECRET` | 自动生成（`~/.9router/jwt-secret`） | 仪表板认证 cookie 的 JWT 签名密钥（设置可在多实例间共享） |
-| `INITIAL_PASSWORD | `123456` | 当没有保存的哈希时的首次登录密码 |
-| `DATA_DIR` | `~/.9router` | 主应用数据库位置（`db.json`） |
-| `PORT` | 框架默认值 | 服务端口（示例中为 `20128`） |
-| `HOSTNAME` | 框架默认值 | 绑定主机（Docker 默认为 `0.0.0.0`） |
-| `NODE_ENV` | 运行时默认值 | 部署时设置 `production` |
-| `BASE_URL` |http://localhost:20128` | 云同步作业使用的服务器端内部基础 URL |
-| `CLOUD_URL` | `https://9router.com` | 服务器端云同步端点基础 URL |
-| `NEXT_PUBLIC_BASE_URL` | `http://localhost:3000` | 向后兼容/公共基础 URL（服务器运行时优先使用 `BASE_URL`） |
-| `NEXT_PUBLIC_CLOUD_URL` | `https://9router.com` | 向后兼容/公共云 URL（服务器运行时优先使用 `CLOUD_URL`） |
-| `API_KEY_SECRET` | `endpoint-proxy-api-secret` | 生成的 API Key 的 HMAC 密钥 |
-| `MACHINE_ID_SALT` | `endpoint-proxy-salt` | 稳定机器 ID 哈希的盐值 |
-| `ENABLE_REQUEST_LOGS` | `false` | 在 `logs/` 下启用请求/响应日志 |
-| `AUTH_COOKIE_SECURE` | `false` | 强制 `Secure` 认证 cookie（在 HTTPS 反向代理后设置 `true`） |
-| `REQUIRE_API_KEY` | `false` | 在 `/v1/*` 路由上强制执行 Bearer API key推荐用于暴露在互联网的部署） |
-| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | 空 | 上游提供商调用的可选出站代理 |
+| 变量                                                 | 默认值                              | 描述                                                                 |
+| ---------------------------------------------------- | ----------------------------------- | -------------------------------------------------------------------- |
+| `JWT_SECRET`                                         | 自动生成（`~/.9router/jwt-secret`） | 仪表板认证 cookie 的 JWT 签名密钥（设置可在多实例间共享）            |
+| `INITIAL_PASSWORD                                    | `123456`                            | 当没有保存的哈希时的首次登录密码                                     |
+| `DATA_DIR`                                           | `~/.9router`                        | 主应用数据库位置（`db.json`）                                        |
+| `PORT`                                               | 框架默认值                          | 服务端口（示例中为 `20128`）                                         |
+| `HOSTNAME`                                           | 框架默认值                          | 绑定主机（Docker 默认为 `0.0.0.0`）                                  |
+| `NODE_ENV`                                           | 运行时默认值                        | 部署时设置 `production`                                              |
+| `BASE_URL`                                           | http://localhost:20128`             | 云同步作业使用的服务器端内部基础 URL                                 |
+| `CLOUD_URL`                                          | `https://9router.com`               | 服务器端云同步端点基础 URL                                           |
+| `NEXT_PUBLIC_BASE_URL`                               | `http://localhost:3000`             | 向后兼容/公共基础 URL（服务器运行时优先使用 `BASE_URL`）             |
+| `NEXT_PUBLIC_CLOUD_URL`                              | `https://9router.com`               | 向后兼容/公共云 URL（服务器运行时优先使用 `CLOUD_URL`）              |
+| `API_KEY_SECRET`                                     | `endpoint-proxy-api-secret`         | 生成的 API Key 的 HMAC 密钥                                          |
+| `MACHINE_ID_SALT`                                    | `endpoint-proxy-salt`               | 稳定机器 ID 哈希的盐值                                               |
+| `ENABLE_REQUEST_LOGS`                                | `false`                             | 在 `logs/` 下启用请求/响应日志                                       |
+| `AUTH_COOKIE_SECURE`                                 | `false`                             | 强制 `Secure` 认证 cookie（在 HTTPS 反向代理后设置 `true`）          |
+| `REQUIRE_API_KEY`                                    | `false`                             | 在 `/v1/*` 路由上强制执行 Bearer API key推荐用于暴露在互联网的部署） |
+| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | 空                                  | 上游提供商调用的可选出站代理                                         |
 
 注意：
+
 - 也支持小写代理变量：`http_proxy`, `https_proxy`, `all_proxy`, `no_proxy`。
 - `.env` 不会烘焙到 Docker 镜像中（`.dockerignore`）；使用 `--env-file` 或 `-e` 注入运行时配置。
 - 在 Windows 上，`APPDATA` 可用于本地存储路径解析。
@@ -1055,37 +1087,46 @@ docker stop 9router && docker rm 9router
 <summary><b>查看所有可用模型</b></summary>
 
 **Claude Code (`cc/`)** - Pro/Max:
+
 - `cc/claude-opus-4-6`
 - `cc/claude-sonnet-4-5-20250929`
 - `cc/claude-haiku-4-5-20251001`
 
 **Codex (`cx/`)** - Plus/Pro:
+
 - `cx/gpt-5.2-codex- `cx/gpt-5.1-codex-max`
 
 **Gemini CLI (`gc/`)** - 免费:
+
 - `gc/gemini-3-flash-preview`
 - `gc/gemini-2.5-pro`
 
 **GitHub Copilot (`gh/`)**:
+
 - `gh/gpt-5`
 - `gh/claude-4.5-sonnet`
 
 **GLM (`glm/`)** - $0.6/1M:
+
 - `glm/glm-4.7`
 
 **MiniMax (`minimax/`)** - $0.2/1M:
+
 - `imax/MiniMax-M2.1`
 
 **iFlow (`if/`)** - 免费:
+
 - `if/kimi-k2-thinking`
 - `if/qwen3-coder-plus`
 - `if/deepseek-r1`
 
 **Qwen (`qw/`)** - 免费:
+
 - `qw/qwen3-coder-plus`
 - `qw/qwen3-coder-flash`
 
 **Kiro (`kr/`)** - 免费:
+
 - `kr/claude-sonnet-4.5`
 - `kr/claude-haiku-4.5`
 
@@ -1095,46 +1136,56 @@ docker stop 9router && docker rm 9router
 
 ## 🐛 故障排除
 
-“Language model did not provide messages”**
+“Language model did not provide messages”\*\*
+
 - 提供商配额耗尽 → 检查仪表板配额追踪器
 - 解决方案：使用组合回退或切换到更便宜的层
 
 **速率限制**
+
 - 订阅配额用完 → 回退到 GLM/MiniMax
 - 添加组合：`cc/claude-opus-4-6 → glm/glm-4.7 → if/kimi-k2-thinking`
 
 **OAuth token 过期**
+
 - 由 9Router 自动刷新
 - 如果问题持续：仪表板 → 提供商 → 重新
 
 **高成本**
+
 - 在仪表板中检查使用统计
 - 将主要模型切换为 GLM/MiniMax
 - 对非关键任务使用免费层（Gemini CLI, iFlow）
 
 **仪表板在错误的端口打开**
+
 - 设置 `PORT=20128` 和 `NEXT_PUBLIC_BASE_URL=http://localhost:20128`
 
 **云端同步错误**
+
 - 验证 `BASE_URL` 指向您正在运行的实例（例如：`http://localhost:20128`）
 - 验证 `CLOUD_URL` 指向您预期的云端端点（例如：`https://9router.com`）
 - 尽可能保持 `NEXT_PUBLIC_*` 值与服务器端值一致。
 
 **云端端点 `stream=false` 返回 500（`Unexpected token 'd'...`）**
+
 - 症状通常出现在公共云端端点（`https://9router.com/v1`）的非流式调用上。
 - 根本原因：上游返回 SSE 负载（`data: ...`）而客户端期望 JSON。
 - 变通方法：对云端直接调用使用 `stream=true`。
 - 当上游返回 `text/event-stream` 时，本地 9Router 运行时包含 SSE→JSON 回退用于非流式调用。
 
 **云端显示已连接，但请求仍然失败并显示 `Invalid API key`**
+
 - 从本地仪表板（`/api/keys`）创建新密钥并运行云端同步（`Enable Cloud` 然后 `Sync Now`）。
 - 旧/未同步的密钥即使在本地端点工作的情况下，仍可能在云端返回 `401`。
 
 **首次登录不工作**
+
 - 检查 `.env` 中的 `INITIAL_PASSWORD`
 - 如果未设置，回退密码是 `123456`
 
 **`logs/` 下没有请求日志**
+
 - 设置 `ENABLE_REQUEST_LOGS=true`
 
 ---
@@ -1224,7 +1275,7 @@ OPENAI_API_KEY="your-cloud-key" bash tester/security/test-cloud-openai-compatibl
 - 认证/设置：`/api/auth/login`, `/api/auth/logout`, `/api/settings`, `/api/settings/require-login`
 - 提供商管理：`/api/providers`, `/api/providers/[id]`, `/api/providers/[id]/test`, `/api/providers/[id]/models`, `/api/providers/validate`, `/api/provider-nodes*`
 - OAuth 流程：`/api/oauth/[provider]/[action]`（+ 特定提供商导入如 Cursor/Kiro）
- 路由配置：`/api/models/alias`, `/api/combos*`, `/api/keys*`, `/api/pricing`
+  路由配置：`/api/models/alias`, `/api/combos*`, `/api/keys*`, `/api/pricing`
 - 使用/日志：`/api/usage/history`, `/api/usage/logs`, `/api/usage/request-logs`, `/api/usage/[connectionId]`
 - 云端同步：`/api/sync/cloud`, `/api/sync/initialize`, `/api/cloud/*`
 - CLI 助手：`/api/cli-tools/claude-settings`, `/api/cli-tools/codex-settings`, `/api/cli-tools/droid-settings`, `/api/cli-tools/openaw-settings`
@@ -1276,8 +1327,8 @@ OPENAI_API_KEY="your-cloud-key" bash tester/security/test-cloud-openai-compatibl
 1. Fork 仓库
 2. 创建您的功能分支（`git checkout -b feature/amazing-feature`）
 3. 提交您的更改（`git commit -m 'Add amazing feature'`）
-4 推送到分支（`git push origin feature/amazing-feature`）
-5. 打开 Pull Request
+   4 推送到分支（`git push origin feature/amazing-feature`）
+4. 打开 Pull Request
 
 详细指南请参阅 [Pull Requests](https://github.com/decolua/9router/pulls)。
 

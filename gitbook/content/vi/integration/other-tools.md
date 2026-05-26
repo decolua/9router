@@ -5,6 +5,7 @@
 ## Tổng quan
 
 9Router cung cấp API endpoint tương thích OpenAI hoạt động với:
+
 - Script và ứng dụng tùy chỉnh
 - API client và công cụ test
 - Công cụ CLI và utility
@@ -16,6 +17,7 @@
 Mọi công cụ tương thích OpenAI có thể kết nối đến 9Router bằng các cài đặt sau:
 
 **9Router cục bộ:**
+
 ```
 Base URL: http://localhost:20128/v1
 API Key: your-api-key-from-dashboard
@@ -23,6 +25,7 @@ Model: any 9Router model (cc/*, cx/*, glm/*, etc.)
 ```
 
 **9Router cloud:**
+
 ```
 Base URL: https://9router.com/v1
 API Key: your-api-key-from-dashboard
@@ -32,15 +35,18 @@ Model: any 9Router model (cc/*, cx/*, glm/*, etc.)
 ## Model có sẵn
 
 ### Claude Models (Anthropic)
+
 - `cc/claude-opus-4-5-20251101`
 - `cc/claude-sonnet-4-20250514`
 - `cc/claude-haiku-4-20250514`
 
 ### DeepSeek Models
+
 - `cx/deepseek-chat`
 - `cx/deepseek-reasoner`
 
 ### GLM Models (Zhipu AI)
+
 - `glm/glm-4-plus`
 - `glm/glm-4-flash`
 
@@ -73,14 +79,12 @@ import OpenAI from "openai";
 
 const client = new OpenAI({
   apiKey: "your-api-key-from-dashboard",
-  baseURL: "http://localhost:20128/v1"
+  baseURL: "http://localhost:20128/v1",
 });
 
 const response = await client.chat.completions.create({
   model: "cc/claude-sonnet-4-20250514",
-  messages: [
-    { role: "user", content: "Hello, how are you?" }
-  ]
+  messages: [{ role: "user", content: "Hello, how are you?" }],
 });
 
 console.log(response.choices[0].message.content);
@@ -103,23 +107,24 @@ curl http://localhost:20128/v1/chat/completions \
 ### HTTP Client (Postman, Insomnia)
 
 **Request:**
+
 ```
 POST http://localhost:20128/v1/chat/completions
 ```
 
 **Headers:**
+
 ```
 Content-Type: application/json
 Authorization: Bearer your-api-key-from-dashboard
 ```
 
 **Body:**
+
 ```json
 {
   "model": "cc/claude-sonnet-4-20250514",
-  "messages": [
-    {"role": "user", "content": "Hello, how are you?"}
-  ],
+  "messages": [{ "role": "user", "content": "Hello, how are you?" }],
   "temperature": 0.7,
   "max_tokens": 1000
 }
@@ -199,14 +204,14 @@ import OpenAI from "openai";
 
 const client = new OpenAI({
   apiKey: "your-api-key-from-dashboard",
-  baseURL: "http://localhost:20128/v1"
+  baseURL: "http://localhost:20128/v1",
 });
 
 async function streamResponse(prompt) {
   const stream = await client.chat.completions.create({
     model: "cc/claude-sonnet-4-20250514",
     messages: [{ role: "user", content: prompt }],
-    stream: true
+    stream: true,
   });
 
   for await (const chunk of stream) {
@@ -319,6 +324,7 @@ def chat_with_retry(prompt, max_retries=3):
 ### Vấn đề Connection
 
 **Vấn đề:** Không kết nối được đến 9Router
+
 ```bash
 # Check if 9Router is running
 curl http://localhost:20128/health
@@ -328,6 +334,7 @@ curl http://localhost:20128/health
 ```
 
 **Giải pháp:**
+
 - Xác minh 9Router đang chạy
 - Kiểm tra port 20128 không bị chặn
 - Đảm bảo base URL đúng (bao gồm `/v1`)
@@ -335,11 +342,13 @@ curl http://localhost:20128/health
 ### Lỗi Xác thực
 
 **Vấn đề:** 401 Unauthorized
+
 ```
 Error: Invalid API key
 ```
 
 **Giải pháp:**
+
 - Xác minh API key từ dashboard
 - Kiểm tra format header Authorization: `Bearer your-api-key`
 - Đảm bảo không có khoảng trắng hoặc xuống dòng thừa trong API key
@@ -347,11 +356,13 @@ Error: Invalid API key
 ### Model Not Found
 
 **Vấn đề:** 404 Model not found
+
 ```
 Error: Model 'cc/claude-opus' not found
 ```
 
 **Giải pháp:**
+
 - Dùng tên model chính xác (case-sensitive)
 - Kiểm tra model có sẵn: `curl http://localhost:20128/v1/models`
 - Xác minh model được bật trong plan của bạn
@@ -359,11 +370,13 @@ Error: Model 'cc/claude-opus' not found
 ### Vấn đề Timeout
 
 **Vấn đề:** Request timeout
+
 ```
 Error: Request timed out after 30s
 ```
 
 **Giải pháp:**
+
 - Tăng timeout trong cấu hình client
 - Dùng model nhanh hơn cho task nhạy cảm về thời gian
 - Kiểm tra kết nối network đến 9Router
@@ -371,11 +384,13 @@ Error: Request timed out after 30s
 ### Rate Limiting
 
 **Vấn đề:** 429 Too Many Requests
+
 ```
 Error: Rate limit exceeded
 ```
 
 **Giải pháp:**
+
 - Triển khai exponential backoff
 - Giảm tần suất request
 - Kiểm tra rate limit trong dashboard
@@ -384,24 +399,28 @@ Error: Rate limit exceeded
 ## Best Practices
 
 ### Bảo mật
+
 - Lưu API key trong biến môi trường
 - Không bao giờ commit API key vào version control
 - Dùng HTTPS cho cloud deployment
 - Xoay API key định kỳ
 
 ### Hiệu năng
+
 - Dùng model phù hợp với độ phức tạp task
 - Triển khai caching cho query lặp lại
 - Dùng streaming cho phản hồi dài
 - Batch request khi có thể
 
 ### Xử lý Lỗi
+
 - Luôn triển khai try-catch block
 - Thêm logic retry với exponential backoff
 - Log lỗi để debug
 - Cung cấp cơ chế fallback
 
 ### Tối ưu Chi phí
+
 - Chọn model tiết kiệm chi phí cho task đơn giản
 - Cache phản hồi khi phù hợp
 - Theo dõi usage trong dashboard

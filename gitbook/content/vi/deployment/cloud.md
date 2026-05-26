@@ -45,13 +45,13 @@ export NODE_ENV="production"
 
 **Biến môi trường:**
 
-| Biến | Mặc định | Mô tả |
-|----------|---------|-------------|
-| `JWT_SECRET` | Auto-generated | **PHẢI đổi trong production!** Dùng để ký JWT token |
-| `INITIAL_PASSWORD` | `123456` | Mật khẩu đăng nhập Dashboard |
-| `DATA_DIR` | `~/.9router` | Đường dẫn lưu database và data |
-| `NODE_ENV` | `development` | Đặt `production` cho deployment |
-| `ENABLE_REQUEST_LOGS` | `false` | Bật debug request/response logs |
+| Biến                  | Mặc định       | Mô tả                                               |
+| --------------------- | -------------- | --------------------------------------------------- |
+| `JWT_SECRET`          | Auto-generated | **PHẢI đổi trong production!** Dùng để ký JWT token |
+| `INITIAL_PASSWORD`    | `123456`       | Mật khẩu đăng nhập Dashboard                        |
+| `DATA_DIR`            | `~/.9router`   | Đường dẫn lưu database và data                      |
+| `NODE_ENV`            | `development`  | Đặt `production` cho deployment                     |
+| `ENABLE_REQUEST_LOGS` | `false`        | Bật debug request/response logs                     |
 
 ### Bước 5: Tạo Data Directory
 
@@ -165,7 +165,7 @@ docker run -d \
 Tạo `docker-compose.yml`:
 
 ```yaml
-version: '3.8'
+version: "3.8"
 
 services:
   9router:
@@ -258,7 +258,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_cache_bypass $http_upgrade;
-        
+
         # SSE support - CRITICAL for streaming
         proxy_buffering off;
         proxy_read_timeout 86400;
@@ -272,7 +272,7 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        
+
         # SSE support - CRITICAL for streaming
         proxy_buffering off;
         proxy_read_timeout 86400;

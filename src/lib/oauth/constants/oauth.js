@@ -42,7 +42,8 @@ export const CODEX_CONFIG = {
 
 // Gemini (Google) OAuth Configuration (Standard OAuth2)
 export const GEMINI_CONFIG = {
-  clientId: "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com",
+  clientId:
+    "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com",
   clientSecret: "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",
   authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
   tokenUrl: "https://oauth2.googleapis.com/token",
@@ -89,7 +90,8 @@ export const IFLOW_CONFIG = {
 
 // Antigravity OAuth Configuration (Standard OAuth2 with Google)
 export const ANTIGRAVITY_CONFIG = {
-  clientId: "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com",
+  clientId:
+    "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com",
   clientSecret: "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",
   authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
   tokenUrl: "https://oauth2.googleapis.com/token",
@@ -104,12 +106,18 @@ export const ANTIGRAVITY_CONFIG = {
   // Antigravity specific
   apiEndpoint: "https://cloudcode-pa.googleapis.com",
   apiVersion: "v1internal",
-  loadCodeAssistEndpoint: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
-  onboardUserEndpoint: "https://cloudcode-pa.googleapis.com/v1internal:onboardUser",
+  loadCodeAssistEndpoint:
+    "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
+  onboardUserEndpoint:
+    "https://cloudcode-pa.googleapis.com/v1internal:onboardUser",
   loadCodeAssistUserAgent: "google-api-nodejs-client/9.15.1",
   loadCodeAssistApiClient: "google-cloud-sdk vscode_cloudshelleditor/0.1",
   // Numeric enums matching Antigravity binary ClientMetadata (see getOAuthClientMetadata below)
-  loadCodeAssistClientMetadata: JSON.stringify({ ideType: 9, platform: getOAuthPlatformEnum(), pluginType: 2 }),
+  loadCodeAssistClientMetadata: JSON.stringify({
+    ideType: 9,
+    platform: getOAuthPlatformEnum(),
+    pluginType: 2,
+  }),
 };
 
 /**
@@ -164,7 +172,11 @@ export const KIRO_CONFIG = {
   // Client registration params
   clientName: "kiro-oauth-client",
   clientType: "public",
-  scopes: ["codewhisperer:completions", "codewhisperer:analysis", "codewhisperer:conversations"],
+  scopes: [
+    "codewhisperer:completions",
+    "codewhisperer:analysis",
+    "codewhisperer:conversations",
+  ],
   grantTypes: ["urn:ietf:params:oauth:grant-type:device_code", "refresh_token"],
   issuerUrl: "https://identitycenter.amazonaws.com/ssoins-722374e8c3c8e6c6",
   // Social auth endpoints (Google/GitHub via AWS Cognito)
@@ -194,7 +206,8 @@ export const CURSOR_CONFIG = {
   // Token storage locations (for user reference)
   tokenStoragePaths: {
     linux: "~/.config/Cursor/User/globalStorage/state.vscdb",
-    macos: "/Users/<user>/Library/Application Support/Cursor/User/globalStorage/state.vscdb",
+    macos:
+      "/Users/<user>/Library/Application Support/Cursor/User/globalStorage/state.vscdb",
     windows: "%APPDATA%\\Cursor\\User\\globalStorage\\state.vscdb",
   },
   // Database keys
@@ -206,7 +219,9 @@ export const CURSOR_CONFIG = {
 
 // Kimi Coding OAuth Configuration (Device Code Flow)
 export const KIMI_CODING_CONFIG = {
-  clientId: process.env.KIMI_CODING_OAUTH_CLIENT_ID || "17e5f671-d194-4dfb-9706-5516cb48c098",
+  clientId:
+    process.env.KIMI_CODING_OAUTH_CLIENT_ID ||
+    "17e5f671-d194-4dfb-9706-5516cb48c098",
   deviceCodeUrl: "https://auth.kimi.com/api/oauth/device_authorization",
   tokenUrl: "https://auth.kimi.com/api/oauth/token",
 };

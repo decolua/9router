@@ -22,7 +22,14 @@ export default function createOpenAIAdapter(providerId) {
       return headers;
     },
     buildBody: (model, body) => {
-      const { prompt, n = 1, size = "1024x1024", quality, style, response_format } = body;
+      const {
+        prompt,
+        n = 1,
+        size = "1024x1024",
+        quality,
+        style,
+        response_format,
+      } = body;
       // xAI only accepts prompt, model, n, response_format
       if (providerId === "xai") {
         const req = { model, prompt, n };

@@ -22,10 +22,10 @@ Los proveedores del nivel de suscripción son tu opción **principal** - ya est�
 
 ### Precios
 
-| Plan | Costo mensual | Reinicio de cuota | Modelos |
-|------|--------------|-------------|--------|
-| Pro | $20 | 5 horas + semanal | Opus, Sonnet, Haiku |
-| Max | $100 | 5 horas + semanal | Opus, Sonnet, Haiku |
+| Plan | Costo mensual | Reinicio de cuota | Modelos             |
+| ---- | ------------- | ----------------- | ------------------- |
+| Pro  | $20           | 5 horas + semanal | Opus, Sonnet, Haiku |
+| Max  | $100          | 5 horas + semanal | Opus, Sonnet, Haiku |
 
 ### Configuración
 
@@ -53,11 +53,11 @@ Model: cc/claude-opus-4-5-20251101
 
 ### Modelos disponibles
 
-| ID del modelo | Descripción | Ideal para |
-|----------|-------------|----------|
-| `cc/claude-opus-4-5-20251101` | Claude 4.5 Opus | Tareas complejas, arquitectura |
-| `cc/claude-sonnet-4-5-20250929` | Claude 4.5 Sonnet | Velocidad/calidad equilibrada |
-| `cc/claude-haiku-4-5-20251001` | Claude 4.5 Haiku | Respuestas rápidas |
+| ID del modelo                   | Descripción       | Ideal para                     |
+| ------------------------------- | ----------------- | ------------------------------ |
+| `cc/claude-opus-4-5-20251101`   | Claude 4.5 Opus   | Tareas complejas, arquitectura |
+| `cc/claude-sonnet-4-5-20250929` | Claude 4.5 Sonnet | Velocidad/calidad equilibrada  |
+| `cc/claude-haiku-4-5-20251001`  | Claude 4.5 Haiku  | Respuestas rápidas             |
 
 ### Pro Tips
 
@@ -72,10 +72,10 @@ Model: cc/claude-opus-4-5-20251101
 
 ### Precios
 
-| Plan | Costo mensual | Reinicio de cuota | Modelos |
-|------|--------------|-------------|--------|
-| Plus | $20 | 5 horas + semanal | GPT 5.2, GPT 5.1 |
-| Pro | $200 | 5 horas + semanal | GPT 5.2 Codex, GPT 5.1 Max |
+| Plan | Costo mensual | Reinicio de cuota | Modelos                    |
+| ---- | ------------- | ----------------- | -------------------------- |
+| Plus | $20           | 5 horas + semanal | GPT 5.2, GPT 5.1           |
+| Pro  | $200          | 5 horas + semanal | GPT 5.2 Codex, GPT 5.1 Max |
 
 ### Configuración
 
@@ -104,12 +104,12 @@ Model: cx/gpt-5.2-codex
 
 ### Modelos disponibles
 
-| ID del modelo | Descripción | Ideal para |
-|----------|-------------|----------|
-| `cx/gpt-5.2-codex` | GPT 5.2 Codex | Último modelo de codificación |
-| `cx/gpt-5.1-codex-max` | GPT 5.1 Codex Max | Contexto máximo |
-| `cx/gpt-5.2` | GPT 5.2 | Tareas generales |
-| `cx/gpt-5.1-codex` | GPT 5.1 Codex | Codificación estable |
+| ID del modelo          | Descripción       | Ideal para                    |
+| ---------------------- | ----------------- | ----------------------------- |
+| `cx/gpt-5.2-codex`     | GPT 5.2 Codex     | Último modelo de codificación |
+| `cx/gpt-5.1-codex-max` | GPT 5.1 Codex Max | Contexto máximo               |
+| `cx/gpt-5.2`           | GPT 5.2           | Tareas generales              |
+| `cx/gpt-5.1-codex`     | GPT 5.1 Codex     | Codificación estable          |
 
 ### Pro Tips
 
@@ -123,9 +123,9 @@ Model: cx/gpt-5.2-codex
 
 ### Precios
 
-| Plan | Costo mensual | Cuota | Reinicio |
-|------|--------------|-------|-------|
-| FREE | $0 | 180K completados/mes + 1K/día | Diario + Mensual |
+| Plan | Costo mensual | Cuota                         | Reinicio         |
+| ---- | ------------- | ----------------------------- | ---------------- |
+| FREE | $0            | 180K completados/mes + 1K/día | Diario + Mensual |
 
 **Mejor valor:** ¡Nivel gratis enorme! Úsalo antes de los niveles de pago.
 
@@ -156,12 +156,12 @@ Model: gc/gemini-3-flash-preview
 
 ### Modelos disponibles
 
-| ID del modelo | Descripción | Ideal para |
-|----------|-------------|----------|
+| ID del modelo               | Descripción            | Ideal para         |
+| --------------------------- | ---------------------- | ------------------ |
 | `gc/gemini-3-flash-preview` | Gemini 3 Flash Preview | Respuestas rápidas |
-| `gc/gemini-3-pro-preview` | Gemini 3 Pro Preview | Tareas complejas |
-| `gc/gemini-2.5-pro` | Gemini 2.5 Pro | Producción estable |
-| `gc/gemini-2.5-flash` | Gemini 2.5 Flash | Tareas rápidas |
+| `gc/gemini-3-pro-preview`   | Gemini 3 Pro Preview   | Tareas complejas   |
+| `gc/gemini-2.5-pro`         | Gemini 2.5 Pro         | Producción estable |
+| `gc/gemini-2.5-flash`       | Gemini 2.5 Flash       | Tareas rápidas     |
 
 ### Pro Tips
 
@@ -176,10 +176,10 @@ Model: gc/gemini-3-flash-preview
 
 ### Precios
 
-| Plan | Costo mensual | Reinicio de cuota | Modelos |
-|------|--------------|-------------|--------|
-| Individual | $10 | Mensual (día 1) | GPT-5, Claude 4.5, Gemini 3 |
-| Business | $19 | Mensual (día 1) | GPT-5, Claude 4.5, Gemini 3 |
+| Plan       | Costo mensual | Reinicio de cuota | Modelos                     |
+| ---------- | ------------- | ----------------- | --------------------------- |
+| Individual | $10           | Mensual (día 1)   | GPT-5, Claude 4.5, Gemini 3 |
+| Business   | $19           | Mensual (día 1)   | GPT-5, Claude 4.5, Gemini 3 |
 
 ### Configuración
 
@@ -208,12 +208,12 @@ Model: gh/gpt-5
 
 ### Modelos disponibles
 
-| ID del modelo | Descripción | Ideal para |
-|----------|-------------|----------|
-| `gh/gpt-5` | GPT-5 | Último modelo de OpenAI |
-| `gh/gpt-5.1-codex-max` | GPT-5.1 Codex Max | Contexto máximo |
-| `gh/claude-4.5-sonnet` | Claude 4.5 Sonnet | Calidad de Anthropic |
-| `gh/gemini-3-pro` | Gemini 3 Pro | Calidad de Google |
+| ID del modelo          | Descripción       | Ideal para              |
+| ---------------------- | ----------------- | ----------------------- |
+| `gh/gpt-5`             | GPT-5             | Último modelo de OpenAI |
+| `gh/gpt-5.1-codex-max` | GPT-5.1 Codex Max | Contexto máximo         |
+| `gh/claude-4.5-sonnet` | Claude 4.5 Sonnet | Calidad de Anthropic    |
+| `gh/gemini-3-pro`      | Gemini 3 Pro      | Calidad de Google       |
 
 ### Pro Tips
 
@@ -227,9 +227,9 @@ Model: gh/gpt-5
 
 ### Precios
 
-| Plan | Costo mensual | Cuota | Modelos |
-|------|--------------|-------|--------|
-| FREE | $0 | Similar a Gemini CLI | Gemini 3 Pro, Claude Sonnet 4.5 |
+| Plan | Costo mensual | Cuota                | Modelos                         |
+| ---- | ------------- | -------------------- | ------------------------------- |
+| FREE | $0            | Similar a Gemini CLI | Gemini 3 Pro, Claude Sonnet 4.5 |
 
 ### Configuración
 
@@ -257,11 +257,11 @@ Model: ag/gemini-3-pro-high
 
 ### Modelos disponibles
 
-| ID del modelo | Descripción | Ideal para |
-|----------|-------------|----------|
-| `ag/gemini-3-pro-high` | Gemini 3 Pro High | Respuestas de alta calidad |
-| `ag/claude-sonnet-4-5` | Claude Sonnet 4.5 | Calidad de Anthropic |
-| `ag/claude-opus-4-5-thinking` | Claude Opus 4.5 Thinking | Razonamiento complejo |
+| ID del modelo                 | Descripción              | Ideal para                 |
+| ----------------------------- | ------------------------ | -------------------------- |
+| `ag/gemini-3-pro-high`        | Gemini 3 Pro High        | Respuestas de alta calidad |
+| `ag/claude-sonnet-4-5`        | Claude Sonnet 4.5        | Calidad de Anthropic       |
+| `ag/claude-opus-4-5-thinking` | Claude Opus 4.5 Thinking | Razonamiento complejo      |
 
 ### Pro Tips
 
@@ -273,15 +273,15 @@ Model: ag/gemini-3-pro-high
 
 ## Comparación de precios
 
-| Proveedor | Costo mensual | Reinicio de cuota | Valor |
-|----------|--------------|-------------|-------|
-| **Claude Code Pro** | $20 | 5 horas + semanal | ⭐⭐⭐⭐⭐ Mejor calidad |
-| **Claude Code Max** | $100 | 5 horas + semanal | ⭐⭐⭐⭐⭐ Mayor cuota |
-| **Codex Plus** | $20 | 5 horas + semanal | ⭐⭐⭐⭐ Buen valor |
-| **Codex Pro** | $200 | 5 horas + semanal | ⭐⭐⭐⭐⭐ 10× cuota |
-| **Gemini CLI** | **$0** | Diario + Mensual | ⭐⭐⭐⭐⭐ ¡GRATIS 180K/mes! |
-| **GitHub Copilot** | $10-19 | Mensual (día 1) | ⭐⭐⭐⭐ Multi-modelo |
-| **Antigravity** | **$0** | Diario + Mensual | ⭐⭐⭐⭐ ¡Claude GRATIS! |
+| Proveedor           | Costo mensual | Reinicio de cuota | Valor                        |
+| ------------------- | ------------- | ----------------- | ---------------------------- |
+| **Claude Code Pro** | $20           | 5 horas + semanal | ⭐⭐⭐⭐⭐ Mejor calidad     |
+| **Claude Code Max** | $100          | 5 horas + semanal | ⭐⭐⭐⭐⭐ Mayor cuota       |
+| **Codex Plus**      | $20           | 5 horas + semanal | ⭐⭐⭐⭐ Buen valor          |
+| **Codex Pro**       | $200          | 5 horas + semanal | ⭐⭐⭐⭐⭐ 10× cuota         |
+| **Gemini CLI**      | **$0**        | Diario + Mensual  | ⭐⭐⭐⭐⭐ ¡GRATIS 180K/mes! |
+| **GitHub Copilot**  | $10-19        | Mensual (día 1)   | ⭐⭐⭐⭐ Multi-modelo        |
+| **Antigravity**     | **$0**        | Diario + Mensual  | ⭐⭐⭐⭐ ¡Claude GRATIS!     |
 
 ---
 
@@ -378,6 +378,7 @@ Madrugada: Nivel barato/gratis
 ### "Cuota agotada"
 
 **Solución:**
+
 - Verifica el rastreador de cuota del dashboard
 - Espera el reinicio (5 horas o diario)
 - Usa fallback de combo al nivel barato/gratis
@@ -385,12 +386,14 @@ Madrugada: Nivel barato/gratis
 ### "Token OAuth expirado"
 
 **Solución:**
+
 - Auto-refresh por 9Router
 - Si hay problemas: Dashboard → Provider → Reconnect
 
 ### "Rate limiting"
 
 **Solución:**
+
 - Cuota de suscripción agotada
 - Agrega fallback: `cc/claude-opus → glm/glm-4.7`
 - Usa el nivel gratis: `if/kimi-k2-thinking`

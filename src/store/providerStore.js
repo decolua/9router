@@ -17,7 +17,7 @@ const useProviderStore = create((set, get) => ({
   updateProvider: (id, updates) =>
     set((state) => ({
       providers: state.providers.map((p) =>
-        p._id === id ? { ...p, ...updates } : p
+        p._id === id ? { ...p, ...updates } : p,
       ),
     })),
 
@@ -35,13 +35,22 @@ const useProviderStore = create((set, get) => ({
   // Skips network when cache is fresh (< CLIENT_STORE_TTL_MS). Pass {force:true} to override.
   fetchProviders: async ({ force = false } = {}) => {
     const { lastFetched, providers } = get();
-    if (!force && providers.length > 0 && Date.now() - lastFetched < CLIENT_STORE_TTL_MS) return;
+    if (
+      !force &&
+      providers.length > 0 &&
+      Date.now() - lastFetched < CLIENT_STORE_TTL_MS
+    )
+      return;
     set({ loading: true, error: null });
     try {
       const response = await fetch("/api/providers");
       const data = await response.json();
       if (response.ok) {
-        set({ providers: data.connections || data.providers || [], loading: false, lastFetched: Date.now() });
+        set({
+          providers: data.connections || data.providers || [],
+          loading: false,
+          lastFetched: Date.now(),
+        });
       } else {
         set({ error: data.error, loading: false });
       }
@@ -52,4 +61,3 @@ const useProviderStore = create((set, get) => ({
 }));
 
 export default useProviderStore;
-

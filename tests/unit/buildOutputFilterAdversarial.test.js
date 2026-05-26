@@ -7,7 +7,10 @@ import { gitDiff } from "../../open-sse/rtk/filters/gitDiff.js";
 import { gitStatus } from "../../open-sse/rtk/filters/gitStatus.js";
 import { safeApply } from "../../open-sse/rtk/applyFilter.js";
 import { compressMessages } from "../../open-sse/rtk/index.js";
-import { DETECT_WINDOW, MIN_COMPRESS_SIZE } from "../../open-sse/rtk/constants.js";
+import {
+  DETECT_WINDOW,
+  MIN_COMPRESS_SIZE,
+} from "../../open-sse/rtk/constants.js";
 
 // ============================================================
 // 1. PRIORITY / OVERLAPPING PATTERNS
@@ -20,9 +23,9 @@ describe("PR #1175 - priority with overlapping patterns", () => {
       "--- a/Cargo.toml",
       "+++ b/Cargo.toml",
       "@@ -1,3 +1,3 @@",
-      "-version = \"0.1.0\"",
-      "+version = \"0.2.0\"",
-      "   Compiling foo v0.1.0"
+      '-version = "0.1.0"',
+      '+version = "0.2.0"',
+      "   Compiling foo v0.1.0",
     ].join("\n");
     expect(autoDetectFilter(input)).toBe(gitDiff);
   });
@@ -32,7 +35,7 @@ describe("PR #1175 - priority with overlapping patterns", () => {
       "On branch main",
       "Changes not staged for commit:",
       "\tmodified:   Cargo.toml",
-      "   Compiling foo v0.1.0"
+      "   Compiling foo v0.1.0",
     ].join("\n");
     expect(autoDetectFilter(input)).toBe(gitStatus);
   });
@@ -66,14 +69,16 @@ describe("PR #1175 - line endings & whitespace", () => {
   });
 
   it("Tab-prefixed Compiling (real cargo output uses leading spaces, not tab)", () => {
-    const input = "\tCompiling foo v0.1.0\n\tCompiling bar v0.2.0\n\tFinished dev in 1s";
+    const input =
+      "\tCompiling foo v0.1.0\n\tCompiling bar v0.2.0\n\tFinished dev in 1s";
     const filter = autoDetectFilter(input);
     // \s matches tab, so should detect
     expect(filter).toBe(buildOutput);
   });
 
   it("Compiling without leading spaces", () => {
-    const input = "Compiling foo v0.1.0\nCompiling bar v0.2.0\nFinished dev in 1s";
+    const input =
+      "Compiling foo v0.1.0\nCompiling bar v0.2.0\nFinished dev in 1s";
     expect(autoDetectFilter(input)).toBe(buildOutput);
   });
 });
@@ -91,7 +96,7 @@ describe("PR #1175 - adversarial: user code containing build strings", () => {
       "}",
       "function logError() {",
       "  console.log('npm error something bad');",
-      "}"
+      "}",
     ].join("\n");
     const filter = autoDetectFilter(input);
     // Regex uses `m` flag, so ^ matches line start — these are inside indented code
@@ -106,10 +111,13 @@ describe("PR #1175 - adversarial: user code containing build strings", () => {
       "Here is the deployment script:",
       "It outputs:",
       "BUILD SUCCESS",
-      "when complete."
+      "when complete.",
     ].join("\n");
     const filter = autoDetectFilter(input);
-    console.log("[file-content-build-success] detected:", filter?.filterName || "null");
+    console.log(
+      "[file-content-build-success] detected:",
+      filter?.filterName || "null",
+    );
     // Document behavior — buildOutput should preserve non-pattern lines as fallback
     if (filter === buildOutput) {
       const out = buildOutput(input);
@@ -130,7 +138,7 @@ describe("PR #1175 - adversarial: user code containing build strings", () => {
       "error: aborting due to previous error",
       "",
       "For more information about this error, try `rustc --explain E0432`.",
-      "error: could not compile `my-app` (bin \"my-app\") due to previous error"
+      'error: could not compile `my-app` (bin "my-app") due to previous error',
     ].join("\n");
     const out = buildOutput(input);
     expect(out).toContain("error[E0432]");
@@ -150,7 +158,7 @@ describe("PR #1175 - corruption safety", () => {
     const input = [
       "   Compiling a v0.1.0",
       "   Compiling b v0.1.0",
-      "   Compiling c v0.1.0"
+      "   Compiling c v0.1.0",
     ].join("\n");
     const out = buildOutput(input);
     // out = "Compiled 3 packages" (non-empty)
@@ -162,7 +170,7 @@ describe("PR #1175 - corruption safety", () => {
     const input = [
       "   Downloading foo v0.1.0",
       "   Downloading bar v0.2.0",
-      "Fetching baz from registry"
+      "Fetching baz from registry",
     ].join("\n");
     const out = buildOutput(input);
     expect(out).toContain("Downloaded");
@@ -178,7 +186,7 @@ describe("PR #1175 - corruption safety", () => {
     const input = [
       "npm warn deprecated 📦 foo@1.0.0: 🚫 deprecated reason",
       "added 1 package ✨",
-      "Run `npm audit` for details."
+      "Run `npm audit` for details.",
     ].join("\n");
     const out = buildOutput(input);
     expect(out).toContain("📦");
@@ -193,7 +201,7 @@ describe("PR #1175 - corruption safety", () => {
       "npm warn deprecated c@1.0.0: reason C",
       "npm warn deprecated d@1.0.0: reason D",
       "npm warn deprecated e@1.0.0: reason E",
-      "added 5 packages"
+      "added 5 packages",
     ].join("\n");
     const out = buildOutput(input);
     expect(out).toContain("a@1.0.0");
@@ -206,7 +214,10 @@ describe("PR #1175 - corruption safety", () => {
 
   it("safeApply wraps buildOutput against panics", () => {
     // Pass a non-string input via direct call — safeApply should catch
-    const out = safeApply(buildOutput, "npm warn deprecated foo\nadded 1 package\n");
+    const out = safeApply(
+      buildOutput,
+      "npm warn deprecated foo\nadded 1 package\n",
+    );
     expect(typeof out).toBe("string");
   });
 });
@@ -221,16 +232,25 @@ describe("PR #1175 - integration with compressMessages", () => {
         {
           role: "user",
           content: [
-            { type: "tool_result", tool_use_id: "id1", content: toolResultText }
-          ]
-        }
-      ]
+            {
+              type: "tool_result",
+              tool_use_id: "id1",
+              content: toolResultText,
+            },
+          ],
+        },
+      ],
     };
   }
 
   it("npm install output above MIN_COMPRESS_SIZE → compressed", () => {
-    const padding = "npm warn deprecated foo@1.0.0: this is a deprecation warning\n".repeat(20);
-    const text = padding + "added 47 packages, and audited 48 packages in 13s\n4 vulnerabilities (2 moderate, 2 critical)\nRun `npm audit` for details.";
+    const padding =
+      "npm warn deprecated foo@1.0.0: this is a deprecation warning\n".repeat(
+        20,
+      );
+    const text =
+      padding +
+      "added 47 packages, and audited 48 packages in 13s\n4 vulnerabilities (2 moderate, 2 critical)\nRun `npm audit` for details.";
     expect(text.length).toBeGreaterThan(MIN_COMPRESS_SIZE);
     const body = buildBody(text);
     const stats = compressMessages(body, true);
@@ -253,7 +273,10 @@ describe("PR #1175 - integration with compressMessages", () => {
 
   it("compressed output never grows input (safety guard)", () => {
     // Pathological: every line is something buildOutput keeps verbatim
-    const text = "npm ERR! error line 1\nnpm ERR! error line 2\nnpm ERR! error line 3\n".repeat(20);
+    const text =
+      "npm ERR! error line 1\nnpm ERR! error line 2\nnpm ERR! error line 3\n".repeat(
+        20,
+      );
     const body = buildBody(text);
     const stats = compressMessages(body, true);
     // either no hit (grew) or hit and shrunk
@@ -262,16 +285,22 @@ describe("PR #1175 - integration with compressMessages", () => {
   });
 
   it("tool_result with is_error:true is NOT compressed (preserve error traces)", () => {
-    const text = "npm warn deprecated foo@1.0.0\n".repeat(30) + "added 5 packages in 2s";
+    const text =
+      "npm warn deprecated foo@1.0.0\n".repeat(30) + "added 5 packages in 2s";
     const body = {
       messages: [
         {
           role: "user",
           content: [
-            { type: "tool_result", tool_use_id: "id1", content: text, is_error: true }
-          ]
-        }
-      ]
+            {
+              type: "tool_result",
+              tool_use_id: "id1",
+              content: text,
+              is_error: true,
+            },
+          ],
+        },
+      ],
     };
     const stats = compressMessages(body, true);
     expect(stats.hits.length).toBe(0);
@@ -285,10 +314,10 @@ describe("PR #1175 - integration with compressMessages", () => {
 describe("PR #1175 - porcelain regression deeper", () => {
   it("mixed staged + workdir + untracked porcelain → detected (has status code first char)", () => {
     const input = [
-      "M  src/staged.js",   // staged modified
-      " M src/workdir.js",  // workdir modified (space first)
+      "M  src/staged.js", // staged modified
+      " M src/workdir.js", // workdir modified (space first)
       "?? new.js",
-      "A  src/added.js"
+      "A  src/added.js",
     ].join("\n");
     const filter = autoDetectFilter(input);
     // M and A and ?? lines have status code first → 4/4 lines hit? No — " M" has space first
@@ -301,18 +330,14 @@ describe("PR #1175 - porcelain regression deeper", () => {
       " M src/a.js",
       " M src/b.js",
       " M src/c.js",
-      " D src/d.js"
+      " D src/d.js",
     ].join("\n");
     const filter = autoDetectFilter(input);
     expect(filter).toBe(gitStatus);
   });
 
   it("manual gitStatus() call on workdir-only porcelain still parses correctly", () => {
-    const input = [
-      " M src/a.js",
-      " M src/b.js",
-      " D src/c.js"
-    ].join("\n");
+    const input = [" M src/a.js", " M src/b.js", " D src/c.js"].join("\n");
     const out = gitStatus(input);
     expect(out).toContain("Modified: 3 files");
   });

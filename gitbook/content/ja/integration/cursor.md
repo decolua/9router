@@ -37,6 +37,7 @@ https://9router.com
 ```
 
 **手順:**
+
 1. Models設定で **Base URL** フィールドを見つける
 2. 入力: `https://9router.com`
 3. **Save** をクリック
@@ -75,13 +76,13 @@ Custom Models: gpt-4, claude-opus-4-5, gemini-2.0-flash
 
 9Routerダッシュボードで設定されたモデルを使用できます。一般的な例:
 
-| モデル名 | プロバイダー | 説明 |
-|------------|----------|-------------|
-| `gpt-4` | OpenAI | GPT-4 Turbo |
-| `gpt-4o` | OpenAI | GPT-4 Optimized |
-| `claude-opus-4-5` | Anthropic | Claude Opus 4.5 |
-| `claude-sonnet-4-5` | Anthropic | Claude Sonnet 4.5 |
-| `gemini-2.0-flash` | Google | Gemini 2.0 Flash |
+| モデル名            | プロバイダー | 説明              |
+| ------------------- | ------------ | ----------------- |
+| `gpt-4`             | OpenAI       | GPT-4 Turbo       |
+| `gpt-4o`            | OpenAI       | GPT-4 Optimized   |
+| `claude-opus-4-5`   | Anthropic    | Claude Opus 4.5   |
+| `claude-sonnet-4-5` | Anthropic    | Claude Sonnet 4.5 |
+| `gemini-2.0-flash`  | Google       | Gemini 2.0 Flash  |
 
 ## 使用法
 

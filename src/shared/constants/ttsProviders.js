@@ -9,7 +9,7 @@ export const TTS_PROVIDER_CONFIG = {
     hasBrowseButton: true,
     voiceSource: "hardcoded", // languages built from providerModels at runtime
   },
-  "openai": {
+  openai: {
     hasLanguageDropdown: false,
     hasModelSelector: true,
     hasBrowseButton: false,
@@ -18,7 +18,7 @@ export const TTS_PROVIDER_CONFIG = {
     voiceKey: "openai-tts-voices",
     voicesPerModel: true,
   },
-  "openrouter": {
+  openrouter: {
     hasLanguageDropdown: false,
     hasModelSelector: true,
     hasBrowseButton: false,
@@ -27,7 +27,7 @@ export const TTS_PROVIDER_CONFIG = {
     voiceKey: "openrouter-tts-voices",
     voicesPerModel: true,
   },
-  "elevenlabs": {
+  elevenlabs: {
     hasLanguageDropdown: false,
     hasModelSelector: true,
     hasBrowseButton: true,
@@ -49,53 +49,53 @@ export const TTS_PROVIDER_CONFIG = {
     voiceSource: "api-language", // from API with language picker
   },
   // ── Config-driven providers (load models from providers.js → ttsConfig.models) ──
-  "nvidia": {
+  nvidia: {
     hasModelSelector: true,
     hasBrowseButton: false,
     hasVoiceIdInput: true,
     voiceSource: "config",
   },
-  "hyperbolic": {
+  hyperbolic: {
     hasModelSelector: true,
     hasBrowseButton: false,
     voiceSource: "config",
   },
-  "deepgram": {
+  deepgram: {
     hasModelSelector: false,
     hasBrowseButton: true,
     voiceSource: "api-language",
     apiEndpoint: "/api/media-providers/tts/deepgram/voices",
   },
-  "huggingface": {
+  huggingface: {
     hasModelSelector: true,
     hasBrowseButton: false,
     voiceSource: "config",
   },
-  "cartesia": {
-    hasModelSelector: true,
-    hasBrowseButton: false,
-    hasVoiceIdInput: true,
-    voiceSource: "config",
-  },
-  "playht": {
+  cartesia: {
     hasModelSelector: true,
     hasBrowseButton: false,
     hasVoiceIdInput: true,
     voiceSource: "config",
   },
-  "coqui": {
+  playht: {
     hasModelSelector: true,
     hasBrowseButton: false,
     hasVoiceIdInput: true,
     voiceSource: "config",
   },
-  "tortoise": {
+  coqui: {
     hasModelSelector: true,
     hasBrowseButton: false,
     hasVoiceIdInput: true,
     voiceSource: "config",
   },
-  "inworld": {
+  tortoise: {
+    hasModelSelector: true,
+    hasBrowseButton: false,
+    hasVoiceIdInput: true,
+    voiceSource: "config",
+  },
+  inworld: {
     hasModelSelector: true,
     hasBrowseButton: true,
     hasVoiceIdInput: true,
@@ -103,13 +103,13 @@ export const TTS_PROVIDER_CONFIG = {
     modelKey: "inworld-tts-models",
     apiEndpoint: "/api/media-providers/tts/inworld/voices",
   },
-  "qwen": {
+  qwen: {
     hasModelSelector: true,
     hasBrowseButton: false,
     hasVoiceIdInput: true,
     voiceSource: "config",
   },
-  "minimax": {
+  minimax: {
     hasModelSelector: true,
     hasBrowseButton: true,
     hasVoiceIdInput: true,
@@ -125,7 +125,7 @@ export const TTS_PROVIDER_CONFIG = {
     apiEndpoint: "/api/media-providers/tts/minimax/voices?provider=minimax-cn",
     defaultVoiceId: "English_expressive_narrator",
   },
-  "gemini": {
+  gemini: {
     hasLanguageDropdown: false,
     hasLanguageHint: true, // sends body.language to guide TTS pronunciation
     hasModelSelector: true,

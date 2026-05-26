@@ -86,22 +86,40 @@ function isAutoStartEnabled() {
 
   try {
     if (platform === "darwin") {
-      const plistPath = path.join(os.homedir(), "Library", "LaunchAgents", `${APP_LABEL}.plist`);
+      const plistPath = path.join(
+        os.homedir(),
+        "Library",
+        "LaunchAgents",
+        `${APP_LABEL}.plist`,
+      );
       if (!fs.existsSync(plistPath)) return false;
       try {
         execSync(`launchctl list ${APP_LABEL}`, {
           stdio: ["ignore", "ignore", "ignore"],
-          timeout: 3000
+          timeout: 3000,
         });
         return true;
       } catch (e) {
         return false;
       }
     } else if (platform === "win32") {
-      const startupPath = path.join(process.env.APPDATA || "", "Microsoft", "Windows", "Start Menu", "Programs", "Startup", `${APP_NAME}.vbs`);
+      const startupPath = path.join(
+        process.env.APPDATA || "",
+        "Microsoft",
+        "Windows",
+        "Start Menu",
+        "Programs",
+        "Startup",
+        `${APP_NAME}.vbs`,
+      );
       return fs.existsSync(startupPath);
     } else if (platform === "linux") {
-      const desktopPath = path.join(os.homedir(), ".config", "autostart", `${APP_NAME}.desktop`);
+      const desktopPath = path.join(
+        os.homedir(),
+        ".config",
+        "autostart",
+        `${APP_NAME}.desktop`,
+      );
       return fs.existsSync(desktopPath);
     }
   } catch (e) {}
@@ -129,7 +147,7 @@ function isAgentSelfMacOS() {
     const output = execSync(`launchctl list ${APP_LABEL}`, {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
-      timeout: 3000
+      timeout: 3000,
     });
     const match = output.match(/"PID"\s*=\s*(\d+)/);
     return !!(match && parseInt(match[1], 10) === process.pid);
@@ -215,7 +233,12 @@ function enableMacOS(cliPath) {
 }
 
 function disableMacOS() {
-  const plistPath = path.join(os.homedir(), "Library", "LaunchAgents", `${APP_LABEL}.plist`);
+  const plistPath = path.join(
+    os.homedir(),
+    "Library",
+    "LaunchAgents",
+    `${APP_LABEL}.plist`,
+  );
 
   // Don't kill ourselves: when the current process is the running agent,
   // `launchctl unload` would send SIGTERM and the user clicking
@@ -237,7 +260,14 @@ function disableMacOS() {
 // ============ Windows ============
 
 function enableWindows(cliPath) {
-  const startupDir = path.join(process.env.APPDATA || "", "Microsoft", "Windows", "Start Menu", "Programs", "Startup");
+  const startupDir = path.join(
+    process.env.APPDATA || "",
+    "Microsoft",
+    "Windows",
+    "Start Menu",
+    "Programs",
+    "Startup",
+  );
   const vbsPath = path.join(startupDir, `${APP_NAME}.vbs`);
 
   if (!fs.existsSync(startupDir)) return false;
@@ -256,7 +286,15 @@ WshShell.Run """${nodePath}"" ""${routerScript}"" --tray --skip-update", 0, Fals
 }
 
 function disableWindows() {
-  const vbsPath = path.join(process.env.APPDATA || "", "Microsoft", "Windows", "Start Menu", "Programs", "Startup", `${APP_NAME}.vbs`);
+  const vbsPath = path.join(
+    process.env.APPDATA || "",
+    "Microsoft",
+    "Windows",
+    "Start Menu",
+    "Programs",
+    "Startup",
+    `${APP_NAME}.vbs`,
+  );
   if (fs.existsSync(vbsPath)) {
     fs.unlinkSync(vbsPath);
   }
@@ -270,8 +308,11 @@ function enableLinux(cliPath) {
   const desktopPath = path.join(autostartDir, `${APP_NAME}.desktop`);
 
   if (!fs.existsSync(autostartDir)) {
-    try { fs.mkdirSync(autostartDir, { recursive: true }); }
-    catch (e) { return false; }
+    try {
+      fs.mkdirSync(autostartDir, { recursive: true });
+    } catch (e) {
+      return false;
+    }
   }
 
   const nodePath = process.execPath;
@@ -292,7 +333,12 @@ X-GNOME-Autostart-enabled=true
 }
 
 function disableLinux() {
-  const desktopPath = path.join(os.homedir(), ".config", "autostart", `${APP_NAME}.desktop`);
+  const desktopPath = path.join(
+    os.homedir(),
+    ".config",
+    "autostart",
+    `${APP_NAME}.desktop`,
+  );
   if (fs.existsSync(desktopPath)) {
     fs.unlinkSync(desktopPath);
   }
@@ -302,5 +348,5 @@ function disableLinux() {
 module.exports = {
   enableAutoStart,
   disableAutoStart,
-  isAutoStartEnabled
+  isAutoStartEnabled,
 };

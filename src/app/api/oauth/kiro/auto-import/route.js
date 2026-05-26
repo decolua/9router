@@ -66,7 +66,8 @@ export async function GET() {
     if (!refreshToken) {
       return NextResponse.json({
         found: false,
-        error: "Kiro token not found in AWS SSO cache. Please login to Kiro IDE first.",
+        error:
+          "Kiro token not found in AWS SSO cache. Please login to Kiro IDE first.",
       });
     }
 
@@ -79,7 +80,7 @@ export async function GET() {
     console.log("Kiro auto-import error:", error);
     return NextResponse.json(
       { found: false, error: error.message },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

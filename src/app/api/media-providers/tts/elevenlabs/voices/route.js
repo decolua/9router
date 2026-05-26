@@ -15,10 +15,16 @@ export async function GET(request) {
     const langFilter = searchParams.get("lang");
 
     // Direct DB read - bypass auth mutex used for TTS inference
-    const connections = await getProviderConnections({ provider: "elevenlabs", isActive: true });
+    const connections = await getProviderConnections({
+      provider: "elevenlabs",
+      isActive: true,
+    });
     const apiKey = connections[0]?.apiKey;
     if (!apiKey) {
-      return NextResponse.json({ error: "No ElevenLabs connection found" }, { status: 400 });
+      return NextResponse.json(
+        { error: "No ElevenLabs connection found" },
+        { status: 400 },
+      );
     }
 
     const voices = await fetchElevenLabsVoices(apiKey);
@@ -29,7 +35,13 @@ export async function GET(request) {
       if (!byLang[code]) {
         byLang[code] = {
           code,
-          name: (() => { try { return langNames.of(code); } catch { return code; } })(),
+          name: (() => {
+            try {
+              return langNames.of(code);
+            } catch {
+              return code;
+            }
+          })(),
           voices: [],
         };
       }
@@ -41,7 +53,8 @@ export async function GET(request) {
           gender: voice.labels?.gender || "",
           lang: code,
           // premade voices are free; professional library voices added to account may require paid plan
-          free_users_allowed: voice.category === "premade" || voice.is_owner === true
+          free_users_allowed:
+            voice.category === "premade" || voice.is_owner === true,
         });
       }
     };
@@ -57,7 +70,9 @@ export async function GET(request) {
       }
     }
 
-    const languages = Object.values(byLang).sort((a, b) => a.name.localeCompare(b.name));
+    const languages = Object.values(byLang).sort((a, b) =>
+      a.name.localeCompare(b.name),
+    );
 
     // If lang filter requested, return only that group's voices
     if (langFilter) {
@@ -66,6 +81,9 @@ export async function GET(request) {
 
     return NextResponse.json({ languages, byLang });
   } catch (err) {
-    return NextResponse.json({ error: err.message || "Failed to fetch voices" }, { status: 502 });
+    return NextResponse.json(
+      { error: err.message || "Failed to fetch voices" },
+      { status: 502 },
+    );
   }
 }

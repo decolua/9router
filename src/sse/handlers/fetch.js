@@ -6,13 +6,22 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { getSettings, getCombos } from "@/lib/localDb";
-import { AI_PROVIDERS, resolveProviderId } from "@/shared/constants/providers.js";
+import {
+  AI_PROVIDERS,
+  resolveProviderId,
+} from "@/shared/constants/providers.js";
 import { handleFetchCore } from "open-sse/handlers/fetch/index.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
-import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
-import { handleComboChat, getComboModelsFromData } from "open-sse/services/combo.js";
+import {
+  updateProviderCredentials,
+  checkAndRefreshToken,
+} from "../services/tokenRefresh.js";
+import {
+  handleComboChat,
+  getComboModelsFromData,
+} from "open-sse/services/combo.js";
 
 /**
  * Handle web fetch (URL extraction) request for the SSE/Next.js server.
@@ -62,12 +71,18 @@ export async function handleFetch(request) {
 
   if (!providerInput || typeof providerInput !== "string") {
     log.warn("FETCH", "Missing provider/model");
-    return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: provider (or model)");
+    return errorResponse(
+      HTTP_STATUS.BAD_REQUEST,
+      "Missing required field: provider (or model)",
+    );
   }
 
   if (!targetUrl || typeof targetUrl !== "string") {
     log.warn("FETCH", "Missing url");
-    return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: url");
+    return errorResponse(
+      HTTP_STATUS.BAD_REQUEST,
+      "Missing required field: url",
+    );
   }
 
   // Validate URL format
@@ -83,24 +98,43 @@ export async function handleFetch(request) {
   const comboModels = getComboModelsFromData(providerInput, combos);
   if (comboModels) {
     const comboStrategies = settings.comboStrategies || {};
-    const comboStrategy = comboStrategies[providerInput]?.fallbackStrategy || settings.comboStrategy || "fallback";
+    const comboStrategy =
+      comboStrategies[providerInput]?.fallbackStrategy ||
+      settings.comboStrategy ||
+      "fallback";
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
-    log.info("FETCH", `Combo "${providerInput}" with ${comboModels.length} providers (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
+    log.info(
+      "FETCH",
+      `Combo "${providerInput}" with ${comboModels.length} providers (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`,
+    );
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleProviderFetch(b, m, request, apiKey, settings),
+      handleSingleModel: (b, m) =>
+        handleSingleProviderFetch(b, m, request, apiKey, settings),
       log,
       comboName: providerInput,
       comboStrategy,
-      comboStickyLimit
+      comboStickyLimit,
     });
   }
 
-  return handleSingleProviderFetch(body, providerInput, request, apiKey, settings);
+  return handleSingleProviderFetch(
+    body,
+    providerInput,
+    request,
+    apiKey,
+    settings,
+  );
 }
 
-async function handleSingleProviderFetch(body, providerInput, request, apiKey, settings) {
+async function handleSingleProviderFetch(
+  body,
+  providerInput,
+  request,
+  apiKey,
+  settings,
+) {
   const targetUrl = body.url;
   const format = body.format;
   const maxCharacters = body.max_characters;
@@ -109,13 +143,21 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
 
   if (!resolvedProvider) {
     log.warn("FETCH", "Unknown provider", { provider: providerInput });
-    return errorResponse(HTTP_STATUS.BAD_REQUEST, `Unknown provider: ${providerInput}`);
+    return errorResponse(
+      HTTP_STATUS.BAD_REQUEST,
+      `Unknown provider: ${providerInput}`,
+    );
   }
 
   const providerConfig = resolvedProvider.fetchConfig;
   if (!providerConfig) {
-    log.warn("FETCH", "Provider does not support web fetch", { provider: providerId });
-    return errorResponse(HTTP_STATUS.BAD_REQUEST, `Provider ${providerId} does not support web fetch`);
+    log.warn("FETCH", "Provider does not support web fetch", {
+      provider: providerId,
+    });
+    return errorResponse(
+      HTTP_STATUS.BAD_REQUEST,
+      `Provider ${providerId} does not support web fetch`,
+    );
   }
 
   if (providerInput !== providerId) {
@@ -134,14 +176,20 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
       provider: resolvedProvider.id,
       providerConfig,
       credentials: null,
-      log
+      log,
     });
     if (result.success) {
       return new Response(JSON.stringify(result.data), {
-        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
       });
     }
-    return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "Fetch failed");
+    return errorResponse(
+      result.status || HTTP_STATUS.BAD_GATEWAY,
+      result.error || "Fetch failed",
+    );
   }
 
   // Credential + fallback loop
@@ -150,26 +198,52 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(providerId, excludeConnectionIds);
+    const credentials = await getProviderCredentials(
+      providerId,
+      excludeConnectionIds,
+    );
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
-        const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
-        log.warn("FETCH", `[${providerId}] ${errorMsg} (${credentials.retryAfterHuman})`);
-        return unavailableResponse(status, `[${providerId}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
+        const status =
+          lastStatus ||
+          Number(credentials.lastErrorCode) ||
+          HTTP_STATUS.SERVICE_UNAVAILABLE;
+        log.warn(
+          "FETCH",
+          `[${providerId}] ${errorMsg} (${credentials.retryAfterHuman})`,
+        );
+        return unavailableResponse(
+          status,
+          `[${providerId}] ${errorMsg}`,
+          credentials.retryAfter,
+          credentials.retryAfterHuman,
+        );
       }
       if (excludeConnectionIds.size === 0) {
         log.error("AUTH", `No credentials for provider: ${providerId}`);
-        return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${providerId}`);
+        return errorResponse(
+          HTTP_STATUS.BAD_REQUEST,
+          `No credentials for provider: ${providerId}`,
+        );
       }
       log.warn("FETCH", "No more accounts available", { provider: providerId });
-      return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
+      return errorResponse(
+        lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE,
+        lastError || "All accounts unavailable",
+      );
     }
 
-    log.info("AUTH", `\x1b[32mUsing ${providerId} account: ${credentials.connectionName}\x1b[0m`);
+    log.info(
+      "AUTH",
+      `\x1b[32mUsing ${providerId} account: ${credentials.connectionName}\x1b[0m`,
+    );
 
-    const refreshedCredentials = await checkAndRefreshToken(providerId, credentials);
+    const refreshedCredentials = await checkAndRefreshToken(
+      providerId,
+      credentials,
+    );
 
     const result = await handleFetchCore({
       url: targetUrl,
@@ -184,30 +258,44 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
           accessToken: newCreds.accessToken,
           refreshToken: newCreds.refreshToken,
           providerSpecificData: newCreds.providerSpecificData,
-          testStatus: "active"
+          testStatus: "active",
         });
       },
       onRequestSuccess: async () => {
         await clearAccountError(credentials.connectionId, credentials);
-      }
+      },
     });
 
     if (result.success) {
       return new Response(JSON.stringify(result.data), {
-        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
       });
     }
 
-    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, providerId);
+    const { shouldFallback } = await markAccountUnavailable(
+      credentials.connectionId,
+      result.status,
+      result.error,
+      providerId,
+    );
 
     if (shouldFallback) {
-      log.warn("AUTH", `Account ${credentials.connectionName} unavailable (${result.status}), trying fallback`);
+      log.warn(
+        "AUTH",
+        `Account ${credentials.connectionName} unavailable (${result.status}), trying fallback`,
+      );
       excludeConnectionIds.add(credentials.connectionId);
       lastError = result.error;
       lastStatus = result.status;
       continue;
     }
 
-    return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "Fetch failed");
+    return errorResponse(
+      result.status || HTTP_STATUS.BAD_GATEWAY,
+      result.error || "Fetch failed",
+    );
   }
 }

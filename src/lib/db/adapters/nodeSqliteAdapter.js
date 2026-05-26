@@ -9,7 +9,11 @@ export async function createNodeSqliteAdapter(filePath) {
   // Stable enough for production use as of Node 22.x (RC quality).
   const origEmit = process.emit;
   process.emit = function (name, data, ...rest) {
-    if (name === "warning" && data?.name === "ExperimentalWarning" && /SQLite/i.test(data.message || "")) {
+    if (
+      name === "warning" &&
+      data?.name === "ExperimentalWarning" &&
+      /SQLite/i.test(data.message || "")
+    ) {
       return false;
     }
     return origEmit.call(process, name, data, ...rest);
@@ -34,25 +38,42 @@ export async function createNodeSqliteAdapter(filePath) {
 
   // Periodic WAL checkpoint to keep -wal/-shm small
   const checkpointTimer = setInterval(() => {
-    try { db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch {}
+    try {
+      db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+    } catch {}
   }, CHECKPOINT_INTERVAL_MS);
   if (typeof checkpointTimer.unref === "function") checkpointTimer.unref();
 
   function gracefulClose() {
-    try { db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch {}
-    try { stmtCache.clear(); } catch {}
-    try { db.close(); } catch {}
+    try {
+      db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+    } catch {}
+    try {
+      stmtCache.clear();
+    } catch {}
+    try {
+      db.close();
+    } catch {}
   }
   const onShutdown = () => gracefulClose();
   process.once("beforeExit", onShutdown);
-  process.once("SIGINT", () => { onShutdown(); process.exit(0); });
-  process.once("SIGTERM", () => { onShutdown(); process.exit(0); });
+  process.once("SIGINT", () => {
+    onShutdown();
+    process.exit(0);
+  });
+  process.once("SIGTERM", () => {
+    onShutdown();
+    process.exit(0);
+  });
 
   return {
     driver: "node:sqlite",
     run(sql, params = []) {
       const r = prepare(sql).run(...params);
-      return { changes: Number(r.changes ?? 0), lastInsertRowid: Number(r.lastInsertRowid ?? 0) };
+      return {
+        changes: Number(r.changes ?? 0),
+        lastInsertRowid: Number(r.lastInsertRowid ?? 0),
+      };
     },
     get(sql, params = []) {
       return prepare(sql).get(...params);
@@ -60,7 +81,9 @@ export async function createNodeSqliteAdapter(filePath) {
     all(sql, params = []) {
       return prepare(sql).all(...params);
     },
-    exec(sql) { return db.exec(sql); },
+    exec(sql) {
+      return db.exec(sql);
+    },
     transaction(fn) {
       // node:sqlite has no transaction wrapper. Use SAVEPOINT for nested support.
       const sp = `sp_${Math.random().toString(36).slice(2)}`;
@@ -70,11 +93,18 @@ export async function createNodeSqliteAdapter(filePath) {
         db.exec(`RELEASE ${sp}`);
         return r;
       } catch (e) {
-        try { db.exec(`ROLLBACK TO ${sp}`); db.exec(`RELEASE ${sp}`); } catch {}
+        try {
+          db.exec(`ROLLBACK TO ${sp}`);
+          db.exec(`RELEASE ${sp}`);
+        } catch {}
         throw e;
       }
     },
-    checkpoint() { try { db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch {} },
+    checkpoint() {
+      try {
+        db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+      } catch {}
+    },
     close() {
       clearInterval(checkpointTimer);
       gracefulClose();

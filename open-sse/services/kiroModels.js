@@ -66,11 +66,11 @@ function regionFromProfileArn(profileArn) {
  */
 function buildKiroFingerprintHeaders(credentials) {
   const seed =
-    credentials?.providerSpecificData?.clientId
-    || credentials?.refreshToken
-    || credentials?.providerSpecificData?.profileArn
-    || credentials?.accessToken
-    || "kiro-anonymous";
+    credentials?.providerSpecificData?.clientId ||
+    credentials?.refreshToken ||
+    credentials?.providerSpecificData?.profileArn ||
+    credentials?.accessToken ||
+    "kiro-anonymous";
   const machineId = createHash("sha256").update(String(seed)).digest("hex");
 
   const userAgent =
@@ -88,7 +88,7 @@ function buildKiroFingerprintHeaders(credentials) {
     "x-amzn-codewhisperer-optout": "true",
     "amz-sdk-request": "attempt=1; max=1",
     "amz-sdk-invocation-id": uuidv4(),
-    "Accept": "application/json"
+    Accept: "application/json",
   };
 }
 
@@ -112,25 +112,25 @@ function buildVariants(upstream, displayName) {
     {
       id: safeUpstream,
       name: display,
-      capabilities: { thinking: false, agentic: false }
+      capabilities: { thinking: false, agentic: false },
     },
     {
       id: `${safeUpstream}-thinking`,
       name: `${display} (Thinking)`,
-      capabilities: { thinking: true, agentic: false }
-    }
+      capabilities: { thinking: true, agentic: false },
+    },
   ];
 
   if (!isAuto) {
     variants.push({
       id: `${safeUpstream}-agentic`,
       name: `${display} (Agentic)`,
-      capabilities: { thinking: false, agentic: true }
+      capabilities: { thinking: false, agentic: true },
     });
     variants.push({
       id: `${safeUpstream}-thinking-agentic`,
       name: `${display} (Thinking + Agentic)`,
-      capabilities: { thinking: true, agentic: true }
+      capabilities: { thinking: true, agentic: true },
     });
   }
 
@@ -166,7 +166,7 @@ async function fetchKiroCatalogRaw(credentials, signal) {
 
   const headers = {
     ...buildKiroFingerprintHeaders(credentials),
-    "Authorization": `Bearer ${credentials?.accessToken || ""}`
+    Authorization: `Bearer ${credentials?.accessToken || ""}`,
   };
 
   const controller = new AbortController();
@@ -181,7 +181,7 @@ async function fetchKiroCatalogRaw(credentials, signal) {
     response = await fetch(url, {
       method: "GET",
       headers,
-      signal: controller.signal
+      signal: controller.signal,
     });
   } finally {
     clearTimeout(timer);
@@ -189,7 +189,9 @@ async function fetchKiroCatalogRaw(credentials, signal) {
 
   if (!response.ok) {
     const text = await response.text().catch(() => "");
-    const err = new Error(`Kiro ListAvailableModels ${response.status}: ${text || response.statusText}`);
+    const err = new Error(
+      `Kiro ListAvailableModels ${response.status}: ${text || response.statusText}`,
+    );
     err.status = response.status;
     err.body = text;
     throw err;
@@ -208,11 +210,11 @@ async function fetchKiroCatalogRaw(credentials, signal) {
 function cacheKey(credentials) {
   const psd = credentials?.providerSpecificData || {};
   const seed =
-    psd.profileArn
-    || psd.clientId
-    || credentials?.refreshToken
-    || credentials?.accessToken
-    || "anonymous";
+    psd.profileArn ||
+    psd.clientId ||
+    credentials?.refreshToken ||
+    credentials?.accessToken ||
+    "anonymous";
   return createHash("sha256").update(`kiro:${seed}`).digest("hex");
 }
 
@@ -257,13 +259,18 @@ export async function resolveKiroModels(credentials, options = {}) {
       const refreshed = await refreshKiroToken(
         credentials.refreshToken,
         credentials.providerSpecificData,
-        options.log
+        options.log,
       );
       if (refreshed?.accessToken) {
         const next = { ...credentials, ...refreshed };
         if (typeof options.onCredentialsRefreshed === "function") {
-          try { await options.onCredentialsRefreshed(refreshed); } catch (e) {
-            options.log?.warn?.("KIRO_MODELS", `onCredentialsRefreshed failed: ${e?.message || e}`);
+          try {
+            await options.onCredentialsRefreshed(refreshed);
+          } catch (e) {
+            options.log?.warn?.(
+              "KIRO_MODELS",
+              `onCredentialsRefreshed failed: ${e?.message || e}`,
+            );
           }
         }
         try {
@@ -273,15 +280,24 @@ export async function resolveKiroModels(credentials, options = {}) {
           credentials.accessToken = next.accessToken;
           if (next.refreshToken) credentials.refreshToken = next.refreshToken;
         } catch (err2) {
-          options.log?.warn?.("KIRO_MODELS", `Retry after refresh failed: ${err2?.message || err2}`);
+          options.log?.warn?.(
+            "KIRO_MODELS",
+            `Retry after refresh failed: ${err2?.message || err2}`,
+          );
           return null;
         }
       } else {
-        options.log?.warn?.("KIRO_MODELS", "Token refresh did not return accessToken");
+        options.log?.warn?.(
+          "KIRO_MODELS",
+          "Token refresh did not return accessToken",
+        );
         return null;
       }
     } else {
-      options.log?.warn?.("KIRO_MODELS", `ListAvailableModels failed: ${err?.message || err}`);
+      options.log?.warn?.(
+        "KIRO_MODELS",
+        `ListAvailableModels failed: ${err?.message || err}`,
+      );
       return null;
     }
   }
@@ -291,7 +307,11 @@ export async function resolveKiroModels(credentials, options = {}) {
     if (!m || typeof m !== "object") continue;
     const upstreamId = m.modelId || m.id;
     if (!upstreamId) continue;
-    const display = formatDisplayName(m.modelName, upstreamId, m.rateMultiplier);
+    const display = formatDisplayName(
+      m.modelName,
+      upstreamId,
+      m.rateMultiplier,
+    );
     const ctx = Number(m?.tokenLimits?.maxInputTokens) || 200_000;
     for (const v of buildVariants(upstreamId, display)) {
       expanded.push({
@@ -299,9 +319,11 @@ export async function resolveKiroModels(credentials, options = {}) {
         // Carry over context window + raw upstream metadata so the caller
         // (e.g. the dashboard models endpoint) can render it.
         contextLength: ctx,
-        rateMultiplier: Number.isFinite(Number(m.rateMultiplier)) ? Number(m.rateMultiplier) : 1.0,
+        rateMultiplier: Number.isFinite(Number(m.rateMultiplier))
+          ? Number(m.rateMultiplier)
+          : 1.0,
         upstreamModelId: upstreamId,
-        description: m.description || ""
+        description: m.description || "",
       });
     }
   }
@@ -309,7 +331,7 @@ export async function resolveKiroModels(credentials, options = {}) {
   catalogCache.set(key, {
     expiresAt: now + CACHE_TTL_MS,
     models: expanded,
-    rawModels: raw
+    rawModels: raw,
   });
 
   return { models: expanded, rawModels: raw };

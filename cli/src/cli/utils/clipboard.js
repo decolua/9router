@@ -8,7 +8,7 @@ const { execSync } = require("child_process");
 function copyToClipboard(text) {
   try {
     const platform = process.platform;
-    
+
     if (platform === "darwin") {
       execSync("pbcopy", { input: text });
     } else if (platform === "win32") {

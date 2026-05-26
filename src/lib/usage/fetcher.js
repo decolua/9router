@@ -2,7 +2,11 @@
  * Usage Fetcher - Get usage data from provider APIs
  */
 
-import { GITHUB_CONFIG, GEMINI_CONFIG, ANTIGRAVITY_CONFIG } from "@/lib/oauth/constants/oauth";
+import {
+  GITHUB_CONFIG,
+  GEMINI_CONFIG,
+  ANTIGRAVITY_CONFIG,
+} from "@/lib/oauth/constants/oauth";
 
 /**
  * Get usage data for a provider connection
@@ -43,14 +47,17 @@ async function getGitHubUsage(accessToken, providerSpecificData) {
       throw new Error("Copilot token not found. Please refresh token first.");
     }
 
-    const response = await fetch("https://api.github.com/copilot_internal/user", {
-      headers: {
-        Authorization: `Bearer ${copilotToken}`,
-        Accept: "application/json",
-        "X-GitHub-Api-Version": GITHUB_CONFIG.apiVersion,
-        "User-Agent": GITHUB_CONFIG.userAgent,
+    const response = await fetch(
+      "https://api.github.com/copilot_internal/user",
+      {
+        headers: {
+          Authorization: `Bearer ${copilotToken}`,
+          Accept: "application/json",
+          "X-GitHub-Api-Version": GITHUB_CONFIG.apiVersion,
+          "User-Agent": GITHUB_CONFIG.userAgent,
+        },
       },
-    });
+    );
 
     if (!response.ok) {
       const error = await response.text();
@@ -69,14 +76,16 @@ async function getGitHubUsage(accessToken, providerSpecificData) {
         quotas: {
           chat: formatGitHubQuotaSnapshot(snapshots.chat),
           completions: formatGitHubQuotaSnapshot(snapshots.completions),
-          premium_interactions: formatGitHubQuotaSnapshot(snapshots.premium_interactions),
+          premium_interactions: formatGitHubQuotaSnapshot(
+            snapshots.premium_interactions,
+          ),
         },
       };
     } else if (data.monthly_quotas || data.limited_user_quotas) {
       // Free/limited plan format
       const monthlyQuotas = data.monthly_quotas || {};
       const usedQuotas = data.limited_user_quotas || {};
-      
+
       return {
         plan: data.copilot_plan || data.access_type_sku,
         resetDate: data.limited_user_reset_date,
@@ -103,7 +112,7 @@ async function getGitHubUsage(accessToken, providerSpecificData) {
 
 function formatGitHubQuotaSnapshot(quota) {
   if (!quota) return { used: 0, total: 0, unlimited: true };
-  
+
   return {
     used: quota.entitlement - quota.remaining,
     total: quota.entitlement,
@@ -126,17 +135,24 @@ async function getGeminiUsage(accessToken) {
           Authorization: `Bearer ${accessToken}`,
           Accept: "application/json",
         },
-      }
+      },
     );
 
     if (!response.ok) {
       // Quota API may not be accessible, return generic message
-      return { message: "Gemini CLI uses Google Cloud quotas. Check Google Cloud Console for details." };
+      return {
+        message:
+          "Gemini CLI uses Google Cloud quotas. Check Google Cloud Console for details.",
+      };
     }
 
-    return { message: "Gemini CLI connected. Usage tracked via Google Cloud Console." };
+    return {
+      message: "Gemini CLI connected. Usage tracked via Google Cloud Console.",
+    };
   } catch (error) {
-    return { message: "Unable to fetch Gemini usage. Check Google Cloud Console." };
+    return {
+      message: "Unable to fetch Gemini usage. Check Google Cloud Console.",
+    };
   }
 }
 
@@ -146,7 +162,9 @@ async function getGeminiUsage(accessToken) {
 async function getAntigravityUsage(accessToken) {
   try {
     // Similar to Gemini, uses Google Cloud
-    return { message: "Antigravity connected. Usage tracked via Google Cloud Console." };
+    return {
+      message: "Antigravity connected. Usage tracked via Google Cloud Console.",
+    };
   } catch (error) {
     return { message: "Unable to fetch Antigravity usage." };
   }
@@ -205,4 +223,3 @@ async function getIflowUsage(accessToken) {
     return { message: "Unable to fetch iFlow usage." };
   }
 }
-

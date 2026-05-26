@@ -28,16 +28,19 @@
 将 base URL 设为你的 9Router endpoint:
 
 **本地 9Router:**
+
 ```
 http://localhost:20128/v1
 ```
 
 **云端 9Router:**
+
 ```
 https://9router.com
 ```
 
 **步骤:**
+
 1. 在 **Base URL** 字段中输入你的 9Router endpoint
 2. 末尾必须包含 `/v1`
 
@@ -79,13 +82,13 @@ Model: gpt-4
 
 你可以使用 9Router 仪表盘中配置的任意模型。常见示例:
 
-| 模型名 | 提供商 | 描述 |
-|------------|----------|-------------|
-| `gpt-4` | OpenAI | GPT-4 Turbo |
-| `gpt-4o` | OpenAI | GPT-4 Optimized |
-| `claude-opus-4-5` | Anthropic | Claude Opus 4.5 |
+| 模型名              | 提供商    | 描述              |
+| ------------------- | --------- | ----------------- |
+| `gpt-4`             | OpenAI    | GPT-4 Turbo       |
+| `gpt-4o`            | OpenAI    | GPT-4 Optimized   |
+| `claude-opus-4-5`   | Anthropic | Claude Opus 4.5   |
 | `claude-sonnet-4-5` | Anthropic | Claude Sonnet 4.5 |
-| `gemini-2.0-flash` | Google | Gemini 2.0 Flash |
+| `gemini-2.0-flash`  | Google    | Gemini 2.0 Flash  |
 
 ## 使用
 
@@ -183,6 +186,7 @@ Model: gpt-4
 ### 模型路由
 
 9Router 会根据以下因素自动将请求路由到最佳提供商:
+
 - 模型可用性
 - 提供商健康状态
 - 成本优化
@@ -195,6 +199,7 @@ Model: gpt-4
 ### 使用跟踪
 
 通过 9Router 仪表盘监控你的 Cline 使用:
+
 - 请求总数
 - Token 使用
 - 每个模型的成本

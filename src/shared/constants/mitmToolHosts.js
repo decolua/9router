@@ -3,7 +3,10 @@
  * Kept in sync with MITM routing; shared by Node (dnsConfig) and dashboard UI.
  */
 const TOOL_HOSTS = {
-  antigravity: ["daily-cloudcode-pa.googleapis.com", "cloudcode-pa.googleapis.com"],
+  antigravity: [
+    "daily-cloudcode-pa.googleapis.com",
+    "cloudcode-pa.googleapis.com",
+  ],
   copilot: ["api.individual.githubcopilot.com"],
   kiro: ["q.us-east-1.amazonaws.com", "codewhisperer.us-east-1.amazonaws.com"],
   cursor: ["api2.cursor.sh"],

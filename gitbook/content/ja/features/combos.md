@@ -9,6 +9,7 @@
 コンボはダッシュボードで作成する**カスタムフォールバックチェーン**です。単一モデルを使う代わりに、9Routerが順番に試すモデルのシーケンスを定義します。
 
 **例:**
+
 ```
 コンボ名: premium-coding
 モデル:
@@ -18,6 +19,7 @@
 ```
 
 **CLIでの使用:**
+
 ```
 Model: premium-coding
 ```
@@ -29,6 +31,7 @@ Model: premium-coding
 ## なぜコンボを使うのか?
 
 ### 1. サブスクリプション価値を最大化
+
 ```
 cc/claude-opus → glm/glm-4.7 → if/kimi-k2-thinking
 
@@ -37,6 +40,7 @@ cc/claude-opus → glm/glm-4.7 → if/kimi-k2-thinking
 ```
 
 ### 2. コストを最小化
+
 ```
 glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2-thinking
 
@@ -47,6 +51,7 @@ glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2-thinking
 ```
 
 ### 3. 24時間可用性を確保
+
 ```
 cc/claude-opus → cx/gpt-5.2-codex → glm/glm-4.7 → if/kimi-k2-thinking
 
@@ -56,6 +61,7 @@ cc/claude-opus → cx/gpt-5.2-codex → glm/glm-4.7 → if/kimi-k2-thinking
 ```
 
 ### 4. 品質に最適化
+
 ```
 cc/claude-opus-4-5 → cx/gpt-5.2-codex → gc/gemini-3-pro
 
@@ -84,16 +90,19 @@ Dashboard → Combos → Create New Combo
 ### ステップ3: コンボを設定
 
 **コンボ名:**
+
 ```
 premium-coding
 ```
 
 **説明(任意):**
+
 ```
 サブスクリプション優先、低価格バックアップ、無料緊急時
 ```
 
 **モデルを選択:**
+
 ```
 1. cc/claude-opus-4-5-20251101
 2. glm/glm-4.7
@@ -135,12 +144,14 @@ Models:
 ```
 
 **使用法:**
+
 ```
 Cursor IDE:
   Model: premium-coding
 ```
 
 **動作:**
+
 ```
 朝 (新鮮なクォータ):
   Request → cc/claude-opus-4-5 ✅
@@ -153,6 +164,7 @@ Cursor IDE:
 ```
 
 **月コスト (1億トークン):**
+
 ```
 Claude Code経由で8000万: $0 (サブスクリプション)
 GLM経由で1500万: $9
@@ -179,6 +191,7 @@ Models:
 ```
 
 **使用法:**
+
 ```
 Cline:
   Provider: OpenAI Compatible
@@ -187,6 +200,7 @@ Cline:
 ```
 
 **動作:**
+
 ```
 Request → glm/glm-4.7
   ✅ 日次クォータ利用可 → GLMを使用 (100万あたり$0.60)
@@ -195,6 +209,7 @@ Request → glm/glm-4.7
 ```
 
 **月コスト (1億トークン):**
+
 ```
 GLM経由で7000万: $42
 MiniMax経由で2000万: $4
@@ -221,12 +236,14 @@ Models:
 ```
 
 **使用法:**
+
 ```
 Claude Desktop:
   Model: free-combo
 ```
 
 **動作:**
+
 ```
 Request → if/kimi-k2-thinking
   ✅ 利用可 → iFlowを使用
@@ -235,6 +252,7 @@ Request → if/kimi-k2-thinking
 ```
 
 **月コスト:**
+
 ```
 無料プロバイダー経由で1億トークン: $0
 合計: 永久に$0
@@ -259,6 +277,7 @@ Models:
 ```
 
 **使用法:**
+
 ```
 Codex CLI:
   export OPENAI_BASE_URL="http://localhost:20128"
@@ -266,6 +285,7 @@ Codex CLI:
 ```
 
 **動作:**
+
 ```
 Request → cc/claude-opus-4-5
   ❌ クォータ切れ → cx/gpt-5.2-codex
@@ -295,6 +315,7 @@ Models:
 ```
 
 **月コスト (2億トークン):**
+
 ```
 Gemini CLI経由で5000万: $0 (無料プラン)
 Claude Code経由で8000万: $0 (サブスクリプション)
@@ -326,6 +347,7 @@ Models:
 ```
 
 **日課:**
+
 ```
 08:00 - 13:00: Claude Code (新鮮な5時間クォータ)
 13:00 - 18:00: Gemini CLI (1K/日クォータ)
@@ -351,6 +373,7 @@ Settings → Models → Advanced:
 ### Claude Desktop
 
 `~/.claude/config.json`を編集:
+
 ```json
 {
   "anthropic_api_base": "http://localhost:20128/v1",
@@ -510,6 +533,7 @@ Dashboard → Combos → Clone "premium-coding"
 **問題: コンボがモデルリストに表示されない**
 
 **解決策:**
+
 1. ダッシュボードを更新
 2. コンボが保存されていることを確認 (緑のチェック)
 3. CLIツールを再起動してモデルリストを更新
@@ -517,6 +541,7 @@ Dashboard → Combos → Clone "premium-coding"
 **問題: コンボが常に最後のモデル (無料階層) を使用**
 
 **解決策:**
+
 1. プライマリモデルのクォータを確認 (Dashboard → Quota)
 2. APIキーが有効か確認 (Dashboard → Providers)
 3. 予算上限を超えていないか確認
@@ -524,6 +549,7 @@ Dashboard → Combos → Clone "premium-coding"
 **問題: コンボのコストが予想より高い**
 
 **解決策:**
+
 1. Dashboard → Analytics → コンボ使用量を確認
 2. プライマリモデルがクォータ切れか確認
 3. モデルを並べ替え (安価を先に)

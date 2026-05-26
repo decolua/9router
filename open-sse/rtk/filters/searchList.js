@@ -1,6 +1,9 @@
 // Compact "Result of search in '...' (total N files):\n- path\n- path" output
 // (Cursor Glob tool). Groups by parent dir like find, shows basenames.
-import { SEARCH_LIST_PER_DIR_MAX, SEARCH_LIST_TOTAL_DIR_MAX } from "../constants.js";
+import {
+  SEARCH_LIST_PER_DIR_MAX,
+  SEARCH_LIST_TOTAL_DIR_MAX,
+} from "../constants.js";
 
 const HEADER_RE = /^Result of search in '[^']*' \(total (\d+) files?\):/;
 
@@ -23,7 +26,7 @@ export function searchList(input) {
   const byDir = new Map();
   for (const p of paths) {
     const slash = p.lastIndexOf("/");
-    const dir = slash === -1 ? "." : (p.slice(0, slash) || "/");
+    const dir = slash === -1 ? "." : p.slice(0, slash) || "/";
     const name = slash === -1 ? p : p.slice(slash + 1);
     if (!byDir.has(dir)) byDir.set(dir, []);
     byDir.get(dir).push(name);

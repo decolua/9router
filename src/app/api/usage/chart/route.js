@@ -16,6 +16,9 @@ export async function GET(request) {
     return NextResponse.json(data);
   } catch (error) {
     console.error("[API] Failed to get chart data:", error);
-    return NextResponse.json({ error: "Failed to fetch chart data" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to fetch chart data" },
+      { status: 500 },
+    );
   }
 }

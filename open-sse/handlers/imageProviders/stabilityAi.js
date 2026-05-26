@@ -10,25 +10,31 @@ function modelToEndpoint(model) {
   return "core";
 }
 
-export default {
+const provider = {
   buildUrl: (model) => `${BASE_URL}/${modelToEndpoint(model)}`,
   buildHeaders: (creds) => {
     const key = creds?.apiKey || creds?.accessToken;
     return {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${key}`,
-      "Accept": "application/json",
+      Authorization: `Bearer ${key}`,
+      Accept: "application/json",
     };
   },
   buildBody: (model, body) => {
-    const req = { prompt: body.prompt, output_format: (body.output_format || "png").toLowerCase() };
+    const req = {
+      prompt: body.prompt,
+      output_format: (body.output_format || "png").toLowerCase(),
+    };
     if (body.size) req.aspect_ratio = sizeToAspectRatio(body.size);
     if (body.style) req.style_preset = body.style;
     if (model.includes("sd3")) req.model = model;
     return req;
   },
   normalize: (responseBody) => {
-    if (responseBody.image) return { created: nowSec(), data: [{ b64_json: responseBody.image }] };
+    if (responseBody.image)
+      return { created: nowSec(), data: [{ b64_json: responseBody.image }] };
     return { created: nowSec(), data: [] };
   },
 };
+
+export default provider;

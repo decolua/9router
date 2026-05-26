@@ -90,6 +90,7 @@ docker run --rm -p 20128:20128 \
 ## Publish (automatic via CI)
 
 Push a git tag `v*` → GitHub Actions builds multi-platform (amd64+arm64) and pushes to:
+
 - `ghcr.io/decolua/9router:v{version}` + `:latest`
 - `decolua/9router:v{version}` + `:latest`
 

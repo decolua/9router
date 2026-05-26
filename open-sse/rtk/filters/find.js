@@ -3,7 +3,7 @@
 import { FIND_PER_DIR_MAX, FIND_TOTAL_DIR_MAX } from "../constants.js";
 
 export function find(input) {
-  const lines = input.split("\n").filter(l => l.trim());
+  const lines = input.split("\n").filter((l) => l.trim());
   if (lines.length === 0) return input;
 
   const byDir = new Map();

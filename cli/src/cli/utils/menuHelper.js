@@ -20,7 +20,7 @@ async function showMenuWithBack(config) {
     backLabel = "← Back",
     defaultIndex = 0,
     refresh = null,
-    breadcrumb = []
+    breadcrumb = [],
   } = config;
 
   while (true) {
@@ -37,16 +37,20 @@ async function showMenuWithBack(config) {
     // Build menu items with back at top
     const menuItems = [
       { label: backLabel, icon: "☆" },
-      ...items.map(item => ({
-        label: typeof item.label === "function" ? item.label(refreshedData) : item.label,
-        icon: "☆"
-      }))
+      ...items.map((item) => ({
+        label:
+          typeof item.label === "function"
+            ? item.label(refreshedData)
+            : item.label,
+        icon: "☆",
+      })),
     ];
 
     // Resolve headerContent if it's a function
-    const resolvedHeader = typeof headerContent === "function" 
-      ? await headerContent(refreshedData) 
-      : headerContent;
+    const resolvedHeader =
+      typeof headerContent === "function"
+        ? await headerContent(refreshedData)
+        : headerContent;
 
     const selected = await selectMenu(
       title,
@@ -54,7 +58,7 @@ async function showMenuWithBack(config) {
       defaultIndex,
       "",
       resolvedHeader,
-      breadcrumb
+      breadcrumb,
     );
 
     // Back or ESC
@@ -65,7 +69,7 @@ async function showMenuWithBack(config) {
     // Execute action for selected item
     const actionIndex = selected - 1;
     const item = items[actionIndex];
-    
+
     if (item && item.action) {
       const shouldContinue = await item.action(refreshedData);
       // If action returns false, exit menu
@@ -98,7 +102,7 @@ async function showListMenu(config) {
     onSelect,
     createAction = null,
     backLabel = "← Back",
-    breadcrumb = []
+    breadcrumb = [],
   } = config;
 
   while (true) {
@@ -113,21 +117,29 @@ async function showListMenu(config) {
 
     // Build menu items
     const menuItems = [{ label: backLabel, icon: "☆" }];
-    
+
     if (createAction) {
       menuItems.push({ label: createAction.label, icon: "☆" });
     }
 
-    items.forEach(item => {
+    items.forEach((item) => {
       const formatted = formatItem(item);
       menuItems.push({ label: formatted, icon: "☆" });
     });
 
-    const header = typeof headerContent === "function" 
-      ? await headerContent(metadata) 
-      : headerContent;
+    const header =
+      typeof headerContent === "function"
+        ? await headerContent(metadata)
+        : headerContent;
 
-    const selected = await selectMenu(title, menuItems, 0, "", header, breadcrumb);
+    const selected = await selectMenu(
+      title,
+      menuItems,
+      0,
+      "",
+      header,
+      breadcrumb,
+    );
 
     // Back or ESC
     if (selected === -1 || selected === 0) {
@@ -143,7 +155,7 @@ async function showListMenu(config) {
     // Select item
     const offset = createAction ? 2 : 1;
     const itemIndex = selected - offset;
-    
+
     if (itemIndex >= 0 && itemIndex < items.length) {
       await onSelect(items[itemIndex]);
     }
@@ -152,5 +164,5 @@ async function showListMenu(config) {
 
 module.exports = {
   showMenuWithBack,
-  showListMenu
+  showListMenu,
 };

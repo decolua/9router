@@ -37,6 +37,7 @@ https://9router.com
 ```
 
 **Steps:**
+
 1. In the Models settings, locate the **Base URL** field
 2. Enter: `https://9router.com`
 3. Click **Save**
@@ -75,13 +76,13 @@ Custom Models: gpt-4, claude-opus-4-5, gemini-2.0-flash
 
 You can use any model configured in your 9Router dashboard. Common examples:
 
-| Model Name | Provider | Description |
-|------------|----------|-------------|
-| `gpt-4` | OpenAI | GPT-4 Turbo |
-| `gpt-4o` | OpenAI | GPT-4 Optimized |
-| `claude-opus-4-5` | Anthropic | Claude Opus 4.5 |
+| Model Name          | Provider  | Description       |
+| ------------------- | --------- | ----------------- |
+| `gpt-4`             | OpenAI    | GPT-4 Turbo       |
+| `gpt-4o`            | OpenAI    | GPT-4 Optimized   |
+| `claude-opus-4-5`   | Anthropic | Claude Opus 4.5   |
 | `claude-sonnet-4-5` | Anthropic | Claude Sonnet 4.5 |
-| `gemini-2.0-flash` | Google | Gemini 2.0 Flash |
+| `gemini-2.0-flash`  | Google    | Gemini 2.0 Flash  |
 
 ## Usage
 

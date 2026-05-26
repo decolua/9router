@@ -111,6 +111,7 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 ```
 
 URL mặc định:
+
 - Bảng điều khiển: `http://localhost:20128/dashboard`
 - API tương thích OpenAI: `http://localhost:20128/v1`
 
@@ -125,6 +126,7 @@ URL mặc định:
 [![Thiết lập 9Router + Claude Code](https://img.youtube.com/vi/raEyZPg5xE0/maxresdefault.jpg)](https://www.youtube.com/watch?v=raEyZPg5xE0)
 
 **🎬 Xem hướng dẫn từng đầy đủ:**
+
 - ✅ Cài đặt & thiết lập 9Router
 - ✅ Cấu hình Claude Sonnet 4.5 MIỄN PHÍ
 - ✅ Tích hợp Claude Code
@@ -201,7 +203,7 @@ URL mặc định:
 
 ---
 
-##  Các nhà cung cấp được hỗ trợ
+## Các nhà cung cấp được hỗ trợ
 
 ### 🔐 Các nhà cung cấp OAuth
 
@@ -351,18 +353,18 @@ URL mặc định:
 
 ## 💡 Các tính năng chính
 
-| Tính năng | Công dụng | Tại sao nó trọng |
-|---------|--------------|----------------|
-| 🎯 **Smart 3-Tier Fallback** | Tự động định tuyến: Gói đăng ký → Giá rẻ → Miễn phí | Không bao giờ ngừng code, thời gian chết bằng không |
-| 📊 **Theo dõi hạn mức thời gian thực** | Đếm token trực tiếp + đếm ngược reset | Tối đa hóa giá trị gói đăng ký |
-| 🔄 **Dịch chuyển định dạng** | OpenAI ↔ Claude ↔ Gemini liền mạch | Hoạt động với mọi công cụ CLI |
-| 👥 **Hỗ trợ Đa tài khoản** | Nhiều tài khoản cho mỗi nhà cung cấp | Cân bằng tải + dự phòng |
-| 🔄 **Tự động làm mới Token** | Token OAuth tự động làm mới | Không cần đăng nhập lại thủ công |
-| 🎨 **Combo tùy chỉnh** | Tạo tổ hợp mô hình không giới hạn | Điều chỉnh dự phòng theo nhu cầu |
-| 📝 **Ghi log Request** | Chế độ gỡ lỗi với log request/response đầy đủ | Dễ dàng khắc phục sự cố |
-| 💾 **Đồng bộ đám mây** | Đồng bộ cấu hình giữa các thiết bị | Cài đặt giống nhau ở mọi nơi |
-| 📊 **Phân tích sử dụng** | Theo dõi token, chi phí, xu hướng theo thời gian | Tối ưu hóa chi tiêu |
-| 🌐 **Triển khai ở bất cứ đâu** | Localhost, VPS, Docker, Cloudflare Workers | Tùy chọn triển khai linh hoạt |
+| Tính năng                              | Công dụng                                           | Tại sao nó trọng                                    |
+| -------------------------------------- | --------------------------------------------------- | --------------------------------------------------- |
+| 🎯 **Smart 3-Tier Fallback**           | Tự động định tuyến: Gói đăng ký → Giá rẻ → Miễn phí | Không bao giờ ngừng code, thời gian chết bằng không |
+| 📊 **Theo dõi hạn mức thời gian thực** | Đếm token trực tiếp + đếm ngược reset               | Tối đa hóa giá trị gói đăng ký                      |
+| 🔄 **Dịch chuyển định dạng**           | OpenAI ↔ Claude ↔ Gemini liền mạch                  | Hoạt động với mọi công cụ CLI                       |
+| 👥 **Hỗ trợ Đa tài khoản**             | Nhiều tài khoản cho mỗi nhà cung cấp                | Cân bằng tải + dự phòng                             |
+| 🔄 **Tự động làm mới Token**           | Token OAuth tự động làm mới                         | Không cần đăng nhập lại thủ công                    |
+| 🎨 **Combo tùy chỉnh**                 | Tạo tổ hợp mô hình không giới hạn                   | Điều chỉnh dự phòng theo nhu cầu                    |
+| 📝 **Ghi log Request**                 | Chế độ gỡ lỗi với log request/response đầy đủ       | Dễ dàng khắc phục sự cố                             |
+| 💾 **Đồng bộ đám mây**                 | Đồng bộ cấu hình giữa các thiết bị                  | Cài đặt giống nhau ở mọi nơi                        |
+| 📊 **Phân tích sử dụng**               | Theo dõi token, chi phí, xu hướng theo thời gian    | Tối ưu hóa chi tiêu                                 |
+| 🌐 **Triển khai ở bất cứ đâu**         | Localhost, VPS, Docker, Cloudflare Workers          | Tùy chọn triển khai linh hoạt                       |
 
 <details>
 <summary><b>📖 Chi tiết tính năng</b></summary>
@@ -390,6 +392,7 @@ Combo: "my-coding-stack"
 ### 🔄 Dịch chuyển định dạng
 
 Dịch chuyển liền mạch giữa các định dạng:
+
 - **OpenAI** ↔ **Claude** ↔ **Gemini** ↔ **OpenAI Responses**
 - Công cụ CLI của bạn gửi định dạng OpenAI → 9Router dịch chuyển → Nhà cung cấp nhận định dạng gốc
 - Hoạt động với mọi công cụ hỗ trợ endpoint OpenAI tùy chỉnh
@@ -443,20 +446,20 @@ Dịch chuyển liền mạch giữa các định dạng:
 - Tối ưu hóa chi tiêu AI của bạn
 
 > **💡AN TRỌNG - Hiểu về Chi phí trên Bảng điều khiển:**
-> 
-> "Chi phí" hiển thị trong Phân tích sử dụng là **chỉ để theo dõi và so sánh**. 
+>
+> "Chi phí" hiển thị trong Phân tích sử dụng là **chỉ để theo dõi và so sánh**.
 > Bản thân 9Router **không bao giờ thu phí** bạn bất cứ thứ gì. Bạn chỉ trả tiền trực tiếp cho các nhà cung cấp (nếu sử dụng dịch vụ trả phí).
-> 
-> **Ví dụ:** Nếu bảng điều khiển của bạn hiển thị "tổng chi phí $290" trong khi sử dụng các mô hìnhFlow, điều này đại diện cho 
+>
+> **Ví dụ:** Nếu bảng điều khiển của bạn hiển thị "tổng chi phí $290" trong khi sử dụng các mô hìnhFlow, điều này đại diện cho
 > số tiền bạn sẽ phải trả nếu sử dụng API trả phí trực tiếp. Chi phí thực tế của bạn = **$0** (iFlow miễn phí không giới hạn).
-> 
-> Hãy coi nó như một "trình theo dõi tiết kiệm" cho thấy bạn đang tiết kiệm được bao nhiêu bằng cách sử dụng các mô hình miễn phí hoặc 
+>
+> Hãy coi nó như một "trình theo dõi tiết kiệm" cho thấy bạn đang tiết kiệm được bao nhiêu bằng cách sử dụng các mô hình miễn phí hoặc
 > định tuyến qua 9Router!
 
 ### 🌐 Triển khai ở bất cứ đâu
 
 - 💻 **Localhost** - Mặc định, hoạt động ngoại tuyến
- ☁️ **VPS/Cloud** - Chia sẻ giữa các thiết bị
+  ☁️ **VPS/Cloud** - Chia sẻ giữa các thiết bị
 - 🐳 **Docker** - Triển khai bằng một lệnh
 - 🚀 **Cloudflare Workers** - Mạng edge toàn cầu
 
@@ -466,18 +469,18 @@ Dịch chuyển liền mạch giữa các định dạng:
 
 ## 💰 Tổng quan về giá
 
-| Hạng mục | Nhà cung cấp | Chi phí | Reset Hạn mức | Tốt nhất cho |
-|------|----------|------|-------------|----------|
-| **💳 GÓI ĐĂNG KÝ** | Claude Code (Pro) | $20/tháng | 5h + hàng tuần | Đã đăng ký rồi |
-| | Codex (Plus/Pro) | $20-200/tháng | 5h + hàng tuần | Người dùng OpenAI |
-| | Gemini CLI | **MIỄN PHÍ** | 180K/tháng + 1K/ngày | Tất cả mọi người! |
-| | GitHub Copilot | $10-19/tháng | Hàng tháng | Người dùng GitHub |
-| **💰 GIÁ RẺ** | GLM-4.7 | $0.6/1M | 10AM hàng ngày | Backup ngân sách |
-| | MiniMax M21 | $0.2/1M | 5 giờ luân phiên | Lựa chọn rẻ nhất |
-| | Kimi K2 | $9/tháng cố định | 10M token/tháng | Chi phí dự đoán được |
-| **🆓 MIỄN PHÍ** | iFlow | $0 | Không giới hạn | 8 mô hình miễn phí |
-| | Qwen | $0 | Không giới hạn | 3 mô hình miễn phí |
-| | Kiro | $0 | Không giới hạn | Claude miễn phí |
+| Hạng mục           | Nhà cung cấp      | Chi phí          | Reset Hạn mức        | Tốt nhất cho         |
+| ------------------ | ----------------- | ---------------- | -------------------- | -------------------- |
+| **💳 GÓI ĐĂNG KÝ** | Claude Code (Pro) | $20/tháng        | 5h + hàng tuần       | Đã đăng ký rồi       |
+|                    | Codex (Plus/Pro)  | $20-200/tháng    | 5h + hàng tuần       | Người dùng OpenAI    |
+|                    | Gemini CLI        | **MIỄN PHÍ**     | 180K/tháng + 1K/ngày | Tất cả mọi người!    |
+|                    | GitHub Copilot    | $10-19/tháng     | Hàng tháng           | Người dùng GitHub    |
+| **💰 GIÁ RẺ**      | GLM-4.7           | $0.6/1M          | 10AM hàng ngày       | Backup ngân sách     |
+|                    | MiniMax M21       | $0.2/1M          | 5 giờ luân phiên     | Lựa chọn rẻ nhất     |
+|                    | Kimi K2           | $9/tháng cố định | 10M token/tháng      | Chi phí dự đoán được |
+| **🆓 MIỄN PHÍ**    | iFlow             | $0               | Không giới hạn       | 8 mô hình miễn phí   |
+|                    | Qwen              | $0               | Không giới hạn       | 3 mô hình miễn phí   |
+|                    | Kiro              | $0               | Không giới hạn       | Claude miễn phí      |
 
 **💡 Mẹo Chuyên nghiệp:** Bắt với combo Gemini CLI (180K miễn phí/tháng) + iFlow (không giới hạn miễn phí) = chi phí $0!
 
@@ -498,6 +501,7 @@ Dịch chuyển liền mạch giữa các định dạng:
 Bảng điều khiển hiển thị **chi phí ước tính** như thể bạn đang sử dụng API trả phí trực tiếp. Đây **không phải là thanh toán** - đó là công cụ so sánh để cho thấy mức tiết kiệm của bạn.
 
 **Kịch bản Ví dụ:**
+
 ```
 Hiển thị trên Bảng điều khiển:
 • Tổng số Request: 1,662
@@ -511,6 +515,7 @@ Kiểm tra Thực tế:
 ```
 
 **Quy tắc Thanh toán:**
+
 - **Nhà cung cấp gói đăng ký** (Claude Code, Codex): Trả tiền trực tiếp cho họ qua website của họ
 - **Nhà cung cấp giá rẻ** (GLM, MiniMax): Trả tiền trực tiếp cho họ, 9Router chỉ định tuyến
 - **Nhà cung cấp MIỄN PHÍ** (iFlow, Kiro, Qwen): Thực sự miễn phí mãi mãi, không có phí ẩn
@@ -525,6 +530,7 @@ Kiểm tra Thực tế:
 **Vấn đề:** Hạn mức hết hạn không dùng, giới hạn tốc độ khi code nặng
 
 **Giải pháp:**
+
 ```
 Combo: "maximize-claude"
   1. cc/claude-opus-4-6        (sử dụng đầy đủ gói đăng ký)
@@ -539,6 +545,7 @@ so với $20 + chạm giới hạn = sự thất vọng
 **Vấn đề:** Không đủ khả năng trả gói đăng ký, cần code AI đáng tin cậy
 
 **Giải pháp:**
+
 ```
 Combo: "free-forever"
   1. gc/gini-3-flash         (180K miễn phí/tháng)
@@ -554,6 +561,7 @@ Chất lượng: Các mô hình sẵn sàng cho production
 **Vấn đề:** Deadline, không thể để thời gian chết
 
 **Giải pháp:**
+
 ```
 Combo: "always-on"
   1. cc/claude-opus-4-6        (chất lượng tốt nhất)
@@ -571,6 +579,7 @@ Chi phí tháng: $20-200 (gói đăng ký) + $10-20 (backup)
 **Vấn đề:** Cần trợ lý AI trong các ứng dụng nhắn tin (WhatsApp, Telegram, Slack...), hoàn toàn miễn phí
 
 **Giải pháp:**
+
 ```
 Combo: "openclaw-free"
   1. if/glm-4.7                (không giới hạn miễn phí)
@@ -588,9 +597,10 @@ Truy cập qua: WhatsApp, Telegram, Slack, Discord, iMessage, Signal...
 <details>
 <summary><b>📊 Tại sao bảng điều khiển của tôi hiển thị chi phí cao?</b></summary>
 
-Bảng điều khiển theo dõi mức sử dụng token của bạn và hiển thị **chi phí ước tính** như thể bạn đang sử dụng API trả phí trực tiếp. Đâykhông phải là thanh toán thực tế** - đó là tài liệu tham khảo để cho thấy bạn đang tiết kiệm được bao nhiêu bằng cách sử dụng các mô hình miễn phí hoặc gói đăng ký hiện có thông qua 9Router.
+Bảng điều khiển theo dõi mức sử dụng token của bạn và hiển thị **chi phí ước tính** như thể bạn đang sử dụng API trả phí trực tiếp. Đâykhông phải là thanh toán thực tế\*\* - đó là tài liệu tham khảo để cho thấy bạn đang tiết kiệm được bao nhiêu bằng cách sử dụng các mô hình miễn phí hoặc gói đăng ký hiện có thông qua 9Router.
 
 **Ví dụ:**
+
 - **Bảng điều khiển hiển thị:** "Tổng chi phí $290"
 - **Thực tế:** Bạn đang sử dụng iFlow (MIỄN PHÍ không giới hạn)
 - **Chi phí thực tế của bạn:** **$0.00**
@@ -606,6 +616,7 @@ Màn hình chi phí là một "trình theo dõi tiết kiệm" để giúp bạn
 **Không.** 9Router là phần mềm miễn phí, mã nguồn mở chạy trên máy tính của chính bạn. Nó không bao giờ tính phí bạn bất cứ thứ gì.
 
 **Bạn chỉ trả tiền:**
+
 - ✅ **Nhà cung cấp gói đăng ký** (Claude Code $20/tháng, Codex $20-200/tháng) → Trả tiền trực tiếp cho họ trên website của họ
 - ✅ **Nhà cung cấp giá rẻ** (GLM, MiniMax) → Trả tiền trực tiếp cho họ, 9Router chỉ định tuyến yêu cầu của bạn
 - ❌ **Bản thân 9Router** → **Không bao giờ tính phí bất cứ thứ gì, ever**
@@ -617,11 +628,12 @@ Màn hình chi phí là một "trình theo dõi tiết kiệm" để giúp bạn
 <details>
 <summary><b>🆓 Các nhà cung cấp MIỄN PHÍ có thực sự không giới hạn không?</b></summary>
 
-**Có!** Các nhà cung cấp được đánh dấu là MIỄN PHÍ (iFlow, Kiro, Qwen) thực sự không giới hạn với **không có phí ẩn**. 
+**Có!** Các nhà cung cấp được đánh dấu là MIỄN PHÍ (iFlow, Kiro, Qwen) thực sự không giới hạn với **không có phí ẩn**.
 
 Đây là các dịch vụ miễn phí được cung cấp bởi các công ty tương ứng:
+
 - **iFlow**: Truy cập miễn phí không giới hạn vào hơn 8 mô hình qua OAuth
-- **Kiro**: Các mô hình Claude miễn phí không giới hạn qua AWS Builder ID  
+- **Kiro**: Các mô hình Claude miễn phí không giới hạn qua AWS Builder ID
 - **Qwen**: Truy cập miễn phí không giới hạn vào các mô hình Qwen qua xác thực thiết bị
 
 9Router chỉ định tuyến yêu cầu của bạn đến họ - không có "cạm bẫy" hay thanh toán trong tương lai. Đó là các dịch vụ thực sự miễn phí, và 9Router giúp chúng dễ sử dụng với hỗ trợ dự phòng.
@@ -636,17 +648,21 @@ Màn hình chi phí là một "trình theo dõi tiết kiệm" để giúp bạn
 **Chiến lược Ưu tiên Miễn phí:**
 
 1. **Bắt đầu với combo 100% miễn phí:**
+
    ```
    1. gc/gemini-3-flash (180K/tháng miễn phí từ Google)
    2. if/kimi-k2-thinking (không giới hạn miễn phí từ iFlow)
    3. qw/qwen3-coder-plus (không giới hạn miễn phí từ Qwen)
    ```
+
    **Chi phí: $0/tháng**
 
 2. **Thêm backup giá rẻ** chỉ khi bạn cần:
+
    ```
    4. glm/glm-4.7 ($0.6/1M token)
    ```
+
    **Chi phí bổ sung:** Chỉ trả tiền cho những gì bạn sự sử dụng
 
 3. **Sử dụng nhà cung cấp gói đăng ký cuối cùng:**
@@ -665,10 +681,12 @@ Cơ chế dự phòng thông minh của 9Router ngăn chặn các khoản phí b
 **Kịch bản:** Bạn đang trong giai đoạn code nước rút và vượt qua các hạn mức
 
 **Không có 9Router:**
+
 - ❌ Chạm giới hạn tốc độ → Công việc dừng lại → Thất vọng
 - ❌ Hoặc: Vô tình tích lũy hóa đơn API khổng lồ
 
 **Có 9Router:**
+
 - ✅ Gói đăng ký chạm giới hạn → Tự động dự phòng sang tầng giá rẻ
 - ✅ Tầng giá rẻ trở nên đắt đỏ → Tự động dự phòng sang tầng miễn phí
 - ✅ Không bao giờ ngừng code → Chi phí dự đoán được
@@ -727,7 +745,7 @@ Các hình:
 
 ### GitHub Copilot
 
-```bash
+````bash
 Bảng điều khiển → Providers → Kết nối GitHub
 → OAuth qua GitHub
 → Reset hàng tháng (ngày 1 của tháng)
@@ -793,7 +811,7 @@ Các mô hình:
   if/glm-4.7
   if/minimax-m2
   if/deepseek-r1
-```
+````
 
 ### Qwen (3 mô hình MIỄN PHÍ)
 
@@ -863,7 +881,7 @@ Chi phí: $0 mãi mãi!
 
 ### Cursor IDE
 
-```
+````
 Settings → Models → Advanced:
   OpenAI API Base URL: http://localhost:20128/v1
   OpenAI API Key: [từ bảng điều khiển 9router]
@@ -879,7 +897,7 @@ Chỉnh sửa `~/.claude/config.json`:
   "anthropic_api_base": "http://localhost:20128/v1",
   "anthropic_api_key": "your-9router-api-key"
 }
-```
+````
 
 ### Codex CLI
 
@@ -1003,6 +1021,7 @@ docker run -d \
 ```
 
 Mặc định container:
+
 - `PORT=20128`
 - `HOSTNAME=0.0.0.0`
 
@@ -1016,26 +1035,27 @@ docker stop 9router && docker rm 9router
 
 ### Biến môi trường
 
-| Biến | Mặc định | Mô tả |
-|----------|---------|-------------|
-| `JWT_SECRET` | Tự động sinh (`~/.9router/jwt-secret`) | Bí mật ký JWT cho cookie xác thực bảng điều khiển (đặt để chia sẻ giữa nhiều instance) |
-| `INITIAL_PASSWORD` | `123456` | Mật khẩu đăng nhập đầu tiên khi không có hash đã lưu tồn tại |
-| `DATA_DIR` | `~/.9router` |ị trí cơ sở dữ liệu ứng dụng chính (`db.json`) |
-| `PORT` | framework default | Cổng dịch vụ (`20128` trong các ví dụ) |
-| `HOSTNAME` | framework default | Bind host (Docker mặc định là `0.0.0.0`) |
-| `NODE_ENV` | runtime default | Đặt `production` để triển khai |
-| `BASE_URL` | `http://localhost:20128` | URL cơ sở nội bộ phía máy chủ được sử dụng bởi các tác vụ đồng bộ đám mây |
-| `CLOUD_URL` | `https://9router.com` | URL cơ sở endpoint đồng bộ đám mây phía máy chủ |
-| `NEXT_PUBLIC_BASE_URL` | `http://localhost:3000` | URL cơ sở tương thích ngược/công khai (ưu tiên `BASE_URL` cho runtime máy chủ) |
-| `NEXT_PUBLIC_CLOUD_URL` | `https://9router.com` | URL đám mây tương thích ngược/công khai (ưu tiên `CLOUD_URL` cho runtime máy chủ) |
-| `API_KEY_SECRET` | `endpoint-proxy-api-key-secret` | B mật HMAC cho các API key được tạo |
-| `MACHINE_ID_SALT` | `endpoint-proxy-salt` | Salt cho việc băm ID máy ổn định |
-| `ENABLE_REQUEST_LOGS` | `false` | Bật log request/response dưới `logs/` |
-| `AUTH_COOKIE_SECURE` | `false` | Buộc cookie xác thực `Secure` (đặt `true` phía reverse proxy HTTPS) |
-| `REQUIRE_API_KEY` | `false` | Thực thi Bearer API key trên các route `/v1/*` (khuyên dùng cho triển khai xúc internet) |
-| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | empty | Proxy gửi đi tùy chọn cho các lệnh gọi nhà cung cấp upstream |
+| Biến                                                 | Mặc định                               | Mô tả                                                                                    |
+| ---------------------------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `JWT_SECRET`                                         | Tự động sinh (`~/.9router/jwt-secret`) | Bí mật ký JWT cho cookie xác thực bảng điều khiển (đặt để chia sẻ giữa nhiều instance)   |
+| `INITIAL_PASSWORD`                                   | `123456`                               | Mật khẩu đăng nhập đầu tiên khi không có hash đã lưu tồn tại                             |
+| `DATA_DIR`                                           | `~/.9router`                           | ị trí cơ sở dữ liệu ứng dụng chính (`db.json`)                                           |
+| `PORT`                                               | framework default                      | Cổng dịch vụ (`20128` trong các ví dụ)                                                   |
+| `HOSTNAME`                                           | framework default                      | Bind host (Docker mặc định là `0.0.0.0`)                                                 |
+| `NODE_ENV`                                           | runtime default                        | Đặt `production` để triển khai                                                           |
+| `BASE_URL`                                           | `http://localhost:20128`               | URL cơ sở nội bộ phía máy chủ được sử dụng bởi các tác vụ đồng bộ đám mây                |
+| `CLOUD_URL`                                          | `https://9router.com`                  | URL cơ sở endpoint đồng bộ đám mây phía máy chủ                                          |
+| `NEXT_PUBLIC_BASE_URL`                               | `http://localhost:3000`                | URL cơ sở tương thích ngược/công khai (ưu tiên `BASE_URL` cho runtime máy chủ)           |
+| `NEXT_PUBLIC_CLOUD_URL`                              | `https://9router.com`                  | URL đám mây tương thích ngược/công khai (ưu tiên `CLOUD_URL` cho runtime máy chủ)        |
+| `API_KEY_SECRET`                                     | `endpoint-proxy-api-key-secret`        | B mật HMAC cho các API key được tạo                                                      |
+| `MACHINE_ID_SALT`                                    | `endpoint-proxy-salt`                  | Salt cho việc băm ID máy ổn định                                                         |
+| `ENABLE_REQUEST_LOGS`                                | `false`                                | Bật log request/response dưới `logs/`                                                    |
+| `AUTH_COOKIE_SECURE`                                 | `false`                                | Buộc cookie xác thực `Secure` (đặt `true` phía reverse proxy HTTPS)                      |
+| `REQUIRE_API_KEY`                                    | `false`                                | Thực thi Bearer API key trên các route `/v1/*` (khuyên dùng cho triển khai xúc internet) |
+| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | empty                                  | Proxy gửi đi tùy chọn cho các lệnh gọi nhà cung cấp upstream                             |
 
 Ghi chú:
+
 - Các biến proxy chữ thường cũng được hỗ trợ: `http_proxy`, `https_proxy`, `all_proxy`, `no_proxy`.
 - `.env` không được nướng vào image Docker (`.dockerignore`); tiêm cấu hình runtime với `--env-file` hoặc `-e`.
 - Trên Windows, `APPDATA` có thể được sử dụng cho việc phân giải đường dẫn lưuữ cục bộ.
@@ -1058,38 +1078,47 @@ Ghi chú:
 <summary><b>Xem tất cả các mô hình có sẵn</b></summary>
 
 **Claude Code (`cc/`)** - Pro/Max:
+
 - `cc/claude-opus-4-6`
 - `cc/claude-sonnet-4-5-2025029`
 - `cc/claude-haiku-4-5-20251001`
 
 **Codex (`cx/`)** - Plus/Pro:
+
 - `cx/gpt-5.2-codex`
 - `cx/gpt-5.1-codex-max`
 
 **Gemini CLI (`gc/`)** - MIỄN PHÍ:
+
 - `gc/gemini-3-flash-preview`
 - `gc/gemini-2.5-pro`
 
 **GitHub Copilot (`gh/`)**:
+
 - `gh/gpt-5`
 - `gh/claude-.5-sonnet`
 
 **GLM (`glm/`)** - $0.6/1M:
+
 - `glm/glm-4.7`
 
 **MiniMax (`minimax/`)** - $0.2/1M:
+
 - `minimax/MiniMax-M2.1`
 
 **iFlow (`if/`)** - MIỄN PHÍ:
+
 - `if/kimi-k2-thinking`
 - `if/qwen3-coder-plus`
 - `if/deepseek-r1`
 
 **Qwen (`qw/`)** - MIỄN PHÍ:
+
 - `qw/q3-coder-plus`
 - `qw/qwen3-coder-flash`
 
 **Kiro (`kr/`)** - MIỄN PHÍ:
+
 - `kr/claude-sonnet-4.5`
 - `kr/claude-haiku-4.5`
 
@@ -1100,45 +1129,55 @@ Ghi chú:
 ## 🐛 Khắc phục sự cố
 
 **"Language model did not provide messages"**
+
 - Hết hạn mức nhà cung cấp → Kiểm tra trình theo dõi hạn mức bảng điều khiển
 - Giải pháp: Sử dụng dự phòng combo hoặc chuyển sang tầng rẻ hơn
 
 **Gi hạn tốc độ (Rate limiting)**
+
 - Hết hạn mức gói đăng ký → Dự phòng sang GLM/MiniMax
 - Thêm combo: `cc/claude-opus-4-6 → glm/glm-4.7 → if/kimi-k2-thinking`
 
 **Token OAuth hết hạn**
+
 - Tự động làm mới bởi 9Router
 - Nếu sự cố vẫn tiếp diễn: Bảng điều khiển → Nhà cung cấp → Kết nối lại
 
 **Chi phí cao**
+
 - Kiểm tra thống kê sử dụng trong Bảng điều khiển
 - Chuyển mô hình chính sang GLM/MiniMax
 - Sử dụng tầng miễn phí (Gemini CLI, iFlow) cho các tác vụ không quan trọng
 
 **Bảng điều khiển mở sai cổng**
+
 - Đặt `PORT=20128` và `NEXT_PUBLIC_BASE_URL=http://localhost:20128`
 
 **Lỗi đồng bộ đám mây**
+
 - Xác minh `BASE_URL` trỏ đến phiên bản đang chạy của bạn (ví dụ: `http://localhost:20128`)
 - Xác minh `CLOUD_URL` trỏ đến endpoint đám mây dự kiến của bạn (ví dụ: `https://9router.com`)
 - Giữ các giá trị `NEXT_PUBLIC_*` phù hợp với giá trị phía máy chủ khi có thể.
 
 **Endpoint đám mây `stream=false` trả về 500 (`Unexpected token 'd'...`)**
+
 - Triệu chứng thường xuất hiện trên endpoint đám mây công khai (`https://9router.com/v1`) cho các lệnh gọi không phát trực tiếp (non-streaming).
 - Nguyên nhân gốc rễ: upstream trả về payload SSE (`data: ...`) trong khi client mong đợi JSON.
--ải pháp thay thế: sử dụng `stream=true` cho các lệnh gọi trực tiếp đến đám mây.
+  -ải pháp thay thế: sử dụng `stream=true` cho các lệnh gọi trực tiếp đến đám mây.
 - Runtime 9Router cục bộ bao gồm dự phòng SSE→JSON cho các lệnh gọi không phát trực tiếp khi upstream trả về `text/event-stream`.
 
 **Đám mây báo đã kết nối, nhưng yêu cầu vẫn thất bại với `Invalid API key`**
+
 - Tạo một key mới từ bảng điều khiển cục bộ (`/api/keys`) và chạy đồng bộ đám mây (`Enable Cloud` sau đó `Sync Now`).
 - Các key cũ/chưa đồng bộ vẫn có thể trả về `401` trên đám mây ngay cả khi endpoint cục bộ hoạt động.
 
 **Đăng nhập lần đầu không hoạt động**
+
 - Kiểm tra `INITIAL_PASSWORD` trong `.env`
 - Nếu chưa đặt, mật khẩu dự phòng là `123456`
 
 **Không có log request dưới `logs/`**
+
 - Đặt `ENABLE_REQUEST_LOGS=true`
 
 ---
@@ -1231,7 +1270,7 @@ Hành vi dự kiến từ việc xác thực gần đây:
 - Cấu hình định tuyến: `/api/models/alias`, `/api/combos*`, `/api/keys*`, `/api/pricing`
 - Sử dụng/log: `/api/usage/history`, `/api/usage/logs`, `/api/usage/request-logs`, `/api/usage/[connectionId]`
 - Đồng bộ đám mây: `/api/sync/cloud`, `/api/sync/initialize`, `/api/cloud/*`
--ợ giúp CLI: `/api/cli-tools/claude-settings`, `/api/cli-tools/codex-settings`, `/api/cli-tools/droid-settings`, `/api/cli-tools/openclaw-settings`
+  -ợ giúp CLI: `/api/cli-tools/claude-settings`, `/api/cli-tools/codex-settings`, `/api/cli-tools/droid-settings`, `/api/cli-tools/openclaw-settings`
 
 ### Hành vi Xác thực
 

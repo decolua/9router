@@ -32,7 +32,12 @@ export class QoderExecutor extends BaseExecutor {
     const userAgent = this.config.headers["User-Agent"] || "Qoder-Cli";
     const apiKey = credentials.apiKey || credentials.accessToken || "";
 
-    const signature = this.createSignature(userAgent, sessionID, timestamp, apiKey);
+    const signature = this.createSignature(
+      userAgent,
+      sessionID,
+      timestamp,
+      apiKey,
+    );
 
     const headers = {
       "Content-Type": "application/json",

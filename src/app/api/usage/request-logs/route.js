@@ -8,6 +8,9 @@ export async function GET() {
   } catch (error) {
     console.error("[API ERROR] /api/usage/logs failed:", error);
     console.error("[API ERROR] Stack:", error?.stack);
-    return NextResponse.json({ error: "Failed to fetch logs" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to fetch logs" },
+      { status: 500 },
+    );
   }
 }

@@ -7,6 +7,7 @@ import {
   Handle,
   Position,
   Controls,
+  Background,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
@@ -37,10 +38,30 @@ function ProviderNode({ data }) {
         minWidth: "150px",
       }}
     >
-      <Handle type="target" position={Position.Top} id="top" className="!bg-transparent !border-0 !w-0 !h-0" />
-      <Handle type="target" position={Position.Bottom} id="bottom" className="!bg-transparent !border-0 !w-0 !h-0" />
-      <Handle type="target" position={Position.Left} id="left" className="!bg-transparent !border-0 !w-0 !h-0" />
-      <Handle type="target" position={Position.Right} id="right" className="!bg-transparent !border-0 !w-0 !h-0" />
+      <Handle
+        type="target"
+        position={Position.Top}
+        id="top"
+        className="!bg-transparent !border-0 !w-0 !h-0"
+      />
+      <Handle
+        type="target"
+        position={Position.Bottom}
+        id="bottom"
+        className="!bg-transparent !border-0 !w-0 !h-0"
+      />
+      <Handle
+        type="target"
+        position={Position.Left}
+        id="left"
+        className="!bg-transparent !border-0 !w-0 !h-0"
+      />
+      <Handle
+        type="target"
+        position={Position.Right}
+        id="right"
+        className="!bg-transparent !border-0 !w-0 !h-0"
+      />
 
       {/* Provider icon */}
       <div
@@ -48,9 +69,17 @@ function ProviderNode({ data }) {
         style={{ backgroundColor: `${color}15` }}
       >
         {!imgError ? (
-          <img src={imageUrl} alt={label} className="w-6 h-6 rounded-sm object-contain" onError={() => setImgError(true)} />
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img
+            src={imageUrl}
+            alt={label}
+            className="w-6 h-6 rounded-sm object-contain"
+            onError={() => setImgError(true)}
+          />
         ) : (
-          <span className="text-sm font-bold" style={{ color }}>{textIcon}</span>
+          <span className="text-sm font-bold" style={{ color }}>
+            {textIcon}
+          </span>
         )}
       </div>
 
@@ -65,8 +94,14 @@ function ProviderNode({ data }) {
       {/* Active indicator */}
       {active && (
         <span className="relative flex h-2 w-2 shrink-0">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: color }} />
-          <span className="relative inline-flex rounded-full h-2 w-2" style={{ backgroundColor: color }} />
+          <span
+            className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+            style={{ backgroundColor: color }}
+          />
+          <span
+            className="relative inline-flex rounded-full h-2 w-2"
+            style={{ backgroundColor: color }}
+          />
         </span>
       )}
     </div>
@@ -81,11 +116,32 @@ ProviderNode.propTypes = {
 function RouterNode({ data }) {
   return (
     <div className="flex items-center justify-center px-5 py-3 rounded-xl border-2 border-primary bg-primary/5 shadow-md min-w-[130px]">
-      <Handle type="source" position={Position.Top} id="top" className="!bg-transparent !border-0 !w-0 !h-0" />
-      <Handle type="source" position={Position.Bottom} id="bottom" className="!bg-transparent !border-0 !w-0 !h-0" />
-      <Handle type="source" position={Position.Left} id="left" className="!bg-transparent !border-0 !w-0 !h-0" />
-      <Handle type="source" position={Position.Right} id="right" className="!bg-transparent !border-0 !w-0 !h-0" />
+      <Handle
+        type="source"
+        position={Position.Top}
+        id="top"
+        className="!bg-transparent !border-0 !w-0 !h-0"
+      />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        id="bottom"
+        className="!bg-transparent !border-0 !w-0 !h-0"
+      />
+      <Handle
+        type="source"
+        position={Position.Left}
+        id="left"
+        className="!bg-transparent !border-0 !w-0 !h-0"
+      />
+      <Handle
+        type="source"
+        position={Position.Right}
+        id="right"
+        className="!bg-transparent !border-0 !w-0 !h-0"
+      />
 
+      {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src="/favicon.svg" alt="9Router" className="w-6 h-6 mr-2" />
       <span className="text-sm font-bold text-primary">9Router</span>
       {data.activeCount > 0 && (
@@ -119,7 +175,15 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
   const ry = Math.max(200, rx * 0.55); // ellipse ratio ~0.55
   if (count === 0) {
     return {
-      nodes: [{ id: "router", type: "router", position: { x: 0, y: 0 }, data: { activeCount: 0 }, draggable: false }],
+      nodes: [
+        {
+          id: "router",
+          type: "router",
+          position: { x: 0, y: 0 },
+          data: { activeCount: 0 },
+          draggable: false,
+        },
+      ],
       edges: [],
     };
   }
@@ -149,10 +213,14 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
     const error = !active && errorSet.has(p.provider?.toLowerCase());
     const nodeId = `provider-${p.provider}`;
     const data = {
-      label: (config.name !== p.provider ? config.name : null) || p.name || p.provider,
+      label:
+        (config.name !== p.provider ? config.name : null) ||
+        p.name ||
+        p.provider,
       color: config.color || "#6b7280",
       imageUrl: getProviderImageUrl(p.provider),
-      textIcon: config.textIcon || (p.provider || "?").slice(0, 2).toUpperCase(),
+      textIcon:
+        config.textIcon || (p.provider || "?").slice(0, 2).toUpperCase(),
       active,
     };
 
@@ -163,14 +231,21 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
 
     // Pick router handle closest to the node direction
     let sourceHandle, targetHandle;
-    if (Math.abs(angle + Math.PI / 2) < Math.PI / 4 || Math.abs(angle - 3 * Math.PI / 2) < Math.PI / 4) {
-      sourceHandle = "top"; targetHandle = "bottom";
+    if (
+      Math.abs(angle + Math.PI / 2) < Math.PI / 4 ||
+      Math.abs(angle - (3 * Math.PI) / 2) < Math.PI / 4
+    ) {
+      sourceHandle = "top";
+      targetHandle = "bottom";
     } else if (Math.abs(angle - Math.PI / 2) < Math.PI / 4) {
-      sourceHandle = "bottom"; targetHandle = "top";
+      sourceHandle = "bottom";
+      targetHandle = "top";
     } else if (cx > 0) {
-      sourceHandle = "right"; targetHandle = "left";
+      sourceHandle = "right";
+      targetHandle = "left";
     } else {
-      sourceHandle = "left"; targetHandle = "right";
+      sourceHandle = "left";
+      targetHandle = "right";
     }
 
     nodes.push({
@@ -195,79 +270,108 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
   return { nodes, edges };
 }
 
-export default function ProviderTopology({ providers = [], activeRequests = [], lastProvider = "", errorProvider = "" }) {
+export default function ProviderTopology({
+  providers = [],
+  activeRequests = [],
+  lastProvider = "",
+  errorProvider = "",
+}) {
   // Serialize to stable string keys so useMemo only re-runs when values actually change
   const activeKey = useMemo(
-    () => activeRequests.map((r) => r.provider?.toLowerCase()).filter(Boolean).sort().join(","),
-    [activeRequests]
+    () =>
+      activeRequests
+        .map((r) => r.provider?.toLowerCase())
+        .filter(Boolean)
+        .sort()
+        .join(","),
+    [activeRequests],
   );
   const lastKey = lastProvider?.toLowerCase() || "";
   const errorKey = errorProvider?.toLowerCase() || "";
 
-  const rawActiveSet = useMemo(() => new Set(activeKey ? activeKey.split(",") : []), [activeKey]);
+  const rawActiveSet = useMemo(
+    () => new Set(activeKey ? activeKey.split(",") : []),
+    [activeKey],
+  );
   const lastSet = useMemo(() => new Set(lastKey ? [lastKey] : []), [lastKey]);
-  const errorSet = useMemo(() => new Set(errorKey ? [errorKey] : []), [errorKey]);
+  const errorSet = useMemo(
+    () => new Set(errorKey ? [errorKey] : []),
+    [errorKey],
+  );
 
   // Track firstSeen per active provider; drop provider if running too long (BE stuck)
   const firstSeenRef = useRef({});
-  const [tick, setTick] = useState(0);
+  const [activeSet, setActiveSet] = useState(new Set());
 
   useEffect(() => {
-    const seen = firstSeenRef.current;
-    const now = Date.now();
-    for (const p of rawActiveSet) {
-      if (!seen[p]) seen[p] = now;
+    const syncActiveSet = () => {
+      const seen = firstSeenRef.current;
+      const now = Date.now();
+      for (const p of rawActiveSet) {
+        if (!seen[p]) seen[p] = now;
+      }
+      for (const p of Object.keys(seen)) {
+        if (!rawActiveSet.has(p)) delete seen[p];
+      }
+
+      const filtered = new Set();
+      for (const p of rawActiveSet) {
+        const ts = seen[p];
+        if (!ts || now - ts < FE_ACTIVE_TIMEOUT_MS) filtered.add(p);
+      }
+      setActiveSet(filtered);
+    };
+
+    const timer = setTimeout(syncActiveSet, 0);
+    if (rawActiveSet.size === 0) {
+      return () => clearTimeout(timer);
     }
-    for (const p of Object.keys(seen)) {
-      if (!rawActiveSet.has(p)) delete seen[p];
-    }
+
+    const intervalId = setInterval(syncActiveSet, FE_ACTIVE_TICK_MS);
+    return () => {
+      clearTimeout(timer);
+      clearInterval(intervalId);
+    };
   }, [rawActiveSet]);
 
-  useEffect(() => {
-    if (rawActiveSet.size === 0) return;
-    const id = setInterval(() => setTick((t) => t + 1), FE_ACTIVE_TICK_MS);
-    return () => clearInterval(id);
-  }, [rawActiveSet]);
-
-  const activeSet = useMemo(() => {
-    const now = Date.now();
-    const filtered = new Set();
-    for (const p of rawActiveSet) {
-      const ts = firstSeenRef.current[p];
-      if (!ts || now - ts < FE_ACTIVE_TIMEOUT_MS) filtered.add(p);
-    }
-    return filtered;
-  }, [rawActiveSet, tick]);
+  const activeSetKey = useMemo(
+    () => Array.from(activeSet).sort().join(","),
+    [activeSet],
+  );
 
   const { nodes, edges } = useMemo(
     () => buildLayout(providers, activeSet, lastSet, errorSet),
-    [providers, activeSet, lastKey, errorKey]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [providers, activeSetKey, lastSet, errorSet],
   );
 
-  // Stable key — only remount when provider list changes
-  const providersKey = useMemo(
-    () => providers.map((p) => p.provider).sort().join(","),
-    [providers]
+  const fitOpts = useMemo(() => ({ padding: 0.2, duration: 200 }), []);
+
+  const onInit = useCallback(
+    (instance) => {
+      rfInstance.current = instance;
+      setTimeout(() => instance.fitView(fitOpts), 50);
+    },
+    [fitOpts],
   );
+
+  const fitViewToGraph = useCallback(() => {
+    if (rfInstance.current) rfInstance.current.fitView(fitOpts);
+  }, [fitOpts]);
 
   const rfInstance = useRef(null);
   const containerRef = useRef(null);
-  const fitOpts = { padding: 0.2, duration: 200 };
-  const onInit = useCallback((instance) => {
-    rfInstance.current = instance;
-    setTimeout(() => instance.fitView(fitOpts), 50);
-  }, []);
 
   // Re-fit on container resize
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const ro = new ResizeObserver(() => {
-      if (rfInstance.current) rfInstance.current.fitView(fitOpts);
+      fitViewToGraph();
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [fitViewToGraph]);
 
   // Re-fit when node count/layout changes
   useEffect(() => {
@@ -275,10 +379,22 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
       const id = setTimeout(() => rfInstance.current.fitView(fitOpts), 50);
       return () => clearTimeout(id);
     }
-  }, [nodes.length]);
+  }, [fitOpts, nodes.length]);
+
+  const providersKey = useMemo(
+    () =>
+      providers
+        .map((p) => p.provider)
+        .sort()
+        .join(","),
+    [providers],
+  );
 
   return (
-    <div ref={containerRef} className="h-[320px] w-full min-w-0 rounded-lg border border-border bg-bg-subtle/30 sm:h-[480px]">
+    <div
+      ref={containerRef}
+      className="h-[320px] w-full min-w-0 rounded-lg border border-border bg-bg-subtle/30 sm:h-[480px]"
+    >
       {providers.length === 0 ? (
         <div className="h-full flex items-center justify-center text-text-muted text-sm">
           No providers connected
@@ -289,22 +405,23 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}
-          fitView
-          fitViewOptions={fitOpts}
-          minZoom={0.1}
-          maxZoom={2}
-          onInit={onInit}
-          proOptions={{ hideAttribution: true }}
-          panOnDrag
-          zoomOnScroll
-          zoomOnPinch
-          zoomOnDoubleClick
-          preventScrolling={false}
           nodesDraggable={false}
           nodesConnectable={false}
           elementsSelectable={false}
+          panOnDrag={false}
+          zoomOnScroll={false}
+          zoomOnPinch={false}
+          zoomOnDoubleClick={false}
+          preventScrolling={false}
+          fitView
+          onInit={onInit}
         >
-          <Controls showInteractive={false} className="react-flow-controls-custom" />
+          <Background
+            color="currentColor"
+            gap={24}
+            className="text-text-muted/10"
+          />
+          <Controls showInteractive={false} />
         </ReactFlow>
       )}
     </div>
@@ -312,16 +429,20 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
 }
 
 ProviderTopology.propTypes = {
-  providers: PropTypes.arrayOf(PropTypes.shape({
-    id: PropTypes.string,
-    provider: PropTypes.string,
-    name: PropTypes.string,
-  })),
-  activeRequests: PropTypes.arrayOf(PropTypes.shape({
-    provider: PropTypes.string,
-    model: PropTypes.string,
-    account: PropTypes.string,
-  })),
+  providers: PropTypes.arrayOf(
+    PropTypes.shape({
+      id: PropTypes.string,
+      provider: PropTypes.string,
+      name: PropTypes.string,
+    }),
+  ),
+  activeRequests: PropTypes.arrayOf(
+    PropTypes.shape({
+      provider: PropTypes.string,
+      model: PropTypes.string,
+      account: PropTypes.string,
+    }),
+  ),
   lastProvider: PropTypes.string,
   errorProvider: PropTypes.string,
 };

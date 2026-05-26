@@ -28,8 +28,8 @@ const useThemeStore = create(
     }),
     {
       name: THEME_CONFIG.storageKey,
-    }
-  )
+    },
+  ),
 );
 
 // Apply theme to document
@@ -51,4 +51,3 @@ function applyTheme(theme) {
 }
 
 export default useThemeStore;
-

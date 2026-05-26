@@ -1,7 +1,8 @@
 // OpenRouter TTS — via chat completions + audio modality (SSE stream)
-export default {
+const provider = {
   async synthesize(text, model, credentials) {
-    if (!credentials?.apiKey) throw new Error("No OpenRouter API key configured");
+    if (!credentials?.apiKey)
+      throw new Error("No OpenRouter API key configured");
 
     // model format: "tts-model/voice" e.g. "openai/gpt-4o-mini-tts/alloy"
     let ttsModel = "openai/gpt-4o-mini-tts";
@@ -24,7 +25,7 @@ export default {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${credentials.apiKey}`,
+        Authorization: `Bearer ${credentials.apiKey}`,
         "HTTP-Referer": "https://endpoint-proxy.local",
         "X-Title": "Endpoint Proxy",
       },
@@ -39,7 +40,9 @@ export default {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err?.error?.message || `OpenRouter TTS failed: ${res.status}`);
+      throw new Error(
+        err?.error?.message || `OpenRouter TTS failed: ${res.status}`,
+      );
     }
 
     // Parse SSE stream, accumulate base64 audio chunks
@@ -64,7 +67,10 @@ export default {
       }
     }
 
-    if (chunks.length === 0) throw new Error("OpenRouter TTS returned no audio data");
+    if (chunks.length === 0)
+      throw new Error("OpenRouter TTS returned no audio data");
     return { base64: chunks.join(""), format: "wav" };
   },
 };
+
+export default provider;

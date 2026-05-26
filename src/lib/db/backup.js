@@ -24,12 +24,19 @@ export function backupFile(srcPath, destDir, destName = null) {
 
 export function pruneOldBackups() {
   if (!fs.existsSync(BACKUPS_DIR)) return;
-  const entries = fs.readdirSync(BACKUPS_DIR, { withFileTypes: true })
+  const entries = fs
+    .readdirSync(BACKUPS_DIR, { withFileTypes: true })
     .filter((e) => e.isDirectory())
-    .map((e) => ({ name: e.name, full: path.join(BACKUPS_DIR, e.name), mtime: fs.statSync(path.join(BACKUPS_DIR, e.name)).mtimeMs }))
+    .map((e) => ({
+      name: e.name,
+      full: path.join(BACKUPS_DIR, e.name),
+      mtime: fs.statSync(path.join(BACKUPS_DIR, e.name)).mtimeMs,
+    }))
     .sort((a, b) => b.mtime - a.mtime);
 
   for (const old of entries.slice(KEEP_BACKUPS)) {
-    try { fs.rmSync(old.full, { recursive: true, force: true }); } catch {}
+    try {
+      fs.rmSync(old.full, { recursive: true, force: true });
+    } catch {}
   }
 }

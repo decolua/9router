@@ -1,6 +1,10 @@
 // Port concept of filter::smart_truncate (rtk/src/core/filter.rs).
 // Keep HEAD + TAIL lines, replace middle with "... +N lines truncated".
-import { SMART_TRUNCATE_HEAD, SMART_TRUNCATE_TAIL, SMART_TRUNCATE_MIN_LINES } from "../constants.js";
+import {
+  SMART_TRUNCATE_HEAD,
+  SMART_TRUNCATE_TAIL,
+  SMART_TRUNCATE_MIN_LINES,
+} from "../constants.js";
 
 export function smartTruncate(input) {
   const lines = input.split("\n");

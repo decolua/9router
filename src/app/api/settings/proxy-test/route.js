@@ -15,9 +15,15 @@ export async function POST(request) {
     }
 
     const status = typeof result?.status === "number" ? result.status : 500;
-    return NextResponse.json({ ok: false, error: result?.error || "Proxy test failed" }, { status });
+    return NextResponse.json(
+      { ok: false, error: result?.error || "Proxy test failed" },
+      { status },
+    );
   } catch (err) {
-    const message = err?.name === "AbortError" ? "Proxy test timed out" : (err?.message || String(err));
+    const message =
+      err?.name === "AbortError"
+        ? "Proxy test timed out"
+        : err?.message || String(err);
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }

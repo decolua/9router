@@ -12,7 +12,9 @@ const originalDataDir = process.env.DATA_DIR;
 let tempSqlite, tempLowdb;
 let sqliteDb, lowDb;
 
-function fmt(ms) { return `${ms.toFixed(2)}ms`; }
+function fmt(ms) {
+  return `${ms.toFixed(2)}ms`;
+}
 
 async function bench(label, fn) {
   // warmup
@@ -37,8 +39,14 @@ beforeAll(async () => {
   const { Low } = await import("lowdb");
   const { JSONFile } = await import("lowdb/node");
   const dbFile = path.join(tempLowdb, "db.json");
-  fs.writeFileSync(dbFile, JSON.stringify({ providerConnections: [], usageHistory: [] }));
-  lowDb = new Low(new JSONFile(dbFile), { providerConnections: [], usageHistory: [] });
+  fs.writeFileSync(
+    dbFile,
+    JSON.stringify({ providerConnections: [], usageHistory: [] }),
+  );
+  lowDb = new Low(new JSONFile(dbFile), {
+    providerConnections: [],
+    usageHistory: [],
+  });
   await lowDb.read();
 });
 
@@ -53,21 +61,32 @@ describe("DB Benchmark — SQLite vs Lowdb", () => {
   it(`INSERT ${N_ITEMS} provider connections`, async () => {
     console.log(`\n[INSERT ${N_ITEMS}]`);
 
-    const sqliteTime = await bench("SQLite createProviderConnection", async () => {
-      for (let i = 0; i < N_ITEMS; i++) {
-        await sqliteDb.createProviderConnection({
-          provider: `bench-p${i % 5}`, authType: "apikey",
-          name: `name-${i}`, apiKey: `k-${i}`,
-        });
-      }
-    });
+    const sqliteTime = await bench(
+      "SQLite createProviderConnection",
+      async () => {
+        for (let i = 0; i < N_ITEMS; i++) {
+          await sqliteDb.createProviderConnection({
+            provider: `bench-p${i % 5}`,
+            authType: "apikey",
+            name: `name-${i}`,
+            apiKey: `k-${i}`,
+          });
+        }
+      },
+    );
 
     const lowdbTime = await bench("Lowdb push + write", async () => {
       for (let i = 0; i < N_ITEMS; i++) {
         lowDb.data.providerConnections.push({
-          id: `id-${i}`, provider: `bench-p${i % 5}`, authType: "apikey",
-          name: `name-${i}`, apiKey: `k-${i}`, priority: i + 1, isActive: true,
-          createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+          id: `id-${i}`,
+          provider: `bench-p${i % 5}`,
+          authType: "apikey",
+          name: `name-${i}`,
+          apiKey: `k-${i}`,
+          priority: i + 1,
+          isActive: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
         });
         await lowDb.write();
       }
@@ -80,16 +99,23 @@ describe("DB Benchmark — SQLite vs Lowdb", () => {
   it(`READ ${N_QUERIES} filtered queries`, async () => {
     console.log(`\n[READ ${N_QUERIES} filtered queries]`);
 
-    const sqliteTime = await bench("SQLite getProviderConnections(filter)", async () => {
-      for (let i = 0; i < N_QUERIES; i++) {
-        await sqliteDb.getProviderConnections({ provider: `bench-p${i % 5}` });
-      }
-    });
+    const sqliteTime = await bench(
+      "SQLite getProviderConnections(filter)",
+      async () => {
+        for (let i = 0; i < N_QUERIES; i++) {
+          await sqliteDb.getProviderConnections({
+            provider: `bench-p${i % 5}`,
+          });
+        }
+      },
+    );
 
     const lowdbTime = await bench("Lowdb read + filter", async () => {
       for (let i = 0; i < N_QUERIES; i++) {
         await lowDb.read();
-        lowDb.data.providerConnections.filter((c) => c.provider === `bench-p${i % 5}`);
+        lowDb.data.providerConnections.filter(
+          (c) => c.provider === `bench-p${i % 5}`,
+        );
       }
     });
 
@@ -103,11 +129,16 @@ describe("DB Benchmark — SQLite vs Lowdb", () => {
     const sqliteAll = await sqliteDb.getProviderConnections();
     const ids = sqliteAll.slice(0, N_QUERIES).map((c) => c.id);
 
-    const sqliteTime = await bench("SQLite getProviderConnectionById", async () => {
-      for (const id of ids) await sqliteDb.getProviderConnectionById(id);
-    });
+    const sqliteTime = await bench(
+      "SQLite getProviderConnectionById",
+      async () => {
+        for (const id of ids) await sqliteDb.getProviderConnectionById(id);
+      },
+    );
 
-    const lowdbIds = lowDb.data.providerConnections.slice(0, N_QUERIES).map((c) => c.id);
+    const lowdbIds = lowDb.data.providerConnections
+      .slice(0, N_QUERIES)
+      .map((c) => c.id);
     const lowdbTime = await bench("Lowdb find by id", async () => {
       for (const id of lowdbIds) {
         await lowDb.read();
@@ -125,9 +156,12 @@ describe("DB Benchmark — SQLite vs Lowdb", () => {
     const sqliteTime = await bench("SQLite saveRequestUsage", async () => {
       for (let i = 0; i < N_ITEMS; i++) {
         await sqliteDb.saveRequestUsage({
-          provider: "openai", model: `m-${i % 10}`, connectionId: `c-${i % 5}`,
+          provider: "openai",
+          model: `m-${i % 10}`,
+          connectionId: `c-${i % 5}`,
           tokens: { prompt_tokens: 100 + i, completion_tokens: 50 + i },
-          endpoint: "/v1/chat/completions", status: "ok",
+          endpoint: "/v1/chat/completions",
+          status: "ok",
         });
       }
     });
@@ -136,9 +170,14 @@ describe("DB Benchmark — SQLite vs Lowdb", () => {
       lowDb.data.usageHistory = [];
       for (let i = 0; i < N_ITEMS; i++) {
         lowDb.data.usageHistory.push({
-          timestamp: new Date().toISOString(), provider: "openai", model: `m-${i % 10}`,
-          connectionId: `c-${i % 5}`, tokens: { prompt_tokens: 100 + i, completion_tokens: 50 + i },
-          endpoint: "/v1/chat/completions", status: "ok", cost: 0,
+          timestamp: new Date().toISOString(),
+          provider: "openai",
+          model: `m-${i % 10}`,
+          connectionId: `c-${i % 5}`,
+          tokens: { prompt_tokens: 100 + i, completion_tokens: 50 + i },
+          endpoint: "/v1/chat/completions",
+          status: "ok",
+          cost: 0,
         });
         await lowDb.write();
       }
@@ -159,10 +198,13 @@ describe("DB Benchmark — SQLite vs Lowdb", () => {
       for (let i = 0; i < 50; i++) {
         await lowDb.read();
         const cutoff = Date.now() - 86400000;
-        const hist = lowDb.data.usageHistory.filter((h) => new Date(h.timestamp).getTime() >= cutoff);
+        const hist = lowDb.data.usageHistory.filter(
+          (h) => new Date(h.timestamp).getTime() >= cutoff,
+        );
         const stats = { byProvider: {}, byModel: {} };
         for (const e of hist) {
-          if (!stats.byProvider[e.provider]) stats.byProvider[e.provider] = { requests: 0 };
+          if (!stats.byProvider[e.provider])
+            stats.byProvider[e.provider] = { requests: 0 };
           stats.byProvider[e.provider].requests++;
         }
       }

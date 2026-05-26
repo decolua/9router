@@ -13,6 +13,7 @@ npm install -g 9router
 ```
 
 **要件:**
+
 - Node.js 20以上
 - npm 9以上
 
@@ -29,6 +30,7 @@ npm install -g 9router
 ダッシュボードが自動的にブラウザで `http://localhost:3000` に開きます。
 
 **デフォルト設定:**
+
 - **ダッシュボード**: `http://localhost:3000`
 - **APIエンドポイント**: `http://localhost:20128/v1`
 - **データディレクトリ**: `~/.9router`

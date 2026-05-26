@@ -23,6 +23,7 @@
 以下の設定を `config.json` に追加:
 
 **単一モデルセットアップ:**
+
 ```json
 {
   "models": [
@@ -38,6 +39,7 @@
 ```
 
 **複数モデルセットアップ:**
+
 ```json
 {
   "models": [
@@ -75,6 +77,7 @@
 
 **クラウド9Router用:**
 `apiBase` を以下に置き換え:
+
 ```json
 "apiBase": "https://9router.com/v1"
 ```
@@ -94,37 +97,44 @@
 ## 利用可能なモデル
 
 ### Claudeモデル (Anthropic)
+
 - `cc/claude-opus-4-5-20251101` - 最も高性能、複雑なタスクに最適
 - `cc/claude-sonnet-4-20250514` - パフォーマンスと速度のバランス
 - `cc/claude-haiku-4-20250514` - 最速、シンプルなタスクに適している
 
 ### DeepSeekモデル
+
 - `cx/deepseek-chat` - コード生成に優れている
 - `cx/deepseek-reasoner` - 複雑な問題解決に最適
 
 ### GLMモデル (Zhipu AI)
+
 - `glm/glm-4-plus` - 高度な中国語と英語
 - `glm/glm-4-flash` - 高速応答
 
 ## 使用例
 
 ### コード説明
+
 1. エディタでコードを選択
 2. Continueサイドバーを開く
 3. 入力: 「Explain this code」
 4. Model: `cc/claude-sonnet-4-20250514`
 
 ### コード生成
+
 1. Continueサイドバーを開く
 2. 入力: 「Create a React component for user profile card」
 3. Model: `cx/deepseek-chat`
 
 ### リファクタリング
+
 1. リファクタリングするコードを選択
 2. 入力: 「Refactor this to use async/await」
 3. Model: `cc/claude-sonnet-4-20250514`
 
 ### バグ修正
+
 1. 問題のあるコードを選択
 2. 入力: 「Find and fix the bug in this code」
 3. Model: `cx/deepseek-reasoner`
@@ -204,21 +214,25 @@ Continueがモデルに送信するコンテキストを設定:
 ## トラブルシューティング
 
 ### モデルが応答しない
+
 - 9Routerが動作中か確認: `curl http://localhost:20128/health`
 - config.jsonのAPIキーを確認
 - エラーについてVSCode開発者コンソールを確認: `Help` → `Toggle Developer Tools`
 
 ### 間違ったモデルが選択されている
+
 - Continueサイドバーのモデルドロップダウンをクリック
 - 正しい9Routerモデルを選択
 - モデル名は正確に一致する必要があります (大文字小文字を区別)
 
 ### 設定が読み込まれない
+
 - JSON構文が有効であることを確認 (JSONバリデータを使用)
 - ファイルの場所を確認: `~/.continue/config.json`
 - 変更後にVSCodeウィンドウをリロード
 
 ### パフォーマンスが遅い
+
 - より高速なモデルへ切替 (haiku、flash)
 - contextProvidersでコンテキストサイズを削減
 - 9Routerへのネットワークレイテンシを確認
@@ -226,17 +240,20 @@ Continueがモデルに送信するコンテキストを設定:
 ## ベストプラクティス
 
 ### モデル選択戦略
+
 - **クイック編集**: `cc/claude-haiku-4-20250514` を使用
 - **コード生成**: `cx/deepseek-chat` を使用
 - **複雑なリファクタリング**: `cc/claude-opus-4-5-20251101` を使用
 - **問題解決**: `cx/deepseek-reasoner` を使用
 
 ### コンテキスト管理
+
 - 質問する前に関連コードのみを選択
 - 具体的で明確なプロンプトを使用
 - 複雑なタスクを小さなステップに分解
 
 ### コスト最適化
+
 - シンプルなタスクには高速/安価なモデルを使用
 - 可能な場合はコンテキストサイズを制限
 - 頻繁に使用される応答をキャッシュ

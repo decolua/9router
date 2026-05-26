@@ -28,16 +28,19 @@
 Base URLを9Routerエンドポイントに設定:
 
 **ローカル9Router用:**
+
 ```
 http://localhost:20128/v1
 ```
 
 **クラウド9Router用:**
+
 ```
 https://9router.com
 ```
 
 **手順:**
+
 1. **Base URL** フィールドに9Routerエンドポイントを入力
 2. 末尾に `/v1` を必ず含める
 
@@ -79,13 +82,13 @@ Model: gpt-4
 
 9Routerダッシュボードで設定されたモデルを使用できます。一般的な例:
 
-| モデル名 | プロバイダー | 説明 |
-|------------|----------|-------------|
-| `gpt-4` | OpenAI | GPT-4 Turbo |
-| `gpt-4o` | OpenAI | GPT-4 Optimized |
-| `claude-opus-4-5` | Anthropic | Claude Opus 4.5 |
-| `claude-sonnet-4-5` | Anthropic | Claude Sonnet 4.5 |
-| `gemini-2.0-flash` | Google | Gemini 2.0 Flash |
+| モデル名            | プロバイダー | 説明              |
+| ------------------- | ------------ | ----------------- |
+| `gpt-4`             | OpenAI       | GPT-4 Turbo       |
+| `gpt-4o`            | OpenAI       | GPT-4 Optimized   |
+| `claude-opus-4-5`   | Anthropic    | Claude Opus 4.5   |
+| `claude-sonnet-4-5` | Anthropic    | Claude Sonnet 4.5 |
+| `gemini-2.0-flash`  | Google       | Gemini 2.0 Flash  |
 
 ## 使用法
 
@@ -183,6 +186,7 @@ localhostの代わりに9Routerクラウドエンドポイントを使用:
 ### モデルルーティング
 
 9Routerは以下に基づいて最適な利用可能なプロバイダーにリクエストを自動的にルーティング:
+
 - モデル可用性
 - プロバイダーヘルスステータス
 - コスト最適化
@@ -195,6 +199,7 @@ localhostの代わりに9Routerクラウドエンドポイントを使用:
 ### 使用量トラッキング
 
 9Routerダッシュボード経由でCline使用量をモニター:
+
 - 総リクエスト数
 - トークン使用量
 - モデルごとのコスト

@@ -3,7 +3,12 @@ import { PROVIDERS } from "../config/providers.js";
 import { v4 as uuidv4 } from "uuid";
 import { refreshKiroToken } from "../services/tokenRefresh.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
-import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG, resolveRetryEntry } from "../config/runtimeConfig.js";
+import {
+  HTTP_STATUS,
+  RETRY_CONFIG,
+  DEFAULT_RETRY_CONFIG,
+  resolveRetryEntry,
+} from "../config/runtimeConfig.js";
 
 /**
  * KiroExecutor - Executor for Kiro AI (AWS CodeWhisperer)
@@ -18,7 +23,7 @@ export class KiroExecutor extends BaseExecutor {
     const headers = {
       ...this.config.headers,
       "Amz-Sdk-Request": "attempt=1; max=3",
-      "Amz-Sdk-Invocation-Id": uuidv4()
+      "Amz-Sdk-Invocation-Id": uuidv4(),
     };
 
     if (credentials.accessToken) {
@@ -35,30 +40,52 @@ export class KiroExecutor extends BaseExecutor {
   /**
    * Custom execute for Kiro - handles AWS EventStream binary response with retry support
    */
-  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
+  async execute({
+    model,
+    body,
+    stream,
+    credentials,
+    signal,
+    log,
+    proxyOptions = null,
+  }) {
     const url = this.buildUrl(model, stream, 0);
-    const transformedBody = this.transformRequest(model, body, stream, credentials);
-    
+    const transformedBody = this.transformRequest(
+      model,
+      body,
+      stream,
+      credentials,
+    );
+
     // Merge default retry config with provider-specific config
     const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...this.config.retry };
     let retryAttempts = 0;
 
     while (true) {
       const headers = this.buildHeaders(credentials, stream);
-      
-      const response = await proxyAwareFetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(transformedBody),
-        signal
-      }, proxyOptions);
+
+      const response = await proxyAwareFetch(
+        url,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify(transformedBody),
+          signal,
+        },
+        proxyOptions,
+      );
 
       // Check if should retry based on status code
-      const { attempts: maxRetries, delayMs } = resolveRetryEntry(retryConfig[response.status]);
+      const { attempts: maxRetries, delayMs } = resolveRetryEntry(
+        retryConfig[response.status],
+      );
       if (!response.ok && maxRetries > 0 && retryAttempts < maxRetries) {
         retryAttempts++;
-        log?.debug?.("RETRY", `${response.status} retry ${retryAttempts}/${maxRetries} after ${delayMs / 1000}s`);
-        await new Promise(resolve => setTimeout(resolve, delayMs));
+        log?.debug?.(
+          "RETRY",
+          `${response.status} retry ${retryAttempts}/${maxRetries} after ${delayMs / 1000}s`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
         continue;
       }
 
@@ -69,7 +96,10 @@ export class KiroExecutor extends BaseExecutor {
       // Success - transform and return
       // For Kiro, we need to transform the binary EventStream to SSE
       // Create a TransformStream to convert binary to SSE text
-      const transformedResponse = this.transformEventStreamToSSE(response, model);
+      const transformedResponse = this.transformEventStreamToSSE(
+        response,
+        model,
+      );
       return { response: transformedResponse, url, headers, transformedBody };
     }
   }
@@ -94,7 +124,7 @@ export class KiroExecutor extends BaseExecutor {
       toolCallIndex: 0,
       seenToolIds: new Map(),
       totalContentLength: 0,
-      contextUsagePercentage: 0
+      contextUsagePercentage: 0,
     };
 
     const transformStream = new TransformStream({
@@ -114,43 +144,58 @@ export class KiroExecutor extends BaseExecutor {
         const maxIterations = 1000;
         while (buffer.length - readOffset >= 16 && iterations < maxIterations) {
           iterations++;
-          const view = new DataView(buffer.buffer, buffer.byteOffset + readOffset);
+          const view = new DataView(
+            buffer.buffer,
+            buffer.byteOffset + readOffset,
+          );
           const totalLength = view.getUint32(0, false);
 
-          if (totalLength < 16 || totalLength > (buffer.length - readOffset)) break;
+          if (totalLength < 16 || totalLength > buffer.length - readOffset)
+            break;
 
-          const eventData = buffer.subarray(readOffset, readOffset + totalLength);
+          const eventData = buffer.subarray(
+            readOffset,
+            readOffset + totalLength,
+          );
           readOffset += totalLength;
 
           const event = parseEventFrame(eventData);
           if (!event) continue;
 
           const eventType = event.headers[":event-type"] || "";
-          
+
           // Track total content length for token estimation
           if (!state.totalContentLength) state.totalContentLength = 0;
           if (!state.contextUsagePercentage) state.contextUsagePercentage = 0;
 
           // Handle assistantResponseEvent
-          if (eventType === "assistantResponseEvent" && event.payload?.content) {
+          if (
+            eventType === "assistantResponseEvent" &&
+            event.payload?.content
+          ) {
             const content = event.payload.content;
             state.totalContentLength += content.length;
-            
+
             const chunk = {
               id: responseId,
               object: "chat.completion.chunk",
               created,
               model,
-              choices: [{
-                index: 0,
-                delta: chunkIndex === 0
-                  ? { role: "assistant", content }
-                  : { content },
-                finish_reason: null
-              }]
+              choices: [
+                {
+                  index: 0,
+                  delta:
+                    chunkIndex === 0
+                      ? { role: "assistant", content }
+                      : { content },
+                  finish_reason: null,
+                },
+              ],
             };
             chunkIndex++;
-            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\n`));
+            controller.enqueue(
+              new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\n`),
+            );
           }
 
           // Handle reasoningContentEvent (Kiro thinking / reasoning)
@@ -159,32 +204,39 @@ export class KiroExecutor extends BaseExecutor {
           // as OpenAI delta.reasoning_content so downstream translators can map
           // it back to Claude thinking blocks / Anthropic reasoning, etc.
           if (eventType === "reasoningContentEvent") {
-            const reasoning = event.payload?.reasoningContentEvent || event.payload || {};
-            const reasoningText = (typeof reasoning === "string")
-              ? reasoning
-              : (reasoning.text || reasoning.content || "");
+            const reasoning =
+              event.payload?.reasoningContentEvent || event.payload || {};
+            const reasoningText =
+              typeof reasoning === "string"
+                ? reasoning
+                : reasoning.text || reasoning.content || "";
             if (reasoningText) {
               state.hasReasoningContent = true;
               state.totalContentLength += reasoningText.length;
 
-              const reasoningDelta = state.reasoningChunkCount === 0 && chunkIndex === 0
-                ? { role: "assistant", reasoning_content: reasoningText }
-                : { reasoning_content: reasoningText };
+              const reasoningDelta =
+                state.reasoningChunkCount === 0 && chunkIndex === 0
+                  ? { role: "assistant", reasoning_content: reasoningText }
+                  : { reasoning_content: reasoningText };
 
               const chunk = {
                 id: responseId,
                 object: "chat.completion.chunk",
                 created,
                 model,
-                choices: [{
-                  index: 0,
-                  delta: reasoningDelta,
-                  finish_reason: null
-                }]
+                choices: [
+                  {
+                    index: 0,
+                    delta: reasoningDelta,
+                    finish_reason: null,
+                  },
+                ],
               };
               chunkIndex++;
               state.reasoningChunkCount++;
-              controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\n`));
+              controller.enqueue(
+                new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\n`),
+              );
             }
           }
 
@@ -195,14 +247,18 @@ export class KiroExecutor extends BaseExecutor {
               object: "chat.completion.chunk",
               created,
               model,
-              choices: [{
-                index: 0,
-                delta: { content: event.payload.content },
-                finish_reason: null
-              }]
+              choices: [
+                {
+                  index: 0,
+                  delta: { content: event.payload.content },
+                  finish_reason: null,
+                },
+              ],
             };
             chunkIndex++;
-            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\n`));
+            controller.enqueue(
+              new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\n`),
+            );
           }
 
           // Handle toolUseEvent
@@ -212,7 +268,8 @@ export class KiroExecutor extends BaseExecutor {
             const toolUses = Array.isArray(toolUse) ? toolUse : [toolUse];
 
             for (const singleToolUse of toolUses) {
-              const toolCallId = singleToolUse.toolUseId || `call_${Date.now()}`;
+              const toolCallId =
+                singleToolUse.toolUseId || `call_${Date.now()}`;
               const toolName = singleToolUse.name || "";
               const toolInput = singleToolUse.input;
 
@@ -228,25 +285,33 @@ export class KiroExecutor extends BaseExecutor {
                   object: "chat.completion.chunk",
                   created,
                   model,
-                  choices: [{
-                    index: 0,
-                    delta: {
-                      ...(chunkIndex === 0 ? { role: "assistant" } : {}),
-                      tool_calls: [{
-                        index: toolIndex,
-                        id: toolCallId,
-                        type: "function",
-                        function: {
-                          name: toolName,
-                          arguments: ""
-                        }
-                      }]
+                  choices: [
+                    {
+                      index: 0,
+                      delta: {
+                        ...(chunkIndex === 0 ? { role: "assistant" } : {}),
+                        tool_calls: [
+                          {
+                            index: toolIndex,
+                            id: toolCallId,
+                            type: "function",
+                            function: {
+                              name: toolName,
+                              arguments: "",
+                            },
+                          },
+                        ],
+                      },
+                      finish_reason: null,
                     },
-                    finish_reason: null
-                  }]
+                  ],
                 };
                 chunkIndex++;
-                controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(startChunk)}\n\n`));
+                controller.enqueue(
+                  new TextEncoder().encode(
+                    `data: ${JSON.stringify(startChunk)}\n\n`,
+                  ),
+                );
               } else {
                 toolIndex = state.seenToolIds.get(toolCallId);
               }
@@ -254,9 +319,9 @@ export class KiroExecutor extends BaseExecutor {
               if (toolInput !== undefined) {
                 let argumentsStr;
 
-                if (typeof toolInput === 'string') {
+                if (typeof toolInput === "string") {
                   argumentsStr = toolInput;
-                } else if (typeof toolInput === 'object') {
+                } else if (typeof toolInput === "object") {
                   argumentsStr = JSON.stringify(toolInput);
                 } else {
                   continue;
@@ -267,21 +332,29 @@ export class KiroExecutor extends BaseExecutor {
                   object: "chat.completion.chunk",
                   created,
                   model,
-                  choices: [{
-                    index: 0,
-                    delta: {
-                      tool_calls: [{
-                        index: toolIndex,
-                        function: {
-                          arguments: argumentsStr
-                        }
-                      }]
+                  choices: [
+                    {
+                      index: 0,
+                      delta: {
+                        tool_calls: [
+                          {
+                            index: toolIndex,
+                            function: {
+                              arguments: argumentsStr,
+                            },
+                          },
+                        ],
+                      },
+                      finish_reason: null,
                     },
-                    finish_reason: null
-                  }]
+                  ],
                 };
                 chunkIndex++;
-                controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(argsChunk)}\n\n`));
+                controller.enqueue(
+                  new TextEncoder().encode(
+                    `data: ${JSON.stringify(argsChunk)}\n\n`,
+                  ),
+                );
               }
             }
           }
@@ -291,18 +364,20 @@ export class KiroExecutor extends BaseExecutor {
             state.finishEmitted = true;
 
             if (!state.usage) {
-              const estimatedOutputTokens = state.totalContentLength > 0 
-                ? Math.max(1, Math.floor(state.totalContentLength / 4))
-                : 0;
+              const estimatedOutputTokens =
+                state.totalContentLength > 0
+                  ? Math.max(1, Math.floor(state.totalContentLength / 4))
+                  : 0;
 
-              const estimatedInputTokens = state.contextUsagePercentage > 0
-                ? Math.floor(state.contextUsagePercentage * 200000 / 100)
-                : 0;
+              const estimatedInputTokens =
+                state.contextUsagePercentage > 0
+                  ? Math.floor((state.contextUsagePercentage * 200000) / 100)
+                  : 0;
 
               state.usage = {
                 prompt_tokens: estimatedInputTokens,
                 completion_tokens: estimatedOutputTokens,
-                total_tokens: estimatedInputTokens + estimatedOutputTokens
+                total_tokens: estimatedInputTokens + estimatedOutputTokens,
               };
             }
 
@@ -311,18 +386,22 @@ export class KiroExecutor extends BaseExecutor {
               object: "chat.completion.chunk",
               created,
               model,
-              choices: [{
-                index: 0,
-                delta: {},
-                finish_reason: state.hasToolCalls ? "tool_calls" : "stop"
-              }]
+              choices: [
+                {
+                  index: 0,
+                  delta: {},
+                  finish_reason: state.hasToolCalls ? "tool_calls" : "stop",
+                },
+              ],
             };
 
             if (state.usage) {
               chunk.usage = state.usage;
             }
 
-            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\n`));
+            controller.enqueue(
+              new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\n`),
+            );
 
             if (!state.doneEmitted) {
               controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
@@ -331,7 +410,10 @@ export class KiroExecutor extends BaseExecutor {
           }
 
           // Handle contextUsageEvent to extract contextUsagePercentage
-          if (eventType === "contextUsageEvent" && event.payload?.contextUsagePercentage) {
+          if (
+            eventType === "contextUsageEvent" &&
+            event.payload?.contextUsagePercentage
+          ) {
             state.contextUsagePercentage = event.payload.contextUsagePercentage;
             // Mark that we received context usage event
             state.hasContextUsage = true;
@@ -346,62 +428,74 @@ export class KiroExecutor extends BaseExecutor {
           if (eventType === "metricsEvent") {
             // Extract usage data from metricsEvent payload
             const metrics = event.payload?.metricsEvent || event.payload;
-            if (metrics && typeof metrics === 'object') {
+            if (metrics && typeof metrics === "object") {
               const inputTokens = metrics.inputTokens || 0;
               const outputTokens = metrics.outputTokens || 0;
-              
+
               if (inputTokens > 0 || outputTokens > 0) {
                 state.usage = {
                   prompt_tokens: inputTokens,
                   completion_tokens: outputTokens,
-                  total_tokens: inputTokens + outputTokens
+                  total_tokens: inputTokens + outputTokens,
                 };
               }
             }
           }
 
           // Emit final chunk only after receiving BOTH meteringEvent AND contextUsageEvent
-          if (state.hasMeteringEvent && state.hasContextUsage && !state.finishEmitted) {
+          if (
+            state.hasMeteringEvent &&
+            state.hasContextUsage &&
+            !state.finishEmitted
+          ) {
             state.finishEmitted = true;
-            
+
             // Estimate tokens if not available from events
             if (!state.usage) {
               // Estimate output tokens from content length
-              const estimatedOutputTokens = state.totalContentLength > 0 
-                ? Math.max(1, Math.floor(state.totalContentLength / 4))
-                : 0;
-              
+              const estimatedOutputTokens =
+                state.totalContentLength > 0
+                  ? Math.max(1, Math.floor(state.totalContentLength / 4))
+                  : 0;
+
               // Estimate input tokens from contextUsagePercentage
               // Kiro models typically have 200k context window
-              const estimatedInputTokens = state.contextUsagePercentage > 0
-                ? Math.floor(state.contextUsagePercentage * 200000 / 100)
-                : 0;
-              
+              const estimatedInputTokens =
+                state.contextUsagePercentage > 0
+                  ? Math.floor((state.contextUsagePercentage * 200000) / 100)
+                  : 0;
+
               state.usage = {
                 prompt_tokens: estimatedInputTokens,
                 completion_tokens: estimatedOutputTokens,
-                total_tokens: estimatedInputTokens + estimatedOutputTokens
+                total_tokens: estimatedInputTokens + estimatedOutputTokens,
               };
             }
-            
+
             const finishChunk = {
               id: responseId,
               object: "chat.completion.chunk",
               created,
               model,
-              choices: [{
-                index: 0,
-                delta: {},
-                finish_reason: state.hasToolCalls ? "tool_calls" : "stop"
-              }]
+              choices: [
+                {
+                  index: 0,
+                  delta: {},
+                  finish_reason: state.hasToolCalls ? "tool_calls" : "stop",
+                },
+              ],
             };
-            
+
             // Include usage in final chunk if available
             if (state.usage) {
               finishChunk.usage = state.usage;
             }
-            
-            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(finishChunk)}\n\n`));
+
+            controller.enqueue(
+              new TextEncoder().encode(
+                `data: ${JSON.stringify(finishChunk)}\n\n`,
+              ),
+            );
           }
         }
 
@@ -419,16 +513,22 @@ export class KiroExecutor extends BaseExecutor {
             object: "chat.completion.chunk",
             created,
             model,
-            choices: [{
-              index: 0,
-              delta: {},
-              finish_reason: state.hasToolCalls ? "tool_calls" : "stop"
-            }]
+            choices: [
+              {
+                index: 0,
+                delta: {},
+                finish_reason: state.hasToolCalls ? "tool_calls" : "stop",
+              },
+            ],
           };
           if (state.usage) {
             finishChunk.usage = state.usage;
           }
-          controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(finishChunk)}\n\n`));
+          controller.enqueue(
+            new TextEncoder().encode(
+              `data: ${JSON.stringify(finishChunk)}\n\n`,
+            ),
+          );
         }
 
         // Send final done message
@@ -436,12 +536,15 @@ export class KiroExecutor extends BaseExecutor {
           controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
           state.doneEmitted = true;
         }
-      }
+      },
     });
 
     // Pipe response body through transform stream
     if (!response.body) {
-      return new Response("data: [DONE]\n\n", { status: response.status, headers: { "Content-Type": "text/event-stream" } });
+      return new Response("data: [DONE]\n\n", {
+        status: response.status,
+        headers: { "Content-Type": "text/event-stream" },
+      });
     }
     const transformedStream = response.body.pipeThrough(transformStream);
 
@@ -451,8 +554,8 @@ export class KiroExecutor extends BaseExecutor {
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
-        "Connection": "keep-alive"
-      }
+        Connection: "keep-alive",
+      },
     });
   }
 
@@ -465,7 +568,7 @@ export class KiroExecutor extends BaseExecutor {
         credentials.refreshToken,
         credentials.providerSpecificData,
         log,
-        proxyOptions
+        proxyOptions,
       );
 
       return result;
@@ -494,18 +597,23 @@ function parseEventFrame(data) {
       offset++;
       if (offset + nameLen > data.length) break;
 
-      const name = new TextDecoder().decode(data.slice(offset, offset + nameLen));
+      const name = new TextDecoder().decode(
+        data.slice(offset, offset + nameLen),
+      );
       offset += nameLen;
 
       const headerType = data[offset];
       offset++;
 
-      if (headerType === 7) { // String type
+      if (headerType === 7) {
+        // String type
         const valueLen = (data[offset] << 8) | data[offset + 1];
         offset += 2;
         if (offset + valueLen > data.length) break;
 
-        const value = new TextDecoder().decode(data.slice(offset, offset + valueLen));
+        const value = new TextDecoder().decode(
+          data.slice(offset, offset + valueLen),
+        );
         offset += valueLen;
         headers[name] = value;
       } else {
@@ -519,7 +627,9 @@ function parseEventFrame(data) {
 
     let payload = null;
     if (payloadEnd > payloadStart) {
-      const payloadStr = new TextDecoder().decode(data.slice(payloadStart, payloadEnd));
+      const payloadStr = new TextDecoder().decode(
+        data.slice(payloadStart, payloadEnd),
+      );
 
       // Skip empty or whitespace-only payloads
       if (!payloadStr || !payloadStr.trim()) {
@@ -530,7 +640,9 @@ function parseEventFrame(data) {
         payload = JSON.parse(payloadStr);
       } catch (parseError) {
         // Log parse error for debugging
-        console.warn(`[Kiro] Failed to parse payload: ${parseError.message} | payload: ${payloadStr.substring(0, 100)}`);
+        console.warn(
+          `[Kiro] Failed to parse payload: ${parseError.message} | payload: ${payloadStr.substring(0, 100)}`,
+        );
         payload = { raw: payloadStr };
       }
     }

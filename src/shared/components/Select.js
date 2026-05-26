@@ -35,8 +35,9 @@ export default function Select({
             "focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500/40",
             "transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed",
             "text-[16px] sm:text-sm",
-            error && "ring-1 ring-red-500 focus:ring-2 focus:ring-red-500/40 border-red-500/40",
-            selectClassName
+            error &&
+              "ring-1 ring-red-500 focus:ring-2 focus:ring-red-500/40 border-red-500/40",
+            selectClassName,
           )}
           {...props}
         >
@@ -50,7 +51,9 @@ export default function Select({
           ))}
         </select>
         <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-text-muted">
-          <span className="material-symbols-outlined text-[20px]">expand_more</span>
+          <span className="material-symbols-outlined text-[20px]">
+            expand_more
+          </span>
         </div>
       </div>
       {error && (
@@ -59,9 +62,7 @@ export default function Select({
           {error}
         </p>
       )}
-      {hint && !error && (
-        <p className="text-xs text-text-muted">{hint}</p>
-      )}
+      {hint && !error && <p className="text-xs text-text-muted">{hint}</p>}
     </div>
   );
 }

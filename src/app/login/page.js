@@ -19,7 +19,10 @@ export default function LoginPage() {
   // Countdown for rate-limit
   useEffect(() => {
     if (retryAfter <= 0) return;
-    const id = setInterval(() => setRetryAfter((s) => (s > 0 ? s - 1 : 0)), 1000);
+    const id = setInterval(
+      () => setRetryAfter((s) => (s > 0 ? s - 1 : 0)),
+      1000,
+    );
     return () => clearInterval(id);
   }, [retryAfter]);
 
@@ -27,7 +30,8 @@ export default function LoginPage() {
     async function checkAuth() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000);
-      const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
+      const baseUrl =
+        typeof window !== "undefined" ? window.location.origin : "";
 
       try {
         const res = await fetch(`${baseUrl}/api/auth/status`, {
@@ -109,7 +113,10 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-bg p-4 relative overflow-hidden">
       {/* Faint grid background */}
-      <div className="landing-grid absolute inset-0 pointer-events-none" aria-hidden="true" />
+      <div
+        className="landing-grid absolute inset-0 pointer-events-none"
+        aria-hidden="true"
+      />
       <div className="relative z-10 w-full max-w-md">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-primary mb-2">9Router</h1>
@@ -123,18 +130,28 @@ export default function LoginPage() {
         <Card>
           <div className="flex flex-col gap-4">
             {oidcAvailable && (
-              <Button type="button" variant="primary" className="w-full" onClick={handleOidcLogin}>
+              <Button
+                type="button"
+                variant="primary"
+                className="w-full"
+                onClick={handleOidcLogin}
+              >
                 {oidcLoginLabel}
               </Button>
             )}
 
-            {oidcAvailable && passwordAvailable && <div className="h-px bg-border/60" />}
+            {oidcAvailable && passwordAvailable && (
+              <div className="h-px bg-border/60" />
+            )}
 
             {passwordAvailable ? (
               <form onSubmit={handleLogin} className="flex flex-col gap-4">
-                {((authMode === "oidc" && !oidcConfigured) || (authMode === "both" && !oidcConfigured)) && (
+                {((authMode === "oidc" && !oidcConfigured) ||
+                  (authMode === "both" && !oidcConfigured)) && (
                   <p className="text-xs text-amber-600 dark:text-amber-400 text-center">
-                    OIDC login is enabled, but the issuer/client fields are not configured yet. Password login is still available for recovery.
+                    OIDC login is enabled, but the issuer/client fields are not
+                    configured yet. Password login is still available for
+                    recovery.
                   </p>
                 )}
 
@@ -157,12 +174,16 @@ export default function LoginPage() {
                   {error && <p className="text-xs text-red-500">{error}</p>}
                   {retryAfter > 0 && (
                     <p className="text-xs text-amber-600 dark:text-amber-400">
-                      Locked. Retry in <span className="font-mono">{retryAfter}s</span>.
+                      Locked. Retry in{" "}
+                      <span className="font-mono">{retryAfter}s</span>.
                     </p>
                   )}
                   {resetHint && (
                     <p className="text-xs text-text-muted">
-                      Forgot password? Open <code className="bg-sidebar px-1 rounded">9router</code> CLI on the host → <b>Settings</b> → <b>Reset Password to Default</b>.
+                      Forgot password? Open{" "}
+                      <code className="bg-sidebar px-1 rounded">9router</code>{" "}
+                      CLI on the host → <b>Settings</b> →{" "}
+                      <b>Reset Password to Default</b>.
                     </p>
                   )}
                 </div>
@@ -178,11 +199,13 @@ export default function LoginPage() {
                 </Button>
 
                 <p className="text-xs text-center text-text-muted mt-2">
-                  Default password is <code className="bg-sidebar px-1 rounded">123456</code>
+                  Default password is{" "}
+                  <code className="bg-sidebar px-1 rounded">123456</code>
                 </p>
                 {hasPassword === false && (
                   <p className="text-xs text-center text-text-muted">
-                    No custom password is set yet. The default password above will work until you change it.
+                    No custom password is set yet. The default password above
+                    will work until you change it.
                   </p>
                 )}
               </form>

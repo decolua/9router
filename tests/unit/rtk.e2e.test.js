@@ -43,8 +43,11 @@ function logOffset() {
 async function sendChat(body) {
   return fetch(`${BASE}/v1/chat/completions`, {
     method: "POST",
-    headers: { "content-type": "application/json", "authorization": `Bearer ${API_KEY}` },
-    body: JSON.stringify(body)
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${API_KEY}`,
+    },
+    body: JSON.stringify(body),
   });
 }
 
@@ -57,8 +60,12 @@ function makeBigDiff(fileCount = 3, linesPerFile = 80) {
     out.push(`+++ b/src/file${f}.js`);
     out.push(`@@ -1,${linesPerFile} +1,${linesPerFile} @@`);
     for (let i = 0; i < linesPerFile; i++) {
-      out.push(`-const old${f}_${i} = "removed value ${i} padding padding padding";`);
-      out.push(`+const new${f}_${i} = "added value ${i} padding padding padding padding";`);
+      out.push(
+        `-const old${f}_${i} = "removed value ${i} padding padding padding";`,
+      );
+      out.push(
+        `+const new${f}_${i} = "added value ${i} padding padding padding padding";`,
+      );
     }
   }
   return out.join("\n");
@@ -87,20 +94,42 @@ maybe("RTK end-to-end", () => {
       max_tokens: 64,
       messages: [
         { role: "user", content: "run git diff" },
-        { role: "assistant", content: null, tool_calls: [{ id: "call_1", type: "function", function: { name: "Bash", arguments: JSON.stringify({ command: "git diff" }) } }] },
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            {
+              id: "call_1",
+              type: "function",
+              function: {
+                name: "Bash",
+                arguments: JSON.stringify({ command: "git diff" }),
+              },
+            },
+          ],
+        },
         { role: "tool", tool_call_id: "call_1", content: diff },
-        { role: "user", content: "summarize in 10 words" }
-      ]
+        { role: "user", content: "summarize in 10 words" },
+      ],
     });
     expect([200, 400, 401, 402, 500]).toContain(res.status);
 
     if (!LOG_FILE) return;
-    await new Promise(r => setTimeout(r, 500));
+    await new Promise((r) => setTimeout(r, 500));
     const { text } = readLogSince(offset);
-    const matches = [...text.matchAll(/\[RTK\] saved (\d+)B \/ (\d+)B \([\d.]+%\) via \[([\w,-]+)\] hits=(\d+)/g)];
+    const matches = [
+      ...text.matchAll(
+        /\[RTK\] saved (\d+)B \/ (\d+)B \([\d.]+%\) via \[([\w,-]+)\] hits=(\d+)/g,
+      ),
+    ];
     // Find the log line that corresponds to OUR request (total ≥ diff.length and contains git-diff)
-    const mine = matches.find(m => Number(m[2]) >= diff.length && m[3].includes("git-diff"));
-    expect(mine, `no matching [RTK] line for our request (diff=${diff.length}B) in ${matches.length} log entries`).toBeTruthy();
+    const mine = matches.find(
+      (m) => Number(m[2]) >= diff.length && m[3].includes("git-diff"),
+    );
+    expect(
+      mine,
+      `no matching [RTK] line for our request (diff=${diff.length}B) in ${matches.length} log entries`,
+    ).toBeTruthy();
     expect(Number(mine[1])).toBeGreaterThan(500);
     expect(mine[3]).toContain("git-diff");
     expect(Number(mine[4])).toBeGreaterThanOrEqual(1);
@@ -108,7 +137,10 @@ maybe("RTK end-to-end", () => {
 
   it("compresses grep-style tool_result", async () => {
     const lines = [];
-    for (let i = 1; i <= 30; i++) lines.push(`src/lib/foo.js:${i}:const v${i} = "matching content with enough padding to exceed threshold";`);
+    for (let i = 1; i <= 30; i++)
+      lines.push(
+        `src/lib/foo.js:${i}:const v${i} = "matching content with enough padding to exceed threshold";`,
+      );
     const grepOut = lines.join("\n");
     expect(grepOut.length).toBeGreaterThan(500);
 
@@ -119,18 +151,34 @@ maybe("RTK end-to-end", () => {
       max_tokens: 32,
       messages: [
         { role: "user", content: "grep" },
-        { role: "assistant", content: null, tool_calls: [{ id: "c3", type: "function", function: { name: "Bash", arguments: "{}" } }] },
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            {
+              id: "c3",
+              type: "function",
+              function: { name: "Bash", arguments: "{}" },
+            },
+          ],
+        },
         { role: "tool", tool_call_id: "c3", content: grepOut },
-        { role: "user", content: "ok" }
-      ]
+        { role: "user", content: "ok" },
+      ],
     });
     expect([200, 400, 401, 402, 500]).toContain(res.status);
 
     if (!LOG_FILE) return;
-    await new Promise(r => setTimeout(r, 500));
+    await new Promise((r) => setTimeout(r, 500));
     const { text } = readLogSince(offset);
-    const matches = [...text.matchAll(/\[RTK\] saved (\d+)B \/ (\d+)B \([\d.]+%\) via \[([\w,-]+)\] hits=(\d+)/g)];
-    const mine = matches.find(m => Number(m[2]) >= grepOut.length && m[3].includes("grep"));
+    const matches = [
+      ...text.matchAll(
+        /\[RTK\] saved (\d+)B \/ (\d+)B \([\d.]+%\) via \[([\w,-]+)\] hits=(\d+)/g,
+      ),
+    ];
+    const mine = matches.find(
+      (m) => Number(m[2]) >= grepOut.length && m[3].includes("grep"),
+    );
     expect(mine, `no matching [RTK] line for grep payload`).toBeTruthy();
   });
 });

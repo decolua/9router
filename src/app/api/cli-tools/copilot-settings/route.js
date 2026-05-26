@@ -10,10 +10,22 @@ const getConfigPath = () => {
   const home = os.homedir();
   const platform = os.platform();
   if (platform === "win32") {
-    return path.join(process.env.APPDATA || home, "Code", "User", "chatLanguageModels.json");
+    return path.join(
+      process.env.APPDATA || home,
+      "Code",
+      "User",
+      "chatLanguageModels.json",
+    );
   }
   if (platform === "darwin") {
-    return path.join(home, "Library", "Application Support", "Code", "User", "chatLanguageModels.json");
+    return path.join(
+      home,
+      "Library",
+      "Application Support",
+      "Code",
+      "User",
+      "chatLanguageModels.json",
+    );
   }
   return path.join(home, ".config", "Code", "User", "chatLanguageModels.json");
 };
@@ -54,7 +66,10 @@ export async function GET() {
     });
   } catch (error) {
     console.log("Error checking copilot settings:", error);
-    return NextResponse.json({ error: "Failed to check copilot settings" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to check copilot settings" },
+      { status: 500 },
+    );
   }
 }
 
@@ -64,7 +79,10 @@ export async function POST(request) {
     const { baseUrl, apiKey, models } = await request.json();
 
     if (!baseUrl || !models?.length) {
-      return NextResponse.json({ error: "baseUrl and models are required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "baseUrl and models are required" },
+        { status: 400 },
+      );
     }
 
     const configPath = getConfigPath();
@@ -76,7 +94,9 @@ export async function POST(request) {
       const existing = await fs.readFile(configPath, "utf-8");
       const parsed = JSON.parse(existing);
       config = Array.isArray(parsed) ? parsed : [];
-    } catch { /* No existing config */ }
+    } catch {
+      /* No existing config */
+    }
 
     const endpointUrl = `${baseUrl}/chat/completions#models.ai.azure.com`;
     const keyToUse = apiKey || "sk_9router";
@@ -113,7 +133,10 @@ export async function POST(request) {
     });
   } catch (error) {
     console.log("Error updating copilot settings:", error);
-    return NextResponse.json({ error: "Failed to update copilot settings" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to update copilot settings" },
+      { status: 500 },
+    );
   }
 }
 
@@ -129,7 +152,10 @@ export async function DELETE() {
       config = Array.isArray(parsed) ? parsed : [];
     } catch (error) {
       if (error.code === "ENOENT") {
-        return NextResponse.json({ success: true, message: "No config file to reset" });
+        return NextResponse.json({
+          success: true,
+          message: "No config file to reset",
+        });
       }
       throw error;
     }
@@ -143,6 +169,9 @@ export async function DELETE() {
     });
   } catch (error) {
     console.log("Error resetting copilot settings:", error);
-    return NextResponse.json({ error: "Failed to reset copilot settings" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to reset copilot settings" },
+      { status: 500 },
+    );
   }
 }

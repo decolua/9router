@@ -15,7 +15,7 @@ const LINUX_CERT_PATHS = [
   // Fedora / RHEL / CentOS
   { dir: "/etc/pki/ca-trust/source/anchors", cmd: "update-ca-trust" },
   // openSUSE
-  { dir: "/etc/pki/trust/anchors", cmd: "update-ca-certificates" }
+  { dir: "/etc/pki/trust/anchors", cmd: "update-ca-certificates" },
 ];
 
 function getLinuxCertConfig() {
@@ -32,8 +32,17 @@ const ROOT_CA_CN = "9Router MITM Root CA";
 // Get SHA1 fingerprint from cert file using Node.js crypto
 function getCertFingerprint(certPath) {
   const pem = fs.readFileSync(certPath, "utf-8");
-  const der = Buffer.from(pem.replace(/-----[^-]+-----/g, "").replace(/\s/g, ""), "base64");
-  return crypto.createHash("sha1").update(der).digest("hex").toUpperCase().match(/.{2}/g).join(":");
+  const der = Buffer.from(
+    pem.replace(/-----[^-]+-----/g, "").replace(/\s/g, ""),
+    "base64",
+  );
+  return crypto
+    .createHash("sha1")
+    .update(der)
+    .digest("hex")
+    .toUpperCase()
+    .match(/.{2}/g)
+    .join(":");
 }
 
 /**
@@ -50,15 +59,25 @@ function checkCertInstalledMac(certPath) {
     try {
       const fingerprint = getCertFingerprint(certPath).replace(/:/g, "");
       // Verify exact cert bytes match — same CN with different fingerprint = stale cert
-      exec(`security find-certificate -a -c "${ROOT_CA_CN}" -Z /Library/Keychains/System.keychain 2>/dev/null`, { windowsHide: true }, (error, stdout) => {
-        if (error || !stdout) return resolve(false);
-        const match = new RegExp(`SHA-1 hash:\\s*${fingerprint}`, "i").test(stdout);
-        if (!match) return resolve(false);
-        // Cert exists with matching fingerprint — confirm trust policy
-        exec(`security verify-cert -c "${certPath}" -p ssl -k /Library/Keychains/System.keychain 2>/dev/null`, { windowsHide: true }, (err2) => {
-          resolve(!err2);
-        });
-      });
+      exec(
+        `security find-certificate -a -c "${ROOT_CA_CN}" -Z /Library/Keychains/System.keychain 2>/dev/null`,
+        { windowsHide: true },
+        (error, stdout) => {
+          if (error || !stdout) return resolve(false);
+          const match = new RegExp(`SHA-1 hash:\\s*${fingerprint}`, "i").test(
+            stdout,
+          );
+          if (!match) return resolve(false);
+          // Cert exists with matching fingerprint — confirm trust policy
+          exec(
+            `security verify-cert -c "${certPath}" -p ssl -k /Library/Keychains/System.keychain 2>/dev/null`,
+            { windowsHide: true },
+            (err2) => {
+              resolve(!err2);
+            },
+          );
+        },
+      );
     } catch {
       resolve(false);
     }
@@ -74,9 +93,13 @@ function checkCertInstalledWindows(certPath) {
     } catch {
       return resolve(false);
     }
-    exec(`certutil -store Root ${fingerprint}`, { windowsHide: true }, (error) => {
-      resolve(!error);
-    });
+    exec(
+      `certutil -store Root ${fingerprint}`,
+      { windowsHide: true },
+      (error) => {
+        resolve(!error);
+      },
+    );
   });
 }
 
@@ -111,7 +134,9 @@ async function installCertMac(sudoPassword, certPath) {
     await execWithPassword(`${deleteOld} && ${install}`, sudoPassword);
     log("🔐 Cert: ✅ installed to system keychain");
   } catch (error) {
-    const msg = error.message?.includes("canceled") ? "User canceled authorization" : "Certificate install failed";
+    const msg = error.message?.includes("canceled")
+      ? "User canceled authorization"
+      : "Certificate install failed";
     throw new Error(msg);
   }
 }
@@ -179,9 +204,9 @@ function checkCertInstalledLinux() {
   return Promise.resolve(fs.existsSync(certFile));
 }
 
-async function updateNssDatabases(certPath, action = 'add') {
+async function updateNssDatabases(certPath, action = "add") {
   const certName = "9Router MITM Root CA";
-  
+
   const script = `
     if ! command -v certutil &> /dev/null; then
       exit 0
@@ -217,7 +242,7 @@ async function updateNssDatabases(certPath, action = 'add') {
       fi
     done
   `;
-  
+
   return new Promise((resolve) => {
     exec(script, { shell: "/bin/bash" }, () => resolve());
   });
@@ -225,22 +250,26 @@ async function updateNssDatabases(certPath, action = 'add') {
 
 async function installCertLinux(sudoPassword, certPath) {
   if (!isSudoAvailable()) {
-    log(`🔐 Cert: cannot install to system store without sudo — trust this file on clients: ${certPath}`);
+    log(
+      `🔐 Cert: cannot install to system store without sudo — trust this file on clients: ${certPath}`,
+    );
     // Still try to update user NSS DBs even if no sudo!
-    await updateNssDatabases(certPath, 'add');
+    await updateNssDatabases(certPath, "add");
     return;
   }
-  
+
   const config = getLinuxCertConfig();
   const destFile = `${config.dir}/9router-root-ca.crt`;
-  
+
   // Copy to the discovered directory and execute the specific update command
   const cmd = `cp "${certPath}" "${destFile}" && (${config.cmd} 2>/dev/null || true)`;
-  
+
   try {
     await execWithPassword(cmd, sudoPassword);
-    await updateNssDatabases(certPath, 'add');
-    log(`🔐 Cert: ✅ installed to Linux trust store (${config.dir}) and user browser databases`);
+    await updateNssDatabases(certPath, "add");
+    log(
+      `🔐 Cert: ✅ installed to Linux trust store (${config.dir}) and user browser databases`,
+    );
   } catch (error) {
     throw new Error(`Certificate install failed: ${error.message}`);
   }
@@ -248,19 +277,21 @@ async function installCertLinux(sudoPassword, certPath) {
 
 async function uninstallCertLinux(sudoPassword) {
   // Always try to uninstall from user DBs even without sudo
-  await updateNssDatabases(null, 'delete');
+  await updateNssDatabases(null, "delete");
 
   if (!isSudoAvailable()) {
     return;
   }
-  
+
   const config = getLinuxCertConfig();
   const destFile = `${config.dir}/9router-root-ca.crt`;
   const cmd = `rm -f "${destFile}" && (${config.cmd} 2>/dev/null || true)`;
-  
+
   try {
     await execWithPassword(cmd, sudoPassword);
-    log("🔐 Cert: ✅ uninstalled from Linux trust store and user browser databases");
+    log(
+      "🔐 Cert: ✅ uninstalled from Linux trust store and user browser databases",
+    );
   } catch (error) {
     throw new Error("Failed to uninstall certificate");
   }

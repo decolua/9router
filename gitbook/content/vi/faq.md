@@ -9,11 +9,13 @@ Những câu hỏi phổ biến về 9Router.
 **9Router là bộ định tuyến mô hình AI giúp tối đa hóa giá trị subscription và giảm chi phí.**
 
 Nó định tuyến request thông minh qua nhiều provider AI bằng hệ thống fallback 3 tầng:
+
 1. **Tầng Subscription** - Tối đa quota Claude Code, Codex, Gemini bạn đang trả tiền
 2. **Tầng Cheap** - Lựa chọn siêu rẻ ($0.20-$0.60 per 1M tokens)
 3. **Tầng Free** - Backup khẩn cấp với model miễn phí không giới hạn
 
 **Lợi ích chính:**
+
 - Không bao giờ lãng phí quota subscription
 - Fallback tự động khi hết quota
 - Theo dõi quota thời gian thực
@@ -26,6 +28,7 @@ Nó định tuyến request thông minh qua nhiều provider AI bằng hệ th�
 **9Router dùng chiến lược pricing 3 tầng:**
 
 ### Tier 1: Subscription (Dùng đầu tiên)
+
 - **Claude Code** (Pro/Max): $20-100/tháng - Quota 5 giờ + hàng tuần
 - **OpenAI Codex** (Plus/Pro): $20-200/tháng - Quota 5 giờ + hàng tuần
 - **Gemini CLI**: MIỄN PHÍ - 180K completions/tháng + 1K/ngày
@@ -35,6 +38,7 @@ Nó định tuyến request thông minh qua nhiều provider AI bằng hệ th�
 **Mục tiêu:** Dùng hết mọi quota trước khi reset!
 
 ### Tier 2: Cheap (Backup)
+
 - **GLM-4.7**: $0.60/$2.20 per 1M tokens - Reset 10AM hàng ngày
 - **MiniMax M2.1**: $0.20/$1.00 per 1M tokens - 5 giờ rolling
 - **Kimi K2**: $9/tháng cố định (10M tokens)
@@ -42,6 +46,7 @@ Nó định tuyến request thông minh qua nhiều provider AI bằng hệ th�
 **Mục tiêu:** Rẻ hơn 90% so với ChatGPT API ($20/1M)!
 
 ### Tier 3: Free (Khẩn cấp)
+
 - **iFlow**: 8 model MIỄN PHÍ (Kimi K2, Qwen3, GLM, MiniMax...)
 - **Qwen**: 3 model MIỄN PHÍ (Qwen3 Coder Plus/Flash, Vision)
 - **Kiro**: 2 model MIỄN PHÍ (Claude Sonnet 4.5, Haiku 4.5)
@@ -55,6 +60,7 @@ Nó định tuyến request thông minh qua nhiều provider AI bằng hệ th�
 **Có, 9Router hoàn toàn miễn phí và mã nguồn mở 100%.**
 
 **Provider free tier có sẵn:**
+
 - **Gemini CLI** - 180K completions/tháng (MIỄN PHÍ tài khoản Google)
 - **iFlow** - 8 model không giới hạn (MIỄN PHÍ OAuth)
 - **Qwen** - 3 model không giới hạn (MIỄN PHÍ OAuth)
@@ -63,6 +69,7 @@ Nó định tuyến request thông minh qua nhiều provider AI bằng hệ th�
 **Bạn có thể code MIỄN PHÍ mãi mãi chỉ dùng provider free tier!**
 
 **Provider trả phí tùy chọn:**
+
 - Dịch vụ subscription bạn có thể đã có (Claude Code, Codex, Copilot)
 - Lựa chọn siêu rẻ ($0.20-$0.60 per 1M tokens)
 
@@ -71,6 +78,7 @@ Nó định tuyến request thông minh qua nhiều provider AI bằng hệ th�
 ## Provider nào được hỗ trợ?
 
 ### Subscription Providers
+
 - **Claude Code** (Pro/Max) - Claude 4.5 Opus/Sonnet/Haiku
 - **OpenAI Codex** (Plus/Pro) - GPT 5.2 Codex, GPT 5.1 Codex Max
 - **Gemini CLI** (MIỄN PHÍ) - Gemini 3 Flash/Pro, 2.5 Pro/Flash
@@ -78,12 +86,14 @@ Nó định tuyến request thông minh qua nhiều provider AI bằng hệ th�
 - **Antigravity** (Google) - Gemini 3 Pro, Claude Sonnet 4.5
 
 ### Cheap Providers
+
 - **GLM** (Zhipu AI) - GLM 4.7, GLM 4.6V Vision
 - **MiniMax** - MiniMax M2.1
 - **Kimi** (Moonshot AI) - Kimi Latest
 - **OpenRouter** - Passthrough đến mọi model OpenRouter
 
 ### Free Providers
+
 - **iFlow** - 8 models (Kimi K2, Qwen3, GLM, MiniMax, DeepSeek...)
 - **Qwen** - 3 models (Qwen3 Coder Plus/Flash, Vision)
 - **Kiro** - 2 models (Claude Sonnet 4.5, Haiku 4.5)
@@ -112,6 +122,7 @@ Example combo: "premium-coding"
 ```
 
 **Cách tạo combo:**
+
 ```
 Dashboard → Combos → Create New
 → Add models in priority order
@@ -119,6 +130,7 @@ Dashboard → Combos → Create New
 ```
 
 **Lợi ích:**
+
 - Zero downtime khi hết quota
 - Tối ưu chi phí tự động
 - Một tên model cho mọi công cụ
@@ -132,6 +144,7 @@ Xem [tài liệu combos](features/combos.md) để biết ví dụ.
 **9Router theo dõi quota thời gian thực cho tất cả provider:**
 
 **Tính năng:**
+
 - **Token consumption** - Tokens input/output mỗi request
 - **Reset countdown** - Thời gian đến khi quota refresh
 - **Usage stats** - Báo cáo hàng ngày/tuần/tháng
@@ -139,12 +152,14 @@ Xem [tài liệu combos](features/combos.md) để biết ví dụ.
 - **Quota alerts** - Thông báo khi quota thấp
 
 **Loại quota:**
+
 - **5 giờ rolling** - Claude Code, Codex, MiniMax
 - **Reset hàng ngày** - Gemini CLI (1K/ngày), GLM (10AM)
 - **Reset hàng tuần** - Claude Code, Codex (quota thêm)
 - **Reset hàng tháng** - Gemini CLI (180K), GitHub Copilot (ngày 1)
 
 **Xem quota:**
+
 ```
 Dashboard → Providers → Quota Tracking
 → Real-time usage + reset countdown
@@ -170,6 +185,7 @@ Cursor Settings → Models → Advanced:
 ```
 
 **Thay thế:** Self-host trên VPS với domain công khai:
+
 ```bash
 # Deploy to VPS
 git clone https://github.com/decolua/9router.git
@@ -182,6 +198,7 @@ npm start
 ```
 
 **Công cụ CLI khác hoạt động với localhost:**
+
 - Cline ✅
 - Claude Desktop ✅
 - Codex CLI ✅
@@ -197,6 +214,7 @@ Xem [hướng dẫn tích hợp Cursor](integration/cursor.md) để biết chi 
 **Có! 9Router hỗ trợ nhiều tùy chọn deployment:**
 
 ### Localhost (Mặc định)
+
 ```bash
 npm install -g 9router
 9router
@@ -205,6 +223,7 @@ npm install -g 9router
 ```
 
 ### VPS/Cloud
+
 ```bash
 git clone https://github.com/decolua/9router.git
 cd 9router/app
@@ -218,6 +237,7 @@ npm start
 ```
 
 ### Docker
+
 ```bash
 docker build -t 9router .
 docker run -d \
@@ -228,12 +248,14 @@ docker run -d \
 ```
 
 ### Cloudflare Workers
+
 ```bash
 cd 9router/app
 npm run deploy:cloudflare
 ```
 
 **Biến môi trường:**
+
 - `JWT_SECRET` - **PHẢI đổi trong production!**
 - `DATA_DIR` - Đường dẫn lưu database (mặc định: `~/.9router`)
 - `INITIAL_PASSWORD` - Đăng nhập Dashboard (mặc định: `123456`)
@@ -248,33 +270,39 @@ Xem [hướng dẫn deployment](getting-started/installation.md#deployment) đ�
 **Có, 9Router ưu tiên bảo mật và quyền riêng tư:**
 
 **Local storage:**
+
 - Mọi dữ liệu lưu cục bộ tại `~/.9router` (hoặc `DATA_DIR` tùy chỉnh)
 - Không gửi data đến server 9Router
 - OAuth tokens mã hóa bằng JWT
 
 **Không telemetry:**
+
 - Không tracking sử dụng
 - Không analytics
 - Không phone-home
 
 **Mã nguồn mở:**
+
 - Toàn bộ source code có trên GitHub
 - Tự audit bảo mật
 - Community review
 
 **Best practice:**
+
 - Đổi `JWT_SECRET` trong production
 - Dùng `INITIAL_PASSWORD` mạnh
 - Bật HTTPS cho cloud deployment
 - Xoay API key định kỳ
 
 **9Router lưu gì:**
+
 - Tokens OAuth của provider (mã hóa)
 - API keys (mã hóa)
 - Thống kê sử dụng (chỉ cục bộ)
 - Cấu hình combo
 
 **9Router KHÔNG lưu:**
+
 - Prompts hoặc responses của bạn
 - Code bạn tạo
 - Thông tin cá nhân
@@ -286,11 +314,13 @@ Xem [hướng dẫn deployment](getting-started/installation.md#deployment) đ�
 **Phương thức cập nhật phụ thuộc loại cài đặt:**
 
 ### Global NPM Install
+
 ```bash
 npm update -g 9router
 ```
 
 ### Local Install
+
 ```bash
 cd 9router/app
 git pull origin main
@@ -300,6 +330,7 @@ npm start
 ```
 
 ### Docker
+
 ```bash
 docker pull 9router:latest
 docker stop 9router
@@ -311,11 +342,13 @@ docker run -d \
 ```
 
 **Kiểm tra version:**
+
 ```bash
 9router --version
 ```
 
 **Breaking changes:**
+
 - Xem [CHANGELOG.md](https://github.com/decolua/9router/blob/main/CHANGELOG.md)
 - Backup `~/.9router` trước khi update lớn
 - Xem hướng dẫn migration cho major version
@@ -337,26 +370,27 @@ docker run -d \
    - Mô tả use case và lợi ích
 
 3. **Submit code:**
+
    ```bash
    # Fork repo
    git clone https://github.com/YOUR_USERNAME/9router.git
    cd 9router
-   
+
    # Create branch
    git checkout -b feature/your-feature
-   
+
    # Make changes
    npm install
    npm run dev
-   
+
    # Test
    npm test
-   
+
    # Commit and push
    git add .
    git commit -m "Add your feature"
    git push origin feature/your-feature
-   
+
    # Create Pull Request on GitHub
    ```
 
@@ -370,6 +404,7 @@ docker run -d \
    - Xem `app/lib/providers/` để có ví dụ
 
 **Hướng dẫn đóng góp:**
+
 - Tuân theo code style hiện có
 - Thêm test cho tính năng mới
 - Cập nhật tài liệu

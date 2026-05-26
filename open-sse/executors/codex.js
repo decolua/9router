@@ -6,11 +6,17 @@ import { normalizeResponsesInput } from "../translator/helpers/responsesApiHelpe
 import { fetchImageAsBase64 } from "../translator/helpers/imageHelper.js";
 import { getModelUpstreamId } from "../config/providerModels.js";
 import { getConsistentMachineId } from "../../src/shared/utils/machineId.js";
-import { DEFAULT_RETRY_CONFIG, resolveRetryEntry } from "../config/runtimeConfig.js";
+import {
+  DEFAULT_RETRY_CONFIG,
+  resolveRetryEntry,
+} from "../config/runtimeConfig.js";
 import { dbg } from "../utils/debugLog.js";
 
 // SSE error patterns inside 200-OK body that should trigger retry as if 503
-const CODEX_SSE_OVERLOADED_PATTERNS = ["server_is_overloaded", "service_unavailable_error"];
+const CODEX_SSE_OVERLOADED_PATTERNS = [
+  "server_is_overloaded",
+  "service_unavailable_error",
+];
 const CODEX_SSE_PEEK_BYTES = 4096;
 
 // In-memory map: hash(machineId + first assistant content) → { sessionId, lastUsed }
@@ -22,14 +28,31 @@ const SERVER_ID_PATTERN = /^(rs|fc|resp|msg)_/;
 
 // Hosted tool types that Codex/OpenAI Responses executes server-side
 const CODEX_HOSTED_TOOL_TYPES = new Set([
-  "image_generation", "web_search", "web_search_preview", "file_search",
-  "computer", "computer_use_preview", "code_interpreter", "mcp", "local_shell"
+  "image_generation",
+  "web_search",
+  "web_search_preview",
+  "file_search",
+  "computer",
+  "computer_use_preview",
+  "code_interpreter",
+  "mcp",
+  "local_shell",
 ]);
 
 // Allowlist of fields accepted by Codex Responses API — anything else is stripped
 const RESPONSES_API_ALLOWLIST = new Set([
-  "model", "input", "instructions", "tools", "tool_choice", "stream", "store",
-  "reasoning", "service_tier", "include", "prompt_cache_key", "client_metadata"
+  "model",
+  "input",
+  "instructions",
+  "tools",
+  "tool_choice",
+  "stream",
+  "store",
+  "reasoning",
+  "service_tier",
+  "include",
+  "prompt_cache_key",
+  "client_metadata",
 ]);
 
 // Convert role=system → role=developer in body.input (keeps content in cacheable prefix)
@@ -37,7 +60,8 @@ function convertSystemToDeveloperRole(body) {
   if (!Array.isArray(body.input)) return;
   for (const item of body.input) {
     if (!item || typeof item !== "object" || Array.isArray(item)) continue;
-    const isSystemMsg = item.role === "system" && (!item.type || item.type === "message");
+    const isSystemMsg =
+      item.role === "system" && (!item.type || item.type === "message");
     if (isSystemMsg) item.role = "developer";
   }
 }
@@ -49,7 +73,8 @@ function stripStoredItemReferences(body) {
     if (typeof item === "string" && SERVER_ID_PATTERN.test(item)) return false;
     if (item && typeof item === "object" && !Array.isArray(item)) {
       if (item.type === "item_reference") return false;
-      if (typeof item.id === "string" && SERVER_ID_PATTERN.test(item.id)) delete item.id;
+      if (typeof item.id === "string" && SERVER_ID_PATTERN.test(item.id))
+        delete item.id;
     }
     return true;
   });
@@ -65,7 +90,8 @@ function normalizeCodexTools(body) {
     if (type === "namespace") {
       if (Array.isArray(tool.tools)) {
         for (const st of tool.tools) {
-          const n = typeof st?.name === "string" ? st.name.trim().slice(0, 128) : "";
+          const n =
+            typeof st?.name === "string" ? st.name.trim().slice(0, 128) : "";
           if (n) validNames.add(n);
         }
       }
@@ -75,14 +101,36 @@ function normalizeCodexTools(body) {
       if (!type || tool.function || typeof tool.name === "string") return false;
       return CODEX_HOSTED_TOOL_TYPES.has(type);
     }
-    const fn = tool.function && typeof tool.function === "object" && !Array.isArray(tool.function) ? tool.function : null;
-    const rawName = typeof tool.name === "string" ? tool.name : (typeof fn?.name === "string" ? fn.name : "");
+    const fn =
+      tool.function &&
+      typeof tool.function === "object" &&
+      !Array.isArray(tool.function)
+        ? tool.function
+        : null;
+    const rawName =
+      typeof tool.name === "string"
+        ? tool.name
+        : typeof fn?.name === "string"
+          ? fn.name
+          : "";
     const name = rawName.trim();
     if (!name) return false;
-    const description = typeof tool.description === "string" ? tool.description : (typeof fn?.description === "string" ? fn.description : "");
-    const parameters = (tool.parameters && typeof tool.parameters === "object" && !Array.isArray(tool.parameters))
-      ? tool.parameters
-      : (fn?.parameters && typeof fn.parameters === "object" && !Array.isArray(fn.parameters) ? fn.parameters : { type: "object", properties: {} });
+    const description =
+      typeof tool.description === "string"
+        ? tool.description
+        : typeof fn?.description === "string"
+          ? fn.description
+          : "";
+    const parameters =
+      tool.parameters &&
+      typeof tool.parameters === "object" &&
+      !Array.isArray(tool.parameters)
+        ? tool.parameters
+        : fn?.parameters &&
+            typeof fn.parameters === "object" &&
+            !Array.isArray(fn.parameters)
+          ? fn.parameters
+          : { type: "object", properties: {} };
     for (const k of Object.keys(tool)) delete tool[k];
     tool.type = "function";
     tool.name = name.slice(0, 128);
@@ -92,9 +140,16 @@ function normalizeCodexTools(body) {
     return true;
   });
   // Drop tool_choice if it references an unknown function name
-  if (body.tool_choice && typeof body.tool_choice === "object" && !Array.isArray(body.tool_choice)) {
+  if (
+    body.tool_choice &&
+    typeof body.tool_choice === "object" &&
+    !Array.isArray(body.tool_choice)
+  ) {
     if (body.tool_choice.type === "function") {
-      const n = typeof body.tool_choice.name === "string" ? body.tool_choice.name.trim() : "";
+      const n =
+        typeof body.tool_choice.name === "string"
+          ? body.tool_choice.name.trim()
+          : "";
       if (!n || !validNames.has(n)) delete body.tool_choice;
     }
   }
@@ -102,7 +157,9 @@ function normalizeCodexTools(body) {
 
 // Cache machine ID at module level (resolved once)
 let cachedMachineId = null;
-getConsistentMachineId().then(id => { cachedMachineId = id; });
+getConsistentMachineId().then((id) => {
+  cachedMachineId = id;
+});
 
 function hashContent(text) {
   return createHash("sha256").update(text).digest("hex").slice(0, 16);
@@ -117,7 +174,10 @@ function extractItemText(item) {
   if (!item) return "";
   if (typeof item.content === "string") return item.content;
   if (Array.isArray(item.content)) {
-    return item.content.map(c => c.text || c.output || "").filter(Boolean).join("");
+    return item.content
+      .map((c) => c.text || c.output || "")
+      .filter(Boolean)
+      .join("");
   }
   return "";
 }
@@ -165,7 +225,9 @@ function resolveCacheSessionId(body, credentials, machineId) {
   }
 
   // 3. Account-wide fallback (workspaceId from connection)
-  const workspaceId = normalizeSessionId(credentials?.providerSpecificData?.workspaceId);
+  const workspaceId = normalizeSessionId(
+    credentials?.providerSpecificData?.workspaceId,
+  );
   if (workspaceId) return workspaceId;
 
   // 4. Last resort — stable per-machine id
@@ -173,12 +235,16 @@ function resolveCacheSessionId(body, credentials, machineId) {
 }
 
 // Cleanup expired entries periodically
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of assistantSessionMap) {
-    if (now - entry.lastUsed > SESSION_TTL_MS) assistantSessionMap.delete(key);
-  }
-}, 10 * 60 * 1000);
+setInterval(
+  () => {
+    const now = Date.now();
+    for (const [key, entry] of assistantSessionMap) {
+      if (now - entry.lastUsed > SESSION_TTL_MS)
+        assistantSessionMap.delete(key);
+    }
+  },
+  10 * 60 * 1000,
+);
 
 /**
  * Codex Executor - handles OpenAI Codex API (Responses API format)
@@ -196,12 +262,17 @@ export class CodexExecutor extends BaseExecutor {
    */
   buildHeaders(credentials, stream = true) {
     const headers = super.buildHeaders(credentials, stream);
-    headers["session_id"] = this._currentSessionId || credentials?.connectionId || "default";
+    headers["session_id"] =
+      this._currentSessionId || credentials?.connectionId || "default";
     // Identify client type to Codex backend (matches official codex CLI)
     if (!headers["originator"]) headers["originator"] = "codex_cli_rs";
     // Workspace binding header — improves account scope + cache affinity
     const workspaceId = credentials?.providerSpecificData?.workspaceId;
-    if (typeof workspaceId === "string" && workspaceId && !headers["chatgpt-account-id"]) {
+    if (
+      typeof workspaceId === "string" &&
+      workspaceId &&
+      !headers["chatgpt-account-id"]
+    ) {
       headers["chatgpt-account-id"] = workspaceId;
     }
     return headers;
@@ -223,10 +294,12 @@ export class CodexExecutor extends BaseExecutor {
       if (!Array.isArray(item.content)) continue;
       const pending = item.content.map(async (c) => {
         if (c.type !== "image_url") return c;
-        const url = typeof c.image_url === "string" ? c.image_url : c.image_url?.url;
+        const url =
+          typeof c.image_url === "string" ? c.image_url : c.image_url?.url;
         const detail = c.image_url?.detail || "auto";
         if (!url) return c;
-        if (url.startsWith("data:")) return { type: "input_image", image_url: url, detail };
+        if (url.startsWith("data:"))
+          return { type: "input_image", image_url: url, detail };
         const fetched = await fetchImageAsBase64(url, { timeoutMs: 15000 });
         return { type: "input_image", image_url: fetched?.url || url, detail };
       });
@@ -235,9 +308,23 @@ export class CodexExecutor extends BaseExecutor {
   }
 
   async execute(args) {
-    const imgCount = Array.isArray(args.body?.input) ? args.body.input.reduce((n, it) => n + (Array.isArray(it.content) ? it.content.filter(c => c.type === "image_url").length : 0), 0) : 0;
-    const inputLen = Array.isArray(args.body?.input) ? args.body.input.length : 0;
-    dbg("CODEX", `execute start | inputItems=${inputLen} | images=${imgCount} | sessionId=${this._currentSessionId || "pending"}`);
+    const imgCount = Array.isArray(args.body?.input)
+      ? args.body.input.reduce(
+          (n, it) =>
+            n +
+            (Array.isArray(it.content)
+              ? it.content.filter((c) => c.type === "image_url").length
+              : 0),
+          0,
+        )
+      : 0;
+    const inputLen = Array.isArray(args.body?.input)
+      ? args.body.input.length
+      : 0;
+    dbg(
+      "CODEX",
+      `execute start | inputItems=${inputLen} | images=${imgCount} | sessionId=${this._currentSessionId || "pending"}`,
+    );
     if (imgCount > 0) {
       const t0 = Date.now();
       await this.prefetchImages(args.body);
@@ -266,7 +353,10 @@ export class CodexExecutor extends BaseExecutor {
         return result;
       }
       if (attempt >= attempts) {
-        args.log?.warn?.("RETRY", `CODEX | SSE overloaded "${peek.matched}" — retries exhausted (${attempt}/${attempts})`);
+        args.log?.warn?.(
+          "RETRY",
+          `CODEX | SSE overloaded "${peek.matched}" — retries exhausted (${attempt}/${attempts})`,
+        );
         // Out of retries → return with replacement body so client gets the error
         if (peek.replacementBody) {
           result.response = new Response(peek.replacementBody, {
@@ -278,10 +368,20 @@ export class CodexExecutor extends BaseExecutor {
         return result;
       }
       attempt++;
-      args.log?.debug?.("RETRY", `CODEX | SSE "${peek.matched}" retry ${attempt}/${attempts} after ${delayMs / 1000}s`);
-      dbg("CODEX", `SSE overloaded "${peek.matched}" → retry ${attempt}/${attempts} in ${delayMs}ms`);
-      try { await result.response.body?.cancel?.(); } catch { /* noop */ }
-      await new Promise(r => setTimeout(r, delayMs));
+      args.log?.debug?.(
+        "RETRY",
+        `CODEX | SSE "${peek.matched}" retry ${attempt}/${attempts} after ${delayMs / 1000}s`,
+      );
+      dbg(
+        "CODEX",
+        `SSE overloaded "${peek.matched}" → retry ${attempt}/${attempts} in ${delayMs}ms`,
+      );
+      try {
+        await result.response.body?.cancel?.();
+      } catch {
+        /* noop */
+      }
+      await new Promise((r) => setTimeout(r, delayMs));
     }
   }
 
@@ -289,7 +389,8 @@ export class CodexExecutor extends BaseExecutor {
   // Returns { matched: string|null, replacementBody: ReadableStream|null }.
   // Caller MUST use replacementBody (original body has been read).
   async _peekSseOverloaded(response) {
-    if (!response || !response.ok || !response.body) return { matched: null, replacementBody: null };
+    if (!response || !response.ok || !response.body)
+      return { matched: null, replacementBody: null };
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     const chunks = [];
@@ -301,8 +402,11 @@ export class CodexExecutor extends BaseExecutor {
         if (done) break;
         chunks.push(value);
         text += decoder.decode(value, { stream: true });
-        const hit = CODEX_SSE_OVERLOADED_PATTERNS.find(p => text.includes(p));
-        if (hit) { matched = hit; break; }
+        const hit = CODEX_SSE_OVERLOADED_PATTERNS.find((p) => text.includes(p));
+        if (hit) {
+          matched = hit;
+          break;
+        }
       }
     } catch (e) {
       dbg("CODEX", `peek read error: ${e.message}`);
@@ -320,12 +424,21 @@ export class CodexExecutor extends BaseExecutor {
       async pull(controller) {
         try {
           const { done, value } = await upstreamReader.read();
-          if (done) { controller.close(); return; }
+          if (done) {
+            controller.close();
+            return;
+          }
           controller.enqueue(value);
-        } catch (e) { controller.error(e); }
+        } catch (e) {
+          controller.error(e);
+        }
       },
       cancel(reason) {
-        try { upstreamReader?.cancel(reason); } catch { /* noop */ }
+        try {
+          upstreamReader?.cancel(reason);
+        } catch {
+          /* noop */
+        }
       },
     });
     return { matched, replacementBody };
@@ -344,14 +457,24 @@ export class CodexExecutor extends BaseExecutor {
             const ms = err.resets_at * 1000;
             if (ms > now) resetsAtMs = ms;
           }
-          if (!resetsAtMs && typeof err.resets_in_seconds === "number" && err.resets_in_seconds > 0) {
+          if (
+            !resetsAtMs &&
+            typeof err.resets_in_seconds === "number" &&
+            err.resets_in_seconds > 0
+          ) {
             resetsAtMs = now + err.resets_in_seconds * 1000;
           }
           if (resetsAtMs) {
-            return { status: 429, message: err.message || bodyText, resetsAtMs };
+            return {
+              status: 429,
+              message: err.message || bodyText,
+              resetsAtMs,
+            };
           }
         }
-      } catch { /* fall through to default */ }
+      } catch {
+        /* fall through to default */
+      }
     }
     return super.parseError(response, bodyText);
   }
@@ -364,14 +487,24 @@ export class CodexExecutor extends BaseExecutor {
     this._isCompact = !!body._compact;
     delete body._compact;
     // Resolve conversation-stable session_id (priority: body → assistant-text → workspace → machine)
-    this._currentSessionId = resolveCacheSessionId(body, credentials, cachedMachineId);
+    this._currentSessionId = resolveCacheSessionId(
+      body,
+      credentials,
+      cachedMachineId,
+    );
     // Convert string input to array format (Codex API requires input as array)
     const normalized = normalizeResponsesInput(body.input);
     if (normalized) body.input = normalized;
 
     // Ensure input is present and non-empty (Codex API rejects empty input)
     if (!body.input || (Array.isArray(body.input) && body.input.length === 0)) {
-      body.input = [{ type: "message", role: "user", content: [{ type: "input_text", text: "..." }] }];
+      body.input = [
+        {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: "..." }],
+        },
+      ];
     }
 
     // Keep system prompts in body.input as role=developer so they stay in the cacheable prefix
@@ -402,20 +535,20 @@ export class CodexExecutor extends BaseExecutor {
 
     // Extract thinking level from model name suffix
     // e.g., gpt-5.3-codex-high → high, gpt-5.3-codex → medium (default)
-    const effortLevels = ['none', 'low', 'medium', 'high', 'xhigh'];
+    const effortLevels = ["none", "low", "medium", "high", "xhigh"];
     let modelEffort = null;
     for (const level of effortLevels) {
       if (body.model.endsWith(`-${level}`)) {
         modelEffort = level;
         // Strip suffix from model name for actual API call
-        body.model = body.model.replace(`-${level}`, '');
+        body.model = body.model.replace(`-${level}`, "");
         break;
       }
     }
 
     // Priority: explicit reasoning.effort > reasoning_effort param > model suffix > default (medium)
     if (!body.reasoning) {
-      const effort = body.reasoning_effort || modelEffort || 'low';
+      const effort = body.reasoning_effort || modelEffort || "low";
       body.reasoning = { effort, summary: "auto" };
     } else if (!body.reasoning.summary) {
       body.reasoning.summary = "auto";
@@ -423,7 +556,11 @@ export class CodexExecutor extends BaseExecutor {
     delete body.reasoning_effort;
 
     // Include reasoning encrypted content (required by Codex backend for reasoning models)
-    if (body.reasoning && body.reasoning.effort && body.reasoning.effort !== 'none') {
+    if (
+      body.reasoning &&
+      body.reasoning.effort &&
+      body.reasoning.effort !== "none"
+    ) {
       body.include = ["reasoning.encrypted_content"];
     }
 

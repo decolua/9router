@@ -2,7 +2,7 @@ const api = require("../api/client");
 
 const COLORS = {
   reset: "\x1b[0m",
-  green: "\x1b[32m"
+  green: "\x1b[32m",
 };
 
 /**
@@ -14,8 +14,11 @@ async function getEndpoint(port) {
   const result = await api.getTunnelStatus();
   const tunnelEnabled = result.success && result.data?.enabled === true;
   const publicUrl = result.success ? result.data?.publicUrl : "";
-  
-  const endpoint = tunnelEnabled && publicUrl ? `${publicUrl}/v1` : `http://localhost:${port}/v1`;
+
+  const endpoint =
+    tunnelEnabled && publicUrl
+      ? `${publicUrl}/v1`
+      : `http://localhost:${port}/v1`;
   return { endpoint, tunnelEnabled };
 }
 

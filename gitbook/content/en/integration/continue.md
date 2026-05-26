@@ -23,6 +23,7 @@ Integrate 9Router with Continue extension to bring AI assistance directly into V
 Add the following configuration to your `config.json`:
 
 **Single Model Setup:**
+
 ```json
 {
   "models": [
@@ -38,6 +39,7 @@ Add the following configuration to your `config.json`:
 ```
 
 **Multiple Models Setup:**
+
 ```json
 {
   "models": [
@@ -75,6 +77,7 @@ Add the following configuration to your `config.json`:
 
 **For Cloud 9Router:**
 Replace `apiBase` with:
+
 ```json
 "apiBase": "https://9router.com/v1"
 ```
@@ -94,37 +97,44 @@ Replace `apiBase` with:
 ## Available Models
 
 ### Claude Models (Anthropic)
+
 - `cc/claude-opus-4-5-20251101` - Most capable, best for complex tasks
 - `cc/claude-sonnet-4-20250514` - Balanced performance and speed
 - `cc/claude-haiku-4-20250514` - Fastest, good for simple tasks
 
 ### DeepSeek Models
+
 - `cx/deepseek-chat` - Excellent for code generation
 - `cx/deepseek-reasoner` - Best for complex problem solving
 
 ### GLM Models (Zhipu AI)
+
 - `glm/glm-4-plus` - Advanced Chinese and English
 - `glm/glm-4-flash` - Fast responses
 
 ## Usage Examples
 
 ### Code Explanation
+
 1. Select code in editor
 2. Open Continue sidebar
 3. Type: "Explain this code"
 4. Model: `cc/claude-sonnet-4-20250514`
 
 ### Code Generation
+
 1. Open Continue sidebar
 2. Type: "Create a React component for user profile card"
 3. Model: `cx/deepseek-chat`
 
 ### Refactoring
+
 1. Select code to refactor
 2. Type: "Refactor this to use async/await"
 3. Model: `cc/claude-sonnet-4-20250514`
 
 ### Bug Fixing
+
 1. Select problematic code
 2. Type: "Find and fix the bug in this code"
 3. Model: `cx/deepseek-reasoner`
@@ -204,21 +214,25 @@ Configure what context Continue sends to the model:
 ## Troubleshooting
 
 ### Model Not Responding
+
 - Check 9Router is running: `curl http://localhost:20128/health`
 - Verify API key in config.json
 - Check VSCode Developer Console for errors: `Help` → `Toggle Developer Tools`
 
 ### Wrong Model Selected
+
 - Click model dropdown in Continue sidebar
 - Select correct 9Router model
 - Model name must match exactly (case-sensitive)
 
 ### Configuration Not Loading
+
 - Verify JSON syntax is valid (use JSON validator)
 - Check file location: `~/.continue/config.json`
 - Reload VSCode window after changes
 
 ### Slow Performance
+
 - Switch to faster models (haiku, flash)
 - Reduce context size in contextProviders
 - Check network latency to 9Router
@@ -226,17 +240,20 @@ Configure what context Continue sends to the model:
 ## Best Practices
 
 ### Model Selection Strategy
+
 - **Quick edits**: Use `cc/claude-haiku-4-20250514`
 - **Code generation**: Use `cx/deepseek-chat`
 - **Complex refactoring**: Use `cc/claude-opus-4-5-20251101`
 - **Problem solving**: Use `cx/deepseek-reasoner`
 
 ### Context Management
+
 - Select only relevant code before asking
 - Use specific, clear prompts
 - Break complex tasks into smaller steps
 
 ### Cost Optimization
+
 - Use faster/cheaper models for simple tasks
 - Limit context size when possible
 - Cache frequently used responses

@@ -11,13 +11,18 @@ export function savePid(pid) {
 
 export function loadPid() {
   try {
-    if (fs.existsSync(PID_FILE)) return parseInt(fs.readFileSync(PID_FILE, "utf8"));
-  } catch { /* ignore */ }
+    if (fs.existsSync(PID_FILE))
+      return parseInt(fs.readFileSync(PID_FILE, "utf8"));
+  } catch {
+    /* ignore */
+  }
   return null;
 }
 
 export function clearPid() {
   try {
     if (fs.existsSync(PID_FILE)) fs.unlinkSync(PID_FILE);
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }

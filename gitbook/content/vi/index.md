@@ -11,12 +11,14 @@
 9Router là một proxy thông minh nằm giữa các công cụ lập trình của bạn (Cursor, Cline, Claude Desktop) và các nhà cung cấp AI. Nó tự động định tuyến request đến model tốt nhất hiện có dựa trên quota, chi phí và tính khả dụng.
 
 **Đừng lãng phí tiền:**
+
 - ❌ Quota subscription hết hạn mỗi tháng mà không dùng đến
 - ❌ Rate limit chặn bạn đang lập trình
 - ❌ API đắt đỏ ($20-50/tháng cho mỗi provider)
 - ❌ Chuyển đổi provider thủ công
 
 **Bắt đầu tối đa hóa giá trị:**
+
 - ✅ **Tối đa Subscription** - Theo dõi và dùng từng chút quota của Claude Code, Codex, Gemini
 - ✅ **MIỄN PHÍ** - Truy cập model iFlow, Qwen, Kiro qua CLI
 - ✅ **Backup siêu rẻ** - GLM ($0.6/1M), MiniMax M2.1 ($0.20/1M)
@@ -56,6 +58,7 @@ Hoạt động với mọi công cụ hỗ trợ custom OpenAI endpoint:
 ### 💰 Tối ưu Chi phí
 
 **Ví dụ thực tế (100M tokens/tháng):**
+
 ```
 60M qua Gemini CLI: $0 (free tier)
 30M qua Claude Code: $0 (subscription đã có)
@@ -81,11 +84,11 @@ Tổng: $5.20/tháng so với $2000 trên ChatGPT API!
 
 Khi quota subscription hết, trả vài xu:
 
-| Provider | Giá per 1M tokens | Reset |
-|----------|-------------------|-------|
-| **GLM-4.7** | $0.60 input / $2.20 output | Hàng ngày 10:00 AM |
-| **MiniMax M2.1** | $0.20 input / $1.00 output | 5 giờ rolling |
-| **Kimi K2** | $9/tháng (10M tokens) | Hàng tháng |
+| Provider         | Giá per 1M tokens          | Reset              |
+| ---------------- | -------------------------- | ------------------ |
+| **GLM-4.7**      | $0.60 input / $2.20 output | Hàng ngày 10:00 AM |
+| **MiniMax M2.1** | $0.20 input / $1.00 output | 5 giờ rolling      |
+| **Kimi K2**      | $9/tháng (10M tokens)      | Hàng tháng         |
 
 **~90% rẻ hơn ChatGPT API ($20/1M)!**
 

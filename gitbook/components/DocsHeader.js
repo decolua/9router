@@ -25,7 +25,10 @@ export default function DocsHeader({ lang = DEFAULT_LANG }) {
           </button>
 
           {/* Logo */}
-          <Link href={`/${lang}`} className="flex items-center gap-2 font-bold text-2xl text-black hover:opacity-80 transition-opacity">
+          <Link
+            href={`/${lang}`}
+            className="flex items-center gap-2 font-bold text-2xl text-black hover:opacity-80 transition-opacity"
+          >
             <span>9</span>
             <span className="text-[#E68A6E]">{DOCS_CONFIG.logo} Docs</span>
           </Link>
@@ -55,11 +58,12 @@ export default function DocsHeader({ lang = DEFAULT_LANG }) {
             className="mobile-menu-overlay lg:hidden"
             onClick={() => setMobileMenuOpen(false)}
           />
-          
+
           <div className="mobile-menu-drawer lg:hidden">
             <div className="flex items-center justify-between p-4 border-b border-gray-200">
               <span className="font-bold text-lg text-black">
-                <span className="text-[#E68A6E]">9</span>{DOCS_CONFIG.logo} Docs
+                <span className="text-[#E68A6E]">9</span>
+                {DOCS_CONFIG.logo} Docs
               </span>
               <button
                 onClick={() => setMobileMenuOpen(false)}
@@ -69,7 +73,11 @@ export default function DocsHeader({ lang = DEFAULT_LANG }) {
                 <X className="w-5 h-5 text-gray-600" />
               </button>
             </div>
-            <DocsSidebar isMobile onClose={() => setMobileMenuOpen(false)} lang={lang} />
+            <DocsSidebar
+              isMobile
+              onClose={() => setMobileMenuOpen(false)}
+              lang={lang}
+            />
           </div>
         </>
       )}

@@ -20,9 +20,9 @@
 
 ### 料金
 
-| プラン | 月額コスト | モデル | クォータ |
-|------|--------------|--------|-------|
-| FREE | $0 | 8モデル | 無制限 |
+| プラン | 月額コスト | モデル  | クォータ |
+| ------ | ---------- | ------- | -------- |
+| FREE   | $0         | 8モデル | 無制限   |
 
 **最高の価値:** 無料階層で最も多くのモデル! Kimi K2、Qwen3、GLM、MiniMax、DeepSeek。
 
@@ -58,16 +58,16 @@ Model: if/kimi-k2-thinking
 
 ### 利用可能なモデル
 
-| モデルID | 説明 | 最適用途 |
-|----------|-------------|----------|
-| `if/kimi-k2-thinking` | Kimi K2 Thinking | 複雑な推論 |
-| `if/kimi-k2` | Kimi K2 | 汎用コーディング |
-| `if/qwen3-coder-plus` | Qwen3 Coder Plus | コード生成 |
-| `if/glm-4.7` | GLM 4.7 | 中国語 + 英語 |
-| `if/minimax-m2` | MiniMax M2 | 長いコンテキスト |
-| `if/deepseek-r1` | DeepSeek R1 | 推論タスク |
-| `if/deepseek-v3.2-chat` | DeepSeek V3.2 Chat | 会話 |
-| `if/deepseek-v3.2-reasoner` | DeepSeek V3.2 Reasoner | 複雑なロジック |
+| モデルID                    | 説明                   | 最適用途         |
+| --------------------------- | ---------------------- | ---------------- |
+| `if/kimi-k2-thinking`       | Kimi K2 Thinking       | 複雑な推論       |
+| `if/kimi-k2`                | Kimi K2                | 汎用コーディング |
+| `if/qwen3-coder-plus`       | Qwen3 Coder Plus       | コード生成       |
+| `if/glm-4.7`                | GLM 4.7                | 中国語 + 英語    |
+| `if/minimax-m2`             | MiniMax M2             | 長いコンテキスト |
+| `if/deepseek-r1`            | DeepSeek R1            | 推論タスク       |
+| `if/deepseek-v3.2-chat`     | DeepSeek V3.2 Chat     | 会話             |
+| `if/deepseek-v3.2-reasoner` | DeepSeek V3.2 Reasoner | 複雑なロジック   |
 
 ### プロのヒント
 
@@ -82,9 +82,9 @@ Model: if/kimi-k2-thinking
 
 ### 料金
 
-| プラン | 月額コスト | モデル | クォータ |
-|------|--------------|--------|-------|
-| FREE | $0 | 3モデル | 無制限 |
+| プラン | 月額コスト | モデル  | クォータ |
+| ------ | ---------- | ------- | -------- |
+| FREE   | $0         | 3モデル | 無制限   |
 
 ### セットアップ
 
@@ -114,11 +114,11 @@ Model: qw/qwen3-coder-plus
 
 ### 利用可能なモデル
 
-| モデルID | 説明 | 最適用途 |
-|----------|-------------|----------|
-| `qw/qwen3-coder-plus` | Qwen3 Coder Plus | 高度なコーディング |
-| `qw/qwen3-coder-flash` | Qwen3 Coder Flash | 高速応答 |
-| `qw/vision-model` | Qwen3 Vision | 画像分析 |
+| モデルID               | 説明              | 最適用途           |
+| ---------------------- | ----------------- | ------------------ |
+| `qw/qwen3-coder-plus`  | Qwen3 Coder Plus  | 高度なコーディング |
+| `qw/qwen3-coder-flash` | Qwen3 Coder Flash | 高速応答           |
+| `qw/vision-model`      | Qwen3 Vision      | 画像分析           |
 
 ### プロのヒント
 
@@ -133,9 +133,9 @@ Model: qw/qwen3-coder-plus
 
 ### 料金
 
-| プラン | 月額コスト | モデル | クォータ |
-|------|--------------|--------|-------|
-| FREE | $0 | Claude Sonnet 4.5、Haiku 4.5 | 無制限 |
+| プラン | 月額コスト | モデル                       | クォータ |
+| ------ | ---------- | ---------------------------- | -------- |
+| FREE   | $0         | Claude Sonnet 4.5、Haiku 4.5 | 無制限   |
 
 **最高の価値:** 無料Claude! 有料Claude Codeと同じ品質。
 
@@ -167,10 +167,10 @@ Model: kr/claude-sonnet-4.5
 
 ### 利用可能なモデル
 
-| モデルID | 説明 | 最適用途 |
-|----------|-------------|----------|
+| モデルID               | 説明              | 最適用途                  |
+| ---------------------- | ----------------- | ------------------------- |
 | `kr/claude-sonnet-4.5` | Claude Sonnet 4.5 | バランスのとれた品質/速度 |
-| `kr/claude-haiku-4.5` | Claude Haiku 4.5 | 高速応答 |
+| `kr/claude-haiku-4.5`  | Claude Haiku 4.5  | 高速応答                  |
 
 ### プロのヒント
 
@@ -183,11 +183,11 @@ Model: kr/claude-sonnet-4.5
 
 ## 機能比較
 
-| プロバイダー | モデル | 最高のモデル | セットアップ | クォータ |
-|----------|--------|------------|-------|-------|
-| **iFlow** | 8 | Kimi K2 Thinking | OAuth | 無制限 |
-| **Qwen** | 3 | Qwen3 Coder Plus | デバイスコード | 無制限 |
-| **Kiro** | 2 | Claude Sonnet 4.5 | AWS Builder ID | 無制限 |
+| プロバイダー | モデル | 最高のモデル      | セットアップ   | クォータ |
+| ------------ | ------ | ----------------- | -------------- | -------- |
+| **iFlow**    | 8      | Kimi K2 Thinking  | OAuth          | 無制限   |
+| **Qwen**     | 3      | Qwen3 Coder Plus  | デバイスコード | 無制限   |
+| **Kiro**     | 2      | Claude Sonnet 4.5 | AWS Builder ID | 無制限   |
 
 **勝者:** 種類はiFlow、品質はKiro!
 
@@ -242,6 +242,7 @@ CLIで使用: complete-fallback
 ```
 
 **結果:**
+
 - Tier 1: 無料サブスクリプション (Gemini CLI)
 - Tier 2: 有料サブスクリプション (Claude Code)
 - Tier 3: 低価格バックアップ (GLM、MiniMax)
@@ -372,17 +373,20 @@ Models:
 ### シナリオ: 月1億トークン
 
 **オプション1: ChatGPT APIのみ**
+
 ```
 1億 × $20/1M = 月$2,000
 ```
 
 **オプション2: 9Router無料階層のみ**
+
 ```
 無料階層経由で1億 = 月$0
 節約: 月$2,000 (100%)
 ```
 
 **オプション3: 9Router完全戦略**
+
 ```
 Gemini CLI経由で6000万 (無料): $0
 Claude Code経由で3000万 (サブスクリプション): $0追加
@@ -399,6 +403,7 @@ iFlow経由で200万 (無料): $0
 ### "OAuth failed"
 
 **解決策:**
+
 - インターネット接続を確認
 - 別のブラウザを試す
 - ブラウザキャッシュをクリア
@@ -407,6 +412,7 @@ iFlow経由で200万 (無料): $0
 ### "モデルが利用不可"
 
 **解決策:**
+
 - ダッシュボードでプロバイダーが接続されているか確認
 - OAuthトークンが有効か確認
 - 必要に応じてプロバイダーを再接続
@@ -414,6 +420,7 @@ iFlow経由で200万 (無料): $0
 ### "応答が遅い"
 
 **解決策:**
+
 - 無料階層は優先度が低い可能性
 - ピーク外時間に使用
 - 別の無料プロバイダーへ切替

@@ -3,7 +3,7 @@ import { nowSec } from "./_base.js";
 
 const BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 
-export default {
+const provider = {
   buildUrl: (model, creds) => {
     const apiKey = creds?.apiKey || creds?.accessToken;
     const modelId = model.replace(/^models\//, "");
@@ -16,10 +16,15 @@ export default {
   }),
   normalize: (responseBody, prompt) => {
     const parts = responseBody.candidates?.[0]?.content?.parts || [];
-    const images = parts.filter((p) => p.inlineData?.data).map((p) => ({ b64_json: p.inlineData.data }));
+    const images = parts
+      .filter((p) => p.inlineData?.data)
+      .map((p) => ({ b64_json: p.inlineData.data }));
     return {
       created: nowSec(),
-      data: images.length > 0 ? images : [{ b64_json: "", revised_prompt: prompt }],
+      data:
+        images.length > 0 ? images : [{ b64_json: "", revised_prompt: prompt }],
     };
   },
 };
+
+export default provider;

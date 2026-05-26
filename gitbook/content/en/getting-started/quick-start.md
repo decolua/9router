@@ -41,6 +41,7 @@ Dashboard → Providers → Connect [Provider]
 ```
 
 **Example: Claude Code**
+
 1. Click "Connect Claude Code"
 2. Login with your Claude account
 3. Authorize 9Router
@@ -58,6 +59,7 @@ Dashboard → Providers → Add API Key
 ```
 
 **Example: GLM-4.7**
+
 1. Sign up at [Zhipu AI](https://open.bigmodel.cn/)
 2. Get API key from Coding Plan
 3. Dashboard → Add API Key → Provider: `glm` → Paste key
@@ -74,6 +76,7 @@ Dashboard → Providers → Connect [Free Provider]
 ```
 
 **Example: iFlow**
+
 1. Click "Connect iFlow"
 2. Login with iFlow account
 3. Authorize
@@ -142,6 +145,7 @@ Use in CLI: premium-coding
 ```
 
 **How it works:**
+
 1. Tries Claude Opus first (your subscription)
 2. If quota exhausted → GLM-4.7 (ultra-cheap)
 3. If budget limit → iFlow (free)
@@ -154,46 +158,56 @@ Use in CLI: premium-coding
 ### Subscription Models (Maximize First)
 
 **Claude Code (`cc/`)** - Pro/Max subscription:
+
 - `cc/claude-opus-4-5-20251101` - Claude 4.5 Opus
 - `cc/claude-sonnet-4-5-20250929` - Claude 4.5 Sonnet
 - `cc/claude-haiku-4-5-20251001` - Claude 4.5 Haiku
 
 **Codex (`cx/`)** - Plus/Pro subscription:
+
 - `cx/gpt-5.2-codex` - GPT 5.2 Codex
 - `cx/gpt-5.1-codex-max` - GPT 5.1 Codex Max
 
 **Gemini CLI (`gc/`)** - FREE 180K/month:
+
 - `gc/gemini-3-flash-preview` - Gemini 3 Flash Preview
 - `gc/gemini-2.5-pro` - Gemini 2.5 Pro
 
 **GitHub Copilot (`gh/`)** - Subscription:
+
 - `gh/gpt-5` - GPT-5
 - `gh/claude-4.5-sonnet` - Claude 4.5 Sonnet
 
 ### Cheap Models (Backup)
 
 **GLM (`glm/`)** - $0.6/$2.2 per 1M:
+
 - `glm/glm-4.7` - GLM 4.7 (daily reset 10AM)
 
 **MiniMax (`minimax/`)** - $0.20/$1.00 per 1M:
+
 - `minimax/MiniMax-M2.1` - MiniMax M2.1 (5h reset)
 
 **Kimi (`kimi/`)** - $9/month (10M tokens):
+
 - `kimi/kimi-latest` - Kimi Latest
 
 ### FREE Models (Emergency)
 
 **iFlow (`if/`)** - 8 models FREE:
+
 - `if/kimi-k2-thinking` - Kimi K2 Thinking
 - `if/qwen3-coder-plus` - Qwen3 Coder Plus
 - `if/glm-4.7` - GLM 4.7
 - `if/deepseek-r1` - DeepSeek R1
 
 **Qwen (`qw/`)** - 3 models FREE:
+
 - `qw/qwen3-coder-plus` - Qwen3 Coder Plus
 - `qw/qwen3-coder-flash` - Qwen3 Coder Flash
 
 **Kiro (`kr/`)** - 2 models FREE:
+
 - `kr/claude-sonnet-4.5` - Claude Sonnet 4.5
 - `kr/claude-haiku-4.5` - Claude Haiku 4.5
 

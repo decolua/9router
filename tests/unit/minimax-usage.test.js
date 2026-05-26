@@ -13,7 +13,7 @@ function usageResponse(modelRemains) {
       base_resp: { status_code: 0, status_msg: "success" },
       model_remains: modelRemains,
     }),
-    { status: 200, headers: { "Content-Type": "application/json" } }
+    { status: 200, headers: { "Content-Type": "application/json" } },
   );
 }
 
@@ -34,7 +34,7 @@ describe("MiniMax usage", () => {
           end_time: "2026-05-12T10:00:00.000Z",
           weekly_end_time: "2026-05-19T10:00:00.000Z",
         },
-      ])
+      ]),
     );
 
     const usage = await getUsageForProvider({
@@ -67,7 +67,7 @@ describe("MiniMax usage", () => {
           remainsTime: 1000,
           weeklyRemainsTime: 2000,
         },
-      ])
+      ]),
     );
 
     const usage = await getUsageForProvider({
@@ -101,7 +101,7 @@ describe("MiniMax usage", () => {
           current_interval_total_count: 50,
           current_interval_usage_count: 2,
         },
-      ])
+      ]),
     );
 
     const usage = await getUsageForProvider({
@@ -109,7 +109,10 @@ describe("MiniMax usage", () => {
       apiKey: "test-key",
     });
 
-    expect(Object.keys(usage.quotas)).toEqual(["Music 2.6 (5h)", "Image 01 (5h)"]);
+    expect(Object.keys(usage.quotas)).toEqual([
+      "Music 2.6 (5h)",
+      "Image 01 (5h)",
+    ]);
     expect(usage.quotas["Music 2.6 (5h)"].used).toBe(5);
     expect(usage.quotas["Image 01 (5h)"].used).toBe(2);
   });

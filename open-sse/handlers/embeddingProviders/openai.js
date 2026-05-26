@@ -18,7 +18,10 @@ export default function createOpenAIEmbeddingAdapter(providerId) {
   return {
     buildUrl: () => ENDPOINTS[providerId],
     buildHeaders: (creds) => {
-      const headers = { "Content-Type": "application/json", ...bearerAuth(creds) };
+      const headers = {
+        "Content-Type": "application/json",
+        ...bearerAuth(creds),
+      };
       if (providerId === "openrouter") {
         headers["HTTP-Referer"] = "https://endpoint-proxy.local";
         headers["X-Title"] = "Endpoint Proxy";

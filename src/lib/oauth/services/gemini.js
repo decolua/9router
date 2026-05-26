@@ -67,17 +67,17 @@ export class GeminiCLIService {
       {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${accessToken}`,
+          Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
           "User-Agent": "google-api-nodejs-client/9.15.1",
           "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
-          "Client-Metadata": JSON.stringify(getOAuthClientMetadata())
+          "Client-Metadata": JSON.stringify(getOAuthClientMetadata()),
         },
         body: JSON.stringify({
           metadata: getOAuthClientMetadata(),
-          mode: 1
-        })
-      }
+          mode: 1,
+        }),
+      },
     );
 
     if (!response.ok) {
@@ -202,7 +202,9 @@ export class GeminiCLIService {
       close();
 
       if (callbackParams.error) {
-        throw new Error(callbackParams.error_description || callbackParams.error);
+        throw new Error(
+          callbackParams.error_description || callbackParams.error,
+        );
       }
 
       if (!callbackParams.code) {
@@ -229,7 +231,9 @@ export class GeminiCLIService {
       // Save tokens to server
       await this.saveTokens(tokens, userInfo, projectId);
 
-      spinner.succeed(`Gemini CLI connected successfully! (${userInfo.email}, Project: ${projectId})`);
+      spinner.succeed(
+        `Gemini CLI connected successfully! (${userInfo.email}, Project: ${projectId})`,
+      );
       return true;
     } catch (error) {
       spinner.fail(`Failed: ${error.message}`);
@@ -237,4 +241,3 @@ export class GeminiCLIService {
     }
   }
 }
-

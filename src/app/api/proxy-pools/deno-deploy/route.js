@@ -49,14 +49,21 @@ export async function POST(request) {
     const body = await request.json();
     const denoToken = body.denoToken?.trim();
     const orgDomain = body.orgDomain?.trim();
-    const projectName = body.projectName?.trim() || `relay-${Date.now().toString(36)}`;
+    const projectName =
+      body.projectName?.trim() || `relay-${Date.now().toString(36)}`;
 
     if (!orgDomain) {
-      return NextResponse.json({ error: "Organization domain is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Organization domain is required" },
+        { status: 400 },
+      );
     }
 
     if (!denoToken) {
-      return NextResponse.json({ error: "Deno Deploy API token is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Deno Deploy API token is required" },
+        { status: 400 },
+      );
     }
 
     const headers = {
@@ -84,13 +91,15 @@ export async function POST(request) {
       const text = await createAppRes.text().catch(() => "");
       if (createAppRes.status === 409) {
         return NextResponse.json(
-          { error: `App "${projectName}" already exists. Choose a different name.` },
-          { status: 409 }
+          {
+            error: `App "${projectName}" already exists. Choose a different name.`,
+          },
+          { status: 409 },
         );
       }
       return NextResponse.json(
         { error: `Failed to create app (${createAppRes.status}): ${text}` },
-        { status: createAppRes.status }
+        { status: createAppRes.status },
       );
     }
 
@@ -119,7 +128,7 @@ export async function POST(request) {
       }).catch(() => {});
       return NextResponse.json(
         { error: `Deploy failed (${deployRes.status}): ${text}` },
-        { status: deployRes.status }
+        { status: deployRes.status },
       );
     }
 
@@ -150,7 +159,7 @@ export async function POST(request) {
       }).catch(() => {});
       return NextResponse.json(
         { error: `Deploy failed with status: ${status}` },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
@@ -170,6 +179,9 @@ export async function POST(request) {
     return NextResponse.json({ proxyPool, deployUrl }, { status: 201 });
   } catch (error) {
     console.log("Error deploying Deno Deploy relay:", error);
-    return NextResponse.json({ error: error.message || "Deploy failed" }, { status: 500 });
+    return NextResponse.json(
+      { error: error.message || "Deploy failed" },
+      { status: 500 },
+    );
   }
 }

@@ -20,12 +20,13 @@ Provider tier rẻ là **backup** khi hết quota subscription:
 
 ### Pricing
 
-| Tier | Input | Output | Reset |
-|------|-------|--------|-------|
-| Standard | $0.60/1M | $2.20/1M | Hàng ngày 10:00 AM |
+| Tier        | Input    | Output   | Reset                         |
+| ----------- | -------- | -------- | ----------------------------- |
+| Standard    | $0.60/1M | $2.20/1M | Hàng ngày 10:00 AM            |
 | Coding Plan | $0.60/1M | $2.20/1M | Hàng ngày 10:00 AM (3× quota) |
 
 **Ví dụ Chi phí (10M tokens):**
+
 - Input: 10M × $0.60 = $6
 - Output: 10M × $2.20 = $22
 - **Tổng: $6-22** so với $200 trên ChatGPT API!
@@ -64,10 +65,10 @@ Model: glm/glm-4.7
 
 ### Model có sẵn
 
-| Model ID | Mô tả | Context | Tốt nhất cho |
-|----------|-------------|---------|----------|
-| `glm/glm-4.7` | GLM 4.7 | 128K | Coding, task chung |
-| `glm/glm-4.6v` | GLM 4.6V Vision | 128K | Phân tích ảnh |
+| Model ID       | Mô tả           | Context | Tốt nhất cho       |
+| -------------- | --------------- | ------- | ------------------ |
+| `glm/glm-4.7`  | GLM 4.7         | 128K    | Coding, task chung |
+| `glm/glm-4.6v` | GLM 4.6V Vision | 128K    | Phân tích ảnh      |
 
 ### Mẹo Pro
 
@@ -93,11 +94,12 @@ Plan your heavy tasks around reset time!
 
 ### Pricing
 
-| Tier | Input | Output | Reset |
-|------|-------|--------|-------|
+| Tier     | Input    | Output   | Reset         |
+| -------- | -------- | -------- | ------------- |
 | Standard | $0.20/1M | $1.00/1M | 5 giờ rolling |
 
 **Ví dụ Chi phí (10M tokens):**
+
 - Input: 10M × $0.20 = $2
 - Output: 10M × $1.00 = $10
 - **Tổng: $2-10** - Lựa chọn rẻ nhất!
@@ -135,8 +137,8 @@ Model: minimax/MiniMax-M2.1
 
 ### Model có sẵn
 
-| Model ID | Mô tả | Context | Tốt nhất cho |
-|----------|-------------|---------|----------|
+| Model ID               | Mô tả        | Context   | Tốt nhất cho        |
+| ---------------------- | ------------ | --------- | ------------------- |
 | `minimax/MiniMax-M2.1` | MiniMax M2.1 | 1M tokens | Context dài, coding |
 
 ### Mẹo Pro
@@ -166,11 +168,12 @@ Code 24/7 with minimal cost!
 
 ### Pricing
 
-| Plan | Chi phí Hàng tháng | Tokens bao gồm | Chi phí Hiệu quả |
-|------|--------------|-----------------|----------------|
-| Subscription | $9 | 10M tokens | $0.90/1M |
+| Plan         | Chi phí Hàng tháng | Tokens bao gồm | Chi phí Hiệu quả |
+| ------------ | ------------------ | -------------- | ---------------- |
+| Subscription | $9                 | 10M tokens     | $0.90/1M         |
 
 **Ví dụ Chi phí:**
+
 - $9/tháng cố định
 - 10M tokens bao gồm
 - **Hiệu quả: $0.90/1M** - Giá trị tốt nhất cho sử dụng đều!
@@ -208,9 +211,9 @@ Model: kimi/kimi-latest
 
 ### Model có sẵn
 
-| Model ID | Mô tả | Context | Tốt nhất cho |
-|----------|-------------|---------|----------|
-| `kimi/kimi-latest` | Kimi Latest | 200K | Coding chung |
+| Model ID           | Mô tả       | Context | Tốt nhất cho |
+| ------------------ | ----------- | ------- | ------------ |
+| `kimi/kimi-latest` | Kimi Latest | 200K    | Coding chung |
 
 ### Mẹo Pro
 
@@ -237,12 +240,12 @@ Total: 10M tokens = $9 flat
 
 ## So sánh Giá
 
-| Provider | Input/1M | Output/1M | Reset | Chi phí 10M | Tốt nhất cho |
-|----------|----------|-----------|-------|----------|----------|
-| **GLM-4.7** | $0.60 | $2.20 | Hàng ngày 10AM | $6-22 | Dùng quota hàng ngày |
-| **MiniMax M2.1** | $0.20 | $1.00 | 5 giờ | $2-10 | **Rẻ nhất!** |
-| **Kimi K2** | $0.90 | $0.90 | Hàng tháng | **$9 cố định** | Sử dụng đều |
-| ChatGPT API | $20.00 | $20.00 | Không | $200 | ❌ Đắt |
+| Provider         | Input/1M | Output/1M | Reset          | Chi phí 10M    | Tốt nhất cho         |
+| ---------------- | -------- | --------- | -------------- | -------------- | -------------------- |
+| **GLM-4.7**      | $0.60    | $2.20     | Hàng ngày 10AM | $6-22          | Dùng quota hàng ngày |
+| **MiniMax M2.1** | $0.20    | $1.00     | 5 giờ          | $2-10          | **Rẻ nhất!**         |
+| **Kimi K2**      | $0.90    | $0.90     | Hàng tháng     | **$9 cố định** | Sử dụng đều          |
+| ChatGPT API      | $20.00   | $20.00    | Không          | $200           | ❌ Đắt               |
 
 **Tiết kiệm:** Rẻ hơn ChatGPT API 90-95%!
 
@@ -433,6 +436,7 @@ Monthly: $30 limit
 ### "Quota exhausted"
 
 **Giải pháp:**
+
 - GLM: Đợi đến 10:00 AM giờ Bắc Kinh
 - MiniMax: Đợi 5 giờ kể từ lần dùng đầu
 - Kimi: Đợi đến ngày 1 tháng sau
@@ -441,6 +445,7 @@ Monthly: $30 limit
 ### "API key invalid"
 
 **Giải pháp:**
+
 - Kiểm tra API key sao chép đúng
 - Xác minh tài khoản có credits
 - Tạo lại API key nếu cần
@@ -448,6 +453,7 @@ Monthly: $30 limit
 ### "High costs"
 
 **Giải pháp:**
+
 - Kiểm tra usage stats trong Dashboard
 - Đặt cảnh báo ngân sách
 - Chuyển sang MiniMax ($0.2/1M rẻ nhất)

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap");
 @import "tailwindcss";
 
 /* Base styles */
@@ -7,7 +7,11 @@
 }
 
 body {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family:
+    "Inter",
+    system-ui,
+    -apple-system,
+    sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   margin: 0;
@@ -25,32 +29,32 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #CBD5E1;
+  background: #cbd5e1;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #E68A6E;
+  background: #e68a6e;
 }
 
 /* Code highlighting */
 pre {
-  background: #F1F5F9 !important;
+  background: #f1f5f9 !important;
   border-radius: 8px;
   padding: 1rem;
   overflow-x: auto;
 }
 
 code {
-  font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+  font-family: "Monaco", "Menlo", "Courier New", monospace;
   font-size: 0.875rem;
   line-height: 1.5;
 }
 
 /* Inline code */
 :not(pre) > code {
-  background: #F1F5F9;
-  color: #E68A6E;
+  background: #f1f5f9;
+  color: #e68a6e;
   padding: 0.125rem 0.375rem;
   border-radius: 4px;
   font-size: 0.875em;
@@ -60,7 +64,7 @@ code {
 .markdown-content h1 {
   font-size: 2.5rem;
   font-weight: 800;
-  color: #E68A6E;
+  color: #e68a6e;
   /* margin-top: 2rem; */
   margin-bottom: 1rem;
   line-height: 1.2;
@@ -81,7 +85,7 @@ code {
   margin-top: 2rem;
   margin-bottom: 1rem;
   line-height: 1.3;
-  border-bottom: 1px solid #E5E7EB;
+  border-bottom: 1px solid #e5e7eb;
   padding-bottom: 0.5rem;
 }
 
@@ -98,7 +102,7 @@ code {
   font-size: 1.125rem;
   line-height: 1.75;
   margin-bottom: 1rem;
-  color: #6B7280;
+  color: #6b7280;
 }
 
 .markdown-content ul,
@@ -111,11 +115,11 @@ code {
   font-size: 1.125rem;
   line-height: 1.75;
   margin-bottom: 0.5rem;
-  color: #6B7280;
+  color: #6b7280;
 }
 
 .markdown-content a {
-  color: #E68A6E;
+  color: #e68a6e;
   text-decoration: underline;
   transition: opacity 0.2s;
 }
@@ -125,11 +129,11 @@ code {
 }
 
 .markdown-content blockquote {
-  border-left: 4px solid #E68A6E;
+  border-left: 4px solid #e68a6e;
   padding-left: 1rem;
   margin: 1rem 0;
   font-style: italic;
-  color: #6B7280;
+  color: #6b7280;
 }
 
 .markdown-content strong {

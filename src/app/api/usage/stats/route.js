@@ -18,6 +18,9 @@ export async function GET(request) {
     return NextResponse.json(stats);
   } catch (error) {
     console.error("[API] Failed to get usage stats:", error);
-    return NextResponse.json({ error: "Failed to fetch usage stats" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to fetch usage stats" },
+      { status: 500 },
+    );
   }
 }

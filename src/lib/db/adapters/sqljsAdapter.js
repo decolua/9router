@@ -33,13 +33,18 @@ export async function createSqlJsAdapter(filePath) {
     saveTimer = setTimeout(() => {
       saveTimer = null;
       if (dirty) {
-        try { persist(); } catch (e) { console.error("[sqljs] save failed:", e); }
+        try {
+          persist();
+        } catch (e) {
+          console.error("[sqljs] save failed:", e);
+        }
       }
     }, SAVE_DEBOUNCE_MS);
   }
 
   function paramsObj(params) {
-    if (!params || (Array.isArray(params) && params.length === 0)) return undefined;
+    if (!params || (Array.isArray(params) && params.length === 0))
+      return undefined;
     return params;
   }
 
@@ -49,7 +54,9 @@ export async function createSqlJsAdapter(filePath) {
       stmt.bind(paramsObj(params));
       stmt.step();
       const changes = db.getRowsModified();
-      const lastInsertRowid = db.exec("SELECT last_insert_rowid() as id")[0]?.values?.[0]?.[0] ?? null;
+      const lastInsertRowid =
+        db.exec("SELECT last_insert_rowid() as id")[0]?.values?.[0]?.[0] ??
+        null;
       scheduleSave();
       return { changes, lastInsertRowid };
     } finally {
@@ -94,7 +101,10 @@ export async function createSqlJsAdapter(filePath) {
       scheduleSave();
       return result;
     } catch (e) {
-      try { db.exec(`ROLLBACK TO ${sp}`); db.exec(`RELEASE ${sp}`); } catch {}
+      try {
+        db.exec(`ROLLBACK TO ${sp}`);
+        db.exec(`RELEASE ${sp}`);
+      } catch {}
       throw e;
     }
   }
@@ -106,7 +116,12 @@ export async function createSqlJsAdapter(filePath) {
   }
 
   // Flush on shutdown
-  const flush = () => { if (dirty) try { persist(); } catch {} };
+  const flush = () => {
+    if (dirty)
+      try {
+        persist();
+      } catch {}
+  };
   process.on("beforeExit", flush);
   process.on("SIGINT", flush);
   process.on("SIGTERM", flush);

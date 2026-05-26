@@ -10,7 +10,7 @@ const COLORS = {
   dim: "\x1b[2m",
   bold: "\x1b[1m",
   bright: "\x1b[1m",
-  cyan: "\x1b[36m"
+  cyan: "\x1b[36m",
 };
 
 // Box drawing characters
@@ -20,7 +20,7 @@ const BOX_CHARS = {
   bottomLeft: "└",
   bottomRight: "┘",
   horizontal: "─",
-  vertical: "│"
+  vertical: "│",
 };
 
 /**
@@ -34,22 +34,25 @@ function showBox(title, content, width = 60) {
   const lines = content.split("\n");
 
   // Top border with title
-  const topBorder = BOX_CHARS.topLeft + BOX_CHARS.horizontal.repeat(2) + 
-    ` ${title} ` + 
-    BOX_CHARS.horizontal.repeat(Math.max(0, innerWidth - title.length - 3)) + 
+  const topBorder =
+    BOX_CHARS.topLeft +
+    BOX_CHARS.horizontal.repeat(2) +
+    ` ${title} ` +
+    BOX_CHARS.horizontal.repeat(Math.max(0, innerWidth - title.length - 3)) +
     BOX_CHARS.topRight;
 
   console.log(topBorder);
 
   // Content lines
-  lines.forEach(line => {
+  lines.forEach((line) => {
     const paddedLine = line.padEnd(innerWidth);
     console.log(`${BOX_CHARS.vertical} ${paddedLine} ${BOX_CHARS.vertical}`);
   });
 
   // Bottom border
-  const bottomBorder = BOX_CHARS.bottomLeft + 
-    BOX_CHARS.horizontal.repeat(innerWidth + 2) + 
+  const bottomBorder =
+    BOX_CHARS.bottomLeft +
+    BOX_CHARS.horizontal.repeat(innerWidth + 2) +
     BOX_CHARS.bottomRight;
 
   console.log(bottomBorder);
@@ -87,7 +90,9 @@ function showTable(headers, rows) {
 
   // Calculate column widths
   const colWidths = headers.map((header, i) => {
-    const maxDataWidth = Math.max(...rows.map(row => String(row[i] || "").length));
+    const maxDataWidth = Math.max(
+      ...rows.map((row) => String(row[i] || "").length),
+    );
     return Math.max(header.length, maxDataWidth);
   });
 
@@ -96,12 +101,14 @@ function showTable(headers, rows) {
   console.log(COLORS.bold + headerRow + COLORS.reset);
 
   // Print separator
-  const separator = colWidths.map(w => "─".repeat(w)).join("─┼─");
+  const separator = colWidths.map((w) => "─".repeat(w)).join("─┼─");
   console.log(COLORS.dim + separator + COLORS.reset);
 
   // Print rows
-  rows.forEach(row => {
-    const rowStr = row.map((cell, i) => String(cell || "").padEnd(colWidths[i])).join(" │ ");
+  rows.forEach((row) => {
+    const rowStr = row
+      .map((cell, i) => String(cell || "").padEnd(colWidths[i]))
+      .join(" │ ");
     console.log(rowStr);
   });
 }
@@ -116,7 +123,7 @@ function showStatus(message, type = "info") {
     success: "✓",
     error: "✗",
     warning: "⚠",
-    info: "ℹ"
+    info: "ℹ",
   };
 
   const color = COLORS[type] || COLORS.info;
@@ -152,5 +159,5 @@ module.exports = {
   showTable,
   showStatus,
   clearScreen,
-  showHeader
+  showHeader,
 };

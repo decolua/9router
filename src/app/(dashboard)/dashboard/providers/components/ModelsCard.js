@@ -211,7 +211,11 @@ export default function ModelsCard({
   }, [providerId]);
 
   useEffect(() => {
-    fetchData();
+    const timer = setTimeout(() => {
+      void fetchData();
+    }, 0);
+
+    return () => clearTimeout(timer);
   }, [fetchData]);
 
   const handleSetAlias = async (modelId, alias) => {

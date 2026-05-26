@@ -36,10 +36,14 @@ function ValueCells({ item, viewMode, isSummary = false }) {
     return (
       <>
         <td className="px-6 py-3 text-right text-text-muted">
-          {isSummary && item.promptTokens === undefined ? "—" : fmt(item.promptTokens)}
+          {isSummary && item.promptTokens === undefined
+            ? "—"
+            : fmt(item.promptTokens)}
         </td>
         <td className="px-6 py-3 text-right text-text-muted">
-          {isSummary && item.completionTokens === undefined ? "—" : fmt(item.completionTokens)}
+          {isSummary && item.completionTokens === undefined
+            ? "—"
+            : fmt(item.completionTokens)}
         </td>
         <td className="px-6 py-3 text-right font-medium">
           {fmt(item.totalTokens)}
@@ -50,10 +54,14 @@ function ValueCells({ item, viewMode, isSummary = false }) {
   return (
     <>
       <td className="px-6 py-3 text-right text-text-muted">
-        {isSummary && item.inputCost === undefined ? "—" : fmtCost(item.inputCost)}
+        {isSummary && item.inputCost === undefined
+          ? "—"
+          : fmtCost(item.inputCost)}
       </td>
       <td className="px-6 py-3 text-right text-text-muted">
-        {isSummary && item.outputCost === undefined ? "—" : fmtCost(item.outputCost)}
+        {isSummary && item.outputCost === undefined
+          ? "—"
+          : fmtCost(item.outputCost)}
       </td>
       <td className="px-6 py-3 text-right font-medium text-warning">
         {fmtCost(item.totalCost || item.cost)}
@@ -100,17 +108,19 @@ export default function UsageTable({
   renderSummaryCells,
   emptyMessage,
 }) {
-  const [expanded, setExpanded] = useState(new Set());
+  const [expanded, setExpanded] = useState(() => {
+    if (typeof window === "undefined") {
+      return new Set();
+    }
 
-  // Load expanded state from localStorage
-  useEffect(() => {
     try {
       const saved = localStorage.getItem(storageKey);
-      if (saved) setExpanded(new Set(JSON.parse(saved)));
+      return saved ? new Set(JSON.parse(saved)) : new Set();
     } catch (e) {
       console.error(`Failed to load ${storageKey}:`, e);
+      return new Set();
     }
-  }, [storageKey]);
+  });
 
   // Save expanded state to localStorage
   useEffect(() => {
@@ -162,7 +172,11 @@ export default function UsageTable({
                   onClick={() => onToggleSort(tableType, col.field)}
                 >
                   {col.label}{" "}
-                  <SortIcon field={col.field} currentSort={sortBy} currentOrder={sortOrder} />
+                  <SortIcon
+                    field={col.field}
+                    currentSort={sortBy}
+                    currentOrder={sortOrder}
+                  />
                 </th>
               ))}
               {valueColumns.map((col) => (
@@ -172,7 +186,11 @@ export default function UsageTable({
                   onClick={() => onToggleSort(tableType, col.field)}
                 >
                   {col.label}{" "}
-                  <SortIcon field={col.field} currentSort={sortBy} currentOrder={sortOrder} />
+                  <SortIcon
+                    field={col.field}
+                    currentSort={sortBy}
+                    currentOrder={sortOrder}
+                  />
                 </th>
               ))}
             </tr>
@@ -187,32 +205,44 @@ export default function UsageTable({
                 >
                   <td className="px-6 py-3">
                     <div className="flex items-center gap-2">
-                      <span className={`material-symbols-outlined text-[18px] text-text-muted transition-transform ${expanded.has(group.groupKey) ? "rotate-90" : ""}`}>
+                      <span
+                        className={`material-symbols-outlined text-[18px] text-text-muted transition-transform ${expanded.has(group.groupKey) ? "rotate-90" : ""}`}
+                      >
                         chevron_right
                       </span>
-                      <span className={`font-medium transition-colors ${group.summary.pending > 0 ? "text-primary" : ""}`}>
+                      <span
+                        className={`font-medium transition-colors ${group.summary.pending > 0 ? "text-primary" : ""}`}
+                      >
                         {group.groupKey}
                       </span>
                     </div>
                   </td>
                   {renderSummaryCells(group)}
-                  <ValueCells item={group.summary} viewMode={viewMode} isSummary />
+                  <ValueCells
+                    item={group.summary}
+                    viewMode={viewMode}
+                    isSummary
+                  />
                 </tr>
                 {/* Detail rows */}
-                {expanded.has(group.groupKey) && group.items.map((item) => (
-                  <tr
-                    key={`detail-${item.key}`}
-                    className="group-detail hover:bg-bg-subtle/20 transition-colors"
-                  >
-                    {renderDetailCells(item)}
-                    <ValueCells item={item} viewMode={viewMode} />
-                  </tr>
-                ))}
+                {expanded.has(group.groupKey) &&
+                  group.items.map((item) => (
+                    <tr
+                      key={`detail-${item.key}`}
+                      className="group-detail hover:bg-bg-subtle/20 transition-colors"
+                    >
+                      {renderDetailCells(item)}
+                      <ValueCells item={item} viewMode={viewMode} />
+                    </tr>
+                  ))}
               </Fragment>
             ))}
             {groupedData.length === 0 && (
               <tr>
-                <td colSpan={totalColSpan} className="px-6 py-8 text-center text-text-muted">
+                <td
+                  colSpan={totalColSpan}
+                  className="px-6 py-8 text-center text-text-muted"
+                >
                   {emptyMessage}
                 </td>
               </tr>
@@ -226,11 +256,13 @@ export default function UsageTable({
 
 UsageTable.propTypes = {
   title: PropTypes.string.isRequired,
-  columns: PropTypes.arrayOf(PropTypes.shape({
-    field: PropTypes.string.isRequired,
-    label: PropTypes.string.isRequired,
-    align: PropTypes.string,
-  })).isRequired,
+  columns: PropTypes.arrayOf(
+    PropTypes.shape({
+      field: PropTypes.string.isRequired,
+      label: PropTypes.string.isRequired,
+      align: PropTypes.string,
+    }),
+  ).isRequired,
   groupedData: PropTypes.array.isRequired,
   tableType: PropTypes.string.isRequired,
   sortBy: PropTypes.string.isRequired,

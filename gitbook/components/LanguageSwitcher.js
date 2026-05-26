@@ -27,7 +27,9 @@ export default function LanguageSwitcher({ currentLang }) {
   useEffect(() => {
     if (open) {
       document.body.style.overflow = "hidden";
-      return () => { document.body.style.overflow = ""; };
+      return () => {
+        document.body.style.overflow = "";
+      };
     }
   }, [open]);
 
@@ -39,13 +41,18 @@ export default function LanguageSwitcher({ currentLang }) {
   };
 
   const modal = open && (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4" onClick={() => setOpen(false)}>
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4"
+      onClick={() => setOpen(false)}
+    >
       <div
         className="bg-white rounded-xl shadow-2xl max-w-md w-full max-h-[80vh] overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between p-4 border-b border-gray-200">
-          <h2 className="font-bold text-lg text-gray-900">{t(currentLang, "selectLanguage")}</h2>
+          <h2 className="font-bold text-lg text-gray-900">
+            {t(currentLang, "selectLanguage")}
+          </h2>
           <button
             onClick={() => setOpen(false)}
             className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
@@ -86,7 +93,9 @@ export default function LanguageSwitcher({ currentLang }) {
         aria-label="Switch language"
       >
         <Globe className="w-4 h-4" />
-        <span className="hidden sm:inline">{current.flag} {current.native}</span>
+        <span className="hidden sm:inline">
+          {current.flag} {current.native}
+        </span>
         <span className="sm:hidden">{current.flag}</span>
       </button>
 

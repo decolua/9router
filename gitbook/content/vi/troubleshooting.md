@@ -9,6 +9,7 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
 **Vấn đề:** Request thất bại với phản hồi rỗng hoặc thông báo lỗi.
 
 **Nguyên nhân:**
+
 - Hết quota provider
 - API key không hợp lệ hoặc hết hạn
 - Model không khả dụng
@@ -16,12 +17,15 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
 **Giải pháp:**
 
 1. **Kiểm tra trạng thái quota:**
+
    ```
    Dashboard → Providers → View quota tracker
    ```
+
    Nếu hết quota, đợi reset hoặc đổi provider.
 
 2. **Dùng fallback combo:**
+
    ```
    Dashboard → Combos → Create fallback chain
    Example: cc/claude-opus → glm/glm-4.7 → if/kimi-k2
@@ -39,6 +43,7 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
 **Vấn đề:** Lỗi "Rate limit exceeded" hoặc "Too many requests".
 
 **Nguyên nhân:**
+
 - Hết quota subscription (giới hạn 5h/ngày/tuần)
 - Đạt API rate limit
 - Quá nhiều request đồng thời
@@ -46,11 +51,13 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
 **Giải pháp:**
 
 1. **Kiểm tra thời gian reset:**
+
    ```
    Dashboard → Quota Tracking → View reset countdown
    ```
 
 2. **Chuyển sang tier rẻ:**
+
    ```
    Use: glm/glm-4.7 ($0.6/1M tokens)
         minimax/MiniMax-M2.1 ($0.20/1M tokens)
@@ -71,6 +78,7 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
 **Vấn đề:** Lỗi "Unauthorized" hoặc "Token expired".
 
 **Nguyên nhân:**
+
 - OAuth token hết hạn (auto-refresh thất bại)
 - Session provider không hợp lệ
 - Vấn đề network khi refresh
@@ -81,6 +89,7 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
    9Router tự refresh tokens. Đợi 30 giây rồi thử lại.
 
 2. **Kết nối lại thủ công:**
+
    ```
    Dashboard → Providers → [Provider Name] → Reconnect
    → Complete OAuth flow again
@@ -96,6 +105,7 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
 **Vấn đề:** Sử dụng hoặc chi phí cao bất ngờ.
 
 **Nguyên nhân:**
+
 - Dùng model đắt không cần thiết
 - Không fallback sang tier rẻ hơn
 - Context window lớn
@@ -103,12 +113,14 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
 **Giải pháp:**
 
 1. **Kiểm tra usage stats:**
+
    ```
    Dashboard → Usage Stats → View token consumption
    → Identify high-cost models
    ```
 
 2. **Chuyển sang model rẻ hơn:**
+
    ```
    Replace: cc/claude-opus ($20-100/month subscription)
    With: glm/glm-4.7 ($0.6/1M tokens)
@@ -116,6 +128,7 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
    ```
 
 3. **Dùng free tier:**
+
    ```
    if/kimi-k2-thinking (FREE)
    qw/qwen3-coder-plus (FREE)
@@ -135,6 +148,7 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
 **Vấn đề:** Lỗi "ECONNREFUSED" hoặc "Cannot connect to localhost:20128".
 
 **Nguyên nhân:**
+
 - 9Router không chạy
 - Port 20128 bị chặn
 - Firewall chặn kết nối
@@ -142,16 +156,19 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
 **Giải pháp:**
 
 1. **Khởi động 9Router:**
+
    ```bash
    9router
    ```
+
    Dashboard sẽ mở tại http://localhost:3000
 
 2. **Xác minh port 20128:**
+
    ```bash
    # Check if port is listening
    lsof -i :20128
-   
+
    # Or on Windows
    netstat -ano | findstr :20128
    ```
@@ -174,6 +191,7 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
 **Vấn đề:** Dashboard không load tại http://localhost:3000.
 
 **Nguyên nhân:**
+
 - Port 3000 đã được dùng
 - 9Router bị crash
 - Vấn đề cache browser
@@ -181,29 +199,32 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
 **Giải pháp:**
 
 1. **Kiểm tra 9Router có chạy không:**
+
    ```bash
    # Check process
    ps aux | grep 9router
-   
+
    # Check port 3000
    lsof -i :3000
    ```
 
 2. **Kill process xung đột:**
+
    ```bash
    # macOS/Linux
    lsof -ti:3000 | xargs kill -9
-   
+
    # Windows
    netstat -ano | findstr :3000
    taskkill /PID <PID> /F
    ```
 
 3. **Khởi động lại 9Router:**
+
    ```bash
    # Stop
    pkill -f 9router
-   
+
    # Start
    9router
    ```
@@ -222,6 +243,7 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
 **Vấn đề:** Lỗi "Model not found" hoặc "Invalid model".
 
 **Nguyên nhân:**
+
 - Provider chưa kết nối
 - Sai chính tả model ID
 - Provider không hoạt động
@@ -229,19 +251,22 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
 **Giải pháp:**
 
 1. **Xác minh kết nối provider:**
+
    ```
    Dashboard → Providers → Check status (green = active)
    ```
 
 2. **Kiểm tra format model ID:**
+
    ```
    Correct: cc/claude-opus-4-5-20251101
    Wrong: claude-opus-4-5-20251101
-   
+
    Format: [provider-prefix]/[model-name]
    ```
 
 3. **Liệt kê model khả dụng:**
+
    ```bash
    curl http://localhost:20128/v1/models \
      -H "Authorization: Bearer your-api-key"
@@ -259,6 +284,7 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
 **Vấn đề:** Request mất quá lâu hoặc timeout.
 
 **Nguyên nhân:**
+
 - Độ trễ provider
 - Vấn đề network
 - Context/response lớn
@@ -267,11 +293,13 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
 **Giải pháp:**
 
 1. **Kiểm tra trạng thái provider:**
+
    ```
    Dashboard → Providers → View latency stats
    ```
 
 2. **Chuyển sang model nhanh hơn:**
+
    ```
    Fast: cc/claude-haiku-4-5 (Haiku is faster than Opus)
          gc/gemini-3-flash-preview
@@ -279,6 +307,7 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
    ```
 
 3. **Dùng streaming:**
+
    ```json
    {
      "model": "cc/claude-opus-4-5",
@@ -288,6 +317,7 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
    ```
 
 4. **Kiểm tra network:**
+
    ```bash
    # Test latency
    ping api.anthropic.com
@@ -306,6 +336,7 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
 **Vấn đề:** Lỗi "Invalid API key" hoặc "Authentication failed".
 
 **Nguyên nhân:**
+
 - Sao chép sai API key
 - API key hết hạn
 - API key chưa được tạo
@@ -313,25 +344,28 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
 **Giải pháp:**
 
 1. **Tạo lại API key:**
+
    ```
    Dashboard → Settings → API Keys → Generate New Key
    → Copy and use new key
    ```
 
 2. **Xác minh format key:**
+
    ```
    Correct: 9r_xxxxxxxxxxxxxxxxxxxxxxxx
    Wrong: Missing 9r_ prefix
    ```
 
 3. **Kiểm tra key trong CLI config:**
+
    ```bash
    # Cursor
    Settings → Models → OpenAI API Key
-   
+
    # Cline
    Settings → API Key
-   
+
    # Environment variable
    export OPENAI_API_KEY="9r_your_key"
    ```

@@ -5,6 +5,7 @@
 ## Resumen
 
 9Router proporciona un endpoint de API compatible con OpenAI que funciona con:
+
 - Scripts y aplicaciones personalizadas
 - Clientes de API y herramientas de testing
 - Herramientas CLI y utilidades
@@ -16,6 +17,7 @@
 Cualquier herramienta compatible con OpenAI puede conectarse a 9Router usando estas configuraciones:
 
 **9Router local:**
+
 ```
 Base URL: http://localhost:20128/v1
 API Key: your-api-key-from-dashboard
@@ -23,6 +25,7 @@ Model: cualquier modelo de 9Router (cc/*, cx/*, glm/*, etc.)
 ```
 
 **9Router en la nube:**
+
 ```
 Base URL: https://9router.com/v1
 API Key: your-api-key-from-dashboard
@@ -32,15 +35,18 @@ Model: cualquier modelo de 9Router (cc/*, cx/*, glm/*, etc.)
 ## Modelos disponibles
 
 ### Modelos Claude (Anthropic)
+
 - `cc/claude-opus-4-5-20251101`
 - `cc/claude-sonnet-4-20250514`
 - `cc/claude-haiku-4-20250514`
 
 ### Modelos DeepSeek
+
 - `cx/deepseek-chat`
 - `cx/deepseek-reasoner`
 
 ### Modelos GLM (Zhipu AI)
+
 - `glm/glm-4-plus`
 - `glm/glm-4-flash`
 
@@ -73,14 +79,12 @@ import OpenAI from "openai";
 
 const client = new OpenAI({
   apiKey: "your-api-key-from-dashboard",
-  baseURL: "http://localhost:20128/v1"
+  baseURL: "http://localhost:20128/v1",
 });
 
 const response = await client.chat.completions.create({
   model: "cc/claude-sonnet-4-20250514",
-  messages: [
-    { role: "user", content: "Hello, how are you?" }
-  ]
+  messages: [{ role: "user", content: "Hello, how are you?" }],
 });
 
 console.log(response.choices[0].message.content);
@@ -103,23 +107,24 @@ curl http://localhost:20128/v1/chat/completions \
 ### Cliente HTTP (Postman, Insomnia)
 
 **Solicitud:**
+
 ```
 POST http://localhost:20128/v1/chat/completions
 ```
 
 **Headers:**
+
 ```
 Content-Type: application/json
 Authorization: Bearer your-api-key-from-dashboard
 ```
 
 **Body:**
+
 ```json
 {
   "model": "cc/claude-sonnet-4-20250514",
-  "messages": [
-    {"role": "user", "content": "Hello, how are you?"}
-  ],
+  "messages": [{ "role": "user", "content": "Hello, how are you?" }],
   "temperature": 0.7,
   "max_tokens": 1000
 }
@@ -199,14 +204,14 @@ import OpenAI from "openai";
 
 const client = new OpenAI({
   apiKey: "your-api-key-from-dashboard",
-  baseURL: "http://localhost:20128/v1"
+  baseURL: "http://localhost:20128/v1",
 });
 
 async function streamResponse(prompt) {
   const stream = await client.chat.completions.create({
     model: "cc/claude-sonnet-4-20250514",
     messages: [{ role: "user", content: prompt }],
-    stream: true
+    stream: true,
   });
 
   for await (const chunk of stream) {
@@ -319,6 +324,7 @@ def chat_with_retry(prompt, max_retries=3):
 ### Problemas de conexión
 
 **Problema:** No se puede conectar a 9Router
+
 ```bash
 # Verifica si 9Router está corriendo
 curl http://localhost:20128/health
@@ -328,6 +334,7 @@ curl http://localhost:20128/health
 ```
 
 **Solución:**
+
 - Verifica que 9Router esté corriendo
 - Verifica que el puerto 20128 no esté bloqueado
 - Asegúrate de tener la URL base correcta (incluir `/v1`)
@@ -335,11 +342,13 @@ curl http://localhost:20128/health
 ### Errores de autenticación
 
 **Problema:** 401 Unauthorized
+
 ```
 Error: Invalid API key
 ```
 
 **Solución:**
+
 - Verifica la API key desde el dashboard
 - Verifica el formato del header de Authorization: `Bearer your-api-key`
 - Asegúrate de no tener espacios extras o saltos de línea en la API key
@@ -347,11 +356,13 @@ Error: Invalid API key
 ### Modelo no encontrado
 
 **Problema:** 404 Model not found
+
 ```
 Error: Model 'cc/claude-opus' not found
 ```
 
 **Solución:**
+
 - Usa el nombre exacto del modelo (sensible a mayúsculas)
 - Verifica los modelos disponibles: `curl http://localhost:20128/v1/models`
 - Verifica que el modelo esté habilitado en tu plan
@@ -359,11 +370,13 @@ Error: Model 'cc/claude-opus' not found
 ### Problemas de timeout
 
 **Problema:** Request timeout
+
 ```
 Error: Request timed out after 30s
 ```
 
 **Solución:**
+
 - Aumenta el timeout en la configuración del cliente
 - Usa modelos más rápidos para tareas sensibles al tiempo
 - Verifica la conexión de red a 9Router
@@ -371,11 +384,13 @@ Error: Request timed out after 30s
 ### Rate limiting
 
 **Problema:** 429 Too Many Requests
+
 ```
 Error: Rate limit exceeded
 ```
 
 **Solución:**
+
 - Implementa exponential backoff
 - Reduce la frecuencia de solicitudes
 - Verifica los límites de tasa en el dashboard
@@ -384,24 +399,28 @@ Error: Rate limit exceeded
 ## Mejores prácticas
 
 ### Seguridad
+
 - Almacena las API keys en variables de entorno
 - Nunca subas las API keys al control de versiones
 - Usa HTTPS para despliegues en la nube
 - Rota las API keys regularmente
 
 ### Rendimiento
+
 - Usa modelos apropiados para la complejidad de la tarea
 - Implementa caché para consultas repetidas
 - Usa streaming para respuestas largas
 - Agrupa solicitudes cuando sea posible
 
 ### Manejo de errores
+
 - Siempre implementa bloques try-catch
 - Agrega lógica de reintento con exponential backoff
 - Registra errores para debugging
 - Proporciona mecanismos de fallback
 
 ### Optimización de costos
+
 - Elige modelos costo-efectivos para tareas simples
 - Cachea respuestas cuando sea apropiado
 - Monitorea el uso en el dashboard

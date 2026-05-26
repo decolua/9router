@@ -21,12 +21,14 @@
 3. 配置以下设置:
 
 **本地 9Router:**
+
 ```
 Base URL: http://localhost:20128/v1
 API Key: your-api-key-from-dashboard
 ```
 
 **云端 9Router:**
+
 ```
 Base URL: https://9router.com/v1
 API Key: your-api-key-from-dashboard
@@ -37,15 +39,18 @@ API Key: your-api-key-from-dashboard
 从可用的 9Router 模型中选择:
 
 **Claude 模型:**
+
 - `cc/claude-opus-4-5-20251101` - 最强
 - `cc/claude-sonnet-4-20250514` - 平衡
 - `cc/claude-haiku-4-20250514` - 快速
 
 **DeepSeek 模型:**
+
 - `cx/deepseek-chat` - 通用
 - `cx/deepseek-reasoner` - 复杂推理
 
 **GLM 模型:**
+
 - `glm/glm-4-plus` - 高级
 - `glm/glm-4-flash` - 快速响应
 
@@ -60,18 +65,21 @@ Hello! Can you confirm you're connected through 9Router?
 ## 使用示例
 
 ### 基础聊天
+
 ```
 向 Roo 提问: "Explain quantum computing in simple terms"
 模型: cc/claude-sonnet-4-20250514
 ```
 
 ### 代码生成
+
 ```
 向 Roo 提问: "Write a Python function to calculate Fibonacci numbers"
 模型: cx/deepseek-chat
 ```
 
 ### 复杂推理
+
 ```
 向 Roo 提问: "Analyze the trade-offs between microservices and monolithic architecture"
 模型: cx/deepseek-reasoner
@@ -87,16 +95,19 @@ Hello! Can you confirm you're connected through 9Router?
 ## 故障排除
 
 ### 连接失败
+
 - 确认 9Router 正在运行:`curl http://localhost:20128/health`
 - 检查 API key 是否正确
 - 确保 Base URL 末尾包含 `/v1`
 
 ### 模型不可用
+
 - 检查模型名是否完全匹配(大小写敏感)
 - 确认 9Router 套餐中已启用该模型
 - 尝试列表中的其他模型
 
 ### 响应缓慢
+
 - 切换到更快的模型(haiku、flash)
 - 检查网络连接
 - 查看 9Router 日志排查问题
@@ -116,6 +127,7 @@ Hello! Can you confirm you're connected through 9Router?
 ### 多个配置文件
 
 为不同场景设置不同配置:
+
 - **开发**:DeepSeek 模型用于编码
 - **写作**:Claude 模型用于内容创作
 - **研究**:Reasoner 模型用于分析

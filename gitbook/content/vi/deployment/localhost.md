@@ -13,6 +13,7 @@ npm install -g 9router
 ```
 
 **Yêu cầu:**
+
 - Node.js 20 trở lên
 - npm 9 trở lên
 
@@ -29,6 +30,7 @@ Khởi động 9Router với một lệnh duy nhất:
 Dashboard sẽ tự động mở trong trình duyệt tại `http://localhost:3000`
 
 **Cấu hình mặc định:**
+
 - **Dashboard**: `http://localhost:3000`
 - **API Endpoint**: `http://localhost:20128/v1`
 - **Data Directory**: `~/.9router`

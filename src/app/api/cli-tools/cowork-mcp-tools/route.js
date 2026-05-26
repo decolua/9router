@@ -9,7 +9,7 @@ const TIMEOUT_MS = 8000;
 async function probeMcp(url) {
   const headers = {
     "Content-Type": "application/json",
-    "Accept": "application/json, text/event-stream",
+    Accept: "application/json, text/event-stream",
     "MCP-Protocol-Version": "2025-06-18",
   };
   const ac = new AbortController();
@@ -20,8 +20,14 @@ async function probeMcp(url) {
       method: "POST",
       headers,
       body: JSON.stringify({
-        jsonrpc: "2.0", id: 1, method: "initialize",
-        params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "9router", version: "1" } },
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {
+          protocolVersion: "2025-06-18",
+          capabilities: {},
+          clientInfo: { name: "9router", version: "1" },
+        },
       }),
       signal: ac.signal,
     });
@@ -41,7 +47,11 @@ async function probeMcp(url) {
     await fetch(url, {
       method: "POST",
       headers: listHeaders,
-      body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized", params: {} }),
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        method: "notifications/initialized",
+        params: {},
+      }),
       signal: ac.signal,
     }).catch(() => {});
 
@@ -64,18 +74,29 @@ async function probeMcp(url) {
       for (const line of dataLines) {
         try {
           const obj = JSON.parse(line.replace(/^data:\s*/, ""));
-          if (obj?.id === 2 && obj.result) { parsed = obj; break; }
-        } catch { /* skip */ }
+          if (obj?.id === 2 && obj.result) {
+            parsed = obj;
+            break;
+          }
+        } catch {
+          /* skip */
+        }
       }
     } else {
       parsed = await listRes.json().catch(() => null);
     }
     const tools = parsed?.result?.tools || [];
     return {
-      tools: tools.map((t) => ({ name: t.name, description: t.description || "" })),
+      tools: tools.map((t) => ({
+        name: t.name,
+        description: t.description || "",
+      })),
     };
   } catch (e) {
-    return { error: e.name === "AbortError" ? "timeout" : e.message, tools: [] };
+    return {
+      error: e.name === "AbortError" ? "timeout" : e.message,
+      tools: [],
+    };
   } finally {
     clearTimeout(timer);
   }

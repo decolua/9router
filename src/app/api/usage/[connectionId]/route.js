@@ -1,14 +1,23 @@
 // Ensure proxyFetch is loaded to patch globalThis.fetch
 import "open-sse/index.js";
 
-import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
+import {
+  getProviderConnectionById,
+  updateProviderConnection,
+} from "@/lib/localDb";
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
 
 // Detect auth-expired messages returned by usage providers instead of throwing
-const AUTH_EXPIRED_PATTERNS = ["expired", "authentication", "unauthorized", "401", "re-authorize"];
+const AUTH_EXPIRED_PATTERNS = [
+  "expired",
+  "authentication",
+  "unauthorized",
+  "401",
+  "re-authorize",
+];
 function isAuthExpiredMessage(usage) {
   if (!usage?.message) return false;
   const msg = usage.message.toLowerCase();
@@ -20,7 +29,11 @@ function isAuthExpiredMessage(usage) {
  * @param {boolean} force - Skip needsRefresh check and always attempt refresh
  * @returns Promise<{ connection, refreshed: boolean }>
  */
-async function refreshAndUpdateCredentials(connection, force = false, proxyOptions = null) {
+async function refreshAndUpdateCredentials(
+  connection,
+  force = false,
+  proxyOptions = null,
+) {
   const executor = getExecutor(connection.provider);
 
   // Build credentials object from connection
@@ -31,7 +44,8 @@ async function refreshAndUpdateCredentials(connection, force = false, proxyOptio
     providerSpecificData: connection.providerSpecificData,
     // For GitHub
     copilotToken: connection.providerSpecificData?.copilotToken,
-    copilotTokenExpiresAt: connection.providerSpecificData?.copilotTokenExpiresAt,
+    copilotTokenExpiresAt:
+      connection.providerSpecificData?.copilotTokenExpiresAt,
   };
 
   // Check if refresh is needed (skip when force=true)
@@ -42,14 +56,20 @@ async function refreshAndUpdateCredentials(connection, force = false, proxyOptio
   }
 
   // Use executor's refreshCredentials method (with optional proxy)
-  const refreshResult = await executor.refreshCredentials(credentials, console, proxyOptions);
+  const refreshResult = await executor.refreshCredentials(
+    credentials,
+    console,
+    proxyOptions,
+  );
 
   if (!refreshResult) {
     // Refresh failed but we still have an accessToken — try with existing token
     if (connection.accessToken) {
       return { connection, refreshed: false };
     }
-    throw new Error("Failed to refresh credentials. Please re-authorize the connection.");
+    throw new Error(
+      "Failed to refresh credentials. Please re-authorize the connection.",
+    );
   }
 
   // Build update object
@@ -70,7 +90,9 @@ async function refreshAndUpdateCredentials(connection, force = false, proxyOptio
 
   // Update token expiry
   if (refreshResult.expiresIn) {
-    updateData.expiresAt = new Date(Date.now() + refreshResult.expiresIn * 1000).toISOString();
+    updateData.expiresAt = new Date(
+      Date.now() + refreshResult.expiresIn * 1000,
+    ).toISOString();
   } else if (refreshResult.expiresAt) {
     updateData.expiresAt = refreshResult.expiresAt;
   }
@@ -107,7 +129,6 @@ export async function GET(request, { params }) {
   try {
     const { connectionId } = await params;
 
-
     // Get connection from database
     connection = await getProviderConnectionById(connectionId);
     if (!connection) {
@@ -121,11 +142,15 @@ export async function GET(request, { params }) {
       USAGE_APIKEY_PROVIDERS.includes(connection.provider);
 
     if (!isOAuth && !isApikeyEligible) {
-      return Response.json({ message: "Usage not available for this connection" });
+      return Response.json({
+        message: "Usage not available for this connection",
+      });
     }
 
     // Resolve connection proxy config; force strictProxy=false so quota/refresh fall back to direct on failure
-    const proxyConfig = await resolveConnectionProxyConfig(connection.providerSpecificData);
+    const proxyConfig = await resolveConnectionProxyConfig(
+      connection.providerSpecificData,
+    );
     const proxyOptions = {
       connectionProxyEnabled: proxyConfig.connectionProxyEnabled === true,
       connectionProxyUrl: proxyConfig.connectionProxyUrl || "",
@@ -137,13 +162,20 @@ export async function GET(request, { params }) {
     // Refresh credentials only for OAuth connections (apikey has no token refresh)
     if (isOAuth) {
       try {
-        const result = await refreshAndUpdateCredentials(connection, false, proxyOptions);
+        const result = await refreshAndUpdateCredentials(
+          connection,
+          false,
+          proxyOptions,
+        );
         connection = result.connection;
       } catch (refreshError) {
         console.error("[Usage API] Credential refresh failed:", refreshError);
-        return Response.json({
-          error: `Credential refresh failed: ${refreshError.message}`
-        }, { status: 401 });
+        return Response.json(
+          {
+            error: `Credential refresh failed: ${refreshError.message}`,
+          },
+          { status: 401 },
+        );
       }
     }
 
@@ -154,11 +186,17 @@ export async function GET(request, { params }) {
     // force-refresh token and retry once (OAuth only)
     if (isOAuth && isAuthExpiredMessage(usage) && connection.refreshToken) {
       try {
-        const retryResult = await refreshAndUpdateCredentials(connection, true, proxyOptions);
+        const retryResult = await refreshAndUpdateCredentials(
+          connection,
+          true,
+          proxyOptions,
+        );
         connection = retryResult.connection;
         usage = await getUsageForProvider(connection, proxyOptions);
       } catch (retryError) {
-        console.warn(`[Usage] ${connection.provider}: force refresh failed: ${retryError.message}`);
+        console.warn(
+          `[Usage] ${connection.provider}: force refresh failed: ${retryError.message}`,
+        );
       }
     }
 

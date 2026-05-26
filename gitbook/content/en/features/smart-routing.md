@@ -21,6 +21,7 @@ Request → 9Router → Check Tier 1 (Subscription)
 ### 3-Tier Fallback System
 
 **Tier 1: SUBSCRIPTION (Primary)**
+
 - Claude Code (Pro/Max)
 - OpenAI Codex (Plus/Pro)
 - Gemini CLI (FREE 180K/month)
@@ -30,6 +31,7 @@ Request → 9Router → Check Tier 1 (Subscription)
 **Goal**: Maximize value from subscriptions you already pay for.
 
 **Tier 2: CHEAP (Backup)**
+
 - GLM-4.7 ($0.60/1M input)
 - MiniMax M2.1 ($0.20/1M input)
 - Kimi K2 ($9/month flat)
@@ -37,6 +39,7 @@ Request → 9Router → Check Tier 1 (Subscription)
 **Goal**: Ultra-cheap backup when subscription quota runs out (~90% cheaper than ChatGPT API).
 
 **Tier 3: FREE (Emergency)**
+
 - iFlow (8 models)
 - Qwen (3 models)
 - Kiro (Claude FREE)
@@ -148,6 +151,7 @@ Dashboard → Settings → Fallback Priority
 ```
 
 Example custom order:
+
 ```
 Tier 1: Gemini CLI → Claude Code → Codex
 Tier 2: MiniMax → GLM → Kimi
@@ -169,12 +173,14 @@ Dashboard → Settings → Notifications
 ### Example 1: Basic Auto Fallback
 
 **Setup:**
+
 ```
 Model: cc/claude-opus-4-5-20251101
 Fallback: Auto (default 3-tier)
 ```
 
 **Behavior:**
+
 ```
 Morning (fresh quota):
   Request → cc/claude-opus-4-5 ✅
@@ -194,6 +200,7 @@ Late night (all paid quota out):
 ### Example 2: Budget-Conscious Routing
 
 **Setup:**
+
 ```
 Dashboard → Settings:
   Daily budget: $2
@@ -202,6 +209,7 @@ Dashboard → Settings:
 ```
 
 **Behavior:**
+
 ```
 Day 1-15 (within budget):
   Requests → glm/glm-4.7 (cheap tier)
@@ -220,6 +228,7 @@ Next month (budget resets):
 ### Example 3: Subscription-Only Mode
 
 **Setup:**
+
 ```
 Dashboard → Settings:
   Auto Fallback: OFF
@@ -227,6 +236,7 @@ Dashboard → Settings:
 ```
 
 **Behavior:**
+
 ```
 Request → cc/claude-opus-4-5
   ✅ Quota available → Success
@@ -238,12 +248,14 @@ Request → cc/claude-opus-4-5
 ### Example 4: Free-Only Mode
 
 **Setup:**
+
 ```
 Model: if/kimi-k2-thinking
 Fallback: qw/qwen3-coder-plus → kr/claude-sonnet-4.5
 ```
 
 **Behavior:**
+
 ```
 All requests → Free tier only
 Cost: $0 forever
@@ -265,6 +277,7 @@ Strategy:
 ```
 
 **Example combo:**
+
 ```
 cc/claude-opus-4-5 → glm/glm-4.7 → if/kimi-k2-thinking
 ```
@@ -279,6 +292,7 @@ Strategy:
 ```
 
 **Example combo:**
+
 ```
 gc/gemini-3-flash-preview → glm/glm-4.7 → if/kimi-k2-thinking
 ```
@@ -293,6 +307,7 @@ Strategy:
 ```
 
 **Example combo:**
+
 ```
 cc/claude-opus-4-5 → cx/gpt-5.2-codex → glm/glm-4.7
 ```
@@ -307,6 +322,7 @@ Strategy:
 ```
 
 **Example combo:**
+
 ```
 cc/claude-opus-4-5 → glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2-thinking
 ```
@@ -319,16 +335,17 @@ cc/claude-opus-4-5 → glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2-think
 
 Plan your usage around quota reset times:
 
-| Provider | Quota Reset | Strategy |
-|----------|-------------|----------|
-| **Claude Code** | 5-hour + weekly | Use in morning, fresh quota |
-| **Codex** | 5-hour + weekly | Use after Claude quota out |
-| **Gemini CLI** | Daily (1K) + Monthly (180K) | Use throughout day |
-| **GLM-4.7** | Daily 10:00 AM | Use evening, resets next morning |
-| **MiniMax M2.1** | 5-hour rolling | Use anytime, tracks rolling window |
-| **iFlow/Qwen/Kiro** | No limit | Emergency backup |
+| Provider            | Quota Reset                 | Strategy                           |
+| ------------------- | --------------------------- | ---------------------------------- |
+| **Claude Code**     | 5-hour + weekly             | Use in morning, fresh quota        |
+| **Codex**           | 5-hour + weekly             | Use after Claude quota out         |
+| **Gemini CLI**      | Daily (1K) + Monthly (180K) | Use throughout day                 |
+| **GLM-4.7**         | Daily 10:00 AM              | Use evening, resets next morning   |
+| **MiniMax M2.1**    | 5-hour rolling              | Use anytime, tracks rolling window |
+| **iFlow/Qwen/Kiro** | No limit                    | Emergency backup                   |
 
 **Daily routine example:**
+
 ```
 08:00 - 13:00: Claude Code (fresh 5h quota)
 13:00 - 18:00: Gemini CLI (1K/day quota)
@@ -367,7 +384,7 @@ Dashboard → Analytics:
     - 30M via Claude Code (subscription)
     - 15M via GLM-4.7 ($9)
     - 5M via iFlow (free)
-  
+
   Cost: $9 (vs $1000 on ChatGPT API)
   Savings: 99%
 ```
@@ -379,6 +396,7 @@ Dashboard → Analytics:
 **Issue: "All providers quota exhausted"**
 
 **Solution:**
+
 1. Check dashboard quota tracker
 2. Wait for quota reset (see countdown)
 3. Add free tier to fallback chain
@@ -387,6 +405,7 @@ Dashboard → Analytics:
 **Issue: "Too many fallback switches"**
 
 **Solution:**
+
 1. Check if primary provider is down
 2. Increase quota limits (upgrade subscription)
 3. Use cheaper primary model (GLM instead of Claude)
@@ -394,6 +413,7 @@ Dashboard → Analytics:
 **Issue: "Unexpected costs"**
 
 **Solution:**
+
 1. Dashboard → Analytics → Review usage
 2. Set daily/monthly budget limits
 3. Switch to free tier for non-critical tasks

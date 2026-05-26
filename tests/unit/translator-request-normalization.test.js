@@ -180,7 +180,9 @@ describe("request normalization", () => {
   });
 
   it("parseSSELine still supports SSE data lines", () => {
-    const parsed = parseSSELine('data: {"choices":[{"delta":{"content":"hi"}}]}');
+    const parsed = parseSSELine(
+      'data: {"choices":[{"delta":{"content":"hi"}}]}',
+    );
     expect(parsed.choices[0].delta.content).toBe("hi");
   });
 });

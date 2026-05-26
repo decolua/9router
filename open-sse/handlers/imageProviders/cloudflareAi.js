@@ -29,8 +29,12 @@ function sizeToDimensions(size) {
 function getDimensions(body) {
   return {
     ...sizeToDimensions(body.size),
-    ...(Number.isFinite(Number(body.width)) ? { width: Number(body.width) } : {}),
-    ...(Number.isFinite(Number(body.height)) ? { height: Number(body.height) } : {}),
+    ...(Number.isFinite(Number(body.width))
+      ? { width: Number(body.width) }
+      : {}),
+    ...(Number.isFinite(Number(body.height))
+      ? { height: Number(body.height) }
+      : {}),
   };
 }
 
@@ -79,7 +83,9 @@ async function buildJsonBody(body) {
     req.image = imageData.bytes;
   }
 
-  const maskData = await resolveImageInput(body.mask_image || body.maskImage || body.mask);
+  const maskData = await resolveImageInput(
+    body.mask_image || body.maskImage || body.mask,
+  );
   if (maskData) {
     req.mask_b64 = maskData.b64;
     req.mask = maskData.bytes;
@@ -115,7 +121,8 @@ function imageItemFromString(value) {
 }
 
 function normalizeCloudflareResponse(responseBody) {
-  if (responseBody?.created && Array.isArray(responseBody?.data)) return responseBody;
+  if (responseBody?.created && Array.isArray(responseBody?.data))
+    return responseBody;
 
   const result = responseBody?.result ?? responseBody;
   const queuedResponse = Array.isArray(result?.responses)
@@ -136,16 +143,20 @@ function normalizeCloudflareResponse(responseBody) {
   };
 }
 
-export default {
+const provider = {
   buildUrl: (model, creds) => {
     const accountId = creds?.providerSpecificData?.accountId;
-    if (!accountId) throw new Error("cloudflare-ai requires accountId in providerSpecificData");
+    if (!accountId)
+      throw new Error(
+        "cloudflare-ai requires accountId in providerSpecificData",
+      );
     return `${BASE_URL}/${accountId}/ai/run/${model}`;
   },
 
   buildHeaders: (creds, requestBody) => {
     const headers = {};
-    const isMultipart = typeof FormData !== "undefined" && requestBody instanceof FormData;
+    const isMultipart =
+      typeof FormData !== "undefined" && requestBody instanceof FormData;
     if (!isMultipart) {
       headers["Content-Type"] = "application/json";
     }
@@ -154,14 +165,15 @@ export default {
     return headers;
   },
 
-  buildBody: async (model, body) => (
+  buildBody: async (model, body) =>
     MULTIPART_MODELS.has(model)
       ? buildMultipartBody(body)
-      : await buildJsonBody(body)
-  ),
+      : await buildJsonBody(body),
 
   async parseResponse(response) {
-    const contentType = (response.headers.get("Content-Type") || "").toLowerCase();
+    const contentType = (
+      response.headers.get("Content-Type") || ""
+    ).toLowerCase();
     if (contentType.startsWith("image/")) {
       const buf = await response.arrayBuffer();
       return {
@@ -176,3 +188,5 @@ export default {
 
   normalize: normalizeCloudflareResponse,
 };
+
+export default provider;

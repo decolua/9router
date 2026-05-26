@@ -11,14 +11,14 @@ const nextConfig = {
   assetPrefix: basePath || undefined,
   trailingSlash: true,
   images: {
-    unoptimized: true
+    unoptimized: true,
   },
   turbopack: {
-    root: projectRoot
+    root: projectRoot,
   },
   env: {
-    NEXT_PUBLIC_BASE_PATH: basePath
-  }
+    NEXT_PUBLIC_BASE_PATH: basePath,
+  },
 };
 
 export default nextConfig;

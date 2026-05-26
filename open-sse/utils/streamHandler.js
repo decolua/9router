@@ -4,7 +4,12 @@ import { dbg, isDebugEnabled } from "./debugLog.js";
 
 // Get HH:MM:SS timestamp
 function getTimeString() {
-  return new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  return new Date().toLocaleTimeString("en-US", {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 }
 
 /**
@@ -15,7 +20,13 @@ function getTimeString() {
  * @param {string} options.provider - Provider name
  * @param {string} options.model - Model name
  */
-export function createStreamController({ onDisconnect, onError, log, provider, model } = {}) {
+export function createStreamController({
+  onDisconnect,
+  onError,
+  log,
+  provider,
+  model,
+} = {}) {
   const abortController = new AbortController();
   const startTime = Date.now();
   let disconnected = false;
@@ -24,7 +35,9 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
   const logStream = (status) => {
     const duration = Date.now() - startTime;
     const p = provider?.toUpperCase() || "UNKNOWN";
-    console.log(`[${getTimeString()}] 🌊 [STREAM] ${p} | ${model || "unknown"} | ${duration}ms | ${status}`);
+    console.log(
+      `[${getTimeString()}] 🌊 [STREAM] ${p} | ${model || "unknown"} | ${duration}ms | ${status}`,
+    );
   };
 
   return {
@@ -39,7 +52,10 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
       disconnected = true;
 
       logStream(`disconnect: ${reason}`);
-      dbg("CTRL", `${provider}/${model} | disconnect=${reason} | dur=${Date.now() - startTime}ms`);
+      dbg(
+        "CTRL",
+        `${provider}/${model} | disconnect=${reason} | dur=${Date.now() - startTime}ms`,
+      );
 
       // Delay abort to allow cleanup
       abortTimeout = setTimeout(() => {
@@ -81,7 +97,7 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
       onError?.(error);
     },
 
-    abort: () => abortController.abort()
+    abort: () => abortController.abort(),
   };
 }
 
@@ -94,9 +110,19 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
  * for long periods while raw bytes still flow (e.g. Kiro EventStream
  * binary frames buffering, Claude reasoning streams).
  */
-export function createDisconnectAwareStream(transformStream, streamController) {
-  const reader = transformStream.readable.getReader();
-  const writer = transformStream.writable.getWriter();
+export function createDisconnectAwareStream(
+  transformStream,
+  streamController,
+  streamStateTracker = null,
+  resumeCtx = null,
+) {
+  let reader = transformStream.readable.getReader();
+  let writer = transformStream.writable
+    ? transformStream.writable.getWriter()
+    : { abort: () => Promise.resolve() };
+  let resumeAttempts = 0;
+  const maxResumeAttempts = 2;
+  let chunksReceived = 0;
 
   return new ReadableStream({
     async pull(controller) {
@@ -109,20 +135,188 @@ export function createDisconnectAwareStream(transformStream, streamController) {
         const { done, value } = await reader.read();
 
         if (done) {
+          if (chunksReceived === 0) {
+            throw new Error("API returned an empty response (HTTP 200)");
+          }
           streamController.handleComplete();
           controller.close();
           return;
         }
+
+        if (value && chunksReceived === 0) {
+          try {
+            const decoder = new TextDecoder("utf-8");
+            const chunkText = decoder.decode(value, { stream: true });
+            const hasOverload =
+              chunkText.includes("overloaded") ||
+              chunkText.includes("overload");
+            const hasError =
+              chunkText.includes("Error") ||
+              chunkText.includes("error") ||
+              chunkText.includes("●") ||
+              chunkText.includes("[Error]");
+            const hasTryAgain =
+              chunkText.includes("try again later") ||
+              chunkText.includes("Please try again") ||
+              chunkText.includes("try again");
+
+            if (hasOverload || (hasTryAgain && hasError)) {
+              throw new Error(
+                "Upstream error: Our servers are currently overloaded",
+              );
+            }
+          } catch (e) {
+            if (e.message?.startsWith("Upstream error:")) {
+              throw e;
+            }
+          }
+        }
+
+        chunksReceived++;
         controller.enqueue(value);
       } catch (error) {
         const wasConnected = streamController.isConnected();
-        streamController.handleError(error);
-        reader.cancel().catch(() => {});
-        writer.abort().catch(() => {});
+        const textBuffer = streamStateTracker;
+        const hasGeneratedText =
+          textBuffer &&
+          (textBuffer.accumulatedContent || textBuffer.accumulatedThinking);
+        const isEarlyStreamError = chunksReceived === 0;
+        const canResume = hasGeneratedText || isEarlyStreamError;
 
-        // Treat network resets / socket hang up / abort as graceful close
         const msg = error?.message || "";
         const code = error?.code || error?.cause?.code || "";
+        const isNetworkOrOverloadError =
+          error.name === "AbortError" ||
+          msg.includes("aborted") ||
+          msg.includes("socket hang up") ||
+          msg.includes("ECONNRESET") ||
+          msg.includes("ETIMEDOUT") ||
+          msg.includes("EPIPE") ||
+          msg.includes("overloaded") ||
+          msg.includes("overload") ||
+          msg.includes("busy") ||
+          msg.includes("empty response") ||
+          code === "ECONNRESET" ||
+          code === "ETIMEDOUT" ||
+          code === "EPIPE" ||
+          code === "UND_ERR_SOCKET";
+
+        if (
+          wasConnected &&
+          isNetworkOrOverloadError &&
+          canResume &&
+          resumeAttempts < maxResumeAttempts &&
+          resumeCtx
+        ) {
+          resumeAttempts++;
+
+          // Apply backoff strategy: 1st retry = immediate, 2nd retry = 1.5s delay
+          if (resumeAttempts === 2) {
+            console.log(
+              `[RESUME] Applying backoff delay of 1.5s before attempt 2...`,
+            );
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+          }
+
+          console.log(
+            `[RESUME] Mid-stream connection lost (${error.message}). Attempting transparent resume ${resumeAttempts}/${maxResumeAttempts}...`,
+          );
+
+          try {
+            // Dynamic import to prevent circular dependencies
+            const { executeResumeRequest } = await import("./streamResumer.js");
+
+            const newResponse = await executeResumeRequest({
+              originalBody: resumeCtx.body,
+              textBuffer,
+              provider: resumeCtx.provider,
+              model: resumeCtx.model,
+              credentials: resumeCtx.credentials,
+              sourceFormat: resumeCtx.sourceFormat,
+              targetFormat: resumeCtx.targetFormat,
+              userAgent: resumeCtx.userAgent,
+              apiKey: resumeCtx.apiKey,
+              connectionId: resumeCtx.connectionId,
+              toolNameMap: resumeCtx.toolNameMap,
+              reqLogger: resumeCtx.reqLogger,
+              clientRawRequest: resumeCtx.clientRawRequest,
+            });
+
+            if (newResponse) {
+              console.log(
+                "[RESUME] Resume request successful! Piping new stream chunks...",
+              );
+
+              chunksReceived = 0;
+              await reader.cancel().catch(() => {});
+              if (writer && typeof writer.abort === "function") {
+                await writer.abort().catch(() => {});
+              }
+
+              const {
+                createSSETransformStreamWithLogger,
+                createPassthroughStreamWithLogger,
+              } = await import("./stream.js");
+              const { needsTranslation } =
+                await import("../translator/index.js");
+
+              let newTransformStream;
+              if (
+                needsTranslation(resumeCtx.targetFormat, resumeCtx.sourceFormat)
+              ) {
+                newTransformStream = createSSETransformStreamWithLogger(
+                  resumeCtx.targetFormat,
+                  resumeCtx.sourceFormat,
+                  resumeCtx.provider,
+                  resumeCtx.reqLogger,
+                  resumeCtx.toolNameMap,
+                  resumeCtx.model,
+                  resumeCtx.connectionId,
+                  resumeCtx.body,
+                  null, // no need to re-trigger onStreamComplete
+                  resumeCtx.apiKey,
+                  textBuffer,
+                );
+              } else {
+                newTransformStream = createPassthroughStreamWithLogger(
+                  resumeCtx.provider,
+                  resumeCtx.reqLogger,
+                  resumeCtx.model,
+                  resumeCtx.connectionId,
+                  resumeCtx.body,
+                  null,
+                  resumeCtx.apiKey,
+                  textBuffer,
+                );
+              }
+
+              const upstreamTap = new TransformStream({
+                transform(chunk, controller) {
+                  controller.enqueue(chunk);
+                },
+              });
+
+              const newTransformedBody = newResponse.body
+                .pipeThrough(upstreamTap)
+                .pipeThrough(newTransformStream);
+
+              reader = newTransformedBody.getReader();
+              writer = { abort: () => Promise.resolve() };
+
+              // Read next chunks from the resumed stream!
+              return this.pull(controller);
+            }
+          } catch (resumeErr) {
+            console.error("[RESUME] Resume attempt failed:", resumeErr.message);
+          }
+        }
+
+        streamController.handleError(error);
+        reader.cancel().catch(() => {});
+        if (writer && typeof writer.abort === "function") {
+          writer.abort().catch(() => {});
+        }
+
         const isNetworkClose =
           error.name === "AbortError" ||
           msg.includes("aborted") ||
@@ -144,7 +338,9 @@ export function createDisconnectAwareStream(transformStream, streamController) {
         } else {
           try {
             controller.error(error);
-          } catch (e) { /* already closed */ }
+          } catch (e) {
+            /* already closed */
+          }
         }
       }
     },
@@ -152,8 +348,10 @@ export function createDisconnectAwareStream(transformStream, streamController) {
     cancel(reason) {
       streamController.handleDisconnect(reason || "cancelled");
       reader.cancel();
-      writer.abort();
-    }
+      if (writer && typeof writer.abort === "function") {
+        writer.abort();
+      }
+    },
   });
 }
 
@@ -172,8 +370,16 @@ export function createDisconnectAwareStream(transformStream, streamController) {
  * @param {Response} providerResponse - Response from provider
  * @param {TransformStream} transformStream - Transform stream for SSE
  * @param {object} streamController - Stream controller from createStreamController
+ * @param {object} streamStateTracker - Stream state tracker to extract generated text
+ * @param {object} resumeCtx - Context to resume the stream if connection breaks
  */
-export function pipeWithDisconnect(providerResponse, transformStream, streamController) {
+export function pipeWithDisconnect(
+  providerResponse,
+  transformStream,
+  streamController,
+  streamStateTracker = null,
+  resumeCtx = null,
+) {
   let stallTimer = null;
   let chunkCount = 0;
   let totalBytes = 0;
@@ -181,13 +387,19 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
   const t0 = Date.now();
   const tag = "STREAM";
   const clearStall = () => {
-    if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
+    if (stallTimer) {
+      clearTimeout(stallTimer);
+      stallTimer = null;
+    }
   };
   const armStall = () => {
     clearStall();
     stallTimer = setTimeout(() => {
       stallTimer = null;
-      dbg(tag, `STALL TIMEOUT ${STREAM_STALL_TIMEOUT_MS}ms | chunks=${chunkCount} | bytes=${totalBytes} | sinceLast=${Date.now() - lastChunkAt}ms`);
+      dbg(
+        tag,
+        `STALL TIMEOUT ${STREAM_STALL_TIMEOUT_MS}ms | chunks=${chunkCount} | bytes=${totalBytes} | sinceLast=${Date.now() - lastChunkAt}ms`,
+      );
       streamController.handleError?.(new Error("stream stall timeout"));
       streamController.abort?.();
     }, STREAM_STALL_TIMEOUT_MS);
@@ -200,10 +412,34 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
     signal: streamController.signal,
     startTime: streamController.startTime,
     isConnected: () => streamController.isConnected(),
-    handleComplete: () => { dbg(tag, `complete | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); streamController.handleComplete(); },
-    handleError: (e) => { dbg(tag, `error: ${e?.message} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); streamController.handleError(e); },
-    handleDisconnect: (r) => { dbg(tag, `disconnect: ${r} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); streamController.handleDisconnect(r); },
-    abort: () => { clearStall(); streamController.abort(); }
+    handleComplete: () => {
+      dbg(
+        tag,
+        `complete | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`,
+      );
+      clearStall();
+      streamController.handleComplete();
+    },
+    handleError: (e) => {
+      dbg(
+        tag,
+        `error: ${e?.message} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`,
+      );
+      clearStall();
+      streamController.handleError(e);
+    },
+    handleDisconnect: (r) => {
+      dbg(
+        tag,
+        `disconnect: ${r} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`,
+      );
+      clearStall();
+      streamController.handleDisconnect(r);
+    },
+    abort: () => {
+      clearStall();
+      streamController.abort();
+    },
   };
 
   armStall();
@@ -217,13 +453,25 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
       const now = Date.now();
       const gap = now - lastChunkAt;
       lastChunkAt = now;
-      if (isDebugEnabled && (chunkCount <= 5 || chunkCount % 20 === 0 || gap > 5000)) {
-        dbg(tag, `chunk #${chunkCount} | size=${sz}B | gap=${gap}ms | total=${totalBytes}B`);
+      if (
+        isDebugEnabled &&
+        (chunkCount <= 5 || chunkCount % 20 === 0 || gap > 5000)
+      ) {
+        dbg(
+          tag,
+          `chunk #${chunkCount} | size=${sz}B | gap=${gap}ms | total=${totalBytes}B`,
+        );
       }
       armStall();
       controller.enqueue(chunk);
     },
-    flush() { dbg(tag, `upstream EOF | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); }
+    flush() {
+      dbg(
+        tag,
+        `upstream EOF | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`,
+      );
+      clearStall();
+    },
   });
 
   const transformedBody = providerResponse.body
@@ -231,8 +479,12 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
     .pipeThrough(transformStream);
 
   return createDisconnectAwareStream(
-    { readable: transformedBody, writable: { getWriter: () => ({ abort: () => Promise.resolve() }) } },
-    wrappedController
+    {
+      readable: transformedBody,
+      writable: { getWriter: () => ({ abort: () => Promise.resolve() }) },
+    },
+    wrappedController,
+    streamStateTracker,
+    resumeCtx,
   );
 }
-

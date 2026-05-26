@@ -23,12 +23,12 @@ describe("openaiToClaudeRequest", () => {
               type: "object",
               properties: {
                 answer: { type: "number" },
-                explanation: { type: "string" }
+                explanation: { type: "string" },
               },
-              required: ["answer", "explanation"]
-            }
-          }
-        }
+              required: ["answer", "explanation"],
+            },
+          },
+        },
       };
 
       const result = openaiToClaudeRequest("claude-sonnet-4.5", body, false);
@@ -36,16 +36,16 @@ describe("openaiToClaudeRequest", () => {
       // Should have system array with instructions
       expect(result.system).toBeDefined();
       expect(Array.isArray(result.system)).toBe(true);
-      
+
       // Check that system prompt includes schema
       const systemText = result.system
-        .filter(s => s.type === "text")
-        .map(s => s.text)
+        .filter((s) => s.type === "text")
+        .map((s) => s.text)
         .join("\n");
-      
+
       expect(systemText).toContain("You must respond with valid JSON");
-      expect(systemText).toContain("\"answer\"");
-      expect(systemText).toContain("\"explanation\"");
+      expect(systemText).toContain('"answer"');
+      expect(systemText).toContain('"explanation"');
       expect(systemText).toContain("Respond ONLY with the JSON object");
     });
 
@@ -53,8 +53,8 @@ describe("openaiToClaudeRequest", () => {
       const body = {
         messages: [{ role: "user", content: "Give me a JSON object" }],
         response_format: {
-          type: "json_object"
-        }
+          type: "json_object",
+        },
       };
 
       const result = openaiToClaudeRequest("claude-sonnet-4.5", body, false);
@@ -62,31 +62,31 @@ describe("openaiToClaudeRequest", () => {
       // Should have system array with instructions
       expect(result.system).toBeDefined();
       expect(Array.isArray(result.system)).toBe(true);
-      
+
       const systemText = result.system
-        .filter(s => s.type === "text")
-        .map(s => s.text)
+        .filter((s) => s.type === "text")
+        .map((s) => s.text)
         .join("\n");
-      
+
       expect(systemText).toContain("You must respond with valid JSON");
       expect(systemText).toContain("Respond ONLY with a JSON object");
     });
 
     it("should not modify system prompt when response_format is missing", () => {
       const body = {
-        messages: [{ role: "user", content: "Hello" }]
+        messages: [{ role: "user", content: "Hello" }],
       };
 
       const result = openaiToClaudeRequest("claude-sonnet-4.5", body, false);
 
       // Should have system but without JSON instructions
       expect(result.system).toBeDefined();
-      
+
       const systemText = result.system
-        .filter(s => s.type === "text")
-        .map(s => s.text)
+        .filter((s) => s.type === "text")
+        .map((s) => s.text)
         .join("\n");
-      
+
       // Should NOT contain JSON-specific instructions
       expect(systemText).not.toContain("You must respond with valid JSON");
     });
@@ -95,7 +95,7 @@ describe("openaiToClaudeRequest", () => {
       const body = {
         messages: [
           { role: "system", content: "You are a helpful math tutor." },
-          { role: "user", content: "What is 2+2?" }
+          { role: "user", content: "What is 2+2?" },
         ],
         response_format: {
           type: "json_schema",
@@ -103,21 +103,21 @@ describe("openaiToClaudeRequest", () => {
             schema: {
               type: "object",
               properties: {
-                result: { type: "number" }
-              }
-            }
-          }
-        }
+                result: { type: "number" },
+              },
+            },
+          },
+        },
       };
 
       const result = openaiToClaudeRequest("claude-sonnet-4.5", body, false);
 
       // Should preserve original system message
       const systemText = result.system
-        .filter(s => s.type === "text")
-        .map(s => s.text)
+        .filter((s) => s.type === "text")
+        .map((s) => s.text)
         .join("\n");
-      
+
       expect(systemText).toContain("You are a helpful math tutor");
       expect(systemText).toContain("You must respond with valid JSON");
     });
@@ -130,33 +130,39 @@ describe("openaiToClaudeResponse", () => {
     const chunk = {
       id: "chatcmpl-test",
       model: "gpt-test",
-      choices: [{
-        delta: {
-          tool_calls: [{
-            index: 0,
-            id: "call_read",
-            function: {
-              name: "Read",
-              arguments: JSON.stringify({
-                file_path: "/tmp/example.txt",
-                offset: 0,
-                limit: 120,
-                pages: ""
-              })
-            }
-          }]
-        }
-      }]
+      choices: [
+        {
+          delta: {
+            tool_calls: [
+              {
+                index: 0,
+                id: "call_read",
+                function: {
+                  name: "Read",
+                  arguments: JSON.stringify({
+                    file_path: "/tmp/example.txt",
+                    offset: 0,
+                    limit: 120,
+                    pages: "",
+                  }),
+                },
+              },
+            ],
+          },
+        },
+      ],
     };
 
     const result = openaiToClaudeResponse(chunk, state);
-    const inputDelta = result.find(event => event.delta?.type === "input_json_delta");
+    const inputDelta = result.find(
+      (event) => event.delta?.type === "input_json_delta",
+    );
 
     expect(inputDelta).toBeDefined();
     expect(JSON.parse(inputDelta.delta.partial_json)).toEqual({
       file_path: "/tmp/example.txt",
       offset: 0,
-      limit: 120
+      limit: 120,
     });
   });
 });

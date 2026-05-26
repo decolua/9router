@@ -44,6 +44,7 @@ npm install -g 9router
 ```
 
 **Benefits:**
+
 - ✅ Run from any directory
 - ✅ Simple command: `9router`
 - ✅ Auto-updates with `npm update -g 9router`
@@ -65,6 +66,7 @@ npx 9router
 ```
 
 **Benefits:**
+
 - ✅ Isolated per project
 - ✅ Version control per project
 - ✅ No global namespace pollution
@@ -82,6 +84,7 @@ npm start
 ```
 
 **Benefits:**
+
 - ✅ Latest development features
 - ✅ Contribute to development
 - ✅ Custom modifications
@@ -97,6 +100,7 @@ npm start
 ```
 
 **What happens:**
+
 1. Server starts on `http://localhost:20128`
 2. Dashboard opens automatically in browser
 3. Data directory created at `~/.9router`
@@ -105,9 +109,11 @@ npm start
 ### Dashboard Login
 
 **Default credentials:**
+
 - Password: `123456`
 
 **⚠️ Change password immediately:**
+
 1. Login to dashboard
 2. Settings → Change Password
 3. Use strong password
@@ -121,6 +127,7 @@ Dashboard → Settings → API Keys
 ```
 
 **Example API key format:**
+
 ```
 9r_1234567890abcdef1234567890abcdef
 ```
@@ -136,6 +143,7 @@ curl http://localhost:20128/health
 ```
 
 **Expected response:**
+
 ```json
 {
   "status": "ok",
@@ -151,6 +159,7 @@ curl http://localhost:20128/v1/models \
 ```
 
 **Expected response:**
+
 ```json
 {
   "object": "list",
@@ -208,6 +217,7 @@ export ENABLE_REQUEST_LOGS="false"
 **Default location:** `~/.9router`
 
 **Contents:**
+
 ```
 ~/.9router/
   ├── db.json           # Database (providers, combos, usage)
@@ -246,6 +256,7 @@ export PORT="3000"
 ### Port Already in Use
 
 **Error:**
+
 ```
 Error: listen EADDRINUSE: address already in use :::20128
 ```
@@ -269,6 +280,7 @@ kill -9 <PID>
 ### Permission Denied
 
 **Error:**
+
 ```
 Error: EACCES: permission denied, mkdir '/usr/local/lib/node_modules/9router'
 ```
@@ -289,6 +301,7 @@ npm install -g 9router
 ### Node.js Version Too Old
 
 **Error:**
+
 ```
 Error: The engine "node" is incompatible with this module
 ```
@@ -427,7 +440,7 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
         proxy_set_header Host $host;
-        
+
         # SSE support for streaming
         proxy_buffering off;
         proxy_read_timeout 86400;

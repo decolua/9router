@@ -17,7 +17,10 @@ export async function fetchSuggestedModels(fetcher) {
   if (cached && Date.now() < cached.expiresAt) return cached.data;
 
   try {
-    const params = new URLSearchParams({ url: fetcher.url, type: fetcher.type });
+    const params = new URLSearchParams({
+      url: fetcher.url,
+      type: fetcher.type,
+    });
     const res = await fetch(`/api/providers/suggested-models?${params}`);
     if (!res.ok) return [];
     const json = await res.json();

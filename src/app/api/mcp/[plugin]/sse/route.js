@@ -1,4 +1,8 @@
-import { registerSession, unregisterSession, findPlugin } from "@/lib/mcp/stdioSseBridge";
+import {
+  registerSession,
+  unregisterSession,
+  findPlugin,
+} from "@/lib/mcp/stdioSseBridge";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,7 +21,9 @@ export async function GET(request, { params }) {
       const send = (chunk) => controller.enqueue(encoder.encode(chunk));
       sid = registerSession(plugin, send);
       // MCP SSE handshake: tell client where to POST messages.
-      send(`event: endpoint\ndata: /api/mcp/${plugin}/message?sessionId=${sid}\n\n`);
+      send(
+        `event: endpoint\ndata: /api/mcp/${plugin}/message?sessionId=${sid}\n\n`,
+      );
     },
     cancel() {
       if (sid) unregisterSession(plugin, sid);

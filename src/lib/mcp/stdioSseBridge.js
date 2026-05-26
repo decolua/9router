@@ -5,7 +5,10 @@ const { spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const { LOCAL_STDIO_PLUGINS, ALLOWED_MCP_COMMANDS } = require("@/shared/constants/coworkPlugins");
+const {
+  LOCAL_STDIO_PLUGINS,
+  ALLOWED_MCP_COMMANDS,
+} = require("@/shared/constants/coworkPlugins");
 const { DATA_DIR } = require("@/lib/dataDir");
 
 const CUSTOM_FILE = path.join(DATA_DIR, "mcp", "customPlugins.json");
@@ -38,23 +41,47 @@ function collapseRepeated(text) {
   while (i < lines.length) {
     const line = lines[i];
     const m = line.match(/^(\s*)-\s*([a-zA-Z]+)\b/);
-    if (!m) { out.push(line); i++; continue; }
+    if (!m) {
+      out.push(line);
+      i++;
+      continue;
+    }
     const indent = m[1];
     const role = m[2];
     let j = i;
     while (j < lines.length) {
       const ln = lines[j];
       const mm = ln.match(/^(\s*)-\s*([a-zA-Z]+)\b/);
-      if (mm && mm[1] === indent && mm[2] === role) { j++; continue; }
-      if (ln.startsWith(`${indent} `) || ln.startsWith(`${indent}\t`)) { j++; continue; }
+      if (mm && mm[1] === indent && mm[2] === role) {
+        j++;
+        continue;
+      }
+      if (ln.startsWith(`${indent} `) || ln.startsWith(`${indent}\t`)) {
+        j++;
+        continue;
+      }
       break;
     }
     const groupLen = j - i;
     if (groupLen >= COLLAPSE_THRESHOLD) {
-      const headEnd = findNthSiblingEnd(lines, i, indent, role, COLLAPSE_KEEP_HEAD);
-      const tailStart = findLastNSiblingStart(lines, j, indent, role, COLLAPSE_KEEP_TAIL);
+      const headEnd = findNthSiblingEnd(
+        lines,
+        i,
+        indent,
+        role,
+        COLLAPSE_KEEP_HEAD,
+      );
+      const tailStart = findLastNSiblingStart(
+        lines,
+        j,
+        indent,
+        role,
+        COLLAPSE_KEEP_TAIL,
+      );
       for (let k = i; k < headEnd; k++) out.push(lines[k]);
-      out.push(`${indent}... [${groupLen - COLLAPSE_KEEP_HEAD - COLLAPSE_KEEP_TAIL} similar "${role}" items omitted by 9router bridge]`);
+      out.push(
+        `${indent}... [${groupLen - COLLAPSE_KEEP_HEAD - COLLAPSE_KEEP_TAIL} similar "${role}" items omitted by 9router bridge]`,
+      );
       for (let k = tailStart; k < j; k++) out.push(lines[k]);
     } else {
       for (let k = i; k < j; k++) out.push(lines[k]);
@@ -95,11 +122,16 @@ function filterFrame(line) {
     for (const item of content) {
       if (item?.type === "text" && typeof item.text === "string") {
         const filtered = smartFilterText(item.text);
-        if (filtered !== item.text) { item.text = filtered; mutated = true; }
+        if (filtered !== item.text) {
+          item.text = filtered;
+          mutated = true;
+        }
       }
     }
     return mutated ? JSON.stringify(msg) : line;
-  } catch { return line; }
+  } catch {
+    return line;
+  }
 }
 const getStore = () => {
   if (!globalThis[G_KEY]) globalThis[G_KEY] = new Map();
@@ -107,7 +139,8 @@ const getStore = () => {
 };
 
 const getCustomStore = () => {
-  if (!globalThis.__9routerCustomPlugins) globalThis.__9routerCustomPlugins = new Map();
+  if (!globalThis.__9routerCustomPlugins)
+    globalThis.__9routerCustomPlugins = new Map();
   return globalThis.__9routerCustomPlugins;
 };
 
@@ -124,26 +157,39 @@ function registerCustomPlugin(def) {
 }
 
 function findPlugin(name) {
-  const fromMem = getCustomStore().get(name) || LOCAL_STDIO_PLUGINS.find((p) => p.name === name);
+  const fromMem =
+    getCustomStore().get(name) ||
+    LOCAL_STDIO_PLUGINS.find((p) => p.name === name);
   if (fromMem) return fromMem;
   // Lazy-load custom plugins from disk (survives app restart); re-validate allowlist.
   try {
     const list = JSON.parse(fs.readFileSync(CUSTOM_FILE, "utf-8"));
-    const def = Array.isArray(list) ? list.find((p) => p.name === name && p.command) : null;
-    if (def && isAllowedCommand(def.command)) { getCustomStore().set(def.name, def); return def; }
-  } catch { /* file missing or invalid */ }
+    const def = Array.isArray(list)
+      ? list.find((p) => p.name === name && p.command)
+      : null;
+    if (def && isAllowedCommand(def.command)) {
+      getCustomStore().set(def.name, def);
+      return def;
+    }
+  } catch {
+    /* file missing or invalid */
+  }
   return null;
 }
 
 function getOrSpawn(name) {
   const store = getStore();
   let entry = store.get(name);
-  if (entry?.proc && !entry.proc.killed && entry.proc.exitCode === null) return entry;
+  if (entry?.proc && !entry.proc.killed && entry.proc.exitCode === null)
+    return entry;
 
   const plugin = findPlugin(name);
   if (!plugin) throw new Error(`Unknown local plugin: ${name}`);
 
-  const proc = spawn(plugin.command, plugin.args, { stdio: ["pipe", "pipe", "pipe"], env: process.env });
+  const proc = spawn(plugin.command, plugin.args, {
+    stdio: ["pipe", "pipe", "pipe"],
+    env: process.env,
+  });
   entry = { proc, sessions: new Map(), buffer: "" };
   store.set(name, entry);
 
@@ -157,12 +203,18 @@ function getOrSpawn(name) {
       if (!raw) continue;
       const line = filterFrame(raw);
       for (const send of entry.sessions.values()) {
-        try { send(`event: message\ndata: ${line}\n\n`); } catch { /* ignore broken pipe */ }
+        try {
+          send(`event: message\ndata: ${line}\n\n`);
+        } catch {
+          /* ignore broken pipe */
+        }
       }
     }
   });
 
-  proc.stderr.on("data", (d) => console.log(`[mcp:${name}]`, d.toString().trim()));
+  proc.stderr.on("data", (d) =>
+    console.log(`[mcp:${name}]`, d.toString().trim()),
+  );
   proc.on("exit", (code) => {
     console.log(`[mcp:${name}] exited`, code);
     store.delete(name);
@@ -186,7 +238,8 @@ function unregisterSession(name, sid) {
 
 function sendToChild(name, jsonRpc) {
   const entry = getStore().get(name);
-  if (!entry?.proc?.stdin?.writable) throw new Error(`Bridge not running: ${name}`);
+  if (!entry?.proc?.stdin?.writable)
+    throw new Error(`Bridge not running: ${name}`);
   entry.proc.stdin.write(`${JSON.stringify(jsonRpc)}\n`);
 }
 
@@ -195,4 +248,12 @@ function isRunning(name) {
   return !!(entry?.proc && !entry.proc.killed && entry.proc.exitCode === null);
 }
 
-module.exports = { getOrSpawn, registerSession, unregisterSession, sendToChild, isRunning, findPlugin, registerCustomPlugin };
+module.exports = {
+  getOrSpawn,
+  registerSession,
+  unregisterSession,
+  sendToChild,
+  isRunning,
+  findPlugin,
+  registerCustomPlugin,
+};

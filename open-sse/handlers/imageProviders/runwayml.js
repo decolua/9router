@@ -1,9 +1,15 @@
 // Runway ML — async submit + /tasks/{id} polling
-import { sleep, nowSec, sizeToAspectRatio, POLL_INTERVAL_MS, POLL_TIMEOUT_MS } from "./_base.js";
+import {
+  sleep,
+  nowSec,
+  sizeToAspectRatio,
+  POLL_INTERVAL_MS,
+  POLL_TIMEOUT_MS,
+} from "./_base.js";
 
 const BASE_URL = "https://api.dev.runwayml.com/v1";
 
-export default {
+const provider = {
   async: true,
   buildUrl: (model) => {
     // Image models (gen4_image*) → text_to_image; video models → image_to_video
@@ -13,7 +19,7 @@ export default {
     const key = creds?.apiKey || creds?.accessToken;
     return {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${key}`,
+      Authorization: `Bearer ${key}`,
       "X-Runway-Version": "2024-11-06",
     };
   },
@@ -21,9 +27,20 @@ export default {
     const isVideo = !model.includes("image");
     const ratio = sizeToAspectRatio(body.size);
     if (isVideo) {
-      return { promptText: body.prompt, model, ratio, duration: 5, ...(body.image ? { promptImage: body.image } : {}) };
+      return {
+        promptText: body.prompt,
+        model,
+        ratio,
+        duration: 5,
+        ...(body.image ? { promptImage: body.image } : {}),
+      };
     }
-    return { promptText: body.prompt, model, ratio, ...(body.image ? { referenceImages: [{ uri: body.image }] } : {}) };
+    return {
+      promptText: body.prompt,
+      model,
+      ratio,
+      ...(body.image ? { referenceImages: [{ uri: body.image }] } : {}),
+    };
   },
   async parseResponse(response, { headers }) {
     const { id } = await response.json();
@@ -36,12 +53,17 @@ export default {
       if (!r.ok) throw new Error(`Runway status ${r.status}`);
       const s = await r.json();
       if (s.status === "SUCCEEDED") return s;
-      if (s.status === "FAILED" || s.status === "CANCELLED") throw new Error(s.failure || "Runway task failed");
+      if (s.status === "FAILED" || s.status === "CANCELLED")
+        throw new Error(s.failure || "Runway task failed");
     }
     throw new Error("Runway polling timeout");
   },
   normalize: (responseBody) => {
-    const outputs = Array.isArray(responseBody.output) ? responseBody.output : [];
+    const outputs = Array.isArray(responseBody.output)
+      ? responseBody.output
+      : [];
     return { created: nowSec(), data: outputs.map((url) => ({ url })) };
   },
 };
+
+export default provider;

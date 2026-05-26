@@ -21,6 +21,7 @@ Request → 9Router → Check Tier 1 (Subscription)
 ### Hệ thống Fallback 3 tầng
 
 **Tier 1: SUBSCRIPTION (Chính)**
+
 - Claude Code (Pro/Max)
 - OpenAI Codex (Plus/Pro)
 - Gemini CLI (MIỄN PHÍ 180K/tháng)
@@ -30,6 +31,7 @@ Request → 9Router → Check Tier 1 (Subscription)
 **Mục tiêu**: Tối đa giá trị từ subscription đã trả tiền.
 
 **Tier 2: CHEAP (Backup)**
+
 - GLM-4.7 ($0.60/1M input)
 - MiniMax M2.1 ($0.20/1M input)
 - Kimi K2 ($9/tháng cố định)
@@ -37,6 +39,7 @@ Request → 9Router → Check Tier 1 (Subscription)
 **Mục tiêu**: Backup siêu rẻ khi hết quota subscription (~90% rẻ hơn ChatGPT API).
 
 **Tier 3: FREE (Khẩn cấp)**
+
 - iFlow (8 models)
 - Qwen (3 models)
 - Kiro (Claude MIỄN PHÍ)
@@ -148,6 +151,7 @@ Dashboard → Settings → Fallback Priority
 ```
 
 Ví dụ thứ tự tùy chỉnh:
+
 ```
 Tier 1: Gemini CLI → Claude Code → Codex
 Tier 2: MiniMax → GLM → Kimi
@@ -169,12 +173,14 @@ Dashboard → Settings → Notifications
 ### Ví dụ 1: Auto Fallback Cơ bản
 
 **Setup:**
+
 ```
 Model: cc/claude-opus-4-5-20251101
 Fallback: Auto (default 3-tier)
 ```
 
 **Hoạt động:**
+
 ```
 Morning (fresh quota):
   Request → cc/claude-opus-4-5 ✅
@@ -194,6 +200,7 @@ Late night (all paid quota out):
 ### Ví dụ 2: Định tuyến theo Ngân sách
 
 **Setup:**
+
 ```
 Dashboard → Settings:
   Daily budget: $2
@@ -202,6 +209,7 @@ Dashboard → Settings:
 ```
 
 **Hoạt động:**
+
 ```
 Day 1-15 (within budget):
   Requests → glm/glm-4.7 (cheap tier)
@@ -220,6 +228,7 @@ Next month (budget resets):
 ### Ví dụ 3: Chế độ Chỉ Subscription
 
 **Setup:**
+
 ```
 Dashboard → Settings:
   Auto Fallback: OFF
@@ -227,6 +236,7 @@ Dashboard → Settings:
 ```
 
 **Hoạt động:**
+
 ```
 Request → cc/claude-opus-4-5
   ✅ Quota available → Success
@@ -238,12 +248,14 @@ Request → cc/claude-opus-4-5
 ### Ví dụ 4: Chế độ Chỉ Free
 
 **Setup:**
+
 ```
 Model: if/kimi-k2-thinking
 Fallback: qw/qwen3-coder-plus → kr/claude-sonnet-4.5
 ```
 
 **Hoạt động:**
+
 ```
 All requests → Free tier only
 Cost: $0 forever
@@ -265,6 +277,7 @@ Strategy:
 ```
 
 **Ví dụ combo:**
+
 ```
 cc/claude-opus-4-5 → glm/glm-4.7 → if/kimi-k2-thinking
 ```
@@ -279,6 +292,7 @@ Strategy:
 ```
 
 **Ví dụ combo:**
+
 ```
 gc/gemini-3-flash-preview → glm/glm-4.7 → if/kimi-k2-thinking
 ```
@@ -293,6 +307,7 @@ Strategy:
 ```
 
 **Ví dụ combo:**
+
 ```
 cc/claude-opus-4-5 → cx/gpt-5.2-codex → glm/glm-4.7
 ```
@@ -307,6 +322,7 @@ Strategy:
 ```
 
 **Ví dụ combo:**
+
 ```
 cc/claude-opus-4-5 → glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2-thinking
 ```
@@ -319,16 +335,17 @@ cc/claude-opus-4-5 → glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2-think
 
 Lên kế hoạch usage quanh thời gian reset quota:
 
-| Provider | Quota Reset | Chiến lược |
-|----------|-------------|----------|
-| **Claude Code** | 5 giờ + hàng tuần | Dùng buổi sáng, quota mới |
-| **Codex** | 5 giờ + hàng tuần | Dùng sau khi hết quota Claude |
-| **Gemini CLI** | Hàng ngày (1K) + Hàng tháng (180K) | Dùng cả ngày |
-| **GLM-4.7** | Hàng ngày 10:00 AM | Dùng buổi tối, reset sáng hôm sau |
-| **MiniMax M2.1** | 5 giờ rolling | Dùng mọi lúc, theo rolling window |
-| **iFlow/Qwen/Kiro** | Không giới hạn | Backup khẩn cấp |
+| Provider            | Quota Reset                        | Chiến lược                        |
+| ------------------- | ---------------------------------- | --------------------------------- |
+| **Claude Code**     | 5 giờ + hàng tuần                  | Dùng buổi sáng, quota mới         |
+| **Codex**           | 5 giờ + hàng tuần                  | Dùng sau khi hết quota Claude     |
+| **Gemini CLI**      | Hàng ngày (1K) + Hàng tháng (180K) | Dùng cả ngày                      |
+| **GLM-4.7**         | Hàng ngày 10:00 AM                 | Dùng buổi tối, reset sáng hôm sau |
+| **MiniMax M2.1**    | 5 giờ rolling                      | Dùng mọi lúc, theo rolling window |
+| **iFlow/Qwen/Kiro** | Không giới hạn                     | Backup khẩn cấp                   |
 
 **Ví dụ lịch hàng ngày:**
+
 ```
 08:00 - 13:00: Claude Code (fresh 5h quota)
 13:00 - 18:00: Gemini CLI (1K/day quota)
@@ -367,7 +384,7 @@ Dashboard → Analytics:
     - 30M via Claude Code (subscription)
     - 15M via GLM-4.7 ($9)
     - 5M via iFlow (free)
-  
+
   Cost: $9 (vs $1000 on ChatGPT API)
   Savings: 99%
 ```
@@ -379,6 +396,7 @@ Dashboard → Analytics:
 **Issue: "All providers quota exhausted"**
 
 **Giải pháp:**
+
 1. Kiểm tra quota tracker trong dashboard
 2. Đợi quota reset (xem countdown)
 3. Thêm free tier vào fallback chain
@@ -387,6 +405,7 @@ Dashboard → Analytics:
 **Issue: "Too many fallback switches"**
 
 **Giải pháp:**
+
 1. Kiểm tra provider chính có down không
 2. Tăng giới hạn quota (upgrade subscription)
 3. Dùng model chính rẻ hơn (GLM thay vì Claude)
@@ -394,6 +413,7 @@ Dashboard → Analytics:
 **Issue: "Unexpected costs"**
 
 **Giải pháp:**
+
 1. Dashboard → Analytics → Xem usage
 2. Đặt giới hạn ngân sách hàng ngày/tháng
 3. Chuyển sang free tier cho task không quan trọng

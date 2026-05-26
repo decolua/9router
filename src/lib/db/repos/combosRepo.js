@@ -45,7 +45,14 @@ export async function createCombo(data) {
   };
   db.run(
     `INSERT INTO combos(id, name, kind, models, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
-    [combo.id, combo.name, combo.kind, stringifyJson(combo.models), combo.createdAt, combo.updatedAt]
+    [
+      combo.id,
+      combo.name,
+      combo.kind,
+      stringifyJson(combo.models),
+      combo.createdAt,
+      combo.updatedAt,
+    ],
   );
   return combo;
 }
@@ -56,10 +63,20 @@ export async function updateCombo(id, data) {
   db.transaction(() => {
     const row = db.get(`SELECT * FROM combos WHERE id = ?`, [id]);
     if (!row) return;
-    const merged = { ...rowToCombo(row), ...data, updatedAt: new Date().toISOString() };
+    const merged = {
+      ...rowToCombo(row),
+      ...data,
+      updatedAt: new Date().toISOString(),
+    };
     db.run(
       `UPDATE combos SET name = ?, kind = ?, models = ?, updatedAt = ? WHERE id = ?`,
-      [merged.name, merged.kind, stringifyJson(merged.models || []), merged.updatedAt, id]
+      [
+        merged.name,
+        merged.kind,
+        stringifyJson(merged.models || []),
+        merged.updatedAt,
+        id,
+      ],
     );
     result = merged;
   });

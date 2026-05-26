@@ -4,7 +4,7 @@ import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import {
   generateCursorBody,
   parseConnectRPCFrame,
-  extractTextFromResponse
+  extractTextFromResponse,
 } from "../utils/cursorProtobuf.js";
 import { buildCursorHeaders } from "../utils/cursorChecksum.js";
 import { estimateUsage } from "../utils/usageTracking.js";
@@ -33,7 +33,7 @@ const COMPRESS_FLAG = {
   NONE: 0x00,
   GZIP: 0x01,
   TRAILER: 0x02,
-  GZIP_TRAILER: 0x03
+  GZIP_TRAILER: 0x03,
 };
 
 const CURSOR_STREAM_DEBUG = process.env.CURSOR_STREAM_DEBUG === "1";
@@ -42,7 +42,9 @@ const debugLog = (...args) => {
 };
 
 function isComposerModel(model) {
-  const modelId = String(model || "").split("/").pop();
+  const modelId = String(model || "")
+    .split("/")
+    .pop();
   return /^composer(?:-|$)/i.test(modelId);
 }
 
@@ -84,11 +86,11 @@ function decompressPayload(payload, flags) {
           return zlib.inflateRawSync(payload);
         } catch (rawErr) {
           debugLog(
-            `[DECOMPRESS ERROR] flags=${flags}, payloadSize=${payload.length}, gzip=${gzipErr.message}, deflate=${deflateErr.message}, raw=${rawErr.message}`
+            `[DECOMPRESS ERROR] flags=${flags}, payloadSize=${payload.length}, gzip=${gzipErr.message}, deflate=${deflateErr.message}, raw=${rawErr.message}`,
           );
           debugLog(
             `[DECOMPRESS ERROR] First 50 bytes (hex):`,
-            payload.slice(0, 50).toString("hex")
+            payload.slice(0, 50).toString("hex"),
           );
           return payload;
         }
@@ -99,23 +101,27 @@ function decompressPayload(payload, flags) {
 }
 
 function createErrorResponse(jsonError) {
-  const errorMsg = jsonError?.error?.details?.[0]?.debug?.details?.title
-    || jsonError?.error?.details?.[0]?.debug?.details?.detail
-    || jsonError?.error?.message
-    || "API Error";
-  
+  const errorMsg =
+    jsonError?.error?.details?.[0]?.debug?.details?.title ||
+    jsonError?.error?.details?.[0]?.debug?.details?.detail ||
+    jsonError?.error?.message ||
+    "API Error";
+
   const isRateLimit = jsonError?.error?.code === "resource_exhausted";
-  
-  return new Response(JSON.stringify({
-    error: {
-      message: errorMsg,
-      type: isRateLimit ? "rate_limit_error" : "api_error",
-      code: jsonError?.error?.details?.[0]?.debug?.error || "unknown"
-    }
-  }), {
-    status: isRateLimit ? HTTP_STATUS.RATE_LIMITED : HTTP_STATUS.BAD_REQUEST,
-    headers: { "Content-Type": "application/json" }
-  });
+
+  return new Response(
+    JSON.stringify({
+      error: {
+        message: errorMsg,
+        type: isRateLimit ? "rate_limit_error" : "api_error",
+        code: jsonError?.error?.details?.[0]?.debug?.error || "unknown",
+      },
+    }),
+    {
+      status: isRateLimit ? HTTP_STATUS.RATE_LIMITED : HTTP_STATUS.BAD_REQUEST,
+      headers: { "Content-Type": "application/json" },
+    },
+  );
 }
 
 export class CursorExecutor extends BaseExecutor {
@@ -147,22 +153,35 @@ export class CursorExecutor extends BaseExecutor {
     const reasoningEffort = body.reasoning_effort || null;
     // Detect Claude Code UA to force Agent mode (issue #643)
     const ua = credentials?.rawHeaders?.["user-agent"] || "";
-    const forceAgentMode = ua.includes("claude-cli") || ua.includes("claude-code") || ua.includes("Claude Code");
-    return generateCursorBody(messages, model, tools, reasoningEffort, forceAgentMode);
+    const forceAgentMode =
+      ua.includes("claude-cli") ||
+      ua.includes("claude-code") ||
+      ua.includes("Claude Code");
+    return generateCursorBody(
+      messages,
+      model,
+      tools,
+      reasoningEffort,
+      forceAgentMode,
+    );
   }
 
   async makeFetchRequest(url, headers, body, signal, proxyOptions = null) {
-    const response = await proxyAwareFetch(url, {
-      method: "POST",
-      headers,
-      body,
-      signal
-    }, proxyOptions);
+    const response = await proxyAwareFetch(
+      url,
+      {
+        method: "POST",
+        headers,
+        body,
+        signal,
+      },
+      proxyOptions,
+    );
 
     return {
       status: response.status,
       headers: Object.fromEntries(response.headers.entries()),
-      body: Buffer.from(await response.arrayBuffer())
+      body: Buffer.from(await response.arrayBuffer()),
     };
   }
 
@@ -181,18 +200,23 @@ export class CursorExecutor extends BaseExecutor {
       let settled = false;
 
       // Ensure client is always closed on settle
-      const finish = (fn) => (...args) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(hangTimeout);
-        client.close();
-        fn(...args);
-      };
+      const finish =
+        (fn) =>
+        (...args) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(hangTimeout);
+          client.close();
+          fn(...args);
+        };
 
       // Hard timeout: close session if server never responds
-      const hangTimeout = setTimeout(finish(() => {
-        reject(new Error("HTTP/2 request timed out"));
-      }), HTTP2_TIMEOUT_MS);
+      const hangTimeout = setTimeout(
+        finish(() => {
+          reject(new Error("HTTP/2 request timed out"));
+        }),
+        HTTP2_TIMEOUT_MS,
+      );
 
       client.on("error", finish(reject));
 
@@ -201,18 +225,25 @@ export class CursorExecutor extends BaseExecutor {
         ":path": urlObj.pathname,
         ":authority": urlObj.host,
         ":scheme": "https",
-        ...headers
+        ...headers,
       });
 
-      req.on("response", (hdrs) => { responseHeaders = hdrs; });
-      req.on("data", (chunk) => { chunks.push(chunk); });
-      req.on("end", finish(() => {
-        resolve({
-          status: responseHeaders[":status"],
-          headers: responseHeaders,
-          body: Buffer.concat(chunks)
-        });
-      }));
+      req.on("response", (hdrs) => {
+        responseHeaders = hdrs;
+      });
+      req.on("data", (chunk) => {
+        chunks.push(chunk);
+      });
+      req.on(
+        "end",
+        finish(() => {
+          resolve({
+            status: responseHeaders[":status"],
+            headers: responseHeaders,
+            body: Buffer.concat(chunks),
+          });
+        }),
+      );
       req.on("error", finish(reject));
 
       if (signal) {
@@ -225,48 +256,83 @@ export class CursorExecutor extends BaseExecutor {
     });
   }
 
-  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
+  async execute({
+    model,
+    body,
+    stream,
+    credentials,
+    signal,
+    log,
+    proxyOptions = null,
+  }) {
     const url = this.buildUrl();
     const headers = this.buildHeaders(credentials);
-    const transformedBody = this.transformRequest(model, body, stream, credentials);
+    const transformedBody = this.transformRequest(
+      model,
+      body,
+      stream,
+      credentials,
+    );
 
     try {
-      const shouldForceFetch = proxyOptions?.enabled === true || proxyOptions?.connectionProxyEnabled === true || !!proxyOptions?.vercelRelayUrl;
-      const response = (http2 && !shouldForceFetch)
-        ? await this.makeHttp2Request(url, headers, transformedBody, signal)
-        : await this.makeFetchRequest(url, headers, transformedBody, signal, proxyOptions);
+      const shouldForceFetch =
+        proxyOptions?.enabled === true ||
+        proxyOptions?.connectionProxyEnabled === true ||
+        !!proxyOptions?.vercelRelayUrl;
+      const response =
+        http2 && !shouldForceFetch
+          ? await this.makeHttp2Request(url, headers, transformedBody, signal)
+          : await this.makeFetchRequest(
+              url,
+              headers,
+              transformedBody,
+              signal,
+              proxyOptions,
+            );
 
       if (response.status !== 200) {
         const errorText = response.body?.toString() || "Unknown error";
-        const errorResponse = new Response(JSON.stringify({
-          error: {
-            message: `[${response.status}]: ${errorText}`,
-            type: "invalid_request_error",
-            code: ""
-          }
-        }), {
-          status: response.status,
-          headers: { "Content-Type": "application/json" }
-        });
+        const errorResponse = new Response(
+          JSON.stringify({
+            error: {
+              message: `[${response.status}]: ${errorText}`,
+              type: "invalid_request_error",
+              code: "",
+            },
+          }),
+          {
+            status: response.status,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
         return { response: errorResponse, url, headers, transformedBody: body };
       }
 
-      const transformedResponse = stream !== false
-        ? this.transformProtobufToSSE(response.body, model, body)
-        : this.transformProtobufToJSON(response.body, model, body);
+      const transformedResponse =
+        stream !== false
+          ? this.transformProtobufToSSE(response.body, model, body)
+          : this.transformProtobufToJSON(response.body, model, body);
 
-      return { response: transformedResponse, url, headers, transformedBody: body };
+      return {
+        response: transformedResponse,
+        url,
+        headers,
+        transformedBody: body,
+      };
     } catch (error) {
-      const errorResponse = new Response(JSON.stringify({
-        error: {
-          message: error.message,
-          type: "connection_error",
-          code: ""
-        }
-      }), {
-        status: HTTP_STATUS.SERVER_ERROR,
-        headers: { "Content-Type": "application/json" }
-      });
+      const errorResponse = new Response(
+        JSON.stringify({
+          error: {
+            message: error.message,
+            type: "connection_error",
+            code: "",
+          },
+        }),
+        {
+          status: HTTP_STATUS.SERVER_ERROR,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
       return { response: errorResponse, url, headers, transformedBody: body };
     }
   }
@@ -288,7 +354,7 @@ export class CursorExecutor extends BaseExecutor {
     while (offset < buffer.length) {
       if (offset + 5 > buffer.length) {
         debugLog(
-          `[CURSOR BUFFER] Reached end, offset=${offset}, remaining=${buffer.length - offset}`
+          `[CURSOR BUFFER] Reached end, offset=${offset}, remaining=${buffer.length - offset}`,
         );
         break;
       }
@@ -297,12 +363,12 @@ export class CursorExecutor extends BaseExecutor {
       const length = buffer.readUInt32BE(offset + 1);
 
       debugLog(
-        `[CURSOR BUFFER] Frame ${frameCount + 1}: flags=0x${flags.toString(16).padStart(2, "0")}, length=${length}`
+        `[CURSOR BUFFER] Frame ${frameCount + 1}: flags=0x${flags.toString(16).padStart(2, "0")}, length=${length}`,
       );
 
       if (offset + 5 + length > buffer.length) {
         debugLog(
-          `[CURSOR BUFFER] Incomplete frame, offset=${offset}, length=${length}, buffer.length=${buffer.length}`
+          `[CURSOR BUFFER] Incomplete frame, offset=${offset}, length=${length}, buffer.length=${buffer.length}`,
         );
         break;
       }
@@ -313,7 +379,9 @@ export class CursorExecutor extends BaseExecutor {
 
       payload = decompressPayload(payload, flags);
       if (!payload) {
-        debugLog(`[CURSOR BUFFER] Frame ${frameCount}: decompression failed, skipping`);
+        debugLog(
+          `[CURSOR BUFFER] Frame ${frameCount}: decompression failed, skipping`,
+        );
         continue;
       }
 
@@ -324,7 +392,7 @@ export class CursorExecutor extends BaseExecutor {
           if (text.includes('"error"')) {
             const hasContent = totalContent || toolCallsMap.size > 0;
             debugLog(
-              `[CURSOR BUFFER] Error frame (hasContent=${hasContent}): ${text.slice(0, 500)}`
+              `[CURSOR BUFFER] Error frame (hasContent=${hasContent}): ${text.slice(0, 500)}`,
             );
             if (hasContent) {
               break;
@@ -339,7 +407,9 @@ export class CursorExecutor extends BaseExecutor {
 
       if (result.error) {
         const hasContent = totalContent || toolCallsMap.size > 0;
-        debugLog(`[CURSOR BUFFER] Decoded error (hasContent=${hasContent}): ${result.error}`);
+        debugLog(
+          `[CURSOR BUFFER] Decoded error (hasContent=${hasContent}): ${result.error}`,
+        );
         if (hasContent) {
           break;
         }
@@ -348,13 +418,13 @@ export class CursorExecutor extends BaseExecutor {
             error: {
               message: result.error,
               type: "rate_limit_error",
-              code: "rate_limited"
-            }
+              code: "rate_limited",
+            },
           }),
           {
             status: HTTP_STATUS.RATE_LIMITED,
-            headers: { "Content-Type": "application/json" }
-          }
+            headers: { "Content-Type": "application/json" },
+          },
         );
       }
 
@@ -380,8 +450,8 @@ export class CursorExecutor extends BaseExecutor {
             type: finalToolCall.type,
             function: {
               name: finalToolCall.function.name,
-              arguments: finalToolCall.function.arguments
-            }
+              arguments: finalToolCall.function.arguments,
+            },
           });
         }
       }
@@ -396,31 +466,32 @@ export class CursorExecutor extends BaseExecutor {
     const finalContent = totalContent || visibleComposerContent;
 
     debugLog(
-      `[CURSOR BUFFER] Parsed ${frameCount} frames, toolCallsMap size: ${toolCallsMap.size}, finalized toolCalls: ${toolCalls.length}`
+      `[CURSOR BUFFER] Parsed ${frameCount} frames, toolCallsMap size: ${toolCallsMap.size}, finalized toolCalls: ${toolCalls.length}`,
     );
 
     // Finalize all remaining tool calls in map (in case stream ended without isLast=true)
     for (const [id, tc] of toolCallsMap.entries()) {
       // Check if already in final array
       if (!finalizedIds.has(id)) {
-        debugLog(`[CURSOR BUFFER] Finalizing incomplete tool call: ${id}, isLast=${tc.isLast}`);
+        debugLog(
+          `[CURSOR BUFFER] Finalizing incomplete tool call: ${id}, isLast=${tc.isLast}`,
+        );
         toolCalls.push({
           id: tc.id,
           type: tc.type,
           function: {
             name: tc.function.name,
-            arguments: tc.function.arguments
-          }
+            arguments: tc.function.arguments,
+          },
         });
       }
     }
 
     debugLog(`[CURSOR BUFFER] Final toolCalls count: ${toolCalls.length}`);
 
-
     const message = {
       role: "assistant",
-      content: finalContent || null
+      content: finalContent || null,
     };
 
     if (toolCalls.length > 0) {
@@ -434,17 +505,19 @@ export class CursorExecutor extends BaseExecutor {
       object: "chat.completion",
       created,
       model,
-      choices: [{
-        index: 0,
-        message,
-        finish_reason: toolCalls.length > 0 ? "tool_calls" : "stop"
-      }],
-      usage
+      choices: [
+        {
+          index: 0,
+          message,
+          finish_reason: toolCalls.length > 0 ? "tool_calls" : "stop",
+        },
+      ],
+      usage,
     };
 
     return new Response(JSON.stringify(completion), {
       status: 200,
-      headers: { "Content-Type": "application/json" }
+      headers: { "Content-Type": "application/json" },
     });
   }
 
@@ -468,7 +541,7 @@ export class CursorExecutor extends BaseExecutor {
     while (offset < buffer.length) {
       if (offset + 5 > buffer.length) {
         debugLog(
-          `[CURSOR BUFFER SSE] Reached end, offset=${offset}, remaining=${buffer.length - offset}`
+          `[CURSOR BUFFER SSE] Reached end, offset=${offset}, remaining=${buffer.length - offset}`,
         );
         break;
       }
@@ -477,12 +550,12 @@ export class CursorExecutor extends BaseExecutor {
       const length = buffer.readUInt32BE(offset + 1);
 
       debugLog(
-        `[CURSOR BUFFER SSE] Frame ${frameCount + 1}: flags=0x${flags.toString(16).padStart(2, "0")}, length=${length}`
+        `[CURSOR BUFFER SSE] Frame ${frameCount + 1}: flags=0x${flags.toString(16).padStart(2, "0")}, length=${length}`,
       );
 
       if (offset + 5 + length > buffer.length) {
         debugLog(
-          `[CURSOR BUFFER SSE] Incomplete frame, offset=${offset}, length=${length}, buffer.length=${buffer.length}`
+          `[CURSOR BUFFER SSE] Incomplete frame, offset=${offset}, length=${length}, buffer.length=${buffer.length}`,
         );
         break;
       }
@@ -493,7 +566,9 @@ export class CursorExecutor extends BaseExecutor {
 
       payload = decompressPayload(payload, flags);
       if (!payload) {
-        debugLog(`[CURSOR BUFFER SSE] Frame ${frameCount}: decompression failed, skipping`);
+        debugLog(
+          `[CURSOR BUFFER SSE] Frame ${frameCount}: decompression failed, skipping`,
+        );
         continue;
       }
 
@@ -502,9 +577,10 @@ export class CursorExecutor extends BaseExecutor {
         try {
           const text = payload.toString("utf-8");
           if (text.includes('"error"')) {
-            const hasContent = chunks.length > 0 || totalContent || toolCallsMap.size > 0;
+            const hasContent =
+              chunks.length > 0 || totalContent || toolCallsMap.size > 0;
             debugLog(
-              `[CURSOR BUFFER SSE] Error frame (hasContent=${hasContent}): ${text.slice(0, 500)}`
+              `[CURSOR BUFFER SSE] Error frame (hasContent=${hasContent}): ${text.slice(0, 500)}`,
             );
             if (hasContent) {
               break;
@@ -518,8 +594,11 @@ export class CursorExecutor extends BaseExecutor {
       debugLog(`[CURSOR DECODED SSE] Frame ${frameCount}:`, result);
 
       if (result.error) {
-        const hasContent = chunks.length > 0 || totalContent || toolCallsMap.size > 0;
-        debugLog(`[CURSOR BUFFER SSE] Decoded error (hasContent=${hasContent}): ${result.error}`);
+        const hasContent =
+          chunks.length > 0 || totalContent || toolCallsMap.size > 0;
+        debugLog(
+          `[CURSOR BUFFER SSE] Decoded error (hasContent=${hasContent}): ${result.error}`,
+        );
         if (hasContent) {
           break;
         }
@@ -528,13 +607,13 @@ export class CursorExecutor extends BaseExecutor {
             error: {
               message: result.error,
               type: "rate_limit_error",
-              code: "rate_limited"
-            }
+              code: "rate_limited",
+            },
           }),
           {
             status: HTTP_STATUS.RATE_LIMITED,
-            headers: { "Content-Type": "application/json" }
-          }
+            headers: { "Content-Type": "application/json" },
+          },
         );
       }
 
@@ -552,10 +631,10 @@ export class CursorExecutor extends BaseExecutor {
                 {
                   index: 0,
                   delta: { role: "assistant", content: "" },
-                  finish_reason: null
-                }
-              ]
-            })}\n\n`
+                  finish_reason: null,
+                },
+              ],
+            })}\n\n`,
           );
         }
 
@@ -586,15 +665,15 @@ export class CursorExecutor extends BaseExecutor {
                           type: "function",
                           function: {
                             name: tc.function.name,
-                            arguments: tc.function.arguments
-                          }
-                        }
-                      ]
+                            arguments: tc.function.arguments,
+                          },
+                        },
+                      ],
                     },
-                    finish_reason: null
-                  }
-                ]
-              })}\n\n`
+                    finish_reason: null,
+                  },
+                ],
+              })}\n\n`,
             );
           }
         } else {
@@ -623,15 +702,15 @@ export class CursorExecutor extends BaseExecutor {
                         type: "function",
                         function: {
                           name: tc.function.name,
-                          arguments: tc.function.arguments
-                        }
-                      }
-                    ]
+                          arguments: tc.function.arguments,
+                        },
+                      },
+                    ],
                   },
-                  finish_reason: null
-                }
-              ]
-            })}\n\n`
+                  finish_reason: null,
+                },
+              ],
+            })}\n\n`,
           );
         }
       }
@@ -651,18 +730,21 @@ export class CursorExecutor extends BaseExecutor {
                   chunks.length === 0 && toolCalls.length === 0
                     ? { role: "assistant", content: result.text }
                     : { content: result.text },
-                finish_reason: null
-              }
-            ]
-          })}\n\n`
+                finish_reason: null,
+              },
+            ],
+          })}\n\n`,
         );
       }
 
       if (isComposerModel(model) && result.thinking) {
         totalThinking += result.thinking;
-        const visibleContent = visibleComposerContentFromThinking(totalThinking);
+        const visibleContent =
+          visibleComposerContentFromThinking(totalThinking);
         if (visibleContent.length > emittedComposerThinkingContentLength) {
-          const deltaContent = visibleContent.slice(emittedComposerThinkingContentLength);
+          const deltaContent = visibleContent.slice(
+            emittedComposerThinkingContentLength,
+          );
           emittedComposerThinkingContentLength = visibleContent.length;
           totalContent += deltaContent;
           chunks.push(
@@ -678,23 +760,25 @@ export class CursorExecutor extends BaseExecutor {
                     chunks.length === 0 && toolCalls.length === 0
                       ? { role: "assistant", content: deltaContent }
                       : { content: deltaContent },
-                  finish_reason: null
-                }
-              ]
-            })}\n\n`
+                  finish_reason: null,
+                },
+              ],
+            })}\n\n`,
           );
         }
       }
     }
 
     debugLog(
-      `[CURSOR BUFFER SSE] Parsed ${frameCount} frames, toolCallsMap size: ${toolCallsMap.size}, toolCalls array: ${toolCalls.length}`
+      `[CURSOR BUFFER SSE] Parsed ${frameCount} frames, toolCallsMap size: ${toolCallsMap.size}, toolCalls array: ${toolCalls.length}`,
     );
 
     // Finalize all remaining tool calls in map (stream may have ended without isLast=true)
     for (const [id, tc] of toolCallsMap.entries()) {
       if (!finalizedIds.has(id)) {
-        debugLog(`[CURSOR BUFFER SSE] Finalizing incomplete tool call: ${id}, isLast=${tc.isLast}`);
+        debugLog(
+          `[CURSOR BUFFER SSE] Finalizing incomplete tool call: ${id}, isLast=${tc.isLast}`,
+        );
         const toolCallIndex = toolCalls.length;
         toolCalls.push({
           id: tc.id,
@@ -702,8 +786,8 @@ export class CursorExecutor extends BaseExecutor {
           index: toolCallIndex,
           function: {
             name: tc.function.name,
-            arguments: tc.function.arguments
-          }
+            arguments: tc.function.arguments,
+          },
         });
 
         // Emit SSE chunk for the finalized tool call if not already emitted
@@ -725,15 +809,15 @@ export class CursorExecutor extends BaseExecutor {
                         type: "function",
                         function: {
                           name: tc.function.name,
-                          arguments: tc.function.arguments
-                        }
-                      }
-                    ]
+                          arguments: tc.function.arguments,
+                        },
+                      },
+                    ],
                   },
-                  finish_reason: null
-                }
-              ]
-            })}\n\n`
+                  finish_reason: null,
+                },
+              ],
+            })}\n\n`,
           );
         }
       }
@@ -750,10 +834,10 @@ export class CursorExecutor extends BaseExecutor {
             {
               index: 0,
               delta: { role: "assistant", content: "" },
-              finish_reason: null
-            }
-          ]
-        })}\n\n`
+              finish_reason: null,
+            },
+          ],
+        })}\n\n`,
       );
     }
 
@@ -769,11 +853,11 @@ export class CursorExecutor extends BaseExecutor {
           {
             index: 0,
             delta: {},
-            finish_reason: toolCalls.length > 0 ? "tool_calls" : "stop"
-          }
+            finish_reason: toolCalls.length > 0 ? "tool_calls" : "stop",
+          },
         ],
-        usage
-      })}\n\n`
+        usage,
+      })}\n\n`,
     );
     chunks.push("data: [DONE]\n\n");
 
@@ -782,8 +866,8 @@ export class CursorExecutor extends BaseExecutor {
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
-        "Connection": "keep-alive"
-      }
+        Connection: "keep-alive",
+      },
     });
   }
 

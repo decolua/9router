@@ -10,47 +10,49 @@ const getColorClasses = (remainingPercentage) => {
       text: "text-green-500",
       bg: "bg-green-500",
       bgLight: "bg-green-500/10",
-      emoji: "🟢"
+      emoji: "🟢",
     };
   }
-  
+
   if (remainingPercentage >= 30) {
     return {
       text: "text-yellow-500",
       bg: "bg-yellow-500",
       bgLight: "bg-yellow-500/10",
-      emoji: "🟡"
+      emoji: "🟡",
     };
   }
-  
+
   // 0-29% including 0% (out of quota) - show red
   return {
     text: "text-red-500",
     bg: "bg-red-500",
     bgLight: "bg-red-500/10",
-    emoji: "🔴"
+    emoji: "🔴",
   };
 };
 
 // Format reset time display
 const formatResetTimeDisplay = (resetTime) => {
   if (!resetTime) return null;
-  
+
   try {
     const resetDate = new Date(resetTime);
     const now = new Date();
     const isToday = resetDate.toDateString() === now.toDateString();
-    const isTomorrow = resetDate.toDateString() === new Date(now.getTime() + 86400000).toDateString();
-    
+    const isTomorrow =
+      resetDate.toDateString() ===
+      new Date(now.getTime() + 86400000).toDateString();
+
     const timeStr = resetDate.toLocaleTimeString(undefined, {
       hour: "2-digit",
       minute: "2-digit",
       hour12: true,
     });
-    
+
     if (isToday) return `Today, ${timeStr}`;
     if (isTomorrow) return `Tomorrow, ${timeStr}`;
-    
+
     return resetDate.toLocaleString(undefined, {
       month: "short",
       day: "numeric",
@@ -69,27 +71,23 @@ export default function QuotaProgressBar({
   used = 0,
   total = 0,
   unlimited = false,
-  resetTime = null
+  resetTime = null,
 }) {
   const colors = getColorClasses(percentage);
   const countdown = formatResetTime(resetTime);
   const resetDisplay = formatResetTimeDisplay(resetTime);
-  
+
   // percentage is already remaining percentage (from ProviderLimitCard)
   const remaining = percentage;
-  
+
   return (
     <div className="space-y-2">
       {/* Label and percentage */}
       <div className="flex items-center justify-between text-sm">
-        <span className="font-semibold text-text-primary">
-          {label}
-        </span>
+        <span className="font-semibold text-text-primary">{label}</span>
         <div className="flex items-center gap-1.5">
           <span className="text-xs">{colors.emoji}</span>
-          <span className={cn("font-medium", colors.text)}>
-            {remaining}%
-          </span>
+          <span className={cn("font-medium", colors.text)}>{remaining}%</span>
         </div>
       </div>
 

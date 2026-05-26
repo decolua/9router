@@ -33,26 +33,41 @@ curl $NINEROUTER_URL/v1/models/image-to-text    # vision
 Use `data[].id` as `model` field in requests. Combos appear with `owned_by:"combo"`.
 
 Response shape:
+
 ```json
-{ "object": "list", "data": [
-  { "id": "openai/gpt-5", "object": "model", "owned_by": "openai", "created": 1735000000 },
-  { "id": "tavily/search", "object": "model", "kind": "webSearch", "owned_by": "tavily", "created": 1735000000 }
-]}
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "openai/gpt-5",
+      "object": "model",
+      "owned_by": "openai",
+      "created": 1735000000
+    },
+    {
+      "id": "tavily/search",
+      "object": "model",
+      "kind": "webSearch",
+      "owned_by": "tavily",
+      "created": 1735000000
+    }
+  ]
+}
 ```
 
 ## Capability skills
 
 When the user needs a specific capability, fetch that skill's `SKILL.md` from its raw URL:
 
-| Capability | Raw URL |
-|---|---|
-| Chat / code-gen | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-chat/SKILL.md |
-| Image generation | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-image/SKILL.md |
-| Text-to-speech | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-tts/SKILL.md |
-| Speech-to-text | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-stt/SKILL.md |
-| Embeddings | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-embeddings/SKILL.md |
-| Web search | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-web-search/SKILL.md |
-| Web fetch (URL → markdown) | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-web-fetch/SKILL.md |
+| Capability                 | Raw URL                                                                                                |
+| -------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Chat / code-gen            | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-chat/SKILL.md       |
+| Image generation           | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-image/SKILL.md      |
+| Text-to-speech             | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-tts/SKILL.md        |
+| Speech-to-text             | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-stt/SKILL.md        |
+| Embeddings                 | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-embeddings/SKILL.md |
+| Web search                 | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-web-search/SKILL.md |
+| Web fetch (URL → markdown) | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-web-fetch/SKILL.md  |
 
 ## Errors
 

@@ -37,6 +37,7 @@ https://9router.com
 ```
 
 **步骤:**
+
 1. 在 Models 设置中找到 **Base URL** 字段
 2. 输入:`https://9router.com`
 3. 点击 **Save**
@@ -75,13 +76,13 @@ Custom Models: gpt-4, claude-opus-4-5, gemini-2.0-flash
 
 你可以使用 9Router 仪表盘中配置的任意模型。常见示例:
 
-| 模型名 | 提供商 | 描述 |
-|------------|----------|-------------|
-| `gpt-4` | OpenAI | GPT-4 Turbo |
-| `gpt-4o` | OpenAI | GPT-4 Optimized |
-| `claude-opus-4-5` | Anthropic | Claude Opus 4.5 |
+| 模型名              | 提供商    | 描述              |
+| ------------------- | --------- | ----------------- |
+| `gpt-4`             | OpenAI    | GPT-4 Turbo       |
+| `gpt-4o`            | OpenAI    | GPT-4 Optimized   |
+| `claude-opus-4-5`   | Anthropic | Claude Opus 4.5   |
 | `claude-sonnet-4-5` | Anthropic | Claude Sonnet 4.5 |
-| `gemini-2.0-flash` | Google | Gemini 2.0 Flash |
+| `gemini-2.0-flash`  | Google    | Gemini 2.0 Flash  |
 
 ## 使用
 

@@ -33,7 +33,7 @@ export class QoderService {
    */
   async exchangeCode(code, redirectUri) {
     const basicAuth = Buffer.from(
-      `${this.config.clientId}:${this.config.clientSecret}`
+      `${this.config.clientId}:${this.config.clientSecret}`,
     ).toString("base64");
 
     const response = await fetch(this.config.tokenUrl, {
@@ -65,7 +65,7 @@ export class QoderService {
    */
   async refreshToken(refreshToken) {
     const basicAuth = Buffer.from(
-      `${this.config.clientId}:${this.config.clientSecret}`
+      `${this.config.clientId}:${this.config.clientSecret}`,
     ).toString("base64");
 
     const response = await fetch(this.config.tokenUrl, {
@@ -97,7 +97,7 @@ export class QoderService {
   async getUserInfo(accessToken) {
     const response = await fetch(
       `${this.config.userInfoUrl}?accessToken=${encodeURIComponent(accessToken)}`,
-      { headers: { Accept: "application/json" } }
+      { headers: { Accept: "application/json" } },
     );
 
     if (!response.ok) {
@@ -206,7 +206,9 @@ export class QoderService {
       close();
 
       if (callbackParams.error) {
-        throw new Error(callbackParams.error_description || callbackParams.error);
+        throw new Error(
+          callbackParams.error_description || callbackParams.error,
+        );
       }
 
       if (!callbackParams.code) {
@@ -222,7 +224,9 @@ export class QoderService {
       spinner.text = "Saving tokens to server...";
       await this.saveTokens(tokens, userInfo);
 
-      spinner.succeed(`Qoder connected successfully! (${userInfo.email || userInfo.phone})`);
+      spinner.succeed(
+        `Qoder connected successfully! (${userInfo.email || userInfo.phone})`,
+      );
       return true;
     } catch (error) {
       spinner.fail(`Failed: ${error.message}`);

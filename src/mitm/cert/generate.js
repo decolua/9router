@@ -21,7 +21,7 @@ function getCertForDomain(domain) {
     const leafCert = generateLeafCert(domain, rootCA);
     return {
       key: leafCert.key,
-      cert: leafCert.cert
+      cert: leafCert.cert,
     };
   } catch (error) {
     console.error(`Failed to generate cert for ${domain}:`, error.message);

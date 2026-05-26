@@ -15,9 +15,13 @@ const MODEL = "moonshotai/Kimi-K2.6";
 
 describe("openaiToCommandCode — basic envelope", () => {
   it("returns the expected top-level envelope shape", () => {
-    const out = openaiToCommandCode(MODEL, {
-      messages: [{ role: "user", content: "hi" }],
-    }, true);
+    const out = openaiToCommandCode(
+      MODEL,
+      {
+        messages: [{ role: "user", content: "hi" }],
+      },
+      true,
+    );
 
     expect(out).toHaveProperty("threadId");
     expect(out).toHaveProperty("memory");
@@ -30,12 +34,16 @@ describe("openaiToCommandCode — basic envelope", () => {
 
 describe("openaiToCommandCode — system handling", () => {
   it("hoists system messages to params.system (string), not messages[]", () => {
-    const out = openaiToCommandCode(MODEL, {
-      messages: [
-        { role: "system", content: "You are concise." },
-        { role: "user", content: "hi" },
-      ],
-    }, true);
+    const out = openaiToCommandCode(
+      MODEL,
+      {
+        messages: [
+          { role: "system", content: "You are concise." },
+          { role: "user", content: "hi" },
+        ],
+      },
+      true,
+    );
 
     expect(typeof out.params.system).toBe("string");
     expect(out.params.system).toBe("You are concise.");
@@ -44,30 +52,42 @@ describe("openaiToCommandCode — system handling", () => {
   });
 
   it("joins multiple system messages with blank line", () => {
-    const out = openaiToCommandCode(MODEL, {
-      messages: [
-        { role: "system", content: "A" },
-        { role: "system", content: "B" },
-        { role: "user", content: "hi" },
-      ],
-    }, true);
+    const out = openaiToCommandCode(
+      MODEL,
+      {
+        messages: [
+          { role: "system", content: "A" },
+          { role: "system", content: "B" },
+          { role: "user", content: "hi" },
+        ],
+      },
+      true,
+    );
 
     expect(out.params.system).toBe("A\n\nB");
   });
 
   it("omits params.system when no system messages", () => {
-    const out = openaiToCommandCode(MODEL, {
-      messages: [{ role: "user", content: "hi" }],
-    }, true);
+    const out = openaiToCommandCode(
+      MODEL,
+      {
+        messages: [{ role: "user", content: "hi" }],
+      },
+      true,
+    );
     expect(out.params.system).toBeUndefined();
   });
 });
 
 describe("openaiToCommandCode — content shape", () => {
   it("MUST always emit content as Array (never string) for user", () => {
-    const out = openaiToCommandCode(MODEL, {
-      messages: [{ role: "user", content: "hello" }],
-    }, true);
+    const out = openaiToCommandCode(
+      MODEL,
+      {
+        messages: [{ role: "user", content: "hello" }],
+      },
+      true,
+    );
 
     const u = out.params.messages[0];
     expect(Array.isArray(u.content)).toBe(true);
@@ -75,12 +95,16 @@ describe("openaiToCommandCode — content shape", () => {
   });
 
   it("MUST always emit content as Array for assistant", () => {
-    const out = openaiToCommandCode(MODEL, {
-      messages: [
-        { role: "user", content: "a" },
-        { role: "assistant", content: "b" },
-      ],
-    }, true);
+    const out = openaiToCommandCode(
+      MODEL,
+      {
+        messages: [
+          { role: "user", content: "a" },
+          { role: "assistant", content: "b" },
+        ],
+      },
+      true,
+    );
     const a = out.params.messages[1];
     expect(Array.isArray(a.content)).toBe(true);
     expect(a.content[0]).toEqual({ type: "text", text: "b" });
@@ -88,20 +112,33 @@ describe("openaiToCommandCode — content shape", () => {
 });
 
 describe("openaiToCommandCode — tool role / tool-result (AI SDK)", () => {
-  it("converts role:\"tool\" to role:\"tool\" with tool-result block; output is {type:\"text\",value}", () => {
-    const out = openaiToCommandCode(MODEL, {
-      messages: [
-        { role: "user", content: "run X" },
-        {
-          role: "assistant",
-          content: null,
-          tool_calls: [
-            { id: "call_1", type: "function", function: { name: "do_x", arguments: "{\"a\":1}" } },
-          ],
-        },
-        { role: "tool", tool_call_id: "call_1", name: "do_x", content: "RESULT_OK" },
-      ],
-    }, true);
+  it('converts role:"tool" to role:"tool" with tool-result block; output is {type:"text",value}', () => {
+    const out = openaiToCommandCode(
+      MODEL,
+      {
+        messages: [
+          { role: "user", content: "run X" },
+          {
+            role: "assistant",
+            content: null,
+            tool_calls: [
+              {
+                id: "call_1",
+                type: "function",
+                function: { name: "do_x", arguments: '{"a":1}' },
+              },
+            ],
+          },
+          {
+            role: "tool",
+            tool_call_id: "call_1",
+            name: "do_x",
+            content: "RESULT_OK",
+          },
+        ],
+      },
+      true,
+    );
 
     const toolMsg = out.params.messages[out.params.messages.length - 1];
     expect(toolMsg.role).toBe("tool");
@@ -115,18 +152,26 @@ describe("openaiToCommandCode — tool role / tool-result (AI SDK)", () => {
 
 describe("openaiToCommandCode — assistant tool_calls / tool-call", () => {
   it("converts assistant.tool_calls[] into content blocks of type tool-call", () => {
-    const out = openaiToCommandCode(MODEL, {
-      messages: [
-        { role: "user", content: "go" },
-        {
-          role: "assistant",
-          content: null,
-          tool_calls: [
-            { id: "call_42", type: "function", function: { name: "search", arguments: "{\"q\":\"hi\"}" } },
-          ],
-        },
-      ],
-    }, true);
+    const out = openaiToCommandCode(
+      MODEL,
+      {
+        messages: [
+          { role: "user", content: "go" },
+          {
+            role: "assistant",
+            content: null,
+            tool_calls: [
+              {
+                id: "call_42",
+                type: "function",
+                function: { name: "search", arguments: '{"q":"hi"}' },
+              },
+            ],
+          },
+        ],
+      },
+      true,
+    );
 
     const asst = out.params.messages[1];
     expect(asst.role).toBe("assistant");
@@ -139,20 +184,28 @@ describe("openaiToCommandCode — assistant tool_calls / tool-call", () => {
 });
 
 describe("openaiToCommandCode — tools schema conversion", () => {
-  it("converts OpenAI {type:\"function\", function:{...}} to Anthropic plain {name, input_schema}", () => {
-    const out = openaiToCommandCode(MODEL, {
-      messages: [{ role: "user", content: "hi" }],
-      tools: [
-        {
-          type: "function",
-          function: {
-            name: "weather",
-            description: "Get weather",
-            parameters: { type: "object", properties: { city: { type: "string" } }, required: ["city"] },
+  it('converts OpenAI {type:"function", function:{...}} to Anthropic plain {name, input_schema}', () => {
+    const out = openaiToCommandCode(
+      MODEL,
+      {
+        messages: [{ role: "user", content: "hi" }],
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: "weather",
+              description: "Get weather",
+              parameters: {
+                type: "object",
+                properties: { city: { type: "string" } },
+                required: ["city"],
+              },
+            },
           },
-        },
-      ],
-    }, true);
+        ],
+      },
+      true,
+    );
 
     const t = out.params.tools[0];
     expect(t.name).toBe("weather");
@@ -163,19 +216,34 @@ describe("openaiToCommandCode — tools schema conversion", () => {
   });
 
   it("preserves description on converted tool", () => {
-    const out = openaiToCommandCode(MODEL, {
-      messages: [{ role: "user", content: "hi" }],
-      tools: [
-        { type: "function", function: { name: "ping", description: "Ping the server", parameters: { type: "object" } } },
-      ],
-    }, true);
+    const out = openaiToCommandCode(
+      MODEL,
+      {
+        messages: [{ role: "user", content: "hi" }],
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: "ping",
+              description: "Ping the server",
+              parameters: { type: "object" },
+            },
+          },
+        ],
+      },
+      true,
+    );
     expect(out.params.tools[0].description).toBe("Ping the server");
   });
 
   it("does not include tools field when input has none", () => {
-    const out = openaiToCommandCode(MODEL, {
-      messages: [{ role: "user", content: "hi" }],
-    }, true);
+    const out = openaiToCommandCode(
+      MODEL,
+      {
+        messages: [{ role: "user", content: "hi" }],
+      },
+      true,
+    );
     expect(out.params.tools).toBeUndefined();
   });
 });

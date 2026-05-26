@@ -47,7 +47,10 @@ const checkCodexInstalled = async () => {
     const isWindows = os.platform() === "win32";
     const command = isWindows ? "where codex" : "which codex";
     const env = isWindows
-      ? { ...process.env, PATH: `${process.env.APPDATA}\\npm;${process.env.PATH}` }
+      ? {
+          ...process.env,
+          PATH: `${process.env.APPDATA}\\npm;${process.env.PATH}`,
+        }
       : process.env;
     await execAsync(command, { windowsHide: true, env });
     return true;
@@ -76,14 +79,17 @@ const readConfig = async () => {
 // Check if config has 9Router settings
 const has9RouterConfig = (config) => {
   if (!config) return false;
-  return config.includes("model_provider = \"9router\"") || config.includes("[model_providers.9router]");
+  return (
+    config.includes('model_provider = "9router"') ||
+    config.includes("[model_providers.9router]")
+  );
 };
 
 // GET - Check codex CLI and read current settings
 export async function GET() {
   try {
     const isInstalled = await checkCodexInstalled();
-    
+
     if (!isInstalled) {
       return NextResponse.json({
         installed: false,
@@ -102,7 +108,10 @@ export async function GET() {
     });
   } catch (error) {
     console.log("Error checking codex settings:", error);
-    return NextResponse.json({ error: "Failed to check codex settings" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to check codex settings" },
+      { status: 500 },
+    );
   }
 }
 
@@ -110,9 +119,12 @@ export async function GET() {
 export async function POST(request) {
   try {
     const { baseUrl, apiKey, model, subagentModel } = await request.json();
-    
+
     if (!baseUrl || !apiKey || !model) {
-      return NextResponse.json({ error: "baseUrl, apiKey and model are required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "baseUrl, apiKey and model are required" },
+        { status: 400 },
+      );
     }
 
     const codexDir = getCodexDir();
@@ -126,7 +138,9 @@ export async function POST(request) {
     try {
       const existingConfig = await fs.readFile(configPath, "utf-8");
       parsed = parsedToWritable(parseTOML(existingConfig));
-    } catch { /* No existing config */ }
+    } catch {
+      /* No existing config */
+    }
 
     // Update only 9Router related fields (api_key goes to auth.json, not config.toml)
     parsed.model = model;
@@ -134,7 +148,9 @@ export async function POST(request) {
 
     // Update or create 9router provider section (no api_key - Codex reads from auth.json)
     // Ensure /v1 suffix is added only once
-    const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
+    const normalizedBaseUrl = baseUrl.endsWith("/v1")
+      ? baseUrl
+      : `${baseUrl}/v1`;
     setNestedSection(parsed, "model_providers.9router", {
       name: "9Router",
       base_url: normalizedBaseUrl,
@@ -157,8 +173,10 @@ export async function POST(request) {
     try {
       const existingAuth = await fs.readFile(authPath, "utf-8");
       authData = JSON.parse(existingAuth);
-    } catch { /* No existing auth */ }
-    
+    } catch {
+      /* No existing auth */
+    }
+
     // Force apikey mode (keep existing tokens untouched for ChatGPT login reuse)
     authData.OPENAI_API_KEY = apiKey;
     authData.auth_mode = "apikey";
@@ -171,7 +189,10 @@ export async function POST(request) {
     });
   } catch (error) {
     console.log("Error updating codex settings:", error);
-    return NextResponse.json({ error: "Failed to update codex settings" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to update codex settings" },
+      { status: 500 },
+    );
   }
 }
 
@@ -225,7 +246,9 @@ export async function DELETE() {
       } else {
         await fs.writeFile(authPath, JSON.stringify(authData, null, 2));
       }
-    } catch { /* No auth file */ }
+    } catch {
+      /* No auth file */
+    }
 
     return NextResponse.json({
       success: true,
@@ -233,6 +256,9 @@ export async function DELETE() {
     });
   } catch (error) {
     console.log("Error resetting codex settings:", error);
-    return NextResponse.json({ error: "Failed to reset codex settings" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to reset codex settings" },
+      { status: 500 },
+    );
   }
 }

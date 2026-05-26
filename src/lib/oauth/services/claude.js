@@ -110,15 +110,18 @@ export class ClaudeService extends OAuthService {
       spinner.text = "Starting local server...";
 
       // Authenticate and get authorization code
-      const { code, state, codeVerifier, redirectUri } = await this.authenticate(
-        "Claude",
-        this.buildClaudeAuthUrl.bind(this)
-      );
+      const { code, state, codeVerifier, redirectUri } =
+        await this.authenticate("Claude", this.buildClaudeAuthUrl.bind(this));
 
       spinner.start("Exchanging code for tokens...");
 
       // Exchange code for tokens
-      const tokens = await this.exchangeClaudeCode(code, redirectUri, codeVerifier, state);
+      const tokens = await this.exchangeClaudeCode(
+        code,
+        redirectUri,
+        codeVerifier,
+        state,
+      );
 
       spinner.text = "Saving tokens to server...";
 
@@ -133,4 +136,3 @@ export class ClaudeService extends OAuthService {
     }
   }
 }
-
