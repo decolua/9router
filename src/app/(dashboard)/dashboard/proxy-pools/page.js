@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { Badge, Button, Card, CardSkeleton, Input, Modal, Toggle, ConfirmModal } from "@/shared/components";
 import { useNotificationStore } from "@/store/notificationStore";
 
@@ -33,10 +33,15 @@ export default function ProxyPoolsPage() {
   const [showFormModal, setShowFormModal] = useState(false);
   const [showBatchImportModal, setShowBatchImportModal] = useState(false);
   const [showVercelModal, setShowVercelModal] = useState(false);
+  const [showCloudflareModal, setShowCloudflareModal] = useState(false);
+  const [showDenoModal, setShowDenoModal] = useState(false);
+  const [showRelayMenu, setShowRelayMenu] = useState(false);
   const [editingProxyPool, setEditingProxyPool] = useState(null);
   const [formData, setFormData] = useState(normalizeFormData());
   const [batchImportText, setBatchImportText] = useState("");
   const [vercelForm, setVercelForm] = useState({ vercelToken: "", projectName: "vercel-relay" });
+  const [cloudflareForm, setCloudflareForm] = useState({ accountId: "", apiToken: "", projectName: "cloudflare-relay" });
+  const [denoForm, setDenoForm] = useState({ denoToken: "", orgDomain: "", projectName: "" });
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
   const [deploying, setDeploying] = useState(false);
@@ -46,7 +51,20 @@ export default function ProxyPoolsPage() {
   const [healthProgress, setHealthProgress] = useState({ current: 0, total: 0 });
   const [bulkBusy, setBulkBusy] = useState(false);
   const [confirmState, setConfirmState] = useState(null);
+  const relayMenuRef = useRef(null);
   const notify = useNotificationStore();
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (relayMenuRef.current && !relayMenuRef.current.contains(e.target)) {
+        setShowRelayMenu(false);
+      }
+    };
+    if (showRelayMenu) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showRelayMenu]);
 
   const fetchProxyPools = useCallback(async () => {
     try {
@@ -334,6 +352,26 @@ export default function ProxyPoolsPage() {
     setShowVercelModal(false);
   };
 
+  const openCloudflareModal = () => {
+    setCloudflareForm({ accountId: "", apiToken: "", projectName: "cloudflare-relay" });
+    setShowCloudflareModal(true);
+  };
+
+  const closeCloudflareModal = () => {
+    if (deploying) return;
+    setShowCloudflareModal(false);
+  };
+
+  const openDenoModal = () => {
+    setDenoForm({ denoToken: "", orgDomain: "", projectName: "" });
+    setShowDenoModal(true);
+  };
+
+  const closeDenoModal = () => {
+    if (deploying) return;
+    setShowDenoModal(false);
+  };
+
   const handleVercelDeploy = async () => {
     if (!vercelForm.vercelToken.trim()) return;
     setDeploying(true);
@@ -353,6 +391,56 @@ export default function ProxyPoolsPage() {
       }
     } catch (error) {
       console.log("Error deploying Vercel relay:", error);
+      notify.error("Deploy failed");
+    } finally {
+      setDeploying(false);
+    }
+  };
+
+  const handleCloudflareDeploy = async () => {
+    if (!cloudflareForm.accountId.trim() || !cloudflareForm.apiToken.trim()) return;
+    setDeploying(true);
+    try {
+      const res = await fetch("/api/proxy-pools/cloudflare-deploy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(cloudflareForm),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        await fetchProxyPools();
+        closeCloudflareModal();
+        notify.success(`Deployed: ${data.deployUrl}`);
+      } else {
+        notify.error(data.error || "Deploy failed");
+      }
+    } catch (error) {
+      console.log("Error deploying Cloudflare relay:", error);
+      notify.error("Deploy failed");
+    } finally {
+      setDeploying(false);
+    }
+  };
+
+  const handleDenoDeploy = async () => {
+    if (!denoForm.denoToken.trim()) return;
+    setDeploying(true);
+    try {
+      const res = await fetch("/api/proxy-pools/deno-deploy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(denoForm),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        await fetchProxyPools();
+        closeDenoModal();
+        notify.success(`Deployed: ${data.deployUrl}`);
+      } else {
+        notify.error(data.error || "Deploy failed");
+      }
+    } catch (error) {
+      console.log("Error deploying Deno relay:", error);
       notify.error("Deploy failed");
     } finally {
       setDeploying(false);
@@ -489,15 +577,58 @@ export default function ProxyPoolsPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-xl font-semibold sm:text-2xl">Proxy Pools</h1>
-          <p className="text-sm text-text-muted mt-1">
-            Manage reusable per-connection proxies and bind them to provider connections.
-          </p>
         </div>
 
         <div className="grid grid-cols-1 gap-2 sm:flex sm:items-center">
-          <Button size="sm" variant="secondary" icon="cloud_upload" onClick={openVercelModal}>
-            Vercel Relay
-          </Button>
+          <div className="relative" ref={relayMenuRef}>
+            <Button
+              size="sm"
+              variant="secondary"
+              icon="rocket_launch"
+              onClick={() => setShowRelayMenu(!showRelayMenu)}
+            >
+              Deploy Relay
+              <span className="material-symbols-outlined ml-1 text-[18px]">
+                {showRelayMenu ? "expand_less" : "expand_more"}
+              </span>
+            </Button>
+
+            {showRelayMenu && (
+              <div className="absolute left-0 top-full z-50 mt-1 w-48 rounded-xl border border-black/10 bg-white p-1 shadow-xl dark:border-white/10 dark:bg-zinc-900 sm:left-auto sm:right-0">
+                <button
+                  onClick={() => {
+                    openCloudflareModal();
+                    setShowRelayMenu(false);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-text-main transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                >
+                  <span className="material-symbols-outlined text-[20px] text-orange-500">cloud</span>
+                  Cloudflare Relay
+                </button>
+                <button
+                  onClick={() => {
+                    openVercelModal();
+                    setShowRelayMenu(false);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-text-main transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                >
+                  <span className="material-symbols-outlined text-[20px] text-blue-500">cloud_upload</span>
+                  Vercel Relay
+                </button>
+                <button
+                  onClick={() => {
+                    openDenoModal();
+                    setShowRelayMenu(false);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-text-main transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                >
+                  <span className="material-symbols-outlined text-[20px] text-green-500">terminal</span>
+                  Deno Relay
+                </button>
+              </div>
+            )}
+          </div>
+
           <Button size="sm" variant="secondary" icon="upload" onClick={openBatchImportModal}>
             Batch Import
           </Button>
@@ -587,6 +718,9 @@ export default function ProxyPoolsPage() {
                     </Badge>
                     {pool.type === "vercel" && (
                       <Badge variant="default" size="sm">vercel relay</Badge>
+                    )}
+                    {pool.type === "cloudflare" && (
+                      <Badge variant="default" size="sm">cloudflare relay</Badge>
                     )}
                     <Badge variant="default" size="sm">
                       {pool.boundConnectionCount || 0} bound
@@ -716,6 +850,134 @@ export default function ProxyPoolsPage() {
               {deploying ? "Deploying... (may take ~1 min)" : "Deploy"}
             </Button>
             <Button fullWidth variant="ghost" onClick={closeVercelModal} disabled={deploying}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={showCloudflareModal}
+        title="Deploy Cloudflare Relay"
+        onClose={closeCloudflareModal}
+      >
+        <div className="flex flex-col gap-4">
+          <div className="rounded-lg bg-orange-500/5 border border-orange-500/10 p-3 flex flex-col gap-1.5">
+            <p className="text-sm text-text-main font-medium">What is Cloudflare Relay?</p>
+            <p className="text-xs text-text-muted">
+              Deploys a Cloudflare Worker as a proxy relay. All AI provider requests will be forwarded through Cloudflare&apos;s global edge network.
+            </p>
+            <ul className="text-xs text-text-muted list-disc pl-4 space-y-0.5">
+              <li>High performance global routing and IP masking via Cloudflare Workers</li>
+              <li>Free tier: 100,000 requests per day</li>
+              <li>Requires Cloudflare Account ID and a Workers API Token (Edit Workers permission)</li>
+            </ul>
+            <div className="mt-2 pt-2 border-t border-orange-500/10 text-xs text-text-muted">
+              <p className="font-medium text-text-main mb-1">How to generate your API Token:</p>
+              <ol className="list-decimal pl-4 space-y-0.5">
+                <li>Go to <b>My Profile</b> → <b>API Tokens</b> → <b>Create Token</b></li>
+                <li>Scroll down to <b>Custom Token</b> and click <b>Get started</b></li>
+                <li>Under <b>Permissions</b>: Account | Workers Scripts | Edit</li>
+                <li>Under <b>Account Resources</b>: Include | Account | <i>Your Account Name</i></li>
+                <li>Click <b>Continue to summary</b> → <b>Create Token</b></li>
+              </ol>
+            </div>
+          </div>
+          <Input
+            label="Account ID"
+            value={cloudflareForm.accountId}
+            onChange={(e) => setCloudflareForm((prev) => ({ ...prev, accountId: e.target.value }))}
+            placeholder="your-cloudflare-account-id"
+            hint={<>Found on the right side of the Cloudflare dashboard overview page.</>}
+          />
+          <Input
+            label="API Token"
+            value={cloudflareForm.apiToken}
+            onChange={(e) => setCloudflareForm((prev) => ({ ...prev, apiToken: e.target.value }))}
+            placeholder="your-cloudflare-api-token"
+            hint={<>Requires "Workers Scripts: Edit" permission. <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Get token →</a></>}
+            type="password"
+          />
+          <Input
+            label="Worker Name"
+            value={cloudflareForm.projectName}
+            onChange={(e) => setCloudflareForm((prev) => ({ ...prev, projectName: e.target.value }))}
+            placeholder="my-relay"
+            hint="Unique name for your Cloudflare Worker. Leave empty for auto-generated name."
+          />
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <Button
+              fullWidth
+              onClick={handleCloudflareDeploy}
+              disabled={!cloudflareForm.accountId.trim() || !cloudflareForm.apiToken.trim() || deploying}
+            >
+              {deploying ? "Deploying..." : "Deploy Worker"}
+            </Button>
+            <Button fullWidth variant="ghost" onClick={closeCloudflareModal} disabled={deploying}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={showDenoModal}
+        title="Deploy Deno Relay"
+        onClose={closeDenoModal}
+      >
+        <div className="flex flex-col gap-4">
+          <div className="rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 p-3 flex flex-col gap-1.5">
+            <p className="text-sm text-text-main font-medium">What is Deno Relay?</p>
+            <p className="text-xs text-text-muted">
+              Deploys a relay worker to Deno Deploy&apos;s global edge network. All AI provider requests are forwarded through Deno&apos;s edge, masking your real IP.
+            </p>
+            <ul className="text-xs text-text-muted list-disc pl-4 space-y-0.5">
+              <li>Deno Deploy v2 runs on a high-performance global edge network</li>
+              <li>Free tier: 1M requests & 100GiB outbound traffic per month</li>
+              <li>No per-request CPU time limits (unlike Vercel/Cloudflare)</li>
+              <li>Support up to 20 active apps & 50 custom domains</li>
+              <li>Deploy multiple relays for maximum IP diversity</li>
+            </ul>
+            <div className="mt-2 pt-2 border-t border-black/10 dark:border-white/10 text-xs text-text-muted">
+              <p className="font-medium text-text-main mb-1">How to generate API token:</p>
+              <ol className="list-decimal pl-4 space-y-0.5">
+                <li>Go to <b>console.deno.com</b></li>
+                <li>Select your <b>Organization</b> → <b>Settings</b> → <b>Organization Tokens</b></li>
+                <li>Create a <b>Organization Token</b> (prefix <b>ddo_</b>)</li>
+              </ol>
+            </div>
+          </div>
+          <Input
+            label="Deno Deploy API Token"
+            value={denoForm.denoToken}
+            onChange={(e) => setDenoForm((prev) => ({ ...prev, denoToken: e.target.value }))}
+            placeholder="ddo_xxxxxxxxxxxxxxxx"
+            hint={<>Token is used once for deployment, not stored. Found in Organization Settings.</>}
+            type="password"
+          />
+          <Input
+            label="Organization Domain"
+            value={denoForm.orgDomain}
+            onChange={(e) => setDenoForm((prev) => ({ ...prev, orgDomain: e.target.value }))}
+            placeholder="your-org.deno.net"
+            hint="Organization's default domain. Your relay URL will be in the format: https://my-relay.your-org.deno.net"
+          />
+          <Input
+            label="App Name"
+            value={denoForm.projectName}
+            onChange={(e) => setDenoForm((prev) => ({ ...prev, projectName: e.target.value }))}
+            placeholder="deno-relay"
+            hint="Unique app name. Leave empty for auto-generated name."
+          />
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <Button
+              fullWidth
+              onClick={handleDenoDeploy}
+              disabled={!denoForm.denoToken.trim() || !denoForm.orgDomain.trim() || deploying}
+            >
+              {deploying ? "Deploying..." : "Deploy Relay"}
+            </Button>
+            <Button fullWidth variant="ghost" onClick={closeDenoModal} disabled={deploying}>
               Cancel
             </Button>
           </div>

@@ -92,12 +92,14 @@ export const PROVIDER_MODELS = {
     { id: "iflow-rome-30ba3b", name: "iFlow ROME" },
   ],
   ag: [  // Antigravity - special case: models call different backends
-    { id: "gemini-3.1-pro-high", name: "Gemini 3 Pro High" },
-    { id: "gemini-3.1-pro-low", name: "Gemini 3 Pro Low" },
-    { id: "gemini-3-flash", name: "Gemini 3 Flash", thinking: false }, // AG strips thinking for this model
-    { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
-    { id: "claude-opus-4-6-thinking", name: "Claude Opus 4.6 Thinking" },
-    { id: "gpt-oss-120b-medium", name: "GPT OSS 120B Medium" },
+    { id: "gemini-3-flash-agent", name: "Gemini 3.5 Flash (High)" },
+    { id: "gemini-3.5-flash-low", name: "Gemini 3.5 Flash (Medium)" },
+    { id: "gemini-pro-agent", name: "Gemini 3.1 Pro (High)" },
+    { id: "gemini-3.1-pro-low", name: "Gemini 3.1 Pro (Low)" },
+    { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6 (Thinking)" },
+    { id: "claude-opus-4-6-thinking", name: "Claude Opus 4.6 (Thinking)" },
+    { id: "gpt-oss-120b-medium", name: "GPT-OSS 120B (Medium)" },
+    { id: "gemini-3-flash", name: "Gemini 3 Flash", thinking: false }, // command model; AG strips thinking
   ],
   gh: [  // GitHub Copilot - OpenAI models
     { id: "gpt-3.5-turbo", name: "GPT-3.5 Turbo" },

@@ -73,8 +73,6 @@ const LOCAL_ONLY_PATHS = [
   "/api/tunnel/tailscale-install",
   "/api/tunnel/tailscale-enable",
   "/api/tunnel/tailscale-disable",
-  "/api/tunnel/tailscale-login",
-  "/api/tunnel/tailscale-start-daemon",
   "/api/tunnel/tailscale-check",
   "/api/tunnel/enable",
   "/api/tunnel/disable",
