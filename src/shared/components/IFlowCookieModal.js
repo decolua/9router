@@ -56,13 +56,21 @@ export default function IFlowCookieModal({ isOpen, onSuccess, onClose }) {
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} title="iFlow Cookie Authentication">
+    <Modal
+      isOpen={isOpen}
+      onClose={handleClose}
+      title="iFlow Cookie Authentication"
+    >
       <div className="space-y-4">
         {success ? (
           <div className="text-center py-8">
             <div className="text-6xl mb-4">✅</div>
-            <p className="text-lg font-medium text-text-primary">Authentication Successful!</p>
-            <p className="text-sm text-text-muted mt-2">Fresh API key obtained</p>
+            <p className="text-lg font-medium text-text-primary">
+              Authentication Successful!
+            </p>
+            <p className="text-sm text-text-muted mt-2">
+              Fresh API key obtained
+            </p>
           </div>
         ) : (
           <>
@@ -79,7 +87,9 @@ export default function IFlowCookieModal({ isOpen, onSuccess, onClose }) {
                 </a>
               </p>
               <div className="bg-surface-secondary p-3 rounded-lg text-xs space-y-2">
-                <p className="font-medium text-text-primary">How to get cookie:</p>
+                <p className="font-medium text-text-primary">
+                  How to get cookie:
+                </p>
                 <ol className="list-decimal list-inside space-y-1 text-text-muted">
                   <li>Open platform.iflow.cn in your browser</li>
                   <li>Login to your account</li>
@@ -111,7 +121,12 @@ export default function IFlowCookieModal({ isOpen, onSuccess, onClose }) {
             )}
 
             <div className="flex gap-3 pt-2">
-              <Button variant="secondary" onClick={handleClose} disabled={loading} fullWidth>
+              <Button
+                variant="secondary"
+                onClick={handleClose}
+                disabled={loading}
+                fullWidth
+              >
                 Cancel
               </Button>
               <Button onClick={handleSubmit} loading={loading} fullWidth>

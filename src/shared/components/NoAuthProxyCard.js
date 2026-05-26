@@ -17,15 +17,24 @@ export default function NoAuthProxyCard({ providerId }) {
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      fetch("/api/proxy-pools?isActive=true", { cache: "no-store" }).then((r) => r.ok ? r.json() : { proxyPools: [] }),
-      fetch("/api/settings", { cache: "no-store" }).then((r) => r.ok ? r.json() : {}),
-    ]).then(([poolData, settingsData]) => {
-      if (cancelled) return;
-      setProxyPools(poolData.proxyPools || []);
-      const override = (settingsData.providerStrategies || {})[providerId] || {};
-      setProxyPoolId(override.proxyPoolId || NONE_PROXY_POOL_VALUE);
-    }).catch(() => {});
-    return () => { cancelled = true; };
+      fetch("/api/proxy-pools?isActive=true", { cache: "no-store" }).then(
+        (r) => (r.ok ? r.json() : { proxyPools: [] }),
+      ),
+      fetch("/api/settings", { cache: "no-store" }).then((r) =>
+        r.ok ? r.json() : {},
+      ),
+    ])
+      .then(([poolData, settingsData]) => {
+        if (cancelled) return;
+        setProxyPools(poolData.proxyPools || []);
+        const override =
+          (settingsData.providerStrategies || {})[providerId] || {};
+        setProxyPoolId(override.proxyPoolId || NONE_PROXY_POOL_VALUE);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [providerId]);
 
   const handleChange = async (newValue) => {
@@ -59,13 +68,22 @@ export default function NoAuthProxyCard({ providerId }) {
     <Card>
       <div className="flex items-center gap-3 mb-4">
         <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-green-500/10 text-green-500">
-          <span className="material-symbols-outlined text-[20px]">lock_open</span>
+          <span className="material-symbols-outlined text-[20px]">
+            lock_open
+          </span>
         </div>
         <div className="flex-1">
           <p className="text-sm font-medium">No authentication required</p>
-          <p className="text-xs text-text-muted">This provider is ready to use. Optionally route requests through a proxy pool to bypass IP-based limits.</p>
+          <p className="text-xs text-text-muted">
+            This provider is ready to use. Optionally route requests through a
+            proxy pool to bypass IP-based limits.
+          </p>
         </div>
-        {savedFlash && <Badge variant="success" size="sm">Saved</Badge>}
+        {savedFlash && (
+          <Badge variant="success" size="sm">
+            Saved
+          </Badge>
+        )}
       </div>
       <Select
         label="Proxy Pool"

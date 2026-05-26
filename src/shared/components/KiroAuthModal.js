@@ -116,7 +116,9 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
               className="w-full p-4 text-left border border-border rounded-lg hover:bg-sidebar transition-colors"
             >
               <div className="flex items-start gap-3">
-                <span className="material-symbols-outlined text-primary mt-0.5">shield</span>
+                <span className="material-symbols-outlined text-primary mt-0.5">
+                  shield
+                </span>
                 <div className="flex-1">
                   <h3 className="font-semibold mb-1">AWS Builder ID</h3>
                   <p className="text-sm text-text-muted">
@@ -132,9 +134,13 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
               className="w-full p-4 text-left border border-border rounded-lg hover:bg-sidebar transition-colors"
             >
               <div className="flex items-start gap-3">
-                <span className="material-symbols-outlined text-primary mt-0.5">business</span>
+                <span className="material-symbols-outlined text-primary mt-0.5">
+                  business
+                </span>
                 <div className="flex-1">
-                  <h3 className="font-semibold mb-1">AWS IAM Identity Center</h3>
+                  <h3 className="font-semibold mb-1">
+                    AWS IAM Identity Center
+                  </h3>
                   <p className="text-sm text-text-muted">
                     For enterprise users with custom AWS IAM Identity Center.
                   </p>
@@ -148,7 +154,9 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
               className="hidden w-full p-4 text-left border border-border rounded-lg hover:bg-sidebar transition-colors"
             >
               <div className="flex items-start gap-3">
-                <span className="material-symbols-outlined text-primary mt-0.5">account_circle</span>
+                <span className="material-symbols-outlined text-primary mt-0.5">
+                  account_circle
+                </span>
                 <div className="flex-1">
                   <h3 className="font-semibold mb-1">Google Account</h3>
                   <p className="text-sm text-text-muted">
@@ -164,7 +172,9 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
               className="hidden w-full p-4 text-left border border-border rounded-lg hover:bg-sidebar transition-colors"
             >
               <div className="flex items-start gap-3">
-                <span className="material-symbols-outlined text-primary mt-0.5">code</span>
+                <span className="material-symbols-outlined text-primary mt-0.5">
+                  code
+                </span>
                 <div className="flex-1">
                   <h3 className="font-semibold mb-1">GitHub Account</h3>
                   <p className="text-sm text-text-muted">
@@ -180,7 +190,9 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
               className="w-full p-4 text-left border border-border rounded-lg hover:bg-sidebar transition-colors"
             >
               <div className="flex items-start gap-3">
-                <span className="material-symbols-outlined text-primary mt-0.5">file_upload</span>
+                <span className="material-symbols-outlined text-primary mt-0.5">
+                  file_upload
+                </span>
                 <div className="flex-1">
                   <h3 className="font-semibold mb-1">Import Token</h3>
                   <p className="text-sm text-text-muted">
@@ -225,9 +237,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
               </p>
             </div>
 
-            {error && (
-              <p className="text-sm text-red-600">{error}</p>
-            )}
+            {error && <p className="text-sm text-red-600">{error}</p>}
 
             <div className="flex gap-2">
               <Button onClick={handleIdcContinue} fullWidth>
@@ -245,13 +255,16 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
           <div className="space-y-4">
             <div className="bg-amber-50 dark:bg-amber-900/20 p-4 rounded-lg border border-amber-200 dark:border-amber-800">
               <div className="flex gap-2">
-                <span className="material-symbols-outlined text-amber-600 dark:text-amber-400">info</span>
+                <span className="material-symbols-outlined text-amber-600 dark:text-amber-400">
+                  info
+                </span>
                 <div className="flex-1 text-sm">
                   <p className="font-medium text-amber-900 dark:text-amber-100 mb-1">
                     Manual Callback Required
                   </p>
                   <p className="text-amber-800 dark:text-amber-200">
-                    After login, you&apos;ll need to copy the callback URL from your browser and paste it back here.
+                    After login, you&apos;ll need to copy the callback URL from
+                    your browser and paste it back here.
                   </p>
                 </div>
               </div>
@@ -273,13 +286,16 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
           <div className="space-y-4">
             <div className="bg-amber-50 dark:bg-amber-900/20 p-4 rounded-lg border border-amber-200 dark:border-amber-800">
               <div className="flex gap-2">
-                <span className="material-symbols-outlined text-amber-600 dark:text-amber-400">info</span>
+                <span className="material-symbols-outlined text-amber-600 dark:text-amber-400">
+                  info
+                </span>
                 <div className="flex-1 text-sm">
                   <p className="font-medium text-amber-900 dark:text-amber-100 mb-1">
                     Manual Callback Required
                   </p>
                   <p className="text-amber-800 dark:text-amber-200">
-                    After login, you&apos;ll need to copy the callback URL from your browser and paste it back here.
+                    After login, you&apos;ll need to copy the callback URL from
+                    your browser and paste it back here.
                   </p>
                 </div>
               </div>
@@ -307,7 +323,9 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
                     progress_activity
                   </span>
                 </div>
-                <h3 className="text-lg font-semibold mb-2">Auto-detecting token...</h3>
+                <h3 className="text-lg font-semibold mb-2">
+                  Auto-detecting token...
+                </h3>
                 <p className="text-sm text-text-muted">
                   Reading from AWS SSO cache
                 </p>
@@ -321,7 +339,9 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
                 {autoDetected && (
                   <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg border border-green-200 dark:border-green-800">
                     <div className="flex gap-2">
-                      <span className="material-symbols-outlined text-green-600 dark:text-green-400">check_circle</span>
+                      <span className="material-symbols-outlined text-green-600 dark:text-green-400">
+                        check_circle
+                      </span>
                       <p className="text-sm text-green-800 dark:text-green-200">
                         Token auto-detected from Kiro IDE successfully!
                       </p>
@@ -333,9 +353,12 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
                 {!autoDetected && !error && (
                   <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-200 dark:border-blue-800">
                     <div className="flex gap-2">
-                      <span className="material-symbols-outlined text-blue-600 dark:text-blue-400">info</span>
+                      <span className="material-symbols-outlined text-blue-600 dark:text-blue-400">
+                        info
+                      </span>
                       <p className="text-sm text-blue-800 dark:text-blue-200">
-                        Kiro IDE not detected. Please paste your refresh token manually.
+                        Kiro IDE not detected. Please paste your refresh token
+                        manually.
                       </p>
                     </div>
                   </div>
@@ -355,12 +378,18 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
 
                 {error && (
                   <div className="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200 dark:border-red-800">
-                    <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+                    <p className="text-sm text-red-600 dark:text-red-400">
+                      {error}
+                    </p>
                   </div>
                 )}
 
                 <div className="flex gap-2">
-                  <Button onClick={handleImportToken} fullWidth disabled={importing || !refreshToken.trim()}>
+                  <Button
+                    onClick={handleImportToken}
+                    fullWidth
+                    disabled={importing || !refreshToken.trim()}
+                  >
                     {importing ? "Importing..." : "Import Token"}
                   </Button>
                   <Button onClick={handleBack} variant="ghost" fullWidth>

@@ -5,7 +5,12 @@ import Modal from "./Modal";
 import Button from "./Button";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
-export default function ManualConfigModal({ isOpen, onClose, title = "Manual Configuration", configs = [] }) {
+export default function ManualConfigModal({
+  isOpen,
+  onClose,
+  title = "Manual Configuration",
+  configs = [],
+}) {
   const { copy } = useCopyToClipboard();
   const [copiedIndex, setCopiedIndex] = useState(null);
 
@@ -21,7 +26,9 @@ export default function ManualConfigModal({ isOpen, onClose, title = "Manual Con
         {configs.map((config, index) => (
           <div key={index} className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-text-main">{config.filename}</span>
+              <span className="text-sm font-medium text-text-main">
+                {config.filename}
+              </span>
               <Button
                 variant="ghost"
                 size="sm"

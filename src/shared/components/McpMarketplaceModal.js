@@ -6,7 +6,12 @@ import Modal from "./Modal";
 const REGISTRY_ENDPOINT = "/api/cli-tools/cowork-mcp-registry";
 const TOOLS_ENDPOINT = "/api/cli-tools/cowork-mcp-tools";
 
-export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames = [] }) {
+export default function McpMarketplaceModal({
+  isOpen,
+  onClose,
+  onAdd,
+  addedNames = [],
+}) {
   const [servers, setServers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
@@ -60,11 +65,20 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
       const tools = d.tools || [];
       const fallback = Array.isArray(server.toolNames) ? server.toolNames : [];
       const toolNames = tools.length > 0 ? tools.map((t) => t.name) : fallback;
-      setToolsCache((p) => ({ ...p, [server.url]: { tools, requiresAuth: !!d.requiresAuth, error: d.error } }));
+      setToolsCache((p) => ({
+        ...p,
+        [server.url]: { tools, requiresAuth: !!d.requiresAuth, error: d.error },
+      }));
       // Default: all checked
-      setToolSelection((p) => ({ ...p, [server.url]: Object.fromEntries(toolNames.map((t) => [t, true])) }));
+      setToolSelection((p) => ({
+        ...p,
+        [server.url]: Object.fromEntries(toolNames.map((t) => [t, true])),
+      }));
     } catch (e) {
-      setToolsCache((p) => ({ ...p, [server.url]: { tools: [], error: e.message } }));
+      setToolsCache((p) => ({
+        ...p,
+        [server.url]: { tools: [], error: e.message },
+      }));
     } finally {
       setToolsLoading((p) => ({ ...p, [server.url]: false }));
     }
@@ -80,12 +94,18 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
   };
 
   const toggleTool = (url, tool) => {
-    setToolSelection((prev) => ({ ...prev, [url]: { ...prev[url], [tool]: !prev[url]?.[tool] } }));
+    setToolSelection((prev) => ({
+      ...prev,
+      [url]: { ...prev[url], [tool]: !prev[url]?.[tool] },
+    }));
   };
 
   const setAllTools = (url, value) => {
     const sel = toolSelection[url] || {};
-    setToolSelection((prev) => ({ ...prev, [url]: Object.fromEntries(Object.keys(sel).map((t) => [t, value])) }));
+    setToolSelection((prev) => ({
+      ...prev,
+      [url]: Object.fromEntries(Object.keys(sel).map((t) => [t, value])),
+    }));
   };
 
   const confirmAdd = (server) => {
@@ -104,7 +124,12 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Browse MCP Marketplace" size="lg">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Browse MCP Marketplace"
+      size="lg"
+    >
       <div className="flex flex-col gap-3">
         <div className="flex items-center gap-2">
           <input
@@ -126,12 +151,16 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
         </div>
 
         {error && (
-          <div className="px-2 py-1.5 rounded text-xs bg-red-500/10 text-red-600">{error}</div>
+          <div className="px-2 py-1.5 rounded text-xs bg-red-500/10 text-red-600">
+            {error}
+          </div>
         )}
 
         {loading && (
           <div className="flex items-center gap-2 text-text-muted text-xs py-4 justify-center">
-            <span className="material-symbols-outlined animate-spin text-[18px]">progress_activity</span>
+            <span className="material-symbols-outlined animate-spin text-[18px]">
+              progress_activity
+            </span>
             <span>Loading registry...</span>
           </div>
         )}
@@ -139,7 +168,9 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
         {!loading && (
           <div className="flex flex-col gap-1 max-h-[60vh] overflow-y-auto">
             {filtered.length === 0 && (
-              <div className="text-center text-xs text-text-muted py-6">No servers match filter</div>
+              <div className="text-center text-xs text-text-muted py-6">
+                No servers match filter
+              </div>
             )}
             {filtered.map((s) => {
               const added = addedSet.has(s.slug || s.name);
@@ -150,11 +181,21 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
               const toolKeys = Object.keys(sel);
               const selectedCount = Object.values(sel).filter(Boolean).length;
               return (
-                <div key={s.url} className="rounded border border-transparent hover:border-border">
+                <div
+                  key={s.url}
+                  className="rounded border border-transparent hover:border-border"
+                >
                   <div className="flex items-start gap-2 px-2 py-2 hover:bg-black/5 dark:hover:bg-white/5">
                     {s.iconUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={s.iconUrl} alt="" className="size-7 rounded shrink-0 object-contain" onError={(e) => { e.target.style.display = "none"; }} />
+                      <img
+                        src={s.iconUrl}
+                        alt=""
+                        className="size-7 rounded shrink-0 object-contain"
+                        onError={(e) => {
+                          e.target.style.display = "none";
+                        }}
+                      />
                     ) : (
                       <div className="size-7 rounded bg-surface shrink-0" />
                     )}
@@ -162,27 +203,35 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="font-medium text-xs">{s.title}</span>
                         {s.oauth ? (
-                          <span className="px-1 py-0.5 text-[9px] rounded bg-amber-500/10 text-amber-600">OAuth</span>
+                          <span className="px-1 py-0.5 text-[9px] rounded bg-amber-500/10 text-amber-600">
+                            OAuth
+                          </span>
                         ) : (
-                          <span className="px-1 py-0.5 text-[9px] rounded bg-green-500/10 text-green-600">Authless</span>
+                          <span className="px-1 py-0.5 text-[9px] rounded bg-green-500/10 text-green-600">
+                            Authless
+                          </span>
                         )}
                         {s.toolCount > 0 && (
-                          <span className="text-[10px] text-text-muted">{s.toolCount} tools</span>
+                          <span className="text-[10px] text-text-muted">
+                            {s.toolCount} tools
+                          </span>
                         )}
                       </div>
                       {s.description && (
-                        <p className="text-[10px] text-text-muted line-clamp-2 mt-0.5">{s.description}</p>
+                        <p className="text-[10px] text-text-muted line-clamp-2 mt-0.5">
+                          {s.description}
+                        </p>
                       )}
                     </div>
                     <button
-                      onClick={() => added ? null : expandServer(s)}
+                      onClick={() => (added ? null : expandServer(s))}
                       disabled={added}
                       className={`shrink-0 px-2 py-1 rounded text-[10px] font-medium transition-colors ${
                         added
                           ? "bg-green-500/10 text-green-600 cursor-default"
                           : expanded
-                          ? "bg-surface border border-border text-text-muted hover:bg-black/5"
-                          : "bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20"
+                            ? "bg-surface border border-border text-text-muted hover:bg-black/5"
+                            : "bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20"
                       }`}
                     >
                       {added ? "Added" : expanded ? "Cancel" : "+ Add"}
@@ -192,34 +241,64 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
                     <div className="px-3 py-2 bg-surface/40 border-t border-border flex flex-col gap-2">
                       {isLoadingTools && (
                         <div className="flex items-center gap-2 text-text-muted text-[10px] py-1">
-                          <span className="material-symbols-outlined animate-spin text-[14px]">progress_activity</span>
+                          <span className="material-symbols-outlined animate-spin text-[14px]">
+                            progress_activity
+                          </span>
                           <span>Probing server for tools...</span>
                         </div>
                       )}
                       {!isLoadingTools && cache?.requiresAuth && (
                         <p className="text-[10px] text-amber-600 bg-amber-500/10 px-2 py-1 rounded">
-                          🔐 OAuth required. Add now and authenticate after Apply; tool list will be discovered after first connect.
+                          🔐 OAuth required. Add now and authenticate after
+                          Apply; tool list will be discovered after first
+                          connect.
                         </p>
                       )}
-                      {!isLoadingTools && cache?.error && !cache?.requiresAuth && (
-                        <p className="text-[10px] text-red-600 bg-red-500/10 px-2 py-1 rounded">Probe failed: {cache.error}</p>
-                      )}
-                      {!isLoadingTools && toolKeys.length === 0 && !cache?.requiresAuth && !cache?.error && (
-                        <p className="text-[10px] text-text-muted">No tools advertised by server.</p>
-                      )}
+                      {!isLoadingTools &&
+                        cache?.error &&
+                        !cache?.requiresAuth && (
+                          <p className="text-[10px] text-red-600 bg-red-500/10 px-2 py-1 rounded">
+                            Probe failed: {cache.error}
+                          </p>
+                        )}
+                      {!isLoadingTools &&
+                        toolKeys.length === 0 &&
+                        !cache?.requiresAuth &&
+                        !cache?.error && (
+                          <p className="text-[10px] text-text-muted">
+                            No tools advertised by server.
+                          </p>
+                        )}
                       {!isLoadingTools && toolKeys.length > 0 && (
                         <>
                           <div className="flex items-center justify-between">
-                            <span className="text-[10px] text-text-muted">{selectedCount}/{toolKeys.length} tools enabled</span>
+                            <span className="text-[10px] text-text-muted">
+                              {selectedCount}/{toolKeys.length} tools enabled
+                            </span>
                             <div className="flex gap-1">
-                              <button onClick={() => setAllTools(s.url, true)} className="text-[10px] text-primary hover:underline">All</button>
-                              <span className="text-[10px] text-text-muted">·</span>
-                              <button onClick={() => setAllTools(s.url, false)} className="text-[10px] text-primary hover:underline">None</button>
+                              <button
+                                onClick={() => setAllTools(s.url, true)}
+                                className="text-[10px] text-primary hover:underline"
+                              >
+                                All
+                              </button>
+                              <span className="text-[10px] text-text-muted">
+                                ·
+                              </span>
+                              <button
+                                onClick={() => setAllTools(s.url, false)}
+                                className="text-[10px] text-primary hover:underline"
+                              >
+                                None
+                              </button>
                             </div>
                           </div>
                           <div className="grid grid-cols-2 gap-1 max-h-40 overflow-y-auto">
                             {toolKeys.map((t) => (
-                              <label key={t} className="flex items-center gap-1.5 text-[10px] cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 px-1 rounded">
+                              <label
+                                key={t}
+                                className="flex items-center gap-1.5 text-[10px] cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 px-1 rounded"
+                              >
                                 <input
                                   type="checkbox"
                                   checked={!!sel[t]}

@@ -28,7 +28,9 @@ export default function Input({
       <div className="relative">
         {icon && (
           <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-text-muted">
-            <span className="material-symbols-outlined text-[20px]">{icon}</span>
+            <span className="material-symbols-outlined text-[20px]">
+              {icon}
+            </span>
           </div>
         )}
         <input
@@ -45,8 +47,9 @@ export default function Input({
             // iOS zoom fix
             "text-[16px] sm:text-sm",
             icon && "pl-10",
-            error && "ring-1 ring-red-500 focus:ring-2 focus:ring-red-500/40 border-red-500/40",
-            inputClassName
+            error &&
+              "ring-1 ring-red-500 focus:ring-2 focus:ring-red-500/40 border-red-500/40",
+            inputClassName,
           )}
           {...props}
         />
@@ -57,9 +60,7 @@ export default function Input({
           {error}
         </p>
       )}
-      {hint && !error && (
-        <p className="text-xs text-text-muted">{hint}</p>
-      )}
+      {hint && !error && <p className="text-xs text-text-muted">{hint}</p>}
     </div>
   );
 }

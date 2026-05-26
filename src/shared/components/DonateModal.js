@@ -5,37 +5,50 @@ import { createPortal } from "react-dom";
 import PropTypes from "prop-types";
 import { GITHUB_CONFIG } from "@/shared/constants/config";
 
-export default function DonateModal({ isOpen, onClose }) {
+function DonateModalContent({ onClose }) {
   const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const modalRef = useRef(null);
 
   useEffect(() => {
-    if (!isOpen || data) return;
-    setLoading(true);
-    setError("");
-    fetch(GITHUB_CONFIG.donateUrl, { cache: "no-store" })
-      .then((res) => {
+    const abortController = new AbortController();
+
+    const loadDonateData = async () => {
+      try {
+        const res = await fetch(GITHUB_CONFIG.donateUrl, {
+          cache: "no-store",
+          signal: abortController.signal,
+        });
+
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((json) => setData(json))
-      .catch((err) => setError(err.message || "Failed to load"))
-      .finally(() => setLoading(false));
-  }, [isOpen, data]);
+        const json = await res.json();
+        setData(json);
+      } catch (err) {
+        if (err.name === "AbortError") return;
+        setError(err.message || "Failed to load");
+      } finally {
+        if (!abortController.signal.aborted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadDonateData();
+
+    return () => {
+      abortController.abort();
+    };
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (modalRef.current && !modalRef.current.contains(e.target)) onClose();
     };
-    if (isOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [isOpen, onClose]);
 
-  if (!isOpen || typeof document === "undefined") return null;
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [onClose]);
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -83,8 +96,18 @@ export default function DonateModal({ isOpen, onClose }) {
         </div>
       </div>
     </div>,
-    document.body
+    document.body,
   );
+}
+
+DonateModalContent.propTypes = {
+  onClose: PropTypes.func.isRequired,
+};
+
+export default function DonateModal({ isOpen, onClose }) {
+  if (!isOpen || typeof document === "undefined") return null;
+
+  return <DonateModalContent key={isOpen ? "open" : "closed"} onClose={onClose} />;
 }
 
 function DonateChannelCard({ channel }) {

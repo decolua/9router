@@ -8,25 +8,46 @@ import { GITHUB_CONFIG } from "@/shared/constants/config";
 
 marked.setOptions({ gfm: true, breaks: true });
 
-export default function ChangelogModal({ isOpen, onClose }) {
+function ChangelogModalContent({ onClose }) {
   const [html, setHtml] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const modalRef = useRef(null);
 
   useEffect(() => {
-    if (!isOpen || html) return;
-    setLoading(true);
-    setError("");
-    fetch(GITHUB_CONFIG.changelogUrl)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.text();
-      })
-      .then((md) => setHtml(marked.parse(md)))
-      .catch((err) => setError(err.message || "Failed to load"))
-      .finally(() => setLoading(false));
-  }, [isOpen, html]);
+    const abortController = new AbortController();
+
+    const loadChangelog = async () => {
+      try {
+        const res = await fetch(GITHUB_CONFIG.changelogUrl, {
+          signal: abortController.signal,
+        });
+
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+
+        const md = await res.text();
+        setHtml(marked.parse(md));
+      } catch (err) {
+        if (err.name === "AbortError") {
+          return;
+        }
+
+        setError(err.message || "Failed to load");
+      } finally {
+        if (!abortController.signal.aborted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadChangelog();
+
+    return () => {
+      abortController.abort();
+    };
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -34,13 +55,12 @@ export default function ChangelogModal({ isOpen, onClose }) {
         onClose();
       }
     };
-    if (isOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [isOpen, onClose]);
 
-  if (!isOpen || typeof document === "undefined") return null;
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [onClose]);
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -71,12 +91,16 @@ export default function ChangelogModal({ isOpen, onClose }) {
         <div className="p-6 overflow-y-auto flex-1">
           {loading && (
             <div className="flex items-center justify-center py-10 text-text-muted">
-              <span className="material-symbols-outlined animate-spin mr-2">progress_activity</span>
+              <span className="material-symbols-outlined animate-spin mr-2">
+                progress_activity
+              </span>
               Loading...
             </div>
           )}
           {error && (
-            <div className="text-red-500 py-4">Failed to load changelog: {error}</div>
+            <div className="text-red-500 py-4">
+              Failed to load changelog: {error}
+            </div>
           )}
           {!loading && !error && html && (
             <div
@@ -87,8 +111,18 @@ export default function ChangelogModal({ isOpen, onClose }) {
         </div>
       </div>
     </div>,
-    document.body
+    document.body,
   );
+}
+
+ChangelogModalContent.propTypes = {
+  onClose: PropTypes.func.isRequired,
+};
+
+export default function ChangelogModal({ isOpen, onClose }) {
+  if (!isOpen || typeof document === "undefined") return null;
+
+  return <ChangelogModalContent key={isOpen ? "open" : "closed"} onClose={onClose} />;
 }
 
 ChangelogModal.propTypes = {
