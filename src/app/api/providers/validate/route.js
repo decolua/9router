@@ -6,6 +6,7 @@ import { resolveOllamaLocalHost, resolveXiaomiTokenplanBaseUrl, PROVIDERS } from
 import { openaiToCommandCode } from "open-sse/translator/request/openai-to-commandcode.js";
 import { PROVIDER_ENDPOINTS } from "@/shared/constants/config";
 import { normalizeProviderId } from "@/lib/providerNormalization";
+import { PROBE_ENDPOINTS, buildHeaders as buildProbeHeaders } from "@/lib/startup/providerProbe";
 
 // Probe a webSearch/webFetch provider using its searchConfig/fetchConfig.
 // Returns true if API key is accepted (status !== 401 && !== 403).
@@ -79,6 +80,23 @@ async function probeMediaProvider(provider, apiKey) {
     signal: AbortSignal.timeout(8000),
   });
   return res.status !== 401 && res.status !== 403;
+}
+
+// Probe a provider using the shared PROBE_ENDPOINTS table from providerProbe.js.
+// Returns the validity boolean, or null if provider not in PROBE_ENDPOINTS.
+async function probeWithSharedEndpoint(provider, apiKey) {
+  const probe = PROBE_ENDPOINTS[provider];
+  if (!probe) return null;
+  const url =
+    probe.authHeader === "key-param"
+      ? `${probe.url}?key=${encodeURIComponent(apiKey)}`
+      : probe.url;
+  const res = await fetch(url, {
+    headers: buildProbeHeaders(probe.authHeader, apiKey),
+    signal: AbortSignal.timeout(8000),
+  });
+  const validStatuses = probe.validStatus ?? null;
+  return validStatuses ? validStatuses.includes(res.status) : res.ok;
 }
 
 // POST /api/providers/validate - Validate API key with provider
@@ -245,18 +263,10 @@ export async function POST(request) {
 
       switch (provider) {
         case "openai":
-          const openaiRes = await fetch("https://api.openai.com/v1/models", {
-            headers: { "Authorization": `Bearer ${apiKey}` },
-          });
-          isValid = openaiRes.ok;
+        case "vercel-ai-gateway": {
+          isValid = await probeWithSharedEndpoint(provider, apiKey);
           break;
-
-        case "vercel-ai-gateway":
-          const vercelAiGatewayRes = await fetch("https://ai-gateway.vercel.sh/v1/models", {
-            headers: { "Authorization": `Bearer ${apiKey}` },
-          });
-          isValid = vercelAiGatewayRes.ok;
-          break;
+        }
 
         case "anthropic":
           const anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
@@ -276,16 +286,10 @@ export async function POST(request) {
           break;
 
         case "gemini":
-          const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1/models?key=${apiKey}`);
-          isValid = geminiRes.ok;
+        case "openrouter": {
+          isValid = await probeWithSharedEndpoint(provider, apiKey);
           break;
-
-        case "openrouter":
-          const openrouterRes = await fetch("https://openrouter.ai/api/v1/models", {
-            headers: { "Authorization": `Bearer ${apiKey}` },
-          });
-          isValid = openrouterRes.ok;
-          break;
+        }
 
         case "glm":
         case "glm-cn":
@@ -362,37 +366,23 @@ export async function POST(request) {
         case "xiaomi-mimo":
         case "xiaomi-tokenplan":
         case "nvidia": {
-          const endpoints = {
-            deepseek: "https://api.deepseek.com/models",
-            groq: "https://api.groq.com/openai/v1/models",
-            xai: "https://api.x.ai/v1/models",
-            mistral: "https://api.mistral.ai/v1/models",
-            perplexity: "https://api.perplexity.ai/models",
-            together: "https://api.together.xyz/v1/models",
-            fireworks: "https://api.fireworks.ai/inference/v1/models",
-            cerebras: "https://api.cerebras.ai/v1/models",
-            cohere: "https://api.cohere.ai/v1/models",
-            nebius: "https://api.studio.nebius.ai/v1/models",
-            siliconflow: "https://api.siliconflow.cn/v1/models",
-            hyperbolic: "https://api.hyperbolic.xyz/v1/models",
+          // Prefer PROBE_ENDPOINTS (single source of truth shared with startup probe).
+          // Add new providers to PROBE_ENDPOINTS in src/lib/startup/providerProbe.js.
+          const sharedResult = await probeWithSharedEndpoint(provider, apiKey);
+          if (sharedResult !== null) {
+            isValid = sharedResult;
+            break;
+          }
+          // Fallback for dynamic-URL providers not suitable for a static endpoint table.
+          const dynamicEndpoints = {
             ollama: "https://ollama.com/api/tags",
             "ollama-local": `${resolveOllamaLocalHost({ providerSpecificData })}/api/tags`,
-            assemblyai: "https://api.assemblyai.com/v1/account",
-            nanobanana: "https://api.nanobananaapi.ai/v1/models",
-            chutes: "https://llm.chutes.ai/v1/models",
-            nvidia: "https://integrate.api.nvidia.com/v1/models",
-            "xiaomi-mimo": "https://api.xiaomimimo.com/v1/models",
-            "xiaomi-tokenplan": `${resolveXiaomiTokenplanBaseUrl({ providerSpecificData })}/models`
+            "xiaomi-tokenplan": `${resolveXiaomiTokenplanBaseUrl({ providerSpecificData })}/models`,
           };
           const headers = {};
           if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-          const res = await fetch(endpoints[provider], { headers });
-          // xai returns 400 for bad key, 403 for valid-but-no-credit. Other providers use 401.
-          if (provider === "xai") {
-            isValid = res.status === 200 || res.status === 403;
-          } else {
-            isValid = res.ok;
-          }
+          const res = await fetch(dynamicEndpoints[provider], { headers });
+          isValid = res.ok;
           break;
         }
 

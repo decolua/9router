@@ -55,6 +55,10 @@ function getStatusDisplay(connected, error, errorCode) {
 function getConnectionErrorTag(connection) {
   if (!connection) return null;
 
+  if (connection.testStatus === "failed") {
+    return connection.errorCode || "AUTH";
+  }
+
   const explicitType = connection.lastErrorType;
   if (explicitType === "runtime_error") return "RUNTIME";
   if (
@@ -184,7 +188,7 @@ export default function ProvidersPage() {
     const errorConns = providerConnections.filter((c) => {
       const status = getEffectiveStatus(c);
       return (
-        status === "error" || status === "expired" || status === "unavailable"
+        status === "error" || status === "expired" || status === "unavailable" || status === "failed"
       );
     });
 
@@ -201,7 +205,12 @@ export default function ProvidersPage() {
       ? getRelativeTime(latestError.lastErrorAt)
       : null;
 
-    return { connected, error, total, errorCode, errorTime, allDisabled };
+    const lastValidated = providerConnections
+      .filter((c) => c.lastTested)
+      .sort((a, b) => new Date(b.lastTested) - new Date(a.lastTested))[0]
+      ?.lastTested ?? null;
+
+    return { connected, error, total, errorCode, errorTime, allDisabled, lastValidated };
   };
 
   // Toggle all connections for a provider on/off
@@ -593,7 +602,7 @@ export default function ProvidersPage() {
 }
 
 function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
-  const { connected, error, errorCode, errorTime, allDisabled } = stats;
+  const { connected, error, errorCode, errorTime, allDisabled, lastValidated } = stats;
   const isNoAuth = !!provider.noAuth;
 
   const dotColors = {
@@ -654,6 +663,14 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
                     {errorTime && (
                       <span className="text-text-muted">{errorTime}</span>
                     )}
+                    {lastValidated && !isNoAuth && (
+                      <span
+                        className="text-text-muted"
+                        title={`Startup check: ${new Date(lastValidated).toLocaleString()}`}
+                      >
+                        <span className="material-symbols-outlined text-[10px] align-middle">verified</span>
+                      </span>
+                    )}
                   </>
                 )}
               </div>
@@ -697,6 +714,7 @@ ProviderCard.propTypes = {
     error: PropTypes.number,
     errorCode: PropTypes.string,
     errorTime: PropTypes.string,
+    lastValidated: PropTypes.string,
   }).isRequired,
   authType: PropTypes.string,
   onToggle: PropTypes.func,
@@ -709,7 +727,7 @@ function ApiKeyProviderCard({
   authType,
   onToggle,
 }) {
-  const { connected, error, errorCode, errorTime, allDisabled } = stats;
+  const { connected, error, errorCode, errorTime, allDisabled, lastValidated } = stats;
   const isCompatible = providerId.startsWith(OPENAI_COMPATIBLE_PREFIX);
   const isAnthropicCompatible = providerId.startsWith(
     ANTHROPIC_COMPATIBLE_PREFIX,
@@ -792,6 +810,14 @@ function ApiKeyProviderCard({
                     {errorTime && (
                       <span className="text-text-muted">{errorTime}</span>
                     )}
+                    {lastValidated && (
+                      <span
+                        className="text-text-muted"
+                        title={`Startup check: ${new Date(lastValidated).toLocaleString()}`}
+                      >
+                        <span className="material-symbols-outlined text-[10px] align-middle">verified</span>
+                      </span>
+                    )}
                   </>
                 )}
               </div>
@@ -836,6 +862,7 @@ ApiKeyProviderCard.propTypes = {
     error: PropTypes.number,
     errorCode: PropTypes.string,
     errorTime: PropTypes.string,
+    lastValidated: PropTypes.string,
   }).isRequired,
   authType: PropTypes.string,
   onToggle: PropTypes.func,
