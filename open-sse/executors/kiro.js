@@ -5,6 +5,7 @@ import { refreshKiroToken } from "../services/tokenRefresh.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG, resolveRetryEntry } from "../config/runtimeConfig.js";
 import { splitInlineThinking, flushPendingThinking } from "./kiroThinking.js";
+import { acquireToken, reportRateLimit, reportSuccess } from "../services/kiroRateLimiter.js";
 import { logger as rootLogger } from "@/lib/logger";
 
 /**
@@ -38,9 +39,33 @@ export class KiroExecutor extends BaseExecutor {
    * Custom execute for Kiro - handles AWS EventStream binary response with retry support
    */
   async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
+    const connectionId = credentials?.connectionId || credentials?.connectionName || "default";
+    const token = acquireToken(connectionId);
     const url = this.buildUrl(model, stream, 0);
     const transformedBody = this.transformRequest(model, body, stream, credentials);
-    
+
+    if (!token.allowed) {
+      const retryAfterMs = token.retryAfterMs || 1000;
+      const retryAfterSeconds = Math.max(1, Math.ceil(retryAfterMs / 1000));
+      const response = new Response(JSON.stringify({
+        error: {
+          type: "rate_limit_error",
+          code: "kiro_preemptive_rate_limit",
+          message: `Kiro pre-emptive rate limit exceeded; retry after ${retryAfterSeconds}s`,
+        },
+      }), {
+        status: HTTP_STATUS.RATE_LIMITED,
+        statusText: "Too Many Requests",
+        headers: {
+          "Content-Type": "application/json",
+          "Retry-After": String(retryAfterSeconds),
+          "retry-after": String(retryAfterSeconds),
+          "x-kiro-rate-limit": "preemptive",
+        },
+      });
+      return { response, url, headers: {}, transformedBody };
+    }
+
     // Merge default retry config with provider-specific config
     const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...this.config.retry };
     let retryAttempts = 0;
@@ -65,6 +90,9 @@ export class KiroExecutor extends BaseExecutor {
       }
 
       if (!response.ok) {
+        if (response.status === HTTP_STATUS.RATE_LIMITED) {
+          reportRateLimit(connectionId);
+        }
         return { response, url, headers, transformedBody };
       }
 
@@ -80,6 +108,7 @@ export class KiroExecutor extends BaseExecutor {
       const upstreamUserContent =
         transformedBody?.conversationState?.currentMessage?.userInputMessage?.content || "";
       const thinkingExpected = upstreamUserContent.includes("<thinking_mode>enabled</thinking_mode>");
+      reportSuccess(connectionId);
       const transformedResponse = this.transformEventStreamToSSE(response, model, { thinkingExpected });
       return { response: transformedResponse, url, headers, transformedBody };
     }
