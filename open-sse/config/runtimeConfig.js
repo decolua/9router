@@ -38,7 +38,7 @@ export const STREAM_STALL_TIMEOUT_MS = 35 * 1000;
 export const FETCH_CONNECT_TIMEOUT_MS = 20 * 1000;
 
 // Default token limits
-export const DEFAULT_MAX_TOKENS = 64000;
+export const DEFAULT_MAX_TOKENS = parseInt(process.env.CONTEXT_WINDOW, 10) >= 1048576 ? 128000 : 64000;
 export const DEFAULT_MIN_TOKENS = 32000;
 
 // Retry config for 429 responses (legacy - kept for backward compatibility)
