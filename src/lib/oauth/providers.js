@@ -1287,9 +1287,13 @@ const PROVIDERS = {
   freebuff: {
     config: FREEBUFF_CONFIG,
     flowType: "device_code",
-    requestDeviceCode: async (config) => {
+    requestDeviceCode: async (config, codeChallenge, options = {}) => {
+      const authMethod = options.authMethod === "codebuff" ? "codebuff" : "freebuff";
+      const codeUrl = authMethod === "codebuff" ? "https://www.codebuff.com/api/auth/cli/code" : "https://freebuff.com/api/auth/cli/code";
+      const statusUrl = authMethod === "codebuff" ? "https://www.codebuff.com/api/auth/cli/status" : "https://freebuff.com/api/auth/cli/status";
+
       const fingerprintId = `fb-${crypto.randomBytes(8).toString("hex")}`;
-      const response = await fetch(config.codeUrl, {
+      const response = await fetch(codeUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1300,7 +1304,7 @@ const PROVIDERS = {
       });
       if (!response.ok) {
         const error = await response.text();
-        throw new Error(`Freebuff code request failed: ${error}`);
+        throw new Error(`Freebuff/Codebuff code request failed: ${error}`);
       }
       const data = await response.json();
       const loginUrl = data.loginUrl;
@@ -1309,11 +1313,11 @@ const PROVIDERS = {
       
       const now = Date.now();
       const expires_in = expiresAt > now ? Math.ceil((expiresAt - now) / 1000) : 300;
-      const combinedCode = JSON.stringify({ fingerprintId, fingerprintHash, expiresAt });
+      const combinedCode = JSON.stringify({ fingerprintId, fingerprintHash, expiresAt, authMethod });
 
       return {
         device_code: combinedCode,
-        user_code: "Freebuff CLI Authorization",
+        user_code: authMethod === "codebuff" ? "Codebuff CLI Authorization" : "Freebuff CLI Authorization",
         verification_uri: loginUrl,
         verification_uri_complete: loginUrl,
         expires_in: expires_in,
@@ -1327,13 +1331,14 @@ const PROVIDERS = {
       } catch (e) {
         return { ok: false, data: { error: "invalid_grant", error_description: "Failed to parse device code parameters" } };
       }
-      const { fingerprintId, fingerprintHash, expiresAt } = params;
+      const { fingerprintId, fingerprintHash, expiresAt, authMethod } = params;
+      const statusUrl = authMethod === "codebuff" ? "https://www.codebuff.com/api/auth/cli/status" : "https://freebuff.com/api/auth/cli/status";
       const qs = new URLSearchParams({
         fingerprintId,
         fingerprintHash,
         expiresAt: String(expiresAt),
       });
-      const response = await fetch(`${config.statusUrl}?${qs.toString()}`, {
+      const response = await fetch(`${statusUrl}?${qs.toString()}`, {
         headers: {
           "Accept": "application/json",
           "User-Agent": "Bun/1.3.11",
@@ -1356,6 +1361,7 @@ const PROVIDERS = {
             _userEmail: user.email || null,
             _userId: user.id || null,
             _userName: user.name || null,
+            _authMethod: authMethod || "freebuff",
           },
         };
       }
@@ -1369,6 +1375,7 @@ const PROVIDERS = {
       providerSpecificData: {
         userId: tokens._userId,
         userName: tokens._userName,
+        authMethod: tokens._authMethod || "freebuff",
       },
     }),
   },

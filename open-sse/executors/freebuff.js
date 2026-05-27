@@ -180,9 +180,10 @@ export class FreebuffExecutor extends BaseExecutor {
     const runId = await this.getRun(token, agentId, proxyOptions);
     
     const clientId = Math.random().toString(36).substring(2, 15);
+    const authMethod = credentials?.providerSpecificData?.authMethod || "freebuff";
     const codebuff_metadata = body.codebuff_metadata || {};
     codebuff_metadata.run_id = runId;
-    codebuff_metadata.cost_mode = "free";
+    codebuff_metadata.cost_mode = authMethod === "codebuff" ? "paid" : "free";
     codebuff_metadata.client_id = clientId;
     if (sessionInstanceId) {
       codebuff_metadata.freebuff_instance_id = sessionInstanceId;

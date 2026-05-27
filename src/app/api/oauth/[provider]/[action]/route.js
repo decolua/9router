@@ -142,7 +142,7 @@ export async function GET(request, { params }) {
       const startUrl = searchParams.get("start_url");
       const region = searchParams.get("region");
       const authMethod = searchParams.get("auth_method");
-      const deviceOptions = provider === "kiro"
+      const deviceOptions = ["kiro", "freebuff"].includes(provider)
         ? {
             ...(startUrl ? { startUrl } : {}),
             ...(region ? { region } : {}),
