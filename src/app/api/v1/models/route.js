@@ -5,7 +5,7 @@ import {
   isAnthropicCompatibleProvider,
   isOpenAICompatibleProvider,
 } from "@/shared/constants/providers";
-import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
+import { getProviderConnections, getCombos, getCustomModels, getModelAliases, getSettings } from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 
@@ -418,7 +418,13 @@ export async function OPTIONS() {
  */
 export async function GET() {
   try {
+    const settings = await getSettings().catch(() => ({}));
+    const cw = settings.contextWindow || 256000;
     const data = await buildModelsList([LLM_KIND]);
+    // Inject context_window from settings
+    for (const m of data) {
+      m.context_window = cw;
+    }
     return Response.json({ object: "list", data }, {
       headers: { "Access-Control-Allow-Origin": "*" },
     });
