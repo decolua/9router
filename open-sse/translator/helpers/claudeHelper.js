@@ -85,6 +85,12 @@ const CLAUDE_FORMAT_PROVIDERS_WITHOUT_OUTPUT_CONFIG = new Set(["minimax", "minim
 // - Fix tool_use/tool_result ordering
 // - Apply cloaking (billing header + fake user ID) for OAuth tokens
 export function prepareClaudeRequest(body, provider = null, apiKey = null, connectionId = null) {
+  if (provider?.startsWith("anthropic-compatible")) {
+    // Fixes #1468: Claude Code may send Anthropic-only context_management, but
+    // most anthropic-compatible gateways reject unknown top-level fields.
+    delete body.context_management;
+  }
+
   // MiniMax exposes a Claude-compatible endpoint but rejects Anthropic's extended
   // structured output parameter with a generic 400 "invalid params" response.
   if (CLAUDE_FORMAT_PROVIDERS_WITHOUT_OUTPUT_CONFIG.has(provider)) {
