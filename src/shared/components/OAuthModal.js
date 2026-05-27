@@ -522,7 +522,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
                 </div>
                 <h4 className="font-semibold text-base mb-1">Freebuff (Free)</h4>
                 <p className="text-xs text-text-muted leading-relaxed">
-                  Terminal-based, ad-supported free provider. Access upstream models on the public free tier.
+                  Terminal-based, ad-supported free provider. Access upstream models on the public free tier (please support the creator by using the official CLI so they earn through ads!).
                 </p>
               </div>
 
