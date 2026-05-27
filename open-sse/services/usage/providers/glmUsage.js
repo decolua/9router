@@ -35,11 +35,19 @@ export async function getGlmUsage(apiKey, provider, proxyOptions = null) {
 
     for (const limit of limits) {
       if (!limit || limit.type !== "TOKENS_LIMIT") continue;
+<<<<<<< HEAD
 
       const usedPercent = Number(limit.percentage) || 0;
       const resetMs = Number(limit.nextResetTime) || 0;
       const remaining = Math.max(0, 100 - usedPercent);
       const quota = {
+=======
+      const usedPercent = Number(limit.percentage) || 0;
+      const resetMs = Number(limit.nextResetTime) || 0;
+      const remaining = Math.max(0, 100 - usedPercent);
+
+      quotas.session = {
+>>>>>>> 1e75aa7 (refactor(usage): split monolithic fetcher into modular providers)
         used: usedPercent,
         total: 100,
         remaining,

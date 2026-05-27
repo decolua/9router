@@ -66,6 +66,15 @@ const CLAUDE_CONFIG = {
   settingsUrl: "https://api.anthropic.com/v1/settings",
   apiVersion: "2023-06-01",
 };
+import { getAntigravityUsage } from "./usage/providers/antigravityUsage.js";
+import { getClaudeUsage } from "./usage/providers/claudeUsage.js";
+import { getCodexUsage } from "./usage/providers/codexUsage.js";
+import { getGeminiUsage } from "./usage/providers/geminiUsage.js";
+import { getGitHubUsage } from "./usage/providers/githubUsage.js";
+import { getGlmUsage } from "./usage/providers/glmUsage.js";
+import { getKiroUsage } from "./usage/providers/kiroUsage.js";
+import { getMiniMaxUsage } from "./usage/providers/minimaxUsage.js";
+import { getIflowUsage, getOllamaUsage, getQwenUsage } from "./usage/providers/passiveUsage.js";
 
 /**
  * Get usage data for a provider connection
