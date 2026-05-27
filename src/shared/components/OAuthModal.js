@@ -522,7 +522,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
                 </div>
                 <h4 className="font-semibold text-base mb-1">Freebuff (Free)</h4>
                 <p className="text-xs text-text-muted leading-relaxed">
-                  No subscription required. Access upstream models on the public free tier.
+                  Terminal-based, ad-supported free provider. Access upstream models on the public free tier.
                 </p>
               </div>
 
@@ -539,7 +539,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
                 </div>
                 <h4 className="font-semibold text-base mb-1">Codebuff (Paid/Pro)</h4>
                 <p className="text-xs text-text-muted leading-relaxed">
-                  High-speed priority access. Authenticates with your personal Codebuff subscription.
+                  High-speed priority access. Authenticates with your personal Codebuff subscription (Pro includes $5.00 credit signup bonus!).
                 </p>
               </div>
             </div>
