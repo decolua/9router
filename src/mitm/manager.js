@@ -398,6 +398,31 @@ async function getMitmStatus() {
   return { running, pid, certExists, certTrusted, dnsStatus };
 }
 
+function isAlreadyRunningRestartRecovery(error, status) {
+  return error?.message === "MITM server is already running" && status?.running === true;
+}
+
+async function recoverAlreadyRunningRestart(error, sudoPassword) {
+  let status = null;
+  try {
+    status = await getMitmStatus();
+  } catch {
+    return false;
+  }
+
+  if (!isAlreadyRunningRestartRecovery(error, status)) return false;
+
+  // Fixes #1462: a crashed child can schedule a restart while manager state
+  // still points at a live MITM process. Treat that as recovered instead of
+  // recursively scheduling "already running" restart attempts.
+  log("MITM server already running; treating restart as recovered");
+  await saveMitmSettings(true, sudoPassword);
+  if (sudoPassword) setCachedPassword(sudoPassword);
+  mitmRestartCount = 0;
+  mitmIsRestarting = false;
+  return true;
+}
+
 async function scheduleMitmRestart(apiKey) {
   if (mitmIsRestarting) return;
 
@@ -417,6 +442,7 @@ async function scheduleMitmRestart(apiKey) {
   log(`Restarting in ${delay / 1000}s... (${mitmRestartCount}/${MITM_MAX_RESTARTS})`);
   await new Promise((r) => setTimeout(r, delay));
 
+  let password = null;
   try {
     const settings = _getSettings ? await _getSettings() : null;
     if (settings && !settings.mitmEnabled) {
@@ -424,7 +450,7 @@ async function scheduleMitmRestart(apiKey) {
       mitmIsRestarting = false;
       return;
     }
-    const password = getCachedPassword() || await loadEncryptedPassword();
+    password = getCachedPassword() || await loadEncryptedPassword();
     if (!password && !IS_WIN) {
       err("No cached password, cannot auto-restart");
       mitmIsRestarting = false;
@@ -435,6 +461,7 @@ async function scheduleMitmRestart(apiKey) {
     mitmRestartCount = 0;
     mitmIsRestarting = false;
   } catch (e) {
+    if (await recoverAlreadyRunningRestart(e, password)) return;
     err(`Restart attempt ${mitmRestartCount}/${MITM_MAX_RESTARTS} failed: ${e.message}`);
     mitmIsRestarting = false;
     // Schedule next retry
@@ -848,4 +875,7 @@ module.exports = {
   restoreToolDNS,
   hasDnsPrivilege,
   removeAllDNSEntriesSync,
+  __test__: {
+    isAlreadyRunningRestartRecovery,
+  },
 };
