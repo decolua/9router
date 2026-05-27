@@ -79,7 +79,7 @@ async function selectModelFromList(title, currentValue = "", options = {}) {
   console.log(`\n🎯 ${title}`);
   console.log("=".repeat(50));
   if (currentValue) {
-    console.log(`Current: ${currentValue}\n`);
+    console.log(`Текущая: ${currentValue}\n`);
   } else {
     console.log();
   }
@@ -88,7 +88,7 @@ async function selectModelFromList(title, currentValue = "", options = {}) {
   
   // Combos first (skipped when excludeCombos is true)
   if (combos.length > 0) {
-    console.log("[Combos]");
+    console.log("[Комбинации]");
     combos.forEach(combo => {
       console.log(`  ${idx}. ${combo}`);
       allModels.push(combo);
@@ -115,10 +115,10 @@ async function selectModelFromList(title, currentValue = "", options = {}) {
     console.log();
   });
   
-  console.log("  0. Cancel\n");
+  console.log("  0. Отмена\n");
   
   // Prompt for number input
-  const input = await prompt("Enter number: ");
+  const input = await prompt("Введите номер: ");
   const num = parseInt(input, 10);
   
   if (isNaN(num) || num === 0 || num < 0 || num > allModels.length) {

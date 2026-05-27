@@ -17,7 +17,7 @@ async function showMenuWithBack(config) {
     title,
     headerContent = "",
     items,
-    backLabel = "← Back",
+    backLabel = "← Назад",
     defaultIndex = 0,
     refresh = null,
     breadcrumb = []
@@ -97,7 +97,7 @@ async function showListMenu(config) {
     formatItem,
     onSelect,
     createAction = null,
-    backLabel = "← Back",
+    backLabel = "← Назад",
     breadcrumb = []
   } = config;
 
