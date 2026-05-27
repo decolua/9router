@@ -437,6 +437,22 @@ export default function ProfilePage() {
     }
   };
 
+  const updateContextWindow = async (is1M) => {
+    const contextWindow = is1M ? 1048576 : 256000;
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contextWindow }),
+      });
+      if (res.ok) {
+        setSettings(prev => ({ ...prev, contextWindow }));
+      }
+    } catch (err) {
+      console.error("Failed to update contextWindow:", err);
+    }
+  };
+
   const reloadSettings = async () => {
     try {
       const res = await fetch("/api/settings");
@@ -1022,6 +1038,32 @@ export default function ProfilePage() {
               disabled={loading}
             />
           </div>
+        </Card>
+
+        {/* Context Window */}
+        <Card>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-green-500/10 text-green-500 shrink-0">
+              <span className="material-symbols-outlined text-[20px]">width</span>
+            </div>
+            <h3 className="text-base sm:text-lg font-semibold">Context Window</h3>
+          </div>
+          <div className="flex items-start sm:items-center justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-sm sm:text-base">1M Context Window</p>
+              <p className="text-xs sm:text-sm text-text-muted">
+                Enable 1M (1,048,576) context window. Disabled = default 256K.
+              </p>
+            </div>
+            <Toggle
+              checked={(settings.contextWindow || 256000) >= 1048576}
+              onChange={() => updateContextWindow((settings.contextWindow || 256000) < 1048576)}
+              disabled={loading}
+            />
+          </div>
+          <p className="text-xs text-text-muted mt-2">
+            Current: {((settings.contextWindow || 256000) / 1000).toFixed(0)}K context
+          </p>
         </Card>
 
         {/* App Info */}
