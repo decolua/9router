@@ -414,13 +414,36 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
   const eventType = chunk.type || chunk.event;
   const data = chunk.data || chunk;
 
-  // Initialize state
+  // Initialize state and emit initial chunk immediately
+  // This ensures clients (e.g. Claude Code) see message_start right away
+  // instead of waiting 15-26s for the first reasoning/content delta
   if (!state.started) {
     state.started = true;
     state.chatId = `chatcmpl-${Date.now()}`;
     state.created = Math.floor(Date.now() / 1000);
     state.toolCallIndex = 0;
     state.currentToolCallId = null;
+
+    // Return initial chunk so downstream translators emit message_start immediately
+    // Without this, the client sees nothing until response.reasoning_summary_text.delta arrives
+    if (
+      eventType === "response.created" ||
+      eventType === "response.in_progress"
+    ) {
+      return {
+        id: state.chatId,
+        object: "chat.completion.chunk",
+        created: state.created,
+        model: state.model || "unknown",
+        choices: [
+          {
+            index: 0,
+            delta: { role: "assistant" },
+            finish_reason: null,
+          },
+        ],
+      };
+    }
   }
 
   // Text content delta
