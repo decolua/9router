@@ -95,10 +95,9 @@ export default function ClaudeToolCard({
     }
   };
 
-  const initializeStatusModels = () => {
-    if (!claudeStatus?.installed || hasInitializedModels.current) return;
-    hasInitializedModels.current = true;
-    const env = claudeStatus.settings?.env || {};
+  const initializeStatusModels = (statusData) => {
+    if (!statusData?.installed || hasInitializedModels.current) return;
+    const env = statusData.settings?.env || {};
 
     tool.defaultModels.forEach((model) => {
       if (model.envKey) {
@@ -113,6 +112,8 @@ export default function ClaudeToolCard({
     if (tokenFromFile && apiKeys?.some((k) => k.key === tokenFromFile)) {
       setSelectedApiKey(tokenFromFile);
     }
+
+    hasInitializedModels.current = true;
   };
 
   const checkClaudeStatus = async () => {
@@ -121,9 +122,7 @@ export default function ClaudeToolCard({
       const res = await fetch("/api/cli-tools/claude-settings");
       const data = await res.json();
       setClaudeStatus(data);
-      setTimeout(() => {
-        initializeStatusModels();
-      }, 0);
+      initializeStatusModels(data);
     } catch (error) {
       setClaudeStatus({ installed: false, error: error.message });
     } finally {

@@ -7,7 +7,10 @@ const LOG_LEVELS = {
   ERROR: 3,
 };
 
-const LEVEL = LOG_LEVELS.DEBUG;
+const levelName = (process.env.LOG_LEVEL || process.env.NINE_ROUTER_LOG_LEVEL || "INFO")
+  .toUpperCase()
+  .trim();
+const LEVEL = LOG_LEVELS[levelName] ?? LOG_LEVELS.INFO;
 
 function formatTime() {
   return new Date().toLocaleTimeString("en-US", { hour12: false });
@@ -80,6 +83,15 @@ export function stream(event, data) {
   console.log(
     `\x1b[35m[${formatTime()}] 🌊 [STREAM] ${event}${dataStr}\x1b[0m`,
   );
+}
+
+export function ttft(message, data) {
+  if (LEVEL <= LOG_LEVELS.INFO) {
+    const dataStr = data ? ` ${formatData(data)}` : "";
+    console.log(
+      `\x1b[34m[${formatTime()}] ⏱️  [TTFT] ${message}${dataStr}\x1b[0m`,
+    );
+  }
 }
 
 // Mask sensitive data

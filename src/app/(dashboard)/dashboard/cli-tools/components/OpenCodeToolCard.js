@@ -104,12 +104,28 @@ export default function OpenCodeToolCard({
 
   const getDisplayUrl = () => customBaseUrl || `${baseUrl}/v1`;
 
+  const hydrateModelsFromStatus = (statusData) => {
+    const models = Object.keys(
+      statusData?.config?.provider?.["9router"]?.models || {},
+    );
+    setSelectedModels(models);
+
+    const currentModel = statusData?.config?.model || "";
+    setActiveModel(currentModel.startsWith("9router/") ? currentModel.slice(8) : currentModel);
+
+    const explorerModel = statusData?.config?.agent?.explorer?.model || "";
+    setSubagentModel(
+      explorerModel.startsWith("9router/") ? explorerModel.slice(8) : explorerModel,
+    );
+  };
+
   const checkStatus = async () => {
     setChecking(true);
     try {
       const res = await fetch("/api/cli-tools/opencode-settings");
       const data = await res.json();
       setStatus(data);
+      hydrateModelsFromStatus(data);
     } catch (error) {
       setStatus({ installed: false, error: error.message });
     } finally {

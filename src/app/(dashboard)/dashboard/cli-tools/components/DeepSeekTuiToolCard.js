@@ -73,12 +73,18 @@ export default function DeepSeekTuiToolCard({
     }
   };
 
+  const hydrateModelFromStatus = (statusData) => {
+    const openaiSection = statusData?.settings?.["providers.openai"];
+    setSelectedModel(openaiSection?.model || "");
+  };
+
   const checkStatus = async () => {
     setChecking(true);
     try {
       const res = await fetch(ENDPOINT);
       const data = await res.json();
       setDeepseekStatus(data);
+      hydrateModelFromStatus(data);
     } catch (error) {
       setDeepseekStatus({ installed: false, error: error.message });
     } finally {

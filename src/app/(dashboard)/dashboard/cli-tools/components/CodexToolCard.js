@@ -83,12 +83,25 @@ export default function CodexToolCard({
 
   const getDisplayUrl = () => customBaseUrl || `${baseUrl}/v1`;
 
+  const hydrateModelsFromConfig = (configText) => {
+    if (!configText) return;
+
+    const modelMatch = configText.match(/^model\s*=\s*"([^"]+)"/m);
+    setSelectedModel(modelMatch ? modelMatch[1] : "");
+
+    const subagentModelMatch = configText.match(
+      /\[agents\.subagent\]\s*\n\s*model\s*=\s*"([^"]+)"/m,
+    );
+    setSubagentModel(subagentModelMatch ? subagentModelMatch[1] : "");
+  };
+
   const checkCodexStatus = async () => {
     setCheckingCodex(true);
     try {
       const res = await fetch("/api/cli-tools/codex-settings");
       const data = await res.json();
       setCodexStatus(data);
+      hydrateModelsFromConfig(data?.config);
     } catch (error) {
       setCodexStatus({ installed: false, error: error.message });
     } finally {

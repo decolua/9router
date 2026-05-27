@@ -320,7 +320,7 @@ async function getDispatcher(proxyUrl) {
 /**
  * Create HTTPS request with manual socket connection (bypass DNS)
  */
-async function createBypassRequest(parsedUrl, realIP, options) {
+async function createBypassRequest(parsedUrl, realIP, options, timing = null) {
   const httpsModule = await import("https");
   const https = httpsModule.default ?? httpsModule;
 
@@ -340,6 +340,7 @@ async function createBypassRequest(parsedUrl, realIP, options) {
     };
 
     const req = https.request(reqOptions, (res) => {
+      if (timing && !timing.headersAt) timing.headersAt = Date.now();
       const response = {
         ok:
           res.statusCode >= HTTP_SUCCESS_MIN &&
@@ -355,6 +356,7 @@ async function createBypassRequest(parsedUrl, realIP, options) {
         },
         json: async () => JSON.parse(await response.text()),
       };
+      if (timing) response.__timing = timing;
       resolve(response);
     });
 
@@ -385,17 +387,26 @@ async function createBypassRequest(parsedUrl, realIP, options) {
 
 export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   const targetUrl = typeof url === "string" ? url : url.toString();
+  const timing = {
+    startedAt: Date.now(),
+    mode: "direct",
+  };
 
   // Vercel relay: forward request via relay headers
   const vercelRelayUrl = normalizeString(proxyOptions?.vercelRelayUrl);
   if (vercelRelayUrl) {
+    timing.mode = "vercel-relay";
+    timing.relayStartAt = Date.now();
     const parsed = new URL(targetUrl);
     const relayHeaders = {
       ...options.headers,
       "x-relay-target": `${parsed.protocol}//${parsed.host}`,
       "x-relay-path": `${parsed.pathname}${parsed.search}`,
     };
-    return originalFetch(vercelRelayUrl, { ...options, headers: relayHeaders });
+    const response = await originalFetch(vercelRelayUrl, { ...options, headers: relayHeaders });
+    timing.headersAt = Date.now();
+    response.__timing = timing;
+    return response;
   }
 
   const connectionProxyUrl = resolveConnectionProxyUrl(targetUrl, proxyOptions);
@@ -407,10 +418,16 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   // MITM DNS bypass: for known MITM-intercepted hosts, resolve real IP to avoid DNS spoof
   if (shouldBypassMitmDns(targetUrl)) {
     if (proxyUrl) {
+      timing.mode = "proxy-mitm-bypass";
+      timing.proxyStartAt = Date.now();
       // Proxy resolves DNS externally (not affected by /etc/hosts) — use proxy directly
       try {
         const dispatcher = await getDispatcher(proxyUrl);
-        return await originalFetch(url, { ...options, dispatcher });
+        timing.dispatcherReadyAt = Date.now();
+        const response = await originalFetch(url, { ...options, dispatcher });
+        timing.headersAt = Date.now();
+        response.__timing = timing;
+        return response;
       } catch (proxyError) {
         if (proxyOptions?.strictProxy === true) {
           throw new Error(
@@ -425,8 +442,11 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
     // No proxy — manually resolve real IP to bypass DNS spoof
     try {
       const parsedUrl = new URL(targetUrl);
+      timing.mode = "dns-bypass";
+      timing.dnsStartAt = Date.now();
       const realIP = await resolveRealIP(parsedUrl.hostname);
-      if (realIP) return await createBypassRequest(parsedUrl, realIP, options);
+      timing.dnsResolvedAt = Date.now();
+      if (realIP) return await createBypassRequest(parsedUrl, realIP, options, timing);
     } catch (error) {
       console.warn(`[ProxyFetch] MITM bypass failed: ${error.message}`);
     }
@@ -434,8 +454,14 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
 
   if (proxyUrl) {
     try {
+      timing.mode = "proxy";
+      timing.proxyStartAt = Date.now();
       const dispatcher = await getDispatcher(proxyUrl);
-      return await originalFetch(url, { ...options, dispatcher });
+      timing.dispatcherReadyAt = Date.now();
+      const response = await originalFetch(url, { ...options, dispatcher });
+      timing.headersAt = Date.now();
+      response.__timing = timing;
+      return response;
     } catch (proxyError) {
       // If strictProxy is enabled, fail hard instead of falling back to direct
       if (proxyOptions?.strictProxy === true) {
@@ -446,13 +472,20 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
       console.warn(
         `[ProxyFetch] Proxy failed, falling back to direct: ${proxyError.message}`,
       );
-      return originalFetch(url, options);
+      timing.mode = "direct-fallback";
+      const response = await originalFetch(url, options);
+      timing.headersAt = Date.now();
+      response.__timing = timing;
+      return response;
     }
   }
 
   // got-scraping disabled — use native fetch directly
   // (Re-enable per-host by wrapping with tryGotScrapingFetch when needed)
-  return originalFetch(url, options);
+  const response = await originalFetch(url, options);
+  timing.headersAt = Date.now();
+  response.__timing = timing;
+  return response;
 }
 
 /**

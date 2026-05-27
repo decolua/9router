@@ -11,6 +11,7 @@ import {
   saveUsageStats,
 } from "./requestDetail.js";
 import { saveRequestDetail } from "@/lib/usageDb.js";
+import * as log from "../../../src/sse/utils/logger.js";
 
 const SSE_HEADERS = {
   "Content-Type": "text/event-stream",
@@ -45,7 +46,6 @@ function buildTransformStream({
     !isDroidCLI;
 
   if (needsCodexTranslation) {
-    // Codex returns Responses API SSE → translate to client format
     let codexTarget;
     if (sourceFormat === FORMATS.OPENAI_RESPONSES)
       codexTarget = FORMATS.OPENAI_RESPONSES;
@@ -125,6 +125,7 @@ export function handleStreamingResponse({
   onStreamComplete,
   credentials,
   midStreamResumeEnabled,
+  timing,
 }) {
   if (onRequestSuccess) onRequestSuccess();
 
@@ -133,6 +134,9 @@ export function handleStreamingResponse({
     accumulatedThinking: "",
     totalContentLength: 0,
   };
+  const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+  const wrappedOnStreamComplete = (contentObj, usage, ttftAt) =>
+    onStreamComplete?.(contentObj, usage, ttftAt, streamDetailId);
 
   const transformStream = buildTransformStream({
     provider,
@@ -144,10 +148,11 @@ export function handleStreamingResponse({
     model,
     connectionId,
     body,
-    onStreamComplete,
+    onStreamComplete: wrappedOnStreamComplete,
     apiKey,
     streamStateTracker,
   });
+
   const transformedBody = pipeWithDisconnect(
     providerResponse,
     transformStream,
@@ -169,34 +174,36 @@ export function handleStreamingResponse({
           clientRawRequest,
         }
       : null,
+    timing,
   );
 
-  const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
-  saveRequestDetail(
-    buildRequestDetail(
-      {
-        provider,
-        model,
-        connectionId,
-        latency: { ttft: 0, total: Date.now() - requestStartTime },
-        tokens: { prompt_tokens: 0, completion_tokens: 0 },
-        request: extractRequestConfig(body, stream),
-        providerRequest: finalBody || translatedBody || null,
-        providerResponse: "[Streaming - raw response not captured]",
-        response: {
-          content: "[Streaming in progress...]",
-          thinking: null,
-          type: "streaming",
+  setImmediate(() => {
+    saveRequestDetail(
+      buildRequestDetail(
+        {
+          provider,
+          model,
+          connectionId,
+          latency: { ttft: 0, total: Date.now() - requestStartTime },
+          tokens: { prompt_tokens: 0, completion_tokens: 0 },
+          request: extractRequestConfig(body, stream),
+          providerRequest: finalBody || translatedBody || null,
+          providerResponse: "[Streaming - raw response not captured]",
+          response: {
+            content: "[Streaming in progress...]",
+            thinking: null,
+            type: "streaming",
+          },
+          status: "success",
         },
-        status: "success",
-      },
-      { id: streamDetailId },
-    ),
-  ).catch((err) => {
-    console.error(
-      "[RequestDetail] Failed to save streaming request:",
-      err.message,
-    );
+        { id: streamDetailId },
+      ),
+    ).catch((err) => {
+      console.error(
+        "[RequestDetail] Failed to save streaming request:",
+        err.message,
+      );
+    });
   });
 
   return {
@@ -219,16 +226,38 @@ export function buildOnStreamComplete({
   finalBody,
   translatedBody,
   clientRawRequest,
+  timing,
 }) {
-  const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
-
-  const onStreamComplete = (contentObj, usage, ttftAt) => {
+  const onStreamComplete = (contentObj, usage, ttftAt, streamDetailId) => {
+    const total = Date.now() - requestStartTime;
     const latency = {
-      ttft: ttftAt ? ttftAt - requestStartTime : Date.now() - requestStartTime,
-      total: Date.now() - requestStartTime,
+      ttft: ttftAt ? ttftAt - requestStartTime : total,
+      total,
     };
     const safeContent = contentObj?.content || "[Empty streaming response]";
     const safeThinking = contentObj?.thinking || null;
+
+    if (timing) {
+      log.ttft(`${provider.toUpperCase()} | ${model}`, {
+        total,
+        ttft: latency.ttft,
+        parse: timing.requestParsedAt
+          ? timing.requestParsedAt - requestStartTime
+          : undefined,
+        authModel: timing.requestReadyAt
+          ? timing.requestReadyAt - requestStartTime
+          : undefined,
+        upstreamStart: timing.upstreamFetchStartedAt
+          ? timing.upstreamFetchStartedAt - requestStartTime
+          : undefined,
+        upstreamFirstByte: timing.upstreamFirstByteAt
+          ? timing.upstreamFirstByteAt - requestStartTime
+          : undefined,
+        clientFirstChunk: timing.clientFirstChunkAt
+          ? timing.clientFirstChunkAt - requestStartTime
+          : undefined,
+      });
+    }
 
     saveRequestDetail(
       buildRequestDetail(
@@ -248,7 +277,7 @@ export function buildOnStreamComplete({
           },
           status: "success",
         },
-        { id: streamDetailId },
+        streamDetailId ? { id: streamDetailId } : {},
       ),
     ).catch((err) => {
       console.error(
@@ -268,5 +297,5 @@ export function buildOnStreamComplete({
     });
   };
 
-  return { onStreamComplete, streamDetailId };
+  return { onStreamComplete };
 }

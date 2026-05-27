@@ -84,12 +84,30 @@ export default function DroidToolCard({
     }
   };
 
+  const hydrateModelsFromStatus = (statusData) => {
+    const existingModels = (statusData?.settings?.customModels || [])
+      .filter((m) => m.id?.startsWith("custom:9Router"))
+      .sort((a, b) => (a.index || 0) - (b.index || 0))
+      .map((m) => m.model);
+
+    if (existingModels.length > 0) {
+      setModelList(existingModels);
+      return;
+    }
+
+    const legacy = statusData?.settings?.customModels?.find(
+      (m) => m.id === "custom:9Router-0",
+    );
+    setModelList(legacy?.model ? [legacy.model] : []);
+  };
+
   const checkDroidStatus = async () => {
     setCheckingDroid(true);
     try {
       const res = await fetch("/api/cli-tools/droid-settings");
       const data = await res.json();
       setDroidStatus(data);
+      hydrateModelsFromStatus(data);
     } catch (error) {
       setDroidStatus({ installed: false, error: error.message });
     } finally {

@@ -103,12 +103,25 @@ export default function CopilotToolCard({
   const removeModel = (id) =>
     setSelectedModels((prev) => prev.filter((m) => m !== id));
 
+  const hydrateModelsFromStatus = (statusData) => {
+    if (!Array.isArray(statusData?.config)) {
+      setSelectedModels([]);
+      return;
+    }
+
+    const entry = statusData.config.find((e) => e.name === "9Router");
+    setSelectedModels(
+      entry?.models?.length > 0 ? entry.models.map((model) => model.id) : [],
+    );
+  };
+
   const checkStatus = async () => {
     setChecking(true);
     try {
       const res = await fetch("/api/cli-tools/copilot-settings");
       const data = await res.json();
       setStatus(data);
+      hydrateModelsFromStatus(data);
     } catch (error) {
       setStatus({ error: error.message });
     } finally {

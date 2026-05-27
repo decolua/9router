@@ -65,12 +65,17 @@ export default function KiloToolCard({
 
   const getDisplayUrl = () => customBaseUrl || `${baseUrl}/v1`;
 
+  const hydrateModelFromStatus = (statusData) => {
+    setSelectedModel(statusData?.settings?.model || "");
+  };
+
   const checkStatus = async () => {
     setChecking(true);
     try {
       const res = await fetch("/api/cli-tools/kilo-settings");
       const data = await res.json();
       setStatus(data);
+      hydrateModelFromStatus(data);
     } catch (error) {
       setStatus({ installed: false, error: error.message });
     } finally {
