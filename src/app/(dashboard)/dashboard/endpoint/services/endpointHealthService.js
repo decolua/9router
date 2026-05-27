@@ -1,4 +1,4 @@
-import { CLIENT_PING_TIMEOUT_MS } from "../utils/endpoint-constants";
+import { CLIENT_PING_TIMEOUT_MS } from "../utils/endpointConstants";
 
 export async function clientPingUrl(url) {
   if (!url) return false;

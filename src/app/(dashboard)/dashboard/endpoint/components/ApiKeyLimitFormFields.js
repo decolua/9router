@@ -2,7 +2,7 @@
 
 import PropTypes from "prop-types";
 import { Input, Select, Toggle } from "@/shared/components";
-import { LIMIT_METRIC_OPTIONS, LIMIT_PERIOD_OPTIONS } from "../utils/endpoint-constants";
+import { LIMIT_METRIC_OPTIONS, LIMIT_PERIOD_OPTIONS } from "../utils/endpointConstants";
 
 export function ApiKeyLimitFormFields({ form, onChange, description }) {
   return (

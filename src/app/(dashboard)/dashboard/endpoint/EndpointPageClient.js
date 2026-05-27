@@ -12,8 +12,8 @@ import {
   ConfirmModal,
 } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
-import { useEndpointBaseUrl } from "./hooks/use-endpoint-base-url";
-import { useEndpointSettings } from "./hooks/use-endpoint-settings";
+import { useEndpointBaseUrl } from "./hooks/useEndpointBaseUrl";
+import { useEndpointSettings } from "./hooks/useEndpointSettings";
 import {
   checkTailscaleInstalled as checkTailscaleInstalledRequest,
   createKey,
@@ -27,10 +27,10 @@ import {
   fetchTunnelStatus,
   installTailscale,
   updateKey,
-} from "./services/endpoint-api-service";
-import { clientPingAny, clientPingUrl } from "./services/endpoint-health-service";
-import { ApiKeyLimitFormFields } from "./components/api-key-limit-form-fields";
-import { ApiKeysCard } from "./components/api-keys-card";
+} from "./services/endpointApiService";
+import { clientPingAny, clientPingUrl } from "./services/endpointHealthService";
+import { ApiKeyLimitFormFields } from "./components/ApiKeyLimitFormFields";
+import { ApiKeysCard } from "./components/ApiKeysCard";
 import {
   CLIENT_PING_FAST_MS,
   REACHABLE_MISS_THRESHOLD,
@@ -38,8 +38,8 @@ import {
   TUNNEL_BENEFITS,
   TUNNEL_PING_INTERVAL_MS,
   TUNNEL_PING_MAX_MS,
-} from "./utils/endpoint-constants";
-import { EndpointRow } from "./components/endpoint-row";
+} from "./utils/endpointConstants";
+import { EndpointRow } from "./components/EndpointRow";
 import {
   buildCreatedKeyValue,
   buildLimitFormFromKey,
@@ -47,12 +47,12 @@ import {
   buildUpdatedKey,
   createDefaultLimitForm,
   normalizeLimitForm,
-} from "./utils/endpoint-limit-helpers";
-import { SecurityWarning } from "./components/security-warning";
-import { StatusAlert } from "./components/status-alert";
-import { StreamStabilityCard } from "./components/stream-stability-card";
-import { TokenSaverCard } from "./components/token-saver-card";
-import { Tooltip } from "./components/tooltip";
+} from "./utils/endpointLimitHelpers";
+import { SecurityWarning } from "./components/SecurityWarning";
+import { StatusAlert } from "./components/StatusAlert";
+import { StreamStabilityCard } from "./components/StreamStabilityCard";
+import { TokenSaverCard } from "./components/TokenSaverCard";
+import { Tooltip } from "./components/Tooltip";
 
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);

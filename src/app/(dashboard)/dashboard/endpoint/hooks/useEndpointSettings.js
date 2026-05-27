@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { fetchSettings, patchSettings } from "../services/endpoint-api-service";
+import { fetchSettings, patchSettings } from "../services/endpointApiService";
 
 export function useEndpointSettings() {
   const [requireApiKey, setRequireApiKey] = useState(false);

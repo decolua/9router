@@ -2,7 +2,7 @@
 
 import PropTypes from "prop-types";
 import { Card, Toggle } from "@/shared/components";
-import { CAVEMAN_LEVELS } from "../utils/endpoint-constants";
+import { CAVEMAN_LEVELS } from "../utils/endpointConstants";
 
 export function TokenSaverCard({
   rtkEnabled,

@@ -9,8 +9,8 @@ import {
   formatUsageHistoryValue,
   getLimitBadgeClass,
   getUsageHistoryStatusClass,
-} from "../utils/endpoint-limit-helpers";
-import { StatusAlert } from "./status-alert";
+} from "../utils/endpointLimitHelpers";
+import { StatusAlert } from "./StatusAlert";
 
 export function ApiKeysCard({
   keys,
