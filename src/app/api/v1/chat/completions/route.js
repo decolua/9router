@@ -4,6 +4,9 @@ import { getSettings } from "@/lib/localDb";
 
 let initialized = false;
 
+/**
+ * Initialize translators once
+ */
 async function ensureInitialized() {
   if (!initialized) {
     await initTranslators();
