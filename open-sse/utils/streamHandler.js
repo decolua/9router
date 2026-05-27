@@ -1,5 +1,5 @@
 // Stream handler with disconnect detection - shared for all providers
-import { STREAM_STALL_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import { STREAM_STALL_TIMEOUT_MS, STREAM_SEMANTIC_STALL_TIMEOUT_MS } from "../config/runtimeConfig.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
 // Get HH:MM:SS timestamp
@@ -311,6 +311,24 @@ export function createDisconnectAwareStream(
           }
         }
 
+        if (error.name !== "AbortError") {
+          try {
+            const errorBody = {
+              error: {
+                message: `[9Router] Stream error: ${error.message || "Unknown error"}`,
+                type: "stream_error",
+                code: "stream_failed",
+              },
+            };
+            const encoder = new TextEncoder();
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify(errorBody)}\n\n`),
+            );
+          } catch (e) {
+            // Ignore if stream is already closed
+          }
+        }
+
         streamController.handleError(error);
         reader.cancel().catch(() => {});
         if (writer && typeof writer.abort === "function") {
@@ -382,6 +400,9 @@ export function pipeWithDisconnect(
   timing = null,
 ) {
   let stallTimer = null;
+  let semanticStallTimer = null;
+  let lastContentLength = 0;
+
   let chunkCount = 0;
   let totalBytes = 0;
   let lastChunkAt = Date.now();
@@ -389,12 +410,22 @@ export function pipeWithDisconnect(
   let clientFirstChunkAt = null;
   const t0 = Date.now();
   const tag = "STREAM";
+
+  const clearSemanticStall = () => {
+    if (semanticStallTimer) {
+      clearInterval(semanticStallTimer);
+      semanticStallTimer = null;
+    }
+  };
+
   const clearStall = () => {
     if (stallTimer) {
       clearTimeout(stallTimer);
       stallTimer = null;
     }
+    clearSemanticStall();
   };
+
   const armStall = () => {
     clearStall();
     stallTimer = setTimeout(() => {
@@ -406,6 +437,35 @@ export function pipeWithDisconnect(
       streamController.handleError?.(new Error("stream stall timeout"));
       streamController.abort?.();
     }, STREAM_STALL_TIMEOUT_MS);
+  };
+
+  const startSemanticStallWatchdog = () => {
+    clearSemanticStall();
+    semanticStallTimer = setInterval(() => {
+      if (!streamController.isConnected()) {
+        clearSemanticStall();
+        return;
+      }
+
+      const currentLength =
+        (streamStateTracker?.accumulatedContent?.length || 0) +
+        (streamStateTracker?.accumulatedThinking?.length || 0);
+
+      if (currentLength > 0) {
+        if (currentLength === lastContentLength) {
+          dbg(
+            tag,
+            `SEMANTIC STALL TIMEOUT ${STREAM_SEMANTIC_STALL_TIMEOUT_MS}ms | content size ${currentLength} has not grown in the last interval. Aborting stream.`,
+          );
+          clearSemanticStall();
+          clearStall();
+          streamController.handleError?.(new Error("stream semantic stall timeout"));
+          streamController.abort?.();
+        } else {
+          lastContentLength = currentLength;
+        }
+      }
+    }, STREAM_SEMANTIC_STALL_TIMEOUT_MS);
   };
 
   // Wrap controller so every termination path clears the stall timer.
@@ -446,7 +506,8 @@ export function pipeWithDisconnect(
   };
 
   armStall();
-  dbg(tag, `pipe start | stallTimeout=${STREAM_STALL_TIMEOUT_MS}ms`);
+  startSemanticStallWatchdog();
+  dbg(tag, `pipe start | stallTimeout=${STREAM_STALL_TIMEOUT_MS}ms | semanticStallTimeout=${STREAM_SEMANTIC_STALL_TIMEOUT_MS}ms`);
 
   const upstreamTap = new TransformStream({
     transform(chunk, controller) {

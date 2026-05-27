@@ -10,243 +10,49 @@ import {
   CardSkeleton,
   Toggle,
   ConfirmModal,
-  Select,
 } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
-
-const TUNNEL_BENEFITS = [
-  {
-    icon: "public",
-    title: "Access Anywhere",
-    desc: "Use your API from any network",
-  },
-  {
-    icon: "group",
-    title: "Share Endpoint",
-    desc: "Share URL with team members",
-  },
-  {
-    icon: "code",
-    title: "Use in Cursor/Cline",
-    desc: "Connect AI tools remotely",
-  },
-  { icon: "lock", title: "Encrypted", desc: "End-to-end TLS via Cloudflare" },
-];
-
-const TUNNEL_PING_INTERVAL_MS = 2000;
-const TUNNEL_PING_MAX_MS = 300000;
-const STATUS_POLL_FAST_MS = 5000;
-const STATUS_POLL_SLOW_MS = 30000;
-const REACHABLE_MISS_THRESHOLD = 5;
-const CLIENT_PING_FAST_MS = 10000;
-const CLIENT_PING_SLOW_MS = 60000;
-const CLIENT_PING_TIMEOUT_MS = 5000;
-
-// Browser-side health probe: must reach origin (not just CF/TS edge).
-// cors mode → res.ok=false for 5xx (e.g. Cloudflare 530 when origin dead).
-// /api/health route sets Access-Control-Allow-Origin: * → CORS works through tunnel.
-async function clientPingUrl(url) {
-  if (!url) return false;
-  try {
-    const res = await fetch(`${url}/api/health`, {
-      mode: "cors",
-      cache: "no-store",
-      signal: AbortSignal.timeout(CLIENT_PING_TIMEOUT_MS),
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-// Race multiple URLs: resolve true as soon as any one passes ping.
-async function clientPingAny(...urls) {
-  const checks = urls.filter(Boolean).map(clientPingUrl);
-  if (!checks.length) return false;
-  return new Promise((resolve) => {
-    let pending = checks.length;
-    checks.forEach((p) =>
-      p.then((ok) => {
-        if (ok) resolve(true);
-        else if (--pending === 0) resolve(false);
-      }),
-    );
-  });
-}
-
-const CAVEMAN_LEVELS = [
-  { id: "lite", label: "Lite", desc: "Drop filler, keep grammar" },
-  { id: "full", label: "Full", desc: "Drop articles, fragments OK" },
-  { id: "ultra", label: "Ultra", desc: "Telegraphic, max compression" },
-];
-
-const LIMIT_METRIC_OPTIONS = [
-  { value: "requests", label: "Requests" },
-  { value: "tokens", label: "Tokens" },
-  { value: "cost", label: "Cost" },
-];
-
-const LIMIT_PERIOD_OPTIONS = [
-  { value: "daily", label: "Daily" },
-  { value: "monthly", label: "Monthly" },
-];
-
-function createDefaultLimitForm() {
-  return {
-    enabled: false,
-    metricType: "requests",
-    periodType: "daily",
-    limitValue: "",
-  };
-}
-
-function buildLimitPayload(limitForm) {
-  return {
-    limitEnabled: !!limitForm.enabled,
-    metricType: limitForm.metricType,
-    periodType: limitForm.periodType,
-    limitValue:
-      limitForm.limitValue === "" ? null : Number(limitForm.limitValue),
-  };
-}
-
-function buildLimitFormFromKey(key) {
-  if (!key?.limit) return createDefaultLimitForm();
-  return {
-    enabled: true,
-    metricType: key.limit.metricType || "requests",
-    periodType: key.limit.periodType || "daily",
-    limitValue:
-      key.limit.limitValue === undefined || key.limit.limitValue === null
-        ? ""
-        : String(key.limit.limitValue),
-  };
-}
-
-function getLimitBadgeClass(status) {
-  if (status === "exceeded") return "bg-red-500/10 text-red-500";
-  if (status === "near")
-    return "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400";
-  if (status === "healthy")
-    return "bg-green-500/10 text-green-600 dark:text-green-400";
-  return "bg-surface-2 text-text-muted";
-}
-
-function formatLimitState(key) {
-  const state = key?.limitState;
-  if (!state || !state.enabled) {
-    return {
-      summary: "Unlimited",
-      remaining: null,
-      reset: null,
-      status: "unlimited",
-    };
-  }
-  return {
-    summary: `${state.metricType}: ${state.currentValue}/${state.limitValue} · ${state.periodType}`,
-    remaining: `${state.remainingValue} remaining`,
-    reset: state.nextResetAt
-      ? `Reset: ${new Date(state.nextResetAt).toLocaleString()}`
-      : null,
-    status: state.status || "healthy",
-  };
-}
-
-function normalizeLimitForm(limitForm) {
-  if (!limitForm.enabled) return "";
-  if (limitForm.limitValue === "") return "Limit value is required";
-  const numericValue = Number(limitForm.limitValue);
-  if (!Number.isFinite(numericValue) || numericValue <= 0) {
-    return "Limit value must be greater than 0";
-  }
-  return "";
-}
-
-function formatUsageMetricValue(value) {
-  if (value == null) return "0";
-  return Number.isInteger(value)
-    ? String(value)
-    : Number(value).toLocaleString(undefined, {
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 4,
-      });
-}
-
-function formatUsageHistoryValue(entry) {
-  if (entry.cost != null && Number(entry.cost) > 0) {
-    return `$${formatUsageMetricValue(Number(entry.cost))}`;
-  }
-  if (entry.totalTokens != null && Number(entry.totalTokens) > 0) {
-    return `${formatUsageMetricValue(Number(entry.totalTokens))} tokens`;
-  }
-  return `${formatUsageMetricValue(1)} request`;
-}
-
-function getUsageHistoryStatusClass(status) {
-  if (status >= 400) return "text-red-500";
-  if (status >= 300) return "text-yellow-600 dark:text-yellow-400";
-  return "text-green-600 dark:text-green-400";
-}
-
-function buildUsageSummaryItems(limitState) {
-  if (!limitState?.enabled) return [];
-  return [
-    {
-      label: "Current",
-      value: formatUsageMetricValue(limitState.currentValue),
-    },
-    {
-      label: "Limit",
-      value: formatUsageMetricValue(limitState.limitValue),
-    },
-    {
-      label: "Remaining",
-      value: formatUsageMetricValue(limitState.remainingValue),
-    },
-  ];
-}
-
-function getUsageMetricLabel(metricType) {
-  return (
-    LIMIT_METRIC_OPTIONS.find((option) => option.value === metricType)?.label ||
-    metricType ||
-    "Usage"
-  );
-}
-
-function getUsagePeriodLabel(periodType) {
-  return (
-    LIMIT_PERIOD_OPTIONS.find((option) => option.value === periodType)?.label ||
-    periodType ||
-    "Period"
-  );
-}
-
-function buildUpdatedKey(existingKey, updatedFields, responseKey) {
-  return {
-    ...existingKey,
-    ...updatedFields,
-    ...(responseKey || {}),
-    limit: responseKey?.limit ?? updatedFields.limit ?? existingKey.limit,
-    limitState:
-      responseKey?.limitState ??
-      updatedFields.limitState ??
-      existingKey.limitState,
-  };
-}
-
-function buildCreatedKeyValue(createdKey) {
-  if (!createdKey) return "";
-  if (typeof createdKey === "string") return createdKey;
-  return createdKey.key || "";
-}
-
-function buildUsageDetailMessage(key) {
-  if (!key?.limitState?.enabled) {
-    return "This key has no limit configured yet.";
-  }
-  return `${getUsageMetricLabel(key.limitState.metricType)} tracked on a ${getUsagePeriodLabel(key.limitState.periodType).toLowerCase()} window.`;
-}
+import { useEndpointBaseUrl } from "./hooks/use-endpoint-base-url";
+import { useEndpointSettings } from "./hooks/use-endpoint-settings";
+import {
+  checkTailscaleInstalled as checkTailscaleInstalledRequest,
+  createKey,
+  deleteKey,
+  disableTailscale,
+  disableTunnel,
+  enableTailscale,
+  enableTunnel,
+  fetchKeys,
+  fetchKeyUsage,
+  fetchTunnelStatus,
+  installTailscale,
+  updateKey,
+} from "./services/endpoint-api-service";
+import { clientPingAny, clientPingUrl } from "./services/endpoint-health-service";
+import { ApiKeyLimitFormFields } from "./components/api-key-limit-form-fields";
+import { ApiKeysCard } from "./components/api-keys-card";
+import {
+  CLIENT_PING_FAST_MS,
+  REACHABLE_MISS_THRESHOLD,
+  STATUS_POLL_FAST_MS,
+  TUNNEL_BENEFITS,
+  TUNNEL_PING_INTERVAL_MS,
+  TUNNEL_PING_MAX_MS,
+} from "./utils/endpoint-constants";
+import { EndpointRow } from "./components/endpoint-row";
+import {
+  buildCreatedKeyValue,
+  buildLimitFormFromKey,
+  buildLimitPayload,
+  buildUpdatedKey,
+  createDefaultLimitForm,
+  normalizeLimitForm,
+} from "./utils/endpoint-limit-helpers";
+import { SecurityWarning } from "./components/security-warning";
+import { StatusAlert } from "./components/status-alert";
+import { StreamStabilityCard } from "./components/stream-stability-card";
+import { TokenSaverCard } from "./components/token-saver-card";
+import { Tooltip } from "./components/tooltip";
 
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
@@ -266,17 +72,29 @@ export default function APIPageClient({ machineId }) {
   const [showUsageDetailsByKeyId, setShowUsageDetailsByKeyId] = useState({});
   const [keyActionStatus, setKeyActionStatus] = useState(null);
 
-  const [requireApiKey, setRequireApiKey] = useState(false);
-  const [requireLogin, setRequireLogin] = useState(true);
-  const [hasPassword, setHasPassword] = useState(true);
-  const [tunnelDashboardAccess, setTunnelDashboardAccess] = useState(false);
-  const [rtkEnabled, setRtkEnabledState] = useState(true);
-  const [cavemanEnabled, setCavemanEnabled] = useState(false);
-  const [cavemanLevel, setCavemanLevel] = useState("full");
-  const [autoRetryOverloaded, setAutoRetryOverloaded] = useState(true);
-  const [maxRetryAttempts, setMaxRetryAttempts] = useState(3);
-  const [retryDelayMs, setRetryDelayMs] = useState(2000);
-  const [midStreamResumeEnabled, setMidStreamResumeEnabled] = useState(true);
+  const {
+    requireApiKey,
+    requireLogin,
+    hasPassword,
+    tunnelDashboardAccess,
+    rtkEnabled,
+    cavemanEnabled,
+    cavemanLevel,
+    autoRetryOverloaded,
+    maxRetryAttempts,
+    retryDelayMs,
+    midStreamResumeEnabled,
+    applySettings,
+    handleTunnelDashboardAccess,
+    handleRequireApiKey,
+    handleRtkEnabled,
+    handleAutoRetryOverloaded,
+    handleMaxRetryAttempts,
+    handleRetryDelayMs,
+    handleMidStreamResumeEnabled,
+    handleCavemanEnabled,
+    handleCavemanLevel,
+  } = useEndpointSettings();
 
   // Cloudflare Tunnel state
   const [tunnelChecking, setTunnelChecking] = useState(true);
@@ -341,7 +159,7 @@ export default function APIPageClient({ machineId }) {
 
   useEffect(() => {
     fetchData();
-    loadSettings();
+    loadInitialState();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -454,96 +272,20 @@ export default function APIPageClient({ machineId }) {
   // Trust user intent (settingsEnabled): UI stays "enabled" while watchdog restarts process
   async function syncTunnelStatus() {
     try {
-      const statusRes = await fetch("/api/tunnel/status", {
-        cache: "no-store",
-      });
-      if (!statusRes.ok) return;
-      const data = await statusRes.json();
-      const tEnabled =
-        data.tunnel?.settingsEnabled ?? data.tunnel?.enabled ?? false;
-      const tUrl = data.tunnel?.tunnelUrl || "";
-      setTunnelUrl(tUrl);
-      setTunnelPublicUrl(data.tunnel?.publicUrl || "");
-      setTunnelEnabled(tEnabled);
-      updateReachable(
-        null,
-        tunnelClientReachableRef,
-        tunnelMissRef,
-        setTunnelReachable,
-        tunnelEverReachableRef,
-        setTunnelEverReachable,
-      );
-
-      const tsEn =
-        data.tailscale?.settingsEnabled ?? data.tailscale?.enabled ?? false;
-      const tsUrlVal = data.tailscale?.tunnelUrl || "";
-      setTsUrl(tsUrlVal);
-      setTsEnabled(tsEn);
-      updateReachable(
-        null,
-        tsClientReachableRef,
-        tsMissRef,
-        setTsReachable,
-        tsEverReachableRef,
-        setTsEverReachable,
-      );
+      const { ok, data } = await fetchTunnelStatus();
+      if (!ok) return;
+      applyTunnelStatus(data);
     } catch {
       /* ignore poll errors */
     }
   }
 
-  async function loadSettings() {
+  async function loadInitialState() {
     setTunnelChecking(true);
     try {
-      const [settingsRes, statusRes] = await Promise.all([
-        fetch("/api/settings"),
-        fetch("/api/tunnel/status", { cache: "no-store" }),
-      ]);
-      if (settingsRes.ok) {
-        const data = await settingsRes.json();
-        setRequireApiKey(data.requireApiKey || false);
-        setRequireLogin(data.requireLogin !== false);
-        setHasPassword(data.hasPassword || false);
-        setTunnelDashboardAccess(data.tunnelDashboardAccess || false);
-        setRtkEnabledState(data.rtkEnabled !== false);
-        setCavemanEnabled(!!data.cavemanEnabled);
-        setCavemanLevel(data.cavemanLevel || "full");
-        setAutoRetryOverloaded(data.autoRetryOverloaded !== false);
-        setMaxRetryAttempts(data.maxRetryAttempts ?? 3);
-        setRetryDelayMs(data.retryDelayMs ?? 2000);
-        setMidStreamResumeEnabled(data.midStreamResumeEnabled !== false);
-      }
-      if (statusRes.ok) {
-        const data = await statusRes.json();
-        const tEnabled =
-          data.tunnel?.settingsEnabled ?? data.tunnel?.enabled ?? false;
-        const tUrl = data.tunnel?.tunnelUrl || "";
-        setTunnelUrl(tUrl);
-        setTunnelPublicUrl(data.tunnel?.publicUrl || "");
-        setTunnelEnabled(tEnabled);
-        updateReachable(
-          null,
-          tunnelClientReachableRef,
-          tunnelMissRef,
-          setTunnelReachable,
-          tunnelEverReachableRef,
-          setTunnelEverReachable,
-        );
-
-        const tsEn =
-          data.tailscale?.settingsEnabled ?? data.tailscale?.enabled ?? false;
-        const tsUrlVal = data.tailscale?.tunnelUrl || "";
-        setTsUrl(tsUrlVal);
-        setTsEnabled(tsEn);
-        updateReachable(
-          null,
-          tsClientReachableRef,
-          tsMissRef,
-          setTsReachable,
-          tsEverReachableRef,
-          setTsEverReachable,
-        );
-      }
+      await applySettings();
+      const { ok, data } = await fetchTunnelStatus();
+      if (ok) applyTunnelStatus(data);
     } catch (error) {
       console.log("Error loading settings:", error);
     } finally {
@@ -551,127 +293,41 @@ export default function APIPageClient({ machineId }) {
     }
   }
 
-  const handleTunnelDashboardAccess = async (value) => {
-    try {
-      const res = await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tunnelDashboardAccess: value }),
-      });
-      if (res.ok) setTunnelDashboardAccess(value);
-    } catch (error) {
-      console.log("Error updating tunnelDashboardAccess:", error);
-    }
-  };
+  function applyTunnelStatus(data) {
+    const tEnabled = data.tunnel?.settingsEnabled ?? data.tunnel?.enabled ?? false;
+    const tUrl = data.tunnel?.tunnelUrl || "";
+    setTunnelUrl(tUrl);
+    setTunnelPublicUrl(data.tunnel?.publicUrl || "");
+    setTunnelEnabled(tEnabled);
+    updateReachable(
+      null,
+      tunnelClientReachableRef,
+      tunnelMissRef,
+      setTunnelReachable,
+      tunnelEverReachableRef,
+      setTunnelEverReachable,
+    );
 
-  const handleRequireApiKey = async (value) => {
-    try {
-      const res = await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ requireApiKey: value }),
-      });
-      if (res.ok) setRequireApiKey(value);
-    } catch (error) {
-      console.log("Error updating requireApiKey:", error);
-    }
-  };
+    const tsEn = data.tailscale?.settingsEnabled ?? data.tailscale?.enabled ?? false;
+    const tsUrlVal = data.tailscale?.tunnelUrl || "";
+    setTsUrl(tsUrlVal);
+    setTsEnabled(tsEn);
+    updateReachable(
+      null,
+      tsClientReachableRef,
+      tsMissRef,
+      setTsReachable,
+      tsEverReachableRef,
+      setTsEverReachable,
+    );
+  }
 
-  const handleRtkEnabled = async (value) => {
-    try {
-      const res = await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rtkEnabled: value }),
-      });
-      if (res.ok) setRtkEnabledState(value);
-    } catch (error) {
-      console.log("Error updating rtkEnabled:", error);
-    }
-  };
-
-  const handleAutoRetryOverloaded = async (value) => {
-    try {
-      const res = await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ autoRetryOverloaded: value }),
-      });
-      if (res.ok) setAutoRetryOverloaded(value);
-    } catch (error) {
-      console.log("Error updating autoRetryOverloaded:", error);
-    }
-  };
-
-  const handleMaxRetryAttempts = async (value) => {
-    const val = parseInt(value, 10) || 1;
-    try {
-      const res = await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ maxRetryAttempts: val }),
-      });
-      if (res.ok) setMaxRetryAttempts(val);
-    } catch (error) {
-      console.log("Error updating maxRetryAttempts:", error);
-    }
-  };
-
-  const handleRetryDelayMs = async (value) => {
-    const val = parseInt(value, 10) || 1000;
-    try {
-      const res = await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ retryDelayMs: val }),
-      });
-      if (res.ok) setRetryDelayMs(val);
-    } catch (error) {
-      console.log("Error updating retryDelayMs:", error);
-    }
-  };
-
-  const handleMidStreamResumeEnabled = async (value) => {
-    try {
-      const res = await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ midStreamResumeEnabled: value }),
-      });
-      if (res.ok) setMidStreamResumeEnabled(value);
-    } catch (error) {
-      console.log("Error updating midStreamResumeEnabled:", error);
-    }
-  };
-
-  const patchSetting = async (patch) => {
-    try {
-      await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
-      });
-    } catch (error) {
-      console.log("Error updating setting:", error);
-    }
-  };
-
-  const handleCavemanEnabled = (value) => {
-    setCavemanEnabled(value);
-    patchSetting({ cavemanEnabled: value });
-  };
-
-  const handleCavemanLevel = (level) => {
-    setCavemanLevel(level);
-    patchSetting({ cavemanLevel: level });
-  };
 
   async function fetchData() {
     try {
-      const keysRes = await fetch("/api/keys");
-      const keysData = await keysRes.json();
-      if (keysRes.ok) {
-        setKeys(keysData.keys || []);
+      const { ok, data } = await fetchKeys();
+      if (ok) {
+        setKeys(data.keys || []);
       }
     } catch (error) {
       console.log("Error fetching data:", error);
@@ -716,11 +372,8 @@ export default function APIPageClient({ machineId }) {
 
     setLoadingUsageKeyId(keyId);
     try {
-      const res = await fetch(`/api/keys/${keyId}/usage?limit=20`, {
-        cache: "no-store",
-      });
-      const data = await res.json();
-      if (!res.ok) {
+      const { ok, data } = await fetchKeyUsage(keyId, 20);
+      if (!ok) {
         setKeyActionStatus({
           type: "error",
           message: data.error || "Failed to load key usage",
@@ -766,13 +419,8 @@ export default function APIPageClient({ machineId }) {
         name,
         ...buildLimitPayload(editKeyLimit),
       };
-      const res = await fetch(`/api/keys/${editingKey.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (!res.ok) {
+      const { ok, data } = await updateKey(editingKey.id, payload);
+      if (!ok) {
         setKeyFormError(data.error || "Failed to update key");
         return;
       }
@@ -806,13 +454,8 @@ export default function APIPageClient({ machineId }) {
   const handleUpdateKeyActive = async (id, isActive) => {
     setSavingKeyId(id);
     try {
-      const res = await fetch(`/api/keys/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isActive }),
-      });
-      const data = await res.json();
-      if (res.ok) {
+      const { ok, data } = await updateKey(id, { isActive });
+      if (ok) {
         updateKeyInList(id, (existingKey) =>
           buildUpdatedKey(existingKey, { isActive }, data.key),
         );
@@ -845,14 +488,9 @@ export default function APIPageClient({ machineId }) {
         name,
         ...buildLimitPayload(newKeyLimit),
       };
-      const res = await fetch("/api/keys", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
+      const { ok, data } = await createKey(payload);
 
-      if (res.ok) {
+      if (ok) {
         setCreatedKey(data);
         await fetchData();
         setNewKeyName("");
@@ -898,9 +536,8 @@ export default function APIPageClient({ machineId }) {
       // Every 5 pings (~10s), check if backend process still alive
       if ((Date.now() - start) % 10000 < TUNNEL_PING_INTERVAL_MS) {
         try {
-          const statusRes = await fetch("/api/tunnel/status");
-          if (statusRes.ok) {
-            const status = await statusRes.json();
+          const { ok: statusOk, data: status } = await fetchTunnelStatus();
+          if (statusOk) {
             if (!status.tunnel?.enabled) {
               setTunnelStatus({
                 type: "error",
@@ -936,9 +573,8 @@ export default function APIPageClient({ machineId }) {
     const pollProgress = async () => {
       while (polling) {
         try {
-          const r = await fetch("/api/tunnel/status");
-          if (r.ok) {
-            const s = await r.json();
+          const { ok, data: s } = await fetchTunnelStatus();
+          if (ok) {
             if (s.download?.downloading) {
               setTunnelProgress(
                 `Downloading cloudflared... ${s.download.progress}%`,
@@ -956,10 +592,9 @@ export default function APIPageClient({ machineId }) {
     pollProgress();
 
     try {
-      const res = await fetch("/api/tunnel/enable", { method: "POST" });
+      const { ok, data } = await enableTunnel();
       polling = false;
-      const data = await res.json();
-      if (!res.ok) {
+      if (!ok) {
         setTunnelStatus({
           type: "error",
           message: data.error || "Failed to enable tunnel",
@@ -989,9 +624,8 @@ export default function APIPageClient({ machineId }) {
     setTunnelLoading(true);
     setTunnelStatus(null);
     try {
-      const res = await fetch("/api/tunnel/disable", { method: "POST" });
-      const data = await res.json();
-      if (res.ok) {
+      const { ok, data } = await disableTunnel();
+      if (ok) {
         setTunnelEnabled(false);
         setTunnelUrl("");
         setShowDisableTunnelModal(false);
@@ -1013,9 +647,8 @@ export default function APIPageClient({ machineId }) {
   const checkTailscaleInstalled = async () => {
     setTsInstalled(null);
     try {
-      const res = await fetch("/api/tunnel/tailscale-check");
-      if (res.ok) {
-        const data = await res.json();
+      const { ok, data } = await checkTailscaleInstalledRequest();
+      if (ok) {
         setTsInstalled(data.installed);
         return data;
       }
@@ -1031,11 +664,7 @@ export default function APIPageClient({ machineId }) {
     setTsStatus(null);
     setTsInstallLog([]);
     try {
-      const res = await fetch("/api/tunnel/tailscale-install", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sudoPassword: tsSudoPassword }),
-      });
+      const res = await installTailscale(tsSudoPassword);
       setTsSudoPassword("");
 
       const reader = res.body.getReader();
@@ -1126,12 +755,9 @@ export default function APIPageClient({ machineId }) {
     setTsProgress("Connecting...");
     clearUserAuth();
     try {
-      const res = await fetch("/api/tunnel/tailscale-enable", {
-        method: "POST",
-      });
-      const data = await res.json();
+      const { ok, data } = await enableTailscale();
 
-      if (res.ok && data.success) {
+      if (ok && data.success) {
         setTsUrl(data.tunnelUrl || "");
         const reachable = await pingTsHealth(data.tunnelUrl);
         setTsEnabled(true);
@@ -1152,17 +778,13 @@ export default function APIPageClient({ machineId }) {
         for (let i = 0; i < 40; i++) {
           await new Promise((r) => setTimeout(r, 3000));
           try {
-            const r2 = await fetch("/api/tunnel/tailscale-check");
-            if (r2.ok) {
-              const check = await r2.json();
+            const { ok: checkOk, data: check } = await checkTailscaleInstalledRequest();
+            if (checkOk) {
               if (check.loggedIn) {
                 clearUserAuth();
                 setTsProgress("Starting funnel...");
-                const res2 = await fetch("/api/tunnel/tailscale-enable", {
-                  method: "POST",
-                });
-                const data2 = await res2.json();
-                if (res2.ok && data2.success) {
+                const { ok: ok2Response, data: data2 } = await enableTailscale();
+                if (ok2Response && data2.success) {
                   setTsUrl(data2.tunnelUrl || "");
                   const ok2 = await pingTsHealth(data2.tunnelUrl);
                   setTsEnabled(true);
@@ -1222,11 +844,8 @@ export default function APIPageClient({ machineId }) {
     for (let i = 0; i < 40; i++) {
       await new Promise((r) => setTimeout(r, 3000));
       try {
-        const res = await fetch("/api/tunnel/tailscale-enable", {
-          method: "POST",
-        });
-        const data = await res.json();
-        if (res.ok && data.success) {
+        const { ok, data } = await enableTailscale();
+        if (ok && data.success) {
           clearUserAuth();
           setTsUrl(data.tunnelUrl || "");
           const ok3 = await pingTsHealth(data.tunnelUrl);
@@ -1262,11 +881,8 @@ export default function APIPageClient({ machineId }) {
     setTsLoading(true);
     setTsStatus(null);
     try {
-      const res = await fetch("/api/tunnel/tailscale-disable", {
-        method: "POST",
-      });
-      const data = await res.json();
-      if (res.ok) {
+      const { ok, data } = await disableTailscale();
+      if (ok) {
         setTsEnabled(false);
         setTsUrl("");
         setShowDisableTsModal(false);
@@ -1302,9 +918,9 @@ export default function APIPageClient({ machineId }) {
       onConfirm: async () => {
         setConfirmState(null);
         try {
-          const res = await fetch(`/api/keys/${id}`, { method: "DELETE" });
-          if (res.ok) {
-            setKeys(keys.filter((k) => k.id !== id));
+          const { ok } = await deleteKey(id);
+          if (ok) {
+            setKeys((prev) => prev.filter((k) => k.id !== id));
             setVisibleKeys((prev) => {
               const next = new Set(prev);
               next.delete(id);
@@ -1336,15 +952,7 @@ export default function APIPageClient({ machineId }) {
     });
   };
 
-  const [baseUrl, setBaseUrl] = useState("/v1");
-
-  // Hydration fix: Only access window on client side
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setBaseUrl(`${window.location.origin}/v1`);
-    }
-  }, []);
+  const baseUrl = useEndpointBaseUrl();
 
   if (loading) {
     return (
@@ -1698,426 +1306,59 @@ export default function APIPageClient({ machineId }) {
         )}
       </Card>
 
-      {/* Token Saver (RTK + Caveman) */}
-      <Card id="rtk">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary">bolt</span>
-            Token Saver
-          </h2>
-        </div>
-        <div className="flex items-center justify-between pt-2 pb-4 border-b border-border gap-4">
-          <div className="min-w-0 flex-1">
-            <p className="font-medium">
-              Compress tool output{" "}
-              <a
-                href="https://github.com/rtk-ai/rtk"
-                target="_blank"
-                rel="noreferrer"
-                className="text-xs font-normal text-primary underline hover:opacity-80"
-              >
-                (RTK)
-              </a>
-            </p>
-            <p className="text-sm text-text-muted">
-              git/grep/ls/tree/logs → 60-90% fewer input tokens
-            </p>
-          </div>
-          <Toggle
-            checked={rtkEnabled}
-            onChange={() => handleRtkEnabled(!rtkEnabled)}
-          />
-        </div>
-        <div className="flex items-center justify-between pt-4 gap-4 flex-wrap">
-          <div className="min-w-0 flex-1">
-            <p className="font-medium">
-              Compress LLM output{" "}
-              <a
-                href="https://github.com/JuliusBrussee/caveman"
-                target="_blank"
-                rel="noreferrer"
-                className="text-xs font-normal text-primary underline hover:opacity-80"
-              >
-                (Caveman)
-              </a>
-            </p>
-            <p className="text-sm text-text-muted">
-              Terse-style system prompt → ~65% fewer output tokens (up to 87%)
-            </p>
-          </div>
-          <div className="flex items-center gap-3 shrink-0">
-            {cavemanEnabled && (
-              <div className="flex items-center gap-1.5">
-                {CAVEMAN_LEVELS.map((lvl) => (
-                  <button
-                    key={lvl.id}
-                    onClick={() => handleCavemanLevel(lvl.id)}
-                    className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
-                      cavemanLevel === lvl.id
-                        ? "bg-primary text-white border-primary"
-                        : "bg-transparent border-border text-text-muted hover:bg-surface-2"
-                    }`}
-                    title={lvl.desc}
-                  >
-                    {lvl.label}
-                  </button>
-                ))}
-              </div>
-            )}
-            <Toggle
-              checked={cavemanEnabled}
-              onChange={() => handleCavemanEnabled(!cavemanEnabled)}
-            />
-          </div>
-        </div>
-      </Card>
+      <TokenSaverCard
+        rtkEnabled={rtkEnabled}
+        cavemanEnabled={cavemanEnabled}
+        cavemanLevel={cavemanLevel}
+        onRtkEnabledChange={handleRtkEnabled}
+        onCavemanEnabledChange={handleCavemanEnabled}
+        onCavemanLevelChange={handleCavemanLevel}
+      />
 
-      {/* Stream Stability & Auto Retry */}
-      <Card id="stream-stability">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary">
-              sync_saved_locally
-            </span>
-            Stream Stability & Auto Retry
-          </h2>
-        </div>
+      <StreamStabilityCard
+        autoRetryOverloaded={autoRetryOverloaded}
+        maxRetryAttempts={maxRetryAttempts}
+        retryDelayMs={retryDelayMs}
+        midStreamResumeEnabled={midStreamResumeEnabled}
+        onAutoRetryOverloadedChange={handleAutoRetryOverloaded}
+        onMaxRetryAttemptsChange={handleMaxRetryAttempts}
+        onRetryDelayMsChange={handleRetryDelayMs}
+        onMidStreamResumeEnabledChange={handleMidStreamResumeEnabled}
+      />
 
-        {/* Toggle 1: Auto Retry */}
-        <div className="flex items-center justify-between pt-2 pb-4 border-b border-border gap-4">
-          <div className="min-w-0 flex-1">
-            <p className="font-medium">Auto-Retry Overloaded Errors</p>
-            <p className="text-sm text-text-muted">
-              Automatically retry initial requests when providers return
-              &quot;overloaded&quot; (503/529) or busy 429 status codes.
-            </p>
-          </div>
-          <Toggle
-            checked={autoRetryOverloaded}
-            onChange={() => handleAutoRetryOverloaded(!autoRetryOverloaded)}
-          />
-        </div>
-
-        {/* Inputs for Max Attempts & Delay */}
-        {autoRetryOverloaded && (
-          <div className="flex items-center gap-6 pt-4 pb-4 border-b border-border flex-wrap">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-text-muted">
-                Max Attempts:
-              </span>
-              <Input
-                type="number"
-                min="1"
-                max="10"
-                value={maxRetryAttempts}
-                onChange={(e) => handleMaxRetryAttempts(e.target.value)}
-                className="w-20 text-center"
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-text-muted">
-                Delay (ms):
-              </span>
-              <Input
-                type="number"
-                min="500"
-                max="10000"
-                step="500"
-                value={retryDelayMs}
-                onChange={(e) => handleRetryDelayMs(e.target.value)}
-                className="w-28 text-center"
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Toggle 2: Mid-stream Resume */}
-        <div className="flex items-center justify-between pt-4 gap-4">
-          <div className="min-w-0 flex-1">
-            <p className="font-medium">Mid-stream Transparent Resuming</p>
-            <p className="text-sm text-text-muted">
-              If the stream disconnects unexpectedly mid-generation, 9Router
-              will seamlessly request the provider to write the remaining
-              response from where it left off.
-            </p>
-          </div>
-          <Toggle
-            checked={midStreamResumeEnabled}
-            onChange={() =>
-              handleMidStreamResumeEnabled(!midStreamResumeEnabled)
-            }
-          />
-        </div>
-      </Card>
-
-      {/* API Keys */}
-      <Card id="require-api-key">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary">
-              vpn_key
-            </span>
-            API Keys
-          </h2>
-          <Button
-            icon="add"
-            onClick={() => {
-              setShowAddModal(true);
-              setKeyFormError("");
-            }}
-          >
-            Create Key
-          </Button>
-        </div>
-
-        <div className="flex items-center justify-between pb-4 mb-4 border-b border-border">
-          <div>
-            <p className="font-medium">Require API key</p>
-            <p className="text-sm text-text-muted">
-              Requests without a valid key will be rejected
-            </p>
-          </div>
-          <Toggle
-            checked={requireApiKey}
-            onChange={() => handleRequireApiKey(!requireApiKey)}
-          />
-        </div>
-
-        {keyActionStatus && (
-          <StatusAlert status={keyActionStatus} className="mb-4" />
-        )}
-
-        {keys.length === 0 ? (
-          <div className="text-center py-12">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 text-primary mb-4">
-              <span className="material-symbols-outlined text-[32px]">
-                vpn_key
-              </span>
-            </div>
-            <p className="text-text-main font-medium mb-1">No API keys yet</p>
-            <p className="text-sm text-text-muted mb-4">
-              Create your first API key to get started
-            </p>
-            <Button icon="add" onClick={() => setShowAddModal(true)}>
-              Create Key
-            </Button>
-          </div>
-        ) : (
-          <div className="flex flex-col">
-            {keys.map((key) => {
-              const limitView = formatLimitState(key);
-              const usageDetail = usageDetailsByKeyId[key.id];
-              const usageOpen = !!showUsageDetailsByKeyId[key.id];
-              const usageSummaryItems = buildUsageSummaryItems(
-                usageDetail?.limitState || key.limitState,
-              );
-              const isSavingThisKey = savingKeyId === key.id;
-              const isLoadingUsage = loadingUsageKeyId === key.id;
-
-              return (
-                <div
-                  key={key.id}
-                  className={`py-4 border-b border-black/[0.03] dark:border-white/[0.03] last:border-b-0 ${key.isActive === false ? "opacity-60" : ""}`}
-                >
-                  <div className="group flex items-start justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-sm font-medium">{key.name}</p>
-                        <span
-                          className={`text-[11px] px-2 py-0.5 rounded-full ${getLimitBadgeClass(limitView.status)}`}
-                        >
-                          {limitView.status}
-                        </span>
-                        {key.isActive === false && (
-                          <span className="text-[11px] px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-500">
-                            paused
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-2 mt-1">
-                        <code className="text-xs text-text-muted font-mono break-all">
-                          {visibleKeys.has(key.id) ? key.key : maskKey(key.key)}
-                        </code>
-                        <button
-                          onClick={() => toggleKeyVisibility(key.id)}
-                          className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
-                          title={
-                            visibleKeys.has(key.id) ? "Hide key" : "Show key"
-                          }
-                        >
-                          <span className="material-symbols-outlined text-[14px]">
-                            {visibleKeys.has(key.id)
-                              ? "visibility_off"
-                              : "visibility"}
-                          </span>
-                        </button>
-                        <button
-                          onClick={() => copy(key.key, key.id)}
-                          className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
-                        >
-                          <span className="material-symbols-outlined text-[14px]">
-                            {copied === key.id ? "check" : "content_copy"}
-                          </span>
-                        </button>
-                      </div>
-
-                      <p className="text-xs text-text-muted mt-2">
-                        Created {new Date(key.createdAt).toLocaleDateString()}
-                      </p>
-
-                      <div className="mt-3 rounded-lg border border-border bg-surface-2/40 px-3 py-2">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div>
-                            <p className="text-xs font-medium text-text-main">
-                              {limitView.summary}
-                            </p>
-                            {limitView.remaining && (
-                              <p className="text-xs text-text-muted mt-1">
-                                {limitView.remaining}
-                              </p>
-                            )}
-                            {limitView.reset && (
-                              <p className="text-xs text-text-muted mt-1">
-                                {limitView.reset}
-                              </p>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              icon="monitoring"
-                              onClick={() => toggleUsageDetails(key)}
-                            >
-                              {usageOpen ? "Hide usage" : "View usage"}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              icon="edit"
-                              onClick={() => openEditKeyModal(key)}
-                            >
-                              Edit limit
-                            </Button>
-                          </div>
-                        </div>
-
-                        {usageOpen && (
-                          <div className="mt-3 border-t border-border pt-3">
-                            <p className="text-xs text-text-muted mb-3">
-                              {buildUsageDetailMessage(key)}
-                            </p>
-
-                            {isLoadingUsage ? (
-                              <div className="text-xs text-text-muted flex items-center gap-2">
-                                <span className="material-symbols-outlined animate-spin text-sm">
-                                  progress_activity
-                                </span>
-                                Loading usage details...
-                              </div>
-                            ) : (
-                              <>
-                                {usageSummaryItems.length > 0 && (
-                                  <div className="grid grid-cols-3 gap-2 mb-3">
-                                    {usageSummaryItems.map((item) => (
-                                      <div
-                                        key={item.label}
-                                        className="rounded-lg bg-background px-3 py-2 border border-border"
-                                      >
-                                        <p className="text-[11px] text-text-muted uppercase tracking-wide">
-                                          {item.label}
-                                        </p>
-                                        <p className="text-sm font-medium mt-1">
-                                          {item.value}
-                                        </p>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-
-                                {usageDetail?.history?.length ? (
-                                  <div className="flex flex-col gap-2">
-                                    {usageDetail.history.map((entry) => (
-                                      <div
-                                        key={entry.id}
-                                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-background px-3 py-2 border border-border"
-                                      >
-                                        <div className="min-w-0 flex-1">
-                                          <p className="text-xs font-medium text-text-main break-all">
-                                            {entry.endpoint ||
-                                              entry.model ||
-                                              "Request"}
-                                          </p>
-                                          <p className="text-[11px] text-text-muted mt-1">
-                                            {new Date(
-                                              entry.timestamp,
-                                            ).toLocaleString()}
-                                          </p>
-                                        </div>
-                                        <div className="flex items-center gap-3 shrink-0">
-                                          <span className="text-xs text-text-muted">
-                                            {formatUsageHistoryValue(entry)}
-                                          </span>
-                                          <span
-                                            className={`text-xs font-medium ${getUsageHistoryStatusClass(entry.status)}`}
-                                          >
-                                            {entry.status}
-                                          </span>
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <p className="text-xs text-text-muted">
-                                    No recorded usage for this key yet.
-                                  </p>
-                                )}
-                              </>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <Toggle
-                        size="sm"
-                        checked={key.isActive ?? true}
-                        disabled={isSavingThisKey}
-                        onChange={(checked) => {
-                          if (key.isActive && !checked) {
-                            setConfirmState({
-                              title: "Pause API Key",
-                              message: `Pause API key "${key.name}"?\n\nThis key will stop working immediately but can be resumed later.`,
-                              onConfirm: async () => {
-                                setConfirmState(null);
-                                handleToggleKey(key.id, checked);
-                              },
-                            });
-                          } else {
-                            handleToggleKey(key.id, checked);
-                          }
-                        }}
-                        title={key.isActive ? "Pause key" : "Resume key"}
-                      />
-                      <button
-                        onClick={() => handleDeleteKey(key.id)}
-                        className="p-2 hover:bg-red-500/10 rounded text-red-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
-                      >
-                        <span className="material-symbols-outlined text-[18px]">
-                          delete
-                        </span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </Card>
-
+      <ApiKeysCard
+        keys={keys}
+        copied={copied}
+        requireApiKey={requireApiKey}
+        keyActionStatus={keyActionStatus}
+        visibleKeys={visibleKeys}
+        usageDetailsByKeyId={usageDetailsByKeyId}
+        showUsageDetailsByKeyId={showUsageDetailsByKeyId}
+        savingKeyId={savingKeyId}
+        loadingUsageKeyId={loadingUsageKeyId}
+        onCreateClick={() => {
+          setShowAddModal(true);
+          setKeyFormError("");
+        }}
+        onRequireApiKeyChange={handleRequireApiKey}
+        onCopy={copy}
+        onToggleVisibility={toggleKeyVisibility}
+        onToggleUsageDetails={toggleUsageDetails}
+        onEditKey={openEditKeyModal}
+        onPauseKey={(key, checked) => {
+          setConfirmState({
+            title: "Pause API Key",
+            message: `Pause API key "${key.name}"?\n\nThis key will stop working immediately but can be resumed later.`,
+            onConfirm: async () => {
+              setConfirmState(null);
+              handleToggleKey(key.id, checked);
+            },
+          });
+        }}
+        onToggleKey={handleToggleKey}
+        onDeleteKey={handleDeleteKey}
+        maskKey={maskKey}
+      />
       {/* Add Key Modal */}
       <Modal
         isOpen={showAddModal}
@@ -2137,61 +1378,11 @@ export default function APIPageClient({ machineId }) {
             placeholder="Production Key"
           />
 
-          <div className="rounded-lg border border-border p-4 flex flex-col gap-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium">Usage limit</p>
-                <p className="text-xs text-text-muted">
-                  One limit per key. Block applies after recorded usage exceeds
-                  the configured limit.
-                </p>
-              </div>
-              <Toggle
-                checked={newKeyLimit.enabled}
-                onChange={() =>
-                  setNewKeyLimit((prev) => ({
-                    ...prev,
-                    enabled: !prev.enabled,
-                  }))
-                }
-              />
-            </div>
-
-            {newKeyLimit.enabled && (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <Select
-                  label="Metric"
-                  value={newKeyLimit.metricType}
-                  onChange={(value) =>
-                    setNewKeyLimit((prev) => ({ ...prev, metricType: value }))
-                  }
-                  options={LIMIT_METRIC_OPTIONS}
-                />
-                <Select
-                  label="Period"
-                  value={newKeyLimit.periodType}
-                  onChange={(value) =>
-                    setNewKeyLimit((prev) => ({ ...prev, periodType: value }))
-                  }
-                  options={LIMIT_PERIOD_OPTIONS}
-                />
-                <Input
-                  label="Limit value"
-                  type="number"
-                  min="0"
-                  step="any"
-                  value={newKeyLimit.limitValue}
-                  onChange={(e) =>
-                    setNewKeyLimit((prev) => ({
-                      ...prev,
-                      limitValue: e.target.value,
-                    }))
-                  }
-                  placeholder="1000"
-                />
-              </div>
-            )}
-          </div>
+          <ApiKeyLimitFormFields
+            form={newKeyLimit}
+            onChange={setNewKeyLimit}
+            description="One limit per key. Block applies after recorded usage exceeds the configured limit."
+          />
 
           {keyFormError && (
             <StatusAlert status={{ type: "error", message: keyFormError }} />
@@ -2235,61 +1426,11 @@ export default function APIPageClient({ machineId }) {
             placeholder="Production Key"
           />
 
-          <div className="rounded-lg border border-border p-4 flex flex-col gap-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium">Usage limit</p>
-                <p className="text-xs text-text-muted">
-                  Configure requests, tokens, or cost on daily or monthly
-                  windows.
-                </p>
-              </div>
-              <Toggle
-                checked={editKeyLimit.enabled}
-                onChange={() =>
-                  setEditKeyLimit((prev) => ({
-                    ...prev,
-                    enabled: !prev.enabled,
-                  }))
-                }
-              />
-            </div>
-
-            {editKeyLimit.enabled && (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <Select
-                  label="Metric"
-                  value={editKeyLimit.metricType}
-                  onChange={(value) =>
-                    setEditKeyLimit((prev) => ({ ...prev, metricType: value }))
-                  }
-                  options={LIMIT_METRIC_OPTIONS}
-                />
-                <Select
-                  label="Period"
-                  value={editKeyLimit.periodType}
-                  onChange={(value) =>
-                    setEditKeyLimit((prev) => ({ ...prev, periodType: value }))
-                  }
-                  options={LIMIT_PERIOD_OPTIONS}
-                />
-                <Input
-                  label="Limit value"
-                  type="number"
-                  min="0"
-                  step="any"
-                  value={editKeyLimit.limitValue}
-                  onChange={(e) =>
-                    setEditKeyLimit((prev) => ({
-                      ...prev,
-                      limitValue: e.target.value,
-                    }))
-                  }
-                  placeholder="1000"
-                />
-              </div>
-            )}
-          </div>
+          <ApiKeyLimitFormFields
+            form={editKeyLimit}
+            onChange={setEditKeyLimit}
+            description="Configure requests, tokens, or cost on daily or monthly windows."
+          />
 
           {keyFormError && (
             <StatusAlert status={{ type: "error", message: keyFormError }} />
@@ -2573,116 +1714,6 @@ export default function APIPageClient({ machineId }) {
         message={confirmState?.message}
         variant="danger"
       />
-    </div>
-  );
-}
-
-/** Reusable endpoint row component */
-function EndpointRow({ label, url, copyId, copied, onCopy, badge, actions }) {
-  return (
-    <div className="flex items-center gap-2">
-      <span
-        className={`text-xs font-mono px-1.5 py-0.5 rounded shrink-0 min-w-[88px] text-center ${
-          badge === "CF" || badge === "TS"
-            ? "bg-primary/10 text-primary"
-            : "bg-surface-2 text-text-muted"
-        }`}
-      >
-        {label}
-      </span>
-      <Input value={url} readOnly className="flex-1 font-mono text-sm" />
-      <button
-        onClick={() => onCopy(url, copyId)}
-        className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-colors shrink-0"
-      >
-        <span className="material-symbols-outlined text-[18px]">
-          {copied === copyId ? "check" : "content_copy"}
-        </span>
-      </button>
-      {actions}
-    </div>
-  );
-}
-
-/** Reusable status alert */
-function StatusAlert({ status, className = "" }) {
-  // Render URLs in message as clickable links
-  const renderMessage = (msg) => {
-    const parts = msg.split(/(https?:\/\/[^\s]+)/g);
-    return parts.map((part, i) =>
-      /^https?:\/\//.test(part) ? (
-        <a
-          key={i}
-          href={part}
-          target="_blank"
-          rel="noreferrer"
-          className="underline font-medium"
-        >
-          {part}
-        </a>
-      ) : (
-        part
-      ),
-    );
-  };
-
-  return (
-    <div
-      className={`p-2 rounded text-sm ${className} ${
-        status.type === "success"
-          ? "bg-green-500/10 text-green-600 dark:text-green-400"
-          : status.type === "warning"
-            ? "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400"
-            : status.type === "info"
-              ? "bg-blue-500/10 text-blue-600 dark:text-blue-400"
-              : "bg-red-500/10 text-red-600 dark:text-red-400"
-      }`}
-    >
-      {renderMessage(status.message)}
-    </div>
-  );
-}
-
-/** Inline tooltip, Claude Code CLI style */
-function Tooltip({ text }) {
-  return (
-    <span className="relative group inline-flex items-center">
-      <span className="material-symbols-outlined text-[14px] text-text-muted cursor-help">
-        help
-      </span>
-      <span className="pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 z-50 w-64 rounded bg-gray-900 dark:bg-gray-800 text-white text-xs px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
-        {text}
-      </span>
-    </span>
-  );
-}
-
-/** Security warning banner with optional action link */
-function SecurityWarning({ message, action }) {
-  return (
-    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400">
-      <span className="material-symbols-outlined text-[16px] shrink-0 mt-0.5">
-        warning
-      </span>
-      <p className="text-xs flex-1">{message}</p>
-      {action && (
-        <a
-          href={action.href}
-          className="text-xs font-medium underline shrink-0 hover:opacity-80"
-          onClick={
-            action.href.startsWith("#")
-              ? (e) => {
-                  e.preventDefault();
-                  document
-                    .getElementById(action.href.slice(1))
-                    ?.scrollIntoView({ behavior: "smooth" });
-                }
-              : undefined
-          }
-        >
-          {action.label}
-        </a>
-      )}
     </div>
   );
 }
