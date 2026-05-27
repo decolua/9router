@@ -435,6 +435,13 @@ export const PROVIDERS = {
   "nous-research": { baseUrl: "https://inference-api.nousresearch.com/v1/chat/completions", format: "openai" },
   glhf: { baseUrl: "https://glhf.chat/api/openai/v1/chat/completions", format: "openai" },
   blackbox: { baseUrl: "https://api.blackbox.ai/chat/completions", format: "openai" },
+  freebuff: {
+    baseUrl: "https://www.codebuff.com/api/v1/chat/completions",
+    format: "openai",
+    headers: {
+      "User-Agent": "ai-sdk/openai-compatible/1.0.25/codebuff",
+    }
+  },
 };
 
 export const OLLAMA_LOCAL_DEFAULT_HOST = "http://localhost:11434";

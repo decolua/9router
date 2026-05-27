@@ -252,6 +252,13 @@ export const CODEBUDDY_CONFIG = {
   pollInterval: 5000,
 };
 
+// Freebuff OAuth Configuration (Custom Device/Browser Polling Flow)
+export const FREEBUFF_CONFIG = {
+  codeUrl: "https://freebuff.com/api/auth/cli/code",
+  statusUrl: "https://freebuff.com/api/auth/cli/status",
+  verifyUrl: "https://www.codebuff.com/api/v1/freebuff/session",
+};
+
 // OAuth timeout (5 minutes)
 export const OAUTH_TIMEOUT = 300000;
 
@@ -273,4 +280,5 @@ export const PROVIDERS = {
   CLINE: "cline",
   GITLAB: "gitlab",
   CODEBUDDY: "codebuddy",
+  FREEBUFF: "freebuff",
 };

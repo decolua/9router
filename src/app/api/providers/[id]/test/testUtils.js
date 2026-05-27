@@ -69,6 +69,12 @@ const OAUTH_TEST_CONFIG = {
     authHeader: "Authorization",
     authPrefix: "Bearer ",
   },
+  freebuff: {
+    url: "https://www.codebuff.com/api/v1/freebuff/session",
+    method: "GET",
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+  },
   cline: { refreshable: true },
   gitlab: {
     // Test by hitting the GitLab user API — requires api or read_user scope
