@@ -1,5 +1,6 @@
 import { PROVIDER_MODELS } from "open-sse/config/providerModels.js";
 import { AI_PROVIDERS, ALIAS_TO_ID } from "@/shared/constants/providers";
+import { getSettings } from "@/lib/localDb";
 
 const KIND_ENDPOINT = {
   llm: "/v1/chat/completions",
@@ -106,5 +107,11 @@ export async function GET(request) {
       { status: 404, headers: { "Access-Control-Allow-Origin": "*" } },
     );
   }
+  // Inject context_window from settings
+  try {
+    const settings = await getSettings().catch(() => ({}));
+    const cw = settings.contextWindow;
+    if (cw) info.contextWindow = cw;
+  } catch {}
   return Response.json(info, { headers: { "Access-Control-Allow-Origin": "*" } });
 }
