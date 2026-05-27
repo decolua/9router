@@ -3,6 +3,7 @@ import {
   parseUpstreamError,
   formatProviderError,
 } from "../utils/error.js";
+import { saveRequestUsage } from "@/lib/usageDb.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { getExecutor } from "../executors/index.js";
@@ -35,6 +36,7 @@ export async function handleImageGenerationCore({
   body,
   modelInfo,
   credentials,
+  apiKey,
   log,
   streamToClient = false,
   binaryOutput = false,
@@ -184,6 +186,16 @@ export async function handleImageGenerationCore({
   }
 
   if (onRequestSuccess) await onRequestSuccess();
+
+  saveRequestUsage({
+    provider,
+    model,
+    connectionId: credentials?.connectionId || null,
+    apiKey: apiKey || undefined,
+    endpoint: "/v1/images/generations",
+    tokens: { prompt_tokens: 0, completion_tokens: 0 },
+    status: "200 OK",
+  }).catch(() => {});
 
   // Normalize → OpenAI-compatible shape
   const normalized = adapter.normalize(parsed, body.prompt);

@@ -227,12 +227,41 @@ export function openaiToClaudeResponse(chunk, state) {
       if (tc.function?.arguments) {
         const toolInfo = state.toolCalls.get(idx);
         if (toolInfo) {
-          // Buffer args instead of streaming — sanitize at finish to fix bad params
-          if (!state.toolArgBuffers) state.toolArgBuffers = new Map();
-          state.toolArgBuffers.set(
-            idx,
-            (state.toolArgBuffers.get(idx) || "") + tc.function.arguments,
-          );
+          let toolName = toolInfo.name;
+          if (toolName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)) {
+            toolName = toolName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length);
+          }
+
+          if (toolName === "Read") {
+            if (!state.toolArgBuffers) state.toolArgBuffers = new Map();
+            const current =
+              (state.toolArgBuffers.get(idx) || "") + tc.function.arguments;
+            state.toolArgBuffers.set(idx, current);
+
+            // Try to parse early if the arguments are complete (e.g. in tests)
+            try {
+              JSON.parse(current);
+              const sanitized = sanitizeToolArgs(toolInfo.name, current);
+              results.push({
+                type: "content_block_delta",
+                index: toolInfo.blockIndex,
+                delta: { type: "input_json_delta", partial_json: sanitized },
+              });
+              state.toolArgBuffers.delete(idx);
+            } catch {
+              // JSON is incomplete, continue buffering
+            }
+          } else {
+            // Stream arguments directly in real-time
+            results.push({
+              type: "content_block_delta",
+              index: toolInfo.blockIndex,
+              delta: {
+                type: "input_json_delta",
+                partial_json: tc.function.arguments,
+              },
+            });
+          }
         }
       }
     }
@@ -244,15 +273,21 @@ export function openaiToClaudeResponse(chunk, state) {
     stopTextBlock(state, results);
 
     for (const [idx, toolInfo] of state.toolCalls) {
-      // Emit buffered + sanitized args as single delta before stop
-      const buffered = state.toolArgBuffers?.get(idx);
-      if (buffered) {
-        const sanitized = sanitizeToolArgs(toolInfo.name, buffered);
-        results.push({
-          type: "content_block_delta",
-          index: toolInfo.blockIndex,
-          delta: { type: "input_json_delta", partial_json: sanitized },
-        });
+      let toolName = toolInfo.name;
+      if (toolName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)) {
+        toolName = toolName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length);
+      }
+
+      if (toolName === "Read") {
+        const buffered = state.toolArgBuffers?.get(idx);
+        if (buffered) {
+          const sanitized = sanitizeToolArgs(toolInfo.name, buffered);
+          results.push({
+            type: "content_block_delta",
+            index: toolInfo.blockIndex,
+            delta: { type: "input_json_delta", partial_json: sanitized },
+          });
+        }
       }
       results.push({
         type: "content_block_stop",

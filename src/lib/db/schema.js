@@ -1,5 +1,5 @@
 // Latest schema version — bumped when a migration is added in ./migrations/
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -81,6 +81,21 @@ export const TABLES = {
       createdAt: "TEXT NOT NULL",
     },
     indexes: ["CREATE INDEX IF NOT EXISTS idx_ak_key ON apiKeys(key)"],
+  },
+  apiKeyLimits: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      apiKeyId: "TEXT UNIQUE NOT NULL",
+      metricType: "TEXT NOT NULL",
+      periodType: "TEXT NOT NULL",
+      limitValue: "REAL NOT NULL",
+      createdAt: "TEXT NOT NULL",
+      updatedAt: "TEXT NOT NULL",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_akl_apiKeyId ON apiKeyLimits(apiKeyId)",
+      "CREATE INDEX IF NOT EXISTS idx_akl_metric_period ON apiKeyLimits(metricType, periodType)",
+    ],
   },
   combos: {
     columns: {

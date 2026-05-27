@@ -1,6 +1,8 @@
 // Web Fetch handler — dispatches to firecrawl, jina-reader, tavily, exa
 // Returns normalized shape across all providers
 
+import { saveRequestUsage } from "@/lib/usageDb.js";
+
 const DEFAULT_TIMEOUT_MS = 15000;
 const DEFAULT_FORMAT = "markdown";
 
@@ -109,6 +111,7 @@ export async function handleFetchCore({
   provider,
   providerConfig,
   credentials,
+  apiKey: requestApiKey,
   log,
 }) {
   if (!url || typeof url !== "string") {
@@ -125,9 +128,22 @@ export async function handleFetchCore({
   const costPerQuery = providerConfig?.costPerQuery ?? null;
   const startedAt = Date.now();
 
+  const recordUsage = (data) => {
+    saveRequestUsage({
+      provider,
+      model: provider,
+      connectionId: credentials?.connectionId || null,
+      apiKey: requestApiKey || undefined,
+      endpoint: "/v1/web/fetch",
+      tokens: { prompt_tokens: 0, completion_tokens: 0 },
+      cost: data?.usage?.fetch_cost_usd ?? costPerQuery ?? 0,
+      status: "200 OK",
+    }).catch(() => {});
+  };
+
   try {
     if (provider === "firecrawl") {
-      return await runFirecrawl({
+      const result = await runFirecrawl({
         url,
         fmt,
         timeoutMs,
@@ -136,9 +152,11 @@ export async function handleFetchCore({
         costPerQuery,
         startedAt,
       });
+      if (result.success) recordUsage(result.data);
+      return result;
     }
     if (provider === "jina-reader") {
-      return await runJina({
+      const result = await runJina({
         url,
         fmt,
         timeoutMs,
@@ -147,9 +165,11 @@ export async function handleFetchCore({
         costPerQuery,
         startedAt,
       });
+      if (result.success) recordUsage(result.data);
+      return result;
     }
     if (provider === "tavily") {
-      return await runTavily({
+      const result = await runTavily({
         url,
         fmt,
         timeoutMs,
@@ -158,9 +178,11 @@ export async function handleFetchCore({
         costPerQuery,
         startedAt,
       });
+      if (result.success) recordUsage(result.data);
+      return result;
     }
     if (provider === "exa") {
-      return await runExa({
+      const result = await runExa({
         url,
         fmt,
         timeoutMs,
@@ -169,6 +191,8 @@ export async function handleFetchCore({
         costPerQuery,
         startedAt,
       });
+      if (result.success) recordUsage(result.data);
+      return result;
     }
     return {
       success: false,

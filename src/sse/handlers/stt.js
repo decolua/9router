@@ -1,6 +1,6 @@
 import {
-  extractApiKey,
-  isValidApiKey,
+  enforceApiKeyPolicy,
+  getApiKeyValue,
   getProviderCredentials,
   markAccountUnavailable,
 } from "../services/auth.js";
@@ -39,14 +39,9 @@ export async function handleStt(request) {
   log.request("POST", `/v1/audio/transcriptions | ${modelStr}`);
 
   const settings = await getSettings();
-  if (settings.requireApiKey) {
-    const apiKey = extractApiKey(request);
-    if (!apiKey)
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
-    const valid = await isValidApiKey(apiKey);
-    if (!valid)
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
-  }
+  const authResult = await enforceApiKeyPolicy(request, errorResponse, settings);
+  const apiKey = getApiKeyValue(authResult.auth);
+  if (!authResult.ok) return authResult.response;
 
   if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   if (!formData.get("file"))
@@ -64,7 +59,7 @@ export async function handleStt(request) {
 
   // noAuth providers
   if (!CREDENTIALED_PROVIDERS.has(provider)) {
-    const result = await handleSttCore({ provider, model, formData });
+    const result = await handleSttCore({ provider, model, formData, apiKey });
     if (result.success) return result.response;
     return errorResponse(
       result.status || HTTP_STATUS.BAD_GATEWAY,
@@ -119,6 +114,7 @@ export async function handleStt(request) {
       model,
       formData,
       credentials,
+      apiKey,
     });
 
     if (result.success) return result.response;

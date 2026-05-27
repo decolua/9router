@@ -32,6 +32,10 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
       ).toLowerCase()
     : "";
 
+  if (lowerError.includes("model is not supported")) {
+    return { shouldFallback: false, cooldownMs: 0 };
+  }
+
   for (const rule of ERROR_RULES) {
     // Text-based rule: match substring in error message
     if (rule.text && lowerError && lowerError.includes(rule.text)) {

@@ -45,10 +45,12 @@ export {
 export {
   getApiKeys,
   getApiKeyById,
+  getApiKeyByValue,
   createApiKey,
   updateApiKey,
   deleteApiKey,
   validateApiKey,
+  getApiKeyValidationInfo,
 } from "./repos/apiKeysRepo.js";
 
 // Combos
@@ -101,6 +103,11 @@ export {
   getChartData,
   appendRequestLog,
   getRecentLogs,
+  getApiKeyUsageSummary,
+  evaluateApiKeyLimitState,
+  getApiKeysUsageSummary,
+  getDetailedApiKeyUsage,
+  buildApiKeyLimitPresentation,
 } from "./repos/usageRepo.js";
 
 // Request details

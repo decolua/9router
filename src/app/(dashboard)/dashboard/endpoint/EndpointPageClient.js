@@ -10,6 +10,7 @@ import {
   CardSkeleton,
   Toggle,
   ConfirmModal,
+  Select,
 } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
@@ -78,13 +79,192 @@ const CAVEMAN_LEVELS = [
   { id: "full", label: "Full", desc: "Drop articles, fragments OK" },
   { id: "ultra", label: "Ultra", desc: "Telegraphic, max compression" },
 ];
+
+const LIMIT_METRIC_OPTIONS = [
+  { value: "requests", label: "Requests" },
+  { value: "tokens", label: "Tokens" },
+  { value: "cost", label: "Cost" },
+];
+
+const LIMIT_PERIOD_OPTIONS = [
+  { value: "daily", label: "Daily" },
+  { value: "monthly", label: "Monthly" },
+];
+
+function createDefaultLimitForm() {
+  return {
+    enabled: false,
+    metricType: "requests",
+    periodType: "daily",
+    limitValue: "",
+  };
+}
+
+function buildLimitPayload(limitForm) {
+  return {
+    limitEnabled: !!limitForm.enabled,
+    metricType: limitForm.metricType,
+    periodType: limitForm.periodType,
+    limitValue:
+      limitForm.limitValue === "" ? null : Number(limitForm.limitValue),
+  };
+}
+
+function buildLimitFormFromKey(key) {
+  if (!key?.limit) return createDefaultLimitForm();
+  return {
+    enabled: true,
+    metricType: key.limit.metricType || "requests",
+    periodType: key.limit.periodType || "daily",
+    limitValue:
+      key.limit.limitValue === undefined || key.limit.limitValue === null
+        ? ""
+        : String(key.limit.limitValue),
+  };
+}
+
+function getLimitBadgeClass(status) {
+  if (status === "exceeded") return "bg-red-500/10 text-red-500";
+  if (status === "near")
+    return "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400";
+  if (status === "healthy")
+    return "bg-green-500/10 text-green-600 dark:text-green-400";
+  return "bg-surface-2 text-text-muted";
+}
+
+function formatLimitState(key) {
+  const state = key?.limitState;
+  if (!state || !state.enabled) {
+    return {
+      summary: "Unlimited",
+      remaining: null,
+      reset: null,
+      status: "unlimited",
+    };
+  }
+  return {
+    summary: `${state.metricType}: ${state.currentValue}/${state.limitValue} · ${state.periodType}`,
+    remaining: `${state.remainingValue} remaining`,
+    reset: state.nextResetAt
+      ? `Reset: ${new Date(state.nextResetAt).toLocaleString()}`
+      : null,
+    status: state.status || "healthy",
+  };
+}
+
+function normalizeLimitForm(limitForm) {
+  if (!limitForm.enabled) return "";
+  if (limitForm.limitValue === "") return "Limit value is required";
+  const numericValue = Number(limitForm.limitValue);
+  if (!Number.isFinite(numericValue) || numericValue <= 0) {
+    return "Limit value must be greater than 0";
+  }
+  return "";
+}
+
+function formatUsageMetricValue(value) {
+  if (value == null) return "0";
+  return Number.isInteger(value)
+    ? String(value)
+    : Number(value).toLocaleString(undefined, {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 4,
+      });
+}
+
+function formatUsageHistoryValue(entry) {
+  if (entry.cost != null && Number(entry.cost) > 0) {
+    return `$${formatUsageMetricValue(Number(entry.cost))}`;
+  }
+  if (entry.totalTokens != null && Number(entry.totalTokens) > 0) {
+    return `${formatUsageMetricValue(Number(entry.totalTokens))} tokens`;
+  }
+  return `${formatUsageMetricValue(1)} request`;
+}
+
+function getUsageHistoryStatusClass(status) {
+  if (status >= 400) return "text-red-500";
+  if (status >= 300) return "text-yellow-600 dark:text-yellow-400";
+  return "text-green-600 dark:text-green-400";
+}
+
+function buildUsageSummaryItems(limitState) {
+  if (!limitState?.enabled) return [];
+  return [
+    {
+      label: "Current",
+      value: formatUsageMetricValue(limitState.currentValue),
+    },
+    {
+      label: "Limit",
+      value: formatUsageMetricValue(limitState.limitValue),
+    },
+    {
+      label: "Remaining",
+      value: formatUsageMetricValue(limitState.remainingValue),
+    },
+  ];
+}
+
+function getUsageMetricLabel(metricType) {
+  return (
+    LIMIT_METRIC_OPTIONS.find((option) => option.value === metricType)?.label ||
+    metricType ||
+    "Usage"
+  );
+}
+
+function getUsagePeriodLabel(periodType) {
+  return (
+    LIMIT_PERIOD_OPTIONS.find((option) => option.value === periodType)?.label ||
+    periodType ||
+    "Period"
+  );
+}
+
+function buildUpdatedKey(existingKey, updatedFields, responseKey) {
+  return {
+    ...existingKey,
+    ...updatedFields,
+    ...(responseKey || {}),
+    limit: responseKey?.limit ?? updatedFields.limit ?? existingKey.limit,
+    limitState:
+      responseKey?.limitState ??
+      updatedFields.limitState ??
+      existingKey.limitState,
+  };
+}
+
+function buildCreatedKeyValue(createdKey) {
+  if (!createdKey) return "";
+  if (typeof createdKey === "string") return createdKey;
+  return createdKey.key || "";
+}
+
+function buildUsageDetailMessage(key) {
+  if (!key?.limitState?.enabled) {
+    return "This key has no limit configured yet.";
+  }
+  return `${getUsageMetricLabel(key.limitState.metricType)} tracked on a ${getUsagePeriodLabel(key.limitState.periodType).toLowerCase()} window.`;
+}
+
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
+  const [newKeyLimit, setNewKeyLimit] = useState(createDefaultLimitForm());
   const [createdKey, setCreatedKey] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
+  const [editingKey, setEditingKey] = useState(null);
+  const [editKeyName, setEditKeyName] = useState("");
+  const [editKeyLimit, setEditKeyLimit] = useState(createDefaultLimitForm());
+  const [keyFormError, setKeyFormError] = useState("");
+  const [savingKeyId, setSavingKeyId] = useState(null);
+  const [loadingUsageKeyId, setLoadingUsageKeyId] = useState(null);
+  const [usageDetailsByKeyId, setUsageDetailsByKeyId] = useState({});
+  const [showUsageDetailsByKeyId, setShowUsageDetailsByKeyId] = useState({});
+  const [keyActionStatus, setKeyActionStatus] = useState(null);
 
   const [requireApiKey, setRequireApiKey] = useState(false);
   const [requireLogin, setRequireLogin] = useState(true);
@@ -500,6 +680,199 @@ export default function APIPageClient({ machineId }) {
     }
   }
 
+  const updateKeyInList = useCallback((id, updater) => {
+    setKeys((prev) => prev.map((key) => (key.id === id ? updater(key) : key)));
+  }, []);
+
+  const resetKeyModalState = () => {
+    setKeyFormError("");
+    setSavingKeyId(null);
+  };
+
+  const openEditKeyModal = (key) => {
+    setEditingKey(key);
+    setEditKeyName(key.name || "");
+    setEditKeyLimit(buildLimitFormFromKey(key));
+    setKeyFormError("");
+  };
+
+  const closeEditKeyModal = () => {
+    setEditingKey(null);
+    setEditKeyName("");
+    setEditKeyLimit(createDefaultLimitForm());
+    resetKeyModalState();
+  };
+
+  const toggleUsageDetails = async (key) => {
+    const keyId = key.id;
+    const currentlyOpen = !!showUsageDetailsByKeyId[keyId];
+    if (currentlyOpen) {
+      setShowUsageDetailsByKeyId((prev) => ({ ...prev, [keyId]: false }));
+      return;
+    }
+
+    setShowUsageDetailsByKeyId((prev) => ({ ...prev, [keyId]: true }));
+    if (usageDetailsByKeyId[keyId]) return;
+
+    setLoadingUsageKeyId(keyId);
+    try {
+      const res = await fetch(`/api/keys/${keyId}/usage?limit=20`, {
+        cache: "no-store",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setKeyActionStatus({
+          type: "error",
+          message: data.error || "Failed to load key usage",
+        });
+        return;
+      }
+      setUsageDetailsByKeyId((prev) => ({ ...prev, [keyId]: data }));
+      if (data.limitState) {
+        updateKeyInList(keyId, (existingKey) =>
+          buildUpdatedKey(existingKey, {}, { limitState: data.limitState }),
+        );
+      }
+    } catch (error) {
+      console.log("Error fetching key usage:", error);
+      setKeyActionStatus({
+        type: "error",
+        message: "Failed to load key usage",
+      });
+    } finally {
+      setLoadingUsageKeyId(null);
+    }
+  };
+
+  const handleSaveKey = async () => {
+    if (!editingKey) return;
+    const name = editKeyName.trim();
+    if (!name) {
+      setKeyFormError("Key name is required");
+      return;
+    }
+
+    const limitError = normalizeLimitForm(editKeyLimit);
+    if (limitError) {
+      setKeyFormError(limitError);
+      return;
+    }
+
+    setSavingKeyId(editingKey.id);
+    setKeyFormError("");
+
+    try {
+      const payload = {
+        name,
+        ...buildLimitPayload(editKeyLimit),
+      };
+      const res = await fetch(`/api/keys/${editingKey.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setKeyFormError(data.error || "Failed to update key");
+        return;
+      }
+
+      updateKeyInList(editingKey.id, (existingKey) =>
+        buildUpdatedKey(existingKey, { name }, data.key),
+      );
+      setUsageDetailsByKeyId((prev) => {
+        if (!prev[editingKey.id]) return prev;
+        return {
+          ...prev,
+          [editingKey.id]: {
+            ...prev[editingKey.id],
+            limitState: data.key?.limitState || prev[editingKey.id].limitState,
+          },
+        };
+      });
+      setKeyActionStatus({
+        type: "success",
+        message: `Updated key \"${name}\"`,
+      });
+      closeEditKeyModal();
+    } catch (error) {
+      console.log("Error updating key:", error);
+      setKeyFormError("Failed to update key");
+    } finally {
+      setSavingKeyId(null);
+    }
+  };
+
+  const handleUpdateKeyActive = async (id, isActive) => {
+    setSavingKeyId(id);
+    try {
+      const res = await fetch(`/api/keys/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        updateKeyInList(id, (existingKey) =>
+          buildUpdatedKey(existingKey, { isActive }, data.key),
+        );
+      }
+    } catch (error) {
+      console.log("Error toggling key:", error);
+    } finally {
+      setSavingKeyId(null);
+    }
+  };
+
+  const handleCreateKey = async () => {
+    const name = newKeyName.trim();
+    if (!name) {
+      setKeyFormError("Key name is required");
+      return;
+    }
+
+    const limitError = normalizeLimitForm(newKeyLimit);
+    if (limitError) {
+      setKeyFormError(limitError);
+      return;
+    }
+
+    setSavingKeyId("new");
+    setKeyFormError("");
+
+    try {
+      const payload = {
+        name,
+        ...buildLimitPayload(newKeyLimit),
+      };
+      const res = await fetch("/api/keys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        setCreatedKey(data);
+        await fetchData();
+        setNewKeyName("");
+        setNewKeyLimit(createDefaultLimitForm());
+        setShowAddModal(false);
+        setKeyActionStatus({
+          type: "success",
+          message: `Created key \"${name}\"`,
+        });
+      } else {
+        setKeyFormError(data.error || "Failed to create key");
+      }
+    } catch (error) {
+      console.log("Error creating key:", error);
+      setKeyFormError("Failed to create key");
+    } finally {
+      setSavingKeyId(null);
+    }
+  };
+
   // u2500u2500u2500 Cloudflare Tunnel handlers
   // Ping tunnel health until reachable. Race multiple URLs (shortlink + direct) — 1 OK is enough.
   const pingTunnelHealth = async (...urls) => {
@@ -765,7 +1138,10 @@ export default function APIPageClient({ machineId }) {
         setTsStatus(
           reachable
             ? null
-            : { type: "warning", message: "Connected but not reachable yet." },
+            : {
+                type: "warning",
+                message: "Connected but not reachable yet.",
+              },
         );
         return;
       }
@@ -919,28 +1295,6 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
-  const handleCreateKey = async () => {
-    if (!newKeyName.trim()) return;
-
-    try {
-      const res = await fetch("/api/keys", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newKeyName }),
-      });
-      const data = await res.json();
-
-      if (res.ok) {
-        setCreatedKey(data.key);
-        await fetchData();
-        setNewKeyName("");
-        setShowAddModal(false);
-      }
-    } catch (error) {
-      console.log("Error creating key:", error);
-    }
-  };
-
   const handleDeleteKey = async (id) => {
     setConfirmState({
       title: "Delete API Key",
@@ -965,20 +1319,7 @@ export default function APIPageClient({ machineId }) {
   };
 
   const handleToggleKey = async (id, isActive) => {
-    try {
-      const res = await fetch(`/api/keys/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isActive }),
-      });
-      if (res.ok) {
-        setKeys((prev) =>
-          prev.map((k) => (k.id === id ? { ...k, isActive } : k)),
-        );
-      }
-    } catch (error) {
-      console.log("Error toggling key:", error);
-    }
+    await handleUpdateKeyActive(id, isActive);
   };
 
   const maskKey = (fullKey) => {
@@ -1518,7 +1859,13 @@ export default function APIPageClient({ machineId }) {
             </span>
             API Keys
           </h2>
-          <Button icon="add" onClick={() => setShowAddModal(true)}>
+          <Button
+            icon="add"
+            onClick={() => {
+              setShowAddModal(true);
+              setKeyFormError("");
+            }}
+          >
             Create Key
           </Button>
         </div>
@@ -1535,6 +1882,10 @@ export default function APIPageClient({ machineId }) {
             onChange={() => handleRequireApiKey(!requireApiKey)}
           />
         </div>
+
+        {keyActionStatus && (
+          <StatusAlert status={keyActionStatus} className="mb-4" />
+        )}
 
         {keys.length === 0 ? (
           <div className="text-center py-12">
@@ -1553,75 +1904,216 @@ export default function APIPageClient({ machineId }) {
           </div>
         ) : (
           <div className="flex flex-col">
-            {keys.map((key) => (
-              <div
-                key={key.id}
-                className={`group flex items-center justify-between py-3 border-b border-black/[0.03] dark:border-white/[0.03] last:border-b-0 ${key.isActive === false ? "opacity-60" : ""}`}
-              >
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">{key.name}</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <code className="text-xs text-text-muted font-mono">
-                      {visibleKeys.has(key.id) ? key.key : maskKey(key.key)}
-                    </code>
-                    <button
-                      onClick={() => toggleKeyVisibility(key.id)}
-                      className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
-                      title={visibleKeys.has(key.id) ? "Hide key" : "Show key"}
-                    >
-                      <span className="material-symbols-outlined text-[14px]">
-                        {visibleKeys.has(key.id)
-                          ? "visibility_off"
-                          : "visibility"}
-                      </span>
-                    </button>
-                    <button
-                      onClick={() => copy(key.key, key.id)}
-                      className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
-                    >
-                      <span className="material-symbols-outlined text-[14px]">
-                        {copied === key.id ? "check" : "content_copy"}
-                      </span>
-                    </button>
-                  </div>
-                  <p className="text-xs text-text-muted mt-1">
-                    Created {new Date(key.createdAt).toLocaleDateString()}
-                  </p>
-                  {key.isActive === false && (
-                    <p className="text-xs text-orange-500 mt-1">Paused</p>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Toggle
-                    size="sm"
-                    checked={key.isActive ?? true}
-                    onChange={(checked) => {
-                      if (key.isActive && !checked) {
-                        setConfirmState({
-                          title: "Pause API Key",
-                          message: `Pause API key "${key.name}"?\n\nThis key will stop working immediately but can be resumed later.`,
-                          onConfirm: async () => {
-                            setConfirmState(null);
+            {keys.map((key) => {
+              const limitView = formatLimitState(key);
+              const usageDetail = usageDetailsByKeyId[key.id];
+              const usageOpen = !!showUsageDetailsByKeyId[key.id];
+              const usageSummaryItems = buildUsageSummaryItems(
+                usageDetail?.limitState || key.limitState,
+              );
+              const isSavingThisKey = savingKeyId === key.id;
+              const isLoadingUsage = loadingUsageKeyId === key.id;
+
+              return (
+                <div
+                  key={key.id}
+                  className={`py-4 border-b border-black/[0.03] dark:border-white/[0.03] last:border-b-0 ${key.isActive === false ? "opacity-60" : ""}`}
+                >
+                  <div className="group flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-medium">{key.name}</p>
+                        <span
+                          className={`text-[11px] px-2 py-0.5 rounded-full ${getLimitBadgeClass(limitView.status)}`}
+                        >
+                          {limitView.status}
+                        </span>
+                        {key.isActive === false && (
+                          <span className="text-[11px] px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-500">
+                            paused
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 mt-1">
+                        <code className="text-xs text-text-muted font-mono break-all">
+                          {visibleKeys.has(key.id) ? key.key : maskKey(key.key)}
+                        </code>
+                        <button
+                          onClick={() => toggleKeyVisibility(key.id)}
+                          className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                          title={
+                            visibleKeys.has(key.id) ? "Hide key" : "Show key"
+                          }
+                        >
+                          <span className="material-symbols-outlined text-[14px]">
+                            {visibleKeys.has(key.id)
+                              ? "visibility_off"
+                              : "visibility"}
+                          </span>
+                        </button>
+                        <button
+                          onClick={() => copy(key.key, key.id)}
+                          className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">
+                            {copied === key.id ? "check" : "content_copy"}
+                          </span>
+                        </button>
+                      </div>
+
+                      <p className="text-xs text-text-muted mt-2">
+                        Created {new Date(key.createdAt).toLocaleDateString()}
+                      </p>
+
+                      <div className="mt-3 rounded-lg border border-border bg-surface-2/40 px-3 py-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <p className="text-xs font-medium text-text-main">
+                              {limitView.summary}
+                            </p>
+                            {limitView.remaining && (
+                              <p className="text-xs text-text-muted mt-1">
+                                {limitView.remaining}
+                              </p>
+                            )}
+                            {limitView.reset && (
+                              <p className="text-xs text-text-muted mt-1">
+                                {limitView.reset}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              icon="monitoring"
+                              onClick={() => toggleUsageDetails(key)}
+                            >
+                              {usageOpen ? "Hide usage" : "View usage"}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              icon="edit"
+                              onClick={() => openEditKeyModal(key)}
+                            >
+                              Edit limit
+                            </Button>
+                          </div>
+                        </div>
+
+                        {usageOpen && (
+                          <div className="mt-3 border-t border-border pt-3">
+                            <p className="text-xs text-text-muted mb-3">
+                              {buildUsageDetailMessage(key)}
+                            </p>
+
+                            {isLoadingUsage ? (
+                              <div className="text-xs text-text-muted flex items-center gap-2">
+                                <span className="material-symbols-outlined animate-spin text-sm">
+                                  progress_activity
+                                </span>
+                                Loading usage details...
+                              </div>
+                            ) : (
+                              <>
+                                {usageSummaryItems.length > 0 && (
+                                  <div className="grid grid-cols-3 gap-2 mb-3">
+                                    {usageSummaryItems.map((item) => (
+                                      <div
+                                        key={item.label}
+                                        className="rounded-lg bg-background px-3 py-2 border border-border"
+                                      >
+                                        <p className="text-[11px] text-text-muted uppercase tracking-wide">
+                                          {item.label}
+                                        </p>
+                                        <p className="text-sm font-medium mt-1">
+                                          {item.value}
+                                        </p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {usageDetail?.history?.length ? (
+                                  <div className="flex flex-col gap-2">
+                                    {usageDetail.history.map((entry) => (
+                                      <div
+                                        key={entry.id}
+                                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-background px-3 py-2 border border-border"
+                                      >
+                                        <div className="min-w-0 flex-1">
+                                          <p className="text-xs font-medium text-text-main break-all">
+                                            {entry.endpoint ||
+                                              entry.model ||
+                                              "Request"}
+                                          </p>
+                                          <p className="text-[11px] text-text-muted mt-1">
+                                            {new Date(
+                                              entry.timestamp,
+                                            ).toLocaleString()}
+                                          </p>
+                                        </div>
+                                        <div className="flex items-center gap-3 shrink-0">
+                                          <span className="text-xs text-text-muted">
+                                            {formatUsageHistoryValue(entry)}
+                                          </span>
+                                          <span
+                                            className={`text-xs font-medium ${getUsageHistoryStatusClass(entry.status)}`}
+                                          >
+                                            {entry.status}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <p className="text-xs text-text-muted">
+                                    No recorded usage for this key yet.
+                                  </p>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Toggle
+                        size="sm"
+                        checked={key.isActive ?? true}
+                        disabled={isSavingThisKey}
+                        onChange={(checked) => {
+                          if (key.isActive && !checked) {
+                            setConfirmState({
+                              title: "Pause API Key",
+                              message: `Pause API key "${key.name}"?\n\nThis key will stop working immediately but can be resumed later.`,
+                              onConfirm: async () => {
+                                setConfirmState(null);
+                                handleToggleKey(key.id, checked);
+                              },
+                            });
+                          } else {
                             handleToggleKey(key.id, checked);
-                          },
-                        });
-                      } else {
-                        handleToggleKey(key.id, checked);
-                      }
-                    }}
-                    title={key.isActive ? "Pause key" : "Resume key"}
-                  />
-                  <button
-                    onClick={() => handleDeleteKey(key.id)}
-                    className="p-2 hover:bg-red-500/10 rounded text-red-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">
-                      delete
-                    </span>
-                  </button>
+                          }
+                        }}
+                        title={key.isActive ? "Pause key" : "Resume key"}
+                      />
+                      <button
+                        onClick={() => handleDeleteKey(key.id)}
+                        className="p-2 hover:bg-red-500/10 rounded text-red-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">
+                          delete
+                        </span>
+                      </button>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </Card>
@@ -1633,6 +2125,8 @@ export default function APIPageClient({ machineId }) {
         onClose={() => {
           setShowAddModal(false);
           setNewKeyName("");
+          setNewKeyLimit(createDefaultLimitForm());
+          setKeyFormError("");
         }}
       >
         <div className="flex flex-col gap-4">
@@ -1642,22 +2136,174 @@ export default function APIPageClient({ machineId }) {
             onChange={(e) => setNewKeyName(e.target.value)}
             placeholder="Production Key"
           />
+
+          <div className="rounded-lg border border-border p-4 flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium">Usage limit</p>
+                <p className="text-xs text-text-muted">
+                  One limit per key. Block applies after recorded usage exceeds
+                  the configured limit.
+                </p>
+              </div>
+              <Toggle
+                checked={newKeyLimit.enabled}
+                onChange={() =>
+                  setNewKeyLimit((prev) => ({
+                    ...prev,
+                    enabled: !prev.enabled,
+                  }))
+                }
+              />
+            </div>
+
+            {newKeyLimit.enabled && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <Select
+                  label="Metric"
+                  value={newKeyLimit.metricType}
+                  onChange={(value) =>
+                    setNewKeyLimit((prev) => ({ ...prev, metricType: value }))
+                  }
+                  options={LIMIT_METRIC_OPTIONS}
+                />
+                <Select
+                  label="Period"
+                  value={newKeyLimit.periodType}
+                  onChange={(value) =>
+                    setNewKeyLimit((prev) => ({ ...prev, periodType: value }))
+                  }
+                  options={LIMIT_PERIOD_OPTIONS}
+                />
+                <Input
+                  label="Limit value"
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={newKeyLimit.limitValue}
+                  onChange={(e) =>
+                    setNewKeyLimit((prev) => ({
+                      ...prev,
+                      limitValue: e.target.value,
+                    }))
+                  }
+                  placeholder="1000"
+                />
+              </div>
+            )}
+          </div>
+
+          {keyFormError && (
+            <StatusAlert status={{ type: "error", message: keyFormError }} />
+          )}
+
           <div className="flex gap-2">
             <Button
               onClick={handleCreateKey}
               fullWidth
-              disabled={!newKeyName.trim()}
+              disabled={!newKeyName.trim() || savingKeyId === "new"}
             >
-              Create
+              {savingKeyId === "new" ? "Creating..." : "Create"}
             </Button>
             <Button
               onClick={() => {
                 setShowAddModal(false);
                 setNewKeyName("");
+                setNewKeyLimit(createDefaultLimitForm());
+                setKeyFormError("");
               }}
               variant="ghost"
               fullWidth
             >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit Key Modal */}
+      <Modal
+        isOpen={!!editingKey}
+        title="Edit API Key Limit"
+        onClose={closeEditKeyModal}
+      >
+        <div className="flex flex-col gap-4">
+          <Input
+            label="Key Name"
+            value={editKeyName}
+            onChange={(e) => setEditKeyName(e.target.value)}
+            placeholder="Production Key"
+          />
+
+          <div className="rounded-lg border border-border p-4 flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium">Usage limit</p>
+                <p className="text-xs text-text-muted">
+                  Configure requests, tokens, or cost on daily or monthly
+                  windows.
+                </p>
+              </div>
+              <Toggle
+                checked={editKeyLimit.enabled}
+                onChange={() =>
+                  setEditKeyLimit((prev) => ({
+                    ...prev,
+                    enabled: !prev.enabled,
+                  }))
+                }
+              />
+            </div>
+
+            {editKeyLimit.enabled && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <Select
+                  label="Metric"
+                  value={editKeyLimit.metricType}
+                  onChange={(value) =>
+                    setEditKeyLimit((prev) => ({ ...prev, metricType: value }))
+                  }
+                  options={LIMIT_METRIC_OPTIONS}
+                />
+                <Select
+                  label="Period"
+                  value={editKeyLimit.periodType}
+                  onChange={(value) =>
+                    setEditKeyLimit((prev) => ({ ...prev, periodType: value }))
+                  }
+                  options={LIMIT_PERIOD_OPTIONS}
+                />
+                <Input
+                  label="Limit value"
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={editKeyLimit.limitValue}
+                  onChange={(e) =>
+                    setEditKeyLimit((prev) => ({
+                      ...prev,
+                      limitValue: e.target.value,
+                    }))
+                  }
+                  placeholder="1000"
+                />
+              </div>
+            )}
+          </div>
+
+          {keyFormError && (
+            <StatusAlert status={{ type: "error", message: keyFormError }} />
+          )}
+
+          <div className="flex gap-2">
+            <Button
+              onClick={handleSaveKey}
+              fullWidth
+              disabled={!editingKey || savingKeyId === editingKey?.id}
+            >
+              {savingKeyId === editingKey?.id ? "Saving..." : "Save"}
+            </Button>
+            <Button onClick={closeEditKeyModal} variant="ghost" fullWidth>
               Cancel
             </Button>
           </div>
@@ -1681,14 +2327,16 @@ export default function APIPageClient({ machineId }) {
           </div>
           <div className="flex gap-2">
             <Input
-              value={createdKey || ""}
+              value={buildCreatedKeyValue(createdKey)}
               readOnly
               className="flex-1 font-mono text-sm"
             />
             <Button
               variant="secondary"
               icon={copied === "created_key" ? "check" : "content_copy"}
-              onClick={() => copy(createdKey, "created_key")}
+              onClick={() =>
+                copy(buildCreatedKeyValue(createdKey), "created_key")
+              }
             >
               {copied === "created_key" ? "Copied!" : "Copy"}
             </Button>

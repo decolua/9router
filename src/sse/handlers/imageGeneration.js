@@ -2,8 +2,8 @@ import {
   getProviderCredentials,
   markAccountUnavailable,
   clearAccountError,
-  extractApiKey,
-  isValidApiKey,
+  enforceApiKeyPolicy,
+  getApiKeyValue,
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
@@ -40,15 +40,10 @@ export async function handleImageGeneration(request) {
   const binaryOutput = url.searchParams.get("response_format") === "binary";
   const modelStr = body.model;
 
-  const apiKey = extractApiKey(request);
   const settings = await getSettings();
-  if (settings.requireApiKey) {
-    if (!apiKey)
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
-    const valid = await isValidApiKey(apiKey);
-    if (!valid)
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
-  }
+  const authResult = await enforceApiKeyPolicy(request, errorResponse, settings);
+  const apiKey = getApiKeyValue(authResult.auth);
+  if (!authResult.ok) return authResult.response;
 
   if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   if (!body.prompt)
@@ -78,6 +73,7 @@ export async function handleImageGeneration(request) {
           wantsStream,
           binaryOutput,
           preferredConnectionId,
+          apiKey,
         }),
       log,
       comboName: modelStr,
@@ -90,13 +86,14 @@ export async function handleImageGeneration(request) {
     wantsStream,
     binaryOutput,
     preferredConnectionId,
+    apiKey,
   });
 }
 
 async function handleSingleModelImage(
   body,
   modelStr,
-  { wantsStream, binaryOutput, preferredConnectionId } = {},
+  { wantsStream, binaryOutput, preferredConnectionId, apiKey = null } = {},
 ) {
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider)
@@ -110,6 +107,7 @@ async function handleSingleModelImage(
       body,
       modelInfo: { provider, model },
       credentials: null,
+      apiKey,
       binaryOutput,
     });
     if (result.success) return result.response;
@@ -167,6 +165,7 @@ async function handleSingleModelImage(
       body,
       modelInfo: { provider, model },
       credentials: refreshedCredentials,
+      apiKey,
       streamToClient: wantsStream,
       binaryOutput,
       onCredentialsRefreshed: async (newCreds) => {

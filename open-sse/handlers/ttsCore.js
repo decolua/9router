@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import { createErrorResult } from "../utils/error.js";
+import { saveRequestUsage } from "@/lib/usageDb.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { getTtsAdapter, synthesizeViaConfig } from "./ttsProviders/index.js";
 
@@ -53,6 +54,7 @@ export async function handleTtsCore({
   model,
   input,
   credentials,
+  apiKey,
   responseFormat = "mp3",
   language,
 }) {
@@ -75,7 +77,29 @@ export async function handleTtsCore({
         { language },
       );
       // Adapter may return a full {success, response} (legacy) or {base64, format}
-      if (result.success !== undefined) return result;
+      if (result.success !== undefined) {
+        if (result.success) {
+          saveRequestUsage({
+            provider,
+            model,
+            connectionId: credentials?.connectionId || null,
+            apiKey: apiKey || undefined,
+            endpoint: "/v1/audio/speech",
+            tokens: { prompt_tokens: 0, completion_tokens: 0 },
+            status: "200 OK",
+          }).catch(() => {});
+        }
+        return result;
+      }
+      saveRequestUsage({
+        provider,
+        model,
+        connectionId: credentials?.connectionId || null,
+        apiKey: apiKey || undefined,
+        endpoint: "/v1/audio/speech",
+        tokens: { prompt_tokens: 0, completion_tokens: 0 },
+        status: "200 OK",
+      }).catch(() => {});
       return createTtsResponse(result.base64, result.format, responseFormat);
     }
 
@@ -86,8 +110,18 @@ export async function handleTtsCore({
       model,
       credentials,
     );
-    if (result)
+    if (result) {
+      saveRequestUsage({
+        provider,
+        model,
+        connectionId: credentials?.connectionId || null,
+        apiKey: apiKey || undefined,
+        endpoint: "/v1/audio/speech",
+        tokens: { prompt_tokens: 0, completion_tokens: 0 },
+        status: "200 OK",
+      }).catch(() => {});
       return createTtsResponse(result.base64, result.format, responseFormat);
+    }
 
     return createErrorResult(
       HTTP_STATUS.BAD_REQUEST,
