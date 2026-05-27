@@ -222,6 +222,16 @@ input, textarea {
   accent-color: var(--color-primary);
 }
 
+/* #1481: desktop sidebar must not depend on Tailwind's hidden/lg:flex cascade. */
+.dashboard-sidebar-desktop {
+  display: none;
+}
+@media (min-width: 1024px) {
+  .dashboard-sidebar-desktop {
+    display: flex;
+  }
+}
+
 /* Scrollbar (custom-scrollbar utility kept for compat) */
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;
