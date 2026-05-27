@@ -32,6 +32,20 @@ const nextConfig = {
         fs: false,
         path: false,
       };
+    } else {
+      // Ensure native modules are never bundled by webpack (safety net alongside serverExternalPackages)
+      const nativeModules = ["better-sqlite3", "sql.js", "node:sqlite", "bun:sqlite"];
+      const prev = config.externals || [];
+      const prevArr = Array.isArray(prev) ? prev : [prev];
+      config.externals = [
+        ...prevArr,
+        ({ request }, callback) => {
+          if (nativeModules.some((m) => request === m || request.startsWith(m + "/"))) {
+            return callback(null, "commonjs " + request);
+          }
+          callback();
+        },
+      ];
     }
     // Exclude logs, .next, gitbook subapp from watcher
     config.watchOptions = { ...config.watchOptions, ignored: /[\\/](logs|\.next|gitbook|cli)[\\/]/ };

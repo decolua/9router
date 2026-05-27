@@ -8,8 +8,7 @@ FROM base AS builder
 RUN apk --no-cache upgrade && apk --no-cache add python3 make g++ linux-headers
 
 COPY package.json ./
-RUN --mount=type=cache,target=/root/.npm \
-  npm install
+RUN npm install
 
 COPY . ./
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -36,6 +35,10 @@ COPY --from=builder /app/src/mitm ./src/mitm
 COPY --from=builder /app/node_modules/node-forge ./node_modules/node-forge
 # Ensure `next` is available at runtime in case tracing did not include it.
 COPY --from=builder /app/node_modules/next ./node_modules/next
+# better-sqlite3 is a native module; standalone tracing may omit it.
+COPY --from=builder /app/node_modules/better-sqlite3 ./node_modules/better-sqlite3
+COPY --from=builder /app/node_modules/bindings ./node_modules/bindings
+COPY --from=builder /app/node_modules/file-uri-to-path ./node_modules/file-uri-to-path
 
 RUN mkdir -p /app/data && chown -R node:node /app && \
   mkdir -p /app/data-home && chown node:node /app/data-home && \
