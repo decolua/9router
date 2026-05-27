@@ -111,11 +111,17 @@ export default function OpenCodeToolCard({
     setSelectedModels(models);
 
     const currentModel = statusData?.config?.model || "";
-    setActiveModel(currentModel.startsWith("9router/") ? currentModel.slice(8) : currentModel);
+    setActiveModel(
+      currentModel.startsWith("9router/")
+        ? currentModel.slice(8)
+        : currentModel,
+    );
 
     const explorerModel = statusData?.config?.agent?.explorer?.model || "";
     setSubagentModel(
-      explorerModel.startsWith("9router/") ? explorerModel.slice(8) : explorerModel,
+      explorerModel.startsWith("9router/")
+        ? explorerModel.slice(8)
+        : explorerModel,
     );
   };
 

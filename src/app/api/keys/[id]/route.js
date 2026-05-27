@@ -20,7 +20,11 @@ function validateLimit(body) {
   if (body.limitEnabled !== true) return null;
   if (!body.metricType) return "Metric type is required";
   if (!body.periodType) return "Period type is required";
-  if (body.limitValue === undefined || body.limitValue === null || body.limitValue === "") {
+  if (
+    body.limitValue === undefined ||
+    body.limitValue === null ||
+    body.limitValue === ""
+  ) {
     return "Limit value is required";
   }
   return null;

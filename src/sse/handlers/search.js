@@ -48,7 +48,11 @@ export async function handleSearch(request) {
   log.request("POST", `${url.pathname} | ${providerInput}`);
 
   const settings = await getSettings();
-  const authResult = await enforceApiKeyPolicy(request, errorResponse, settings);
+  const authResult = await enforceApiKeyPolicy(
+    request,
+    errorResponse,
+    settings,
+  );
   const apiKey = getApiKeyValue(authResult.auth);
   logApiKeyPresence(apiKey, log);
   if (!authResult.ok) {

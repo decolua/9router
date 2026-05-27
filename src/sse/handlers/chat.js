@@ -69,7 +69,11 @@ export async function handleChat(request, clientRawRequest = null) {
 
   const settings = await getSettings();
   timing.settingsLoadedAt = Date.now();
-  const authResult = await enforceApiKeyPolicy(request, errorResponse, settings);
+  const authResult = await enforceApiKeyPolicy(
+    request,
+    errorResponse,
+    settings,
+  );
   const apiKey = getApiKeyValue(authResult.auth);
   logApiKeyPresence(apiKey, log);
   if (!authResult.ok) {

@@ -434,7 +434,9 @@ export function createSSEStream(options = {}) {
               for (const item of translated) {
                 const output = formatSSE(item, sourceFormat);
                 reqLogger?.appendConvertedChunk?.(output);
-                emitFirstChunkLog(output, { kind: item.type || "flush-translated" });
+                emitFirstChunkLog(output, {
+                  kind: item.type || "flush-translated",
+                });
                 controller.enqueue(sharedEncoder.encode(output));
               }
             }

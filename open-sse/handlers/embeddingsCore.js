@@ -146,7 +146,13 @@ export async function handleEmbeddingsCore({
   if (onRequestSuccess) await onRequestSuccess();
 
   const normalized = adapter.normalize(responseBody, model);
-  logUsage(provider, normalized.usage || { prompt_tokens: 0, completion_tokens: 0 }, model, credentials?.connectionId, apiKey);
+  logUsage(
+    provider,
+    normalized.usage || { prompt_tokens: 0, completion_tokens: 0 },
+    model,
+    credentials?.connectionId,
+    apiKey,
+  );
   log?.debug?.(
     "EMBEDDINGS",
     `Success | usage=${JSON.stringify(normalized.usage || {})}`,

@@ -411,7 +411,13 @@ export async function requireValidApiKey(request, settings = null) {
   const apiKey = extractApiKey(request);
 
   if (!effectiveSettings.requireApiKey) {
-    return { ok: true, apiKey, keyInfo: null, limitState: null, settings: effectiveSettings };
+    return {
+      ok: true,
+      apiKey,
+      keyInfo: null,
+      limitState: null,
+      settings: effectiveSettings,
+    };
   }
 
   if (!apiKey) {
@@ -436,8 +442,14 @@ export async function requireValidApiKey(request, settings = null) {
       limitState: null,
       settings: effectiveSettings,
       status: 401,
-      message: validation.reason === "inactive" ? "API key is paused" : "Invalid API key",
-      code: validation.reason === "inactive" ? "inactive_api_key" : "invalid_api_key",
+      message:
+        validation.reason === "inactive"
+          ? "API key is paused"
+          : "Invalid API key",
+      code:
+        validation.reason === "inactive"
+          ? "inactive_api_key"
+          : "invalid_api_key",
     };
   }
 
@@ -488,7 +500,11 @@ export function apiKeyErrorResponse(authResult, errorResponse) {
   });
 }
 
-export async function enforceApiKeyPolicy(request, errorResponse, settings = null) {
+export async function enforceApiKeyPolicy(
+  request,
+  errorResponse,
+  settings = null,
+) {
   const result = await requireValidApiKey(request, settings);
   if (!result.ok) {
     return {
@@ -517,7 +533,10 @@ export function normalizeApiKeyFailureLog(authResult, log) {
 export function getLimitStatusForUi(limitState) {
   if (!limitState?.enabled) return "unlimited";
   if (limitState.exceeded) return "exceeded";
-  if (limitState.limitValue && limitState.currentValue >= limitState.limitValue * 0.8) {
+  if (
+    limitState.limitValue &&
+    limitState.currentValue >= limitState.limitValue * 0.8
+  ) {
     return "near";
   }
   return "healthy";
@@ -629,7 +648,11 @@ export function getRequestApiKeyContext(request, authResult = null) {
   };
 }
 
-export function buildApiKeyUsageSummaryResponse(apiKey, limitState, history = []) {
+export function buildApiKeyUsageSummaryResponse(
+  apiKey,
+  limitState,
+  history = [],
+) {
   return {
     key: {
       id: apiKey.id,

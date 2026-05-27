@@ -18,7 +18,9 @@ function parseLimit(body) {
 
 async function decorateKeys(keys) {
   const summaries = await getApiKeysUsageSummary(keys);
-  const byId = new Map(summaries.map((entry) => [entry.apiKeyId, entry.summary]));
+  const byId = new Map(
+    summaries.map((entry) => [entry.apiKeyId, entry.summary]),
+  );
   return keys.map((key) =>
     buildApiKeyLimitPresentation(key, byId.get(key.id) || null),
   );
@@ -32,7 +34,11 @@ function isLimitRequestInvalid(body) {
   if (body.limitEnabled !== true) return null;
   if (!body.metricType) return "Metric type is required";
   if (!body.periodType) return "Period type is required";
-  if (body.limitValue === undefined || body.limitValue === null || body.limitValue === "") {
+  if (
+    body.limitValue === undefined ||
+    body.limitValue === null ||
+    body.limitValue === ""
+  ) {
     return "Limit value is required";
   }
   return null;
@@ -87,7 +93,10 @@ export async function POST(request) {
   try {
     const rawBody = await request.json();
     const parsedBody = parseCreateBody(rawBody);
-    const validationError = validateCreateBody({ ...rawBody, name: parsedBody.name });
+    const validationError = validateCreateBody({
+      ...rawBody,
+      name: parsedBody.name,
+    });
 
     if (validationError) {
       return buildValidationError(validationError);

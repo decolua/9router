@@ -39,7 +39,11 @@ export async function handleStt(request) {
   log.request("POST", `/v1/audio/transcriptions | ${modelStr}`);
 
   const settings = await getSettings();
-  const authResult = await enforceApiKeyPolicy(request, errorResponse, settings);
+  const authResult = await enforceApiKeyPolicy(
+    request,
+    errorResponse,
+    settings,
+  );
   const apiKey = getApiKeyValue(authResult.auth);
   if (!authResult.ok) return authResult.response;
 

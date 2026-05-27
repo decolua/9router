@@ -19,7 +19,9 @@ export async function GET(request, { params }) {
       endDate: searchParams.get("endDate") || undefined,
       endpoint: searchParams.get("endpoint") || undefined,
       status: searchParams.get("status") || undefined,
-      limit: searchParams.get("limit") ? Number(searchParams.get("limit")) : 100,
+      limit: searchParams.get("limit")
+        ? Number(searchParams.get("limit"))
+        : 100,
     });
 
     return NextResponse.json(

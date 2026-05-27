@@ -453,7 +453,8 @@ export function pipeWithDisconnect(
       chunkCount++;
       if (!upstreamFirstByteAt) {
         upstreamFirstByteAt = Date.now();
-        if (timing && !timing.upstreamFirstByteAt) timing.upstreamFirstByteAt = upstreamFirstByteAt;
+        if (timing && !timing.upstreamFirstByteAt)
+          timing.upstreamFirstByteAt = upstreamFirstByteAt;
       }
       const sz = chunk?.byteLength || chunk?.length || 0;
       totalBytes += sz;
@@ -489,7 +490,8 @@ export function pipeWithDisconnect(
     transform(chunk, controller) {
       if (!clientFirstChunkAt) {
         clientFirstChunkAt = Date.now();
-        if (timing && !timing.clientFirstChunkAt) timing.clientFirstChunkAt = clientFirstChunkAt;
+        if (timing && !timing.clientFirstChunkAt)
+          timing.clientFirstChunkAt = clientFirstChunkAt;
       }
       controller.enqueue(chunk);
     },

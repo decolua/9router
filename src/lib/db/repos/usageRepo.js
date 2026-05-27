@@ -68,8 +68,16 @@ function getPeriodBounds(periodType, now = new Date()) {
     const end = new Date(current.getFullYear(), current.getMonth() + 1, 1);
     return { start, end };
   }
-  const start = new Date(current.getFullYear(), current.getMonth(), current.getDate());
-  const end = new Date(current.getFullYear(), current.getMonth(), current.getDate() + 1);
+  const start = new Date(
+    current.getFullYear(),
+    current.getMonth(),
+    current.getDate(),
+  );
+  const end = new Date(
+    current.getFullYear(),
+    current.getMonth(),
+    current.getDate() + 1,
+  );
   return { start, end };
 }
 
@@ -91,16 +99,13 @@ function buildEmptyUsageSummary() {
 }
 
 function sumUsageRows(rows) {
-  return rows.reduce(
-    (acc, row) => {
-      acc.requests += row.requests || 0;
-      acc.promptTokens += row.promptTokens || 0;
-      acc.completionTokens += row.completionTokens || 0;
-      acc.cost += row.cost || 0;
-      return acc;
-    },
-    buildEmptyUsageSummary(),
-  );
+  return rows.reduce((acc, row) => {
+    acc.requests += row.requests || 0;
+    acc.promptTokens += row.promptTokens || 0;
+    acc.completionTokens += row.completionTokens || 0;
+    acc.cost += row.cost || 0;
+    return acc;
+  }, buildEmptyUsageSummary());
 }
 
 function normalizeApiKeyValue(rawKey) {
@@ -121,7 +126,11 @@ function getDayApiKeyTotals(day, apiKeyValue) {
   return totals;
 }
 
-export async function getApiKeyUsageSummary(apiKeyValue, periodType, now = new Date()) {
+export async function getApiKeyUsageSummary(
+  apiKeyValue,
+  periodType,
+  now = new Date(),
+) {
   const db = await getAdapter();
   const normalizedKey = normalizeApiKeyValue(apiKeyValue);
   const { start, end } = getPeriodBounds(periodType, now);
@@ -141,13 +150,20 @@ export async function getApiKeyUsageSummary(apiKeyValue, periodType, now = new D
     [startKey, endKey],
   );
   return sumUsageRows(
-    rows.map((row) => getDayApiKeyTotals(parseJson(row.data, {}), normalizedKey)),
+    rows.map((row) =>
+      getDayApiKeyTotals(parseJson(row.data, {}), normalizedKey),
+    ),
   );
 }
 
 export async function evaluateApiKeyLimitState(apiKey) {
   const limit = apiKey?.limit || null;
-  if (!limit || !limit.metricType || !limit.periodType || limit.limitValue == null) {
+  if (
+    !limit ||
+    !limit.metricType ||
+    !limit.periodType ||
+    limit.limitValue == null
+  ) {
     return {
       enabled: false,
       exceeded: false,
@@ -161,7 +177,10 @@ export async function evaluateApiKeyLimitState(apiKey) {
     };
   }
 
-  const usageSummary = await getApiKeyUsageSummary(apiKey.key, limit.periodType);
+  const usageSummary = await getApiKeyUsageSummary(
+    apiKey.key,
+    limit.periodType,
+  );
   const currentValue = getNumericUsageForMetric(usageSummary, limit.metricType);
   const { end } = getPeriodBounds(limit.periodType);
   return {
@@ -259,7 +278,9 @@ function applyExtendedUsageFilters(rows, filter = {}) {
 }
 
 function sortUsageHistoryDesc(rows) {
-  return [...rows].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  return [...rows].sort(
+    (a, b) => new Date(b.timestamp) - new Date(a.timestamp),
+  );
 }
 
 function limitRows(rows, maxItems = 100) {
@@ -283,7 +304,10 @@ function mergeHistoryFilter(filter = {}) {
 
 function buildApiKeyHistoryPayload(rows, apiKeyValue, filter = {}) {
   const filtered = filterHistoryByApiKey(rows, apiKeyValue);
-  const refined = applyExtendedUsageFilters(filtered, mergeHistoryFilter(filter));
+  const refined = applyExtendedUsageFilters(
+    filtered,
+    mergeHistoryFilter(filter),
+  );
   return limitRows(sortUsageHistoryDesc(refined), filter.limit || 100);
 }
 
@@ -300,7 +324,10 @@ function getUsageStatsPeriodWindow(period) {
   if (period === "today") {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
-    return { startDate: start.toISOString(), endDate: new Date().toISOString() };
+    return {
+      startDate: start.toISOString(),
+      endDate: new Date().toISOString(),
+    };
   }
   if (period === "24h") {
     return {
@@ -350,12 +377,16 @@ function buildLocalNoKeyStatsEntry(row, providerDisplayName) {
 }
 
 function updateLastUsed(target, timestamp) {
-  if (new Date(timestamp) > new Date(target.lastUsed)) target.lastUsed = timestamp;
+  if (new Date(timestamp) > new Date(target.lastUsed))
+    target.lastUsed = timestamp;
 }
 
 function filterUsageHistoryRows(rows, filter = {}) {
   return rows.filter((r) => {
-    if (filter.apiKey !== undefined && normalizeApiKeyValue(r.apiKey) !== normalizeApiKeyValue(filter.apiKey)) {
+    if (
+      filter.apiKey !== undefined &&
+      normalizeApiKeyValue(r.apiKey) !== normalizeApiKeyValue(filter.apiKey)
+    ) {
       return false;
     }
     return true;
@@ -646,7 +677,9 @@ export async function getActiveRequests() {
 export async function saveRequestUsage(entry) {
   try {
     if (!entry.timestamp) entry.timestamp = new Date().toISOString();
-    entry.cost = entry.cost ?? (await calculateCost(entry.provider, entry.model, entry.tokens));
+    entry.cost =
+      entry.cost ??
+      (await calculateCost(entry.provider, entry.model, entry.tokens));
 
     const worker = await getObservabilityWorker();
     if (worker) {
@@ -774,9 +807,13 @@ export async function getUsageHistory(filter = {}) {
 
   return rows.map((r) => {
     const tokens = parseJson(r.tokens, {});
-    const promptTokens = r.promptTokens ?? tokens.prompt_tokens ?? tokens.input_tokens ?? 0;
+    const promptTokens =
+      r.promptTokens ?? tokens.prompt_tokens ?? tokens.input_tokens ?? 0;
     const completionTokens =
-      r.completionTokens ?? tokens.completion_tokens ?? tokens.output_tokens ?? 0;
+      r.completionTokens ??
+      tokens.completion_tokens ??
+      tokens.output_tokens ??
+      0;
     return {
       id: r.id,
       timestamp: r.timestamp,

@@ -50,7 +50,11 @@ export async function handleFetch(request) {
   log.request("POST", `${reqUrl.pathname} | ${providerInput}`);
 
   const settings = await getSettings();
-  const authResult = await enforceApiKeyPolicy(request, errorResponse, settings);
+  const authResult = await enforceApiKeyPolicy(
+    request,
+    errorResponse,
+    settings,
+  );
   const apiKey = getApiKeyValue(authResult.auth);
   logApiKeyPresence(apiKey, log);
   if (!authResult.ok) {

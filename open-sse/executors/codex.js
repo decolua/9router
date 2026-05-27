@@ -402,7 +402,7 @@ export class CodexExecutor extends BaseExecutor {
         if (done) break;
         chunks.push(value);
         text += decoder.decode(value, { stream: true });
-        
+
         // Check for overloaded patterns
         const hit = CODEX_SSE_OVERLOADED_PATTERNS.find((p) => text.includes(p));
         if (hit) {

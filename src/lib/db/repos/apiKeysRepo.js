@@ -56,9 +56,10 @@ function validateLimitInput(limit) {
 }
 
 async function upsertApiKeyLimit(db, apiKeyId, limit) {
-  const existing = db.get(`SELECT id, createdAt FROM apiKeyLimits WHERE apiKeyId = ?`, [
-    apiKeyId,
-  ]);
+  const existing = db.get(
+    `SELECT id, createdAt FROM apiKeyLimits WHERE apiKeyId = ?`,
+    [apiKeyId],
+  );
 
   if (!limit) {
     if (existing) {
@@ -101,7 +102,10 @@ async function upsertApiKeyLimit(db, apiKeyId, limit) {
   };
 }
 
-function selectApiKeyBaseSql(whereClause = "", orderClause = "ORDER BY ak.createdAt ASC") {
+function selectApiKeyBaseSql(
+  whereClause = "",
+  orderClause = "ORDER BY ak.createdAt ASC",
+) {
   return `
     SELECT
       ak.id,
@@ -159,7 +163,14 @@ export async function createApiKey(name, machineId, options = {}) {
   db.transaction(() => {
     db.run(
       `INSERT INTO apiKeys(id, key, name, machineId, isActive, createdAt) VALUES(?, ?, ?, ?, ?, ?)`,
-      [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, 1, apiKey.createdAt],
+      [
+        apiKey.id,
+        apiKey.key,
+        apiKey.name,
+        apiKey.machineId,
+        1,
+        apiKey.createdAt,
+      ],
     );
     upsertApiKeyLimit(db, apiKey.id, normalizedLimit);
   })();
