@@ -7,8 +7,8 @@ import { DEFAULT_MAX_TOKENS, DEFAULT_MIN_TOKENS } from "../../config/runtimeConf
  */
 export function getDefaultMaxTokens() {
   const envCw = parseInt(process.env.CONTEXT_WINDOW, 10);
-  if (envCw >= 1048576) return 128000;
-  return DEFAULT_MAX_TOKENS;
+  if (envCw >= 1048576) return 1048576;
+  return 256000;
 }
 
 /**

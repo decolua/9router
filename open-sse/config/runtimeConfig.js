@@ -37,8 +37,8 @@ export const STREAM_STALL_TIMEOUT_MS = 35 * 1000;
 // Fetch connect timeout: abort if upstream doesn't return response headers within this duration
 export const FETCH_CONNECT_TIMEOUT_MS = 20 * 1000;
 
-// Default token limits
-export const DEFAULT_MAX_TOKENS = parseInt(process.env.CONTEXT_WINDOW, 10) >= 1048576 ? 128000 : 64000;
+// Default token limits — 1M when CONTEXT_WINDOW env is set, otherwise 256K
+export const DEFAULT_MAX_TOKENS = parseInt(process.env.CONTEXT_WINDOW, 10) >= 1048576 ? 1048576 : 256000;
 export const DEFAULT_MIN_TOKENS = 32000;
 
 // Retry config for 429 responses (legacy - kept for backward compatibility)
