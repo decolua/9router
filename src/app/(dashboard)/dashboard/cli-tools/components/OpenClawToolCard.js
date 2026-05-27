@@ -81,12 +81,27 @@ export default function OpenClawToolCard({
     }
   };
 
+  const hydrateModelsFromStatus = (statusData) => {
+    const provider = statusData?.settings?.models?.providers?.["9router"];
+    const primaryModel = statusData?.settings?.agents?.defaults?.model?.primary;
+    setSelectedModel(
+      provider && primaryModel ? primaryModel.replace("9router/", "") : "",
+    );
+
+    const nextAgentModels = {};
+    (statusData?.agents || []).forEach((agent) => {
+      if (agent.currentModel) nextAgentModels[agent.id] = agent.currentModel;
+    });
+    setAgentModels(nextAgentModels);
+  };
+
   const checkOpenclawStatus = async () => {
     setCheckingOpenclaw(true);
     try {
       const res = await fetch("/api/cli-tools/openclaw-settings");
       const data = await res.json();
       setOpenclawStatus(data);
+      hydrateModelsFromStatus(data);
     } catch (error) {
       setOpenclawStatus({ installed: false, error: error.message });
     } finally {

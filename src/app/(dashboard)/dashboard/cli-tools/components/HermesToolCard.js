@@ -68,12 +68,18 @@ export default function HermesToolCard({
     }
   };
 
+  const hydrateModelFromStatus = (statusData) => {
+    const cfg = statusData?.settings?.model;
+    setSelectedModel(cfg?.default || "");
+  };
+
   const checkStatus = async () => {
     setChecking(true);
     try {
       const res = await fetch(ENDPOINT);
       const data = await res.json();
       setHermesStatus(data);
+      hydrateModelFromStatus(data);
     } catch (error) {
       setHermesStatus({ installed: false, error: error.message });
     } finally {

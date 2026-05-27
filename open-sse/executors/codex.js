@@ -17,7 +17,7 @@ const CODEX_SSE_OVERLOADED_PATTERNS = [
   "server_is_overloaded",
   "service_unavailable_error",
 ];
-const CODEX_SSE_PEEK_BYTES = 4096;
+const CODEX_SSE_PEEK_BYTES = 1024;
 
 // In-memory map: hash(machineId + first assistant content) → { sessionId, lastUsed }
 const SESSION_TTL_MS = 60 * 60 * 1000; // 1 hour
@@ -402,9 +402,20 @@ export class CodexExecutor extends BaseExecutor {
         if (done) break;
         chunks.push(value);
         text += decoder.decode(value, { stream: true });
+        
+        // Check for overloaded patterns
         const hit = CODEX_SSE_OVERLOADED_PATTERNS.find((p) => text.includes(p));
         if (hit) {
           matched = hit;
+          break;
+        }
+
+        // Early exit: if we see normal response events, this is a healthy stream
+        const isNormalStream =
+          text.includes("response.created") ||
+          text.includes("chat.completion") ||
+          text.includes("response.output");
+        if (isNormalStream) {
           break;
         }
       }

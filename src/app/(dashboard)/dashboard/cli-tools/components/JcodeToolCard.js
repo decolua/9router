@@ -70,12 +70,18 @@ export default function JcodeToolCard({
     }
   };
 
+  const hydrateModelFromStatus = (statusData) => {
+    const provider = statusData?.config?.providers?.["9router"];
+    setSelectedModel(provider?.default_model || "");
+  };
+
   const checkJcodeStatus = async () => {
     setCheckingJcode(true);
     try {
       const res = await fetch("/api/cli-tools/jcode-settings");
       const data = await res.json();
       setJcodeStatus(data);
+      hydrateModelFromStatus(data);
     } catch (error) {
       setJcodeStatus({ installed: false, error: error.message });
     } finally {
