@@ -244,10 +244,38 @@ export class BaseExecutor {
 
         const ct = response.headers?.get?.("content-type") || "";
         const cl = response.headers?.get?.("content-length") || "?";
+        const fetchTiming = response.__timing || null;
+        const timingBreakdown = fetchTiming
+          ? {
+              mode: fetchTiming.mode,
+              dnsMs:
+                fetchTiming.dnsStartAt && fetchTiming.dnsResolvedAt
+                  ? fetchTiming.dnsResolvedAt - fetchTiming.dnsStartAt
+                  : undefined,
+              dispatcherMs:
+                fetchTiming.proxyStartAt && fetchTiming.dispatcherReadyAt
+                  ? fetchTiming.dispatcherReadyAt - fetchTiming.proxyStartAt
+                  : undefined,
+              relayMs:
+                fetchTiming.relayStartAt && fetchTiming.headersAt
+                  ? fetchTiming.headersAt - fetchTiming.relayStartAt
+                  : undefined,
+              headersMs:
+                fetchTiming.startedAt && fetchTiming.headersAt
+                  ? fetchTiming.headersAt - fetchTiming.startedAt
+                  : undefined,
+            }
+          : null;
         dbg(
           "FETCH",
-          `${this.provider.toUpperCase()} ← ${response.status} | ttft=${Date.now() - fetchT0}ms | ct=${ct} | cl=${cl}`,
+          `${this.provider.toUpperCase()} ← ${response.status} | ttft=${Date.now() - fetchT0}ms | ct=${ct} | cl=${cl}${timingBreakdown ? ` | net=${JSON.stringify(timingBreakdown)}` : ""}`,
         );
+        if (timingBreakdown) {
+          log?.info?.(
+            "FETCH",
+            `${this.provider.toUpperCase()} | mode=${timingBreakdown.mode} | headers=${timingBreakdown.headersMs ?? "?"}ms | dns=${timingBreakdown.dnsMs ?? "-"}ms | dispatcher=${timingBreakdown.dispatcherMs ?? "-"}ms | relay=${timingBreakdown.relayMs ?? "-"}ms`,
+          );
+        }
 
         // Connection successful! Let the stream run indefinitely after headers arrive.
 

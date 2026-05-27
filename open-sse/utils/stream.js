@@ -17,6 +17,7 @@ import {
   formatSSE,
 } from "./streamHelpers.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
+import * as log from "../../src/sse/utils/logger.js";
 
 export { COLORS, formatSSE };
 
@@ -76,9 +77,23 @@ export function createSSEStream(options = {}) {
   let accumulatedContent = "";
   let accumulatedThinking = "";
   let ttftAt = null;
+  let firstRawChunkLogged = false;
+  let firstEmittedChunkAt = null;
+  let firstEmittedChunkBytes = 0;
   let sseLineCount = 0;
   let sseEmittedCount = 0;
   const eventTypeCounts = {};
+  const streamStartAt = Date.now();
+  const emitFirstChunkLog = (output, meta = {}) => {
+    if (firstEmittedChunkAt) return;
+    firstEmittedChunkAt = Date.now();
+    firstEmittedChunkBytes = new TextEncoder().encode(output || "").byteLength;
+    log.info(
+      "SSE-FIRST",
+      `${provider || "unknown"}/${model || "unknown"} | mode=${mode} | firstEmitMs=${firstEmittedChunkAt - streamStartAt}ms | bytes=${firstEmittedChunkBytes}${meta.kind ? ` | kind=${meta.kind}` : ""}`,
+    );
+  };
+  const rawChunkEncoder = new TextEncoder();
 
   const updateTracker = () => {
     if (streamStateTracker) {
@@ -92,6 +107,13 @@ export function createSSEStream(options = {}) {
     transform(chunk, controller) {
       if (!ttftAt) ttftAt = Date.now();
       const text = decoder.decode(chunk, { stream: true });
+      if (!firstRawChunkLogged) {
+        firstRawChunkLogged = true;
+        log.info(
+          "SSE-FIRST",
+          `${provider || "unknown"}/${model || "unknown"} | mode=${mode} | firstRawMs=${Date.now() - streamStartAt}ms | bytes=${rawChunkEncoder.encode(text).byteLength}`,
+        );
+      }
       buffer += text;
       reqLogger?.appendProviderChunk?.(text);
 
@@ -310,6 +332,7 @@ export function createSSEStream(options = {}) {
 
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
+            emitFirstChunkLog(output, { kind: item.type || "translated" });
             controller.enqueue(sharedEncoder.encode(output));
             sseEmittedCount++;
           }
@@ -411,6 +434,7 @@ export function createSSEStream(options = {}) {
               for (const item of translated) {
                 const output = formatSSE(item, sourceFormat);
                 reqLogger?.appendConvertedChunk?.(output);
+                emitFirstChunkLog(output, { kind: item.type || "flush-translated" });
                 controller.enqueue(sharedEncoder.encode(output));
               }
             }
@@ -435,6 +459,7 @@ export function createSSEStream(options = {}) {
           for (const item of flushed) {
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
+            emitFirstChunkLog(output, { kind: item.type || "tail-translated" });
             controller.enqueue(sharedEncoder.encode(output));
           }
         }
