@@ -67,9 +67,10 @@ export async function handleChatCore({
   midStreamResumeEnabled,
   sourceFormatOverride,
   providerThinking,
+  timing = null,
 }) {
   const { provider, model } = modelInfo;
-  const requestStartTime = Date.now();
+  const requestStartTime = timing?.requestStartTime || Date.now();
 
   const sourceFormat = sourceFormatOverride || detectFormat(body);
 
@@ -292,6 +293,9 @@ export async function handleChatCore({
   // Execute request
   let providerResponse, providerUrl, providerHeaders, finalBody;
   try {
+    if (timing && !timing.upstreamFetchStartedAt) {
+      timing.upstreamFetchStartedAt = Date.now();
+    }
     const result = await executor.execute({
       model,
       body: translatedBody,
@@ -493,7 +497,7 @@ export async function handleChatCore({
   }
 
   // Streaming response
-  const { onStreamComplete } = buildOnStreamComplete({ ...sharedCtx });
+  const { onStreamComplete } = buildOnStreamComplete({ ...sharedCtx, timing });
   return handleStreamingResponse({
     ...sharedCtx,
     providerResponse,
@@ -505,6 +509,7 @@ export async function handleChatCore({
     streamController,
     onStreamComplete,
     credentials,
+    timing,
   });
 }
 

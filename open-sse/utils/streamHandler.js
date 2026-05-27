@@ -379,11 +379,14 @@ export function pipeWithDisconnect(
   streamController,
   streamStateTracker = null,
   resumeCtx = null,
+  timing = null,
 ) {
   let stallTimer = null;
   let chunkCount = 0;
   let totalBytes = 0;
   let lastChunkAt = Date.now();
+  let upstreamFirstByteAt = null;
+  let clientFirstChunkAt = null;
   const t0 = Date.now();
   const tag = "STREAM";
   const clearStall = () => {
@@ -448,6 +451,10 @@ export function pipeWithDisconnect(
   const upstreamTap = new TransformStream({
     transform(chunk, controller) {
       chunkCount++;
+      if (!upstreamFirstByteAt) {
+        upstreamFirstByteAt = Date.now();
+        if (timing && !timing.upstreamFirstByteAt) timing.upstreamFirstByteAt = upstreamFirstByteAt;
+      }
       const sz = chunk?.byteLength || chunk?.length || 0;
       totalBytes += sz;
       const now = Date.now();
@@ -478,9 +485,19 @@ export function pipeWithDisconnect(
     .pipeThrough(upstreamTap)
     .pipeThrough(transformStream);
 
+  const clientTap = new TransformStream({
+    transform(chunk, controller) {
+      if (!clientFirstChunkAt) {
+        clientFirstChunkAt = Date.now();
+        if (timing && !timing.clientFirstChunkAt) timing.clientFirstChunkAt = clientFirstChunkAt;
+      }
+      controller.enqueue(chunk);
+    },
+  });
+
   return createDisconnectAwareStream(
     {
-      readable: transformedBody,
+      readable: transformedBody.pipeThrough(clientTap),
       writable: { getWriter: () => ({ abort: () => Promise.resolve() }) },
     },
     wrappedController,

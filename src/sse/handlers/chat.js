@@ -71,14 +71,19 @@ export async function handleChat(request, clientRawRequest = null) {
     log.debug("AUTH", "No API key provided (local mode)");
   }
 
+  const requestStartTime = Date.now();
+  const timing = { requestStartTime, requestParsedAt: Date.now() };
+
   // Enforce API key if enabled in settings
   const settings = await getSettings();
+  timing.settingsLoadedAt = Date.now();
   if (settings.requireApiKey) {
     if (!apiKey) {
       log.warn("AUTH", "Missing API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
     }
     const valid = await isValidApiKey(apiKey);
+    timing.apiKeyValidatedAt = Date.now();
     if (!valid) {
       log.warn("AUTH", "Invalid API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
@@ -102,6 +107,7 @@ export async function handleChat(request, clientRawRequest = null) {
 
   // Check if model is a combo (has multiple models with fallback)
   const comboModels = await getComboModels(modelStr);
+  timing.comboResolvedAt = Date.now();
   if (comboModels) {
     // Check for combo-specific strategy first, fallback to global
     const comboStrategies = settings.comboStrategies || {};
@@ -118,7 +124,10 @@ export async function handleChat(request, clientRawRequest = null) {
       body,
       models: comboModels,
       handleSingleModel: (b, m) =>
-        handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        handleSingleModelChat(b, m, clientRawRequest, request, apiKey, {
+          settings,
+          timing: { ...timing },
+        }),
       log,
       comboName: modelStr,
       comboStrategy,
@@ -133,6 +142,7 @@ export async function handleChat(request, clientRawRequest = null) {
     clientRawRequest,
     request,
     apiKey,
+    { settings, timing },
   );
 }
 
@@ -145,14 +155,18 @@ async function handleSingleModelChat(
   clientRawRequest = null,
   request = null,
   apiKey = null,
+  requestContext = {},
 ) {
+  const timing = requestContext.timing || { requestStartTime: Date.now() };
+  const settings = requestContext.settings || (await getSettings());
   const modelInfo = await getModelInfo(modelStr);
+  timing.modelResolvedAt = Date.now();
 
   // If provider is null, this might be a combo name - check and handle
   if (!modelInfo.provider) {
     const comboModels = await getComboModels(modelStr);
     if (comboModels) {
-      const chatSettings = await getSettings();
+      const chatSettings = settings;
       // Check for combo-specific strategy first, fallback to global
       const comboStrategies = chatSettings.comboStrategies || {};
       const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
@@ -168,7 +182,10 @@ async function handleSingleModelChat(
         body,
         models: comboModels,
         handleSingleModel: (b, m) =>
-          handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+          handleSingleModelChat(b, m, clientRawRequest, request, apiKey, {
+            settings,
+            timing: { ...timing },
+          }),
         log,
         comboName: modelStr,
         comboStrategy,
@@ -266,9 +283,10 @@ async function handleSingleModelChat(
     }
 
     // Use shared chatCore
-    const chatSettings = await getSettings();
+    const chatSettings = settings;
     const providerThinking =
       (chatSettings.providerThinking || {})[provider] || null;
+    timing.requestReadyAt = Date.now();
     const result = await handleChatCore({
       body: { ...body, model: `${provider}/${model}` },
       modelInfo: { provider, model },
@@ -299,6 +317,7 @@ async function handleSingleModelChat(
       onRequestSuccess: async () => {
         await clearAccountError(credentials.connectionId, credentials, model);
       },
+      timing,
     });
 
     if (result.success) return result.response;
