@@ -13,6 +13,7 @@ import { OpenCodeExecutor } from "./opencode.js";
 import { OpenCodeGoExecutor } from "./opencode-go.js";
 import { GrokWebExecutor } from "./grok-web.js";
 import { PerplexityWebExecutor } from "./perplexity-web.js";
+import { DeepSeekFreeExecutor } from "./deepseek-free.js";
 import { OllamaLocalExecutor } from "./ollama-local.js";
 import { CommandCodeExecutor } from "./commandcode.js";
 import { DefaultExecutor } from "./default.js";
@@ -35,6 +36,8 @@ const executors = {
   "opencode-go": new OpenCodeGoExecutor(),
   "grok-web": new GrokWebExecutor(),
   "perplexity-web": new PerplexityWebExecutor(),
+  "deepseek-free": new DeepSeekFreeExecutor(),
+  dsf: new DeepSeekFreeExecutor(),
   "ollama-local": new OllamaLocalExecutor(),
   commandcode: new CommandCodeExecutor(),
 };
@@ -70,3 +73,4 @@ export { GrokWebExecutor } from "./grok-web.js";
 export { PerplexityWebExecutor } from "./perplexity-web.js";
 export { OllamaLocalExecutor } from "./ollama-local.js";
 export { CommandCodeExecutor } from "./commandcode.js";
+export { DeepSeekFreeExecutor } from "./deepseek-free.js";

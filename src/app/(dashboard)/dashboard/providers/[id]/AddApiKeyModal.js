@@ -11,16 +11,19 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const NONE_PROXY_POOL_VALUE = "__none__";
   const isOllamaLocal = provider === "ollama-local";
   const isCookie = authType === "cookie";
+  const isDeepseekFree = provider === "deepseek-free";
   const isXaiApiKey = provider === "xai" && !isCookie;
-  const credentialLabel = isCookie ? "Cookie Value" : "API Key";
+  const credentialLabel = isCookie ? "Cookie Value" : (isDeepseekFree ? "Password" : "API Key");
   const credentialPlaceholder = isCookie
     ? (provider === "grok-web" ? "sso=xxxxx... or just the raw value" : "eyJhbGciOi...")
-    : (isXaiApiKey ? "xai-..." : "");
+    : (isDeepseekFree ? "Your DeepSeek Account Password" : (isXaiApiKey ? "xai-..." : ""));
 
   const isAzure = provider === "azure";
   const isCloudflareAi = provider === "cloudflare-ai";
   const providerRegions = AI_PROVIDERS?.[provider]?.regions || null;
   const defaultRegion = AI_PROVIDERS?.[provider]?.defaultRegion || providerRegions?.[0]?.id || "";
+
+  const [deepseekFreeData, setDeepseekFreeData] = useState({ username: "" });
 
   const [formData, setFormData] = useState({
     name: "",
@@ -59,6 +62,9 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     }
     if (isCloudflareAi) {
       return { accountId: cloudflareData.accountId };
+    }
+    if (isDeepseekFree) {
+      return { username: deepseekFreeData.username };
     }
     if (providerRegions && region) {
       return { region };
@@ -281,6 +287,20 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
             Enter the model ID exactly as your compatible endpoint expects it. This model will be saved as the connection default.
           </p>
         )}
+        {isDeepseekFree && (
+          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+            <h3 className="font-semibold mb-3 text-sm">DeepSeek Account Details</h3>
+            <Input
+              label="Username (Email or Mobile)"
+              value={deepseekFreeData.username}
+              onChange={(e) => setDeepseekFreeData({ ...deepseekFreeData, username: e.target.value })}
+              placeholder="example@email.com or +8613800000000"
+            />
+            <p className="text-xs text-text-muted mt-2">
+              Enter your deepseek.com login email or mobile number (include country code like +86).
+            </p>
+          </div>
+        )}
         {isCloudflareAi && (
           <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
             <h3 className="font-semibold mb-3 text-sm">Cloudflare Workers AI</h3>
@@ -356,7 +376,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         </p>
 
         <div className="flex gap-2">
-          <Button onClick={handleSubmit} fullWidth disabled={saving || (!isOllamaLocal && (!formData.name || !formData.apiKey)) || (isCompatible && !formData.defaultModel.trim()) || (isAzure && (!azureData.azureEndpoint || !azureData.deployment || !azureData.organization)) || (isCloudflareAi && !cloudflareData.accountId)}>
+          <Button onClick={handleSubmit} fullWidth disabled={saving || (!isOllamaLocal && (!formData.name || !formData.apiKey)) || (isCompatible && !formData.defaultModel.trim()) || (isAzure && (!azureData.azureEndpoint || !azureData.deployment || !azureData.organization)) || (isCloudflareAi && !cloudflareData.accountId) || (isDeepseekFree && !deepseekFreeData.username)}>
             {saving ? "Saving..." : "Save"}
           </Button>
           <Button onClick={onClose} variant="ghost" fullWidth>

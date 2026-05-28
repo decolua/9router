@@ -437,6 +437,10 @@ export const PROVIDER_MODELS = {
     { id: "deepseek-chat", name: "DeepSeek V3.2 Chat" },
     { id: "deepseek-reasoner", name: "DeepSeek V3.2 Reasoner" },
   ],
+  "deepseek-free": [
+    { id: "deepseek-chat", name: "DeepSeek V3 Chat (Free)", upstreamModelId: "deepseek-chat" },
+    { id: "deepseek-reasoner", name: "DeepSeek R1 Reasoner (Free)", upstreamModelId: "deepseek-reasoner" }
+  ],
   commandcode: [
     { id: "deepseek/deepseek-v4-pro", name: "DeepSeek V4 Pro" },
     { id: "deepseek/deepseek-v4-flash", name: "DeepSeek V4 Flash" },

@@ -68,6 +68,20 @@ export const OAUTH_PROVIDERS = {
 };
 
 export const APIKEY_PROVIDERS = {
+  "deepseek-free": {
+    id: "deepseek-free",
+    alias: "dsf",
+    name: "DeepSeek Free",
+    icon: "bolt",
+    color: "#4D6BFE",
+    textIcon: "DSF",
+    website: "https://chat.deepseek.com",
+    notice: {
+      text: "Connect to unofficial DeepSeek Web/App backend. Bypasses limits using Proof of Work (PoW).",
+      signupUrl: "https://chat.deepseek.com"
+    },
+    hasProviderSpecificData: true
+  },
   glm: { id: "glm", alias: "glm", name: "GLM Coding", icon: "code", color: "#2563EB", textIcon: "GL", website: "https://open.bigmodel.cn", notice: { apiKeyUrl: "https://open.bigmodel.cn/usercenter/apikeys" } },
   "glm-cn": { id: "glm-cn", alias: "glm-cn", name: "GLM (China)", icon: "code", color: "#DC2626", textIcon: "GC", website: "https://open.bigmodel.cn", notice: { apiKeyUrl: "https://open.bigmodel.cn/usercenter/apikeys" } },
   kimi: { id: "kimi", alias: "kimi", name: "Kimi", icon: "psychology", color: "#1E3A8A", textIcon: "KM", website: "https://kimi.moonshot.cn", notice: { apiKeyUrl: "https://platform.moonshot.ai/console/api-keys" }, serviceKinds: ["llm", "webSearch"], searchViaChat: { defaultModel: "kimi-k2.5", pricingUrl: "https://platform.moonshot.ai/docs/pricing/chat" } },

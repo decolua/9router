@@ -583,6 +583,25 @@ export async function POST(request) {
           break;
         }
 
+        case "deepseek-free": {
+          const username = providerSpecificData?.username;
+          if (!username) {
+            isValid = false;
+            error = "Username (email or mobile) is required";
+            break;
+          }
+          try {
+            const { DeepSeekFreeExecutor } = await import("open-sse/executors/deepseek-free.js");
+            const executor = new DeepSeekFreeExecutor();
+            await executor.login(username, apiKey);
+            isValid = true;
+          } catch (err) {
+            isValid = false;
+            error = err.message || "Invalid DeepSeek credentials or login failure";
+          }
+          break;
+        }
+
         default: {
           // Generic probe for OpenAI-compatible providers (config-driven from PROVIDERS)
           const cfg = PROVIDERS[provider];

@@ -258,6 +258,11 @@ export const PROVIDERS = {
     baseUrl: "https://api.deepseek.com/chat/completions",
     format: "openai"
   },
+  "deepseek-free": {
+    baseUrl: "https://chat.deepseek.com/api/v0/chat/completion",
+    format: "openai",
+    headers: {}
+  },
   commandcode: {
     baseUrl: "https://api.commandcode.ai/alpha/generate",
     format: "commandcode",
