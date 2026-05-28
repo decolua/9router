@@ -11,9 +11,8 @@ describe("pipeWithDisconnect timing markers", () => {
   });
 
   it("captures upstream first byte and client first chunk timings", async () => {
-    const { pipeWithDisconnect } = await import(
-      "../../open-sse/utils/streamHandler.js"
-    );
+    const { pipeWithDisconnect } =
+      await import("../../open-sse/utils/streamHandler.js");
 
     const timing = {};
     const providerResponse = {

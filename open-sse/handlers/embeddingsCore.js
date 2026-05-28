@@ -7,6 +7,7 @@ import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { getExecutor } from "../executors/index.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { getEmbeddingAdapter } from "./embeddingProviders/index.js";
+import { logUsage } from "../utils/usageTracking.js";
 
 /**
  * Core embeddings handler — orchestrator only. Provider-specific URL/headers/body/normalize
@@ -18,6 +19,7 @@ export async function handleEmbeddingsCore({
   body,
   modelInfo,
   credentials,
+  apiKey,
   log,
   onCredentialsRefreshed,
   onRequestSuccess,
@@ -144,6 +146,13 @@ export async function handleEmbeddingsCore({
   if (onRequestSuccess) await onRequestSuccess();
 
   const normalized = adapter.normalize(responseBody, model);
+  logUsage(
+    provider,
+    normalized.usage || { prompt_tokens: 0, completion_tokens: 0 },
+    model,
+    credentials?.connectionId,
+    apiKey,
+  );
   log?.debug?.(
     "EMBEDDINGS",
     `Success | usage=${JSON.stringify(normalized.usage || {})}`,

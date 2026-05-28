@@ -1,6 +1,6 @@
 import {
-  extractApiKey,
-  isValidApiKey,
+  enforceApiKeyPolicy,
+  getApiKeyValue,
   getProviderCredentials,
   markAccountUnavailable,
 } from "../services/auth.js";
@@ -43,14 +43,13 @@ export async function handleTts(request) {
   );
 
   const settings = await getSettings();
-  if (settings.requireApiKey) {
-    const apiKey = extractApiKey(request);
-    if (!apiKey)
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
-    const valid = await isValidApiKey(apiKey);
-    if (!valid)
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
-  }
+  const authResult = await enforceApiKeyPolicy(
+    request,
+    errorResponse,
+    settings,
+  );
+  const apiKey = getApiKeyValue(authResult.auth);
+  if (!authResult.ok) return authResult.response;
 
   if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   if (!body.input)
@@ -76,7 +75,7 @@ export async function handleTts(request) {
       body,
       models: comboModels,
       handleSingleModel: (b, m) =>
-        handleSingleModelTts(b, m, responseFormat, language),
+        handleSingleModelTts(b, m, responseFormat, language, apiKey),
       log,
       comboName: modelStr,
       comboStrategy,
@@ -84,10 +83,16 @@ export async function handleTts(request) {
     });
   }
 
-  return handleSingleModelTts(body, modelStr, responseFormat, language);
+  return handleSingleModelTts(body, modelStr, responseFormat, language, apiKey);
 }
 
-async function handleSingleModelTts(body, modelStr, responseFormat, language) {
+async function handleSingleModelTts(
+  body,
+  modelStr,
+  responseFormat,
+  language,
+  apiKey = null,
+) {
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider)
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
@@ -101,6 +106,7 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language) {
       provider,
       model,
       input: body.input,
+      apiKey,
       responseFormat,
       language,
     });
@@ -158,6 +164,7 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language) {
       model,
       input: body.input,
       credentials,
+      apiKey,
       responseFormat,
       language,
     });

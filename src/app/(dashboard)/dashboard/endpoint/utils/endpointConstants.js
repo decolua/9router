@@ -1,0 +1,42 @@
+export const TUNNEL_BENEFITS = [
+  {
+    icon: "public",
+    title: "Access Anywhere",
+    desc: "Use your API from any network",
+  },
+  {
+    icon: "group",
+    title: "Share Endpoint",
+    desc: "Share URL with team members",
+  },
+  {
+    icon: "code",
+    title: "Use in Cursor/Cline",
+    desc: "Connect AI tools remotely",
+  },
+  { icon: "lock", title: "Encrypted", desc: "End-to-end TLS via Cloudflare" },
+];
+
+export const TUNNEL_PING_INTERVAL_MS = 2000;
+export const TUNNEL_PING_MAX_MS = 300000;
+export const STATUS_POLL_FAST_MS = 5000;
+export const REACHABLE_MISS_THRESHOLD = 5;
+export const CLIENT_PING_FAST_MS = 10000;
+export const CLIENT_PING_TIMEOUT_MS = 5000;
+
+export const CAVEMAN_LEVELS = [
+  { id: "lite", label: "Lite", desc: "Drop filler, keep grammar" },
+  { id: "full", label: "Full", desc: "Drop articles, fragments OK" },
+  { id: "ultra", label: "Ultra", desc: "Telegraphic, max compression" },
+];
+
+export const LIMIT_METRIC_OPTIONS = [
+  { value: "requests", label: "Requests" },
+  { value: "tokens", label: "Tokens" },
+  { value: "cost", label: "Cost" },
+];
+
+export const LIMIT_PERIOD_OPTIONS = [
+  { value: "daily", label: "Daily" },
+  { value: "monthly", label: "Monthly" },
+];

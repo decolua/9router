@@ -43,6 +43,12 @@ export const STREAM_STALL_TIMEOUT_MS = parseInt(
   10,
 );
 
+// Stream semantic stall timeout: abort if model stops generating tokens (after first token is received).
+export const STREAM_SEMANTIC_STALL_TIMEOUT_MS = parseInt(
+  process.env.STREAM_SEMANTIC_STALL_TIMEOUT_MS || String(35 * 1000),
+  10,
+);
+
 // Fetch connect timeout: abort if upstream doesn't return response headers within this duration.
 export const FETCH_CONNECT_TIMEOUT_MS = parseInt(
   process.env.FETCH_CONNECT_TIMEOUT_MS || String(20 * 1000),

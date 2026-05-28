@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 import { createErrorResult } from "../utils/error.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
+import { saveRequestUsage } from "@/lib/usageDb.js";
 import { AI_PROVIDERS } from "../../src/shared/constants/providers.js";
 
 // Build auth headers from sttConfig + token
@@ -240,6 +241,7 @@ export async function handleSttCore({
   model,
   formData,
   credentials,
+  apiKey,
 }) {
   const file = formData.get("file");
   if (!file)
@@ -267,19 +269,25 @@ export async function handleSttCore({
   }
 
   try {
+    let result;
     switch (cfg.format) {
       case "deepgram":
-        return await transcribeDeepgram(cfg, file, model, token, formData);
+        result = await transcribeDeepgram(cfg, file, model, token, formData);
+        break;
       case "assemblyai":
-        return await transcribeAssemblyAI(cfg, file, model, token);
+        result = await transcribeAssemblyAI(cfg, file, model, token);
+        break;
       case "nvidia-asr":
-        return await transcribeNvidia(cfg, file, model, token);
+        result = await transcribeNvidia(cfg, file, model, token);
+        break;
       case "huggingface-asr":
-        return await transcribeHuggingFace(cfg, file, model, token);
+        result = await transcribeHuggingFace(cfg, file, model, token);
+        break;
       case "gemini-stt":
-        return await transcribeGemini(cfg, file, model, token, formData);
+        result = await transcribeGemini(cfg, file, model, token, formData);
+        break;
       default:
-        return await transcribeOpenAICompatible(
+        result = await transcribeOpenAICompatible(
           cfg,
           file,
           model,
@@ -287,6 +295,18 @@ export async function handleSttCore({
           formData,
         );
     }
+    if (result?.success) {
+      saveRequestUsage({
+        provider,
+        model,
+        connectionId: credentials?.connectionId || null,
+        apiKey: apiKey || undefined,
+        endpoint: "/v1/audio/transcriptions",
+        tokens: { prompt_tokens: 0, completion_tokens: 0 },
+        status: "200 OK",
+      }).catch(() => {});
+    }
+    return result;
   } catch (err) {
     return createErrorResult(
       HTTP_STATUS.BAD_GATEWAY,

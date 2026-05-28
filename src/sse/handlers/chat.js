@@ -4,8 +4,10 @@ import {
   getProviderCredentials,
   markAccountUnavailable,
   clearAccountError,
-  extractApiKey,
-  isValidApiKey,
+  enforceApiKeyPolicy,
+  getApiKeyValue,
+  logApiKeyPresence,
+  normalizeApiKeyFailureLog,
 } from "../services/auth.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
 import { getSettings } from "@/lib/localDb";
@@ -62,33 +64,24 @@ export async function handleChat(request, clientRawRequest = null) {
   );
 
   // Log API key (masked)
-  const authHeader = request.headers.get("Authorization");
-  const apiKey = extractApiKey(request);
-  if (authHeader && apiKey) {
-    const masked = log.maskKey(apiKey);
-    log.debug("AUTH", `API Key: ${masked}`);
-  } else {
-    log.debug("AUTH", "No API key provided (local mode)");
-  }
-
   const requestStartTime = Date.now();
   const timing = { requestStartTime, requestParsedAt: Date.now() };
 
-  // Enforce API key if enabled in settings
   const settings = await getSettings();
   timing.settingsLoadedAt = Date.now();
-  if (settings.requireApiKey) {
-    if (!apiKey) {
-      log.warn("AUTH", "Missing API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
-    }
-    const valid = await isValidApiKey(apiKey);
+  const authResult = await enforceApiKeyPolicy(
+    request,
+    errorResponse,
+    settings,
+  );
+  const apiKey = getApiKeyValue(authResult.auth);
+  logApiKeyPresence(apiKey, log);
+  if (!authResult.ok) {
+    normalizeApiKeyFailureLog(authResult.auth, log);
     timing.apiKeyValidatedAt = Date.now();
-    if (!valid) {
-      log.warn("AUTH", "Invalid API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
-    }
+    return authResult.response;
   }
+  timing.apiKeyValidatedAt = Date.now();
 
   if (!modelStr) {
     log.warn("CHAT", "Missing model");

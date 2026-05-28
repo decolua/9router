@@ -403,7 +403,10 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
       "x-relay-target": `${parsed.protocol}//${parsed.host}`,
       "x-relay-path": `${parsed.pathname}${parsed.search}`,
     };
-    const response = await originalFetch(vercelRelayUrl, { ...options, headers: relayHeaders });
+    const response = await originalFetch(vercelRelayUrl, {
+      ...options,
+      headers: relayHeaders,
+    });
     timing.headersAt = Date.now();
     response.__timing = timing;
     return response;
@@ -446,7 +449,8 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
       timing.dnsStartAt = Date.now();
       const realIP = await resolveRealIP(parsedUrl.hostname);
       timing.dnsResolvedAt = Date.now();
-      if (realIP) return await createBypassRequest(parsedUrl, realIP, options, timing);
+      if (realIP)
+        return await createBypassRequest(parsedUrl, realIP, options, timing);
     } catch (error) {
       console.warn(`[ProxyFetch] MITM bypass failed: ${error.message}`);
     }

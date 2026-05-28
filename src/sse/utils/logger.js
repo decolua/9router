@@ -7,7 +7,11 @@ const LOG_LEVELS = {
   ERROR: 3,
 };
 
-const levelName = (process.env.LOG_LEVEL || process.env.NINE_ROUTER_LOG_LEVEL || "INFO")
+const levelName = (
+  process.env.LOG_LEVEL ||
+  process.env.NINE_ROUTER_LOG_LEVEL ||
+  "INFO"
+)
   .toUpperCase()
   .trim();
 const LEVEL = LOG_LEVELS[levelName] ?? LOG_LEVELS.INFO;

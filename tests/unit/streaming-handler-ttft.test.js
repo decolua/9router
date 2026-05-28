@@ -42,9 +42,8 @@ describe("streamingHandler TTFT path", () => {
   });
 
   it("defers placeholder request detail persistence until after response construction", async () => {
-    const { handleStreamingResponse } = await import(
-      "../../open-sse/handlers/chatCore/streamingHandler.js"
-    );
+    const { handleStreamingResponse } =
+      await import("../../open-sse/handlers/chatCore/streamingHandler.js");
 
     const result = handleStreamingResponse({
       providerResponse: createProviderResponse(),
@@ -91,9 +90,8 @@ describe("streamingHandler TTFT path", () => {
   });
 
   it("reuses the same request-detail id on stream completion", async () => {
-    const { buildOnStreamComplete } = await import(
-      "../../open-sse/handlers/chatCore/streamingHandler.js"
-    );
+    const { buildOnStreamComplete } =
+      await import("../../open-sse/handlers/chatCore/streamingHandler.js");
 
     const requestStartTime = Date.now() - 100;
     const timing = {

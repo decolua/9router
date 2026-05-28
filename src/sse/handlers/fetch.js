@@ -2,8 +2,10 @@ import {
   getProviderCredentials,
   markAccountUnavailable,
   clearAccountError,
-  extractApiKey,
-  isValidApiKey,
+  enforceApiKeyPolicy,
+  getApiKeyValue,
+  logApiKeyPresence,
+  normalizeApiKeyFailureLog,
 } from "../services/auth.js";
 import { getSettings, getCombos } from "@/lib/localDb";
 import {
@@ -47,26 +49,17 @@ export async function handleFetch(request) {
 
   log.request("POST", `${reqUrl.pathname} | ${providerInput}`);
 
-  // Log API key (masked)
-  const apiKey = extractApiKey(request);
-  if (apiKey) {
-    log.debug("AUTH", `API Key: ${log.maskKey(apiKey)}`);
-  } else {
-    log.debug("AUTH", "No API key provided (local mode)");
-  }
-
-  // Enforce API key if enabled in settings
   const settings = await getSettings();
-  if (settings.requireApiKey) {
-    if (!apiKey) {
-      log.warn("AUTH", "Missing API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
-    }
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) {
-      log.warn("AUTH", "Invalid API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
-    }
+  const authResult = await enforceApiKeyPolicy(
+    request,
+    errorResponse,
+    settings,
+  );
+  const apiKey = getApiKeyValue(authResult.auth);
+  logApiKeyPresence(apiKey, log);
+  if (!authResult.ok) {
+    normalizeApiKeyFailureLog(authResult.auth, log);
+    return authResult.response;
   }
 
   if (!providerInput || typeof providerInput !== "string") {
@@ -252,6 +245,7 @@ async function handleSingleProviderFetch(
       provider: resolvedProvider.id,
       providerConfig,
       credentials: refreshedCredentials,
+      apiKey,
       log,
       onCredentialsRefreshed: async (newCreds) => {
         await updateProviderCredentials(credentials.connectionId, {

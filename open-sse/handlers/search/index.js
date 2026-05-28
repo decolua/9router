@@ -7,6 +7,7 @@
  *   provider.searchViaChat   → wrap chat-completions (chatSearch.js)
  */
 
+import { saveRequestUsage } from "@/lib/usageDb.js";
 import { buildSearchRequest } from "./callers.js";
 import { normalizeSearchResponse } from "./normalizers.js";
 import { handleChatSearch } from "./chatSearch.js";
@@ -210,9 +211,23 @@ export async function handleSearchCore({
   provider,
   providerConfig,
   credentials,
+  apiKey,
   log,
 }) {
   const globalStartTime = Date.now();
+
+  const recordUsage = (data) => {
+    saveRequestUsage({
+      provider: provider.id,
+      model: provider.id,
+      connectionId: credentials?.connectionId || null,
+      apiKey: apiKey || undefined,
+      endpoint: "/v1/search",
+      tokens: { prompt_tokens: 0, completion_tokens: 0 },
+      cost: data?.usage?.search_cost_usd ?? 0,
+      status: "200 OK",
+    }).catch(() => {});
+  };
 
   // 1. Sanitize query
   const { clean, error: sanitizeError } = sanitizeQuery(body.query || "");
@@ -246,7 +261,10 @@ export async function handleSearchCore({
     );
   }
 
-  if (result.success) return successResult(result.data);
+  if (result.success) {
+    recordUsage(result.data);
+    return successResult(result.data);
+  }
 
   // 3. Failover within global timeout for retriable errors
   if (
@@ -267,7 +285,10 @@ export async function handleSearchCore({
       credentials,
       log,
     });
-    if (fallback.success) return successResult(fallback.data);
+    if (fallback.success) {
+      recordUsage(fallback.data);
+      return successResult(fallback.data);
+    }
   }
 
   return errorResult(result.status || 502, result.error || "Search failed");

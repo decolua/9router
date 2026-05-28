@@ -61,6 +61,338 @@ function getLocalDateKey(timestamp) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+function getPeriodBounds(periodType, now = new Date()) {
+  const current = new Date(now);
+  if (periodType === "monthly") {
+    const start = new Date(current.getFullYear(), current.getMonth(), 1);
+    const end = new Date(current.getFullYear(), current.getMonth() + 1, 1);
+    return { start, end };
+  }
+  const start = new Date(
+    current.getFullYear(),
+    current.getMonth(),
+    current.getDate(),
+  );
+  const end = new Date(
+    current.getFullYear(),
+    current.getMonth(),
+    current.getDate() + 1,
+  );
+  return { start, end };
+}
+
+function getNumericUsageForMetric(summary, metricType) {
+  if (metricType === "requests") return summary.requests || 0;
+  if (metricType === "tokens") {
+    return (summary.promptTokens || 0) + (summary.completionTokens || 0);
+  }
+  return summary.cost || 0;
+}
+
+function buildEmptyUsageSummary() {
+  return {
+    requests: 0,
+    promptTokens: 0,
+    completionTokens: 0,
+    cost: 0,
+  };
+}
+
+function sumUsageRows(rows) {
+  return rows.reduce((acc, row) => {
+    acc.requests += row.requests || 0;
+    acc.promptTokens += row.promptTokens || 0;
+    acc.completionTokens += row.completionTokens || 0;
+    acc.cost += row.cost || 0;
+    return acc;
+  }, buildEmptyUsageSummary());
+}
+
+function normalizeApiKeyValue(rawKey) {
+  return rawKey && typeof rawKey === "string" ? rawKey : "local-no-key";
+}
+
+function getDayApiKeyTotals(day, apiKeyValue) {
+  const totals = buildEmptyUsageSummary();
+  const bucket = day?.byApiKey || {};
+  for (const entry of Object.values(bucket)) {
+    const rawApiKey = normalizeApiKeyValue(entry.apiKey);
+    if (rawApiKey !== apiKeyValue) continue;
+    totals.requests += entry.requests || 0;
+    totals.promptTokens += entry.promptTokens || 0;
+    totals.completionTokens += entry.completionTokens || 0;
+    totals.cost += entry.cost || 0;
+  }
+  return totals;
+}
+
+export async function getApiKeyUsageSummary(
+  apiKeyValue,
+  periodType,
+  now = new Date(),
+) {
+  const db = await getAdapter();
+  const normalizedKey = normalizeApiKeyValue(apiKeyValue);
+  const { start, end } = getPeriodBounds(periodType, now);
+
+  if (periodType === "daily") {
+    const row = db.get(`SELECT data FROM usageDaily WHERE dateKey = ?`, [
+      getLocalDateKey(start),
+    ]);
+    const day = row ? parseJson(row.data, {}) : null;
+    return getDayApiKeyTotals(day, normalizedKey);
+  }
+
+  const startKey = getLocalDateKey(start);
+  const endKey = getLocalDateKey(new Date(end.getTime() - 1));
+  const rows = db.all(
+    `SELECT dateKey, data FROM usageDaily WHERE dateKey >= ? AND dateKey <= ? ORDER BY dateKey ASC`,
+    [startKey, endKey],
+  );
+  return sumUsageRows(
+    rows.map((row) =>
+      getDayApiKeyTotals(parseJson(row.data, {}), normalizedKey),
+    ),
+  );
+}
+
+export async function evaluateApiKeyLimitState(apiKey) {
+  const limit = apiKey?.limit || null;
+  if (
+    !limit ||
+    !limit.metricType ||
+    !limit.periodType ||
+    limit.limitValue == null
+  ) {
+    return {
+      enabled: false,
+      exceeded: false,
+      metricType: null,
+      periodType: null,
+      limitValue: null,
+      currentValue: 0,
+      remainingValue: null,
+      usageSummary: buildEmptyUsageSummary(),
+      nextResetAt: null,
+    };
+  }
+
+  const usageSummary = await getApiKeyUsageSummary(
+    apiKey.key,
+    limit.periodType,
+  );
+  const currentValue = getNumericUsageForMetric(usageSummary, limit.metricType);
+  const { end } = getPeriodBounds(limit.periodType);
+  return {
+    enabled: true,
+    exceeded: currentValue >= limit.limitValue,
+    metricType: limit.metricType,
+    periodType: limit.periodType,
+    limitValue: limit.limitValue,
+    currentValue,
+    remainingValue: Math.max(0, limit.limitValue - currentValue),
+    usageSummary,
+    nextResetAt: end.toISOString(),
+  };
+}
+
+export async function getApiKeysUsageSummary(apiKeys) {
+  const results = [];
+  for (const apiKey of apiKeys || []) {
+    results.push({
+      apiKeyId: apiKey.id,
+      key: apiKey.key,
+      summary: await evaluateApiKeyLimitState(apiKey),
+    });
+  }
+  return results;
+}
+
+export async function getApiKeyUsageHistory(apiKeyValue, filter = {}) {
+  return getUsageHistory({ ...filter, apiKey: apiKeyValue });
+}
+
+function getLimitStatus(currentValue, limitValue) {
+  if (!limitValue || limitValue <= 0) return "unlimited";
+  if (currentValue >= limitValue) return "exceeded";
+  if (currentValue >= limitValue * 0.8) return "near";
+  return "healthy";
+}
+
+export function buildApiKeyLimitPresentation(apiKey, limitState) {
+  return {
+    ...apiKey,
+    limitState: {
+      ...limitState,
+      status: getLimitStatus(limitState.currentValue, limitState.limitValue),
+    },
+  };
+}
+
+function filterHistoryByApiKey(rows, apiKeyValue) {
+  const normalized = normalizeApiKeyValue(apiKeyValue);
+  return rows.filter((row) => normalizeApiKeyValue(row.apiKey) === normalized);
+}
+
+function parseDateOrNull(value, endOfDay = false) {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  if (endOfDay) d.setHours(23, 59, 59, 999);
+  else d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function periodFilterToDates(periodType) {
+  const { start, end } = getPeriodBounds(periodType);
+  return {
+    startDate: start.toISOString(),
+    endDate: new Date(end.getTime() - 1).toISOString(),
+  };
+}
+
+function normalizeHistoryFilter(filter = {}) {
+  return {
+    provider: filter.provider,
+    model: filter.model,
+    startDate: filter.startDate,
+    endDate: filter.endDate,
+    endpoint: filter.endpoint,
+    status: filter.status,
+  };
+}
+
+function applyExtendedUsageFilters(rows, filter = {}) {
+  const start = parseDateOrNull(filter.startDate);
+  const end = parseDateOrNull(filter.endDate, true);
+  return rows.filter((row) => {
+    if (filter.provider && row.provider !== filter.provider) return false;
+    if (filter.model && row.model !== filter.model) return false;
+    if (filter.endpoint && row.endpoint !== filter.endpoint) return false;
+    if (filter.status && row.status !== filter.status) return false;
+    const timestamp = row.timestamp ? new Date(row.timestamp) : null;
+    if (start && timestamp && timestamp < start) return false;
+    if (end && timestamp && timestamp > end) return false;
+    return true;
+  });
+}
+
+function sortUsageHistoryDesc(rows) {
+  return [...rows].sort(
+    (a, b) => new Date(b.timestamp) - new Date(a.timestamp),
+  );
+}
+
+function limitRows(rows, maxItems = 100) {
+  return rows.slice(0, maxItems);
+}
+
+function resolveHistoryWindow(filter = {}) {
+  if (filter.periodType === "daily" || filter.periodType === "monthly") {
+    return periodFilterToDates(filter.periodType);
+  }
+  return {
+    startDate: filter.startDate,
+    endDate: filter.endDate,
+  };
+}
+
+function mergeHistoryFilter(filter = {}) {
+  const windowFilter = resolveHistoryWindow(filter);
+  return normalizeHistoryFilter({ ...filter, ...windowFilter });
+}
+
+function buildApiKeyHistoryPayload(rows, apiKeyValue, filter = {}) {
+  const filtered = filterHistoryByApiKey(rows, apiKeyValue);
+  const refined = applyExtendedUsageFilters(
+    filtered,
+    mergeHistoryFilter(filter),
+  );
+  return limitRows(sortUsageHistoryDesc(refined), filter.limit || 100);
+}
+
+export async function getDetailedApiKeyUsage(apiKey, filter = {}) {
+  const limitState = await evaluateApiKeyLimitState(apiKey);
+  const history = await getUsageHistory(mergeHistoryFilter(filter));
+  return {
+    limitState,
+    history: buildApiKeyHistoryPayload(history, apiKey.key, filter),
+  };
+}
+
+function getUsageStatsPeriodWindow(period) {
+  if (period === "today") {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    return {
+      startDate: start.toISOString(),
+      endDate: new Date().toISOString(),
+    };
+  }
+  if (period === "24h") {
+    return {
+      startDate: new Date(Date.now() - PERIOD_MS["24h"]).toISOString(),
+      endDate: new Date().toISOString(),
+    };
+  }
+  return null;
+}
+
+function accumulateUsageSummary(summary, promptTokens, completionTokens, cost) {
+  summary.requests += 1;
+  summary.promptTokens += promptTokens;
+  summary.completionTokens += completionTokens;
+  summary.cost += cost;
+}
+
+function buildUsageStatsApiKeyEntry(row, apiKeyMap, providerDisplayName) {
+  const keyInfo = apiKeyMap[row.apiKey];
+  return {
+    requests: 0,
+    promptTokens: 0,
+    completionTokens: 0,
+    cost: 0,
+    rawModel: row.model,
+    provider: providerDisplayName,
+    apiKey: row.apiKey,
+    keyName: keyInfo?.name || row.apiKey.slice(0, 8) + "...",
+    apiKeyKey: row.apiKey,
+    lastUsed: row.timestamp,
+  };
+}
+
+function buildLocalNoKeyStatsEntry(row, providerDisplayName) {
+  return {
+    requests: 0,
+    promptTokens: 0,
+    completionTokens: 0,
+    cost: 0,
+    rawModel: row.model,
+    provider: providerDisplayName,
+    apiKey: null,
+    keyName: "Local (No API Key)",
+    apiKeyKey: "local-no-key",
+    lastUsed: row.timestamp,
+  };
+}
+
+function updateLastUsed(target, timestamp) {
+  if (new Date(timestamp) > new Date(target.lastUsed))
+    target.lastUsed = timestamp;
+}
+
+function filterUsageHistoryRows(rows, filter = {}) {
+  return rows.filter((r) => {
+    if (
+      filter.apiKey !== undefined &&
+      normalizeApiKeyValue(r.apiKey) !== normalizeApiKeyValue(filter.apiKey)
+    ) {
+      return false;
+    }
+    return true;
+  });
+}
+
 function addToCounter(target, key, values) {
   if (!target[key])
     target[key] = {
@@ -345,7 +677,9 @@ export async function getActiveRequests() {
 export async function saveRequestUsage(entry) {
   try {
     if (!entry.timestamp) entry.timestamp = new Date().toISOString();
-    entry.cost = await calculateCost(entry.provider, entry.model, entry.tokens);
+    entry.cost =
+      entry.cost ??
+      (await calculateCost(entry.provider, entry.model, entry.tokens));
 
     const worker = await getObservabilityWorker();
     if (worker) {
@@ -444,6 +778,18 @@ export async function getUsageHistory(filter = {}) {
     conds.push("model = ?");
     params.push(filter.model);
   }
+  if (filter.apiKey !== undefined) {
+    conds.push("COALESCE(apiKey, 'local-no-key') = ?");
+    params.push(normalizeApiKeyValue(filter.apiKey));
+  }
+  if (filter.endpoint) {
+    conds.push("endpoint = ?");
+    params.push(filter.endpoint);
+  }
+  if (filter.status) {
+    conds.push("status = ?");
+    params.push(filter.status);
+  }
   if (filter.startDate) {
     conds.push("timestamp >= ?");
     params.push(new Date(filter.startDate).toISOString());
@@ -455,21 +801,35 @@ export async function getUsageHistory(filter = {}) {
 
   const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
   const rows = db.all(
-    `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, cost, status, tokens FROM usageHistory ${where} ORDER BY id ASC`,
+    `SELECT id, timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens FROM usageHistory ${where} ORDER BY id ASC`,
     params,
   );
 
-  return rows.map((r) => ({
-    timestamp: r.timestamp,
-    provider: r.provider,
-    model: r.model,
-    connectionId: r.connectionId,
-    apiKey: r.apiKey,
-    endpoint: r.endpoint,
-    cost: r.cost,
-    status: r.status,
-    tokens: parseJson(r.tokens, {}),
-  }));
+  return rows.map((r) => {
+    const tokens = parseJson(r.tokens, {});
+    const promptTokens =
+      r.promptTokens ?? tokens.prompt_tokens ?? tokens.input_tokens ?? 0;
+    const completionTokens =
+      r.completionTokens ??
+      tokens.completion_tokens ??
+      tokens.output_tokens ??
+      0;
+    return {
+      id: r.id,
+      timestamp: r.timestamp,
+      provider: r.provider,
+      model: r.model,
+      connectionId: r.connectionId,
+      apiKey: r.apiKey,
+      endpoint: r.endpoint,
+      cost: r.cost,
+      status: r.status,
+      tokens,
+      promptTokens,
+      completionTokens,
+      totalTokens: promptTokens + completionTokens,
+    };
+  });
 }
 
 function loadDaysInRange(adapter, maxDays) {
