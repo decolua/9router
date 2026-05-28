@@ -1,7 +1,10 @@
 import { describe, it, expect } from "vitest";
 
 import { FORMATS } from "../../open-sse/translator/formats.js";
-import { translateRequest } from "../../open-sse/translator/index.js";
+import {
+  translateRequest,
+  translateResponse,
+} from "../../open-sse/translator/index.js";
 import { claudeToOpenAIRequest } from "../../open-sse/translator/request/claude-to-openai.js";
 import { filterToOpenAIFormat } from "../../open-sse/translator/helpers/openaiHelper.js";
 import { parseSSELine } from "../../open-sse/utils/streamHelpers.js";
@@ -162,6 +165,17 @@ describe("request normalization", () => {
     );
 
     expect(result.output_config).toEqual(body.output_config);
+  });
+
+  it("translateResponse ignores same-format null flush chunks", () => {
+    const result = translateResponse(
+      FORMATS.OPENAI_RESPONSES,
+      FORMATS.OPENAI_RESPONSES,
+      null,
+      {},
+    );
+
+    expect(result).toEqual([]);
   });
 
   it("parseSSELine supports provider raw NDJSON stream lines", () => {

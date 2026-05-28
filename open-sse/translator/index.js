@@ -169,7 +169,7 @@ export function translateResponse(targetFormat, sourceFormat, chunk, state) {
   ensureInitialized();
   // If same format, return as-is
   if (sourceFormat === targetFormat) {
-    return [chunk];
+    return chunk == null ? [] : [chunk];
   }
 
   let results = [chunk];
