@@ -49,6 +49,24 @@ export async function getModelInfo(modelStr) {
     if (matchedEmbedding) {
       return { provider: matchedEmbedding.id, model: parsed.model };
     }
+
+    // Try alias resolution as fallback for provider/model format
+    // This allows aliasing models like "deepseek/deepseek-v4-flash" which
+    // get parsed as provider/model but need to be redirected to another provider
+    const aliases = await getModelAliases();
+
+    // Check if full model string (e.g. "deepseek/deepseek-v4-flash") has an alias
+    if (aliases && aliases[modelStr]) {
+      const resolved = resolveModelAliasFromMap(modelStr, aliases);
+      if (resolved) return resolved;
+    }
+
+    // Check if just the model part (e.g. "deepseek-v4-flash") has an alias
+    if (aliases && aliases[parsed.model]) {
+      const resolved = resolveModelAliasFromMap(parsed.model, aliases);
+      if (resolved) return resolved;
+    }
+
     return {
       provider: parsed.provider,
       model: parsed.model
