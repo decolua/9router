@@ -11,13 +11,11 @@ export default {
       updatedAt TEXT NOT NULL
     )`);
 		db.exec(`CREATE INDEX IF NOT EXISTS idx_kg_name ON keyGroups(name)`);
-		// Guard: syncSchemaFromTables may have already added this column
-		const cols = db.all(`PRAGMA table_info(apiKeys)`);
-		const hasGroupId = cols.some((c) => c.name === "groupId");
-		if (!hasGroupId) {
-			db.exec(
-				`ALTER TABLE apiKeys ADD COLUMN groupId TEXT REFERENCES keyGroups(id) ON DELETE SET NULL`,
-			);
+		// Guard: column may already exist if syncSchemaFromTables ran before this migration stamped
+		try {
+			db.exec(`ALTER TABLE apiKeys ADD COLUMN groupId TEXT`);
+		} catch (e) {
+			if (!e.message.includes("duplicate column name")) throw e;
 		}
 	},
 };
