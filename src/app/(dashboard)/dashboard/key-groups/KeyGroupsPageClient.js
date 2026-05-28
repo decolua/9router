@@ -85,7 +85,7 @@ export default function KeyGroupsPageClient() {
 		setFormDescription(group.description ?? "");
 		setFormAllowedConnectionIds(group.allowedConnectionIds ?? []);
 		const currentKeyIds = (keys || [])
-			.filter((k) => k.groupId === group._id)
+			.filter((k) => k.groupId === group.id)
 			.map((k) => k.id);
 		setFormSelectedKeyIds(currentKeyIds);
 		setShowEditModal(true);
@@ -140,7 +140,7 @@ export default function KeyGroupsPageClient() {
 	const handleEdit = async () => {
 		if (!formName.trim() || !editingGroup) return;
 		try {
-			const res = await fetch(`/api/key-groups/${editingGroup._id}`, {
+			const res = await fetch(`/api/key-groups/${editingGroup.id}`, {
 				method: "PUT",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
@@ -151,7 +151,7 @@ export default function KeyGroupsPageClient() {
 			});
 			if (res.ok) {
 				const prevKeyIds = (keys || [])
-					.filter((k) => k.groupId === editingGroup._id)
+					.filter((k) => k.groupId === editingGroup.id)
 					.map((k) => k.id);
 				const toUnassign = prevKeyIds.filter(
 					(id) => !formSelectedKeyIds.includes(id),
@@ -164,7 +164,7 @@ export default function KeyGroupsPageClient() {
 						fetch(`/api/keys/${keyId}`, {
 							method: "PUT",
 							headers: { "Content-Type": "application/json" },
-							body: JSON.stringify({ groupId: editingGroup._id }),
+							body: JSON.stringify({ groupId: editingGroup.id }),
 						}),
 					),
 					...toUnassign.map((keyId) =>
@@ -222,7 +222,7 @@ export default function KeyGroupsPageClient() {
 	const keysInGroup = (groupId) => keys.filter((k) => k.groupId === groupId);
 
 	const connectionById = (id) =>
-		connections.find((c) => String(c._id) === String(id));
+		connections.find((c) => String(c.id) === String(id));
 
 	// ── loading ──────────────────────────────────────────────────────────────────
 
@@ -272,11 +272,11 @@ export default function KeyGroupsPageClient() {
 				) : (
 					<div className="flex flex-col gap-3">
 						{groups.map((group) => {
-							const groupKeyCount = keysInGroup(group._id).length;
+							const groupKeyCount = keysInGroup(group.id).length;
 							const allowedIds = group.allowedConnectionIds ?? [];
 							return (
 								<div
-									key={group._id}
+									key={group.id}
 									className="flex items-start justify-between p-4 rounded-lg border border-border bg-surface-1 hover:bg-surface-2 transition-colors"
 								>
 									<div className="flex-1 min-w-0">
@@ -325,7 +325,7 @@ export default function KeyGroupsPageClient() {
 											</span>
 										</button>
 										<button
-											onClick={() => setConfirmDelete(group._id)}
+											onClick={() => setConfirmDelete(group.id)}
 											className="p-2 hover:bg-red-500/10 rounded text-red-500 transition-colors"
 											title="Delete group"
 										>
@@ -385,7 +385,7 @@ export default function KeyGroupsPageClient() {
 									>
 										<option value="">No group</option>
 										{groups.map((g) => (
-											<option key={g._id} value={g._id}>
+											<option key={g.id} value={g.id}>
 												{g.name}
 											</option>
 										))}
@@ -516,7 +516,7 @@ function GroupForm({
 				) : (
 					<div className="flex flex-col gap-1 max-h-56 overflow-y-auto rounded-md border border-border p-2">
 						{connections.map((conn) => {
-							const id = String(conn._id);
+							const id = String(conn.id);
 							const checked = formAllowedConnectionIds.includes(id);
 							return (
 								<label
@@ -566,7 +566,7 @@ function GroupForm({
 									className="accent-primary"
 								/>
 								<span className="text-sm">{k.name}</span>
-								{k.groupId && k.groupId !== editingGroup?._id && (
+								{k.groupId && k.groupId !== editingGroup?.id && (
 									<span className="text-xs text-yellow-500">
 										(in another group)
 									</span>
