@@ -69,6 +69,7 @@ export default function APIPageClient({ machineId }) {
   const [rtkEnabled, setRtkEnabledState] = useState(true);
   const [cavemanEnabled, setCavemanEnabled] = useState(false);
   const [cavemanLevel, setCavemanLevel] = useState("full");
+  const [ruBypassEnabled, setRuBypassEnabled] = useState(false);
 
   // Cloudflare Tunnel state
   const [tunnelChecking, setTunnelChecking] = useState(true);
@@ -240,6 +241,7 @@ export default function APIPageClient({ machineId }) {
         setRtkEnabledState(data.rtkEnabled !== false);
         setCavemanEnabled(!!data.cavemanEnabled);
         setCavemanLevel(data.cavemanLevel || "full");
+        setRuBypassEnabled(data.ruBypassEnabled === true);
       }
       if (statusRes.ok) {
         const data = await statusRes.json();
@@ -322,6 +324,11 @@ export default function APIPageClient({ machineId }) {
   const handleCavemanLevel = (level) => {
     setCavemanLevel(level);
     patchSetting({ cavemanLevel: level });
+  };
+
+  const handleRuBypassEnabled = (value) => {
+    setRuBypassEnabled(value);
+    patchSetting({ ruBypassEnabled: value });
   };
 
   const fetchData = async () => {
@@ -1088,6 +1095,24 @@ export default function APIPageClient({ machineId }) {
             <Toggle
               checked={cavemanEnabled}
               onChange={() => handleCavemanEnabled(!cavemanEnabled)}
+            />
+          </div>
+        </div>
+
+        {/* RU Mode: region bypass toggle */}
+        <div className="flex items-center justify-between pt-4 gap-4 flex-wrap border-t border-border">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">
+              RU Mode <span className="text-xs font-normal text-text-muted">(Russia bypass)</span>
+            </p>
+            <p className="text-sm text-text-muted">
+              Skip region-blocked providers (Google, Antigravity, GitHub) — use alternatives only
+            </p>
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            <Toggle
+              checked={ruBypassEnabled}
+              onChange={() => handleRuBypassEnabled(!ruBypassEnabled)}
             />
           </div>
         </div>

@@ -7,6 +7,26 @@
 import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { unavailableResponse } from "../utils/error.js";
 
+// ─── RU Mode: region-locked provider filter ─────────────────────────────────
+
+/**
+ * Provider prefixes known to be blocked in Russia (region-locked).
+ * When ruBypassEnabled is true, these are auto-skipped in combos.
+ */
+const RU_BLOCKED_PROVIDERS = new Set([
+  "gemini/", "gc/", "ag/", "gh/",
+]);
+
+/**
+ * Check if a model uses a region-blocked provider.
+ */
+function isRuBlocked(modelStr) {
+  for (const prefix of RU_BLOCKED_PROVIDERS) {
+    if (modelStr.startsWith(prefix)) return true;
+  }
+  return false;
+}
+
 // ─── Model Health Tracking ──────────────────────────────────────────────────
 
 /**
@@ -237,14 +257,25 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
  * @returns {Promise<Response>}
  */
-export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1 }) {
+export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, ruBypassEnabled = false }) {
   // Auto-filter: if request has images, use only vision-capable models
-  const effectiveModels = filterModelsForRequest(models, body);
+  let effectiveModels = filterModelsForRequest(models, body);
   const hasVision = hasImageContent(body);
   if (hasVision) {
     const skipped = models.length - effectiveModels.length;
     if (skipped > 0) {
       log.info("COMBO", `Vision request detected, skipped ${skipped} non-vision models`);
+    }
+  }
+
+  // RU Mode: skip region-blocked providers (gemini, antigravity, github)
+  // Activated via settings.ruBypassEnabled (persistent toggle in Dashboard)
+  if (ruBypassEnabled) {
+    const before = effectiveModels.length;
+    effectiveModels = effectiveModels.filter(m => !isRuBlocked(m));
+    const skipped = before - effectiveModels.length;
+    if (skipped > 0) {
+      log.info("COMBO", `RU Mode: skipped ${skipped} region-blocked model(s)`);
     }
   }
 
