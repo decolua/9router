@@ -684,14 +684,69 @@ export default function ProviderDetailPage() {
 		}
 	};
 
-	const handleUpdateConnection = async (formData) => {
+	const handleUpdateConnection = async (updates) => {
 		try {
+			const { groupId, ...connectionFormData } = updates;
 			const res = await fetch(`/api/providers/${selectedConnection.id}`, {
 				method: "PUT",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify(formData),
+				body: JSON.stringify(connectionFormData),
 			});
 			if (res.ok) {
+				// Handle group assignment change
+				if ("groupId" in updates) {
+					const connId = selectedConnection.id || selectedConnection._id;
+					const newGroupId = groupId;
+
+					// Remove from old group if any
+					const oldGroup = keyGroups.find((g) =>
+						(g.allowedConnectionIds || []).includes(connId),
+					);
+					if (oldGroup && oldGroup.id !== newGroupId) {
+						const filtered = oldGroup.allowedConnectionIds.filter(
+							(id) => id !== connId,
+						);
+						await fetch(`/api/key-groups/${oldGroup.id}`, {
+							method: "PUT",
+							headers: { "Content-Type": "application/json" },
+							body: JSON.stringify({ allowedConnectionIds: filtered }),
+						});
+						setKeyGroups((prev) =>
+							prev.map((g) =>
+								g.id === oldGroup.id
+									? { ...g, allowedConnectionIds: filtered }
+									: g,
+							),
+						);
+					}
+
+					// Add to new group if selected
+					if (newGroupId) {
+						const newGroup = keyGroups.find((g) => g.id === newGroupId);
+						if (
+							newGroup &&
+							!(newGroup.allowedConnectionIds || []).includes(connId)
+						) {
+							const updated = [
+								...(newGroup.allowedConnectionIds || []),
+								connId,
+							];
+							await fetch(`/api/key-groups/${newGroupId}`, {
+								method: "PUT",
+								headers: { "Content-Type": "application/json" },
+								body: JSON.stringify({ allowedConnectionIds: updated }),
+							});
+							setKeyGroups((prev) =>
+								prev.map((g) =>
+									g.id === newGroupId
+										? { ...g, allowedConnectionIds: updated }
+										: g,
+								),
+							);
+						}
+					}
+				}
+
 				await fetchConnections();
 				setShowEditModal(false);
 			}
@@ -1733,6 +1788,16 @@ export default function ProviderDetailPage() {
 				isOpen={showEditModal}
 				connection={selectedConnection}
 				proxyPools={proxyPools}
+				groups={keyGroups}
+				currentGroupId={
+					(
+						keyGroups.find((g) =>
+							(g.allowedConnectionIds || []).includes(
+								selectedConnection?.id || selectedConnection?._id,
+							),
+						) || null
+					)?.id || null
+				}
 				onSave={handleUpdateConnection}
 				onClose={() => setShowEditModal(false)}
 			/>
