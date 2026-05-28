@@ -5,33 +5,21 @@ import {
   createKey,
   deleteKey,
   fetchKeys,
-  fetchKeyUsage,
   updateKey,
 } from "../services/endpointApiService";
-import {
-  buildLimitFormFromKey,
-  buildLimitPayload,
-  buildUpdatedKey,
-  createDefaultLimitForm,
-  normalizeLimitForm,
-} from "../utils/endpointLimitHelpers";
+import { buildUpdatedKey } from "../utils/endpointLimitHelpers";
 
 export function useEndpointApiKeys() {
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
-  const [newKeyLimit, setNewKeyLimit] = useState(createDefaultLimitForm());
   const [createdKey, setCreatedKey] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
   const [editingKey, setEditingKey] = useState(null);
   const [editKeyName, setEditKeyName] = useState("");
-  const [editKeyLimit, setEditKeyLimit] = useState(createDefaultLimitForm());
   const [keyFormError, setKeyFormError] = useState("");
   const [savingKeyId, setSavingKeyId] = useState(null);
-  const [loadingUsageKeyId, setLoadingUsageKeyId] = useState(null);
-  const [usageDetailsByKeyId, setUsageDetailsByKeyId] = useState({});
-  const [showUsageDetailsByKeyId, setShowUsageDetailsByKeyId] = useState({});
   const [keyActionStatus, setKeyActionStatus] = useState(null);
   const [visibleKeys, setVisibleKeys] = useState(new Set());
 
@@ -63,60 +51,19 @@ export function useEndpointApiKeys() {
   const closeAddKeyModal = () => {
     setShowAddModal(false);
     setNewKeyName("");
-    setNewKeyLimit(createDefaultLimitForm());
     setKeyFormError("");
   };
 
   const openEditKeyModal = (key) => {
     setEditingKey(key);
     setEditKeyName(key.name || "");
-    setEditKeyLimit(buildLimitFormFromKey(key));
     setKeyFormError("");
   };
 
   const closeEditKeyModal = () => {
     setEditingKey(null);
     setEditKeyName("");
-    setEditKeyLimit(createDefaultLimitForm());
     resetKeyModalState();
-  };
-
-  const toggleUsageDetails = async (key) => {
-    const keyId = key.id;
-    const currentlyOpen = !!showUsageDetailsByKeyId[keyId];
-    if (currentlyOpen) {
-      setShowUsageDetailsByKeyId((prev) => ({ ...prev, [keyId]: false }));
-      return;
-    }
-
-    setShowUsageDetailsByKeyId((prev) => ({ ...prev, [keyId]: true }));
-    if (usageDetailsByKeyId[keyId]) return;
-
-    setLoadingUsageKeyId(keyId);
-    try {
-      const { ok, data } = await fetchKeyUsage(keyId, 20);
-      if (!ok) {
-        setKeyActionStatus({
-          type: "error",
-          message: data.error || "Failed to load key usage",
-        });
-        return;
-      }
-      setUsageDetailsByKeyId((prev) => ({ ...prev, [keyId]: data }));
-      if (data.limitState) {
-        updateKeyInList(keyId, (existingKey) =>
-          buildUpdatedKey(existingKey, {}, { limitState: data.limitState }),
-        );
-      }
-    } catch (error) {
-      console.log("Error fetching key usage:", error);
-      setKeyActionStatus({
-        type: "error",
-        message: "Failed to load key usage",
-      });
-    } finally {
-      setLoadingUsageKeyId(null);
-    }
   };
 
   const handleSaveKey = async () => {
@@ -127,18 +74,11 @@ export function useEndpointApiKeys() {
       return;
     }
 
-    const limitError = normalizeLimitForm(editKeyLimit);
-    if (limitError) {
-      setKeyFormError(limitError);
-      return;
-    }
-
     setSavingKeyId(editingKey.id);
     setKeyFormError("");
 
     try {
-      const payload = { name, ...buildLimitPayload(editKeyLimit) };
-      const { ok, data } = await updateKey(editingKey.id, payload);
+      const { ok, data } = await updateKey(editingKey.id, { name });
       if (!ok) {
         setKeyFormError(data.error || "Failed to update key");
         return;
@@ -147,16 +87,6 @@ export function useEndpointApiKeys() {
       updateKeyInList(editingKey.id, (existingKey) =>
         buildUpdatedKey(existingKey, { name }, data.key),
       );
-      setUsageDetailsByKeyId((prev) => {
-        if (!prev[editingKey.id]) return prev;
-        return {
-          ...prev,
-          [editingKey.id]: {
-            ...prev[editingKey.id],
-            limitState: data.key?.limitState || prev[editingKey.id].limitState,
-          },
-        };
-      });
       setKeyActionStatus({
         type: "success",
         message: `Updated key \"${name}\"`,
@@ -193,24 +123,16 @@ export function useEndpointApiKeys() {
       return;
     }
 
-    const limitError = normalizeLimitForm(newKeyLimit);
-    if (limitError) {
-      setKeyFormError(limitError);
-      return;
-    }
-
     setSavingKeyId("new");
     setKeyFormError("");
 
     try {
-      const payload = { name, ...buildLimitPayload(newKeyLimit) };
-      const { ok, data } = await createKey(payload);
+      const { ok, data } = await createKey({ name });
 
       if (ok) {
         setCreatedKey(data);
         await fetchData();
         setNewKeyName("");
-        setNewKeyLimit(createDefaultLimitForm());
         setShowAddModal(false);
         setKeyActionStatus({
           type: "success",
@@ -284,31 +206,23 @@ export function useEndpointApiKeys() {
     loading,
     showAddModal,
     newKeyName,
-    newKeyLimit,
     createdKey,
     confirmState,
     editingKey,
     editKeyName,
-    editKeyLimit,
     keyFormError,
     savingKeyId,
-    loadingUsageKeyId,
-    usageDetailsByKeyId,
-    showUsageDetailsByKeyId,
     keyActionStatus,
     visibleKeys,
     fetchData,
     setConfirmState,
     setNewKeyName,
-    setNewKeyLimit,
     setCreatedKey,
     setEditKeyName,
-    setEditKeyLimit,
     openAddKeyModal,
     closeAddKeyModal,
     openEditKeyModal,
     closeEditKeyModal,
-    toggleUsageDetails,
     handleSaveKey,
     handleCreateKey,
     handleDeleteKey,

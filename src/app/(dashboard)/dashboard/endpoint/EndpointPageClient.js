@@ -22,31 +22,23 @@ export default function APIPageClient({ machineId }) {
     loading,
     showAddModal,
     newKeyName,
-    newKeyLimit,
     createdKey,
     confirmState,
     editingKey,
     editKeyName,
-    editKeyLimit,
     keyFormError,
     savingKeyId,
-    loadingUsageKeyId,
-    usageDetailsByKeyId,
-    showUsageDetailsByKeyId,
     keyActionStatus,
     visibleKeys,
     fetchData,
     setConfirmState,
     setNewKeyName,
-    setNewKeyLimit,
     setCreatedKey,
     setEditKeyName,
-    setEditKeyLimit,
     openAddKeyModal,
     closeAddKeyModal,
     openEditKeyModal,
     closeEditKeyModal,
-    toggleUsageDetails,
     handleSaveKey,
     handleCreateKey,
     handleDeleteKey,
@@ -148,15 +140,11 @@ export default function APIPageClient({ machineId }) {
         requireApiKey={requireApiKey}
         keyActionStatus={keyActionStatus}
         visibleKeys={visibleKeys}
-        usageDetailsByKeyId={usageDetailsByKeyId}
-        showUsageDetailsByKeyId={showUsageDetailsByKeyId}
         savingKeyId={savingKeyId}
-        loadingUsageKeyId={loadingUsageKeyId}
         onCreateClick={openAddKeyModal}
         onRequireApiKeyChange={handleRequireApiKey}
         onCopy={copy}
         onToggleVisibility={toggleKeyVisibility}
-        onToggleUsageDetails={toggleUsageDetails}
         onEditKey={openEditKeyModal}
         onPauseKey={confirmPauseKey}
         onToggleKey={handleToggleKey}
@@ -167,19 +155,15 @@ export default function APIPageClient({ machineId }) {
       <ApiKeyModals
         showAddModal={showAddModal}
         newKeyName={newKeyName}
-        newKeyLimit={newKeyLimit}
         createdKey={createdKey}
         editingKey={editingKey}
         editKeyName={editKeyName}
-        editKeyLimit={editKeyLimit}
         keyFormError={keyFormError}
         savingKeyId={savingKeyId}
         copied={copied}
         onNewKeyNameChange={setNewKeyName}
-        onNewKeyLimitChange={setNewKeyLimit}
         onCreatedKeyClose={() => setCreatedKey(null)}
         onEditKeyNameChange={setEditKeyName}
-        onEditKeyLimitChange={setEditKeyLimit}
         onCreateKey={handleCreateKey}
         onSaveKey={handleSaveKey}
         onCloseAddModal={closeAddKeyModal}
