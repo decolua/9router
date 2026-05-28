@@ -196,6 +196,9 @@ export function createDisconnectAwareStream(
           msg.includes("overload") ||
           msg.includes("busy") ||
           msg.includes("empty response") ||
+          msg.includes("terminated") ||
+          msg.includes("premature close") ||
+          msg.includes("fetch failed") ||
           code === "ECONNRESET" ||
           code === "ETIMEDOUT" ||
           code === "EPIPE" ||
@@ -342,6 +345,9 @@ export function createDisconnectAwareStream(
           msg.includes("ECONNRESET") ||
           msg.includes("ETIMEDOUT") ||
           msg.includes("EPIPE") ||
+          msg.includes("terminated") ||
+          msg.includes("premature close") ||
+          msg.includes("fetch failed") ||
           code === "ECONNRESET" ||
           code === "ETIMEDOUT" ||
           code === "EPIPE" ||
