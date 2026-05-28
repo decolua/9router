@@ -28,16 +28,16 @@ export function ApiKeyLimitFormFields({ form, onChange, description }) {
           <Select
             label="Metric"
             value={form.metricType}
-            onChange={(value) =>
-              onChange((prev) => ({ ...prev, metricType: value }))
+            onChange={(e) =>
+              onChange((prev) => ({ ...prev, metricType: e.target.value }))
             }
             options={LIMIT_METRIC_OPTIONS}
           />
           <Select
             label="Period"
             value={form.periodType}
-            onChange={(value) =>
-              onChange((prev) => ({ ...prev, periodType: value }))
+            onChange={(e) =>
+              onChange((prev) => ({ ...prev, periodType: e.target.value }))
             }
             options={LIMIT_PERIOD_OPTIONS}
           />
