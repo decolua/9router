@@ -225,6 +225,10 @@ export const PROVIDERS = {
     tokenUrl: "https://auth.kimi.com/api/oauth/token",
     refreshUrl: "https://auth.kimi.com/api/oauth/token"
   },
+  "kimi-free": {
+    baseUrl: "https://www.kimi.com",
+    format: "openai"
+  },
   kilocode: {
     baseUrl: "https://api.kilo.ai/api/openrouter/chat/completions",
     format: "openai",
@@ -263,6 +267,7 @@ export const PROVIDERS = {
     format: "openai",
     headers: {}
   },
+
   commandcode: {
     baseUrl: "https://api.commandcode.ai/alpha/generate",
     format: "commandcode",

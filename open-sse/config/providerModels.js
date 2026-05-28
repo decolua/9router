@@ -176,6 +176,23 @@ export const PROVIDER_MODELS = {
     { id: "kimi-k2.5-thinking", name: "Kimi K2.5 Thinking" },
     { id: "kimi-latest", name: "Kimi Latest" },
   ],
+  kmf: [  // Kimi Free (Web/Unofficial)
+    { id: "kimi-k2.5", name: "Kimi K2.5" },
+    { id: "kimi-k2.5-thinking", name: "Kimi K2.5 Thinking" },
+    { id: "kimi-k2.5-search", name: "Kimi K2.5 Web Search" },
+    { id: "kimi-k2.5-thinking-search", name: "Kimi K2.5 Thinking + Search" },
+    { id: "kimi-2.6-fast", name: "Kimi 2.6 Fast" },
+    { id: "kimi-2.6-thinking", name: "Kimi 2.6 Thinking" },
+    { id: "kimi-2.6-search", name: "Kimi 2.6 Web Search" },
+    { id: "kimi-2.6-thinking-search", name: "Kimi 2.6 Thinking + Search" },
+    { id: "kimi-k2", name: "Kimi K2" },
+    { id: "kimi-k2-thinking", name: "Kimi K2 Thinking" },
+    { id: "kimi-k2-search", name: "Kimi K2 Web Search" },
+    { id: "kimi-k2-thinking-search", name: "Kimi K2 Thinking + Search" },
+    { id: "kimi-thinking", name: "Kimi Thinking" },
+    { id: "kimi-search", name: "Kimi Web Search" },
+    { id: "kimi-thinking-search", name: "Kimi Thinking + Search" },
+  ],
   kc: [  // KiloCode
     { id: "anthropic/claude-sonnet-4-20250514", name: "Claude Sonnet 4" },
     { id: "anthropic/claude-opus-4-20250514", name: "Claude Opus 4" },
@@ -437,10 +454,11 @@ export const PROVIDER_MODELS = {
     { id: "deepseek-chat", name: "DeepSeek V3.2 Chat" },
     { id: "deepseek-reasoner", name: "DeepSeek V3.2 Reasoner" },
   ],
-  "deepseek-free": [
+  dsf: [
     { id: "deepseek-chat", name: "DeepSeek V3 Chat (Free)", upstreamModelId: "deepseek-chat" },
     { id: "deepseek-reasoner", name: "DeepSeek R1 Reasoner (Free)", upstreamModelId: "deepseek-reasoner" }
   ],
+
   commandcode: [
     { id: "deepseek/deepseek-v4-pro", name: "DeepSeek V4 Pro" },
     { id: "deepseek/deepseek-v4-flash", name: "DeepSeek V4 Flash" },
@@ -888,6 +906,9 @@ const OAUTH_ALIASES = {
   opencode: "oc",
   vertex: "vertex",
   "vertex-partner": "vertex-partner",
+
+  "deepseek-free": "dsf",
+  "kimi-free": "kmf",
 };
 
 // Derived from PROVIDERS — no need to maintain manually

@@ -624,7 +624,7 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
               }}
             >
               <ProviderIcon
-                src={`/providers/${provider.id}.png`}
+                src={provider.iconUrl || `/providers/${provider.id}.png`}
                 alt={provider.name}
                 size={30}
                 className="object-contain rounded-lg max-w-[32px] max-h-[32px]"
@@ -729,6 +729,7 @@ function ApiKeyProviderCard({
   };
 
   const getIconPath = () => {
+    if (provider.iconUrl) return provider.iconUrl;
     if (isCompatible)
       return provider.apiType === "responses"
         ? "/providers/oai-r.png"

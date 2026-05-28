@@ -5,6 +5,7 @@ import { GEMINI_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken, updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
+import { PROVIDER_MODELS } from "open-sse/config/providerModels.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -321,6 +322,18 @@ const PROVIDER_MODELS_CONFIG = {
       }
       const data = await response.json();
       return { models: parseOpenAIStyleModels(data) };
+    }
+  },
+  "deepseek-free": {
+    customResolver: async (connection) => {
+      const models = PROVIDER_MODELS["dsf"] || [];
+      return { models };
+    }
+  },
+  "kimi-free": {
+    customResolver: async (connection) => {
+      const models = PROVIDER_MODELS["kmf"] || [];
+      return { models };
     }
   }
 };

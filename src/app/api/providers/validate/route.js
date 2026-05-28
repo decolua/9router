@@ -7,6 +7,8 @@ import { openaiToCommandCode } from "open-sse/translator/request/openai-to-comma
 import { PROVIDER_ENDPOINTS } from "@/shared/constants/config";
 import { normalizeProviderId } from "@/lib/providerNormalization";
 
+
+
 // Probe a webSearch/webFetch provider using its searchConfig/fetchConfig.
 // Returns true if API key is accepted (status !== 401 && !== 403).
 async function probeWebProvider(provider, apiKey) {
@@ -583,6 +585,106 @@ export async function POST(request) {
           break;
         }
 
+        case "kimi-free": {
+          const generate19DigitId = () => Math.floor(7000000000000000000 + Math.random() * 1000000000000000000).toString();
+          const deviceId = generate19DigitId();
+          const sessionId = generate19DigitId();
+          let effectiveApiKey = apiKey;
+
+          // 1. Detect if the token is a Google ID token (contains accounts.google.com as issuer)
+          if (apiKey && apiKey.startsWith("eyJ")) {
+            const parts = apiKey.split(".");
+            if (parts.length === 3) {
+              try {
+                const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+                const padded = base64 + "=".repeat((4 - base64.length % 4) % 4);
+                const payload = JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+                if (payload && payload.iss && (payload.iss.includes("accounts.google.com") || payload.iss.includes("google.com"))) {
+                  // This is a Google ID Token - exchange it first
+                  const loginRes = await fetch("https://www.kimi.com/api/auth/login/google", {
+                    method: "POST",
+                    headers: {
+                      "Accept": "application/json, text/plain, */*",
+                      "Content-Type": "application/json",
+                      "Origin": "https://www.kimi.com",
+                      "Referer": "https://www.kimi.com/",
+                      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                      "X-Msh-Platform": "web",
+                      "X-Msh-Device-Id": deviceId,
+                    },
+                    body: JSON.stringify({ code: apiKey })
+                  });
+                  if (!loginRes.ok) {
+                    const rawErr = await loginRes.text();
+                    isValid = false;
+                    error = `Google login exchange failed: HTTP ${loginRes.status} - ${rawErr.slice(0, 150)}`;
+                    break;
+                  }
+                  const loginData = await loginRes.json();
+                  if (!loginData.access_token) {
+                    isValid = false;
+                    error = "Google login exchange succeeded but Kimi returned no access token";
+                    break;
+                  }
+                  effectiveApiKey = loginData.access_token;
+                }
+              } catch (e) {
+                // Ignore parse errors, proceed with standard validation
+              }
+            }
+          }
+
+          // 2. Validate Kimi access token using GetSubscription probe
+          try {
+            const res = await fetch("https://www.kimi.com/apiv2/kimi.gateway.order.v1.SubscriptionService/GetSubscription", {
+              method: "POST",
+              headers: {
+                "Accept": "*/*",
+                "Accept-Encoding": "gzip, deflate, br, zstd",
+                "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+                "Cache-Control": "no-cache",
+                "Pragma": "no-cache",
+                "Origin": "https://www.kimi.com",
+                "R-Timezone": "Asia/Shanghai",
+                "Sec-Ch-Ua": '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+                "Sec-Ch-Ua-Mobile": "?0",
+                "Sec-Ch-Ua-Platform": '"Windows"',
+                "Sec-Fetch-Dest": "empty",
+                "Sec-Fetch-Mode": "cors",
+                "Sec-Fetch-Site": "same-origin",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                "Priority": "u=1, i",
+                "X-Msh-Platform": "web",
+                "X-Msh-Device-Id": deviceId,
+                "X-Msh-Session-Id": sessionId,
+                "Connect-Protocol-Version": "1",
+                "Authorization": `Bearer ${effectiveApiKey}`,
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({})
+            });
+            if (res.status === 401 || res.status === 403) {
+              isValid = false;
+              error = "Invalid Kimi Token — please paste a valid access or refresh token";
+            } else {
+              isValid = res.ok;
+              if (!res.ok) {
+                error = `Kimi validation failed: HTTP ${res.status}`;
+              } else {
+                // If it is valid and we got a new exchanged Kimi token, return it as the validation apiKey!
+                return NextResponse.json({
+                  valid: true,
+                  apiKey: effectiveApiKey,
+                });
+              }
+            }
+          } catch (err) {
+            isValid = false;
+            error = `Kimi connection failed: ${err.message || String(err)}`;
+          }
+          break;
+        }
+
         case "deepseek-free": {
           const username = providerSpecificData?.username;
           if (!username) {
@@ -601,6 +703,8 @@ export async function POST(request) {
           }
           break;
         }
+
+
 
         default: {
           // Generic probe for OpenAI-compatible providers (config-driven from PROVIDERS)

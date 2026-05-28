@@ -65,14 +65,12 @@ export const OAUTH_PROVIDERS = {
   kilocode: { id: "kilocode", alias: "kc", name: "Kilo Code", icon: "code", color: "#FF6B35", textIcon: "KC", website: "https://kilocode.ai", notice: { signupUrl: "https://kilocode.ai" } },
   cline: { id: "cline", alias: "cl", name: "Cline", icon: "smart_toy", color: "#5B9BD5", textIcon: "CL", website: "https://cline.bot", notice: { signupUrl: "https://cline.bot" } },
   // opencode: { id: "opencode", alias: "oc", name: "OpenCode", icon: "terminal", color: "#E87040", textIcon: "OC" },
-};
-
-export const APIKEY_PROVIDERS = {
   "deepseek-free": {
     id: "deepseek-free",
     alias: "dsf",
     name: "DeepSeek Free",
     icon: "bolt",
+    iconUrl: "https://fe-static.deepseek.com/chat/favicon.svg",
     color: "#4D6BFE",
     textIcon: "DSF",
     website: "https://chat.deepseek.com",
@@ -82,6 +80,24 @@ export const APIKEY_PROVIDERS = {
     },
     hasProviderSpecificData: true
   },
+  "kimi-free": {
+    id: "kimi-free",
+    alias: "kmf",
+    name: "Kimi Free",
+    icon: "psychology",
+    iconUrl: "/providers/kimi.png",
+    color: "#1E3A8A",
+    textIcon: "KMF",
+    website: "https://kimi.moonshot.cn",
+    notice: {
+      text: "Connect to unofficial Kimi Web backend to stream Kimi K2.5, K2.6, and other models for free.",
+      signupUrl: "https://kimi.moonshot.cn"
+    },
+    hasProviderSpecificData: true
+  },
+};
+
+export const APIKEY_PROVIDERS = {
   glm: { id: "glm", alias: "glm", name: "GLM Coding", icon: "code", color: "#2563EB", textIcon: "GL", website: "https://open.bigmodel.cn", notice: { apiKeyUrl: "https://open.bigmodel.cn/usercenter/apikeys" } },
   "glm-cn": { id: "glm-cn", alias: "glm-cn", name: "GLM (China)", icon: "code", color: "#DC2626", textIcon: "GC", website: "https://open.bigmodel.cn", notice: { apiKeyUrl: "https://open.bigmodel.cn/usercenter/apikeys" } },
   kimi: { id: "kimi", alias: "kimi", name: "Kimi", icon: "psychology", color: "#1E3A8A", textIcon: "KM", website: "https://kimi.moonshot.cn", notice: { apiKeyUrl: "https://platform.moonshot.ai/console/api-keys" }, serviceKinds: ["llm", "webSearch"], searchViaChat: { defaultModel: "kimi-k2.5", pricingUrl: "https://platform.moonshot.ai/docs/pricing/chat" } },

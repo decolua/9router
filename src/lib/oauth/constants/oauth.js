@@ -273,4 +273,5 @@ export const PROVIDERS = {
   CLINE: "cline",
   GITLAB: "gitlab",
   CODEBUDDY: "codebuddy",
+  KIMI_FREE: "kimi-free",
 };

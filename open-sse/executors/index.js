@@ -14,8 +14,10 @@ import { OpenCodeGoExecutor } from "./opencode-go.js";
 import { GrokWebExecutor } from "./grok-web.js";
 import { PerplexityWebExecutor } from "./perplexity-web.js";
 import { DeepSeekFreeExecutor } from "./deepseek-free.js";
+
 import { OllamaLocalExecutor } from "./ollama-local.js";
 import { CommandCodeExecutor } from "./commandcode.js";
+import { KimiFreeExecutor } from "./kimi-free.js";
 import { DefaultExecutor } from "./default.js";
 
 const executors = {
@@ -38,8 +40,11 @@ const executors = {
   "perplexity-web": new PerplexityWebExecutor(),
   "deepseek-free": new DeepSeekFreeExecutor(),
   dsf: new DeepSeekFreeExecutor(),
+
   "ollama-local": new OllamaLocalExecutor(),
   commandcode: new CommandCodeExecutor(),
+  "kimi-free": new KimiFreeExecutor(),
+  kmf: new KimiFreeExecutor(),
 };
 
 const defaultCache = new Map();
@@ -74,3 +79,5 @@ export { PerplexityWebExecutor } from "./perplexity-web.js";
 export { OllamaLocalExecutor } from "./ollama-local.js";
 export { CommandCodeExecutor } from "./commandcode.js";
 export { DeepSeekFreeExecutor } from "./deepseek-free.js";
+
+export { KimiFreeExecutor } from "./kimi-free.js";

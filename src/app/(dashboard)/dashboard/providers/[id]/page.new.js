@@ -43,7 +43,9 @@ export default function ProviderDetailPage() {
       type: providerNode.type,
     }
     : (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId]);
-  const isOAuth = !!OAUTH_PROVIDERS[providerId] || !!FREE_PROVIDERS[providerId];
+  const isOAuth = (!!OAUTH_PROVIDERS[providerId] || !!FREE_PROVIDERS[providerId]) &&
+                  providerId !== "deepseek-free" &&
+                  providerId !== "kimi-free";
   const models = useMemo(() => getModelsByProviderId(providerId), [providerId]);
   const providerAlias = getProviderAlias(providerId);
 

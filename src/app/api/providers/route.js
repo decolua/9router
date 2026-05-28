@@ -105,6 +105,7 @@ export async function POST(request) {
     const isValidProvider = APIKEY_PROVIDERS[provider] ||
       FREE_TIER_PROVIDERS[provider] ||
       isWebCookieProvider ||
+      (AI_PROVIDERS[provider]?.hasProviderSpecificData === true) ||
       isOpenAICompatibleProvider(provider) ||
       isAnthropicCompatibleProvider(provider) ||
       isCustomEmbeddingProvider(provider);
