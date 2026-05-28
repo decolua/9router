@@ -1019,7 +1019,7 @@ export default function ProfilePage() {
             <div className="flex flex-col gap-2">
               <label className="font-medium text-sm sm:text-base">Test URL</label>
               <Input
-                placeholder="https://httpbin.org/ip/"
+                placeholder="https://google.com/"
                 value={proxyTestUrl}
                 onChange={(e) => setProxyTestUrl(e.target.value)}
                 disabled={loading || proxyTestUrlLoading}

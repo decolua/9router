@@ -1,6 +1,6 @@
 import { ProxyAgent, fetch as undiciFetch } from "undici";
 
-const DEFAULT_TEST_URL = "https://httpbin.org/ip/";
+const DEFAULT_TEST_URL = "https://google.com/";
 const DEFAULT_TIMEOUT_MS = 8000;
 
 function getErrorMessage(err) {
