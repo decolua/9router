@@ -1,10 +1,59 @@
 /**
  * Shared combo (model combo) handling with fallback support
  * Auto-filters vision-capable models when request contains images.
+ * Smart Combo: tracks model health, auto-skips failed/rate-limited models.
  */
 
 import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { unavailableResponse } from "../utils/error.js";
+
+// ─── Model Health Tracking ──────────────────────────────────────────────────
+
+/**
+ * In-memory health state per combo model.
+ * @type {Map<string, { fails: number, lastError: string|null, until: number }>}
+ */
+const modelHealth = new Map();
+const HEALTH_TTL_BASE_MS = 30 * 1000; // 30s initial cooldown
+const HEALTH_TTL_MAX_MS = 10 * 60 * 1000; // 10 min max cooldown
+
+function healthKey(comboName, modelStr) { return `${comboName}::${modelStr}`; }
+
+/** Mark model failed — exponential backoff. */
+function markModelFailed(comboName, modelStr, errorText) {
+  const key = healthKey(comboName, modelStr);
+  const prev = modelHealth.get(key);
+  const fails = (prev?.fails || 0) + 1;
+  const cooldown = Math.min(HEALTH_TTL_BASE_MS * Math.pow(2, fails - 1), HEALTH_TTL_MAX_MS);
+  modelHealth.set(key, { fails, lastError: errorText || "error", until: Date.now() + cooldown });
+}
+
+/** Mark model success — reset health. */
+function markModelSuccess(comboName, modelStr) {
+  const key = healthKey(comboName, modelStr);
+  modelHealth.delete(key);
+}
+
+/** Check if model is in cooldown. */
+function isModelUnhealthy(comboName, modelStr) {
+  const h = modelHealth.get(healthKey(comboName, modelStr));
+  if (!h) return false;
+  if (Date.now() >= h.until) { modelHealth.delete(healthKey(comboName, modelStr)); return false; }
+  return true;
+}
+
+/** Sort models: healthy first, cooldown last. */
+function prioritizeModels(models, comboName) {
+  return [...models].sort((a, b) => {
+    const aBad = isModelUnhealthy(comboName, a);
+    const bBad = isModelUnhealthy(comboName, b);
+    if (aBad && !bBad) return 1;
+    if (!aBad && bBad) return -1;
+    return 0;
+  });
+}
+
+// ─── Vision Detection ───────────────────────────────────────────────────────
 
 /**
  * Set of model prefixes that support vision (image-to-text).
@@ -199,8 +248,16 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
     }
   }
 
+  // Smart Combo: skip unhealthy models, prioritize healthy ones
+  const healthyModels = effectiveModels.filter(m => !isModelUnhealthy(comboName, m));
+  const sickCount = effectiveModels.length - healthyModels.length;
+  if (sickCount > 0) {
+    log.info("COMBO", `Smart Combo: ${sickCount} model(s) in cooldown, skipping`);
+  }
+  const prioritizedModels = prioritizeModels(healthyModels.length > 0 ? healthyModels : effectiveModels, comboName);
+
   // Apply rotation strategy if enabled
-  const rotatedModels = getRotatedModels(effectiveModels, comboName, comboStrategy, comboStickyLimit);
+  const rotatedModels = getRotatedModels(prioritizedModels, comboName, comboStrategy, comboStickyLimit);
   
   let lastError = null;
   let earliestRetryAfter = null;
@@ -213,8 +270,9 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
     try {
       const result = await handleSingleModel(body, modelStr);
       
-      // Success (2xx) - return response
+      // Success (2xx) - return response + reset health
       if (result.ok) {
+        markModelSuccess(comboName, modelStr);
         log.info("COMBO", `Model ${modelStr} succeeded`);
         return result;
       }
@@ -257,15 +315,17 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         await new Promise(r => setTimeout(r, cooldownMs));
       }
 
-      // Fallback to next model
+      // Fallback to next model — Smart Combo: mark model unhealthy
+      markModelFailed(comboName, modelStr, errorText);
       lastError = errorText || String(result.status);
       if (!lastStatus) lastStatus = result.status;
-      log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
+      log.warn("COMBO", `Model ${modelStr} failed (cooldown ${HEALTH_TTL_BASE_MS/1000}s-${HEALTH_TTL_MAX_MS/60000}min), trying next`, { status: result.status });
     } catch (error) {
       // Catch unexpected exceptions to ensure fallback continues
+      markModelFailed(comboName, modelStr, error.message);
       lastError = error.message || String(error);
       if (!lastStatus) lastStatus = 500;
-      log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
+      log.warn("COMBO", `Model ${modelStr} threw error (cooldown), trying next`, { error: lastError });
     }
   }
 
