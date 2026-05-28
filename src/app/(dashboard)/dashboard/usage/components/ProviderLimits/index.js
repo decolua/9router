@@ -766,24 +766,6 @@ export default function ProviderLimits() {
     );
   }
 
-  if (!connectionsLoading && !hasVisibleConnections) {
-    return (
-      <Card padding="lg">
-        <div className="text-center py-12">
-          <span className="material-symbols-outlined text-[64px] text-text-muted opacity-20">
-            {emptyState.icon}
-          </span>
-          <h3 className="mt-4 text-lg font-semibold text-text-primary">
-            {emptyState.title}
-          </h3>
-          <p className="mt-2 text-sm text-text-muted max-w-md mx-auto">
-            {emptyState.description}
-          </p>
-        </div>
-      </Card>
-    );
-  }
-
   return (
     <div className="space-y-6">
       {/* Header Controls */}
@@ -1009,22 +991,23 @@ export default function ProviderLimits() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {sortedConnections.map((conn) => {
-          const quota = quotaData[conn.id];
-          const isLoading = loading[conn.id];
-          const error = errors[conn.id];
+      {hasVisibleConnections ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {sortedConnections.map((conn) => {
+            const quota = quotaData[conn.id];
+            const isLoading = loading[conn.id];
+            const error = errors[conn.id];
 
-          // Use table layout for all providers
-          const isInactive = conn.isActive === false;
-          const rowBusy = deletingId === conn.id || togglingId === conn.id;
+            // Use table layout for all providers
+            const isInactive = conn.isActive === false;
+            const rowBusy = deletingId === conn.id || togglingId === conn.id;
 
-          return (
-            <Card
-              key={conn.id}
-              padding="none"
-              className={`min-w-0 ${isInactive ? "opacity-60" : ""}`}
-            >
+            return (
+              <Card
+                key={conn.id}
+                padding="none"
+                className={`min-w-0 ${isInactive ? "opacity-60" : ""}`}
+              >
               <div className="px-3 py-2 border-b border-black/10 dark:border-white/10">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
@@ -1146,9 +1129,24 @@ export default function ProviderLimits() {
                 )}
               </div>
             </Card>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      ) : (
+        <Card padding="lg">
+          <div className="text-center py-12">
+            <span className="material-symbols-outlined text-[64px] text-text-muted opacity-20">
+              {emptyState.icon}
+            </span>
+            <h3 className="mt-4 text-lg font-semibold text-text-primary">
+              {emptyState.title}
+            </h3>
+            <p className="mt-2 text-sm text-text-muted max-w-md mx-auto">
+              {emptyState.description}
+            </p>
+          </div>
+        </Card>
+      )}
 
       <div className="rounded-xl border border-black/10 bg-black/[0.02] px-3 py-2 dark:border-white/10 dark:bg-white/[0.03]">
         <div className="flex flex-wrap items-center justify-between gap-2">
