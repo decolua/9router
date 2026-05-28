@@ -41,6 +41,19 @@ import { dedupeTools } from "../utils/toolDeduper.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
 
+function maskLoggedUrl(rawUrl) {
+  try {
+    const parsed = new URL(rawUrl);
+    parsed.username = "";
+    parsed.password = "";
+    parsed.search = "";
+    parsed.hash = "";
+    return parsed.toString();
+  } catch {
+    return "<invalid-url>";
+  }
+}
+
 /**
  * Core chat handler - shared between SSE and Worker
  * @param {object} options.body - Request body
@@ -244,6 +257,8 @@ export async function handleChatCore({
       credentials?.providerSpecificData?.connectionProxyUrl || "",
     connectionNoProxy:
       credentials?.providerSpecificData?.connectionNoProxy || "",
+    connectionProxyHeadersTimeoutMs:
+      credentials?.providerSpecificData?.connectionProxyHeadersTimeoutMs,
     vercelRelayUrl: credentials?.providerSpecificData?.vercelRelayUrl || "",
   };
 
@@ -254,7 +269,7 @@ export async function handleChatCore({
       credentials?.providerSpecificData?.connectionProxyPoolId || "none";
     log?.info?.(
       "PROXY",
-      `${provider.toUpperCase()} | ${model} | conn=${connectionName} | pool=${poolId} | vercel-relay=${proxyOptions.vercelRelayUrl}`,
+      `${provider.toUpperCase()} | ${model} | conn=${connectionName} | pool=${poolId} | vercel-relay=${maskLoggedUrl(proxyOptions.vercelRelayUrl)}`,
     );
   } else if (
     proxyOptions.connectionProxyEnabled &&

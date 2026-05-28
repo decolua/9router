@@ -375,6 +375,21 @@ function computeFinishReason(state) {
     : "stop";
 }
 
+function shouldEmitInitialAssistantChunk(eventType) {
+  if (!eventType?.startsWith?.("response.")) return false;
+  return ![
+    "response.completed",
+    "response.failed",
+    "response.cancelled",
+    "response.incomplete",
+    "response.output_text.done",
+    "response.reasoning_summary_text.done",
+    "response.reasoning_summary_part.done",
+    "response.content_part.done",
+    "response.output_item.done",
+  ].includes(eventType);
+}
+
 /**
  * Translate OpenAI Responses API chunk to OpenAI Chat Completions format
  * This is for when Codex returns data and we need to send it to an OpenAI-compatible client
@@ -424,12 +439,8 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     state.toolCallIndex = 0;
     state.currentToolCallId = null;
 
-    // Return initial chunk so downstream translators emit message_start immediately
-    // Without this, the client sees nothing until response.reasoning_summary_text.delta arrives
-    if (
-      eventType === "response.created" ||
-      eventType === "response.in_progress"
-    ) {
+    // Return initial chunk so downstream translators emit message_start immediately.
+    if (shouldEmitInitialAssistantChunk(eventType)) {
       return {
         id: state.chatId,
         object: "chat.completion.chunk",
