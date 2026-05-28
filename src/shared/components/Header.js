@@ -104,6 +104,13 @@ const getPageInfo = (pathname) => {
       icon: "bar_chart",
       breadcrumbs: [],
     };
+  if (pathname.includes("/key-budgets"))
+    return {
+      title: "Key Budgets",
+      description: "Manage per-API-key budget limits and remaining usage",
+      icon: "account_balance_wallet",
+      breadcrumbs: [],
+    };
   if (pathname.includes("/auth-files"))
     return {
       title: "Auth Files",

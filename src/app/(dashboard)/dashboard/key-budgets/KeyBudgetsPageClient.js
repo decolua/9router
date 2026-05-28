@@ -153,8 +153,12 @@ function KeyBudgetCard({
   usageDetails,
   expanded,
   loadingUsage,
+  visible,
+  copied,
   onEdit,
   onToggleUsage,
+  onToggleVisibility,
+  onCopy,
 }) {
   const state = keyItem.limitState;
   const metric = state?.enabled ? getUsageMetricLabel(state.metricType) : "No metric";
@@ -171,7 +175,31 @@ function KeyBudgetCard({
               {keyItem.isActive ? "Active" : "Paused"}
             </span>
           </div>
-          <p className="font-mono text-xs text-text-muted">{maskKey(keyItem.key) || keyItem.id}</p>
+          <div className="group/key flex items-center gap-2">
+            <code className="font-mono text-xs text-text-muted break-all">
+              {visible ? keyItem.key : maskKey(keyItem.key) || keyItem.id}
+            </code>
+            <button
+              onClick={() => onToggleVisibility(keyItem.id)}
+              className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover/key:opacity-100 transition-all"
+              title={visible ? "Hide key" : "Show key"}
+              aria-label={visible ? "Hide API key" : "Show API key"}
+            >
+              <span className="material-symbols-outlined text-[14px]">
+                {visible ? "visibility_off" : "visibility"}
+              </span>
+            </button>
+            <button
+              onClick={() => onCopy(keyItem.key, keyItem.id)}
+              className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover/key:opacity-100 transition-all"
+              title="Copy key"
+              aria-label="Copy API key"
+            >
+              <span className="material-symbols-outlined text-[14px]">
+                {copied ? "check" : "content_copy"}
+              </span>
+            </button>
+          </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div>
               <p className="text-xs text-text-muted">Metric</p>
@@ -224,31 +252,27 @@ export default function KeyBudgetsPageClient() {
     expandedKeyId,
     usageDetailsByKeyId,
     loadingUsageKeyId,
+    visibleKeys,
+    copiedKeyId,
     setEditKeyLimit,
     loadKeys,
     openEditModal,
     closeEditModal,
+    toggleKeyVisibility,
+    copyKey,
     saveBudget,
     toggleUsageDetails,
   } = useKeyBudgets();
 
   return (
-    <div className="mx-auto flex max-w-7xl flex-col gap-6 p-6">
-      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight text-text-main">Key Budgets</h1>
-          <p className="mt-2 max-w-2xl text-sm text-text-muted">
-            Manage per-API-key budgets. Full usage analytics stay in the Usage page; this page focuses on limits, remaining budget, and quick edits.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" icon="refresh" onClick={loadKeys}>
-            Refresh
-          </Button>
-          <Link href="/dashboard/usage">
-            <Button variant="ghost" icon="bar_chart">Full Usage Analytics</Button>
-          </Link>
-        </div>
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button variant="secondary" icon="refresh" onClick={loadKeys}>
+          Refresh
+        </Button>
+        <Link href="/dashboard/usage">
+          <Button variant="ghost" icon="bar_chart">Full Usage Analytics</Button>
+        </Link>
       </div>
 
       {status && <StatusAlert status={status} />}
@@ -290,8 +314,12 @@ export default function KeyBudgetsPageClient() {
               usageDetails={usageDetailsByKeyId[keyItem.id]}
               expanded={expandedKeyId === keyItem.id}
               loadingUsage={loadingUsageKeyId === keyItem.id}
+              visible={visibleKeys.has(keyItem.id)}
+              copied={copiedKeyId === keyItem.id}
               onEdit={openEditModal}
               onToggleUsage={toggleUsageDetails}
+              onToggleVisibility={toggleKeyVisibility}
+              onCopy={copyKey}
             />
           ))}
         </div>
@@ -305,7 +333,33 @@ export default function KeyBudgetsPageClient() {
         <div className="flex flex-col gap-4">
           <div>
             <p className="text-sm font-medium text-text-main">{editingKey?.name}</p>
-            <p className="font-mono text-xs text-text-muted">{maskKey(editingKey?.key)}</p>
+            <div className="mt-1 flex items-center gap-2">
+              <code className="font-mono text-xs text-text-muted break-all">
+                {visibleKeys.has(editingKey?.id)
+                  ? editingKey?.key
+                  : maskKey(editingKey?.key)}
+              </code>
+              <button
+                onClick={() => toggleKeyVisibility(editingKey?.id)}
+                className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
+                title={visibleKeys.has(editingKey?.id) ? "Hide key" : "Show key"}
+                aria-label={visibleKeys.has(editingKey?.id) ? "Hide API key" : "Show API key"}
+              >
+                <span className="material-symbols-outlined text-[14px]">
+                  {visibleKeys.has(editingKey?.id) ? "visibility_off" : "visibility"}
+                </span>
+              </button>
+              <button
+                onClick={() => copyKey(editingKey?.key, editingKey?.id)}
+                className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
+                title="Copy key"
+                aria-label="Copy API key"
+              >
+                <span className="material-symbols-outlined text-[14px]">
+                  {copiedKeyId === editingKey?.id ? "check" : "content_copy"}
+                </span>
+              </button>
+            </div>
           </div>
           <ApiKeyLimitFormFields
             form={editKeyLimit}

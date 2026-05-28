@@ -25,6 +25,8 @@ export function useKeyBudgets() {
   const [expandedKeyId, setExpandedKeyId] = useState(null);
   const [usageDetailsByKeyId, setUsageDetailsByKeyId] = useState({});
   const [loadingUsageKeyId, setLoadingUsageKeyId] = useState(null);
+  const [visibleKeys, setVisibleKeys] = useState(new Set());
+  const [copiedKeyId, setCopiedKeyId] = useState(null);
 
   const loadKeys = useCallback(async () => {
     setLoading(true);
@@ -71,6 +73,22 @@ export function useKeyBudgets() {
     setEditingKey(null);
     setEditKeyLimit(createDefaultLimitForm());
     setFormError("");
+  }, []);
+
+  const toggleKeyVisibility = useCallback((keyId) => {
+    setVisibleKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(keyId)) next.delete(keyId);
+      else next.add(keyId);
+      return next;
+    });
+  }, []);
+
+  const copyKey = useCallback(async (keyValue, keyId) => {
+    if (!keyValue) return;
+    await navigator.clipboard.writeText(keyValue);
+    setCopiedKeyId(keyId);
+    window.setTimeout(() => setCopiedKeyId(null), 2000);
   }, []);
 
   const saveBudget = useCallback(async () => {
@@ -165,10 +183,14 @@ export function useKeyBudgets() {
     expandedKeyId,
     usageDetailsByKeyId,
     loadingUsageKeyId,
+    visibleKeys,
+    copiedKeyId,
     setEditKeyLimit,
     loadKeys,
     openEditModal,
     closeEditModal,
+    toggleKeyVisibility,
+    copyKey,
     saveBudget,
     toggleUsageDetails,
   };
