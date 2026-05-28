@@ -280,6 +280,39 @@ export async function markAccountUnavailable(
   const conn = connections.find((c) => c.id === connectionId);
   const backoffLevel = conn?.backoffLevel || 0;
 
+  const connName =
+    conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
+
+  const lowerError =
+    typeof errorText === "string" ? errorText.toLowerCase() : "";
+  const isReachLimit =
+    lowerError.includes("reach limit") ||
+    lowerError.includes("quota exceeded") ||
+    lowerError.includes("insufficient_quota");
+
+  if (isReachLimit) {
+    const reason =
+      typeof errorText === "string" ? errorText.slice(0, 100) : "Quota reached";
+    log.warn(
+      "AUTH",
+      `[Auto-Disable] Disabling connection ${connName} permanently due to quota limit reached: ${reason}`,
+    );
+    await updateProviderConnection(connectionId, {
+      isActive: false, // Disable account permanently in DB
+      testStatus: "unavailable",
+      lastError: `Quota reached: ${reason}`,
+      errorCode: status,
+      lastErrorAt: new Date().toISOString(),
+      backoffLevel: 0,
+    });
+    if (provider && status && reason) {
+      console.error(
+        `\x1b[31m❌ ${provider} [${status}]: ${reason} (Auto-disabled)\x1b[0m`,
+      );
+    }
+    return { shouldFallback: true, cooldownMs: 5 * 60 * 60 * 1000 }; // 5 hours fallback cooldown
+  }
+
   // Provider-specific precise cooldown (e.g. codex usage_limit_reached resets_at) overrides backoff
   let shouldFallback, cooldownMs, newBackoffLevel;
   if (resetsAtMs && resetsAtMs > Date.now()) {
@@ -309,8 +342,6 @@ export async function markAccountUnavailable(
   });
 
   const lockKey = Object.keys(lockUpdate)[0];
-  const connName =
-    conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
   log.warn(
     "AUTH",
     `${connName} locked ${lockKey} for ${Math.round(cooldownMs / 1000)}s [${status}]`,
