@@ -186,6 +186,36 @@ describe("Provider Validation API", () => {
     });
   });
 
+  describe("Fetch timeout", () => {
+    it("should abort the underlying fetch when validation times out", async () => {
+      vi.useFakeTimers();
+      const { fetchWithTimeout } =
+        await import("../../src/app/api/provider-nodes/validate/route.js");
+      let signal;
+      global.fetch = vi.fn((_url, options) => {
+        signal = options.signal;
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () =>
+            reject(new DOMException("Aborted", "AbortError")),
+          );
+        });
+      });
+
+      const requestPromise = fetchWithTimeout(
+        "https://provider.example.com/models",
+        {},
+        25,
+      );
+      const rejectionAssertion =
+        expect(requestPromise).rejects.toThrow("Request timeout");
+      await vi.advanceTimersByTimeAsync(25);
+
+      await rejectionAssertion;
+      expect(signal.aborted).toBe(true);
+      vi.useRealTimers();
+    });
+  });
+
   describe("URL Validation", () => {
     it("should validate correct URL format", () => {
       const isValidUrl = (url) => {

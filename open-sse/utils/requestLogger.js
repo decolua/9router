@@ -76,25 +76,68 @@ function writeJsonFile(sessionPath, filename, data) {
   }
 }
 
-// Mask sensitive data in headers (DISABLED - keep full token for testing)
+const REDACTED_VALUE = "[REDACTED]";
+const SENSITIVE_KEY_PARTS = [
+  "authorization",
+  "x-api-key",
+  "cookie",
+  "token",
+  "secret",
+  "key",
+  "password",
+];
+
+function isSensitiveKey(key) {
+  const lowerKey = String(key).toLowerCase();
+  return SENSITIVE_KEY_PARTS.some((part) => lowerKey.includes(part));
+}
+
+function redactValue(value) {
+  if (Array.isArray(value)) return value.map((item) => redactValue(item));
+  if (value && typeof value === "object") {
+    if (typeof value.entries === "function") {
+      return redactValue(Object.fromEntries(value.entries()));
+    }
+
+    return Object.fromEntries(
+      Object.entries(value).map(([key, nestedValue]) => [
+        key,
+        isSensitiveKey(key) ? REDACTED_VALUE : redactValue(nestedValue),
+      ]),
+    );
+  }
+  return value;
+}
+
+function redactUrl(value) {
+  if (typeof value !== "string") return value;
+  try {
+    const parsed = new URL(value);
+    for (const key of [...parsed.searchParams.keys()]) {
+      if (isSensitiveKey(key)) parsed.searchParams.set(key, REDACTED_VALUE);
+    }
+    return parsed.toString();
+  } catch {
+    return value;
+  }
+}
+
+function redactRequestBody(body) {
+  return redactValue(body);
+}
+
+function redactRequestUrl(url) {
+  return redactUrl(url);
+}
+
+// Mask sensitive data in headers while preserving field names for debugging.
 function maskSensitiveHeaders(headers) {
   if (!headers) return {};
-  return { ...headers };
-
-  // Old masking code (disabled):
-  // const masked = { ...headers };
-  // const sensitiveKeys = ["authorization", "x-api-key", "cookie", "token"];
-  //
-  // for (const key of Object.keys(masked)) {
-  //   const lowerKey = key.toLowerCase();
-  //   if (sensitiveKeys.some(sk => lowerKey.includes(sk))) {
-  //     const value = masked[key];
-  //     if (value && value.length > 20) {
-  //       masked[key] = value.slice(0, 10) + "..." + value.slice(-5);
-  //     }
-  //   }
-  // }
-  // return masked;
+  const normalizedHeaders =
+    typeof headers.entries === "function"
+      ? Object.fromEntries(headers.entries())
+      : headers;
+  return redactValue(normalizedHeaders);
 }
 
 // No-op logger when logging is disabled
@@ -139,9 +182,9 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
     logClientRawRequest(endpoint, body, headers = {}) {
       writeJsonFile(sessionPath, "1_req_client.json", {
         timestamp: new Date().toISOString(),
-        endpoint,
+        endpoint: redactRequestUrl(endpoint),
         headers: maskSensitiveHeaders(headers),
-        body,
+        body: redactRequestBody(body),
       });
     },
 
@@ -150,7 +193,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
       writeJsonFile(sessionPath, "2_req_source.json", {
         timestamp: new Date().toISOString(),
         headers: maskSensitiveHeaders(headers),
-        body,
+        body: redactRequestBody(body),
       });
     },
 
@@ -158,7 +201,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
     logOpenAIRequest(body) {
       writeJsonFile(sessionPath, "3_req_openai.json", {
         timestamp: new Date().toISOString(),
-        body,
+        body: redactRequestBody(body),
       });
     },
 
@@ -166,9 +209,9 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
     logTargetRequest(url, headers, body) {
       writeJsonFile(sessionPath, "4_req_target.json", {
         timestamp: new Date().toISOString(),
-        url,
+        url: redactRequestUrl(url),
         headers: maskSensitiveHeaders(headers),
-        body,
+        body: redactRequestBody(body),
       });
     },
 
@@ -235,7 +278,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
         timestamp: new Date().toISOString(),
         error: error?.message || String(error),
         stack: error?.stack,
-        requestBody,
+        requestBody: redactRequestBody(requestBody),
       });
     },
   };
@@ -260,10 +303,10 @@ export function logError(provider, { error, url, model, requestBody }) {
       type: "error",
       provider,
       model,
-      url,
+      url: redactRequestUrl(url),
       error: error?.message || String(error),
       stack: error?.stack,
-      requestBody,
+      requestBody: redactRequestBody(requestBody),
     };
 
     fs.appendFileSync(logPath, JSON.stringify(logEntry) + "\n");

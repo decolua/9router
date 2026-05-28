@@ -170,6 +170,7 @@ export async function handleImageGenerationCore({
         requestBody,
         model,
         body,
+        signal: request?.signal,
       });
       // Codex streaming case: returns an SSE Response directly
       if (parsed?.sseResponse) {

@@ -51,7 +51,9 @@ export default function ProviderConnectionsToolbar({
             <span className="text-xs font-medium text-text-muted">View</span>
             <select
               value={accountStatusFilter}
-              onChange={(event) => onAccountStatusFilterChange(event.target.value)}
+              onChange={(event) =>
+                onAccountStatusFilterChange(event.target.value)
+              }
               disabled={!hasConnections}
               className="h-7 rounded-[8px] border border-border bg-surface-2 px-2 text-xs text-text-main outline-none transition-colors hover:bg-surface-3 disabled:opacity-50"
               aria-label="Filter accounts by status"

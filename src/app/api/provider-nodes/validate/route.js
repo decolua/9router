@@ -1,13 +1,20 @@
 import { NextResponse } from "next/server";
 
-// Fetch with timeout wrapper
-const fetchWithTimeout = (url, options, timeout = 10000) => {
-  return Promise.race([
-    fetch(url, options),
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Request timeout")), timeout),
-    ),
-  ]);
+// Fetch with timeout wrapper that aborts the underlying request.
+const fetchWithTimeout = async (url, options = {}, timeout = 10000) => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error("Request timeout");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 };
 
 // Validate URL format
@@ -57,6 +64,8 @@ const getChatErrorMessage = (status) => {
 };
 
 // POST /api/provider-nodes/validate - Validate API key against base URL
+export { fetchWithTimeout };
+
 export async function POST(request) {
   try {
     const body = await request.json();

@@ -146,7 +146,8 @@ export function useProviderDetailConnections({
     [connections, accountStatusFilter],
   );
   const displayedConnections = useMemo(
-    () => sortConnectionsByExpiresAt(filteredConnections, connectionsSortDirection),
+    () =>
+      sortConnectionsByExpiresAt(filteredConnections, connectionsSortDirection),
     [filteredConnections, connectionsSortDirection],
   );
   const isConnectionsSortActive = connectionsSortDirection !== null;
@@ -633,7 +634,9 @@ export function useProviderDetailConnections({
           const nextIndex = nextConnections.findIndex(
             (connection) => connection.id === connectionId,
           );
-          return updateProviderConnection(connectionId, { priority: nextIndex });
+          return updateProviderConnection(connectionId, {
+            priority: nextIndex,
+          });
         }),
       );
       await fetchConnections();

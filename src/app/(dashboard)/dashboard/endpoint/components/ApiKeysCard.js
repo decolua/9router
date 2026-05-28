@@ -37,7 +37,9 @@ export function ApiKeysCard({
     <Card id="require-api-key">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-semibold flex items-center gap-2">
-          <span className="material-symbols-outlined text-primary">vpn_key</span>
+          <span className="material-symbols-outlined text-primary">
+            vpn_key
+          </span>
           API Keys
         </h2>
         <Button icon="add" onClick={onCreateClick}>
@@ -65,7 +67,9 @@ export function ApiKeysCard({
       {keys.length === 0 ? (
         <div className="text-center py-12">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 text-primary mb-4">
-            <span className="material-symbols-outlined text-[32px]">vpn_key</span>
+            <span className="material-symbols-outlined text-[32px]">
+              vpn_key
+            </span>
           </div>
           <p className="text-text-main font-medium mb-1">No API keys yet</p>
           <p className="text-sm text-text-muted mb-4">
@@ -115,10 +119,14 @@ export function ApiKeysCard({
                       <button
                         onClick={() => onToggleVisibility(key.id)}
                         className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
-                        title={visibleKeys.has(key.id) ? "Hide key" : "Show key"}
+                        title={
+                          visibleKeys.has(key.id) ? "Hide key" : "Show key"
+                        }
                       >
                         <span className="material-symbols-outlined text-[14px]">
-                          {visibleKeys.has(key.id) ? "visibility_off" : "visibility"}
+                          {visibleKeys.has(key.id)
+                            ? "visibility_off"
+                            : "visibility"}
                         </span>
                       </button>
                       <button
@@ -214,10 +222,14 @@ export function ApiKeysCard({
                                     >
                                       <div className="min-w-0 flex-1">
                                         <p className="text-xs font-medium text-text-main break-all">
-                                          {entry.endpoint || entry.model || "Request"}
+                                          {entry.endpoint ||
+                                            entry.model ||
+                                            "Request"}
                                         </p>
                                         <p className="text-[11px] text-text-muted mt-1">
-                                          {new Date(entry.timestamp).toLocaleString()}
+                                          {new Date(
+                                            entry.timestamp,
+                                          ).toLocaleString()}
                                         </p>
                                       </div>
                                       <div className="flex items-center gap-3 shrink-0">

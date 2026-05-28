@@ -438,7 +438,9 @@ export default function ProviderDetailPage() {
         clearSelection={clearSelection}
         clearManualRefreshResults={clearManualRefreshResults}
         handleToggleConnectionsSort={handleToggleConnectionsSort}
-        handleAutoPriorityVisibleConnections={handleAutoPriorityVisibleConnections}
+        handleAutoPriorityVisibleConnections={
+          handleAutoPriorityVisibleConnections
+        }
         onConfirmDeleteSelectedConnections={() => {
           const idsToDelete = [...selectedConnectionIds];
           const previewItems = [...selectedConnectionDeletePreview];

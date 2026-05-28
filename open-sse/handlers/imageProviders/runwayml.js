@@ -42,14 +42,14 @@ const provider = {
       ...(body.image ? { referenceImages: [{ uri: body.image }] } : {}),
     };
   },
-  async parseResponse(response, { headers }) {
+  async parseResponse(response, { headers, signal }) {
     const { id } = await response.json();
     if (!id) throw new Error("Runway: no task id returned");
     const taskUrl = `${BASE_URL}/tasks/${id}`;
     const deadline = Date.now() + POLL_TIMEOUT_MS;
     while (Date.now() < deadline) {
-      await sleep(POLL_INTERVAL_MS);
-      const r = await fetch(taskUrl, { headers });
+      await sleep(POLL_INTERVAL_MS, signal);
+      const r = await fetch(taskUrl, { headers, signal });
       if (!r.ok) throw new Error(`Runway status ${r.status}`);
       const s = await r.json();
       if (s.status === "SUCCEEDED") return s;

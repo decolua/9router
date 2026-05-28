@@ -590,7 +590,7 @@ const serverPath = path.join(standaloneDir, "server.js");
 
 if (!fs.existsSync(serverPath)) {
   console.error("Error: Standalone build not found.");
-  console.error("Please run 'npm run build:cli' first.");
+  console.error("Please run 'npm run build' from the cli package first.");
   process.exit(1);
 }
 

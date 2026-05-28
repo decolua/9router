@@ -3,7 +3,15 @@
 import PropTypes from "prop-types";
 import { Input } from "@/shared/components";
 
-export function EndpointRow({ label, url, copyId, copied, onCopy, badge, actions }) {
+export function EndpointRow({
+  label,
+  url,
+  copyId,
+  copied,
+  onCopy,
+  badge,
+  actions,
+}) {
   return (
     <div className="flex items-center gap-2">
       <span

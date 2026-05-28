@@ -87,7 +87,9 @@ export default function ProviderConnectionsCard({
         isConnectionsSortActive={isConnectionsSortActive}
         connectionsSortDirection={connectionsSortDirection}
         handleToggleConnectionsSort={handleToggleConnectionsSort}
-        handleAutoPriorityVisibleConnections={handleAutoPriorityVisibleConnections}
+        handleAutoPriorityVisibleConnections={
+          handleAutoPriorityVisibleConnections
+        }
         onConfirmDeleteSelectedConnections={onConfirmDeleteSelectedConnections}
         oneByOneRunning={oneByOneRunning}
         oneByOneStopping={oneByOneStopping}

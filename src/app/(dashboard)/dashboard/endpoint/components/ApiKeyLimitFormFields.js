@@ -2,7 +2,10 @@
 
 import PropTypes from "prop-types";
 import { Input, Select, Toggle } from "@/shared/components";
-import { LIMIT_METRIC_OPTIONS, LIMIT_PERIOD_OPTIONS } from "../utils/endpointConstants";
+import {
+  LIMIT_METRIC_OPTIONS,
+  LIMIT_PERIOD_OPTIONS,
+} from "../utils/endpointConstants";
 
 export function ApiKeyLimitFormFields({ form, onChange, description }) {
   return (
@@ -14,7 +17,9 @@ export function ApiKeyLimitFormFields({ form, onChange, description }) {
         </div>
         <Toggle
           checked={form.enabled}
-          onChange={() => onChange((prev) => ({ ...prev, enabled: !prev.enabled }))}
+          onChange={() =>
+            onChange((prev) => ({ ...prev, enabled: !prev.enabled }))
+          }
         />
       </div>
 

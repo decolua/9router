@@ -928,6 +928,10 @@ export default function BasicChatPageClient() {
               type="button"
               onClick={() => setModelMenuOpen((value) => !value)}
               className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left transition hover:bg-white/8"
+              aria-label="Select chat model"
+              aria-haspopup="menu"
+              aria-expanded={modelMenuOpen}
+              aria-controls="basic-chat-model-menu"
             >
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
@@ -945,7 +949,11 @@ export default function BasicChatPageClient() {
             </button>
 
             {modelMenuOpen ? (
-              <div className="absolute left-0 top-[calc(100%+10px)] z-30 w-[min(520px,calc(100vw-2rem))] overflow-hidden rounded-[20px] border border-white/10 bg-[#262626] shadow-2xl shadow-black/50">
+              <div
+                id="basic-chat-model-menu"
+                role="menu"
+                className="absolute left-0 top-[calc(100%+10px)] z-30 w-[min(520px,calc(100vw-2rem))] overflow-hidden rounded-[20px] border border-white/10 bg-[#262626] shadow-2xl shadow-black/50"
+              >
                 <div className="border-b border-white/10 px-4 py-3">
                   <p className="text-xs uppercase tracking-[0.22em] text-white/45">
                     Models
@@ -977,6 +985,7 @@ export default function BasicChatPageClient() {
                               type="button"
                               onClick={() => handleSelectModel(model.id)}
                               className={`rounded-[14px] border px-3 py-3 text-left transition ${isActive ? "border-blue-400/40 bg-blue-500/15" : "border-white/10 bg-white/5 hover:bg-white/8"}`}
+                              role="menuitem"
                             >
                               <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
@@ -1009,6 +1018,10 @@ export default function BasicChatPageClient() {
               type="button"
               onClick={() => setHistoryOpen((value) => !value)}
               className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80 transition hover:bg-white/8"
+              aria-label="Open chat history"
+              aria-haspopup="menu"
+              aria-expanded={historyOpen}
+              aria-controls="basic-chat-history-menu"
             >
               History
             </button>
@@ -1026,7 +1039,9 @@ export default function BasicChatPageClient() {
 
         {historyOpen ? (
           <div
+            id="basic-chat-history-menu"
             ref={historyMenuRef}
+            role="menu"
             className="absolute right-4 top-[72px] z-20 w-[min(360px,calc(100vw-2rem))] rounded-[20px] border border-white/10 bg-[#262626] p-2 shadow-2xl shadow-black/50 lg:right-6"
           >
             <div className="px-3 py-2">
@@ -1053,6 +1068,7 @@ export default function BasicChatPageClient() {
                       type="button"
                       onClick={() => handleSelectSession(session.id)}
                       className={`w-full rounded-[16px] border px-3 py-3 text-left transition ${isActive ? "border-blue-400/40 bg-blue-500/15" : "border-white/10 bg-white/5 hover:bg-white/8"}`}
+                      role="menuitem"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
@@ -1202,6 +1218,7 @@ export default function BasicChatPageClient() {
                   onChange={(event) => setDraft(event.target.value)}
                   onKeyDown={handleKeyDown}
                   placeholder="Message AI"
+                  aria-label="Message AI"
                   rows={1}
                   className="w-full resize-none bg-transparent px-2 text-[15px] leading-6 text-white outline-none placeholder:text-white/40 custom-scrollbar max-h-[25vh] overflow-y-auto"
                 />
@@ -1213,6 +1230,7 @@ export default function BasicChatPageClient() {
                       onClick={() => fileInputRef.current?.click()}
                       disabled={!activeModel || loadingData}
                       className="p-2 text-white/50 hover:text-white transition rounded-full hover:bg-white/5"
+                      aria-label="Attach image files"
                     >
                       <span className="material-symbols-outlined text-[20px]">
                         attach_file
@@ -1237,6 +1255,7 @@ export default function BasicChatPageClient() {
                         type="button"
                         onClick={handleStop}
                         className="p-2 text-white bg-white/10 hover:bg-white/20 transition rounded-full h-8 w-8 flex items-center justify-center"
+                        aria-label="Stop response"
                       >
                         <span className="material-symbols-outlined text-[16px]">
                           stop
@@ -1247,6 +1266,7 @@ export default function BasicChatPageClient() {
                       onClick={sendMessage}
                       disabled={!canSend}
                       className={`h-8 w-8 rounded-full flex items-center justify-center transition ${canSend ? "bg-white text-black hover:opacity-90" : "bg-white/10 text-white/30 cursor-not-allowed"}`}
+                      aria-label="Send message"
                     >
                       <span className="material-symbols-outlined text-[16px]">
                         arrow_upward

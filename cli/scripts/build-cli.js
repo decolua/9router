@@ -94,20 +94,23 @@ fs.mkdirSync(path.join(buildHomeDir, "AppData", "Roaming"), {
 });
 fs.mkdirSync(path.join(buildHomeDir, "AppData", "Local"), { recursive: true });
 
-// Step 0: Sync version from app/cli/package.json to app/package.json
-console.log("0️⃣  Syncing version to app/package.json...");
+// Step 0: Verify app and CLI versions match without mutating release metadata.
+console.log("0️⃣  Verifying app/cli package versions...");
 const cliPkg = JSON.parse(
   fs.readFileSync(path.join(cliDir, "package.json"), "utf8"),
 );
 const appPkgPath = path.join(appDir, "package.json");
 const appPkg = JSON.parse(fs.readFileSync(appPkgPath, "utf8"));
 if (appPkg.version !== cliPkg.version) {
-  appPkg.version = cliPkg.version;
-  fs.writeFileSync(appPkgPath, JSON.stringify(appPkg, null, 2) + "\n");
-  console.log(`✅ Version synced: ${cliPkg.version}\n`);
-} else {
-  console.log(`✅ Version already synced: ${cliPkg.version}\n`);
+  console.error(
+    `❌ Version mismatch: app/package.json=${appPkg.version}, cli/package.json=${cliPkg.version}`,
+  );
+  console.error(
+    "Update both package manifests before building the CLI package.",
+  );
+  process.exit(1);
 }
+console.log(`✅ Versions match: ${cliPkg.version}\n`);
 
 // Step 1: Build app with Next.js (workspace tracing root → traced node_modules in standalone).
 console.log("1️⃣  Building Next.js app...");

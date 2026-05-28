@@ -128,6 +128,11 @@ export default function LandingPage() {
         .animate-blob {
           animation: blob 20s ease-in-out infinite;
         }
+        @media (prefers-reduced-motion: reduce) {
+          .animate-blob {
+            animation: none;
+          }
+        }
       `}</style>
     </div>
   );

@@ -40,6 +40,8 @@ export default function FlowAnimation() {
   const [activeFlow, setActiveFlow] = useState(0);
 
   useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
     const interval = setInterval(() => {
       setActiveFlow((prev) => (prev + 1) % PROVIDERS.length);
     }, 2000);
@@ -47,7 +49,7 @@ export default function FlowAnimation() {
   }, []);
 
   return (
-    <div className="mt-16 w-full max-w-4xl relative h-[360px] hidden md:flex items-center justify-center animate-[float_6s_ease-in-out_infinite]">
+    <div className="mt-16 w-full max-w-4xl relative h-[360px] hidden md:flex items-center justify-center motion-safe:animate-[float_6s_ease-in-out_infinite]">
       {/* 9Router Hub - Center */}
       <div className="relative z-20 w-32 h-32 rounded-full bg-[#23180f] border-2 border-[#f97815] shadow-[0_0_40px_rgba(249,120,21,0.3)] flex flex-col items-center justify-center gap-1 group cursor-pointer hover:scale-105 transition-transform duration-500">
         <span className="material-symbols-outlined text-4xl text-[#f97815]">
@@ -56,7 +58,7 @@ export default function FlowAnimation() {
         <span className="text-xs font-bold text-white tracking-widest uppercase">
           9Router
         </span>
-        <div className="absolute inset-0 rounded-full border border-[#f97815]/30 animate-ping opacity-20"></div>
+        <div className="absolute inset-0 rounded-full border border-[#f97815]/30 motion-safe:animate-ping opacity-20"></div>
       </div>
 
       {/* CLI Tools - Left side */}
@@ -85,28 +87,28 @@ export default function FlowAnimation() {
         xmlns="http://www.w3.org/2000/svg"
       >
         <path
-          className="animate-[dash_2s_linear_infinite]"
+          className="motion-safe:animate-[dash_2s_linear_infinite]"
           d="M 60 50 C 250 70, 250 180, 360 180"
           fill="none"
           strokeDasharray="5,5"
           strokeWidth="2"
         ></path>
         <path
-          className="animate-[dash_2s_linear_infinite]"
+          className="motion-safe:animate-[dash_2s_linear_infinite]"
           d="M 60 140 C 250 140, 250 180, 360 180"
           fill="none"
           strokeDasharray="5,5"
           strokeWidth="2"
         ></path>
         <path
-          className="animate-[dash_2s_linear_infinite]"
+          className="motion-safe:animate-[dash_2s_linear_infinite]"
           d="M 60 210 C 250 210, 250 180, 360 180"
           fill="none"
           strokeDasharray="5,5"
           strokeWidth="2"
         ></path>
         <path
-          className="animate-[dash_2s_linear_infinite]"
+          className="motion-safe:animate-[dash_2s_linear_infinite]"
           d="M 60 300 C 250 280, 250 180, 360 180"
           fill="none"
           strokeDasharray="5,5"
@@ -124,28 +126,28 @@ export default function FlowAnimation() {
           fill="none"
           stroke={activeFlow === 0 ? "#f97815" : "rgb(75, 85, 99)"}
           strokeWidth={activeFlow === 0 ? "3" : "2"}
-          className={activeFlow === 0 ? "animate-pulse" : ""}
+          className={activeFlow === 0 ? "motion-safe:animate-pulse" : ""}
         ></path>
         <path
           d="M 440 180 C 550 180, 550 130, 740 130"
           fill="none"
           stroke={activeFlow === 1 ? "#f97815" : "rgb(75, 85, 99)"}
           strokeWidth={activeFlow === 1 ? "3" : "2"}
-          className={activeFlow === 1 ? "animate-pulse" : ""}
+          className={activeFlow === 1 ? "motion-safe:animate-pulse" : ""}
         ></path>
         <path
           d="M 440 180 C 550 180, 550 230, 740 230"
           fill="none"
           stroke={activeFlow === 2 ? "#f97815" : "rgb(75, 85, 99)"}
           strokeWidth={activeFlow === 2 ? "3" : "2"}
-          className={activeFlow === 2 ? "animate-pulse" : ""}
+          className={activeFlow === 2 ? "motion-safe:animate-pulse" : ""}
         ></path>
         <path
           d="M 440 180 C 550 180, 550 310, 740 310"
           fill="none"
           stroke={activeFlow === 3 ? "#f97815" : "rgb(75, 85, 99)"}
           strokeWidth={activeFlow === 3 ? "3" : "2"}
-          className={activeFlow === 3 ? "animate-pulse" : ""}
+          className={activeFlow === 3 ? "motion-safe:animate-pulse" : ""}
         ></path>
       </svg>
 

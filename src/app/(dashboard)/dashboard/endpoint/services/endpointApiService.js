@@ -47,7 +47,9 @@ export async function deleteKey(id) {
 }
 
 export async function fetchKeyUsage(id, limit = 20) {
-  return fetchJson(`/api/keys/${id}/usage?limit=${limit}`, { cache: "no-store" });
+  return fetchJson(`/api/keys/${id}/usage?limit=${limit}`, {
+    cache: "no-store",
+  });
 }
 
 export async function checkTailscaleInstalled() {

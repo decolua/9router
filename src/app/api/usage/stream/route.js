@@ -10,6 +10,8 @@ export async function GET() {
     send: null,
     sendPending: null,
     cachedStats: null,
+    sendInFlight: false,
+    sendQueued: false,
   };
 
   const stream = new ReadableStream({
@@ -17,32 +19,45 @@ export async function GET() {
       // Full stats refresh (heavy) + immediate lightweight push
       state.send = async () => {
         if (state.closed) return;
+        if (state.sendInFlight) {
+          state.sendQueued = true;
+          return;
+        }
+
+        state.sendInFlight = true;
         try {
-          // Push lightweight update immediately so UI reflects changes fast
-          if (state.cachedStats) {
-            const { activeRequests, recentRequests, errorProvider } =
-              await getActiveRequests();
-            const quickStats = {
-              ...state.cachedStats,
-              activeRequests,
-              recentRequests,
-              errorProvider,
-            };
+          do {
+            state.sendQueued = false;
+            if (state.closed) return;
+
+            // Push lightweight update immediately so UI reflects changes fast
+            if (state.cachedStats) {
+              const { activeRequests, recentRequests, errorProvider } =
+                await getActiveRequests();
+              const quickStats = {
+                ...state.cachedStats,
+                activeRequests,
+                recentRequests,
+                errorProvider,
+              };
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify(quickStats)}\n\n`),
+              );
+            }
+            // Then do full recalc and update cache
+            const stats = await getUsageStats();
+            state.cachedStats = stats;
             controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify(quickStats)}\n\n`),
+              encoder.encode(`data: ${JSON.stringify(stats)}\n\n`),
             );
-          }
-          // Then do full recalc and update cache
-          const stats = await getUsageStats();
-          state.cachedStats = stats;
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify(stats)}\n\n`),
-          );
+          } while (state.sendQueued && !state.closed);
         } catch {
           state.closed = true;
           statsEmitter.off("update", state.send);
           statsEmitter.off("pending", state.sendPending);
           clearInterval(state.keepalive);
+        } finally {
+          state.sendInFlight = false;
         }
       };
 

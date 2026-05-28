@@ -3,7 +3,27 @@
 export const POLL_INTERVAL_MS = 1500;
 export const POLL_TIMEOUT_MS = 120000;
 
-export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+export function sleep(ms, signal) {
+  if (signal?.aborted)
+    return Promise.reject(
+      signal.reason || new DOMException("Aborted", "AbortError"),
+    );
+
+  return new Promise((resolve, reject) => {
+    const cleanup = () => signal?.removeEventListener("abort", onAbort);
+    const timeout = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timeout);
+      cleanup();
+      reject(signal.reason || new DOMException("Aborted", "AbortError"));
+    };
+
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
 
 // Map OpenAI size to provider-specific aspect ratio
 export function sizeToAspectRatio(size) {
