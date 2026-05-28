@@ -1,6 +1,6 @@
 {
-  "version": "2.19.0",
-  "generatedAt": "2026-05-13T16:04:33.569Z",
+  "version": "2.19.1",
+  "generatedAt": "2026-05-25T18:14:17.753Z",
   "files": [
     {
       "path": ".ck.json",
@@ -28,9 +28,9 @@
     },
     {
       "path": ".mcp.json.example",
-      "checksum": "1add9f64a1c29e26dbb9a3cd078e9d590301e5405de0f1eda8b628bd503f6b4c",
-      "size": 732,
-      "lastModified": "2026-04-02T18:07:38-04:00"
+      "checksum": "f194e0692dc282586022e74d71a334a5718fcabe516ad2543b233dd1071b11df",
+      "size": 773,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "agents/brainstormer.md",
@@ -40,9 +40,9 @@
     },
     {
       "path": "agents/code-reviewer.md",
-      "checksum": "7e9784ee4f85d1d610aa843f3e4cda8455f2cbc5248caaaaec2091d444bce263",
-      "size": 6240,
-      "lastModified": "2026-04-28T19:59:34-04:00"
+      "checksum": "21708a3f98e03ccc0ec6a2a4050c1008621fe1622d4fcff5fb74975617829369",
+      "size": 6271,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "agents/code-simplifier.md",
@@ -135,10 +135,297 @@
       "lastModified": "2026-04-02T18:07:38-04:00"
     },
     {
+      "path": "command-archive/commands/bootstrap/auto/fast.md",
+      "checksum": "1cc0f8cc6e0f2c029500c87cba9c1878b269d1694f6fcb1dfc2f4b1992c754a3",
+      "size": 7355,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/bootstrap/auto/parallel.md",
+      "checksum": "ab05afb248054f4b49c5630f25c185658654c69f20abebba119987aa4e1baff2",
+      "size": 2322,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/bootstrap/auto.md",
+      "checksum": "9957bdeb442f726728fd80ad0c376a59869fb216160989f04cda027e862cd0c7",
+      "size": 7448,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/bootstrap.md",
+      "checksum": "b10d455e0fa899857356587c141d75302942c9fc1b15d8e734de7f7b4b8f9e77",
+      "size": 9296,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/code/auto.md",
+      "checksum": "bc38abdf50fe72ff37d7787601c2e021ca63f5c7a992dc3141b83a0d01cd8fb1",
+      "size": 9971,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/code/no-test.md",
+      "checksum": "650d32864242037cfc77f389f35b82e0c247f666f4abd7c131052ac4ca662649",
+      "size": 8018,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/code/parallel.md",
+      "checksum": "66fcd0b0577121c31f62e40005bab3e0a33529cce8fb06316a0d7d981085e4f6",
+      "size": 3911,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/code.md",
+      "checksum": "60443d15535c2706029ebf299b4edbf81c6506f6e7e8666e0d66d9c22f7bba8e",
+      "size": 9651,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/content/cro.md",
+      "checksum": "53041fe703f462f17492451dae64f7a52ab8816c26a1e5f1099392b0a061702d",
+      "size": 3045,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/content/enhance.md",
+      "checksum": "4b77d36646d99d6c2b19361713ba3dca9847feb0edaca3d07455ed1e1c53c395",
+      "size": 703,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/content/fast.md",
+      "checksum": "843a92ddc82d81ab577380518bb0085dc0fbfee92c5cf5be19c32ac850bb8a2a",
+      "size": 468,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/content/good.md",
+      "checksum": "d5d8df92b0f7245882afc8fe7365399ee44f7255f0ad9456589414a7a6aca029",
+      "size": 833,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/cook/auto/fast.md",
+      "checksum": "a2da50e863642f996cc3ccfaaf2da40e31e6104de3c1e6d342594345a748bc12",
+      "size": 1455,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/cook/auto/parallel.md",
+      "checksum": "7eb873f7684342585781e0f86460ba05d737a31869096dcd2f14ade29e57b514",
+      "size": 1630,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/cook/auto.md",
+      "checksum": "e40f3376f0c86f83abc7896ab6b4cf71328ca6e04b147f423632fd03789f5fab",
+      "size": 841,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/cook.md",
+      "checksum": "1b16beb6e12ff4ab7b38a85aeccde0a8a2db3c75f93e2b022d77b72f0f8609d2",
+      "size": 7083,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/debug.md",
+      "checksum": "0510a2961caf4594d7fa4f1913f7ab4a16d3ae1c01bb17abc7447e3b44e86bec",
+      "size": 511,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/design/3d.md",
+      "checksum": "18bcfd066f5c2bf4b9db5ed272a53591f7783c5320add76f03adcdf035ecde0c",
+      "size": 4766,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/design/describe.md",
+      "checksum": "bf55b707a0a95d0c8d494bf5c4ddfdda02f97dbe18338dd0b60514e1ff8ce6fb",
+      "size": 1843,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/design/fast.md",
+      "checksum": "cde608011543bc3459983ccec2a9d09c4087253098355866f38d065b6cfba454",
+      "size": 1626,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/design/good.md",
+      "checksum": "3c86440bde4af5a7333d0f52d3b668f1aef2ba07ee22fec4575594f892834bd5",
+      "size": 2184,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/design/screenshot.md",
+      "checksum": "145b25374904e3f98e7677e5fa7e28dc546ec8bebb3e940b9f2c17632fd0f030",
+      "size": 2676,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/design/video.md",
+      "checksum": "8b48aac7d8309ed38d8f43b93590b604bcddb8cf0f8f48c710754ffca9db103a",
+      "size": 2761,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/fix/ci.md",
+      "checksum": "48cc9ff591f60d0495578537211856fd6f3d564f6061b8a5875ef3cff352cf68",
+      "size": 797,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/fix/fast.md",
+      "checksum": "52c77c0786887a75fea40931265bb8ecad3a282fac9a8f38d193dad6af7931a9",
+      "size": 1037,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/fix/hard.md",
+      "checksum": "282d56e35f24eef558953ac46f96edbf73fd1bd121f5a26cd7e9ce1f56408ca0",
+      "size": 2423,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/fix/logs.md",
+      "checksum": "b6d95d05559f987ccf6682e319b0091445d8c6f45544e2ddd81b24a401a89fe6",
+      "size": 1524,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/fix/parallel.md",
+      "checksum": "6169438e7105a75acd361d91b61000289c60659e8594333b297f175bf23d61df",
+      "size": 1970,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/fix/test.md",
+      "checksum": "80d558079c4212c66a5d3ad322f514bff4d2cff3d3675d871c16f4c2783a558a",
+      "size": 1146,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/fix/types.md",
+      "checksum": "4622688d6263d004550529a6cf5f38aae7981407cdd1ab863e01a4ca4d9db223",
+      "size": 255,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/fix/ui.md",
+      "checksum": "009dc740be253ef2558fcbaa3a6930ce226a2f6e25f1f378969562c3adbc1a87",
+      "size": 3572,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/fix.md",
+      "checksum": "20e817df5d125690e60205a55eece2fba342d8f5242457cd9841380c174a51b7",
+      "size": 1529,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/plan/ci.md",
+      "checksum": "7a6863a7238ba267df07417a8a6e97b1ae76e82db38a13d0f6cdd79a2673b150",
+      "size": 1102,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/plan/cro.md",
+      "checksum": "05d1f83c11fa6cea3fb80380d5427ea52381e32b3355cba2a35561922c5cdf62",
+      "size": 4700,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/plan/fast.md",
+      "checksum": "e41fd09f10846623e2186058b899b853e2af75857166cb4b0c3ad3db3084fe4e",
+      "size": 3547,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/plan/hard.md",
+      "checksum": "76d5be0855e3e4e3dad0a09609d1425b8389d809391f286e4379da2efc783041",
+      "size": 5020,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/plan/parallel.md",
+      "checksum": "6b67ba8d11950421da453361bbecc7d26922d623a5400bb565a6eb2c0439befa",
+      "size": 6484,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/plan/two.md",
+      "checksum": "eae91b91e8c18fd14883ab8369e5e737fde3154b93513e0fc62c820037cb2856",
+      "size": 2023,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/plan.md",
+      "checksum": "c4f0a48ba4429580d23f5d3407d4a2c03694c9b7bb566cd2e7d9c93308b8de9e",
+      "size": 1478,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/scout/ext.md",
+      "checksum": "8463aafdc1d07f919a95dff7e2dba0958598654badf753e438c906bdf1b059cd",
+      "size": 2352,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/scout.md",
+      "checksum": "cdf50c72dc35b0617b4dafb1a9255af93981b716c0830ff7b9e9694f6b001b84",
+      "size": 1364,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/skill/add.md",
+      "checksum": "1dd2ce648df1a3712aa338d30358f85920b1277f134f91b9c1b15f94e1e2d09f",
+      "size": 2065,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/skill/create.md",
+      "checksum": "8bf0f83c03587b4e6f69b843fcda84f08c5e5786344c162a771d9f41598f2224",
+      "size": 1813,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/skill/fix-logs.md",
+      "checksum": "9cf840ac49883aff0c2898d91387859274687748c5038ac51838174e8c73115f",
+      "size": 1268,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/skill/optimize/auto.md",
+      "checksum": "e4ff0d46e3b950526a07eab75d8f3ec8e0eab68ac52eb44b1ac0e54e28e80b96",
+      "size": 1075,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/skill/optimize.md",
+      "checksum": "71c85d3f4f04aff7a8359f07f526152cfa61a29c83c938b491ae63da573d0292",
+      "size": 2027,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "command-archive/commands/skill/update.md",
+      "checksum": "259e13b950c61db7881eac22b2eead3b1d742aa1ecdb6f47adb0934f3965e287",
+      "size": 2290,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "hooks/.logs/hook-log.jsonl",
+      "checksum": "41a2cf1dd4d0cf0f1a16347000b4c214aac383301d512c03336dcfc36985259a",
+      "size": 1760
+    },
+    {
       "path": "hooks/__tests__/advisory-boundary-policy.test.cjs",
-      "checksum": "7b8b7df9d1052f749761664d74601b5ce82bc7ca7f87f4311072b3862cbbbc7c",
-      "size": 8833,
-      "lastModified": "2026-04-28T20:32:34-04:00"
+      "checksum": "060664939ad1dfaef97cbe7e8dca0799fdab5afc0824f51f0144817bcebb1e0b",
+      "size": 10689,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "hooks/__tests__/ck-config-utils.test.cjs",
@@ -148,15 +435,195 @@
     },
     {
       "path": "hooks/__tests__/descriptive-name.test.cjs",
-      "checksum": "b307a81902cab7d4c0b016df32837cc8598c0adc493ae7d05d016069908a86be",
-      "size": 9123,
-      "lastModified": "2026-04-02T18:07:38-04:00"
+      "checksum": "4a65a0eae2373eab598b83ca5abf372093514fd326802469e54d4f297576fad2",
+      "size": 10402,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "hooks/__tests__/dev-rules-reminder.test.cjs",
       "checksum": "a24c0c2d392cc257bd692af613cb3e5f54809e56622a3496ebb1cff8328f69e6",
       "size": 17827,
       "lastModified": "2026-04-02T18:07:38-04:00"
+    },
+    {
+      "path": "hooks/__tests__/fixtures/workflow-artifacts/blocked-review/adversarial-validation.json",
+      "checksum": "61d328b8d68e033236bef159cdb97cd78bc7dd52dfcb87dd05f291486431c39e",
+      "size": 128,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "hooks/__tests__/fixtures/workflow-artifacts/blocked-review/context-snippets.json",
+      "checksum": "f0a54b6c196b5f474a4700ba5738d9793f120f1aae0039c3dc50154099be9b3e",
+      "size": 386,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "hooks/__tests__/fixtures/workflow-artifacts/blocked-review/review-decision.json",
+      "checksum": "86e8223428bace4de4cc277d83e0d1277535eda2565714b7dbe856b60a2b81ff",
+      "size": 255,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "hooks/__tests__/fixtures/workflow-artifacts/blocked-review/risk-gate.json",
+      "checksum": "7abc724fdf73a96d542a568cf420698feb535197165f2a2d7078e10fa96a5901",
+      "size": 118,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "hooks/__tests__/fixtures/workflow-artifacts/blocked-review/verification.json",
+      "checksum": "e1625d16805455b47bee70c009a8c5521ca7d228428a631bad1d407756ed4e05",
+      "size": 271,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "hooks/__tests__/fixtures/workflow-artifacts/malformed-json/context-snippets.json",
+      "checksum": "431de2d85fbc79198a660a4cd5b677f713f441c91252a73c5bb2a211c9d457e0",
+      "size": 42,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "hooks/__tests__/fixtures/workflow-artifacts/missing-risk-gate-auto/adversarial-validation.json",
+      "checksum": "61d328b8d68e033236bef159cdb97cd78bc7dd52dfcb87dd05f291486431c39e",
+      "size": 128,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "hooks/__tests__/fixtures/workflow-artifacts/missing-risk-gate-auto/context-snippets.json",
+      "checksum": "f0a54b6c196b5f474a4700ba5738d9793f120f1aae0039c3dc50154099be9b3e",
+      "size": 386,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "hooks/__tests__/fixtures/workflow-artifacts/missing-risk-gate-auto/review-decision.json",
+      "checksum": "ad2a494a92c61e475099a4879548aab5eb2674353b1a62e763bf289cdad84561",
+      "size": 224,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "hooks/__tests__/fixtures/workflow-artifacts/missing-risk-gate-auto/verification.json",
+      "checksum": "e1625d16805455b47bee70c009a8c5521ca7d228428a631bad1d407756ed4e05",
+      "size": 271,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "hooks/__tests__/fixtures/workflow-artifacts/pointer-resolution/adversarial-validation.json",
+      "checksum": "61d328b8d68e033236bef159cdb97cd78bc7dd52dfcb87dd05f291486431c39e",
+      "size": 128,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "hooks/__tests__/fixtures/workflow-artifacts/pointer-resolution/context-snippets.json",
+      "checksum": "f0a54b6c196b5f474a4700ba5738d9793f120f1aae0039c3dc50154099be9b3e",
+      "size": 386,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "hooks/__tests__/fixtures/workflow-artifacts/pointer-resolution/review-decision.json",
+      "checksum": "ad2a494a92c61e475099a4879548aab5eb2674353b1a62e763bf289cdad84561",
+      "size": 224,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "hooks/__tests__/fixtures/workflow-artifacts/pointer-resolution/risk-gate.json",
+      "checksum": "7abc724fdf73a96d542a568cf420698feb535197165f2a2d7078e10fa96a5901",
+      "size": 118,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "hooks/__tests__/fixtures/workflow-artifacts/pointer-resolution/verification.json",
+      "checksum": "e1625d16805455b47bee70c009a8c5521ca7d228428a631bad1d407756ed4e05",
+      "size": 271,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "hooks/__tests__/fixtures/workflow-artifacts/secret-leak/adversarial-validation.json",
+      "checksum": "61d328b8d68e033236bef159cdb97cd78bc7dd52dfcb87dd05f291486431c39e",
+      "size": 128,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "hooks/__tests__/fixtures/workflow-artifacts/secret-leak/context-snippets.json",
+      "checksum": "f0a54b6c196b5f474a4700ba5738d9793f120f1aae0039c3dc50154099be9b3e",
+      "size": 386,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "hooks/__tests__/fixtures/workflow-artifacts/secret-leak/review-decision.json",
+      "checksum": "ad2a494a92c61e475099a4879548aab5eb2674353b1a62e763bf289cdad84561",
+      "size": 224,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "hooks/__tests__/fixtures/workflow-artifacts/secret-leak/risk-gate.json",
+      "checksum": "7abc724fdf73a96d542a568cf420698feb535197165f2a2d7078e10fa96a5901",
+      "size": 118,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "hooks/__tests__/fixtures/workflow-artifacts/secret-leak/verification.json",
+      "checksum": "15c6eb057d1889039155ef76b20e398acc107501f431f48863ac5aceb84ef1ce",
+      "size": 283,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "hooks/__tests__/fixtures/workflow-artifacts/valid-high-risk-approved/adversarial-validation.json",
+      "checksum": "61d328b8d68e033236bef159cdb97cd78bc7dd52dfcb87dd05f291486431c39e",
+      "size": 128,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "hooks/__tests__/fixtures/workflow-artifacts/valid-high-risk-approved/context-snippets.json",
+      "checksum": "18220bd2fc7e39c6d20ba2d0d3a7b864360300aec21b1240d70e6575742015d6",
+      "size": 395,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "hooks/__tests__/fixtures/workflow-artifacts/valid-high-risk-approved/review-decision.json",
+      "checksum": "ad2a494a92c61e475099a4879548aab5eb2674353b1a62e763bf289cdad84561",
+      "size": 224,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "hooks/__tests__/fixtures/workflow-artifacts/valid-high-risk-approved/risk-gate.json",
+      "checksum": "69108c97ddecec472a2b5e5b37e2c913ac9a9c73be05ca645d8bb17730ce2ee3",
+      "size": 140,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "hooks/__tests__/fixtures/workflow-artifacts/valid-high-risk-approved/verification.json",
+      "checksum": "e1625d16805455b47bee70c009a8c5521ca7d228428a631bad1d407756ed4e05",
+      "size": 271,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "hooks/__tests__/fixtures/workflow-artifacts/valid-low-risk/adversarial-validation.json",
+      "checksum": "61d328b8d68e033236bef159cdb97cd78bc7dd52dfcb87dd05f291486431c39e",
+      "size": 128,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "hooks/__tests__/fixtures/workflow-artifacts/valid-low-risk/context-snippets.json",
+      "checksum": "f0a54b6c196b5f474a4700ba5738d9793f120f1aae0039c3dc50154099be9b3e",
+      "size": 386,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "hooks/__tests__/fixtures/workflow-artifacts/valid-low-risk/review-decision.json",
+      "checksum": "ad2a494a92c61e475099a4879548aab5eb2674353b1a62e763bf289cdad84561",
+      "size": 224,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "hooks/__tests__/fixtures/workflow-artifacts/valid-low-risk/risk-gate.json",
+      "checksum": "7abc724fdf73a96d542a568cf420698feb535197165f2a2d7078e10fa96a5901",
+      "size": 118,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "hooks/__tests__/fixtures/workflow-artifacts/valid-low-risk/verification.json",
+      "checksum": "e1625d16805455b47bee70c009a8c5521ca7d228428a631bad1d407756ed4e05",
+      "size": 271,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "hooks/__tests__/hook-logger.test.cjs",
@@ -207,16 +674,10 @@
       "lastModified": "2026-04-18T16:01:34-04:00"
     },
     {
-      "path": "hooks/__tests__/skill-dedup.test.cjs",
-      "checksum": "790082bdcfbe54abaa792a109b23325a8501b98f4c62fe5dc9ba749ef9cb0093",
-      "size": 18335,
-      "lastModified": "2026-04-02T18:07:38-04:00"
-    },
-    {
       "path": "hooks/__tests__/subagent-init.test.cjs",
-      "checksum": "2cf232eb8cdf77eee50341b3148afead65a24bc2f64f8455354860c13a75d943",
-      "size": 23193,
-      "lastModified": "2026-04-28T19:59:34-04:00"
+      "checksum": "f3688ad70508437e27cd3a73273fb0b1b1f1a0b4d618b44748d99b86fd9fbc8f",
+      "size": 23985,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "hooks/__tests__/task-completed-handler.test.cjs",
@@ -243,6 +704,12 @@
       "lastModified": "2026-04-02T18:07:38-04:00"
     },
     {
+      "path": "hooks/__tests__/workflow-artifact-gate.test.cjs",
+      "checksum": "b58efdf6f33d59490d7204cd58229bd889c06d191fda2fc26e5efccbc7549e3c",
+      "size": 9387,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
       "path": "hooks/cook-after-plan-reminder.cjs",
       "checksum": "b34478e0469ea9b35152a8bdaffebd5cfab0e27ae7fde1a4af67f5738bd11420",
       "size": 2475,
@@ -250,9 +717,9 @@
     },
     {
       "path": "hooks/descriptive-name.cjs",
-      "checksum": "4adc22a5596784c46ff929f15c3a04e764beb66cc58ae2af6bffc9e678a9143a",
-      "size": 1617,
-      "lastModified": "2026-04-02T18:07:38-04:00"
+      "checksum": "a1a0e72416d8e158b5f2c3469f50ade4d9f5fd60a857367c3e00e8e398e3aa35",
+      "size": 1748,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "hooks/dev-rules-reminder.cjs",
@@ -262,9 +729,9 @@
     },
     {
       "path": "hooks/docs/README.md",
-      "checksum": "965e80a6705c727a98dd2ccfc8b0224ce08d0dd85667e4fc1e3065e42f8bb5ed",
-      "size": 5439,
-      "lastModified": "2026-04-03T00:53:34-04:00"
+      "checksum": "e3a939926bcaee35f4c213846ffd5d2072f55737717e8eaeda419c01273e3f5e",
+      "size": 6733,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "hooks/lib/__tests__/README.md",
@@ -280,9 +747,9 @@
     },
     {
       "path": "hooks/lib/__tests__/context-builder.test.cjs",
-      "checksum": "cfa787542970544edd50b3d4a5b5aa9c5e2633e7adbfc17d5725d4a7986b9eae",
-      "size": 20753,
-      "lastModified": "2026-04-02T18:07:38-04:00"
+      "checksum": "3380131977928cf386b41ddb03a88366bc93a5129bed293526f3720b27049914",
+      "size": 21295,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "hooks/lib/__tests__/project-detector.test.cjs",
@@ -322,9 +789,9 @@
     },
     {
       "path": "hooks/lib/ck-config-utils.cjs",
-      "checksum": "0e3ad96ec1114e7547fdc97cce9c14efbe8b37e29db8c51b27b21276c1798c36",
-      "size": 29675,
-      "lastModified": "2026-04-16T22:52:27-04:00"
+      "checksum": "7ce744d6097c0afbf642890be8985829ffa186eeeead80a977170a838a12416e",
+      "size": 30101,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "hooks/lib/colors.cjs",
@@ -340,9 +807,9 @@
     },
     {
       "path": "hooks/lib/context-builder.cjs",
-      "checksum": "9e217fc4d081b7dfb5b6be2f628b6434741f860f91e94bf6647eed9756ce840a",
-      "size": 30610,
-      "lastModified": "2026-04-28T19:59:34-04:00"
+      "checksum": "799602b281f7494819133a8ca20413a0a79b7b1bc1ae2ef77e79c0ecfd244e0f",
+      "size": 30837,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "hooks/lib/git-info-cache.cjs",
@@ -421,12 +888,6 @@
       "checksum": "454636bb6153ecf3c52529cbe0d8a70855ef771f48a53c54ecafea4e8dc57f0f",
       "size": 9157,
       "lastModified": "2026-04-02T18:07:38-04:00"
-    },
-    {
-      "path": "hooks/node-hook-runner.sh",
-      "checksum": "f3f43b1c59012ffbcd6210ece850e61bd898b78db69c279cf0e604ac2ecdc649",
-      "size": 2142,
-      "lastModified": "2026-05-10T14:20:54-04:00"
     },
     {
       "path": "hooks/notifications/.env.example",
@@ -597,16 +1058,10 @@
       "lastModified": "2026-04-18T16:01:34-04:00"
     },
     {
-      "path": "hooks/skill-dedup.cjs",
-      "checksum": "94c1b631ddb9f691939fa2bfad470d5af81e90562807e8f08e352ce2db00aef0",
-      "size": 8025,
-      "lastModified": "2026-04-02T18:07:38-04:00"
-    },
-    {
       "path": "hooks/subagent-init.cjs",
-      "checksum": "fd1ad8dc892370d710c23fd8009ec7e97c8841b8c4000d0fdf67d56129736fec",
-      "size": 8220,
-      "lastModified": "2026-04-28T19:59:34-04:00"
+      "checksum": "817afeb3371a9eb5baf8537824519966130324ff466d695fd8690eff5ed27cd2",
+      "size": 8486,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "hooks/task-completed-handler.cjs",
@@ -711,10 +1166,40 @@
       "lastModified": "2026-04-02T18:07:38-04:00"
     },
     {
+      "path": "hooks/workflow-artifact-gate/artifact-locator.cjs",
+      "checksum": "3b2f4cec9d3777a53ef14daba21eacbc67891ce87e33818bccca269fc565051b",
+      "size": 2980,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "hooks/workflow-artifact-gate/artifact-schema.cjs",
+      "checksum": "702d698437b76598662fb4dced51d6314a042d7003b2f9fc4419478beda6893f",
+      "size": 4596,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "hooks/workflow-artifact-gate/stage-detector.cjs",
+      "checksum": "e49682c4f8c129b4a0ac17aa965b6fdea200e4e3aae62dd70afa18efddaddef7",
+      "size": 2546,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "hooks/workflow-artifact-gate/validator.cjs",
+      "checksum": "7e4d99ca3f8ca86937ee708028795e4c7dbecd8b1b7fbe18c80dfbfa9f3c6dd8",
+      "size": 7936,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "hooks/workflow-artifact-gate.cjs",
+      "checksum": "995e50a67a95a693452ffb845d70ffa9804f2a4a4e84e857d0cd2e614ad3db7b",
+      "size": 3838,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
       "path": "metadata.json",
-      "checksum": "88df36eee804a6d065234c30f990382b2b3a153f61d506bccb7882fad6f38a61",
-      "size": 5043,
-      "lastModified": "2026-05-13T16:00:42Z"
+      "checksum": "59ad16465625f9c96309014ddf72c9834a8b11e7c22324fb6a0ce44ad56dde31",
+      "size": 4884,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "output-styles/coding-level-0-eli5.md",
@@ -753,6 +1238,12 @@
       "lastModified": "2026-04-02T18:07:38-04:00"
     },
     {
+      "path": "rules/CLAUDE.md",
+      "checksum": "2c3399c41224f8d2455b7689bb95c9aeb37af38376b80a2390995b440bf33651",
+      "size": 4295,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
       "path": "rules/development-rules.md",
       "checksum": "f9a0a7c4646d2446b34f4a0f5a5daf93fa1140ed4f8c0e1754afab44703855a4",
       "size": 3737,
@@ -784,9 +1275,9 @@
     },
     {
       "path": "rules/skill-domain-routing.md",
-      "checksum": "674aed5000387c1acf5e17c0bba6c871dd286fdc00efd5078e3cc39ce36cd880",
-      "size": 5617,
-      "lastModified": "2026-05-02T21:58:06-04:00"
+      "checksum": "2939e472c05685f4b8186c029e66b1ef2bcaa7b358906f719ae7ee4a29957205",
+      "size": 5785,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "rules/skill-workflow-routing.md",
@@ -802,9 +1293,9 @@
     },
     {
       "path": "schemas/ck-config.schema.json",
-      "checksum": "654ba0a9f3d295b3a3b73ae3be9760a24c8a92b4e5a9e43be1d2d7269def98ce",
-      "size": 18957,
-      "lastModified": "2026-04-29T09:48:36-04:00"
+      "checksum": "d4e1b0d1ef778799f514acf52657885ec16e249ac6cc7a9e3ee56b6f13ca2b08",
+      "size": 20238,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "schemas/skill-schema.json",
@@ -862,9 +1353,9 @@
     },
     {
       "path": "scripts/skills_data.yaml",
-      "checksum": "4e26aed5f5b48d156516599b31182e3a14601b7af8db996e9a35f32b7762628b",
-      "size": 38248,
-      "lastModified": "2026-05-07T08:18:59-04:00"
+      "checksum": "506cd4aab096292eb1f0b830d1884e9aacbeb7cfc8c2fb2a39613e3daf3390e0",
+      "size": 38673,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "scripts/validate-docs.cjs",
@@ -874,15 +1365,15 @@
     },
     {
       "path": "scripts/validate-skill-crossrefs.py",
-      "checksum": "35a5a6e7fcba02bbd7d1f47d565d32d9bde0b6ef8162da66678d0818a25eb7b3",
-      "size": 12959,
-      "lastModified": "2026-04-10T16:04:22-04:00"
+      "checksum": "efc641a4b5a388fe37848f0efc05ddba0721b538ae30ee7c25b942e4a01eeb5a",
+      "size": 12965,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "scripts/validate-skill-frontmatter.py",
-      "checksum": "31baaec8558fb86c3728cdda0399aeb3961984dbda68036574fb385b76a6dba2",
-      "size": 12983,
-      "lastModified": "2026-05-07T11:45:16-04:00"
+      "checksum": "eeb78841e7d94d2af9ecc3e854c87984cc8671978d0a6f1977a6453d3ee2e7a0",
+      "size": 13049,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "scripts/win_compat.py",
@@ -910,9 +1401,9 @@
     },
     {
       "path": "settings.json",
-      "checksum": "516393be137b3b986a01a40acf40c316415617644619636fd2ed5a061a4eda3e",
-      "size": 1245,
-      "lastModified": "2026-05-13T11:59:42-04:00"
+      "checksum": "0136eb27c94f15acc10a59ca8542bac4fc507c92b705c5f409d3b89190d868f3",
+      "size": 3120,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/.env.example",
@@ -951,6 +1442,12 @@
       "lastModified": "2026-04-02T18:07:38-04:00"
     },
     {
+      "path": "skills/_shared/references/workflow-artifacts.md",
+      "checksum": "ac1b15de6beebd3cc259398a34283f0eeb21c55732e26a3539f04733569de439",
+      "size": 3921,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
       "path": "skills/_shared/tests/plan-table-parser.test.cjs",
       "checksum": "c4fffdc3696899afda24ddf6389cbfb49339a1fe0d34023637b6ac170720a5b6",
       "size": 14897,
@@ -958,9 +1455,9 @@
     },
     {
       "path": "skills/agent-browser/SKILL.md",
-      "checksum": "2feab298937e042381506c35d6b3c18d09e1d34741d10bad454ca317eb947e32",
-      "size": 4021,
-      "lastModified": "2026-05-07T11:45:16-04:00"
+      "checksum": "cd32d2e9434bf55d61f62c0b56798641fc3f1e96b73cc567dde88dca94130f74",
+      "size": 4753,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/agent-browser/references/.gitkeep",
@@ -970,9 +1467,9 @@
     },
     {
       "path": "skills/agent-browser/references/agent-browser-vs-chrome-devtools.md",
-      "checksum": "81a49bc6ca50cec6761e94e789be5ebf2f0bea496762c17d075e07d53de948cf",
-      "size": 1886,
-      "lastModified": "2026-04-30T14:19:02-04:00"
+      "checksum": "6578f6bc4681c4c4472428ba1f51852b945c4a9e072afdc4d91c3049386fbf65",
+      "size": 1333,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/agent-browser/references/browserbase-cloud-setup.md",
@@ -1414,9 +1911,9 @@
     },
     {
       "path": "skills/better-auth/SKILL.md",
-      "checksum": "40e1fbd7a8a6b2d86646ad9e4e5abc9a2fc4bd7cf48fc99f55ccf0970ce232a8",
-      "size": 7187,
-      "lastModified": "2026-05-07T11:45:16-04:00"
+      "checksum": "3c009965afd6ace100615a07caab80cabbd338dd10c4ec8c1dc89cca637cf0ab",
+      "size": 8078,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/better-auth/references/advanced-features.md",
@@ -1503,16 +2000,172 @@
       "lastModified": "2026-05-13T13:45:13+07:00"
     },
     {
+      "path": "skills/chrome-profile/LICENSE",
+      "checksum": "3c4b6863319b2a4aac5ca1854160708df3d852eb8629d8c56c9d2fd08ed1c2d0",
+      "size": 1099,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "skills/chrome-profile/SKILL.md",
+      "checksum": "18176d6c690e6ae7cd9efd6315560c93dec703aa2022e7fd1b910eb43a1d63ac",
+      "size": 6428,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "skills/chrome-profile/profiles.example.json",
+      "checksum": "6128bc8b400a1593edb8ae8170c98d6487a5ba833de60328a10535b061c37d54",
+      "size": 181,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "skills/chrome-profile/references/architecture.md",
+      "checksum": "50d4be9a3daa0cb7bc60d91e38ed7367550ab2e9dd4c788780356514e31aa4b0",
+      "size": 5979,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "skills/chrome-profile/references/mcp-config-recipes.md",
+      "checksum": "419d25f7b282e02c95302cb89465e30aa45fa96a4371f5697fd74952f2fde084",
+      "size": 6740,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "skills/chrome-profile/references/troubleshooting.md",
+      "checksum": "ed994eb388f08689783cb30b00f0359dcf5183d8db839cb9c0041765a8af8e3d",
+      "size": 3757,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "skills/chrome-profile/scripts/chrome_profile_cli.py",
+      "checksum": "a461592427fa2dbe049d9558e423c4e45d43a7346d1de065eade64a060f438bc",
+      "size": 24081,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "skills/chrome-profile/scripts/install.cmd",
+      "checksum": "9be3c67e21b5e2c3a990a773a3505ac14a93d436e7aa9533e4857aad95c25612",
+      "size": 1411,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "skills/chrome-profile/scripts/install.sh",
+      "checksum": "963e47caf003a80201d229f32e28d1d6b74e1f66d44cf7812c7a5e4ab08f7ad9",
+      "size": 1139,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "skills/chrome-profile/scripts/test_chrome_profile.py",
+      "checksum": "b40b636d90fb7cb8942ab7565569580453a8d9f8516cf26abf892d3ae9337ca2",
+      "size": 8759,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "skills/chrome-profile/scripts/uninstall.cmd",
+      "checksum": "5d542265e8b8466e08157b1d9e48d72dd79bc549ff41d9f781d9a85257e78b9d",
+      "size": 1631,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "skills/chrome-profile/scripts/uninstall.sh",
+      "checksum": "475ecb482a1dd365f55596819e0d59086992249f0c0ca5fd1389183a67f48717",
+      "size": 1596,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
       "path": "skills/ck-autoresearch/SKILL.md",
       "checksum": "495ff79a8b79758ae034c6cb0ef9fec9c43d691f556711df46f6cf3fb57b5cd2",
       "size": 6330,
       "lastModified": "2026-05-07T11:45:16-04:00"
     },
     {
+      "path": "skills/ck-code-review/SKILL.md",
+      "checksum": "f4da5ca777e26163ed1f3a3574c2d2ff8230640fb5f9d587f610179b386afd90",
+      "size": 9042,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "skills/ck-code-review/references/checklist-workflow.md",
+      "checksum": "15515d39b7afa784f667e4b8aa41ef237465c30d5cbcff84520348cf2287709f",
+      "size": 2885,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "skills/ck-code-review/references/checklists/api.md",
+      "checksum": "d9041be1459ca934573918cebbb976ab695b49eda73651e121f777d086f3ddaf",
+      "size": 1916,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "skills/ck-code-review/references/checklists/base.md",
+      "checksum": "eb4c55edc9cdd8a0a4704798d8d537b86c19ddc98afdd821187efff17e097213",
+      "size": 4141,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "skills/ck-code-review/references/checklists/web-app.md",
+      "checksum": "cf6c14d4772e237b417284aea79a7c1e771e890e278a0786a519e205b8811418",
+      "size": 1919,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "skills/ck-code-review/references/code-review-reception.md",
+      "checksum": "f8b818db1b47ecf7a43328783cd298f4efeacdf8d2bb04061281149a2256cada",
+      "size": 3214,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "skills/ck-code-review/references/codebase-scan-workflow.md",
+      "checksum": "3495a74fbea069a00cb9110bbdf1743041a1888dae31ef0bab8435a7ec82e6db",
+      "size": 1266,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "skills/ck-code-review/references/edge-case-scouting.md",
+      "checksum": "1b250390990038426e86fdab061ca073b8db2f87abaf8935e9d514972d504c3e",
+      "size": 3018,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "skills/ck-code-review/references/input-mode-resolution.md",
+      "checksum": "0685bec615a9780d61f3ce21cb70689f0a9fd3f9e043bc817db204d8dc466c48",
+      "size": 3593,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "skills/ck-code-review/references/parallel-review-workflow.md",
+      "checksum": "55078454b14afdb521e9f321840ff4146b195621e29aaaa37509e1a696948e25",
+      "size": 2178,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "skills/ck-code-review/references/requesting-code-review.md",
+      "checksum": "c923d68f9e4effbe9d21ed5095cfc9246d24bfb9c2e114ef3cca26f7dbe4f35c",
+      "size": 3183,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "skills/ck-code-review/references/spec-compliance-review.md",
+      "checksum": "f66d056e6204c23cec67bca5dfb92806d9e4b5fbc4a32be415059628981a7783",
+      "size": 1455,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "skills/ck-code-review/references/task-management-reviews.md",
+      "checksum": "111b1c16f8c826079181e640eaa694e96fa9290ab964ed7934389792f4b38e4d",
+      "size": 4663,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "skills/ck-code-review/references/verification-before-completion.md",
+      "checksum": "ad75a3a6de283507d7827b103fb82497102dee4f77d004a3d81ea7a997b53b4f",
+      "size": 4338,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
       "path": "skills/ck-debug/SKILL.md",
-      "checksum": "b0ff993fb8570481051fe963845c5ce198e6ec456ce1302dc73fb69cae237d32",
-      "size": 6140,
-      "lastModified": "2026-05-07T11:45:16-04:00"
+      "checksum": "0683bc1a41f16f1a854a3b48602440975ef75f7d9b76706106945408148407f9",
+      "size": 6228,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/ck-debug/references/defense-in-depth.md",
@@ -1522,9 +2175,9 @@
     },
     {
       "path": "skills/ck-debug/references/frontend-verification.md",
-      "checksum": "a8517f81fb9db9b84a908e27d3bd0357c75bdd2fc28c79e2de673f9ff54f23f2",
-      "size": 3526,
-      "lastModified": "2026-04-30T14:19:02-04:00"
+      "checksum": "9361be06ab16f02f5168e44c07cc3289979a94da2090d7851b0dfb8ddc52a3e3",
+      "size": 3903,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/ck-debug/references/investigation-methodology.md",
@@ -1593,12 +2246,6 @@
       "lastModified": "2026-05-07T11:45:16-04:00"
     },
     {
-      "path": "skills/ck-help/scripts/skills_data.yaml",
-      "checksum": "0c034e494021be182fb753bfa029e300556f89d442b9be41bcf32ad332bac9ce",
-      "size": 34386,
-      "lastModified": "2026-05-07T06:17:51-04:00"
-    },
-    {
       "path": "skills/ck-loop/SKILL.md",
       "checksum": "df55428da56e69e0c45a0e0b2b57c01381650bba2ce2db6579953760d42e486e",
       "size": 8015,
@@ -1636,9 +2283,9 @@
     },
     {
       "path": "skills/ck-plan/SKILL.md",
-      "checksum": "a5e1747842cf1834a08a914e510b13e39a7c0796f223787c5a266bafd7e7adce",
-      "size": 16103,
-      "lastModified": "2026-05-13T13:45:13+07:00"
+      "checksum": "9532e5bbb53baa708e0460fb091d1458054455e7328f5a0af1e1917ee9fd3455",
+      "size": 16644,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/ck-plan/references/archive-workflow.md",
@@ -1660,21 +2307,21 @@
     },
     {
       "path": "skills/ck-plan/references/plan-organization.md",
-      "checksum": "0ffcbb802e475b177164332932b82c01dcfd8be55596aeff21d6f3f6451a77ca",
-      "size": 6183,
-      "lastModified": "2026-04-13T21:03:31-04:00"
+      "checksum": "8d3df001cef1af99270d55c65d67a479f46454ce3c8b7647b4f4937ce55d2330",
+      "size": 6657,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/ck-plan/references/red-team-personas.md",
-      "checksum": "95f54592c1a238ab16569feed5e6036cad3b5dde85230527d1850540e43dda2d",
-      "size": 4376,
-      "lastModified": "2026-04-15T14:38:17-04:00"
+      "checksum": "4c73b8dd3aa6607a5796a02a2ff33fbd8698c659fc27f7ab100df8651c0a196c",
+      "size": 4650,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/ck-plan/references/red-team-workflow.md",
-      "checksum": "721d71dc4ec684e551769c0d8f59c7406f9cd3e9de0ee2ca4a4fb3226bb0c5ed",
-      "size": 4285,
-      "lastModified": "2026-04-28T20:32:34-04:00"
+      "checksum": "13d03a86e9037b4a0facff5f4a018a632e2d14c929ce75558c55fcdc56c5ac11",
+      "size": 4815,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/ck-plan/references/research-phase.md",
@@ -1764,96 +2411,6 @@
       "path": "skills/ck-security/references/stride-owasp-checklist.md",
       "checksum": "1ef185a3ea57a56ae0018deffd027486e55c2485adfbcbd3ad3bea7fa6afdbe7",
       "size": 5447,
-      "lastModified": "2026-04-02T18:07:38-04:00"
-    },
-    {
-      "path": "skills/code-review/SKILL.md",
-      "checksum": "f404c2671319a17909f5a11ca206362a4fa732125a2e690aed3ae577952efb3b",
-      "size": 9736,
-      "lastModified": "2026-05-07T11:45:16-04:00"
-    },
-    {
-      "path": "skills/code-review/references/adversarial-review.md",
-      "checksum": "a7a3d57c2fbe7d7560e77a94e1fed6c87b05fe8f1cb273d114a2cc957b35f28b",
-      "size": 8282,
-      "lastModified": "2026-04-02T18:07:38-04:00"
-    },
-    {
-      "path": "skills/code-review/references/checklist-workflow.md",
-      "checksum": "776df3432c71d6300e50e47a70d00e019c17b494e0c821e863dba311d4a42fbb",
-      "size": 2904,
-      "lastModified": "2026-04-02T18:07:38-04:00"
-    },
-    {
-      "path": "skills/code-review/references/checklists/api.md",
-      "checksum": "9223d090952195e14f1a3ea42d3df661a996070e207c38b90be420cc6d608180",
-      "size": 1896,
-      "lastModified": "2026-04-02T18:07:38-04:00"
-    },
-    {
-      "path": "skills/code-review/references/checklists/base.md",
-      "checksum": "69824641bbb9f30d81f21f09f190acb9c40af8c32e2c80511ea84a81a00d0083",
-      "size": 4149,
-      "lastModified": "2026-04-02T18:07:38-04:00"
-    },
-    {
-      "path": "skills/code-review/references/checklists/web-app.md",
-      "checksum": "cf6c14d4772e237b417284aea79a7c1e771e890e278a0786a519e205b8811418",
-      "size": 1919,
-      "lastModified": "2026-04-02T18:07:38-04:00"
-    },
-    {
-      "path": "skills/code-review/references/code-review-reception.md",
-      "checksum": "f8b818db1b47ecf7a43328783cd298f4efeacdf8d2bb04061281149a2256cada",
-      "size": 3214,
-      "lastModified": "2026-04-02T18:07:38-04:00"
-    },
-    {
-      "path": "skills/code-review/references/codebase-scan-workflow.md",
-      "checksum": "cd4a506b2fc5a09be51b43d34a202be95c4c599a556b3fee7e8cd84b776a10e5",
-      "size": 1269,
-      "lastModified": "2026-04-02T18:07:38-04:00"
-    },
-    {
-      "path": "skills/code-review/references/edge-case-scouting.md",
-      "checksum": "1b250390990038426e86fdab061ca073b8db2f87abaf8935e9d514972d504c3e",
-      "size": 3018,
-      "lastModified": "2026-04-02T18:07:38-04:00"
-    },
-    {
-      "path": "skills/code-review/references/input-mode-resolution.md",
-      "checksum": "dc1179c5185a69d7c1ac071ad954260402c393bfc1435daac002b6fa63e49555",
-      "size": 3588,
-      "lastModified": "2026-04-02T18:07:38-04:00"
-    },
-    {
-      "path": "skills/code-review/references/parallel-review-workflow.md",
-      "checksum": "1e86599a6c8797aab945f374e9af7a1843f25f4d407ac4884762b4f49cdb3557",
-      "size": 2247,
-      "lastModified": "2026-04-02T18:07:38-04:00"
-    },
-    {
-      "path": "skills/code-review/references/requesting-code-review.md",
-      "checksum": "c923d68f9e4effbe9d21ed5095cfc9246d24bfb9c2e114ef3cca26f7dbe4f35c",
-      "size": 3183,
-      "lastModified": "2026-04-02T18:07:38-04:00"
-    },
-    {
-      "path": "skills/code-review/references/spec-compliance-review.md",
-      "checksum": "f66d056e6204c23cec67bca5dfb92806d9e4b5fbc4a32be415059628981a7783",
-      "size": 1455,
-      "lastModified": "2026-04-02T18:07:38-04:00"
-    },
-    {
-      "path": "skills/code-review/references/task-management-reviews.md",
-      "checksum": "a0071129f4fcd23799fea11b277bab6d766563d986fa5590c960249d3966e8e0",
-      "size": 5268,
-      "lastModified": "2026-04-02T18:07:38-04:00"
-    },
-    {
-      "path": "skills/code-review/references/verification-before-completion.md",
-      "checksum": "ad75a3a6de283507d7827b103fb82497102dee4f77d004a3d81ea7a997b53b4f",
-      "size": 4338,
       "lastModified": "2026-04-02T18:07:38-04:00"
     },
     {
@@ -1966,39 +2523,39 @@
     },
     {
       "path": "skills/cook/README.md",
-      "checksum": "90bac5dc65b39df42724745a662897868b2cc4326fdc89b6d7b86b2ee0a1f9aa",
-      "size": 2576,
-      "lastModified": "2026-04-08T10:50:40-04:00"
+      "checksum": "25627695ecfb2b3d37e341ecc10d1bac405c7f3fe2f751168a0e44e43132e4ed",
+      "size": 2648,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/cook/SKILL.md",
-      "checksum": "bbbc1fe0600b126941de7143bdc3b54edacaaac7dca809ebe304487bc5ee0d9b",
-      "size": 11477,
-      "lastModified": "2026-05-13T13:45:13+07:00"
+      "checksum": "8ebb87a03162bf67781525cb3d747c57b60b082ba15134f371e138fdc8ba418f",
+      "size": 11834,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/cook/references/intent-detection.md",
-      "checksum": "c11730f7ae62e9a81c1cfac7fe528d70a57d98c243f8a807fe6bf37f5f52263c",
-      "size": 3633,
-      "lastModified": "2026-04-08T10:50:40-04:00"
+      "checksum": "13992d745375ba8310fc86a2789f19b9a2c28231822eabb456c298f9149b0f9b",
+      "size": 3717,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/cook/references/review-cycle.md",
-      "checksum": "9f8baa633cfa69b879fad0740b6e812085d0ab9d0a577a222f340d373639d976",
-      "size": 2872,
-      "lastModified": "2026-04-02T18:07:38-04:00"
+      "checksum": "5ee742d72b9c47acf7bc6e9862698080ed1bd7840651ba3d48346d87f3fb519b",
+      "size": 3538,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/cook/references/subagent-patterns.md",
-      "checksum": "f317a1006f64ffadaf41552e25e03b00c9bd8ec3c0f90842a1e6e00096629a80",
-      "size": 3605,
-      "lastModified": "2026-05-13T13:45:13+07:00"
+      "checksum": "3e89c8eabf93870e63748968b0bb074b32b7d513052c13c3f93bc7aec55142cb",
+      "size": 4794,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/cook/references/workflow-steps.md",
-      "checksum": "4abba547fa638b2dec0772f82cd1c4b246e99d1f7387a5dad8e670d5b5431a6e",
-      "size": 11505,
-      "lastModified": "2026-05-13T13:45:13+07:00"
+      "checksum": "589fc134edeec67cd70ec7ce8cea2964f57f5718bc8f0159f2eee75591b5cfed",
+      "size": 11995,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/copywriting/SKILL.md",
@@ -2104,9 +2661,9 @@
     },
     {
       "path": "skills/cti-expert/SKILL.md",
-      "checksum": "4c665f57d4802dae1e34b5e15428e8b2813e3ee54ead16fc8684f1b581c3ac4b",
-      "size": 49419,
-      "lastModified": "2026-05-07T11:45:16-04:00"
+      "checksum": "2a3fa754bf4d58d6e32ab25011c9babd3d8e9d9e2f83061b29c1ed45fca833ad",
+      "size": 49658,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/cti-expert/analysis/archive-explorer.md",
@@ -2356,9 +2913,9 @@
     },
     {
       "path": "skills/cti-expert/handbook/tool-cascade-reference.md",
-      "checksum": "9f4cf22f2b44801fd69362231c6b6eda20ffdb230e765fdab3e3f48b0d61ac4a",
-      "size": 14057,
-      "lastModified": "2026-04-23T08:35:03+07:00"
+      "checksum": "5ffca548d5e6a87298fbca27f8c138c68805cb52ea3f89acfcd8d92b6233354f",
+      "size": 14117,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/cti-expert/output/reports/citation-guide.md",
@@ -2554,15 +3111,15 @@
     },
     {
       "path": "skills/cti-expert/techniques/fx-document-leak-hunt.md",
-      "checksum": "990419f5140a601888cd74f58c7ed4df6a2a5ff86cac60eb818f64a7c6e6917d",
-      "size": 6826,
-      "lastModified": "2026-04-23T08:35:03+07:00"
+      "checksum": "cecf3ec7374e5e824032a061660431f0bf3c39e170ef48bdc08957714c81fc8b",
+      "size": 6847,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/cti-expert/techniques/fx-dork-sweep.md",
-      "checksum": "6c6794b06561eeacb718249b5bb77e09853b535e623498038bbdbc4dfd86686d",
-      "size": 7773,
-      "lastModified": "2026-04-23T08:35:03+07:00"
+      "checksum": "8310398ab21e4b13434959e67a28c208cb26df9aa53db2e6f100eddc5f9cb9b5",
+      "size": 7874,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/cti-expert/techniques/fx-email-header-analysis.md",
@@ -2662,9 +3219,9 @@
     },
     {
       "path": "skills/cti-expert/techniques/scam-check.md",
-      "checksum": "03910880f9cf0deb2b7cae0428647acb26e9226b5e5e0fb59493f8871388f016",
-      "size": 7241,
-      "lastModified": "2026-04-23T08:35:03+07:00"
+      "checksum": "fb8ba661bbd64f6cd3ce06ca9df6c63be87699fe3cbd653fb5f7499b57d708a5",
+      "size": 7356,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/cti-expert/techniques/secret-scanning.md",
@@ -2698,9 +3255,9 @@
     },
     {
       "path": "skills/cti-expert/techniques/web-collection-scrapling.md",
-      "checksum": "4c5bd407c721376fc8c0b1a049974c4dc8d0de843ba88968c7f091aa2509c0ab",
-      "size": 4995,
-      "lastModified": "2026-04-23T08:35:03+07:00"
+      "checksum": "e6f029a738eccae514a91863be21cca659c65954be2ad2577db8b76185d00ed5",
+      "size": 5027,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/cti-expert/techniques/web-dns-forensics.md",
@@ -3034,9 +3591,9 @@
     },
     {
       "path": "skills/design/SKILL.md",
-      "checksum": "88a9027ab4057349cb9b616a129e24b26b71f65382e8c0f6fcf81728e36dccdd",
-      "size": 11726,
-      "lastModified": "2026-05-07T11:45:16-04:00"
+      "checksum": "1c41406e1257b171c380fe3a0bda47881706c5e8fa81ab51a27fbfcab146d0e5",
+      "size": 11763,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/design/data/cip/deliverables.csv",
@@ -3190,9 +3747,9 @@
     },
     {
       "path": "skills/design/references/social-photos-design.md",
-      "checksum": "2e41671b3f89e36e513b6df281bec61c21734af92852e161355e2ea9fe23f8bd",
-      "size": 11268,
-      "lastModified": "2026-04-30T14:19:02-04:00"
+      "checksum": "a268f84003313e642554c91dd89a947aa454f9bffa7136ab45dbc130e5ce67e5",
+      "size": 11289,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/design/scripts/cip/core.py",
@@ -4402,9 +4959,9 @@
     },
     {
       "path": "skills/fix/SKILL.md",
-      "checksum": "e3bc3b343aaf1eefc3f98021c43beff7ca57e4369c663f972959af685087ed49",
-      "size": 14677,
-      "lastModified": "2026-05-13T13:45:13+07:00"
+      "checksum": "4a44da3e47655c7ae4e746211002e05ca9cb9b964215a354078f3b09af81ccfc",
+      "size": 15060,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/fix/references/complexity-assessment.md",
@@ -4432,15 +4989,15 @@
     },
     {
       "path": "skills/fix/references/prevention-gate.md",
-      "checksum": "b15763e62e28439cb74d8fa7d9303ec6c5159a7a2edcef408b8ad1bd99bfd379",
-      "size": 3191,
-      "lastModified": "2026-04-02T18:07:38-04:00"
+      "checksum": "5ab219c4860a15574a1100397361e198766b0725022f2ff0afcfdce398c8e569",
+      "size": 3327,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/fix/references/review-cycle.md",
-      "checksum": "10628e4b45a22efac4705794bfdfcf11a24e2a9debc2c810919a445fcb682308",
-      "size": 2343,
-      "lastModified": "2026-04-02T18:07:38-04:00"
+      "checksum": "e3179a130c5b3b1f0e1a4ff75b3c1af3aafbbb1a87f753e739b809d1e89c95ea",
+      "size": 2797,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/fix/references/skill-activation-matrix.md",
@@ -4462,9 +5019,9 @@
     },
     {
       "path": "skills/fix/references/workflow-deep.md",
-      "checksum": "9dfb35d8ea8c93bbd28c8392c430bc54b25d0da02f52f70992c6b425d9375834",
-      "size": 7222,
-      "lastModified": "2026-05-13T13:45:13+07:00"
+      "checksum": "a8f9f41b4323be960298264035e776ed62518ad3104f18f829a592fdbc35528f",
+      "size": 7243,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/fix/references/workflow-logs.md",
@@ -4480,9 +5037,9 @@
     },
     {
       "path": "skills/fix/references/workflow-standard.md",
-      "checksum": "b38ed6df75451107628a91e06dd960f106f15374cb7ddbd50934830a0fb178f4",
-      "size": 5445,
-      "lastModified": "2026-05-13T13:45:13+07:00"
+      "checksum": "ea1a014113df397719e82cb918d75ff1115889bb2a82db40a681d3e9533541ee",
+      "size": 5466,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/fix/references/workflow-test.md",
@@ -4498,9 +5055,9 @@
     },
     {
       "path": "skills/fix/references/workflow-ui.md",
-      "checksum": "8a9a45096aad1698b5d9c7cf74587183959f73a1a0e80d44683eae826a466e9d",
-      "size": 2523,
-      "lastModified": "2026-04-30T14:19:02-04:00"
+      "checksum": "fa5bffbbed70361086255da1f9ac9710bde29d2d7a022951b21076fe748f1d7e",
+      "size": 2544,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/frontend-design/SKILL.md",
@@ -4870,9 +5427,9 @@
     },
     {
       "path": "skills/google-adk-python/references/tools-and-mcp-integration.md",
-      "checksum": "faa533d7a69f81df4233c7d1e562d8151197bfc346f5642f4de81170a2ba3d91",
-      "size": 3963,
-      "lastModified": "2026-04-02T18:07:38-04:00"
+      "checksum": "72d35fcf8f7c42253ea9c0ecc8d96fd6268a45f3a24c237cee3f0ea61c516219",
+      "size": 4162,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/install.ps1",
@@ -5116,9 +5673,9 @@
     },
     {
       "path": "skills/mcp-builder/reference/node_mcp_server.md",
-      "checksum": "40b03e9c07463d5db524c1f5140ef60713fdd911c2f4386f89e0b94d43b8764e",
-      "size": 26709,
-      "lastModified": "2026-04-02T18:07:38-04:00"
+      "checksum": "ebd68f827982cf4ff28740f7e86e21d864ed0252d33d1978ccecc30ec6cdc691",
+      "size": 27071,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/mcp-builder/reference/python_mcp_server.md",
@@ -6190,9 +6747,9 @@
     },
     {
       "path": "skills/remotion/SKILL.md",
-      "checksum": "135239fe804dd52a1a28dc0941a3e9d4697294febb405c22529c4107ca2c7225",
-      "size": 3718,
-      "lastModified": "2026-05-07T11:45:16-04:00"
+      "checksum": "1aee088e6e971d37b2a0c19cbef083ddf9641b295ea681442f4c76191b0a26d7",
+      "size": 3835,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/remotion/rules/3d.md",
@@ -6265,6 +6822,12 @@
       "checksum": "96abde72e0bcb88cdc5871b80b5d6eb0c6aedf0ea9611e6c5157cb0ee980ba99",
       "size": 3698,
       "lastModified": "2026-04-02T18:07:38-04:00"
+    },
+    {
+      "path": "skills/remotion/rules/effects.md",
+      "checksum": "a68be501da6cf74cdddfbe2e226e14201108ae9887fa64714f5a170f80f89acc",
+      "size": 1027,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/remotion/rules/extract-frames.md",
@@ -6382,9 +6945,9 @@
     },
     {
       "path": "skills/repomix/SKILL.md",
-      "checksum": "7e3fa1770a0ee4fbcf2e9275fb3005bd5373102e53ee739978da56fd896609df",
-      "size": 6578,
-      "lastModified": "2026-05-07T11:45:16-04:00"
+      "checksum": "4588e81dfa2c580657638fe5295e28067fb854f75360efb45ba5a36987d8c577",
+      "size": 7005,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/repomix/references/configuration.md",
@@ -7330,9 +7893,9 @@
     },
     {
       "path": "skills/test/SKILL.md",
-      "checksum": "a0380aa3923cacd6fee936778ac98f48249c5700494b77cac8c98ff3a9e7bf89",
-      "size": 5207,
-      "lastModified": "2026-05-07T11:45:16-04:00"
+      "checksum": "d7d14346d94acf6946f913c404d8f6104226cad764075f6e374c81db759ea473",
+      "size": 5347,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/test/references/report-format.md",
@@ -7348,9 +7911,9 @@
     },
     {
       "path": "skills/test/references/ui-testing-workflow.md",
-      "checksum": "4f0ff5dc88909df19249266ba3b537b61bbf843b6dcfad78437b2592f87a5852",
-      "size": 1789,
-      "lastModified": "2026-04-30T14:19:02-04:00"
+      "checksum": "da8545a2d3107d70cf9da0f68a122861670d14c44d59447a6dec6c42f0773f0e",
+      "size": 2341,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/threejs/SKILL.md",
@@ -8302,9 +8865,21 @@
     },
     {
       "path": "skills/watzup/SKILL.md",
-      "checksum": "eaca4ceb6525a128d4cbca84ad2710a394bb76ef80e427dc18d73ecd46116ba7",
-      "size": 754,
-      "lastModified": "2026-05-07T11:45:16-04:00"
+      "checksum": "16088d9b945931e21a258b102811a43b210221a64a4d86bbd5c36552cd56494b",
+      "size": 2355,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "skills/watzup/scripts/watzup-scan.cjs",
+      "checksum": "5f5440c4e09641a5b0f4a2c00cf82eea2596d2e7c6c066aef55c27db6c0251ac",
+      "size": 18874,
+      "lastModified": "2026-05-25T18:46:12+07:00"
+    },
+    {
+      "path": "skills/watzup/scripts/watzup-scan.test.cjs",
+      "checksum": "b9b52c46e3bf97c1500b9264a7e9deef76ae55106dafe0329fe4ab85e25363a3",
+      "size": 8719,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/web-design-guidelines/SKILL.md",
@@ -8314,9 +8889,9 @@
     },
     {
       "path": "skills/web-frameworks/SKILL.md",
-      "checksum": "b06031decb9d80527d8e549c621daf880c5adbb19cdfc1085527d031a438ea4e",
-      "size": 9256,
-      "lastModified": "2026-05-07T11:45:16-04:00"
+      "checksum": "e9c46d09c40c3b1733bc8dd253852f8da224874699fd4b34cc5300322c238c1a",
+      "size": 9467,
+      "lastModified": "2026-05-25T18:46:12+07:00"
     },
     {
       "path": "skills/web-frameworks/references/nextjs-app-router.md",
@@ -8653,12 +9228,6 @@
       "checksum": "979502d648dad5903d9c366c53037d7ab247137fa5f9f8e6d559aaad0e8cf8dc",
       "size": 209,
       "lastModified": "2025-11-05T11:04:50+07:00"
-    },
-    {
-      "path": "CLAUDE.md",
-      "checksum": "9bdabcb1e272c51319dca31bec358330c302c6c654310faa730a1dfcf118c5c9",
-      "size": 4246,
-      "lastModified": "2026-05-02T21:24:08-04:00"
     }
   ]
 }
