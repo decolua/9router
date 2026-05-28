@@ -118,7 +118,7 @@ export {
 } from "./repos/requestDetailsRepo.js";
 
 // Export/import full DB
-export async function exportDb() {
+export async function exportDb({ includeUsageAnalytics = false } = {}) {
   const db = await getAdapter();
   const { exportSettings } = await import("./repos/settingsRepo.js");
 
@@ -189,10 +189,18 @@ export async function exportDb() {
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'pricing'`))
     out.pricing[r.key] = parseJson(r.value);
 
+  if (includeUsageAnalytics) {
+    out.usageAnalytics = {
+      usageHistory: db.all(`SELECT * FROM usageHistory ORDER BY id ASC`),
+      usageDaily: db.all(`SELECT * FROM usageDaily ORDER BY dateKey ASC`),
+      requestDetails: db.all(`SELECT * FROM requestDetails ORDER BY timestamp ASC`),
+    };
+  }
+
   return out;
 }
 
-export async function importDb(payload) {
+export async function importDb(payload, { restoreUsageAnalytics = false } = {}) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw new Error("Invalid database payload");
   }
@@ -326,9 +334,56 @@ export async function importDb(payload) {
         [provider, stringifyJson(models || {})],
       );
     }
+
+    if (restoreUsageAnalytics && payload.usageAnalytics) {
+      db.run(`DELETE FROM usageHistory`);
+      db.run(`DELETE FROM usageDaily`);
+      db.run(`DELETE FROM requestDetails`);
+
+      for (const row of payload.usageAnalytics.usageHistory || []) {
+        db.run(
+          `INSERT OR REPLACE INTO usageHistory(id, timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            row.id,
+            row.timestamp,
+            row.provider || null,
+            row.model || null,
+            row.connectionId || null,
+            row.apiKey || null,
+            row.endpoint || null,
+            row.promptTokens || 0,
+            row.completionTokens || 0,
+            row.cost || 0,
+            row.status || null,
+            row.tokens || null,
+            row.meta || null,
+          ],
+        );
+      }
+      for (const row of payload.usageAnalytics.usageDaily || []) {
+        db.run(`INSERT OR REPLACE INTO usageDaily(dateKey, data) VALUES(?, ?)`, [
+          row.dateKey,
+          row.data,
+        ]);
+      }
+      for (const row of payload.usageAnalytics.requestDetails || []) {
+        db.run(
+          `INSERT OR REPLACE INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?)`,
+          [
+            row.id,
+            row.timestamp,
+            row.provider || null,
+            row.model || null,
+            row.connectionId || null,
+            row.status || null,
+            row.data,
+          ],
+        );
+      }
+    }
   });
 
-  return await exportDb();
+  return await exportDb({ includeUsageAnalytics: restoreUsageAnalytics });
 }
 
 // Eager init helper (optional)

@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 import { exportDb, getSettings, importDb } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 
-export async function GET() {
+export async function GET(request) {
   try {
-    const payload = await exportDb();
+    const includeUsageAnalytics =
+      new URL(request.url).searchParams.get("includeUsageAnalytics") === "true";
+    const payload = await exportDb({ includeUsageAnalytics });
     return NextResponse.json(payload);
   } catch (error) {
     console.log("Error exporting database:", error);
@@ -17,8 +19,8 @@ export async function GET() {
 
 export async function POST(request) {
   try {
-    const payload = await request.json();
-    await importDb(payload);
+    const { restoreUsageAnalytics = false, ...payload } = await request.json();
+    await importDb(payload, { restoreUsageAnalytics });
 
     // Ensure proxy settings take effect immediately after a DB import.
     try {

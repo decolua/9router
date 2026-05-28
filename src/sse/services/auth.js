@@ -513,9 +513,9 @@ export async function requireValidApiKey(request, settings = null) {
       keyInfo: validation.apiKey,
       limitState,
       settings: effectiveSettings,
-      status: 429,
+      status: 403, // Return 403 Forbidden for quota/budget limits to prevent client retry loops
       message: buildLimitExceededMessage(limitState),
-      code: "api_key_limit_exceeded",
+      code: "insufficient_quota",
     };
   }
 

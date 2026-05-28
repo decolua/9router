@@ -1,3 +1,5 @@
+import { detectFormatByEndpoint, FORMATS } from "open-sse/translator/formats.js";
+
 const LOOPBACK_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i;
 
 function parseAllowedOrigins() {
@@ -43,7 +45,48 @@ export function createCorsPreflightResponse(request) {
   return new Response(null, { headers: buildCorsHeaders(request) });
 }
 
-export function withCors(response, request, extraHeaders = {}) {
+export async function withCors(response, request, extraHeaders = {}) {
+  const url = request?.url ? new URL(request.url) : null;
+  const sourceFormat = url ? detectFormatByEndpoint(url.pathname, null) : null;
+
+  if (response.status >= 400 && sourceFormat === FORMATS.CLAUDE) {
+    try {
+      const bodyText = await response.clone().text();
+      const json = JSON.parse(bodyText);
+      if (json && (json.error || json.message)) {
+        const message = json.error?.message || json.message || "An error occurred";
+        let anthropicErrorType = "invalid_request_error";
+        if (response.status === 401) anthropicErrorType = "authentication_error";
+        else if (response.status === 403) anthropicErrorType = "permission_error";
+        else if (response.status === 429) anthropicErrorType = "rate_limit_error";
+        else if (response.status >= 500) anthropicErrorType = "api_error";
+
+        const formattedBody = JSON.stringify({
+          type: "error",
+          error: {
+            type: anthropicErrorType,
+            message: message,
+          },
+        });
+
+        const headers = new Headers(response.headers);
+        const corsHeaders = buildCorsHeaders(request, extraHeaders);
+        for (const [key, value] of Object.entries(corsHeaders)) {
+          headers.set(key, value);
+        }
+        headers.set("Content-Type", "application/json");
+
+        return new Response(formattedBody, {
+          status: response.status,
+          statusText: response.statusText,
+          headers,
+        });
+      }
+    } catch (e) {
+      // Fall through to default response wrapping if parsing failed
+    }
+  }
+
   const headers = new Headers(response.headers);
   const corsHeaders = buildCorsHeaders(request, extraHeaders);
   for (const [key, value] of Object.entries(corsHeaders)) {
