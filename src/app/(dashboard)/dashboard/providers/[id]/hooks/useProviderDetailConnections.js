@@ -636,6 +636,7 @@ export function useProviderDetailConnections({
           return updateProviderConnection(connectionId, { priority: nextIndex });
         }),
       );
+      await fetchConnections();
     } catch (error) {
       console.log("Error auto updating priorities:", error);
       await fetchConnections();
