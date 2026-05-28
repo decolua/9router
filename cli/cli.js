@@ -100,6 +100,9 @@ for (let i = 0; i < args.length; i++) {
   } else if (args[i] === "--tray" || args[i] === "-t") {
     trayMode = true;
     process.env.TRAY_MODE = "1";
+  } else if (args[i] === "doctor") {
+    runDoctor();
+    process.exit(process.exitCode || 0);
   } else if (args[i] === "--help" || args[i] === "-h") {
     console.log(`
 Usage: ${APP_NAME} [options]
@@ -110,6 +113,7 @@ Options:
   -n, --no-browser    Don't open browser automatically
   -l, --log           Show server logs (default: hidden)
   -t, --tray          Run in system tray mode (background)
+  doctor              Run local diagnostics without starting the server
   --skip-update       Skip auto-update check
   -h, --help          Show this help message
   -v, --version       Show version
@@ -129,6 +133,80 @@ if (skipUpdate && !trayMode && !process.stdin.isTTY) {
 
 // Always use Node.js runtime with absolute path
 const RUNTIME = process.execPath;
+
+function checkDoctorItem(label, check, hint) {
+  try {
+    const result = check();
+    if (result === false) {
+      console.log(`❌ ${label}${hint ? ` — ${hint}` : ""}`);
+      return false;
+    }
+    console.log(`✅ ${label}${typeof result === "string" ? ` — ${result}` : ""}`);
+    return true;
+  } catch (error) {
+    console.log(`❌ ${label} — ${error.message}${hint ? ` (${hint})` : ""}`);
+    return false;
+  }
+}
+
+function commandExists(command) {
+  try {
+    execSync(process.platform === "win32" ? `where ${command}` : `command -v ${command}`, {
+      stdio: "ignore",
+      windowsHide: true,
+      timeout: 3000,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function dockerDaemonAvailable() {
+  try {
+    execSync("docker info", {
+      stdio: "ignore",
+      windowsHide: true,
+      timeout: 5000,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function runDoctor() {
+  console.log(`\n${APP_NAME} doctor v${pkg.version}\n`);
+  const dataDir = getAppDataDir();
+  const doctorServerPath = path.join(__dirname, "app", "server.js");
+  const checks = [
+    checkDoctorItem("Node.js runtime", () => process.version),
+    checkDoctorItem("Standalone server bundle", () => fs.existsSync(doctorServerPath), "run npm run build from the cli package"),
+    checkDoctorItem("Data directory", () => {
+      if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+      return dataDir;
+    }),
+    checkDoctorItem("SQLite runtime", () => {
+      ensureSqliteRuntime({ silent: true });
+      return true;
+    }),
+    checkDoctorItem("Tray runtime", () => {
+      ensureTrayRuntime({ silent: true });
+      return process.platform === "win32" ? "skipped on Windows" : true;
+    }),
+    checkDoctorItem("Docker CLI", () => commandExists("docker"), "optional; needed only for Docker smoke tests"),
+    checkDoctorItem("Docker daemon", () => {
+      if (!commandExists("docker")) return "skipped; Docker CLI not installed";
+      return dockerDaemonAvailable()
+        ? true
+        : "skipped; start Docker Desktop to run smoke tests";
+    }),
+  ];
+
+  const failed = checks.filter((ok) => !ok).length;
+  console.log(failed ? `\n${failed} check(s) need attention.\n` : "\nAll required checks passed.\n");
+  process.exitCode = failed > 0 ? 1 : 0;
+}
 
 // Compare semver versions: returns 1 if a > b, -1 if a < b, 0 if equal
 function compareVersions(a, b) {

@@ -6,6 +6,7 @@ const CHECKPOINT_INTERVAL_MS = 60 * 1000;
 
 export function createBetterSqliteAdapter(filePath) {
   const db = new Database(filePath);
+  db.timeout(10000); // Configure native busy timeout (10 seconds)
   db.exec(PRAGMA_SQL);
   // Schema is created/synced by migrate.js after adapter init
 
@@ -20,10 +21,10 @@ export function createBetterSqliteAdapter(filePath) {
     return stmt;
   }
 
-  // Truncate WAL periodically so file stays small for backup/copy
+  // Truncate WAL periodically via PASSIVE checkpoint to avoid exclusive locks on Windows
   const checkpointTimer = setInterval(() => {
     try {
-      db.pragma("wal_checkpoint(TRUNCATE)");
+      db.pragma("wal_checkpoint(PASSIVE)");
     } catch {}
   }, CHECKPOINT_INTERVAL_MS);
   if (typeof checkpointTimer.unref === "function") checkpointTimer.unref();
@@ -67,7 +68,26 @@ export function createBetterSqliteAdapter(filePath) {
       return db.exec(sql);
     },
     transaction(fn) {
-      return db.transaction(fn)();
+      // Robust retry mechanism for synchronous transactions on SQLITE_BUSY
+      const maxRetries = 5;
+      let delay = 50;
+      for (let i = 0; i < maxRetries; i++) {
+        try {
+          return db.transaction(fn)();
+        } catch (err) {
+          const isBusy =
+            err.code === "SQLITE_BUSY" ||
+            (err.message && err.message.includes("database is locked"));
+          if (isBusy && i < maxRetries - 1) {
+            const sleepMs = delay + Math.random() * 50;
+            const start = Date.now();
+            while (Date.now() - start < sleepMs) {} // Synchronous sleep block
+            delay *= 2; // Exponential backoff
+            continue;
+          }
+          throw err;
+        }
+      }
     },
     checkpoint() {
       try {

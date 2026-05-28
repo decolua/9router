@@ -17,7 +17,7 @@ Core capabilities:
 - Local persistence for providers, keys, aliases, combos, settings, pricing
 - Usage/cost tracking and redacted request logging
 - Optional cloud sync for multi-device/state sync
-- Deterministic Docker/source builds via lockfile-based installs and Dependabot coverage
+- Deterministic Docker/source builds via lockfile-based installs, Dependabot coverage, and runtime smoke checks
 
 Primary runtime model:
 
@@ -405,7 +405,7 @@ flowchart LR
 
 ### Route and API Modules
 
-- `src/app/api/v1/*`, `src/app/api/v1beta/*`: compatibility APIs
+- `src/app/api/v1/*`, `src/app/api/v1beta/*`: compatibility APIs; selected high-traffic chat/Gemini routes use shared CORS allowlist helpers for public deployment hardening
 - `src/app/api/providers*`: provider CRUD, validation, testing
 - `src/app/api/provider-nodes*`: custom compatible node management
 - `src/app/api/oauth/*`: OAuth/device-code flows
@@ -532,6 +532,7 @@ Environment variables actively used by code:
 - Logging: `ENABLE_REQUEST_LOGS`
 - Sync/cloud URLing: `NEXT_PUBLIC_BASE_URL`, `NEXT_PUBLIC_CLOUD_URL`
 - Outbound proxy: `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` and lowercase variants
+- Public API CORS allowlist: `CORS_ALLOWED_ORIGINS` or `ALLOWED_ORIGINS` as comma-separated origins; production without allowlist only permits loopback browser origins on routes using the shared helper
 - Platform/runtime helpers (not app-specific config): `APPDATA`, `NODE_ENV`, `PORT`, `HOSTNAME`
 
 ## Release and Dependency Hygiene

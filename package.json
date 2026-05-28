@@ -11,6 +11,7 @@
     "build:bun": "bun --bun next build --webpack",
     "start:bun": "bun ./.next/standalone/server.js",
     "lint": "eslint .",
+    "smoke:docker": "node scripts/docker-runtime-smoke.cjs",
     "format": "prettier . --write"
   },
   "dependencies": {
