@@ -10,10 +10,16 @@ import {
 import { testSingleConnection } from "../[id]/test/testUtils.js";
 
 function getAuthGroup(providerId, connection = null) {
+  if (OAUTH_PROVIDERS[providerId]) {
+    return "oauth";
+  }
+  if (FREE_PROVIDERS[providerId]) {
+    return "free";
+  }
+
   // Prioritize authType from connection if available
   if (connection?.authType) {
-    if (connection.authType === "oauth") {
-      // Check if it's a free provider
+    if (connection.authType === "oauth" || connection.authType === "access_token") {
       if (FREE_PROVIDERS[providerId]) return "free";
       return "oauth";
     }
@@ -21,8 +27,6 @@ function getAuthGroup(providerId, connection = null) {
   }
   
   // Fallback to constants
-  if (FREE_PROVIDERS[providerId]) return "free";
-  if (OAUTH_PROVIDERS[providerId]) return "oauth";
   if (APIKEY_PROVIDERS[providerId]) return "apikey";
   if (
     typeof providerId === "string" &&

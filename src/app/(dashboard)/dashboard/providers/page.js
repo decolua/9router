@@ -162,8 +162,15 @@ export default function ProvidersPage() {
   }, []);
 
   const getProviderStats = (providerId, authType) => {
+    let effectiveAuthType = authType;
+    if (providerId === "kimi-free" || providerId === "deepseek-free") {
+      effectiveAuthType = "apikey";
+    } else if (providerId === "codex" && authType === "oauth") {
+      effectiveAuthType = "access_token";
+    }
+
     const providerConnections = connections.filter(
-      (c) => c.provider === providerId && c.authType === authType,
+      (c) => c.provider === providerId && c.authType === effectiveAuthType,
     );
 
     const getEffectiveStatus = (conn) => {
@@ -206,12 +213,19 @@ export default function ProvidersPage() {
 
   // Toggle all connections for a provider on/off
   const handleToggleProvider = async (providerId, authType, newActive) => {
+    let effectiveAuthType = authType;
+    if (providerId === "kimi-free" || providerId === "deepseek-free") {
+      effectiveAuthType = "apikey";
+    } else if (providerId === "codex" && authType === "oauth") {
+      effectiveAuthType = "access_token";
+    }
+
     const providerConns = connections.filter(
-      (c) => c.provider === providerId && c.authType === authType,
+      (c) => c.provider === providerId && c.authType === effectiveAuthType,
     );
     setConnections((prev) =>
       prev.map((c) =>
-        c.provider === providerId && c.authType === authType
+        c.provider === providerId && c.authType === effectiveAuthType
           ? { ...c, isActive: newActive }
           : c,
       ),
