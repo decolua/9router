@@ -72,3 +72,10 @@ ecosystem.config.*
 scripts/agSniffer/*
 gitbooks/*
 gitbook/README.md
+
+# local cruft
+*.log
+9router_models.json
+docker-compose.yml
+t.name).join('
+
