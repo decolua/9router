@@ -1,9 +1,91 @@
 /**
  * Shared combo (model combo) handling with fallback support
+ * Auto-filters vision-capable models when request contains images.
  */
 
 import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { unavailableResponse } from "../utils/error.js";
+
+/**
+ * Set of model prefixes that support vision (image-to-text).
+ * Used by combo to auto-filter non-vision models when request has images.
+ */
+const VISION_MODEL_PREFIXES = new Set([
+  "gemini/",
+  "gc/",
+  "gh/gpt-4o",
+  "gh/gpt-4.1",
+  "gh/gpt-5",
+  "openrouter/",
+  "ag/",
+  "xai/grok",
+  "anthropic/claude",
+  "openai/gpt",
+  "mistral/",
+  "groq/llama",
+  "oc/",
+]);
+
+/**
+ * Check if a model string supports vision based on known prefixes.
+ */
+function isVisionModel(modelStr) {
+  for (const prefix of VISION_MODEL_PREFIXES) {
+    if (modelStr.startsWith(prefix)) return true;
+  }
+  return false;
+}
+
+/**
+ * Check if request body contains image content (vision request).
+ * Supports OpenAI messages[] and Anthropic input[] formats.
+ */
+function hasImageContent(body) {
+  const messages = body?.messages || body?.input || [];
+
+  for (const msg of messages) {
+    const content = msg?.content;
+    if (!content) continue;
+
+    // Array format: [{ type: "image_url" | "image", ... }]
+    if (Array.isArray(content)) {
+      for (const part of content) {
+        if (part?.type === "image_url" || part?.type === "image" || part?.type === "image_base64") {
+          return true;
+        }
+      }
+    }
+  }
+
+  // Anthropic Messages API uses source.type === "image" inside content blocks
+  for (const msg of messages) {
+    const content = msg?.content;
+    if (Array.isArray(content)) {
+      for (const part of content) {
+        if (part?.source?.type === "image" || part?.source?.type === "image_base64") {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Filter combo models to only those supporting vision when request has images.
+ */
+function filterModelsForRequest(models, body) {
+  if (!models || models.length === 0) return models;
+  if (!hasImageContent(body)) return models;
+
+  const filtered = models.filter((m) => isVisionModel(m));
+  if (filtered.length === 0) {
+    // Fallback: if no vision models found in combo, return all (let it fail naturally)
+    return models;
+  }
+  return filtered;
+}
 
 /**
  * Track rotation state per combo (for round-robin strategy)
@@ -95,6 +177,7 @@ export function getComboModelsFromData(modelStr, combosData) {
 
 /**
  * Handle combo chat with fallback
+ * Auto-filters vision models when request contains images.
  * @param {Object} options
  * @param {Object} options.body - Request body
  * @param {string[]} options.models - Array of model strings to try
@@ -106,8 +189,18 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @returns {Promise<Response>}
  */
 export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1 }) {
+  // Auto-filter: if request has images, use only vision-capable models
+  const effectiveModels = filterModelsForRequest(models, body);
+  const hasVision = hasImageContent(body);
+  if (hasVision) {
+    const skipped = models.length - effectiveModels.length;
+    if (skipped > 0) {
+      log.info("COMBO", `Vision request detected, skipped ${skipped} non-vision models`);
+    }
+  }
+
   // Apply rotation strategy if enabled
-  const rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
+  const rotatedModels = getRotatedModels(effectiveModels, comboName, comboStrategy, comboStickyLimit);
   
   let lastError = null;
   let earliestRetryAfter = null;
