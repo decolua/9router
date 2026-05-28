@@ -1,4 +1,4 @@
-import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
+import { getProviderConnectionById, updateProviderConnection, getSettings } from "@/lib/localDb";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { testProxyUrl } from "@/lib/network/proxyTest";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
@@ -615,7 +615,8 @@ export async function testSingleConnection(id) {
   const effectiveProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
 
   if (effectiveProxy.connectionProxyEnabled && effectiveProxy.connectionProxyUrl && !effectiveProxy.vercelRelayUrl) {
-    const proxyResult = await testProxyUrl({ proxyUrl: effectiveProxy.connectionProxyUrl });
+    const settings = await getSettings();
+    const proxyResult = await testProxyUrl({ proxyUrl: effectiveProxy.connectionProxyUrl, testUrl: settings.proxyTestUrl });
     if (!proxyResult.ok) {
       const proxyError = proxyResult.error || `Proxy test failed with status ${proxyResult.status}`;
       await updateProviderConnection(id, {
