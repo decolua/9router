@@ -72,3 +72,4 @@ ecosystem.config.*
 scripts/agSniffer/*
 gitbooks/*
 gitbook/README.md
+EVIDENCE_KEY_GROUPS.md
