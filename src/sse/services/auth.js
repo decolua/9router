@@ -285,22 +285,40 @@ export async function markAccountUnavailable(
 
   const lowerError =
     typeof errorText === "string" ? errorText.toLowerCase() : "";
+
+  const isInvalidToken =
+    status === 401 ||
+    lowerError.includes("token_revoked") ||
+    lowerError.includes("invalidated oauth token") ||
+    lowerError.includes("invalid oauth token") ||
+    lowerError.includes("token revoked") ||
+    lowerError.includes("invalid token") ||
+    lowerError.includes("invalid api key") ||
+    lowerError.includes("unauthorized") ||
+    lowerError.includes("unauthenticated");
+
   const isReachLimit =
     lowerError.includes("reach limit") ||
     lowerError.includes("quota exceeded") ||
     lowerError.includes("insufficient_quota");
 
-  if (isReachLimit) {
+  if (isReachLimit || isInvalidToken) {
     const reason =
-      typeof errorText === "string" ? errorText.slice(0, 100) : "Quota reached";
+      typeof errorText === "string"
+        ? errorText.slice(0, 100)
+        : isInvalidToken
+          ? "Invalid/Revoked Token"
+          : "Quota reached";
     log.warn(
       "AUTH",
-      `[Auto-Disable] Disabling connection ${connName} permanently due to quota limit reached: ${reason}`,
+      `[Auto-Disable] Disabling connection ${connName} permanently due to ${isInvalidToken ? "invalid/revoked token" : "quota limit reached"}: ${reason}`,
     );
     await updateProviderConnection(connectionId, {
       isActive: false, // Disable account permanently in DB
       testStatus: "unavailable",
-      lastError: `Quota reached: ${reason}`,
+      lastError: isInvalidToken
+        ? `Invalid Token: ${reason}`
+        : `Quota reached: ${reason}`,
       errorCode: status,
       lastErrorAt: new Date().toISOString(),
       backoffLevel: 0,
