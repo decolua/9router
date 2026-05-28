@@ -300,7 +300,10 @@ export async function markAccountUnavailable(
   const isReachLimit =
     lowerError.includes("reach limit") ||
     lowerError.includes("quota exceeded") ||
-    lowerError.includes("insufficient_quota");
+    lowerError.includes("insufficient_quota") ||
+    lowerError.includes("usage limit") ||
+    lowerError.includes("limit has been reached") ||
+    lowerError.includes("limit reached");
 
   if (isReachLimit || isInvalidToken) {
     const reason =
