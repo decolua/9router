@@ -142,7 +142,28 @@ export default function ProviderDetailModals({
         onClose={onCloseConfirm}
         onConfirm={confirmState?.onConfirm}
         title={confirmState?.title || "Confirm"}
-        message={confirmState?.message}
+        message={
+          confirmState?.items?.length ? (
+            <span className="flex flex-col gap-3">
+              <span>{confirmState.message}</span>
+              <span className="rounded-lg border border-border bg-surface-2 p-3 text-xs text-text-main">
+                {confirmState.items.map((item) => (
+                  <span key={item} className="block truncate">
+                    {item}
+                  </span>
+                ))}
+                {confirmState.moreCount > 0 && (
+                  <span className="mt-1 block text-text-muted">
+                    +{confirmState.moreCount} more
+                  </span>
+                )}
+              </span>
+            </span>
+          ) : (
+            confirmState?.message
+          )
+        }
+        confirmText={confirmState?.confirmText || "Confirm"}
         variant="danger"
       />
     </>
