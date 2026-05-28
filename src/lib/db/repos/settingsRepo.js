@@ -34,8 +34,10 @@ const DEFAULT_SETTINGS = {
   mitmRouterBaseUrl: DEFAULT_MITM_ROUTER_BASE,
   dnsToolEnabled: {},
   rtkEnabled: true,
+  prefixCacheEnabled: true,
   cavemanEnabled: false,
   cavemanLevel: "full",
+  compactPoliciesEnabled: false,
 };
 
 async function readRaw() {

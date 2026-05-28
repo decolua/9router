@@ -260,7 +260,7 @@ export async function saveRequestUsage(entry) {
           entry.timestamp, entry.provider || null, entry.model || null,
           entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
           promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
-          stringifyJson(tokens), stringifyJson({}),
+          stringifyJson(tokens), stringifyJson(entry.meta || {}),
         ]
       );
 
@@ -284,6 +284,141 @@ export async function saveRequestUsage(entry) {
   } catch (e) {
     console.error("Failed to save usage stats:", e);
   }
+}
+
+// Per-day savings time-series. Buckets size depends on period (hourly for today/24h, daily otherwise).
+export async function getOptimizationSeries(period = "7d") {
+  const db = await getAdapter();
+  const now = Date.now();
+
+  let start;
+  let bucketMs;
+  let buckets;
+  let labelFn;
+  if (period === "today") {
+    const s = new Date(); s.setHours(0, 0, 0, 0);
+    start = s.getTime();
+    bucketMs = 60 * 60 * 1000; // hour
+    buckets = 24;
+    labelFn = (t) => new Date(t).toLocaleTimeString("en-US", { hour: "2-digit", hour12: false });
+  } else if (period === "24h") {
+    start = now - 24 * 60 * 60 * 1000;
+    bucketMs = 60 * 60 * 1000;
+    buckets = 24;
+    labelFn = (t) => new Date(t).toLocaleTimeString("en-US", { hour: "2-digit", hour12: false });
+  } else {
+    const days = period === "7d" ? 7 : period === "30d" ? 30 : period === "60d" ? 60 : 7;
+    start = new Date(); start.setHours(0, 0, 0, 0); start = start.getTime() - (days - 1) * 86400000;
+    bucketMs = 86400000;
+    buckets = days;
+    labelFn = (t) => new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  }
+
+  const rows = db.all(
+    `SELECT timestamp, tokens, meta FROM usageHistory WHERE timestamp >= ?`,
+    [new Date(start).toISOString()]
+  );
+
+  const series = Array.from({ length: buckets }, (_, i) => ({
+    label: labelFn(start + i * bucketMs),
+    ts: start + i * bucketMs,
+    cacheReadTokens: 0,
+    rtkBytesSaved: 0,
+    requests: 0,
+  }));
+
+  for (const r of rows) {
+    const t = new Date(r.timestamp).getTime();
+    const idx = Math.floor((t - start) / bucketMs);
+    if (idx < 0 || idx >= buckets) continue;
+    const tokens = parseJson(r.tokens, {}) || {};
+    const meta = parseJson(r.meta, {}) || {};
+    series[idx].requests += 1;
+    series[idx].cacheReadTokens += tokens.cache_read_input_tokens || tokens.cached_tokens || 0;
+    series[idx].rtkBytesSaved += meta.rtk?.saved || 0;
+  }
+
+  return { period, series };
+}
+
+// Optimization savings: aggregates the per-layer attribution we now persist into
+// usageHistory.meta + cache token stats from tokens column.
+export async function getOptimizationSavings(period = "7d") {
+  const db = await getAdapter();
+  const now = Date.now();
+  const ms = PERIOD_MS[period];
+
+  const conds = ["status = 'ok' OR status = 'success' OR status IS NULL"];
+  const params = [];
+  if (period === "today") {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    conds.push("timestamp >= ?");
+    params.push(start.toISOString());
+  } else if (ms) {
+    conds.push("timestamp >= ?");
+    params.push(new Date(now - ms).toISOString());
+  }
+
+  const where = `WHERE (${conds[0]})${conds.length > 1 ? " AND " + conds.slice(1).join(" AND ") : ""}`;
+  const rows = db.all(
+    `SELECT promptTokens, completionTokens, cost, tokens, meta FROM usageHistory ${where}`,
+    params
+  );
+
+  const out = {
+    period,
+    requests: 0,
+    promptTokens: 0,
+    completionTokens: 0,
+    cost: 0,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
+    cacheHitRate: 0,
+    rtkBytesIn: 0,
+    rtkBytesOut: 0,
+    rtkBytesSaved: 0,
+    rtkActiveRequests: 0,
+    prefixCacheRequests: 0,
+    cavemanRequests: 0,
+    compactPoliciesRequests: 0,
+    estDollarsSaved: 0,
+  };
+
+  // Average input rate across cached/uncached for $-saved estimate (Sonnet 4.6-ish: $3 - $0.3 = $2.70/M saved)
+  const ASSUMED_INPUT_SAVINGS_PER_M = 2.7;
+
+  for (const r of rows) {
+    out.requests += 1;
+    out.promptTokens += r.promptTokens || 0;
+    out.completionTokens += r.completionTokens || 0;
+    out.cost += r.cost || 0;
+
+    const tokens = parseJson(r.tokens, {}) || {};
+    const meta = parseJson(r.meta, {}) || {};
+
+    const cacheRead = tokens.cache_read_input_tokens || tokens.cached_tokens || 0;
+    const cacheCreate = tokens.cache_creation_input_tokens || 0;
+    out.cacheReadTokens += cacheRead;
+    out.cacheCreationTokens += cacheCreate;
+
+    if (meta.rtk) {
+      out.rtkBytesIn += meta.rtk.bytesIn || 0;
+      out.rtkBytesOut += meta.rtk.bytesOut || 0;
+      out.rtkBytesSaved += meta.rtk.saved || 0;
+      if ((meta.rtk.hits || 0) > 0) out.rtkActiveRequests += 1;
+    }
+    // Prefix cache counted only when the toggle was ON for that request.
+    if (meta.prefixCache?.applied) out.prefixCacheRequests += 1;
+    if (meta.caveman?.active) out.cavemanRequests += 1;
+    if (meta.compactPolicies?.active) out.compactPoliciesRequests += 1;
+  }
+
+  const totalInputForCache = out.cacheReadTokens + out.promptTokens;
+  out.cacheHitRate = totalInputForCache > 0 ? out.cacheReadTokens / totalInputForCache : 0;
+  out.estDollarsSaved = (out.cacheReadTokens / 1_000_000) * ASSUMED_INPUT_SAVINGS_PER_M;
+
+  return out;
 }
 
 export async function getUsageHistory(filter = {}) {

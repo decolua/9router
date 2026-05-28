@@ -13,6 +13,7 @@ function isLLMProvider(id) {
 import Badge from "./Badge";
 import Card from "./Card";
 import OverviewCards from "@/app/(dashboard)/dashboard/usage/components/OverviewCards";
+import OptimizationSavings from "@/app/(dashboard)/dashboard/usage/components/OptimizationSavings";
 import UsageTable, { fmt, fmtTime } from "@/app/(dashboard)/dashboard/usage/components/UsageTable";
 import ProviderTopology from "@/app/(dashboard)/dashboard/usage/components/ProviderTopology";
 import UsageChart from "@/app/(dashboard)/dashboard/usage/components/UsageChart";
@@ -433,6 +434,9 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
 
       {/* Overview cards */}
       {loading ? spinner : <OverviewCards stats={stats} />}
+
+      {/* Optimization Savings (TOAAS layer attribution) */}
+      {loading ? null : <OptimizationSavings period={period} />}
 
       {/* Provider topology + Recent Requests */}
       {loading ? spinner : (

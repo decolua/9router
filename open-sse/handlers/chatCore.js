@@ -18,6 +18,8 @@ import { handleStreamingResponse, buildOnStreamComplete } from "./chatCore/strea
 import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.js";
 import { dedupeTools } from "../utils/toolDeduper.js";
 import { injectCaveman } from "../rtk/caveman.js";
+import { injectCompactPolicies } from "../rtk/compactPolicies.js";
+import { applyPrefixCacheHints, formatPrefixCacheLog } from "../rtk/prefixCache.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
 
 /**
@@ -27,7 +29,7 @@ import { compressMessages, formatRtkLog } from "../rtk/index.js";
  * @param {object} options.credentials - Provider credentials
  * @param {string} options.sourceFormatOverride - Override detected source format (e.g. "openai-responses")
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, cavemanEnabled, cavemanLevel, sourceFormatOverride, providerThinking }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, cavemanEnabled, cavemanLevel, compactPoliciesEnabled, prefixCacheEnabled, sourceFormatOverride, providerThinking }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
 
@@ -85,13 +87,17 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const clientTool = detectClientTool(clientRawRequest?.headers || {}, body);
   const passthrough = isNativePassthrough(clientTool, provider);
 
+  const timings = {};
+
   let translatedBody;
   let toolNameMap;
   if (passthrough) {
     log?.debug?.("PASSTHROUGH", `${clientTool} → ${provider} | native lossless`);
     translatedBody = { ...body, model };
   } else {
+    const tTranslate = Date.now();
     translatedBody = translateRequest(sourceFormat, targetFormat, model, body, stream, credentials, provider, reqLogger, stripList, connectionId, clientTool);
+    timings.translate = Date.now() - tTranslate;
     if (!translatedBody) {
       trackPendingRequest(model, provider, connectionId, false, true);
       return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Failed to translate request for ${sourceFormat} → ${targetFormat}`);
@@ -114,15 +120,59 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Covers both passthrough (source shape) and translated (target shape) flows
   const finalFormat = passthrough ? sourceFormat : targetFormat;
 
+  // Per-request optimization-layer attribution. Persisted into usage row's `meta` column.
+  const attribution = { format: finalFormat, timings };
+
   // RTK: compress tool_result content
+  const tRtk = Date.now();
   const rtkStats = compressMessages(translatedBody, rtkEnabled);
+  timings.rtk = Date.now() - tRtk;
   const rtkLine = formatRtkLog(rtkStats);
   if (rtkLine) console.log(rtkLine);
+  if (rtkStats && rtkStats.bytesBefore > 0) {
+    attribution.rtk = {
+      bytesIn: rtkStats.bytesBefore,
+      bytesOut: rtkStats.bytesAfter,
+      saved: rtkStats.bytesBefore - rtkStats.bytesAfter,
+      hits: rtkStats.hits.length,
+    };
+  }
+
+  // Prefix Cache Awareness: mark stable prefix (system + tools) for upstream cache reuse.
+  // Runs BEFORE caveman/compact so their inserts splice into the cached prefix.
+  // Attribution reflects toggle intent: when enabled, the request counts regardless of
+  // whether we actively added markers (Anthropic) or the provider auto-cached (OpenAI/Gemini).
+  if (prefixCacheEnabled) {
+    const tPc = Date.now();
+    const cacheStats = applyPrefixCacheHints(translatedBody, finalFormat);
+    timings.prefixCache = Date.now() - tPc;
+    const cacheLine = formatPrefixCacheLog(cacheStats);
+    if (cacheLine) console.log(cacheLine);
+    attribution.prefixCache = {
+      applied: true,
+      format: finalFormat,
+      ...(cacheStats || {}),
+    };
+  }
 
   // Caveman: inject terse-style system prompt
   if (cavemanEnabled && cavemanLevel) {
+    const tCv = Date.now();
     injectCaveman(translatedBody, finalFormat, cavemanLevel);
+    timings.caveman = Date.now() - tCv;
     log?.debug?.("CAVEMAN", `${cavemanLevel} | ${finalFormat}`);
+    attribution.caveman = { active: true, level: cavemanLevel };
+  }
+
+  // Compact Response Policies: bundled concise-reply injection (peer of caveman)
+  if (compactPoliciesEnabled) {
+    const tCp = Date.now();
+    const injected = injectCompactPolicies(translatedBody, finalFormat, true);
+    timings.compactPolicies = Date.now() - tCp;
+    if (injected) {
+      log?.debug?.("COMPACT", `enabled | ${finalFormat}`);
+      attribution.compactPolicies = { active: true };
+    }
   }
 
   const executor = getExecutor(provider);
@@ -176,8 +226,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Execute request
   let providerResponse, providerUrl, providerHeaders, finalBody;
+  const tUpstream = Date.now();
   try {
     const result = await executor.execute({ model, body: translatedBody, stream, credentials, signal: streamController.signal, log, proxyOptions });
+    timings.upstreamConnect = Date.now() - tUpstream;
     providerResponse = result.response;
     providerUrl = result.url;
     providerHeaders = result.headers;
@@ -248,7 +300,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     return createErrorResult(statusCode, errMsg, resetsAtMs);
   }
 
-  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess };
+  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, attribution };
   const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
 

@@ -364,6 +364,16 @@ export default function RequestDetailsTab() {
                   TTFT {selectedDetail.latency?.ttft || 0}ms / Total {selectedDetail.latency?.total || 0}ms
                 </span>
               </div>
+              {selectedDetail.latency?.layers && Object.keys(selectedDetail.latency.layers).length > 0 && (
+                <div className="col-span-full">
+                  <span className="text-text-muted">Per-layer:</span>{" "}
+                  <span className="text-text-main font-mono text-xs">
+                    {Object.entries(selectedDetail.latency.layers)
+                      .map(([k, v]) => `${k}=${v}ms`)
+                      .join(" · ")}
+                  </span>
+                </div>
+              )}
               <div>
                 <span className="text-text-muted">Input Tokens:</span>{" "}
                 <span className="text-text-main font-mono">

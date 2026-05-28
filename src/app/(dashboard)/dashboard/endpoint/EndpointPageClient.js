@@ -53,6 +53,7 @@ const CAVEMAN_LEVELS = [
   { id: "full", label: "Full", desc: "Drop articles, fragments OK" },
   { id: "ultra", label: "Ultra", desc: "Telegraphic, max compression" },
 ];
+
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -66,8 +67,10 @@ export default function APIPageClient({ machineId }) {
   const [hasPassword, setHasPassword] = useState(true);
   const [tunnelDashboardAccess, setTunnelDashboardAccess] = useState(false);
   const [rtkEnabled, setRtkEnabledState] = useState(true);
+  const [prefixCacheEnabled, setPrefixCacheEnabled] = useState(true);
   const [cavemanEnabled, setCavemanEnabled] = useState(false);
   const [cavemanLevel, setCavemanLevel] = useState("full");
+  const [compactPoliciesEnabled, setCompactPoliciesEnabled] = useState(false);
 
   // Cloudflare Tunnel state
   const [tunnelChecking, setTunnelChecking] = useState(true);
@@ -235,8 +238,10 @@ export default function APIPageClient({ machineId }) {
         setHasPassword(data.hasPassword || false);
         setTunnelDashboardAccess(data.tunnelDashboardAccess || false);
         setRtkEnabledState(data.rtkEnabled !== false);
+        setPrefixCacheEnabled(data.prefixCacheEnabled !== false);
         setCavemanEnabled(!!data.cavemanEnabled);
         setCavemanLevel(data.cavemanLevel || "full");
+        setCompactPoliciesEnabled(!!data.compactPoliciesEnabled);
       }
       if (statusRes.ok) {
         const data = await statusRes.json();
@@ -299,6 +304,11 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
+  const handlePrefixCacheEnabled = (value) => {
+    setPrefixCacheEnabled(value);
+    patchSetting({ prefixCacheEnabled: value });
+  };
+
   const patchSetting = async (patch) => {
     try {
       await fetch("/api/settings", {
@@ -319,6 +329,11 @@ export default function APIPageClient({ machineId }) {
   const handleCavemanLevel = (level) => {
     setCavemanLevel(level);
     patchSetting({ cavemanLevel: level });
+  };
+
+  const handleCompactPoliciesEnabled = (value) => {
+    setCompactPoliciesEnabled(value);
+    patchSetting({ compactPoliciesEnabled: value });
   };
 
   const fetchData = async () => {
@@ -1026,6 +1041,18 @@ export default function APIPageClient({ machineId }) {
         </div>
         <div className="flex items-center justify-between pt-2 pb-4 border-b border-border gap-4">
           <div className="min-w-0 flex-1">
+            <p className="font-medium">Prefix Cache Awareness</p>
+            <p className="text-sm text-text-muted">
+              Mark stable system + tool prefix for Anthropic cache reuse → 40-50% savings on stable content
+            </p>
+          </div>
+          <Toggle
+            checked={prefixCacheEnabled}
+            onChange={() => handlePrefixCacheEnabled(!prefixCacheEnabled)}
+          />
+        </div>
+        <div className="flex items-center justify-between pt-4 pb-4 border-b border-border gap-4">
+          <div className="min-w-0 flex-1">
             <p className="font-medium">
               Compress tool output{" "}
               <a
@@ -1087,6 +1114,18 @@ export default function APIPageClient({ machineId }) {
               onChange={() => handleCavemanEnabled(!cavemanEnabled)}
             />
           </div>
+        </div>
+        <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">Compact Response Policies</p>
+            <p className="text-sm text-text-muted">
+              No preamble + no tool narration + format enforcement → ~30-60% fewer output tokens
+            </p>
+          </div>
+          <Toggle
+            checked={compactPoliciesEnabled}
+            onChange={() => handleCompactPoliciesEnabled(!compactPoliciesEnabled)}
+          />
         </div>
       </Card>
 
