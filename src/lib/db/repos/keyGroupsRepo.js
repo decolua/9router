@@ -93,3 +93,20 @@ export async function deleteKeyGroup(id) {
 	const res = db.run(`DELETE FROM keyGroups WHERE id = ?`, [id]);
 	return (res?.changes ?? 0) > 0;
 }
+
+export async function getApiKeysByGroupId(groupId) {
+	const db = await getAdapter();
+	const rows = db.all(
+		`SELECT * FROM apiKeys WHERE groupId = ? ORDER BY createdAt ASC`,
+		[groupId],
+	);
+	return rows.map((row) => ({
+		id: row.id,
+		key: row.key,
+		name: row.name,
+		machineId: row.machineId,
+		isActive: row.isActive === 1 || row.isActive === true,
+		groupId: row.groupId || null,
+		createdAt: row.createdAt,
+	}));
+}
