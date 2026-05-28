@@ -228,7 +228,7 @@ export default function KeyGroupsPageClient() {
 
 	if (loading) {
 		return (
-			<div className="flex flex-col gap-8">
+			<div className="flex flex-col gap-6">
 				<CardSkeleton />
 				<CardSkeleton />
 			</div>
@@ -238,22 +238,23 @@ export default function KeyGroupsPageClient() {
 	// ── render ───────────────────────────────────────────────────────────────────
 
 	return (
-		<div className="flex flex-col gap-8">
-			{/* ── Groups section ─────────────────────────────────────────────────── */}
-			<Card>
-				<div className="flex items-center justify-between mb-4">
-					<h2 className="text-lg font-semibold flex items-center gap-2">
-						<span className="material-symbols-outlined text-primary">
-							group_work
-						</span>
-						Key Groups
-					</h2>
-					<Button icon="add" onClick={openCreate}>
-						Create Group
-					</Button>
+		<div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
+			{/* ── Page header — same pattern as Combos ──────────────────────────── */}
+			<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+				<div className="min-w-0">
+					<h1 className="text-2xl font-semibold">Key Groups</h1>
+					<p className="text-sm text-text-muted mt-1">
+						Group API keys and restrict which provider connections they can use
+					</p>
 				</div>
+				<Button icon="add" onClick={openCreate} className="w-full sm:w-auto">
+					Create Group
+				</Button>
+			</div>
 
-				{groups.length === 0 ? (
+			{/* ── Groups list ───────────────────────────────────────────────────── */}
+			{groups.length === 0 ? (
+				<Card>
 					<div className="text-center py-12">
 						<div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 text-primary mb-4">
 							<span className="material-symbols-outlined text-[32px]">
@@ -265,95 +266,101 @@ export default function KeyGroupsPageClient() {
 							Create a group to control which provider connections an API key
 							can use
 						</p>
-						<Button icon="add" onClick={openCreate}>
+						<Button
+							icon="add"
+							onClick={openCreate}
+							className="w-full sm:w-auto"
+						>
 							Create Group
 						</Button>
 					</div>
-				) : (
-					<div className="flex flex-col gap-3">
-						{groups.map((group) => {
-							const groupKeyCount = keysInGroup(group.id).length;
-							const allowedIds = group.allowedConnectionIds ?? [];
-							return (
-								<div
-									key={group.id}
-									className="flex items-start justify-between p-4 rounded-lg border border-border bg-surface-1 hover:bg-surface-2 transition-colors"
-								>
-									<div className="flex-1 min-w-0">
-										<div className="flex items-center gap-2 flex-wrap">
-											<p className="font-medium text-text-main">{group.name}</p>
-											<Badge variant="info" icon="cable">
-												{allowedIds.length} connection
-												{allowedIds.length !== 1 ? "s" : ""}
-											</Badge>
-											<Badge variant="primary" icon="vpn_key">
-												{groupKeyCount} key{groupKeyCount !== 1 ? "s" : ""}
-											</Badge>
+				</Card>
+			) : (
+				<div className="flex flex-col gap-4">
+					{groups.map((group) => {
+						const groupKeyCount = keysInGroup(group.id).length;
+						const allowedIds = group.allowedConnectionIds ?? [];
+						return (
+							<Card key={group.id} padding="sm" className="group">
+								<div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+									<div className="flex min-w-0 flex-1 items-start gap-3 sm:items-center">
+										<div className="size-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+											<span className="material-symbols-outlined text-primary text-[18px]">
+												group_work
+											</span>
 										</div>
-										{group.description && (
-											<p className="text-sm text-text-muted mt-1">
-												{group.description}
+										<div className="min-w-0 flex-1">
+											<p className="font-medium text-text-main truncate">
+												{group.name}
 											</p>
-										)}
-										{allowedIds.length > 0 && (
-											<div className="flex flex-wrap gap-1.5 mt-2">
-												{allowedIds.map((cid) => {
-													const conn = connectionById(cid);
-													return (
-														<span
-															key={cid}
-															className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-surface-2 text-text-muted border border-border"
-														>
-															<span className="material-symbols-outlined text-[12px]">
-																dns
-															</span>
-															{conn ? `${conn.name} (${conn.provider})` : cid}
-														</span>
-													);
-												})}
+											<div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
+												<Badge variant="default" size="sm">
+													{allowedIds.length} connection
+													{allowedIds.length !== 1 ? "s" : ""}
+												</Badge>
+												<Badge variant="default" size="sm">
+													{groupKeyCount} key{groupKeyCount !== 1 ? "s" : ""}
+												</Badge>
+												{group.description && (
+													<span className="text-xs text-text-muted truncate max-w-[240px]">
+														{group.description}
+													</span>
+												)}
 											</div>
-										)}
+											{allowedIds.length > 0 && (
+												<div className="flex flex-wrap gap-1 mt-1.5">
+													{allowedIds.map((cid) => {
+														const conn = connectionById(cid);
+														return (
+															<code
+																key={cid}
+																className="max-w-full truncate rounded bg-black/5 px-1.5 py-0.5 font-mono text-[10px] text-text-muted dark:bg-white/5 sm:max-w-[200px]"
+															>
+																{conn ? `${conn.name} (${conn.provider})` : cid}
+															</code>
+														);
+													})}
+												</div>
+											)}
+										</div>
 									</div>
-									<div className="flex items-center gap-1 ml-4 shrink-0">
+									<div className="grid grid-cols-2 gap-1 sm:flex">
 										<button
 											onClick={() => openEdit(group)}
-											className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-colors"
-											title="Edit group"
+											className="flex flex-col items-center rounded px-2 py-1 text-text-muted hover:bg-black/5 hover:text-primary dark:hover:bg-white/5"
 										>
 											<span className="material-symbols-outlined text-[18px]">
 												edit
 											</span>
+											<span className="text-[10px] leading-tight">Edit</span>
 										</button>
 										<button
 											onClick={() => setConfirmDelete(group.id)}
-											className="p-2 hover:bg-red-500/10 rounded text-red-500 transition-colors"
-											title="Delete group"
+											className="flex flex-col items-center rounded px-2 py-1 text-red-500 hover:bg-red-500/10"
 										>
 											<span className="material-symbols-outlined text-[18px]">
 												delete
 											</span>
+											<span className="text-[10px] leading-tight">Delete</span>
 										</button>
 									</div>
 								</div>
-							);
-						})}
-					</div>
-				)}
-			</Card>
+							</Card>
+						);
+					})}
+				</div>
+			)}
 
-			{/* ── API Keys section ────────────────────────────────────────────────── */}
+			{/* ── API Keys section ───────────────────────────────────────────────── */}
 			<Card>
-				<h2 className="text-lg font-semibold flex items-center gap-2 mb-4">
-					<span className="material-symbols-outlined text-primary">
-						vpn_key
-					</span>
-					API Key Assignments
-				</h2>
-				<p className="text-sm text-text-muted mb-4">
-					Assign each API key to a group to restrict which provider connections
-					it can use.
-				</p>
-
+				<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+					<div>
+						<h2 className="text-lg font-semibold">API Key Assignments</h2>
+						<p className="text-sm text-text-muted mt-0.5">
+							Assign keys to groups to restrict provider access
+						</p>
+					</div>
+				</div>
 				{keys.length === 0 ? (
 					<div className="text-center py-8">
 						<p className="text-text-muted text-sm">
@@ -367,21 +374,28 @@ export default function KeyGroupsPageClient() {
 								key={key.id}
 								className="flex items-center justify-between py-3 border-b border-black/[0.03] dark:border-white/[0.03] last:border-b-0 gap-4"
 							>
-								<div className="flex-1 min-w-0">
-									<p className="text-sm font-medium text-text-main">
-										{key.name}
-									</p>
-									<code className="text-xs text-text-muted font-mono">
-										{maskKey(key.key)}
-									</code>
+								<div className="flex min-w-0 flex-1 items-center gap-3">
+									<div className="size-7 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+										<span className="material-symbols-outlined text-primary text-[15px]">
+											vpn_key
+										</span>
+									</div>
+									<div className="min-w-0">
+										<p className="text-sm font-medium text-text-main truncate">
+											{key.name}
+										</p>
+										<code className="text-[10px] text-text-muted font-mono">
+											{maskKey(key.key)}
+										</code>
+									</div>
 								</div>
-								<div className="shrink-0 w-48">
+								<div className="shrink-0 w-44">
 									<select
 										value={key.groupId ?? ""}
 										onChange={(e) =>
 											handleKeyGroupChange(key.id, e.target.value)
 										}
-										className="w-full text-sm rounded-md border border-border bg-input text-text-main px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary"
+										className="w-full text-sm rounded-lg border border-border bg-bg-input px-3 py-1.5 text-text-main focus:outline-none focus:ring-2 focus:ring-primary"
 									>
 										<option value="">No group</option>
 										{groups.map((g) => (
