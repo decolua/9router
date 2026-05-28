@@ -173,7 +173,7 @@ export async function createApiKey(name, machineId, options = {}) {
       ],
     );
     upsertApiKeyLimit(db, apiKey.id, normalizedLimit);
-  })();
+  });
 
   return await getApiKeyById(apiKey.id);
 }
@@ -205,7 +205,7 @@ export async function updateApiKey(id, data) {
     }
 
     result = true;
-  })();
+  });
 
   if (!result) return null;
   return await getApiKeyById(id);

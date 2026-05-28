@@ -280,6 +280,60 @@ export async function markAccountUnavailable(
   const conn = connections.find((c) => c.id === connectionId);
   const backoffLevel = conn?.backoffLevel || 0;
 
+  const connName =
+    conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
+
+  const lowerError =
+    typeof errorText === "string" ? errorText.toLowerCase() : "";
+
+  const isInvalidToken =
+    status === 401 ||
+    lowerError.includes("token_revoked") ||
+    lowerError.includes("invalidated oauth token") ||
+    lowerError.includes("invalid oauth token") ||
+    lowerError.includes("token revoked") ||
+    lowerError.includes("invalid token") ||
+    lowerError.includes("invalid api key") ||
+    lowerError.includes("unauthorized") ||
+    lowerError.includes("unauthenticated");
+
+  const isReachLimit =
+    lowerError.includes("reach limit") ||
+    lowerError.includes("quota exceeded") ||
+    lowerError.includes("insufficient_quota") ||
+    lowerError.includes("usage limit") ||
+    lowerError.includes("limit has been reached") ||
+    lowerError.includes("limit reached");
+
+  if (isReachLimit || isInvalidToken) {
+    const reason =
+      typeof errorText === "string"
+        ? errorText.slice(0, 100)
+        : isInvalidToken
+          ? "Invalid/Revoked Token"
+          : "Quota reached";
+    log.warn(
+      "AUTH",
+      `[Auto-Disable] Disabling connection ${connName} permanently due to ${isInvalidToken ? "invalid/revoked token" : "quota limit reached"}: ${reason}`,
+    );
+    await updateProviderConnection(connectionId, {
+      isActive: false, // Disable account permanently in DB
+      testStatus: "unavailable",
+      lastError: isInvalidToken
+        ? `Invalid Token: ${reason}`
+        : `Quota reached: ${reason}`,
+      errorCode: status,
+      lastErrorAt: new Date().toISOString(),
+      backoffLevel: 0,
+    });
+    if (provider && status && reason) {
+      console.error(
+        `\x1b[31m❌ ${provider} [${status}]: ${reason} (Auto-disabled)\x1b[0m`,
+      );
+    }
+    return { shouldFallback: true, cooldownMs: 5 * 60 * 60 * 1000 }; // 5 hours fallback cooldown
+  }
+
   // Provider-specific precise cooldown (e.g. codex usage_limit_reached resets_at) overrides backoff
   let shouldFallback, cooldownMs, newBackoffLevel;
   if (resetsAtMs && resetsAtMs > Date.now()) {
@@ -309,8 +363,6 @@ export async function markAccountUnavailable(
   });
 
   const lockKey = Object.keys(lockUpdate)[0];
-  const connName =
-    conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
   log.warn(
     "AUTH",
     `${connName} locked ${lockKey} for ${Math.round(cooldownMs / 1000)}s [${status}]`,
@@ -461,9 +513,9 @@ export async function requireValidApiKey(request, settings = null) {
       keyInfo: validation.apiKey,
       limitState,
       settings: effectiveSettings,
-      status: 429,
+      status: 403, // Return 403 Forbidden for quota/budget limits to prevent client retry loops
       message: buildLimitExceededMessage(limitState),
-      code: "api_key_limit_exceeded",
+      code: "insufficient_quota",
     };
   }
 

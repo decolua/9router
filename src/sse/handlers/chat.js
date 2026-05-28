@@ -17,13 +17,47 @@ import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { handleComboChat } from "open-sse/services/combo.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
-import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
+import { detectFormatByEndpoint, FORMATS } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import {
   updateProviderCredentials,
   checkAndRefreshToken,
 } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+
+/**
+ * Format error response dynamically based on request client format
+ */
+function getCustomErrorResponse(request, statusCode, message, body = null) {
+  const url = request?.url ? new URL(request.url) : null;
+  const sourceFormat = url ? detectFormatByEndpoint(url.pathname, body) : null;
+
+  if (sourceFormat === FORMATS.CLAUDE) {
+    let anthropicErrorType = "invalid_request_error";
+    if (statusCode === 401) anthropicErrorType = "authentication_error";
+    else if (statusCode === 403) anthropicErrorType = "permission_error";
+    else if (statusCode === 429) anthropicErrorType = "rate_limit_error";
+    else if (statusCode >= 500) anthropicErrorType = "api_error";
+
+    return new Response(
+      JSON.stringify({
+        type: "error",
+        error: {
+          type: anthropicErrorType,
+          message: message,
+        },
+      }),
+      {
+        status: statusCode,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      }
+    );
+  }
+  return errorResponse(statusCode, message);
+}
 
 /**
  * Handle chat completion request
@@ -36,7 +70,7 @@ export async function handleChat(request, clientRawRequest = null) {
     body = await request.json();
   } catch {
     log.warn("CHAT", "Invalid JSON body");
-    return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid JSON body");
+    return getCustomErrorResponse(request, HTTP_STATUS.BAD_REQUEST, "Invalid JSON body");
   }
 
   // Build clientRawRequest for logging (if not provided)
@@ -69,9 +103,10 @@ export async function handleChat(request, clientRawRequest = null) {
 
   const settings = await getSettings();
   timing.settingsLoadedAt = Date.now();
+
   const authResult = await enforceApiKeyPolicy(
     request,
-    errorResponse,
+    (status, msg) => getCustomErrorResponse(request, status, msg, body),
     settings,
   );
   const apiKey = getApiKeyValue(authResult.auth);
@@ -85,7 +120,7 @@ export async function handleChat(request, clientRawRequest = null) {
 
   if (!modelStr) {
     log.warn("CHAT", "Missing model");
-    return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
+    return getCustomErrorResponse(request, HTTP_STATUS.BAD_REQUEST, "Missing model", body);
   }
 
   // Bypass naming/warmup requests before combo rotation to avoid wasting rotation slots
@@ -186,7 +221,7 @@ async function handleSingleModelChat(
       });
     }
     log.warn("CHAT", "Invalid model format", { model: modelStr });
-    return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
+    return getCustomErrorResponse(request, HTTP_STATUS.BAD_REQUEST, "Invalid model format", body);
   }
 
   const { provider, model } = modelInfo;
@@ -234,15 +269,19 @@ async function handleSingleModelChat(
       }
       if (excludeConnectionIds.size === 0) {
         log.warn("AUTH", `No active credentials for provider: ${provider}`);
-        return errorResponse(
+        return getCustomErrorResponse(
+          request,
           HTTP_STATUS.NOT_FOUND,
           `No active credentials for provider: ${provider}`,
+          body
         );
       }
       log.warn("CHAT", "No more accounts available", { provider });
-      return errorResponse(
+      return getCustomErrorResponse(
+        request,
         lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE,
         lastError || "All accounts unavailable",
+        body
       );
     }
 

@@ -162,6 +162,8 @@ export default function ProviderDetailPage() {
     manualRefreshSummary,
     fetchConnections,
     displayedConnections,
+    accountStatusFilter,
+    handleAccountStatusFilterChange,
     isConnectionsSortActive,
     handleToggleConnectionsSort,
     handleRoundRobinToggle,
@@ -169,7 +171,10 @@ export default function ProviderDetailPage() {
     handleRunOneByOneTest,
     handleStopOneByOneTest,
     handleDeleteConnection,
+    handleDeleteSelectedConnections,
+    selectedConnectionDeletePreview,
     handleUpdateConnectionStatus,
+    handleAutoPriorityVisibleConnections,
     handleSwapPriority,
     setSelectedConnectionsAutoRefresh,
     copySelectedEmails,
@@ -402,6 +407,8 @@ export default function ProviderDetailPage() {
         apiKeyConnectionLabel={apiKeyConnectionLabel}
         connections={connections}
         displayedConnections={displayedConnections}
+        accountStatusFilter={accountStatusFilter}
+        onAccountStatusFilterChange={handleAccountStatusFilterChange}
         proxyPools={proxyPools}
         selectedConnectionIds={selectedConnectionIds}
         allSelected={allSelected}
@@ -431,6 +438,24 @@ export default function ProviderDetailPage() {
         clearSelection={clearSelection}
         clearManualRefreshResults={clearManualRefreshResults}
         handleToggleConnectionsSort={handleToggleConnectionsSort}
+        handleAutoPriorityVisibleConnections={
+          handleAutoPriorityVisibleConnections
+        }
+        onConfirmDeleteSelectedConnections={() => {
+          const idsToDelete = [...selectedConnectionIds];
+          const previewItems = [...selectedConnectionDeletePreview];
+          setConfirmState({
+            title: "Delete selected accounts?",
+            message: `This will delete ${idsToDelete.length} selected account${idsToDelete.length === 1 ? "" : "s"}. This action cannot be undone.`,
+            items: previewItems,
+            moreCount: Math.max(0, idsToDelete.length - previewItems.length),
+            confirmText: `Delete ${idsToDelete.length} account${idsToDelete.length === 1 ? "" : "s"}`,
+            onConfirm: async () => {
+              setConfirmState(null);
+              await handleDeleteSelectedConnections(idsToDelete);
+            },
+          });
+        }}
         handleRunOneByOneTest={handleRunOneByOneTest}
         handleStopOneByOneTest={handleStopOneByOneTest}
         openBulkProxyModal={openBulkProxyModal}

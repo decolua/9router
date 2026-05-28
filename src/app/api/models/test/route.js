@@ -4,9 +4,29 @@ import { UPDATER_CONFIG } from "@/shared/constants/config";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 
 const CLI_TOKEN_SALT = "9r-cli-auth";
+const MODEL_TEST_TIMEOUT_MS = 15000;
+
+export function isTimeoutError(err) {
+  return (
+    err?.name === "TimeoutError" ||
+    (err?.name === "AbortError" &&
+      /timeout|timed out/i.test(String(err?.message || "")))
+  );
+}
+
+function timeoutResponse(start) {
+  return NextResponse.json({
+    ok: false,
+    latencyMs: Date.now() - start,
+    error: `Model test timed out after ${MODEL_TEST_TIMEOUT_MS / 1000}s`,
+    status: "timeout",
+  });
+}
 
 // POST /api/models/test - Ping a single model via internal completions or embeddings
 export async function POST(request) {
+  const requestStart = Date.now();
+
   try {
     const { model, kind } = await request.json();
     if (!model)
@@ -34,7 +54,7 @@ export async function POST(request) {
         method: "POST",
         headers,
         body: JSON.stringify({ model, input: "test" }),
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(MODEL_TEST_TIMEOUT_MS),
       });
       const latencyMs = Date.now() - start;
       const rawText = await res.text().catch(() => "");
@@ -82,7 +102,7 @@ export async function POST(request) {
         stream: false,
         messages: [{ role: "user", content: "hi" }],
       }),
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(MODEL_TEST_TIMEOUT_MS),
     });
     const latencyMs = Date.now() - start;
 
@@ -154,6 +174,10 @@ export async function POST(request) {
       status: res.status,
     });
   } catch (err) {
+    if (isTimeoutError(err)) {
+      return timeoutResponse(requestStart);
+    }
+
     return NextResponse.json(
       { ok: false, error: err.message },
       { status: 500 },

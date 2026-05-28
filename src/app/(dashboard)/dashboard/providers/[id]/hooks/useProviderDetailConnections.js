@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useMemo, useRef } from "react";
 import {
   ONE_BY_ONE_DELAY_MS,
   sortConnectionsByExpiresAt,
@@ -21,6 +21,22 @@ import {
   fetchProviderSettings,
 } from "../utils/providerDetailPageApi";
 
+const ACCOUNT_STATUS_FILTER_OPTIONS = ["all", "active", "inactive"];
+
+function filterConnectionsByAccountStatus(connections, accountStatusFilter) {
+  if (accountStatusFilter === "active") {
+    return connections.filter((connection) => connection.isActive !== false);
+  }
+  if (accountStatusFilter === "inactive") {
+    return connections.filter((connection) => connection.isActive === false);
+  }
+  return connections;
+}
+
+function getConnectionLabel(connection) {
+  return connection.email || connection.name || connection.id;
+}
+
 export function useProviderDetailConnections({
   providerId,
   isCompatible,
@@ -31,6 +47,7 @@ export function useProviderDetailConnections({
   const [loading, setLoading] = useState(true);
   const [proxyPools, setProxyPools] = useState([]);
   const [selectedConnectionIds, setSelectedConnectionIds] = useState([]);
+  const [accountStatusFilter, setAccountStatusFilter] = useState("all");
   const [showBulkProxyModal, setShowBulkProxyModal] = useState(false);
   const [bulkUpdatingProxy, setBulkUpdatingProxy] = useState(false);
   const [providerStrategy, setProviderStrategy] = useState(null);
@@ -124,9 +141,14 @@ export function useProviderDetailConnections({
     onThinkingModeLoaded,
   ]);
 
-  const displayedConnections = sortConnectionsByExpiresAt(
-    connections,
-    connectionsSortDirection,
+  const filteredConnections = useMemo(
+    () => filterConnectionsByAccountStatus(connections, accountStatusFilter),
+    [connections, accountStatusFilter],
+  );
+  const displayedConnections = useMemo(
+    () =>
+      sortConnectionsByExpiresAt(filteredConnections, connectionsSortDirection),
+    [filteredConnections, connectionsSortDirection],
   );
   const isConnectionsSortActive = connectionsSortDirection !== null;
 
@@ -288,8 +310,10 @@ export function useProviderDetailConnections({
     try {
       const res = await updateProviderConnection(connectionId, { isActive });
       if (res.ok) {
-        setConnections((prev) =>
-          prev.map((c) => (c.id === connectionId ? { ...c, isActive } : c)),
+        applyConnections(
+          connectionsRef.current.map((c) =>
+            c.id === connectionId ? { ...c, isActive } : c,
+          ),
         );
       }
     } catch (error) {
@@ -324,9 +348,10 @@ export function useProviderDetailConnections({
     connections,
     selectedConnectionIds,
   );
+  const displayedConnectionIds = displayedConnections.map((conn) => conn.id);
   const allSelected =
-    connections.length > 0 &&
-    selectedConnectionIds.length === connections.length;
+    displayedConnectionIds.length > 0 &&
+    displayedConnectionIds.every((id) => selectedConnectionIds.includes(id));
 
   const persistAutoRefreshSelection = async (connectionId, enabled) => {
     try {
@@ -429,10 +454,15 @@ export function useProviderDetailConnections({
 
   const toggleSelectAllConnections = () => {
     if (allSelected) {
-      setSelectedConnectionIds([]);
+      setSelectedConnectionIds((prev) =>
+        prev.filter((id) => !displayedConnectionIds.includes(id)),
+      );
       return;
     }
-    setSelectedConnectionIds(connections.map((conn) => conn.id));
+    setSelectedConnectionIds((prev) => [
+      ...prev,
+      ...displayedConnectionIds.filter((id) => !prev.includes(id)),
+    ]);
   };
 
   const clearSelection = () => {
@@ -440,8 +470,8 @@ export function useProviderDetailConnections({
   };
 
   const selectionSummary = getSelectionSummary(
-    selectedConnectionIds,
-    connections,
+    selectedConnectionIds.filter((id) => displayedConnectionIds.includes(id)),
+    displayedConnections,
   );
   const autoRefreshSummary = getAutoRefreshSummary(connections);
   const selectedEmailSummary = getSelectedEmailSummary(selectedConnections);
@@ -568,6 +598,91 @@ export function useProviderDetailConnections({
     }
   };
 
+  const handleAccountStatusFilterChange = (nextFilter) => {
+    if (!ACCOUNT_STATUS_FILTER_OPTIONS.includes(nextFilter)) return;
+    setAccountStatusFilter(nextFilter);
+    setSelectedConnectionIds([]);
+    lastClickedIndexRef.current = null;
+  };
+
+  const handleAutoPriorityVisibleConnections = async () => {
+    if (displayedConnections.length === 0) return;
+
+    const visibleIds = displayedConnections.map((conn) => conn.id);
+    const visiblePositionById = new Map(
+      visibleIds.map((connectionId, index) => [connectionId, index]),
+    );
+    const activeVisible = displayedConnections.filter(
+      (conn) => conn.isActive !== false,
+    );
+    const inactiveVisible = displayedConnections.filter(
+      (conn) => conn.isActive === false,
+    );
+    const prioritizedVisible = [...activeVisible, ...inactiveVisible];
+    const nextConnections = connectionsRef.current.map((connection) => {
+      const visibleIndex = visiblePositionById.get(connection.id);
+      return visibleIndex === undefined
+        ? connection
+        : prioritizedVisible[visibleIndex];
+    });
+
+    applyConnections(nextConnections);
+
+    try {
+      await Promise.all(
+        visibleIds.map((connectionId) => {
+          const nextIndex = nextConnections.findIndex(
+            (connection) => connection.id === connectionId,
+          );
+          return updateProviderConnection(connectionId, {
+            priority: nextIndex,
+          });
+        }),
+      );
+      await fetchConnections();
+    } catch (error) {
+      console.log("Error auto updating priorities:", error);
+      await fetchConnections();
+    }
+  };
+
+  const handleDeleteSelectedConnections = async (
+    connectionIds = selectedConnectionIds,
+  ) => {
+    if (connectionIds.length === 0) return;
+
+    try {
+      let failed = 0;
+      for (const connectionId of connectionIds) {
+        try {
+          const res = await deleteProviderConnection(connectionId);
+          if (!res.ok) failed += 1;
+        } catch (error) {
+          console.log("Error deleting connection:", connectionId, error);
+          failed += 1;
+        }
+      }
+
+      const deletedIds = new Set(connectionIds);
+      applyConnections(
+        connectionsRef.current.filter((conn) => !deletedIds.has(conn.id)),
+      );
+      setSelectedConnectionIds([]);
+
+      if (failed > 0) {
+        alert(`Deleted with ${failed} failed request(s).`);
+        await fetchConnections();
+      }
+    } catch (error) {
+      console.log("Error deleting selected connections:", error);
+      await fetchConnections();
+    }
+  };
+
+  const selectedConnectionDeletePreview = selectedConnections
+    .slice(0, 5)
+    .map(getConnectionLabel);
+
   return {
     connections,
     setConnections,
@@ -589,6 +704,8 @@ export function useProviderDetailConnections({
     manualRefreshSummary,
     fetchConnections,
     displayedConnections,
+    accountStatusFilter,
+    handleAccountStatusFilterChange,
     isConnectionsSortActive,
     handleToggleConnectionsSort,
     handleRoundRobinToggle,
@@ -596,7 +713,10 @@ export function useProviderDetailConnections({
     handleRunOneByOneTest,
     handleStopOneByOneTest,
     handleDeleteConnection,
+    handleDeleteSelectedConnections,
+    selectedConnectionDeletePreview,
     handleUpdateConnectionStatus,
+    handleAutoPriorityVisibleConnections,
     handleSwapPriority,
     setSelectedConnectionsAutoRefresh,
     copySelectedEmails,

@@ -35,12 +35,14 @@ vi.mock("@/lib/auth/dashboardSession", () => ({
 
 const { proxy, __test__ } = await import("../../src/dashboardGuard.js");
 
-function request(pathname, headers = {}) {
+function request(pathname, headers = {}, cookieValue = undefined) {
   const normalizedHeaders = new Headers(headers);
   return {
     nextUrl: { pathname },
     headers: normalizedHeaders,
-    cookies: { get: vi.fn(() => undefined) },
+    cookies: {
+      get: vi.fn(() => (cookieValue ? { value: cookieValue } : undefined)),
+    },
     url: `http://localhost${pathname}`,
   };
 }
@@ -218,6 +220,56 @@ describe("dashboard guard local-only access", () => {
         host: "router.example.com",
         "x-9r-cli-token": "cli-token",
       }),
+    );
+
+    expect(response).toBe(mocks.nextResponse);
+  });
+});
+
+describe("dashboard guard version shutdown access", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getSettings.mockResolvedValue({ requireLogin: true });
+    mocks.validateApiKey.mockResolvedValue(false);
+    mocks.getConsistentMachineId.mockResolvedValue("cli-token");
+    mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+  });
+
+  it("rejects shutdown when only remote browser JWT is valid", async () => {
+    mocks.verifyDashboardAuthToken.mockResolvedValue(true);
+
+    const response = await proxy(
+      request(
+        "/api/version/shutdown",
+        { host: "router.example.com" },
+        "valid-jwt",
+      ),
+    );
+
+    expect(response.status).toBe(401);
+    expect(response.body.error).toBe("CLI token required");
+  });
+
+  it("allows shutdown with valid CLI token", async () => {
+    const response = await proxy(
+      request("/api/version/shutdown", {
+        host: "router.example.com",
+        "x-9r-cli-token": "cli-token",
+      }),
+    );
+
+    expect(response).toBe(mocks.nextResponse);
+  });
+
+  it("keeps ordinary always-protected dashboard auth behavior unchanged", async () => {
+    mocks.verifyDashboardAuthToken.mockResolvedValue(true);
+
+    const response = await proxy(
+      request(
+        "/api/version/update",
+        { host: "router.example.com" },
+        "valid-jwt",
+      ),
     );
 
     expect(response).toBe(mocks.nextResponse);

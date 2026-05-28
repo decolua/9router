@@ -19,6 +19,8 @@ export default function ProfilePage() {
   const [passLoading, setPassLoading] = useState(false);
   const [dbLoading, setDbLoading] = useState(false);
   const [dbStatus, setDbStatus] = useState({ type: "", message: "" });
+  const [includeUsageAnalytics, setIncludeUsageAnalytics] = useState(false);
+  const [restoreUsageAnalytics, setRestoreUsageAnalytics] = useState(false);
   const [oidcForm, setOidcForm] = useState({
     authMode: "password",
     oidcIssuerUrl: "",
@@ -502,7 +504,13 @@ export default function ProfilePage() {
     setDbLoading(true);
     setDbStatus({ type: "", message: "" });
     try {
-      const res = await fetch("/api/settings/database");
+      const params = new URLSearchParams();
+      if (includeUsageAnalytics) {
+        params.set("includeUsageAnalytics", "true");
+      }
+      const res = await fetch(
+        `/api/settings/database${params.toString() ? `?${params.toString()}` : ""}`,
+      );
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Failed to export database");
@@ -542,11 +550,17 @@ export default function ProfilePage() {
     try {
       const raw = await file.text();
       const payload = JSON.parse(raw);
+      const analyticsIncluded = !!payload?.usageAnalytics;
+      const shouldRestoreUsageAnalytics =
+        analyticsIncluded && restoreUsageAnalytics;
 
       const res = await fetch("/api/settings/database", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          ...payload,
+          restoreUsageAnalytics: shouldRestoreUsageAnalytics,
+        }),
       });
 
       const data = await res.json().catch(() => ({}));
@@ -557,7 +571,10 @@ export default function ProfilePage() {
       await reloadSettings();
       setDbStatus({
         type: "success",
-        message: "Database imported successfully",
+        message:
+          analyticsIncluded && !shouldRestoreUsageAnalytics
+            ? "Database imported successfully. Usage & Analytics skipped."
+            : "Database imported successfully",
       });
     } catch (err) {
       setDbStatus({
@@ -631,32 +648,70 @@ export default function ProfilePage() {
                 </p>
               </div>
             </div>
-            <div className="flex flex-col sm:flex-row gap-2">
-              <Button
-                variant="secondary"
-                icon="download"
-                onClick={handleExportDatabase}
-                loading={dbLoading}
-                className="w-full sm:w-auto"
-              >
-                Download Backup
-              </Button>
-              <Button
-                variant="outline"
-                icon="upload"
-                onClick={() => importFileRef.current?.click()}
-                disabled={dbLoading}
-                className="w-full sm:w-auto"
-              >
-                Import Backup
-              </Button>
-              <input
-                ref={importFileRef}
-                type="file"
-                accept="application/json,.json"
-                className="hidden"
-                onChange={handleImportDatabase}
-              />
+            <div className="flex flex-col gap-3">
+              <div className="flex items-start sm:items-center justify-between gap-4 rounded-lg border border-border bg-bg p-3">
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-sm sm:text-base">
+                    Include Usage & Analytics
+                  </p>
+                  <p className="text-xs sm:text-sm text-text-muted">
+                    Add token, cost, request history, and request details to the
+                    downloaded backup.
+                  </p>
+                </div>
+                <Toggle
+                  checked={includeUsageAnalytics}
+                  onChange={() =>
+                    setIncludeUsageAnalytics((enabled) => !enabled)
+                  }
+                  disabled={dbLoading}
+                />
+              </div>
+              <div className="flex items-start sm:items-center justify-between gap-4 rounded-lg border border-border bg-bg p-3">
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-sm sm:text-base">
+                    Restore Usage & Analytics
+                  </p>
+                  <p className="text-xs sm:text-sm text-text-muted">
+                    When importing a backup that contains analytics, replace the
+                    current usage history with the backup data.
+                  </p>
+                </div>
+                <Toggle
+                  checked={restoreUsageAnalytics}
+                  onChange={() =>
+                    setRestoreUsageAnalytics((enabled) => !enabled)
+                  }
+                  disabled={dbLoading}
+                />
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <Button
+                  variant="secondary"
+                  icon="download"
+                  onClick={handleExportDatabase}
+                  loading={dbLoading}
+                  className="w-full sm:w-auto"
+                >
+                  Download Backup
+                </Button>
+                <Button
+                  variant="outline"
+                  icon="upload"
+                  onClick={() => importFileRef.current?.click()}
+                  disabled={dbLoading}
+                  className="w-full sm:w-auto"
+                >
+                  Import Backup
+                </Button>
+                <input
+                  ref={importFileRef}
+                  type="file"
+                  accept="application/json,.json"
+                  className="hidden"
+                  onChange={handleImportDatabase}
+                />
+              </div>
             </div>
             {dbStatus.message && (
               <p

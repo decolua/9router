@@ -3,25 +3,20 @@
 import PropTypes from "prop-types";
 import { Button, Input, Modal } from "@/shared/components";
 import { buildCreatedKeyValue } from "../utils/endpointLimitHelpers";
-import { ApiKeyLimitFormFields } from "./ApiKeyLimitFormFields";
 import { StatusAlert } from "./StatusAlert";
 
 export function ApiKeyModals({
   showAddModal,
   newKeyName,
-  newKeyLimit,
   createdKey,
   editingKey,
   editKeyName,
-  editKeyLimit,
   keyFormError,
   savingKeyId,
   copied,
   onNewKeyNameChange,
-  onNewKeyLimitChange,
   onCreatedKeyClose,
   onEditKeyNameChange,
-  onEditKeyLimitChange,
   onCreateKey,
   onSaveKey,
   onCloseAddModal,
@@ -41,12 +36,6 @@ export function ApiKeyModals({
             value={newKeyName}
             onChange={(e) => onNewKeyNameChange(e.target.value)}
             placeholder="Production Key"
-          />
-
-          <ApiKeyLimitFormFields
-            form={newKeyLimit}
-            onChange={onNewKeyLimitChange}
-            description="One limit per key. Block applies after recorded usage exceeds the configured limit."
           />
 
           {keyFormError && (
@@ -70,7 +59,7 @@ export function ApiKeyModals({
 
       <Modal
         isOpen={!!editingKey}
-        title="Edit API Key Limit"
+        title="Edit API Key"
         onClose={onCloseEditModal}
       >
         <div className="flex flex-col gap-4">
@@ -81,11 +70,9 @@ export function ApiKeyModals({
             placeholder="Production Key"
           />
 
-          <ApiKeyLimitFormFields
-            form={editKeyLimit}
-            onChange={onEditKeyLimitChange}
-            description="Configure requests, tokens, or cost on daily or monthly windows."
-          />
+          <p className="text-sm text-text-muted">
+            Budget and usage settings are managed on the Key Budgets page.
+          </p>
 
           {keyFormError && (
             <StatusAlert status={{ type: "error", message: keyFormError }} />
@@ -145,30 +132,18 @@ export function ApiKeyModals({
   );
 }
 
-const limitFormShape = PropTypes.shape({
-  enabled: PropTypes.bool.isRequired,
-  metricType: PropTypes.string.isRequired,
-  periodType: PropTypes.string.isRequired,
-  limitValue: PropTypes.oneOfType([PropTypes.string, PropTypes.number])
-    .isRequired,
-});
-
 ApiKeyModals.propTypes = {
   showAddModal: PropTypes.bool.isRequired,
   newKeyName: PropTypes.string.isRequired,
-  newKeyLimit: limitFormShape.isRequired,
   createdKey: PropTypes.oneOfType([PropTypes.object, PropTypes.string]),
   editingKey: PropTypes.object,
   editKeyName: PropTypes.string.isRequired,
-  editKeyLimit: limitFormShape.isRequired,
   keyFormError: PropTypes.string.isRequired,
   savingKeyId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
   copied: PropTypes.string,
   onNewKeyNameChange: PropTypes.func.isRequired,
-  onNewKeyLimitChange: PropTypes.func.isRequired,
   onCreatedKeyClose: PropTypes.func.isRequired,
   onEditKeyNameChange: PropTypes.func.isRequired,
-  onEditKeyLimitChange: PropTypes.func.isRequired,
   onCreateKey: PropTypes.func.isRequired,
   onSaveKey: PropTypes.func.isRequired,
   onCloseAddModal: PropTypes.func.isRequired,

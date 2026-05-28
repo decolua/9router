@@ -50,6 +50,9 @@ export default function DashboardLayout({ children }) {
           return (
             <div
               key={n.id}
+              role={n.type === "error" ? "alert" : "status"}
+              aria-live={n.type === "error" ? "assertive" : "polite"}
+              aria-atomic="true"
               className={`rounded-lg border px-3 py-2 shadow-lg backdrop-blur-sm ${style.wrapper}`}
             >
               <div className="flex items-start gap-2">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useId, useRef } from "react";
 import { cn } from "@/shared/utils/cn";
 import Button from "./Button";
 import Tooltip from "./Tooltip";
@@ -16,6 +16,9 @@ export default function Modal({
   showTrafficLights = true,
   className,
 }) {
+  const titleId = useId();
+  const modalRef = useRef(null);
+  const previousFocusRef = useRef(null);
   const sizes = {
     sm: "max-w-sm",
     md: "max-w-md",
@@ -36,11 +39,53 @@ export default function Modal({
   }, [isOpen]);
 
   useEffect(() => {
-    const handleEscape = (e) => {
-      if (e.key === "Escape" && isOpen) onClose();
+    if (!isOpen) return undefined;
+
+    previousFocusRef.current = document.activeElement;
+    const focusableSelector =
+      'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const getFocusableElements = () =>
+      Array.from(
+        modalRef.current?.querySelectorAll(focusableSelector) || [],
+      ).filter((element) => !element.hasAttribute("disabled"));
+
+    window.setTimeout(() => {
+      const firstFocusable = getFocusableElements()[0];
+      (firstFocusable || modalRef.current)?.focus();
+    }, 0);
+
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") {
+        onClose();
+        return;
+      }
+
+      if (e.key !== "Tab") return;
+      const focusableElements = getFocusableElements();
+      if (focusableElements.length === 0) {
+        e.preventDefault();
+        modalRef.current?.focus();
+        return;
+      }
+
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
+      if (e.shiftKey && document.activeElement === firstElement) {
+        e.preventDefault();
+        lastElement.focus();
+      } else if (!e.shiftKey && document.activeElement === lastElement) {
+        e.preventDefault();
+        firstElement.focus();
+      }
     };
-    document.addEventListener("keydown", handleEscape);
-    return () => document.removeEventListener("keydown", handleEscape);
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      if (previousFocusRef.current instanceof HTMLElement) {
+        previousFocusRef.current.focus();
+      }
+    };
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
@@ -55,6 +100,11 @@ export default function Modal({
 
       {/* Modal content */}
       <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={title ? titleId : undefined}
+        tabIndex={-1}
         className={cn(
           "relative w-full bg-surface",
           "border border-border-subtle",
@@ -88,7 +138,10 @@ export default function Modal({
                 </div>
               )}
               {title && (
-                <h2 className="text-lg font-semibold text-text-main">
+                <h2
+                  id={titleId}
+                  className="text-lg font-semibold text-text-main"
+                >
                   {title}
                 </h2>
               )}

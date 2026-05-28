@@ -1,5 +1,8 @@
 // Stream handler with disconnect detection - shared for all providers
-import { STREAM_STALL_TIMEOUT_MS, STREAM_SEMANTIC_STALL_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import {
+  STREAM_STALL_TIMEOUT_MS,
+  STREAM_SEMANTIC_STALL_TIMEOUT_MS,
+} from "../config/runtimeConfig.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
 // Get HH:MM:SS timestamp
@@ -196,6 +199,10 @@ export function createDisconnectAwareStream(
           msg.includes("overload") ||
           msg.includes("busy") ||
           msg.includes("empty response") ||
+          msg.includes("terminated") ||
+          msg.includes("premature close") ||
+          msg.includes("fetch failed") ||
+          msg.includes("closed unexpectedly") ||
           code === "ECONNRESET" ||
           code === "ETIMEDOUT" ||
           code === "EPIPE" ||
@@ -342,6 +349,10 @@ export function createDisconnectAwareStream(
           msg.includes("ECONNRESET") ||
           msg.includes("ETIMEDOUT") ||
           msg.includes("EPIPE") ||
+          msg.includes("terminated") ||
+          msg.includes("premature close") ||
+          msg.includes("fetch failed") ||
+          msg.includes("closed unexpectedly") ||
           code === "ECONNRESET" ||
           code === "ETIMEDOUT" ||
           code === "EPIPE" ||
@@ -459,7 +470,9 @@ export function pipeWithDisconnect(
           );
           clearSemanticStall();
           clearStall();
-          streamController.handleError?.(new Error("stream semantic stall timeout"));
+          streamController.handleError?.(
+            new Error("stream semantic stall timeout"),
+          );
           streamController.abort?.();
         } else {
           lastContentLength = currentLength;
@@ -507,7 +520,10 @@ export function pipeWithDisconnect(
 
   armStall();
   startSemanticStallWatchdog();
-  dbg(tag, `pipe start | stallTimeout=${STREAM_STALL_TIMEOUT_MS}ms | semanticStallTimeout=${STREAM_SEMANTIC_STALL_TIMEOUT_MS}ms`);
+  dbg(
+    tag,
+    `pipe start | stallTimeout=${STREAM_STALL_TIMEOUT_MS}ms | semanticStallTimeout=${STREAM_SEMANTIC_STALL_TIMEOUT_MS}ms`,
+  );
 
   const upstreamTap = new TransformStream({
     transform(chunk, controller) {

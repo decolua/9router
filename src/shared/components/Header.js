@@ -104,6 +104,13 @@ const getPageInfo = (pathname) => {
       icon: "bar_chart",
       breadcrumbs: [],
     };
+  if (pathname.includes("/key-budgets"))
+    return {
+      title: "Key Budgets",
+      description: "Manage per-API-key budget limits and remaining usage",
+      icon: "account_balance_wallet",
+      breadcrumbs: [],
+    };
   if (pathname.includes("/auth-files"))
     return {
       title: "Auth Files",
@@ -242,8 +249,10 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
       <div className="flex items-center gap-3 lg:hidden shrink-0">
         {showMenuButton && (
           <button
+            type="button"
             onClick={onMenuClick}
             className="text-text-main hover:text-primary transition-colors"
+            aria-label="Open navigation menu"
           >
             <span className="material-symbols-outlined">menu</span>
           </button>
@@ -361,6 +370,7 @@ function HeaderSearch() {
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder={placeholder}
+        aria-label={placeholder || "Search"}
         className="w-full h-8 pl-7 pr-7 rounded-lg border border-border bg-surface/60 text-sm focus:outline-none focus:border-primary/50 transition-colors"
       />
       {query && (

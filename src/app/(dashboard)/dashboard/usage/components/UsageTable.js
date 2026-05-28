@@ -22,6 +22,11 @@ function SortIcon({ field, currentSort, currentOrder }) {
   return <span className="ml-1">{currentOrder === "asc" ? "↑" : "↓"}</span>;
 }
 
+function getAriaSort(field, currentSort, currentOrder) {
+  if (currentSort !== field) return "none";
+  return currentOrder === "asc" ? "ascending" : "descending";
+}
+
 SortIcon.propTypes = {
   field: PropTypes.string.isRequired,
   currentSort: PropTypes.string.isRequired,
@@ -168,29 +173,43 @@ export default function UsageTable({
               {columns.map((col) => (
                 <th
                   key={col.field}
-                  className={`px-6 py-3 cursor-pointer hover:bg-bg-subtle/50 ${col.align === "right" ? "text-right" : ""}`}
-                  onClick={() => onToggleSort(tableType, col.field)}
+                  className={`px-6 py-3 ${col.align === "right" ? "text-right" : ""}`}
+                  aria-sort={getAriaSort(col.field, sortBy, sortOrder)}
                 >
-                  {col.label}{" "}
-                  <SortIcon
-                    field={col.field}
-                    currentSort={sortBy}
-                    currentOrder={sortOrder}
-                  />
+                  <button
+                    type="button"
+                    onClick={() => onToggleSort(tableType, col.field)}
+                    className={`inline-flex items-center gap-1 uppercase hover:text-text transition-colors ${col.align === "right" ? "justify-end" : "justify-start"}`}
+                    aria-label={`Sort by ${col.label}`}
+                  >
+                    {col.label}{" "}
+                    <SortIcon
+                      field={col.field}
+                      currentSort={sortBy}
+                      currentOrder={sortOrder}
+                    />
+                  </button>
                 </th>
               ))}
               {valueColumns.map((col) => (
                 <th
                   key={col.field}
-                  className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
-                  onClick={() => onToggleSort(tableType, col.field)}
+                  className="px-6 py-3 text-right"
+                  aria-sort={getAriaSort(col.field, sortBy, sortOrder)}
                 >
-                  {col.label}{" "}
-                  <SortIcon
-                    field={col.field}
-                    currentSort={sortBy}
-                    currentOrder={sortOrder}
-                  />
+                  <button
+                    type="button"
+                    onClick={() => onToggleSort(tableType, col.field)}
+                    className="inline-flex items-center justify-end gap-1 uppercase hover:text-text transition-colors"
+                    aria-label={`Sort by ${col.label}`}
+                  >
+                    {col.label}{" "}
+                    <SortIcon
+                      field={col.field}
+                      currentSort={sortBy}
+                      currentOrder={sortOrder}
+                    />
+                  </button>
                 </th>
               ))}
             </tr>
@@ -205,16 +224,27 @@ export default function UsageTable({
                 >
                   <td className="px-6 py-3">
                     <div className="flex items-center gap-2">
-                      <span
-                        className={`material-symbols-outlined text-[18px] text-text-muted transition-transform ${expanded.has(group.groupKey) ? "rotate-90" : ""}`}
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          toggleGroup(group.groupKey);
+                        }}
+                        className="flex items-center gap-2 text-left"
+                        aria-expanded={expanded.has(group.groupKey)}
+                        aria-label={`${expanded.has(group.groupKey) ? "Collapse" : "Expand"} ${group.groupKey}`}
                       >
-                        chevron_right
-                      </span>
-                      <span
-                        className={`font-medium transition-colors ${group.summary.pending > 0 ? "text-primary" : ""}`}
-                      >
-                        {group.groupKey}
-                      </span>
+                        <span
+                          className={`material-symbols-outlined text-[18px] text-text-muted transition-transform ${expanded.has(group.groupKey) ? "rotate-90" : ""}`}
+                        >
+                          chevron_right
+                        </span>
+                        <span
+                          className={`font-medium transition-colors ${group.summary.pending > 0 ? "text-primary" : ""}`}
+                        >
+                          {group.groupKey}
+                        </span>
+                      </button>
                     </div>
                   </td>
                   {renderSummaryCells(group)}

@@ -1,15 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import PropTypes from "prop-types";
 import { Button, Card, Toggle } from "@/shared/components";
-import {
-  buildUsageDetailMessage,
-  buildUsageSummaryItems,
-  formatLimitState,
-  formatUsageHistoryValue,
-  getLimitBadgeClass,
-  getUsageHistoryStatusClass,
-} from "../utils/endpointLimitHelpers";
+import { formatLimitState, getLimitBadgeClass } from "../utils/endpointLimitHelpers";
 import { StatusAlert } from "./StatusAlert";
 
 export function ApiKeysCard({
@@ -18,15 +12,11 @@ export function ApiKeysCard({
   requireApiKey,
   keyActionStatus,
   visibleKeys,
-  usageDetailsByKeyId,
-  showUsageDetailsByKeyId,
   savingKeyId,
-  loadingUsageKeyId,
   onCreateClick,
   onRequireApiKeyChange,
   onCopy,
   onToggleVisibility,
-  onToggleUsageDetails,
   onEditKey,
   onPauseKey,
   onToggleKey,
@@ -37,7 +27,9 @@ export function ApiKeysCard({
     <Card id="require-api-key">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-semibold flex items-center gap-2">
-          <span className="material-symbols-outlined text-primary">vpn_key</span>
+          <span className="material-symbols-outlined text-primary">
+            vpn_key
+          </span>
           API Keys
         </h2>
         <Button icon="add" onClick={onCreateClick}>
@@ -65,7 +57,9 @@ export function ApiKeysCard({
       {keys.length === 0 ? (
         <div className="text-center py-12">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 text-primary mb-4">
-            <span className="material-symbols-outlined text-[32px]">vpn_key</span>
+            <span className="material-symbols-outlined text-[32px]">
+              vpn_key
+            </span>
           </div>
           <p className="text-text-main font-medium mb-1">No API keys yet</p>
           <p className="text-sm text-text-muted mb-4">
@@ -79,13 +73,7 @@ export function ApiKeysCard({
         <div className="flex flex-col">
           {keys.map((key) => {
             const limitView = formatLimitState(key);
-            const usageDetail = usageDetailsByKeyId[key.id];
-            const usageOpen = !!showUsageDetailsByKeyId[key.id];
-            const usageSummaryItems = buildUsageSummaryItems(
-              usageDetail?.limitState || key.limitState,
-            );
             const isSavingThisKey = savingKeyId === key.id;
-            const isLoadingUsage = loadingUsageKeyId === key.id;
 
             return (
               <div
@@ -116,6 +104,7 @@ export function ApiKeysCard({
                         onClick={() => onToggleVisibility(key.id)}
                         className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
                         title={visibleKeys.has(key.id) ? "Hide key" : "Show key"}
+                        aria-label={visibleKeys.has(key.id) ? "Hide API key" : "Show API key"}
                       >
                         <span className="material-symbols-outlined text-[14px]">
                           {visibleKeys.has(key.id) ? "visibility_off" : "visibility"}
@@ -124,6 +113,8 @@ export function ApiKeysCard({
                       <button
                         onClick={() => onCopy(key.key, key.id)}
                         className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                        aria-label="Copy API key"
+                        title="Copy key"
                       >
                         <span className="material-symbols-outlined text-[14px]">
                           {copied === key.id ? "check" : "content_copy"}
@@ -139,113 +130,32 @@ export function ApiKeysCard({
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div>
                           <p className="text-xs font-medium text-text-main">
-                            {limitView.summary}
+                            Budget: {limitView.summary}
                           </p>
                           {limitView.remaining && (
                             <p className="text-xs text-text-muted mt-1">
                               {limitView.remaining}
                             </p>
                           )}
-                          {limitView.reset && (
-                            <p className="text-xs text-text-muted mt-1">
-                              {limitView.reset}
-                            </p>
-                          )}
                         </div>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            icon="monitoring"
-                            onClick={() => onToggleUsageDetails(key)}
-                          >
-                            {usageOpen ? "Hide usage" : "View usage"}
+                        <Link href="/dashboard/key-budgets">
+                          <Button size="sm" variant="ghost" icon="account_balance_wallet">
+                            Manage Budget
                           </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            icon="edit"
-                            onClick={() => onEditKey(key)}
-                          >
-                            Edit limit
-                          </Button>
-                        </div>
+                        </Link>
                       </div>
-
-                      {usageOpen && (
-                        <div className="mt-3 border-t border-border pt-3">
-                          <p className="text-xs text-text-muted mb-3">
-                            {buildUsageDetailMessage(key)}
-                          </p>
-
-                          {isLoadingUsage ? (
-                            <div className="text-xs text-text-muted flex items-center gap-2">
-                              <span className="material-symbols-outlined animate-spin text-sm">
-                                progress_activity
-                              </span>
-                              Loading usage details...
-                            </div>
-                          ) : (
-                            <>
-                              {usageSummaryItems.length > 0 && (
-                                <div className="grid grid-cols-3 gap-2 mb-3">
-                                  {usageSummaryItems.map((item) => (
-                                    <div
-                                      key={item.label}
-                                      className="rounded-lg bg-background px-3 py-2 border border-border"
-                                    >
-                                      <p className="text-[11px] text-text-muted uppercase tracking-wide">
-                                        {item.label}
-                                      </p>
-                                      <p className="text-sm font-medium mt-1">
-                                        {item.value}
-                                      </p>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-
-                              {usageDetail?.history?.length ? (
-                                <div className="flex flex-col gap-2">
-                                  {usageDetail.history.map((entry) => (
-                                    <div
-                                      key={entry.id}
-                                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-background px-3 py-2 border border-border"
-                                    >
-                                      <div className="min-w-0 flex-1">
-                                        <p className="text-xs font-medium text-text-main break-all">
-                                          {entry.endpoint || entry.model || "Request"}
-                                        </p>
-                                        <p className="text-[11px] text-text-muted mt-1">
-                                          {new Date(entry.timestamp).toLocaleString()}
-                                        </p>
-                                      </div>
-                                      <div className="flex items-center gap-3 shrink-0">
-                                        <span className="text-xs text-text-muted">
-                                          {formatUsageHistoryValue(entry)}
-                                        </span>
-                                        <span
-                                          className={`text-xs font-medium ${getUsageHistoryStatusClass(entry.status)}`}
-                                        >
-                                          {entry.status}
-                                        </span>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : (
-                                <p className="text-xs text-text-muted">
-                                  No recorded usage for this key yet.
-                                </p>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      )}
                     </div>
                   </div>
 
                   <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      icon="edit"
+                      onClick={() => onEditKey(key)}
+                    >
+                      Edit
+                    </Button>
                     <Toggle
                       size="sm"
                       checked={key.isActive ?? true}
@@ -259,6 +169,7 @@ export function ApiKeysCard({
                     <button
                       onClick={() => onDeleteKey(key.id)}
                       className="p-2 hover:bg-red-500/10 rounded text-red-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                      aria-label="Delete API key"
                     >
                       <span className="material-symbols-outlined text-[18px]">
                         delete
@@ -281,15 +192,11 @@ ApiKeysCard.propTypes = {
   requireApiKey: PropTypes.bool.isRequired,
   keyActionStatus: PropTypes.object,
   visibleKeys: PropTypes.instanceOf(Set).isRequired,
-  usageDetailsByKeyId: PropTypes.object.isRequired,
-  showUsageDetailsByKeyId: PropTypes.object.isRequired,
   savingKeyId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
-  loadingUsageKeyId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
   onCreateClick: PropTypes.func.isRequired,
   onRequireApiKeyChange: PropTypes.func.isRequired,
   onCopy: PropTypes.func.isRequired,
   onToggleVisibility: PropTypes.func.isRequired,
-  onToggleUsageDetails: PropTypes.func.isRequired,
   onEditKey: PropTypes.func.isRequired,
   onPauseKey: PropTypes.func.isRequired,
   onToggleKey: PropTypes.func.isRequired,

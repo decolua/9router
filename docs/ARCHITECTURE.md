@@ -1,6 +1,6 @@
 # 9Router Architecture
 
-_Last updated: 2026-02-06_
+_Last updated: 2026-05-28_
 
 ## Executive Summary
 
@@ -15,8 +15,9 @@ Core capabilities:
 - Account-level fallback (multi-account per provider)
 - OAuth + API-key provider connection management
 - Local persistence for providers, keys, aliases, combos, settings, pricing
-- Usage/cost tracking and request logging
+- Usage/cost tracking and redacted request logging
 - Optional cloud sync for multi-device/state sync
+- Deterministic Docker/source builds via lockfile-based installs, Dependabot coverage, and runtime smoke checks
 
 Primary runtime model:
 
@@ -56,8 +57,8 @@ flowchart LR
         API[V1 Compatibility API\n/v1/*]
         DASH[Dashboard + Management API\n/api/*]
         CORE[SSE + Translation Core\nopen-sse + src/sse]
-        DB[(db.json)]
-        UDB[(usage.json + log.txt)]
+        DB[(data.sqlite)]
+        UDB[(SQLite usage + request details)]
     end
 
     subgraph Upstreams[Upstream Providers]
@@ -137,15 +138,16 @@ Main flow modules:
 
 Primary state DB:
 
-- `src/lib/localDb.js`
-- file: `${DATA_DIR}/db.json` (or `~/.9router/db.json` when `DATA_DIR` is unset)
-- entities: providerConnections, providerNodes, modelAliases, combos, apiKeys, settings, pricing
+- `src/lib/localDb.js` is a compatibility shim over `src/lib/db/index.js`
+- file: `${DATA_DIR}/db/data.sqlite`
+- legacy import/migration paths are defined in `src/lib/db/paths.js`
+- entities: providerConnections, providerNodes, modelAliases, combos, apiKeys, settings, pricing, usage, request details
 
 Usage DB:
 
-- `src/lib/usageDb.js`
-- files: `~/.9router/usage.json`, `~/.9router/log.txt`
-- note: currently independent from `DATA_DIR`
+- `src/lib/usageDb.js` is a compatibility shim over the same SQLite DB layer
+- usage stream reads from `src/lib/db` repositories through the shim and coalesces expensive stats refreshes per connection
+- request/usage history is under `${DATA_DIR}/db/data.sqlite`; backups are under `${DATA_DIR}/db/backups/`
 
 ## 4) Auth + Security Surfaces
 
@@ -154,11 +156,11 @@ Usage DB:
 - Provider secrets persisted in `providerConnections` entries
 - Optional proxy support for upstream calls via env proxy variables (`open-sse/utils/proxyFetch.js`)
 
-## 5) Cloud Sync
+## 5) Cloud URL Configuration
 
-- Scheduler init: `src/lib/initCloudSync.js`, `src/shared/services/initializeCloudSync.js`
-- Periodic task: `src/shared/services/cloudSyncScheduler.js`
-- Control route: `src/app/api/sync/cloud/route.js`
+- Cloud mode is represented in settings (`cloudEnabled`, `cloudUrl`) and resolved by `src/lib/db/repos/settingsRepo.js`.
+- Dashboard CLI-tool cards use cloud/local base URL selection when rendering tool configuration.
+- No local cloud sync scheduler or `/api/sync/cloud` route exists in the current codebase.
 
 ## Request Lifecycle (`/v1/chat/completions`)
 
@@ -271,39 +273,25 @@ sequenceDiagram
 
 Refresh during live traffic is executed inside `open-sse/handlers/chatCore.js` via executor `refreshCredentials()`.
 
-## Cloud Sync Lifecycle (Enable / Sync / Disable)
+## Cloud URL Selection
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant UI as Endpoint Page UI
-    participant Sync as /api/sync/cloud
-    participant DB as localDb
-    participant Cloud as External Cloud Sync
-    participant Claude as ~/.claude/settings.json
+    participant UI as CLI Tools UI
+    participant Settings as /api/settings
+    participant DB as settingsRepo
+    participant Tool as Tool Config Card
 
-    UI->>Sync: POST action=enable
-    Sync->>DB: set cloudEnabled=true
-    Sync->>DB: ensure API key exists
-    Sync->>Cloud: POST /sync/{machineId} (providers/aliases/combos/keys)
-    Cloud-->>Sync: sync result
-    Sync->>Cloud: GET /{machineId}/v1/verify
-    Sync-->>UI: enabled + verification status
-
-    UI->>Sync: POST action=sync
-    Sync->>Cloud: POST /sync/{machineId}
-    Cloud-->>Sync: remote data
-    Sync->>DB: update newer local tokens/status
-    Sync-->>UI: synced
-
-    UI->>Sync: POST action=disable
-    Sync->>DB: set cloudEnabled=false
-    Sync->>Cloud: DELETE /sync/{machineId}
-    Sync->>Claude: switch ANTHROPIC_BASE_URL back to local (if needed)
-    Sync-->>UI: disabled
+    UI->>Settings: GET current settings
+    Settings->>DB: read cloudEnabled/cloudUrl
+    DB-->>Settings: settings payload
+    Settings-->>UI: cloud mode state
+    UI->>Tool: render config
+    Tool-->>UI: base URL = cloud URL when enabled, otherwise local URL
 ```
 
-Periodic sync is triggered by `CloudSyncScheduler` when cloud is enabled.
+Cloud URL resolution prefers saved `settings.cloudUrl`, then `CLOUD_URL`, then `NEXT_PUBLIC_CLOUD_URL`.
 
 ## Data Model and Storage Map
 
@@ -377,10 +365,10 @@ erDiagram
 
 Physical storage files:
 
-- main state: `${DATA_DIR}/db.json` (or `~/.9router/db.json`)
-- usage stats: `~/.9router/usage.json`
-- request log lines: `~/.9router/log.txt`
-- optional translator/request debug sessions: `<repo>/logs/...`
+- main state and usage/request history: `${DATA_DIR}/db/data.sqlite`
+- automatic SQLite backups: `${DATA_DIR}/db/backups/`
+- legacy JSON import paths: `${DATA_DIR}/db.json`, `${DATA_DIR}/usage.json`, `${DATA_DIR}/disabledModels.json`, `${DATA_DIR}/request-details.json`
+- optional translator/request debug sessions: `<repo>/logs/...` when `ENABLE_REQUEST_LOGS=true`
 
 ## Deployment Topology
 
@@ -394,8 +382,8 @@ flowchart LR
     subgraph ContainerOrProcess[9Router Runtime]
         Next[Next.js Server\nPORT=20128]
         Core[SSE Core + Executors]
-        MainDB[(db.json)]
-        UsageDB[(usage.json/log.txt)]
+        MainDB[(data.sqlite)]
+        UsageDB[(usage tables/request details)]
     end
 
     subgraph External[External Services]
@@ -417,7 +405,7 @@ flowchart LR
 
 ### Route and API Modules
 
-- `src/app/api/v1/*`, `src/app/api/v1beta/*`: compatibility APIs
+- `src/app/api/v1/*`, `src/app/api/v1beta/*`: compatibility APIs; selected high-traffic chat/Gemini routes use shared CORS allowlist helpers for public deployment hardening
 - `src/app/api/providers*`: provider CRUD, validation, testing
 - `src/app/api/provider-nodes*`: custom compatible node management
 - `src/app/api/oauth/*`: OAuth/device-code flows
@@ -426,7 +414,7 @@ flowchart LR
 - `src/app/api/combos*`: fallback combo management
 - `src/app/api/pricing`: pricing overrides for cost calculation
 - `src/app/api/usage/*`: usage and logs APIs
-- `src/app/api/sync/*` + `src/app/api/cloud/*`: cloud sync and cloud-facing helpers
+- cloud mode is currently settings/UI-driven; no `src/app/api/sync/*` or `src/app/api/cloud/*` routes exist in the current codebase
 - `src/app/api/cli-tools/*`: local CLI config writers/checkers
 
 ### Routing and Execution Core
@@ -488,6 +476,7 @@ Translations are selected dynamically based on source payload shape and provider
 - provider account cooldown on transient/rate/auth errors
 - account fallback before failing request
 - combo model fallback when current model/provider path is exhausted
+- provider-node validation uses `AbortController` so timeout cancels the underlying fetch and reports timeout-specific validation errors
 
 ## 2) Token Expiry
 
@@ -497,13 +486,16 @@ Translations are selected dynamically based on source payload shape and provider
 ## 3) Stream Safety
 
 - disconnect-aware stream controller
-- translation stream with end-of-stream flush and `[DONE]` handling
+- translation stream with buffered partial-line parsing, end-of-stream flush, and `[DONE]` handling
+- Gemini v1beta streaming transforms keep a text buffer so JSON `data:` lines split across chunks are not dropped
+- usage stats SSE coalesces concurrent full refreshes to the latest pending update per connection
+- image-provider polling helpers accept `AbortSignal` so long-running polling can stop on abort/disconnect where the route passes a signal
 - usage estimation fallback when provider usage metadata is missing
 
-## 4) Cloud Sync Degradation
+## 4) Cloud URL Degradation
 
-- sync errors are surfaced but local runtime continues
-- scheduler has retry-capable logic, but periodic execution currently calls single-attempt sync by default
+- local runtime continues when cloud URL settings are absent or unreachable
+- CLI-tool configuration UI falls back to local base URL when cloud mode is not enabled
 
 ## 5) Data Integrity
 
@@ -515,9 +507,9 @@ Translations are selected dynamically based on source payload shape and provider
 Runtime visibility sources:
 
 - console logs from `src/sse/utils/logger.js`
-- per-request usage aggregates in `usage.json`
-- textual request status log in `log.txt`
+- per-request usage aggregates and request details in `${DATA_DIR}/db/data.sqlite`
 - optional deep request/translation logs under `logs/` when `ENABLE_REQUEST_LOGS=true`
+- request logging masks auth-like header, URL query, and nested body keys (`authorization`, `x-api-key`, `cookie`, `token`, `secret`, `key`, `password`) as `[REDACTED]`
 - dashboard usage endpoints (`/api/usage/*`) for UI consumption
 
 ## Security-Sensitive Boundaries
@@ -526,7 +518,9 @@ Runtime visibility sources:
 - Initial password fallback (`INITIAL_PASSWORD`, default `123456`) must be overridden in real deployments
 - API key HMAC secret (`API_KEY_SECRET`) secures generated local API key format
 - Provider secrets (API keys/tokens) are persisted in local DB and should be protected at filesystem level
-- Cloud sync endpoints rely on API key auth + machine id semantics
+- Cloud/local CLI-tool URLs rely on API key auth + machine id semantics when exposed beyond localhost
+- `/api/version/shutdown` is CLI-token-only via the machine-bound `x-9r-cli-token`; browser JWT auth alone is intentionally insufficient
+- Local-only host-secret/spawn-capable routes still require loopback browser auth or the same CLI token path
 
 ## Environment and Runtime Matrix
 
@@ -538,19 +532,27 @@ Environment variables actively used by code:
 - Logging: `ENABLE_REQUEST_LOGS`
 - Sync/cloud URLing: `NEXT_PUBLIC_BASE_URL`, `NEXT_PUBLIC_CLOUD_URL`
 - Outbound proxy: `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` and lowercase variants
+- Public API CORS allowlist: `CORS_ALLOWED_ORIGINS` or `ALLOWED_ORIGINS` as comma-separated origins; production without allowlist only permits loopback browser origins on routes using the shared helper
 - Platform/runtime helpers (not app-specific config): `APPDATA`, `NODE_ENV`, `PORT`, `HOSTNAME`
+
+## Release and Dependency Hygiene
+
+- Root and CLI package lockfiles are expected to match their package manifests before build/release.
+- Docker builds copy `package.json` plus `package-lock.json` and install with `npm ci` for reproducibility.
+- Dependabot covers root npm, `cli`, `gitbook`, Docker, and GitHub Actions with conservative grouped updates.
+- CLI build validation must not silently mutate root package metadata during ordinary builds.
 
 ## Known Architectural Notes
 
-1. `usageDb` currently stores under `~/.9router` and does not follow `DATA_DIR`.
-2. `/api/v1/route.js` returns a static model list and is not the main models source used by `/v1/models`.
-3. Request logger writes full headers/body when enabled; treat log directory as sensitive.
-4. Cloud behavior depends on correct `NEXT_PUBLIC_BASE_URL` and cloud endpoint reachability.
+1. `/api/v1/route.js` returns a static model list and is not the main models source used by `/v1/models`.
+2. Request logger still writes payload structure and non-sensitive values when enabled; treat log directory as sensitive even with redaction.
+3. Cloud URL selection depends on correct `CLOUD_URL` / `NEXT_PUBLIC_CLOUD_URL` configuration and external endpoint reachability.
+4. Accessibility behavior is implemented as additive UI semantics: shared modal focus management, icon labels, sortable table buttons, chart summaries, toast live regions, and reduced-motion guards.
 
 ## Operational Verification Checklist
 
-- Build from source: `cd /root/dev/9router && npm run build`
-- Build Docker image: `cd /root/dev/9router && docker build -t 9router .`
+- Build from source: `npm run build`
+- Build Docker image: `docker build -t 9router .`
 - Start service and verify:
 - `GET /api/settings`
 - `GET /api/v1/models`

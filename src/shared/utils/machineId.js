@@ -1,5 +1,5 @@
-import { machineIdSync } from "node-machine-id";
-import fs from "node:fs";
+import { machineId } from "node-machine-id";
+import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
 import { DATA_DIR } from "@/lib/dataDir";
@@ -12,36 +12,36 @@ let cachedRawId = null;
 let cachedCliSecret = null;
 
 // Persist raw machine ID to file → guarantees CLI/server/middleware see same value
-// even when machineIdSync fails or returns inconsistent values across runtimes.
-function loadRawMachineId() {
+// even when machineId fails or returns inconsistent values across runtimes.
+async function loadRawMachineId() {
   if (cachedRawId) return cachedRawId;
   try {
-    cachedRawId = fs.readFileSync(MACHINE_ID_FILE, "utf8").trim();
+    cachedRawId = (await fs.readFile(MACHINE_ID_FILE, "utf8")).trim();
     if (cachedRawId) return cachedRawId;
   } catch {}
   try {
-    cachedRawId = machineIdSync();
+    cachedRawId = await machineId();
   } catch {
     cachedRawId = crypto.randomUUID();
   }
   try {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(MACHINE_ID_FILE, cachedRawId, { mode: 0o600 });
+    await fs.mkdir(DATA_DIR, { recursive: true });
+    await fs.writeFile(MACHINE_ID_FILE, cachedRawId, { mode: 0o600 });
   } catch {}
   return cachedRawId;
 }
 
 // Random secret persisted on first run → unpredictable CLI token even when machineId leaks.
-function loadCliSecret() {
+async function loadCliSecret() {
   if (cachedCliSecret) return cachedCliSecret;
   try {
-    cachedCliSecret = fs.readFileSync(CLI_SECRET_FILE, "utf8").trim();
+    cachedCliSecret = (await fs.readFile(CLI_SECRET_FILE, "utf8")).trim();
     if (cachedCliSecret) return cachedCliSecret;
   } catch {}
   cachedCliSecret = crypto.randomBytes(32).toString("hex");
   try {
-    fs.mkdirSync(AUTH_DIR, { recursive: true });
-    fs.writeFileSync(CLI_SECRET_FILE, cachedCliSecret, { mode: 0o600 });
+    await fs.mkdir(AUTH_DIR, { recursive: true });
+    await fs.writeFile(CLI_SECRET_FILE, cachedCliSecret, { mode: 0o600 });
   } catch {}
   return cachedCliSecret;
 }
@@ -49,8 +49,8 @@ function loadCliSecret() {
 export async function getConsistentMachineId(salt = null) {
   const saltValue =
     salt || process.env.MACHINE_ID_SALT || "endpoint-proxy-salt";
-  const raw = loadRawMachineId();
-  const extra = saltValue === CLI_AUTH_SALT ? loadCliSecret() : "";
+  const raw = await loadRawMachineId();
+  const extra = saltValue === CLI_AUTH_SALT ? await loadCliSecret() : "";
   return crypto
     .createHash("sha256")
     .update(raw + saltValue + extra)

@@ -35,15 +35,17 @@ const PUBLIC_API_PATHS = [
 // Public top-level prefixes (LLM API endpoints with their own API key auth).
 const PUBLIC_PREFIXES = ["/v1", "/v1beta", "/api/v1", "/api/v1beta"];
 
-// Always require JWT token regardless of requireLogin setting
+// Always require JWT token regardless of requireLogin setting.
 const ALWAYS_PROTECTED = [
   "/api/shutdown",
   "/api/settings/database",
-  "/api/version/shutdown",
   "/api/version/update",
   "/api/oauth/cursor/auto-import",
   "/api/oauth/kiro/auto-import",
 ];
+
+// Shutdown terminates the process and is reserved for the machine-bound CLI flow.
+const CLI_TOKEN_ONLY_PATHS = ["/api/version/shutdown"];
 
 // Require auth, but allow through if requireLogin is disabled
 const PROTECTED_API_PATHS = [
@@ -183,6 +185,12 @@ export async function proxy(request) {
         { status: 403 },
       );
     }
+  }
+
+  // Process shutdown requires the machine-bound CLI token, not browser JWT auth.
+  if (CLI_TOKEN_ONLY_PATHS.some((p) => pathname.startsWith(p))) {
+    if (await hasValidCliToken(request)) return NextResponse.next();
+    return NextResponse.json({ error: "CLI token required" }, { status: 401 });
   }
 
   // Always protected - require valid JWT or local CLI token (machineId-based)

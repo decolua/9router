@@ -68,8 +68,14 @@ export default function Navigation() {
             Get Started
           </button>
           <button
+            type="button"
             className="md:hidden text-white"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            aria-label={
+              mobileMenuOpen ? "Close navigation menu" : "Open navigation menu"
+            }
+            aria-expanded={mobileMenuOpen}
+            aria-controls="landing-mobile-menu"
           >
             <span className="material-symbols-outlined">
               {mobileMenuOpen ? "close" : "menu"}
@@ -80,7 +86,10 @@ export default function Navigation() {
 
       {/* Mobile menu dropdown */}
       {mobileMenuOpen && (
-        <div className="md:hidden border-t border-[#3a2f27] bg-[#181411]/95 backdrop-blur-md">
+        <div
+          id="landing-mobile-menu"
+          className="md:hidden border-t border-[#3a2f27] bg-[#181411]/95 backdrop-blur-md"
+        >
           <div className="flex flex-col gap-4 p-6">
             <a
               className="text-gray-300 hover:text-white text-sm font-medium transition-colors"

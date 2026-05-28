@@ -13,6 +13,8 @@ export default function ProviderConnectionsCard({
   apiKeyConnectionLabel,
   connections,
   displayedConnections,
+  accountStatusFilter,
+  onAccountStatusFilterChange,
   proxyPools,
   selectedConnectionIds,
   allSelected,
@@ -42,6 +44,8 @@ export default function ProviderConnectionsCard({
   clearSelection,
   clearManualRefreshResults,
   handleToggleConnectionsSort,
+  handleAutoPriorityVisibleConnections,
+  onConfirmDeleteSelectedConnections,
   handleRunOneByOneTest,
   handleStopOneByOneTest,
   openBulkProxyModal,
@@ -69,6 +73,8 @@ export default function ProviderConnectionsCard({
         allSelected={allSelected}
         selectionSummary={selectionSummary}
         selectedConnectionIds={selectedConnectionIds}
+        accountStatusFilter={accountStatusFilter}
+        onAccountStatusFilterChange={onAccountStatusFilterChange}
         manualRefreshing={manualRefreshing}
         selectedEmailSummary={selectedEmailSummary}
         toggleSelectAllConnections={toggleSelectAllConnections}
@@ -81,6 +87,10 @@ export default function ProviderConnectionsCard({
         isConnectionsSortActive={isConnectionsSortActive}
         connectionsSortDirection={connectionsSortDirection}
         handleToggleConnectionsSort={handleToggleConnectionsSort}
+        handleAutoPriorityVisibleConnections={
+          handleAutoPriorityVisibleConnections
+        }
+        onConfirmDeleteSelectedConnections={onConfirmDeleteSelectedConnections}
         oneByOneRunning={oneByOneRunning}
         oneByOneStopping={oneByOneStopping}
         handleRunOneByOneTest={handleRunOneByOneTest}
@@ -186,23 +196,37 @@ export default function ProviderConnectionsCard({
             </div>
           )}
 
-          <ProviderConnectionsList
-            displayedConnections={displayedConnections}
-            connections={connections}
-            proxyPools={proxyPools}
-            isOAuth={isOAuth}
-            isSelected={isSelected}
-            toggleSelectConnection={toggleSelectConnection}
-            handleSwapPriority={handleSwapPriority}
-            handleUpdateConnectionStatus={handleUpdateConnectionStatus}
-            handleUpdateProxy={handleUpdateProxy}
-            openEditConnection={onOpenEditConnection}
-            handleDelete={handleDeleteConnection}
-            oneByOneResults={oneByOneResults}
-            manualRefreshResults={manualRefreshResults}
-            manualRefreshing={manualRefreshing}
-            isConnectionsSortActive={isConnectionsSortActive}
-          />
+          {displayedConnections.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-border bg-surface-2/40 px-4 py-8 text-center">
+              <span className="material-symbols-outlined text-[32px] text-text-muted">
+                filter_alt_off
+              </span>
+              <p className="mt-2 text-sm font-medium text-text-main">
+                No accounts match this filter
+              </p>
+              <p className="mt-1 text-xs text-text-muted">
+                Switch back to All accounts to see every connection.
+              </p>
+            </div>
+          ) : (
+            <ProviderConnectionsList
+              displayedConnections={displayedConnections}
+              connections={connections}
+              proxyPools={proxyPools}
+              isOAuth={isOAuth}
+              isSelected={isSelected}
+              toggleSelectConnection={toggleSelectConnection}
+              handleSwapPriority={handleSwapPriority}
+              handleUpdateConnectionStatus={handleUpdateConnectionStatus}
+              handleUpdateProxy={handleUpdateProxy}
+              openEditConnection={onOpenEditConnection}
+              handleDelete={handleDeleteConnection}
+              oneByOneResults={oneByOneResults}
+              manualRefreshResults={manualRefreshResults}
+              manualRefreshing={manualRefreshing}
+              isConnectionsSortActive={isConnectionsSortActive}
+            />
+          )}
 
           {!isCompatible && (
             <div className="mt-4 grid grid-cols-1 gap-2 sm:flex">

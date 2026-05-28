@@ -1,4 +1,7 @@
-import { LIMIT_METRIC_OPTIONS, LIMIT_PERIOD_OPTIONS } from "./endpointConstants";
+import {
+  LIMIT_METRIC_OPTIONS,
+  LIMIT_PERIOD_OPTIONS,
+} from "./endpointConstants";
 
 export function createDefaultLimitForm() {
   return {

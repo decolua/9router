@@ -1,3 +1,8 @@
+import {
+  buildCorsHeaders,
+  createCorsPreflightResponse,
+  withCors,
+} from "@/app/api/cors.js";
 import { handleChat } from "@/sse/handlers/chat.js";
 import { initTranslators } from "open-sse/translator/index.js";
 
@@ -16,14 +21,8 @@ async function ensureInitialized() {
 /**
  * Handle CORS preflight
  */
-export async function OPTIONS() {
-  return new Response(null, {
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "*",
-    },
-  });
+export async function OPTIONS(request) {
+  return createCorsPreflightResponse(request);
 }
 
 /**
@@ -93,16 +92,21 @@ export async function POST(request, { params }) {
       // Transform OpenAI SSE => Gemini SSE on the fly.
       // The @google/genai SDK always uses :streamGenerateContent?alt=sse and
       // expects Gemini SSE chunks (no [DONE] sentinel — stream just closes).
-      return transformOpenAISSEToGeminiSSE(response, model);
+      return transformOpenAISSEToGeminiSSE(response, model, request);
     } else {
       // Convert OpenAI JSON response => Gemini GenerateContentResponse
-      return await convertOpenAIResponseToGemini(response, model);
+      return await convertOpenAIResponseToGemini(response, model, request);
     }
   } catch (error) {
     console.log("Error handling Gemini request:", error);
     return Response.json(
       { error: { message: error.message, code: 500 } },
-      { status: 500 },
+      {
+        status: 500,
+        headers: buildCorsHeaders(request, {
+          "Content-Type": "application/json",
+        }),
+      },
     );
   }
 }
@@ -166,96 +170,107 @@ const FINISH_REASON_MAP = {
  *   data: {"candidates":[{"content":{"role":"model","parts":[{"text":""}]},"finishReason":"STOP","index":0}],"usageMetadata":{...}}
  *   (stream closes — no [DONE])
  */
-function transformOpenAISSEToGeminiSSE(upstreamResponse, model) {
+export function transformOpenAISSEToGeminiSSE(upstreamResponse, model, request) {
   if (!upstreamResponse.ok || !upstreamResponse.body) {
-    return upstreamResponse;
+    return withCors(upstreamResponse, request);
   }
 
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
 
+  let lineBuffer = "";
+
+  const processLine = (line, controller) => {
+    if (!line.startsWith("data:")) return;
+
+    const data = line.slice(5).trim();
+
+    // Drop empty lines and the OpenAI [DONE] sentinel.
+    // Gemini SSE ends by stream close, no sentinel needed.
+    if (!data || data === "[DONE]") return;
+
+    let parsed;
+    try {
+      parsed = JSON.parse(data);
+    } catch {
+      return;
+    }
+
+    const choice = parsed.choices?.[0];
+    if (!choice) return;
+
+    const delta = choice.delta || {};
+
+    const parts = [];
+    if (delta.reasoning_content) {
+      parts.push({ text: delta.reasoning_content, thought: true });
+    }
+    if (delta.content) {
+      parts.push({ text: delta.content });
+    }
+
+    // Skip pure role-only deltas with no content and no finish signal
+    if (parts.length === 0 && !choice.finish_reason) return;
+
+    const candidate = {
+      content: {
+        role: "model",
+        parts: parts.length > 0 ? parts : [{ text: "" }],
+      },
+      index: 0,
+    };
+
+    if (choice.finish_reason) {
+      candidate.finishReason =
+        FINISH_REASON_MAP[choice.finish_reason] || "STOP";
+    }
+
+    const geminiChunk = { candidates: [candidate] };
+
+    // Attach usage + modelVersion on the final chunk (when finish_reason is set)
+    if (choice.finish_reason && parsed.usage) {
+      geminiChunk.usageMetadata = {
+        promptTokenCount: parsed.usage.prompt_tokens || 0,
+        candidatesTokenCount: parsed.usage.completion_tokens || 0,
+        totalTokenCount: parsed.usage.total_tokens || 0,
+      };
+      const reasoningTokens =
+        parsed.usage.completion_tokens_details?.reasoning_tokens;
+      if (reasoningTokens) {
+        geminiChunk.usageMetadata.thoughtsTokenCount = reasoningTokens;
+      }
+      geminiChunk.modelVersion = parsed.model || model;
+    }
+
+    controller.enqueue(
+      encoder.encode("data: " + JSON.stringify(geminiChunk) + "\r\n\r\n"),
+    );
+  };
+
   const transformStream = new TransformStream({
     transform(chunk, controller) {
-      const text = decoder.decode(chunk, { stream: true });
-      const lines = text.split("\n");
+      lineBuffer += decoder.decode(chunk, { stream: true });
+      const lines = lineBuffer.split(/\r?\n/);
+      lineBuffer = lines.pop() || "";
 
       for (const line of lines) {
-        if (!line.startsWith("data:")) continue;
-
-        const data = line.slice(5).trim();
-
-        // Drop empty lines and the OpenAI [DONE] sentinel.
-        // Gemini SSE ends by stream close, no sentinel needed.
-        if (!data || data === "[DONE]") continue;
-
-        let parsed;
-        try {
-          parsed = JSON.parse(data);
-        } catch {
-          continue;
-        }
-
-        const choice = parsed.choices?.[0];
-        if (!choice) continue;
-
-        const delta = choice.delta || {};
-
-        const parts = [];
-        if (delta.reasoning_content) {
-          parts.push({ text: delta.reasoning_content, thought: true });
-        }
-        if (delta.content) {
-          parts.push({ text: delta.content });
-        }
-
-        // Skip pure role-only deltas with no content and no finish signal
-        if (parts.length === 0 && !choice.finish_reason) continue;
-
-        const candidate = {
-          content: {
-            role: "model",
-            parts: parts.length > 0 ? parts : [{ text: "" }],
-          },
-          index: 0,
-        };
-
-        if (choice.finish_reason) {
-          candidate.finishReason =
-            FINISH_REASON_MAP[choice.finish_reason] || "STOP";
-        }
-
-        const geminiChunk = { candidates: [candidate] };
-
-        // Attach usage + modelVersion on the final chunk (when finish_reason is set)
-        if (choice.finish_reason && parsed.usage) {
-          geminiChunk.usageMetadata = {
-            promptTokenCount: parsed.usage.prompt_tokens || 0,
-            candidatesTokenCount: parsed.usage.completion_tokens || 0,
-            totalTokenCount: parsed.usage.total_tokens || 0,
-          };
-          const reasoningTokens =
-            parsed.usage.completion_tokens_details?.reasoning_tokens;
-          if (reasoningTokens) {
-            geminiChunk.usageMetadata.thoughtsTokenCount = reasoningTokens;
-          }
-          geminiChunk.modelVersion = parsed.model || model;
-        }
-
-        controller.enqueue(
-          encoder.encode("data: " + JSON.stringify(geminiChunk) + "\r\n\r\n"),
-        );
+        processLine(line, controller);
       }
     },
-    // No flush() needed: Gemini SSE ends by stream close, not a sentinel
+    flush(controller) {
+      lineBuffer += decoder.decode();
+      if (lineBuffer) {
+        processLine(lineBuffer, controller);
+      }
+    },
   });
 
   return new Response(upstreamResponse.body.pipeThrough(transformStream), {
     status: 200,
-    headers: {
+    headers: buildCorsHeaders(request, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
-      "Access-Control-Allow-Origin": "*",
-    },
+    }),
   });
 }
 
@@ -263,40 +278,37 @@ function transformOpenAISSEToGeminiSSE(upstreamResponse, model) {
  * Convert an OpenAI chat.completion JSON response into a Gemini
  * GenerateContentResponse so that Gemini CLI can parse it.
  */
-async function convertOpenAIResponseToGemini(response, model) {
-  if (!response.ok) return response;
+async function convertOpenAIResponseToGemini(response, model, request) {
+  if (!response.ok) return withCors(response, request);
 
   let body;
   try {
     body = await response.json();
   } catch {
-    return response;
+    return withCors(response, request);
   }
 
   if (body.candidates)
     return Response.json(body, {
-      headers: {
+      headers: buildCorsHeaders(request, {
         "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
-      },
+      }),
     });
 
   if (body.error)
     return Response.json(body, {
       status: response.status,
-      headers: {
+      headers: buildCorsHeaders(request, {
         "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
-      },
+      }),
     });
 
   const choice = body.choices?.[0];
   if (!choice) {
     return Response.json(body, {
-      headers: {
+      headers: buildCorsHeaders(request, {
         "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
-      },
+      }),
     });
   }
 
@@ -335,9 +347,8 @@ async function convertOpenAIResponseToGemini(response, model) {
   }
 
   return Response.json(geminiResponse, {
-    headers: {
+    headers: buildCorsHeaders(request, {
       "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": "*",
-    },
+    }),
   });
 }

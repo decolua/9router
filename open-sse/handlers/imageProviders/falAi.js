@@ -22,16 +22,16 @@ const provider = {
     if (body.image) req.image_url = body.image;
     return req;
   },
-  async parseResponse(response, { headers }) {
+  async parseResponse(response, { headers, signal }) {
     const { status_url, response_url } = await response.json();
     const deadline = Date.now() + POLL_TIMEOUT_MS;
     while (Date.now() < deadline) {
-      await sleep(POLL_INTERVAL_MS);
-      const r = await fetch(status_url, { headers });
+      await sleep(POLL_INTERVAL_MS, signal);
+      const r = await fetch(status_url, { headers, signal });
       if (!r.ok) throw new Error(`Fal status ${r.status}`);
       const s = await r.json();
       if (s.status === "COMPLETED") {
-        const fr = await fetch(response_url, { headers });
+        const fr = await fetch(response_url, { headers, signal });
         return await fr.json();
       }
       if (s.status === "FAILED")
