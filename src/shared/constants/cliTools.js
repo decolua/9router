@@ -345,6 +345,33 @@ amp --model "{{model}}"
       { id: "gemini-3.1-pro", name: "Gemini 3.1 Pro", alias: "gemini", defaultValue: "gemini/gemini-3.1-pro" },
     ],
   },
+  letta: {
+    id: "letta",
+    name: "Letta Code",
+    image: "/providers/letta.png",
+    color: "#FF6B35",
+    description: "Letta Code CLI — AI agent with persistent memory and tool use",
+    configType: "custom",
+    docsUrl: "https://docs.letta.com",
+    notes: [
+      {
+        type: "info",
+        text: "Letta Code uses pi-ai which sends OpenAI-compatible requests. 9Router configures it as an OpenAI provider with custom base URL."
+      },
+      {
+        type: "info",
+        text: "CLI (Local Mode): 9Router auto-configures ~/.letta/lc-local-backend/providers/auth.json. Use 'letta --info' to check if local mode is enabled."
+      },
+      {
+        type: "info",
+        text: "Desktop App: Use the /connect command in Letta's TUI: '/connect openai --base-url <9router>/v1 --api-key <key>' then select models."
+      },
+      {
+        type: "warning",
+        text: "Local mode config path: ~/.letta/lc-local-backend/providers/auth.json (CLI only)"
+      },
+    ],
+  },
   // HIDDEN: gemini-cli
   // "gemini-cli": {
   //   id: "gemini-cli",

@@ -43,6 +43,9 @@ export function detectClientTool(headers = {}, body = {}) {
   // DeepSeek TUI
   if (ua.includes("deepseek-tui")) return "deepseek-tui";
 
+  // Letta Code
+  if (ua.includes("letta-code") || ua.includes("letta-cli")) return "letta";
+
   return null;
 }
 
