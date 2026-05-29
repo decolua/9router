@@ -20,6 +20,7 @@ export default function CombosPage() {
   const [activeProviders, setActiveProviders] = useState([]);
   const [comboStrategies, setComboStrategies] = useState({});
   const [confirmState, setConfirmState] = useState(null);
+  const [activeTab, setActiveTab] = useState("llm"); // "llm" | "embedding"
   const { copied, copy } = useCopyToClipboard();
 
   useEffect(() => {
@@ -37,8 +38,8 @@ export default function CombosPage() {
       const providersData = await providersRes.json();
       const settingsData = settingsRes.ok ? await settingsRes.json() : {};
       
-      // Only LLM combos here — webSearch/webFetch combos belong to media-providers/web
-      if (combosRes.ok) setCombos((combosData.combos || []).filter(c => !c.kind));
+      // Store all combos — filtering will be done client-side based on activeTab
+      if (combosRes.ok) setCombos(combosData.combos || []);
       if (providersRes.ok) {
         setActiveProviders(providersData.connections || []);
       }
@@ -50,12 +51,18 @@ export default function CombosPage() {
     }
   };
 
+  const filteredCombos = combos.filter(combo => {
+    if (activeTab === "llm") return !combo.kind;
+    return combo.kind === "embedding";
+  });
+
   const handleCreate = async (data) => {
     try {
+      const kind = activeTab === "embedding" ? "embedding" : null;
       const res = await fetch("/api/combos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify({ ...data, kind }),
       });
       if (res.ok) {
         await fetchData();
@@ -146,20 +153,43 @@ export default function CombosPage() {
             Create model combos with fallback support
           </p>
         </div>
-        <Button icon="add" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto">
-          Create Combo
-        </Button>
+        <div className="flex items-center gap-3">
+          {/* Tab Switcher */}
+          <div className="flex gap-1 bg-black/[0.03] dark:bg-white/[0.03] rounded-lg p-1">
+            <button
+              onClick={() => setActiveTab("llm")}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                activeTab === "llm" ? "bg-white dark:bg-black/20 shadow-sm" : "text-text-muted hover:text-text-main"
+              }`}
+            >LLM</button>
+            <button
+              onClick={() => setActiveTab("embedding")}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                activeTab === "embedding" ? "bg-white dark:bg-black/20 shadow-sm" : "text-text-muted hover:text-text-main"
+              }`}
+            >Embedding</button>
+          </div>
+          <Button icon="add" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto">
+            Create Combo
+          </Button>
+        </div>
       </div>
 
       {/* Combos List */}
-      {combos.length === 0 ? (
+      {filteredCombos.length === 0 ? (
         <Card>
           <div className="text-center py-12">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 text-primary mb-4">
               <span className="material-symbols-outlined text-[32px]">layers</span>
             </div>
-            <p className="text-text-main font-medium mb-1">No combos yet</p>
-            <p className="text-sm text-text-muted mb-4">Create model combos with fallback support</p>
+            <p className="text-text-main font-medium mb-1">
+              {activeTab === "llm" ? "No LLM combos yet" : "No embedding combos yet"}
+            </p>
+            <p className="text-sm text-text-muted mb-4">
+              {activeTab === "llm" 
+                ? "Create LLM model combos with fallback support" 
+                : "Create embedding model combos with fallback support"}
+            </p>
             <Button icon="add" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto">
               Create Combo
             </Button>
@@ -167,7 +197,7 @@ export default function CombosPage() {
         </Card>
       ) : (
         <div className="flex flex-col gap-4">
-          {combos.map((combo) => (
+          {filteredCombos.map((combo) => (
             <ComboCard
               key={combo.id}
               combo={combo}
@@ -189,6 +219,7 @@ export default function CombosPage() {
         onClose={() => setShowCreateModal(false)}
         onSave={handleCreate}
         activeProviders={activeProviders}
+        kindFilter={activeTab === "embedding" ? "embedding" : null}
       />
 
       {/* Edit Modal - Use key to force remount and reset state */}
@@ -199,6 +230,7 @@ export default function CombosPage() {
         onClose={() => setEditingCombo(null)}
         onSave={(data) => handleUpdate(editingCombo.id, data)}
         activeProviders={activeProviders}
+        kindFilter={editingCombo?.kind === "embedding" ? "embedding" : null}
       />
 
       {/* Confirm Delete Modal */}
