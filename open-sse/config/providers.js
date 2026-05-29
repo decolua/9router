@@ -366,6 +366,14 @@ export const PROVIDERS = {
     headers: { "x-opencode-client": "desktop" },
     noAuth: true
   },
+  // Gitlawb Opengateway — free OpenAI-compatible proxy that fronts Xiaomi MiMo.
+  // The /v1/xiaomi-mimo route only accepts mimo-* models (the gateway itself also
+  // exposes other vendor sub-routes, but this provider entry pins Xiaomi MiMo).
+  "gitlawb-opengateway": {
+    baseUrl: "https://opengateway.gitlawb.com/v1/xiaomi-mimo/chat/completions",
+    format: "openai",
+    noAuth: true
+  },
   "opencode-go": {
     baseUrl: "https://opencode.ai/zen/go/v1/chat/completions",
     format: "openai",

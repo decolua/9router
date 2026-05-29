@@ -542,6 +542,15 @@ export const PROVIDER_MODELS = {
     { id: "mimo-v2-omni", name: "MiMo V2 Omni" },
     { id: "mimo-v2-flash", name: "MiMo V2 Flash" },
   ],
+  // Gitlawb Opengateway — Xiaomi MiMo route. Same model family as xiaomi-mimo
+  // but proxied through the free, no-auth gateway.
+  "gitlawb-opengateway": [
+    { id: "mimo-v2.5-pro", name: "MiMo V2.5 Pro" },
+    { id: "mimo-v2.5", name: "MiMo V2.5" },
+    { id: "mimo-v2-pro", name: "MiMo V2 Pro" },
+    { id: "mimo-v2-omni", name: "MiMo V2 Omni" },
+    { id: "mimo-v2-flash", name: "MiMo V2 Flash" },
+  ],
   "xiaomi-tokenplan": [
     { id: "mimo-v2.5-pro", name: "MiMo V2.5 Pro" },
     { id: "mimo-v2.5", name: "MiMo V2.5" },

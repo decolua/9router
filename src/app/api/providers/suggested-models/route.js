@@ -18,6 +18,13 @@ const FILTERS = {
     models
       .filter((m) => m.id?.endsWith("-free"))
       .map((m) => ({ id: m.id, name: m.id })),
+
+  // Generic passthrough for any OpenAI-shape `/models` response: `{ data: [{ id, ... }] }`.
+  // Used by the Gitlawb Opengateway provider.
+  "openai-list": (models) =>
+    models
+      .filter((m) => m.id)
+      .map((m) => ({ id: m.id, name: m.id })),
 };
 
 export async function GET(request) {
