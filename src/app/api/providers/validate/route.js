@@ -6,6 +6,8 @@ import { resolveOllamaLocalHost, resolveXiaomiTokenplanBaseUrl, PROVIDERS } from
 import { openaiToCommandCode } from "open-sse/translator/request/openai-to-commandcode.js";
 import { PROVIDER_ENDPOINTS } from "@/shared/constants/config";
 import { normalizeProviderId } from "@/lib/providerNormalization";
+import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
 
 
 
@@ -489,6 +491,40 @@ export async function POST(request) {
               { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }
             );
             isValid = probeRes.status !== 401 && probeRes.status !== 403;
+          }
+          break;
+        }
+
+        case "grok-free": {
+          const token = apiKey.startsWith("sso=") ? apiKey.slice(4) : apiKey;
+          const effectiveProxy = await resolveConnectionProxyConfig(providerSpecificData || {});
+          const res = await proxyAwareFetch("https://console.x.ai/v1/responses", {
+            method: "POST",
+            headers: {
+              "Accept": "*/*",
+              "Authorization": "Bearer anonymous",
+              "Content-Type": "application/json",
+              "Cookie": `sso=${token}; sso-rw=${token}`,
+              "Origin": "https://console.x.ai",
+              "Referer": "https://console.x.ai/",
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+              "x-cluster": "https://us-east-1.api.x.ai",
+            },
+            body: JSON.stringify({
+              model: "grok-4.3",
+              input: [{ role: "user", content: [{ type: "input_text", text: "ping" }] }],
+              max_output_tokens: 1,
+              temperature: 0.7,
+              top_p: 0.95,
+              store: false,
+              stream: true,
+            }),
+          }, effectiveProxy);
+          if (res.status === 401 || res.status === 403) {
+            isValid = false;
+            error = "Invalid SSO cookie — re-paste from console.x.ai DevTools → Cookies → sso";
+          } else {
+            isValid = true;
           }
           break;
         }

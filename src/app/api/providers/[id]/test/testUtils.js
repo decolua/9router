@@ -564,6 +564,33 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const res = await fetchWithConnectionProxy("https://llm.chutes.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
+      case "grok-free": {
+        const token = connection.apiKey.startsWith("sso=") ? connection.apiKey.slice(4) : connection.apiKey;
+        const res = await fetchWithConnectionProxy("https://console.x.ai/v1/responses", {
+          method: "POST",
+          headers: {
+            "Accept": "*/*",
+            "Authorization": "Bearer anonymous",
+            "Content-Type": "application/json",
+            "Cookie": `sso=${token}; sso-rw=${token}`,
+            "Origin": "https://console.x.ai",
+            "Referer": "https://console.x.ai/",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "x-cluster": "https://us-east-1.api.x.ai",
+          },
+          body: JSON.stringify({
+            model: "grok-4.3",
+            input: [{ role: "user", content: [{ type: "input_text", text: "ping" }] }],
+            max_output_tokens: 1,
+            temperature: 0.7,
+            top_p: 0.95,
+            store: false,
+            stream: true,
+          }),
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid SSO cookie" };
+      }
       case "grok-web": {
         const token = connection.apiKey.startsWith("sso=") ? connection.apiKey.slice(4) : connection.apiKey;
         const randomHex = (n) => Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => b.toString(16).padStart(2, "0")).join("");

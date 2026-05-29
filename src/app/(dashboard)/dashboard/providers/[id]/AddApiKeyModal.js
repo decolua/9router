@@ -26,7 +26,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     : "API Key";
 
   const credentialPlaceholder = isCookie
-    ? (provider === "grok-web" ? "sso=xxxxx... or just the raw value" : "eyJhbGciOi...")
+    ? ((provider === "grok-web" || provider === "grok-free") ? "sso=xxxxx... or just the raw value" : "eyJhbGciOi...")
     : isDeepseekFree
     ? "Your Password"
     : isKimiFree
@@ -183,7 +183,14 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
       const res = await fetch("/api/providers/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider, apiKey: formData.apiKey, providerSpecificData: buildProviderSpecificData() }),
+        body: JSON.stringify({
+          provider,
+          apiKey: formData.apiKey,
+          providerSpecificData: {
+            ...buildProviderSpecificData(),
+            proxyPoolId: formData.proxyPoolId === NONE_PROXY_POOL_VALUE ? null : formData.proxyPoolId,
+          },
+        }),
       });
       const data = await res.json();
       setValidationResult(data.valid ? "success" : "failed");
@@ -216,7 +223,14 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         const res = await fetch("/api/providers/validate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ provider, apiKey: formData.apiKey, providerSpecificData: buildProviderSpecificData() }),
+          body: JSON.stringify({
+            provider,
+            apiKey: formData.apiKey,
+            providerSpecificData: {
+              ...buildProviderSpecificData(),
+              proxyPoolId: formData.proxyPoolId === NONE_PROXY_POOL_VALUE ? null : formData.proxyPoolId,
+            },
+          }),
         });
         const data = await res.json();
         isValid = !!data.valid;
@@ -506,6 +520,58 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
                 <li><strong>Either:</strong> Under <strong>Local Storage</strong> for the site, find the key <code>refresh_token</code> or <code>access_token</code> and copy its value.</li>
                 <li><strong>Or:</strong> Under <strong>Cookies</strong> for the site, find the cookie named <code>kimi-auth</code> and copy its value.</li>
                 <li>Paste the copied token (starts with <code>eyJ...</code>) in the <strong>Kimi Web Token</strong> field above, and click <strong>Check</strong>!</li>
+              </ol>
+            </div>
+          </div>
+        )}
+
+        {provider === "grok-free" && (
+          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20 flex flex-col gap-3">
+            <div className="bg-blue-500/10 border border-blue-500/30 p-3 rounded-lg text-xs text-blue-300 leading-relaxed">
+              <div className="flex items-center justify-between mb-1">
+                <strong className="text-blue-400">📋 Grok Free Tier Limits (console.x.ai)</strong>
+                <Badge variant="success" className="!bg-amber-500/10 !text-amber-500 border border-amber-500/20 text-[10px] py-0 px-1.5 rounded-full font-medium flex items-center gap-0.5 shrink-0">
+                  🔥 Fastest
+                </Badge>
+              </div>
+              <div className="overflow-x-auto mt-1.5">
+                <table className="w-full text-left border-collapse text-[11px]">
+                  <thead>
+                    <tr className="border-b border-blue-500/20 text-text-muted">
+                      <th className="py-1 pr-2">Feature</th>
+                      <th className="py-1 pr-2">Free Tier Limit</th>
+                      <th className="py-1">Reset Frequency</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-b border-blue-500/10">
+                      <td className="py-1 pr-2">Grok 4.3 Console</td>
+                      <td className="py-1 pr-2">~20 to 50 messages/day</td>
+                      <td className="py-1">Every 24 hours</td>
+                    </tr>
+                    <tr className="border-b border-blue-500/10">
+                      <td className="py-1 pr-2">Context Window</td>
+                      <td className="py-1 pr-2">Up to 1,000,000 tokens</td>
+                      <td className="py-1">-</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="bg-yellow-500/10 border border-yellow-500/30 p-2.5 rounded text-xs text-yellow-300 leading-relaxed">
+              <strong className="text-red-400 block mb-1">⚠️ Important Proxy Requirement:</strong>
+              <p className="mb-2 text-text-muted">
+                Cloudflare blocks direct server connections to console.x.ai (resulting in 403).
+                <strong> You MUST select a working Proxy Pool (e.g. Vercel or Cloudflare relay) in the Proxy Pool dropdown below</strong> before clicking Check or Save, otherwise validation will fail.
+              </p>
+              <strong className="block mt-2 mb-1">💡 How to extract your SSO cookie:</strong>
+              <ol className="list-decimal list-inside mt-1 gap-1 flex flex-col">
+                <li>Log in to <a href="https://console.x.ai" target="_blank" rel="noopener noreferrer" className="text-primary underline font-semibold">console.x.ai</a> in your browser.</li>
+                <li>Open Developer Tools (F12 or right-click -&gt; Inspect).</li>
+                <li>Go to the <strong>Application</strong> (or Storage) tab.</li>
+                <li>Under <strong>Cookies</strong> for the site, find the cookie named <code>sso</code> and copy its value.</li>
+                <li>Paste the copied cookie value (starts with <code>sso=...</code> or just the raw token) in the <strong>Cookie Value</strong> field above, and click <strong>Check</strong>! <strong>(If validation shows Invalid, try changing the proxy in the Proxy Pool dropdown below.)</strong></li>
               </ol>
             </div>
           </div>

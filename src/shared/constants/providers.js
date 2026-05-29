@@ -95,6 +95,23 @@ export const OAUTH_PROVIDERS = {
     },
     hasProviderSpecificData: true
   },
+  "grok-free": {
+    id: "grok-free",
+    alias: "grf",
+    name: "Grok Free",
+    icon: "auto_awesome",
+    iconUrl: "https://grok.com/images/favicon.ico",
+    color: "#1DA1F2",
+    textIcon: "GRF",
+    website: "https://console.x.ai",
+    authType: "cookie",
+    authHint: "Paste your sso= cookie value from console.x.ai",
+    notice: {
+      text: "Connect to official console.x.ai backend to stream Grok 4.3 and Grok 4.20 models for free using SSO cookies.",
+      signupUrl: "https://console.x.ai"
+    },
+    hasProviderSpecificData: true
+  },
 };
 
 export const APIKEY_PROVIDERS = {

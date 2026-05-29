@@ -84,8 +84,11 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         body: JSON.stringify({
           provider: connection.provider,
           apiKey: formData.apiKey,
-          ...(isAzure ? { providerSpecificData: azureData } : {}),
-          ...(isCloudflareAi ? { providerSpecificData: cloudflareData } : {}),
+          providerSpecificData: {
+            ...(connection.providerSpecificData || {}),
+            ...(isAzure ? azureData : {}),
+            ...(isCloudflareAi ? cloudflareData : {}),
+          },
         }),
       });
       const data = await res.json();
@@ -118,8 +121,11 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
               body: JSON.stringify({
                 provider: connection.provider,
                 apiKey: formData.apiKey,
-                ...(isAzure ? { providerSpecificData: azureData } : {}),
-                ...(isCloudflareAi ? { providerSpecificData: cloudflareData } : {}),
+                providerSpecificData: {
+                  ...(connection.providerSpecificData || {}),
+                  ...(isAzure ? azureData : {}),
+                  ...(isCloudflareAi ? cloudflareData : {}),
+                },
               }),
             });
             const data = await res.json();

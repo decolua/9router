@@ -65,6 +65,8 @@ const ALIAS_TO_PROVIDER_ID = {
   // Web cookie providers
   gw: "grok-web",
   "grok-web": "grok-web",
+  grf: "grok-free",
+  "grok-free": "grok-free",
   pw: "perplexity-web",
   "perplexity-web": "perplexity-web",
   mimo: "xiaomi-mimo",

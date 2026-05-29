@@ -458,6 +458,21 @@ export const PROVIDER_MODELS = {
     { id: "deepseek-chat", name: "DeepSeek V3 Chat (Free)", upstreamModelId: "deepseek-chat" },
     { id: "deepseek-reasoner", name: "DeepSeek R1 Reasoner (Free)", upstreamModelId: "deepseek-reasoner" }
   ],
+  grf: [
+    { id: "grok-4.3-console", name: "Grok 4.3" },
+    { id: "grok-4.3-low", name: "Grok 4.3 (Low Effort)" },
+    { id: "grok-4.3-medium", name: "Grok 4.3 (Medium Effort)" },
+    { id: "grok-4.3-high", name: "Grok 4.3 (High Effort)" },
+    { id: "grok-4.20-0309-console", name: "Grok 4.20" },
+    { id: "grok-4.20-0309-reasoning-console", name: "Grok 4.20 Reasoning" },
+    { id: "grok-4.20-0309-non-reasoning-console", name: "Grok 4.20 (No Reasoning)" },
+    { id: "grok-4.20-multi-agent-console", name: "Grok 4.20 Multi Agent" },
+    { id: "grok-4.20-multi-agent-low", name: "Grok 4.20 Multi Agent (Low Effort)" },
+    { id: "grok-4.20-multi-agent-medium", name: "Grok 4.20 Multi Agent (Medium Effort)" },
+    { id: "grok-4.20-multi-agent-high", name: "Grok 4.20 Multi Agent (High Effort)" },
+    { id: "grok-4.20-multi-agent-xhigh", name: "Grok 4.20 Multi Agent (xHigh Effort)" },
+    { id: "grok-build-console", name: "Grok Build" }
+  ],
 
   commandcode: [
     { id: "deepseek/deepseek-v4-pro", name: "DeepSeek V4 Pro" },
@@ -909,6 +924,7 @@ const OAUTH_ALIASES = {
 
   "deepseek-free": "dsf",
   "kimi-free": "kmf",
+  "grok-free": "grf",
 };
 
 // Derived from PROVIDERS — no need to maintain manually

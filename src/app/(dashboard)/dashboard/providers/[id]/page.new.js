@@ -45,7 +45,8 @@ export default function ProviderDetailPage() {
     : (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId]);
   const isOAuth = (!!OAUTH_PROVIDERS[providerId] || !!FREE_PROVIDERS[providerId]) &&
                   providerId !== "deepseek-free" &&
-                  providerId !== "kimi-free";
+                  providerId !== "kimi-free" &&
+                  providerId !== "grok-free";
   const models = useMemo(() => getModelsByProviderId(providerId), [providerId]);
   const providerAlias = getProviderAlias(providerId);
 
@@ -591,7 +592,14 @@ export default function ProviderDetailPage() {
             )}
           </div>
           <div>
-            <h1 className="text-3xl font-semibold tracking-tight">{providerInfo.name}</h1>
+            <div className="flex items-center gap-2.5">
+              <h1 className="text-3xl font-semibold tracking-tight">{providerInfo.name}</h1>
+              {providerId === "grok-free" && (
+                <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-500/10 px-2.5 py-0.5 text-xs font-medium text-amber-500 border border-amber-500/20">
+                  🔥 Fastest
+                </span>
+              )}
+            </div>
             <p className="text-text-muted">
               {connections.length} connection{connections.length === 1 ? "" : "s"}
             </p>

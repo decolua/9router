@@ -163,7 +163,7 @@ export default function ProvidersPage() {
 
   const getProviderStats = (providerId, authType) => {
     let effectiveAuthType = authType;
-    if (providerId === "kimi-free" || providerId === "deepseek-free") {
+    if (providerId === "kimi-free" || providerId === "deepseek-free" || providerId === "grok-free") {
       effectiveAuthType = "apikey";
     } else if (providerId === "codex" && authType === "oauth") {
       effectiveAuthType = "access_token";
@@ -214,7 +214,7 @@ export default function ProvidersPage() {
   // Toggle all connections for a provider on/off
   const handleToggleProvider = async (providerId, authType, newActive) => {
     let effectiveAuthType = authType;
-    if (providerId === "kimi-free" || providerId === "deepseek-free") {
+    if (providerId === "kimi-free" || providerId === "deepseek-free" || providerId === "grok-free") {
       effectiveAuthType = "apikey";
     } else if (providerId === "codex" && authType === "oauth") {
       effectiveAuthType = "access_token";
@@ -649,7 +649,14 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
               />
             </div>
             <div className="min-w-0">
-              <h3 className="truncate font-semibold">{provider.name}</h3>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <h3 className="truncate font-semibold">{provider.name}</h3>
+                {providerId === "grok-free" && (
+                  <Badge variant="success" className="!bg-amber-500/10 !text-amber-500 border border-amber-500/20 text-[10px] py-0 px-1 rounded font-medium flex items-center gap-0.5 shrink-0">
+                    🔥 Fastest
+                  </Badge>
+                )}
+              </div>
               <div className="flex min-w-0 items-center gap-1.5 text-xs flex-wrap">
                 {allDisabled ? (
                   <Badge variant="default" size="sm">
@@ -778,7 +785,14 @@ function ApiKeyProviderCard({
               />
             </div>
             <div className="min-w-0">
-              <h3 className="truncate font-semibold">{provider.name}</h3>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <h3 className="truncate font-semibold">{provider.name}</h3>
+                {providerId === "grok-free" && (
+                  <Badge variant="success" className="!bg-amber-500/10 !text-amber-500 border border-amber-500/20 text-[10px] py-0 px-1 rounded font-medium flex items-center gap-0.5 shrink-0">
+                    🔥 Fastest
+                  </Badge>
+                )}
+              </div>
               <div className="flex min-w-0 items-center gap-1.5 text-xs flex-wrap">
                 {allDisabled ? (
                   <Badge variant="default" size="sm">

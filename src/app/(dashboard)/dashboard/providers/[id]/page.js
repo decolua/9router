@@ -125,7 +125,8 @@ export default function ProviderDetailPage() {
   const authModes = providerInfo?.authModes || [];
   const isOAuth = (!!OAUTH_PROVIDERS[providerId] || !!FREE_PROVIDERS[providerId] || authModes.includes("oauth")) &&
                   providerId !== "deepseek-free" &&
-                  providerId !== "kimi-free";
+                  providerId !== "kimi-free" &&
+                  providerId !== "grok-free";
   const supportsApiKeyAuth = !!APIKEY_PROVIDERS[providerId] || authModes.includes("apikey");
   const isFreeNoAuth = !!FREE_PROVIDERS[providerId]?.noAuth;
   const models = getModelsByProviderId(providerId);
@@ -1049,6 +1050,11 @@ export default function ProviderDetailPage() {
           <div className="min-w-0">
             <div className="flex items-center gap-3 flex-wrap">
               <h1 className="truncate text-2xl font-semibold tracking-tight sm:text-3xl">{providerInfo.name}</h1>
+              {providerId === "grok-free" && (
+                <Badge variant="success" className="!bg-amber-500/10 !text-amber-500 border border-amber-500/20 text-xs px-2.5 py-0.5 rounded-full font-medium">
+                  🔥 Fastest
+                </Badge>
+              )}
               {(providerInfo.notice?.apiKeyUrl || providerInfo.notice?.signupUrl || providerInfo.website) && (
                 <a
                   href={providerInfo.notice?.apiKeyUrl || providerInfo.notice?.signupUrl || providerInfo.website}
