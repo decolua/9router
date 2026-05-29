@@ -9,7 +9,7 @@ import { getConsistentMachineId } from "../../src/shared/utils/machineId.js";
 
 // In-memory map: hash(machineId + first assistant content) → { sessionId, lastUsed }
 const SESSION_TTL_MS = 60 * 60 * 1000; // 1 hour
-const assistantSessionMap = new Map();
+const conversationSessionMap = new Map();
 
 // Cache machine ID at module level (resolved once)
 let cachedMachineId = null;
@@ -19,7 +19,8 @@ function hashContent(text) {
   return createHash("sha256").update(text).digest("hex").slice(0, 16);
 }
 
-function generateSessionId() {
+function generateSessionId(seed = null) {
+  if (seed) return `sess_${hashContent(seed)}`;
   return `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
@@ -33,39 +34,45 @@ function extractItemText(item) {
   return "";
 }
 
-// Resolve session_id from first assistant message + machineId to avoid cross-user collision
-function resolveConversationSessionId(input, machineId) {
-  const machineSessionId = machineId ? `sess_${hashContent(machineId)}` : generateSessionId();
-  if (!Array.isArray(input) || input.length === 0) return machineSessionId;
+function buildConversationCacheKey(input, machineId, promptCacheKey = null, instructions = "") {
+  if (promptCacheKey && typeof promptCacheKey === "string") return `client:${promptCacheKey}`;
 
-  // Find first assistant message that has actual text content
-  let text = "";
-  for (const item of input) {
-    if (item.role === "assistant") {
-      text = extractItemText(item);
-      if (text) break;
+  const parts = [machineId || "unknown-machine", instructions || ""];
+  if (Array.isArray(input)) {
+    for (const item of input) {
+      if (item?.role === "user") {
+        const text = extractItemText(item);
+        if (text) {
+          parts.push(text);
+          break;
+        }
+      }
     }
   }
-  if (!text) return machineSessionId;
 
-  const hash = hashContent((machineId || "") + text);
-  const entry = assistantSessionMap.get(hash);
+  return `auto:${hashContent(parts.join("\n---\n"))}`;
+}
+
+// Resolve session_id from a stable conversation prefix. Do not key off assistant
+// history: that changes after the first response and breaks Codex prompt caching.
+export function resolveConversationSessionId(input, machineId, promptCacheKey = null, instructions = "") {
+  const key = buildConversationCacheKey(input, machineId, promptCacheKey, instructions);
+  const entry = conversationSessionMap.get(key);
   if (entry) {
     entry.lastUsed = Date.now();
     return entry.sessionId;
   }
 
-
-  const sessionId = generateSessionId();
-  assistantSessionMap.set(hash, { sessionId, lastUsed: Date.now() });
+  const sessionId = generateSessionId(key);
+  conversationSessionMap.set(key, { sessionId, lastUsed: Date.now() });
   return sessionId;
 }
 
 // Cleanup expired entries periodically
 setInterval(() => {
   const now = Date.now();
-  for (const [key, entry] of assistantSessionMap) {
-    if (now - entry.lastUsed > SESSION_TTL_MS) assistantSessionMap.delete(key);
+  for (const [key, entry] of conversationSessionMap) {
+    if (now - entry.lastUsed > SESSION_TTL_MS) conversationSessionMap.delete(key);
   }
 }, 10 * 60 * 1000);
 
@@ -154,8 +161,6 @@ export class CodexExecutor extends BaseExecutor {
   transformRequest(model, body, stream, credentials) {
     this._isCompact = !!body._compact;
     delete body._compact;
-    // Resolve conversation-stable session_id from input history + machineId
-    this._currentSessionId = resolveConversationSessionId(body.input, cachedMachineId);
     // Convert string input to array format (Codex API requires input as array)
     const normalized = normalizeResponsesInput(body.input);
     if (normalized) body.input = normalized;
@@ -172,6 +177,11 @@ export class CodexExecutor extends BaseExecutor {
     if (!body.instructions || body.instructions.trim() === "") {
       body.instructions = CODEX_DEFAULT_INSTRUCTIONS;
     }
+
+    // Use one stable cache/session key across tool turns. Codex CLI resends full
+    // history, so stable prompt_cache_key + session_id is what lets upstream reuse it.
+    this._currentSessionId = resolveConversationSessionId(body.input, cachedMachineId, body.prompt_cache_key, body.instructions);
+    if (!body.prompt_cache_key) body.prompt_cache_key = this._currentSessionId;
 
     // Ensure store is false (Codex requirement)
     body.store = false;

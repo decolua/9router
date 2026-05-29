@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { CodexExecutor } from "../../open-sse/executors/codex.js";
+import { CodexExecutor, resolveConversationSessionId } from "../../open-sse/executors/codex.js";
 import * as proxyFetchModule from "../../open-sse/utils/proxyFetch.js";
 
 const IMAGE_1MB_BYTES = 1024 * 1024;
@@ -141,5 +141,47 @@ describe("CodexExecutor image handling", () => {
     const parsed = JSON.parse(capturedBodyString);
     const imgBlock = parsed.input[0].content.find((c) => c.type === "input_image");
     expect(imgBlock.image_url.startsWith("data:image/jpeg;base64,")).toBe(true);
+  });
+});
+
+describe("CodexExecutor prompt cache session", () => {
+  it("keeps the same session as assistant/tool history grows", () => {
+    const firstTurn = [
+      { type: "message", role: "user", content: [{ type: "input_text", text: "fix cache bug" }] },
+    ];
+    const laterTurn = [
+      ...firstTurn,
+      { type: "message", role: "assistant", content: [{ type: "output_text", text: "I will inspect it." }] },
+      { type: "function_call", call_id: "call_1", name: "shell", arguments: "{}" },
+      { type: "function_call_output", call_id: "call_1", output: "ok" },
+    ];
+
+    const firstSession = resolveConversationSessionId(firstTurn, "machine-a", null, "instructions");
+    const laterSession = resolveConversationSessionId(laterTurn, "machine-a", null, "instructions");
+
+    expect(laterSession).toBe(firstSession);
+  });
+
+  it("preserves client prompt_cache_key for the session", () => {
+    const input = [{ type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] }];
+
+    const session = resolveConversationSessionId(input, "machine-a", "cache-key-1", "instructions");
+    const sameSession = resolveConversationSessionId(input, "machine-b", "cache-key-1", "different");
+
+    expect(sameSession).toBe(session);
+  });
+
+  it("adds prompt_cache_key when transforming Codex requests", () => {
+    const executor = new CodexExecutor();
+    const body = {
+      model: "gpt-5.3-codex",
+      input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] }],
+      instructions: "instructions",
+    };
+
+    const transformed = executor.transformRequest("gpt-5.3-codex", body, true, {});
+
+    expect(transformed.prompt_cache_key).toBeTypeOf("string");
+    expect(transformed.prompt_cache_key).toBe(executor._currentSessionId);
   });
 });

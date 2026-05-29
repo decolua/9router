@@ -259,13 +259,21 @@ function emitToolCall(state, emit, tc) {
 
   if (funcName) state.funcNames[tcIdx] = funcName;
 
+  const isCustomTool = (state.funcNames[tcIdx] || funcName) === "apply_patch";
+
   if (!state.funcCallIds[tcIdx] && newCallId) {
     state.funcCallIds[tcIdx] = newCallId;
-    
+
     emit("response.output_item.added", {
       type: "response.output_item.added",
       output_index: tcIdx,
-      item: {
+      item: isCustomTool ? {
+        id: `fc_${newCallId}`,
+        type: "custom_tool_call",
+        input: "",
+        call_id: newCallId,
+        name: state.funcNames[tcIdx] || ""
+      } : {
         id: `fc_${newCallId}`,
         type: "function_call",
         arguments: "",
@@ -280,8 +288,9 @@ function emitToolCall(state, emit, tc) {
   if (tc.function?.arguments) {
     const refCallId = state.funcCallIds[tcIdx] || newCallId;
     if (refCallId) {
-      emit("response.function_call_arguments.delta", {
-        type: "response.function_call_arguments.delta",
+      const deltaEvent = isCustomTool ? "response.custom_tool_call_input.delta" : "response.function_call_arguments.delta";
+      emit(deltaEvent, {
+        type: deltaEvent,
         item_id: `fc_${refCallId}`,
         output_index: tcIdx,
         delta: tc.function.arguments
@@ -295,25 +304,54 @@ function closeToolCall(state, emit, idx) {
   const callId = state.funcCallIds[idx];
   if (callId && !state.funcItemDone[idx]) {
     const args = state.funcArgsBuf[idx] || "{}";
-    
-    emit("response.function_call_arguments.done", {
-      type: "response.function_call_arguments.done",
-      item_id: `fc_${callId}`,
-      output_index: parseInt(idx),
-      arguments: args
-    });
+    const isCustomTool = (state.funcNames[idx] || "") === "apply_patch";
 
-    emit("response.output_item.done", {
-      type: "response.output_item.done",
-      output_index: parseInt(idx),
-      item: {
-        id: `fc_${callId}`,
-        type: "function_call",
-        arguments: args,
-        call_id: callId,
-        name: state.funcNames[idx] || ""
-      }
-    });
+    if (isCustomTool) {
+      // Extract raw patch string from JSON {"input":"..."} that the model generated
+      let rawInput = args;
+      try {
+        const parsed = JSON.parse(args);
+        if (typeof parsed.input === "string") rawInput = parsed.input;
+      } catch (_) {}
+
+      emit("response.custom_tool_call_input.done", {
+        type: "response.custom_tool_call_input.done",
+        item_id: `fc_${callId}`,
+        output_index: parseInt(idx),
+        input: rawInput
+      });
+
+      emit("response.output_item.done", {
+        type: "response.output_item.done",
+        output_index: parseInt(idx),
+        item: {
+          id: `fc_${callId}`,
+          type: "custom_tool_call",
+          input: rawInput,
+          call_id: callId,
+          name: state.funcNames[idx] || ""
+        }
+      });
+    } else {
+      emit("response.function_call_arguments.done", {
+        type: "response.function_call_arguments.done",
+        item_id: `fc_${callId}`,
+        output_index: parseInt(idx),
+        arguments: args
+      });
+
+      emit("response.output_item.done", {
+        type: "response.output_item.done",
+        output_index: parseInt(idx),
+        item: {
+          id: `fc_${callId}`,
+          type: "function_call",
+          arguments: args,
+          call_id: callId,
+          name: state.funcNames[idx] || ""
+        }
+      });
+    }
 
     state.funcItemDone[idx] = true;
     state.funcArgsDone[idx] = true;
