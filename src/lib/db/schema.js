@@ -82,17 +82,18 @@ export const TABLES = {
     },
     indexes: ["CREATE INDEX IF NOT EXISTS idx_ak_key ON apiKeys(key)"],
   },
-  combos: {
-    columns: {
-      id: "TEXT PRIMARY KEY",
-      name: "TEXT UNIQUE NOT NULL",
-      kind: "TEXT",
-      models: "TEXT NOT NULL",
-      createdAt: "TEXT NOT NULL",
-      updatedAt: "TEXT NOT NULL",
-    },
-    indexes: ["CREATE INDEX IF NOT EXISTS idx_combo_name ON combos(name)"],
-  },
+   combos: {
+     columns: {
+       id: "TEXT PRIMARY KEY",
+       name: "TEXT UNIQUE NOT NULL",
+       kind: "TEXT",
+       models: "TEXT NOT NULL",
+       dimensions: "TEXT",
+       createdAt: "TEXT NOT NULL",
+       updatedAt: "TEXT NOT NULL",
+     },
+     indexes: ["CREATE INDEX IF NOT EXISTS idx_combo_name ON combos(name)"],
+   },
   kv: {
     columns: {
       scope: "TEXT NOT NULL",
