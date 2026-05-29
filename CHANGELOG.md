@@ -1,6 +1,7 @@
 # v0.4.63 (2026-05-26)
 
 ## Fixes
+- Suggested models: include free OpenCode models without a `-free` suffix (e.g. `big-pickle`) so they show up for import (#1535)
 - proxyFetch: restore missing `Readable` import causing runtime `ReferenceError` in DNS-bypass fetch path
 
 ## Improvements
