@@ -6,12 +6,14 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
-import { getModelInfo } from "../services/model.js";
+import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleEmbeddingsCore } from "open-sse/handlers/embeddingsCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
+import { handleComboChat } from "open-sse/services/combo.js";
+import { getComboByName } from "@/lib/localDb";
 
 /**
  * Handle embeddings request for the SSE/Next.js server.
@@ -65,9 +67,41 @@ export async function handleEmbeddings(request) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: input");
   }
 
+  // Combo 检测：model 可能是 combo 名称，使用 fallback/round-robin 策略
+  const comboModels = await getComboModels(modelStr);
+  if (comboModels) {
+    const comboStrategies = settings.comboStrategies || {};
+    const comboStrategy = comboStrategies[modelStr]?.fallbackStrategy || settings.comboStrategy || "fallback";
+    const comboStickyLimit = settings.comboStickyRoundRobinLimit;
+
+    // 注入 combo 级别 dimensions（若用户未显式传入）
+    if (!body.dimensions) {
+      const combo = await getComboByName(modelStr);
+      if (combo?.dimensions) {
+        body = { ...body, dimensions: combo.dimensions };
+        log.info("EMBEDDINGS", `使用 combo 维度: ${combo.dimensions}`);
+      }
+    }
+
+    log.info("EMBEDDINGS", `Combo "${modelStr}" 包含 ${comboModels.length} 个模型 (策略: ${comboStrategy}, sticky: ${comboStickyLimit})`);
+    return handleComboChat({
+      body,
+      models: comboModels,
+      handleSingleModel: (b, m) => handleSingleModelEmbedding(b, m),
+      log,
+      comboName: modelStr,
+      comboStrategy,
+      comboStickyLimit,
+    });
+  }
+
+  return handleSingleModelEmbedding(body, modelStr);
+}
+
+async function handleSingleModelEmbedding(body, modelStr) {
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider) {
-    log.warn("EMBEDDINGS", "Invalid model format", { model: modelStr });
+    log.warn("EMBEDDINGS", "无效的模型格式", { model: modelStr });
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
   }
 
@@ -79,7 +113,6 @@ export async function handleEmbeddings(request) {
     log.info("ROUTING", `Provider: ${provider}, Model: ${model}`);
   }
 
-  // Credential + fallback loop (mirrors handleChat)
   const excludeConnectionIds = new Set();
   let lastError = null;
   let lastStatus = null;
@@ -87,7 +120,6 @@ export async function handleEmbeddings(request) {
   while (true) {
     const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
 
-    // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
