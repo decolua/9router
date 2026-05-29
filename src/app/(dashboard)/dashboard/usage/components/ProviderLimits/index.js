@@ -8,6 +8,7 @@ import { parseQuotaData, calculatePercentage } from "./utils";
 import Card from "@/shared/components/Card";
 import { EditConnectionModal } from "@/shared/components";
 import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
+import { describeFetchError } from "@/shared/utils/fetchError";
 
 function getConnectionLabel(connection) {
   const isEmail = (value) =>
@@ -317,7 +318,8 @@ export default function ProviderLimits() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        const errorMsg = errorData.error || response.statusText;
+        // Distinguish a dashboard-session 401 from an upstream/provider error (#1160).
+        const errorMsg = describeFetchError(response.status, response.statusText, errorData.error);
 
         // Handle different error types gracefully
         if (response.status === 404) {

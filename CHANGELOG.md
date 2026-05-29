@@ -1,6 +1,7 @@
 # v0.4.63 (2026-05-26)
 
 ## Fixes
+- Dashboard: distinguish an expired dashboard session from an upstream provider auth failure instead of showing a bare "HTTP 401: Unauthorized" in the provider model list / quota panels (#1160)
 - proxyFetch: restore missing `Readable` import causing runtime `ReferenceError` in DNS-bypass fetch path
 
 ## Improvements

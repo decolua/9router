@@ -3,6 +3,7 @@
 import { useState } from "react";
 import PropTypes from "prop-types";
 import { Button } from "@/shared/components";
+import { describeFetchError } from "@/shared/utils/fetchError";
 function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting }) {
   const borderColor = testStatus === "ok"
     ? "border-green-500/40"
@@ -149,9 +150,10 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
     setImporting(true);
     try {
       const res = await fetch(`/api/providers/${activeConnection.id}/models`);
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        alert(data.error || "Failed to import models");
+        // Session-401 vs upstream/provider error are now distinguished (#1160).
+        alert(describeFetchError(res.status, res.statusText, data.error));
         return;
       }
       const models = data.models || [];
