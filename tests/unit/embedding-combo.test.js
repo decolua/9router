@@ -14,7 +14,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("@/lib/localDb", () => ({
   getSettings: vi.fn(),
-  getComboByName: vi.fn(),
   getCombos: vi.fn(),
   getComboById: vi.fn(),
   createCombo: vi.fn(),
@@ -115,7 +114,7 @@ import { getModelInfo, getComboModels } from "../../src/sse/services/model.js";
 import { handleComboChat } from "open-sse/services/combo.js";
 import { handleEmbeddingsCore } from "open-sse/handlers/embeddingsCore.js";
 import { errorResponse } from "open-sse/utils/error.js";
-import { getProviderCredentials, markAccountUnavailable } from "../../src/sse/services/auth.js";
+import { getProviderCredentials, markAccountUnavailable, extractApiKey } from "../../src/sse/services/auth.js";
 import { checkAndRefreshToken } from "../../src/sse/services/tokenRefresh.js";
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -180,7 +179,7 @@ describe("handleEmbeddings — combo detection", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getSettings.mockResolvedValue(defaultSettings());
-    extractApiKey: vi.fn().mockReturnValue(null);
+    extractApiKey.mockReturnValue(null);
   });
 
   it("1. detects combo name and calls handleComboChat", async () => {
