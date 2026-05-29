@@ -78,6 +78,7 @@ export function createSSEStream(options = {}) {
   let accumulatedThinking = "";
   let ttftAt = null;
   let firstRawChunkLogged = false;
+  let firstParsedEventLogged = false;
   let firstEmittedChunkAt = null;
   let firstEmittedChunkBytes = 0;
   let sseLineCount = 0;
@@ -233,6 +234,13 @@ export function createSSEStream(options = {}) {
 
         const parsed = parseSSELine(trimmed, targetFormat);
         if (!parsed) continue;
+        if (!firstParsedEventLogged) {
+          firstParsedEventLogged = true;
+          log.info(
+            "SSE-FIRST",
+            `${provider || "unknown"}/${model || "unknown"} | mode=${mode} | firstEvent=${parsed.type || parsed.event || "unknown"}`,
+          );
+        }
 
         // For Ollama: done=true is the final chunk with finish_reason/usage, must translate
         // For other formats: done=true is the [DONE] sentinel, skip

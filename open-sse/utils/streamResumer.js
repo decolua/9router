@@ -167,6 +167,8 @@ export async function executeResumeRequest({
       credentials?.providerSpecificData?.connectionProxyUrl || "",
     connectionNoProxy:
       credentials?.providerSpecificData?.connectionNoProxy || "",
+    connectionProxyHeadersTimeoutMs:
+      credentials?.providerSpecificData?.connectionProxyHeadersTimeoutMs,
     vercelRelayUrl: credentials?.providerSpecificData?.vercelRelayUrl || "",
   };
 

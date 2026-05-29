@@ -248,6 +248,12 @@ export class BaseExecutor {
         const timingBreakdown = fetchTiming
           ? {
               mode: fetchTiming.mode,
+              proxySource: fetchTiming.proxySource,
+              proxyUrl: fetchTiming.proxyUrl,
+              strictProxy: fetchTiming.strictProxy,
+              proxyError: fetchTiming.proxyError,
+              proxyHeadersTimeoutMs: fetchTiming.proxyHeadersTimeoutMs,
+              proxyHeadersTimedOut: fetchTiming.proxyHeadersTimedOut,
               dnsMs:
                 fetchTiming.dnsStartAt && fetchTiming.dnsResolvedAt
                   ? fetchTiming.dnsResolvedAt - fetchTiming.dnsStartAt
@@ -255,6 +261,14 @@ export class BaseExecutor {
               dispatcherMs:
                 fetchTiming.proxyStartAt && fetchTiming.dispatcherReadyAt
                   ? fetchTiming.dispatcherReadyAt - fetchTiming.proxyStartAt
+                  : undefined,
+              proxyHeadersMs:
+                fetchTiming.dispatcherReadyAt && fetchTiming.headersAt
+                  ? fetchTiming.headersAt - fetchTiming.dispatcherReadyAt
+                  : undefined,
+              directFallbackMs:
+                fetchTiming.directFallbackStartAt && fetchTiming.headersAt
+                  ? fetchTiming.headersAt - fetchTiming.directFallbackStartAt
                   : undefined,
               relayMs:
                 fetchTiming.relayStartAt && fetchTiming.headersAt
@@ -271,9 +285,15 @@ export class BaseExecutor {
           `${this.provider.toUpperCase()} ← ${response.status} | ttft=${Date.now() - fetchT0}ms | ct=${ct} | cl=${cl}${timingBreakdown ? ` | net=${JSON.stringify(timingBreakdown)}` : ""}`,
         );
         if (timingBreakdown) {
+          const proxyDetails = timingBreakdown.proxyUrl
+            ? ` | proxy=${timingBreakdown.proxyUrl} | source=${timingBreakdown.proxySource} | strict=${timingBreakdown.strictProxy} | proxyTimeout=${timingBreakdown.proxyHeadersTimeoutMs ?? "-"}ms`
+            : "";
+          const fallbackDetails = timingBreakdown.proxyError
+            ? ` | proxyError=${timingBreakdown.proxyError}${timingBreakdown.directFallbackMs !== undefined ? ` | directFallback=${timingBreakdown.directFallbackMs}ms` : ""}`
+            : "";
           log?.info?.(
             "FETCH",
-            `${this.provider.toUpperCase()} | mode=${timingBreakdown.mode} | headers=${timingBreakdown.headersMs ?? "?"}ms | dns=${timingBreakdown.dnsMs ?? "-"}ms | dispatcher=${timingBreakdown.dispatcherMs ?? "-"}ms | relay=${timingBreakdown.relayMs ?? "-"}ms`,
+            `${this.provider.toUpperCase()} | mode=${timingBreakdown.mode}${proxyDetails} | headers=${timingBreakdown.headersMs ?? "?"}ms | dns=${timingBreakdown.dnsMs ?? "-"}ms | dispatcher=${timingBreakdown.dispatcherMs ?? "-"}ms | proxyHeaders=${timingBreakdown.proxyHeadersMs ?? "-"}ms | relay=${timingBreakdown.relayMs ?? "-"}ms${fallbackDetails}`,
           );
         }
 
