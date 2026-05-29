@@ -61,6 +61,17 @@ const OAUTH_TEST_CONFIG = {
   },
   qwen: { checkExpiry: true, refreshable: true },
   kiro: { checkExpiry: true, refreshable: true },
+  qoder: {
+    // Test by hitting Qoder's userinfo endpoint with the device token.
+    // refreshable: false because the device-flow refresh endpoint returns
+    // 403 for our flow (users re-login when expired). No checkExpiry —
+    // we want the actual URL probe to run so revoked tokens surface.
+    url: "https://openapi.qoder.sh/api/v1/userinfo",
+    method: "GET",
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    refreshable: false,
+  },
   "kimi-coding": { checkExpiry: true, refreshable: false },
   cursor: { tokenExists: true },
   kilocode: {

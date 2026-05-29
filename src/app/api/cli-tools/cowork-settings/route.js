@@ -311,6 +311,8 @@ export async function GET() {
 }
 
 export async function POST(request) {
+  // Cowork disabled: spawns arbitrary processes (RCE risk).
+  return NextResponse.json({ error: "Cowork is disabled" }, { status: 403 });
   try {
     const { baseUrl, apiKey, models, plugins, localPlugins, customPlugins } = await request.json();
 
