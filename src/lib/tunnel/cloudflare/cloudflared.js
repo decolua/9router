@@ -374,6 +374,14 @@ export async function spawnQuickTunnel(localPort, onUrlUpdate) {
     child.on("exit", (code, signal) => {
       cloudflaredProcess = null;
       clearPid();
+      // Deliberate kill (restart/disable) — exit silently, no error noise
+      if (intentionalKill) {
+        intentionalKill = false;
+        clearTimeout(timeout);
+        cleanup();
+        if (!resolved) { resolved = true; reject(new Error("cloudflared killed")); }
+        return;
+      }
       console.log(`[Tunnel] cloudflared exit code=${code} signal=${signal}`);
       if (!resolved) {
         resolved = true;
@@ -389,7 +397,6 @@ export async function spawnQuickTunnel(localPort, onUrlUpdate) {
         }
         return;
       }
-      if (intentionalKill) { intentionalKill = false; cleanup(); return; }
       if (unexpectedExitHandler) unexpectedExitHandler();
       cleanup();
     });

@@ -9,7 +9,7 @@ import {
   isTunnelManuallyDisabled, isTunnelReconnecting, isTailscaleReconnecting,
   getTunnelService, getTailscaleService, setTunnelUnexpectedExitCallback,
   killCloudflared, isCloudflaredRunning, ensureCloudflared,
-  isTailscaleRunning,
+  isTailscaleRunning, isTailscaleRunningStrict,
   loadState,
   checkInternet,
   probeCloudflareAlive, probeTailscaleAlive,
@@ -177,7 +177,9 @@ async function safeRestartTunnel(reason) {
     svc.lastRestartAt = Date.now();
     logger.info("[Tunnel] restart success");
   } catch (err) {
-    logger.error({ err }, "[Tunnel] restart failed");
+    if (!/cloudflared killed|tunnel cancelled/.test(err.message)) {
+      logger.error({ err }, "[Tunnel] restart failed");
+    }
   }
 }
 
@@ -188,8 +190,10 @@ async function safeRestartTailscale(reason) {
   if (svc.cancelToken.cancelled) return;
   if (svc.spawnInProgress) return;
 
-  // Tailscale daemon is OS-level with built-in reconnect; trust it when running
-  if (isTailscaleRunning()) return;
+  // Tailscale daemon is OS-level with built-in reconnect; trust it when running.
+  // Startup uses strict probe — cached state is cold after process/dev reload.
+  const running = reason === "startup" ? isTailscaleRunningStrict() : isTailscaleRunning();
+  if (running) return;
 
   const force = FORCE_RESTART_REASONS.test(reason);
   if (!force && Date.now() - svc.lastRestartAt < RESTART_COOLDOWN_MS) {
