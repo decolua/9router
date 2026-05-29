@@ -1,13 +1,59 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Card, Button, Toggle, Input } from "@/shared/components";
+import { Card, Button, Toggle, Input, SegmentedControl } from "@/shared/components";
+import { StatusAlert } from "../endpoint/components/StatusAlert";
 import { useTheme } from "@/shared/hooks/useTheme";
-import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
 
+const EMPTY_STATUS = { type: "", message: "" };
+const DEFAULT_OIDC_FORM = {
+  authMode: "password",
+  oidcIssuerUrl: "",
+  oidcClientId: "",
+  oidcScopes: "openid profile email",
+  oidcLoginLabel: "Sign in with OIDC",
+};
+const THEME_OPTIONS = [
+  { value: "light", label: "Light", icon: "light_mode" },
+  { value: "dark", label: "Dark", icon: "dark_mode" },
+  { value: "system", label: "System", icon: "contrast" },
+];
+const OIDC_AUTH_MODE_OPTIONS = [
+  {
+    value: "password",
+    title: "Password only",
+    desc: "Keep the legacy password login.",
+  },
+  {
+    value: "oidc",
+    title: "OIDC only",
+    desc: "Require OIDC for dashboard access.",
+  },
+  {
+    value: "both",
+    title: "Both",
+    desc: "Allow either password or OIDC.",
+  },
+];
+
+function getOidcFormFromSettings(data = {}, fallback = DEFAULT_OIDC_FORM) {
+  return {
+    authMode: data?.authMode || fallback.authMode,
+    oidcIssuerUrl: data?.oidcIssuerUrl || fallback.oidcIssuerUrl,
+    oidcClientId: data?.oidcClientId || fallback.oidcClientId,
+    oidcScopes: data?.oidcScopes || fallback.oidcScopes,
+    oidcLoginLabel: data?.oidcLoginLabel || fallback.oidcLoginLabel,
+  };
+}
+
+function ProfileStatus({ status, className = "" }) {
+  if (!status.message) return null;
+  return <StatusAlert status={status} className={className} />;
+}
+
 export default function ProfilePage() {
-  const { theme, setTheme, isDark } = useTheme();
+  const { theme, setTheme } = useTheme();
   const [settings, setSettings] = useState({ fallbackStrategy: "fill-first" });
   const [loading, setLoading] = useState(true);
   const [passwords, setPasswords] = useState({
@@ -15,27 +61,18 @@ export default function ProfilePage() {
     new: "",
     confirm: "",
   });
-  const [passStatus, setPassStatus] = useState({ type: "", message: "" });
+  const [passStatus, setPassStatus] = useState(EMPTY_STATUS);
   const [passLoading, setPassLoading] = useState(false);
   const [dbLoading, setDbLoading] = useState(false);
-  const [dbStatus, setDbStatus] = useState({ type: "", message: "" });
+  const [dbStatus, setDbStatus] = useState(EMPTY_STATUS);
   const [includeUsageAnalytics, setIncludeUsageAnalytics] = useState(false);
   const [restoreUsageAnalytics, setRestoreUsageAnalytics] = useState(false);
-  const [oidcForm, setOidcForm] = useState({
-    authMode: "password",
-    oidcIssuerUrl: "",
-    oidcClientId: "",
-    oidcScopes: "openid profile email",
-    oidcLoginLabel: "Sign in with OIDC",
-  });
+  const [oidcForm, setOidcForm] = useState(DEFAULT_OIDC_FORM);
   const [oidcClientSecret, setOidcClientSecret] = useState("");
-  const [oidcStatus, setOidcStatus] = useState({ type: "", message: "" });
+  const [oidcStatus, setOidcStatus] = useState(EMPTY_STATUS);
   const [oidcLoading, setOidcLoading] = useState(false);
   const [oidcTestLoading, setOidcTestLoading] = useState(false);
-  const [oidcTestStatus, setOidcTestStatus] = useState({
-    type: "",
-    message: "",
-  });
+  const [oidcTestStatus, setOidcTestStatus] = useState(EMPTY_STATUS);
   const [oidcRedirectUri] = useState(() => {
     if (typeof window === "undefined") {
       return "/api/auth/oidc/callback";
@@ -46,11 +83,10 @@ export default function ProfilePage() {
   const [oidcExpanded, setOidcExpanded] = useState(false);
   const importFileRef = useRef(null);
   const [proxyForm, setProxyForm] = useState({
-    outboundProxyEnabled: false,
     outboundProxyUrl: "",
     outboundNoProxy: "",
   });
-  const [proxyStatus, setProxyStatus] = useState({ type: "", message: "" });
+  const [proxyStatus, setProxyStatus] = useState(EMPTY_STATUS);
   const [proxyLoading, setProxyLoading] = useState(false);
   const [proxyTestLoading, setProxyTestLoading] = useState(false);
 
@@ -59,18 +95,11 @@ export default function ProfilePage() {
       .then((res) => res.json())
       .then((data) => {
         setSettings(data);
-        setOidcForm({
-          authMode: data?.authMode || "password",
-          oidcIssuerUrl: data?.oidcIssuerUrl || "",
-          oidcClientId: data?.oidcClientId || "",
-          oidcScopes: data?.oidcScopes || "openid profile email",
-          oidcLoginLabel: data?.oidcLoginLabel || "Sign in with OIDC",
-        });
+        setOidcForm(getOidcFormFromSettings(data));
         setOidcClientSecret("");
         if (data?.authMode === "oidc" || data?.authMode === "both")
           setOidcExpanded(true);
         setProxyForm({
-          outboundProxyEnabled: data?.outboundProxyEnabled === true,
           outboundProxyUrl: data?.outboundProxyUrl || "",
           outboundNoProxy: data?.outboundNoProxy || "",
         });
@@ -86,7 +115,7 @@ export default function ProfilePage() {
     e.preventDefault();
     if (settings.outboundProxyEnabled !== true) return;
     setProxyLoading(true);
-    setProxyStatus({ type: "", message: "" });
+    setProxyStatus(EMPTY_STATUS);
 
     try {
       const res = await fetch("/api/settings", {
@@ -128,7 +157,7 @@ export default function ProfilePage() {
     }
 
     setProxyTestLoading(true);
-    setProxyStatus({ type: "", message: "" });
+    setProxyStatus(EMPTY_STATUS);
 
     try {
       const res = await fetch("/api/settings/proxy-test", {
@@ -158,7 +187,7 @@ export default function ProfilePage() {
 
   const updateOutboundProxyEnabled = async (outboundProxyEnabled) => {
     setProxyLoading(true);
-    setProxyStatus({ type: "", message: "" });
+    setProxyStatus(EMPTY_STATUS);
 
     try {
       const res = await fetch("/api/settings", {
@@ -170,10 +199,6 @@ export default function ProfilePage() {
       const data = await res.json();
       if (res.ok) {
         setSettings((prev) => ({ ...prev, ...data }));
-        setProxyForm((prev) => ({
-          ...prev,
-          outboundProxyEnabled: data?.outboundProxyEnabled === true,
-        }));
         setProxyStatus({
           type: "success",
           message: outboundProxyEnabled ? "Proxy enabled" : "Proxy disabled",
@@ -199,7 +224,7 @@ export default function ProfilePage() {
     }
 
     setPassLoading(true);
-    setPassStatus({ type: "", message: "" });
+    setPassStatus(EMPTY_STATUS);
 
     try {
       const res = await fetch("/api/settings", {
@@ -320,8 +345,12 @@ export default function ProfilePage() {
     setOidcForm((prev) => ({ ...prev, [field]: value }));
   };
 
+  const updateProxyForm = (field, value) => {
+    setProxyForm((prev) => ({ ...prev, [field]: value }));
+  };
+
   const saveOidcSettings = async (
-    authMode = oidcForm.authMode || "password",
+    authMode = oidcForm.authMode || DEFAULT_OIDC_FORM.authMode,
   ) => {
     const issuerUrl = oidcForm.oidcIssuerUrl.trim();
     const clientId = oidcForm.oidcClientId.trim();
@@ -343,16 +372,16 @@ export default function ProfilePage() {
     }
 
     setOidcLoading(true);
-    setOidcStatus({ type: "", message: "" });
-    setOidcTestStatus({ type: "", message: "" });
+    setOidcStatus(EMPTY_STATUS);
+    setOidcTestStatus(EMPTY_STATUS);
 
     try {
       const payload = {
         authMode,
         oidcIssuerUrl: issuerUrl,
         oidcClientId: clientId,
-        oidcScopes: scopes || "openid profile email",
-        oidcLoginLabel: loginLabel || "Sign in with OIDC",
+        oidcScopes: scopes || DEFAULT_OIDC_FORM.oidcScopes,
+        oidcLoginLabel: loginLabel || DEFAULT_OIDC_FORM.oidcLoginLabel,
       };
       if (secret) {
         payload.oidcClientSecret = secret;
@@ -367,14 +396,15 @@ export default function ProfilePage() {
       const data = await res.json();
       if (res.ok) {
         setSettings((prev) => ({ ...prev, ...data }));
-        setOidcForm({
-          authMode: data?.authMode || authMode,
-          oidcIssuerUrl: data?.oidcIssuerUrl || issuerUrl,
-          oidcClientId: data?.oidcClientId || clientId,
-          oidcScopes: data?.oidcScopes || scopes || "openid profile email",
-          oidcLoginLabel:
-            data?.oidcLoginLabel || loginLabel || "Sign in with OIDC",
-        });
+        setOidcForm(
+          getOidcFormFromSettings(data, {
+            authMode,
+            oidcIssuerUrl: issuerUrl,
+            oidcClientId: clientId,
+            oidcScopes: scopes || DEFAULT_OIDC_FORM.oidcScopes,
+            oidcLoginLabel: loginLabel || DEFAULT_OIDC_FORM.oidcLoginLabel,
+          }),
+        );
         setOidcClientSecret("");
         setOidcStatus({
           type: "success",
@@ -414,8 +444,8 @@ export default function ProfilePage() {
     }
 
     setOidcTestLoading(true);
-    setOidcStatus({ type: "", message: "" });
-    setOidcTestStatus({ type: "", message: "" });
+    setOidcStatus(EMPTY_STATUS);
+    setOidcTestStatus(EMPTY_STATUS);
 
     try {
       const saveRes = await fetch("/api/settings", {
@@ -502,14 +532,15 @@ export default function ProfilePage() {
 
   const handleExportDatabase = async () => {
     setDbLoading(true);
-    setDbStatus({ type: "", message: "" });
+    setDbStatus(EMPTY_STATUS);
     try {
       const params = new URLSearchParams();
       if (includeUsageAnalytics) {
         params.set("includeUsageAnalytics", "true");
       }
+      const query = params.toString();
       const res = await fetch(
-        `/api/settings/database${params.toString() ? `?${params.toString()}` : ""}`,
+        `/api/settings/database${query ? `?${query}` : ""}`,
       );
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -545,7 +576,7 @@ export default function ProfilePage() {
     if (!file) return;
 
     setDbLoading(true);
-    setDbStatus({ type: "", message: "" });
+    setDbStatus(EMPTY_STATUS);
 
     try {
       const raw = await file.text();
@@ -610,32 +641,13 @@ export default function ProfilePage() {
                 </p>
               </div>
             </div>
-            <div className="inline-flex p-1 rounded-lg bg-black/5 dark:bg-white/5 w-full sm:w-auto">
-              {["light", "dark", "system"].map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  onClick={() => setTheme(option)}
-                  className={cn(
-                    "flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-md font-medium transition-all flex-1 sm:flex-initial",
-                    theme === option
-                      ? "bg-white dark:bg-white/10 text-text-main shadow-sm"
-                      : "text-text-muted hover:text-text-main",
-                  )}
-                >
-                  <span className="material-symbols-outlined text-[18px]">
-                    {option === "light"
-                      ? "light_mode"
-                      : option === "dark"
-                        ? "dark_mode"
-                        : "contrast"}
-                  </span>
-                  <span className="capitalize text-xs sm:text-sm">
-                    {option}
-                  </span>
-                </button>
-              ))}
-            </div>
+            <SegmentedControl
+              options={THEME_OPTIONS}
+              value={theme}
+              onChange={setTheme}
+              size="sm"
+              className="w-full sm:w-auto"
+            />
           </div>
           <div className="flex flex-col gap-3 pt-4 border-t border-border">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-3 rounded-lg bg-bg border border-border gap-2">
@@ -713,13 +725,7 @@ export default function ProfilePage() {
                 />
               </div>
             </div>
-            {dbStatus.message && (
-              <p
-                className={`text-sm ${dbStatus.type === "error" ? "text-red-500" : "text-green-600 dark:text-green-400"}`}
-              >
-                {dbStatus.message}
-              </p>
-            )}
+            <ProfileStatus status={dbStatus} />
           </div>
         </Card>
 
@@ -771,13 +777,6 @@ export default function ProfilePage() {
                     />
                   </div>
                 )}
-                {/* {!settings.hasPassword && (
-                  <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
-                    <p className="text-sm text-blue-600 dark:text-blue-400">
-                      Setting password for the first time. Leave current password empty or use default: <code className="bg-blue-500/20 px-1 rounded">123456</code>
-                    </p>
-                  </div>
-                )} */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="flex flex-col gap-2">
                     <label className="text-xs sm:text-sm font-medium">
@@ -809,13 +808,7 @@ export default function ProfilePage() {
                   </div>
                 </div>
 
-                {passStatus.message && (
-                  <p
-                    className={`text-xs sm:text-sm ${passStatus.type === "error" ? "text-red-500" : "text-green-500"}`}
-                  >
-                    {passStatus.message}
-                  </p>
-                )}
+                <ProfileStatus status={passStatus} />
 
                 <div className="pt-2">
                   <Button
@@ -873,23 +866,7 @@ export default function ProfilePage() {
                   Auth Mode
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  {[
-                    {
-                      value: "password",
-                      title: "Password only",
-                      desc: "Keep the legacy password login.",
-                    },
-                    {
-                      value: "oidc",
-                      title: "OIDC only",
-                      desc: "Require OIDC for dashboard access.",
-                    },
-                    {
-                      value: "both",
-                      title: "Both",
-                      desc: "Allow either password or OIDC.",
-                    },
-                  ].map((option) => {
+                  {OIDC_AUTH_MODE_OPTIONS.map((option) => {
                     const active = oidcForm.authMode === option.value;
                     return (
                       <button
@@ -1018,21 +995,8 @@ export default function ProfilePage() {
                 </Button>
               </div>
 
-              {oidcTestStatus.message && (
-                <p
-                  className={`text-xs sm:text-sm ${oidcTestStatus.type === "error" ? "text-red-500" : "text-green-500"}`}
-                >
-                  {oidcTestStatus.message}
-                </p>
-              )}
-
-              {oidcStatus.message && (
-                <p
-                  className={`text-xs sm:text-sm ${oidcStatus.type === "error" ? "text-red-500" : "text-green-500"}`}
-                >
-                  {oidcStatus.message}
-                </p>
-              )}
+              <ProfileStatus status={oidcTestStatus} />
+              <ProfileStatus status={oidcStatus} />
 
               {settings.authMode === "oidc" && (
                 <p className="text-xs sm:text-sm text-amber-600 dark:text-amber-400">
@@ -1207,10 +1171,7 @@ export default function ProfilePage() {
                     placeholder="http://127.0.0.1:7897"
                     value={proxyForm.outboundProxyUrl}
                     onChange={(e) =>
-                      setProxyForm((prev) => ({
-                        ...prev,
-                        outboundProxyUrl: e.target.value,
-                      }))
+                      updateProxyForm("outboundProxyUrl", e.target.value)
                     }
                     disabled={loading || proxyLoading}
                   />
@@ -1227,10 +1188,7 @@ export default function ProfilePage() {
                     placeholder="localhost,127.0.0.1"
                     value={proxyForm.outboundNoProxy}
                     onChange={(e) =>
-                      setProxyForm((prev) => ({
-                        ...prev,
-                        outboundNoProxy: e.target.value,
-                      }))
+                      updateProxyForm("outboundNoProxy", e.target.value)
                     }
                     disabled={loading || proxyLoading}
                   />
@@ -1262,13 +1220,10 @@ export default function ProfilePage() {
               </form>
             )}
 
-            {proxyStatus.message && (
-              <p
-                className={`text-xs sm:text-sm ${proxyStatus.type === "error" ? "text-red-500" : "text-green-500"} pt-2 border-t border-border/50`}
-              >
-                {proxyStatus.message}
-              </p>
-            )}
+            <ProfileStatus
+              status={proxyStatus}
+              className="pt-2 border-t border-border/50"
+            />
           </div>
         </Card>
 
