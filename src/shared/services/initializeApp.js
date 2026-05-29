@@ -145,9 +145,14 @@ async function safeRestartTunnel(reason) {
   if (svc.cancelToken.cancelled) return;
   if (svc.spawnInProgress) return;
 
-  // Alive check FIRST: probe URLs to decide health (process up but tunnel 530 = dead)
-  let alive = false;
-  if (isCloudflaredRunning()) {
+  const force = FORCE_RESTART_REASONS.test(reason);
+
+  // Watchdog: process alive = trust it (cloudflared self-retries via --retries 99).
+  // Avoids killing a healthy tunnel on transient HTTP probe failures (app busy / slow DNS).
+  if (!force && isCloudflaredRunning()) return;
+
+  // Force reasons (netchange/sleep/online): process may be up but routing stale → probe to confirm
+  if (force && isCloudflaredRunning()) {
     const state = loadState();
     const publicUrl = state?.shortId ? `https://r${state.shortId}.abc-tunnel.us` : null;
     const directUrl = state?.tunnelUrl || null;
@@ -156,14 +161,10 @@ async function safeRestartTunnel(reason) {
         probeCloudflareAlive(publicUrl),
         probeCloudflareAlive(directUrl),
       ]);
-      alive = publicOk && directOk;
+      if (publicOk && directOk) return;
     }
   }
-  if (alive) return;
 
-  // Degraded/dead → cooldown only prevents hammer loop after a recent restart attempt.
-  // Bypass for network transitions (one-shot events) so user recovers fast after wifi change.
-  const force = FORCE_RESTART_REASONS.test(reason);
   if (!force && Date.now() - svc.lastRestartAt < RESTART_COOLDOWN_MS) {
     logger.debug(`[Tunnel] degraded but cooldown active, skip (${reason})`);
     return;
@@ -187,12 +188,8 @@ async function safeRestartTailscale(reason) {
   if (svc.cancelToken.cancelled) return;
   if (svc.spawnInProgress) return;
 
-  // Alive check FIRST: daemon up + URL responds = healthy
-  let alive = false;
-  if (isTailscaleRunning() && settings.tailscaleUrl) {
-    alive = await probeTailscaleAlive(settings.tailscaleUrl);
-  }
-  if (alive) return;
+  // Tailscale daemon is OS-level with built-in reconnect; trust it when running
+  if (isTailscaleRunning()) return;
 
   const force = FORCE_RESTART_REASONS.test(reason);
   if (!force && Date.now() - svc.lastRestartAt < RESTART_COOLDOWN_MS) {
@@ -201,7 +198,7 @@ async function safeRestartTailscale(reason) {
   }
   if (!await checkInternet()) return;
 
-  logger.info(`[Tailscale] safeRestart (${reason}) — tunnel unreachable${force ? " [force]" : ""}`);
+  logger.info(`[Tailscale] safeRestart (${reason}) — daemon not running${force ? " [force]" : ""}`);
   try {
     await enableTailscale();
     svc.lastRestartAt = Date.now();
