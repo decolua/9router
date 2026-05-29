@@ -635,6 +635,25 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
     mitmLastStartTime = Date.now();
   }
 
+  // Set NODE_EXTRA_CA_CERTS so Node-based GUI apps (Electron/AG language_server) trust MITM cert
+  if (IS_MAC) {
+    const rootCAPath = path.join(MITM_DIR, "rootCA.crt");
+    if (fs.existsSync(rootCAPath)) {
+      exec(`launchctl setenv NODE_EXTRA_CA_CERTS "${rootCAPath}"`, { windowsHide: true }, (e) => {
+        if (e) log(`[launchctl] Failed to set NODE_EXTRA_CA_CERTS: ${e.message}`);
+        else log(`[launchctl] NODE_EXTRA_CA_CERTS set to ${rootCAPath}`);
+      });
+    }
+  } else if (IS_WIN) {
+    const rootCAPath = path.join(MITM_DIR, "rootCA.crt");
+    if (fs.existsSync(rootCAPath)) {
+      exec(`setx NODE_EXTRA_CA_CERTS "${rootCAPath}"`, { windowsHide: true }, (e) => {
+        if (e) log(`[setx] Failed to set NODE_EXTRA_CA_CERTS: ${e.message}`);
+        else log(`[setx] NODE_EXTRA_CA_CERTS set for current user`);
+      });
+    }
+  }
+
   let startError = null;
   if (serverProcess) {
     serverProcess.stdout.on("data", (data) => {
@@ -744,6 +763,19 @@ async function stopServer(sudoPassword) {
     } catch (e) { err(`Failed to clean hosts: ${e.message}`); }
   } else {
     await removeAllDNSEntries(sudoPassword);
+  }
+
+  // Unset NODE_EXTRA_CA_CERTS so apps don't keep trusting stale MITM cert
+  if (IS_MAC) {
+    exec(`launchctl unsetenv NODE_EXTRA_CA_CERTS`, { windowsHide: true }, (e) => {
+      if (e) log(`[launchctl] Failed to unset NODE_EXTRA_CA_CERTS: ${e.message}`);
+      else log(`[launchctl] NODE_EXTRA_CA_CERTS unset`);
+    });
+  } else if (IS_WIN) {
+    exec(`reg delete HKCU\\Environment /F /V NODE_EXTRA_CA_CERTS`, { windowsHide: true }, (e) => {
+      if (e) log(`[reg] Failed to unset NODE_EXTRA_CA_CERTS: ${e.message}`);
+      else log(`[reg] NODE_EXTRA_CA_CERTS unset`);
+    });
   }
 
   try { fs.unlinkSync(PID_FILE); } catch { /* ignore */ }
