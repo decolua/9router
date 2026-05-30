@@ -45,6 +45,7 @@ export default function ModelSelectModal({
   const [providerNodes, setProviderNodes] = useState([]);
   const [customModels, setCustomModels] = useState([]);
   const [disabledModels, setDisabledModels] = useState({});
+  const [dynamicModels, setDynamicModels] = useState({});
 
   const fetchCombos = async () => {
     try {
@@ -58,10 +59,6 @@ export default function ModelSelectModal({
     }
   };
 
-  useEffect(() => {
-    if (isOpen) fetchCombos();
-  }, [isOpen]);
-
   const fetchProviderNodes = async () => {
     try {
       const res = await fetch("/api/provider-nodes");
@@ -74,10 +71,6 @@ export default function ModelSelectModal({
     }
   };
 
-  useEffect(() => {
-    if (isOpen) fetchProviderNodes();
-  }, [isOpen]);
-
   const fetchCustomModels = async () => {
     try {
       const res = await fetch("/api/models/custom");
@@ -89,10 +82,6 @@ export default function ModelSelectModal({
       setCustomModels([]);
     }
   };
-
-  useEffect(() => {
-    if (isOpen) fetchCustomModels();
-  }, [isOpen]);
 
   const fetchDisabledModels = async () => {
     try {
@@ -107,8 +96,36 @@ export default function ModelSelectModal({
   };
 
   useEffect(() => {
-    if (isOpen) fetchDisabledModels();
-  }, [isOpen]);
+    if (isOpen) {
+      fetchCombos();
+      fetchProviderNodes();
+      fetchCustomModels();
+      fetchDisabledModels();
+
+      // Fetch dynamic models for providers that have modelsFetcher defined
+      const providersWithFetcher = Object.values(allProviders).filter(p => p.modelsFetcher);
+      providersWithFetcher.forEach(provider => {
+        const fetchUrl = provider.modelsFetcher.url.startsWith("http") 
+          ? `/api/proxy?url=${encodeURIComponent(provider.modelsFetcher.url)}`
+          : provider.modelsFetcher.url;
+
+        fetch(fetchUrl)
+          .then((res) => (res.ok ? res.json() : { models: [] }))
+          .then((data) => {
+            setDynamicModels(prev => ({
+              ...prev,
+              [provider.id]: data.models || []
+            }));
+          })
+          .catch(() => {
+            setDynamicModels(prev => ({
+              ...prev,
+              [provider.id]: []
+            }));
+          });
+      });
+    }
+  }, [isOpen, allProviders]);
 
   const allProviders = useMemo(() => ({ ...OAUTH_PROVIDERS, ...FREE_PROVIDERS, ...FREE_TIER_PROVIDERS, ...APIKEY_PROVIDERS }), []);
 
@@ -262,10 +279,14 @@ export default function ModelSelectModal({
           .filter((m) => m.providerAlias === alias && !hardcodedIds.has(m.id) && !customAliasIds.has(m.id))
           .map((m) => ({ id: m.id, name: m.name || m.id, value: `${alias}/${m.id}`, isCustom: true }));
 
+        const dynamicModelsForProvider = dynamicModels[providerId] || [];
         const merged = [
           ...hardcodedModels.map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, type: m.type })),
           ...customAliasModels,
           ...customRegisteredModels,
+          ...dynamicModelsForProvider
+            .filter((fm) => !hardcodedIds.has(fm.id))
+            .map((m) => ({ id: m.id, name: m.name || m.id, value: `${alias}/${m.id}`, isCustom: true })),
         ];
         // Dedupe by value (alias may equal hardcoded id, causing React key collision)
         const seen = new Set();
@@ -308,7 +329,7 @@ export default function ModelSelectModal({
     });
 
     return groups;
-  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, activeProviders]);
+  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kiloFreeModels, kindFilter, activeProviders]);
 
   // Filter combos by search query (and hide combos when kindFilter is set — combos are LLM-only by design)
   const filteredCombos = useMemo(() => {
