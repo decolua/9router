@@ -9,6 +9,7 @@ import {
 } from "../services/auth.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
 import { getSettings } from "@/lib/localDb";
+import { checkUserQuota } from "@/lib/db/repos/usageRepo.js";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -76,6 +77,21 @@ export async function handleChat(request, clientRawRequest = null) {
     if (!valid) {
       log.warn("AUTH", "Invalid API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
+    }
+  }
+
+  // Per-user 5h token quota: prevent one user from draining the shared codex pool.
+  // Placed before combo/non-combo branching to cover all paths.
+  if (apiKey) {
+    const quota = await checkUserQuota(apiKey);
+    if (quota && quota.allowed === false) {
+      log.warn("QUOTA", `[${log.maskKey(apiKey)}] exceeded 5h token quota (${quota.used}/${quota.budget}), resets at ${quota.resetAtLocal}, in ${quota.retryAfterHuman}`);
+      return unavailableResponse(
+        429,
+        `[quota] Token quota exceeded`,
+        quota.retryAfterIso,
+        `Resets at ${quota.resetAtLocal}, in ${quota.retryAfterHuman}`
+      );
     }
   }
 

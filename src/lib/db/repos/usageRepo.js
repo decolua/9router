@@ -729,3 +729,83 @@ export async function getRecentLogs(limit = 200) {
     return [];
   }
 }
+
+// ─── Per-user token quota (prevent one user from draining the shared pool) ───
+const QUOTA_WINDOW_MS = 5 * 60 * 60 * 1000; // 5h
+const DEFAULT_USER_TOKEN_BUDGET_5H = 25_000_000;
+
+/**
+ * Check a user's (apiKey) token usage within a fixed 5h window anchored to the
+ * window's first request (not rolling — matches codex's reset behavior).
+ *
+ * Sums promptTokens (incl. cache_read) of rows with endpoint IS NULL to avoid
+ * double-write (each request is logged twice; only the null-endpoint row is correct).
+ *
+ * @returns {{allowed:boolean, used?:number, budget?:number, windowStart?:string,
+ *            retryAfterIso?:string, retryAfterSec?:number, disabled?:boolean}}
+ */
+export async function checkUserQuota(apiKey) {
+  if (!apiKey) return { allowed: true };
+  const db = await getAdapter();
+
+  // Enabled flag & default budget resolve as: DB setting > env > built-in default.
+  // - userQuotaEnabled: DB boolean if set, else env USER_QUOTA_ENABLED === "true" (disabled by default)
+  // - userTokenBudget5hDefault: DB number if set, else env USER_TOKEN_BUDGET_5H, else constant
+  let budget = DEFAULT_USER_TOKEN_BUDGET_5H;
+  try {
+    const { getSettings } = await import("./settingsRepo.js");
+    const settings = await getSettings();
+    const enabled = typeof settings.userQuotaEnabled === "boolean"
+      ? settings.userQuotaEnabled
+      : process.env.USER_QUOTA_ENABLED === "true";
+    if (!enabled) return { allowed: true, disabled: true };
+    budget = settings.userTokenBudget5hDefault
+      || parseInt(process.env.USER_TOKEN_BUDGET_5H || String(DEFAULT_USER_TOKEN_BUDGET_5H), 10);
+  } catch { /* fall back to default if settings cannot be read */ }
+  try {
+    const keyRow = db.get(`SELECT tokenBudget5h FROM apiKeys WHERE key = ?`, [apiKey]);
+    if (keyRow && keyRow.tokenBudget5h != null) budget = keyRow.tokenBudget5h;
+  } catch { /* ignore, keep current budget */ }
+
+  const now = Date.now();
+  let windowStartIso;
+  const wrow = db.get(`SELECT windowStart FROM userQuotaWindow WHERE apiKey = ?`, [apiKey]);
+  if (!wrow || (now - new Date(wrow.windowStart).getTime()) >= QUOTA_WINDOW_MS) {
+    // Open a new window: this request is the window's first request
+    windowStartIso = new Date(now).toISOString();
+    db.run(
+      `INSERT INTO userQuotaWindow(apiKey, windowStart) VALUES(?, ?) ON CONFLICT(apiKey) DO UPDATE SET windowStart = excluded.windowStart`,
+      [apiKey, windowStartIso]
+    );
+  } else {
+    windowStartIso = wrow.windowStart;
+  }
+
+  const row = db.get(
+    `SELECT COALESCE(SUM(promptTokens), 0) AS used FROM usageHistory
+     WHERE apiKey = ? AND endpoint IS NULL AND timestamp >= ?`,
+    [apiKey, windowStartIso]
+  );
+  const used = row?.used || 0;
+  const resetMs = new Date(windowStartIso).getTime() + QUOTA_WINDOW_MS;
+  const retryAfterSec = Math.max(Math.ceil((resetMs - now) / 1000), 1);
+
+  // Reset time in the server's local timezone, formatted HH:MM DD/MM
+  const d = new Date(resetMs);
+  const pad = (n) => String(n).padStart(2, "0");
+  const resetAtLocal = `${pad(d.getHours())}:${pad(d.getMinutes())} ${pad(d.getDate())}/${pad(d.getMonth() + 1)}`;
+  const h = Math.floor(retryAfterSec / 3600);
+  const m = Math.ceil((retryAfterSec % 3600) / 60);
+  const retryAfterHuman = h > 0 ? `${h}h${m}m` : `${m}m`;
+
+  return {
+    allowed: used < budget,
+    used,
+    budget,
+    windowStart: windowStartIso,
+    retryAfterIso: new Date(resetMs).toISOString(),
+    retryAfterSec,
+    resetAtLocal,
+    retryAfterHuman,
+  };
+}

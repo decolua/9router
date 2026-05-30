@@ -79,6 +79,8 @@ export const TABLES = {
       machineId: "TEXT",
       isActive: "INTEGER DEFAULT 1",
       createdAt: "TEXT NOT NULL",
+      // Per-key token budget per 5h; null = use the global default
+      tokenBudget5h: "INTEGER",
     },
     indexes: ["CREATE INDEX IF NOT EXISTS idx_ak_key ON apiKeys(key)"],
   },
@@ -123,6 +125,8 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_uh_provider ON usageHistory(provider)",
       "CREATE INDEX IF NOT EXISTS idx_uh_model ON usageHistory(model)",
       "CREATE INDEX IF NOT EXISTS idx_uh_conn ON usageHistory(connectionId)",
+      // Speeds up the per-user token sum within the quota window
+      "CREATE INDEX IF NOT EXISTS idx_uh_apikey_ts ON usageHistory(apiKey, timestamp)",
     ],
   },
   usageDaily: {
@@ -138,6 +142,7 @@ export const TABLES = {
       provider: "TEXT",
       model: "TEXT",
       connectionId: "TEXT",
+      apiKey: "TEXT",
       status: "TEXT",
       data: "TEXT NOT NULL",
     },
@@ -146,7 +151,16 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_rd_provider ON requestDetails(provider)",
       "CREATE INDEX IF NOT EXISTS idx_rd_model ON requestDetails(model)",
       "CREATE INDEX IF NOT EXISTS idx_rd_conn ON requestDetails(connectionId)",
+      "CREATE INDEX IF NOT EXISTS idx_rd_apikey ON requestDetails(apiKey)",
     ],
+  },
+  // Start of each user's (apiKey) current 5h quota window.
+  // windowStart = first request of the current window; a new window opens after 5h.
+  userQuotaWindow: {
+    columns: {
+      apiKey: "TEXT PRIMARY KEY",
+      windowStart: "TEXT NOT NULL",
+    },
   },
 };
 
