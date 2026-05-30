@@ -194,8 +194,17 @@ export default function ModelSelectModal({
             value: fullModel,
           }));
 
+        const dynamicModelsForProvider = dynamicModels[providerId] || [];
+        const aliasIds = new Set(aliasModels.map((m) => m.id));
+
         // For typed kinds, only include hardcoded typed models (aliases are typically LLM-only and lack type info)
-        let combined = aliasModels;
+        let combined = [
+          ...aliasModels,
+          ...dynamicModelsForProvider
+            .filter((fm) => !aliasIds.has(fm.id))
+            .map((m) => ({ id: m.id, name: m.name || m.id, value: `${alias}/${m.id}`, isCustom: true })),
+        ];
+
         if (kindFilter && TYPED_KINDS.has(kindFilter)) {
           combined = getModelsByProviderId(providerId)
             .filter((m) => m.type === kindFilter)
