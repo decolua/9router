@@ -95,6 +95,8 @@ export default function ModelSelectModal({
     }
   };
 
+  const allProviders = useMemo(() => ({ ...OAUTH_PROVIDERS, ...FREE_PROVIDERS, ...FREE_TIER_PROVIDERS, ...APIKEY_PROVIDERS }), []);
+
   useEffect(() => {
     if (isOpen) {
       fetchCombos();
@@ -126,8 +128,6 @@ export default function ModelSelectModal({
       });
     }
   }, [isOpen, allProviders]);
-
-  const allProviders = useMemo(() => ({ ...OAUTH_PROVIDERS, ...FREE_PROVIDERS, ...FREE_TIER_PROVIDERS, ...APIKEY_PROVIDERS }), []);
 
   // Group models by provider with priority order
   const groupedModels = useMemo(() => {
