@@ -120,6 +120,16 @@ export function getOAuthClientMetadata() {
   return { ideType: 9, platform: getOAuthPlatformEnum(), pluginType: 2 };
 }
 
+// AWS region is interpolated into OIDC token endpoints (oidc.<region>.amazonaws.com).
+// An attacker-controlled region (e.g. "evil.com/x?") would rewrite the request host
+// and exfiltrate Kiro refresh tokens, so only accept well-formed AWS region ids and
+// otherwise fall back to the safe default. Covers standard + gov/iso partitions
+// (us-east-1, ap-southeast-2, us-gov-east-1, us-iso-east-1).
+const AWS_REGION_RE = /^[a-z]{2}(?:-[a-z]+){1,2}-\d{1,2}$/;
+export function sanitizeAwsRegion(region, fallback = "us-east-1") {
+  return typeof region === "string" && AWS_REGION_RE.test(region) ? region : fallback;
+}
+
 // OpenAI OAuth Configuration (Authorization Code Flow with PKCE)
 export const OPENAI_CONFIG = {
   clientId: "app_EMoamEEZ73f0CkXaXp7hrann",

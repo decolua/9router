@@ -1,7 +1,7 @@
 import { PROVIDERS } from "../config/providers.js";
 import { OAUTH_ENDPOINTS, GITHUB_COPILOT, REFRESH_LEAD_MS } from "../config/appConstants.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
-import { KIRO_CONFIG } from "../../src/lib/oauth/constants/oauth.js";
+import { KIRO_CONFIG, sanitizeAwsRegion } from "../../src/lib/oauth/constants/oauth.js";
 
 // xAI refresh — wraps the class method from src/lib/oauth/services/xai.js so
 // the token-refresh switches below can stay flat (one function per provider).
@@ -368,8 +368,8 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
   // If clientId and clientSecret exist, assume AWS SSO OIDC (default to builder-id if authMethod not specified)
   if (clientId && clientSecret) {
     const isIDC = authMethod === "idc";
-    const endpoint = isIDC && region
-      ? `https://oidc.${region}.amazonaws.com/token`
+    const endpoint = isIDC
+      ? `https://oidc.${sanitizeAwsRegion(region)}.amazonaws.com/token`
       : "https://oidc.us-east-1.amazonaws.com/token";
 
     const response = await proxyAwareFetch(endpoint, {
