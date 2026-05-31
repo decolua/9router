@@ -73,6 +73,8 @@ const ALIAS_TO_PROVIDER_ID = {
   "xiaomi-mimo": "xiaomi-mimo",
   xmtp: "xiaomi-tokenplan",
   "xiaomi-tokenplan": "xiaomi-tokenplan",
+  xmtpc: "xiaomi-tokenplan-claude",
+  "xiaomi-tokenplan-claude": "xiaomi-tokenplan-claude",
   cf: "cloudflare-ai",
   "cloudflare-ai": "cloudflare-ai",
   // Image/video providers

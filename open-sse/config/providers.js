@@ -399,8 +399,13 @@ export const PROVIDERS = {
     baseUrl: "https://token-plan-sgp.xiaomimimo.com/v1/chat/completions",
     format: "openai"
   },
+  "xiaomi-tokenplan-claude": {
+    baseUrl: "https://token-plan-sgp.xiaomimimo.com/anthropic/v1/messages",
+    format: "claude",
+    headers: { ...CLAUDE_API_HEADERS }
+  },
   // Region map for Xiaomi MiMo Token Plan (keys are cluster-specific)
-  // Used by resolveXiaomiTokenplanBaseUrl below
+  // Used by resolveXiaomiTokenplanBaseUrl / resolveXiaomiTokenplanClaudeBaseUrl below
   // === Free-tier providers (synced from OmniRoute) ===
   // Claude-format with Claude CLI header spoofing (auth: x-api-key)
   agentrouter: { baseUrl: "https://agentrouter.org/v1/messages", format: "claude", headers: { ...CLAUDE_CLI_SPOOF_HEADERS } },
@@ -454,4 +459,16 @@ export const XIAOMI_TOKENPLAN_DEFAULT_REGION = "sgp";
 export function resolveXiaomiTokenplanBaseUrl(credentials) {
   const region = credentials?.providerSpecificData?.region;
   return XIAOMI_TOKENPLAN_REGIONS[region] || XIAOMI_TOKENPLAN_REGIONS[XIAOMI_TOKENPLAN_DEFAULT_REGION];
+}
+
+export const XIAOMI_TOKENPLAN_CLAUDE_REGIONS = {
+  sgp: "https://token-plan-sgp.xiaomimimo.com/anthropic/v1",
+  cn: "https://token-plan-cn.xiaomimimo.com/anthropic/v1",
+  ams: "https://token-plan-ams.xiaomimimo.com/anthropic/v1"
+};
+export const XIAOMI_TOKENPLAN_CLAUDE_DEFAULT_REGION = "sgp";
+
+export function resolveXiaomiTokenplanClaudeBaseUrl(credentials) {
+  const region = credentials?.providerSpecificData?.region;
+  return XIAOMI_TOKENPLAN_CLAUDE_REGIONS[region] || XIAOMI_TOKENPLAN_CLAUDE_REGIONS[XIAOMI_TOKENPLAN_CLAUDE_DEFAULT_REGION];
 }

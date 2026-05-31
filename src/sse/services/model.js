@@ -6,6 +6,8 @@ import { parseModel as parseModelCore, resolveModelAliasFromMap, getModelInfoCor
 const LOCAL_PROVIDER_ALIASES = {
   xmtp: "xiaomi-tokenplan",
   "xiaomi-tokenplan": "xiaomi-tokenplan",
+  xmtpc: "xiaomi-tokenplan-claude",
+  "xiaomi-tokenplan-claude": "xiaomi-tokenplan-claude",
 };
 
 export function parseModel(modelStr) {
