@@ -84,3 +84,4 @@ CLAUDE.md
 GEMINI.md
 *.log
 .playwright-mcp/
+OmniRoute/
