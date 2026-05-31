@@ -12,6 +12,15 @@ export class DefaultExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body) {
+    // Strip `temperature` for Claude provider. Upstream returns 400
+    // invalid_request_error: "temperature is deprecate (reset after Ns)".
+    // Anthropic is moving the Claude family toward managed/internal temperature
+    // (observed on opus-4-7); strip unconditionally for the claude provider.
+    if (this.provider === "claude" && body && body.temperature !== undefined) {
+      const next = { ...body };
+      delete next.temperature;
+      body = next;
+    }
     const transformed = this.applyJsonSchemaFallback(body);
     return injectReasoningContent({ provider: this.provider, model, body: transformed });
   }
