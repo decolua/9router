@@ -95,6 +95,8 @@ export class KiroExecutor extends BaseExecutor {
 
     const transformStream = new TransformStream({
       async transform(chunk, controller) {
+        // Track output so we can emit a keepalive if this frame yields no chunk.
+        const enqueueCountBefore = chunkIndex;
         // Append to buffer
         const newBuffer = new Uint8Array(buffer.length + chunk.length);
         newBuffer.set(buffer);
@@ -372,6 +374,12 @@ export class KiroExecutor extends BaseExecutor {
 
         if (iterations >= maxIterations) {
           console.warn("[Kiro] Max iterations reached in event parsing");
+        }
+
+        // No client chunk produced this frame — emit an SSE comment keepalive
+        // so the stall watchdog sees upstream activity (ignored by parser/client).
+        if (chunkIndex === enqueueCountBefore && !state.finishEmitted) {
+          controller.enqueue(new TextEncoder().encode(": ka\n\n"));
         }
       },
 
