@@ -45,6 +45,9 @@ export default function ProviderDetailPage() {
   const [modelTestResults, setModelTestResults] = useState({});
   const [modelsTestError, setModelsTestError] = useState("");
   const [testingModelId, setTestingModelId] = useState(null);
+  const [speedTestingModelId, setSpeedTestingModelId] = useState(null);
+  const [modelSpeedResults, setModelSpeedResults] = useState({});
+  const [bulkSpeedTesting, setBulkSpeedTesting] = useState(false);
   const [showAddCustomModel, setShowAddCustomModel] = useState(false);
   const [selectedConnectionIds, setSelectedConnectionIds] = useState([]);
   const [bulkProxyPoolId, setBulkProxyPoolId] = useState("__none__");
@@ -830,6 +833,107 @@ export default function ProviderDetailPage() {
     }
   };
 
+  const hasSpeedTest = providerId !== "codex" && providerId !== "antigravity";
+
+  const handleSpeedTestModel = async (modelId) => {
+    if (!hasSpeedTest) {
+      alert(`Speed (Latency & TPS) check is not supported for ${providerId === "codex" ? "Codex" : "Antigravity"}.`);
+      return;
+    }
+    if (speedTestingModelId) return;
+    setSpeedTestingModelId(modelId);
+    try {
+      const res = await fetch("/api/models/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: `${providerStorageAlias}/${modelId}`, speedTest: true }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setModelSpeedResults((prev) => ({
+          ...prev,
+          [modelId]: { latencyMs: data.latencyMs, tps: data.tps },
+        }));
+        setModelsTestError("");
+      } else {
+        setModelsTestError(data.error || "Failed to check speed");
+      }
+    } catch {
+      setModelsTestError("Network error checking speed");
+    } finally {
+      setSpeedTestingModelId(null);
+    }
+  };
+
+  const handleSpeedTestAllModels = async () => {
+    if (!hasSpeedTest) {
+      alert(`Speed test is not supported for ${providerId === "codex" ? "Codex" : "Antigravity"}.`);
+      return;
+    }
+    if (bulkSpeedTesting || connections.length === 0) return;
+
+    setBulkSpeedTesting(true);
+
+    let activeModelIds = [];
+    if (isCompatible) {
+      const providerAliases = Object.entries(modelAliases).filter(
+        ([, model]) => model.startsWith(`${providerStorageAlias}/`),
+      );
+      activeModelIds = providerAliases.map(([, fullModel]) =>
+        fullModel.replace(`${providerStorageAlias}/`, ""),
+      );
+    } else {
+      const customModels = Object.entries(modelAliases)
+        .filter(([alias, fullModel]) => {
+          const prefix = `${providerStorageAlias}/`;
+          if (!fullModel.startsWith(prefix)) return false;
+          const modelId = fullModel.slice(prefix.length);
+          if (providerInfo?.passthroughModels) return !models.some((m) => m.id === modelId);
+          return !models.some((m) => m.id === modelId) && alias === modelId;
+        })
+        .map(([, fullModel]) => fullModel.slice(`${providerStorageAlias}/`.length));
+
+      const allIds = [
+        ...models,
+        ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
+      ].filter((m) => !m.type || m.type === "llm").map((m) => m.id);
+
+      const disabledSet = new Set(disabledModelIds);
+      const displayModelIds = allIds.filter((id) => !disabledSet.has(id));
+
+      activeModelIds = [...customModels, ...displayModelIds];
+    }
+
+    try {
+      for (const modelId of activeModelIds) {
+        setSpeedTestingModelId(modelId);
+        try {
+          const res = await fetch("/api/models/test", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model: `${providerStorageAlias}/${modelId}`, speedTest: true }),
+          });
+          const data = await res.json();
+          if (data.ok) {
+            setModelSpeedResults((prev) => ({
+              ...prev,
+              [modelId]: { latencyMs: data.latencyMs, tps: data.tps },
+            }));
+          }
+        } catch (err) {
+          console.error(`Failed to speed test ${modelId}:`, err);
+        }
+        await sleep(300);
+      }
+      setModelsTestError("");
+    } catch {
+      setModelsTestError("Failed during speed test of all models");
+    } finally {
+      setSpeedTestingModelId(null);
+      setBulkSpeedTesting(false);
+    }
+  };
+
   const renderModelsSection = () => {
     if (isCompatible) {
       return (
@@ -843,6 +947,9 @@ export default function ProviderDetailPage() {
           onDeleteAlias={handleDeleteAlias}
           connections={connections}
           isAnthropic={isAnthropicCompatible}
+          onSpeedTest={hasSpeedTest && (connections.length > 0 || isFreeNoAuth) ? handleSpeedTestModel : undefined}
+          speedTestingModelId={speedTestingModelId}
+          modelSpeedResults={modelSpeedResults}
         />
       );
     }
@@ -890,6 +997,9 @@ export default function ProviderDetailPage() {
             isTesting={testingModelId === model.id}
             isCustom
             isFree={false}
+            onSpeedTest={hasSpeedTest && (connections.length > 0 || isFreeNoAuth) ? () => handleSpeedTestModel(model.id) : undefined}
+            isSpeedTesting={speedTestingModelId === model.id}
+            speedTestData={modelSpeedResults[model.id]}
           />
         ))}
 
@@ -914,6 +1024,9 @@ export default function ProviderDetailPage() {
               isTesting={testingModelId === model.id}
               isFree={model.isFree}
               onDisable={() => handleDisableModel(model.id)}
+              onSpeedTest={hasSpeedTest && (connections.length > 0 || isFreeNoAuth) ? () => handleSpeedTestModel(model.id) : undefined}
+              isSpeedTesting={speedTestingModelId === model.id}
+              speedTestData={modelSpeedResults[model.id]}
             />
           );
         })}
@@ -1192,6 +1305,17 @@ export default function ProviderDetailPage() {
                     </Button>
                   )}
                 </>
+              )}
+              {hasSpeedTest && connections.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  icon="speed"
+                  onClick={handleSpeedTestAllModels}
+                  disabled={bulkSpeedTesting || oneByOneRunning}
+                >
+                  {bulkSpeedTesting ? "Speed Testing All Models..." : "Speed Test All Models"}
+                </Button>
               )}
               {/* Thinking config */}
               {/* {thinkingConfig && (

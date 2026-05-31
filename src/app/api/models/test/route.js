@@ -8,7 +8,7 @@ const CLI_TOKEN_SALT = "9r-cli-auth";
 // POST /api/models/test - Ping a single model via internal completions or embeddings
 export async function POST(request) {
   try {
-    const { model, kind } = await request.json();
+    const { model, kind, speedTest } = await request.json();
     if (!model) return NextResponse.json({ error: "Model required" }, { status: 400 });
 
     const baseUrl = `http://127.0.0.1:${process.env.PORT || UPDATER_CONFIG.appPort}`;
@@ -52,16 +52,21 @@ export async function POST(request) {
     }
 
     // Default: chat completions
+    const maxTokens = speedTest ? 300 : 1;
+    const testMessage = speedTest
+      ? "Write a 200-word essay about the future of artificial intelligence."
+      : "hi";
+
     const res = await fetch(`${baseUrl}/api/v1/chat/completions`, {
       method: "POST",
       headers,
       body: JSON.stringify({
         model,
-        max_tokens: 1,
+        max_tokens: maxTokens,
         stream: false,
-        messages: [{ role: "user", content: "hi" }],
+        messages: [{ role: "user", content: testMessage }],
       }),
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(speedTest ? 60000 : 15000),
     });
     const latencyMs = Date.now() - start;
 
@@ -113,7 +118,38 @@ export async function POST(request) {
       });
     }
 
-    return NextResponse.json({ ok: true, latencyMs, error: null, status: res.status });
+    const choiceContent = parsed?.choices?.[0]?.message?.content || "";
+    let completionTokens = parsed?.usage?.completion_tokens || 0;
+
+    // Fallback 1: reasoning tokens (Gemini 3 / Antigravity thinking models report
+    // their work as reasoning_tokens with completion_tokens=0).
+    if (completionTokens === 0) {
+      const reasoningTokens =
+        parsed?.usage?.completion_tokens_details?.reasoning_tokens || 0;
+      if (reasoningTokens > 0) {
+        completionTokens = reasoningTokens;
+      }
+    }
+
+    // Fallback 2: estimate from visible content length (~4 chars/token) for
+    // providers that don't return usage metadata.
+    if (completionTokens === 0 && choiceContent.length > 0) {
+      completionTokens = Math.max(1, Math.ceil(choiceContent.length / 4));
+    }
+
+    let tps = 0;
+    if (speedTest && completionTokens > 0 && latencyMs > 0) {
+      tps = Math.round((completionTokens / (latencyMs / 1000)) * 10) / 10;
+    }
+
+    return NextResponse.json({
+      ok: true,
+      latencyMs,
+      tps,
+      completionTokens,
+      error: null,
+      status: res.status,
+    });
   } catch (err) {
     return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
   }
