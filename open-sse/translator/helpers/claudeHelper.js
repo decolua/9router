@@ -4,6 +4,44 @@ import { adjustMaxTokens } from "./maxTokensHelper.js";
 import { applyCloaking } from "../../utils/claudeCloaking.js";
 import { deriveSessionId } from "../../utils/sessionManager.js";
 
+/**
+ * Sanitize system role from messages[] for Claude API.
+ * Anthropic no longer accepts role:'system' inside the messages array.
+ * This moves any system messages into the top-level `system` field.
+ */
+export function sanitizeSystemRole(body) {
+  if (!body.messages || !Array.isArray(body.messages)) return body;
+
+  const systemMessages = body.messages.filter(m => m.role === "system");
+  if (systemMessages.length === 0) return body;
+
+  const systemTexts = systemMessages.map(m =>
+    typeof m.content === "string"
+      ? m.content
+      : Array.isArray(m.content)
+        ? m.content.filter(b => b.type === "text").map(b => b.text).join("\n")
+        : ""
+  ).filter(Boolean);
+
+  const existingSystem = body.system
+    ? (Array.isArray(body.system)
+        ? body.system.map(b => b.text || "").join("\n")
+        : body.system)
+    : "";
+
+  const allSystemText = [existingSystem, ...systemTexts].filter(Boolean).join("\n");
+
+  const newSystem = allSystemText
+    ? [{ type: "text", text: allSystemText, cache_control: { type: "ephemeral", ttl: "1h" } }]
+    : body.system;
+
+  return {
+    ...body,
+    system: newSystem,
+    messages: body.messages.filter(m => m.role !== "system")
+  };
+}
+
 // Check if message has valid non-empty content
 export function hasValidContent(msg) {
   if (typeof msg.content === "string" && msg.content.trim()) return true;
