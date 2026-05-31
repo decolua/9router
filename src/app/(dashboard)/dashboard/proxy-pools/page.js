@@ -35,6 +35,7 @@ export default function ProxyPoolsPage() {
   const [showVercelModal, setShowVercelModal] = useState(false);
   const [showCloudflareModal, setShowCloudflareModal] = useState(false);
   const [showDenoModal, setShowDenoModal] = useState(false);
+  const [showNetlifyModal, setShowNetlifyModal] = useState(false);
   const [showRelayMenu, setShowRelayMenu] = useState(false);
   const [editingProxyPool, setEditingProxyPool] = useState(null);
   const [formData, setFormData] = useState(normalizeFormData());
@@ -42,6 +43,7 @@ export default function ProxyPoolsPage() {
   const [vercelForm, setVercelForm] = useState({ vercelToken: "", projectName: "vercel-relay" });
   const [cloudflareForm, setCloudflareForm] = useState({ accountId: "", apiToken: "", projectName: "cloudflare-relay" });
   const [denoForm, setDenoForm] = useState({ denoToken: "", orgDomain: "", projectName: "" });
+  const [netlifyForm, setNetlifyForm] = useState({ netlifyToken: "", projectName: "netlify-relay" });
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
   const [deploying, setDeploying] = useState(false);
@@ -372,6 +374,16 @@ export default function ProxyPoolsPage() {
     setShowDenoModal(false);
   };
 
+  const openNetlifyModal = () => {
+    setNetlifyForm({ netlifyToken: "", projectName: "netlify-relay" });
+    setShowNetlifyModal(true);
+  };
+
+  const closeNetlifyModal = () => {
+    if (deploying) return;
+    setShowNetlifyModal(false);
+  };
+
   const handleVercelDeploy = async () => {
     if (!vercelForm.vercelToken.trim()) return;
     setDeploying(true);
@@ -441,6 +453,31 @@ export default function ProxyPoolsPage() {
       }
     } catch (error) {
       console.log("Error deploying Deno relay:", error);
+      notify.error("Deploy failed");
+    } finally {
+      setDeploying(false);
+    }
+  };
+
+  const handleNetlifyDeploy = async () => {
+    if (!netlifyForm.netlifyToken.trim()) return;
+    setDeploying(true);
+    try {
+      const res = await fetch("/api/proxy-pools/netlify-deploy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(netlifyForm),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        await fetchProxyPools();
+        closeNetlifyModal();
+        notify.success(`Deployed: ${data.deployUrl}`);
+      } else {
+        notify.error(data.error || "Deploy failed");
+      }
+    } catch (error) {
+      console.log("Error deploying Netlify relay:", error);
       notify.error("Deploy failed");
     } finally {
       setDeploying(false);
@@ -625,6 +662,16 @@ export default function ProxyPoolsPage() {
                   <span className="material-symbols-outlined text-[20px] text-green-500">terminal</span>
                   Deno Relay
                 </button>
+                <button
+                  onClick={() => {
+                    openNetlifyModal();
+                    setShowRelayMenu(false);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-text-main transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                >
+                  <span className="material-symbols-outlined text-[20px] text-cyan-500">cloud</span>
+                  Netlify Relay
+                </button>
               </div>
             )}
           </div>
@@ -721,6 +768,12 @@ export default function ProxyPoolsPage() {
                     )}
                     {pool.type === "cloudflare" && (
                       <Badge variant="default" size="sm">cloudflare relay</Badge>
+                    )}
+                    {pool.type === "deno" && (
+                      <Badge variant="default" size="sm">deno relay</Badge>
+                    )}
+                    {pool.type === "netlify" && (
+                      <Badge variant="default" size="sm">netlify relay</Badge>
                     )}
                     <Badge variant="default" size="sm">
                       {pool.boundConnectionCount || 0} bound
@@ -978,6 +1031,65 @@ export default function ProxyPoolsPage() {
               {deploying ? "Deploying..." : "Deploy Relay"}
             </Button>
             <Button fullWidth variant="ghost" onClick={closeDenoModal} disabled={deploying}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={showNetlifyModal}
+        title="Deploy Netlify Relay"
+        onClose={closeNetlifyModal}
+      >
+        <div className="flex flex-col gap-4">
+          <div className="rounded-lg bg-cyan-500/5 border border-cyan-500/10 p-3 flex flex-col gap-1.5">
+            <p className="text-sm text-text-main font-medium">What is Netlify Relay?</p>
+            <p className="text-xs text-text-muted">
+              Deploys a dynamic proxy relay edge function to Netlify&apos;s high-performance global edge network, masking your IP from AI providers.
+            </p>
+            <ul className="text-xs text-text-muted list-disc pl-4 space-y-0.5">
+              <li>300 credits/month</li>
+              <li>Deploy from AI, Git or API</li>
+              <li>Custom domains with SSL</li>
+              <li>Unlimited deploy previews</li>
+              <li>Serverless functions & storage</li>
+              <li>Global CDN</li>
+              <li>And more, with no overage charges ever</li>
+            </ul>
+            <div className="mt-2 pt-2 border-t border-cyan-500/10 text-xs text-text-muted">
+              <p className="font-medium text-text-main mb-1">How to generate API token:</p>
+              <ol className="list-decimal pl-4 space-y-0.5">
+                <li>Go to <b>app.netlify.com</b></li>
+                <li>Go to your profile avatar → <b>User settings</b> → <b>Applications</b> → <b>Personal access tokens</b></li>
+                <li>Click <b>New access token</b>, name your token, and click <b>Generate</b></li>
+              </ol>
+            </div>
+          </div>
+          <Input
+            label="Netlify API Token (Personal Access Token)"
+            value={netlifyForm.netlifyToken}
+            onChange={(e) => setNetlifyForm((prev) => ({ ...prev, netlifyToken: e.target.value }))}
+            placeholder="your-netlify-api-token"
+            hint={<>Token is used once for deployment and not stored. <a href="https://app.netlify.com/user/applications#oauth" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Get token →</a></>}
+            type="password"
+          />
+          <Input
+            label="Site Name (Optional)"
+            value={netlifyForm.projectName}
+            onChange={(e) => setNetlifyForm((prev) => ({ ...prev, projectName: e.target.value }))}
+            placeholder="netlify-relay"
+            hint="Unique name for your Netlify site. Leave empty for auto-generated name."
+          />
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <Button
+              fullWidth
+              onClick={handleNetlifyDeploy}
+              disabled={!netlifyForm.netlifyToken.trim() || deploying}
+            >
+              {deploying ? "Deploying..." : "Deploy Relay"}
+            </Button>
+            <Button fullWidth variant="ghost" onClick={closeNetlifyModal} disabled={deploying}>
               Cancel
             </Button>
           </div>
