@@ -8,7 +8,7 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
-import { getSettings } from "@/lib/localDb";
+import { getSettings, getComboByName, updateCombo } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -19,6 +19,35 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+
+/**
+ * Helper to wrap single model handler with auto-promotion logic.
+ * When a model succeeds, it gets promoted to the first position in the combo models array in DB.
+ */
+function makeSingleModelHandler(clientRawRequest, request, apiKey, comboName) {
+  return async (b, m) => {
+    const res = await handleSingleModelChat(b, m, clientRawRequest, request, apiKey);
+    if (res && res.ok && comboName) {
+      const settings = await getSettings();
+      if (!settings.comboAutoPromoteEnabled) return res;
+      try {
+        const currentCombo = await getComboByName(comboName);
+        if (currentCombo && currentCombo.models && currentCombo.models.length > 0) {
+          const currentModels = [...currentCombo.models];
+          if (currentModels[0] !== m) {
+            const filtered = currentModels.filter(x => x !== m);
+            const newModels = [m, ...filtered];
+            await updateCombo(currentCombo.id, { models: newModels });
+            log.info("COMBO", `Model "${m}" succeeded, promoted to first position in combo "${comboName}"`);
+          }
+        }
+      } catch (dbErr) {
+        log.warn("COMBO", `Failed to promote model "${m}" in combo "${comboName}": ${dbErr.message}`);
+      }
+    }
+    return res;
+  };
+}
 
 /**
  * Handle chat completion request
@@ -102,7 +131,7 @@ export async function handleChat(request, clientRawRequest = null) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+      handleSingleModel: makeSingleModelHandler(clientRawRequest, request, apiKey, modelStr),
       log,
       comboName: modelStr,
       comboStrategy,
@@ -135,7 +164,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       return handleComboChat({
         body,
         models: comboModels,
-        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        handleSingleModel: makeSingleModelHandler(clientRawRequest, request, apiKey, modelStr),
         log,
         comboName: modelStr,
         comboStrategy,

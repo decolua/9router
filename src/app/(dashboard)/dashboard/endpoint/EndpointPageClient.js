@@ -69,6 +69,7 @@ export default function APIPageClient({ machineId }) {
   const [rtkEnabled, setRtkEnabledState] = useState(true);
   const [cavemanEnabled, setCavemanEnabled] = useState(false);
   const [cavemanLevel, setCavemanLevel] = useState("full");
+  const [comboAutoPromoteEnabled, setComboAutoPromoteEnabled] = useState(false);
 
   // Cloudflare Tunnel state
   const [tunnelChecking, setTunnelChecking] = useState(true);
@@ -240,6 +241,7 @@ export default function APIPageClient({ machineId }) {
         setRtkEnabledState(data.rtkEnabled !== false);
         setCavemanEnabled(!!data.cavemanEnabled);
         setCavemanLevel(data.cavemanLevel || "full");
+        setComboAutoPromoteEnabled(!!data.comboAutoPromoteEnabled);
       }
       if (statusRes.ok) {
         const data = await statusRes.json();
@@ -322,6 +324,11 @@ export default function APIPageClient({ machineId }) {
   const handleCavemanLevel = (level) => {
     setCavemanLevel(level);
     patchSetting({ cavemanLevel: level });
+  };
+
+  const handleComboAutoPromoteEnabled = (value) => {
+    setComboAutoPromoteEnabled(value);
+    patchSetting({ comboAutoPromoteEnabled: value });
   };
 
   const fetchData = async () => {
@@ -1090,6 +1097,28 @@ export default function APIPageClient({ machineId }) {
               onChange={() => handleCavemanEnabled(!cavemanEnabled)}
             />
           </div>
+        </div>
+      </Card>
+
+      {/* Combo Routing */}
+      <Card id="combo-routing">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <span className="material-symbols-outlined text-primary">alt_route</span>
+            Combo Routing
+          </h2>
+        </div>
+        <div className="flex items-center justify-between pt-2 gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">Auto-promote successful combo model</p>
+            <p className="text-sm text-text-muted">
+              When a combo model responds successfully, move it to position #1 for future requests.
+            </p>
+          </div>
+          <Toggle
+            checked={comboAutoPromoteEnabled}
+            onChange={() => handleComboAutoPromoteEnabled(!comboAutoPromoteEnabled)}
+          />
         </div>
       </Card>
 
