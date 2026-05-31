@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import PropTypes from "prop-types";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -46,8 +46,12 @@ export default function Sidebar({ onClose }) {
   const [updateInfo, setUpdateInfo] = useState(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState(null);
+  const [updateError, setUpdateError] = useState(null);
+  const [showManualUpdate, setShowManualUpdate] = useState(false);
   const [shutdownCountdown, setShutdownCountdown] = useState(0);
   const [enableTranslator, setEnableTranslator] = useState(false);
+  const updatePollTimerRef = useRef(null);
   const { copied, copy } = useCopyToClipboard(2000);
 
   const INSTALL_CMD = UPDATER_CONFIG.installCmdLatest;
@@ -67,6 +71,10 @@ export default function Sidebar({ onClose }) {
       .catch(() => {});
   }, []);
 
+  useEffect(() => () => {
+    if (updatePollTimerRef.current) clearTimeout(updatePollTimerRef.current);
+  }, []);
+
   const isActive = (href) => {
     if (href === "/dashboard/endpoint") {
       return pathname === "/dashboard" || pathname.startsWith("/dashboard/endpoint");
@@ -74,13 +82,65 @@ export default function Sidebar({ onClose }) {
     return pathname.startsWith(href);
   };
 
-  // Open manual update panel (no countdown yet — user must click Copy to trigger shutdown)
-  const handleUpdate = () => {
-    setShowUpdateModal(false);
-    setIsUpdating(true);
+  // Updater status server binds to 127.0.0.1 over plain HTTP. Always poll
+  // loopback HTTP regardless of the dashboard's own scheme/host so the request
+  // is not blocked by mixed-content (HTTPS dashboard -> HTTP updater) or sent
+  // to an unreachable hostname (dashboard accessed via tunnel/remote host).
+  const getUpdaterStatusUrl = () =>
+    `http://127.0.0.1:${UPDATER_CONFIG.statusPort}/update/status`;
+
+  const pollUpdateStatus = () => {
+    let lastContactAt = Date.now();
+    const noContactTimeoutMs = UPDATER_CONFIG.statusPollNoContactTimeoutMs;
+
+    const poll = async () => {
+      try {
+        const res = await fetch(getUpdaterStatusUrl(), { cache: "no-store" });
+        if (res.ok) {
+          lastContactAt = Date.now();
+          const data = await res.json();
+          setUpdateStatus(data);
+          if (data.done) {
+            if (!data.success) {
+              setUpdateError(data.error || "Update failed. You can install manually instead.");
+              setShowManualUpdate(true);
+            }
+            return;
+          }
+        }
+      } catch { /* updater may still be starting */ }
+
+      if (Date.now() - lastContactAt > noContactTimeoutMs) {
+        setUpdateError("Automatic updater did not respond. You can install manually instead.");
+        setShowManualUpdate(true);
+        return;
+      }
+
+      updatePollTimerRef.current = setTimeout(poll, UPDATER_CONFIG.statusPollIntervalMs);
+    };
+    updatePollTimerRef.current = setTimeout(poll, UPDATER_CONFIG.statusPollIntervalMs);
   };
 
-  // Triggered by Copy button inside ManualUpdatePanel: copy + countdown + shutdown
+  const handleUpdate = async () => {
+    setShowUpdateModal(false);
+    setIsUpdating(true);
+    setShowManualUpdate(false);
+    setUpdateError(null);
+    setUpdateStatus({ phase: "starting", logTail: [] });
+
+    try {
+      const res = await fetch("/api/version/update", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.success === false) {
+        throw new Error(data.message || "Unable to start the automatic updater.");
+      }
+      pollUpdateStatus();
+    } catch (e) {
+      setUpdateError(e.message || "Unable to start the automatic updater.");
+      setShowManualUpdate(true);
+    }
+  };
+
   const handleCopyAndShutdown = async () => {
     try { await navigator.clipboard.writeText(INSTALL_CMD); } catch { /* clipboard blocked */ }
     copy(INSTALL_CMD);
@@ -98,13 +158,13 @@ export default function Sidebar({ onClose }) {
   };
 
   const handleCancelUpdate = () => {
+    if (updatePollTimerRef.current) clearTimeout(updatePollTimerRef.current);
     setIsUpdating(false);
+    setShowManualUpdate(false);
+    setUpdateStatus(null);
+    setUpdateError(null);
     setShutdownCountdown(0);
   };
-
-  // Note: legacy updater poll removed. New flow: copy install cmd + shutdown server,
-  // user runs the command manually in another terminal.
-
 
   const handleShutdown = async () => {
     setIsShuttingDown(true);
@@ -360,8 +420,8 @@ export default function Sidebar({ onClose }) {
         onClose={() => setShowUpdateModal(false)}
         onConfirm={handleUpdate}
         title="Update 9Router"
-        message={`Show install command for v${updateInfo?.latestVersion || ""}? You can copy it and shutdown to install manually.`}
-        confirmText="Show Command"
+        message={`Install v${updateInfo?.latestVersion || "latest"} now? 9Router will update, restart, and reopen the dashboard when ready.`}
+        confirmText="Update Now"
         cancelText="Cancel"
         variant="primary"
       />
@@ -370,15 +430,25 @@ export default function Sidebar({ onClose }) {
       {(isDisconnected || isUpdating) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-6">
           {isUpdating ? (
-            <ManualUpdatePanel
-              latestVersion={updateInfo?.latestVersion}
-              installCmd={INSTALL_CMD}
-              copied={copied}
-              onCopyAndShutdown={handleCopyAndShutdown}
-              onCancel={handleCancelUpdate}
-              countdown={shutdownCountdown}
-              isDisconnected={isDisconnected}
-            />
+            showManualUpdate ? (
+              <ManualUpdatePanel
+                latestVersion={updateInfo?.latestVersion}
+                installCmd={INSTALL_CMD}
+                copied={copied}
+                onCopyAndShutdown={handleCopyAndShutdown}
+                onCancel={handleCancelUpdate}
+                countdown={shutdownCountdown}
+                isDisconnected={isDisconnected}
+                error={updateError}
+              />
+            ) : (
+              <AutoUpdatePanel
+                latestVersion={updateInfo?.latestVersion}
+                status={updateStatus}
+                error={updateError}
+                onShowManual={() => setShowManualUpdate(true)}
+              />
+            )
           ) : (
             <div className="text-center p-8">
               <div className="flex items-center justify-center size-16 rounded-full bg-red-500/20 text-red-500 mx-auto mb-4">
@@ -401,7 +471,88 @@ Sidebar.propTypes = {
   onClose: PropTypes.func,
 };
 
-function ManualUpdatePanel({ latestVersion, installCmd, copied, onCopyAndShutdown, onCancel, countdown, isDisconnected }) {
+function AutoUpdatePanel({ latestVersion, status, error, onShowManual }) {
+  const phase = status?.phase || "starting";
+  const done = status?.done;
+  const success = status?.success;
+  const title = done && success
+    ? "Update installed"
+    : latestVersion
+      ? `Updating 9Router to v${latestVersion}`
+      : "Updating 9Router";
+  const message = error
+    ? error
+    : done && success
+      ? "9Router is restarting. The dashboard will reopen when it is ready."
+      : phase === "waitingForExit"
+        ? "Waiting for the current server to stop before installing."
+        : phase === "installing"
+          ? "Installing the latest npm package."
+          : "Starting the automatic updater.";
+  const progressWidth = done
+    ? "100%"
+    : phase === "installing"
+      ? "65%"
+      : phase === "waitingForExit"
+        ? "35%"
+        : "15%";
+
+  return (
+    <div className="w-full max-w-lg rounded-xl bg-neutral-900/95 border border-white/10 p-6 text-white">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="flex items-center justify-center size-11 rounded-full bg-green-500/20 text-green-400">
+          <span className="material-symbols-outlined text-[24px]">system_update_alt</span>
+        </div>
+        <div>
+          <h2 className="text-lg font-semibold">{title}</h2>
+          <p className="text-xs text-white/60">{message}</p>
+        </div>
+      </div>
+
+      <div className="rounded bg-white/5 border border-white/10 p-3 mb-4">
+        <div className="flex items-center justify-between text-xs text-white/70 mb-2">
+          <span>Phase</span>
+          <span className="font-mono text-amber-300">{phase}</span>
+        </div>
+        <div className="h-2 rounded bg-white/10 overflow-hidden">
+          <div className="h-full rounded bg-green-500 transition-all" style={{ width: progressWidth }} />
+        </div>
+      </div>
+
+      {status?.logTail?.length > 0 && (
+        <pre className="max-h-40 overflow-y-auto rounded bg-black/40 p-3 text-[11px] text-white/70 whitespace-pre-wrap mb-4">
+          {status.logTail.join("\n")}
+        </pre>
+      )}
+
+      {error ? (
+        <Button variant="primary" fullWidth onClick={onShowManual}>
+          Show Manual Install Command
+        </Button>
+      ) : done && success ? (
+        <Button variant="secondary" fullWidth onClick={() => globalThis.location.reload()}>
+          Reload Dashboard
+        </Button>
+      ) : (
+        <p className="text-xs text-white/50 text-center">Keep this window open while the updater runs.</p>
+      )}
+    </div>
+  );
+}
+
+AutoUpdatePanel.propTypes = {
+  latestVersion: PropTypes.string,
+  status: PropTypes.shape({
+    phase: PropTypes.string,
+    done: PropTypes.bool,
+    success: PropTypes.bool,
+    logTail: PropTypes.arrayOf(PropTypes.string),
+  }),
+  error: PropTypes.string,
+  onShowManual: PropTypes.func.isRequired,
+};
+
+function ManualUpdatePanel({ latestVersion, installCmd, copied, onCopyAndShutdown, onCancel, countdown, isDisconnected, error }) {
   const isCountingDown = countdown > 0;
   return (
     <div className="w-full max-w-lg rounded-xl bg-neutral-900/95 border border-white/10 p-6 text-white">
@@ -420,6 +571,12 @@ function ManualUpdatePanel({ latestVersion, installCmd, copied, onCopyAndShutdow
           </p>
         </div>
       </div>
+
+      {error && (
+        <div className="rounded bg-red-500/10 border border-red-500/20 text-red-200 text-xs p-3 mb-4">
+          Automatic update failed: {error}
+        </div>
+      )}
 
       <p className="text-sm text-white/80 mb-2">Install command:</p>
       <div className="w-full px-3 py-2 rounded bg-white/5 mb-4">
@@ -458,4 +615,5 @@ ManualUpdatePanel.propTypes = {
   onCancel: PropTypes.func.isRequired,
   countdown: PropTypes.number,
   isDisconnected: PropTypes.bool,
+  error: PropTypes.string,
 };

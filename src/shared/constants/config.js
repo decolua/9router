@@ -22,6 +22,7 @@ export const UPDATER_CONFIG = {
   exitDelayMs: 500,
   statusPort: 20129,
   statusPollIntervalMs: 1000,
+  statusPollNoContactTimeoutMs: 30000,
   statusLogTailLines: 8,
   installRetries: 3,
   installRetryDelayMs: 5000,
