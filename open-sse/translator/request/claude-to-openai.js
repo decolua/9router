@@ -197,11 +197,13 @@ function convertClaudeMessage(msg) {
       return result;
     }
 
-    // Return content
+    // Return content. Text-only Claude arrays should be flattened to a string
+    // for OpenAI-compatible endpoints that reject Anthropic-style content arrays.
     if (parts.length > 0) {
+      const textOnly = parts.every(part => part.type === "text");
       return {
         role,
-        content: parts.length === 1 && parts[0].type === "text" ? parts[0].text : parts
+        content: textOnly ? parts.map(part => part.text).join("\n") : parts
       };
     }
     
