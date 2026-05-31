@@ -42,16 +42,21 @@ const DEFAULT_RESPONSE_EXAMPLE = `{
   "usage": { "prompt_tokens": 9, "total_tokens": 9 }
 }`;
 
-const CLOUDFLARE_TEST_IMAGE_URL = "https://pub-1fb693cb11cc46b2b2f656f51e015a2c.r2.dev/dog.png";
-const CLOUDFLARE_TEST_MASK_URL = "https://pub-1fb693cb11cc46b2b2f656f51e015a2c.r2.dev/dog-mask.png";
+const IMAGE_EDIT_TEST_IMAGE_URL = "https://pub-1fb693cb11cc46b2b2f656f51e015a2c.r2.dev/dog.png";
+const IMAGE_EDIT_TEST_MASK_URL = "https://pub-1fb693cb11cc46b2b2f656f51e015a2c.r2.dev/dog-mask.png";
 
 function getImageEditDefaults(providerId, modelId) {
-  if (providerId !== "cloudflare-ai") return {};
-  if (modelId === "@cf/runwayml/stable-diffusion-v1-5-img2img") {
-    return { image: CLOUDFLARE_TEST_IMAGE_URL };
+  if (providerId === "cloudflare-ai" && modelId === "@cf/runwayml/stable-diffusion-v1-5-img2img") {
+    return { image: IMAGE_EDIT_TEST_IMAGE_URL };
   }
-  if (modelId === "@cf/runwayml/stable-diffusion-v1-5-inpainting") {
-    return { image: CLOUDFLARE_TEST_IMAGE_URL, mask_image: CLOUDFLARE_TEST_MASK_URL };
+  if (providerId === "cloudflare-ai" && modelId === "@cf/runwayml/stable-diffusion-v1-5-inpainting") {
+    return { image: IMAGE_EDIT_TEST_IMAGE_URL, mask_image: IMAGE_EDIT_TEST_MASK_URL };
+  }
+  if (
+    providerId === "nvidia" &&
+    (modelId === "black-forest-labs/flux.1-dev" || modelId === "black-forest-labs/flux.1-kontext-dev")
+  ) {
+    return { image: "data:image/png;example_id,0" };
   }
   return {};
 }
@@ -98,6 +103,13 @@ const KIND_EXAMPLE_CONFIG = {
     extraFields: [
       { key: "n", label: "n", type: "number", default: 1, min: 1, max: 4 },
       { key: "size", label: "Size", type: "select", default: "auto", options: ["auto", "1024x1024", "1024x1536", "1536x1024", "1024x1792", "1792x1024"] },
+      { key: "width", label: "Width", type: "select", default: "", options: ["768", "832", "896", "960", "1024", "1088", "1152", "1216", "1280", "1344"] },
+      { key: "height", label: "Height", type: "select", default: "", options: ["768", "832", "896", "960", "1024", "1088", "1152", "1216", "1280", "1344"] },
+      { key: "aspect_ratio", label: "Aspect Ratio", type: "select", default: "", options: ["match_input_image", "9:21", "5:11", "1:2", "7:13", "3:5", "2:3", "3:4", "6:7", "1:1", "7:6", "4:3", "3:2", "5:3", "13:7", "2:1", "11:5", "21:9"] },
+      { key: "mode", label: "Mode", type: "select", default: "base", options: ["base", "depth", "canny"] },
+      { key: "cfg_scale", label: "CFG Scale", type: "number", default: "", min: 1.01, step: 0.1 },
+      { key: "seed", label: "Seed", type: "number", default: "", min: 0 },
+      { key: "steps", label: "Steps", type: "number", default: "", min: 1 },
       { key: "quality", label: "Quality", type: "select", default: "auto", options: ["auto", "low", "medium", "high", "standard", "hd"] },
       { key: "background", label: "Background", type: "select", default: "auto", options: ["auto", "transparent", "opaque"] },
       { key: "style", label: "Style", type: "select", default: "", options: ["", "vivid", "natural"] },
@@ -986,13 +998,34 @@ function GenericExampleCard({ providerId, kind }) {
     ? safeProviderAlias
     : (selectedModel ? `${safeProviderAlias}/${selectedModel}` : (allowManualModel ? "" : safeProviderAlias));
   const imageEditDefaults = getImageEditDefaults(providerId, selectedModel);
+  const isNvidiaFlux1Dev = providerId === "nvidia" && selectedModel === "black-forest-labs/flux.1-dev";
+  const nvidiaFlux1DevMode = String(extraValues.mode || "base");
+  const showRefImageInput = supportsEdit && !(isNvidiaFlux1Dev && nvidiaFlux1DevMode === "base");
   const effectiveRefImage = refImage.trim() || imageEditDefaults.image || "";
   const effectiveMaskImage = maskImage.trim() || imageEditDefaults.mask_image || "";
   const refImagePreviewSrc = toImagePreviewSrc(effectiveRefImage);
   const maskImagePreviewSrc = toImagePreviewSrc(effectiveMaskImage);
+  const isExtraFieldAllowed = (key) =>
+    kindModels.length === 0 || (Array.isArray(selectedModelObj?.params) && selectedModelObj.params.includes(key));
+  const extraFields = exConfig.extraFields || [];
+  const extraFieldsByKey = Object.fromEntries(extraFields.map((field) => [field.key, field]));
+  const getExtraFieldOptions = (field) => selectedModelObj?.paramOptions?.[field.key] || field.options || [];
+  const getExtraFieldValue = (field, value = extraValues[field.key]) => {
+    const modelDefault = selectedModelObj?.paramDefaults?.[field.key];
+    if ((value === "" || value === null || value === undefined) && modelDefault !== undefined) {
+      value = modelDefault;
+    }
+    if (field?.type !== "select") return value;
+    const options = getExtraFieldOptions(field);
+    if (options.length > 0 && !options.includes(value)) return options[0];
+    return value;
+  };
 
   // Build request body with optional extra fields (only non-empty values)
   const extraBodyFromFields = Object.entries(extraValues).reduce((acc, [k, v]) => {
+    if (!isExtraFieldAllowed(k)) return acc;
+    const field = extraFieldsByKey[k];
+    v = getExtraFieldValue(field, v);
     if (v === "" || v === null || v === undefined) return acc;
     if (typeof v === "number" && Number.isNaN(v)) return acc;
     acc[k] = v;
@@ -1003,7 +1036,7 @@ function GenericExampleCard({ providerId, kind }) {
     [exConfig.bodyKey]: input,
     ...exConfig.extraBody,
     ...extraBodyFromFields,
-    ...(supportsEdit && effectiveRefImage ? { image: effectiveRefImage } : {}),
+    ...(showRefImageInput && effectiveRefImage ? { image: effectiveRefImage } : {}),
     ...(supportsMask && effectiveMaskImage ? { mask_image: effectiveMaskImage } : {}),
   };
 
@@ -1210,7 +1243,7 @@ function GenericExampleCard({ providerId, kind }) {
         </Row>
 
         {/* Reference image (only for edit-capable image models) */}
-        {supportsEdit && (
+        {showRefImageInput && (
           <Row label="Ref Image (URL)">
             <div className="flex flex-col gap-2">
               <div className="relative">
@@ -1277,40 +1310,44 @@ function GenericExampleCard({ providerId, kind }) {
         )}
 
         {/* Extra fields — for kinds without model concept (webSearch/webFetch), show all; otherwise filter by model.params */}
-        {(exConfig.extraFields || [])
-          .filter((f) => kindModels.length === 0 || (Array.isArray(selectedModelObj?.params) && selectedModelObj.params.includes(f.key)))
-          .map((f) => (
-          <Row key={f.key} label={f.label}>
-            {f.type === "select" ? (
-              <select
-                value={extraValues[f.key] ?? ""}
-                onChange={(e) => setExtraValues((s) => ({ ...s, [f.key]: e.target.value }))}
-                className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
-              >
-                {(f.options || []).map((opt) => (
-                  <option key={opt} value={opt}>{opt === "" ? "(default)" : opt}</option>
-                ))}
-              </select>
-            ) : f.type === "text" ? (
-              <input
-                type="text"
-                value={extraValues[f.key] ?? ""}
-                placeholder={f.placeholder}
-                onChange={(e) => setExtraValues((s) => ({ ...s, [f.key]: e.target.value }))}
-                className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
-              />
-            ) : (
-              <input
-                type="number"
-                value={extraValues[f.key] ?? ""}
-                min={f.min}
-                max={f.max}
-                onChange={(e) => setExtraValues((s) => ({ ...s, [f.key]: e.target.value === "" ? "" : Number(e.target.value) }))}
-                className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
-              />
-            )}
-          </Row>
-        ))}
+        {extraFields
+          .filter((f) => isExtraFieldAllowed(f.key))
+          .map((f) => {
+            const fieldValue = getExtraFieldValue(f);
+            return (
+              <Row key={f.key} label={f.label}>
+                {f.type === "select" ? (
+                  <select
+                    value={fieldValue ?? ""}
+                    onChange={(e) => setExtraValues((s) => ({ ...s, [f.key]: e.target.value }))}
+                    className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+                  >
+                    {getExtraFieldOptions(f).map((opt) => (
+                      <option key={opt} value={opt}>{opt === "" ? "(default)" : opt}</option>
+                    ))}
+                  </select>
+                ) : f.type === "text" ? (
+                  <input
+                    type="text"
+                    value={extraValues[f.key] ?? ""}
+                    placeholder={f.placeholder}
+                    onChange={(e) => setExtraValues((s) => ({ ...s, [f.key]: e.target.value }))}
+                    className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+                  />
+                ) : (
+                  <input
+                    type="number"
+                    value={fieldValue ?? ""}
+                    min={f.min}
+                    max={f.max}
+                    step={f.step}
+                    onChange={(e) => setExtraValues((s) => ({ ...s, [f.key]: e.target.value === "" ? "" : Number(e.target.value) }))}
+                    className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+                  />
+                )}
+              </Row>
+            );
+          })}
 
         {/* Output Format toggle (image only) — last */}
         {kind === "image" && (
@@ -1760,6 +1797,13 @@ export default function MediaProviderDetailPage() {
 
   const kinds = isCustom ? ["embedding"] : (provider.serviceKinds ?? ["llm"]);
   if (!isCustom && !kinds.includes(kind)) return notFound();
+  const providerInfoConfig =
+    kind === "webFetch" ? provider.fetchConfig
+      : kind === "tts" ? provider.ttsConfig
+      : kind === "stt" ? provider.sttConfig
+      : kind === "embedding" ? provider.embeddingConfig
+      : kind === "webSearch" ? (provider.searchConfig || (provider.searchViaChat ? { mode: "chat-completions", defaultModel: provider.searchViaChat.defaultModel, pricingUrl: provider.searchViaChat.pricingUrl, freeTier: provider.searchViaChat.freeTier } : null))
+      : null;
 
   return (
     <div className="flex flex-col gap-8">
@@ -1865,15 +1909,9 @@ export default function MediaProviderDetailPage() {
       )}
 
       {/* Provider Info — config-driven, supports searchConfig, fetchConfig, ttsConfig, embeddingConfig, searchViaChat */}
-      {!isCustom && (provider.searchConfig || provider.fetchConfig || provider.ttsConfig || provider.sttConfig || provider.embeddingConfig || provider.searchViaChat) && (
+      {!isCustom && providerInfoConfig && (
         <ProviderInfoCard
-          config={
-            kind === "webFetch" ? provider.fetchConfig
-              : kind === "tts" ? provider.ttsConfig
-              : kind === "stt" ? provider.sttConfig
-              : kind === "embedding" ? provider.embeddingConfig
-              : provider.searchConfig || { mode: "chat-completions", defaultModel: provider.searchViaChat?.defaultModel, pricingUrl: provider.searchViaChat?.pricingUrl, freeTier: provider.searchViaChat?.freeTier }
-          }
+          config={providerInfoConfig}
           provider={provider}
           title={`${kindConfig.label} Config`}
         />

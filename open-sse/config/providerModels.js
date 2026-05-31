@@ -511,6 +511,10 @@ export const PROVIDER_MODELS = {
     { id: "minimaxai/minimax-m2.7", name: "Minimax M2.7" },
     { id: "z-ai/glm4.7", name: "GLM 4.7" },
     { id: "nvidia/nv-embedqa-e5-v5", name: "NV EmbedQA E5 v5", type: "embedding" },
+    { id: "black-forest-labs/flux.2-klein-4b", name: "FLUX.2 Klein 4B", type: "image", params: ["width", "height", "seed", "steps"], capabilities: ["text2img", "edit"], paramDefaults: { width: "1024", height: "1024", seed: 0, steps: 4 } },
+    { id: "black-forest-labs/flux.1-dev", name: "FLUX.1 Dev", type: "image", params: ["width", "height", "mode", "cfg_scale", "seed", "steps"], capabilities: ["text2img", "edit"], paramDefaults: { width: "768", height: "1344", mode: "base", cfg_scale: 1.1, seed: 0, steps: 50 } },
+    { id: "black-forest-labs/flux.1-schnell", name: "FLUX.1 Schnell", type: "image", params: ["width", "height", "seed", "steps"], paramDefaults: { width: "1024", height: "1024" } },
+    { id: "black-forest-labs/flux.1-kontext-dev", name: "FLUX.1 Kontext Dev (Edit)", type: "image", params: ["aspect_ratio", "cfg_scale", "seed", "steps"], capabilities: ["edit"], paramDefaults: { image: "data:image/png;example_id,0", aspect_ratio: "match_input_image", steps: 30, cfg_scale: 3.5, seed: 0 } },
     // STT models
     { id: "nvidia/parakeet-ctc-1.1b-asr", name: "Parakeet CTC 1.1B", type: "stt", params: ["language"] },
   ],

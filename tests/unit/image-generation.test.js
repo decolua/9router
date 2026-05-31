@@ -284,6 +284,264 @@ describe("handleImageGenerationCore", () => {
     expect(responseBody.data[0].b64_json).toBeTruthy();
   });
 
+  it("generates image with NVIDIA NIM artifacts response", async () => {
+    global.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          artifacts: [{ base64: "base64nvidia", finishReason: "SUCCESS" }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    );
+
+    const result = await handleImageGenerationCore({
+      body: { prompt: "A neon city", width: 1344, height: 1024, seed: 7, steps: 4 },
+      modelInfo: { provider: "nvidia", model: "black-forest-labs/flux.1-schnell" },
+      credentials: { apiKey: "nv-token" },
+      log: null,
+    });
+
+    expect(result.success).toBe(true);
+    expect(global.fetch).toHaveBeenCalledWith(
+      "https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-schnell",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          Authorization: "Bearer nv-token",
+        }),
+      })
+    );
+
+    const fetchCall = global.fetch.mock.calls[0];
+    const requestBody = JSON.parse(fetchCall[1].body);
+    expect(requestBody).toEqual({
+      prompt: "A neon city",
+      width: 1344,
+      height: 1024,
+      seed: 7,
+      steps: 4,
+    });
+
+    const responseBody = await result.response.json();
+    expect(responseBody.data[0].b64_json).toBe("base64nvidia");
+    expect(responseBody.data[0].finish_reason).toBe("SUCCESS");
+  });
+
+  it("sends NVIDIA FLUX.2 Klein edit input image as an array", async () => {
+    global.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          artifacts: [{ base64: "base64nvidiaedit" }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    );
+
+    const result = await handleImageGenerationCore({
+      body: {
+        prompt: "Make the frog wear tiny glasses",
+        image: "data:image/png;example_id,0",
+        width: 1024,
+        height: 1024,
+        seed: 0,
+        steps: 4,
+      },
+      modelInfo: { provider: "nvidia", model: "black-forest-labs/flux.2-klein-4b" },
+      credentials: { apiKey: "nv-token" },
+      log: null,
+    });
+
+    expect(result.success).toBe(true);
+    const fetchCall = global.fetch.mock.calls[0];
+    const requestBody = JSON.parse(fetchCall[1].body);
+    expect(requestBody).toEqual({
+      prompt: "Make the frog wear tiny glasses",
+      width: 1024,
+      height: 1024,
+      image: ["data:image/png;example_id,0"],
+      seed: 0,
+      steps: 4,
+    });
+
+    const responseBody = await result.response.json();
+    expect(responseBody.data[0].b64_json).toBe("base64nvidiaedit");
+  });
+
+  it("omits NVIDIA FLUX.1 Dev input image in base mode", async () => {
+    global.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          artifacts: [{ base64: "base64nvidiabase" }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    );
+
+    const result = await handleImageGenerationCore({
+      body: {
+        prompt: "A simple coffee shop interior",
+        mode: "base",
+        image: "data:image/png;example_id,0",
+        cfg_scale: 1.1,
+        width: 768,
+        height: 1344,
+        seed: 0,
+        steps: 50,
+      },
+      modelInfo: { provider: "nvidia", model: "black-forest-labs/flux.1-dev" },
+      credentials: { apiKey: "nv-token" },
+      log: null,
+    });
+
+    expect(result.success).toBe(true);
+    const fetchCall = global.fetch.mock.calls[0];
+    const requestBody = JSON.parse(fetchCall[1].body);
+    expect(requestBody).toEqual({
+      prompt: "A simple coffee shop interior",
+      mode: "base",
+      width: 768,
+      height: 1344,
+      cfg_scale: 1.1,
+      seed: 0,
+      steps: 50,
+    });
+  });
+
+  it("drops unsupported NVIDIA FLUX.1 Dev dimensions and cfg_scale values", async () => {
+    global.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          artifacts: [{ base64: "base64nvidiasanitized" }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    );
+
+    const result = await handleImageGenerationCore({
+      body: {
+        prompt: "A simple coffee shop interior",
+        mode: "base",
+        image: "data:image/png;example_id,0",
+        cfg_scale: 0,
+        width: 1792,
+        height: 1024,
+        seed: 0,
+        steps: 50,
+      },
+      modelInfo: { provider: "nvidia", model: "black-forest-labs/flux.1-dev" },
+      credentials: { apiKey: "nv-token" },
+      log: null,
+    });
+
+    expect(result.success).toBe(true);
+    const fetchCall = global.fetch.mock.calls[0];
+    const requestBody = JSON.parse(fetchCall[1].body);
+    expect(requestBody).toEqual({
+      prompt: "A simple coffee shop interior",
+      mode: "base",
+      seed: 0,
+      steps: 50,
+    });
+  });
+
+  it("sends NVIDIA FLUX.1 Dev control image as a string", async () => {
+    global.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          artifacts: [{ base64: "base64nvidiadepth" }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    );
+
+    const result = await handleImageGenerationCore({
+      body: {
+        prompt: "A simple coffee shop interior",
+        mode: "depth",
+        image: "data:image/png;example_id,0",
+        cfg_scale: 3.5,
+        width: 1024,
+        height: 1024,
+        seed: 0,
+        steps: 50,
+      },
+      modelInfo: { provider: "nvidia", model: "black-forest-labs/flux.1-dev" },
+      credentials: { apiKey: "nv-token" },
+      log: null,
+    });
+
+    expect(result.success).toBe(true);
+    expect(global.fetch).toHaveBeenCalledWith(
+      "https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-dev",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          Authorization: "Bearer nv-token",
+        }),
+      })
+    );
+
+    const fetchCall = global.fetch.mock.calls[0];
+    const requestBody = JSON.parse(fetchCall[1].body);
+    expect(requestBody).toEqual({
+      prompt: "A simple coffee shop interior",
+      width: 1024,
+      height: 1024,
+      mode: "depth",
+      image: "data:image/png;example_id,0",
+      cfg_scale: 3.5,
+      seed: 0,
+      steps: 50,
+    });
+
+    const responseBody = await result.response.json();
+    expect(responseBody.data[0].b64_json).toBe("base64nvidiadepth");
+  });
+
+  it("sends NVIDIA FLUX.1 Kontext edit input image as a string with aspect ratio", async () => {
+    global.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          artifacts: [{ base64: "base64nvidiakontext" }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    );
+
+    const result = await handleImageGenerationCore({
+      body: {
+        prompt: "Now the mouse is holding pizza instead",
+        image: "data:image/png;example_id,0",
+        aspect_ratio: "match_input_image",
+        width: 1024,
+        height: 1024,
+        steps: 30,
+        cfg_scale: 3.5,
+        seed: 0,
+      },
+      modelInfo: { provider: "nvidia", model: "black-forest-labs/flux.1-kontext-dev" },
+      credentials: { apiKey: "nv-token" },
+      log: null,
+    });
+
+    expect(result.success).toBe(true);
+    const fetchCall = global.fetch.mock.calls[0];
+    const requestBody = JSON.parse(fetchCall[1].body);
+    expect(requestBody).toEqual({
+      prompt: "Now the mouse is holding pizza instead",
+      image: "data:image/png;example_id,0",
+      aspect_ratio: "match_input_image",
+      cfg_scale: 3.5,
+      seed: 0,
+      steps: 30,
+    });
+
+    const responseBody = await result.response.json();
+    expect(responseBody.data[0].b64_json).toBe("base64nvidiakontext");
+  });
+
   it("generates image with Codex gpt-5.5-image using current Codex version header", async () => {
     global.fetch.mockResolvedValueOnce(
       new Response(

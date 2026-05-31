@@ -3,6 +3,7 @@ import { ensureDirs, DATA_FILE } from "./paths.js";
 // Use global to survive Next.js dev hot-reload (module state resets on reload)
 if (!global._dbAdapter) global._dbAdapter = { instance: null, initPromise: null, logged: false };
 const state = global._dbAdapter;
+const sqlJsOnly = process.env.NINE_ROUTER_SQLJS_ONLY === "1";
 
 async function tryBunSqlite() {
   // Bun runtime only — built-in, no install needed
@@ -18,7 +19,7 @@ async function tryBunSqlite() {
 
 async function tryBetterSqlite() {
   // Skip on Bun — better-sqlite3 native bindings unsupported
-  if (process.versions.bun) return null;
+  if (process.versions.bun || sqlJsOnly) return null;
   try {
     const { createBetterSqliteAdapter } = await import("./adapters/betterSqliteAdapter.js");
     return createBetterSqliteAdapter(DATA_FILE);
@@ -30,7 +31,7 @@ async function tryBetterSqlite() {
 
 async function tryNodeSqlite() {
   // Built-in since Node 22.5.0 — no install needed. Skip under Bun (no node:sqlite).
-  if (process.versions.bun) return null;
+  if (process.versions.bun || sqlJsOnly) return null;
   const [maj, min] = process.versions.node.split(".").map(Number);
   if (maj < 22 || (maj === 22 && min < 5)) return null;
   try {
