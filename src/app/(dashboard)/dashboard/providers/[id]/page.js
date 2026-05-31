@@ -1277,6 +1277,30 @@ export default function ProviderDetailPage() {
                   Apply API Key
                 </Button>
               )}
+              {connections.length > 0 && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    icon="sync"
+                    onClick={handleRunOneByOneTest}
+                    disabled={oneByOneRunning}
+                  >
+                    {oneByOneRunning ? "Testing Connection One-by-One..." : "Test Connection One-by-One"}
+                  </Button>
+                  {oneByOneRunning && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      icon="stop"
+                      onClick={handleStopOneByOneTest}
+                      disabled={oneByOneStopping}
+                    >
+                      {oneByOneStopping ? "Stopping..." : "Stop"}
+                    </Button>
+                  )}
+                </>
+              )}
               {/* Thinking config */}
               {/* {thinkingConfig && (
                 <div className="flex items-center gap-2">
