@@ -14,6 +14,7 @@ const ALIAS_TO_PROVIDER_ID = {
   cl: "cline",
   oc: "opencode",
   ocg: "opencode-go",
+  fb: "freebuff",
   // TTS providers
   el: "elevenlabs",
   // API Key providers

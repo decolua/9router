@@ -27,6 +27,12 @@ function withCodexReviewModels(models) {
 }
 
 export const PROVIDER_MODELS = {
+  fb: [  // Freebuff
+    { id: "deepseek/deepseek-v4-pro", name: "DeepSeek V4 Pro" },
+    { id: "moonshotai/kimi-k2.6", name: "Kimi K2.6" },
+    { id: "deepseek/deepseek-v4-flash", name: "DeepSeek V4 Flash" },
+    { id: "minimax/minimax-m2.7", name: "MiniMax M2.7" },
+  ],
   // OAuth Providers (using alias)
   cc: [  // Claude Code
     { id: "claude-opus-4-7", name: "Claude Opus 4.7" },
@@ -869,6 +875,7 @@ export function getModelQuotaFamily(aliasOrId, modelId) {
 
 // OAuth providers that use short aliases (everything else: alias = id)
 const OAUTH_ALIASES = {
+  freebuff: "fb",
   claude: "cc",
   codex: "cx",
   "gemini-cli": "gc",
