@@ -272,11 +272,7 @@ export const PROVIDERS = {
   },
   xai: {
     baseUrl: "https://api.x.ai/v1/chat/completions",
-    responsesUrl: "https://api.x.ai/v1/responses",
-    format: "openai",
-    clientId: "b1a00492-073a-47ea-816f-4c329264a828",
-    tokenUrl: "https://auth.x.ai/oauth2/token",
-    refreshUrl: "https://auth.x.ai/oauth2/token"
+    format: "openai"
   },
   mistral: {
     baseUrl: "https://api.mistral.ai/v1/chat/completions",
@@ -435,6 +431,14 @@ export const PROVIDERS = {
   "nous-research": { baseUrl: "https://inference-api.nousresearch.com/v1/chat/completions", format: "openai" },
   glhf: { baseUrl: "https://glhf.chat/api/openai/v1/chat/completions", format: "openai" },
   blackbox: { baseUrl: "https://api.blackbox.ai/chat/completions", format: "openai" },
+  // Pioneer AI by Fastino Labs - OpenAI-compatible chat completions on api.pioneer.ai/v1
+  // Auth: X-API-Key header with pio_sk_... key (Bearer also accepted by upstream)
+  pioneer: {
+    baseUrl: "https://api.pioneer.ai/v1/chat/completions",
+    format: "openai",
+    authHeader: "x-api-key",
+    headers: {}
+  },
 };
 
 export const OLLAMA_LOCAL_DEFAULT_HOST = "http://localhost:11434";

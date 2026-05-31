@@ -124,6 +124,27 @@ export const PROVIDER_MODELS = {
     { id: "text-embedding-3-small", name: "Text Embedding 3 Small (GitHub)", type: "embedding" },
     { id: "text-embedding-3-large", name: "Text Embedding 3 Large (GitHub)", type: "embedding" },
   ],
+  pn: [  // Pioneer AI by Fastino Labs (https://api.pioneer.ai/v1/chat/completions)
+    // Source of truth: GET https://api.pioneer.ai/base-models?supports_inference=true&task_type=decoder
+    // Filter: supports_on_demand_inference=true ONLY. Pioneer enterprise tier (Claude/GPT/Gemini)
+    // and many open-tier models have on_demand_inference=false — they REQUIRE prior fine-tuning
+    // (POST /felix/training-jobs) and are called via the resulting job_id, NOT the base model id.
+    // Calling those models directly with just a pio_sk_ key forwards to the upstream provider
+    // (OpenAI/Anthropic/etc.) using your pio_sk_ as Bearer, which fails with the upstream's
+    // own 401 (the "Incorrect API key provided: pio_sk_..." OpenAI error). To use the gated
+    // models, fine-tune first and pass the returned training-job id as `model_id`.
+    // === Open-tier serverless inference (works with any pio_sk_ key) ===
+    { id: "Qwen/Qwen3-32B", name: "Qwen3 32B" },
+    { id: "Qwen/Qwen3.6-27B", name: "Qwen3.6 27B" },
+    { id: "Qwen/Qwen3.5-9B", name: "Qwen3.5 9B" },
+    { id: "Qwen/Qwen3-8B", name: "Qwen3 8B" },
+    { id: "Qwen/Qwen3-4B-Base", name: "Qwen3 4B Base" },
+    { id: "Qwen/Qwen3-1.7B-Base", name: "Qwen3 1.7B Base" },
+    { id: "meta-llama/Llama-3.1-8B-Instruct", name: "Llama 3.1 8B Instruct" },
+    { id: "meta-llama/Llama-3.2-1B-Instruct", name: "Llama 3.2 1B Instruct" },
+    { id: "google/gemma-3-4b-pt", name: "Gemma 3 4B (Pretrained)" },
+    { id: "HuggingFaceTB/SmolLM3-3B-Base", name: "SmolLM3 3B Base" },
+  ],
   kr: [  // Kiro AI
     // --- Base Claude variants ---
     // { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
@@ -468,7 +489,6 @@ export const PROVIDER_MODELS = {
     { id: "grok-4-fast-reasoning", name: "Grok 4 Fast Reasoning" },
     { id: "grok-code-fast-1", name: "Grok Code Fast" },
     { id: "grok-3", name: "Grok 3" },
-    { id: "grok-2-image-1212", name: "Grok 2 Image", type: "image", params: ["n", "response_format"] },
   ],
   mistral: [
     { id: "mistral-large-latest", name: "Mistral Large 3" },
@@ -888,6 +908,7 @@ const OAUTH_ALIASES = {
   qoder: "qd",
   vertex: "vertex",
   "vertex-partner": "vertex-partner",
+  pioneer: "pn",
 };
 
 // Derived from PROVIDERS — no need to maintain manually

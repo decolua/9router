@@ -80,6 +80,7 @@ export const PROVIDER_ENDPOINTS = {
   gemini: "https://generativelanguage.googleapis.com/v1beta/models",
   ollama: "https://ollama.com/api/chat",
   "ollama-local": "http://localhost:11434/api/chat",
+  pioneer: "https://api.pioneer.ai/v1/chat/completions",
 };
 
 // Re-export from providers.js for backward compatibility
