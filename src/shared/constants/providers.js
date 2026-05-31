@@ -12,6 +12,9 @@ export const FREE_PROVIDERS = {
   qoder: { id: "qoder", alias: "qd", name: "Qoder", icon: "water_drop", color: "#EC4899", deprecated: true, deprecationNotice: RISK_NOTICE, website: "https://qoder.com", notice: { signupUrl: "https://qoder.com" } },
   // iflow: { id: "iflow", alias: "if", name: "iFlow AI", icon: "water_drop", color: "#6366F1", website: "https://iflow.cn", notice: { signupUrl: "https://iflow.cn" } },
   opencode: { id: "opencode", alias: "oc", name: "OpenCode Free", icon: "terminal", color: "#E87040", textIcon: "OC", noAuth: true, passthroughModels: true, modelsFetcher: { url: "https://opencode.ai/zen/v1/models", type: "opencode-free" } },
+  // Augment Code via Auggie CLI subprocess. Auth handled by `auggie login`,
+  // so 9Router treats this as no-auth. Requires the CLI to be on PATH.
+  auggie: { id: "auggie", alias: "auggie", name: "Augment (Auggie CLI)", icon: "terminal", color: "#7C3AED", textIcon: "AG", noAuth: true, website: "https://docs.augmentcode.com/cli/overview", notice: { text: "Requires the local Auggie CLI. Install with `npm i -g @augmentcode/auggie`, then run `auggie login` once. Uses your Augment account credits.", signupUrl: "https://www.augmentcode.com/" } },
 };
 
 // Free Tier Providers (has free access but may require account/API key)

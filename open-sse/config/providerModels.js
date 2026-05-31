@@ -211,6 +211,23 @@ export const PROVIDER_MODELS = {
     // { id: "trinity-large-preview-free", name: "Trinity Large Preview" },
   ],
 
+  // Augment Code (Auggie CLI). Models are passed straight through to `auggie --model`.
+  // Names mirror Augment's available-models list (https://docs.augmentcode.com/models/available-models).
+  auggie: [
+    { id: "sonnet4.5", name: "Claude Sonnet 4.5" },
+    { id: "sonnet4.6", name: "Claude Sonnet 4.6" },
+    { id: "haiku4.5", name: "Claude Haiku 4.5" },
+    { id: "opus4.5", name: "Claude Opus 4.5" },
+    { id: "opus4.6", name: "Claude Opus 4.6" },
+    { id: "opus4.7", name: "Claude Opus 4.7" },
+    { id: "gemini3.1-pro", name: "Gemini 3.1 Pro" },
+    { id: "gpt-5.4", name: "GPT-5.4" },
+    { id: "gpt-5.5", name: "GPT-5.5" },
+    { id: "kimi-k2.6", name: "Kimi K2.6" },
+    { id: "prism-claude-gemini", name: "Prism (Claude + Gemini)" },
+    { id: "prism-gpt-kimi", name: "Prism (GPT + Kimi)" },
+  ],
+
   cl: [  // Cline
     { id: "anthropic/claude-opus-4.7", name: "Claude Opus 4.7" },
     { id: "anthropic/claude-sonnet-4.6", name: "Claude Sonnet 4.6" },

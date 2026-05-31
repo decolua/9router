@@ -396,6 +396,26 @@ export async function POST(request) {
           break;
         }
 
+        case "auggie": {
+          // Validate by checking the local CLI works. Honors `auggie login` session.
+          const { spawn } = await import("child_process");
+          const cmd = process.platform === "win32" ? "auggie.cmd" : "auggie";
+          isValid = await new Promise((resolve) => {
+            try {
+              const child = spawn(cmd, ["--version"], { shell: process.platform === "win32", windowsHide: true });
+              let resolved = false;
+              const finish = (ok) => { if (!resolved) { resolved = true; resolve(ok); } };
+              child.on("error", () => finish(false));
+              child.on("close", (code) => finish(code === 0));
+              setTimeout(() => { try { child.kill(); } catch { /* ignore */ } finish(false); }, 5000);
+            } catch {
+              resolve(false);
+            }
+          });
+          if (!isValid) error = "auggie CLI not found. Run: npm i -g @augmentcode/auggie && auggie login";
+          break;
+        }
+
         case "opencode-go": {
           const res = await fetch("https://opencode.ai/zen/go/v1/chat/completions", {
             method: "POST",
