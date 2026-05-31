@@ -32,4 +32,16 @@ describe("Dynamic Provider Models Configuration", () => {
     expect(dynamicIds).toContain("opencode");
     expect(dynamicIds).toContain("openrouter");
   });
+
+  it("should ensure passthrough providers with fetchers have consistent metadata", () => {
+    // These providers use dynamic fetching AND passthrough (critical for combo editing)
+    const passthroughWithFetcher = ["kilocode", "openrouter", "opencode"];
+    
+    passthroughWithFetcher.forEach(id => {
+      const p = AI_PROVIDERS[id];
+      expect(p, `Provider ${id} should be defined`).toBeDefined();
+      expect(p.passthroughModels, `Provider ${id} should have passthroughModels: true`).toBe(true);
+      expect(p.modelsFetcher, `Provider ${id} should have a modelsFetcher defined`).toBeDefined();
+    });
+  });
 });
