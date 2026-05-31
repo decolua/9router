@@ -20,6 +20,10 @@ import { dedupeTools } from "../utils/toolDeduper.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
 
+// Anthropic Messages top-level `effort` is Claude Opus 4.6+ only.
+// haiku/sonnet upstreams reject it with 400 invalid_request_error.
+const isEffortCapableClaude = (model = "") => /opus-4-(6|7|8)/.test(model);
+
 /**
  * Core chat handler - shared between SSE and Worker
  * @param {object} options.body - Request body
@@ -113,6 +117,12 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Token savers: applied at the final body just before dispatch
   // Covers both passthrough (source shape) and translated (target shape) flows
   const finalFormat = passthrough ? sourceFormat : targetFormat;
+
+  // Strip unsupported top-level `effort` for non-Opus claude upstreams (avoids 400)
+  if (finalFormat === "claude" && translatedBody.effort != null && !isEffortCapableClaude(model)) {
+    delete translatedBody.effort;
+    log?.debug?.("EFFORT", `stripped unsupported effort for ${model}`);
+  }
 
   // RTK: compress tool_result content
   const rtkStats = compressMessages(translatedBody, rtkEnabled);
