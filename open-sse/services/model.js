@@ -246,6 +246,7 @@ export async function getModelInfoCore(modelStr, aliasesOrGetter) {
 function inferProviderFromModelName(modelName) {
   if (!modelName) return "openai";
   const m = modelName.toLowerCase();
+  if (m === "default" || m === "auto") return "cursor";
   if (m.startsWith("claude-")) return "anthropic";
   if (m.startsWith("gemini-")) return "gemini";
   if (m.startsWith("gpt-")) return "openai";

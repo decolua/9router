@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getApiKeys } from "@/lib/localDb";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
+import { parseSSEToOpenAIResponse } from "open-sse/handlers/chatCore/sseToJsonHandler.js";
 
 const CLI_TOKEN_SALT = "9r-cli-auth";
 
@@ -51,14 +52,15 @@ export async function POST(request) {
       return NextResponse.json({ ok: true, latencyMs, error: null, status: res.status });
     }
 
-    // Default: chat completions
+    // Default: chat completions (Cursor models require streaming upstream)
+    const isCursorModel = /^(cu|cursor)\//i.test(model);
     const res = await fetch(`${baseUrl}/api/v1/chat/completions`, {
       method: "POST",
       headers,
       body: JSON.stringify({
         model,
         max_tokens: 1,
-        stream: false,
+        stream: isCursorModel,
         messages: [{ role: "user", content: "hi" }],
       }),
       signal: AbortSignal.timeout(15000),
@@ -68,7 +70,11 @@ export async function POST(request) {
     const rawText = await res.text().catch(() => "");
     let parsed = null;
     try {
-      parsed = rawText ? JSON.parse(rawText) : null;
+      if (isCursorModel && res.ok) {
+        parsed = parseSSEToOpenAIResponse(rawText, model);
+      } else {
+        parsed = rawText ? JSON.parse(rawText) : null;
+      }
     } catch {}
 
     if (!res.ok) {
@@ -110,6 +116,18 @@ export async function POST(request) {
         latencyMs,
         status: res.status,
         error: "Provider returned no completion choices for this model",
+      });
+    }
+
+    const message = parsed.choices[0]?.message;
+    const hasContent = typeof message?.content === "string" && message.content.length > 0;
+    const hasToolCalls = Array.isArray(message?.tool_calls) && message.tool_calls.length > 0;
+    if (!hasContent && !hasToolCalls) {
+      return NextResponse.json({
+        ok: false,
+        latencyMs,
+        status: res.status,
+        error: "Provider returned an empty completion for this model",
       });
     }
 
