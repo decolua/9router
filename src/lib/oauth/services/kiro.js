@@ -5,10 +5,14 @@ import { KIRO_CONFIG } from "../constants/oauth.js";
  * Supports multiple authentication methods:
  * 1. AWS Builder ID (Device Code Flow)
  * 2. AWS IAM Identity Center/IDC (Device Code Flow)
- * 3. Import Token (Manual refresh token paste)
+ * 3. Google/GitHub Social Login (Authorization Code Flow via AWS Cognito)
+ * 4. Import Token (Manual refresh token paste)
  */
 
 const KIRO_AUTH_SERVICE = "https://prod.us-east-1.auth.desktop.kiro.dev";
+const KIRO_COGNITO_DOMAIN = "kiro-prod-us-east-1.auth.us-east-1.amazoncognito.com";
+const KIRO_COGNITO_CLIENT_ID = "59bd15eh40ee7pc20h0bkcu7id";
+const KIRO_SOCIAL_REDIRECT_URI = "http://localhost:3128/oauth/callback";
 
 export class KiroService {
   /**
@@ -122,6 +126,55 @@ export class KiroService {
   }
 
   /**
+   * Build Google/GitHub social login URL via Kiro desktop auth (AWS Cognito)
+   * Uses localhost:3128 callback (manual paste flow), matching Kiro CLI.
+   */
+  buildSocialLoginUrl(provider, codeChallenge, state) {
+    const idp = provider === "google" ? "Google" : "Github";
+    const redirectUri = `${KIRO_SOCIAL_REDIRECT_URI}?login_option=${provider}`;
+    const params = new URLSearchParams({
+      idp,
+      redirect_uri: redirectUri,
+      code_challenge: codeChallenge,
+      code_challenge_method: "S256",
+      state,
+      prompt: "select_account",
+    });
+    return `${KIRO_AUTH_SERVICE}/login?${params.toString()}`;
+  }
+
+  /**
+   * Exchange Google/GitHub social authorization code for tokens.
+   * Goes through Kiro's desktop auth backend service.
+   */
+  async exchangeSocialCode(code, codeVerifier, provider = "google") {
+    const redirectUri = `${KIRO_SOCIAL_REDIRECT_URI}?login_option=${provider}`;
+    const response = await fetch(`${KIRO_AUTH_SERVICE}/oauth/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        code,
+        code_verifier: codeVerifier,
+        redirect_uri: redirectUri,
+      }),
+    });
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Social token exchange failed: ${error}`);
+    }
+    const data = await response.json();
+    return {
+      accessToken: data.accessToken || data.access_token,
+      refreshToken: data.refreshToken || data.refresh_token,
+      idToken: data.idToken || data.id_token,
+      profileArn: data.profileArn,
+      expiresIn: data.expiresIn || data.expires_in || 3600,
+      authMethod: "social",
+      socialProvider: provider,
+    };
+  }
+
+  /**
    * Refresh token using refresh token
    */
   async refreshToken(refreshToken, providerSpecificData = {}) {
@@ -157,7 +210,34 @@ export class KiroService {
       };
     }
 
-    // Imported token refresh
+    // Social auth refresh (Google/GitHub via AWS Cognito)
+    if (authMethod === "social") {
+      const response = await fetch(`https://${KIRO_COGNITO_DOMAIN}/oauth2/token`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          client_id: KIRO_COGNITO_CLIENT_ID,
+          refresh_token: refreshToken,
+        }).toString(),
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Token refresh failed: ${error}`);
+      }
+
+      const data = await response.json();
+      return {
+        accessToken: data.access_token,
+        refreshToken: data.refresh_token || refreshToken,
+        expiresIn: data.expires_in || 3600,
+      };
+    }
+
+    // Imported token refresh (default Kiro IDE flow)
     const response = await fetch(`${KIRO_AUTH_SERVICE}/refreshToken`, {
       method: "POST",
       headers: {

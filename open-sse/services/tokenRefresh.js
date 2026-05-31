@@ -428,6 +428,57 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
   }
 
   // Imported token refresh - use Kiro's desktop refresh endpoint
+  // For social-login tokens (Google/GitHub via AWS Cognito), refresh hits
+  // the Cognito token endpoint with the public Kiro client_id.
+  if (authMethod === "social") {
+    const KIRO_COGNITO_DOMAIN = "kiro-prod-us-east-1.auth.us-east-1.amazoncognito.com";
+    const KIRO_COGNITO_CLIENT_ID = "59bd15eh40ee7pc20h0bkcu7id";
+    const response = await proxyAwareFetch(`https://${KIRO_COGNITO_DOMAIN}/oauth2/token`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+      },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        client_id: KIRO_COGNITO_CLIENT_ID,
+        refresh_token: refreshToken,
+      }).toString(),
+    }, proxyOptions);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      log?.error?.("TOKEN_REFRESH", "Failed to refresh Kiro social token", {
+        status: response.status,
+        error: errorText,
+      });
+      if (response.status === 400 || response.status === 401) {
+        const lower = errorText.toLowerCase();
+        if (
+          lower.includes("invalid_grant") ||
+          lower.includes("invalid refresh") ||
+          lower.includes("expired") ||
+          lower.includes("revoked")
+        ) {
+          return { error: "invalid_grant", code: "social_invalid_grant" };
+        }
+      }
+      return null;
+    }
+
+    const tokens = await response.json();
+    log?.info?.("TOKEN_REFRESH", "Successfully refreshed Kiro social token", {
+      hasNewAccessToken: !!tokens.access_token,
+      expiresIn: tokens.expires_in,
+    });
+    return {
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token || refreshToken,
+      expiresIn: tokens.expires_in || 3600,
+    };
+  }
+
+  // Imported token refresh - use Kiro's desktop refresh endpoint
   const response = await proxyAwareFetch(PROVIDERS.kiro.tokenUrl, {
     method: "POST",
     headers: {

@@ -96,6 +96,10 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
     onMethodSelect("idc", { startUrl: idcStartUrl.trim(), region: idcRegion });
   };
 
+  const handleSocialLogin = (provider) => {
+    onMethodSelect("social", { provider });
+  };
+
   return (
     <Modal isOpen={isOpen} title="Connect Kiro" onClose={onClose} size="lg">
       <div className="flex flex-col gap-4">
@@ -138,7 +142,37 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
               </div>
             </button>
 
+            {/* Google Social Login */}
+            <button
+              onClick={() => handleMethodSelect("social-google")}
+              className="w-full p-4 text-left border border-border rounded-lg hover:bg-sidebar transition-colors"
+            >
+              <div className="flex items-start gap-3">
+                <span className="material-symbols-outlined text-primary mt-0.5">account_circle</span>
+                <div className="flex-1">
+                  <h3 className="font-semibold mb-1">Google Account</h3>
+                  <p className="text-sm text-text-muted">
+                    Sign in with your Google account via Kiro backend.
+                  </p>
+                </div>
+              </div>
+            </button>
 
+            {/* GitHub Social Login */}
+            <button
+              onClick={() => handleMethodSelect("social-github")}
+              className="w-full p-4 text-left border border-border rounded-lg hover:bg-sidebar transition-colors"
+            >
+              <div className="flex items-start gap-3">
+                <span className="material-symbols-outlined text-primary mt-0.5">code</span>
+                <div className="flex-1">
+                  <h3 className="font-semibold mb-1">GitHub Account</h3>
+                  <p className="text-sm text-text-muted">
+                    Sign in with your GitHub account via Kiro backend.
+                  </p>
+                </div>
+              </div>
+            </button>
 
             {/* Import Token */}
             <button
@@ -206,7 +240,61 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
           </div>
         )}
 
+        {/* Social Login Info (Google) */}
+        {selectedMethod === "social-google" && (
+          <div className="space-y-4">
+            <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+              <div className="flex gap-2">
+                <span className="material-symbols-outlined text-blue-600 dark:text-blue-400">info</span>
+                <div className="flex-1 text-sm">
+                  <p className="font-medium text-blue-900 dark:text-blue-100 mb-1">
+                    Google OAuth Login
+                  </p>
+                  <p className="text-blue-800 dark:text-blue-200">
+                    You will be redirected to Google to authenticate. After login, you&apos;ll be redirected back to complete the connection.
+                  </p>
+                </div>
+              </div>
+            </div>
 
+            <div className="flex gap-2">
+              <Button onClick={() => onMethodSelect("social", { provider: "google" })} fullWidth>
+                Continue with Google
+              </Button>
+              <Button onClick={handleBack} variant="ghost" fullWidth>
+                Back
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Social Login Info (GitHub) */}
+        {selectedMethod === "social-github" && (
+          <div className="space-y-4">
+            <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+              <div className="flex gap-2">
+                <span className="material-symbols-outlined text-blue-600 dark:text-blue-400">info</span>
+                <div className="flex-1 text-sm">
+                  <p className="font-medium text-blue-900 dark:text-blue-100 mb-1">
+                    GitHub OAuth Login
+                  </p>
+                  <p className="text-blue-800 dark:text-blue-200">
+                    You will be redirected to GitHub to authenticate. After login, you&apos;ll be redirected back to complete the connection.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <Button onClick={() => onMethodSelect("social", { provider: "github" })} fullWidth>
+                Continue with GitHub
+              </Button>
+              <Button onClick={handleBack} variant="ghost" fullWidth>
+                Back
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* Import Token */}
         {selectedMethod === "import" && (

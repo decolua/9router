@@ -151,7 +151,8 @@ export const GITHUB_CONFIG = {
 // Supports multiple auth methods:
 // 1. AWS Builder ID (Device Code Flow)
 // 2. AWS IAM Identity Center/IDC (Device Code Flow with custom startUrl/region)
-// 3. Import Token (paste refresh token from Kiro IDE)
+// 3. Google/GitHub Social Login (Authorization Code Flow via AWS Cognito)
+// 4. Import Token (paste refresh token from Kiro IDE)
 export const KIRO_CONFIG = {
   // AWS SSO OIDC endpoints for Builder ID/IDC (Device Code Flow)
   ssoOidcEndpoint: "https://oidc.us-east-1.amazonaws.com",
@@ -169,7 +170,7 @@ export const KIRO_CONFIG = {
   // Refresh endpoint (used for imported social tokens)
   socialRefreshUrl: "https://prod.us-east-1.auth.desktop.kiro.dev/refreshToken",
   // Auth methods
-  authMethods: ["builder-id", "idc", "import"],
+  authMethods: ["builder-id", "idc", "social", "import"],
 };
 
 // Cursor OAuth Configuration (Import Token from Cursor IDE)
