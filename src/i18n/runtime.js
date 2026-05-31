@@ -1,12 +1,89 @@
 "use client";
 
-import { DEFAULT_LOCALE, LOCALE_COOKIE, normalizeLocale } from "./config";
+import { DEFAULT_LOCALE, LOCALE_COOKIE, normalizeLocale, LOCALES } from "./config";
 
 let translationMap = {};
 let currentLocale = DEFAULT_LOCALE;
 let reloadCallbacks = [];
 
-// Read locale from cookie
+// Detect browser language and map to a supported locale.
+// Tries exact match first, then prefix (e.g. "en-GB" → "en"), falls back to "en".
+function detectBrowserLocale() {
+  if (typeof navigator === "undefined") return null;
+
+  // navigator.language is the primary preference (e.g. "zh-CN", "en-US")
+  const langs = [navigator.language];
+
+  // navigator.languages lists all preferences in order (Chrome/Firefox)
+  if (Array.isArray(navigator.languages) && navigator.languages.length) {
+    langs.push(...navigator.languages);
+  }
+
+  for (const lang of [...new Set(langs)]) {
+    const lower = lang.toLowerCase();
+
+    // Exact match (case-insensitive)
+    const matched = LOCALES.find(
+      (l) => l.toLowerCase() === lower
+    );
+    if (matched) return matched;
+
+    // zh-HK → zh-TW (Traditional Chinese)
+    if (lower === "zh-hk" || lower === "zh-mo") return "zh-TW";
+
+    // Prefix match: "en-GB" → "en", "fr-CA" → "fr"
+    // Skip when prefix alone is "zh" (handled above for HK/MO)
+    const prefix = lower.split("-")[0];
+    if (prefix === "zh") continue;
+    const prefixMatched = LOCALES.find(
+      (l) => l.toLowerCase().split("-")[0] === prefix
+    );
+    if (prefixMatched) return prefixMatched;
+  }
+
+  return null;
+}
+
+// Set locale cookie via the existing /api/locale POST endpoint.
+async function setLocaleCookie(locale) {
+  if (typeof fetch === "undefined") return;
+  try {
+    await fetch("/api/locale", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ locale }),
+      credentials: "same-origin",
+    });
+  } catch {
+    // Silently fail — translations still work in-memory for this session.
+  }
+}
+
+// Read locale from cookie. If no cookie exists, auto-detect from browser language.
+async function getLocaleAsync() {
+  if (typeof document === "undefined") return DEFAULT_LOCALE;
+
+  const cookie = document.cookie
+    .split(";")
+    .find((c) => c.trim().startsWith(`${LOCALE_COOKIE}=`));
+
+  if (cookie) {
+    const value = decodeURIComponent(cookie.split("=")[1]);
+    return normalizeLocale(value);
+  }
+
+  // No cookie — detect from browser
+  const detected = detectBrowserLocale();
+  if (detected) {
+    await setLocaleCookie(detected);
+    return detected;
+  }
+
+  return DEFAULT_LOCALE;
+}
+
+// Sync version (for modules that can't await, e.g. translate() calls).
+// Still used as fallback; initRuntimeI18n is the true entry point.
 function getLocaleFromCookie() {
   if (typeof document === "undefined") return DEFAULT_LOCALE;
   const cookie = document.cookie
@@ -121,10 +198,19 @@ function processElement(element) {
 }
 
 // Initialize runtime i18n
+// On first load (no cookie) this auto-detects browser language and sets the locale cookie.
 export async function initRuntimeI18n() {
   if (typeof window === "undefined") return;
-  
-  currentLocale = getLocaleFromCookie();
+
+  // Auto-detect locale if no cookie exists (first visit)
+  const hasCookie = typeof document !== "undefined" &&
+    document.cookie.split(";").some((c) => c.trim().startsWith(`${LOCALE_COOKIE}=`));
+
+  if (hasCookie) {
+    currentLocale = getLocaleFromCookie();
+  } else {
+    currentLocale = await getLocaleAsync();
+  }
   await loadTranslations(currentLocale);
   
   // Process existing DOM
