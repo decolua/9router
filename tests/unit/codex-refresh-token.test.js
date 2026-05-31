@@ -48,9 +48,9 @@ describe("Codex Refresh Token", () => {
       });
 
       const { refreshCodexToken } = await import("../../open-sse/services/tokenRefresh.js");
-      const result = await refreshCodexToken("old-refresh-token", null);
+      const result = await refreshCodexToken("old-refresh-token-no-rotation", null);
 
-      expect(result.refreshToken).toBe("old-refresh-token");
+      expect(result.refreshToken).toBe("old-refresh-token-no-rotation");
     });
   });
 
@@ -64,7 +64,7 @@ describe("Codex Refresh Token", () => {
       expect(getRefreshLeadMs("iflow")).toBe(24 * 60 * 60 * 1000);       // 24 hours
       expect(getRefreshLeadMs("qwen")).toBe(20 * 60 * 1000);             // 20 minutes
       expect(getRefreshLeadMs("kimi-coding")).toBe(5 * 60 * 1000);       // 5 minutes
-      expect(getRefreshLeadMs("antigravity")).toBe(5 * 60 * 1000);       // 5 minutes
+      expect(getRefreshLeadMs("antigravity")).toBe(10 * 60 * 1000);      // 10 minutes
     });
 
     it("should fallback to default buffer for unknown providers", async () => {
