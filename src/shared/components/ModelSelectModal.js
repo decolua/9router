@@ -186,6 +186,9 @@ export default function ModelSelectModal({
       }
 
       if (providerInfo.passthroughModels) {
+        const hardcodedModels = getModelsByProviderId(providerId);
+        const hardcodedIds = new Set(hardcodedModels.map((m) => m.id));
+
         const aliasModels = Object.entries(modelAliases)
           .filter(([, fullModel]) => fullModel.startsWith(`${alias}/`))
           .map(([aliasName, fullModel]) => ({
@@ -199,10 +202,11 @@ export default function ModelSelectModal({
 
         // For typed kinds, only include hardcoded typed models (aliases are typically LLM-only and lack type info)
         let combined = [
+          ...hardcodedModels.map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, type: m.type })),
           ...aliasModels,
           ...dynamicModelsForProvider
-            .filter((fm) => !aliasIds.has(fm.id))
-            .map((m) => ({ id: m.id, name: m.name || m.id, value: `${alias}/${m.id}`, isCustom: true })),
+            .filter((fm) => !aliasIds.has(fm.id) && !hardcodedIds.has(fm.id))
+            .map((m) => ({ id: m.id, name: m.name || m.id, value: `${alias}/${m.id}` })),
         ];
 
         if (kindFilter && TYPED_KINDS.has(kindFilter)) {
@@ -295,7 +299,7 @@ export default function ModelSelectModal({
           ...customRegisteredModels,
           ...dynamicModelsForProvider
             .filter((fm) => !hardcodedIds.has(fm.id))
-            .map((m) => ({ id: m.id, name: m.name || m.id, value: `${alias}/${m.id}`, isCustom: true })),
+            .map((m) => ({ id: m.id, name: m.name || m.id, value: `${alias}/${m.id}` })),
         ];
         // Dedupe by value (alias may equal hardcoded id, causing React key collision)
         const seen = new Set();
