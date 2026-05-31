@@ -10,9 +10,6 @@ import { KIRO_CONFIG } from "../constants/oauth.js";
  */
 
 const KIRO_AUTH_SERVICE = "https://prod.us-east-1.auth.desktop.kiro.dev";
-const KIRO_COGNITO_DOMAIN = "kiro-prod-us-east-1.auth.us-east-1.amazoncognito.com";
-const KIRO_COGNITO_CLIENT_ID = "59bd15eh40ee7pc20h0bkcu7id";
-const KIRO_SOCIAL_REDIRECT_URI = "http://localhost:3128/oauth/callback";
 
 export class KiroService {
   /**
@@ -131,7 +128,7 @@ export class KiroService {
    */
   buildSocialLoginUrl(provider, codeChallenge, state) {
     const idp = provider === "google" ? "Google" : "Github";
-    const redirectUri = `${KIRO_SOCIAL_REDIRECT_URI}?login_option=${provider}`;
+    const redirectUri = `${KIRO_CONFIG.socialRedirectUri}?login_option=${provider}`;
     const params = new URLSearchParams({
       idp,
       redirect_uri: redirectUri,
@@ -140,7 +137,7 @@ export class KiroService {
       state,
       prompt: "select_account",
     });
-    return `${KIRO_AUTH_SERVICE}/login?${params.toString()}`;
+    return `${KIRO_CONFIG.socialAuthBaseUrl}/login?${params.toString()}`;
   }
 
   /**
@@ -148,8 +145,8 @@ export class KiroService {
    * Goes through Kiro's desktop auth backend service.
    */
   async exchangeSocialCode(code, codeVerifier, provider = "google") {
-    const redirectUri = `${KIRO_SOCIAL_REDIRECT_URI}?login_option=${provider}`;
-    const response = await fetch(`${KIRO_AUTH_SERVICE}/oauth/token`, {
+    const redirectUri = `${KIRO_CONFIG.socialRedirectUri}?login_option=${provider}`;
+    const response = await fetch(`${KIRO_CONFIG.socialAuthBaseUrl}/oauth/token`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -212,14 +209,14 @@ export class KiroService {
 
     // Social auth refresh (Google/GitHub via AWS Cognito)
     if (authMethod === "social") {
-      const response = await fetch(`https://${KIRO_COGNITO_DOMAIN}/oauth2/token`, {
+      const response = await fetch(`https://${KIRO_CONFIG.cognitoDomain}/oauth2/token`, {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
         },
         body: new URLSearchParams({
           grant_type: "refresh_token",
-          client_id: KIRO_COGNITO_CLIENT_ID,
+          client_id: KIRO_CONFIG.cognitoClientId,
           refresh_token: refreshToken,
         }).toString(),
       });

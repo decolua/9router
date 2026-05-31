@@ -169,6 +169,11 @@ export const KIRO_CONFIG = {
   issuerUrl: "https://identitycenter.amazonaws.com/ssoins-722374e8c3c8e6c6",
   // Refresh endpoint (used for imported social tokens)
   socialRefreshUrl: "https://prod.us-east-1.auth.desktop.kiro.dev/refreshToken",
+  // Google/GitHub social login (Authorization Code Flow via AWS Cognito)
+  socialAuthBaseUrl: "https://prod.us-east-1.auth.desktop.kiro.dev",
+  socialRedirectUri: "http://localhost:3128/oauth/callback",
+  cognitoDomain: "kiro-prod-us-east-1.auth.us-east-1.amazoncognito.com",
+  cognitoClientId: "59bd15eh40ee7pc20h0bkcu7id",
   // Auth methods
   authMethods: ["builder-id", "idc", "social", "import"],
 };

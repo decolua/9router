@@ -10,7 +10,7 @@ import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
  * Handles manual callback URL flow for social login
  */
 export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onClose }) {
-  const [step, setStep] = useState("loading"); // loading | input | success | error
+  const [step, setStep] = useState("loading"); // loading | input | submitting | success | error
   const [authUrl, setAuthUrl] = useState("");
   const [authData, setAuthData] = useState(null);
   const [callbackUrl, setCallbackUrl] = useState("");
@@ -36,9 +36,6 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
         setAuthData(data);
         setAuthUrl(data.authUrl);
         setStep("input");
-
-        // Auto-open browser
-        window.open(data.authUrl, "_blank");
       } catch (err) {
         setError(err.message);
         setStep("error");
@@ -56,8 +53,7 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
       let url;
       try {
         url = new URL(callbackUrl);
-      } catch (e) {
-        // If URL parsing fails, might be malformed
+      } catch {
         throw new Error("Invalid callback URL format");
       }
 
@@ -73,13 +69,20 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
         throw new Error("No authorization code found in URL");
       }
 
-      // Exchange code for tokens
+      // CSRF protection: callback state must match the state we issued
+      if (authData?.state && state && state !== authData.state) {
+        throw new Error("State mismatch - possible CSRF, please restart the login");
+      }
+
+      setStep("submitting");
+
+      // Exchange code for tokens (PKCE verifier is resolved server-side via state)
       const res = await fetch("/api/oauth/kiro/social-exchange", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           code,
-          codeVerifier: authData.codeVerifier,
+          state: authData?.state || state,
           provider,
         }),
       });
@@ -88,11 +91,14 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
       if (!res.ok) throw new Error(data.error);
 
       setStep("success");
-      onSuccess?.();
     } catch (err) {
       setError(err.message);
       setStep("error");
     }
+  };
+
+  const handleOpenBrowser = () => {
+    if (authUrl) window.open(authUrl, "_blank", "noopener,noreferrer");
   };
 
   const providerName = provider === "google" ? "Google" : "GitHub";
@@ -125,6 +131,13 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
                   <Input value={authUrl} readOnly className="flex-1 font-mono text-xs" />
                   <Button
                     variant="secondary"
+                    icon="open_in_new"
+                    onClick={handleOpenBrowser}
+                  >
+                    Open
+                  </Button>
+                  <Button
+                    variant="secondary"
                     icon={copied === "auth_url" ? "check" : "content_copy"}
                     onClick={() => copy(authUrl, "auth_url")}
                   >
@@ -136,12 +149,12 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
               <div>
                 <p className="text-sm font-medium mb-2">Step 2: Paste the callback URL here</p>
                 <p className="text-xs text-text-muted mb-2">
-                  After authorization, copy the full URL from your browser address bar.
+                  After authorization, copy the full localhost callback URL from your browser address bar.
                 </p>
                 <Input
                   value={callbackUrl}
                   onChange={(e) => setCallbackUrl(e.target.value)}
-                  placeholder="kiro://kiro.kiroAgent/authenticate-success?code=..."
+                  placeholder="http://localhost:3128/oauth/callback?login_option=google&code=...&state=..."
                   className="font-mono text-xs"
                 />
               </div>
@@ -158,6 +171,21 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
           </>
         )}
 
+        {/* Submitting */}
+        {step === "submitting" && (
+          <div className="text-center py-6">
+            <div className="size-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
+              <span className="material-symbols-outlined text-3xl text-primary animate-spin">
+                progress_activity
+              </span>
+            </div>
+            <h3 className="text-lg font-semibold mb-2">Connecting...</h3>
+            <p className="text-sm text-text-muted">
+              Exchanging authorization code for Kiro credentials
+            </p>
+          </div>
+        )}
+
         {/* Success */}
         {step === "success" && (
           <div className="text-center py-6">
@@ -168,7 +196,7 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
             <p className="text-sm text-text-muted mb-4">
               Your Kiro account via {providerName} has been connected.
             </p>
-            <Button onClick={onClose} fullWidth>
+            <Button onClick={() => onSuccess?.()} fullWidth>
               Done
             </Button>
           </div>

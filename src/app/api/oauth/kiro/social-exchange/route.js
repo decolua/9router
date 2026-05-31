@@ -1,19 +1,18 @@
 import { NextResponse } from "next/server";
 import { KiroService } from "@/lib/oauth/services/kiro";
+import { consumeSocialOAuthState } from "@/lib/oauth/socialStateStore";
 import { createProviderConnection } from "@/models";
 
 /**
  * POST /api/oauth/kiro/social-exchange
  * Exchange Google/GitHub social authorization code for Kiro tokens
- * and persist them as a Kiro connection. The browser captures the
- * code from the localhost:3128 callback page (manual paste or
- * automatic if the callback page is open) and POSTs it here.
+ * and persist them as a Kiro connection.
  */
 export async function POST(request) {
   try {
-    const { code, codeVerifier, provider } = await request.json();
+    const { code, state, provider } = await request.json();
 
-    if (!code || !codeVerifier) {
+    if (!code || !state) {
       return NextResponse.json(
         { error: "Missing required fields" },
         { status: 400 }
@@ -27,10 +26,18 @@ export async function POST(request) {
       );
     }
 
+    const storedState = consumeSocialOAuthState(state, { provider });
+    if (!storedState) {
+      return NextResponse.json(
+        { error: "Invalid or expired OAuth state" },
+        { status: 400 }
+      );
+    }
+
     const kiroService = new KiroService();
     const tokenData = await kiroService.exchangeSocialCode(
       code,
-      codeVerifier,
+      storedState.codeVerifier,
       provider
     );
     const email = kiroService.extractEmailFromJWT(tokenData.accessToken);

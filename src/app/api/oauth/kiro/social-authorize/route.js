@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server";
 import { generatePKCE } from "@/lib/oauth/utils/pkce";
 import { KiroService } from "@/lib/oauth/services/kiro";
+import { saveSocialOAuthState } from "@/lib/oauth/socialStateStore";
 
 /**
  * GET /api/oauth/kiro/social-authorize
  * Generate Google/GitHub social login URL for manual callback flow.
- * The generated URL uses Kiro's desktop auth backend + localhost:3128 callback.
+ *
+ * The PKCE code verifier and CSRF state are stored server-side keyed by
+ * `state`, so the verifier is never exposed to the browser. The exchange
+ * route consumes the same state to retrieve the verifier and validates the
+ * provider matches.
  */
 export async function GET(request) {
   try {
@@ -23,11 +28,15 @@ export async function GET(request) {
     const kiroService = new KiroService();
     const authUrl = kiroService.buildSocialLoginUrl(provider, codeChallenge, state);
 
+    saveSocialOAuthState(state, {
+      provider,
+      codeVerifier,
+      codeChallenge,
+    });
+
     return NextResponse.json({
       authUrl,
       state,
-      codeVerifier,
-      codeChallenge,
       provider,
     });
   } catch (error) {

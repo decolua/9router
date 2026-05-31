@@ -1,6 +1,7 @@
 import { PROVIDERS } from "../config/providers.js";
 import { OAUTH_ENDPOINTS, GITHUB_COPILOT, REFRESH_LEAD_MS } from "../config/appConstants.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { KIRO_CONFIG } from "../../src/lib/oauth/constants/oauth.js";
 
 // xAI refresh — wraps the class method from src/lib/oauth/services/xai.js so
 // the token-refresh switches below can stay flat (one function per provider).
@@ -431,9 +432,7 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
   // For social-login tokens (Google/GitHub via AWS Cognito), refresh hits
   // the Cognito token endpoint with the public Kiro client_id.
   if (authMethod === "social") {
-    const KIRO_COGNITO_DOMAIN = "kiro-prod-us-east-1.auth.us-east-1.amazoncognito.com";
-    const KIRO_COGNITO_CLIENT_ID = "59bd15eh40ee7pc20h0bkcu7id";
-    const response = await proxyAwareFetch(`https://${KIRO_COGNITO_DOMAIN}/oauth2/token`, {
+    const response = await proxyAwareFetch(`https://${KIRO_CONFIG.cognitoDomain}/oauth2/token`, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
@@ -441,7 +440,7 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
       },
       body: new URLSearchParams({
         grant_type: "refresh_token",
-        client_id: KIRO_COGNITO_CLIENT_ID,
+        client_id: KIRO_CONFIG.cognitoClientId,
         refresh_token: refreshToken,
       }).toString(),
     }, proxyOptions);

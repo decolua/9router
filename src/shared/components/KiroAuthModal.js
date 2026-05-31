@@ -96,10 +96,6 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
     onMethodSelect("idc", { startUrl: idcStartUrl.trim(), region: idcRegion });
   };
 
-  const handleSocialLogin = (provider) => {
-    onMethodSelect("social", { provider });
-  };
-
   return (
     <Modal isOpen={isOpen} title="Connect Kiro" onClose={onClose} size="lg">
       <div className="flex flex-col gap-4">
@@ -243,6 +239,19 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
         {/* Social Login Info (Google) */}
         {selectedMethod === "social-google" && (
           <div className="space-y-4">
+            <div className="bg-amber-50 dark:bg-amber-900/20 p-4 rounded-lg border border-amber-200 dark:border-amber-800">
+              <div className="flex gap-2">
+                <span className="material-symbols-outlined text-amber-700 dark:text-amber-400">warning</span>
+                <div className="flex-1 text-sm">
+                  <p className="font-medium text-amber-900 dark:text-amber-100 mb-1">
+                    ToS / account-ban risk
+                  </p>
+                  <p className="text-amber-800 dark:text-amber-200">
+                    Social login routes through AWS Cognito and may violate Kiro&apos;s Terms of Service. Use a throwaway account only.
+                  </p>
+                </div>
+              </div>
+            </div>
             <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
               <div className="flex gap-2">
                 <span className="material-symbols-outlined text-blue-600 dark:text-blue-400">info</span>
@@ -251,7 +260,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
                     Google OAuth Login
                   </p>
                   <p className="text-blue-800 dark:text-blue-200">
-                    You will be redirected to Google to authenticate. After login, you&apos;ll be redirected back to complete the connection.
+                    A new browser window will open. After approving, copy the full localhost callback URL back into the next dialog.
                   </p>
                 </div>
               </div>
@@ -271,6 +280,19 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
         {/* Social Login Info (GitHub) */}
         {selectedMethod === "social-github" && (
           <div className="space-y-4">
+            <div className="bg-amber-50 dark:bg-amber-900/20 p-4 rounded-lg border border-amber-200 dark:border-amber-800">
+              <div className="flex gap-2">
+                <span className="material-symbols-outlined text-amber-700 dark:text-amber-400">warning</span>
+                <div className="flex-1 text-sm">
+                  <p className="font-medium text-amber-900 dark:text-amber-100 mb-1">
+                    ToS / account-ban risk
+                  </p>
+                  <p className="text-amber-800 dark:text-amber-200">
+                    Social login routes through AWS Cognito and may violate Kiro&apos;s Terms of Service. Use a throwaway account only.
+                  </p>
+                </div>
+              </div>
+            </div>
             <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
               <div className="flex gap-2">
                 <span className="material-symbols-outlined text-blue-600 dark:text-blue-400">info</span>
@@ -279,7 +301,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
                     GitHub OAuth Login
                   </p>
                   <p className="text-blue-800 dark:text-blue-200">
-                    You will be redirected to GitHub to authenticate. After login, you&apos;ll be redirected back to complete the connection.
+                    A new browser window will open. After approving, copy the full localhost callback URL back into the next dialog.
                   </p>
                 </div>
               </div>
