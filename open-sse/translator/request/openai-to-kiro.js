@@ -25,6 +25,7 @@ function convertMessages(messages, tools, model) {
   let pendingToolResults = [];
   let pendingImages = [];
   let currentRole = null;
+  let toolsAttached = false;
 
   // Image support is pre-filtered by caps in translateRequest before reaching here
   const supportsImages = true;
@@ -50,19 +51,23 @@ function convertMessages(messages, tools, model) {
         };
       }
       
-      // Add tools to first user message
-      if (tools && tools.length > 0 && history.length === 0) {
+      // Add tools to the first emitted user turn. We track a flag instead of
+      // relying on `history.length === 0` because the first few messages may
+      // be assistant turns (e.g. when role=undefined collapses to a prior
+      // assistant turn), in which case the first user flush would already see
+      // a non-empty history and lose the tools schema.
+      if (tools && tools.length > 0 && !toolsAttached) {
         if (!userMsg.userInputMessage.userInputMessageContext) {
           userMsg.userInputMessage.userInputMessageContext = {};
         }
         userMsg.userInputMessage.userInputMessageContext.tools = tools.map(t => {
           const name = t.function?.name || t.name;
           let description = t.function?.description || t.description || "";
-          
+
           if (!description.trim()) {
             description = `Tool: ${name}`;
           }
-          
+
           const schema = t.function?.parameters || t.parameters || t.input_schema || {};
           // Normalize schema: Kiro requires required[] and proper type/properties
           const normalizedSchema = Object.keys(schema).length === 0
@@ -77,6 +82,7 @@ function convertMessages(messages, tools, model) {
             }
           };
         });
+        toolsAttached = true;
       }
       
       history.push(userMsg);
@@ -234,17 +240,70 @@ function convertMessages(messages, tools, model) {
   if (currentRole !== null) {
     flushPending();
   }
-  
-  // Pop last userInputMessage as currentMessage (search from end, skip trailing assistant messages)
-  for (let i = history.length - 1; i >= 0; i--) {
-    if (history[i].userInputMessage) {
-      currentMessage = history.splice(i, 1)[0];
-      break;
+
+  // Kiro requires currentMessage to be a user turn. If the request ends with a
+  // user turn, move that final turn into currentMessage. If it ends with an
+  // assistant/tool turn, keep chronological history intact and ask Kiro to
+  // continue instead of reordering prior turns.
+  if (history.length > 0 && history[history.length - 1].userInputMessage) {
+    currentMessage = history.pop();
+  } else {
+    currentMessage = {
+      userInputMessage: {
+        content: "Continue",
+        modelId: model
+      }
+    };
+  }
+
+  // Promote the tools schema to currentMessage. Tools may have been attached
+  // to any user turn in history (e.g. when the first message was assistant or
+  // had an undefined role, the first user flush lands further down). Scan the
+  // whole history so we never lose the schema.
+  if (!currentMessage?.userInputMessage?.userInputMessageContext?.tools) {
+    const carrier = history.find(item => item?.userInputMessage?.userInputMessageContext?.tools);
+    if (carrier?.userInputMessage?.userInputMessageContext?.tools) {
+      if (!currentMessage.userInputMessage.userInputMessageContext) {
+        currentMessage.userInputMessage.userInputMessageContext = {};
+      }
+      currentMessage.userInputMessage.userInputMessageContext.tools =
+        carrier.userInputMessage.userInputMessageContext.tools;
     }
   }
 
-  // Grab tools from first history item BEFORE cleanup removes them
-  const firstHistoryTools = history[0]?.userInputMessage?.userInputMessageContext?.tools;
+  // Fallback: if the schema was never attached to any user turn (e.g. the
+  // input contained no user messages and currentMessage is a synthesized
+  // "Continue" turn), attach the provided tools directly to currentMessage so
+  // Kiro still sees the schema it needs to validate assistant.toolUses in
+  // history.
+  if (!toolsAttached && tools && tools.length > 0 &&
+      !currentMessage?.userInputMessage?.userInputMessageContext?.tools) {
+    if (!currentMessage.userInputMessage.userInputMessageContext) {
+      currentMessage.userInputMessage.userInputMessageContext = {};
+    }
+    currentMessage.userInputMessage.userInputMessageContext.tools = tools.map(t => {
+      const name = t.function?.name || t.name;
+      let description = t.function?.description || t.description || "";
+
+      if (!description.trim()) {
+        description = `Tool: ${name}`;
+      }
+
+      const schema = t.function?.parameters || t.parameters || t.input_schema || {};
+      const normalizedSchema = Object.keys(schema).length === 0
+        ? { type: "object", properties: {}, required: [] }
+        : { ...schema, required: schema.required ?? [] };
+
+      return {
+        toolSpecification: {
+          name,
+          description,
+          inputSchema: { json: normalizedSchema }
+        }
+      };
+    });
+    toolsAttached = true;
+  }
 
   // Clean up history for Kiro API compatibility
   history.forEach(item => {
@@ -260,7 +319,11 @@ function convertMessages(messages, tools, model) {
     }
   });
 
-  // Merge consecutive user messages (Kiro requires alternating user/assistant)
+  // Merge consecutive user messages (Kiro requires alternating user/assistant).
+  // Concatenate text content AND merge userInputMessageContext (e.g. accumulated
+  // toolResults) so we don't lose tool result history when adjacent user turns
+  // collapse together — a normalized `tool` role followed by a `user` role each
+  // open their own flush, producing two adjacent userInputMessage entries.
   const mergedHistory = [];
   for (let i = 0; i < history.length; i++) {
     const current = history[i];
@@ -268,19 +331,29 @@ function convertMessages(messages, tools, model) {
         mergedHistory.length > 0 &&
         mergedHistory[mergedHistory.length - 1].userInputMessage) {
       const prev = mergedHistory[mergedHistory.length - 1];
-      prev.userInputMessage.content += "\n\n" + current.userInputMessage.content;
+      const prevContent = prev.userInputMessage.content || "";
+      const curContent = current.userInputMessage.content || "";
+      prev.userInputMessage.content = prevContent
+        ? `${prevContent}\n\n${curContent}`
+        : curContent;
+
+      if (current.userInputMessage.userInputMessageContext) {
+        const prevCtx = prev.userInputMessage.userInputMessageContext || {};
+        const curCtx = current.userInputMessage.userInputMessageContext;
+        const mergedCtx = { ...prevCtx };
+        for (const [key, value] of Object.entries(curCtx)) {
+          const existing = prevCtx[key];
+          if (Array.isArray(existing) && Array.isArray(value)) {
+            mergedCtx[key] = [...existing, ...value];
+          } else {
+            mergedCtx[key] = value;
+          }
+        }
+        prev.userInputMessage.userInputMessageContext = mergedCtx;
+      }
     } else {
       mergedHistory.push(current);
     }
-  }
-
-  // Inject tools into currentMessage AFTER cleanup
-  if (firstHistoryTools && currentMessage?.userInputMessage &&
-      !currentMessage.userInputMessage.userInputMessageContext?.tools) {
-    if (!currentMessage.userInputMessage.userInputMessageContext) {
-      currentMessage.userInputMessage.userInputMessageContext = {};
-    }
-    currentMessage.userInputMessage.userInputMessageContext.tools = firstHistoryTools;
   }
 
   return { history: mergedHistory, currentMessage };
@@ -305,13 +378,57 @@ function convertMessages(messages, tools, model) {
  */
 export function buildKiroPayload(model, body, stream, credentials) {
   const messages = body.messages || [];
-  const tools = body.tools || [];
+  let tools = body.tools || [];
   const maxTokens = 32000;
   const temperature = body.temperature;
   const topP = body.top_p;
 
   const { upstream: upstreamModel, agentic, thinking: modelImpliesThinking } = resolveKiroModel(model);
   const thinkingEnabled = modelImpliesThinking || isThinkingEnabled(body, null, model);
+
+  // Kiro rejects history that references toolUses/toolResults without a tools
+  // schema in userInputMessageContext. When callers omit body.tools but the
+  // message history still contains assistant.tool_calls / role=tool turns,
+  // synthesize a minimal tool schema from the tool names present in history
+  // so Kiro accepts the request instead of returning `Improperly formed
+  // request`. This preserves tool-call history and is a no-op when body.tools
+  // is already populated.
+  if (tools.length === 0) {
+    const seen = new Set();
+    const synthesized = [];
+    const pushName = (name) => {
+      if (typeof name === "string" && name && !seen.has(name)) {
+        seen.add(name);
+        synthesized.push({
+          type: "function",
+          function: {
+            name,
+            description: `Tool: ${name}`,
+            parameters: { type: "object", properties: {}, required: [] }
+          }
+        });
+      }
+    };
+    for (const msg of messages) {
+      if (msg?.role !== "assistant") continue;
+      if (Array.isArray(msg.tool_calls)) {
+        for (const tc of msg.tool_calls) {
+          pushName(tc?.function?.name || tc?.name);
+        }
+      }
+      // Anthropic-style assistant blocks: content:[{type:"tool_use", name, ...}]
+      if (Array.isArray(msg.content)) {
+        for (const block of msg.content) {
+          if (block?.type === "tool_use") {
+            pushName(block.name);
+          }
+        }
+      }
+    }
+    if (synthesized.length > 0) {
+      tools = synthesized;
+    }
+  }
 
   const { history, currentMessage } = convertMessages(messages, tools, upstreamModel);
 
