@@ -25,7 +25,7 @@ async function pingModel(modelId, baseUrl, apiKey, cliToken) {
     const headers = { "Content-Type": "application/json" };
     if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
     if (cliToken) headers["x-9r-cli-token"] = cliToken;
-    const res = await fetch(`${baseUrl}/api/v1/chat/completions`, {
+    const res = await fetch(`${baseUrl}/v1/chat/completions`, {
       method: "POST",
       headers,
       body: JSON.stringify({
@@ -53,7 +53,7 @@ async function pingModel(modelId, baseUrl, apiKey, cliToken) {
 /**
  * POST /api/providers/[id]/test-models
  * id = connectionId — used only to resolve provider + model list.
- * Actual requests go through /api/v1/chat/completions (open-sse handles everything).
+ * Actual requests go through /v1/chat/completions (open-sse handles everything).
  */
 export async function POST(request, { params }) {
   try {
