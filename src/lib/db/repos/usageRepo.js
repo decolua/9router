@@ -6,6 +6,7 @@ import { getMeta, setMeta } from "../helpers/metaStore.js";
 const PENDING_TIMEOUT_MS = 60 * 1000;
 const RING_CAP = 50;
 const CONN_CACHE_TTL_MS = 30 * 1000;
+const API_KEY_CACHE_TTL_MS = 30 * 1000;
 const PERIOD_MS = { "24h": 86400000, "7d": 604800000, "30d": 2592000000, "60d": 5184000000 };
 
 // In-memory state shared across Next.js modules
@@ -18,12 +19,14 @@ if (!global._statsEmitter) {
 if (!global._pendingTimers) global._pendingTimers = {};
 if (!global._recentRing) global._recentRing = { items: [], initialized: false };
 if (!global._connectionMapCache) global._connectionMapCache = { map: {}, ts: 0 };
+if (!global._apiKeyMapCache) global._apiKeyMapCache = { map: {}, ts: 0 };
 
 const pendingRequests = global._pendingRequests;
 const lastErrorProvider = global._lastErrorProvider;
 const pendingTimers = global._pendingTimers;
 const recentRing = global._recentRing;
 const connCache = global._connectionMapCache;
+const apiKeyCache = global._apiKeyMapCache;
 
 export const statsEmitter = global._statsEmitter;
 
@@ -94,6 +97,86 @@ async function getConnectionMapCached() {
     connCache.ts = Date.now();
   } catch {}
   return connCache.map;
+}
+
+async function getApiKeyMapCached() {
+  if (Date.now() - apiKeyCache.ts < API_KEY_CACHE_TTL_MS) return apiKeyCache.map;
+  try {
+    const { getApiKeys } = await import("./apiKeysRepo.js");
+    const all = await getApiKeys();
+    const map = {};
+    for (const k of all) map[k.key] = { name: k.name, id: k.id, createdAt: k.createdAt };
+    apiKeyCache.map = map;
+    apiKeyCache.ts = Date.now();
+  } catch {}
+  return apiKeyCache.map;
+}
+
+// Mask a secret API key for display: ••••last4 — never the full value. (#1258)
+function maskApiKey(apiKeyValue) {
+  if (!apiKeyValue || typeof apiKeyValue !== "string") return "••••";
+  return apiKeyValue.length <= 4 ? "••••" : `••••${apiKeyValue.slice(-4)}`;
+}
+
+// Resolve display metadata for the API key behind a request WITHOUT exposing the
+// secret. The plaintext key must never reach the client — the dashboard payload
+// is visible in DevTools/Network — so we return only the key's stable non-secret
+// id (used for dedup + identity) and a human label (configured name, else the
+// masked ••••last4 form). See #1258: surface *which* key was used, not its value.
+export function resolveRecentRequestApiKey(apiKey, apiKeyMap = {}) {
+  const apiKeyValue = typeof apiKey === "string" && apiKey ? apiKey : null;
+  if (!apiKeyValue) {
+    return { apiKeyId: "local-no-key", keyName: "Local" };
+  }
+
+  const info = apiKeyMap[apiKeyValue];
+  return {
+    apiKeyId: info?.id || maskApiKey(apiKeyValue),
+    keyName: info?.name || maskApiKey(apiKeyValue),
+  };
+}
+
+// Strip plaintext API keys from the byApiKey aggregate before it leaves the
+// server. Internally the plaintext key is used as the map key and stored in
+// `apiKey`/`apiKeyKey`, but the client only renders `keyName`. Re-key each entry
+// by the key's stable non-secret id (uuid for known keys, ••••last4 otherwise)
+// and drop the secret fields. Two distinct known keys keep distinct uuid ids, so
+// they stay distinct rows; only unknown keys sharing a ••••last4 fallback merge,
+// which is acceptable and no worse than the previous slice(0,8) label. (#1258)
+function sanitizeByApiKey(byApiKey, apiKeyMap = {}) {
+  const out = {};
+  for (const entry of Object.values(byApiKey || {})) {
+    const plain = typeof entry.apiKey === "string" && entry.apiKey ? entry.apiKey : null;
+    const info = plain ? apiKeyMap[plain] : null;
+    const apiKeyId = plain ? (info?.id || maskApiKey(plain)) : "local-no-key";
+    const keyName = plain ? (info?.name || maskApiKey(plain)) : (entry.keyName || "Local (No API Key)");
+    const outKey = `${apiKeyId}|${entry.rawModel || ""}|${entry.provider || ""}`;
+    const { apiKey, apiKeyKey, ...rest } = entry; // eslint-disable-line no-unused-vars
+    if (!out[outKey]) {
+      out[outKey] = { ...rest, apiKeyId, keyName };
+    } else {
+      const o = out[outKey];
+      o.requests += rest.requests || 0;
+      o.promptTokens += rest.promptTokens || 0;
+      o.completionTokens += rest.completionTokens || 0;
+      o.cost += rest.cost || 0;
+      if ((rest.lastUsed || "") > (o.lastUsed || "")) o.lastUsed = rest.lastUsed;
+    }
+  }
+  return out;
+}
+
+export function formatRecentRequest(entry, apiKeyMap = {}) {
+  const t = entry.tokens || {};
+  return {
+    timestamp: entry.timestamp,
+    model: entry.model,
+    provider: entry.provider || "",
+    promptTokens: t.prompt_tokens || t.input_tokens || 0,
+    completionTokens: t.completion_tokens || t.output_tokens || 0,
+    status: entry.status || "ok",
+    ...resolveRecentRequestApiKey(entry.apiKey, apiKeyMap),
+  };
 }
 
 async function ensureRingInitialized() {
@@ -198,6 +281,7 @@ export function trackPendingRequest(model, provider, connectionId, started, erro
 export async function getActiveRequests() {
   const activeRequests = [];
   const connectionMap = await getConnectionMapCached();
+  const apiKeyMap = await getApiKeyMapCached();
 
   for (const [connectionId, models] of Object.entries(pendingRequests.byAccount)) {
     for (const [modelKey, count] of Object.entries(models)) {
@@ -217,19 +301,11 @@ export async function getActiveRequests() {
   const seen = new Set();
   const recentRequests = [...recentRing.items]
     .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-    .map((e) => {
-      const t = e.tokens || {};
-      return {
-        timestamp: e.timestamp, model: e.model, provider: e.provider || "",
-        promptTokens: t.prompt_tokens || t.input_tokens || 0,
-        completionTokens: t.completion_tokens || t.output_tokens || 0,
-        status: e.status || "ok",
-      };
-    })
+    .map((e) => formatRecentRequest(e, apiKeyMap))
     .filter((e) => {
       if (e.promptTokens === 0 && e.completionTokens === 0) return false;
       const minute = e.timestamp ? e.timestamp.slice(0, 16) : "";
-      const key = `${e.model}|${e.provider}|${e.promptTokens}|${e.completionTokens}|${minute}`;
+      const key = `${e.apiKeyId}|${e.model}|${e.provider}|${e.promptTokens}|${e.completionTokens}|${minute}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -342,22 +418,14 @@ export async function getUsageStats(period = "all") {
   for (const k of allApiKeys) apiKeyMap[k.key] = { name: k.name, id: k.id, createdAt: k.createdAt };
 
   // recentRequests from live history (last 100 entries enough for 20 deduped)
-  const recentRows = db.all(`SELECT timestamp, provider, model, tokens, status FROM usageHistory ORDER BY id DESC LIMIT 100`);
+  const recentRows = db.all(`SELECT timestamp, provider, model, apiKey, tokens, status FROM usageHistory ORDER BY id DESC LIMIT 100`);
   const seen = new Set();
   const recentRequests = recentRows
-    .map((r) => {
-      const t = parseJson(r.tokens, {}) || {};
-      return {
-        timestamp: r.timestamp, model: r.model, provider: r.provider || "",
-        promptTokens: t.prompt_tokens || t.input_tokens || 0,
-        completionTokens: t.completion_tokens || t.output_tokens || 0,
-        status: r.status || "ok",
-      };
-    })
+    .map((r) => formatRecentRequest({ ...r, tokens: parseJson(r.tokens, {}) || {} }, apiKeyMap))
     .filter((e) => {
       if (e.promptTokens === 0 && e.completionTokens === 0) return false;
       const minute = e.timestamp ? e.timestamp.slice(0, 16) : "";
-      const key = `${e.model}|${e.provider}|${e.promptTokens}|${e.completionTokens}|${minute}`;
+      const key = `${e.apiKeyId}|${e.model}|${e.provider}|${e.promptTokens}|${e.completionTokens}|${minute}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -614,6 +682,9 @@ export async function getUsageStats(period = "all") {
   }
 
   stats.totalRequests = Object.values(stats.byProvider).reduce((sum, p) => sum + (p.requests || 0), 0);
+  // Security (#1258): the byApiKey aggregate uses the plaintext key as map key
+  // and stores it in apiKey/apiKeyKey; strip it before returning to the client.
+  stats.byApiKey = sanitizeByApiKey(stats.byApiKey, apiKeyMap);
   return stats;
 }
 
