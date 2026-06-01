@@ -145,10 +145,20 @@ cmd_recover() {
       warn "State DONE but live unhealthy; restarting."
       pm2 restart 9router --update-env 2>&1 | tail -3 || true
       ;;
+    RESTARTED)
+      if [[ -f "${live}/server.js" ]] && wait_live_healthy 5; then
+        log "Live is already healthy after restart; marking deploy DONE."
+        jstate DONE
+        return 0
+      fi
+      warn "State RESTARTED but live is not healthy; re-running critical section."
+      jstate RECOVER_RESUME
+      phase_swap "$ts" "$stage_dir"
+      ;;
     ROLLED_BACK)
       log "Last deploy rolled back; ensuring live healthy."
       ;;
-    STAGED|BACKED_UP|SWAPPED|RESTARTED|VERIFY_FAILED|SWAP_BROKEN|"")
+    STAGED|BACKED_UP|SWAPPED|VERIFY_FAILED|SWAP_BROKEN|"")
       warn "Incomplete swap detected; re-running critical section."
       jstate RECOVER_RESUME
       phase_swap "$ts" "$stage_dir"
@@ -290,6 +300,16 @@ while (( SECONDS < deadline )); do
   case "$st" in
     DONE)        final="DONE"; break ;;
     ROLLED_BACK) final="ROLLED_BACK"; break ;;
+    RESTARTED)
+      # The detached phase may be killed by an external supervisor after pm2
+      # restart but before it can append DONE. If live is already healthy, the
+      # deploy is complete; close the journal from the observer process.
+      if [[ -f "${GLOBAL_CLI_DIR}/app/server.js" ]] && wait_live_healthy 1; then
+        jstate DONE
+        final="DONE"
+        break
+      fi
+      ;;
   esac
   sleep 2
 done
