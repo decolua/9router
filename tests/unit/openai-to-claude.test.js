@@ -122,6 +122,41 @@ describe("openaiToClaudeRequest", () => {
       expect(systemText).toContain("You must respond with valid JSON");
     });
   });
+
+  describe("tool_choice handling", () => {
+    const baseBody = {
+      messages: [{ role: "user", content: "add a todo" }],
+      tools: [{
+        type: "function",
+        function: { name: "todo_write", description: "write todos", parameters: { type: "object", properties: {} } }
+      }]
+    };
+
+    it("converts OpenAI forced tool ({type:'function'}) to Claude {type:'tool'}", () => {
+      const result = openaiToClaudeRequest("claude-sonnet-4.5", {
+        ...baseBody,
+        tool_choice: { type: "function", function: { name: "todo_write" } }
+      }, false);
+
+      // Must NOT leak the OpenAI "function" type — Claude only accepts auto|any|tool|none.
+      expect(result.tool_choice).toEqual({ type: "tool", name: "todo_write" });
+    });
+
+    it("maps string tool_choice values", () => {
+      const mk = (tc) => openaiToClaudeRequest("claude-sonnet-4.5", { ...baseBody, tool_choice: tc }, false).tool_choice;
+      expect(mk("auto")).toEqual({ type: "auto" });
+      expect(mk("none")).toEqual({ type: "auto" });
+      expect(mk("required")).toEqual({ type: "any" });
+    });
+
+    it("passes through Claude-native tool_choice objects unchanged", () => {
+      const result = openaiToClaudeRequest("claude-sonnet-4.5", {
+        ...baseBody,
+        tool_choice: { type: "tool", name: "todo_write" }
+      }, false);
+      expect(result.tool_choice).toEqual({ type: "tool", name: "todo_write" });
+    });
+  });
 });
 
 describe("openaiToClaudeResponse", () => {

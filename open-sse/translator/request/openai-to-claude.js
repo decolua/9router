@@ -294,11 +294,17 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
 // Convert OpenAI tool choice to Claude format
 function convertOpenAIToolChoice(choice) {
   if (!choice) return { type: "auto" };
-  if (typeof choice === "object" && choice.type) return choice;
   if (choice === "auto" || choice === "none") return { type: "auto" };
   if (choice === "required") return { type: "any" };
-  if (typeof choice === "object" && choice.function) {
-    return { type: "tool", name: choice.function.name };
+  if (typeof choice === "object") {
+    // OpenAI forced tool: { type: "function", function: { name } }.
+    // Must be checked before the generic `.type` pass-through below, because
+    // the OpenAI shape also has a `.type` ("function") that Claude rejects.
+    if (choice.function?.name) {
+      return { type: "tool", name: choice.function.name };
+    }
+    // Already Claude-native: { type: "auto" | "any" | "tool" | "none", ... }
+    if (choice.type) return choice;
   }
   return { type: "auto" };
 }

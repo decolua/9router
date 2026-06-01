@@ -60,8 +60,16 @@ export function cloakClaudeTools(body) {
     return { ...msg, content: renamedContent };
   });
 
+  const cloakedBody = { ...body, tools: allTools, messages: renamedMessages || body.messages };
+
+  // A forced tool_choice ({ type: "tool", name }) must point at the suffixed
+  // tool name, otherwise Claude rejects it: "Tool '<name>' not found in provided tools".
+  if (body.tool_choice && body.tool_choice.type === "tool" && body.tool_choice.name) {
+    cloakedBody.tool_choice = { ...body.tool_choice, name: `${body.tool_choice.name}${CLAUDE_TOOL_SUFFIX}` };
+  }
+
   return {
-    body: { ...body, tools: allTools, messages: renamedMessages || body.messages },
+    body: cloakedBody,
     toolNameMap: toolNameMap.size > 0 ? toolNameMap : null
   };
 }
