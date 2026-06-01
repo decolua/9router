@@ -89,7 +89,10 @@ function runNpmInstall({ cwd, pkgs, extraArgs = [], timeout = 180000 }) {
 
 function npmInstall(pkgs, opts = {}) {
   const cwd = ensureRuntimeDir();
-  const extra = opts.optional ? ["--no-save"] : [];
+  // Persist to the runtime package.json (exact version) so a later install of a
+  // sibling runtime dep (e.g. systray2 from trayRuntime.js) does not prune this
+  // package as "extraneous". `opts.optional` still keeps the install non-fatal.
+  const extra = ["--save-exact"];
   if (!opts.silent) console.log("⏳ Installing SQLite engine (first run)...");
   const res = runNpmInstall({ cwd, pkgs, extraArgs: extra, timeout: opts.timeout || 180000 });
   if (!res.ok && !opts.silent) {
