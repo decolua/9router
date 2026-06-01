@@ -1,6 +1,23 @@
+# v0.4.66 (2026-05-29)
+
+## Features
+- Add Qoder provider: device-flow OAuth, COSY signing, WAF-bypass body encoding, live model catalog, dashboard quota tracker, 11 models (#1372)
+- Add new models: Claude Opus 4.8 (Claude Code), GPT 5.4 Mini (Codex)
+
+## Fixes
+- DeepSeek thinking mode: echo `reasoning_content` back on follow-up/tool-call turns so OpenCode-free and custom providers no longer 400 with "reasoning_content must be passed back" (#1543)
+- Reasoning injector: match deepseek/kimi model ids case-insensitively (covers custom providers using capitalized model names)
+- OpenCode suggested-models: include free models without the `-free` suffix, e.g. `big-pickle` (#1535)
+
+## Improvements
+- Codex: trim sunset models, keep gpt-5.5 / gpt-5.4 / gpt-5.3-codex family, add gpt-5.4-mini
+- volcengine-ark: refresh model list (add DeepSeek-V4-Flash/Pro, drop EOL entries)
+- Lower stream stall timeout 35s → 30s for faster hang detection
+
 # v0.4.63 (2026-05-26)
 
 ## Fixes
+- GitHub Copilot: never route Gemini/Claude models to the `/responses` endpoint; prevents misleading "does not support Responses API" 400s (#1062)
 - proxyFetch: restore missing `Readable` import causing runtime `ReferenceError` in DNS-bypass fetch path
 
 ## Improvements
