@@ -151,7 +151,7 @@ export async function GET(request, { params }) {
         : undefined;
       
       // Providers that don't use PKCE for device code
-      const noPkceDeviceProviders = ["github", "kiro", "kimi-coding", "kilocode", "codebuddy"];
+      const noPkceDeviceProviders = ["github", "kiro", "kimi-coding", "kilocode", "codebuddy", "qoder"];
       let deviceData;
       if (noPkceDeviceProviders.includes(provider)) {
         deviceData = await requestDeviceCode(provider, undefined, deviceOptions);
@@ -162,7 +162,9 @@ export async function GET(request, { params }) {
 
       return NextResponse.json({
         ...deviceData,
-        codeVerifier: authData.codeVerifier,
+        // Prefer the verifier the provider's requestDeviceCode generated for
+        // itself (qoder rolls its own PKCE pair); fall back to the generic one.
+        codeVerifier: deviceData.codeVerifier || authData.codeVerifier,
       });
     }
 
@@ -276,6 +278,14 @@ export async function POST(request, { params }) {
       } else if (provider === "kiro") {
         // Kiro needs extraData (clientId, clientSecret) from device code response
         result = await pollForToken(provider, deviceCode, null, extraData);
+      } else if (provider === "qoder") {
+        // Qoder needs both the PKCE verifier (codeVerifier) and the machineId
+        // captured at device-code time (extraData._qoderMachineId) so
+        // mapTokens can persist it for COSY signing.
+        if (!codeVerifier) {
+          return NextResponse.json({ error: "Missing code verifier" }, { status: 400 });
+        }
+        result = await pollForToken(provider, deviceCode, codeVerifier, extraData);
       } else {
         // Qwen and other PKCE providers
         if (!codeVerifier) {
