@@ -132,29 +132,38 @@ describe("openaiToClaudeRequest", () => {
       }]
     };
 
-    it("converts OpenAI forced tool ({type:'function'}) to Claude {type:'tool'}", () => {
-      const result = openaiToClaudeRequest("claude-sonnet-4.5", {
-        ...baseBody,
-        tool_choice: { type: "function", function: { name: "todo_write" } }
-      }, false);
+    const choiceOf = (tc) =>
+      openaiToClaudeRequest("claude-sonnet-4.5", { ...baseBody, tool_choice: tc }, false).tool_choice;
 
+    it("converts OpenAI forced tool ({type:'function'}) to Claude {type:'tool'}", () => {
       // Must NOT leak the OpenAI "function" type — Claude only accepts auto|any|tool|none.
-      expect(result.tool_choice).toEqual({ type: "tool", name: "todo_write" });
+      expect(choiceOf({ type: "function", function: { name: "todo_write" } }))
+        .toEqual({ type: "tool", name: "todo_write" });
     });
 
     it("maps string tool_choice values", () => {
-      const mk = (tc) => openaiToClaudeRequest("claude-sonnet-4.5", { ...baseBody, tool_choice: tc }, false).tool_choice;
-      expect(mk("auto")).toEqual({ type: "auto" });
-      expect(mk("none")).toEqual({ type: "auto" });
-      expect(mk("required")).toEqual({ type: "any" });
+      expect(choiceOf("auto")).toEqual({ type: "auto" });
+      expect(choiceOf("none")).toEqual({ type: "auto" });
+      expect(choiceOf("required")).toEqual({ type: "any" });
     });
 
     it("passes through Claude-native tool_choice objects unchanged", () => {
-      const result = openaiToClaudeRequest("claude-sonnet-4.5", {
-        ...baseBody,
-        tool_choice: { type: "tool", name: "todo_write" }
-      }, false);
-      expect(result.tool_choice).toEqual({ type: "tool", name: "todo_write" });
+      expect(choiceOf({ type: "tool", name: "todo_write" })).toEqual({ type: "tool", name: "todo_write" });
+      expect(choiceOf({ type: "any" })).toEqual({ type: "any" });
+      expect(choiceOf({ type: "none" })).toEqual({ type: "none" });
+    });
+
+    it("never leaks an invalid type (falls back to auto)", () => {
+      // Malformed forced choice with no tool name, and unknown types, must not
+      // pass an invalid `type` through to Claude.
+      expect(choiceOf({ type: "function", function: {} })).toEqual({ type: "auto" });
+      expect(choiceOf({ type: "function" })).toEqual({ type: "auto" });
+      expect(choiceOf({ type: "bogus" })).toEqual({ type: "auto" });
+    });
+
+    it("omits tool_choice entirely when the request has none", () => {
+      const result = openaiToClaudeRequest("claude-sonnet-4.5", baseBody, false);
+      expect(result.tool_choice).toBeUndefined();
     });
   });
 });
