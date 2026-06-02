@@ -300,7 +300,6 @@ export async function markAccountUnavailable(
     lowerError.includes("unauthenticated");
 
   const isReachLimit =
-    status === 402 ||
     lowerError.includes("reach limit") ||
     lowerError.includes("reached the limit") ||
     lowerError.includes("reached limit") ||
