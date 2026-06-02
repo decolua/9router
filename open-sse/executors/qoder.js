@@ -30,9 +30,8 @@ import { PROVIDERS } from "../config/providers.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import {
   QODER_CHAT_URL_ENCODED,
-  QODER_MODEL_MAP,
 } from "@/lib/qoder/constants.js";
-import { getQoderModelConfig, resolveQoderModels } from "../services/qoderModels.js";
+import { canonicalQoderModelKey, resolveQoderModelConfig } from "../services/qoderModels.js";
 
 /**
  * Hoist role:"system" messages out of the messages array (Qoder rejects
@@ -124,24 +123,15 @@ function truncate(s, n) {
  * Map the OpenAI-style request body into the exact shape Qoder expects.
  */
 async function buildQoderRequestBody({ model, body, credentials, log, proxyOptions, signal }) {
-  const qoderKey = String(model || "").replace(/^qoder\//, "");
-  if (!QODER_MODEL_MAP[qoderKey]) {
-    throw new Error(`Unsupported qoder model: "${qoderKey}" (received "${model}")`);
+  const resolved = await resolveQoderModelConfig(credentials, model, { log, proxyOptions, signal });
+  if (!resolved?.modelConfig) {
+    const raw = String(model || "").replace(/^qoder\//, "");
+    const canonical = canonicalQoderModelKey(raw);
+    throw new Error(
+      `Unsupported qoder model: "${canonical || raw}" (received "${model}")`,
+    );
   }
-
-  let modelConfig = await getQoderModelConfig(credentials, qoderKey, { log, proxyOptions, signal });
-  if (!modelConfig) {
-    // Try a forced refresh once before giving up — the cache may simply
-    // not be populated yet on first ever call for this credential.
-    const refreshed = await resolveQoderModels(credentials, { forceRefresh: true, log, proxyOptions, signal });
-    const retried = refreshed?.rawConfigs.get(qoderKey);
-    if (!retried) {
-      throw new Error(
-        `qoder: model_config for "${qoderKey}" not yet known (run a model list fetch or check upstream connectivity)`,
-      );
-    }
-    modelConfig = { ...retried, key: qoderKey };
-  }
+  const { qoderKey, modelConfig } = resolved;
 
   const { messages, systemText } = normalizeMessages(body.messages || []);
   const tools = body.tools;

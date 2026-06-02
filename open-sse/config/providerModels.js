@@ -158,6 +158,7 @@ export const PROVIDER_MODELS = {
     { id: "gm51model", name: "GLM 5.1 (Qoder)" },
     { id: "kmodel", name: "Kimi K2.6 (Qoder)" },
     { id: "mmodel", name: "MiniMax M2.7 (Qoder)" },
+    { id: "qwen3.7-max", name: "Qwen 3.7 Max (Qoder)" },
   ],
   cu: [  // Cursor IDE
     { id: "default", name: "Auto (Server Picks)" },

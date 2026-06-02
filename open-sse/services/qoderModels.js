@@ -17,8 +17,59 @@ import { createHash } from "crypto";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { buildCosyHeaders } from "@/lib/qoder/cosy.js";
 import {
+  QODER_MODEL_ALIASES,
   QODER_MODEL_LIST_URL,
+  QODER_MODEL_MAP,
 } from "@/lib/qoder/constants.js";
+
+/** Normalize model keys for fuzzy catalog matching (qwen3.7-max ≈ qwen37max). */
+function normalizeModelKey(key) {
+  return String(key || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/** Resolve user input to canonical Qoder model key. */
+export function canonicalQoderModelKey(modelKey) {
+  const raw = String(modelKey || "").replace(/^qoder\//, "").trim();
+  if (!raw) return raw;
+  if (QODER_MODEL_MAP[raw]) return raw;
+  if (QODER_MODEL_ALIASES[raw]) return QODER_MODEL_ALIASES[raw];
+  const norm = normalizeModelKey(raw);
+  for (const [alias, canonical] of Object.entries(QODER_MODEL_ALIASES)) {
+    if (normalizeModelKey(alias) === norm) return canonical;
+  }
+  for (const key of Object.keys(QODER_MODEL_MAP)) {
+    if (normalizeModelKey(key) === norm) return key;
+  }
+  return raw;
+}
+
+function findCatalogEntry(rawConfigs, modelKey) {
+  if (!rawConfigs || !modelKey) return null;
+  if (rawConfigs.has(modelKey)) {
+    return { entry: rawConfigs.get(modelKey), catalogKey: modelKey };
+  }
+  const norm = normalizeModelKey(modelKey);
+  for (const [k, entry] of rawConfigs) {
+    if (normalizeModelKey(k) === norm) return { entry, catalogKey: k };
+  }
+  return null;
+}
+
+/** Minimal model_config when catalog fetch misses a statically-known model. */
+export function buildFallbackQoderModelConfig(modelKey) {
+  const key = canonicalQoderModelKey(modelKey);
+  const isQwen37 = /^qwen37max$/i.test(normalizeModelKey(key));
+  return {
+    key,
+    enable: true,
+    display_name: key,
+    max_input_tokens: 131_072,
+    max_output_tokens: 32_768,
+    is_reasoning: isQwen37,
+    is_vl: false,
+    source: "system",
+  };
+}
 
 const FETCH_TIMEOUT_MS = 15_000;
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1h, same as the Kiro catalog
@@ -144,12 +195,35 @@ async function fetchQoderCatalogRaw(credentials, signal, proxyOptions = null) {
  * (so callers can fall back to the static registry).
  */
 export async function getQoderModelConfig(credentials, modelKey, options = {}) {
-  const cached = await resolveQoderModels(credentials, options);
-  if (!cached) return null;
-  const config = cached.rawConfigs.get(modelKey);
-  if (!config) return null;
-  // Defensive copy — chat code may mutate `key` to align with the alias path.
-  return { ...config, key: modelKey };
+  const resolved = await resolveQoderModelConfig(credentials, modelKey, options);
+  return resolved?.modelConfig ?? null;
+}
+
+/**
+ * Resolve model_config for chat: live catalog first, then static/fallback config.
+ */
+export async function resolveQoderModelConfig(credentials, modelKey, options = {}) {
+  const qoderKey = canonicalQoderModelKey(modelKey);
+  if (!qoderKey) return null;
+
+  let catalog = await resolveQoderModels(credentials, options);
+  let found = catalog ? findCatalogEntry(catalog.rawConfigs, qoderKey) : null;
+
+  if (!found && !options.forceRefresh) {
+    catalog = await resolveQoderModels(credentials, { ...options, forceRefresh: true });
+    found = catalog ? findCatalogEntry(catalog.rawConfigs, qoderKey) : null;
+  }
+
+  if (found) {
+    const upstreamKey = found.catalogKey;
+    return { qoderKey: upstreamKey, modelConfig: { ...found.entry, key: upstreamKey } };
+  }
+
+  if (QODER_MODEL_MAP[qoderKey]) {
+    return { qoderKey, modelConfig: buildFallbackQoderModelConfig(qoderKey) };
+  }
+
+  return null;
 }
 
 /**
@@ -207,6 +281,32 @@ export async function resolveQoderModels(credentials, options = {}) {
 export function invalidateQoderCatalog(credentials) {
   if (!credentials) return;
   catalogCache.delete(cacheKey(credentials));
+}
+
+/**
+ * Check if a model key is supported. Allows both static (QODER_MODEL_MAP)
+ * and dynamically-discovered models from the upstream catalog.
+ */
+export function isKnownQoderModel(qoderKey) {
+  const canonical = canonicalQoderModelKey(qoderKey);
+  if (QODER_MODEL_MAP[canonical]) return true;
+  for (const entry of catalogCache.values()) {
+    if (findCatalogEntry(entry.rawConfigs, canonical)?.entry) return true;
+  }
+  return false;
+}
+
+/**
+ * Get all known model keys (static + dynamic).
+ */
+export function getAllKnownQoderModels() {
+  const keys = new Set(Object.keys(QODER_MODEL_MAP));
+  for (const entry of catalogCache.values()) {
+    for (const key of entry.rawConfigs.keys()) {
+      keys.add(key);
+    }
+  }
+  return keys;
 }
 
 export function clearQoderCatalog() {

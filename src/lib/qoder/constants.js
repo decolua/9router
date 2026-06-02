@@ -51,6 +51,16 @@ export const QODER_MODEL_MAP = {
   gm51model: "gm51model",
   kmodel: "kmodel",
   mmodel: "mmodel",
+  // Promotional / flagship (Qoder docs: Qwen3.7-Max daily free tier)
+  "qwen3.7-max": "qwen3.7-max",
+};
+
+/** User-facing aliases → canonical Qoder model key */
+export const QODER_MODEL_ALIASES = {
+  "qwen3.7max": "qwen3.7-max",
+  "qwen3-7-max": "qwen3.7-max",
+  "qwen37-max": "qwen3.7-max",
+  "qwen37max": "qwen3.7-max",
 };
 
 // RSA public key for COSY encryption (extracted from Qoder IDE v0.9).
