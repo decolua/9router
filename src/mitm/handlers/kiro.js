@@ -4,6 +4,15 @@ const { fetchRouter, pipeTransformedEventStream } = require("./base");
 const fs = require("fs");
 const path = require("path");
 
+// Debug trace log — written to data/logs/mitm/kiro-debug.log (dev only)
+const DEBUG_LOG = path.join(__dirname, "../../../data/logs/mitm/kiro-debug.log");
+function dbg(msg) {
+  if (!IS_DEV) return;
+  try {
+    fs.appendFileSync(DEBUG_LOG, `${new Date().toISOString()} ${msg}\n`);
+  } catch {}
+}
+
 // ─── CRC32 (standard, polynomial 0xEDB88320 — same as AWS EventStream) ───────
 const CRC32_TABLE = (() => {
   const t = new Uint32Array(256);
@@ -344,9 +353,7 @@ function convertOpenAIToKiro(chunk, state) {
       if (tc.id && tc.function?.name && !state.toolCallInit[idx]) {
         // First appearance: emit frame with name + id, no input
         state.toolCallInit[idx] = { id: tc.id, name: tc.function.name };
-        if (process.env.DEBUG_MITM) {
-          console.log(`[MITM] Kiro toolUseEvent init: ${tc.function.name} (${tc.id})`);
-        }
+        dbg(`toolUseEvent init: ${tc.function.name} (${tc.id})`);
         frames.push(buildEventStreamFrame("toolUseEvent", {
           name: tc.function.name,
           toolUseId: tc.id
@@ -356,9 +363,7 @@ function convertOpenAIToKiro(chunk, state) {
       // Emit incremental input fragment
       if (tc.function?.arguments) {
         const init = state.toolCallInit[idx];
-        if (process.env.DEBUG_MITM) {
-          console.log(`[MITM] Kiro toolUseEvent fragment: ${tc.function.arguments.slice(0, 100)}`);
-        }
+        dbg(`toolUseEvent fragment: ${tc.function.arguments.slice(0, 100)}`);
         frames.push(buildEventStreamFrame("toolUseEvent", {
           input: tc.function.arguments,
           name: init?.name || tc.function?.name || "",

@@ -114,6 +114,20 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Covers both passthrough (source shape) and translated (target shape) flows
   const finalFormat = passthrough ? sourceFormat : targetFormat;
 
+  // TTS models don't support tool role messages - filter them out
+  // Check if model is TTS type by looking at provider models config
+  const { getModelType } = await import("../config/providerModels.js");
+  const modelType = getModelType(alias, model);
+  if (modelType === "tts" && translatedBody.messages) {
+    const originalLength = translatedBody.messages.length;
+    translatedBody.messages = translatedBody.messages.filter(msg => msg.role !== "tool");
+    if (translatedBody.messages.length !== originalLength) {
+      log?.debug?.("TTS", `Filtered ${originalLength - translatedBody.messages.length} tool messages for TTS model`);
+    }
+    // Also remove tools array as TTS models don't support function calling
+    delete translatedBody.tools;
+  }
+
   // RTK: compress tool_result content
   const rtkStats = compressMessages(translatedBody, rtkEnabled);
   const rtkLine = formatRtkLog(rtkStats);

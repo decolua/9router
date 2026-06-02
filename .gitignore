@@ -72,10 +72,3 @@ ecosystem.config.*
 scripts/agSniffer/*
 gitbooks/*
 gitbook/README.md
-
-output/
-bugfix/
-.next/
-.next_home/
-build-local.ps1
-build-local.sh
