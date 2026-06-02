@@ -128,6 +128,7 @@ export async function POST(request) {
         return NextResponse.json({ error: "OpenAI Compatible node not found" }, { status: 404 });
       }
       providerSpecificData = {
+        providerNodeId: provider,
         prefix: node.prefix,
         apiType: node.apiType,
         baseUrl: node.baseUrl,
@@ -139,6 +140,7 @@ export async function POST(request) {
         return NextResponse.json({ error: "Anthropic Compatible node not found" }, { status: 404 });
       }
       providerSpecificData = {
+        providerNodeId: provider,
         prefix: node.prefix,
         baseUrl: node.baseUrl,
         nodeName: node.name,
@@ -149,6 +151,7 @@ export async function POST(request) {
         return NextResponse.json({ error: "Custom Embedding node not found" }, { status: 404 });
       }
       providerSpecificData = {
+        providerNodeId: provider,
         prefix: node.prefix,
         baseUrl: node.baseUrl,
         nodeName: node.name,

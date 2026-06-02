@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getProviderConnections } from "@/lib/localDb";
+import { getProviderConnections, getProviderNodes } from "@/lib/localDb";
 import { backfillCodexEmails } from "@/lib/oauth/providers";
 import { USAGE_APIKEY_PROVIDERS, USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
 
@@ -17,6 +17,7 @@ const SAFE_PSD_FIELDS = [
   "connectionProxyEnabled", "connectionProxyUrl", "connectionNoProxy",
   "githubLogin", "githubName", "githubEmail", "githubUserId",
   "username", "firstName", "lastName", "authMethod", "authKind",
+  "providerNodeId",
 ];
 
 const DEFAULT_PAGE_SIZE = 20;
@@ -42,10 +43,16 @@ function sanitize(c) {
   return safe;
 }
 
-function isUsageEligible(connection) {
-  return USAGE_SUPPORTED_PROVIDERS.includes(connection.provider) && (
+function isUsageEligible(connection, providerNodes = []) {
+  const builtIn = USAGE_SUPPORTED_PROVIDERS.includes(connection.provider) && (
     connection.authType === "oauth" || USAGE_APIKEY_PROVIDERS.includes(connection.provider)
   );
+  if (builtIn) return true;
+
+  // Check if this connection's provider node has custom usage config
+  const nodeId = connection.providerSpecificData?.providerNodeId || connection.provider;
+  const node = providerNodes.find(n => n.id === nodeId);
+  return !!(node?.customUsageConfig?.enabled && node?.customUsageConfig?.script);
 }
 
 function parsePositiveInt(value, fallback) {
@@ -85,7 +92,8 @@ export async function GET(request) {
     const pageSize = Math.min(parsePositiveInt(searchParams.get("pageSize"), DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE);
 
     const allConnections = await getProviderConnections();
-    const eligibleConnections = allConnections.filter(isUsageEligible);
+    const providerNodes = await getProviderNodes();
+    const eligibleConnections = allConnections.filter(conn => isUsageEligible(conn, providerNodes));
     const providerOptions = Array.from(new Set(eligibleConnections.map((conn) => conn.provider))).sort();
 
     const providerFilteredConnections = eligibleConnections.filter((conn) => (

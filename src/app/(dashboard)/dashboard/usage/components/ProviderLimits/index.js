@@ -202,6 +202,23 @@ function setQuotaCache(connectionId, quotaEntry) {
     console.error("Error writing quota cache:", error);
   }
 }
+// Connection is eligible for the quota page when:
+// 1. Provider has built-in usage support (USAGE_SUPPORTED_PROVIDERS) and uses OAuth or whitelisted apikey
+// 2. OR has a custom usage config enabled at provider node level
+const isUsageEligible = (conn, providerNodes = []) => {
+  const builtIn = USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) &&
+    (conn.authType === "oauth" || USAGE_APIKEY_PROVIDERS.includes(conn.provider));
+  if (builtIn) return true;
+
+  // Check if this connection's provider node has custom usage config
+  // For compatible providers, provider IS the node ID, so check that too
+  const nodeId = conn.providerSpecificData?.providerNodeId || conn.provider;
+  const node = providerNodes.find(n => n.id === nodeId);
+  if (node?.customUsageConfig?.enabled && node?.customUsageConfig?.script) {
+    return true;
+  }
+  return false;
+};
 
 const REFRESH_INTERVAL_MS = 60000; // 60 seconds
 const DEPLETED_QUOTA_THRESHOLD = 5; // percent
@@ -236,6 +253,7 @@ export default function ProviderLimits() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedConnection, setSelectedConnection] = useState(null);
   const [proxyPools, setProxyPools] = useState([]);
+  const [providerNodes, setProviderNodes] = useState([]);
   const [providerFilter, setProviderFilter] = useState("all");
   const [providerOptions, setProviderOptions] = useState([]);
   const [accountFilter, setAccountFilter] = useState("all");

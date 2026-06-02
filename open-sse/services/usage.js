@@ -3,7 +3,9 @@
  */
 
 import { CLIENT_METADATA, getPlatformUserAgent } from "../config/appConstants.js";
+import { PROVIDERS } from "../config/providers.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { executeCustomUsageScript } from "./customUsageRunner.js";
 
 // GitHub API config
 const GITHUB_CONFIG = {
@@ -58,7 +60,7 @@ const CLAUDE_CONFIG = {
  * @returns {Object} Usage data with quotas
  */
 export async function getUsageForProvider(connection, proxyOptions = null) {
-  const { provider, accessToken, apiKey, providerSpecificData, projectId } = connection;
+  const { provider, accessToken, apiKey, providerSpecificData, projectId, customUsageConfig } = connection;
   const providerDataWithProjectId = {
     ...(providerSpecificData || {}),
     ...(projectId ? { projectId } : {}),
@@ -92,6 +94,11 @@ export async function getUsageForProvider(connection, proxyOptions = null) {
     case "minimax-cn":
       return await getMiniMaxUsage(apiKey, provider, proxyOptions);
     default:
+      // If custom usage is enabled, use the user's script
+      if (customUsageConfig?.enabled && customUsageConfig?.script) {
+        const providerConfig = PROVIDERS[provider];
+        return await executeCustomUsageScript(connection, providerConfig, customUsageConfig.script, proxyOptions);
+      }
       return { message: `Usage API not implemented for ${provider}` };
   }
 }
