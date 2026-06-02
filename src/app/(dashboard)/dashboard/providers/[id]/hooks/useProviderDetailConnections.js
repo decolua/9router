@@ -562,14 +562,28 @@ export function useProviderDetailConnections({
       );
       setManualRefreshResults(nextResults);
       setManualRefreshSummary(data.summary || null);
+
+      if (data.results && Array.isArray(data.results)) {
+        setConnections((prevConnections) => {
+          const next = prevConnections.map((conn) => {
+            const match = data.results.find((r) => r.connectionId === conn.id && r.ok);
+            if (match && match.expiresAt) {
+              return {
+                ...conn,
+                expiresAt: match.expiresAt,
+              };
+            }
+            return conn;
+          });
+          connectionsRef.current = next;
+          return next;
+        });
+      }
     } catch (error) {
       console.log("Error refreshing selected Codex accounts:", error);
       alert("Failed to refresh selected Codex accounts");
     } finally {
       setManualRefreshing(false);
-      fetchConnections().catch((err) =>
-        console.log("Error fetching connections after refresh:", err),
-      );
     }
   };
 
