@@ -38,6 +38,10 @@ export default function ProviderConnectionsToolbar({
   handleRoundRobinToggle,
   providerStickyLimit,
   handleStickyLimitChange,
+  warmupRunning,
+  warmupSummary,
+  handleWarmupSelected,
+  clearWarmupResults,
 }) {
   const hasConnections = connectionsCount > 0;
   const hasSelection = selectedConnectionIds.length > 0;
@@ -124,7 +128,7 @@ export default function ProviderConnectionsToolbar({
             )}
           </div>
 
-          {connectionsCount > 0 && providerId === "codex" && (
+          {connectionsCount > 0 && (
             <div className="flex w-full flex-wrap items-center gap-2 lg:justify-end">
               <span className="text-xs font-medium text-text-muted">Bulk</span>
               <label className="flex h-7 items-center gap-2 rounded-[8px] border border-border bg-surface-2 px-3 text-xs text-text-muted">
@@ -136,35 +140,53 @@ export default function ProviderConnectionsToolbar({
                 />
                 Select all ({selectionSummary})
               </label>
+              {providerId === "codex" && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    icon="toggle_on"
+                    onClick={() => setSelectedConnectionsAutoRefresh(true)}
+                    disabled={!hasSelection}
+                  >
+                    Bật auto refresh
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon="toggle_off"
+                    onClick={() => setSelectedConnectionsAutoRefresh(false)}
+                    disabled={!hasSelection}
+                  >
+                    Tắt auto refresh
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={manualRefreshing ? "secondary" : "ghost"}
+                    icon="refresh"
+                    onClick={handleManualRefreshSelected}
+                    disabled={manualRefreshing || !hasSelection}
+                  >
+                    {manualRefreshing
+                      ? "Refreshing selected..."
+                      : `Refresh selected now (${selectedConnectionIds.length})`}
+                  </Button>
+                </>
+              )}
+
               <Button
                 size="sm"
-                variant="secondary"
-                icon="toggle_on"
-                onClick={() => setSelectedConnectionsAutoRefresh(true)}
-                disabled={!hasSelection}
+                variant={warmupRunning ? "secondary" : "ghost"}
+                icon="local_fire_department"
+                onClick={handleWarmupSelected}
+                disabled={warmupRunning || !hasSelection}
+                className="text-orange-500 hover:bg-orange-500/10 hover:text-orange-600"
               >
-                Bật auto refresh
+                {warmupRunning
+                  ? "Warming up selected..."
+                  : `Warmup selected (${selectedConnectionIds.length})`}
               </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                icon="toggle_off"
-                onClick={() => setSelectedConnectionsAutoRefresh(false)}
-                disabled={!hasSelection}
-              >
-                Tắt auto refresh
-              </Button>
-              <Button
-                size="sm"
-                variant={manualRefreshing ? "secondary" : "ghost"}
-                icon="refresh"
-                onClick={handleManualRefreshSelected}
-                disabled={manualRefreshing || !hasSelection}
-              >
-                {manualRefreshing
-                  ? "Refreshing selected..."
-                  : `Refresh selected now (${selectedConnectionIds.length})`}
-              </Button>
+
               <Button
                 size="sm"
                 variant="ghost"
@@ -191,8 +213,9 @@ export default function ProviderConnectionsToolbar({
                 onClick={() => {
                   clearSelection();
                   clearManualRefreshResults();
+                  clearWarmupResults?.();
                 }}
-                disabled={!hasSelection && !manualRefreshSummary}
+                disabled={!hasSelection && !manualRefreshSummary && !warmupSummary}
               >
                 Clear
               </Button>

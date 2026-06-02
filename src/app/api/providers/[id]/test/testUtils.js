@@ -23,6 +23,28 @@ import {
 } from "@/lib/oauth/constants/oauth";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
 
+function getFriendlyErrorMessage(err) {
+  if (!err) return "Unknown error";
+  const base = err.message || String(err);
+  const causeCode = err.cause?.code || err.code;
+  const causeMessage = err.cause?.message;
+
+  let msg = base;
+  if (causeMessage && causeMessage !== base) {
+    msg = causeCode ? `${base}: ${causeMessage} (${causeCode})` : `${base}: ${causeMessage}`;
+  } else if (causeCode && !base.includes(causeCode)) {
+    msg = `${base} (${causeCode})`;
+  }
+
+  if (msg.includes("Request was cancelled") || msg.includes("request was cancelled")) {
+    msg += " (Proxy is likely offline or unreachable)";
+  } else if (msg.includes("Connect Timeout") || msg.includes("UND_ERR_CONNECT_TIMEOUT")) {
+    msg += " (Proxy connection timed out)";
+  }
+
+  return msg;
+}
+
 // OAuth provider test endpoints
 const OAUTH_TEST_CONFIG = {
   claude: { checkExpiry: true, refreshable: true },
@@ -436,7 +458,7 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
       return { valid: false, error: "Access denied", refreshed };
     return { valid: false, error: `API returned ${res.status}`, refreshed };
   } catch (err) {
-    return { valid: false, error: err.message, refreshed };
+    return { valid: false, error: getFriendlyErrorMessage(err), refreshed };
   }
 }
 
@@ -450,6 +472,7 @@ async function fetchWithConnectionProxy(
     const { proxyAwareFetch } = await import("open-sse/utils/proxyFetch.js");
     return proxyAwareFetch(url, options, {
       vercelRelayUrl: effectiveProxy.vercelRelayUrl,
+      connectionProxyHeadersTimeoutMs: effectiveProxy.connectionProxyHeadersTimeoutMs,
     });
   }
 
@@ -465,6 +488,8 @@ async function fetchWithConnectionProxy(
     connectionProxyEnabled: true,
     connectionProxyUrl: effectiveProxy.connectionProxyUrl,
     connectionNoProxy: effectiveProxy.connectionNoProxy || "",
+    strictProxy: true,
+    connectionProxyHeadersTimeoutMs: effectiveProxy.connectionProxyHeadersTimeoutMs,
   });
 }
 
@@ -485,7 +510,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         error: res.ok ? null : "Invalid API key or base URL",
       };
     } catch (err) {
-      return { valid: false, error: err.message };
+      return { valid: false, error: getFriendlyErrorMessage(err) };
     }
   }
 
@@ -995,7 +1020,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid: false, error: "Provider test not supported" };
     }
   } catch (err) {
-    return { valid: false, error: err.message };
+    return { valid: false, error: getFriendlyErrorMessage(err) };
   }
 }
 
@@ -1079,3 +1104,451 @@ export async function testSingleConnection(id) {
     testedAt: new Date().toISOString(),
   };
 }
+
+async function executeWarmup(connection, effectiveProxy = null, options = {}) {
+  const provider = connection.provider;
+  const authType = connection.authType;
+  const intensity = options.intensity || "light";
+
+  if (authType === "apikey" || authType === "cookie") {
+    // OpenAI or OpenAI-compatible
+    if (
+      isOpenAICompatibleProvider(provider) ||
+      [
+        "openai",
+        "deepseek",
+        "groq",
+        "together",
+        "fireworks",
+        "xai",
+        "mistral",
+        "perplexity",
+        "cerebras",
+        "nebius",
+        "siliconflow",
+        "hyperbolic",
+        "chutes",
+        "nanobanana",
+        "vercel-ai-gateway",
+        "nvidia",
+        "cohere",
+      ].includes(provider)
+    ) {
+      let baseUrl = "https://api.openai.com/v1";
+      if (isOpenAICompatibleProvider(provider)) {
+        baseUrl = connection.providerSpecificData?.baseUrl;
+      } else {
+        const defaultBases = {
+          deepseek: "https://api.deepseek.com",
+          groq: "https://api.groq.com/openai/v1",
+          together: "https://api.together.xyz/v1",
+          fireworks: "https://api.fireworks.ai/inference/v1",
+          xai: "https://api.x.ai/v1",
+          mistral: "https://api.mistral.ai/v1",
+          perplexity: "https://api.perplexity.ai",
+          cerebras: "https://api.cerebras.ai/v1",
+          nebius: "https://api.studio.nebius.ai/v1",
+          siliconflow: "https://api.siliconflow.cn/v1",
+          hyperbolic: "https://api.hyperbolic.xyz/v1",
+          chutes: "https://llm.chutes.ai/v1",
+          nanobanana: "https://api.nanobananaapi.ai/v1",
+          "vercel-ai-gateway": "https://ai-gateway.vercel.sh/v1",
+          nvidia: "https://integrate.api.nvidia.com/v1",
+          cohere: "https://api.cohere.ai/v1",
+        };
+        if (defaultBases[provider]) {
+          baseUrl = defaultBases[provider];
+        }
+      }
+
+      if (!baseUrl) return { valid: false, error: "Missing base URL" };
+      baseUrl = baseUrl.replace(/\/$/, "");
+
+      const model = getDefaultModel(provider) || "gpt-4o-mini";
+      let prompt = "hi";
+      let maxTokens = 1;
+
+      if (intensity === "medium") {
+        prompt = "Write a detailed 300-word story about space exploration. Be creative and include descriptions of stars and planets.";
+        maxTokens = 500;
+      } else if (intensity === "heavy") {
+        prompt = "Write a comprehensive 1500-word essay about the history and future of artificial intelligence in software engineering, discussing benefits and ethical implications.";
+        maxTokens = 2000;
+      }
+
+      try {
+        const res = await fetchWithConnectionProxy(
+          `${baseUrl}/chat/completions`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${connection.apiKey}`,
+            },
+            body: JSON.stringify({
+              model: model,
+              messages: [{ role: "user", content: prompt }],
+              max_tokens: maxTokens,
+            }),
+          },
+          effectiveProxy,
+        );
+
+        const valid = res.status !== 401 && res.status !== 403;
+        return {
+          valid,
+          error: valid ? null : `API returned status ${res.status}`,
+        };
+      } catch (err) {
+        return { valid: false, error: err.message };
+      }
+    }
+
+    // Anthropic
+    if (isAnthropicCompatibleProvider(provider) || provider === "anthropic") {
+      let baseUrl = "https://api.anthropic.com/v1";
+      if (isAnthropicCompatibleProvider(provider)) {
+        baseUrl = connection.providerSpecificData?.baseUrl;
+      }
+      if (!baseUrl) return { valid: false, error: "Missing base URL" };
+      baseUrl = baseUrl.replace(/\/$/, "");
+      if (baseUrl.endsWith("/messages")) {
+        baseUrl = baseUrl.slice(0, -9);
+      }
+
+      let prompt = "hi";
+      let maxTokens = 1;
+
+      if (intensity === "medium") {
+        prompt = "Write a detailed 300-word story about space exploration. Be creative and include descriptions of stars and planets.";
+        maxTokens = 500;
+      } else if (intensity === "heavy") {
+        prompt = "Write a comprehensive 1500-word essay about the history and future of artificial intelligence in software engineering, discussing benefits and ethical implications.";
+        maxTokens = 2000;
+      }
+
+      try {
+        const res = await fetchWithConnectionProxy(
+          `${baseUrl}/messages`,
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-api-key": connection.apiKey,
+              "anthropic-version": "2023-06-01",
+              Authorization: `Bearer ${connection.apiKey}`,
+            },
+            body: JSON.stringify({
+              model: "claude-3-haiku-20240307",
+              max_tokens: maxTokens,
+              messages: [{ role: "user", content: prompt }],
+            }),
+          },
+          effectiveProxy,
+        );
+        const valid = res.status !== 401 && res.status !== 403;
+        return {
+          valid,
+          error: valid ? null : `API returned status ${res.status}`,
+        };
+      } catch (err) {
+        return { valid: false, error: err.message };
+      }
+    }
+
+    // Gemini
+    if (provider === "gemini") {
+      let prompt = "hi";
+      let maxTokens = 1;
+
+      if (intensity === "medium") {
+        prompt = "Write a detailed 300-word story about space exploration. Be creative and include descriptions of stars and planets.";
+        maxTokens = 500;
+      } else if (intensity === "heavy") {
+        prompt = "Write a comprehensive 1500-word essay about the history and future of artificial intelligence in software engineering, discussing benefits and ethical implications.";
+        maxTokens = 2000;
+      }
+
+      try {
+        const res = await fetchWithConnectionProxy(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${connection.apiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: { maxOutputTokens: maxTokens },
+            }),
+          },
+          effectiveProxy,
+        );
+        return {
+          valid: res.ok,
+          error: res.ok ? null : `API returned status ${res.status}`,
+        };
+      } catch (err) {
+        return { valid: false, error: err.message };
+      }
+    }
+
+    // Providers with built-in chat request in testApiKeyConnection:
+    if (
+      [
+        "cloudflare-ai",
+        "azure",
+        "glm",
+        "glm-cn",
+        "minimax",
+        "minimax-cn",
+        "kimi",
+        "alicode",
+        "alicode-intl",
+        "volcengine-ark",
+        "byteplus",
+        "grok-web",
+      ].includes(provider)
+    ) {
+      return testApiKeyConnection(connection, effectiveProxy);
+    }
+
+    // Fallback/Specialized cases:
+    return testApiKeyConnection(connection, effectiveProxy);
+  }
+
+  // OAuth Providers
+  const oAuthTest = await testOAuthConnection(connection, effectiveProxy);
+  if (!oAuthTest.valid) {
+    return oAuthTest;
+  }
+
+  let accessToken = oAuthTest.newTokens?.accessToken || connection.accessToken;
+
+  if (provider === "claude") {
+    let prompt = "hi";
+    let maxTokens = 1;
+
+    if (intensity === "medium") {
+      prompt = "Write a detailed 300-word story about space exploration. Be creative and include descriptions of stars and planets.";
+      maxTokens = 500;
+    } else if (intensity === "heavy") {
+      prompt = "Write a comprehensive 1500-word essay about the history and future of artificial intelligence in software engineering, discussing benefits and ethical implications.";
+      maxTokens = 2000;
+    }
+
+    try {
+      const res = await fetchWithConnectionProxy(
+        "https://api.anthropic.com/v1/messages",
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: "claude-3-haiku-20240307",
+            max_tokens: maxTokens,
+            messages: [{ role: "user", content: prompt }],
+          }),
+        },
+        effectiveProxy,
+      );
+      const valid = res.status !== 401 && res.status !== 403;
+      return {
+        valid,
+        error: valid ? null : `API returned status ${res.status}`,
+        refreshed: oAuthTest.refreshed,
+        newTokens: oAuthTest.newTokens,
+      };
+    } catch (err) {
+      return {
+        valid: false,
+        error: err.message,
+        refreshed: oAuthTest.refreshed,
+        newTokens: oAuthTest.newTokens,
+      };
+    }
+  }
+
+  if (provider === "gemini-cli" || provider === "antigravity") {
+    let prompt = "hi";
+    let maxTokens = 1;
+
+    if (intensity === "medium") {
+      prompt = "Write a detailed 300-word story about space exploration. Be creative and include descriptions of stars and planets.";
+      maxTokens = 500;
+    } else if (intensity === "heavy") {
+      prompt = "Write a comprehensive 1500-word essay about the history and future of artificial intelligence in software engineering, discussing benefits and ethical implications.";
+      maxTokens = 2000;
+    }
+
+    try {
+      const res = await fetchWithConnectionProxy(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { maxOutputTokens: maxTokens },
+          }),
+        },
+        effectiveProxy,
+      );
+      const valid = res.status !== 401 && res.status !== 403;
+      return {
+        valid,
+        error: valid ? null : `API returned status ${res.status}`,
+        refreshed: oAuthTest.refreshed,
+        newTokens: oAuthTest.newTokens,
+      };
+    } catch (err) {
+      return {
+        valid: false,
+        error: err.message,
+        refreshed: oAuthTest.refreshed,
+        newTokens: oAuthTest.newTokens,
+      };
+    }
+  }
+
+  if (provider === "codex") {
+    let prompt = "hi";
+    let storeValue = false;
+
+    if (intensity === "medium") {
+      prompt = "Write a detailed 300-word story about space exploration. Be creative and include descriptions of stars and planets.";
+      storeValue = true;
+    } else if (intensity === "heavy") {
+      prompt = "Write a comprehensive 1500-word essay about the history and future of artificial intelligence in software engineering, discussing benefits and ethical implications.";
+      storeValue = true;
+    }
+
+    try {
+      const res = await fetchWithConnectionProxy(
+        "https://chatgpt.com/backend-api/codex/responses",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+            originator: "codex-cli",
+            "User-Agent": "codex-cli/1.0.18 (macOS; arm64)",
+          },
+          body: JSON.stringify({
+            model: "gpt-5.3-codex",
+            input: [{ role: "user", content: prompt }],
+            stream: false,
+            store: storeValue,
+          }),
+        },
+        effectiveProxy,
+      );
+      const valid = res.status !== 401 && res.status !== 403;
+      return {
+        valid,
+        error: valid ? null : `API returned status ${res.status}`,
+        refreshed: oAuthTest.refreshed,
+        newTokens: oAuthTest.newTokens,
+      };
+    } catch (err) {
+      return {
+        valid: false,
+        error: err.message,
+        refreshed: oAuthTest.refreshed,
+        newTokens: oAuthTest.newTokens,
+      };
+    }
+  }
+
+  return oAuthTest;
+}
+
+/**
+ * Warmup a single connection by ID, update DB, and return result.
+ */
+export async function warmupSingleConnection(id, options = {}) {
+  const connection = await getProviderConnectionById(id);
+  if (!connection)
+    return {
+      valid: false,
+      error: "Connection not found",
+      testedAt: new Date().toISOString(),
+    };
+
+  const effectiveProxy = await resolveConnectionProxyConfig(
+    connection.providerSpecificData || {},
+  );
+
+  if (
+    effectiveProxy.connectionProxyEnabled &&
+    effectiveProxy.connectionProxyUrl &&
+    !effectiveProxy.vercelRelayUrl
+  ) {
+    const proxyResult = await testProxyUrl({
+      proxyUrl: effectiveProxy.connectionProxyUrl,
+    });
+    if (!proxyResult.ok) {
+      const proxyError =
+        proxyResult.error ||
+        `Proxy test failed with status ${proxyResult.status}`;
+      await updateProviderConnection(id, {
+        testStatus: "error",
+        lastError: proxyError,
+        lastErrorAt: new Date().toISOString(),
+      });
+      return {
+        valid: false,
+        error: proxyError,
+        latencyMs: 0,
+        testedAt: new Date().toISOString(),
+      };
+    }
+  }
+
+  const start = Date.now();
+  let result;
+
+  try {
+    result = await executeWarmup(connection, effectiveProxy, options);
+  } catch (err) {
+    result = { valid: false, error: getFriendlyErrorMessage(err) };
+  }
+
+  const latencyMs = Date.now() - start;
+
+  const updateData = {
+    testStatus: result.valid ? "active" : "error",
+    lastError: result.valid ? null : result.error,
+    lastErrorAt: result.valid ? null : new Date().toISOString(),
+  };
+
+  if (result.valid) {
+    updateData.warmedUp = true;
+    updateData.warmedUpAt = new Date().toISOString();
+  }
+
+  if (result.refreshed && result.newTokens) {
+    updateData.accessToken = result.newTokens.accessToken;
+    if (result.newTokens.refreshToken)
+      updateData.refreshToken = result.newTokens.refreshToken;
+    if (result.newTokens.expiresIn) {
+      updateData.expiresAt = new Date(
+        Date.now() + result.newTokens.expiresIn * 1000,
+      ).toISOString();
+    }
+  }
+
+  await updateProviderConnection(id, updateData);
+
+  return {
+    valid: result.valid,
+    error: result.error,
+    latencyMs,
+    testedAt: new Date().toISOString(),
+  };
+}
+

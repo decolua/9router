@@ -52,9 +52,9 @@ describe("Codex Refresh Token", () => {
 
       const { refreshCodexToken } =
         await import("../../open-sse/services/tokenRefresh.js");
-      const result = await refreshCodexToken("old-refresh-token", null);
+      const result = await refreshCodexToken("old-refresh-token-no-rotate", null);
 
-      expect(result.refreshToken).toBe("old-refresh-token");
+      expect(result.refreshToken).toBe("old-refresh-token-no-rotate");
     });
   });
 
@@ -64,7 +64,7 @@ describe("Codex Refresh Token", () => {
         await import("../../open-sse/services/tokenRefresh.js");
 
       // Synced with CLIProxyAPI refresh_registry
-      expect(getRefreshLeadMs("codex")).toBe(5 * 24 * 60 * 60 * 1000); // 5 days
+      expect(getRefreshLeadMs("codex")).toBe(2 * 60 * 60 * 1000); // 2 hours
       expect(getRefreshLeadMs("claude")).toBe(4 * 60 * 60 * 1000); // 4 hours
       expect(getRefreshLeadMs("iflow")).toBe(24 * 60 * 60 * 1000); // 24 hours
       expect(getRefreshLeadMs("qwen")).toBe(20 * 60 * 1000); // 20 minutes

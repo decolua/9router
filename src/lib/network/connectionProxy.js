@@ -1,4 +1,5 @@
 import { getProxyPoolById } from "@/models";
+import { getSettings } from "@/lib/localDb";
 
 // Safely normalize any value into a trimmed string.
 function normalizeString(value) {
@@ -38,6 +39,8 @@ function normalizeLegacyProxy(providerSpecificData = {}) {
  */
 export async function resolveConnectionProxyConfig(providerSpecificData = {}) {
   try {
+    const settings = await getSettings();
+    const proxyHeadersTimeout = Number(settings?.connectionProxyHeadersTimeoutMs) || undefined;
     const proxyPoolIdRaw = normalizeString(providerSpecificData?.proxyPoolId);
 
     // "__none__" means explicitly disabled
@@ -81,6 +84,7 @@ export async function resolveConnectionProxyConfig(providerSpecificData = {}) {
             strictProxy: proxyPool.strictProxy === true,
 
             vercelRelayUrl: proxyUrl, // Still mapped to vercelRelayUrl in the unified payload since they use the exact same header spec
+            connectionProxyHeadersTimeoutMs: proxyHeadersTimeout,
           };
         }
 
@@ -98,6 +102,7 @@ export async function resolveConnectionProxyConfig(providerSpecificData = {}) {
           connectionNoProxy: noProxy,
 
           strictProxy: proxyPool.strictProxy === true,
+          connectionProxyHeadersTimeoutMs: proxyHeadersTimeout,
         };
       }
     }
@@ -115,6 +120,7 @@ export async function resolveConnectionProxyConfig(providerSpecificData = {}) {
         proxyPool: null,
 
         ...legacy,
+        connectionProxyHeadersTimeoutMs: proxyHeadersTimeout,
       };
     }
 
@@ -130,6 +136,7 @@ export async function resolveConnectionProxyConfig(providerSpecificData = {}) {
       proxyPool: null,
 
       ...legacy,
+      connectionProxyHeadersTimeoutMs: proxyHeadersTimeout,
     };
   } catch (error) {
     console.error(
@@ -148,6 +155,7 @@ export async function resolveConnectionProxyConfig(providerSpecificData = {}) {
       connectionNoProxy: "",
 
       strictProxy: false,
+      connectionProxyHeadersTimeoutMs: undefined,
     };
   }
 }

@@ -170,7 +170,7 @@ export const ANTIGRAVITY_DEFAULT_SYSTEM =
 
 // Proactive token refresh lead times per provider (ms)
 export const REFRESH_LEAD_MS = {
-  codex: 5 * 24 * 60 * 60 * 1000, // 5 days
+  codex: 2 * 60 * 60 * 1000, // 2 hours
   claude: 4 * 60 * 60 * 1000, // 4 hours
   iflow: 24 * 60 * 60 * 1000, // 24 hours
   qwen: 20 * 60 * 1000, // 20 minutes

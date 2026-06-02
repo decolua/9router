@@ -196,6 +196,12 @@ export default function ProviderDetailPage() {
     handleManualRefreshSelected,
     clearManualRefreshResults,
     handleUpdateProxy,
+    warmupRunning,
+    warmupResults,
+    warmupSummary,
+    handleWarmupSelected,
+    handleWarmupSingle,
+    clearWarmupResults,
   } = useProviderDetailConnections({
     providerId,
     isCompatible,
@@ -438,6 +444,12 @@ export default function ProviderDetailPage() {
         clearSelection={clearSelection}
         clearManualRefreshResults={clearManualRefreshResults}
         handleToggleConnectionsSort={handleToggleConnectionsSort}
+        warmupRunning={warmupRunning}
+        warmupResults={warmupResults}
+        warmupSummary={warmupSummary}
+        handleWarmupSelected={handleWarmupSelected}
+        handleWarmupSingle={handleWarmupSingle}
+        clearWarmupResults={clearWarmupResults}
         handleAutoPriorityVisibleConnections={
           handleAutoPriorityVisibleConnections
         }

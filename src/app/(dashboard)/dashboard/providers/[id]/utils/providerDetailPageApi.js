@@ -161,3 +161,22 @@ export async function fetchKilocodeFreeModels() {
   const res = await fetch("/api/providers/kilo/free-models");
   return res.json();
 }
+
+export async function warmupProviderConnection(connectionId, options = {}) {
+  const res = await fetch(`/api/providers/${connectionId}/warmup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(options),
+  });
+  return { res, data: await res.json() };
+}
+
+export async function warmupSelectedConnections(connectionIds, options = {}) {
+  const res = await fetch("/api/providers/warmup-batch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connectionIds, options }),
+  });
+  return { res, data: await res.json() };
+}
+

@@ -59,6 +59,18 @@ export function ProfileNetworkCard({
               <p className="text-xs sm:text-sm text-text-muted">Comma-separated hostnames/domains to bypass the proxy.</p>
             </div>
 
+            <div className="flex flex-col gap-2 pt-2 border-t border-border/50">
+              <label className="font-medium text-sm sm:text-base">Proxy Timeout (ms)</label>
+              <Input
+                type="number"
+                placeholder="30000"
+                value={proxyForm.connectionProxyHeadersTimeoutMs}
+                onChange={(e) => updateProxyForm("connectionProxyHeadersTimeoutMs", e.target.value)}
+                disabled={loading || proxyLoading}
+              />
+              <p className="text-xs sm:text-sm text-text-muted">Timeout for connection proxy headers in milliseconds. Default is 30000 (30 seconds).</p>
+            </div>
+
             <div className="pt-2 border-t border-border/50 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
               <Button
                 type="button"

@@ -54,6 +54,7 @@ export async function POST(request) {
         await updateProviderCredentials(connection.id, {
           accessToken: newCredentials.accessToken,
           refreshToken: newCredentials.refreshToken,
+          expiresIn: newCredentials.expiresIn,
           providerSpecificData: newCredentials.providerSpecificData,
         });
         Object.assign(credentials, newCredentials);

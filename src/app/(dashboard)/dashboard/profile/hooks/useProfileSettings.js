@@ -34,7 +34,11 @@ export function useProfileSettings() {
   const [oidcRedirectUri] = useState(getOidcRedirectUri);
   const [oidcExpanded, setOidcExpanded] = useState(false);
   const importFileRef = useRef(null);
-  const [proxyForm, setProxyForm] = useState({ outboundProxyUrl: "", outboundNoProxy: "" });
+  const [proxyForm, setProxyForm] = useState({
+    outboundProxyUrl: "",
+    outboundNoProxy: "",
+    connectionProxyHeadersTimeoutMs: "",
+  });
   const [proxyStatus, setProxyStatus] = useState(EMPTY_STATUS);
   const [proxyLoading, setProxyLoading] = useState(false);
   const [proxyTestLoading, setProxyTestLoading] = useState(false);
@@ -50,6 +54,7 @@ export function useProfileSettings() {
         setProxyForm({
           outboundProxyUrl: data?.outboundProxyUrl || "",
           outboundNoProxy: data?.outboundNoProxy || "",
+          connectionProxyHeadersTimeoutMs: data?.connectionProxyHeadersTimeoutMs || "",
         });
       })
       .catch((err) => console.error("Failed to fetch settings:", err))
@@ -68,6 +73,9 @@ export function useProfileSettings() {
       const { ok, data } = await patchSettings({
         outboundProxyUrl: proxyForm.outboundProxyUrl,
         outboundNoProxy: proxyForm.outboundNoProxy,
+        connectionProxyHeadersTimeoutMs: proxyForm.connectionProxyHeadersTimeoutMs
+          ? parseInt(proxyForm.connectionProxyHeadersTimeoutMs, 10)
+          : null,
       });
       if (ok) {
         updateSettings(data);

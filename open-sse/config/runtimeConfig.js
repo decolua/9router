@@ -57,7 +57,7 @@ export const FETCH_CONNECT_TIMEOUT_MS = parseInt(
 
 // Connection proxy headers timeout: abort slow proxy paths before account fallback stalls.
 export const CONNECTION_PROXY_HEADERS_TIMEOUT_MS = parseInt(
-  process.env.CONNECTION_PROXY_HEADERS_TIMEOUT_MS || String(10 * 1000),
+  process.env.CONNECTION_PROXY_HEADERS_TIMEOUT_MS || String(30 * 1000),
   10,
 );
 
