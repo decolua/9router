@@ -541,6 +541,7 @@ export function useProviderDetailConnections({
   const handleManualRefreshSelected = async () => {
     if (selectedConnectionIds.length === 0 || manualRefreshing) return;
 
+    setConnectionsSortDirection(null);
     setManualRefreshing(true);
     setManualRefreshSummary(null);
     try {
@@ -552,21 +553,26 @@ export function useProviderDetailConnections({
         return;
       }
 
-      const nextResults = Object.fromEntries(
-        (data.results || []).map((result) => [
-          result.connectionId,
-          result.ok
-            ? { state: "success", error: null }
-            : { state: "failed", error: result.error || "failed" },
-        ]),
-      );
+      const nextResults = {};
+      (data.results || []).forEach((result) => {
+        const foundConn = connectionsRef.current.find(
+          (c) => c.id.toLowerCase() === result.connectionId.toLowerCase(),
+        );
+        const key = foundConn ? foundConn.id : result.connectionId;
+        nextResults[key] = result.ok
+          ? { state: "success", error: null }
+          : { state: "failed", error: result.error || "failed" };
+      });
       setManualRefreshResults(nextResults);
       setManualRefreshSummary(data.summary || null);
 
       if (data.results && Array.isArray(data.results)) {
         setConnections((prevConnections) => {
           const next = prevConnections.map((conn) => {
-            const match = data.results.find((r) => r.connectionId === conn.id && r.ok);
+            const match = data.results.find(
+              (r) =>
+                r.connectionId.toLowerCase() === conn.id.toLowerCase() && r.ok,
+            );
             if (match && match.expiresAt) {
               return {
                 ...conn,
@@ -579,6 +585,23 @@ export function useProviderDetailConnections({
           return next;
         });
       }
+
+      // Automatically clear refreshed badge after 3 seconds
+      setTimeout(() => {
+        setManualRefreshResults((prev) => {
+          const updated = { ...prev };
+          (data.results || []).forEach((r) => {
+            if (r.ok) {
+              const foundConn = connectionsRef.current.find(
+                (c) => c.id.toLowerCase() === r.connectionId.toLowerCase(),
+              );
+              const key = foundConn ? foundConn.id : r.connectionId;
+              delete updated[key];
+            }
+          });
+          return updated;
+        });
+      }, 3000);
     } catch (error) {
       console.log("Error refreshing selected Codex accounts:", error);
       alert("Failed to refresh selected Codex accounts");
@@ -634,7 +657,10 @@ export function useProviderDetailConnections({
     }));
 
     try {
-      const { res, data } = await warmupProviderConnection(connectionId, options);
+      const { res, data } = await warmupProviderConnection(
+        connectionId,
+        options,
+      );
       const valid = !!data?.valid;
 
       setWarmupResults((prev) => ({
