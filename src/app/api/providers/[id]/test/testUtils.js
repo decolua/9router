@@ -23,6 +23,28 @@ import {
 } from "@/lib/oauth/constants/oauth";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
 
+function getFriendlyErrorMessage(err) {
+  if (!err) return "Unknown error";
+  const base = err.message || String(err);
+  const causeCode = err.cause?.code || err.code;
+  const causeMessage = err.cause?.message;
+
+  let msg = base;
+  if (causeMessage && causeMessage !== base) {
+    msg = causeCode ? `${base}: ${causeMessage} (${causeCode})` : `${base}: ${causeMessage}`;
+  } else if (causeCode && !base.includes(causeCode)) {
+    msg = `${base} (${causeCode})`;
+  }
+
+  if (msg.includes("Request was cancelled") || msg.includes("request was cancelled")) {
+    msg += " (Proxy is likely offline or unreachable)";
+  } else if (msg.includes("Connect Timeout") || msg.includes("UND_ERR_CONNECT_TIMEOUT")) {
+    msg += " (Proxy connection timed out)";
+  }
+
+  return msg;
+}
+
 // OAuth provider test endpoints
 const OAUTH_TEST_CONFIG = {
   claude: { checkExpiry: true, refreshable: true },
@@ -436,7 +458,7 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
       return { valid: false, error: "Access denied", refreshed };
     return { valid: false, error: `API returned ${res.status}`, refreshed };
   } catch (err) {
-    return { valid: false, error: err.message, refreshed };
+    return { valid: false, error: getFriendlyErrorMessage(err), refreshed };
   }
 }
 
@@ -465,6 +487,7 @@ async function fetchWithConnectionProxy(
     connectionProxyEnabled: true,
     connectionProxyUrl: effectiveProxy.connectionProxyUrl,
     connectionNoProxy: effectiveProxy.connectionNoProxy || "",
+    strictProxy: true,
   });
 }
 
@@ -485,7 +508,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         error: res.ok ? null : "Invalid API key or base URL",
       };
     } catch (err) {
-      return { valid: false, error: err.message };
+      return { valid: false, error: getFriendlyErrorMessage(err) };
     }
   }
 
@@ -995,7 +1018,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid: false, error: "Provider test not supported" };
     }
   } catch (err) {
-    return { valid: false, error: err.message };
+    return { valid: false, error: getFriendlyErrorMessage(err) };
   }
 }
 
@@ -1424,7 +1447,7 @@ export async function warmupSingleConnection(id) {
   try {
     result = await executeWarmup(connection, effectiveProxy);
   } catch (err) {
-    result = { valid: false, error: err.message };
+    result = { valid: false, error: getFriendlyErrorMessage(err) };
   }
 
   const latencyMs = Date.now() - start;
