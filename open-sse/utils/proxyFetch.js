@@ -288,7 +288,10 @@ function sanitizeProxyError(error) {
   const code = normalizeString(error?.code);
   const message = normalizeString(error?.message)
     .replace(/\b(?:https?|socks5?|socks4):\/\/[^\s]+/gi, "<redacted-url>")
-    .replace(/(proxy-authorization|authorization)\s*[:=]\s*[^\s,;]+/gi, "$1=<redacted>")
+    .replace(
+      /(proxy-authorization|authorization)\s*[:=]\s*[^\s,;]+/gi,
+      "$1=<redacted>",
+    )
     .slice(0, 240);
 
   return `${name}${code ? `/${code}` : ""}${message ? `: ${message}` : ""}`;
@@ -296,13 +299,20 @@ function sanitizeProxyError(error) {
 
 function resolveProxyHeadersTimeoutMs(proxyOptions) {
   const configured = Number(
-    proxyOptions?.connectionProxyHeadersTimeoutMs ?? proxyOptions?.headersTimeoutMs,
+    proxyOptions?.connectionProxyHeadersTimeoutMs ??
+      proxyOptions?.headersTimeoutMs,
   );
   if (Number.isFinite(configured) && configured > 0) return configured;
   return CONNECTION_PROXY_HEADERS_TIMEOUT_MS;
 }
 
-async function fetchViaProxyWithHeadersTimeout(url, options, dispatcher, timing, proxyOptions) {
+async function fetchViaProxyWithHeadersTimeout(
+  url,
+  options,
+  dispatcher,
+  timing,
+  proxyOptions,
+) {
   const timeoutMs = resolveProxyHeadersTimeoutMs(proxyOptions);
   timing.proxyHeadersTimeoutMs = timeoutMs;
 
@@ -313,13 +323,17 @@ async function fetchViaProxyWithHeadersTimeout(url, options, dispatcher, timing,
     if (upstreamSignal.aborted) controller.abort(upstreamSignal.reason);
     else {
       upstreamAbortListener = () => controller.abort(upstreamSignal.reason);
-      upstreamSignal.addEventListener("abort", upstreamAbortListener, { once: true });
+      upstreamSignal.addEventListener("abort", upstreamAbortListener, {
+        once: true,
+      });
     }
   }
 
   const timer = setTimeout(() => {
     timing.proxyHeadersTimedOut = true;
-    controller.abort(new DOMException("Connection proxy headers timed out", "TimeoutError"));
+    controller.abort(
+      new DOMException("Connection proxy headers timed out", "TimeoutError"),
+    );
   }, timeoutMs);
 
   try {
@@ -579,10 +593,23 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
       );
       timing.mode = "direct-fallback";
       timing.directFallbackStartAt = Date.now();
-      const response = await originalFetch(url, options);
-      timing.headersAt = Date.now();
-      response.__timing = timing;
-      return response;
+      try {
+        const response = await originalFetch(url, options);
+        timing.headersAt = Date.now();
+        response.__timing = timing;
+        return response;
+      } catch (fallbackError) {
+        const sanitizedFallbackError = sanitizeProxyError(fallbackError);
+        console.error(
+          `[ProxyFetch] Direct fallback also failed: ${sanitizedFallbackError}`,
+        );
+        const combinedError = new Error(
+          `Proxy failed (${sanitizedProxyError}) and direct fallback also failed (${sanitizedFallbackError})`,
+        );
+        combinedError.name = fallbackError.name;
+        combinedError.status = fallbackError.status || 502;
+        throw combinedError;
+      }
     }
   }
 
