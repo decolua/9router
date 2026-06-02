@@ -472,6 +472,7 @@ async function fetchWithConnectionProxy(
     const { proxyAwareFetch } = await import("open-sse/utils/proxyFetch.js");
     return proxyAwareFetch(url, options, {
       vercelRelayUrl: effectiveProxy.vercelRelayUrl,
+      connectionProxyHeadersTimeoutMs: effectiveProxy.connectionProxyHeadersTimeoutMs,
     });
   }
 
@@ -488,6 +489,7 @@ async function fetchWithConnectionProxy(
     connectionProxyUrl: effectiveProxy.connectionProxyUrl,
     connectionNoProxy: effectiveProxy.connectionNoProxy || "",
     strictProxy: true,
+    connectionProxyHeadersTimeoutMs: effectiveProxy.connectionProxyHeadersTimeoutMs,
   });
 }
 
