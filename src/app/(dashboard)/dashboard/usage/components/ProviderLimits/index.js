@@ -47,7 +47,17 @@ function sortVisibleConnections(
     });
   }
 
-  if (!expiringFirst) return connections;
+  if (!expiringFirst) {
+    return [...connections].sort((a, b) => {
+      const priorityA = a.priority ?? Number.MAX_SAFE_INTEGER;
+      const priorityB = b.priority ?? Number.MAX_SAFE_INTEGER;
+      if (priorityA !== priorityB) return priorityA - priorityB;
+      return (
+        (a.provider || "").localeCompare(b.provider || "") ||
+        (getConnectionLabel(a) || "").localeCompare(getConnectionLabel(b) || "")
+      );
+    });
+  }
 
   const getEarliestResetTime = (connection) => {
     const resetTimes = (quotaData[connection.id]?.quotas || [])
@@ -1023,9 +1033,16 @@ export default function ProviderLimits() {
                         />
                       </div>
                       <div className="min-w-0">
-                        <h3 className="text-sm font-semibold text-text-primary capitalize truncate">
-                          {conn.provider}
-                        </h3>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <h3 className="text-sm font-semibold text-text-primary capitalize truncate">
+                            {conn.provider}
+                          </h3>
+                          {conn.priority !== undefined && conn.priority !== null && (
+                            <span className="shrink-0 rounded bg-black/5 px-1.5 py-0.5 text-[10px] font-medium text-text-muted dark:bg-white/5" title={`Priority: ${conn.priority}`}>
+                              #{conn.priority}
+                            </span>
+                          )}
+                        </div>
                         {getConnectionLabel(conn) ? (
                           <p className="text-xs text-text-muted truncate">
                             {getConnectionLabel(conn)}
