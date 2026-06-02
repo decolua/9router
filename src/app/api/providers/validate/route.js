@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { spawn } from "child_process";
 import { getProviderNodeById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
@@ -81,6 +82,47 @@ async function probeMediaProvider(provider, apiKey) {
   return res.status !== 401 && res.status !== 403;
 }
 
+function validateCommandCodeCli() {
+  return new Promise((resolve) => {
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    const child = spawn("cmd", ["--model", "xiaomi/mimo-v2.5-pro", "-p", "Say pong only", "--skip-onboarding", "--trust", "--max-turns", "1"], { shell: false, windowsHide: true });
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+    const timer = setTimeout(() => {
+      child.kill("SIGTERM");
+      finish({ valid: false, error: "Command Code CLI timed out after 20s" });
+    }, 20000);
+    child.stdout?.on?.("data", (chunk) => { stdout += chunk.toString(); });
+    child.stderr?.on?.("data", (chunk) => { stderr += chunk.toString(); });
+    child.on("error", (err) => {
+      if (err?.code === "ENOENT") {
+        finish({ valid: false, error: "Command Code CLI not found. Install with: npm i -g command-code" });
+        return;
+      }
+      finish({ valid: false, error: err.message || "Command Code CLI failed to start" });
+    });
+    child.on("close", (code) => {
+      if (settled) return;
+      const text = (stderr || stdout || "").trim();
+      if (code === 0) {
+        finish({ valid: true });
+        return;
+      }
+      if (/login|auth|authenticate|unauthorized|forbidden/i.test(text)) {
+        finish({ valid: false, error: "Command Code CLI is not authenticated. Run: cmd login" });
+        return;
+      }
+      finish({ valid: false, error: "Command Code CLI validation failed" + (text ? ": " + text.slice(0, 400) : "") });
+    });
+  });
+}
+
 // POST /api/providers/validate - Validate API key with provider
 export async function POST(request) {
   try {
@@ -98,6 +140,14 @@ export async function POST(request) {
 
     // Validate with each provider
     try {
+      if (provider === "commandcode-cli") {
+        const result = await validateCommandCodeCli();
+        return NextResponse.json({
+          valid: result.valid,
+          error: result.valid ? null : result.error,
+        });
+      }
+
       if (isOpenAICompatibleProvider(provider)) {
         const node = await getProviderNodeById(provider);
         if (!node) {

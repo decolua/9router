@@ -1316,3 +1316,29 @@ MIT License - see [LICENSE](LICENSE) for details.
 <div align="center">
   <sub>Built with ❤️ for developers who code 24/7</sub>
 </div>
+
+### Command Code CLI Provider
+
+9Router can route chat completions through a locally installed Command Code CLI without using the Command Code Provider API.
+
+Requirements:
+
+```bash
+npm i -g command-code
+cmd login
+cmd --model xiaomi/mimo-v2.5-pro -p "Say hello" --skip-onboarding --trust --max-turns 4
+```
+
+Model IDs use the `cccli/` prefix. The part after `cccli/` is passed directly to the CLI:
+
+- `cccli/deepseek/deepseek-v4-pro` -> `cmd --model deepseek/deepseek-v4-pro`
+- `cccli/moonshotai/Kimi-K2.5` -> `cmd --model moonshotai/Kimi-K2.5`
+- `cccli/xiaomi/mimo-v2.5-pro` -> `cmd --model xiaomi/mimo-v2.5-pro`
+
+Model discovery order:
+
+1. If `providerSpecificData.commandCodeApiKey` or `COMMAND_CODE_API_KEY` is set, 9Router calls `GET https://api.commandcode.ai/provider/v1/models` for listing only.
+2. If API discovery fails or no key is configured, 9Router runs `cmd --list-models` with a 10 second timeout.
+3. If CLI discovery fails or hangs, 9Router uses a static fallback catalog including Claude, GPT, Kimi, GLM, MiniMax, DeepSeek, Qwen, Step, MiMo, and Gemini model IDs.
+
+The first implementation returns normal non-streaming OpenAI-compatible JSON. The local CLI must already be logged in, and process startup can be slower than remote API providers.
