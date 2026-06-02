@@ -126,8 +126,11 @@ describe("openaiToClaudeRequest", () => {
 
 describe("openaiToClaudeResponse", () => {
   it("omits empty Read pages tool argument before emitting Claude input deltas", () => {
+    // Since #1144 tool-call args are buffered and sanitized once at finish_reason
+    // (not per-chunk), so feed the args chunk then a finish chunk and assert on the
+    // single emitted input_json_delta.
     const state = { toolCalls: new Map() };
-    const chunk = {
+    const argsChunk = {
       id: "chatcmpl-test",
       model: "gpt-test",
       choices: [{
@@ -148,8 +151,14 @@ describe("openaiToClaudeResponse", () => {
         }
       }]
     };
+    const finishChunk = {
+      id: "chatcmpl-test",
+      model: "gpt-test",
+      choices: [{ delta: {}, finish_reason: "tool_calls" }]
+    };
 
-    const result = openaiToClaudeResponse(chunk, state);
+    openaiToClaudeResponse(argsChunk, state);
+    const result = openaiToClaudeResponse(finishChunk, state);
     const inputDelta = result.find(event => event.delta?.type === "input_json_delta");
 
     expect(inputDelta).toBeDefined();
