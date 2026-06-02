@@ -79,3 +79,5 @@ gitbook/README.md
 docker-compose.yml
 t.name).join('
 
+data/  
+backup-data/ 
