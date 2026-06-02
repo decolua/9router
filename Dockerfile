@@ -32,6 +32,8 @@ COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/open-sse ./open-sse
 # Next file tracing can omit sibling files; MITM runs server.js as a separate process.
 COPY --from=builder /app/src/mitm ./src/mitm
+# MITM runtime requires shared constants (mitmToolHosts.js, colors.js etc.)
+COPY --from=builder /app/src/shared/constants ./src/shared/constants
 # Standalone node_modules may omit deps only required by the MITM child process.
 COPY --from=builder /app/node_modules/node-forge ./node_modules/node-forge
 # Ensure `next` is available at runtime in case tracing did not include it.

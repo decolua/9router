@@ -15,6 +15,7 @@ const DEFAULT_SETTINGS = {
   comboStrategy: "fallback",
   comboStickyRoundRobinLimit: 1,
   comboStrategies: {},
+  ruBypassEnabled: false,
   requireLogin: true,
   tunnelDashboardAccess: true,
   authMode: "password",
