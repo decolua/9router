@@ -300,12 +300,16 @@ export async function markAccountUnavailable(
     lowerError.includes("unauthenticated");
 
   const isReachLimit =
+    status === 402 ||
     lowerError.includes("reach limit") ||
+    lowerError.includes("reached the limit") ||
+    lowerError.includes("reached limit") ||
     lowerError.includes("quota exceeded") ||
     lowerError.includes("insufficient_quota") ||
     lowerError.includes("usage limit") ||
     lowerError.includes("limit has been reached") ||
-    lowerError.includes("limit reached");
+    lowerError.includes("limit reached") ||
+    lowerError.includes("monthly_request_count");
 
   if (isReachLimit || isInvalidToken) {
     const reason =
