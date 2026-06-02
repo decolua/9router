@@ -995,6 +995,12 @@ function formatMiniMaxQuotaName(model) {
   const rawName = getMiniMaxModelName(model);
   if (!rawName) return "MiniMax";
 
+  // M3+ shared quota pool: MiniMax reports M-series as a single wildcard
+  // bucket ("MiniMax-M*"). Newer responses rename it to plain "general".
+  // Render both as a friendly series label rather than leaking the
+  // asterisk or the vague "general" word to the UI.
+  if (rawName === "MiniMax-M*" || rawName === "general") return "M-series";
+
   return rawName
     .replace(/[_-]+/g, " ")
     .replace(/\s+/g, " ")
@@ -1003,6 +1009,15 @@ function formatMiniMaxQuotaName(model) {
     .replace(/\bTo\b/g, "to")
     .replace(/\bTts\b/g, "TTS")
     .replace(/\bHd\b/g, "HD");
+}
+
+function getMiniMaxProvidedPercent(model, snakeKey, camelKey) {
+  if (!model || typeof model !== "object") return null;
+  const raw = model[snakeKey] ?? model[camelKey];
+  if (raw === null || raw === undefined) return null;
+  const num = Number(raw);
+  if (!Number.isFinite(num)) return null;
+  return Math.max(0, Math.min(100, num));
 }
 
 function getMiniMaxSessionTotal(model) {
@@ -1014,7 +1029,12 @@ function getMiniMaxWeeklyTotal(model) {
 }
 
 function hasMiniMaxQuota(model) {
-  return getMiniMaxSessionTotal(model) > 0 || getMiniMaxWeeklyTotal(model) > 0;
+  // Old format has real count totals; M3-era M-series buckets ship percent-only
+  // (count fields are 0) so accept those too.
+  if (getMiniMaxSessionTotal(model) > 0 || getMiniMaxWeeklyTotal(model) > 0) return true;
+  if (getMiniMaxProvidedPercent(model, "current_interval_remaining_percent", "currentIntervalRemainingPercent") !== null) return true;
+  if (getMiniMaxProvidedPercent(model, "current_weekly_remaining_percent", "currentWeeklyRemainingPercent") !== null) return true;
+  return false;
 }
 
 function getMiniMaxResetAt(model, capturedAtMs, remainsSnake, remainsCamel, endSnake, endCamel) {
@@ -1023,30 +1043,50 @@ function getMiniMaxResetAt(model, capturedAtMs, remainsSnake, remainsCamel, endS
   return parseResetTime(getMiniMaxField(model, endSnake, endCamel));
 }
 
-function buildMiniMaxQuota(total, count, resetAt, countMeansRemaining) {
+function buildMiniMaxQuota(total, count, resetAt, countMeansRemaining, providedPercent = null) {
   const safeTotal = Math.max(0, total);
   const used = countMeansRemaining ? Math.max(safeTotal - count, 0) : Math.min(Math.max(0, count), safeTotal);
   const remaining = Math.max(safeTotal - used, 0);
+  // M-series buckets ship percent-only (count = 0). Prefer the upstream value
+  // when present, otherwise fall back to the computed percentage. When the
+  // quota is unbounded (no count) and no upstream percent is available, surface
+  // the percent anyway as long as it is defined.
+  const remainingPercentage = providedPercentage(providedPercent, remaining, safeTotal);
   return {
     used,
     total: safeTotal,
     remaining,
-    remainingPercentage: safeTotal > 0 ? Math.max(0, Math.min(100, (remaining / safeTotal) * 100)) : 0,
+    remainingPercentage,
     resetAt,
     unlimited: false,
   };
 }
 
-function addMiniMaxQuota(quotas, key, model, getTotal, countSnake, countCamel, resetArgs, countMeansRemaining) {
+function providedPercentage(provided, remaining, total) {
+  if (provided !== null && provided !== undefined && Number.isFinite(provided)) {
+    return Math.max(0, Math.min(100, provided));
+  }
+  return total > 0 ? Math.max(0, Math.min(100, (remaining / total) * 100)) : 0;
+}
+
+function addMiniMaxQuota(quotas, key, model, getTotal, countSnake, countCamel, percentSnake, percentCamel, resetArgs, countMeansRemaining) {
   const total = getTotal(model);
-  if (total <= 0) return;
+  const providedPercent = getMiniMaxProvidedPercent(model, percentSnake, percentCamel);
+  if (total <= 0 && providedPercent === null) return;
 
   const count = Math.max(0, Number(getMiniMaxField(model, countSnake, countCamel)) || 0);
+  // For percent-only rows the API never tells us a real total. Normalize to
+  // 100 so the UI bar fills correctly (e.g. 70% remaining → "30 / 100, 70%").
+  const effectiveTotal = total > 0 ? total : 100;
+  const effectiveCount = total > 0
+    ? count
+    : Math.max(0, Math.round(effectiveTotal * (1 - providedPercent / 100)));
   quotas[key] = buildMiniMaxQuota(
-    total,
-    count,
+    effectiveTotal,
+    effectiveCount,
     getMiniMaxResetAt(model, ...resetArgs),
-    countMeansRemaining
+    countMeansRemaining,
+    providedPercent
   );
 }
 
@@ -1122,6 +1162,8 @@ async function getMiniMaxUsage(apiKey, provider, proxyOptions = null) {
           getMiniMaxSessionTotal,
           "current_interval_usage_count",
           "currentIntervalUsageCount",
+          "current_interval_remaining_percent",
+          "currentIntervalRemainingPercent",
           [capturedAtMs, "remains_time", "remainsTime", "end_time", "endTime"],
           countMeansRemaining
         );
@@ -1133,6 +1175,8 @@ async function getMiniMaxUsage(apiKey, provider, proxyOptions = null) {
           getMiniMaxWeeklyTotal,
           "current_weekly_usage_count",
           "currentWeeklyUsageCount",
+          "current_weekly_remaining_percent",
+          "currentWeeklyRemainingPercent",
           [capturedAtMs, "weekly_remains_time", "weeklyRemainsTime", "weekly_end_time", "weeklyEndTime"],
           countMeansRemaining
         );
