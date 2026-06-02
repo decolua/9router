@@ -145,6 +145,37 @@ describe("MiniMax usage", () => {
     });
   });
 
+  it("normalizes M-series percent-only buckets on the coding_plan (countMeansRemaining) endpoint too", async () => {
+    proxyAwareFetch.mockResolvedValueOnce(
+      usageResponse([
+        {
+          model_name: "general",
+          current_interval_remaining_percent: 80,
+          current_weekly_remaining_percent: 95,
+        },
+      ])
+    );
+
+    const usage = await getUsageForProvider({
+      provider: "minimax-cn",
+      apiKey: "test-key",
+    });
+
+    expect(usage.message).toBeUndefined();
+    expect(usage.quotas["M-series (5h)"]).toMatchObject({
+      used: 20,
+      total: 100,
+      remaining: 80,
+      remainingPercentage: 80,
+    });
+    expect(usage.quotas["M-series (7d)"]).toMatchObject({
+      used: 5,
+      total: 100,
+      remaining: 95,
+      remainingPercentage: 95,
+    });
+  });
+
   it("renders the M3-era MiniMax-M* wildcard as a friendly series label", async () => {
     proxyAwareFetch.mockResolvedValueOnce(
       usageResponse([

@@ -1075,12 +1075,19 @@ function addMiniMaxQuota(quotas, key, model, getTotal, countSnake, countCamel, p
   if (total <= 0 && providedPercent === null) return;
 
   const count = Math.max(0, Number(getMiniMaxField(model, countSnake, countCamel)) || 0);
-  // For percent-only rows the API never tells us a real total. Normalize to
-  // 100 so the UI bar fills correctly (e.g. 70% remaining → "30 / 100, 70%").
-  const effectiveTotal = total > 0 ? total : 100;
-  const effectiveCount = total > 0
-    ? count
-    : Math.max(0, Math.round(effectiveTotal * (1 - providedPercent / 100)));
+  let effectiveTotal = total;
+  let effectiveCount = count;
+  if (total <= 0) {
+    // M-series bucket: API only ships *_remaining_percent (count = 0). Normalize
+    // to total=100. The downstream buildMiniMaxQuota treats the count as
+    // "used" or "remaining" depending on countMeansRemaining, so the synthetic
+    // count has to match that semantic — otherwise the UI flips the percentage.
+    effectiveTotal = 100;
+    const pct = providedPercent;
+    effectiveCount = countMeansRemaining
+      ? Math.round(effectiveTotal * (pct / 100))
+      : Math.round(effectiveTotal * (1 - pct / 100));
+  }
   quotas[key] = buildMiniMaxQuota(
     effectiveTotal,
     effectiveCount,
