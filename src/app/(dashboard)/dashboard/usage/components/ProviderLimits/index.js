@@ -540,62 +540,19 @@ export default function ProviderLimits() {
       const visibleConnections = await fetchConnections(page);
       setConnectionsLoading(false);
 
-      const cache = getQuotaCache();
-      const nextLoading = {};
-      const cachedQuotas = {};
-      const connectionsToFetch = [];
-      let latestCachedAt = null;
+      // Always fetch fresh quota on mount, no cache display
+      setLoading(buildLoadingState(visibleConnections));
+      setErrors((prev) =>
+        filterQuotaStateByConnections(prev, visibleConnections),
+      );
+      setQuotaData((prev) =>
+        filterQuotaStateByConnections(prev, visibleConnections),
+      );
 
-      visibleConnections.forEach((conn) => {
-        const cachedEntry = cache[conn.id];
-        if (cachedEntry) {
-          nextLoading[conn.id] = false;
-          cachedQuotas[conn.id] = {
-            quotas: cachedEntry.quotas,
-            plan: cachedEntry.plan,
-            message: cachedEntry.message,
-            raw: cachedEntry.raw,
-          };
-          if (cachedEntry.cachedAt) {
-            const cachedTime = new Date(cachedEntry.cachedAt);
-            if (!latestCachedAt || cachedTime > latestCachedAt) {
-              latestCachedAt = cachedTime;
-            }
-          }
-        } else {
-          nextLoading[conn.id] = true;
-          connectionsToFetch.push(conn);
-        }
-      });
-
-      setLoading(nextLoading);
-      setErrors((prev) => {
-        const nextErrors = filterQuotaStateByConnections(
-          prev,
-          visibleConnections,
-        );
-        visibleConnections.forEach((conn) => {
-          if (cache[conn.id]) {
-            nextErrors[conn.id] = null;
-          }
-        });
-        return nextErrors;
-      });
-      setQuotaData((prev) => ({
-        ...filterQuotaStateByConnections(prev, visibleConnections),
-        ...cachedQuotas,
-      }));
-
-      if (latestCachedAt) {
-        setLastUpdated(latestCachedAt);
-      }
-
-      if (connectionsToFetch.length > 0) {
-        await Promise.all(
-          connectionsToFetch.map((conn) => fetchQuota(conn.id, conn.provider)),
-        );
-        setLastUpdated(new Date());
-      }
+      await Promise.all(
+        visibleConnections.map((conn) => fetchQuota(conn.id, conn.provider)),
+      );
+      setLastUpdated(new Date());
     };
 
     initializeData();

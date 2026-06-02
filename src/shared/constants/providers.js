@@ -9,7 +9,7 @@ export const FREE_PROVIDERS = {
   "gemini-cli": { id: "gemini-cli", alias: "gc", name: "Gemini CLI", icon: "terminal", color: "#4285F4", deprecated: true, deprecationNotice: RISK_NOTICE, website: "https://github.com/google-gemini/gemini-cli", notice: { signupUrl: "https://github.com/google-gemini/gemini-cli" } },
   // gitlab: { id: "gitlab", alias: "gl", name: "GitLab Duo", icon: "code", color: "#FC6D26" },
   // codebuddy: { id: "codebuddy", alias: "cb", name: "CodeBuddy", icon: "smart_toy", color: "#006EFF" },
-  // qoder: { id: "qoder", alias: "qd", name: "Qoder AI", icon: "water_drop", color: "#EC4899" },
+  qoder: { id: "qoder", alias: "qd", name: "Qoder", icon: "water_drop", color: "#EC4899", deprecated: true, deprecationNotice: RISK_NOTICE, website: "https://qoder.com", notice: { signupUrl: "https://qoder.com" } },
   // iflow: { id: "iflow", alias: "if", name: "iFlow AI", icon: "water_drop", color: "#6366F1", website: "https://iflow.cn", notice: { signupUrl: "https://iflow.cn" } },
   opencode: { id: "opencode", alias: "oc", name: "OpenCode Free", icon: "terminal", color: "#E87040", textIcon: "OC", noAuth: true, passthroughModels: true, modelsFetcher: { url: "https://opencode.ai/zen/v1/models", type: "opencode-free" } },
 };
@@ -267,6 +267,7 @@ export const USAGE_SUPPORTED_PROVIDERS = [
   "claude",
   "antigravity",
   "kiro",
+  "qoder",
   "github",
   "codex",
   "kimi-coding",
