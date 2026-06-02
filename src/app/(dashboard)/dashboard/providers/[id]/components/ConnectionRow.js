@@ -81,7 +81,9 @@ export default function ConnectionRow({
 }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
+  const [showWarmupDropdown, setShowWarmupDropdown] = useState(false);
   const proxyDropdownRef = useRef(null);
+  const warmupDropdownRef = useRef(null);
 
   const proxyPoolMap = new Map(
     (proxyPools || []).map((pool) => [pool.id, pool]),
@@ -144,6 +146,21 @@ export default function ConnectionRow({
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [showProxyDropdown]);
+
+  // Close warmup dropdown when clicking outside
+  useEffect(() => {
+    if (!showWarmupDropdown) return;
+    const handler = (e) => {
+      if (
+        warmupDropdownRef.current &&
+        !warmupDropdownRef.current.contains(e.target)
+      ) {
+        setShowWarmupDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showWarmupDropdown]);
 
   const handleSelectProxy = async (poolId) => {
     setUpdatingProxy(true);
@@ -456,17 +473,59 @@ export default function ConnectionRow({
               )}
             </div>
           )}
-          <button
-            onClick={onWarmup}
-            disabled={connection.warmedUp === true || warmupStatus?.state === "refreshing"}
-            className={`flex flex-col items-center rounded px-2 py-1 ${(connection.warmedUp === true || warmupStatus?.state === "refreshing") ? "text-text-muted/30 cursor-not-allowed" : "text-orange-500 hover:bg-orange-500/10 hover:text-orange-600"}`}
-            title={connection.warmedUp === true ? "Already warmed up" : "Warmup account"}
-          >
-            <span className="material-symbols-outlined text-[18px]">
-              {warmupStatus?.state === "refreshing" ? "progress_activity" : "local_fire_department"}
-            </span>
-            <span className="text-[10px] leading-tight">Warmup</span>
-          </button>
+          <div ref={warmupDropdownRef} className="relative">
+            <button
+              onClick={() => {
+                if (warmupStatus?.state !== "refreshing") {
+                  setShowWarmupDropdown((prev) => !prev);
+                }
+              }}
+              disabled={warmupStatus?.state === "refreshing"}
+              className={`flex flex-col items-center rounded px-2 py-1 ${warmupStatus?.state === "refreshing" ? "text-text-muted/30 cursor-not-allowed" : "text-orange-500 hover:bg-orange-500/10 hover:text-orange-600"}`}
+              title="Warmup account"
+            >
+              <span className="material-symbols-outlined text-[18px]">
+                {warmupStatus?.state === "refreshing" ? "progress_activity" : "local_fire_department"}
+              </span>
+              <span className="text-[10px] leading-tight">Warmup</span>
+            </button>
+            {showWarmupDropdown && (
+              <div className="absolute right-0 top-full z-50 mt-1 min-w-[160px] rounded-lg border border-border bg-bg py-1 shadow-lg">
+                <button
+                  onClick={() => {
+                    onWarmup({ intensity: "light" });
+                    setShowWarmupDropdown(false);
+                  }}
+                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-black/5 dark:hover:bg-white/5 text-text-main flex items-center gap-1.5"
+                >
+                  <span className="material-symbols-outlined text-[14px] text-green-500">bolt</span>
+                  Light (1 token)
+                </button>
+                <button
+                  onClick={() => {
+                    onWarmup({ intensity: "medium" });
+                    setShowWarmupDropdown(false);
+                  }}
+                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-black/5 dark:hover:bg-white/5 text-text-main flex items-center gap-1.5"
+                >
+                  <span className="material-symbols-outlined text-[14px] text-orange-500">local_fire_department</span>
+                  Medium (~500 tokens)
+                </button>
+                <button
+                  onClick={() => {
+                    if (confirm("WARNING: Heavy warmup will consume ~2,000 tokens of your actual quota and may cost money. Proceed?")) {
+                      onWarmup({ intensity: "heavy" });
+                    }
+                    setShowWarmupDropdown(false);
+                  }}
+                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-black/5 dark:hover:bg-white/5 text-text-main flex items-center gap-1.5"
+                >
+                  <span className="material-symbols-outlined text-[14px] text-red-500">warning</span>
+                  Heavy (~2,000 tokens)
+                </button>
+              </div>
+            )}
+          </div>
           <button
             onClick={onEdit}
             className="flex flex-col items-center rounded px-2 py-1 text-text-muted hover:bg-black/5 hover:text-primary dark:hover:bg-white/5"

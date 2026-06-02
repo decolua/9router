@@ -613,14 +613,14 @@ export function useProviderDetailConnections({
     }
   };
 
-  const handleWarmupSingle = async (connectionId) => {
+  const handleWarmupSingle = async (connectionId, options = {}) => {
     setWarmupResults((prev) => ({
       ...prev,
       [connectionId]: { state: "refreshing", error: null },
     }));
 
     try {
-      const { res, data } = await warmupProviderConnection(connectionId);
+      const { res, data } = await warmupProviderConnection(connectionId, options);
       const valid = !!data?.valid;
 
       setWarmupResults((prev) => ({

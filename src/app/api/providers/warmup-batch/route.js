@@ -6,7 +6,7 @@ import { warmupSingleConnection } from "../[id]/test/testUtils.js";
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { connectionIds } = body;
+    const { connectionIds, options } = body;
 
     if (!connectionIds || !Array.isArray(connectionIds)) {
       return NextResponse.json(
@@ -37,7 +37,7 @@ export async function POST(request) {
           continue;
         }
 
-        const data = await warmupSingleConnection(id);
+        const data = await warmupSingleConnection(id, options);
         results.push({
           provider: conn.provider,
           connectionId: id,

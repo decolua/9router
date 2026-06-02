@@ -5,7 +5,13 @@ import { warmupSingleConnection } from "../test/testUtils.js";
 export async function POST(request, { params }) {
   try {
     const { id } = await params;
-    const result = await warmupSingleConnection(id);
+    let options = {};
+    try {
+      options = await request.json();
+    } catch (e) {
+      // Ignore if body is empty
+    }
+    const result = await warmupSingleConnection(id, options);
 
     if (result.error === "Connection not found") {
       return NextResponse.json(

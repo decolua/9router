@@ -61,7 +61,7 @@ export default function ProviderConnectionsList({
                     : null)
                 }
                 disablePriorityControls={isConnectionsSortActive}
-                onWarmup={() => handleWarmupSingle(conn.id)}
+                onWarmup={(options) => handleWarmupSingle(conn.id, options)}
                 warmupStatus={warmupResults[conn.id] || null}
               />
             </div>

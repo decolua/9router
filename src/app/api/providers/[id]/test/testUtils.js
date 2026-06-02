@@ -1105,9 +1105,10 @@ export async function testSingleConnection(id) {
   };
 }
 
-async function executeWarmup(connection, effectiveProxy = null) {
+async function executeWarmup(connection, effectiveProxy = null, options = {}) {
   const provider = connection.provider;
   const authType = connection.authType;
+  const intensity = options.intensity || "light";
 
   if (authType === "apikey" || authType === "cookie") {
     // OpenAI or OpenAI-compatible
@@ -1164,6 +1165,16 @@ async function executeWarmup(connection, effectiveProxy = null) {
       baseUrl = baseUrl.replace(/\/$/, "");
 
       const model = getDefaultModel(provider) || "gpt-4o-mini";
+      let prompt = "hi";
+      let maxTokens = 1;
+
+      if (intensity === "medium") {
+        prompt = "Write a detailed 300-word story about space exploration. Be creative and include descriptions of stars and planets.";
+        maxTokens = 500;
+      } else if (intensity === "heavy") {
+        prompt = "Write a comprehensive 1500-word essay about the history and future of artificial intelligence in software engineering, discussing benefits and ethical implications.";
+        maxTokens = 2000;
+      }
 
       try {
         const res = await fetchWithConnectionProxy(
@@ -1176,8 +1187,8 @@ async function executeWarmup(connection, effectiveProxy = null) {
             },
             body: JSON.stringify({
               model: model,
-              messages: [{ role: "user", content: "hi" }],
-              max_tokens: 1,
+              messages: [{ role: "user", content: prompt }],
+              max_tokens: maxTokens,
             }),
           },
           effectiveProxy,
@@ -1205,6 +1216,17 @@ async function executeWarmup(connection, effectiveProxy = null) {
         baseUrl = baseUrl.slice(0, -9);
       }
 
+      let prompt = "hi";
+      let maxTokens = 1;
+
+      if (intensity === "medium") {
+        prompt = "Write a detailed 300-word story about space exploration. Be creative and include descriptions of stars and planets.";
+        maxTokens = 500;
+      } else if (intensity === "heavy") {
+        prompt = "Write a comprehensive 1500-word essay about the history and future of artificial intelligence in software engineering, discussing benefits and ethical implications.";
+        maxTokens = 2000;
+      }
+
       try {
         const res = await fetchWithConnectionProxy(
           `${baseUrl}/messages`,
@@ -1218,8 +1240,8 @@ async function executeWarmup(connection, effectiveProxy = null) {
             },
             body: JSON.stringify({
               model: "claude-3-haiku-20240307",
-              max_tokens: 1,
-              messages: [{ role: "user", content: "hi" }],
+              max_tokens: maxTokens,
+              messages: [{ role: "user", content: prompt }],
             }),
           },
           effectiveProxy,
@@ -1236,6 +1258,17 @@ async function executeWarmup(connection, effectiveProxy = null) {
 
     // Gemini
     if (provider === "gemini") {
+      let prompt = "hi";
+      let maxTokens = 1;
+
+      if (intensity === "medium") {
+        prompt = "Write a detailed 300-word story about space exploration. Be creative and include descriptions of stars and planets.";
+        maxTokens = 500;
+      } else if (intensity === "heavy") {
+        prompt = "Write a comprehensive 1500-word essay about the history and future of artificial intelligence in software engineering, discussing benefits and ethical implications.";
+        maxTokens = 2000;
+      }
+
       try {
         const res = await fetchWithConnectionProxy(
           `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${connection.apiKey}`,
@@ -1243,8 +1276,8 @@ async function executeWarmup(connection, effectiveProxy = null) {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              contents: [{ parts: [{ text: "hi" }] }],
-              generationConfig: { maxOutputTokens: 1 },
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: { maxOutputTokens: maxTokens },
             }),
           },
           effectiveProxy,
@@ -1291,6 +1324,17 @@ async function executeWarmup(connection, effectiveProxy = null) {
   let accessToken = oAuthTest.newTokens?.accessToken || connection.accessToken;
 
   if (provider === "claude") {
+    let prompt = "hi";
+    let maxTokens = 1;
+
+    if (intensity === "medium") {
+      prompt = "Write a detailed 300-word story about space exploration. Be creative and include descriptions of stars and planets.";
+      maxTokens = 500;
+    } else if (intensity === "heavy") {
+      prompt = "Write a comprehensive 1500-word essay about the history and future of artificial intelligence in software engineering, discussing benefits and ethical implications.";
+      maxTokens = 2000;
+    }
+
     try {
       const res = await fetchWithConnectionProxy(
         "https://api.anthropic.com/v1/messages",
@@ -1303,8 +1347,8 @@ async function executeWarmup(connection, effectiveProxy = null) {
           },
           body: JSON.stringify({
             model: "claude-3-haiku-20240307",
-            max_tokens: 1,
-            messages: [{ role: "user", content: "hi" }],
+            max_tokens: maxTokens,
+            messages: [{ role: "user", content: prompt }],
           }),
         },
         effectiveProxy,
@@ -1327,6 +1371,17 @@ async function executeWarmup(connection, effectiveProxy = null) {
   }
 
   if (provider === "gemini-cli" || provider === "antigravity") {
+    let prompt = "hi";
+    let maxTokens = 1;
+
+    if (intensity === "medium") {
+      prompt = "Write a detailed 300-word story about space exploration. Be creative and include descriptions of stars and planets.";
+      maxTokens = 500;
+    } else if (intensity === "heavy") {
+      prompt = "Write a comprehensive 1500-word essay about the history and future of artificial intelligence in software engineering, discussing benefits and ethical implications.";
+      maxTokens = 2000;
+    }
+
     try {
       const res = await fetchWithConnectionProxy(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`,
@@ -1337,8 +1392,8 @@ async function executeWarmup(connection, effectiveProxy = null) {
             Authorization: `Bearer ${accessToken}`,
           },
           body: JSON.stringify({
-            contents: [{ parts: [{ text: "hi" }] }],
-            generationConfig: { maxOutputTokens: 1 },
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { maxOutputTokens: maxTokens },
           }),
         },
         effectiveProxy,
@@ -1361,6 +1416,17 @@ async function executeWarmup(connection, effectiveProxy = null) {
   }
 
   if (provider === "codex") {
+    let prompt = "hi";
+    let storeValue = false;
+
+    if (intensity === "medium") {
+      prompt = "Write a detailed 300-word story about space exploration. Be creative and include descriptions of stars and planets.";
+      storeValue = true;
+    } else if (intensity === "heavy") {
+      prompt = "Write a comprehensive 1500-word essay about the history and future of artificial intelligence in software engineering, discussing benefits and ethical implications.";
+      storeValue = true;
+    }
+
     try {
       const res = await fetchWithConnectionProxy(
         "https://chatgpt.com/backend-api/codex/responses",
@@ -1374,9 +1440,9 @@ async function executeWarmup(connection, effectiveProxy = null) {
           },
           body: JSON.stringify({
             model: "gpt-5.3-codex",
-            input: [{ role: "user", content: "hi" }],
+            input: [{ role: "user", content: prompt }],
             stream: false,
-            store: false,
+            store: storeValue,
           }),
         },
         effectiveProxy,
@@ -1404,7 +1470,7 @@ async function executeWarmup(connection, effectiveProxy = null) {
 /**
  * Warmup a single connection by ID, update DB, and return result.
  */
-export async function warmupSingleConnection(id) {
+export async function warmupSingleConnection(id, options = {}) {
   const connection = await getProviderConnectionById(id);
   if (!connection)
     return {
@@ -1447,7 +1513,7 @@ export async function warmupSingleConnection(id) {
   let result;
 
   try {
-    result = await executeWarmup(connection, effectiveProxy);
+    result = await executeWarmup(connection, effectiveProxy, options);
   } catch (err) {
     result = { valid: false, error: getFriendlyErrorMessage(err) };
   }
