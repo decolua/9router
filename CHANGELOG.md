@@ -5,6 +5,9 @@
 - Add new models: Claude Opus 4.8 (Claude Code), GPT 5.4 Mini (Codex)
 
 ## Fixes
+- MITM runtime copy: include the shared MITM host contract required by `dnsConfig.js` so the data-dir server can resolve `../../shared/constants/mitmToolHosts.js`. Self-heal a missing copy even when `server.js` is unchanged (older runtimes left it out, crashing the server with `MODULE_NOT_FOUND`).
+- MITM runtime process: preserve access to bundled `node_modules` for external dependencies such as `node-forge` when the server is launched from the data-dir runtime copy.
+- MITM standalone start: copy the full `src/mitm` tree into the runtime copy so `server.js` can still resolve local requires like `./logger`.
 - Request debug logs: mask sensitive headers (authorization, API keys, cookies, tokens, secrets) before writing opt-in request/response log files.
 - DeepSeek thinking mode: echo `reasoning_content` back on follow-up/tool-call turns so OpenCode-free and custom providers no longer 400 with "reasoning_content must be passed back" (#1543)
 - Reasoning injector: match deepseek/kimi model ids case-insensitively (covers custom providers using capitalized model names)

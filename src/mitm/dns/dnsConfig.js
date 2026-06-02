@@ -3,6 +3,11 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const { log, err } = require("../logger");
+// GUARD: this is the only require from src/mitm that reaches OUTSIDE the mitm tree.
+// The MITM server runs from a loose-file copy under DATA_DIR/runtime (see manager.js),
+// so any such external require must be explicitly mirrored there by manager.js's copy
+// logic (resolveSharedMitmToolHostsPath/ensureRuntimeSharedHosts). Adding a new external
+// require without registering it will crash the runtime with MODULE_NOT_FOUND.
 const { TOOL_HOSTS } = require("../../shared/constants/mitmToolHosts.js");
 const { runElevatedPowerShell, isAdmin } = require("../winElevated.js");
 

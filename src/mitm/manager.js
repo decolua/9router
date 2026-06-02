@@ -61,30 +61,131 @@ function resolveBundledServerPath() {
   return fromCwd;
 }
 
-// Copy bundled server.js into DATA_DIR so MITM doesn't lock node_modules
+function resolveMitmSourceDir(bundledPath) {
+  if (!bundledPath) return null;
+  const candidates = [
+    path.join(process.cwd(), "src", "mitm"),
+    path.join(process.cwd(), "..", "src", "mitm"),
+  ];
+  for (const candidate of candidates) {
+    const serverPath = path.join(candidate, "server.js");
+    if (fs.existsSync(serverPath)) return candidate;
+  }
+  const bundledDir = path.dirname(bundledPath);
+  if (fs.existsSync(path.join(bundledDir, "logger.js"))) return bundledDir;
+  return null;
+}
+
+function copyRecursive(srcDir, destDir) {
+  fs.mkdirSync(destDir, { recursive: true });
+  for (const entry of fs.readdirSync(srcDir, { withFileTypes: true })) {
+    const from = path.join(srcDir, entry.name);
+    const to = path.join(destDir, entry.name);
+    if (entry.isDirectory()) {
+      copyRecursive(from, to);
+    } else if (entry.isFile()) {
+      fs.copyFileSync(from, to);
+    }
+  }
+}
+
+function copyFileIfExists(srcFile, destFile) {
+  if (!fs.existsSync(srcFile)) return false;
+  fs.mkdirSync(path.dirname(destFile), { recursive: true });
+  fs.copyFileSync(srcFile, destFile);
+  return true;
+}
+
+// Registry of src/mitm's external (outside-the-tree) require dependencies that must be
+// mirrored into the DATA_DIR runtime copy. Today that's only mitmToolHosts.js (kept in
+// src/shared because the dashboard UI consumes it too — see MitmToolCard.js). If a new
+// external require is ever added under src/mitm, register it here, or the runtime breaks
+// with MODULE_NOT_FOUND. See the matching GUARD note in dns/dnsConfig.js.
+function resolveSharedMitmToolHostsPath(sourceDir) {
+  const candidates = [
+    path.join(path.dirname(sourceDir || ""), "shared", "constants", "mitmToolHosts.js"),
+    path.join(process.cwd(), "src", "shared", "constants", "mitmToolHosts.js"),
+    path.join(process.cwd(), "..", "src", "shared", "constants", "mitmToolHosts.js"),
+  ];
+  return candidates.find((candidate) => fs.existsSync(candidate)) || null;
+}
+
+// dnsConfig requires ../../shared/constants/mitmToolHosts.js from runtime/mitm/dns,
+// so mirror that one shared contract beside the mitm tree. Kept independent of the
+// server.js size-skip below: an older runtime may have a same-size server.js but be
+// missing this file (it was only copied by newer builds), which crashed dnsConfig
+// with MODULE_NOT_FOUND. Always heal the shared file when it's absent.
+function ensureRuntimeSharedHosts(sourceDir, force = false, runtimeShared = path.join(DATA_DIR, "runtime", "shared", "constants", "mitmToolHosts.js")) {
+  if (!force && fs.existsSync(runtimeShared)) return;
+  const sharedHosts = resolveSharedMitmToolHostsPath(sourceDir);
+  if (sharedHosts) copyFileIfExists(sharedHosts, runtimeShared);
+}
+
+function findAncestorNodeModules(startPath) {
+  const found = [];
+  let dir = startPath && fs.existsSync(startPath) && fs.statSync(startPath).isDirectory()
+    ? startPath
+    : path.dirname(startPath || "");
+  while (dir && dir !== path.dirname(dir)) {
+    const candidate = path.join(dir, "node_modules");
+    if (fs.existsSync(candidate)) found.push(candidate);
+    dir = path.dirname(dir);
+  }
+  return found;
+}
+
+function buildMitmNodePath(bundledPath, existingNodePath = process.env.NODE_PATH || "") {
+  const parts = [];
+  for (const bundledNodeModules of findAncestorNodeModules(bundledPath)) {
+    if (!parts.includes(bundledNodeModules)) parts.push(bundledNodeModules);
+  }
+  for (const entry of String(existingNodePath).split(path.delimiter)) {
+    if (entry && !parts.includes(entry)) parts.push(entry);
+  }
+  return parts.join(path.delimiter);
+}
+
+function buildMitmChildEnv(apiKey, mitmRouterBase) {
+  const env = {
+    ...process.env,
+    ROUTER_API_KEY: apiKey,
+    NODE_ENV: "production",
+    MITM_ROUTER_BASE: mitmRouterBase,
+  };
+  const nodePath = buildMitmNodePath(BUNDLED_SERVER_PATH);
+  if (nodePath) {
+    // Runtime MITM lives under DATA_DIR to avoid update-time file locks, so
+    // external deps like node-forge must resolve from the original bundle.
+    env.NODE_PATH = nodePath;
+  }
+  return env;
+}
+
+// Copy MITM source tree into DATA_DIR so the spawned server keeps its local
+// relative requires (`./logger`, `./config`, etc.) intact even when Next.js
+// standalone only emits server.js.
 // (prevents EBUSY on `npm i -g 9router@latest` while MITM is running).
 function ensureRuntimeServer(bundledPath) {
   try {
     if (!bundledPath || !fs.existsSync(bundledPath)) return bundledPath;
-
-    // Dev mode: source file has relative requires (./logger, ./config...),
-    // only the bundled file inside node_modules is self-contained + safe to copy.
-    if (!bundledPath.includes(`${path.sep}node_modules${path.sep}`)) {
-      return bundledPath;
-    }
-
     const runtimeDir = path.join(DATA_DIR, "runtime", "mitm");
     const runtimeServer = path.join(runtimeDir, "server.js");
+    const sourceDir = resolveMitmSourceDir(bundledPath);
+    if (!sourceDir) return bundledPath;
 
-    // Skip copy if sizes match (bundle unchanged since last run)
+    // Skip copy if sizes match (bundle unchanged since last run), but still
+    // self-heal the shared hosts file — it may be absent from an older runtime.
     if (fs.existsSync(runtimeServer)) {
       try {
-        if (fs.statSync(bundledPath).size === fs.statSync(runtimeServer).size) return runtimeServer;
+        if (fs.statSync(bundledPath).size === fs.statSync(runtimeServer).size) {
+          ensureRuntimeSharedHosts(sourceDir);
+          return runtimeServer;
+        }
       } catch { /* recopy */ }
     }
 
-    fs.mkdirSync(runtimeDir, { recursive: true });
-    fs.copyFileSync(bundledPath, runtimeServer);
+    copyRecursive(sourceDir, runtimeDir);
+    ensureRuntimeSharedHosts(sourceDir, true);
     return runtimeServer;
   } catch (e) {
     try { log(`[MITM] runtime copy failed: ${e.message}`); } catch { /* ignore */ }
@@ -92,7 +193,8 @@ function ensureRuntimeServer(bundledPath) {
   }
 }
 
-const SERVER_PATH = ensureRuntimeServer(resolveBundledServerPath());
+const BUNDLED_SERVER_PATH = resolveBundledServerPath();
+const SERVER_PATH = ensureRuntimeServer(BUNDLED_SERVER_PATH);
 const ENCRYPT_ALGO = "aes-256-gcm";
 const ENCRYPT_SALT = "9router-mitm-pwd";
 
@@ -586,12 +688,7 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
         windowsHide: true,
         cwd: os.tmpdir(),
         stdio: ["ignore", "pipe", "pipe"],
-        env: {
-          ...process.env,
-          ROUTER_API_KEY: apiKey,
-          NODE_ENV: "production",
-          MITM_ROUTER_BASE: mitmRouterBase,
-        },
+        env: buildMitmChildEnv(apiKey, mitmRouterBase),
       }
     );
 
@@ -599,10 +696,12 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
   } else if (isSudoAvailable()) {
     // Pass HOME explicitly so os.homedir() resolves to the unprivileged user's home
     // instead of /root when sudo resets the environment.
+    const mitmNodePath = buildMitmNodePath(BUNDLED_SERVER_PATH);
     const inlineCmd = [
       `HOME=${shellQuoteSingle(os.homedir())}`,
       `ROUTER_API_KEY=${shellQuoteSingle(apiKey)}`,
       `MITM_ROUTER_BASE=${shellQuoteSingle(mitmRouterBase)}`,
+      ...(mitmNodePath ? [`NODE_PATH=${shellQuoteSingle(mitmNodePath)}`] : []),
       "NODE_ENV=production",
       shellQuoteSingle(process.execPath),
       shellQuoteSingle(effectiveServerPath),
@@ -620,12 +719,7 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
       windowsHide: true,
       cwd: os.tmpdir(),
       stdio: ["ignore", "pipe", "pipe"],
-      env: {
-        ...process.env,
-        ROUTER_API_KEY: apiKey,
-        NODE_ENV: "production",
-        MITM_ROUTER_BASE: mitmRouterBase,
-      },
+      env: buildMitmChildEnv(apiKey, mitmRouterBase),
     });
   }
 
@@ -848,4 +942,14 @@ module.exports = {
   restoreToolDNS,
   hasDnsPrivilege,
   removeAllDNSEntriesSync,
+  __test__: {
+    resolveMitmSourceDir,
+    copyRecursive,
+    copyFileIfExists,
+    resolveSharedMitmToolHostsPath,
+    ensureRuntimeSharedHosts,
+    ensureRuntimeServer,
+    findAncestorNodeModules,
+    buildMitmNodePath,
+  },
 };
