@@ -1079,3 +1079,385 @@ export async function testSingleConnection(id) {
     testedAt: new Date().toISOString(),
   };
 }
+
+async function executeWarmup(connection, effectiveProxy = null) {
+  const provider = connection.provider;
+  const authType = connection.authType;
+
+  if (authType === "apikey" || authType === "cookie") {
+    // OpenAI or OpenAI-compatible
+    if (
+      isOpenAICompatibleProvider(provider) ||
+      [
+        "openai",
+        "deepseek",
+        "groq",
+        "together",
+        "fireworks",
+        "xai",
+        "mistral",
+        "perplexity",
+        "cerebras",
+        "nebius",
+        "siliconflow",
+        "hyperbolic",
+        "chutes",
+        "nanobanana",
+        "vercel-ai-gateway",
+        "nvidia",
+        "cohere",
+      ].includes(provider)
+    ) {
+      let baseUrl = "https://api.openai.com/v1";
+      if (isOpenAICompatibleProvider(provider)) {
+        baseUrl = connection.providerSpecificData?.baseUrl;
+      } else {
+        const defaultBases = {
+          deepseek: "https://api.deepseek.com",
+          groq: "https://api.groq.com/openai/v1",
+          together: "https://api.together.xyz/v1",
+          fireworks: "https://api.fireworks.ai/inference/v1",
+          xai: "https://api.x.ai/v1",
+          mistral: "https://api.mistral.ai/v1",
+          perplexity: "https://api.perplexity.ai",
+          cerebras: "https://api.cerebras.ai/v1",
+          nebius: "https://api.studio.nebius.ai/v1",
+          siliconflow: "https://api.siliconflow.cn/v1",
+          hyperbolic: "https://api.hyperbolic.xyz/v1",
+          chutes: "https://llm.chutes.ai/v1",
+          nanobanana: "https://api.nanobananaapi.ai/v1",
+          "vercel-ai-gateway": "https://ai-gateway.vercel.sh/v1",
+          nvidia: "https://integrate.api.nvidia.com/v1",
+          cohere: "https://api.cohere.ai/v1",
+        };
+        if (defaultBases[provider]) {
+          baseUrl = defaultBases[provider];
+        }
+      }
+
+      if (!baseUrl) return { valid: false, error: "Missing base URL" };
+      baseUrl = baseUrl.replace(/\/$/, "");
+
+      const model = getDefaultModel(provider) || "gpt-4o-mini";
+
+      try {
+        const res = await fetchWithConnectionProxy(
+          `${baseUrl}/chat/completions`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${connection.apiKey}`,
+            },
+            body: JSON.stringify({
+              model: model,
+              messages: [{ role: "user", content: "hi" }],
+              max_tokens: 1,
+            }),
+          },
+          effectiveProxy,
+        );
+
+        const valid = res.status !== 401 && res.status !== 403;
+        return {
+          valid,
+          error: valid ? null : `API returned status ${res.status}`,
+        };
+      } catch (err) {
+        return { valid: false, error: err.message };
+      }
+    }
+
+    // Anthropic
+    if (isAnthropicCompatibleProvider(provider) || provider === "anthropic") {
+      let baseUrl = "https://api.anthropic.com/v1";
+      if (isAnthropicCompatibleProvider(provider)) {
+        baseUrl = connection.providerSpecificData?.baseUrl;
+      }
+      if (!baseUrl) return { valid: false, error: "Missing base URL" };
+      baseUrl = baseUrl.replace(/\/$/, "");
+      if (baseUrl.endsWith("/messages")) {
+        baseUrl = baseUrl.slice(0, -9);
+      }
+
+      try {
+        const res = await fetchWithConnectionProxy(
+          `${baseUrl}/messages`,
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-api-key": connection.apiKey,
+              "anthropic-version": "2023-06-01",
+              Authorization: `Bearer ${connection.apiKey}`,
+            },
+            body: JSON.stringify({
+              model: "claude-3-haiku-20240307",
+              max_tokens: 1,
+              messages: [{ role: "user", content: "hi" }],
+            }),
+          },
+          effectiveProxy,
+        );
+        const valid = res.status !== 401 && res.status !== 403;
+        return {
+          valid,
+          error: valid ? null : `API returned status ${res.status}`,
+        };
+      } catch (err) {
+        return { valid: false, error: err.message };
+      }
+    }
+
+    // Gemini
+    if (provider === "gemini") {
+      try {
+        const res = await fetchWithConnectionProxy(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${connection.apiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: "hi" }] }],
+              generationConfig: { maxOutputTokens: 1 },
+            }),
+          },
+          effectiveProxy,
+        );
+        return {
+          valid: res.ok,
+          error: res.ok ? null : `API returned status ${res.status}`,
+        };
+      } catch (err) {
+        return { valid: false, error: err.message };
+      }
+    }
+
+    // Providers with built-in chat request in testApiKeyConnection:
+    if (
+      [
+        "cloudflare-ai",
+        "azure",
+        "glm",
+        "glm-cn",
+        "minimax",
+        "minimax-cn",
+        "kimi",
+        "alicode",
+        "alicode-intl",
+        "volcengine-ark",
+        "byteplus",
+        "grok-web",
+      ].includes(provider)
+    ) {
+      return testApiKeyConnection(connection, effectiveProxy);
+    }
+
+    // Fallback/Specialized cases:
+    return testApiKeyConnection(connection, effectiveProxy);
+  }
+
+  // OAuth Providers
+  const oAuthTest = await testOAuthConnection(connection, effectiveProxy);
+  if (!oAuthTest.valid) {
+    return oAuthTest;
+  }
+
+  let accessToken = oAuthTest.newTokens?.accessToken || connection.accessToken;
+
+  if (provider === "claude") {
+    try {
+      const res = await fetchWithConnectionProxy(
+        "https://api.anthropic.com/v1/messages",
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: "claude-3-haiku-20240307",
+            max_tokens: 1,
+            messages: [{ role: "user", content: "hi" }],
+          }),
+        },
+        effectiveProxy,
+      );
+      const valid = res.status !== 401 && res.status !== 403;
+      return {
+        valid,
+        error: valid ? null : `API returned status ${res.status}`,
+        refreshed: oAuthTest.refreshed,
+        newTokens: oAuthTest.newTokens,
+      };
+    } catch (err) {
+      return {
+        valid: false,
+        error: err.message,
+        refreshed: oAuthTest.refreshed,
+        newTokens: oAuthTest.newTokens,
+      };
+    }
+  }
+
+  if (provider === "gemini-cli" || provider === "antigravity") {
+    try {
+      const res = await fetchWithConnectionProxy(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: "hi" }] }],
+            generationConfig: { maxOutputTokens: 1 },
+          }),
+        },
+        effectiveProxy,
+      );
+      const valid = res.status !== 401 && res.status !== 403;
+      return {
+        valid,
+        error: valid ? null : `API returned status ${res.status}`,
+        refreshed: oAuthTest.refreshed,
+        newTokens: oAuthTest.newTokens,
+      };
+    } catch (err) {
+      return {
+        valid: false,
+        error: err.message,
+        refreshed: oAuthTest.refreshed,
+        newTokens: oAuthTest.newTokens,
+      };
+    }
+  }
+
+  if (provider === "codex") {
+    try {
+      const res = await fetchWithConnectionProxy(
+        "https://chatgpt.com/backend-api/codex/responses",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+            originator: "codex-cli",
+            "User-Agent": "codex-cli/1.0.18 (macOS; arm64)",
+          },
+          body: JSON.stringify({
+            model: "gpt-5.3-codex",
+            input: [{ role: "user", content: "hi" }],
+            stream: false,
+            store: false,
+          }),
+        },
+        effectiveProxy,
+      );
+      const valid = res.status !== 401 && res.status !== 403;
+      return {
+        valid,
+        error: valid ? null : `API returned status ${res.status}`,
+        refreshed: oAuthTest.refreshed,
+        newTokens: oAuthTest.newTokens,
+      };
+    } catch (err) {
+      return {
+        valid: false,
+        error: err.message,
+        refreshed: oAuthTest.refreshed,
+        newTokens: oAuthTest.newTokens,
+      };
+    }
+  }
+
+  return oAuthTest;
+}
+
+/**
+ * Warmup a single connection by ID, update DB, and return result.
+ */
+export async function warmupSingleConnection(id) {
+  const connection = await getProviderConnectionById(id);
+  if (!connection)
+    return {
+      valid: false,
+      error: "Connection not found",
+      testedAt: new Date().toISOString(),
+    };
+
+  const effectiveProxy = await resolveConnectionProxyConfig(
+    connection.providerSpecificData || {},
+  );
+
+  if (
+    effectiveProxy.connectionProxyEnabled &&
+    effectiveProxy.connectionProxyUrl &&
+    !effectiveProxy.vercelRelayUrl
+  ) {
+    const proxyResult = await testProxyUrl({
+      proxyUrl: effectiveProxy.connectionProxyUrl,
+    });
+    if (!proxyResult.ok) {
+      const proxyError =
+        proxyResult.error ||
+        `Proxy test failed with status ${proxyResult.status}`;
+      await updateProviderConnection(id, {
+        testStatus: "error",
+        lastError: proxyError,
+        lastErrorAt: new Date().toISOString(),
+      });
+      return {
+        valid: false,
+        error: proxyError,
+        latencyMs: 0,
+        testedAt: new Date().toISOString(),
+      };
+    }
+  }
+
+  const start = Date.now();
+  let result;
+
+  try {
+    result = await executeWarmup(connection, effectiveProxy);
+  } catch (err) {
+    result = { valid: false, error: err.message };
+  }
+
+  const latencyMs = Date.now() - start;
+
+  const updateData = {
+    testStatus: result.valid ? "active" : "error",
+    lastError: result.valid ? null : result.error,
+    lastErrorAt: result.valid ? null : new Date().toISOString(),
+  };
+
+  if (result.valid) {
+    updateData.warmedUp = true;
+    updateData.warmedUpAt = new Date().toISOString();
+  }
+
+  if (result.refreshed && result.newTokens) {
+    updateData.accessToken = result.newTokens.accessToken;
+    if (result.newTokens.refreshToken)
+      updateData.refreshToken = result.newTokens.refreshToken;
+    if (result.newTokens.expiresIn) {
+      updateData.expiresAt = new Date(
+        Date.now() + result.newTokens.expiresIn * 1000,
+      ).toISOString();
+    }
+  }
+
+  await updateProviderConnection(id, updateData);
+
+  return {
+    valid: result.valid,
+    error: result.error,
+    latencyMs,
+    testedAt: new Date().toISOString(),
+  };
+}
+

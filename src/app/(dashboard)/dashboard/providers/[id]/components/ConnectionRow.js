@@ -76,6 +76,8 @@ export default function ConnectionRow({
   disablePriorityControls = false,
   isSelected = false,
   onSelectChange = null,
+  onWarmup = null,
+  warmupStatus = null,
 }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
@@ -287,20 +289,18 @@ export default function ConnectionRow({
         )}
         {/* Priority arrows */}
         <div className="flex shrink-0 flex-col">
-          {isOAuthConnection && (
-            <label className="mb-1 flex items-center justify-center">
-              <input
-                type="checkbox"
-                checked={isSelected}
-                onClick={(e) => {
-                  onSelectChange?.(e.target.checked, e.shiftKey);
-                }}
-                onChange={() => {}}
-                className="rounded border-border"
-                title="Select this account for batch actions"
-              />
-            </label>
-          )}
+          <label className="mb-1 flex items-center justify-center">
+            <input
+              type="checkbox"
+              checked={isSelected}
+              onClick={(e) => {
+                onSelectChange?.(e.target.checked, e.shiftKey);
+              }}
+              onChange={() => {}}
+              className="rounded border-border"
+              title="Select this account for batch actions"
+            />
+          </label>
           <button
             onClick={onMoveUp}
             disabled={disablePriorityControls || isFirst}
@@ -340,6 +340,21 @@ export default function ConnectionRow({
             <Badge variant="default" size="sm">
               {authLabel}
             </Badge>
+            {connection.warmedUp === true && (
+              <Badge variant="success" size="sm" title={connection.warmedUpAt ? `Warmed up at: ${formatVietnameseExpiresAt(connection.warmedUpAt)}` : "Warmed up"}>
+                Warmed
+              </Badge>
+            )}
+            {warmupStatus?.state === "refreshing" && (
+              <Badge variant="primary" size="sm">
+                Warming...
+              </Badge>
+            )}
+            {warmupStatus?.state === "failed" && (
+              <Badge variant="error" size="sm" title={warmupStatus.error}>
+                Warmup failed
+              </Badge>
+            )}
             {hasAnyProxy && (
               <Badge variant={proxyBadgeVariant} size="sm">
                 Proxy
@@ -442,6 +457,17 @@ export default function ConnectionRow({
             </div>
           )}
           <button
+            onClick={onWarmup}
+            disabled={connection.warmedUp === true || warmupStatus?.state === "refreshing"}
+            className={`flex flex-col items-center rounded px-2 py-1 ${(connection.warmedUp === true || warmupStatus?.state === "refreshing") ? "text-text-muted/30 cursor-not-allowed" : "text-orange-500 hover:bg-orange-500/10 hover:text-orange-600"}`}
+            title={connection.warmedUp === true ? "Already warmed up" : "Warmup account"}
+          >
+            <span className="material-symbols-outlined text-[18px]">
+              {warmupStatus?.state === "refreshing" ? "progress_activity" : "local_fire_department"}
+            </span>
+            <span className="text-[10px] leading-tight">Warmup</span>
+          </button>
+          <button
             onClick={onEdit}
             className="flex flex-col items-center rounded px-2 py-1 text-text-muted hover:bg-black/5 hover:text-primary dark:hover:bg-white/5"
           >
@@ -516,4 +542,9 @@ ConnectionRow.propTypes = {
   disablePriorityControls: PropTypes.bool,
   isSelected: PropTypes.bool,
   onSelectChange: PropTypes.func,
+  onWarmup: PropTypes.func,
+  warmupStatus: PropTypes.shape({
+    state: PropTypes.string,
+    error: PropTypes.string,
+  }),
 };

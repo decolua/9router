@@ -19,6 +19,8 @@ import {
   refreshSelectedCodexConnections,
   patchProviderSettings,
   fetchProviderSettings,
+  warmupProviderConnection,
+  warmupSelectedConnections,
 } from "../utils/providerDetailPageApi";
 
 const ACCOUNT_STATUS_FILTER_OPTIONS = ["all", "active", "inactive"];
@@ -63,6 +65,9 @@ export function useProviderDetailConnections({
   const [manualRefreshResults, setManualRefreshResults] = useState({});
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const [manualRefreshSummary, setManualRefreshSummary] = useState(null);
+  const [warmupRunning, setWarmupRunning] = useState(false);
+  const [warmupResults, setWarmupResults] = useState({});
+  const [warmupSummary, setWarmupSummary] = useState(null);
   const stopOneByOneRef = useRef(false);
   const lastClickedIndexRef = useRef(null);
   const connectionsRef = useRef([]);
@@ -573,6 +578,78 @@ export function useProviderDetailConnections({
     setManualRefreshSummary(null);
   };
 
+  const handleWarmupSelected = async () => {
+    if (selectedConnectionIds.length === 0 || warmupRunning) return;
+
+    setWarmupRunning(true);
+    setWarmupSummary(null);
+    try {
+      const { res, data } = await warmupSelectedConnections(
+        selectedConnectionIds,
+      );
+      if (!res.ok) {
+        alert(data.error || "Failed to warmup selected accounts");
+        return;
+      }
+
+      const nextResults = Object.fromEntries(
+        (data.results || []).map((result) => [
+          result.connectionId,
+          result.valid
+            ? { state: "success", error: null }
+            : { state: "failed", error: result.error || "failed" },
+        ]),
+      );
+      setWarmupResults(nextResults);
+      setWarmupSummary(data.summary || null);
+    } catch (error) {
+      console.log("Error warming up selected accounts:", error);
+      alert("Failed to warmup selected accounts");
+    } finally {
+      setWarmupRunning(false);
+      fetchConnections().catch((err) =>
+        console.log("Error fetching connections after warmup:", err),
+      );
+    }
+  };
+
+  const handleWarmupSingle = async (connectionId) => {
+    setWarmupResults((prev) => ({
+      ...prev,
+      [connectionId]: { state: "refreshing", error: null },
+    }));
+
+    try {
+      const { res, data } = await warmupProviderConnection(connectionId);
+      const valid = !!data?.valid;
+
+      setWarmupResults((prev) => ({
+        ...prev,
+        [connectionId]: {
+          state: valid ? "success" : "failed",
+          error: valid ? null : data?.error || "failed",
+        },
+      }));
+    } catch (error) {
+      setWarmupResults((prev) => ({
+        ...prev,
+        [connectionId]: {
+          state: "failed",
+          error: error.message || "Warmup failed",
+        },
+      }));
+    } finally {
+      fetchConnections().catch((err) =>
+        console.log("Error fetching connections after warmup:", err),
+      );
+    }
+  };
+
+  const clearWarmupResults = () => {
+    setWarmupResults({});
+    setWarmupSummary(null);
+  };
+
   const handleUpdateProxy = async (connectionId, proxyPoolId) => {
     try {
       const res = await updateProviderConnection(connectionId, {
@@ -738,5 +815,11 @@ export function useProviderDetailConnections({
     handleManualRefreshSelected,
     clearManualRefreshResults,
     handleUpdateProxy,
+    warmupRunning,
+    warmupResults,
+    warmupSummary,
+    handleWarmupSelected,
+    handleWarmupSingle,
+    clearWarmupResults,
   };
 }

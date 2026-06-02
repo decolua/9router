@@ -60,6 +60,12 @@ export default function ProviderConnectionsCard({
   onTriggerApiKeyConnection,
   onTriggerAddConnection,
   onOpenIFlowCookieModal,
+  warmupRunning,
+  warmupResults,
+  warmupSummary,
+  handleWarmupSelected,
+  handleWarmupSingle,
+  clearWarmupResults,
 }) {
   if (isFreeNoAuth) {
     return <NoAuthProxyCard providerId={providerId} />;
@@ -101,6 +107,10 @@ export default function ProviderConnectionsCard({
         handleRoundRobinToggle={handleRoundRobinToggle}
         providerStickyLimit={providerStickyLimit}
         handleStickyLimitChange={handleStickyLimitChange}
+        warmupRunning={warmupRunning}
+        warmupSummary={warmupSummary}
+        handleWarmupSelected={handleWarmupSelected}
+        clearWarmupResults={clearWarmupResults}
       />
 
       <ProviderConnectionsSummary
@@ -225,6 +235,8 @@ export default function ProviderConnectionsCard({
               manualRefreshResults={manualRefreshResults}
               manualRefreshing={manualRefreshing}
               isConnectionsSortActive={isConnectionsSortActive}
+              warmupResults={warmupResults}
+              handleWarmupSingle={handleWarmupSingle}
             />
           )}
 
