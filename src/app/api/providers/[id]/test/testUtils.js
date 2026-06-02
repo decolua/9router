@@ -4,7 +4,7 @@ import { testProxyUrl } from "@/lib/network/proxyTest";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { PROVIDER_ENDPOINTS } from "@/shared/constants/config";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
-import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
+import { CODEX_ORIGINATOR, CODEX_USER_AGENT, resolveOllamaLocalHost } from "open-sse/config/providers.js";
 import {
   GEMINI_CONFIG,
   ANTIGRAVITY_CONFIG,
@@ -25,7 +25,7 @@ const OAUTH_TEST_CONFIG = {
     method: "POST",
     authHeader: "Authorization",
     authPrefix: "Bearer ",
-    extraHeaders: { "Content-Type": "application/json", "originator": "codex-cli", "User-Agent": "codex-cli/1.0.18 (macOS; arm64)" },
+    extraHeaders: { "Content-Type": "application/json", "originator": CODEX_ORIGINATOR, "User-Agent": CODEX_USER_AGENT },
     // Minimal invalid body — triggers fast 400 without consuming quota
     body: JSON.stringify({ model: "gpt-5.3-codex", input: [], stream: false, store: false }),
     // 400 (bad request) means auth succeeded; only 401/403 means token is bad

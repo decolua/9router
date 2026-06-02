@@ -37,8 +37,9 @@ export function detectClientTool(headers = {}, body = {}) {
   // Gemini CLI
   if (ua.includes("gemini-cli")) return "gemini-cli";
 
-  // Codex CLI
-  if (ua.includes("codex-cli")) return "codex";
+  // Codex CLI/Rust CLI. The current official wire identity is codex_cli_rs,
+  // but keep the older codex-cli alias recognized for older local captures.
+  if (ua.includes("codex_cli_rs") || ua.includes("codex-cli")) return "codex";
 
   // DeepSeek TUI
   if (ua.includes("deepseek-tui")) return "deepseek-tui";

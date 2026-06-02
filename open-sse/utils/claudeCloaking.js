@@ -1,10 +1,10 @@
 import { createHash, randomBytes, randomUUID } from "crypto";
 import { CLAUDE_TOOL_SUFFIX, CC_DEFAULT_TOOLS } from "../config/appConstants.js";
 
-const CLAUDE_VERSION = "2.1.92";
+const CLAUDE_VERSION = (process.env.CLAUDE_CLI_VERSION || "2.1.159").trim() || "2.1.159";
 const CC_ENTRYPOINT = "sdk-cli";
 
-// Generate billing header matching real Claude Code 2.1.92+ format:
+// Generate billing header matching the current Claude Code format:
 // x-anthropic-billing-header: cc_version=<ver>.<build>; cc_entrypoint=sdk-cli; cch=<hash>;
 function generateBillingHeader(payload) {
   const content = JSON.stringify(payload);
@@ -13,7 +13,7 @@ function generateBillingHeader(payload) {
   return `x-anthropic-billing-header: cc_version=${CLAUDE_VERSION}.${buildHash}; cc_entrypoint=${CC_ENTRYPOINT}; cch=${cch};`;
 }
 
-// Generate fake user ID in Claude Code 2.1.92+ JSON format:
+// Generate fake user ID in the current Claude Code JSON format:
 // {"device_id":"<64hex>","account_uuid":"<uuid>","session_id":"<uuid>"}
 function generateFakeUserID(sessionId) {
   const deviceId = randomBytes(32).toString("hex");

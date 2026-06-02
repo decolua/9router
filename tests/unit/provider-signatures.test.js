@@ -19,6 +19,7 @@ describe("provider signature/header matrix", () => {
 
   it("builds Codex identity headers with the connection-scoped session id", async () => {
     const { CodexExecutor } = await import("../../open-sse/executors/codex.js");
+    const { CODEX_ORIGINATOR, CODEX_USER_AGENT } = await import("../../open-sse/config/providers.js");
     const executor = new CodexExecutor();
     const headers = executor.buildHeaders(
       {
@@ -31,10 +32,40 @@ describe("provider signature/header matrix", () => {
 
     expect(headers.Authorization).toBe("Bearer codex-test-token");
     expect(headers["Content-Type"]).toBe("application/json");
-    expect(headers.originator).toBe("codex-cli");
+    expect(headers.originator).toBe(CODEX_ORIGINATOR);
     expect(headers.session_id).toBe("conn-123");
     expect(headers["chatgpt-account-id"]).toBe("workspace-abc");
+    expect(headers["User-Agent"]).toBe(CODEX_USER_AGENT);
     expect(headers.Accept).toBe("text/event-stream");
+  });
+
+  it("accepts chatgptAccountId as the Codex account binding fallback", async () => {
+    const { CodexExecutor } = await import("../../open-sse/executors/codex.js");
+    const { CODEX_ORIGINATOR } = await import("../../open-sse/config/providers.js");
+    const executor = new CodexExecutor();
+    const headers = executor.buildHeaders(
+      {
+        accessToken: "codex-test-token",
+        connectionId: "conn-456",
+        providerSpecificData: { chatgptAccountId: "account-xyz" }
+      },
+      true
+    );
+
+    expect(headers["chatgpt-account-id"]).toBe("account-xyz");
+    expect(headers.session_id).toBe("conn-456");
+    expect(headers.originator).toBe(CODEX_ORIGINATOR);
+  });
+
+  it("keeps the Claude cold-start spoof User-Agent aligned with the installed version", async () => {
+    const { DefaultExecutor } = await import("../../open-sse/executors/default.js");
+    const { CLAUDE_CLI_VERSION } = await import("../../open-sse/config/providers.js");
+    const executor = new DefaultExecutor("claude");
+    const headers = executor.buildHeaders({ apiKey: "claude-test-key" }, true);
+
+    expect(headers["User-Agent"]).toBe(`claude-cli/${CLAUDE_CLI_VERSION} (external, sdk-cli)`);
+    expect(headers["X-App"]).toBe("cli");
+    expect(headers["Anthropic-Beta"]).toContain("oauth-2025-04-20");
   });
 
   it("builds Gemini CLI request headers from the current model", async () => {
@@ -52,14 +83,15 @@ describe("provider signature/header matrix", () => {
 
   it("builds Kiro eventstream headers and preserves the AWS fingerprint shape", async () => {
     const { KiroExecutor } = await import("../../open-sse/executors/kiro.js");
+    const { KIRO_IDE_VERSION } = await import("../../open-sse/config/appConstants.js");
     const executor = new KiroExecutor();
     const headers = executor.buildHeaders({ accessToken: "kiro-test-token" }, true);
 
     expect(headers.Authorization).toBe("Bearer kiro-test-token");
     expect(headers["Content-Type"]).toBe("application/json");
     expect(headers.Accept).toBe("application/vnd.amazon.eventstream");
-    expect(headers["User-Agent"]).toBe("AWS-SDK-JS/3.0.0 kiro-ide/1.0.0");
-    expect(headers["X-Amz-User-Agent"]).toBe("aws-sdk-js/3.0.0 kiro-ide/1.0.0");
+    expect(headers["User-Agent"]).toBe(`AWS-SDK-JS/3.0.0 kiro-ide/${KIRO_IDE_VERSION}`);
+    expect(headers["X-Amz-User-Agent"]).toBe(`aws-sdk-js/3.0.0 kiro-ide/${KIRO_IDE_VERSION}`);
     expect(headers["Amz-Sdk-Request"]).toBe("attempt=1; max=3");
     expectUuidLike(headers["Amz-Sdk-Invocation-Id"]);
   });
@@ -92,5 +124,34 @@ describe("provider signature/header matrix", () => {
     expect(headers["Cosy-Bodyhash"]).toMatch(/^[0-9a-f]{32}$/);
     expect(headers["Login-Version"]).toBe("v2");
     expectUuidLike(headers["X-Request-Id"]);
+  });
+
+  it("keeps KiloCode on the generic OpenAI-compatible path", async () => {
+    const { DefaultExecutor } = await import("../../open-sse/executors/default.js");
+    const executor = new DefaultExecutor("kilocode");
+    const headers = executor.buildHeaders({ apiKey: "kilo-test-key" }, true);
+
+    // KiloCode has an official client fingerprint in its own repo/issues, but 9router
+    // currently routes it as a plain OpenAI-compatible backend and does not synthesize
+    // a KiloCode-specific UA/version header.
+    expect(headers.Authorization).toBe("Bearer kilo-test-key");
+    expect(headers["Content-Type"]).toBe("application/json");
+    expect(headers.Accept).toBe("text/event-stream");
+    expect(headers["x-kilocode-version"]).toBeUndefined();
+    expect(headers["user-agent"]).toBeUndefined();
+  });
+
+  it("builds the current OpenCode local proxy headers", async () => {
+    const { OpenCodeExecutor } = await import("../../open-sse/executors/opencode.js");
+    const executor = new OpenCodeExecutor();
+    const headers = executor.buildHeaders();
+
+    // OpenCode's own issues mention webfetch/browser-like UA behavior, but the local
+    // 9router integration currently only marks the upstream as the desktop client.
+    expect(headers["Content-Type"]).toBe("application/json");
+    expect(headers.Authorization).toBe("Bearer public");
+    expect(headers["x-opencode-client"]).toBe("desktop");
+    expect(headers.Accept).toBe("text/event-stream");
+    expect(headers["user-agent"]).toBeUndefined();
   });
 });

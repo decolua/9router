@@ -28,6 +28,9 @@ export const QODER_MODEL_LIST_URL = `${QODER_CHAT_BASE}/algo/api/v2/model/list`;
 
 // COSY header constants. These are not arbitrary — the upstream signature
 // validation matches them against the values used at signing time.
+// Qoder 1.0 public docs/changelog still expose the 1.0 wire version, so
+// keep this aligned with the current CLI/IDE family rather than older v0.9
+// snapshots.
 export const QODER_IDE_VERSION = "1.0.0";
 export const QODER_CLIENT_TYPE = "5";
 export const QODER_DATA_POLICY = "disagree";
@@ -53,7 +56,7 @@ export const QODER_MODEL_MAP = {
   mmodel: "mmodel",
 };
 
-// RSA public key for COSY encryption (extracted from Qoder IDE v0.9).
+// RSA public key for COSY encryption (matches the current Qoder 1.0 family).
 // Matches the CLIProxyAPIPlus branch and live qodercli traffic.
 export const QODER_RSA_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
 MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDA8iMH5c02LilrsERw9t6Pv5Nc

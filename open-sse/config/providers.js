@@ -1,4 +1,5 @@
 import { platform, arch } from "os";
+import { KIRO_IDE_VERSION } from "./appConstants.js";
 
 // === OS/Arch helpers ===
 function mapStainlessOs() {
@@ -27,11 +28,12 @@ const CLAUDE_API_HEADERS = {
 };
 
 // Full Claude CLI fingerprint — required by providers that gate on client identity (e.g. agentrouter)
+export const CLAUDE_CLI_VERSION = (process.env.CLAUDE_CLI_VERSION || "2.1.159").trim() || "2.1.159";
 const CLAUDE_CLI_SPOOF_HEADERS = {
   "Anthropic-Version": "2023-06-01",
   "Anthropic-Beta": "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05,advanced-tool-use-2025-11-20,effort-2025-11-24,structured-outputs-2025-12-15,fast-mode-2026-02-01,redact-thinking-2026-02-12,token-efficient-tools-2026-03-28",
   "Anthropic-Dangerous-Direct-Browser-Access": "true",
-  "User-Agent": "claude-cli/2.1.92 (external, sdk-cli)",
+  "User-Agent": `claude-cli/${CLAUDE_CLI_VERSION} (external, sdk-cli)`,
   "X-App": "cli",
   "X-Stainless-Helper-Method": "stream",
   "X-Stainless-Retry-Count": "0",
@@ -43,6 +45,13 @@ const CLAUDE_CLI_SPOOF_HEADERS = {
   "X-Stainless-Os": mapStainlessOs(),
   "X-Stainless-Timeout": "600"
 };
+
+// Codex uses the Rust CLI identity on the wire (`codex_cli_rs`), not the
+// older `codex-cli` placeholder. Keep the request headers aligned with the
+// current official CLI shape so backend allowlists and request captures match.
+export const CODEX_ORIGINATOR = "codex_cli_rs";
+export const CODEX_CLI_VERSION = (process.env.CODEX_CLI_VERSION || "0.135.0").trim() || "0.135.0";
+export const CODEX_USER_AGENT = `codex_cli_rs/${CODEX_CLI_VERSION} (${platform()}; ${arch()})`;
 
 // Shared baseUrls
 const KIMI_CODING_BASE_URL = "https://api.kimi.com/coding/v1/messages";
@@ -71,8 +80,8 @@ export const PROVIDERS = {
     baseUrl: "https://chatgpt.com/backend-api/codex/responses",
     format: "openai-responses",
     headers: {
-      "originator": "codex-cli",
-      "User-Agent": "codex-cli/1.0.18 (macOS; arm64)"
+      "originator": CODEX_ORIGINATOR,
+      "User-Agent": CODEX_USER_AGENT
     },
     clientId: "app_EMoamEEZ73f0CkXaXp7hrann",
     tokenUrl: "https://auth.openai.com/oauth/token"
@@ -199,8 +208,8 @@ export const PROVIDERS = {
       "Content-Type": "application/json",
       "Accept": "application/vnd.amazon.eventstream",
       "X-Amz-Target": "AmazonCodeWhispererStreamingService.GenerateAssistantResponse",
-      "User-Agent": "AWS-SDK-JS/3.0.0 kiro-ide/1.0.0",
-      "X-Amz-User-Agent": "aws-sdk-js/3.0.0 kiro-ide/1.0.0"
+      "User-Agent": `AWS-SDK-JS/3.0.0 kiro-ide/${KIRO_IDE_VERSION}`,
+      "X-Amz-User-Agent": `aws-sdk-js/3.0.0 kiro-ide/${KIRO_IDE_VERSION}`
     },
     tokenUrl: "https://prod.us-east-1.auth.desktop.kiro.dev/refreshToken",
     authUrl: "https://prod.us-east-1.auth.desktop.kiro.dev"

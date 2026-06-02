@@ -2,7 +2,16 @@ import { platform, arch } from "os";
 
 // === Gemini CLI ===
 export const GEMINI_CLI_VERSION = "0.34.0";
+// Gemini CLI telemetry/debug logs currently show the Google client library
+// pair below together with the User-Agent surface tag handling.
 export const GEMINI_CLI_API_CLIENT = "google-genai-sdk/1.41.0 gl-node/v22.19.0";
+// Official Gemini CLI docs expose GEMINI_CLI_SURFACE as the supported
+// override for the trailing User-Agent surface tag.
+export const GEMINI_CLI_SURFACE = (process.env.GEMINI_CLI_SURFACE || "terminal").trim() || "terminal";
+
+// Match the installed Kiro desktop build observed in the local Kiro logs.
+// Keep this aligned with the actual app version instead of the old 1.0.0 placeholder.
+export const KIRO_IDE_VERSION = "0.12.263";
 
 // Map Node arch to Gemini CLI arch string (x64/x86/arm64/...)
 function geminiCLIArch() {
@@ -12,7 +21,9 @@ function geminiCLIArch() {
 }
 
 export function geminiCLIUserAgent(model = "unknown") {
-  return `GeminiCLI/${GEMINI_CLI_VERSION}/${model || "unknown"} (${platform()}; ${geminiCLIArch()}; terminal)`;
+  // Gemini CLI's official telemetry docs expose GEMINI_CLI_SURFACE for the
+  // trailing surface tag; default to "terminal" for standalone 9router runs.
+  return `GeminiCLI/${GEMINI_CLI_VERSION}/${model || "unknown"} (${platform()}; ${geminiCLIArch()}; ${GEMINI_CLI_SURFACE})`;
 }
 
 // === GitHub Copilot ===

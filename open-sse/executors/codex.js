@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 import { BaseExecutor } from "./base.js";
 import { CODEX_DEFAULT_INSTRUCTIONS } from "../config/codexInstructions.js";
-import { PROVIDERS } from "../config/providers.js";
+import { CODEX_ORIGINATOR, PROVIDERS } from "../config/providers.js";
 import { normalizeResponsesInput } from "../translator/helpers/responsesApiHelper.js";
 import { fetchImageAsBase64 } from "../translator/helpers/imageHelper.js";
 import { getModelUpstreamId } from "../config/providerModels.js";
@@ -130,7 +130,10 @@ function normalizeSessionId(value) {
   return v;
 }
 
-// Resolve prompt-cache session id with priority: body → assistant-text-hash → workspaceId → machineId
+// Resolve prompt-cache session id with priority: body → assistant-text-hash → accountId → machineId.
+// Codex connections in this repo have historically stored the account binding as either
+// chatgptAccountId (current OAuth/import path) or workspaceId (older/local fallback), so
+// accept both without changing the visible request shape.
 function resolveCacheSessionId(body, credentials, machineId) {
   // 1. Client-provided session/conversation id (highest priority — stable per conversation)
   const fromBody =
@@ -164,9 +167,11 @@ function resolveCacheSessionId(body, credentials, machineId) {
     }
   }
 
-  // 3. Account-wide fallback (workspaceId from connection)
-  const workspaceId = normalizeSessionId(credentials?.providerSpecificData?.workspaceId);
-  if (workspaceId) return workspaceId;
+  // 3. Account-wide fallback (chatgptAccountId/workspaceId from connection)
+  const accountId =
+    normalizeSessionId(credentials?.providerSpecificData?.chatgptAccountId) ||
+    normalizeSessionId(credentials?.providerSpecificData?.workspaceId);
+  if (accountId) return accountId;
 
   // 4. Last resort — stable per-machine id
   return machineId ? `sess_${hashContent(machineId)}` : generateSessionId();
@@ -197,12 +202,14 @@ export class CodexExecutor extends BaseExecutor {
   buildHeaders(credentials, stream = true) {
     const headers = super.buildHeaders(credentials, stream);
     headers["session_id"] = this._currentSessionId || credentials?.connectionId || "default";
-    // Identify client type to Codex backend (matches official codex CLI)
-    if (!headers["originator"]) headers["originator"] = "codex_cli_rs";
+    // Identify client type to Codex backend (matches the official Rust CLI wire identity).
+    if (!headers["originator"]) headers["originator"] = CODEX_ORIGINATOR;
     // Workspace binding header — improves account scope + cache affinity
-    const workspaceId = credentials?.providerSpecificData?.workspaceId;
-    if (typeof workspaceId === "string" && workspaceId && !headers["chatgpt-account-id"]) {
-      headers["chatgpt-account-id"] = workspaceId;
+    const accountId =
+      credentials?.providerSpecificData?.chatgptAccountId ||
+      credentials?.providerSpecificData?.workspaceId;
+    if (typeof accountId === "string" && accountId && !headers["chatgpt-account-id"]) {
+      headers["chatgpt-account-id"] = accountId;
     }
     return headers;
   }

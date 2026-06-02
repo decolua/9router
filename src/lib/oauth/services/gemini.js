@@ -67,6 +67,8 @@ export class GeminiCLIService {
       {
         method: "POST",
         headers: {
+          // Keep the Cloud Code Assist request aligned with the current
+          // Gemini CLI telemetry surface and Google client headers.
           "Authorization": `Bearer ${accessToken}`,
           "Content-Type": "application/json",
           "User-Agent": "google-api-nodejs-client/9.15.1",

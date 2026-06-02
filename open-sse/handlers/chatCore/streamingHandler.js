@@ -16,7 +16,8 @@ const SSE_HEADERS = {
  * Determine which SSE transform stream to use based on provider/format.
  */
 function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey }) {
-  const isDroidCLI = userAgent?.toLowerCase().includes("droid") || userAgent?.toLowerCase().includes("codex-cli");
+  const lowerUserAgent = userAgent?.toLowerCase() || "";
+  const isDroidCLI = lowerUserAgent.includes("droid") || lowerUserAgent.includes("codex-cli") || lowerUserAgent.includes("codex_cli_rs");
   const needsCodexTranslation = provider === "codex" && targetFormat === FORMATS.OPENAI_RESPONSES && !isDroidCLI;
 
   if (needsCodexTranslation) {
