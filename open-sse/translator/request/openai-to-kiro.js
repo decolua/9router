@@ -278,21 +278,33 @@ function convertMessages(messages, tools, model) {
     }
   });
 
-  // Merge consecutive user messages (Kiro requires alternating user/assistant)
+  // Merge consecutive user/assistant messages (Kiro requires alternating user/assistant)
   const mergedHistory = [];
   for (let i = 0; i < history.length; i++) {
     const current = history[i];
-    if (
-      current.userInputMessage &&
-      mergedHistory.length > 0 &&
-      mergedHistory[mergedHistory.length - 1].userInputMessage
-    ) {
+    if (mergedHistory.length > 0) {
       const prev = mergedHistory[mergedHistory.length - 1];
-      prev.userInputMessage.content +=
-        "\n\n" + current.userInputMessage.content;
-    } else {
-      mergedHistory.push(current);
+      if (current.userInputMessage && prev.userInputMessage) {
+        prev.userInputMessage.content +=
+          "\n\n" + current.userInputMessage.content;
+        continue;
+      }
+      if (current.assistantResponseMessage && prev.assistantResponseMessage) {
+        prev.assistantResponseMessage.content =
+          (prev.assistantResponseMessage.content || "").trim() +
+          "\n\n" +
+          (current.assistantResponseMessage.content || "").trim();
+        prev.assistantResponseMessage.content = prev.assistantResponseMessage.content.trim();
+        if (current.assistantResponseMessage.toolUses) {
+          prev.assistantResponseMessage.toolUses = [
+            ...(prev.assistantResponseMessage.toolUses || []),
+            ...current.assistantResponseMessage.toolUses,
+          ];
+        }
+        continue;
+      }
     }
+    mergedHistory.push(current);
   }
 
   // Inject tools into currentMessage AFTER cleanup
