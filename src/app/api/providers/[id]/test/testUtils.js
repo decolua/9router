@@ -5,6 +5,7 @@ import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/sha
 import { PROVIDER_ENDPOINTS } from "@/shared/constants/config";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
+import { OPENAI_STYLE_PROBE_MAX_TOKENS, fetchOpenAIStyleWithTokenFallback } from "@/lib/openaiParamFallback";
 import {
   GEMINI_CONFIG,
   ANTIGRAVITY_CONFIG,
@@ -347,6 +348,15 @@ async function fetchWithConnectionProxy(url, options = {}, effectiveProxy = null
   });
 }
 
+async function fetchOpenAIProbeWithConnectionProxy(url, options, payload, effectiveProxy = null) {
+  return fetchOpenAIStyleWithTokenFallback(
+    (targetUrl, targetOptions) => fetchWithConnectionProxy(targetUrl, targetOptions, effectiveProxy),
+    url,
+    options,
+    payload
+  );
+}
+
 async function testApiKeyConnection(connection, effectiveProxy = null) {
   if (isOpenAICompatibleProvider(connection.provider)) {
     const modelsBase = connection.providerSpecificData?.baseUrl;
@@ -383,11 +393,10 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const accountId = psd.accountId;
         if (!accountId) return { valid: false, error: "Missing Account ID" };
         const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/v1/chat/completions`;
-        const res = await fetchWithConnectionProxy(url, {
+        const res = await fetchOpenAIProbeWithConnectionProxy(url, {
           method: "POST",
           headers: { "Authorization": `Bearer ${connection.apiKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ model: getDefaultModel("cloudflare-ai"), messages: [{ role: "user", content: "test" }], max_tokens: 1 }),
-        }, effectiveProxy);
+        }, { model: getDefaultModel("cloudflare-ai"), messages: [{ role: "user", content: "test" }], max_tokens: OPENAI_STYLE_PROBE_MAX_TOKENS }, effectiveProxy);
         const valid = res.status !== 401 && res.status !== 403 && res.status !== 404;
         return { valid, error: valid ? null : "Invalid API token or Account ID" };
       }
@@ -399,10 +408,9 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const url = `${endpoint}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`;
         const headers = { "api-key": connection.apiKey, "Content-Type": "application/json" };
         if (psd.organization) headers["OpenAI-Organization"] = psd.organization;
-        const res = await fetchWithConnectionProxy(url, {
+        const res = await fetchOpenAIProbeWithConnectionProxy(url, {
           method: "POST", headers,
-          body: JSON.stringify({ messages: [{ role: "user", content: "test" }], max_completion_tokens: 1 }),
-        }, effectiveProxy);
+        }, { messages: [{ role: "user", content: "test" }], max_completion_tokens: OPENAI_STYLE_PROBE_MAX_TOKENS }, effectiveProxy);
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key or Azure configuration" };
       }
@@ -441,11 +449,10 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid, error: valid ? null : "Invalid API key" };
       }
       case "glm-cn": {
-        const res = await fetchWithConnectionProxy("https://open.bigmodel.cn/api/coding/paas/v4/chat/completions", {
+        const res = await fetchOpenAIProbeWithConnectionProxy("https://open.bigmodel.cn/api/coding/paas/v4/chat/completions", {
           method: "POST",
           headers: { "Authorization": `Bearer ${connection.apiKey}`, "content-type": "application/json" },
-          body: JSON.stringify({ model: "glm-4.7", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
-        }, effectiveProxy);
+        }, { model: "glm-4.7", max_tokens: OPENAI_STYLE_PROBE_MAX_TOKENS, messages: [{ role: "user", content: "test" }] }, effectiveProxy);
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key" };
       }
@@ -475,21 +482,19 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const aliBaseUrl = connection.provider === "alicode-intl"
           ? "https://coding-intl.dashscope.aliyuncs.com/v1/chat/completions"
           : "https://coding.dashscope.aliyuncs.com/v1/chat/completions";
-        const res = await fetchWithConnectionProxy(aliBaseUrl, {
+        const res = await fetchOpenAIProbeWithConnectionProxy(aliBaseUrl, {
           method: "POST",
           headers: { "Authorization": `Bearer ${connection.apiKey}`, "content-type": "application/json" },
-          body: JSON.stringify({ model: getDefaultModel(connection.provider), max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
-        }, effectiveProxy);
+        }, { model: getDefaultModel(connection.provider), max_tokens: OPENAI_STYLE_PROBE_MAX_TOKENS, messages: [{ role: "user", content: "test" }] }, effectiveProxy);
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key" };
       }
       case "volcengine-ark":
       case "byteplus": {
-        const res = await fetchWithConnectionProxy(PROVIDER_ENDPOINTS[connection.provider], {
+        const res = await fetchOpenAIProbeWithConnectionProxy(PROVIDER_ENDPOINTS[connection.provider], {
           method: "POST",
           headers: { "Authorization": `Bearer ${connection.apiKey}`, "content-type": "application/json" },
-          body: JSON.stringify({ model: getDefaultModel(connection.provider), max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
-        }, effectiveProxy);
+        }, { model: getDefaultModel(connection.provider), max_tokens: OPENAI_STYLE_PROBE_MAX_TOKENS, messages: [{ role: "user", content: "test" }] }, effectiveProxy);
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key" };
       }
@@ -609,11 +614,10 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid, error: valid ? null : "Session expired — re-paste cookie" };
       }
       case "opencode-go": {
-        const res = await fetchWithConnectionProxy("https://opencode.ai/zen/go/v1/chat/completions", {
+        const res = await fetchOpenAIProbeWithConnectionProxy("https://opencode.ai/zen/go/v1/chat/completions", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${connection.apiKey}` },
-          body: JSON.stringify({ model: getDefaultModel("opencode-go"), messages: [{ role: "user", content: "ping" }], max_tokens: 1, stream: false }),
-        }, effectiveProxy);
+        }, { model: getDefaultModel("opencode-go"), messages: [{ role: "user", content: "ping" }], max_tokens: OPENAI_STYLE_PROBE_MAX_TOKENS, stream: false }, effectiveProxy);
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key" };
       }

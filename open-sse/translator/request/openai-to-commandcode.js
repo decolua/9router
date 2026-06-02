@@ -11,6 +11,7 @@
  */
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
+import { getTokenLimit } from "../helpers/maxTokensHelper.js";
 import { randomUUID } from "crypto";
 
 function flattenText(content) {
@@ -137,7 +138,7 @@ export function openaiToCommandCode(model, body, stream /* , credentials */) {
     model,
     messages,
     stream: stream !== false,
-    max_tokens: body.max_tokens ?? body.max_output_tokens ?? 64000,
+    max_tokens: getTokenLimit(body, body.max_output_tokens ?? 64000),
     temperature: body.temperature ?? 0.3,
   };
 

@@ -3,6 +3,7 @@ import { FORMATS } from "../formats.js";
 import { DEFAULT_THINKING_AG_SIGNATURE, DEFAULT_THINKING_GEMINI_CLI_SIGNATURE } from "../../config/defaultThinkingSignature.js";
 import { ANTIGRAVITY_DEFAULT_SYSTEM } from "../../config/appConstants.js";
 import { openaiToClaudeRequestForAntigravity } from "./openai-to-claude.js";
+import { getTokenLimit } from "../helpers/maxTokensHelper.js";
 
 function generateUUID() {
   return crypto.randomUUID();
@@ -54,8 +55,9 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
   if (body.top_k !== undefined) {
     result.generationConfig.topK = body.top_k;
   }
-  if (body.max_tokens !== undefined) {
-    result.generationConfig.maxOutputTokens = body.max_tokens;
+  const maxTokens = getTokenLimit(body);
+  if (maxTokens !== undefined) {
+    result.generationConfig.maxOutputTokens = maxTokens;
   }
 
   // Build tool_call_id -> name map

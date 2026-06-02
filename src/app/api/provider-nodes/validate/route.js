@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { OPENAI_STYLE_PROBE_MAX_TOKENS, fetchOpenAIStyleWithTokenFallback } from "@/lib/openaiParamFallback";
 
 // Fetch with timeout wrapper
 const fetchWithTimeout = (url, options, timeout = 10000) => {
@@ -120,19 +121,18 @@ export async function POST(request) {
 
       // Fallback: try chat/completions if modelId provided
       if (modelId) {
-        const chatRes = await fetchWithTimeout(`${normalizedBase}/chat/completions`, {
+        const chatRes = await fetchOpenAIStyleWithTokenFallback(fetchWithTimeout, `${normalizedBase}/chat/completions`, {
           method: "POST",
           headers: {
             "Authorization": `Bearer ${apiKey}`,
             "Content-Type": "application/json",
             "x-api-key": apiKey,
             "anthropic-version": "2023-06-01"
-          },
-          body: JSON.stringify({
-            model: modelId,
-            messages: [{ role: "user", content: "ping" }],
-            max_tokens: 1
-          })
+          }
+        }, {
+          model: modelId,
+          messages: [{ role: "user", content: "ping" }],
+          max_tokens: OPENAI_STYLE_PROBE_MAX_TOKENS
         });
         if (chatRes.ok) {
           return NextResponse.json({ valid: true, method: "chat" });
@@ -162,17 +162,16 @@ export async function POST(request) {
 
     // Fallback: try chat/completions if modelId provided
     if (modelId) {
-      const chatRes = await fetchWithTimeout(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
+      const chatRes = await fetchOpenAIStyleWithTokenFallback(fetchWithTimeout, `${baseUrl.replace(/\/$/, "")}/chat/completions`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${apiKey}`,
           "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          model: modelId,
-          messages: [{ role: "user", content: "ping" }],
-          max_tokens: 1
-        })
+        }
+      }, {
+        model: modelId,
+        messages: [{ role: "user", content: "ping" }],
+        max_tokens: OPENAI_STYLE_PROBE_MAX_TOKENS
       });
       if (chatRes.ok) {
         return NextResponse.json({ valid: true, method: "chat" });

@@ -3,6 +3,7 @@ import { needsTranslation } from "../../translator/index.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
 import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
 import { createErrorResult } from "../../utils/error.js";
+import { isEventStreamContentType } from "../../utils/contentType.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats } from "./requestDetail.js";
@@ -133,7 +134,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   const contentType = providerResponse.headers.get("content-type") || "";
   let responseBody;
 
-  if (contentType.includes("text/event-stream")) {
+  if (isEventStreamContentType(contentType)) {
     const sseText = await providerResponse.text();
     const parsed = parseSSEToOpenAIResponse(sseText, model);
     if (!parsed) {

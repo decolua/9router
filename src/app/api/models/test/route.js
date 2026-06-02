@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getApiKeys } from "@/lib/localDb";
+import { OPENAI_STYLE_PROBE_MAX_TOKENS } from "@/lib/openaiParamFallback";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 
@@ -20,7 +21,7 @@ export async function POST(request) {
       apiKey = keys.find((k) => k.isActive !== false)?.key || null;
     } catch {}
 
-    const headers = { "Content-Type": "application/json" };
+    const headers = { "Content-Type": "application/json", "Accept": "application/json" };
     if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
     // Bypass dashboardGuard for internal self-call via CLI token (machineId-based)
     headers["x-9r-cli-token"] = await getConsistentMachineId(CLI_TOKEN_SALT);
@@ -57,7 +58,7 @@ export async function POST(request) {
       headers,
       body: JSON.stringify({
         model,
-        max_tokens: 1,
+        max_tokens: OPENAI_STYLE_PROBE_MAX_TOKENS,
         stream: false,
         messages: [{ role: "user", content: "hi" }],
       }),

@@ -256,6 +256,14 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (!clientRequestedStreaming && providerRequiresStreaming) {
     const result = await handleForcedSSEToJson({ ...sharedCtx, providerResponse, sourceFormat, trackDone, appendLog });
     if (result) { streamController.handleComplete(); return result; }
+
+    // Some providers in this bucket can still return ordinary JSON when the
+    // translated payload contains stream:false, even with missing or incorrect
+    // Content-Type. handleNonStreamingResponse still treats explicit SSE as SSE
+    // and otherwise safely attempts JSON parsing with its own error handling.
+    const jsonResult = await handleNonStreamingResponse({ ...sharedCtx, stream: false, providerResponse, sourceFormat, targetFormat, reqLogger, toolNameMap, trackDone, appendLog });
+    streamController.handleComplete();
+    return jsonResult;
   }
 
   // True non-streaming response

@@ -1,5 +1,6 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
+import { getTokenLimit } from "../helpers/maxTokensHelper.js";
 
 /**
  * Convert OpenAI request to Ollama format
@@ -29,9 +30,10 @@ export function openaiToOllamaRequest(model, body, stream) {
   }
 
   // Max tokens (Ollama uses num_predict)
-  if (body.max_tokens !== undefined) {
+  const maxTokens = getTokenLimit(body);
+  if (maxTokens !== undefined) {
     result.options = result.options || {};
-    result.options.num_predict = body.max_tokens;
+    result.options.num_predict = maxTokens;
   }
 
   // Top_p

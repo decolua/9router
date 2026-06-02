@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getProviderConnectionById, getApiKeys } from "@/lib/localDb";
+import { OPENAI_STYLE_PROBE_MAX_TOKENS } from "@/lib/openaiParamFallback";
 import { getProviderModels, PROVIDER_ID_TO_ALIAS } from "open-sse/config/providerModels.js";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
@@ -22,7 +23,7 @@ async function getInternalApiKey() {
 async function pingModel(modelId, baseUrl, apiKey, cliToken) {
   const start = Date.now();
   try {
-    const headers = { "Content-Type": "application/json" };
+    const headers = { "Content-Type": "application/json", "Accept": "application/json" };
     if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
     if (cliToken) headers["x-9r-cli-token"] = cliToken;
     const res = await fetch(`${baseUrl}/api/v1/chat/completions`, {
@@ -30,7 +31,7 @@ async function pingModel(modelId, baseUrl, apiKey, cliToken) {
       headers,
       body: JSON.stringify({
         model: modelId,
-        max_tokens: 1,
+        max_tokens: OPENAI_STYLE_PROBE_MAX_TOKENS,
         stream: false,
         messages: [{ role: "user", content: "hi" }],
       }),
