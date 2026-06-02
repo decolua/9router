@@ -525,7 +525,7 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 | | GitHub Copilot | $10-19/月 | 每月 | GitHub 用户 |
 | | Cursor IDE | $20/月 | 每月 | Cursor 用户 |
 | **💰 低价** | GLM-5.1 / GLM-4.7 | $0.6/1M | 每日 10AM | 预算备份 |
-| | MiniMax M2.7 | $0.2/1M | 5小时滚动 | 最便宜选项 |
+| | MiniMax M3 | $0.2/1M | 5小时滚动 | 最便宜选项 |
 | | Kimi K2.5 | $9/月固定 | 10M tokens/月 | 可预测成本 |
 | **🆓 免费** | Kiro AI | $0 | 无限量 | Claude 4.5 + GLM-5 + MiniMax 免费 |
 | | OpenCode Free | $0 | 无限量 | 无需认证，自动获取模型 |
@@ -612,7 +612,7 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
   1. cc/claude-opus-4-7        （最佳质量）
   2. cx/gpt-5.5                （第二个订阅）
   3. glm/glm-5.1               （低价，每日重置）
-  4. minimax/MiniMax-M2.7      （最便宜，5小时重置）
+  4. minimax/MiniMax-M3        （最便宜，5小时重置）
   5. kr/claude-sonnet-4.5      （免费无限量）
 
 结果：5 层切换 = 零停机时间
@@ -815,13 +815,13 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 
 **专业提示：** 编程计划提供 3 倍配额，成本仅为 1/7！每日 10:00 AM 重置。
 
-### MiniMax M2.7（5小时重置，$0.20/1M）
+### MiniMax M3（5小时重置，$0.20/1M）
 
 1. 注册：[MiniMax](https://www.minimax.io/)
 2. 获取 API key
 3. 控制面板 → 添加 API Key
 
-**使用：** `minimax/MiniMax-M2.7`、`minimax/MiniMax-M2.5`
+**使用：** `minimax/MiniMax-M3`、`minimax/MiniMax-M2.7`
 
 **专业提示：** 长上下文（1M tokens）的最便宜选项！
 
@@ -902,7 +902,7 @@ Vertex 合作伙伴（通过 Vertex 提供 Anthropic / DeepSeek / GLM / Qwen）�
 模型：
   1. cc/claude-opus-4-7 (订阅主用)
   2. glm/glm-5.1 (低价备份，$0.6/1M)
-  3. minimax/MiniMax-M2.7 (最便宜的备选，$0.20/1M)
+  3. minimax/MiniMax-M3 (最便宜的备选，$0.20/1M)
 
 在 CLI 中使用：premium-coding
 
@@ -1161,8 +1161,8 @@ docker stop 9router && docker rm 9router
 - `glm/glm-4.7`
 
 **MiniMax（`minimax/`）** - $0.2/1M：
+- `minimax/MiniMax-M3`
 - `minimax/MiniMax-M2.7`
-- `minimax/MiniMax-M2.5`
 
 **Kimi（`kimi/`）** - $9/月固定：
 - `kimi/kimi-k2.5`
