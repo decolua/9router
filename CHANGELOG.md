@@ -1,3 +1,49 @@
+# v0.4.66 (2026-05-29)
+
+## Features
+- Add Qoder provider: device-flow OAuth, COSY signing, WAF-bypass body encoding, live model catalog, dashboard quota tracker, 11 models (#1372)
+- Add new models: Claude Opus 4.8 (Claude Code), GPT 5.4 Mini (Codex)
+
+## Fixes
+- DeepSeek thinking mode: echo `reasoning_content` back on follow-up/tool-call turns so OpenCode-free and custom providers no longer 400 with "reasoning_content must be passed back" (#1543)
+- Reasoning injector: match deepseek/kimi model ids case-insensitively (covers custom providers using capitalized model names)
+- OpenCode suggested-models: include free models without the `-free` suffix, e.g. `big-pickle` (#1535)
+
+## Improvements
+- Codex: trim sunset models, keep gpt-5.5 / gpt-5.4 / gpt-5.3-codex family, add gpt-5.4-mini
+- volcengine-ark: refresh model list (add DeepSeek-V4-Flash/Pro, drop EOL entries)
+- Lower stream stall timeout 35s → 30s for faster hang detection
+
+# v0.4.63 (2026-05-26)
+
+## Fixes
+- GitHub Copilot: never route Gemini/Claude models to the `/responses` endpoint; prevents misleading "does not support Responses API" 400s (#1062)
+- proxyFetch: restore missing `Readable` import causing runtime `ReferenceError` in DNS-bypass fetch path
+
+## Improvements
+- Lower stream stall timeout from 60s → 35s for faster hang detection
+
+# v0.4.62 (2026-05-26)
+
+## Fixes
+- Codex: auto-retry when upstream drops mid-stream (no more hangs)
+- Codex: fix random 400/404 errors, tool-calling failures, and unstable prompt cache
+- MITM: support Antigravity 2.x 
+- Sanitize Read tool args to prevent retry loops from non-Anthropic models (#1144)
+- Implement json_schema fallback for OpenAI-compatible providers without native Structured Output (#1343)
+- Strip empty Read pages argument in OpenAI-to-Claude translator (#1354)
+- Forward Gemini output dimensions for embeddings (#1366)
+- Resolve setState-in-effect errors in dashboard components (#1362)
+- Gemini CLI: reuse stored OAuth project IDs for quota checks and show clearer setup guidance when the project is missing (#1271, #1428)
+
+## Features
+- Add Cloudflare Workers proxy deployer and pool integration (#1360)
+- Add Deno Deploy relays support and improved proxy pools dashboard layout (#1437)
+
+## Improvements
+- Refactor Tunnel into dedicated Cloudflare and Tailscale manager modules
+- Refactor tokenRefresh service with in-flight dedup to prevent refresh_token_reused errors
+
 # v0.4.59 (2026-05-21)
 
 ## Fixes

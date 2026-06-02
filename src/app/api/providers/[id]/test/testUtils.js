@@ -61,6 +61,17 @@ const OAUTH_TEST_CONFIG = {
   },
   qwen: { checkExpiry: true, refreshable: true },
   kiro: { checkExpiry: true, refreshable: true },
+  qoder: {
+    // Test by hitting Qoder's userinfo endpoint with the device token.
+    // refreshable: false because the device-flow refresh endpoint returns
+    // 403 for our flow (users re-login when expired). No checkExpiry —
+    // we want the actual URL probe to run so revoked tokens surface.
+    url: "https://openapi.qoder.sh/api/v1/userinfo",
+    method: "GET",
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    refreshable: false,
+  },
   "kimi-coding": { checkExpiry: true, refreshable: false },
   cursor: { tokenExists: true },
   kilocode: {
@@ -596,6 +607,23 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const data = await res.json().catch(() => null);
         const valid = !!(data && data.user);
         return { valid, error: valid ? null : "Session expired — re-paste cookie" };
+      }
+      case "opencode-go": {
+        const res = await fetchWithConnectionProxy("https://opencode.ai/zen/go/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${connection.apiKey}` },
+          body: JSON.stringify({ model: getDefaultModel("opencode-go"), messages: [{ role: "user", content: "ping" }], max_tokens: 1, stream: false }),
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid API key" };
+      }
+      case "xiaomi-mimo":
+      case "xiaomi-tokenplan": {
+        const baseUrls = { "xiaomi-mimo": "https://api.xiaomimimo.com/v1", "xiaomi-tokenplan": "https://token-plan-sgp.xiaomimimo.com/v1" };
+        const res = await fetchWithConnectionProxy(`${baseUrls[connection.provider]}/models`, {
+          headers: { Authorization: `Bearer ${connection.apiKey}` },
+        }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       default:
         return { valid: false, error: "Provider test not supported" };

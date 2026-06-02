@@ -29,6 +29,7 @@ function withCodexReviewModels(models) {
 export const PROVIDER_MODELS = {
   // OAuth Providers (using alias)
   cc: [  // Claude Code
+    { id: "claude-opus-4-8", name: "Claude Opus 4.8" },
     { id: "claude-opus-4-7", name: "Claude Opus 4.7" },
     { id: "claude-opus-4-6", name: "Claude Opus 4.6" },
     { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
@@ -39,6 +40,7 @@ export const PROVIDER_MODELS = {
   cx: withCodexReviewModels([  // OpenAI Codex
     { id: "gpt-5.5", name: "GPT 5.5" },
     { id: "gpt-5.4", name: "GPT 5.4" },
+    { id: "gpt-5.4-mini", name: "GPT 5.4 Mini" },
     // GPT 5.3 Codex - all thinking levels
     { id: "gpt-5.3-codex", name: "GPT 5.3 Codex" },
     { id: "gpt-5.3-codex-xhigh", name: "GPT 5.3 Codex (xHigh)" },
@@ -46,22 +48,10 @@ export const PROVIDER_MODELS = {
     { id: "gpt-5.3-codex-low", name: "GPT 5.3 Codex (Low)" },
     { id: "gpt-5.3-codex-none", name: "GPT 5.3 Codex (None)" },
     { id: "gpt-5.3-codex-spark", name: "GPT 5.3 Codex Spark" },
-    // Mini - medium and high only
-    { id: "gpt-5.1-codex-mini", name: "GPT 5.1 Codex Mini" },
-    { id: "gpt-5.1-codex-mini-high", name: "GPT 5.1 Codex Mini (High)" },
-    // Other models
-    { id: "gpt-5.2-codex", name: "GPT 5.2 Codex" },
-    { id: "gpt-5.2", name: "GPT 5.2" },
-    { id: "gpt-5.1-codex-max", name: "GPT 5.1 Codex Max" },
-    { id: "gpt-5.1-codex", name: "GPT 5.1 Codex" },
-    { id: "gpt-5.1", name: "GPT 5.1" },
-    { id: "gpt-5-codex", name: "GPT 5 Codex" },
-    { id: "gpt-5-codex-mini", name: "GPT 5 Codex Mini" },
     // Image models (uses image_generation tool, requires Plus/Pro plan)
     { id: "gpt-5.5-image", name: "GPT 5.5 Image", type: "image", capabilities: ["text2img", "edit"], params: ["size", "quality", "background", "image_detail", "output_format"] },
     { id: "gpt-5.4-image", name: "GPT 5.4 Image", type: "image", capabilities: ["text2img", "edit"], params: ["size", "quality", "background", "image_detail", "output_format"] },
     { id: "gpt-5.3-image", name: "GPT 5.3 Image", type: "image", capabilities: ["text2img", "edit"], params: ["size", "quality", "background", "image_detail", "output_format"] },
-    { id: "gpt-5.2-image", name: "GPT 5.2 Image", type: "image", capabilities: ["text2img", "edit"], params: ["size", "quality", "background", "image_detail", "output_format"] },
   ]),
   gc: [  // Gemini CLI
     { id: "gemini-3-flash-preview", name: "Gemini 3 Flash Preview" },
@@ -92,12 +82,15 @@ export const PROVIDER_MODELS = {
     { id: "iflow-rome-30ba3b", name: "iFlow ROME" },
   ],
   ag: [  // Antigravity - special case: models call different backends
-    { id: "gemini-3.1-pro-high", name: "Gemini 3 Pro High" },
-    { id: "gemini-3.1-pro-low", name: "Gemini 3 Pro Low" },
-    { id: "gemini-3-flash", name: "Gemini 3 Flash", thinking: false }, // AG strips thinking for this model
-    { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
-    { id: "claude-opus-4-6-thinking", name: "Claude Opus 4.6 Thinking" },
-    { id: "gpt-oss-120b-medium", name: "GPT OSS 120B Medium" },
+    { id: "gemini-3.5-flash-extra-low", name: "Gemini 3.5 Flash (Extra Low)" },
+    { id: "gemini-3-flash-agent", name: "Gemini 3.5 Flash (High)" },
+    { id: "gemini-3.5-flash-low", name: "Gemini 3.5 Flash (Medium)" },
+    { id: "gemini-pro-agent", name: "Gemini 3.1 Pro (High)" },
+    { id: "gemini-3.1-pro-low", name: "Gemini 3.1 Pro (Low)" },
+    { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6 (Thinking)" },
+    { id: "claude-opus-4-6-thinking", name: "Claude Opus 4.6 (Thinking)" },
+    { id: "gpt-oss-120b-medium", name: "GPT-OSS 120B (Medium)" },
+    { id: "gemini-3-flash", name: "Gemini 3 Flash", thinking: false }, // command model; AG strips thinking
   ],
   gh: [  // GitHub Copilot - OpenAI models
     { id: "gpt-3.5-turbo", name: "GPT-3.5 Turbo" },
@@ -150,6 +143,21 @@ export const PROVIDER_MODELS = {
     { id: "claude-haiku-4.5-agentic", name: "Claude Haiku 4.5 (Agentic)" },
     { id: "claude-sonnet-4.5-thinking-agentic", name: "Claude Sonnet 4.5 (Thinking + Agentic)" },
     { id: "claude-haiku-4.5-thinking-agentic", name: "Claude Haiku 4.5 (Thinking + Agentic)" },
+  ],
+  qd: [  // Qoder - tier + frontier models (server-published catalog)
+    // Tier models — pick a quality/cost tradeoff
+    { id: "auto", name: "Qoder Auto" },
+    { id: "ultimate", name: "Qoder Ultimate" },
+    { id: "performance", name: "Qoder Performance" },
+    { id: "efficient", name: "Qoder Efficient" },
+    { id: "lite", name: "Qoder Lite" },
+    // Frontier models — pin a specific backing model
+    { id: "qmodel", name: "Qwen 3.6 Plus (Qoder)" },
+    { id: "dmodel", name: "DeepSeek V4 Pro (Qoder)" },
+    { id: "dfmodel", name: "DeepSeek V4 Flash (Qoder)" },
+    { id: "gm51model", name: "GLM 5.1 (Qoder)" },
+    { id: "kmodel", name: "Kimi K2.6 (Qoder)" },
+    { id: "mmodel", name: "MiniMax M2.7 (Qoder)" },
   ],
   cu: [  // Cursor IDE
     { id: "default", name: "Auto (Server Picks)" },
@@ -383,13 +391,11 @@ export const PROVIDER_MODELS = {
     { id: "Doubao-Seed-2.0-pro", name: "Doubao-Seed-2.0-pro" },
     { id: "Doubao-Seed-2.0-lite", name: "Doubao-Seed-2.0-lite" },
     { id: "Doubao-Seed-Code", name: "Doubao-Seed-Code" },
+    { id: "DeepSeek-V4-Flash", name: "DeepSeek-V4-Flash" },
+    { id: "DeepSeek-V4-Pro", name: "DeepSeek-V4-Pro" },
     { id: "GLM-5.1", name: "GLM-5.1" },
     { id: "MiniMax-M2.7", name: "MiniMax-M2.7" },
     { id: "Kimi-K2.6", name: "Kimi-K2.6" },
-    { id: "MiniMax-M2.5", name: "MiniMax-M2.5" },
-    { id: "Kimi-K2.5", name: "Kimi-K2.5" },
-    { id: "GLM-4.7", name: "GLM-4.7" },
-    { id: "DeepSeek-V3.2", name: "DeepSeek-V3.2" },
   ],
   "cloudflare-ai": [
     { id: "@cf/meta/llama-3.2-1b-instruct", name: "Llama 3.2 1B Instruct" },
@@ -879,6 +885,7 @@ const OAUTH_ALIASES = {
   kilocode: "kc",
   cline: "cl",
   opencode: "oc",
+  qoder: "qd",
   vertex: "vertex",
   "vertex-partner": "vertex-partner",
 };
