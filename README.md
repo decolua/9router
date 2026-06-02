@@ -528,7 +528,7 @@ Seamless translation between formats:
 | | GitHub Copilot | $10-19/mo | Monthly | GitHub users |
 | | Cursor IDE | $20/mo | Monthly | Cursor users |
 | **💰 CHEAP** | GLM-5.1 / GLM-4.7 | $0.6/1M | Daily 10AM | Budget backup |
-| | MiniMax M2.7 | $0.2/1M | 5-hour rolling | Cheapest option |
+| | MiniMax M3 | $0.2/1M | 5-hour rolling | Cheapest option |
 | | Kimi K2.5 | $9/mo flat | 10M tokens/mo | Predictable cost |
 | **🆓 FREE** | Kiro AI | $0 | Unlimited | Claude 4.5 + GLM-5 + MiniMax free |
 | | OpenCode Free | $0 | Unlimited | No auth, auto-fetch models |
@@ -615,7 +615,7 @@ Combo: "always-on"
   1. cc/claude-opus-4-7        (best quality)
   2. cx/gpt-5.5                (second subscription)
   3. glm/glm-5.1               (cheap, resets daily)
-  4. minimax/MiniMax-M2.7      (cheapest, 5h reset)
+  4. minimax/MiniMax-M3        (cheapest, 5h reset)
   5. kr/claude-sonnet-4.5      (free unlimited)
 
 Result: 5 layers of fallback = zero downtime
@@ -818,13 +818,13 @@ Models:
 
 **Pro Tip:** Coding Plan offers 3× quota at 1/7 cost! Reset daily 10:00 AM.
 
-### MiniMax M2.7 (5h reset, $0.20/1M)
+### MiniMax M3 (5h reset, $0.20/1M)
 
 1. Sign up: [MiniMax](https://www.minimax.io/)
 2. Get API key
 3. Dashboard → Add API Key
 
-**Use:** `minimax/MiniMax-M2.7`, `minimax/MiniMax-M2.5`
+**Use:** `minimax/MiniMax-M3`, `minimax/MiniMax-M2.7`
 
 **Pro Tip:** Cheapest option for long context (1M tokens)!
 
@@ -905,7 +905,7 @@ Name: premium-coding
 Models:
   1. cc/claude-opus-4-7 (Subscription primary)
   2. glm/glm-5.1 (Cheap backup, $0.6/1M)
-  3. minimax/MiniMax-M2.7 (Cheapest fallback, $0.20/1M)
+  3. minimax/MiniMax-M3 (Cheapest fallback, $0.20/1M)
 
 Use in CLI: premium-coding
 
@@ -1168,8 +1168,8 @@ Notes:
 - `glm/glm-4.7`
 
 **MiniMax (`minimax/`)** - $0.2/1M:
+- `minimax/MiniMax-M3`
 - `minimax/MiniMax-M2.7`
-- `minimax/MiniMax-M2.5`
 
 **Kimi (`kimi/`)** - $9/mo flat:
 - `kimi/kimi-k2.5`

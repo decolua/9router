@@ -337,9 +337,8 @@ export const PROVIDER_MODELS = {
     { id: "kimi-latest", name: "Kimi Latest" },
   ],
   minimax: [
+    { id: "MiniMax-M3", name: "MiniMax M3" },
     { id: "MiniMax-M2.7", name: "MiniMax M2.7" },
-    { id: "MiniMax-M2.5", name: "MiniMax M2.5" },
-    { id: "MiniMax-M2.1", name: "MiniMax M2.1" },
     // Image models
     { id: "minimax-image-01", name: "MiniMax Image 01", type: "image", params: ["n", "size", "response_format"] },
   ],
@@ -363,9 +362,8 @@ export const PROVIDER_MODELS = {
     { id: "qwen3-vl-plus", name: "Qwen3 VL Plus" },
   ],
   "minimax-cn": [
+    { id: "MiniMax-M3", name: "MiniMax M3" },
     { id: "MiniMax-M2.7", name: "MiniMax M2.7" },
-    { id: "MiniMax-M2.5", name: "MiniMax M2.5" },
-    { id: "MiniMax-M2.1", name: "MiniMax M2.1" },
   ],
   alicode: [
     { id: "qwen3.5-plus", name: "Qwen3.5 Plus" },
