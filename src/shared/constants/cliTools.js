@@ -56,6 +56,15 @@ export const MITM_TOOLS = {
     configType: "mitm",
     mitmDomain: "q.us-east-1.amazonaws.com",
     defaultModels: [
+      // Kiro's agent/"vibe" mode sends modelId "auto" for the main turn ("simple-task",
+      // below, covers the background sub-tasks). Evidence: MITM request dump of
+      // /generateAssistantResponse captured 2026-06-02 showed `conversationState.modelId
+      // = "auto"`. Unlike Copilot's "auto" (a client-side dispatch label that resolves to
+      // concrete wire ids — separately confirmed by live capture 2026-06-03, see the
+      // github block above), Kiro's "auto" is a real wire id: without a mappable slot
+      // getMappedModel returns null and the main turn is passed through to AWS instead of
+      // the configured provider. Re-verify the wire id if Kiro's client changes.
+      { id: "auto", name: "Auto (Kiro Agent)", alias: "auto" },
       { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5", alias: "claude-sonnet-4.5" },
       { id: "claude-sonnet-4", name: "Claude Sonnet 4", alias: "claude-sonnet-4" },
       { id: "claude-haiku-4.5", name: "Claude Haiku 4.5", alias: "claude-haiku-4.5" },
