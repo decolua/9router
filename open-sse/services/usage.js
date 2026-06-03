@@ -58,13 +58,17 @@ const CLAUDE_CONFIG = {
  * @returns {Object} Usage data with quotas
  */
 export async function getUsageForProvider(connection, proxyOptions = null) {
-  const { provider, accessToken, apiKey, providerSpecificData } = connection;
+  const { provider, accessToken, apiKey, providerSpecificData, projectId } = connection;
+  const providerDataWithProjectId = {
+    ...(providerSpecificData || {}),
+    ...(projectId ? { projectId } : {}),
+  };
 
   switch (provider) {
     case "github":
       return await getGitHubUsage(accessToken, providerSpecificData, proxyOptions);
     case "gemini-cli":
-      return await getGeminiUsage(accessToken, providerSpecificData, proxyOptions);
+      return await getGeminiUsage(accessToken, providerDataWithProjectId, proxyOptions);
     case "antigravity":
       return await getAntigravityUsage(accessToken, providerSpecificData, proxyOptions);
     case "claude":
@@ -73,6 +77,8 @@ export async function getUsageForProvider(connection, proxyOptions = null) {
       return await getCodexUsage(accessToken, proxyOptions);
     case "kiro":
       return await getKiroUsage(accessToken, providerSpecificData, proxyOptions);
+    case "qoder":
+      return await getQoderUsage(accessToken, proxyOptions);
     case "qwen":
       return await getQwenUsage(accessToken, providerSpecificData);
     case "iflow":
@@ -222,18 +228,22 @@ async function getGeminiUsage(accessToken, providerSpecificData, proxyOptions = 
   }
 
   try {
-    // Resolve project id: prefer connection-stored id, else loadCodeAssist lookup
-    let projectId = providerSpecificData?.projectId || null;
+    // Resolve project id: prefer connection-stored id, else loadCodeAssist lookup.
+    // #1271: OAuth save stores projectId on the connection, not providerSpecificData.
+    let projectId = normalizeCloudCodeProjectId(providerSpecificData?.projectId);
     let plan = "Free";
 
     if (!projectId) {
       const subInfo = await getGeminiSubscriptionInfo(accessToken, proxyOptions);
-      projectId = subInfo?.cloudaicompanionProject || null;
+      projectId = normalizeCloudCodeProjectId(subInfo?.cloudaicompanionProject);
       plan = subInfo?.currentTier?.name || plan;
     }
 
     if (!projectId) {
-      return { plan, message: "Gemini CLI project ID not available." };
+      return {
+        plan,
+        message: "Gemini CLI project ID not available. Reconnect Gemini CLI, or configure a Google Cloud project with Gemini Code Assist access before checking quota.",
+      };
     }
 
     const controller = new AbortController();
@@ -289,6 +299,14 @@ async function getGeminiUsage(accessToken, providerSpecificData, proxyOptions = 
   }
 }
 
+function normalizeCloudCodeProjectId(project) {
+  if (typeof project === "string") return project.trim() || null;
+  if (project && typeof project === "object" && typeof project.id === "string") {
+    return project.id.trim() || null;
+  }
+  return null;
+}
+
 /**
  * Get Gemini CLI subscription info via loadCodeAssist
  */
@@ -305,11 +323,7 @@ async function getGeminiSubscriptionInfo(accessToken, proxyOptions = null) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          metadata: {
-            ideType: "IDE_UNSPECIFIED",
-            platform: "PLATFORM_UNSPECIFIED",
-            pluginType: "GEMINI",
-          },
+          metadata: CLIENT_METADATA,
         }),
         signal: controller.signal,
       },
@@ -383,12 +397,14 @@ async function getAntigravityUsage(accessToken, providerSpecificData, proxyOptio
     if (data.models) {
       // Filter only recommended/important models (must match PROVIDER_MODELS ag ids)
       const importantModels = [
-        'claude-opus-4-6-thinking',
-        'claude-sonnet-4-6',
-        'gemini-3.1-pro-high',
+        'gemini-3-flash-agent',
+        'gemini-3.5-flash-low',
+        'gemini-pro-agent',
         'gemini-3.1-pro-low',
-        'gemini-3-flash',
+        'claude-sonnet-4-6',
+        'claude-opus-4-6-thinking',
         'gpt-oss-120b-medium',
+        'gemini-3-flash',
       ];
 
       for (const [modelKey, info] of Object.entries(data.models)) {
@@ -1134,4 +1150,66 @@ async function getMiniMaxUsage(apiKey, provider, proxyOptions = null) {
   }
 
   return { message: lastErrorMessage ? `MiniMax connected. Unable to fetch usage: ${lastErrorMessage}` : "MiniMax connected. Unable to fetch usage." };
+}
+
+async function getQoderUsage(accessToken, proxyOptions = null) {
+  if (!accessToken) {
+    return { message: "Qoder usage unavailable: no access token" };
+  }
+  try {
+    const response = await proxyAwareFetch(
+      "https://openapi.qoder.sh/api/v2/quota/usage",
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: "application/json",
+        },
+      },
+      proxyOptions,
+    );
+    if (!response.ok) {
+      return { message: `Qoder connected. Usage fetch returned ${response.status}.` };
+    }
+    const body = await response.json().catch(() => null);
+    if (!body) {
+      return { message: "Qoder connected. Usage response was not JSON." };
+    }
+    // Quota records live under `quotas`; scalar metadata
+    // (totalUsagePercentage, isQuotaExceeded, expiresAt) are surfaced as
+    // siblings so the dashboard parser doesn't try to render them as rows.
+    const userQuota = body.userQuota || {};
+    const orgQuota = body.orgResourcePackage || {};
+    // Qoder publishes a single absolute reset timestamp (`expiresAt` in ms);
+    // surface it on every quota record as ISO so the table can render
+    // "resets at" alongside used/total.
+    const expiresAtMs = Number.isFinite(Number(body.expiresAt)) && Number(body.expiresAt) > 0
+      ? Number(body.expiresAt)
+      : null;
+    const resetAt = expiresAtMs ? new Date(expiresAtMs).toISOString() : null;
+    const quotas = {
+      user: {
+        total: Number(userQuota.total) || 0,
+        used: Number(userQuota.used) || 0,
+        remaining: Number(userQuota.remaining) || 0,
+        unit: userQuota.unit || "credits",
+        resetAt,
+      },
+      organization: {
+        total: Number(orgQuota.total) || 0,
+        used: Number(orgQuota.used) || 0,
+        remaining: Number(orgQuota.remaining) || 0,
+        unit: orgQuota.unit || "credits",
+        resetAt,
+      },
+    };
+    return {
+      quotas,
+      totalUsagePercentage: Number(body.totalUsagePercentage) || 0,
+      isQuotaExceeded: !!body.isQuotaExceeded,
+      expiresAt: expiresAtMs,
+    };
+  } catch (error) {
+    return { message: `Qoder connected. Unable to fetch usage: ${error.message}` };
+  }
 }

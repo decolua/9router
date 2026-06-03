@@ -1,5 +1,6 @@
 // Stream handler with disconnect detection - shared for all providers
 import { STREAM_STALL_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import { dbg, isDebugEnabled } from "./debugLog.js";
 
 // Get HH:MM:SS timestamp
 function getTimeString() {
@@ -38,6 +39,7 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
       disconnected = true;
 
       logStream(`disconnect: ${reason}`);
+      dbg("CTRL", `${provider}/${model} | disconnect=${reason} | dur=${Date.now() - startTime}ms`);
 
       // Delay abort to allow cleanup
       abortTimeout = setTimeout(() => {
@@ -85,7 +87,12 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
 
 /**
  * Create transform stream with disconnect detection
- * Wraps existing transform stream and adds abort capability
+ * Wraps existing transform stream and adds abort capability.
+ *
+ * Stall detection lives in pipeWithDisconnect (tied to upstream byte
+ * activity), not here — output of the transform stream may be silent
+ * for long periods while raw bytes still flow (e.g. Kiro EventStream
+ * binary frames buffering, Claude reasoning streams).
  */
 export function createDisconnectAwareStream(transformStream, streamController) {
   const reader = transformStream.readable.getReader();
@@ -99,18 +106,7 @@ export function createDisconnectAwareStream(transformStream, streamController) {
       }
 
       try {
-        // Race between chunk arrival and stall timeout
-        let stallTimer;
-        const stallPromise = new Promise((_, reject) => {
-          stallTimer = setTimeout(() => reject(new Error("stream stall timeout")), STREAM_STALL_TIMEOUT_MS);
-        });
-
-        let done, value;
-        try {
-          ({ done, value } = await Promise.race([reader.read(), stallPromise]));
-        } finally {
-          clearTimeout(stallTimer);
-        }
+        const { done, value } = await reader.read();
 
         if (done) {
           streamController.handleComplete();
@@ -119,10 +115,37 @@ export function createDisconnectAwareStream(transformStream, streamController) {
         }
         controller.enqueue(value);
       } catch (error) {
+        const wasConnected = streamController.isConnected();
         streamController.handleError(error);
         reader.cancel().catch(() => {});
         writer.abort().catch(() => {});
-        controller.error(error);
+
+        // Treat network resets / socket hang up / abort as graceful close
+        const msg = error?.message || "";
+        const code = error?.code || error?.cause?.code || "";
+        const isNetworkClose =
+          error.name === "AbortError" ||
+          msg.includes("aborted") ||
+          msg.includes("socket hang up") ||
+          msg.includes("ECONNRESET") ||
+          msg.includes("ETIMEDOUT") ||
+          msg.includes("EPIPE") ||
+          code === "ECONNRESET" ||
+          code === "ETIMEDOUT" ||
+          code === "EPIPE" ||
+          code === "UND_ERR_SOCKET";
+
+        if (!wasConnected || isNetworkClose) {
+          try {
+            controller.close();
+          } catch (e) {
+            // Stream might already be closed or cancelled
+          }
+        } else {
+          try {
+            controller.error(error);
+          } catch (e) { /* already closed */ }
+        }
       }
     },
 
@@ -135,16 +158,81 @@ export function createDisconnectAwareStream(transformStream, streamController) {
 }
 
 /**
- * Pipe provider response through transform with disconnect detection
+ * Pipe provider response through transform with disconnect detection.
+ *
+ * Stall watchdog tracks raw upstream byte activity, not transform output.
+ * Reasoning models (Claude thinking via Kiro, etc.) can produce zero SSE
+ * output for long stretches while partial EventStream frames keep arriving.
+ * Measuring stall on the transform output caused false stalls and the
+ * "failed to pipe response" error in Next.
+ *
+ * Any upstream chunk resets the timer. If no bytes arrive for
+ * STREAM_STALL_TIMEOUT_MS, abort the underlying fetch via the controller.
+ *
  * @param {Response} providerResponse - Response from provider
  * @param {TransformStream} transformStream - Transform stream for SSE
  * @param {object} streamController - Stream controller from createStreamController
  */
 export function pipeWithDisconnect(providerResponse, transformStream, streamController) {
-  const transformedBody = providerResponse.body.pipeThrough(transformStream);
+  let stallTimer = null;
+  let chunkCount = 0;
+  let totalBytes = 0;
+  let lastChunkAt = Date.now();
+  const t0 = Date.now();
+  const tag = "STREAM";
+  const clearStall = () => {
+    if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
+  };
+  const armStall = () => {
+    clearStall();
+    stallTimer = setTimeout(() => {
+      stallTimer = null;
+      dbg(tag, `STALL TIMEOUT ${STREAM_STALL_TIMEOUT_MS}ms | chunks=${chunkCount} | bytes=${totalBytes} | sinceLast=${Date.now() - lastChunkAt}ms`);
+      streamController.handleError?.(new Error("stream stall timeout"));
+      streamController.abort?.();
+    }, STREAM_STALL_TIMEOUT_MS);
+  };
+
+  // Wrap controller so every termination path clears the stall timer.
+  // Without this, abort/cancel/downstream-error paths leave the timer armed
+  // and a stale abort could fire after the request has already ended.
+  const wrappedController = {
+    signal: streamController.signal,
+    startTime: streamController.startTime,
+    isConnected: () => streamController.isConnected(),
+    handleComplete: () => { dbg(tag, `complete | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); streamController.handleComplete(); },
+    handleError: (e) => { dbg(tag, `error: ${e?.message} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); streamController.handleError(e); },
+    handleDisconnect: (r) => { dbg(tag, `disconnect: ${r} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); streamController.handleDisconnect(r); },
+    abort: () => { clearStall(); streamController.abort(); }
+  };
+
+  armStall();
+  dbg(tag, `pipe start | stallTimeout=${STREAM_STALL_TIMEOUT_MS}ms`);
+
+  const upstreamTap = new TransformStream({
+    transform(chunk, controller) {
+      chunkCount++;
+      const sz = chunk?.byteLength || chunk?.length || 0;
+      totalBytes += sz;
+      const now = Date.now();
+      const gap = now - lastChunkAt;
+      lastChunkAt = now;
+      if (isDebugEnabled && (chunkCount <= 5 || chunkCount % 20 === 0 || gap > 5000)) {
+        dbg(tag, `chunk #${chunkCount} | size=${sz}B | gap=${gap}ms | total=${totalBytes}B`);
+      }
+      armStall();
+      controller.enqueue(chunk);
+    },
+    flush() { dbg(tag, `upstream EOF | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); }
+  });
+
+  const transformedBody = providerResponse.body
+    .pipeThrough(upstreamTap)
+    .pipeThrough(transformStream);
+
   return createDisconnectAwareStream(
     { readable: transformedBody, writable: { getWriter: () => ({ abort: () => Promise.resolve() }) } },
-    streamController
+    wrappedController
   );
 }
 

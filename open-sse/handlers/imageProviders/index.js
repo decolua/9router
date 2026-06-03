@@ -17,6 +17,7 @@ const ADAPTERS = {
   minimax: createOpenAIAdapter("minimax"),
   openrouter: createOpenAIAdapter("openrouter"),
   recraft: createOpenAIAdapter("recraft"),
+  xai: createOpenAIAdapter("xai"),
   gemini,
   codex,
   sdwebui,

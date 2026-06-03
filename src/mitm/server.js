@@ -1,17 +1,23 @@
 const https = require("https");
+const http2 = require("http2");
+const tls = require("tls");
 const fs = require("fs");
 const path = require("path");
 const dns = require("dns");
 const { promisify } = require("util");
 const { execSync } = require("child_process");
-const { log, err, dumpRequest, createResponseDumper } = require("./logger");
-const { TARGET_HOSTS, URL_PATTERNS, MODEL_SYNONYMS, getToolForHost } = require("./config");
+const { log, err, dumpRequest, createResponseDumper, clearDumpDir } = require("./logger");
+const { IS_DEV, LSOF_BIN, TARGET_HOSTS, URL_PATTERNS, MODEL_SYNONYMS, MODEL_PATTERNS, getToolForHost } = require("./config");
 const { DATA_DIR, MITM_DIR } = require("./paths");
 const { getCertForDomain } = require("./cert/generate");
 const { getMitmAlias } = require("./dbReader");
+const { applyAntigravityIdeVersionOverride } = require("./antigravityIdeVersion");
 const LOCAL_PORT = 443;
 const IS_WIN = process.platform === "win32";
-const ENABLE_FILE_LOG = true;
+const ENABLE_FILE_LOG = IS_DEV;
+
+// Clear stale dump files on every MITM start (prevents unbounded disk usage)
+clearDumpDir();
 const INTERNAL_REQUEST_HEADER = { name: "x-request-source", value: "local" };
 
 // Host rewrite for upstream forward: PROD cloudcode-pa is rate-limited (429),
@@ -108,7 +114,13 @@ function getMappedModel(tool, model) {
     if (aliases[lookup]) return aliases[lookup];
     // Prefix match fallback
     const prefixKey = Object.keys(aliases).find(k => k && aliases[k] && (lookup.startsWith(k) || k.startsWith(lookup)));
-    return prefixKey ? aliases[prefixKey] : null;
+    if (prefixKey) return aliases[prefixKey];
+    // Pattern fallback: catches AG renamed variants (e.g. deprecated pro IDs → gemini-pro-agent)
+    const patterns = MODEL_PATTERNS?.[tool] || [];
+    for (const { match, alias } of patterns) {
+      if (match.test(lookup) && aliases[alias]) return aliases[alias];
+    }
+    return null;
   } catch { return null; }
 }
 
@@ -120,16 +132,136 @@ function getMappedModel(tool, model) {
  */
 async function passthrough(req, res, bodyBuffer, onResponse) {
   const originalHost = (req.headers.host || TARGET_HOSTS[0]).split(":")[0];
-  const targetHost = HOST_REWRITE[originalHost] || originalHost;
-  const targetIP = await resolveTargetIP(targetHost);
+  // Only rewrite host for chat endpoints — daily-cloudcode-pa rejects auth/login requests
+  const isChatEndpoint = req.url.includes(":generateContent") || req.url.includes(":streamGenerateContent");
+  const targetHost = isChatEndpoint ? (HOST_REWRITE[originalHost] || originalHost) : originalHost;
   const dumper = ENABLE_FILE_LOG ? createResponseDumper(req, "passthrough") : null;
 
+  const tool = getToolForHost(req.headers.host);
+  const versionOverride = tool === "antigravity"
+    ? applyAntigravityIdeVersionOverride(bodyBuffer, req.headers)
+    : { bodyBuffer, headers: req.headers };
+  const bodyForForwarding = versionOverride.bodyBuffer;
+  const headersForForwarding = { ...versionOverride.headers, host: targetHost };
+  if (bodyForForwarding !== bodyBuffer) {
+    headersForForwarding["content-length"] = String(bodyForForwarding.length);
+  }
+
+  // ALPN negotiate: try HTTP/2 first (like browsers/mitmweb), fallback HTTP/1.1
+  try {
+    const proto = await negotiateAlpn(targetHost);
+    if (proto === "h2") {
+      return await passthroughHttp2(req, res, bodyForForwarding, headersForForwarding, targetHost, onResponse, dumper);
+    }
+  } catch (e) {
+    err(`[mitm] ALPN negotiate failed: ${e.message}, fallback to HTTP/1.1`);
+  }
+
+  return passthroughHttps(req, res, bodyForForwarding, headersForForwarding, targetHost, onResponse, dumper);
+}
+
+// ── ALPN negotiation cache ────────────────────────────────────
+const alpnCache = new Map(); // host → "h2" | "http/1.1"
+async function negotiateAlpn(host) {
+  if (alpnCache.has(host)) return alpnCache.get(host);
+  const ip = await resolveTargetIP(host);
+  return new Promise((resolve, reject) => {
+    const socket = tls.connect({
+      host: ip, port: 443, servername: host,
+      ALPNProtocols: ["h2", "http/1.1"], rejectUnauthorized: false,
+    }, () => {
+      const proto = socket.alpnProtocol || "http/1.1";
+      alpnCache.set(host, proto);
+      log(`🔗 [mitm] ALPN ${host} → ${proto}`);
+      socket.end();
+      resolve(proto);
+    });
+    socket.once("error", reject);
+    socket.setTimeout(5000, () => { socket.destroy(new Error("ALPN timeout")); });
+  });
+}
+
+// HTTP/2 passthrough using node:http2 native
+async function passthroughHttp2(req, res, bodyBuffer, headers, targetHost, onResponse, dumper) {
+  const targetIP = await resolveTargetIP(targetHost);
+  // HTTP/2 pseudo-headers required; strip HTTP/1.1-only headers
+  const h2Headers = {};
+  for (const [k, v] of Object.entries(headers)) {
+    const lk = k.toLowerCase();
+    if (lk === "host" || lk === "connection" || lk === "keep-alive" ||
+        lk === "transfer-encoding" || lk === "upgrade" || lk === "proxy-connection") continue;
+    h2Headers[lk] = v;
+  }
+  h2Headers[":method"] = req.method;
+  h2Headers[":path"] = req.url;
+  h2Headers[":scheme"] = "https";
+  h2Headers[":authority"] = targetHost;
+
+  return new Promise((resolve) => {
+    const client = http2.connect(`https://${targetHost}`, {
+      createConnection: () => tls.connect({
+        host: targetIP, port: 443, servername: targetHost,
+        ALPNProtocols: ["h2"], rejectUnauthorized: false,
+      }),
+    });
+    client.once("error", (e) => {
+      err(`[mitm] http2 client error: ${e.message}`);
+      if (dumper) { dumper.writeChunk(`\n[ERROR h2] ${e.message}\n`); dumper.end(); }
+      if (!res.headersSent) res.writeHead(502);
+      if (!res.writableEnded) res.end("Bad Gateway");
+      try { client.close(); } catch {}
+      resolve();
+    });
+
+    const stream = client.request(h2Headers, { endStream: bodyBuffer.length === 0 });
+    if (bodyBuffer.length > 0) stream.end(bodyBuffer);
+
+    stream.once("response", (responseHeaders) => {
+      const status = responseHeaders[":status"];
+      // Filter pseudo-headers + connection-specific
+      const outHeaders = {};
+      for (const [k, v] of Object.entries(responseHeaders)) {
+        if (k.startsWith(":")) continue;
+        if (k === "connection" || k === "keep-alive" || k === "transfer-encoding") continue;
+        outHeaders[k] = v;
+      }
+      res.writeHead(status, outHeaders);
+      if (dumper) dumper.writeHeader(status, outHeaders);
+
+      const chunks = [];
+      stream.on("data", chunk => {
+        if (dumper) dumper.writeChunk(chunk);
+        if (onResponse) chunks.push(chunk);
+        res.write(chunk);
+      });
+      stream.on("end", () => {
+        if (dumper) dumper.end();
+        if (!res.writableEnded) res.end();
+        if (onResponse) try { onResponse(Buffer.concat(chunks), outHeaders); } catch {}
+        try { client.close(); } catch {}
+        resolve();
+      });
+    });
+    stream.once("error", (e) => {
+      err(`[mitm] http2 stream error: ${e.message}`);
+      if (dumper) { dumper.writeChunk(`\n[ERROR h2-stream] ${e.message}\n`); dumper.end(); }
+      if (!res.headersSent) res.writeHead(502);
+      if (!res.writableEnded) res.end();
+      try { client.close(); } catch {}
+      resolve();
+    });
+  });
+}
+
+// Fallback: raw https.request HTTP/1.1 with custom DNS (bypasses /etc/hosts MITM loop)
+async function passthroughHttps(req, res, bodyBuffer, headers, targetHost, onResponse, dumper) {
+  const targetIP = await resolveTargetIP(targetHost);
   const forwardReq = https.request({
     hostname: targetIP,
     port: 443,
     path: req.url,
     method: req.method,
-    headers: { ...req.headers, host: targetHost },
+    headers,
     servername: targetHost,
     rejectUnauthorized: false
   }, (forwardRes) => {
@@ -141,7 +273,6 @@ async function passthrough(req, res, bodyBuffer, onResponse) {
       return;
     }
 
-    // Tee: forward to client AND optionally buffer + dump
     const chunks = [];
     forwardRes.on("data", chunk => {
       if (dumper) dumper.writeChunk(chunk);
@@ -222,7 +353,7 @@ function killPort(port) {
       if (!out) return;
       pidList = out.split(/\r?\n/).map(s => s.trim()).filter(p => p && Number(p) !== process.pid && Number(p) > 4);
     } else {
-      const out = execSync(`lsof -nP -iTCP:${port} -sTCP:LISTEN -t`, { encoding: "utf-8", windowsHide: true }).trim();
+      const out = execSync(`${LSOF_BIN} -nP -iTCP:${port} -sTCP:LISTEN -t`, { encoding: "utf-8", windowsHide: true }).trim();
       if (!out) return;
       pidList = out.split("\n").filter(p => p && Number(p) !== process.pid);
     }

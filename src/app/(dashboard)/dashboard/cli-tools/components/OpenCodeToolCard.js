@@ -192,7 +192,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
 
     const modelsObj = {};
     modelsToShow.forEach(m => {
-      modelsObj[m] = { name: m };
+      modelsObj[m] = { name: m, modalities: { input: ["text", "image"], output: ["text"] } };
     });
 
     return [{

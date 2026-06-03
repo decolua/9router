@@ -273,19 +273,21 @@ export default function ProvidersPage() {
     }))
     .filter((p) => matchSearch(p.name));
 
-  const oauthEntries = Object.entries(OAUTH_PROVIDERS).filter(([, info]) =>
-    matchSearch(info.name),
+  const oauthEntries = Object.entries(OAUTH_PROVIDERS).filter(
+    ([, info]) => !info.hidden && matchSearch(info.name),
   );
-  const freeEntries = Object.entries(FREE_PROVIDERS).filter(([, info]) =>
-    matchSearch(info.name),
+  const freeEntries = Object.entries(FREE_PROVIDERS).filter(
+    ([, info]) => !info.hidden && matchSearch(info.name),
   );
   const freeTierEntries = Object.entries(FREE_TIER_PROVIDERS).filter(
-    ([, info]) => matchSearch(info.name),
+    ([, info]) => !info.hidden && matchSearch(info.name),
   );
   const apikeyEntries = sortByPriority(
     Object.entries(APIKEY_PROVIDERS).filter(
       ([, info]) =>
-        (info.serviceKinds ?? ["llm"]).includes("llm") && matchSearch(info.name),
+        !info.hidden &&
+        (info.serviceKinds ?? ["llm"]).includes("llm") &&
+        matchSearch(info.name),
     ),
     "apikey",
   );

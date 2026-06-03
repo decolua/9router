@@ -188,5 +188,7 @@
   "Sudo Password Required": "Απαιτείται κωδικός πρόσβασης Sudo",
   "Enter your sudo password to start/stop MITM server": "Εισαγάγετε τον κωδικό πρόσβασης sudo για να ξεκινήσετε/διακόψετε τον διακομιστή MITM",
   "Sudo Password": "Κωδικός πρόσβασης Sudo",
-  "Click to add, click again to remove. Changes are saved automatically.": "Κάντε κλικ για προσθήκη, κάντε ξανά κλικ για αφαίρεση. Οι αλλαγές αποθηκεύονται αυτόματα."
+  "Click to add, click again to remove. Changes are saved automatically.": "Κάντε κλικ για προσθήκη, κάντε ξανά κλικ για αφαίρεση. Οι αλλαγές αποθηκεύονται αυτόματα.",
+  "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ Ειδοποίηση κινδύνου: Αυτός ο πάροχος χρησιμοποιεί συνδρομή/συνεδρία OAuth που δεν έχει επίσημη άδεια για χρήση μέσω proxy/router. Ο λογαριασμός ενδέχεται να περιοριστεί ή να αποκλειστεί. Χρήση με δική σας ευθύνη.",
+  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ Το MITM υποκλέπτει την κίνηση HTTPS των εργαλείων IDE (Antigravity, GitHub Copilot, Kiro) μέσω τοπικού CA για ανακατεύθυνση αιτημάτων στους παρόχους σας. Μπορεί να παραβιάσει τους ToS → κίνδυνος αποκλεισμού λογαριασμού. Χρήση με δική σας ευθύνη."
 }
