@@ -109,8 +109,9 @@ function getMappedModel(tool, model) {
   try {
     const aliases = getMitmAlias(tool);
     if (!aliases) return null;
-    // Normalize via synonym map (e.g., gemini-default → gemini-3-flash)
-    const lookup = MODEL_SYNONYMS?.[tool]?.[model] || model;
+    // Normalize via synonym map (e.g., public AG names -> backend model ids)
+    const normalizedModel = String(model).replace(/^models\//, "");
+    const lookup = MODEL_SYNONYMS?.[tool]?.[normalizedModel] || normalizedModel;
     if (aliases[lookup]) return aliases[lookup];
     // Prefix match fallback
     const prefixKey = Object.keys(aliases).find(k => k && aliases[k] && (lookup.startsWith(k) || k.startsWith(lookup)));

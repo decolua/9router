@@ -399,6 +399,7 @@ async function getAntigravityUsage(accessToken, providerSpecificData, proxyOptio
       const importantModels = [
         'gemini-3-flash-agent',
         'gemini-3.5-flash-low',
+        'gemini-3.5-flash-extra-low',
         'gemini-pro-agent',
         'gemini-3.1-pro-low',
         'claude-sonnet-4-6',
