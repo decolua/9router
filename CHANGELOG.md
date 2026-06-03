@@ -1,3 +1,8 @@
+# Unreleased
+
+## Fixes
+- Fix runtime installs in `~/.9router/runtime` pruning sibling packages. The SQLite (`better-sqlite3`) and tray (`systray2`) lazy installs now save to `package.json` instead of passing `--no-save`, so the second install no longer prunes the first.
+
 # v0.4.66 (2026-05-29)
 
 ## Features
