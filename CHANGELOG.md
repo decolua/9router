@@ -1,6 +1,6 @@
 # Unreleased
 
-### Features
+## Features
 - Make `STREAM_STALL_TIMEOUT_MS` and `FETCH_CONNECT_TIMEOUT_MS` configurable via `NINE_ROUTER_STREAM_STALL_TIMEOUT_MS` and `NINE_ROUTER_FETCH_CONNECT_TIMEOUT_MS` environment variables. Backward compatible — defaults unchanged.
 
 # v0.4.66 (2026-05-29)
