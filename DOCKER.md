@@ -59,6 +59,7 @@ docker run -d \
   -e DATA_DIR=/app/data \
   -e PORT=20128 \
   -e HOSTNAME=0.0.0.0 \
+  -e NEXT_PROXY_CLIENT_MAX_BODY_SIZE=268435456 \
   -e DEBUG=true \
   --name 9router \
   decolua/9router:latest

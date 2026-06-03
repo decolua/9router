@@ -1102,6 +1102,7 @@ docker pull decolua/9router:latest   # update to latest
 | `PORT` | framework default | Service port (`20128` in examples) |
 | `HOSTNAME` | framework default | Bind host (Docker defaults to `0.0.0.0`) |
 | `NODE_ENV` | runtime default | Set `production` for deploy |
+| `NEXT_PROXY_CLIENT_MAX_BODY_SIZE` | `268435456` | Max proxied request body size for `/v1/*` routes. Accepts bytes or Next.js size strings like `50mb` |
 | `BASE_URL` | `http://localhost:20128` | Server-side internal base URL used by cloud sync jobs |
 | `CLOUD_URL` | `https://9router.com` | Server-side cloud sync endpoint base URL |
 | `NEXT_PUBLIC_BASE_URL` | `http://localhost:3000` | Backward-compatible/public base URL (prefer `BASE_URL` for server runtime) |
