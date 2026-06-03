@@ -1,3 +1,20 @@
+// Read a timeout (in milliseconds) from an env var, falling back to a default.
+// Logs a warning and falls back if the value is not a positive integer.
+// Reading happens once at module load — set the env var before importing.
+function _parseTimeoutMs(envName, defaultMs) {
+  const raw = process.env[envName];
+  if (raw == null || raw === "") return defaultMs;
+  const trimmed = raw.trim();
+  const parsed = Number.parseInt(trimmed, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0 || String(parsed) !== trimmed) {
+    console.warn(
+      `[runtimeConfig] Invalid ${envName}=${JSON.stringify(raw)}; using default ${defaultMs}ms. Expected positive integer in milliseconds.`
+    );
+    return defaultMs;
+  }
+  return parsed;
+}
+
 // HTTP status codes
 export const HTTP_STATUS = {
   BAD_REQUEST: 400,
@@ -31,11 +48,22 @@ export const MEMORY_CONFIG = {
   proxyDispatchersMaxSize: 20,
 };
 
-// Stream stall timeout: abort if no chunk received within this duration
-export const STREAM_STALL_TIMEOUT_MS = 30 * 1000;
+// Stream stall timeout: abort if no chunk received within this duration.
+// Override at runtime via env var NINE_ROUTER_STREAM_STALL_TIMEOUT_MS (milliseconds).
+const _stallTimeoutMs = _parseTimeoutMs(
+  "NINE_ROUTER_STREAM_STALL_TIMEOUT_MS",
+  30 * 1000
+);
+export const STREAM_STALL_TIMEOUT_MS = _stallTimeoutMs;
 
-// Fetch connect timeout: abort if upstream doesn't return response headers within this duration
-export const FETCH_CONNECT_TIMEOUT_MS = 20 * 1000;
+// Fetch connect timeout: abort if upstream doesn't return response headers
+// within this duration. Override at runtime via env var
+// NINE_ROUTER_FETCH_CONNECT_TIMEOUT_MS (milliseconds).
+const _fetchConnectTimeoutMs = _parseTimeoutMs(
+  "NINE_ROUTER_FETCH_CONNECT_TIMEOUT_MS",
+  20 * 1000
+);
+export const FETCH_CONNECT_TIMEOUT_MS = _fetchConnectTimeoutMs;
 
 // Default token limits
 export const DEFAULT_MAX_TOKENS = 64000;
