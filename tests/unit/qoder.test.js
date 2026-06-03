@@ -452,3 +452,107 @@ describe("wrapQoderSSE", () => {
     expect(wrapped).toBe(r);
   });
 });
+
+describe("buildQoderRequestBody - dynamic model support", () => {
+  const { buildQoderRequestBody } = qoderExecutorInternals;
+
+  // Mock credentials for testing
+  const mockCredentials = {
+    userId: "test-user",
+    accessToken: "test-token",
+    email: "test@example.com",
+    displayName: "Test User",
+  };
+
+  const mockBody = {
+    messages: [{ role: "user", content: "Hello" }],
+    max_tokens: 100,
+  };
+
+  it("accepts models not in static QODER_MODEL_MAP (e.g., qmodel_latest)", async () => {
+    // This test verifies that the function no longer rejects models based on
+    // a static whitelist. Instead, it should attempt to fetch the model config
+    // from the dynamic API. Since we're not mocking getQoderModelConfig here,
+    // we expect it to throw an error about config not being available, NOT
+    // about the model being unsupported.
+    
+    // Note: This will fail with "model_config not yet known" rather than
+    // "Unsupported qoder model", proving the static check was removed.
+    await expect(
+      buildQoderRequestBody({
+        model: "qoder/qmodel_latest",
+        body: mockBody,
+        credentials: mockCredentials,
+        log: () => {},
+        proxyOptions: undefined,
+        signal: undefined,
+      })
+    ).rejects.toThrow(/model_config for "qmodel_latest" not yet known/);
+    
+    // The key assertion: it should NOT throw "Unsupported qoder model"
+    await expect(
+      buildQoderRequestBody({
+        model: "qoder/qmodel_latest",
+        body: mockBody,
+        credentials: mockCredentials,
+        log: () => {},
+        proxyOptions: undefined,
+        signal: undefined,
+      })
+    ).rejects.not.toThrow(/Unsupported qoder model/);
+  });
+
+  it("strips qoder/ prefix from model ID", async () => {
+    // Verify that both "qoder/auto" and "auto" are treated identically
+    const withPrefix = buildQoderRequestBody({
+      model: "qoder/auto",
+      body: mockBody,
+      credentials: mockCredentials,
+      log: () => {},
+      proxyOptions: undefined,
+      signal: undefined,
+    });
+
+    const withoutPrefix = buildQoderRequestBody({
+      model: "auto",
+      body: mockBody,
+      credentials: mockCredentials,
+      log: () => {},
+      proxyOptions: undefined,
+      signal: undefined,
+    });
+
+    // Both should fail with the same error message (config not known)
+    await expect(withPrefix).rejects.toThrow(/model_config for "auto" not yet known/);
+    await expect(withoutPrefix).rejects.toThrow(/model_config for "auto" not yet known/);
+  });
+
+  it("accepts arbitrary model IDs without static validation", async () => {
+    // Test with a completely arbitrary model ID that definitely isn't in QODER_MODEL_MAP
+    const arbitraryModel = "qoder/totally-new-model-2026";
+    
+    // Should not throw "Unsupported qoder model"
+    await expect(
+      buildQoderRequestBody({
+        model: arbitraryModel,
+        body: mockBody,
+        credentials: mockCredentials,
+        log: () => {},
+        proxyOptions: undefined,
+        signal: undefined,
+      })
+    ).rejects.not.toThrow(/Unsupported qoder model/);
+    
+    // Should throw the expected "config not known" error instead
+    await expect(
+      buildQoderRequestBody({
+        model: arbitraryModel,
+        body: mockBody,
+        credentials: mockCredentials,
+        log: () => {},
+        proxyOptions: undefined,
+        signal: undefined,
+      })
+    ).rejects.toThrow(/model_config for "totally-new-model-2026" not yet known/);
+  });
+});

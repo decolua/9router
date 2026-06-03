@@ -53,5 +53,8 @@
     "eslint-config-next": "16.1.6",
     "postcss": "^8.5.6",
     "tailwindcss": "^4"
+  },
+  "volta": {
+    "node": "22.12.0"
   }
 }
