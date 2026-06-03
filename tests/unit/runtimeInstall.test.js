@@ -2,9 +2,11 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "fs";
 import os from "os";
 import path from "path";
+import { fileURLToPath } from "url";
 
-const RUNTIME_HELPER = "../../cli/hooks/runtimeInstall.js";
-const SQLITE_HOOK = "../../cli/hooks/sqliteRuntime.js";
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const RUNTIME_HELPER = path.resolve(__dirname, "../../cli/hooks/runtimeInstall.js");
+const SQLITE_HOOK = path.resolve(__dirname, "../../cli/hooks/sqliteRuntime.js");
 
 let originalPath;
 let fakeNpmDir;
