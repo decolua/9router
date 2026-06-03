@@ -5,6 +5,7 @@
 - Add new models: Claude Opus 4.8 (Claude Code), GPT 5.4 Mini (Codex)
 
 ## Fixes
+- Copilot MITM: add mappable slots for `gpt-5-mini` and `gpt-5.4-nano` so GitHub Copilot turns route to the configured provider instead of leaking back to GitHub Copilot. The Copilot CLI's default model is `gpt-5-mini`, and its "Auto" mode also dispatches `gpt-5.4-nano` — neither had a slot, so `getMappedModel` returned null and the `/chat/completions` call was passed through to the real upstream (same class as the Kiro `auto` misrouting; confirmed via live MITM passthrough capture). `claude-haiku-4.5` already had a slot.
 - DeepSeek thinking mode: echo `reasoning_content` back on follow-up/tool-call turns so OpenCode-free and custom providers no longer 400 with "reasoning_content must be passed back" (#1543)
 - Reasoning injector: match deepseek/kimi model ids case-insensitively (covers custom providers using capitalized model names)
 - OpenCode suggested-models: include free models without the `-free` suffix, e.g. `big-pickle` (#1535)
