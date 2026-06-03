@@ -58,7 +58,9 @@ function makeFailingFakeNpm() {
 beforeEach(() => {
   originalPath = process.env.PATH;
   fakeNpmDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-fake-npm-"));
-  dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-runtime-test-"));
+  // Canonicalize so subprocess cwd (which always resolves symlinks) matches.
+  // On macOS /var/folders and /tmp are symlinks to /private/*.
+  dataDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "9router-runtime-test-")));
   logPath = path.join(fakeNpmDir, "npm-log.json");
 
   process.env.DATA_DIR = dataDir;
