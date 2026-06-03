@@ -1111,6 +1111,8 @@ docker pull decolua/9router:latest   # update to latest
 | `ENABLE_REQUEST_LOGS` | `false` | Enables request/response logs under `logs/` |
 | `AUTH_COOKIE_SECURE` | `false` | Force `Secure` auth cookie (set `true` behind HTTPS reverse proxy) |
 | `REQUIRE_API_KEY` | `false` | Enforce Bearer API key on `/v1/*` routes (recommended for internet-exposed deploys) |
+| `NINE_ROUTER_STREAM_STALL_TIMEOUT_MS` | `30000` | Stream stall abort timeout in ms. Raise for slow reasoning models (Xiaomi mimo, zai/glm, etc.). |
+| `NINE_ROUTER_FETCH_CONNECT_TIMEOUT_MS` | `20000` | Upstream fetch connect timeout in ms. Raise if specific providers hang on connect. |
 | `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | empty | Optional outbound proxy for upstream provider calls |
 
 Notes:
