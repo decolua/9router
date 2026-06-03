@@ -18,6 +18,43 @@ const STREAM_MODE = {
   PASSTHROUGH: "passthrough" // No translation, normalize output, extract usage
 };
 
+const OPENAI_RESPONSES_TERMINAL_EVENTS = new Set([
+  "response.completed",
+  "response.failed",
+  "error"
+]);
+
+function getOpenAIResponsesEventName(eventName, chunk) {
+  if (eventName) return eventName;
+  if (chunk && typeof chunk.type === "string") return chunk.type;
+  return null;
+}
+
+function isOpenAIResponsesTerminalEvent(eventName, chunk) {
+  const type = getOpenAIResponsesEventName(eventName, chunk);
+  if (OPENAI_RESPONSES_TERMINAL_EVENTS.has(type)) return true;
+  const status = chunk?.response?.status;
+  return status === "completed" || status === "failed";
+}
+
+function formatIncompleteOpenAIResponsesStreamFailure() {
+  return formatSSE({
+    event: "response.failed",
+    data: {
+      type: "response.failed",
+      response: {
+        id: `resp_${Date.now()}`,
+        status: "failed",
+        error: {
+          type: "stream_error",
+          code: "stream_disconnected",
+          message: "stream closed before response.completed"
+        }
+      }
+    }
+  }, FORMATS.OPENAI_RESPONSES);
+}
+
 /**
  * Create unified SSE transform stream
  * @param {object} options
@@ -62,6 +99,9 @@ export function createSSEStream(options = {}) {
   let sseLineCount = 0;
   let sseEmittedCount = 0;
   const eventTypeCounts = {};
+  let currentOpenAIResponsesEvent = null;
+  let openAIResponsesTerminalSeen = false;
+  let openAIResponsesDoneSent = false;
 
   return new TransformStream({
     transform(chunk, controller) {
@@ -81,6 +121,10 @@ export function createSSEStream(options = {}) {
             const evt = trimmed.slice(6).trim();
             eventTypeCounts[evt] = (eventTypeCounts[evt] || 0) + 1;
           }
+        }
+
+        if (mode === STREAM_MODE.TRANSLATE && targetFormat === FORMATS.OPENAI_RESPONSES && trimmed.startsWith("event:")) {
+          currentOpenAIResponsesEvent = trimmed.slice(6).trim();
         }
 
         // Passthrough mode: normalize and forward
@@ -174,12 +218,31 @@ export function createSSEStream(options = {}) {
         const parsed = parseSSELine(trimmed, targetFormat);
         if (!parsed) continue;
 
+        const isOpenAIResponsesStream = targetFormat === FORMATS.OPENAI_RESPONSES;
+        const keepsOpenAIResponsesFormat = isOpenAIResponsesStream && sourceFormat === FORMATS.OPENAI_RESPONSES;
+        const openAIResponsesEventName = isOpenAIResponsesStream
+          ? getOpenAIResponsesEventName(currentOpenAIResponsesEvent, parsed)
+          : null;
+
+        if (isOpenAIResponsesStream && isOpenAIResponsesTerminalEvent(openAIResponsesEventName, parsed)) {
+          openAIResponsesTerminalSeen = true;
+        }
+
         // For Ollama: done=true is the final chunk with finish_reason/usage, must translate
         // For other formats: done=true is the [DONE] sentinel, skip
         if (parsed && parsed.done && targetFormat !== FORMATS.OLLAMA) {
+          if (keepsOpenAIResponsesFormat && !openAIResponsesTerminalSeen) {
+            const failedOutput = formatIncompleteOpenAIResponsesStreamFailure();
+            reqLogger?.appendConvertedChunk?.(failedOutput);
+            controller.enqueue(sharedEncoder.encode(failedOutput));
+            openAIResponsesTerminalSeen = true;
+            sseEmittedCount++;
+          }
+
           const output = "data: [DONE]\n\n";
           reqLogger?.appendConvertedChunk?.(output);
           controller.enqueue(sharedEncoder.encode(output));
+          if (keepsOpenAIResponsesFormat) openAIResponsesDoneSent = true;
           continue;
         }
 
@@ -223,6 +286,17 @@ export function createSSEStream(options = {}) {
         // Extract usage
         const extracted = extractUsage(parsed);
         if (extracted) state.usage = extracted; // Keep original usage for logging
+
+        if (keepsOpenAIResponsesFormat && openAIResponsesEventName) {
+          const output = formatSSE({ event: openAIResponsesEventName, data: parsed }, sourceFormat);
+          reqLogger?.appendConvertedChunk?.(output);
+          controller.enqueue(sharedEncoder.encode(output));
+          currentOpenAIResponsesEvent = null;
+          sseEmittedCount++;
+          continue;
+        }
+
+        currentOpenAIResponsesEvent = null;
 
         // Translate: targetFormat -> openai -> sourceFormat
         const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
@@ -322,6 +396,7 @@ export function createSSEStream(options = {}) {
 
             if (translated?.length > 0) {
               for (const item of translated) {
+                if (item === null || item === undefined) continue;
                 const output = formatSSE(item, sourceFormat);
                 reqLogger?.appendConvertedChunk?.(output);
                 controller.enqueue(sharedEncoder.encode(output));
@@ -341,15 +416,26 @@ export function createSSEStream(options = {}) {
 
         if (flushed?.length > 0) {
           for (const item of flushed) {
+            if (item === null || item === undefined) continue;
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(sharedEncoder.encode(output));
           }
         }
 
-        const doneOutput = "data: [DONE]\n\n";
-        reqLogger?.appendConvertedChunk?.(doneOutput);
-        controller.enqueue(sharedEncoder.encode(doneOutput));
+        const keepsOpenAIResponsesFormat = targetFormat === FORMATS.OPENAI_RESPONSES && sourceFormat === FORMATS.OPENAI_RESPONSES;
+        if (keepsOpenAIResponsesFormat && !openAIResponsesTerminalSeen) {
+          const failedOutput = formatIncompleteOpenAIResponsesStreamFailure();
+          reqLogger?.appendConvertedChunk?.(failedOutput);
+          controller.enqueue(sharedEncoder.encode(failedOutput));
+          openAIResponsesTerminalSeen = true;
+        }
+
+        if (!keepsOpenAIResponsesFormat || !openAIResponsesDoneSent) {
+          const doneOutput = "data: [DONE]\n\n";
+          reqLogger?.appendConvertedChunk?.(doneOutput);
+          controller.enqueue(sharedEncoder.encode(doneOutput));
+        }
 
         if (!hasValidUsage(state?.usage) && totalContentLength > 0) {
           state.usage = estimateUsage(body, totalContentLength, sourceFormat);
