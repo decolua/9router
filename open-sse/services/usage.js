@@ -4,6 +4,8 @@
 
 import { CLIENT_METADATA, getPlatformUserAgent } from "../config/appConstants.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { getAlicodeUsage } from "../diepxuan/services/usage.js";
+
 
 // GitHub API config
 const GITHUB_CONFIG = {
@@ -91,6 +93,9 @@ export async function getUsageForProvider(connection, proxyOptions = null) {
     case "minimax":
     case "minimax-cn":
       return await getMiniMaxUsage(apiKey, provider, proxyOptions);
+    case "alicode":
+    case "alicode-intl":
+      return await getAlicodeUsage(apiKey, provider, proxyOptions);
     default:
       return { message: `Usage API not implemented for ${provider}` };
   }

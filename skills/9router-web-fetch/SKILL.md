@@ -5,7 +5,7 @@ description: Fetch URL → markdown / text / HTML via 9Router /v1/web/fetch usin
 
 # 9Router — Web Fetch
 
-Requires `NINEROUTER_URL` (and `NINEROUTER_KEY` if auth enabled). See https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router/SKILL.md for setup.
+Requires `NINEROUTER_URL` (and `NINEROUTER_KEY` if auth enabled). See skills/9router/SKILL.md for setup.
 
 ## Discover
 

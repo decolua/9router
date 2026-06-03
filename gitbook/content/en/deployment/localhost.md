@@ -26,10 +26,10 @@ Start 9Router with a single command:
 9router
 ```
 
-The dashboard will automatically open in your browser at `http://localhost:3000`
+The dashboard will automatically open in your browser at `http://localhost:20128`
 
 **Default Configuration:**
-- **Dashboard**: `http://localhost:3000`
+- **Dashboard**: `http://localhost:20128`
 - **API Endpoint**: `http://localhost:20128/v1`
 - **Data Directory**: `~/.9router`
 
@@ -101,7 +101,7 @@ If port 20128 or 3000 is already in use:
 ```bash
 # Find process using the port (macOS/Linux)
 lsof -i :20128
-lsof -i :3000
+lsof -i :20128
 
 # Kill the process
 kill -9 <PID>

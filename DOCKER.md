@@ -1,56 +1,16 @@
 # Docker
 
-Run 9Router in a container. Published image: [`decolua/9router`](https://hub.docker.com/r/decolua/9router) — multi-platform `linux/amd64` + `linux/arm64`.
+Run the local 9Router fork in a container. This workspace is local-only; build and run the image from this repository instead of pulling/publishing external images.
 
 ---
 
-# 👤 For Users
-
-## Quick start
+## Build local image
 
 ```bash
-docker run -d \
-  -p 20128:20128 \
-  -v "$HOME/.9router:/app/data" \
-  -e DATA_DIR=/app/data \
-  --name 9router \
-  decolua/9router:latest
+docker build -t 9router .
 ```
 
-App listens on port `20128`. Open: http://localhost:20128
-
-## Manage container
-
-```bash
-docker logs -f 9router        # view logs
-docker stop 9router           # stop
-docker start 9router          # start again
-docker rm -f 9router          # remove
-```
-
-## Data persistence
-
-```bash
--v "$HOME/.9router:/app/data" \
--e DATA_DIR=/app/data
-```
-
-Without `DATA_DIR`, the app falls back to `~/.9router/` (macOS/Linux) or `%APPDATA%\9router\` (Windows). In the container, `DATA_DIR=/app/data` makes the bind mount work.
-
-Data layout under `$DATA_DIR/`:
-
-```text
-$DATA_DIR/
-├── db/
-│   ├── data.sqlite       # main SQLite database
-│   └── backups/          # auto backups
-└── ...                   # certs, logs, runtime configs
-```
-
-Host path: `$HOME/.9router/db/data.sqlite`
-Container path: `/app/data/db/data.sqlite`
-
-## Optional env vars
+## Run container
 
 ```bash
 docker run -d \
@@ -59,46 +19,45 @@ docker run -d \
   -e DATA_DIR=/app/data \
   -e PORT=20128 \
   -e HOSTNAME=0.0.0.0 \
-  -e DEBUG=true \
+  -e INITIAL_PASSWORD="change-this-before-exposing" \
   --name 9router \
-  decolua/9router:latest
-```
-
-## Update to latest
-
-```bash
-docker pull decolua/9router:latest
-docker rm -f 9router
-# re-run the quick start command
-```
-
----
-
-# 🛠 For Developers
-
-## Build image locally (test)
-
-```bash
-cd app && docker build -t 9router .
-
-docker run --rm -p 20128:20128 \
-  -v "$HOME/.9router:/app/data" \
-  -e DATA_DIR=/app/data \
   9router
 ```
 
-## Publish (automatic via CI)
+Open: http://localhost:20128/dashboard
 
-Push a git tag `v*` → GitHub Actions builds multi-platform (amd64+arm64) and pushes to:
-- `ghcr.io/decolua/9router:v{version}` + `:latest`
-- `decolua/9router:v{version}` + `:latest`
+## Security
+
+- This repo is intended for local use. Do not expose the dashboard to the internet unless `INITIAL_PASSWORD` is strong and auth is enabled.
+- Provider credentials and OAuth tokens are stored under `$DATA_DIR/db/data.sqlite`; protect the host data directory.
+- Use `REQUIRE_API_KEY=true` before exposing `/v1/*` outside localhost.
+
+## Manage container
 
 ```bash
-# Use scripts/release.js (recommended)
-node scripts/release.js "Release title" "Notes"
-
-# Or manually
-git tag v0.4.x && git push origin v0.4.x
+docker logs -f 9router
+docker restart 9router
+docker stop 9router
+docker rm -f 9router
 ```
 
-Workflow: `app/.github/workflows/docker-publish.yml`
+## Data persistence
+
+Host path: `$HOME/.9router/db/data.sqlite`
+Container path: `/app/data/db/data.sqlite`
+
+```text
+$DATA_DIR/
+├── db/
+│   ├── data.sqlite
+│   └── backups/
+└── ...
+```
+
+## Rebuild update
+
+```bash
+docker build -t 9router .
+docker rm -f 9router
+# re-run the container command above
+```

@@ -155,14 +155,10 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         return result;
       }
 
-      // For transient errors (503/502/504), wait for cooldown before falling through
-      // so a briefly-overloaded provider gets a chance to recover rather than being
-      // skipped immediately (fixes: combo falls through on transient 503)
-      if (cooldownMs && cooldownMs > 0 && cooldownMs <= 5000 &&
-          (result.status === 503 || result.status === 502 || result.status === 504)) {
-        log.info("COMBO", `Model ${modelStr} transient ${result.status}, waiting ${cooldownMs}ms before next`);
-        await new Promise(r => setTimeout(r, cooldownMs));
-      }
+      // Fallback to the next combo model immediately. The account/model layer is
+      // responsible for cooldown/lock state; combo routing must not sleep here or
+      // clients see avoidable timeout/latency before another model is attempted.
+      // This is especially important for transient 502/503/504 and timeout errors.
 
       // Fallback to next model
       lastError = errorText || String(result.status);

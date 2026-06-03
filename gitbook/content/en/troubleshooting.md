@@ -145,7 +145,7 @@ Common issues and solutions when using 9Router.
    ```bash
    9router
    ```
-   Dashboard should open at http://localhost:3000
+   Dashboard should open at http://localhost:20128
 
 2. **Verify port 20128:**
    ```bash
@@ -171,7 +171,7 @@ Common issues and solutions when using 9Router.
 
 ## Dashboard Not Opening
 
-**Problem:** Dashboard doesn't load at http://localhost:3000.
+**Problem:** Dashboard doesn't load at http://localhost:20128.
 
 **Causes:**
 - Port 3000 already in use
@@ -186,16 +186,16 @@ Common issues and solutions when using 9Router.
    ps aux | grep 9router
    
    # Check port 3000
-   lsof -i :3000
+   lsof -i :20128
    ```
 
 2. **Kill conflicting process:**
    ```bash
    # macOS/Linux
-   lsof -ti:3000 | xargs kill -9
+   lsof -ti:20128 | xargs kill -9
    
    # Windows
-   netstat -ano | findstr :3000
+   netstat -ano | findstr :20128
    taskkill /PID <PID> /F
    ```
 
@@ -346,6 +346,6 @@ Common issues and solutions when using 9Router.
 
 ## Need More Help?
 
-- **GitHub Issues:** [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
+- **GitHub Issues:** [github.com/diepxuan/9router/issues](https://github.com/diepxuan/9router/issues)
 - **Documentation:** [9router.com/docs](https://9router.com/docs)
 - **FAQ:** [faq.md](faq.md)

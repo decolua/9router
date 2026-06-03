@@ -1,4 +1,5 @@
 import pkg from "../../../package.json" with { type: "json" };
+import { DIEPXUAN_PROVIDER_ENDPOINTS } from "@/diepxuan/shared/constants/config.js";
 
 // App configuration
 export const APP_CONFIG = {
@@ -10,7 +11,6 @@ export const APP_CONFIG = {
 // GitHub configuration
 export const GITHUB_CONFIG = {
   changelogUrl: "https://raw.githubusercontent.com/decolua/9router/refs/heads/master/CHANGELOG.md",
-  donateUrl: "https://9router.com/api/donate",
 };
 
 // Updater configuration
@@ -62,6 +62,8 @@ export const CONSOLE_LOG_CONFIG = {
 // Client-side store TTL: how long fetched data stays fresh before re-fetching
 export const CLIENT_STORE_TTL_MS = 60000;
 
+const diepxuanEndpoints = DIEPXUAN_PROVIDER_ENDPOINTS || {};
+
 // Provider API endpoints (for display only)
 export const PROVIDER_ENDPOINTS = {
   openrouter: "https://openrouter.ai/api/v1/chat/completions",
@@ -80,6 +82,7 @@ export const PROVIDER_ENDPOINTS = {
   gemini: "https://generativelanguage.googleapis.com/v1beta/models",
   ollama: "https://ollama.com/api/chat",
   "ollama-local": "http://localhost:11434/api/chat",
+  diepxuanEndpoints,
 };
 
 // Re-export from providers.js for backward compatibility

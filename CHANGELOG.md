@@ -14,6 +14,9 @@
 - volcengine-ark: refresh model list (add DeepSeek-V4-Flash/Pro, drop EOL entries)
 - Lower stream stall timeout 35s → 30s for faster hang detection
 
+## Fixes
+- Combo fallback: immediately try the next model on timeout/transient upstream errors instead of sleeping before fallback.
+
 # v0.4.63 (2026-05-26)
 
 ## Fixes

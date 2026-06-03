@@ -9,15 +9,13 @@
   
   [![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
   [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
-  [![Docker Pulls](https://img.shields.io/docker/pulls/decolua/9router.svg?logo=docker&label=Docker%20pulls)](https://hub.docker.com/r/decolua/9router)
-  [![GHCR](https://img.shields.io/badge/GHCR-decolua%2F9router-blue?logo=github)](https://github.com/decolua/9router/pkgs/container/9router)
-  [![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/decolua/9router/blob/main/LICENSE)
+  [![License](https://img.shields.io/npm/l/9router.svg)](./LICENSE)
 
   <a href="https://trendshift.io/repositories/22628" target="_blank"><img src="https://trendshift.io/api/badge/repositories/22628" alt="decolua%2F9router | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
   
-  [🚀 Quick Start](#-quick-start) • [💡 Features](#-key-features) • [📖 Setup](#-setup-guide) • [🌐 Website](https://9router.com)
+  [Quick Start](#-quick-start) • [Features](#-key-features) • [Setup](#-setup-guide)
 
-  [🇻🇳 Tiếng Việt](./i18n/README.vi.md) • [🇨🇳 中文](./i18n/README.zh-CN.md) • [🇯🇵 日本語](./i18n/README.ja-JP.md)
+  [Tiếng Việt](./i18n/README.vi.md)
 </div>
 
 ---
@@ -174,7 +172,7 @@ Default URLs:
 
 </div>
 
-> 🎬 **Made a video about 9Router?** Submit a [Pull Request](https://github.com/decolua/9router/pulls) adding your video to this section — we'll merge it!
+> This local fork keeps only English and Vietnamese documentation. External upstream PR instructions are intentionally omitted.
 
 ---
 
@@ -1021,7 +1019,7 @@ Model: cc/claude-opus-4-7
 
 ```bash
 # Clone and install
-git clone https://github.com/decolua/9router.git
+git clone git@github.com:diepxuan/9router.git
 cd 9router
 npm install
 npm run build
@@ -1050,11 +1048,13 @@ pm2 startup
 
 ### Docker
 
-Published images (multi-platform `linux/amd64` + `linux/arm64`):
-- Docker Hub: [`decolua/9router`](https://hub.docker.com/r/decolua/9router)
-- GHCR: [`ghcr.io/decolua/9router`](https://github.com/decolua/9router/pkgs/container/9router)
+Local Docker image:
 
-**Quick start (use published image):**
+```bash
+docker build -t 9router .
+```
+
+**Quick start (local image):**
 
 ```bash
 docker run -d \
@@ -1062,7 +1062,7 @@ docker run -d \
   -p 20128:20128 \
   -v "$HOME/.9router:/app/data" \
   -e DATA_DIR=/app/data \
-  decolua/9router:latest
+  9router
 ```
 
 → Open http://localhost:20128
@@ -1070,8 +1070,8 @@ docker run -d \
 **Build from source (dev):**
 
 ```bash
-git clone https://github.com/decolua/9router.git
-cd 9router/app
+git clone git@github.com:diepxuan/9router.git
+cd 9router
 docker build -t 9router .
 docker run -d --name 9router -p 20128:20128 \
   -v "$HOME/.9router:/app/data" -e DATA_DIR=/app/data 9router
@@ -1087,7 +1087,7 @@ docker run -d --name 9router -p 20128:20128 \
 docker logs -f 9router
 docker restart 9router
 docker stop 9router && docker rm 9router
-docker pull decolua/9router:latest   # update to latest
+docker build -t 9router .              # rebuild local image
 ```
 
 **Data persistence:** `$HOME/.9router/db/data.sqlite` on host ↔ `/app/data/db/data.sqlite` in container.
@@ -1104,7 +1104,7 @@ docker pull decolua/9router:latest   # update to latest
 | `NODE_ENV` | runtime default | Set `production` for deploy |
 | `BASE_URL` | `http://localhost:20128` | Server-side internal base URL used by cloud sync jobs |
 | `CLOUD_URL` | `https://9router.com` | Server-side cloud sync endpoint base URL |
-| `NEXT_PUBLIC_BASE_URL` | `http://localhost:3000` | Backward-compatible/public base URL (prefer `BASE_URL` for server runtime) |
+| `NEXT_PUBLIC_BASE_URL` | `http://localhost:20128` | Backward-compatible/public base URL (prefer `BASE_URL` for server runtime) |
 | `NEXT_PUBLIC_CLOUD_URL` | `https://9router.com` | Backward-compatible/public cloud URL (prefer `CLOUD_URL` for server runtime) |
 | `API_KEY_SECRET` | `endpoint-proxy-api-key-secret` | HMAC secret for generated API keys |
 | `MACHINE_ID_SALT` | `endpoint-proxy-salt` | Salt for stable machine ID hashing |
@@ -1269,33 +1269,13 @@ Authorization: Bearer your-api-key
 
 ## 📧 Support
 
-- **Website**: [9router.com](https://9router.com)
-- **GitHub**: [github.com/decolua/9router](https://github.com/decolua/9router)
-- **Issues**: [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
+- **Local dashboard**: http://localhost:20128/dashboard
+- **Fork repository**: `diepxuan/9router`
+- **Upstream reference**: `decolua/9router` (read-only for this workspace)
 
 ---
 
-## 👥 Contributors
-
-Thanks to all contributors who helped make 9Router better!
-
-[![Contributors](https://contrib.rocks/image?repo=decolua/9router&max=150&columns=15&anon=1&v=20260309)](https://github.com/decolua/9router/graphs/contributors)
-
----
-
-## 📊 Star Chart
-
-[![Star Chart](https://starchart.cc/decolua/9router.svg?variant=adaptive)](https://starchart.cc/decolua/9router)
-
-
-
-## 🔀 Forks
-
-**[OmniRoute](https://github.com/diegosouzapw/OmniRoute)** — A full-featured TypeScript fork of 9Router. Adds 36+ providers, 4-tier auto-fallback, multi-modal APIs (images, embeddings, audio, TTS), circuit breaker, semantic cache, LLM evaluations, and a polished dashboard. 368+ unit tests. Available via npm and Docker.
-
----
-
-## 🙏 Acknowledgments
+## Acknowledgments
 
 Built on the shoulders of giants:
 

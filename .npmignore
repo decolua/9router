@@ -4,7 +4,7 @@ data/
 **/db.json
 
 # Development
-src/
+src/mitm/dev/
 docs/
 test/
 agents/
@@ -13,6 +13,7 @@ worker/
 shared-sse/
 copilot-api/
 CLIProxyAPI/
+cli/
 
 # Config files
 *.md
@@ -28,4 +29,3 @@ tsconfig.json
 # Build artifacts that shouldn't be published
 .next/cache/
 .next/standalone/data/
-

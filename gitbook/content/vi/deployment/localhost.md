@@ -26,10 +26,10 @@ Khởi động 9Router với một lệnh duy nhất:
 9router
 ```
 
-Dashboard sẽ tự động mở trong trình duyệt tại `http://localhost:3000`
+Dashboard sẽ tự động mở trong trình duyệt tại `http://localhost:20128`
 
 **Cấu hình mặc định:**
-- **Dashboard**: `http://localhost:3000`
+- **Dashboard**: `http://localhost:20128`
 - **API Endpoint**: `http://localhost:20128/v1`
 - **Data Directory**: `~/.9router`
 
@@ -101,7 +101,7 @@ Nếu port 20128 hoặc 3000 đã được dùng:
 ```bash
 # Find process using the port (macOS/Linux)
 lsof -i :20128
-lsof -i :3000
+lsof -i :20128
 
 # Kill the process
 kill -9 <PID>

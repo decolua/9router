@@ -228,6 +228,13 @@ export default function ComboDetailPage() {
     return out;
   }
 
+  const [baseUrl, setBaseUrl] = useState("");
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setBaseUrl(window.location.origin);
+    }
+  }, []);
+
   if (loading) return <div className="text-text-muted text-sm">Loading...</div>;
   if (!combo) return notFound();
 

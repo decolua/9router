@@ -1,0 +1,91 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.head_ref || github.ref_name }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          registry-url: "https://npm.pkg.github.com"
+
+      - name: Download latest global CLI (9router từ npm)
+        run: |
+          mkdir -p temp-cli
+          cd temp-cli
+          npm init -y
+          npm install 9router@latest
+          cd ..
+          rm -rf cli/
+          mv temp-cli/node_modules/9router ./cli
+          rm -rf temp-cli
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Next.js app
+        run: |
+          npm run build
+          rm -rf cli/app
+          mv .next/standalone cli/app
+          rm -rf cli/app/.env
+          cp -r public cli/app/public
+          cp -r .next/static cli/app/.next/static
+
+      - name: Patch CLI with built app
+        working-directory: cli
+        run: |
+          npm pkg set name="@diepxuan/9router"
+          npm pkg set publishConfig.registry="https://npm.pkg.github.com/"
+          npm pkg delete scripts.prepublishOnly || true
+
+          echo "=== CLI structure after patching ==="
+          cat package.json
+          tree -L 2 .
+
+      - name: Push changes to GitHub
+        run: |
+          git add cli/
+          # git commit -m "${GIT_COMMITTER_MESSAGE:-'Auto-commit update 9router cli'}" || true
+          git commit -m "chore: update @diepxuan/9router built from ${{ github.sha }} [skip ci]" || echo "No changes to commit"
+          if ! git push; then
+            git stash
+            git pull --rebase
+            git stash pop
+            git push || true
+          fi
+        env:
+          REPOSITORY: ${{ github.repository }}
+          GIT_COMMITTER_MESSAGE: ${{ github.event.head_commit.message }}
+          GIT_AUTHOR_NAME: Tran Ngoc Duc
+          GIT_AUTHOR_EMAIL: ductn@diepxuan.com
+          GIT_COMMITTER_NAME: Tran Ngoc Duc
+          GIT_COMMITTER_EMAIL: ductn@diepxuan.com
+
+      - name: Bump version before publish
+        working-directory: cli
+        run: |
+          TIMESTAMP=$(date +%s)
+          npm version patch --no-git-tag-version
+          npm version prerelease --preid=patch.$TIMESTAMP --no-git-tag-version
+
+      - name: Publish to GitHub Packages
+        working-directory: cli
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

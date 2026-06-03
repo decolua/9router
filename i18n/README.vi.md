@@ -15,7 +15,7 @@ Dưới đây là bản dịch tiếng Việt của tài liệu Markdown, giữ 
   
   [![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
   [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
-  [![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/decolua/9router/blob/main/LICENSE)
+  [![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/diepxuan/9router/blob/main/LICENSE)
   
   [🚀 Bắt đầu nhanh](#-quick-start) • [💡 Tính năng](#-key-features) • [📖 Cài đặt](#-setup-guide) • [🌐 Website](https://9router.com)
 </div>
@@ -947,7 +947,7 @@ Model: cc/claude-opus-4-6
 
 ```bash
 # Clone và cài đặt
-git clone https://github.com/decolua/9router.git
+git clone https://github.com/diepxuan/9router.git
 cd 9router
 npm install
 npm run build
@@ -1026,7 +1026,7 @@ docker stop 9router && docker rm 9router
 | `NODE_ENV` | runtime default | Đặt `production` để triển khai |
 | `BASE_URL` | `http://localhost:20128` | URL cơ sở nội bộ phía máy chủ được sử dụng bởi các tác vụ đồng bộ đám mây |
 | `CLOUD_URL` | `https://9router.com` | URL cơ sở endpoint đồng bộ đám mây phía máy chủ |
-| `NEXT_PUBLIC_BASE_URL` | `http://localhost:3000` | URL cơ sở tương thích ngược/công khai (ưu tiên `BASE_URL` cho runtime máy chủ) |
+| `NEXT_PUBLIC_BASE_URL` | `http://localhost:20128` | URL cơ sở tương thích ngược/công khai (ưu tiên `BASE_URL` cho runtime máy chủ) |
 | `NEXT_PUBLIC_CLOUD_URL` | `https://9router.com` | URL đám mây tương thích ngược/công khai (ưu tiên `CLOUD_URL` cho runtime máy chủ) |
 | `API_KEY_SECRET` | `endpoint-proxy-api-key-secret` | B mật HMAC cho các API key được tạo |
 | `MACHINE_ID_SALT` | `endpoint-proxy-salt` | Salt cho việc băm ID máy ổn định |
@@ -1258,8 +1258,9 @@ Tài liệu tham khảo kiến trúc đầy đủ: [`docs/ARCHITECTURE.md`](../d
 ## 📧 Hỗ trợ
 
 - **Website**: [9router.com](https://9router.com)
-- **GitHub**: [github.com/decolua/9](https://github.com/decolua/9router)
-- **Issues**: [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
+- **Local dashboard**: http://localhost:20128/dashboard
+- **Fork repository**: `diepxuan/9router`
+- **Issues**: [github.com/diepxuan/9router/issues](https://github.com/diepxuan/9router/issues)
 
 ---
 
@@ -1267,13 +1268,13 @@ Tài liệu tham khảo kiến trúc đầy đủ: [`docs/ARCHITECTURE.md`](../d
 
 Cảm ơn tất cả những người đã đóng góp giúp 9Router tốt hơn!
 
-[![Contributors](https://contrib.rocks/image?repo=decolua/9router&max=100&columns=20&anon=1)](https://github.com/decolua/9router/graphs/contributors)
+[![Contributors](https://contrib.rocks/image?repo=diepxuan/9router&max=100&columns=20&anon=1)](https://github.com/diepxuan/9router/graphs/contributors)
 
 ---
 
 ## 📊 Star Chart
 
-[![ Chart](https://starchart.cc/decolua/9router.svg?variant=adaptive)](https://starchart.cc/decolua/9router)
+[![ Chart](https://starchart.cc/diepxuan/9router.svg?variant=adaptive)](https://starchart.cc/diepxuan/9router)
 
 ### Cách Đóng góp
 
@@ -1283,7 +1284,7 @@ Cảm ơn tất cả những người đã đóng góp giúp 9Router tốt hơn!
 4. Push lên nhánh (`git push origin feature/amazing-feature`)
 5. Mở một Pull Request
 
-Xem [Pull Requests](https://github.com/decolua/9router/pulls) để biết hướng dẫn chi tiết.
+Xem [Pull Requests](https://github.com/diepxuan/9router/pulls) để biết hướng dẫn chi tiết.
 
 ---
 

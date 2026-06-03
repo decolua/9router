@@ -16,7 +16,7 @@ Deploy 9Router on VPS or Docker for remote access and production use.
 ### Step 1: Clone Repository
 
 ```bash
-git clone https://github.com/decolua/9router.git
+git clone https://github.com/diepxuan/9router.git
 cd 9router/app
 ```
 
@@ -152,7 +152,7 @@ docker build -t 9router .
 # Run container
 docker run -d \
   --name 9router \
-  -p 3000:3000 \
+  -p 3000:20128 \
   -p 20128:20128 \
   -e JWT_SECRET="your-secure-secret-change-this" \
   -e INITIAL_PASSWORD="your-secure-password" \
@@ -172,7 +172,7 @@ services:
     build: .
     container_name: 9router
     ports:
-      - "3000:3000"
+      - "3000:20128"
       - "20128:20128"
     environment:
       - NODE_ENV=production
@@ -249,7 +249,7 @@ server {
 
     # Proxy to 9Router
     location / {
-        proxy_pass http://localhost:3000;
+        proxy_pass http://localhost:20128;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -353,8 +353,8 @@ sudo ufw deny 3000/tcp
 Access dashboard via SSH tunnel:
 
 ```bash
-ssh -L 3000:localhost:3000 user@your-server.com
-# Then open http://localhost:3000 in your browser
+ssh -L 3000:localhost:20128 user@your-server.com
+# Then open http://localhost:20128 in your browser
 ```
 
 ### 4. Regular Updates
@@ -432,7 +432,7 @@ netstat -tulpn | grep -E '3000|20128'
 pm2 logs 9router
 
 # Check if ports are in use
-sudo lsof -i :3000
+sudo lsof -i :20128
 sudo lsof -i :20128
 
 # Check environment variables

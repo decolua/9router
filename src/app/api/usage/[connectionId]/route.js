@@ -6,6 +6,7 @@ import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
+import { hasManualQuota, getManualQuota } from "@/diepxuan/lib/db/repos/manualQuotaRepo.js";
 
 // Detect auth-expired messages returned by usage providers instead of throwing
 const AUTH_EXPIRED_PATTERNS = ["expired", "authentication", "unauthorized", "401", "re-authorize"];
@@ -112,6 +113,12 @@ export async function GET(request, { params }) {
     connection = await getProviderConnectionById(connectionId);
     if (!connection) {
       return Response.json({ error: "Connection not found" }, { status: 404 });
+    }
+
+    // Manual quota first: providers with local counter always use it (alicode, etc.)
+    if (hasManualQuota(connection.provider)) {
+      const manualQuota = await getManualQuota(connection.provider, connectionId, connection);
+      return Response.json(manualQuota);
     }
 
     // Allow OAuth connections, plus whitelisted apikey providers (glm/minimax/...)

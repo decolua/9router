@@ -46,13 +46,13 @@ When the user needs a specific capability, fetch that skill's `SKILL.md` from it
 
 | Capability | Raw URL |
 |---|---|
-| Chat / code-gen | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-chat/SKILL.md |
-| Image generation | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-image/SKILL.md |
-| Text-to-speech | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-tts/SKILL.md |
-| Speech-to-text | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-stt/SKILL.md |
-| Embeddings | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-embeddings/SKILL.md |
-| Web search | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-web-search/SKILL.md |
-| Web fetch (URL → markdown) | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-web-fetch/SKILL.md |
+| Chat / code-gen | skills/9router-chat/SKILL.md |
+| Image generation | skills/9router-image/SKILL.md |
+| Text-to-speech | skills/9router-tts/SKILL.md |
+| Speech-to-text | skills/9router-stt/SKILL.md |
+| Embeddings | skills/9router-embeddings/SKILL.md |
+| Web search | skills/9router-web-search/SKILL.md |
+| Web fetch (URL → markdown) | skills/9router-web-fetch/SKILL.md |
 
 ## Errors
 

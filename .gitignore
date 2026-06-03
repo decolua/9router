@@ -51,6 +51,12 @@ source/*
 .cursor/*
 docs/*
 !docs/ARCHITECTURE.md
+!docs/SETUP.md
+!docs/PROVIDERS.md
+!docs/RTK.md
+!docs/TROUBLESHOOTING.md
+!docs/CUSTOM-FEATURES-MERGE-CHECKLIST.md
+!docs/UPDATE-*.md
 test/*
 open-sse/test/*
 RM.vn.md
@@ -70,5 +76,12 @@ deploy*.sh
 ecosystem.config.*
 
 scripts/agSniffer/*
+scripts/sync.sh
 gitbooks/*
 gitbook/README.md
+
+# Local agent memory
+memory/
+
+# OpenClaw internal state
+.openclaw/

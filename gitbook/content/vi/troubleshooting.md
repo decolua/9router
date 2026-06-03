@@ -145,7 +145,7 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
    ```bash
    9router
    ```
-   Dashboard sẽ mở tại http://localhost:3000
+   Dashboard sẽ mở tại http://localhost:20128
 
 2. **Xác minh port 20128:**
    ```bash
@@ -171,7 +171,7 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
 
 ## Dashboard không mở
 
-**Vấn đề:** Dashboard không load tại http://localhost:3000.
+**Vấn đề:** Dashboard không load tại http://localhost:20128.
 
 **Nguyên nhân:**
 - Port 3000 đã được dùng
@@ -186,16 +186,16 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
    ps aux | grep 9router
    
    # Check port 3000
-   lsof -i :3000
+   lsof -i :20128
    ```
 
 2. **Kill process xung đột:**
    ```bash
    # macOS/Linux
-   lsof -ti:3000 | xargs kill -9
+   lsof -ti:20128 | xargs kill -9
    
    # Windows
-   netstat -ano | findstr :3000
+   netstat -ano | findstr :20128
    taskkill /PID <PID> /F
    ```
 
@@ -346,6 +346,6 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
 
 ## Cần trợ giúp thêm?
 
-- **GitHub Issues:** [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
+- **GitHub Issues:** [github.com/diepxuan/9router/issues](https://github.com/diepxuan/9router/issues)
 - **Documentation:** [9router.com/docs](https://9router.com/docs)
 - **FAQ:** [faq.md](faq.md)
