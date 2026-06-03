@@ -42,6 +42,7 @@ function makeFailingFakeNpm() {
     "  cwd: process.cwd(),\n" +
     "  argv: process.argv.slice(2)\n" +
     "}));\n" +
+    "process.stderr.write('npm ERR! fake failure\\n');\n" +
     "process.exit(1);\n";
   fs.writeFileSync(npmPath, body);
   fs.chmodSync(npmPath, 0o755);
