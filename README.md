@@ -1112,6 +1112,8 @@ docker pull decolua/9router:latest   # update to latest
 | `AUTH_COOKIE_SECURE` | `false` | Force `Secure` auth cookie (set `true` behind HTTPS reverse proxy) |
 | `REQUIRE_API_KEY` | `false` | Enforce Bearer API key on `/v1/*` routes (recommended for internet-exposed deploys) |
 | `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | empty | Optional outbound proxy for upstream provider calls |
+| `STREAM_STALL_TIMEOUT_MS` | `30000` | Abort an upstream stream if no chunk is received within this many milliseconds (raise for slow/long-thinking providers) |
+| `FETCH_CONNECT_TIMEOUT_MS` | `20000` | Abort an upstream request if it does not return response headers within this many milliseconds |
 
 Notes:
 - Lowercase proxy variables are also supported: `http_proxy`, `https_proxy`, `all_proxy`, `no_proxy`.
