@@ -5,6 +5,7 @@
 - Add new models: Claude Opus 4.8 (Claude Code), GPT 5.4 Mini (Codex)
 
 ## Fixes
+- Antigravity MITM: never re-route tab-autocomplete. Antigravity sends dedicated `tab_jump_flash_lite_preview` / `tab_flash_lite_preview` models for inline completion (no slot); the broad `flash` routing pattern was hijacking them onto the flash-agent mapping, so latency-critical autocomplete was being sent to a remote chat model. A `MODEL_NO_MAP` guard now passes these through natively. Also flags the out-of-box agent/Default model (`gemini-3.5-flash-low`) as mandatory in the dashboard. Verified via live MITM dump capture of `streamGenerateContent`.
 - DeepSeek thinking mode: echo `reasoning_content` back on follow-up/tool-call turns so OpenCode-free and custom providers no longer 400 with "reasoning_content must be passed back" (#1543)
 - Reasoning injector: match deepseek/kimi model ids case-insensitively (covers custom providers using capitalized model names)
 - OpenCode suggested-models: include free models without the `-free` suffix, e.g. `big-pickle` (#1535)

@@ -52,6 +52,16 @@ const MODEL_PATTERNS = {
   ],
 };
 
+// Models that must NEVER be re-routed — always passthrough to the real upstream, even when
+// the tool's other models are mapped. Antigravity's tab-autocomplete (`tab_jump_flash_lite_preview`,
+// `tab_flash_lite_preview`, requestType tab/tab_jump) is latency-critical inline completion; routing
+// it through 9Router to an external chat model makes typing laggy and burns provider quota per
+// keystroke. Without this guard the broad `flash` pattern in MODEL_PATTERNS hijacks them onto the
+// flash-agent slot. Verified via MITM dump capture of streamGenerateContent (see AI_JOURNAL).
+const MODEL_NO_MAP = {
+  antigravity: [/^tab[_-]/i],
+};
+
 // URL substrings whose request/response should NOT be dumped to file (telemetry, polling, empty)
 const LOG_BLACKLIST_URL_PARTS = [
   "recordCodeAssistMetrics",
@@ -70,4 +80,4 @@ function getToolForHost(host) {
   return null;
 }
 
-module.exports = { IS_DEV, LSOF_BIN, TARGET_HOSTS, URL_PATTERNS, MODEL_SYNONYMS, MODEL_PATTERNS, LOG_BLACKLIST_URL_PARTS, getToolForHost };
+module.exports = { IS_DEV, LSOF_BIN, TARGET_HOSTS, URL_PATTERNS, MODEL_SYNONYMS, MODEL_PATTERNS, MODEL_NO_MAP, LOG_BLACKLIST_URL_PARTS, getToolForHost };
