@@ -82,8 +82,17 @@ export async function testProxyUrl({ proxyUrl, testUrl, timeoutMs } = {}) {
       clearTimeout(timer);
     }
   } finally {
+    // Tear down forcefully instead of awaiting a graceful close().
+    // For dead/aborted proxies (common during a bulk health scan),
+    // dispatcher.close() can hang indefinitely waiting for in-flight
+    // sockets to drain, which stalls the scan worker. destroy() aborts
+    // pending connections immediately and resolves right away, so we
+    // fire-and-forget it and never block the caller on teardown.
     try {
-      await dispatcher?.close?.();
+      const teardown = dispatcher?.destroy?.(new Error("proxy test teardown"));
+      if (teardown && typeof teardown.then === "function") {
+        teardown.catch(() => {});
+      }
     } catch {
       // ignore
     }

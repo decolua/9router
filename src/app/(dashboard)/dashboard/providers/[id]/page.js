@@ -7,6 +7,7 @@ import Image from "next/image";
 import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, CodexSessionImportModal, IFlowCookieModal, GitLabAuthModal, Toggle, Select, EditConnectionModal, NoAuthProxyCard, ConfirmModal } from "@/shared/components";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS, THINKING_CONFIG } from "@/shared/constants/providers";
 import { getModelsByProviderId } from "@/shared/constants/models";
+import { formatLatency } from "@/lib/proxyDisplay";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 import ModelRow from "./ModelRow";
@@ -788,20 +789,28 @@ export default function ProviderDetailPage() {
             <span className="material-symbols-outlined text-text-muted text-[18px]">link_off</span>
             <span className="text-sm text-text-main">None (unbind all)</span>
           </button>
-          {proxyPools.map((pool) => (
-            <button
-              key={pool.id}
-              onClick={() => handleApplySinglePool(pool.id)}
-              disabled={bulkUpdatingProxy || pool.isActive !== true}
-              className="flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <span className="material-symbols-outlined text-text-muted text-[18px]">lan</span>
-              <span className="truncate text-sm text-text-main">{pool.name}</span>
-              {pool.isActive !== true && (
-                <span className="text-[10px] text-text-muted">(inactive)</span>
-              )}
-            </button>
-          ))}
+          {proxyPools.map((pool) => {
+            const latency = formatLatency(pool.lastLatencyMs);
+            return (
+              <button
+                key={pool.id}
+                onClick={() => handleApplySinglePool(pool.id)}
+                disabled={bulkUpdatingProxy || pool.isActive !== true}
+                className="flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <span className="material-symbols-outlined text-text-muted text-[18px]">lan</span>
+                <span className="min-w-0 flex-1 truncate text-sm text-text-main">{pool.name}</span>
+                {latency && (
+                  <span className="inline-flex shrink-0 items-center gap-0.5 font-mono text-[11px] text-text-muted" title="Last test latency">
+                    <span className="material-symbols-outlined text-[14px]">bolt</span>{latency}
+                  </span>
+                )}
+                {pool.isActive !== true && (
+                  <span className="shrink-0 text-[10px] text-text-muted">(inactive)</span>
+                )}
+              </button>
+            );
+          })}
         </div>
 
         {bulkUpdatingProxy && <p className="text-xs text-text-muted">Applying...</p>}
