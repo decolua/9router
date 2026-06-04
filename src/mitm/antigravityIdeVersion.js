@@ -2,10 +2,15 @@
 
 // Rewrite Antigravity IDE markers so upstream AG 2.x backend accepts the request.
 // User-Agent header (antigravity/<old>) and body.metadata.ideVersion are forced
-// to a known-good IDE version. Hardcoded MVP — toggle/version configurable later.
+// to a known-good IDE version. Reads installed /opt/Antigravity/resources/app/product.json
+// ideVersion dynamically, falling back to 1.23.2.
 
-const ANTIGRAVITY_IDE_VERSION = "1.23.2";
+const { getAntigravityIdeVersion } = require("./antigravityClientIdentity.cjs");
 const ANTIGRAVITY_IDE_VERSION_OVERRIDE_ENABLED = true;
+
+function getOverrideVersion() {
+  return getAntigravityIdeVersion();
+}
 
 function shouldRewriteMetadata(metadata) {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return false;
@@ -20,31 +25,31 @@ function rewriteAntigravityUserAgent(userAgent, version) {
 }
 
 function applyAntigravityIdeVersionOverride(bodyBuffer, headers) {
+  const version = getOverrideVersion();
   if (!ANTIGRAVITY_IDE_VERSION_OVERRIDE_ENABLED) {
-    return { bodyBuffer, headers, applied: false, version: ANTIGRAVITY_IDE_VERSION };
+    return { bodyBuffer, headers, applied: false, version };
   }
 
   const nextHeaders = { ...headers };
-  const nextUserAgent = rewriteAntigravityUserAgent(nextHeaders["user-agent"], ANTIGRAVITY_IDE_VERSION);
+  const nextUserAgent = rewriteAntigravityUserAgent(nextHeaders["user-agent"], version);
   const userAgentChanged = nextUserAgent !== nextHeaders["user-agent"];
   if (userAgentChanged) nextHeaders["user-agent"] = nextUserAgent;
 
   try {
     const parsed = JSON.parse(bodyBuffer.toString());
     if (!shouldRewriteMetadata(parsed?.metadata)) {
-      return { bodyBuffer, headers: nextHeaders, applied: userAgentChanged, version: ANTIGRAVITY_IDE_VERSION };
+      return { bodyBuffer, headers: nextHeaders, applied: userAgentChanged, version };
     }
 
-    parsed.metadata.ideVersion = ANTIGRAVITY_IDE_VERSION;
+    parsed.metadata.ideVersion = version;
     const nextBodyBuffer = Buffer.from(JSON.stringify(parsed));
-    return { bodyBuffer: nextBodyBuffer, headers: nextHeaders, applied: true, version: ANTIGRAVITY_IDE_VERSION };
+    return { bodyBuffer: nextBodyBuffer, headers: nextHeaders, applied: true, version };
   } catch {
-    return { bodyBuffer, headers: nextHeaders, applied: userAgentChanged, version: ANTIGRAVITY_IDE_VERSION };
+    return { bodyBuffer, headers: nextHeaders, applied: userAgentChanged, version };
   }
 }
 
 module.exports = {
-  ANTIGRAVITY_IDE_VERSION,
   applyAntigravityIdeVersionOverride,
   rewriteAntigravityUserAgent,
 };

@@ -1,5 +1,7 @@
 import { PROVIDER_MODELS } from "@/shared/constants/models";
 
+const DEFAULT_INPUT_TOKEN_LIMIT = 200000;
+
 /**
  * Handle CORS preflight
  */
@@ -21,7 +23,7 @@ export async function GET() {
   try {
     // Collect all models from all providers
     const models = [];
-    
+
     for (const [provider, providerModels] of Object.entries(PROVIDER_MODELS)) {
       for (const model of providerModels) {
         models.push({
@@ -29,7 +31,7 @@ export async function GET() {
           displayName: model.name || model.id,
           description: `${provider} model: ${model.name || model.id}`,
           supportedGenerationMethods: ["generateContent"],
-          inputTokenLimit: 128000,
+          inputTokenLimit: model.contextLength || DEFAULT_INPUT_TOKEN_LIMIT,
           outputTokenLimit: 8192,
         });
       }

@@ -3,6 +3,7 @@
  */
 
 import { CLIENT_METADATA, getPlatformUserAgent } from "../config/appConstants.js";
+import { PROVIDERS } from "../config/providers.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
 // GitHub API config
@@ -34,8 +35,8 @@ const ANTIGRAVITY_CONFIG = {
   quotaApiUrl: "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
   loadProjectApiUrl: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
   tokenUrl: "https://oauth2.googleapis.com/token",
-  clientId: "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com",
-  clientSecret: "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",
+  clientId: PROVIDERS.antigravity.clientId,
+  clientSecret: PROVIDERS.antigravity.clientSecret,
   userAgent: getPlatformUserAgent(),
 };
 
@@ -1213,3 +1214,7 @@ async function getQoderUsage(accessToken, proxyOptions = null) {
     return { message: `Qoder connected. Unable to fetch usage: ${error.message}` };
   }
 }
+
+export const __TESTING__ = {
+  ANTIGRAVITY_CONFIG,
+};

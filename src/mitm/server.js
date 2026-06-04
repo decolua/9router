@@ -12,6 +12,8 @@ const { DATA_DIR, MITM_DIR } = require("./paths");
 const { getCertForDomain } = require("./cert/generate");
 const { getMitmAlias } = require("./dbReader");
 const { applyAntigravityIdeVersionOverride } = require("./antigravityIdeVersion");
+const { stripInternalRequestHeaders } = require("./headerFidelity");
+const { resolveAntigravityTargetHost } = require("./hostFidelity");
 const LOCAL_PORT = 443;
 const IS_WIN = process.platform === "win32";
 const ENABLE_FILE_LOG = IS_DEV;
@@ -20,11 +22,8 @@ const ENABLE_FILE_LOG = IS_DEV;
 clearDumpDir();
 const INTERNAL_REQUEST_HEADER = { name: "x-request-source", value: "local" };
 
-// Host rewrite for upstream forward: PROD cloudcode-pa is rate-limited (429),
-// daily-cloudcode-pa (dev endpoint) accepts same body+token. Same trick as open-sse.
-const HOST_REWRITE = {
-  "cloudcode-pa.googleapis.com": "daily-cloudcode-pa.googleapis.com",
-};
+// Production host: Real Antigravity IDE targets cloudcode-pa.googleapis.com.
+// Keep this to match the installed client identity exactly. No rewriting.
 
 const handlers = {
   antigravity: require("./handlers/antigravity"),
@@ -132,9 +131,9 @@ function getMappedModel(tool, model) {
  */
 async function passthrough(req, res, bodyBuffer, onResponse) {
   const originalHost = (req.headers.host || TARGET_HOSTS[0]).split(":")[0];
-  // Only rewrite host for chat endpoints — daily-cloudcode-pa rejects auth/login requests
+  // Production host: real Antigravity IDE targets cloudcode-pa.googleapis.com.
   const isChatEndpoint = req.url.includes(":generateContent") || req.url.includes(":streamGenerateContent");
-  const targetHost = isChatEndpoint ? (HOST_REWRITE[originalHost] || originalHost) : originalHost;
+  const targetHost = resolveAntigravityTargetHost(originalHost, isChatEndpoint);
   const dumper = ENABLE_FILE_LOG ? createResponseDumper(req, "passthrough") : null;
 
   const tool = getToolForHost(req.headers.host);
@@ -142,7 +141,7 @@ async function passthrough(req, res, bodyBuffer, onResponse) {
     ? applyAntigravityIdeVersionOverride(bodyBuffer, req.headers)
     : { bodyBuffer, headers: req.headers };
   const bodyForForwarding = versionOverride.bodyBuffer;
-  const headersForForwarding = { ...versionOverride.headers, host: targetHost };
+  const headersForForwarding = stripInternalRequestHeaders({ ...versionOverride.headers, host: targetHost });
   if (bodyForForwarding !== bodyBuffer) {
     headersForForwarding["content-length"] = String(bodyForForwarding.length);
   }

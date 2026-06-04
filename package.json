@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --webpack --port 20128",
-    "build": "next build --webpack",
+    "build": "next build --webpack && cp -r .next/static .next/standalone/.next/static && cp -r public .next/standalone/public",
     "start": "next start",
     "dev:bun": "bun --bun next dev --webpack --port 20128",
     "build:bun": "bun --bun next build --webpack",
