@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getApiKeys } from "@/lib/localDb";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
+import { getTestMaxTokensForModel } from "@/shared/constants/providers";
 
 const CLI_TOKEN_SALT = "9r-cli-auth";
 
@@ -57,7 +58,7 @@ export async function POST(request) {
       headers,
       body: JSON.stringify({
         model,
-        max_tokens: 1,
+        max_tokens: getTestMaxTokensForModel(model),
         stream: false,
         messages: [{ role: "user", content: "hi" }],
       }),

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getTestMaxTokensForModel } from "@/shared/constants/providers";
 
 // Fetch with timeout wrapper
 const fetchWithTimeout = (url, options, timeout = 10000) => {
@@ -131,7 +132,7 @@ export async function POST(request) {
           body: JSON.stringify({
             model: modelId,
             messages: [{ role: "user", content: "ping" }],
-            max_tokens: 1
+            max_tokens: getTestMaxTokensForModel(modelId)
           })
         });
         if (chatRes.ok) {
@@ -171,7 +172,7 @@ export async function POST(request) {
         body: JSON.stringify({
           model: modelId,
           messages: [{ role: "user", content: "ping" }],
-          max_tokens: 1
+          max_tokens: getTestMaxTokensForModel(modelId)
         })
       });
       if (chatRes.ok) {
