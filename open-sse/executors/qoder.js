@@ -12,8 +12,8 @@
  *   - The request shape Qoder expects is non-trivial (chat_context with
  *     mirrored modelConfig, business block with stable IDs, system text
  *     hoisted out of the messages array). All ported from the reference.
- *   - Model identifier is one of the canonical 11 keys (auto / ultimate /
- *     performance / efficient / lite + 6 frontier "*model" ids); the
+ *   - Model identifier is one of the canonical Qoder keys (auto / ultimate /
+ *     performance / efficient / lite + frontier "*model" ids); the
  *     translator layer feeds us "qoder/<key>" so we strip the prefix.
  *   - Per-model `model_config` is fetched live from /algo/api/v2/model/list
  *     and cached. Sending the wrong block silently downgrades to a

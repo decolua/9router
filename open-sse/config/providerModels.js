@@ -153,6 +153,7 @@ export const PROVIDER_MODELS = {
     { id: "lite", name: "Qoder Lite" },
     // Frontier models — pin a specific backing model
     { id: "qmodel", name: "Qwen 3.6 Plus (Qoder)" },
+    { id: "qmodel_latest", name: "Qoder Qwen 3.7 Max" },
     { id: "dmodel", name: "DeepSeek V4 Pro (Qoder)" },
     { id: "dfmodel", name: "DeepSeek V4 Flash (Qoder)" },
     { id: "gm51model", name: "GLM 5.1 (Qoder)" },
