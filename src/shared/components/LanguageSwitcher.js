@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { LOCALES, LOCALE_COOKIE, normalizeLocale } from "@/i18n/config";
+import { LOCALES, LOCALE_COOKIE, LOCALE_NAMES, normalizeLocale } from "@/i18n/config";
 import { reloadTranslations } from "@/i18n/runtime";
 
 function getLocaleFromCookie() {
@@ -14,45 +14,13 @@ function getLocaleFromCookie() {
   return normalizeLocale(value);
 }
 
-// Locale display names and flags - will be translated by runtime i18n
-const getLocaleInfo = (locale) => {
-  const locales = {
-    "en": { name: "English", flag: "🇺🇸" },
-    "vi": { name: "Tiếng Việt", flag: "🇻🇳" },
-    "zh-CN": { name: "简体中文", flag: "🇨🇳" },
-    "zh-TW": { name: "繁體中文", flag: "🇹🇼" },
-    "ja": { name: "日本語", flag: "🇯🇵" },
-    "pt-BR": { name: "Português (Brasil)", flag: "🇧🇷" },
-    "pt-PT": { name: "Português (Portugal)", flag: "🇵🇹" },
-    "ko": { name: "한국어", flag: "🇰🇷" },
-    "es": { name: "Español", flag: "🇪🇸" },
-    "de": { name: "Deutsch", flag: "🇩🇪" },
-    "fr": { name: "Français", flag: "🇫🇷" },
-    "he": { name: "עברית", flag: "🇮🇱" },
-    "ar": { name: "العربية", flag: "🇸🇦" },
-    "ru": { name: "Русский", flag: "🇷🇺" },
-    "pl": { name: "Polski", flag: "🇵🇱" },
-    "cs": { name: "Čeština", flag: "🇨🇿" },
-    "nl": { name: "Nederlands", flag: "🇳🇱" },
-    "tr": { name: "Türkçe", flag: "🇹🇷" },
-    "uk": { name: "Українська", flag: "🇺🇦" },
-    "tl": { name: "Tagalog", flag: "🇵🇭" },
-    "id": { name: "Indonesia", flag: "🇮🇩" },
-    "th": { name: "ไทย", flag: "🇹🇭" },
-    "hi": { name: "हिन्दी", flag: "🇮🇳" },
-    "bn": { name: "বাংলা", flag: "🇧🇩" },
-    "ur": { name: "اردو", flag: "🇵🇰" },
-    "ro": { name: "Română", flag: "🇷🇴" },
-    "sv": { name: "Svenska", flag: "🇸🇪" },
-    "it": { name: "Italiano", flag: "🇮🇹" },
-    "el": { name: "Ελληνικά", flag: "🇬🇷" },
-    "hu": { name: "Magyar", flag: "🇭🇺" },
-    "fi": { name: "Suomi", flag: "🇫🇮" },
-    "da": { name: "Dansk", flag: "🇩🇰" },
-    "no": { name: "Norsk", flag: "🇳🇴" }
+function getLocaleInfo(locale) {
+  const info = {
+    en: { name: LOCALE_NAMES.en, mark: "EN" },
+    "zh-CN": { name: LOCALE_NAMES["zh-CN"], mark: "中" },
   };
-  return locales[locale] || { name: locale, flag: "🌐" };
-};
+  return info[locale] || { name: locale, mark: locale.toUpperCase() };
+}
 
 export default function LanguageSwitcher({ className = "", isOpen: controlledOpen, onClose, hideTrigger = false }) {
   const [locale, setLocale] = useState("en");
@@ -74,7 +42,6 @@ export default function LanguageSwitcher({ className = "", isOpen: controlledOpe
     setLocale(getLocaleFromCookie());
   }, []);
 
-  // Close modal when clicking outside
   useEffect(() => {
     function handleClickOutside(event) {
       if (modalRef.current && !modalRef.current.contains(event.target)) {
@@ -98,8 +65,6 @@ export default function LanguageSwitcher({ className = "", isOpen: controlledOpe
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ locale: nextLocale }),
       });
-      
-      // Reload translations without full page reload
       await reloadTranslations();
       setLocale(nextLocale);
     } catch (err) {
@@ -109,77 +74,71 @@ export default function LanguageSwitcher({ className = "", isOpen: controlledOpe
     }
   };
 
+  const current = getLocaleInfo(locale);
+  const titleText = locale === "zh-CN" ? "选择语言" : "Select Language";
+
   return (
     <div className={className}>
-      {/* Trigger button */}
       {!hideTrigger && (
         <button
           onClick={() => setIsOpen(!isOpen)}
           disabled={isPending}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg text-text-muted hover:text-text-main hover:bg-surface/60 transition-colors"
+          className="flex items-center gap-2 rounded-lg px-3 py-2 text-text-muted transition-colors hover:bg-surface/60 hover:text-text-main"
           title="Language"
           data-i18n-skip="true"
         >
           <span className="material-symbols-outlined text-[20px]">language</span>
-          <span className="text-sm font-medium">{getLocaleInfo(locale).name}</span>
-          <span className="text-lg">{getLocaleInfo(locale).flag}</span>
+          <span className="text-sm font-medium">{current.name}</span>
+          <span className="rounded border border-border px-1.5 py-0.5 text-xs font-semibold">{current.mark}</span>
         </button>
       )}
 
-      {/* Portal modal - renders at document.body to avoid parent layout constraints */}
       {isOpen && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" data-i18n-skip="true">
-          {/* Overlay */}
-          <div
+          <button
+            type="button"
+            aria-label="Close language selector"
             className="absolute inset-0 bg-black/30 backdrop-blur-sm"
             onClick={() => setIsOpen(false)}
           />
 
-          {/* Modal content */}
           <div
             ref={modalRef}
-            className="relative w-full bg-surface border border-black/10 dark:border-white/10 rounded-xl shadow-2xl animate-in fade-in zoom-in-95 duration-200 max-w-2xl flex flex-col max-h-[80vh]"
+            className="relative flex max-h-[80vh] w-full max-w-md flex-col rounded-xl border border-black/10 bg-surface shadow-2xl dark:border-white/10"
           >
-            {/* Modal header */}
-            <div className="flex items-center justify-between p-3 border-b border-black/5 dark:border-white/5">
-              <h2 className="text-lg font-semibold text-text-main">Select Language</h2>
+            <div className="flex items-center justify-between border-b border-black/5 p-3 dark:border-white/5">
+              <h2 className="text-lg font-semibold text-text-main">{titleText}</h2>
               <button
                 onClick={() => setIsOpen(false)}
-                className="p-1.5 rounded-lg text-text-muted hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                className="rounded-lg p-1.5 text-text-muted transition-colors hover:bg-black/5 dark:hover:bg-white/5"
                 aria-label="Close"
               >
                 <span className="material-symbols-outlined text-[20px]">close</span>
               </button>
             </div>
 
-            {/* Modal body - fixed grid columns, equal sizing */}
-            <div className="p-6 overflow-y-auto flex-1">
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(100px,1fr))] gap-2">
-                {LOCALES.map((item) => {
-                  const active = locale === item;
-                  const info = getLocaleInfo(item);
-                  return (
-                    <button
-                      key={item}
-                      onClick={() => handleSetLocale(item)}
-                      disabled={isPending}
-                      className={`flex flex-col items-center justify-start gap-1 px-2 py-3 rounded-lg text-xs font-medium transition-colors w-full ${
-                        active
-                          ? "bg-primary/15 text-primary ring-2 ring-primary"
-                          : "text-text-main hover:bg-black/5 dark:hover:bg-white/5"
-                      } ${isPending ? "opacity-70 cursor-wait" : ""}`}
-                      title={info.name}
-                    >
-                      <span className="text-2xl">{info.flag}</span>
-                      {/* Fixed 2-line height so all cards are uniform */}
-                      <span className="text-center leading-tight line-clamp-2 h-8 flex items-center">{info.name}</span>
-                      {active && (
-                        <span className="material-symbols-outlined text-sm">check</span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
+            <div className="grid grid-cols-2 gap-2 p-6">
+              {LOCALES.map((item) => {
+                const active = locale === item;
+                const info = getLocaleInfo(item);
+                return (
+                  <button
+                    key={item}
+                    onClick={() => handleSetLocale(item)}
+                    disabled={isPending}
+                    className={`flex h-24 w-full flex-col items-center justify-center gap-2 rounded-lg px-3 py-3 text-sm font-medium transition-colors ${
+                      active
+                        ? "bg-primary/15 text-primary ring-2 ring-primary"
+                        : "text-text-main hover:bg-black/5 dark:hover:bg-white/5"
+                    } ${isPending ? "cursor-wait opacity-70" : ""}`}
+                    title={info.name}
+                  >
+                    <span className="rounded border border-border px-2 py-1 text-xs font-semibold">{info.mark}</span>
+                    <span className="text-center leading-tight">{info.name}</span>
+                    {active && <span className="material-symbols-outlined text-sm">check</span>}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>,

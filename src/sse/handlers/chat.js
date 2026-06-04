@@ -10,6 +10,7 @@ import {
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
+import { getAutoModelCandidates } from "../services/autoModel.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { handleComboChat } from "open-sse/services/combo.js";
@@ -88,6 +89,23 @@ export async function handleChat(request, clientRawRequest = null) {
   const userAgent = request?.headers?.get("user-agent") || "";
   const bypassResponse = handleBypassRequest(body, modelStr, userAgent, !!settings.ccFilterNaming);
   if (bypassResponse) return bypassResponse.response || bypassResponse;
+
+  const autoModels = await getAutoModelCandidates(modelStr, "llm");
+  if (autoModels) {
+    if (autoModels.models.length === 0) {
+      return errorResponse(HTTP_STATUS.NOT_FOUND, `No available models for ${autoModels.name}`);
+    }
+    log.info("CHAT", `Auto model "${modelStr}" resolved to ${autoModels.models.length} ${autoModels.kind} candidates`);
+    return handleComboChat({
+      body,
+      models: autoModels.models,
+      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+      log,
+      comboName: autoModels.name,
+      comboStrategy: "round-robin",
+      comboStickyLimit: settings.comboStickyRoundRobinLimit || 1,
+    });
+  }
 
   // Check if model is a combo (has multiple models with fallback)
   const comboModels = await getComboModels(modelStr);

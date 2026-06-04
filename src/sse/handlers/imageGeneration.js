@@ -7,6 +7,7 @@ import {
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
+import { getAutoModelCandidates } from "../services/autoModel.js";
 import { handleImageGenerationCore } from "open-sse/handlers/imageGenerationCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
@@ -31,6 +32,7 @@ export async function handleImageGeneration(request) {
 
   const url = new URL(request.url);
   const preferredConnectionId = request.headers.get("x-connection-id") || null;
+  const defaultAutoKind = request.headers.get("x-9r-auto-kind") || "image";
   const wantsStream = (request.headers.get("accept") || "").includes("text/event-stream");
   const binaryOutput = url.searchParams.get("response_format") === "binary";
   const modelStr = body.model;
@@ -45,6 +47,23 @@ export async function handleImageGeneration(request) {
 
   if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   if (!body.prompt) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: prompt");
+
+  const autoModels = await getAutoModelCandidates(modelStr, defaultAutoKind);
+  if (autoModels) {
+    if (autoModels.models.length === 0) {
+      return errorResponse(HTTP_STATUS.NOT_FOUND, `No available models for ${autoModels.name}`);
+    }
+    log.info("IMAGE", `Auto model "${modelStr}" resolved to ${autoModels.models.length} ${autoModels.kind} candidates`);
+    return handleComboChat({
+      body,
+      models: autoModels.models,
+      handleSingleModel: (b, m) => handleSingleModelImage(b, m, { wantsStream, binaryOutput, preferredConnectionId }),
+      log,
+      comboName: autoModels.name,
+      comboStrategy: "round-robin",
+      comboStickyLimit: settings.comboStickyRoundRobinLimit || 1,
+    });
+  }
 
   // Combo expansion: model may be a combo name → run fallback/round-robin across models
   const comboModels = await getComboModels(modelStr);

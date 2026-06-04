@@ -2,46 +2,15 @@
 
 import { useState, useEffect, useRef } from "react";
 import PropTypes from "prop-types";
-import { LOCALE_COOKIE, normalizeLocale } from "@/i18n/config";
+import { LOCALE_COOKIE, LOCALE_NAMES, normalizeLocale } from "@/i18n/config";
 import { useTheme } from "@/shared/hooks/useTheme";
 import ChangelogModal from "./ChangelogModal";
 import NineRemotePromoModal from "./NineRemotePromoModal";
 import LanguageSwitcher from "./LanguageSwitcher";
 
 const LOCALE_INFO = {
-  "en": { name: "English", flag: "🇺🇸" },
-  "vi": { name: "Tiếng Việt", flag: "🇻🇳" },
-  "zh-CN": { name: "简体中文", flag: "🇨🇳" },
-  "zh-TW": { name: "繁體中文", flag: "🇹🇼" },
-  "ja": { name: "日本語", flag: "🇯🇵" },
-  "pt-BR": { name: "Português (BR)", flag: "🇧🇷" },
-  "pt-PT": { name: "Português (PT)", flag: "🇵🇹" },
-  "ko": { name: "한국어", flag: "🇰🇷" },
-  "es": { name: "Español", flag: "🇪🇸" },
-  "de": { name: "Deutsch", flag: "🇩🇪" },
-  "fr": { name: "Français", flag: "🇫🇷" },
-  "he": { name: "עברית", flag: "🇮🇱" },
-  "ar": { name: "العربية", flag: "🇸🇦" },
-  "ru": { name: "Русский", flag: "🇷🇺" },
-  "pl": { name: "Polski", flag: "🇵🇱" },
-  "cs": { name: "Čeština", flag: "🇨🇿" },
-  "nl": { name: "Nederlands", flag: "🇳🇱" },
-  "tr": { name: "Türkçe", flag: "🇹🇷" },
-  "uk": { name: "Українська", flag: "🇺🇦" },
-  "tl": { name: "Tagalog", flag: "🇵🇭" },
-  "id": { name: "Indonesia", flag: "🇮🇩" },
-  "th": { name: "ไทย", flag: "🇹🇭" },
-  "hi": { name: "हिन्दी", flag: "🇮🇳" },
-  "bn": { name: "বাংলা", flag: "🇧🇩" },
-  "ur": { name: "اردو", flag: "🇵🇰" },
-  "ro": { name: "Română", flag: "🇷🇴" },
-  "sv": { name: "Svenska", flag: "🇸🇪" },
-  "it": { name: "Italiano", flag: "🇮🇹" },
-  "el": { name: "Ελληνικά", flag: "🇬🇷" },
-  "hu": { name: "Magyar", flag: "🇭🇺" },
-  "fi": { name: "Suomi", flag: "🇫🇮" },
-  "da": { name: "Dansk", flag: "🇩🇰" },
-  "no": { name: "Norsk", flag: "🇳🇴" },
+  en: { name: LOCALE_NAMES.en, mark: "EN" },
+  "zh-CN": { name: LOCALE_NAMES["zh-CN"], mark: "中" },
 };
 
 function getLocaleFromCookie() {
@@ -57,7 +26,7 @@ function MenuItem({ icon, label, onClick, trailing, danger }) {
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-3 w-full px-4 py-2.5 text-sm transition-colors ${
+      className={`flex w-full items-center gap-3 px-4 py-2.5 text-sm transition-colors ${
         danger
           ? "text-red-500 hover:bg-red-500/10"
           : "text-text-main hover:bg-black/5 dark:hover:bg-white/5"
@@ -67,7 +36,7 @@ function MenuItem({ icon, label, onClick, trailing, danger }) {
         {icon}
       </span>
       <span className="flex-1 text-left">{label}</span>
-      {trailing && <span className="text-base">{trailing}</span>}
+      {trailing && <span className="text-xs font-semibold">{trailing}</span>}
     </button>
   );
 }
@@ -106,20 +75,21 @@ export default function HeaderMenu({ onLogout }) {
   }, [isOpen]);
 
   const close = () => setIsOpen(false);
+  const localeInfo = LOCALE_INFO[locale] || { name: locale, mark: locale.toUpperCase() };
 
   return (
     <>
       <div className="relative" ref={menuRef}>
         <button
-          onClick={() => setIsOpen((v) => !v)}
-          className="flex items-center justify-center p-2 rounded-lg text-text-muted hover:text-text-main hover:bg-black/5 dark:hover:bg-white/5 transition-all"
+          onClick={() => setIsOpen((value) => !value)}
+          className="flex items-center justify-center rounded-lg p-2 text-text-muted transition-all hover:bg-black/5 hover:text-text-main dark:hover:bg-white/5"
           title="Menu"
         >
           <span className="material-symbols-outlined">grid_view</span>
         </button>
 
         {isOpen && (
-          <div className="absolute right-0 top-full mt-2 w-60 bg-surface border border-black/10 dark:border-white/10 rounded-xl shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-150 overflow-hidden py-1">
+          <div className="absolute right-0 top-full z-50 mt-2 w-60 overflow-hidden rounded-xl border border-black/10 bg-surface py-1 shadow-2xl dark:border-white/10">
             <MenuItem
               icon="history"
               label="Change Log"
@@ -127,8 +97,8 @@ export default function HeaderMenu({ onLogout }) {
             />
             <MenuItem
               icon="language"
-              label={LOCALE_INFO[locale]?.name || locale}
-              trailing={LOCALE_INFO[locale]?.flag || "🌐"}
+              label={localeInfo.name}
+              trailing={localeInfo.mark}
               onClick={() => { close(); setLangOpen(true); }}
             />
             <MenuItem
@@ -153,10 +123,14 @@ export default function HeaderMenu({ onLogout }) {
 
       <ChangelogModal isOpen={changelogOpen} onClose={() => setChangelogOpen(false)} />
       <NineRemotePromoModal isOpen={remoteOpen} onClose={() => setRemoteOpen(false)} />
-      <LanguageSwitcher hideTrigger isOpen={langOpen} onClose={((locale) => {
-        setLangOpen(false)
-        setLocale(locale)
-      })} />
+      <LanguageSwitcher
+        hideTrigger
+        isOpen={langOpen}
+        onClose={(nextLocale) => {
+          setLangOpen(false);
+          setLocale(nextLocale);
+        }}
+      />
     </>
   );
 }
