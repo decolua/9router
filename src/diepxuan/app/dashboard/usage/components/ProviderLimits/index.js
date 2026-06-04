@@ -7,7 +7,10 @@ import Toggle from "@/shared/components/Toggle";
 import { parseQuotaData, calculatePercentage } from "./utils";
 import Card from "@/shared/components/Card";
 import { EditConnectionModal } from "@/shared/components";
-import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
+import { USAGE_SUPPORTED_PROVIDERS as BASE_USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
+import { DIEPXUAN_USAGE_SUPPORTED_PROVIDERS } from "@/diepxuan/shared/constants/providers";
+
+const USAGE_SUPPORTED_PROVIDERS = [...BASE_USAGE_SUPPORTED_PROVIDERS, ...DIEPXUAN_USAGE_SUPPORTED_PROVIDERS];
 
 function getConnectionLabel(connection) {
   const isEmail = (value) =>
