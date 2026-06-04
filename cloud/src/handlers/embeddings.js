@@ -9,6 +9,10 @@ import {
   formatRetryAfter
 } from "open-sse/services/accountFallback.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
+import {
+  refreshProviderCredentials,
+  shouldRefreshCredentials,
+} from "open-sse/services/oauthCredentialManager.js";
 import * as log from "../utils/logger.js";
 import { parseApiKey, extractBearerToken } from "../utils/apiKey.js";
 import { getMachineData, saveMachineData } from "../services/storage.js";
@@ -129,10 +133,12 @@ export async function handleEmbeddings(request, env, ctx, machineIdOverride = nu
 
     log.debug("EMBEDDINGS", `account=${credentials.id}`, { provider });
 
+    const refreshedCredentials = await checkAndRefreshToken(machineId, provider, credentials, env);
+
     const result = await handleEmbeddingsCore({
       body,
       modelInfo: { provider, model },
-      credentials,
+      credentials: refreshedCredentials,
       log,
       onCredentialsRefreshed: async (newCreds) => {
         await updateCredentials(machineId, credentials.id, newCreds, env);
@@ -212,13 +218,37 @@ async function getProviderCredentials(machineId, provider, env, excludeConnectio
     apiKey: connection.apiKey,
     accessToken: connection.accessToken,
     refreshToken: connection.refreshToken,
+    idToken: connection.idToken,
     expiresAt: connection.expiresAt,
+    expiresIn: connection.expiresIn,
+    lastRefreshAt: connection.lastRefreshAt,
     projectId: connection.projectId,
+    copilotToken: connection.providerSpecificData?.copilotToken,
     providerSpecificData: connection.providerSpecificData,
     status: connection.status,
     lastError: connection.lastError,
     rateLimitedUntil: connection.rateLimitedUntil
   };
+}
+
+async function checkAndRefreshToken(machineId, provider, credentials, env) {
+  if (!shouldRefreshCredentials(provider, credentials)) return credentials;
+
+  log.debug("EMBEDDINGS_TOKEN", `${provider.toUpperCase()} | refreshing`);
+
+  const newCredentials = await refreshProviderCredentials(provider, credentials, log);
+  if (newCredentials?.accessToken || newCredentials?.apiKey || newCredentials?.copilotToken) {
+    await updateCredentials(machineId, credentials.id, newCredentials, env);
+    return {
+      ...credentials,
+      ...newCredentials,
+      providerSpecificData: newCredentials.providerSpecificData
+        ? { ...credentials.providerSpecificData, ...newCredentials.providerSpecificData }
+        : credentials.providerSpecificData
+    };
+  }
+
+  return credentials;
 }
 
 async function markAccountUnavailable(machineId, connectionId, status, errorText, env) {
@@ -269,14 +299,37 @@ async function updateCredentials(machineId, connectionId, newCredentials, env) {
   const data = await getMachineData(machineId, env);
   if (!data?.providers?.[connectionId]) return;
 
-  data.providers[connectionId].accessToken = newCredentials.accessToken;
+  if (newCredentials.accessToken)
+    data.providers[connectionId].accessToken = newCredentials.accessToken;
   if (newCredentials.refreshToken)
     data.providers[connectionId].refreshToken = newCredentials.refreshToken;
+  if (newCredentials.idToken)
+    data.providers[connectionId].idToken = newCredentials.idToken;
+  if (newCredentials.lastRefreshAt)
+    data.providers[connectionId].lastRefreshAt = newCredentials.lastRefreshAt;
   if (newCredentials.expiresIn) {
     data.providers[connectionId].expiresAt = new Date(
       Date.now() + newCredentials.expiresIn * 1000
     ).toISOString();
     data.providers[connectionId].expiresIn = newCredentials.expiresIn;
+  } else if (newCredentials.expiresAt) {
+    data.providers[connectionId].expiresAt = newCredentials.expiresAt;
+  }
+  if (newCredentials.providerSpecificData) {
+    data.providers[connectionId].providerSpecificData = {
+      ...(data.providers[connectionId].providerSpecificData || {}),
+      ...newCredentials.providerSpecificData,
+    };
+  }
+  if (newCredentials.copilotToken || newCredentials.copilotTokenExpiresAt) {
+    data.providers[connectionId].providerSpecificData = {
+      ...(data.providers[connectionId].providerSpecificData || {}),
+      ...(newCredentials.copilotToken ? { copilotToken: newCredentials.copilotToken } : {}),
+      ...(newCredentials.copilotTokenExpiresAt ? { copilotTokenExpiresAt: newCredentials.copilotTokenExpiresAt } : {}),
+    };
+  }
+  if (newCredentials.projectId) {
+    data.providers[connectionId].projectId = newCredentials.projectId;
   }
   data.providers[connectionId].updatedAt = new Date().toISOString();
 

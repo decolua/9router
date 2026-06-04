@@ -27,6 +27,7 @@ describe("Codex Refresh Token", () => {
         json: () => Promise.resolve({
           access_token: "new-access",
           refresh_token: "rotated-refresh-token",
+          id_token: "new-id-token",
           expires_in: 3600,
         }),
       });
@@ -36,6 +37,22 @@ describe("Codex Refresh Token", () => {
 
       expect(result.refreshToken).toBe("rotated-refresh-token");
       expect(result.accessToken).toBe("new-access");
+      expect(result.idToken).toBe("new-id-token");
+      expect(global.fetch).toHaveBeenCalledWith(
+        "https://auth.openai.com/oauth/token",
+        expect.objectContaining({
+          method: "POST",
+          headers: expect.objectContaining({
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          }),
+          body: JSON.stringify({
+            client_id: "app_EMoamEEZ73f0CkXaXp7hrann",
+            grant_type: "refresh_token",
+            refresh_token: "old-refresh-token",
+          }),
+        })
+      );
     });
 
     it("should keep old refresh_token when server does not return new one", async () => {
@@ -51,6 +68,79 @@ describe("Codex Refresh Token", () => {
       const result = await refreshCodexToken("old-refresh-token", null);
 
       expect(result.refreshToken).toBe("old-refresh-token");
+    });
+  });
+
+  describe("CodexExecutor credential lifecycle", () => {
+    it("should refresh Codex credentials and preserve omitted id_token", async () => {
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({
+          access_token: "new-access",
+          refresh_token: "rotated-refresh-token",
+          expires_in: 3600,
+        }),
+      });
+
+      const { CodexExecutor } = await import("../../open-sse/executors/codex.js");
+      const executor = new CodexExecutor();
+      const result = await executor.refreshCredentials({
+        connectionId: "codex-1",
+        refreshToken: "old-refresh-token",
+        idToken: "old-id-token",
+      }, null);
+
+      expect(result.accessToken).toBe("new-access");
+      expect(result.refreshToken).toBe("rotated-refresh-token");
+      expect(result.idToken).toBe("old-id-token");
+      expect(result.lastRefreshAt).toBeTruthy();
+      expect(result.expiresAt).toBeTruthy();
+    });
+
+    it("should refresh Codex when lastRefreshAt is older than the upstream stale window", async () => {
+      const { CodexExecutor } = await import("../../open-sse/executors/codex.js");
+      const executor = new CodexExecutor();
+      const farFuture = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      const staleRefresh = new Date(Date.now() - 9 * 24 * 60 * 60 * 1000).toISOString();
+      const recentRefresh = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString();
+
+      expect(executor.needsRefresh({
+        refreshToken: "refresh-token",
+        expiresAt: farFuture,
+        lastRefreshAt: staleRefresh,
+      })).toBe(true);
+
+      expect(executor.needsRefresh({
+        refreshToken: "refresh-token",
+        expiresAt: farFuture,
+        lastRefreshAt: recentRefresh,
+      })).toBe(false);
+    });
+
+    it("should de-duplicate concurrent refreshes for the same Codex connection", async () => {
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({
+          access_token: "new-access",
+          refresh_token: "rotated-refresh-token",
+          expires_in: 3600,
+        }),
+      });
+
+      const { refreshProviderCredentials } = await import("../../open-sse/services/oauthCredentialManager.js");
+      const credentials = {
+        connectionId: "codex-single-flight",
+        refreshToken: "old-refresh-token",
+      };
+
+      const [first, second] = await Promise.all([
+        refreshProviderCredentials("codex", credentials, null),
+        refreshProviderCredentials("codex", credentials, null),
+      ]);
+
+      expect(first.accessToken).toBe("new-access");
+      expect(second.accessToken).toBe("new-access");
+      expect(global.fetch).toHaveBeenCalledTimes(1);
     });
   });
 

@@ -191,47 +191,72 @@ export async function refreshQwenToken(refreshToken, log) {
   return null;
 }
 
+export function classifyOAuthRefreshError(errorText = "", status = 0) {
+  let parsed = null;
+  try {
+    parsed = errorText ? JSON.parse(errorText) : null;
+  } catch {
+    parsed = null;
+  }
+
+  const code = parsed?.error || parsed?.error_code || "";
+  const description = parsed?.error_description || parsed?.message || errorText || "";
+  const combined = `${code} ${description}`.toLowerCase();
+  const permanent = [
+    "refresh_token_expired",
+    "refresh_token_reused",
+    "refresh_token_invalidated",
+    "invalid_grant",
+  ].some((marker) => combined.includes(marker));
+
+  return { status, code, description, permanent };
+}
+
 /**
  * Specialized refresh for Codex (OpenAI) OAuth tokens
  */
 export async function refreshCodexToken(refreshToken, log) {
   try {
-  const response = await fetch(OAUTH_ENDPOINTS.openai.token, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Accept: "application/json",
-    },
-    body: new URLSearchParams({
-      grant_type: "refresh_token",
-      refresh_token: refreshToken,
-      client_id: PROVIDERS.codex.clientId,
-      scope: "openid profile email offline_access",
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    log?.error?.("TOKEN_REFRESH", "Failed to refresh Codex token", {
-      status: response.status,
-      error: errorText,
+    const response = await fetch(OAUTH_ENDPOINTS.openai.token, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        client_id: PROVIDERS.codex.clientId,
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+      }),
     });
-    return null;
-  }
 
-  const tokens = await response.json();
+    if (!response.ok) {
+      const errorText = await response.text();
+      const failure = classifyOAuthRefreshError(errorText, response.status);
+      log?.error?.("TOKEN_REFRESH", "Failed to refresh Codex token", {
+        status: response.status,
+        error: errorText,
+        code: failure.code,
+        permanent: failure.permanent,
+      });
+      return null;
+    }
 
-  log?.info?.("TOKEN_REFRESH", "Successfully refreshed Codex token", {
-    hasNewAccessToken: !!tokens.access_token,
-    hasNewRefreshToken: !!tokens.refresh_token,
-    expiresIn: tokens.expires_in,
-  });
+    const tokens = await response.json();
 
-  return {
-    accessToken: tokens.access_token,
-    refreshToken: tokens.refresh_token || refreshToken,
-    expiresIn: tokens.expires_in,
-  };
+    log?.info?.("TOKEN_REFRESH", "Successfully refreshed Codex token", {
+      hasNewAccessToken: !!tokens.access_token,
+      hasNewRefreshToken: !!tokens.refresh_token,
+      hasIdToken: !!tokens.id_token,
+      expiresIn: tokens.expires_in,
+    });
+
+    return {
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token || refreshToken,
+      idToken: tokens.id_token,
+      expiresIn: tokens.expires_in,
+    };
   } catch (error) {
     log?.error?.("TOKEN_REFRESH", `Network error refreshing Codex token: ${error.message}`);
     return null;
@@ -737,4 +762,3 @@ export async function refreshWithRetry(refreshFn, maxRetries = 3, log = null) {
   log?.error?.("TOKEN_REFRESH", `All ${maxRetries} retry attempts failed`);
   return null;
 }
-

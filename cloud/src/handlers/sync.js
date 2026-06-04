@@ -185,6 +185,7 @@ function formatProviderData(provider) {
     refreshToken: provider.refreshToken,
     expiresAt: provider.expiresAt,
     expiresIn: provider.expiresIn,
+    lastRefreshAt: provider.lastRefreshAt,
     tokenType: provider.tokenType,
     scope: provider.scope,
     idToken: provider.idToken,

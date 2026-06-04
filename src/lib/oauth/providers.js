@@ -155,6 +155,8 @@ const PROVIDERS = {
       refreshToken: tokens.refresh_token,
       idToken: tokens.id_token,
       expiresIn: tokens.expires_in,
+      email: extractEmailFromAccessToken(tokens.id_token || tokens.access_token),
+      lastRefreshAt: new Date().toISOString(),
     }),
   },
 

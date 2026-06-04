@@ -1,5 +1,36 @@
-import { getProviderConnections } from "@/lib/localDb.js";
-import { getExecutor, refreshTokenByProvider } from "open-sse/index.js";
+import { getProviderConnections, updateProviderConnection } from "@/lib/localDb.js";
+import { getExecutor } from "open-sse/index.js";
+
+async function persistRefreshedCredentials(connection, newCredentials) {
+  const updateData = {};
+
+  if (newCredentials.accessToken) updateData.accessToken = newCredentials.accessToken;
+  if (newCredentials.refreshToken) updateData.refreshToken = newCredentials.refreshToken;
+  if (newCredentials.idToken) updateData.idToken = newCredentials.idToken;
+  if (newCredentials.lastRefreshAt) updateData.lastRefreshAt = newCredentials.lastRefreshAt;
+  if (newCredentials.expiresIn) {
+    updateData.expiresIn = newCredentials.expiresIn;
+    updateData.expiresAt = new Date(Date.now() + newCredentials.expiresIn * 1000).toISOString();
+  } else if (newCredentials.expiresAt) {
+    updateData.expiresAt = newCredentials.expiresAt;
+  }
+
+  const providerSpecificUpdates = {
+    ...(newCredentials.providerSpecificData || {}),
+    ...(newCredentials.copilotToken ? { copilotToken: newCredentials.copilotToken } : {}),
+    ...(newCredentials.copilotTokenExpiresAt ? { copilotTokenExpiresAt: newCredentials.copilotTokenExpiresAt } : {}),
+  };
+  if (Object.keys(providerSpecificUpdates).length > 0) {
+    updateData.providerSpecificData = {
+      ...(connection.providerSpecificData || {}),
+      ...providerSpecificUpdates,
+    };
+  }
+
+  if (Object.keys(updateData).length > 0) {
+    await updateProviderConnection(connection.id, updateData);
+  }
+}
 
 export async function POST(request) {
   try {
@@ -19,7 +50,11 @@ export async function POST(request) {
       apiKey: connection.apiKey,
       accessToken: connection.accessToken,
       refreshToken: connection.refreshToken,
-      copilotToken: connection.copilotToken,
+      idToken: connection.idToken,
+      lastRefreshAt: connection.lastRefreshAt,
+      connectionId: connection.id,
+      copilotToken: connection.providerSpecificData?.copilotToken,
+      copilotTokenExpiresAt: connection.providerSpecificData?.copilotTokenExpiresAt,
       projectId: connection.projectId,
       providerSpecificData: connection.providerSpecificData
     };
@@ -31,9 +66,10 @@ export async function POST(request) {
 
     // Auto-refresh token on 401/403 and retry (same as chatCore.js)
     if (response.status === 401 || response.status === 403) {
-      const newCredentials = await refreshTokenByProvider(provider, credentials);
+      const newCredentials = await executor.refreshCredentials(credentials, console);
       if (newCredentials?.accessToken || newCredentials?.copilotToken) {
         Object.assign(credentials, newCredentials);
+        await persistRefreshedCredentials(connection, newCredentials);
         ({ response } = await executor.execute({ model, body, stream, credentials }));
       }
     }

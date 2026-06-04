@@ -55,6 +55,7 @@ export class CodexService extends OAuthService {
         refreshToken: tokens.refresh_token,
         idToken: tokens.id_token,
         expiresIn: tokens.expires_in,
+        lastRefreshAt: new Date().toISOString(),
       }),
     });
 
@@ -142,4 +143,3 @@ export class CodexService extends OAuthService {
     }
   }
 }
-

@@ -4,12 +4,13 @@ import { errorResponse } from "open-sse/utils/error.js";
 import { checkFallbackError, isAccountUnavailable, getUnavailableUntil, getEarliestRateLimitedUntil, formatRetryAfter } from "open-sse/services/accountFallback.js";
 import { getComboModelsFromData, handleComboChat } from "open-sse/services/combo.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
+import {
+  refreshProviderCredentials,
+  shouldRefreshCredentials,
+} from "open-sse/services/oauthCredentialManager.js";
 import * as log from "../utils/logger.js";
-import { refreshTokenByProvider } from "../services/tokenRefresh.js";
 import { parseApiKey, extractBearerToken } from "../utils/apiKey.js";
 import { getMachineData, saveMachineData } from "../services/storage.js";
-
-const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000;
 
 async function getModelInfo(modelStr, machineId, env) {
   const data = await getMachineData(machineId, env);
@@ -161,23 +162,19 @@ async function handleSingleModelChat(body, modelStr, machineId, env) {
 }
 
 async function checkAndRefreshToken(machineId, provider, credentials, env) {
-  if (!credentials.expiresAt) return credentials;
-
-  const expiresAt = new Date(credentials.expiresAt).getTime();
-  if (expiresAt - Date.now() >= TOKEN_EXPIRY_BUFFER_MS) return credentials;
+  if (!shouldRefreshCredentials(provider, credentials)) return credentials;
 
   log.debug("TOKEN", `${provider.toUpperCase()} | expiring, refreshing`);
 
-  const newCredentials = await refreshTokenByProvider(provider, credentials);
-  if (newCredentials?.accessToken) {
+  const newCredentials = await refreshProviderCredentials(provider, credentials, log);
+  if (newCredentials?.accessToken || newCredentials?.apiKey || newCredentials?.copilotToken) {
     await updateCredentials(machineId, credentials.id, newCredentials, env);
     return {
       ...credentials,
-      accessToken: newCredentials.accessToken,
-      refreshToken: newCredentials.refreshToken || credentials.refreshToken,
-      expiresAt: newCredentials.expiresIn
-        ? new Date(Date.now() + newCredentials.expiresIn * 1000).toISOString()
-        : credentials.expiresAt
+      ...newCredentials,
+      providerSpecificData: newCredentials.providerSpecificData
+        ? { ...credentials.providerSpecificData, ...newCredentials.providerSpecificData }
+        : credentials.providerSpecificData
     };
   }
 
@@ -233,7 +230,10 @@ async function getProviderCredentials(machineId, provider, env, excludeConnectio
     apiKey: connection.apiKey,
     accessToken: connection.accessToken,
     refreshToken: connection.refreshToken,
+    idToken: connection.idToken,
     expiresAt: connection.expiresAt,
+    expiresIn: connection.expiresIn,
+    lastRefreshAt: connection.lastRefreshAt,
     projectId: connection.projectId,
     copilotToken: connection.providerSpecificData?.copilotToken,
     providerSpecificData: connection.providerSpecificData,
@@ -292,11 +292,31 @@ async function updateCredentials(machineId, connectionId, newCredentials, env) {
   const data = await getMachineData(machineId, env);
   if (!data?.providers?.[connectionId]) return;
 
-  data.providers[connectionId].accessToken = newCredentials.accessToken;
+  if (newCredentials.accessToken) data.providers[connectionId].accessToken = newCredentials.accessToken;
   if (newCredentials.refreshToken) data.providers[connectionId].refreshToken = newCredentials.refreshToken;
+  if (newCredentials.idToken) data.providers[connectionId].idToken = newCredentials.idToken;
+  if (newCredentials.lastRefreshAt) data.providers[connectionId].lastRefreshAt = newCredentials.lastRefreshAt;
   if (newCredentials.expiresIn) {
     data.providers[connectionId].expiresAt = new Date(Date.now() + newCredentials.expiresIn * 1000).toISOString();
     data.providers[connectionId].expiresIn = newCredentials.expiresIn;
+  } else if (newCredentials.expiresAt) {
+    data.providers[connectionId].expiresAt = newCredentials.expiresAt;
+  }
+  if (newCredentials.providerSpecificData) {
+    data.providers[connectionId].providerSpecificData = {
+      ...(data.providers[connectionId].providerSpecificData || {}),
+      ...newCredentials.providerSpecificData,
+    };
+  }
+  if (newCredentials.copilotToken || newCredentials.copilotTokenExpiresAt) {
+    data.providers[connectionId].providerSpecificData = {
+      ...(data.providers[connectionId].providerSpecificData || {}),
+      ...(newCredentials.copilotToken ? { copilotToken: newCredentials.copilotToken } : {}),
+      ...(newCredentials.copilotTokenExpiresAt ? { copilotTokenExpiresAt: newCredentials.copilotTokenExpiresAt } : {}),
+    };
+  }
+  if (newCredentials.projectId) {
+    data.providers[connectionId].projectId = newCredentials.projectId;
   }
   data.providers[connectionId].updatedAt = new Date().toISOString();
 
