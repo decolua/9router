@@ -71,8 +71,8 @@ export const APIKEY_PROVIDERS = {
   glm: { id: "glm", alias: "glm", name: "GLM Coding", icon: "code", color: "#2563EB", textIcon: "GL", website: "https://open.bigmodel.cn", notice: { apiKeyUrl: "https://open.bigmodel.cn/usercenter/apikeys" } },
   "glm-cn": { id: "glm-cn", alias: "glm-cn", name: "GLM (China)", icon: "code", color: "#DC2626", textIcon: "GC", website: "https://open.bigmodel.cn", notice: { apiKeyUrl: "https://open.bigmodel.cn/usercenter/apikeys" } },
   kimi: { id: "kimi", alias: "kimi", name: "Kimi", icon: "psychology", color: "#1E3A8A", textIcon: "KM", website: "https://kimi.moonshot.cn", notice: { apiKeyUrl: "https://platform.moonshot.ai/console/api-keys" }, serviceKinds: ["llm", "webSearch"], searchViaChat: { defaultModel: "kimi-k2.5", pricingUrl: "https://platform.moonshot.ai/docs/pricing/chat" } },
-  minimax: { id: "minimax", alias: "minimax", name: "Minimax Coding", icon: "memory", color: "#7C3AED", textIcon: "MM", website: "https://www.minimaxi.com", notice: { apiKeyUrl: "https://platform.minimaxi.com/user-center/basic-information/interface-key" }, serviceKinds: ["llm", "image", "imageToText", "webSearch", "tts"], searchViaChat: { defaultModel: "MiniMax-M2.7", pricingUrl: "https://www.minimaxi.com/document/price" }, ttsConfig: { baseUrl: "https://api.minimax.io/v1/t2a_v2", authType: "apikey", authHeader: "bearer", format: "minimax-tts", models: MINIMAX_TTS_MODELS } },
-  "minimax-cn": { id: "minimax-cn", alias: "minimax-cn", name: "Minimax (China)", icon: "memory", color: "#DC2626", textIcon: "MC", website: "https://www.minimaxi.com", notice: { apiKeyUrl: "https://platform.minimaxi.com/user-center/basic-information/interface-key" }, serviceKinds: ["llm", "tts"], ttsConfig: { baseUrl: "https://api.minimaxi.com/v1/t2a_v2", authType: "apikey", authHeader: "bearer", format: "minimax-tts", models: MINIMAX_TTS_MODELS } },
+  minimax: { id: "minimax", alias: "minimax", name: "Minimax Coding", icon: "memory", color: "#7C3AED", textIcon: "MM", website: "https://www.minimaxi.com", notice: { apiKeyUrl: "https://platform.minimaxi.com/user-center/basic-information/interface-key" }, serviceKinds: ["llm", "image", "imageToText", "webSearch", "tts"], searchViaChat: { defaultModel: "MiniMax-M2.7", pricingUrl: "https://www.minimaxi.com/document/price" }, ttsConfig: { baseUrl: "https://api.minimax.io/v1/t2a_v2", authType: "apikey", authHeader: "bearer", format: "minimax-tts", models: MINIMAX_TTS_MODELS }, testMaxTokens: 10 },
+  "minimax-cn": { id: "minimax-cn", alias: "minimax-cn", name: "Minimax (China)", icon: "memory", color: "#DC2626", textIcon: "MC", website: "https://www.minimaxi.com", notice: { apiKeyUrl: "https://platform.minimaxi.com/user-center/basic-information/interface-key" }, serviceKinds: ["llm", "tts"], ttsConfig: { baseUrl: "https://api.minimaxi.com/v1/t2a_v2", authType: "apikey", authHeader: "bearer", format: "minimax-tts", models: MINIMAX_TTS_MODELS }, testMaxTokens: 10 },
   alicode: { id: "alicode", alias: "alicode", name: "Alibaba", icon: "cloud", color: "#FF6A00", textIcon: "ALi", website: "https://bailian.console.aliyun.com", notice: { apiKeyUrl: "https://bailian.console.aliyun.com/?apiKey=1" } },
   "alicode-intl": { id: "alicode-intl", alias: "alicode-intl", name: "Alibaba Intl", icon: "cloud", color: "#FF6A00", textIcon: "ALi", website: "https://modelstudio.console.alibabacloud.com", notice: { apiKeyUrl: "https://modelstudio.console.alibabacloud.com/?apiKey=1" } },
   "xiaomi-mimo": { id: "xiaomi-mimo", alias: "mimo", name: "Xiaomi MiMo", icon: "smart_toy", color: "#FF6900", textIcon: "XM", website: "https://xiaomimimo.com", notice: { apiKeyUrl: "https://xiaomimimo.com" } },
@@ -286,3 +286,18 @@ export const USAGE_APIKEY_PROVIDERS = [
   "minimax",
   "minimax-cn",
 ];
+
+// Helper: Get test max_tokens for validation
+export function getTestMaxTokens(providerId) {
+  const provider = AI_PROVIDERS[providerId];
+  return provider?.testMaxTokens || 10;
+}
+
+// Helper: Extract provider and get its validation max_tokens
+export function getTestMaxTokensForModel(modelId) {
+  if (!modelId || typeof modelId !== "string") return 10;
+  const parts = modelId.split("/");
+  const prefix = parts.length > 1 ? parts[0] : "";
+  const providerId = prefix ? (ALIAS_TO_ID[prefix] || prefix) : "";
+  return getTestMaxTokens(providerId);
+}

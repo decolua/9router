@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getProviderConnectionById, getApiKeys } from "@/lib/localDb";
 import { getProviderModels, PROVIDER_ID_TO_ALIAS } from "open-sse/config/providerModels.js";
-import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, getTestMaxTokensForModel } from "@/shared/constants/providers";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 
@@ -30,7 +30,7 @@ async function pingModel(modelId, baseUrl, apiKey, cliToken) {
       headers,
       body: JSON.stringify({
         model: modelId,
-        max_tokens: 1,
+        max_tokens: getTestMaxTokensForModel(modelId),
         stream: false,
         messages: [{ role: "user", content: "hi" }],
       }),
