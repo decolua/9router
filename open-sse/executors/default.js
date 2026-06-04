@@ -1,12 +1,39 @@
 import { BaseExecutor } from "./base.js";
-import { PROVIDERS } from "../config/providers.js";
+import { PROVIDERS, resolveXiaomiTokenplanBaseUrl } from "../config/providers.js";
 import { OAUTH_ENDPOINTS, buildKimiHeaders } from "../config/appConstants.js";
 import { buildClineHeaders } from "../../src/shared/utils/clineAuth.js";
 import { getCachedClaudeHeaders } from "../utils/claudeHeaderCache.js";
+import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 
 export class DefaultExecutor extends BaseExecutor {
   constructor(provider) {
     super(provider, PROVIDERS[provider] || PROVIDERS.openai);
+  }
+
+  transformRequest(model, body) {
+    const transformed = this.applyJsonSchemaFallback(body);
+    return injectReasoningContent({ provider: this.provider, model, body: transformed });
+  }
+
+  // Fallback json_schema → json_object for openai-compatible providers without native Structured Output.
+  applyJsonSchemaFallback(body) {
+    if (!this.provider?.startsWith?.("openai-compatible-")) return body;
+    const rf = body?.response_format;
+    if (rf?.type !== "json_schema" || !rf.json_schema?.schema) return body;
+
+    const schemaJson = JSON.stringify(rf.json_schema.schema, null, 2);
+    const prompt = `You must respond with valid JSON that strictly follows this JSON schema:\n\`\`\`json\n${schemaJson}\n\`\`\`\nRespond ONLY with the JSON object, no other text.`;
+
+    const messages = Array.isArray(body.messages) ? body.messages.map(m => ({ ...m })) : [];
+    const sys = messages.find(m => m.role === "system");
+    if (sys) {
+      if (typeof sys.content === "string") sys.content = `${sys.content}\n\n${prompt}`;
+      else if (Array.isArray(sys.content)) sys.content.push({ type: "text", text: `\n\n${prompt}` });
+    } else {
+      messages.unshift({ role: "system", content: prompt });
+    }
+    return { ...body, messages, response_format: { type: "json_object" } };
   }
 
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
@@ -32,8 +59,18 @@ export class DefaultExecutor extends BaseExecutor {
         return `${this.config.baseUrl}?beta=true`;
       case "gemini":
         return `${this.config.baseUrl}/${model}:${stream ? "streamGenerateContent?alt=sse" : "generateContent"}`;
-      default:
-        return this.config.baseUrl;
+      default: {
+        if (this.provider === "xiaomi-tokenplan") {
+          return `${resolveXiaomiTokenplanBaseUrl(credentials)}/chat/completions`;
+        }
+        const url = this.config.baseUrl;
+        if (url?.includes("{accountId}")) {
+          const accountId = credentials?.providerSpecificData?.accountId;
+          if (!accountId) throw new Error(`${this.provider} requires accountId in providerSpecificData`);
+          return url.replace("{accountId}", accountId);
+        }
+        return url;
+      }
     }
   }
 
@@ -83,11 +120,9 @@ export class DefaultExecutor extends BaseExecutor {
       case "kimi":
       case "minimax":
       case "minimax-cn":
-        headers["x-api-key"] = credentials.apiKey || credentials.accessToken;
-        break;
       case "kimi-coding":
-        headers["Authorization"] = `Bearer ${credentials.accessToken}`;
-        Object.assign(headers, buildKimiHeaders());
+        headers["x-api-key"] = credentials.apiKey || credentials.accessToken;
+        if (this.provider === "kimi-coding") Object.assign(headers, buildKimiHeaders());
         break;
       default:
         if (this.provider?.startsWith?.("anthropic-compatible-")) {
@@ -111,6 +146,10 @@ export class DefaultExecutor extends BaseExecutor {
           }
         } else if (this.provider === "cline") {
           Object.assign(headers, buildClineHeaders(credentials.apiKey || credentials.accessToken));
+        } else if (this.config?.format === "claude") {
+          // Generic claude-format provider (e.g. agentrouter): x-api-key + anthropic-version
+          headers["x-api-key"] = credentials.apiKey || credentials.accessToken;
+          if (!headers["anthropic-version"]) headers["anthropic-version"] = "2023-06-01";
         } else {
           headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
         }
@@ -147,19 +186,19 @@ export class DefaultExecutor extends BaseExecutor {
     return headers;
   }
 
-  async refreshCredentials(credentials, log) {
+  async refreshCredentials(credentials, log, proxyOptions = null) {
     if (!credentials.refreshToken) return null;
 
     const refreshers = {
-      claude: () => this.refreshWithJSON(OAUTH_ENDPOINTS.anthropic.token, { grant_type: "refresh_token", refresh_token: credentials.refreshToken, client_id: PROVIDERS.claude.clientId }),
-      codex: () => this.refreshWithForm(OAUTH_ENDPOINTS.openai.token, { grant_type: "refresh_token", refresh_token: credentials.refreshToken, client_id: PROVIDERS.codex.clientId, scope: "openid profile email offline_access" }),
-      qwen: () => this.refreshWithForm(OAUTH_ENDPOINTS.qwen.token, { grant_type: "refresh_token", refresh_token: credentials.refreshToken, client_id: PROVIDERS.qwen.clientId }),
-      iflow: () => this.refreshIflow(credentials.refreshToken),
-      gemini: () => this.refreshGoogle(credentials.refreshToken),
-      kiro: () => this.refreshKiro(credentials.refreshToken),
-      cline: () => this.refreshCline(credentials.refreshToken),
-      "kimi-coding": () => this.refreshKimiCoding(credentials.refreshToken),
-      kilocode: () => this.refreshKilocode(credentials.refreshToken)
+      claude: () => this.refreshWithJSON(OAUTH_ENDPOINTS.anthropic.token, { grant_type: "refresh_token", refresh_token: credentials.refreshToken, client_id: PROVIDERS.claude.clientId }, proxyOptions),
+      codex: () => this.refreshWithForm(OAUTH_ENDPOINTS.openai.token, { grant_type: "refresh_token", refresh_token: credentials.refreshToken, client_id: PROVIDERS.codex.clientId, scope: "openid profile email offline_access" }, proxyOptions),
+      qwen: () => this.refreshWithForm(OAUTH_ENDPOINTS.qwen.token, { grant_type: "refresh_token", refresh_token: credentials.refreshToken, client_id: PROVIDERS.qwen.clientId }, proxyOptions),
+      iflow: () => this.refreshIflow(credentials.refreshToken, proxyOptions),
+      gemini: () => this.refreshGoogle(credentials.refreshToken, proxyOptions),
+      kiro: () => this.refreshKiro(credentials.refreshToken, proxyOptions),
+      cline: () => this.refreshCline(credentials.refreshToken, proxyOptions),
+      "kimi-coding": () => this.refreshKimiCoding(credentials.refreshToken, proxyOptions),
+      kilocode: () => this.refreshKilocode(credentials.refreshToken, proxyOptions)
     };
 
     const refresher = refreshers[this.provider];
@@ -175,69 +214,69 @@ export class DefaultExecutor extends BaseExecutor {
     }
   }
 
-  async refreshWithJSON(url, body) {
-    const response = await fetch(url, {
+  async refreshWithJSON(url, body, proxyOptions = null) {
+    const response = await proxyAwareFetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Accept": "application/json" },
       body: JSON.stringify(body)
-    });
+    }, proxyOptions);
     if (!response.ok) return null;
     const tokens = await response.json();
     return { accessToken: tokens.access_token, refreshToken: tokens.refresh_token || body.refresh_token, expiresIn: tokens.expires_in };
   }
 
-  async refreshWithForm(url, params) {
-    const response = await fetch(url, {
+  async refreshWithForm(url, params, proxyOptions = null) {
+    const response = await proxyAwareFetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
       body: new URLSearchParams(params)
-    });
+    }, proxyOptions);
     if (!response.ok) return null;
     const tokens = await response.json();
     return { accessToken: tokens.access_token, refreshToken: tokens.refresh_token || params.refresh_token, expiresIn: tokens.expires_in };
   }
 
-  async refreshIflow(refreshToken) {
+  async refreshIflow(refreshToken, proxyOptions = null) {
     const basicAuth = btoa(`${PROVIDERS.iflow.clientId}:${PROVIDERS.iflow.clientSecret}`);
-    const response = await fetch(OAUTH_ENDPOINTS.iflow.token, {
+    const response = await proxyAwareFetch(OAUTH_ENDPOINTS.iflow.token, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json", "Authorization": `Basic ${basicAuth}` },
       body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken, client_id: PROVIDERS.iflow.clientId, client_secret: PROVIDERS.iflow.clientSecret })
-    });
+    }, proxyOptions);
     if (!response.ok) return null;
     const tokens = await response.json();
     return { accessToken: tokens.access_token, refreshToken: tokens.refresh_token || refreshToken, expiresIn: tokens.expires_in };
   }
 
-  async refreshGoogle(refreshToken) {
-    const response = await fetch(OAUTH_ENDPOINTS.google.token, {
+  async refreshGoogle(refreshToken, proxyOptions = null) {
+    const response = await proxyAwareFetch(OAUTH_ENDPOINTS.google.token, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
       body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken, client_id: this.config.clientId, client_secret: this.config.clientSecret })
-    });
+    }, proxyOptions);
     if (!response.ok) return null;
     const tokens = await response.json();
     return { accessToken: tokens.access_token, refreshToken: tokens.refresh_token || refreshToken, expiresIn: tokens.expires_in };
   }
 
-  async refreshKiro(refreshToken) {
-    const response = await fetch(PROVIDERS.kiro.tokenUrl, {
+  async refreshKiro(refreshToken, proxyOptions = null) {
+    const response = await proxyAwareFetch(PROVIDERS.kiro.tokenUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Accept": "application/json", "User-Agent": "kiro-cli/1.0.0" },
       body: JSON.stringify({ refreshToken })
-    });
+    }, proxyOptions);
     if (!response.ok) return null;
     const tokens = await response.json();
     return { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken || refreshToken, expiresIn: tokens.expiresIn };
   }
 
-  async refreshCline(refreshToken) {
+  async refreshCline(refreshToken, proxyOptions = null) {
     console.log('[DEBUG] Refreshing Cline token, refreshToken length:', refreshToken?.length);
-    const response = await fetch("https://api.cline.bot/api/v1/auth/refresh", {
+    const response = await proxyAwareFetch("https://api.cline.bot/api/v1/auth/refresh", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Accept": "application/json" },
       body: JSON.stringify({ refreshToken, grantType: "refresh_token", clientType: "extension" })
-    });
+    }, proxyOptions);
     console.log('[DEBUG] Cline refresh response status:', response.status);
     if (!response.ok) {
       const errorText = await response.text();
@@ -253,9 +292,9 @@ export class DefaultExecutor extends BaseExecutor {
     return { accessToken: data?.accessToken, refreshToken: data?.refreshToken || refreshToken, expiresIn };
   }
 
-  async refreshKimiCoding(refreshToken) {
+  async refreshKimiCoding(refreshToken, proxyOptions = null) {
     const kimiHeaders = buildKimiHeaders();
-    const response = await fetch("https://auth.kimi.com/api/oauth/token", {
+    const response = await proxyAwareFetch("https://auth.kimi.com/api/oauth/token", {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
@@ -263,13 +302,13 @@ export class DefaultExecutor extends BaseExecutor {
         ...kimiHeaders
       },
       body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken, client_id: "17e5f671-d194-4dfb-9706-5516cb48c098" })
-    });
+    }, proxyOptions);
     if (!response.ok) return null;
     const tokens = await response.json();
     return { accessToken: tokens.access_token, refreshToken: tokens.refresh_token || refreshToken, expiresIn: tokens.expires_in };
   }
 
-  async refreshKilocode(refreshToken) {
+  async refreshKilocode(refreshToken, proxyOptions = null) {
     // Kilocode uses device code flow, no refresh token support
     return null;
   }

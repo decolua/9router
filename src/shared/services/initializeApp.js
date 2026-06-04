@@ -1,112 +1,106 @@
-import { cleanupProviderConnections, getSettings, updateSettings, getApiKeys } from "@/lib/localDb";
-import { enableTunnel, isTunnelManuallyDisabled, isTunnelReconnecting } from "@/lib/tunnel/tunnelManager";
-import { killCloudflared, isCloudflaredRunning, ensureCloudflared } from "@/lib/tunnel/cloudflared";
-import { getMitmStatus, startMitm, loadEncryptedPassword, initDbHooks } from "@/mitm/manager";
+import os from "os";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { existsSync } from "fs";
+import { cleanupProviderConnections, getSettings, updateSettings, getApiKeys } from "@/lib/localDb";
+import {
+  enableTunnel, enableTailscale,
+  isTunnelManuallyDisabled, isTunnelReconnecting, isTailscaleReconnecting,
+  getTunnelService, getTailscaleService, setTunnelUnexpectedExitCallback,
+  killCloudflared, isCloudflaredRunning, ensureCloudflared,
+  isTailscaleRunning, isTailscaleRunningStrict,
+  loadState,
+  checkInternet,
+  probeCloudflareAlive, probeTailscaleAlive,
+  RESTART_COOLDOWN_MS, NETWORK_SETTLE_MS,
+  WATCHDOG_INTERVAL_MS, NETWORK_CHECK_INTERVAL_MS,
+} from "@/lib/tunnel";
+import { getMitmStatus, startMitm, loadEncryptedPassword, initDbHooks, restoreToolDNS, removeAllDNSEntriesSync } from "@/mitm/manager";
+import { syncToJson as syncMitmAliasCache } from "@/lib/mitmAliasCache";
 
-import os from "os";
-
-// Inject correct paths and DB hooks into manager.js (CJS) from ESM context.
-// Must run before any MITM function is called.
+// Inject correct paths and DB hooks into manager.js (CJS) from ESM context
 (function bootstrapMitm() {
-  // 1. Resolve server.js path from real ESM __filename (not bundled path)
   if (!process.env.MITM_SERVER_PATH) {
     try {
       const thisFile = fileURLToPath(import.meta.url);
-      const appSrc = dirname(dirname(thisFile)); // src/
+      const appSrc = dirname(dirname(thisFile));
       const candidate = join(appSrc, "mitm", "server.js");
-      if (existsSync(candidate)) {
-        process.env.MITM_SERVER_PATH = candidate;
-      }
+      if (existsSync(candidate)) process.env.MITM_SERVER_PATH = candidate;
     } catch { /* ignore */ }
   }
-
-  // 2. Inject DB functions so manager.js (CJS) can save/load settings
-  //    without dynamic import issues inside webpack bundles
-  try {
-    initDbHooks(getSettings, updateSettings);
-  } catch { /* ignore */ }
+  try { initDbHooks(getSettings, updateSettings); } catch { /* ignore */ }
 })();
 
-// Multiple modules register SIGINT/SIGTERM handlers legitimately
 process.setMaxListeners(20);
 
-// Use global to survive Next.js hot reload — prevents duplicate intervals
+// Survive Next.js hot reload
 const g = global.__appSingleton ??= {
   signalHandlersRegistered: false,
   watchdogInterval: null,
   networkMonitorInterval: null,
   lastNetworkFingerprint: null,
   lastWatchdogTick: Date.now(),
-  lastTunnelRestartAt: 0,
-  tunnelRestartInProgress: false,
+  lastOnline: null,
   mitmStartInProgress: false,
+  tunnelAutoResumed: false,
+  tailscaleAutoResumed: false,
 };
 
-const WATCHDOG_INTERVAL_MS = 60000;
-const NETWORK_CHECK_INTERVAL_MS = 5000;
-const NETWORK_RESTART_COOLDOWN_MS = 30000;
-
-/**
- * Initialize app on startup
- * - Cleanup stale data
- * - Auto-reconnect tunnel if previously enabled
- * - Register shutdown handler to kill cloudflared
- * - Start watchdog to recover tunnel after sleep/wake
- */
 export async function initializeApp() {
   try {
     await cleanupProviderConnections();
-
-    // Auto-reconnect tunnel if it was enabled before restart
     const settings = await getSettings();
-    if (settings.tunnelEnabled && !isCloudflaredRunning()) {
-      console.log("[InitApp] Tunnel was enabled, auto-reconnecting...");
-      try {
-        await enableTunnel();
-        console.log("[InitApp] Tunnel reconnected");
-      } catch (error) {
-        console.log("[InitApp] Tunnel reconnect failed:", error.message);
-      }
+
+    // Auto-resume tunnel (once per process)
+    if (settings.tunnelEnabled && !g.tunnelAutoResumed) {
+      g.tunnelAutoResumed = true;
+      console.log("[InitApp] Tunnel was enabled, auto-resuming...");
+      safeRestartTunnel("startup").catch((e) => console.log("[InitApp] Tunnel resume failed:", e.message));
     }
 
-    // Kill cloudflared on process exit (register once only)
+    // Auto-resume tailscale (once per process)
+    if (settings.tailscaleEnabled && !g.tailscaleAutoResumed) {
+      g.tailscaleAutoResumed = true;
+      console.log("[InitApp] Tailscale was enabled, auto-resuming...");
+      safeRestartTailscale("startup").catch((e) => console.log("[InitApp] Tailscale resume failed:", e.message));
+    }
+
     if (!g.signalHandlersRegistered) {
       const cleanup = () => {
+        try { removeAllDNSEntriesSync(); } catch { /* best effort */ }
         killCloudflared();
         process.exit();
       };
       process.on("SIGINT", cleanup);
       process.on("SIGTERM", cleanup);
+      process.on("exit", () => { try { removeAllDNSEntriesSync(); } catch { /* ignore */ } });
       g.signalHandlersRegistered = true;
     }
 
-    // Pre-download cloudflared binary in background
     ensureCloudflared().catch(() => {});
 
-    // Watchdog: recover tunnel after process crash
+    // Sync mitmAlias DB → JSON cache so standalone MITM server can read it
+    syncMitmAliasCache().catch(() => {});
+
+    // Auto-respawn tunnel when cloudflared exits unexpectedly (e.g. network change drop)
+    setTunnelUnexpectedExitCallback(() => {
+      safeRestartTunnel("unexpected-exit").catch(() => {});
+    });
+
     startWatchdog();
-
-    // Network monitor: detect sleep/wake + network changes → restart tunnel
     startNetworkMonitor();
-
-    // Auto-start MITM if it was enabled before restart
     autoStartMitm();
   } catch (error) {
     console.error("[InitApp] Error:", error);
   }
 }
 
-/** Auto-start MITM if it was enabled before restart */
 async function autoStartMitm() {
   if (g.mitmStartInProgress) return;
   g.mitmStartInProgress = true;
   try {
     const settings = await getSettings();
     if (!settings.mitmEnabled) return;
-
     const mitmStatus = await getMitmStatus();
     if (mitmStatus.running) return;
 
@@ -116,13 +110,18 @@ async function autoStartMitm() {
       return;
     }
 
-    // Need an active API key
     const keys = await getApiKeys();
     const activeKey = keys.find(k => k.isActive !== false);
 
     console.log("[InitApp] MITM was enabled, auto-starting...");
     await startMitm(activeKey?.key || "sk_9router", password);
     console.log("[InitApp] MITM auto-started");
+    try {
+      await restoreToolDNS(password);
+      console.log("[InitApp] DNS restored from saved state");
+    } catch (e) {
+      console.log("[InitApp] DNS restore failed:", e.message);
+    }
   } catch (err) {
     console.log("[InitApp] MITM auto-start failed:", err.message);
   } finally {
@@ -130,34 +129,99 @@ async function autoStartMitm() {
   }
 }
 
-/** Periodically check tunnel process health and reconnect if crashed */
+// Cooldown only applies to repeating watchdog ticks (anti hammer-loop).
+// Network/exit events are one-shot transitions → bypass to recover fast.
+const FORCE_RESTART_REASONS = /^(startup|netchange|sleep|sleep\+netchange|online|unexpected-exit)$/;
+
+// ─── Safe restart (4 guards: spawn / cooldown / alive / internet) ────────────
+
+async function safeRestartTunnel(reason) {
+  const svc = getTunnelService();
+  const settings = await getSettings();
+  if (!settings.tunnelEnabled) return;
+  if (svc.cancelToken.cancelled) return;
+  if (svc.spawnInProgress) return;
+
+  const force = FORCE_RESTART_REASONS.test(reason);
+
+  // Watchdog: process alive = trust it (cloudflared self-retries via --retries 99).
+  // Avoids killing a healthy tunnel on transient HTTP probe failures (app busy / slow DNS).
+  if (!force && isCloudflaredRunning()) return;
+
+  // Force reasons (netchange/sleep/online): process may be up but routing stale → probe to confirm
+  if (force && isCloudflaredRunning()) {
+    const state = loadState();
+    const publicUrl = state?.shortId ? `https://r${state.shortId}.abc-tunnel.us` : null;
+    const directUrl = state?.tunnelUrl || null;
+    if (publicUrl && directUrl) {
+      const [publicOk, directOk] = await Promise.all([
+        probeCloudflareAlive(publicUrl),
+        probeCloudflareAlive(directUrl),
+      ]);
+      if (publicOk && directOk) return;
+    }
+  }
+
+  if (!force && Date.now() - svc.lastRestartAt < RESTART_COOLDOWN_MS) {
+    console.log(`[Tunnel] degraded but cooldown active, skip (${reason})`);
+    return;
+  }
+  if (!await checkInternet()) return;
+
+  console.log(`[Tunnel] safeRestart (${reason}) — tunnel unreachable${force ? " [force]" : ""}`);
+  try {
+    await enableTunnel();
+    svc.lastRestartAt = Date.now();
+    console.log("[Tunnel] restart success");
+  } catch (err) {
+    if (!/cloudflared killed|tunnel cancelled/.test(err.message)) {
+      console.log("[Tunnel] restart failed:", err.message);
+    }
+  }
+}
+
+async function safeRestartTailscale(reason) {
+  const svc = getTailscaleService();
+  const settings = await getSettings();
+  if (!settings.tailscaleEnabled) return;
+  if (svc.cancelToken.cancelled) return;
+  if (svc.spawnInProgress) return;
+
+  // Tailscale daemon is OS-level with built-in reconnect; trust it when running.
+  // Startup uses strict probe — cached state is cold after process/dev reload.
+  const running = reason === "startup" ? isTailscaleRunningStrict() : isTailscaleRunning();
+  if (running) return;
+
+  const force = FORCE_RESTART_REASONS.test(reason);
+  if (!force && Date.now() - svc.lastRestartAt < RESTART_COOLDOWN_MS) {
+    console.log(`[Tailscale] degraded but cooldown active, skip (${reason})`);
+    return;
+  }
+  if (!await checkInternet()) return;
+
+  console.log(`[Tailscale] safeRestart (${reason}) — daemon not running${force ? " [force]" : ""}`);
+  try {
+    await enableTailscale();
+    svc.lastRestartAt = Date.now();
+    console.log("[Tailscale] restart success");
+  } catch (err) {
+    console.log("[Tailscale] restart failed:", err.message);
+  }
+}
+
+// ─── Watchdog: 60s tick check both services ──────────────────────────────────
+
 function startWatchdog() {
   if (g.watchdogInterval) return;
-  g.watchdogInterval = setInterval(async () => {
-    try {
-      if (isTunnelManuallyDisabled()) return;
-      if (isTunnelReconnecting()) return;
-      if (g.tunnelRestartInProgress) return;
-      const settings = await getSettings();
-      if (!settings.tunnelEnabled) return;
-      if (isCloudflaredRunning()) return;
-      console.log("[Watchdog] Tunnel process is down, attempting recovery...");
-      g.tunnelRestartInProgress = true;
-      try {
-        await enableTunnel();
-        console.log("[Watchdog] Tunnel recovered");
-      } finally {
-        g.tunnelRestartInProgress = false;
-      }
-    } catch (err) {
-      console.log("[Watchdog] Recovery failed:", err.message);
-    }
+  g.watchdogInterval = setInterval(() => {
+    safeRestartTunnel("watchdog").catch(() => {});
+    safeRestartTailscale("watchdog").catch(() => {});
   }, WATCHDOG_INTERVAL_MS);
-
   if (g.watchdogInterval.unref) g.watchdogInterval.unref();
 }
 
-/** Get network fingerprint from active interfaces (IPv4 only) */
+// ─── Network monitor: detect IPv4 fingerprint change + sleep/wake ────────────
+
 function getNetworkFingerprint() {
   const interfaces = os.networkInterfaces();
   const active = [];
@@ -172,53 +236,44 @@ function getNetworkFingerprint() {
   return active.sort().join("|");
 }
 
-/** Monitor network changes + sleep/wake → kill and reconnect tunnel */
 function startNetworkMonitor() {
   if (g.networkMonitorInterval) return;
 
   g.lastNetworkFingerprint = getNetworkFingerprint();
   g.lastWatchdogTick = Date.now();
+  g.lastOnline = null;
 
   g.networkMonitorInterval = setInterval(async () => {
     try {
-      if (isTunnelManuallyDisabled()) return;
-      const settings = await getSettings();
-      if (!settings.tunnelEnabled) return;
-
       const now = Date.now();
       const elapsed = now - g.lastWatchdogTick;
       g.lastWatchdogTick = now;
 
       const currentFingerprint = getNetworkFingerprint();
       const networkChanged = currentFingerprint !== g.lastNetworkFingerprint;
-      const wasSleep = elapsed > NETWORK_CHECK_INTERVAL_MS * 3;
-
+      const wasSleep = elapsed > NETWORK_CHECK_INTERVAL_MS * 6;
       if (networkChanged) g.lastNetworkFingerprint = currentFingerprint;
 
-      if (!networkChanged && !wasSleep) return;
+      // Real reachability check (TCP 1.1.1.1:443) — not just interface presence
+      const online = await checkInternet();
+      const wasOffline = g.lastOnline === false;
+      g.lastOnline = online;
 
-      // Skip if restart already in progress or restarted recently
-      if (g.tunnelRestartInProgress) return;
-      if (isTunnelReconnecting()) return;
-      if (now - g.lastTunnelRestartAt < NETWORK_RESTART_COOLDOWN_MS) return;
+      if (!online) return; // no internet → idle, don't restart
 
-      const reason = wasSleep && networkChanged ? "sleep/wake + network change"
-        : wasSleep ? "sleep/wake" : "network change";
-      console.log(`[NetworkMonitor] ${reason} detected, restarting tunnel...`);
+      const onlineEdge = wasOffline; // offline → online transition
+      if (!networkChanged && !wasSleep && !onlineEdge) return;
 
-      g.tunnelRestartInProgress = true;
-      g.lastTunnelRestartAt = now;
-      try {
-        killCloudflared();
-        await new Promise(r => setTimeout(r, 2000));
-        await enableTunnel();
-        console.log("[NetworkMonitor] Tunnel restarted");
-        g.lastNetworkFingerprint = getNetworkFingerprint();
-      } finally {
-        g.tunnelRestartInProgress = false;
-      }
+      // Wait for DHCP/DNS to settle before probing
+      await new Promise((r) => setTimeout(r, NETWORK_SETTLE_MS));
+
+      const reason = onlineEdge ? "online"
+        : wasSleep && networkChanged ? "sleep+netchange"
+        : wasSleep ? "sleep" : "netchange";
+      safeRestartTunnel(reason).catch(() => {});
+      safeRestartTailscale(reason).catch(() => {});
     } catch (err) {
-      console.log("[NetworkMonitor] Tunnel restart failed:", err.message);
+      console.log("[NetworkMonitor] error:", err.message);
     }
   }, NETWORK_CHECK_INTERVAL_MS);
 

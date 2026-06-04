@@ -7,7 +7,6 @@ async function ensureInitialized() {
   if (!initialized) {
     await initTranslators();
     initialized = true;
-    console.log("[SSE] Translators initialized for /v1/responses");
   }
 }
 

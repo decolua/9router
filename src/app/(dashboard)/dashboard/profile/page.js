@@ -15,6 +15,20 @@ export default function ProfilePage() {
   const [passLoading, setPassLoading] = useState(false);
   const [dbLoading, setDbLoading] = useState(false);
   const [dbStatus, setDbStatus] = useState({ type: "", message: "" });
+  const [oidcForm, setOidcForm] = useState({
+    authMode: "password",
+    oidcIssuerUrl: "",
+    oidcClientId: "",
+    oidcScopes: "openid profile email",
+    oidcLoginLabel: "Sign in with OIDC",
+  });
+  const [oidcClientSecret, setOidcClientSecret] = useState("");
+  const [oidcStatus, setOidcStatus] = useState({ type: "", message: "" });
+  const [oidcLoading, setOidcLoading] = useState(false);
+  const [oidcTestLoading, setOidcTestLoading] = useState(false);
+  const [oidcTestStatus, setOidcTestStatus] = useState({ type: "", message: "" });
+  const [oidcRedirectUri, setOidcRedirectUri] = useState("/api/auth/oidc/callback");
+  const [oidcExpanded, setOidcExpanded] = useState(false);
   const importFileRef = useRef(null);
   const [proxyForm, setProxyForm] = useState({
     outboundProxyEnabled: false,
@@ -30,6 +44,15 @@ export default function ProfilePage() {
       .then((res) => res.json())
       .then((data) => {
         setSettings(data);
+        setOidcForm({
+          authMode: data?.authMode || "password",
+          oidcIssuerUrl: data?.oidcIssuerUrl || "",
+          oidcClientId: data?.oidcClientId || "",
+          oidcScopes: data?.oidcScopes || "openid profile email",
+          oidcLoginLabel: data?.oidcLoginLabel || "Sign in with OIDC",
+        });
+        setOidcClientSecret("");
+        if (data?.authMode === "oidc" || data?.authMode === "both") setOidcExpanded(true);
         setProxyForm({
           outboundProxyEnabled: data?.outboundProxyEnabled === true,
           outboundProxyUrl: data?.outboundProxyUrl || "",
@@ -41,6 +64,12 @@ export default function ProfilePage() {
         console.error("Failed to fetch settings:", err);
         setLoading(false);
       });
+  }, []);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setOidcRedirectUri(`${window.location.origin}/api/auth/oidc/callback`);
+    }
   }, []);
 
   const updateOutboundProxy = async (e) => {
@@ -223,6 +252,24 @@ export default function ProfilePage() {
     }
   };
 
+  const updateComboStickyLimit = async (limit) => {
+    const numLimit = parseInt(limit);
+    if (isNaN(numLimit) || numLimit < 1) return;
+
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ comboStickyRoundRobinLimit: numLimit }),
+      });
+      if (res.ok) {
+        setSettings(prev => ({ ...prev, comboStickyRoundRobinLimit: numLimit }));
+      }
+    } catch (err) {
+      console.error("Failed to update combo sticky limit:", err);
+    }
+  };
+
   const updateRequireLogin = async (requireLogin) => {
     try {
       const res = await fetch("/api/settings", {
@@ -235,6 +282,143 @@ export default function ProfilePage() {
       }
     } catch (err) {
       console.error("Failed to update require login:", err);
+    }
+  };
+
+  const updateOidcForm = (field, value) => {
+    setOidcForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const saveOidcSettings = async (authMode = oidcForm.authMode || "password") => {
+    const issuerUrl = oidcForm.oidcIssuerUrl.trim();
+    const clientId = oidcForm.oidcClientId.trim();
+    const scopes = oidcForm.oidcScopes.trim();
+    const loginLabel = oidcForm.oidcLoginLabel.trim();
+    const secret = oidcClientSecret.trim();
+
+    if (authMode !== "password" && (!issuerUrl || !clientId || !secret) && !settings.oidcConfigured) {
+      setOidcStatus({ type: "error", message: "Issuer URL, client ID, and client secret are required to enable OIDC." });
+      return;
+    }
+
+    setOidcLoading(true);
+    setOidcStatus({ type: "", message: "" });
+    setOidcTestStatus({ type: "", message: "" });
+
+    try {
+      const payload = {
+        authMode,
+        oidcIssuerUrl: issuerUrl,
+        oidcClientId: clientId,
+        oidcScopes: scopes || "openid profile email",
+        oidcLoginLabel: loginLabel || "Sign in with OIDC",
+      };
+      if (secret) {
+        payload.oidcClientSecret = secret;
+      }
+
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        setSettings((prev) => ({ ...prev, ...data }));
+        setOidcForm({
+          authMode: data?.authMode || authMode,
+          oidcIssuerUrl: data?.oidcIssuerUrl || issuerUrl,
+          oidcClientId: data?.oidcClientId || clientId,
+          oidcScopes: data?.oidcScopes || scopes || "openid profile email",
+          oidcLoginLabel: data?.oidcLoginLabel || loginLabel || "Sign in with OIDC",
+        });
+        setOidcClientSecret("");
+        setOidcStatus({
+          type: "success",
+          message:
+            authMode === "oidc"
+              ? "OIDC login enabled"
+              : authMode === "both"
+                ? "Password and OIDC login enabled"
+                : "OIDC settings saved",
+        });
+      } else {
+        setOidcStatus({ type: "error", message: data.error || "Failed to save OIDC settings" });
+      }
+    } catch (err) {
+      setOidcStatus({ type: "error", message: "An error occurred" });
+    } finally {
+      setOidcLoading(false);
+    }
+  };
+
+  const testOidcConnection = async () => {
+    const issuerUrl = oidcForm.oidcIssuerUrl.trim();
+    const clientId = oidcForm.oidcClientId.trim();
+    const scopes = oidcForm.oidcScopes.trim();
+    const secret = oidcClientSecret.trim();
+
+    if (!issuerUrl || !clientId) {
+      setOidcTestStatus({ type: "error", message: "Issuer URL and client ID are required to test the connection." });
+      return;
+    }
+
+    setOidcTestLoading(true);
+    setOidcStatus({ type: "", message: "" });
+    setOidcTestStatus({ type: "", message: "" });
+
+    try {
+      const saveRes = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          authMode: oidcForm.authMode || settings.authMode || "password",
+          oidcIssuerUrl: issuerUrl,
+          oidcClientId: clientId,
+          oidcScopes: scopes || "openid profile email",
+          oidcLoginLabel: oidcForm.oidcLoginLabel.trim() || "Sign in with OIDC",
+          ...(secret ? { oidcClientSecret: secret } : {}),
+        }),
+      });
+
+      const saved = await saveRes.json().catch(() => ({}));
+      if (!saveRes.ok) {
+        setOidcTestStatus({
+          type: "error",
+          message: saved.error || "Failed to save OIDC settings before testing",
+        });
+        return;
+      }
+
+      const res = await fetch("/api/auth/oidc/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          issuerUrl: saved.oidcIssuerUrl || issuerUrl,
+          clientId: saved.oidcClientId || clientId,
+          scopes: saved.oidcScopes || scopes || "openid profile email",
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.ok) {
+        const statusMessage = data.clientSecretTested
+          ? data.clientSecretValid === true
+            ? `Connection OK. Discovery loaded from ${data.issuerUrl}. Client secret validated too.`
+            : `Connection OK. Discovery loaded from ${data.issuerUrl}. Client secret was not checked.`
+          : `Connection OK. Discovery loaded from ${data.issuerUrl}.`;
+        setOidcTestStatus({
+          type: "success",
+          message: statusMessage,
+        });
+      } else {
+        setOidcTestStatus({ type: "error", message: data.error || "OIDC connection test failed" });
+      }
+    } catch (err) {
+      setOidcTestStatus({ type: "error", message: "An error occurred" });
+    } finally {
+      setOidcTestLoading(false);
     }
   };
 
@@ -332,28 +516,28 @@ export default function ProfilePage() {
   const observabilityEnabled = settings.enableObservability === true;
 
   return (
-    <div className="max-w-2xl mx-auto">
+    <div className="max-w-2xl mx-auto px-4 sm:px-0">
       <div className="flex flex-col gap-6">
         {/* Local Mode Info */}
         <Card>
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-4">
-              <div className="size-12 rounded-lg bg-green-500/10 text-green-500 flex items-center justify-center">
-                <span className="material-symbols-outlined text-2xl">computer</span>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+            <div className="flex items-center gap-3 sm:gap-4">
+              <div className="size-10 sm:size-12 rounded-lg bg-green-500/10 text-green-500 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-xl sm:text-2xl">computer</span>
               </div>
               <div>
-                <h2 className="text-xl font-semibold">Local Mode</h2>
-                <p className="text-text-muted">Running on your machine</p>
+                <h2 className="text-lg sm:text-xl font-semibold">Local Mode</h2>
+                <p className="text-sm text-text-muted">Running on your machine</p>
               </div>
             </div>
-            <div className="inline-flex p-1 rounded-lg bg-black/5 dark:bg-white/5">
+            <div className="inline-flex p-1 rounded-lg bg-black/5 dark:bg-white/5 w-full sm:w-auto">
               {["light", "dark", "system"].map((option) => (
                 <button
                   key={option}
                   type="button"
                   onClick={() => setTheme(option)}
                   className={cn(
-                    "flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium transition-all",
+                    "flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-md font-medium transition-all flex-1 sm:flex-initial",
                     theme === option
                       ? "bg-white dark:bg-white/10 text-text-main shadow-sm"
                       : "text-text-muted hover:text-text-main"
@@ -362,24 +546,25 @@ export default function ProfilePage() {
                   <span className="material-symbols-outlined text-[18px]">
                     {option === "light" ? "light_mode" : option === "dark" ? "dark_mode" : "contrast"}
                   </span>
-                  <span className="capitalize text-sm">{option}</span>
+                  <span className="capitalize text-xs sm:text-sm">{option}</span>
                 </button>
               ))}
             </div>
           </div>
           <div className="flex flex-col gap-3 pt-4 border-t border-border">
-            <div className="flex items-center justify-between p-3 rounded-lg bg-bg border border-border">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-3 rounded-lg bg-bg border border-border gap-2">
               <div>
-                <p className="font-medium">Database Location</p>
-                <p className="text-sm text-text-muted font-mono">~/.9router/db.json</p>
+                <p className="font-medium text-sm sm:text-base">Database Location</p>
+                <p className="text-xs sm:text-sm text-text-muted font-mono break-all">~/.9router/db/data.sqlite</p>
               </div>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
               <Button
                 variant="secondary"
                 icon="download"
                 onClick={handleExportDatabase}
                 loading={dbLoading}
+                className="w-full sm:w-auto"
               >
                 Download Backup
               </Button>
@@ -388,6 +573,7 @@ export default function ProfilePage() {
                 icon="upload"
                 onClick={() => importFileRef.current?.click()}
                 disabled={dbLoading}
+                className="w-full sm:w-auto"
               >
                 Import Backup
               </Button>
@@ -410,16 +596,16 @@ export default function ProfilePage() {
         {/* Security */}
         <Card>
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 rounded-lg bg-primary/10 text-primary">
+            <div className="p-2 rounded-lg bg-primary/10 text-primary shrink-0">
               <span className="material-symbols-outlined text-[20px]">shield</span>
             </div>
-            <h3 className="text-lg font-semibold">Security</h3>
+            <h3 className="text-base sm:text-lg font-semibold">Security</h3>
           </div>
           <div className="flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">Require login</p>
-                <p className="text-sm text-text-muted">
+            <div className="flex items-start sm:items-center justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm sm:text-base">Require login</p>
+                <p className="text-xs sm:text-sm text-text-muted">
                   When ON, dashboard requires password. When OFF, access without login.
                 </p>
               </div>
@@ -433,7 +619,7 @@ export default function ProfilePage() {
               <form onSubmit={handlePasswordChange} className="flex flex-col gap-4 pt-4 border-t border-border/50">
                 {settings.hasPassword && (
                   <div className="flex flex-col gap-2">
-                    <label className="text-sm font-medium">Current Password</label>
+                    <label className="text-xs sm:text-sm font-medium">Current Password</label>
                     <Input
                       type="password"
                       placeholder="Enter current password"
@@ -450,9 +636,9 @@ export default function ProfilePage() {
                     </p>
                   </div>
                 )} */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="flex flex-col gap-2">
-                    <label className="text-sm font-medium">New Password</label>
+                    <label className="text-xs sm:text-sm font-medium">New Password</label>
                     <Input
                       type="password"
                       placeholder="Enter new password"
@@ -462,7 +648,7 @@ export default function ProfilePage() {
                     />
                   </div>
                   <div className="flex flex-col gap-2">
-                    <label className="text-sm font-medium">Confirm New Password</label>
+                    <label className="text-xs sm:text-sm font-medium">Confirm New Password</label>
                     <Input
                       type="password"
                       placeholder="Confirm new password"
@@ -474,13 +660,13 @@ export default function ProfilePage() {
                 </div>
 
                 {passStatus.message && (
-                  <p className={`text-sm ${passStatus.type === "error" ? "text-red-500" : "text-green-500"}`}>
+                  <p className={`text-xs sm:text-sm ${passStatus.type === "error" ? "text-red-500" : "text-green-500"}`}>
                     {passStatus.message}
                   </p>
                 )}
 
                 <div className="pt-2">
-                  <Button type="submit" variant="primary" loading={passLoading}>
+                  <Button type="submit" variant="primary" loading={passLoading} className="w-full sm:w-auto">
                     {settings.hasPassword ? "Update Password" : "Set Password"}
                   </Button>
                 </div>
@@ -489,19 +675,182 @@ export default function ProfilePage() {
           </div>
         </Card>
 
+        {/* OIDC */}
+        <Card>
+          <button
+            type="button"
+            onClick={() => setOidcExpanded((v) => !v)}
+            className="w-full flex items-center gap-3 text-left"
+          >
+            <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-500 shrink-0">
+              <span className="material-symbols-outlined text-[20px]">lock_open</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-base sm:text-lg font-semibold">OIDC Dashboard Login</h3>
+              <p className="text-xs text-text-muted">
+                {settings.authMode === "oidc" ? "OIDC active" : settings.authMode === "both" ? "Password + OIDC active" : "Optional SSO via Authentik/Keycloak/Google"}
+              </p>
+            </div>
+            <span className="material-symbols-outlined text-text-muted shrink-0">
+              {oidcExpanded ? "expand_less" : "expand_more"}
+            </span>
+          </button>
+          {oidcExpanded && (
+          <div className="flex flex-col gap-4 mt-4">
+            <p className="text-xs sm:text-sm text-text-muted">
+              Use Authentik or any OIDC provider to sign in to the dashboard. You can enable password-only, OIDC-only, or both for the dashboard; model API access still uses API keys.
+            </p>
+
+            <div className="flex flex-col gap-2">
+              <label className="font-medium text-sm sm:text-base">Auth Mode</label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {[
+                  {
+                    value: "password",
+                    title: "Password only",
+                    desc: "Keep the legacy password login.",
+                  },
+                  {
+                    value: "oidc",
+                    title: "OIDC only",
+                    desc: "Require OIDC for dashboard access.",
+                  },
+                  {
+                    value: "both",
+                    title: "Both",
+                    desc: "Allow either password or OIDC.",
+                  },
+                ].map((option) => {
+                  const active = oidcForm.authMode === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => updateOidcForm("authMode", option.value)}
+                      className={cn(
+                        "text-left rounded-lg border p-3 transition-colors",
+                        active
+                          ? "border-primary bg-primary/5"
+                          : "border-border bg-bg hover:bg-black/5 dark:hover:bg-white/5"
+                      )}
+                      disabled={loading || oidcLoading}
+                    >
+                      <p className="font-medium text-sm sm:text-base">{option.title}</p>
+                      <p className="text-xs sm:text-sm text-text-muted mt-1">{option.desc}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4">
+              <div className="flex flex-col gap-2">
+                <label className="font-medium text-sm sm:text-base">Issuer URL</label>
+                <Input
+                  placeholder="https://auth.example.com/application/o/9router/"
+                  value={oidcForm.oidcIssuerUrl}
+                  onChange={(e) => updateOidcForm("oidcIssuerUrl", e.target.value)}
+                  disabled={loading || oidcLoading}
+                />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="font-medium text-sm sm:text-base">Client ID</label>
+                <Input
+                  placeholder="9router-dashboard"
+                  value={oidcForm.oidcClientId}
+                  onChange={(e) => updateOidcForm("oidcClientId", e.target.value)}
+                  disabled={loading || oidcLoading}
+                />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="font-medium text-sm sm:text-base">Client Secret</label>
+                <Input
+                  type="password"
+                  placeholder="Leave blank to keep existing secret"
+                  value={oidcClientSecret}
+                  onChange={(e) => setOidcClientSecret(e.target.value)}
+                  disabled={loading || oidcLoading}
+                />
+                <p className="text-xs sm:text-sm text-text-muted">This value is write-only after saving.</p>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="font-medium text-sm sm:text-base">Scopes</label>
+                <Input
+                  placeholder="openid profile email"
+                  value={oidcForm.oidcScopes}
+                  onChange={(e) => updateOidcForm("oidcScopes", e.target.value)}
+                  disabled={loading || oidcLoading}
+                />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="font-medium text-sm sm:text-base">Login Button Label</label>
+                <Input
+                  placeholder="Sign in with OIDC"
+                  value={oidcForm.oidcLoginLabel}
+                  onChange={(e) => updateOidcForm("oidcLoginLabel", e.target.value)}
+                  disabled={loading || oidcLoading}
+                />
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-border bg-bg p-3 text-xs sm:text-sm text-text-muted">
+              <p className="font-medium text-text-main mb-1">Redirect URI</p>
+              <code className="block break-all font-mono">{oidcRedirectUri}</code>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-border/50">
+              <Button type="button" variant="primary" loading={oidcLoading} onClick={() => saveOidcSettings()} className="w-full sm:w-auto">
+                Save auth mode
+              </Button>
+              <Button type="button" variant="outline" loading={oidcTestLoading} onClick={testOidcConnection} className="w-full sm:w-auto">
+                Test connection
+              </Button>
+            </div>
+
+            {oidcTestStatus.message && (
+              <p className={`text-xs sm:text-sm ${oidcTestStatus.type === "error" ? "text-red-500" : "text-green-500"}`}>
+                {oidcTestStatus.message}
+              </p>
+            )}
+
+            {oidcStatus.message && (
+              <p className={`text-xs sm:text-sm ${oidcStatus.type === "error" ? "text-red-500" : "text-green-500"}`}>
+                {oidcStatus.message}
+              </p>
+            )}
+
+            {settings.authMode === "oidc" && (
+              <p className="text-xs sm:text-sm text-amber-600 dark:text-amber-400">
+                OIDC login is currently active. Password login is disabled until you switch back.
+              </p>
+            )}
+
+            {settings.authMode === "both" && (
+              <p className="text-xs sm:text-sm text-amber-600 dark:text-amber-400">
+                Password and OIDC login are both active.
+              </p>
+            )}
+          </div>
+          )}
+        </Card>
+
         {/* Routing Preferences */}
         <Card>
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500">
+            <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500 shrink-0">
               <span className="material-symbols-outlined text-[20px]">route</span>
             </div>
-            <h3 className="text-lg font-semibold">Routing Strategy</h3>
+            <h3 className="text-base sm:text-lg font-semibold">Routing Strategy</h3>
           </div>
           <div className="flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">Round Robin</p>
-                <p className="text-sm text-text-muted">
+            <div className="flex items-start sm:items-center justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm sm:text-base">Round Robin</p>
+                <p className="text-xs sm:text-sm text-text-muted">
                   Cycle through accounts to distribute load
                 </p>
               </div>
@@ -514,10 +863,10 @@ export default function ProfilePage() {
 
             {/* Sticky Round Robin Limit */}
             {settings.fallbackStrategy === "round-robin" && (
-              <div className="flex items-center justify-between pt-2 border-t border-border/50">
-                <div>
-                  <p className="font-medium">Sticky Limit</p>
-                  <p className="text-sm text-text-muted">
+              <div className="flex items-start sm:items-center justify-between gap-4 pt-2 border-t border-border/50">
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm sm:text-base">Sticky Limit</p>
+                  <p className="text-xs sm:text-sm text-text-muted">
                     Calls per account before switching
                   </p>
                 </div>
@@ -528,16 +877,16 @@ export default function ProfilePage() {
                   value={settings.stickyRoundRobinLimit || 3}
                   onChange={(e) => updateStickyLimit(e.target.value)}
                   disabled={loading}
-                  className="w-20 text-center"
+                  className="w-16 sm:w-20 text-center shrink-0"
                 />
               </div>
             )}
 
             {/* Combo Round Robin */}
-            <div className="flex items-center justify-between pt-4 border-t border-border/50">
-              <div>
-                <p className="font-medium">Combo Round Robin</p>
-                <p className="text-sm text-text-muted">
+            <div className="flex items-start sm:items-center justify-between gap-4 pt-4 border-t border-border/50">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm sm:text-base">Combo Round Robin</p>
+                <p className="text-xs sm:text-sm text-text-muted">
                   Cycle through providers in combos instead of always starting with first
                 </p>
               </div>
@@ -548,10 +897,34 @@ export default function ProfilePage() {
               />
             </div>
 
+            {/* Combo Sticky Round Robin Limit */}
+            {settings.comboStrategy === "round-robin" && (
+              <div className="flex items-center justify-between pt-2 border-t border-border/50">
+                <div>
+                  <p className="font-medium">Combo Sticky Limit</p>
+                  <p className="text-sm text-text-muted">
+                    Calls per combo model before switching
+                  </p>
+                </div>
+                <Input
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={settings.comboStickyRoundRobinLimit || 1}
+                  onChange={(e) => updateComboStickyLimit(e.target.value)}
+                  disabled={loading}
+                  className="w-20 text-center"
+                />
+              </div>
+            )}
+
             <p className="text-xs text-text-muted italic pt-2 border-t border-border/50">
               {settings.fallbackStrategy === "round-robin"
                 ? `Currently distributing requests across all available accounts with ${settings.stickyRoundRobinLimit || 3} calls per account.`
                 : "Currently using accounts in priority order (Fill First)."}
+              {settings.comboStrategy === "round-robin"
+                ? ` Combos rotate after ${settings.comboStickyRoundRobinLimit || 1} call${(settings.comboStickyRoundRobinLimit || 1) === 1 ? "" : "s"} per model.`
+                : " Combos always start with their first model."}
             </p>
           </div>
         </Card>
@@ -559,17 +932,17 @@ export default function ProfilePage() {
         {/* Network */}
         <Card>
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 rounded-lg bg-purple-500/10 text-purple-500">
+            <div className="p-2 rounded-lg bg-purple-500/10 text-purple-500 shrink-0">
               <span className="material-symbols-outlined text-[20px]">wifi</span>
             </div>
-            <h3 className="text-lg font-semibold">Network</h3>
+            <h3 className="text-base sm:text-lg font-semibold">Network</h3>
           </div>
 
           <div className="flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">Outbound Proxy</p>
-                <p className="text-sm text-text-muted">Enable proxy for OAuth + provider outbound requests.</p>
+            <div className="flex items-start sm:items-center justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm sm:text-base">Outbound Proxy</p>
+                <p className="text-xs sm:text-sm text-text-muted">Enable proxy for OAuth + provider outbound requests.</p>
               </div>
               <Toggle
                 checked={settings.outboundProxyEnabled === true}
@@ -581,38 +954,39 @@ export default function ProfilePage() {
             {settings.outboundProxyEnabled === true && (
               <form onSubmit={updateOutboundProxy} className="flex flex-col gap-4 pt-2 border-t border-border/50">
                 <div className="flex flex-col gap-2">
-                  <label className="font-medium">Proxy URL</label>
+                  <label className="font-medium text-sm sm:text-base">Proxy URL</label>
                   <Input
                     placeholder="http://127.0.0.1:7897"
                     value={proxyForm.outboundProxyUrl}
                     onChange={(e) => setProxyForm((prev) => ({ ...prev, outboundProxyUrl: e.target.value }))}
                     disabled={loading || proxyLoading}
                   />
-                  <p className="text-sm text-text-muted">Leave empty to inherit existing env proxy (if any).</p>
+                  <p className="text-xs sm:text-sm text-text-muted">Leave empty to inherit existing env proxy (if any).</p>
                 </div>
 
                 <div className="flex flex-col gap-2 pt-2 border-t border-border/50">
-                  <label className="font-medium">No Proxy</label>
+                  <label className="font-medium text-sm sm:text-base">No Proxy</label>
                   <Input
                     placeholder="localhost,127.0.0.1"
                     value={proxyForm.outboundNoProxy}
                     onChange={(e) => setProxyForm((prev) => ({ ...prev, outboundNoProxy: e.target.value }))}
                     disabled={loading || proxyLoading}
                   />
-                  <p className="text-sm text-text-muted">Comma-separated hostnames/domains to bypass the proxy.</p>
+                  <p className="text-xs sm:text-sm text-text-muted">Comma-separated hostnames/domains to bypass the proxy.</p>
                 </div>
 
-                <div className="pt-2 border-t border-border/50 flex items-center gap-2">
+                <div className="pt-2 border-t border-border/50 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                   <Button
                     type="button"
                     variant="secondary"
                     loading={proxyTestLoading}
                     disabled={loading || proxyLoading}
                     onClick={testOutboundProxy}
+                    className="w-full sm:w-auto"
                   >
                     Test proxy URL
                   </Button>
-                  <Button type="submit" variant="primary" loading={proxyLoading}>
+                  <Button type="submit" variant="primary" loading={proxyLoading} className="w-full sm:w-auto">
                     Apply
                   </Button>
                 </div>
@@ -620,7 +994,7 @@ export default function ProfilePage() {
             )}
 
             {proxyStatus.message && (
-              <p className={`text-sm ${proxyStatus.type === "error" ? "text-red-500" : "text-green-500"} pt-2 border-t border-border/50`}>
+              <p className={`text-xs sm:text-sm ${proxyStatus.type === "error" ? "text-red-500" : "text-green-500"} pt-2 border-t border-border/50`}>
                 {proxyStatus.message}
               </p>
             )}
@@ -630,15 +1004,15 @@ export default function ProfilePage() {
         {/* Observability Settings */}
         <Card>
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 rounded-lg bg-orange-500/10 text-orange-500">
+            <div className="p-2 rounded-lg bg-orange-500/10 text-orange-500 shrink-0">
               <span className="material-symbols-outlined text-[20px]">monitoring</span>
             </div>
-            <h3 className="text-lg font-semibold">Observability</h3>
+            <h3 className="text-base sm:text-lg font-semibold">Observability</h3>
           </div>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-medium">Enable Observability</p>
-              <p className="text-sm text-text-muted">
+          <div className="flex items-start sm:items-center justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-sm sm:text-base">Enable Observability</p>
+              <p className="text-xs sm:text-sm text-text-muted">
                 Record request details for inspection in the logs view
               </p>
             </div>
@@ -651,7 +1025,7 @@ export default function ProfilePage() {
         </Card>
 
         {/* App Info */}
-        <div className="text-center text-sm text-text-muted py-4">
+        <div className="text-center text-xs sm:text-sm text-text-muted py-4">
           <p>{APP_CONFIG.name} v{APP_CONFIG.version}</p>
           <p className="mt-1">Local Mode - All data stored on your machine</p>
         </div>

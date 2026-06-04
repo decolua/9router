@@ -1015,7 +1015,7 @@ docker stop 9router && docker rm 9router
 
 | 变量 | 默认值 | 描述 |
 |----------|---------|-------------|
-| `JWT_SECRET` | `9router-default-secret-change-me` | 仪表板认证 cookie 的 JWT 签名密钥（**生产环境中请更改**） |
+| `JWT_SECRET` | 自动生成（`~/.9router/jwt-secret`） | 仪表板认证 cookie 的 JWT 签名密钥（设置可在多实例间共享） |
 | `INITIAL_PASSWORD | `123456` | 当没有保存的哈希时的首次登录密码 |
 | `DATA_DIR` | `~/.9router` | 主应用数据库位置（`db.json`） |
 | `PORT` | 框架默认值 | 服务端口（示例中为 `20128`） |
@@ -1247,7 +1247,7 @@ OPENAI_API_KEY="your-cloud-key" bash tester/security/test-cloud-openai-compatibl
 8. 记录使用/日志（`src/lib/usageDb.js`）。
 9. 根据组合规则在提供商/账户/模型错误时应用回退。
 
-完整架构参考：[`docs/ARCHITECTURE`](docs/ARCHITECTURE.md)
+完整架构参考：[`docs/ARCHITECTURE`](../docs/ARCHITECTURE.md)
 
 ---
 
@@ -1263,7 +1263,7 @@ OPENAI_API_KEY="your-cloud-key" bash tester/security/test-cloud-openai-compatibl
 
 感谢所有帮助让 9Router 变得更好的贡献者！
 
-[![Contributors](https://contrib.rocks/image?repo=decolua/router&max=100&columns=20&anon=1)](https://github.com/decolua/9router/graphs/contributors)
+[![Contributors](https://contrib.rocks/image?repo=decolua/9router&max=100&columns=20&anon=1)](https://github.com/decolua/9router/graphs/contributors)
 
 ---
 
@@ -1279,7 +1279,7 @@ OPENAI_API_KEY="your-cloud-key" bash tester/security/test-cloud-openai-compatibl
 4 推送到分支（`git push origin feature/amazing-feature`）
 5. 打开 Pull Request
 
-详细指南请参阅 [CONTRIBUTING.md](CONTRIBUTING.md)。
+详细指南请参阅 [Pull Requests](https://github.com/decolua/9router/pulls)。
 
 ---
 
@@ -1297,7 +1297,7 @@ OPENAI_API_KEY="your-cloud-key" bash tester/security/test-cloud-openai-compatibl
 
 ## 📄 许可证
 
-MIT License - 详情请参阅 [LICENSE](LICENSE)。
+MIT License - 详情请参阅 [LICENSE](../LICENSE)。
 
 ---
 

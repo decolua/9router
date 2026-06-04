@@ -8,9 +8,9 @@ export const UNSUPPORTED_SCHEMA_CONSTRAINTS = [
   // Claude rejects these in VALIDATED mode
   "default", "examples",
   // JSON Schema meta keywords
-  "$schema", "$defs", "definitions", "const", "$ref",
+  "$schema", "$defs", "definitions", "const", "$ref", "$comment",
   // Object validation keywords (not supported)
-  "additionalProperties", "propertyNames", "patternProperties",
+  "additionalProperties", "propertyNames", "patternProperties", "enumDescriptions",
   // Complex schema keywords (handled by flattenAnyOfOneOf/mergeAllOf)
   "anyOf", "oneOf", "allOf", "not",
   // Dependency keywords (not supported)
@@ -57,6 +57,23 @@ export function convertOpenAIContentToParts(content) {
         parts.push({
           fileData: { fileUri: item.image_url.url, mimeType: "image/*" }
         });
+      } else if (item.type === "input_audio" && item.input_audio?.data) {
+        const format = item.input_audio.format || "wav";
+        const mimeType = format === "mp3" ? "audio/mpeg" : `audio/${format}`;
+        parts.push({
+          inlineData: { mime_type: mimeType, data: item.input_audio.data }
+        });
+      } else if (item.type === "audio_url" && item.audio_url?.url?.startsWith("data:")) {
+        const url = item.audio_url.url;
+        const commaIndex = url.indexOf(",");
+        if (commaIndex !== -1) {
+          const mimePart = url.substring(5, commaIndex);
+          const data = url.substring(commaIndex + 1);
+          const mimeType = mimePart.split(";")[0];
+          parts.push({
+            inlineData: { mime_type: mimeType, data: data }
+          });
+        }
       }
     }
   }
@@ -111,16 +128,18 @@ function removeUnsupportedKeywords(obj, keywords) {
     for (const item of obj) {
       removeUnsupportedKeywords(item, keywords);
     }
-  } else {
-    for (const key of Object.keys(obj)) {
-      if (keywords.includes(key) || key.startsWith("x-")) {
-        delete obj[key];
-      }
+    return;
+  }
+
+  for (const key of Object.keys(obj)) {
+    if (keywords.includes(key) || key.startsWith("x-")) {
+      delete obj[key];
+      continue;
     }
-    for (const value of Object.values(obj)) {
-      if (value && typeof value === "object") {
-        removeUnsupportedKeywords(value, keywords);
-      }
+
+    const value = obj[key];
+    if (value && typeof value === "object") {
+      removeUnsupportedKeywords(value, keywords);
     }
   }
 }
@@ -268,6 +287,13 @@ function flattenTypeArrays(obj) {
   }
 }
 
+// Infer missing type=object when properties exist (Gemini requires explicit type)
+function ensureObjectType(obj) {
+  if (!obj || typeof obj !== "object") return;
+  if (obj.properties && !obj.type) obj.type = "object";
+  for (const v of Object.values(obj)) if (v && typeof v === "object") ensureObjectType(v);
+}
+
 // Clean JSON Schema for Antigravity API compatibility - removes unsupported keywords recursively
 export function cleanJSONSchemaForAntigravity(schema) {
   if (!schema || typeof schema !== "object") return schema;
@@ -283,6 +309,9 @@ export function cleanJSONSchemaForAntigravity(schema) {
   mergeAllOf(cleaned);
   flattenAnyOfOneOf(cleaned);
   flattenTypeArrays(cleaned);
+
+  // Phase 2.5: Infer missing type=object when properties exist (Gemini requirement)
+  ensureObjectType(cleaned);
 
   // Phase 3: Remove all unsupported keywords at ALL levels (including inside arrays)
   removeUnsupportedKeywords(cleaned, UNSUPPORTED_SCHEMA_CONSTRAINTS);

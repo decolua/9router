@@ -88,11 +88,12 @@ export default function AntigravityToolCard({
     }
   };
 
-  // Windows uses UAC dialog, no sudo needed
-  const isWindows = typeof navigator !== "undefined" && navigator.userAgent?.includes("Windows");
+  // MITM elevation is decided by the server OS, not by this browser's OS.
+  const serverIsWindows = status?.isWin === true;
+  const canRunWithoutPassword = serverIsWindows || status?.hasCachedPassword || status?.needsSudoPassword === false;
 
   const handleStart = () => {
-    if (isWindows || status?.hasCachedPassword) {
+    if (canRunWithoutPassword) {
       doStart("");
     } else {
       setShowPasswordModal(true);
@@ -101,7 +102,7 @@ export default function AntigravityToolCard({
   };
 
   const handleStop = () => {
-    if (isWindows || status?.hasCachedPassword) {
+    if (canRunWithoutPassword) {
       doStop("");
     } else {
       setShowPasswordModal(true);
@@ -231,8 +232,8 @@ export default function AntigravityToolCard({
 
   return (
     <Card padding="xs" className="overflow-hidden">
-      <div className="flex items-center justify-between hover:cursor-pointer" onClick={onToggle}>
-        <div className="flex items-center gap-3">
+      <div className="flex items-start justify-between gap-3 hover:cursor-pointer sm:items-center" onClick={onToggle}>
+        <div className="flex min-w-0 items-center gap-3">
           <div className="size-8 flex items-center justify-center shrink-0">
             <Image
               src="/providers/antigravity.png"
@@ -245,7 +246,7 @@ export default function AntigravityToolCard({
             />
           </div>
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
               <h3 className="font-medium text-sm">{tool.name}</h3>
               {isRunning ? (
                 <Badge variant="success" size="sm">Active</Badge>
@@ -290,7 +291,7 @@ export default function AntigravityToolCard({
           </div>
 
           {/* Start/Stop Button */}
-          <div className="flex items-center gap-2">
+          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
             {isRunning ? (
               <button
                 onClick={handleStop}
@@ -322,55 +323,57 @@ export default function AntigravityToolCard({
           {/* When running: API Key + Model Mappings */}
           {isRunning && (
             <>
-              <div className="flex items-center gap-2">
-                <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">API Key</span>
-                <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
+              <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
+                <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">API Key</span>
+                <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
                 {apiKeys.length > 0 ? (
                   <select
                     value={selectedApiKey}
                     onChange={(e) => setSelectedApiKey(e.target.value)}
-                    className="flex-1 px-2 py-1.5 bg-surface rounded text-xs border border-border focus:outline-none focus:ring-1 focus:ring-primary/50"
+                    className="w-full min-w-0 px-2 py-2 bg-surface rounded text-xs border border-border focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5"
                   >
                     {apiKeys.map((key) => <option key={key.id} value={key.key}>{key.key}</option>)}
                   </select>
                 ) : (
-                  <span className="flex-1 text-xs text-text-muted px-2 py-1.5">
+                  <span className="min-w-0 rounded bg-surface/40 px-2 py-2 text-xs text-text-muted sm:py-1.5">
                     {cloudEnabled ? "No API keys - Create one in Keys page" : "sk_9router (default)"}
                   </span>
                 )}
               </div>
 
               {tool.defaultModels.map((model) => (
-                <div key={model.alias} className="flex items-center gap-2">
-                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">{model.name}</span>
-                  <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
-                  <input
-                    type="text"
-                    value={modelMappings[model.alias] || ""}
-                    onChange={(e) => handleModelMappingChange(model.alias, e.target.value)}
-                    placeholder="provider/model-id"
-                    className="flex-1 px-2 py-1.5 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
-                  />
+                <div key={model.alias} className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
+                  <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">{model.name}</span>
+                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
+                  <div className="relative w-full min-w-0">
+                    <input
+                      type="text"
+                      value={modelMappings[model.alias] || ""}
+                      onChange={(e) => handleModelMappingChange(model.alias, e.target.value)}
+                      placeholder="provider/model-id"
+                      className="w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5"
+                    />
+                    {modelMappings[model.alias] && (
+                      <button
+                        onClick={() => handleModelMappingChange(model.alias, "")}
+                        className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-red-500 rounded transition-colors"
+                        title="Clear"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">close</span>
+                      </button>
+                    )}
+                  </div>
                   <button
                     onClick={() => openModelSelector(model.alias)}
                     disabled={!hasActiveProviders}
-                    className={`px-2 py-1.5 rounded border text-xs transition-colors shrink-0 whitespace-nowrap ${hasActiveProviders ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}
+                    className={`w-full sm:w-auto rounded border px-2 py-2 text-xs transition-colors sm:py-1.5 whitespace-nowrap sm:shrink-0 ${hasActiveProviders ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}
                   >
                     Select
                   </button>
-                  {modelMappings[model.alias] && (
-                    <button
-                      onClick={() => handleModelMappingChange(model.alias, "")}
-                      className="p-1 text-text-muted hover:text-red-500 rounded transition-colors"
-                      title="Clear"
-                    >
-                      <span className="material-symbols-outlined text-[14px]">close</span>
-                    </button>
-                  )}
                 </div>
               ))}
 
-              <div className="flex items-center gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:flex sm:items-center">
                 <Button
                   variant="primary"
                   size="sm"
@@ -385,7 +388,7 @@ export default function AntigravityToolCard({
           )}
 
           {/* Windows admin warning */}
-          {!isRunning && isWindows && (
+          {!isRunning && serverIsWindows && (
             <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-yellow-500/10 text-yellow-600 border border-yellow-500/20">
               <span className="material-symbols-outlined text-[14px]">warning</span>
               <span>Windows: Run terminal (9Router) as Administrator to enable MITM</span>

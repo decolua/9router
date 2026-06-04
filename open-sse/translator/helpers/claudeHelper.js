@@ -76,6 +76,8 @@ export function fixToolUseOrdering(messages) {
   return merged;
 }
 
+const CLAUDE_FORMAT_PROVIDERS_WITHOUT_OUTPUT_CONFIG = new Set(["minimax", "minimax-cn"]);
+
 // Prepare request for Claude format endpoints
 // - Cleanup cache_control
 // - Filter empty messages
@@ -83,6 +85,12 @@ export function fixToolUseOrdering(messages) {
 // - Fix tool_use/tool_result ordering
 // - Apply cloaking (billing header + fake user ID) for OAuth tokens
 export function prepareClaudeRequest(body, provider = null, apiKey = null, connectionId = null) {
+  // MiniMax exposes a Claude-compatible endpoint but rejects Anthropic's extended
+  // structured output parameter with a generic 400 "invalid params" response.
+  if (CLAUDE_FORMAT_PROVIDERS_WITHOUT_OUTPUT_CONFIG.has(provider)) {
+    delete body.output_config;
+  }
+
   // 1. System: remove all cache_control, add only to last block with ttl 1h
   if (body.system && Array.isArray(body.system)) {
     body.system = body.system.map((block, i) => {

@@ -5,8 +5,18 @@ import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, INTERNAL_REQUEST_HEADER, AG_DEFAU
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { deriveSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { cleanJSONSchemaForAntigravity } from "../translator/helpers/geminiHelper.js";
+
+// Sanitize function name: Gemini requires [a-zA-Z_][a-zA-Z0-9_.:\-]{0,63}
+function sanitizeFunctionName(name) {
+  if (!name) return "_unknown";
+  let s = name.replace(/[^a-zA-Z0-9_.:\-]/g, "_");
+  if (!/^[a-zA-Z_]/.test(s)) s = "_" + s;
+  return s.substring(0, 64);
+}
 
 const MAX_RETRY_AFTER_MS = 10000;
+const MAX_ANTIGRAVITY_OUTPUT_TOKENS = 16384;
 
 export class AntigravityExecutor extends BaseExecutor {
   constructor() {
@@ -53,14 +63,37 @@ export class AntigravityExecutor extends BaseExecutor {
       return c;
     });
 
+    // Sanitize tool schemas and function names before sending to Antigravity.
+    let tools = body.request?.tools;
+
+    if (tools && tools.length > 0) {
+      // Merge all groups into a single functionDeclarations group (Gemini expects 1 group)
+      const allDeclarations = tools.flatMap(group =>
+        (group.functionDeclarations || []).map(fn => ({
+          ...fn,
+          name: sanitizeFunctionName(fn.name),
+          parameters: fn.parameters
+            ? cleanJSONSchemaForAntigravity(structuredClone(fn.parameters))
+            : { type: "object", properties: { reason: { type: "string", description: "Brief explanation" } }, required: ["reason"] }
+        }))
+      );
+      tools = allDeclarations.length > 0 ? [{ functionDeclarations: allDeclarations }] : [];
+    }
+
+    const { tools: _originalTools, toolConfig: _originalToolConfig, ...requestWithoutTools } = body.request || {};
+    const generationConfig = { ...(requestWithoutTools.generationConfig || {}) };
+    if (generationConfig.maxOutputTokens > MAX_ANTIGRAVITY_OUTPUT_TOKENS) {
+      generationConfig.maxOutputTokens = MAX_ANTIGRAVITY_OUTPUT_TOKENS;
+    }
+
     const transformedRequest = {
-      ...body.request,
+      ...requestWithoutTools,
+      generationConfig,
       ...(contents && { contents }),
+      ...(tools && { tools }),
       sessionId: body.request?.sessionId || deriveSessionId(credentials?.email || credentials?.connectionId),
       safetySettings: undefined,
-      toolConfig: body.request?.tools?.length > 0
-        ? { functionCallingConfig: { mode: "VALIDATED" } }
-        : body.request?.toolConfig
+      ...(tools?.length > 0 && { toolConfig: { functionCallingConfig: { mode: "VALIDATED" } } })
     };
 
     return {
@@ -74,11 +107,11 @@ export class AntigravityExecutor extends BaseExecutor {
     };
   }
 
-  async refreshCredentials(credentials, log) {
+  async refreshCredentials(credentials, log, proxyOptions = null) {
     if (!credentials.refreshToken) return null;
 
     try {
-      const response = await fetch(OAUTH_ENDPOINTS.google.token, {
+      const response = await proxyAwareFetch(OAUTH_ENDPOINTS.google.token, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
         body: new URLSearchParams({
@@ -87,7 +120,7 @@ export class AntigravityExecutor extends BaseExecutor {
           client_id: this.config.clientId,
           client_secret: this.config.clientSecret
         })
-      });
+      }, proxyOptions);
 
       if (!response.ok) return null;
 
@@ -263,21 +296,34 @@ export class AntigravityExecutor extends BaseExecutor {
    * - Inject AG default decoy tools after client tools
    * Returns { cloakedBody, toolNameMap } where toolNameMap maps suffixed → original
    */
-  static cloakTools(body) {
+  static cloakTools(body, clientTool = null) {
     const tools = body.request?.tools;
     if (!tools || tools.length === 0) {
       return { cloakedBody: body, toolNameMap: null };
     }
 
+    const isCopilot = clientTool === "github-copilot";
     const toolNameMap = new Map();
     const clientDeclarations = [];
+    const decoyNames = new Set(AG_DECOY_TOOLS.map(tool => tool.name));
 
     // First: collect renamed client tools
     for (const toolGroup of tools) {
       if (!toolGroup.functionDeclarations) continue;
 
       for (const func of toolGroup.functionDeclarations) {
-        // Skip if already an AG default tool name
+        // For GitHub Copilot, avoid emitting duplicate native Antigravity tool names.
+        // Keep the decoys only once in the final declaration list.
+        if (isCopilot && AG_DEFAULT_TOOLS.has(func.name)) {
+          continue;
+        }
+
+        // Skip if already covered by decoys for Copilot
+        if (isCopilot && decoyNames.has(func.name)) {
+          continue;
+        }
+
+        // Preserve native AG names for non-Copilot clients
         if (AG_DEFAULT_TOOLS.has(func.name)) {
           clientDeclarations.push(func);
           continue;
@@ -290,7 +336,13 @@ export class AntigravityExecutor extends BaseExecutor {
     }
 
     // Client tools first, then AG decoy tools
-    const allDeclarations = [...clientDeclarations, ...AG_DECOY_TOOLS];
+    const allDeclarations = [];
+    const seenNames = new Set();
+    for (const decl of [...clientDeclarations, ...AG_DECOY_TOOLS]) {
+      if (!decl?.name || seenNames.has(decl.name)) continue;
+      seenNames.add(decl.name);
+      allDeclarations.push(decl);
+    }
 
     // Rename tool names in conversation history (contents)
     const cloakedContents = body.request?.contents?.map(msg => {

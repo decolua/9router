@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Card, Button } from "@/shared/components";
+import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import dynamic from "next/dynamic";
 
 const Editor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
@@ -187,9 +188,11 @@ export default function TranslatorPage() {
     }
   };
 
+  const { copy } = useCopyToClipboard();
+
   const handleCopy = async (id) => {
     if (!contents[id]) return;
-    await navigator.clipboard.writeText(contents[id]);
+    copy(contents[id], `translator-step-${id}`);
   };
 
   const handleFormat = (id) => {

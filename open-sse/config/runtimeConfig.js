@@ -31,6 +31,12 @@ export const MEMORY_CONFIG = {
   proxyDispatchersMaxSize: 20,
 };
 
+// Stream stall timeout: abort if no chunk received within this duration
+export const STREAM_STALL_TIMEOUT_MS = 30 * 1000;
+
+// Fetch connect timeout: abort if upstream doesn't return response headers within this duration
+export const FETCH_CONNECT_TIMEOUT_MS = 20 * 1000;
+
 // Default token limits
 export const DEFAULT_MAX_TOKENS = 64000;
 export const DEFAULT_MIN_TOKENS = 32000;
@@ -41,12 +47,24 @@ export const RETRY_CONFIG = {
   delayMs: 2000
 };
 
-// Default retry config by status code (number of retry attempts)
+// Default retry config by status code: { attempts, delayMs }
+// Backward compat: if value is a number, treated as attempts with RETRY_CONFIG.delayMs
 export const DEFAULT_RETRY_CONFIG = {
-  429: 0,   // Rate limit - no retry, use account fallback instead
-  503: 1,   // Service unavailable - retry 1 time (transient)
-  502: 1    // Bad gateway - retry 1 time (transient)
+  429: { attempts: 0, delayMs: 0 },
+  502: { attempts: 3, delayMs: 3000 },
+  503: { attempts: 3, delayMs: 2000 },
+  504: { attempts: 2, delayMs: 3000 }
 };
+
+// Normalize a retry entry to { attempts, delayMs }
+export function resolveRetryEntry(entry) {
+  if (entry == null) return { attempts: 0, delayMs: RETRY_CONFIG.delayMs };
+  if (typeof entry === "number") return { attempts: entry, delayMs: RETRY_CONFIG.delayMs };
+  return {
+    attempts: entry.attempts || 0,
+    delayMs: entry.delayMs != null ? entry.delayMs : RETRY_CONFIG.delayMs
+  };
+}
 
 // Requests containing these texts will bypass provider
 export const SKIP_PATTERNS = [

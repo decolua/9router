@@ -10,6 +10,7 @@ export default function Card({
   action,
   padding = "md",
   hover = false,
+  elev = false,
   className,
   ...props
 }) {
@@ -24,10 +25,9 @@ export default function Card({
   return (
     <div
       className={cn(
-        "bg-surface",
-        "border border-black/5 dark:border-white/5",
-        "rounded-lg shadow-sm",
-        hover && "hover:shadow-md hover:border-primary/30 transition-all cursor-pointer",
+        "bg-surface border border-border-subtle",
+        elev ? "rounded-[14px] shadow-[var(--shadow-elev)]" : "rounded-[14px] shadow-[var(--shadow-soft)]",
+        hover && "hover:shadow-[var(--shadow-warm)] hover:border-brand-500/30 transition-all cursor-pointer",
         paddings[padding],
         className
       )}
@@ -37,7 +37,7 @@ export default function Card({
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             {icon && (
-              <div className="p-2 rounded-lg bg-bg text-text-muted">
+              <div className="p-2 rounded-[10px] bg-bg text-text-muted">
                 <span className="material-symbols-outlined text-[20px]">{icon}</span>
               </div>
             )}
@@ -58,14 +58,12 @@ export default function Card({
   );
 }
 
-// Sub-component: Bordered section inside Card
 Card.Section = function CardSection({ children, className, ...props }) {
   return (
     <div
       className={cn(
-        "p-4 rounded-lg",
-        "bg-black/[0.02] dark:bg-white/[0.02]",
-        "border border-black/5 dark:border-white/5",
+        "p-4 rounded-[10px]",
+        "bg-bg border border-border-subtle",
         className
       )}
       {...props}
@@ -75,14 +73,13 @@ Card.Section = function CardSection({ children, className, ...props }) {
   );
 };
 
-// Sub-component: Hoverable row inside Card
 Card.Row = function CardRow({ children, className, ...props }) {
   return (
     <div
       className={cn(
         "p-3 -mx-3 px-3 transition-colors",
-        "border-b border-black/5 dark:border-white/5 last:border-b-0",
-        "hover:bg-black/[0.02] dark:hover:bg-white/[0.02]",
+        "border-b border-border-subtle last:border-b-0",
+        "hover:bg-surface-2/50",
         className
       )}
       {...props}
@@ -92,20 +89,18 @@ Card.Row = function CardRow({ children, className, ...props }) {
   );
 };
 
-// Sub-component: List item with hover actions (macOS style)
-Card.ListItem = function CardListItem({ 
-  children, 
+Card.ListItem = function CardListItem({
+  children,
   actions,
-  className, 
-  ...props 
+  className,
+  ...props
 }) {
   return (
     <div
       className={cn(
         "group flex items-center justify-between p-3 -mx-3 px-3",
-        "border-b border-black/[0.03] dark:border-white/[0.03] last:border-b-0",
-        "hover:bg-black/[0.02] dark:hover:bg-white/[0.02]",
-        "transition-colors",
+        "border-b border-border-subtle last:border-b-0",
+        "hover:bg-surface-2/50 transition-colors",
         className
       )}
       {...props}
@@ -119,4 +114,3 @@ Card.ListItem = function CardListItem({
     </div>
   );
 };
-

@@ -1,8 +1,15 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { FREE_PROVIDERS } from "@/shared/constants/providers";
+import { FREE_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers";
+
+// Keep providers without serviceKinds (default LLM) or with "llm" in serviceKinds
+function isLLMProvider(id) {
+  const p = AI_PROVIDERS[id];
+  if (!p?.serviceKinds) return true;
+  return p.serviceKinds.includes("llm");
+}
 import Badge from "./Badge";
 import Card from "./Card";
 import OverviewCards from "@/app/(dashboard)/dashboard/usage/components/OverviewCards";
@@ -32,7 +39,7 @@ function TimeAgo({ timestamp }) {
 
 function RecentRequests({ requests = [] }) {
   return (
-    <Card className="flex flex-col overflow-hidden" padding="sm" style={{ height: 480 }}>
+    <Card className="flex min-w-0 flex-col overflow-hidden" padding="sm" style={{ height: 480 }}>
       {/* Header */}
       <div className="px-1 py-2 border-b border-border shrink-0">
         <span className="text-xs font-semibold text-text-muted uppercase tracking-wide">Recent Requests</span>
@@ -42,7 +49,7 @@ function RecentRequests({ requests = [] }) {
         <div className="flex-1 flex items-center justify-center text-text-muted text-sm">No requests yet.</div>
       ) : (
         <div className="flex-1 overflow-y-auto">
-          <table className="w-full text-xs border-collapse">
+          <table className="w-full min-w-[300px] border-collapse text-xs">
             <thead className="sticky top-0 bg-bg z-10">
               <tr className="border-b border-border">
                 <th className="py-1.5 text-left font-semibold text-text-muted w-2"></th>
@@ -175,13 +182,14 @@ const TABLE_OPTIONS = [
 ];
 
 const PERIODS = [
+  { value: "today", label: "Today" },
   { value: "24h", label: "24h" },
   { value: "7d", label: "7D" },
   { value: "30d", label: "30D" },
   { value: "60d", label: "60D" },
 ];
 
-export default function UsageStats() {
+export default function UsageStats({ period: periodProp, setPeriod: setPeriodProp, hidePeriodSelector = false } = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -194,7 +202,10 @@ export default function UsageStats() {
   const [tableView, setTableView] = useState("model");
   const [viewMode, setViewMode] = useState("costs");
   const [providers, setProviders] = useState([]);
-  const [period, setPeriod] = useState("7d");
+  const [periodLocal, setPeriodLocal] = useState("today");
+  const isInitialLoad = useRef(true);
+  const period = periodProp ?? periodLocal;
+  const setPeriod = setPeriodProp ?? setPeriodLocal;
 
   // Fetch connected providers once, deduplicate by provider type
   // Always include noAuth free providers (e.g. opencode) regardless of connections
@@ -204,12 +215,14 @@ export default function UsageStats() {
       .then((d) => {
         const seen = new Set();
         const unique = (d?.connections || []).filter((c) => {
+          if (c.isActive === false) return false;
+          if (!isLLMProvider(c.provider)) return false;
           if (seen.has(c.provider)) return false;
           seen.add(c.provider);
           return true;
         });
         const noAuthProviders = Object.values(FREE_PROVIDERS)
-          .filter((p) => p.noAuth && !seen.has(p.id))
+          .filter((p) => p.noAuth && !seen.has(p.id) && isLLMProvider(p.id))
           .map((p) => ({ provider: p.id, name: p.name }));
         setProviders([...unique, ...noAuthProviders]);
       })
@@ -219,8 +232,12 @@ export default function UsageStats() {
   // Fetch filtered stats via REST when period changes
   useEffect(() => {
     // First load: show full spinner; subsequent: show subtle fetching indicator
-    if (!stats) setLoading(true);
-    else setFetching(true);
+    if (isInitialLoad.current) {
+      isInitialLoad.current = false;
+      setLoading(true);
+    } else {
+      setFetching(true);
+    }
 
     fetch(`/api/usage/stats?period=${period}`)
       .then((r) => r.ok ? r.json() : null)
@@ -397,32 +414,34 @@ export default function UsageStats() {
   );
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* Period selector */}
-      <div className="flex items-center gap-2 self-end">
-        <div className="flex items-center gap-1 bg-bg-subtle rounded-lg p-1 border border-border">
-          {PERIODS.map((p) => (
-            <button
-              key={p.value}
-              onClick={() => setPeriod(p.value)}
-              disabled={fetching}
-              className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${period === p.value ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text hover:bg-bg-hover"}`}
-            >
-              {p.label}
-            </button>
-          ))}
+    <div className="flex min-w-0 flex-col gap-6">
+      {/* Period selector (hidden when controlled by parent) */}
+      {!hidePeriodSelector && (
+        <div className="flex w-full items-center gap-2 sm:w-auto sm:self-end">
+          <div className="grid flex-1 grid-cols-5 items-center gap-1 rounded-lg border border-border bg-bg-subtle p-1 sm:flex sm:flex-none">
+            {PERIODS.map((p) => (
+              <button
+                key={p.value}
+                onClick={() => setPeriod(p.value)}
+                disabled={fetching}
+                className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${period === p.value ? "bg-primary text-white shadow-sm" : "text-text-muted hover:bg-bg-hover hover:text-text"}`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          {fetching && (
+            <span className="material-symbols-outlined text-[16px] text-text-muted animate-spin">progress_activity</span>
+          )}
         </div>
-        {fetching && (
-          <span className="material-symbols-outlined text-[16px] text-text-muted animate-spin">progress_activity</span>
-        )}
-      </div>
+      )}
 
       {/* Overview cards */}
       {loading ? spinner : <OverviewCards stats={stats} />}
 
       {/* Provider topology + Recent Requests */}
       {loading ? spinner : (
-        <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-2 items-stretch">
+        <div className="grid min-w-0 grid-cols-1 items-stretch gap-2 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
           <ProviderTopology
             providers={providers}
             activeRequests={stats.activeRequests || []}
@@ -438,17 +457,18 @@ export default function UsageStats() {
 
       {/* Table with dropdown selector */}
       <div className="flex flex-col gap-3">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <select
             value={tableView}
             onChange={(e) => setTableView(e.target.value)}
-            className="px-3 py-1.5 rounded-lg border border-border bg-bg-subtle text-sm font-medium text-text focus:outline-none focus:ring-2 focus:ring-primary/50"
+            className="w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium text-text-main focus:outline-none focus:ring-2 focus:ring-primary/50 sm:w-auto"
+            style={{ colorScheme: 'auto' }}
           >
             {TABLE_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
           </select>
-          <div className="flex items-center gap-1 bg-bg-subtle rounded-lg p-1 border border-border">
+          <div className="grid grid-cols-2 items-center gap-1 rounded-lg border border-border bg-bg-subtle p-1 sm:flex">
             <button
               onClick={() => setViewMode("costs")}
               className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === "costs" ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text hover:bg-bg-hover"}`}

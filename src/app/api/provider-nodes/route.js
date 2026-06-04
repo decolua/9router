@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createProviderNode, getProviderNodes } from "@/models";
-import { OPENAI_COMPATIBLE_PREFIX, ANTHROPIC_COMPATIBLE_PREFIX } from "@/shared/constants/providers";
+import { OPENAI_COMPATIBLE_PREFIX, ANTHROPIC_COMPATIBLE_PREFIX, CUSTOM_EMBEDDING_PREFIX } from "@/shared/constants/providers";
 import { generateId } from "@/shared/utils";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +11,10 @@ const OPENAI_COMPATIBLE_DEFAULTS = {
 
 const ANTHROPIC_COMPATIBLE_DEFAULTS = {
   baseUrl: "https://api.anthropic.com/v1",
+};
+
+const CUSTOM_EMBEDDING_DEFAULTS = {
+  baseUrl: "https://api.openai.com/v1",
 };
 
 // GET /api/provider-nodes - List all provider nodes
@@ -52,6 +56,23 @@ export async function POST(request) {
         prefix: prefix.trim(),
         apiType,
         baseUrl: (baseUrl || OPENAI_COMPATIBLE_DEFAULTS.baseUrl).trim(),
+        name: name.trim(),
+      });
+      return NextResponse.json({ node }, { status: 201 });
+    }
+
+    if (nodeType === "custom-embedding") {
+      // Strip trailing slash and /embeddings if user pasted full endpoint
+      let sanitizedBaseUrl = (baseUrl || CUSTOM_EMBEDDING_DEFAULTS.baseUrl).trim().replace(/\/$/, "");
+      if (sanitizedBaseUrl.endsWith("/embeddings")) {
+        sanitizedBaseUrl = sanitizedBaseUrl.slice(0, -"/embeddings".length);
+      }
+
+      const node = await createProviderNode({
+        id: `${CUSTOM_EMBEDDING_PREFIX}${generateId()}`,
+        type: "custom-embedding",
+        prefix: prefix.trim(),
+        baseUrl: sanitizedBaseUrl,
         name: name.trim(),
       });
       return NextResponse.json({ node }, { status: 201 });

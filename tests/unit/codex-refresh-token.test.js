@@ -14,22 +14,30 @@ const originalFetch = global.fetch;
 describe("Codex Refresh Token", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.resetModules();
+    global.fetch = originalFetch;
   });
 
   afterEach(() => {
     global.fetch = originalFetch;
   });
 
+  function mockFetchWithJson(payload) {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(payload),
+    });
+    global.fetch = fetchMock;
+    return fetchMock;
+  }
+
   describe("refreshCodexToken", () => {
     it("should return new refresh_token when server provides one (token rotation)", async () => {
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({
+      const fetchMock = mockFetchWithJson({
           access_token: "new-access",
           refresh_token: "rotated-refresh-token",
           id_token: "new-id-token",
           expires_in: 3600,
-        }),
       });
 
       const { refreshCodexToken } = await import("../../open-sse/services/tokenRefresh.js");
@@ -38,7 +46,7 @@ describe("Codex Refresh Token", () => {
       expect(result.refreshToken).toBe("rotated-refresh-token");
       expect(result.accessToken).toBe("new-access");
       expect(result.idToken).toBe("new-id-token");
-      expect(global.fetch).toHaveBeenCalledWith(
+      expect(fetchMock).toHaveBeenCalledWith(
         "https://auth.openai.com/oauth/token",
         expect.objectContaining({
           method: "POST",
@@ -56,30 +64,24 @@ describe("Codex Refresh Token", () => {
     });
 
     it("should keep old refresh_token when server does not return new one", async () => {
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({
+      mockFetchWithJson({
           access_token: "new-access",
           expires_in: 3600,
-        }),
       });
 
       const { refreshCodexToken } = await import("../../open-sse/services/tokenRefresh.js");
-      const result = await refreshCodexToken("old-refresh-token", null);
+      const result = await refreshCodexToken("old-refresh-token-without-rotation", null);
 
-      expect(result.refreshToken).toBe("old-refresh-token");
+      expect(result.refreshToken).toBe("old-refresh-token-without-rotation");
     });
   });
 
   describe("CodexExecutor credential lifecycle", () => {
     it("should refresh Codex credentials and preserve omitted id_token", async () => {
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({
+      mockFetchWithJson({
           access_token: "new-access",
           refresh_token: "rotated-refresh-token",
           expires_in: 3600,
-        }),
       });
 
       const { CodexExecutor } = await import("../../open-sse/executors/codex.js");
@@ -118,13 +120,10 @@ describe("Codex Refresh Token", () => {
     });
 
     it("should de-duplicate concurrent refreshes for the same Codex connection", async () => {
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({
+      const fetchMock = mockFetchWithJson({
           access_token: "new-access",
           refresh_token: "rotated-refresh-token",
           expires_in: 3600,
-        }),
       });
 
       const { refreshProviderCredentials } = await import("../../open-sse/services/oauthCredentialManager.js");
@@ -140,7 +139,7 @@ describe("Codex Refresh Token", () => {
 
       expect(first.accessToken).toBe("new-access");
       expect(second.accessToken).toBe("new-access");
-      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     });
   });
 

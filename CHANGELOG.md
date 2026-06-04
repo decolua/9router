@@ -1,3 +1,497 @@
+# v0.4.66 (2026-05-29)
+
+## Features
+- Add Qoder provider: device-flow OAuth, COSY signing, WAF-bypass body encoding, live model catalog, dashboard quota tracker, 11 models (#1372)
+- Add new models: Claude Opus 4.8 (Claude Code), GPT 5.4 Mini (Codex)
+
+## Fixes
+- DeepSeek thinking mode: echo `reasoning_content` back on follow-up/tool-call turns so OpenCode-free and custom providers no longer 400 with "reasoning_content must be passed back" (#1543)
+- Reasoning injector: match deepseek/kimi model ids case-insensitively (covers custom providers using capitalized model names)
+- OpenCode suggested-models: include free models without the `-free` suffix, e.g. `big-pickle` (#1535)
+
+## Improvements
+- Codex: trim sunset models, keep gpt-5.5 / gpt-5.4 / gpt-5.3-codex family, add gpt-5.4-mini
+- volcengine-ark: refresh model list (add DeepSeek-V4-Flash/Pro, drop EOL entries)
+- Lower stream stall timeout 35s → 30s for faster hang detection
+
+# v0.4.63 (2026-05-26)
+
+## Fixes
+- GitHub Copilot: never route Gemini/Claude models to the `/responses` endpoint; prevents misleading "does not support Responses API" 400s (#1062)
+- proxyFetch: restore missing `Readable` import causing runtime `ReferenceError` in DNS-bypass fetch path
+
+## Improvements
+- Lower stream stall timeout from 60s → 35s for faster hang detection
+
+# v0.4.62 (2026-05-26)
+
+## Fixes
+- Codex: auto-retry when upstream drops mid-stream (no more hangs)
+- Codex: fix random 400/404 errors, tool-calling failures, and unstable prompt cache
+- MITM: support Antigravity 2.x 
+- Sanitize Read tool args to prevent retry loops from non-Anthropic models (#1144)
+- Implement json_schema fallback for OpenAI-compatible providers without native Structured Output (#1343)
+- Strip empty Read pages argument in OpenAI-to-Claude translator (#1354)
+- Forward Gemini output dimensions for embeddings (#1366)
+- Resolve setState-in-effect errors in dashboard components (#1362)
+- Gemini CLI: reuse stored OAuth project IDs for quota checks and show clearer setup guidance when the project is missing (#1271, #1428)
+
+## Features
+- Add Cloudflare Workers proxy deployer and pool integration (#1360)
+- Add Deno Deploy relays support and improved proxy pools dashboard layout (#1437)
+
+## Improvements
+- Refactor Tunnel into dedicated Cloudflare and Tailscale manager modules
+- Refactor tokenRefresh service with in-flight dedup to prevent refresh_token_reused errors
+
+# v0.4.59 (2026-05-21)
+
+## Fixes
+- OAuth: fix login flow on Windows
+
+# v0.4.58 (2026-05-21)
+
+## Features
+- xAI Grok provider (OAuth, API key, image)
+- Provider limits: paginated accounts with page size controls
+
+## Fixes
+- Tailscale: fix connection status on Windows (#1300)
+- Tunnel: fix false "checking" when tunnel URL is reachable
+- Stream: fix pipe errors on client disconnect/abort
+
+# v0.4.55 (2026-05-18)
+
+## Features
+- Xiaomi MiMo Token Plan: region selector (Singapore / China / Europe) — keys are cluster-specific
+- Antigravity: risk confirmation dialog before first connection
+- Gemini CLI: surface upstream retry delay on 429 errors
+
+## Fixes
+- MITM: cannot kill process on macOS under sudo (lsof not found in PATH)
+- Stream: false-positive stall timeout on Claude reasoning / Kiro responses
+- Tunnel: cannot re-enable after disable (stuck state)
+- Tunnel: cloudflared error messages now include log tail for easier debugging
+- Language switcher: applies selected locale immediately on close (#1234)
+- Antigravity OAuth: metadata now matches the official client
+
+## Improvements
+- Gemini CLI: bump engine to 0.34.0
+- Re-hide `qwen` (OAuth EOL) and `iflow` (not ready) providers
+
+# v0.4.52 (2026-05-17)
+
+## Features
+- Add Vercel AI Gateway provider support (#1183)
+- rtk: Kiro format tool result compression — handle conversationState.history & currentMessage, preserve error results, ~13.6% savings (#1194)
+
+## Fixes
+- openclaw: normalize agent.model object form `{primary, fallbacks}` before .startsWith → fix TypeError & 'not configured' status (#1216)
+- Usage Details pagination: stay inside mobile viewport <640px (#1218)
+- Fix test model error
+- Fix MIMO provider in Codex
+- Disable log file creation when using MITM AG
+
+# v0.4.50 (2026-05-16)
+
+## Fixes
+- Fix duplicate tray icon on macOS when hiding to tray
+- Fix tray not showing in background mode on macOS
+- Fix hide to tray broken on Windows/Linux
+- Fix Shutdown button in web UI not working
+
+# v0.4.49 (2026-05-16)
+
+## Features
+- Add Kiro provider support: full request/response translation, live model listing, reasoning content support
+- Add `buildOutput` RTK filter with autodetect for npm/yarn/cargo build logs
+- Add MITM warning notification in tray and dashboard
+
+## Improvements
+- Add modalities (input/output) to model configuration for OpenCode
+- Fix tray hide-to-tray: keep current process alive instead of spawning detached child (fixes macOS NSStatusItem ghost icon)
+- Fix tray kill: graceful shutdown with SIGTERM/SIGKILL escalation
+- Fix SIGHUP handling so macOS terminal close doesn't kill tray process
+- Hide deprecated providers (qwen, iflow, antigravity)
+- Update i18n across 32 languages
+
+## Fixes
+- Fix model check (test-models) blocked by dashboardGuard: pass machineId-based CLI token in internal self-calls
+
+# v0.4.46 (2026-05-15)
+
+## Breaking Changes
+- Tunnel public URL changed — old tunnel links no longer work, please reconnect to get the new URL
+
+# v0.4.44 (2026-05-15)
+
+## Features
+- Add Blackbox provider with `bb` alias (#1143)
+- Add Xiaomi token plan provider
+- Enhance model select modal UX + modal traffic lights (#1111)
+- Default Usage dashboard period to Today (#1141)
+
+## Fixes
+- Fix Cowork model selection and Windows CLI packaging (#1129)
+- Update provider name retrieval for compatibility provider (#1135)
+- Update JWT_SECRET handling
+
+# v0.4.41 (2026-05-14)
+
+## Features
+- Add jcode CLI tool integration with auto-configuration (#1047)
+- Redesign CLI Tools dashboard: grid layout (1/2/3 cols) + dedicated detail page per tool
+- Add drag-and-drop reordering for combo models (#1108)
+- Add Today period option to Usage & Analytics (#1063)
+- Add DeepSeek V4 Pro effort aliases (#950)
+
+## Fixes
+- fix(autostart): work on nvm + npm 9/10, actually register with launchctl (#1104, fixes #1082)
+- Fix Ollama usage not tracked/shown in UI (#1102)
+- fix(opencode): preserve DeepSeek reasoning content (#1099, fixes #1093)
+- Fix TUI input lag (replace enquirer with native readline, persistent raw mode)
+- fix(ui): show API key row actions on mobile (#1112)
+
+## Improvements
+- Sync DeepSeek TUI card style with other CLI tools (badges, layout, manual config modal)
+- Add official logos for Amp CLI, jcode, Qwen Code (replace generic icons)
+- Resize deepseek-tui icon 1024→128 with padding for visual consistency
+
+# v0.4.39 (2026-05-14)
+
+## Fixes
+- fix(docker): restore `/app/server.js` (v0.4.38 regression)
+
+# v0.4.38 (2026-05-13)
+
+## Features
+- Add DeepSeek TUI as CLI tool in dashboard (#1088)
+
+## Fixes
+- Fix broken Docker image in v0.4.36/v0.4.37 (#1096, #1097)
+
+## Improvements
+- Clean Docker tags + clearer pulls badge
+
+# v0.4.37 (2026-05-13)
+
+## Improvements
+- Security hardening — upgrade recommended
+
+# v0.4.36 (2026-05-13)
+
+## Features
+- Add MiniMax TTS provider support (#1043)
+- Docker images now published on both Docker Hub (`decolua/9router`) and GHCR — pull from your preferred registry
+
+## Improvements
+- Replace browser confirm dialogs with custom ConfirmModal (#1060)
+
+## Fixes
+- Fix Docker `Cannot find module 'next'` error in standalone build
+- Restore /app/server.js in Docker standalone build (#1064, #1067)
+- Fix CLI TUI menu arrow-key escape sequences leaking (^[[A^[[B)
+- Switch macOS/Linux tray to systray2 fork (fixes Kaspersky AV false-positive) (#1080)
+- Fix zoom controls contrast in topology view (#1066)
+
+# v0.4.33 (2026-05-12)
+
+## Improvements
+- Windows: replace systray (Go binary, AV flagged) with native PowerShell NotifyIcon
+- Auto-cleanup legacy `tray_windows.exe` on install/startup
+
+# v0.4.31 (2026-05-12)
+
+## Features
+- OIDC dashboard login: Authentik/Keycloak/Google/Okta SSO with password-only, OIDC-only, or both modes (#1020)
+- Linux/arm64 Docker image support (#979)
+- Codex GPT 5.5 image support (#991)
+- Done button in ModelSelectModal during combo creation (#1031)
+- CLI: reset auth mode to password (emergency OIDC lockout recovery)
+
+## Fixes
+- DATA_DIR: graceful fallback to ~/.9router on EACCES/EPERM (#1005)
+- React hooks: variable declaration order & lazy initialization (#1017)
+
+## Improvements
+- Profile page: OIDC settings card collapsed by default to reduce clutter
+- Header: user pill only shown when logged in via OIDC
+
+# v0.4.30 (2026-05-11)
+
+## Features
+- MCP stdio→SSE bridge: expose local stdio MCP plugins over SSE (api/mcp/[plugin]/sse, /message)
+- Dynamic Linux cert resolution + NSS DB injection (Debian/Arch/Fedora/openSUSE, Chrome/Chromium/Firefox incl. snap) (#1010)
+- Cowork tool: expanded settings UI & API
+- GitBook docs (DocsContent, DocsLayout)
+
+## Fixes
+- OAuth callback postMessage scoped to expected origins (CWE-1385) (#998)
+- Re-enable TLS verification on DNS-bypass fetch (CWE-295) (#998)
+- Normalize `developer` role → `system` for OpenAI-format providers (Deepseek, Groq, …) (#1011, closes #773)
+- Respect `PORT` env in internal model-test fetch (#1014)
+- Dropdown text readability in dark theme on usage page (#997)
+
+## Improvements
+- Refactor Claude CLI spoof headers into shared constant
+- Tool deduper utility in open-sse handlers
+
+# v0.4.29 (2026-05-10)
+
+## Features
+- Add Cline & Kilo Code tool cards
+- Tailscale TUN mode for stable Funnel TLS
+- Sort APIKEY providers by usage, collapse to top 20
+
+## Improvements
+- Local Material Symbols font (no Google Fonts)
+- Docker base: Bun → Node 22-alpine
+- MITM reads aliases from JSON cache (no native sqlite)
+- Stream stall timeout (3 min) in open-sse
+
+## Fixes
+- Fal.ai key test: use stable models endpoint
+
+# v0.4.28 (2026-05-10)
+
+## Features
+- Add bun:sqlite adapter with automatic runtime detection (Bun/Node)
+- Add bulk API key import (format: `name|sk-key`, one per line)
+
+## Fixes
+- Fix add API key for custom providers
+
+# v0.4.27 (2026-05-09)
+
+## Features
+- Add 3-tier DB driver fallback: better-sqlite3 → node:sqlite (Node ≥22.5) → sql.js
+
+## Fixes
+- Fix authentication logic for several providers
+
+# v0.4.25 (2026-05-09)
+
+## Features
+- Add MCP Marketplace Modal to Cowork Tool Card for easier plugin management
+- Migrate DB layer from lowdb to SQLite with modular repos pattern (better-sqlite3 / sql.js adapters, migrations, helpers)
+- Add Tailscale tunnel integration with status check API
+- Add `/api/cli-tools/all-statuses` aggregated endpoint
+- Add Cloudflare Workers AI image generation support (#973)
+- Add DeepSeek V4 Pro model and update V4 pricing (#938)
+- Add captain-definition for Caprover deployment (#954)
+
+## Improvements
+- Optimize slow page load performance
+- Refactor connection proxy configuration logic (#970)
+
+## Fixes
+- Prevent cached settings responses (#951)
+- Normalize Ollama Local provider input (#955)
+
+## Docs
+- Add Chinese translation of README (#957)
+- Fix localized README links (#956)
+
+# v0.4.20 (2026-05-07)
+
+## Features
+- Add CommandCode provider support
+
+# v0.4.19 (2026-05-07)
+
+## Features
+- Add OllamaLocalExecutor cho local Ollama provider
+- Add audio input support cho Gemini translation
+- Add configurable tunnel transport protocols
+- Add model deselection trong ComboFormModal & ComboDetailPage
+- ComboFormModal/BaseUrlSelect: cloud endpoint option, custom URL local state, default first option
+- New API: `/v1/audio/voices`, `/v1/models/info`; `/v1/models` filter disabled models
+- CLI tool cards refactor dùng BaseUrlSelect
+
+## Fixes
+- Fix compatible provider API key setup
+- Fix usage: filter `totalRequests` theo time period đã chọn
+- Fix Kiro IDE MITM handler bugs (AWS CodeWhisperer translation)
+- geminiHelper: `ensureObjectType` cho schemas có properties nhưng thiếu type
+- initializeApp: guard tunnel/tailscale auto-resume once-per-process
+
+# v0.4.18 (2026-05-05)
+
+## Features
+- Speech-to-Text: full pipeline with sttCore + /v1/audio/transcriptions; configs for OpenAI, Gemini, Groq, Deepgram, AssemblyAI, HuggingFace, NVIDIA Parakeet; new 9router-stt skill
+- Gemini TTS: dedicated provider with 30 prebuilt voices
+- Usage quotas: GLM (intl/cn) and MiniMax (intl/cn) fetchers; Gemini CLI usage via retrieveUserQuota per-model buckets
+- Disabled models: lowdb-backed disabledModelsDb + /api/models/disabled route
+- Header search: reusable Zustand store wired into Header
+- CLI tools: Claude Cowork tool card + cowork-settings API
+- Providers: mediaPriority sorting in getProvidersByKind, add Kimi K2.6
+
+## Improvements
+- Expand media-providers/[kind]/[id] page; enhance OAuthModal, ModelSelectModal, ProviderTopology, ProxyPools, ProviderLimits
+- Refresh provider icons (alicode, byteplus, cloudflare-ai, nvidia, ollama, vertex, volcengine-ark); add aws-polly, fal-ai, jina-ai, recraft, runwayml, stability-ai, topaz, black-forest-labs
+- Reorder hermes provider, drop qwen STT kind
+
+## Fixes
+- Fix skills metadata/text in 9router, chat, embeddings, image, tts, web-fetch, web-search SKILL.md and skills page
+
+# v0.4.16 (2026-05-04)
+
+## Features
+- Skills system: manage and execute custom AI skills
+
+## Fixes
+- Fix input fields in tool cards
+
+# v0.4.14 (2026-05-03)
+
+## Improvements
+- Token refresh: in-flight request caching to prevent race conditions & reduce duplicate API calls
+- Token refresh: handle unrecoverable errors with token reuse/invalidation
+- MITM server: handle port 443 conflicts (kill occupying process before start)
+- Better UX feedback in MitmServerCard for port conflicts & admin privileges
+- Refactor ComboList for streamlined media provider combos display
+
+# v0.4.13 (2026-05-03)
+
+## Features
+- Add Azure OpenAI as dedicated provider (endpoint/deployment/API version/organization config)
+- Add browser-local endpoint presets for CLI tools (Claude, Codex, OpenCode, Droid, OpenClaw, Hermes, Copilot)
+- Add Codex review model quota support
+- Add DNS tool state persistence in MITM manager
+
+## Improvements
+- New brand color palette with better light/dark theme consistency
+- Improve mobile layouts and restore Cloudflare provider
+- Improve zh-CN translations
+- Better admin privilege feedback in MitmServerCard
+- Refined APIPageClient layout
+- Filter LLM combos to show only relevant data
+
+## Fixes
+- Include alias-backed models in /v1/models listing
+- Improve cloudflared exit code error messages
+- Redirect ~/.9router to DATA_DIR in Docker (persist usage across updates)
+- Prevent SSE listener leak in console-logs stream
+- Gate MITM sudo prompts on server platform
+- Fix Azure validation and persistence (providerSpecificData, Organization required)
+
+# v0.4.12 (2026-05-01)
+
+## Features
+- Add Xiaomi MiMo provider support
+- Add sticky round-robin strategy for combos
+
+## Improvements
+- Refactor proxyFetch and enhance MediaProviderDetailPage layout
+- Improve dashboard responsive layouts
+- Update provider models list
+
+## Fixes
+- Fix custom provider prefix conflicts with built-in alias
+- Strip output_config for MiniMax requests
+
+# v0.4.11 (2026-04-30)
+
+## Features
+- Add Caveman feature: terse-style system prompts to reduce output token usage with configurable compression levels
+- Add Caveman settings UI in Endpoint dashboard (enable/disable, compression level)
+
+## Improvements
+- Consolidate AntigravityExecutor function declarations for Gemini compatibility
+- Clean up translator initialization logs across API routes
+
+# v0.4.10 (2026-04-29)
+
+## Features
+- Add new embedding models and Voyage AI provider support
+- Add Coqui, Inworld, Tortoise TTS providers
+- Add Deepgram and Inworld TTS voices API endpoints
+
+## Improvements
+- Enhance MITM Antigravity handler with improved cert install and DNS config
+- Refactor TTS handling to support additional providers
+- Improve API key validation for media providers
+- Enhance MITM logger with better diagnostics
+- Add Windows elevated permissions support for MITM
+
+## Fixes
+- Fix Antigravity MITM connection and handler issues
+- Fix cloudflared tunnel integration with MITM
+
+# v0.4.8 (2026-04-28)
+
+## Features
+- Add Web Search & Web Fetch providers with Combo support — chain multiple search/fetch providers as a single virtual provider
+- Add Cloudflare AI provider support
+- Add provider filter and expiry sorting to quota dashboard (#769)
+
+## Improvements
+- Proxy-aware token refresh across executors (Antigravity, Base, Default, Github, Kiro)
+
+## Fixes
+- Fix granular `reasoning_effort` handling for Claude models on Copilot & Anthropic backend (#791)
+- Fix Antigravity INVALID_ARGUMENT errors and Copilot agent mode parity
+- Fix quota reset timestamp parsing (#768)
+
+# v0.4.6 (2026-04-25)
+
+## Features
+- Add BytePlus Provider
+- Add Codex support to image providers
+- Enhance image and embedding provider support
+
+## Improvements
+- Cap maximum cooldown for rate limit handling in account unavailability and single-model chat flows
+- Dynamic custom model fetching for model selection
+
+# v0.4.5 (2026-04-24)
+
+## Improvements
+- Cap maximum cooldown for rate limit handling in account unavailability and single-model chat flows
+- Dynamic custom model fetching for model selection
+
+# v0.4.3 (2026-04-24)
+
+## Improvements
+- Improve in-app download/update UX on dashboard
+- Improve Codex provider rate limit handling with precise cooldown (`resetsAtMs`) and email backfill for OAuth accounts
+
+# v0.4.2 (2026-04-24)
+
+## Features
+- Add Azure OpenAI provider support
+- Add built-in Volcengine Ark provider support (#741)
+- Add GPT 5.5 model
+
+## Fixes
+- Enhance retry logic and configuration for HTTP status codes
+
+# v0.4.1 (2026-04-23)
+
+## Features
+- Add Hermes CLI tool with settings management and integration
+- Add in-app version update mechanism (appUpdater + /api/version/update)
+
+## Improvements
+- Strengthen CLI token validation for enhanced security
+- Enhance Sidebar layout for CLI tools
+- Update executors and runtime config
+
+# v0.3.98 (2026-04-22)
+
+## Features
+- Add RTK — filter context (ls/grep/find/.....) before sending to LLM to save tokens
+
+# v0.3.97 (2026-04-22)
+
+## Features
+- Add OpenCode Go provider and support for custom models
+- Add Text To Image provider
+- Support custom host URL for remote Ollama servers
+
+## Fixes
+- Fix copy to clipboard issue
+
 # v0.3.96 (2026-04-17)
 
 ## Features
@@ -61,120 +555,3 @@
 
 ## Improvements
 - Improved dashboard access control by blocking tunnel/Tailscale access when disabled
-
-# v0.3.87 (2026-04-13)
-
-## Fixes
-- Fix codex cache session id
-
-# v0.3.86 (2026-04-13)
-
-## Features
-- Add provider models and thinking configurations for enhanced chat handling
-- Add Vercel relay support to proxy functionality
-- Add Vercel deploy endpoint for proxy pools management
-
-## Improvements
-- Enhance proxy functionality with new relay capabilities
-- Streamline GitHub Actions Docker publish workflow
-- Update Docker configuration and package management
-
-## Fixes
-- Remove obsolete 9remote installation/management APIs
-
-# v0.3.83 (2026-04-08)
-
-## Fixes
-- Fix OpenRouter custom models not showing after being added
-
-# Unreleased
-
-## Features
-- Added API key visibility toggle (eye icon) to Endpoint dashboard page for improved UX and security.
-
-# v0.2.66 (2026-02-06)
-
-## Features
-- Added Cursor provider end-to-end support, including OAuth import flow and translator/executor integration (`137f315`, `0a026c7`).
-- Enhanced auth/settings flow with `requireLogin` control and `hasPassword` state handling in dashboard/login APIs (`249fc28`).
-- Improved usage/quota UX with richer provider limit cards, new quota table, and clearer reset/countdown display (`32aefe5`).
-- Added model support for custom providers in UI/combos/model selection (`a7a52be`).
-- Expanded model/provider catalog:
-  - Codex updates: GPT-5.3 support, translation fixes, thinking levels (`127475d`)
-  - Added Claude Opus 4.6 model (`e8aa3e2`)
-  - Added MiniMax Coding (CN) provider (`7c609d7`)
-  - Added iFlow Kimi K2.5 model (`9e357a7`)
-  - Updated CLI tools with Droid/OpenClaw cards and base URL visibility improvements (`a2122e3`)
-- Added auto-validation for provider API keys when saving settings (`b275dfd`).
-- Added Docker/runtime deployment docs and architecture documentation updates (`5e4a15b`).
-
-## Fixes
-- Improved local-network compatibility by allowing auth cookie flow over HTTP deployments (`0a394d0`).
-- Improved Antigravity quota/stream handling and Droid CLI compatibility behavior (`3c65e0c`, `c612741`, `8c6e3b8`).
-- Fixed GitHub Copilot model mapping/selection issues (`95fd950`).
-- Hardened local DB behavior with corrupt JSON recovery and schema-shape migration safeguards (`e6ef852`).
-- Fixed logout/login edge cases:
-  - Prevent unintended auto-login after logout (`49df3dc`)
-  - Avoid infinite loading on failed `/api/settings` responses (`01c9410`)
-
-# v0.2.56 (2026-02-04)
-
-## Features
-- Added Anthropic-compatible provider support across providers API/UI flow (`da5bdef`).
-- Added provider icons to dashboard provider pages/lists (`60bd686`, `8ceb8f2`).
-- Enhanced usage tracking pipeline across response handlers/streams with buffered accounting improvements (`a33924b`, `df0e1d6`, `7881db8`).
-
-## Fixes
-- Fixed usage conversion and related provider limits presentation issues (`e6e44ac`).
-
-# v0.2.52 (2026-02-02)
-
-## Features
-- Implemented Codex Cursor compatibility and Next.js 16 proxy migration updates (`e9b0a73`, `7b864a9`, `1c6dd6d`).
-- Added OpenAI-compatible provider nodes with CRUD/validation/test coverage in API and UI (`0a28f9f`).
-- Added token expiration and key-validity checks in provider test flow (`686585d`).
-- Added Kiro token refresh support in shared token refresh service (`f2ca6f0`).
-- Added non-streaming response translation support for multiple formats (`63f2da8`).
-- Updated Kiro OAuth wiring and auth-related UI assets/components (`31cc79a`).
-
-## Fixes
-- Fixed cloud translation/request compatibility path (`c7219d0`).
-- Fixed Kiro auth modal/flow issues (`85b7bb9`).
-- Included Antigravity stability fixes in translator/executor flow (`2393771`, `8c37b39`).
-
-# v0.2.43 (2026-01-27)
-
-## Fixes
-- Fixed CLI tools model selection behavior (`a015266`).
-- Fixed Kiro translator request handling (`d3dd868`).
-
-# v0.2.36 (2026-01-19)
-
-## Features
-- Added the Usage dashboard page and related usage stats components (`3804357`).
-- Integrated outbound proxy support in Open SSE fetch pipeline (`0943387`).
-- Improved OpenAI compatibility and build stability across endpoint/profile/providers flows (`d9b8e48`).
-
-## Fixes
-- Fixed combo fallback behavior (`e6ca119`).
-- Resolved SonarQube findings, Next.js image warnings, and build/lint cleanups (`7058b06`, `0848dd5`).
-
-# v0.2.31 (2026-01-18)
-
-## Fixes
-- Fixed Kiro token refresh and executor behavior (`6b22b1f`, `1d481c2`).
-- Fixed Kiro request translation handling (`eff52f7`, `da15660`).
-
-# v0.2.27 (2026-01-15)
-
-## Features
-- Added Kiro provider support with OAuth flow (`26b61e5`).
-
-## Fixes
-- Fixed Codex provider behavior (`26b61e5`).
-
-# v0.2.21 (2026-01-12)
-
-## Changes
-- README updates.
-- Antigravity bug fixes.

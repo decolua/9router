@@ -52,44 +52,55 @@ export async function writeStreamError(writer, statusCode, message) {
 /**
  * Parse upstream provider error response
  * @param {Response} response - Fetch response from provider
- * @returns {Promise<{statusCode: number, message: string}>}
+ * @param {object} [executor] - Optional executor with parseError() override for provider-specific parsing
+ * @returns {Promise<{statusCode: number, message: string, resetsAtMs?: number}>}
  */
-export async function parseUpstreamError(response) {
-  let message = "";
-
+export async function parseUpstreamError(response, executor = null) {
+  let bodyText = "";
   try {
-    const text = await response.text();
-
-    try {
-      const json = JSON.parse(text);
-      message = json.error?.message || json.message || json.error || text;
-    } catch {
-      message = text;
-    }
+    bodyText = await response.text();
   } catch {
-    message = `Upstream error: ${response.status}`;
+    bodyText = "";
+  }
+
+  // Let executor-specific parser extract provider-specific fields (e.g. codex resetsAtMs)
+  if (executor && typeof executor.parseError === "function") {
+    try {
+      const parsed = executor.parseError(response, bodyText);
+      if (parsed && typeof parsed === "object") {
+        const msg = parsed.message || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
+        return { statusCode: parsed.status || response.status, message: msg, resetsAtMs: parsed.resetsAtMs };
+      }
+    } catch { /* fall through to default parsing */ }
+  }
+
+  let message = "";
+  try {
+    const json = JSON.parse(bodyText);
+    message = json.error?.message || json.message || json.error || bodyText;
+  } catch {
+    message = bodyText;
   }
 
   const messageStr = typeof message === "string" ? message : JSON.stringify(message);
   const finalMessage = messageStr || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
 
-  return {
-    statusCode: response.status,
-    message: finalMessage
-  };
+  return { statusCode: response.status, message: finalMessage };
 }
 
 /**
  * Create error result for chatCore handler
  * @param {number} statusCode - HTTP status code
  * @param {string} message - Error message
- * @returns {{ success: false, status: number, error: string, response: Response }}
+ * @param {number} [resetsAtMs] - Optional precise cooldown expiry (ms epoch) for provider-specific quota errors
+ * @returns {{ success: false, status: number, error: string, response: Response, resetsAtMs?: number }}
  */
-export function createErrorResult(statusCode, message) {
+export function createErrorResult(statusCode, message, resetsAtMs) {
   return {
     success: false,
     status: statusCode,
     error: message,
+    resetsAtMs,
     response: errorResponse(statusCode, message)
   };
 }

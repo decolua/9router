@@ -2,11 +2,32 @@ const fs = require("fs");
 const crypto = require("crypto");
 const { exec } = require("child_process");
 const { execWithPassword, isSudoAvailable } = require("../dns/dnsConfig.js");
+const { runElevatedPowerShell, quotePs } = require("../winElevated.js");
 const { log, err } = require("../logger");
 
 const IS_WIN = process.platform === "win32";
 const IS_MAC = process.platform === "darwin";
-const LINUX_CERT_DIR = "/usr/local/share/ca-certificates";
+const LINUX_CERT_PATHS = [
+  // Debian / Ubuntu
+  { dir: "/usr/local/share/ca-certificates", cmd: "update-ca-certificates" },
+  // Arch Linux / CachyOS / Manjaro
+  { dir: "/etc/ca-certificates/trust-source/anchors", cmd: "update-ca-trust" },
+  // Fedora / RHEL / CentOS
+  { dir: "/etc/pki/ca-trust/source/anchors", cmd: "update-ca-trust" },
+  // openSUSE
+  { dir: "/etc/pki/trust/anchors", cmd: "update-ca-certificates" }
+];
+
+function getLinuxCertConfig() {
+  for (const config of LINUX_CERT_PATHS) {
+    if (fs.existsSync(config.dir)) {
+      return config;
+    }
+  }
+  // Fallback to Debian default if none exist
+  return LINUX_CERT_PATHS[0];
+}
+const ROOT_CA_CN = "9Router MITM Root CA";
 
 // Get SHA1 fingerprint from cert file using Node.js crypto
 function getCertFingerprint(certPath) {
@@ -28,12 +49,14 @@ function checkCertInstalledMac(certPath) {
   return new Promise((resolve) => {
     try {
       const fingerprint = getCertFingerprint(certPath).replace(/:/g, "");
-      // security verify-cert returns 0 only if cert is trusted by system policy
-      exec(`security verify-cert -c "${certPath}" -p ssl -k /Library/Keychains/System.keychain 2>/dev/null`, { windowsHide: true }, (error) => {
-        if (!error) return resolve(true);
-        // Fallback: check if fingerprint appears in System keychain with trust
-        exec(`security dump-trust-settings -d 2>/dev/null | grep -i "${fingerprint}"`, { windowsHide: true }, (err2, stdout2) => {
-          resolve(!err2 && !!stdout2?.trim());
+      // Verify exact cert bytes match — same CN with different fingerprint = stale cert
+      exec(`security find-certificate -a -c "${ROOT_CA_CN}" -Z /Library/Keychains/System.keychain 2>/dev/null`, { windowsHide: true }, (error, stdout) => {
+        if (error || !stdout) return resolve(false);
+        const match = new RegExp(`SHA-1 hash:\\s*${fingerprint}`, "i").test(stdout);
+        if (!match) return resolve(false);
+        // Cert exists with matching fingerprint — confirm trust policy
+        exec(`security verify-cert -c "${certPath}" -p ssl -k /Library/Keychains/System.keychain 2>/dev/null`, { windowsHide: true }, (err2) => {
+          resolve(!err2);
         });
       });
     } catch {
@@ -44,8 +67,14 @@ function checkCertInstalledMac(certPath) {
 
 function checkCertInstalledWindows(certPath) {
   return new Promise((resolve) => {
-    // Check Root store for our Root CA by common name
-    exec("certutil -store Root \"9Router MITM Root CA\"", { windowsHide: true }, (error) => {
+    // Check by SHA1 fingerprint — detects stale cert with same CN but different key
+    let fingerprint;
+    try {
+      fingerprint = getCertFingerprint(certPath).replace(/:/g, "");
+    } catch {
+      return resolve(false);
+    }
+    exec(`certutil -store Root ${fingerprint}`, { windowsHide: true }, (error) => {
       resolve(!error);
     });
   });
@@ -88,17 +117,19 @@ async function installCertMac(sudoPassword, certPath) {
 }
 
 async function installCertWindows(certPath) {
-  // Process already has admin rights — run certutil directly, no UAC needed
-  return new Promise((resolve, reject) => {
-    exec(
-      `certutil -addstore Root "${certPath}"`,
-      { windowsHide: true },
-      (error) => {
-        if (error) reject(new Error(`Failed to install certificate: ${error.message}`));
-        else { log("🔐 Cert: ✅ installed to Windows Root store"); resolve(); }
-      }
-    );
-  });
+  // Auto-elevate via UAC popup if not admin (zero popup if already admin).
+  // Delete any stale cert with same CN before adding to avoid duplicates.
+  const script = `
+    certutil -delstore Root ${quotePs(ROOT_CA_CN)} 2>$null | Out-Null
+    $exit = & certutil -addstore Root ${quotePs(certPath)} 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "certutil exit $LASTEXITCODE" }
+  `;
+  try {
+    await runElevatedPowerShell(script);
+    log("🔐 Cert: ✅ installed to Windows Root store");
+  } catch (e) {
+    throw new Error(`Failed to install certificate: ${e.message}`);
+  }
 }
 
 /**
@@ -132,49 +163,104 @@ async function uninstallCertMac(sudoPassword, certPath) {
 }
 
 async function uninstallCertWindows() {
-  // Process already has admin rights — run certutil directly, no UAC needed
-  return new Promise((resolve, reject) => {
-    exec(
-      `certutil -delstore Root "9Router MITM Root CA"`,
-      { windowsHide: true },
-      (error) => {
-        if (error) reject(new Error(`Failed to uninstall certificate: ${error.message}`));
-        else { log("🔐 Cert: ✅ uninstalled from Windows Root store"); resolve(); }
-      }
-    );
-  });
+  // Auto-elevate via UAC popup if not admin
+  const script = `certutil -delstore Root ${quotePs(ROOT_CA_CN)}`;
+  try {
+    await runElevatedPowerShell(script);
+    log("🔐 Cert: ✅ uninstalled from Windows Root store");
+  } catch (e) {
+    throw new Error(`Failed to uninstall certificate: ${e.message}`);
+  }
 }
 
 function checkCertInstalledLinux() {
-  const certFile = `${LINUX_CERT_DIR}/9router-root-ca.crt`;
+  const config = getLinuxCertConfig();
+  const certFile = `${config.dir}/9router-root-ca.crt`;
   return Promise.resolve(fs.existsSync(certFile));
+}
+
+async function updateNssDatabases(certPath, action = 'add') {
+  const certName = "9Router MITM Root CA";
+  
+  const script = `
+    if ! command -v certutil &> /dev/null; then
+      exit 0
+    fi
+    
+    DIRS="$HOME/.pki/nssdb $HOME/snap/chromium/current/.pki/nssdb"
+    
+    if [ -d "$HOME/.mozilla/firefox" ]; then
+      for profile in "$HOME"/.mozilla/firefox/*/; do
+        if [ -f "\${profile}cert9.db" ] || [ -f "\${profile}cert8.db" ]; then
+          DIRS="$DIRS $profile"
+        fi
+      done
+    fi
+
+    if [ -d "$HOME/snap/firefox/common/.mozilla/firefox" ]; then
+      for profile in "$HOME"/snap/firefox/common/.mozilla/firefox/*/; do
+        if [ -f "\${profile}cert9.db" ] || [ -f "\${profile}cert8.db" ]; then
+          DIRS="$DIRS $profile"
+        fi
+      done
+    fi
+
+    for db in $DIRS; do
+      if [ -d "$db" ]; then
+        if [ "${action}" = "add" ]; then
+          certutil -d sql:"$db" -A -t "C,," -n "${certName}" -i "${certPath}" 2>/dev/null || \\
+          certutil -d "$db" -A -t "C,," -n "${certName}" -i "${certPath}" 2>/dev/null || true
+        else
+          certutil -d sql:"$db" -D -n "${certName}" 2>/dev/null || \\
+          certutil -d "$db" -D -n "${certName}" 2>/dev/null || true
+        fi
+      fi
+    done
+  `;
+  
+  return new Promise((resolve) => {
+    exec(script, { shell: "/bin/bash" }, () => resolve());
+  });
 }
 
 async function installCertLinux(sudoPassword, certPath) {
   if (!isSudoAvailable()) {
     log(`🔐 Cert: cannot install to system store without sudo — trust this file on clients: ${certPath}`);
+    // Still try to update user NSS DBs even if no sudo!
+    await updateNssDatabases(certPath, 'add');
     return;
   }
-  const destFile = `${LINUX_CERT_DIR}/9router-root-ca.crt`;
-  // Try update-ca-certificates (Debian/Ubuntu), fallback to update-ca-trust (Fedora/RHEL)
-  const cmd = `cp "${certPath}" "${destFile}" && (update-ca-certificates 2>/dev/null || update-ca-trust 2>/dev/null || true)`;
+  
+  const config = getLinuxCertConfig();
+  const destFile = `${config.dir}/9router-root-ca.crt`;
+  
+  // Copy to the discovered directory and execute the specific update command
+  const cmd = `cp "${certPath}" "${destFile}" && (${config.cmd} 2>/dev/null || true)`;
+  
   try {
     await execWithPassword(cmd, sudoPassword);
-    log("🔐 Cert: ✅ installed to Linux trust store");
+    await updateNssDatabases(certPath, 'add');
+    log(`🔐 Cert: ✅ installed to Linux trust store (${config.dir}) and user browser databases`);
   } catch (error) {
-    throw new Error("Certificate install failed");
+    throw new Error(`Certificate install failed: ${error.message}`);
   }
 }
 
 async function uninstallCertLinux(sudoPassword) {
+  // Always try to uninstall from user DBs even without sudo
+  await updateNssDatabases(null, 'delete');
+
   if (!isSudoAvailable()) {
     return;
   }
-  const destFile = `${LINUX_CERT_DIR}/9router-root-ca.crt`;
-  const cmd = `rm -f "${destFile}" && (update-ca-certificates 2>/dev/null || update-ca-trust 2>/dev/null || true)`;
+  
+  const config = getLinuxCertConfig();
+  const destFile = `${config.dir}/9router-root-ca.crt`;
+  const cmd = `rm -f "${destFile}" && (${config.cmd} 2>/dev/null || true)`;
+  
   try {
     await execWithPassword(cmd, sudoPassword);
-    log("🔐 Cert: ✅ uninstalled from Linux trust store");
+    log("🔐 Cert: ✅ uninstalled from Linux trust store and user browser databases");
   } catch (error) {
     throw new Error("Failed to uninstall certificate");
   }

@@ -1,5 +1,6 @@
 import {
   getRefreshLeadMs,
+  isUnrecoverableRefreshError,
   refreshTokenByProvider,
 } from "./tokenRefresh.js";
 
@@ -64,6 +65,7 @@ export function mergeProviderSpecificData(existing, next) {
 
 export function mergeRefreshedCredentials(provider, currentCredentials, refreshedCredentials, nowMs = Date.now()) {
   if (!refreshedCredentials) return null;
+  if (isUnrecoverableRefreshError(refreshedCredentials)) return refreshedCredentials;
 
   const next = {};
   const nowIso = new Date(nowMs).toISOString();

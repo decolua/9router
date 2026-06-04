@@ -40,6 +40,7 @@ function ensureInitialized() {
   require("./request/openai-to-kiro.js");
   require("./request/openai-to-cursor.js");
   require("./request/openai-to-ollama.js");
+  require("./request/openai-to-commandcode.js");
 
   // Response translators
   require("./response/claude-to-openai.js");
@@ -50,6 +51,7 @@ function ensureInitialized() {
   require("./response/kiro-to-openai.js");
   require("./response/cursor-to-openai.js");
   require("./response/ollama-to-openai.js");
+  require("./response/commandcode-to-openai.js");
 }
 
 // Strip specific content types from messages (explicit opt-in via strip[] in PROVIDER_MODELS)
@@ -70,7 +72,7 @@ function stripContentTypes(body, stripList = []) {
 }
 
 // Translate request: source -> openai -> target
-export function translateRequest(sourceFormat, targetFormat, model, body, stream = true, credentials = null, provider = null, reqLogger = null, stripList = [], connectionId = null) {
+export function translateRequest(sourceFormat, targetFormat, model, body, stream = true, credentials = null, provider = null, reqLogger = null, stripList = [], connectionId = null, clientTool = null) {
   ensureInitialized();
   let result = body;
 
@@ -132,15 +134,14 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
     }
   }
 
-  // Antigravity cloaking: rename client tools + inject decoys (anti-ban)
-  // Skip if client is native AG (userAgent = antigravity)
-  if (provider === FORMATS.ANTIGRAVITY && body.userAgent !== FORMATS.ANTIGRAVITY) {
-    const { cloakedBody, toolNameMap } = AntigravityExecutor.cloakTools(result);
-    result = cloakedBody;
-    if (toolNameMap?.size > 0) {
-      result._toolNameMap = toolNameMap;
-    }
-  }
+  // Antigravity cloaking disabled
+  // if (provider === FORMATS.ANTIGRAVITY && body.userAgent !== FORMATS.ANTIGRAVITY) {
+  //   const { cloakedBody, toolNameMap } = AntigravityExecutor.cloakTools(result);
+  //   result = cloakedBody;
+  //   if (toolNameMap?.size > 0) {
+  //     result._toolNameMap = toolNameMap;
+  //   }
+  // }
 
   return result;
 }

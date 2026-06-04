@@ -30,13 +30,16 @@ export const DEFAULT_ERROR_MESSAGES = {
 
 // Exponential backoff config for rate limits
 export const BACKOFF_CONFIG = {
-  base: 1000,
-  max: 4 * 60 * 1000,
+  base: 2000,
+  max: 5 * 60 * 1000,
   maxLevel: 15
 };
 
 // Default cooldown for transient/unknown errors
 export const TRANSIENT_COOLDOWN_MS = 30 * 1000;
+
+// Hard cap for provider-reported rate limit cooldown (e.g. codex resets_at can be 5-6h)
+export const MAX_RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
 
 // Cooldown durations (ms)
 const COOLDOWN = {

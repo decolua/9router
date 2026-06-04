@@ -1,3 +1,0 @@
-[submodule "src/mitm/dev"]
-	path = src/mitm/dev
-	url = https://github.com/decolua/9router-dev.git

@@ -32,25 +32,26 @@ async function fetchRouter(openaiBody, path = "/v1/chat/completions", clientHead
     body: JSON.stringify(openaiBody)
   });
 
-  if (!response.ok) {
-    const errText = await response.text().catch(() => "");
-    throw new Error(`[${response.status}]: ${errText}`);
-  }
-
+  // Forward response as-is (status + body). pipeSSE will propagate status.
   return response;
 }
 
 /**
- * Pipe SSE stream from router directly to client response
+ * Pipe SSE stream from router directly to client response.
+ * Optional dumper tees the stream into a debug file.
  */
-async function pipeSSE(routerRes, res) {
+async function pipeSSE(routerRes, res, dumper) {
   const ct = routerRes.headers.get("content-type") || "application/json";
+  const status = routerRes.status || 200;
   const resHeaders = { "Content-Type": ct, "Cache-Control": "no-cache", "Connection": "keep-alive" };
   if (ct.includes("text/event-stream")) resHeaders["X-Accel-Buffering"] = "no";
-  res.writeHead(200, resHeaders);
+  res.writeHead(status, resHeaders);
+  if (dumper) dumper.writeHeader(routerRes.status, Object.fromEntries(routerRes.headers));
 
   if (!routerRes.body) {
-    res.end(await routerRes.text().catch(() => ""));
+    const text = await routerRes.text().catch(() => "");
+    if (dumper) { dumper.writeChunk(text); dumper.end(); }
+    res.end(text);
     return;
   }
 
@@ -58,7 +59,8 @@ async function pipeSSE(routerRes, res) {
   const decoder = new TextDecoder();
   while (true) {
     const { done, value } = await reader.read();
-    if (done) { res.end(); break; }
+    if (done) { if (dumper) dumper.end(); res.end(); break; }
+    if (dumper) dumper.writeChunk(value);
     res.write(decoder.decode(value, { stream: true }));
   }
 }

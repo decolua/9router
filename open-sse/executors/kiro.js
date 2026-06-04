@@ -3,7 +3,7 @@ import { PROVIDERS } from "../config/providers.js";
 import { v4 as uuidv4 } from "uuid";
 import { refreshKiroToken } from "../services/tokenRefresh.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
-import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG } from "../config/runtimeConfig.js";
+import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG, resolveRetryEntry } from "../config/runtimeConfig.js";
 
 /**
  * KiroExecutor - Executor for Kiro AI (AWS CodeWhisperer)
@@ -54,11 +54,11 @@ export class KiroExecutor extends BaseExecutor {
       }, proxyOptions);
 
       // Check if should retry based on status code
-      const maxRetries = retryConfig[response.status] || 0;
+      const { attempts: maxRetries, delayMs } = resolveRetryEntry(retryConfig[response.status]);
       if (!response.ok && maxRetries > 0 && retryAttempts < maxRetries) {
         retryAttempts++;
-        log?.debug?.("RETRY", `${response.status} retry ${retryAttempts}/${maxRetries} after ${RETRY_CONFIG.delayMs / 1000}s`);
-        await new Promise(resolve => setTimeout(resolve, RETRY_CONFIG.delayMs));
+        log?.debug?.("RETRY", `${response.status} retry ${retryAttempts}/${maxRetries} after ${delayMs / 1000}s`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
         continue;
       }
 
@@ -87,6 +87,8 @@ export class KiroExecutor extends BaseExecutor {
       endDetected: false,
       finishEmitted: false,
       hasToolCalls: false,
+      hasReasoningContent: false,
+      reasoningChunkCount: 0,
       toolCallIndex: 0,
       seenToolIds: new Map()
     };
@@ -141,6 +143,41 @@ export class KiroExecutor extends BaseExecutor {
             };
             chunkIndex++;
             controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\n`));
+          }
+
+          // Handle reasoningContentEvent (Kiro thinking / reasoning)
+          // Kiro returns reasoning as a separate event when the request system
+          // prompt contains <thinking_mode>enabled</thinking_mode>. Surface it
+          // as OpenAI delta.reasoning_content so downstream translators can map
+          // it back to Claude thinking blocks / Anthropic reasoning, etc.
+          if (eventType === "reasoningContentEvent") {
+            const reasoning = event.payload?.reasoningContentEvent || event.payload || {};
+            const reasoningText = (typeof reasoning === "string")
+              ? reasoning
+              : (reasoning.text || reasoning.content || "");
+            if (reasoningText) {
+              state.hasReasoningContent = true;
+              state.totalContentLength += reasoningText.length;
+
+              const reasoningDelta = state.reasoningChunkCount === 0 && chunkIndex === 0
+                ? { role: "assistant", reasoning_content: reasoningText }
+                : { reasoning_content: reasoningText };
+
+              const chunk = {
+                id: responseId,
+                object: "chat.completion.chunk",
+                created,
+                model,
+                choices: [{
+                  index: 0,
+                  delta: reasoningDelta,
+                  finish_reason: null
+                }]
+              };
+              chunkIndex++;
+              state.reasoningChunkCount++;
+              controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\n`));
+            }
           }
 
           // Handle codeEvent
@@ -378,7 +415,7 @@ export class KiroExecutor extends BaseExecutor {
     });
   }
 
-  async refreshCredentials(credentials, log) {
+  async refreshCredentials(credentials, log, proxyOptions = null) {
     if (!credentials.refreshToken) return null;
 
     try {
@@ -386,7 +423,8 @@ export class KiroExecutor extends BaseExecutor {
       const result = await refreshKiroToken(
         credentials.refreshToken,
         credentials.providerSpecificData,
-        log
+        log,
+        proxyOptions
       );
 
       return result;

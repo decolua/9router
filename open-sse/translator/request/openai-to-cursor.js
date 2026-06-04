@@ -169,8 +169,10 @@ function convertMessages(messages) {
 
 export function buildCursorRequest(model, body, stream, credentials) {
   const messages = convertMessages(body.messages || []);
+
   // Strip fields irrelevant to Cursor (OpenAI/Anthropic-specific)
   const { user, metadata, tool_choice, stream_options, system, ...rest } = body;
+
   return {
     ...rest,
     messages,

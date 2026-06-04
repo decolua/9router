@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { getProviderConnectionById, getApiKeys } from "@/lib/localDb";
 import { getProviderModels, PROVIDER_ID_TO_ALIAS } from "open-sse/config/providerModels.js";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { UPDATER_CONFIG } from "@/shared/constants/config";
+import { getConsistentMachineId } from "@/shared/utils/machineId";
+
+const CLI_TOKEN_SALT = "9r-cli-auth";
 
 /**
  * Get an active API key to pass through auth when requireApiKey is enabled.
@@ -15,11 +19,12 @@ async function getInternalApiKey() {
  * Ping a single model via internal completions endpoint (OpenAI format).
  * open-sse handles all provider translation automatically.
  */
-async function pingModel(modelId, baseUrl, apiKey) {
+async function pingModel(modelId, baseUrl, apiKey, cliToken) {
   const start = Date.now();
   try {
     const headers = { "Content-Type": "application/json" };
     if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+    if (cliToken) headers["x-9r-cli-token"] = cliToken;
     const res = await fetch(`${baseUrl}/api/v1/chat/completions`, {
       method: "POST",
       headers,
@@ -64,10 +69,12 @@ export async function POST(request, { params }) {
 
     let models = getProviderModels(alias);
 
+    const baseUrl = `http://127.0.0.1:${process.env.PORT || UPDATER_CONFIG.appPort}`;
+
     // Compatible providers: fetch live model list
     if (isCompatible && models.length === 0) {
       try {
-        const modelsRes = await fetch(`${getBaseUrl(request)}/api/providers/${id}/models`);
+        const modelsRes = await fetch(`${baseUrl}/api/providers/${id}/models`);
         if (modelsRes.ok) {
           const data = await modelsRes.json();
           models = (data.models || []).map((m) => ({ id: m.id || m.name, name: m.name || m.id }));
@@ -79,19 +86,20 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: "No models configured for this provider" }, { status: 400 });
     }
 
-    const baseUrl = getBaseUrl(request);
     const apiKey = await getInternalApiKey();
+    // Bypass dashboardGuard for internal self-call via CLI token (machineId-based)
+    const cliToken = await getConsistentMachineId(CLI_TOKEN_SALT);
 
     // Warm up with first model to trigger token refresh (if needed) before parallel calls.
     // This prevents race condition where multiple requests concurrently refresh the same token.
     const [first, ...rest] = models;
-    const firstResult = await pingModel(`${alias}/${first.id}`, baseUrl, apiKey);
+    const firstResult = await pingModel(`${alias}/${first.id}`, baseUrl, apiKey, cliToken);
     const results = [{ modelId: first.id, name: first.name || first.id, ...firstResult }];
 
     if (rest.length > 0) {
       const restResults = await Promise.all(
         rest.map(async (model) => {
-          const result = await pingModel(`${alias}/${model.id}`, baseUrl, apiKey);
+          const result = await pingModel(`${alias}/${model.id}`, baseUrl, apiKey, cliToken);
           return { modelId: model.id, name: model.name || model.id, ...result };
         })
       );
@@ -103,9 +111,4 @@ export async function POST(request, { params }) {
     console.log("Error testing models:", error);
     return NextResponse.json({ error: "Test failed" }, { status: 500 });
   }
-}
-
-function getBaseUrl(request) {
-  const url = new URL(request.url);
-  return `${url.protocol}//${url.host}`;
 }

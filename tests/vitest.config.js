@@ -16,6 +16,8 @@ export default defineConfig({
     alias: {
       // Resolve open-sse/* imports to the actual local package
       "open-sse": resolve(__dirname, "../open-sse"),
+      // Resolve @/* imports to src directory
+      "@": resolve(__dirname, "../src"),
     },
   },
 });

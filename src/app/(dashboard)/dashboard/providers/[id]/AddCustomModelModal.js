@@ -15,15 +15,22 @@ export default function AddCustomModelModal({ isOpen, providerAlias, providerDis
     if (isOpen) { setModelId(""); setTestStatus(null); setTestError(""); }
   }, [isOpen]);
 
+  // Strip provider's own alias prefix (e.g. "cc/model" -> "model" for cc provider)
+  const stripAlias = (id) => {
+    const prefix = `${providerAlias}/`;
+    return id.startsWith(prefix) ? id.slice(prefix.length) : id;
+  };
+
   const handleTest = async () => {
-    if (!modelId.trim()) return;
+    const cleanId = stripAlias(modelId.trim());
+    if (!cleanId) return;
     setTestStatus("testing");
     setTestError("");
     try {
       const res = await fetch("/api/models/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: `${providerAlias}/${modelId.trim()}` }),
+        body: JSON.stringify({ model: `${providerAlias}/${cleanId}` }),
       });
       const data = await res.json();
       setTestStatus(data.ok ? "ok" : "error");
@@ -35,10 +42,11 @@ export default function AddCustomModelModal({ isOpen, providerAlias, providerDis
   };
 
   const handleSave = async () => {
-    if (!modelId.trim() || saving) return;
+    const cleanId = stripAlias(modelId.trim());
+    if (!cleanId || saving) return;
     setSaving(true);
     try {
-      await onSave(modelId.trim());
+      await onSave(cleanId);
     } finally {
       setSaving(false);
     }
@@ -74,7 +82,7 @@ export default function AddCustomModelModal({ isOpen, providerAlias, providerDis
             </Button>
           </div>
           <p className="text-xs text-text-muted mt-1">
-            Sent to provider as: <code className="font-mono bg-sidebar px-1 rounded">{modelId.trim() || "model-id"}</code>
+            Sent to provider as: <code className="font-mono bg-sidebar px-1 rounded">{stripAlias(modelId.trim()) || "model-id"}</code>
           </p>
         </div>
 

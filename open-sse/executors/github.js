@@ -114,10 +114,24 @@ export class GithubExecutor extends BaseExecutor {
     return !/gpt-5\.4/i.test(model);
   }
 
-  // GitHub Copilot /chat/completions doesn't support thinking/reasoning_effort.
-  // OpenClaw sends thinking: { type: "enabled" } for Claude models which causes 400.
-  supportsThinking() {
-    return false;
+  // GitHub Copilot /chat/completions rejects Claude-style thinking payloads
+  // (OpenClaw sends thinking: { type: "enabled" } → upstream 400).
+  // GPT-5 family on Copilot DOES honor reasoning_effort, so only strip for Claude. (#713)
+  supportsThinking(model) {
+    return !/claude/i.test(model);
+  }
+
+  // reasoning_effort works for GPT-5 family AND Claude Opus 4.6 / Sonnet 4.6
+  // on GitHub Copilot. Only strip for models that don't support it:
+  // Claude Haiku 4.5, Claude Opus 4.7 (rejected upstream).
+  supportsReasoningEffort(model) {
+    const m = model.toLowerCase();
+    // Claude models that DO support reasoning_effort
+    if (/claude.*opus.*4\.6/i.test(m) || /claude.*sonnet.*4\.6/i.test(m)) return true;
+    // All other Claude models: strip
+    if (/claude/i.test(model)) return false;
+    // GPT-5 family, Gemini, etc.: keep
+    return true;
   }
 
   transformRequest(model, body, stream, credentials) {
@@ -130,19 +144,37 @@ export class GithubExecutor extends BaseExecutor {
     if (!this.supportsTemperature(model) && transformed.temperature !== undefined) {
       delete transformed.temperature;
     }
-    // Strip thinking/reasoning_effort — unsupported on /chat/completions
+    // Always strip Claude-style thinking payload (Copilot doesn't understand it)
     if (!this.supportsThinking(model)) {
       delete transformed.thinking;
+    }
+    // "none" means no thinking — strip it so models that don't support "none" don't 400
+    if (transformed.reasoning_effort === "none") {
+      delete transformed.reasoning_effort;
+    }
+    // Strip reasoning_effort only for models that reject it
+    if (!this.supportsReasoningEffort(model) && transformed.reasoning_effort !== undefined) {
       delete transformed.reasoning_effort;
     }
     return transformed;
+  }
+
+  // GitHub Copilot's /responses endpoint only serves OpenAI (gpt/codex) models.
+  // Gemini and Claude models are not available there and reject with a 400
+  // "does not support Responses API" (unsupported_api_for_model). They must
+  // therefore never be escalated to /responses, even if /chat/completions
+  // returned a "not supported" error for an unrelated reason. Fixes #1062.
+  supportsResponsesEndpoint(model) {
+    const m = (model || "").toLowerCase();
+    return !(m.includes("gemini") || m.includes("claude"));
   }
 
   async execute(options) {
     const { model, log } = options;
 
     // Only use /responses for models that are explicitly known to need it (e.g. gpt codex models)
-    if (this.knownCodexModels.has(model)) {
+    // and that the /responses endpoint actually serves (excludes Gemini/Claude, see #1062).
+    if (this.knownCodexModels.has(model) && this.supportsResponsesEndpoint(model)) {
       log?.debug("GITHUB", `Using cached /responses route for ${model}`);
       return this.executeWithResponsesEndpoint(options);
     }
@@ -156,7 +188,10 @@ export class GithubExecutor extends BaseExecutor {
 
     const result = await super.execute({ ...sanitizedOptions, proxyOptions: options.proxyOptions || null });
 
-    if (result.response.status === HTTP_STATUS.BAD_REQUEST) {
+    // Only escalate to /responses for models that endpoint can actually serve.
+    // Gemini/Claude would otherwise loop into a misleading "does not support
+    // Responses API" 400 instead of surfacing the real /chat/completions error (#1062).
+    if (result.response.status === HTTP_STATUS.BAD_REQUEST && this.supportsResponsesEndpoint(model)) {
       const errorBody = await result.response.clone().text();
 
       if (errorBody.includes("not accessible via the /chat/completions endpoint") || errorBody.includes("The requested model is not supported")) {
@@ -250,9 +285,9 @@ export class GithubExecutor extends BaseExecutor {
     };
   }
 
-  async refreshCopilotToken(githubAccessToken, log) {
+  async refreshCopilotToken(githubAccessToken, log, proxyOptions = null) {
     try {
-      const response = await fetch("https://api.github.com/copilot_internal/v2/token", {
+      const response = await proxyAwareFetch("https://api.github.com/copilot_internal/v2/token", {
         headers: {
           "Authorization": `token ${githubAccessToken}`,
           "User-Agent": GITHUB_COPILOT.USER_AGENT,
@@ -261,7 +296,7 @@ export class GithubExecutor extends BaseExecutor {
           "Accept": "application/json",
           "x-github-api-version": GITHUB_COPILOT.API_VERSION
         }
-      });
+      }, proxyOptions);
       if (!response.ok) {
         const errorText = await response.text();
         log?.error?.("TOKEN", `Copilot token refresh failed: ${response.status} ${errorText}`);
@@ -276,7 +311,7 @@ export class GithubExecutor extends BaseExecutor {
     }
   }
 
-  async refreshGitHubToken(refreshToken, log) {
+  async refreshGitHubToken(refreshToken, log, proxyOptions = null) {
     try {
       const params = {
         grant_type: "refresh_token",
@@ -287,11 +322,11 @@ export class GithubExecutor extends BaseExecutor {
         params.client_secret = this.config.clientSecret;
       }
 
-      const response = await fetch(OAUTH_ENDPOINTS.github.token, {
+      const response = await proxyAwareFetch(OAUTH_ENDPOINTS.github.token, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
         body: new URLSearchParams(params)
-      });
+      }, proxyOptions);
       if (!response.ok) return null;
       const tokens = await response.json();
       log?.info?.("TOKEN", "GitHub token refreshed");
@@ -302,13 +337,13 @@ export class GithubExecutor extends BaseExecutor {
     }
   }
 
-  async refreshCredentials(credentials, log) {
-    let copilotResult = await this.refreshCopilotToken(credentials.accessToken, log);
+  async refreshCredentials(credentials, log, proxyOptions = null) {
+    let copilotResult = await this.refreshCopilotToken(credentials.accessToken, log, proxyOptions);
 
     if (!copilotResult && credentials.refreshToken) {
-      const githubTokens = await this.refreshGitHubToken(credentials.refreshToken, log);
+      const githubTokens = await this.refreshGitHubToken(credentials.refreshToken, log, proxyOptions);
       if (githubTokens?.accessToken) {
-        copilotResult = await this.refreshCopilotToken(githubTokens.accessToken, log);
+        copilotResult = await this.refreshCopilotToken(githubTokens.accessToken, log, proxyOptions);
         if (copilotResult) {
           return { ...githubTokens, copilotToken: copilotResult.token, copilotTokenExpiresAt: copilotResult.expiresAt };
         }

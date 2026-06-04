@@ -1,20 +1,29 @@
 import { NextResponse } from "next/server";
 import { getModelAliases, setModelAlias } from "@/models";
+import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { AI_MODELS } from "@/shared/constants/config";
+import { getProviderAlias } from "@/shared/constants/providers";
 
 // GET /api/models - Get models with aliases
 export async function GET() {
   try {
     const modelAliases = await getModelAliases();
-    
-    const models = AI_MODELS.map((m) => {
-      const fullModel = `${m.provider}/${m.model}`;
-      return {
-        ...m,
-        fullModel,
-        alias: modelAliases[fullModel] || m.model,
-      };
-    });
+    const disabled = await getDisabledModels();
+
+    const models = AI_MODELS
+      .filter((m) => {
+        const alias = getProviderAlias(m.provider) || m.provider;
+        const list = disabled[alias] || disabled[m.provider] || [];
+        return !list.includes(m.model);
+      })
+      .map((m) => {
+        const fullModel = `${m.provider}/${m.model}`;
+        return {
+          ...m,
+          fullModel,
+          alias: modelAliases[fullModel] || m.model,
+        };
+      });
 
     return NextResponse.json({ models });
   } catch (error) {

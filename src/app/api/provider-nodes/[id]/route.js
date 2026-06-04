@@ -40,6 +40,14 @@ export async function PUT(request, { params }) {
       }
     }
 
+    // Sanitize Base URL for Custom Embedding (strip trailing slash and /embeddings)
+    if (node.type === "custom-embedding") {
+      sanitizedBaseUrl = sanitizedBaseUrl.replace(/\/$/, "");
+      if (sanitizedBaseUrl.endsWith("/embeddings")) {
+        sanitizedBaseUrl = sanitizedBaseUrl.slice(0, -"/embeddings".length);
+      }
+    }
+
     const updates = {
       name: name.trim(),
       prefix: prefix.trim(),

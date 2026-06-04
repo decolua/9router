@@ -12,27 +12,13 @@ export default function Toggle({
   className,
 }) {
   const sizes = {
-    sm: {
-      track: "w-8 h-4",
-      thumb: "size-3",
-      translate: "translate-x-4",
-    },
-    md: {
-      track: "w-11 h-6",
-      thumb: "size-5",
-      translate: "translate-x-5",
-    },
-    lg: {
-      track: "w-14 h-7",
-      thumb: "size-6",
-      translate: "translate-x-7",
-    },
+    sm: { track: "w-8 h-4", thumb: "size-3", translate: "translate-x-4" },
+    md: { track: "w-11 h-6", thumb: "size-5", translate: "translate-x-5" },
+    lg: { track: "w-14 h-7", thumb: "size-6", translate: "translate-x-7" },
   };
 
   const handleClick = () => {
-    if (!disabled && onChange) {
-      onChange(!checked);
-    }
+    if (!disabled && onChange) onChange(!checked);
   };
 
   return (
@@ -52,10 +38,8 @@ export default function Toggle({
         className={cn(
           "relative inline-flex shrink-0 cursor-pointer rounded-full",
           "transition-colors duration-200 ease-in-out",
-          "focus:outline-none focus:ring-1 focus:ring-primary/30",
-          checked
-            ? "bg-primary"
-            : "bg-black/10 dark:bg-white/20",
+          "focus:outline-none focus:ring-2 focus:ring-brand-500/30",
+          checked ? "bg-brand-500" : "bg-surface-3",
           sizes[size].track,
           disabled && "cursor-not-allowed"
         )}
@@ -73,18 +57,13 @@ export default function Toggle({
       {(label || description) && (
         <div className="flex flex-col">
           {label && (
-            <span className="text-sm font-medium text-text-main">
-              {label}
-            </span>
+            <span className="text-sm font-medium text-text-main">{label}</span>
           )}
           {description && (
-            <span className="text-xs text-text-muted">
-              {description}
-            </span>
+            <span className="text-xs text-text-muted">{description}</span>
           )}
         </div>
       )}
     </div>
   );
 }
-

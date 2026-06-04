@@ -7,36 +7,70 @@ import { unavailableResponse } from "../utils/error.js";
 
 /**
  * Track rotation state per combo (for round-robin strategy)
- * @type {Map<string, number>}
+ * @type {Map<string, { index: number, consecutiveUseCount: number }>}
  */
 const comboRotationState = new Map();
+
+function normalizeStickyLimit(stickyLimit) {
+  const parsed = Number.parseInt(stickyLimit, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+}
+
+function rotateModelsFromIndex(models, currentIndex) {
+  const rotatedModels = [...models];
+  for (let i = 0; i < currentIndex; i++) {
+    const moved = rotatedModels.shift();
+    rotatedModels.push(moved);
+  }
+  return rotatedModels;
+}
 
 /**
  * Get rotated model list based on strategy
  * @param {string[]} models - Array of model strings
  * @param {string} comboName - Name of the combo
  * @param {string} strategy - "fallback" or "round-robin"
+ * @param {number|string} [stickyLimit=1] - Requests per combo model before switching
  * @returns {string[]} Rotated models array
  */
-export function getRotatedModels(models, comboName, strategy) {
+export function getRotatedModels(models, comboName, strategy, stickyLimit = 1) {
   if (!models || models.length <= 1 || strategy !== "round-robin") {
     return models;
   }
 
-  const currentIndex = comboRotationState.get(comboName) || 0;
-  const rotatedModels = [...models];
-  
-  // Rotate: move models from currentIndex to front, preserving order after
-  for (let i = 0; i < currentIndex; i++) {
-    const moved = rotatedModels.shift();
-    rotatedModels.push(moved);
+  const rotationKey = comboName || "__default__";
+  const normalizedStickyLimit = normalizeStickyLimit(stickyLimit);
+  const existingState = comboRotationState.get(rotationKey);
+  const state = typeof existingState === "number"
+    ? { index: existingState, consecutiveUseCount: 0 }
+    : (existingState || { index: 0, consecutiveUseCount: 0 });
+
+  const currentIndex = state.index % models.length;
+  const rotatedModels = rotateModelsFromIndex(models, currentIndex);
+  const nextUseCount = state.consecutiveUseCount + 1;
+
+  if (nextUseCount >= normalizedStickyLimit) {
+    comboRotationState.set(rotationKey, {
+      index: (currentIndex + 1) % models.length,
+      consecutiveUseCount: 0,
+    });
+  } else {
+    comboRotationState.set(rotationKey, {
+      index: currentIndex,
+      consecutiveUseCount: nextUseCount,
+    });
   }
-  
-  // Update state for next request (cycle through all models)
-  const nextIndex = (currentIndex + 1) % models.length;
-  comboRotationState.set(comboName, nextIndex);
-  
+
   return rotatedModels;
+}
+
+/**
+ * Reset in-memory rotation state when combo/settings change
+ * @param {string} [comboName] - Combo name to reset; omit to clear all
+ */
+export function resetComboRotation(comboName) {
+  if (comboName) comboRotationState.delete(comboName);
+  else comboRotationState.clear();
 }
 
 /**
@@ -68,11 +102,12 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @param {Object} options.log - Logger object
  * @param {string} [options.comboName] - Name of the combo (for round-robin tracking)
  * @param {string} [options.comboStrategy] - Strategy: "fallback" or "round-robin"
+ * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
  * @returns {Promise<Response>}
  */
-export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy }) {
+export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1 }) {
   // Apply rotation strategy if enabled
-  const rotatedModels = getRotatedModels(models, comboName, comboStrategy);
+  const rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
   
   let lastError = null;
   let earliestRetryAfter = null;

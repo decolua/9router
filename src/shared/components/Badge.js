@@ -3,8 +3,8 @@
 import { cn } from "@/shared/utils/cn";
 
 const variants = {
-  default: "bg-black/5 dark:bg-white/10 text-text-muted",
-  primary: "bg-primary/10 text-primary",
+  default: "bg-surface-2 text-text-muted",
+  primary: "bg-brand-500/10 text-brand-600 dark:text-brand-300",
   success: "bg-green-500/10 text-green-600 dark:text-green-400",
   warning: "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400",
   error: "bg-red-500/10 text-red-600 dark:text-red-400",
@@ -42,7 +42,7 @@ export default function Badge({
             variant === "warning" && "bg-yellow-500",
             variant === "error" && "bg-red-500",
             variant === "info" && "bg-blue-500",
-            variant === "primary" && "bg-primary",
+            variant === "primary" && "bg-brand-500",
             variant === "default" && "bg-gray-500"
           )}
         />
@@ -52,4 +52,3 @@ export default function Badge({
     </span>
   );
 }
-

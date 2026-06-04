@@ -1,14 +1,19 @@
 "use client";
 
-import { useMemo, useState, useCallback, useRef } from "react";
+import { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import PropTypes from "prop-types";
 import {
   ReactFlow,
   Handle,
   Position,
+  Controls,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
+
+// Force-stop FE animation if a provider stays active longer than this
+const FE_ACTIVE_TIMEOUT_MS = 60000;
+const FE_ACTIVE_TICK_MS = 1000;
 
 function getProviderConfig(providerId) {
   return AI_PROVIDERS[providerId] || { color: "#6b7280", name: providerId };
@@ -199,13 +204,44 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
   const lastKey = lastProvider?.toLowerCase() || "";
   const errorKey = errorProvider?.toLowerCase() || "";
 
-  const activeSet = useMemo(() => new Set(activeKey ? activeKey.split(",") : []), [activeKey]);
+  const rawActiveSet = useMemo(() => new Set(activeKey ? activeKey.split(",") : []), [activeKey]);
   const lastSet = useMemo(() => new Set(lastKey ? [lastKey] : []), [lastKey]);
   const errorSet = useMemo(() => new Set(errorKey ? [errorKey] : []), [errorKey]);
 
+  // Track firstSeen per active provider; drop provider if running too long (BE stuck)
+  const firstSeenRef = useRef({});
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    const seen = firstSeenRef.current;
+    const now = Date.now();
+    for (const p of rawActiveSet) {
+      if (!seen[p]) seen[p] = now;
+    }
+    for (const p of Object.keys(seen)) {
+      if (!rawActiveSet.has(p)) delete seen[p];
+    }
+  }, [rawActiveSet]);
+
+  useEffect(() => {
+    if (rawActiveSet.size === 0) return;
+    const id = setInterval(() => setTick((t) => t + 1), FE_ACTIVE_TICK_MS);
+    return () => clearInterval(id);
+  }, [rawActiveSet]);
+
+  const activeSet = useMemo(() => {
+    const now = Date.now();
+    const filtered = new Set();
+    for (const p of rawActiveSet) {
+      const ts = firstSeenRef.current[p];
+      if (!ts || now - ts < FE_ACTIVE_TIMEOUT_MS) filtered.add(p);
+    }
+    return filtered;
+  }, [rawActiveSet, tick]);
+
   const { nodes, edges } = useMemo(
     () => buildLayout(providers, activeSet, lastSet, errorSet),
-    [providers, activeKey, lastKey, errorKey]
+    [providers, activeSet, lastKey, errorKey]
   );
 
   // Stable key — only remount when provider list changes
@@ -215,13 +251,34 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
   );
 
   const rfInstance = useRef(null);
+  const containerRef = useRef(null);
+  const fitOpts = { padding: 0.2, duration: 200 };
   const onInit = useCallback((instance) => {
     rfInstance.current = instance;
-    setTimeout(() => instance.fitView({ padding: 0.3 }), 50);
+    setTimeout(() => instance.fitView(fitOpts), 50);
   }, []);
 
+  // Re-fit on container resize
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      if (rfInstance.current) rfInstance.current.fitView(fitOpts);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Re-fit when node count/layout changes
+  useEffect(() => {
+    if (rfInstance.current) {
+      const id = setTimeout(() => rfInstance.current.fitView(fitOpts), 50);
+      return () => clearTimeout(id);
+    }
+  }, [nodes.length]);
+
   return (
-    <div className="w-full rounded-lg border border-border bg-bg-subtle/30" style={{ height: 480 }}>
+    <div ref={containerRef} className="h-[320px] w-full min-w-0 rounded-lg border border-border bg-bg-subtle/30 sm:h-[480px]">
       {providers.length === 0 ? (
         <div className="h-full flex items-center justify-center text-text-muted text-sm">
           No providers connected
@@ -233,18 +290,22 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
           edges={edges}
           nodeTypes={nodeTypes}
           fitView
-          fitViewOptions={{ padding: 0.3 }}
+          fitViewOptions={fitOpts}
+          minZoom={0.1}
+          maxZoom={2}
           onInit={onInit}
           proOptions={{ hideAttribution: true }}
-          panOnDrag={false}
-          zoomOnScroll={false}
-          zoomOnPinch={false}
-          zoomOnDoubleClick={false}
+          panOnDrag
+          zoomOnScroll
+          zoomOnPinch
+          zoomOnDoubleClick
           preventScrolling={false}
           nodesDraggable={false}
           nodesConnectable={false}
           elementsSelectable={false}
-        />
+        >
+          <Controls showInteractive={false} className="react-flow-controls-custom" />
+        </ReactFlow>
       )}
     </div>
   );

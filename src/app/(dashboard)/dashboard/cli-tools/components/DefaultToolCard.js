@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import { Card, ModelSelectModal } from "@/shared/components";
+import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import Image from "next/image";
+import ApiKeySelect from "./ApiKeySelect";
 
 export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders = [], cloudEnabled = false, tunnelEnabled = false }) {
   const [copiedField, setCopiedField] = useState(null);
@@ -31,8 +33,10 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
       .replace(/\{\{model\}\}/g, modelValue || "provider/model-id");
   };
 
+  const { copy: copyToClipboard } = useCopyToClipboard();
+
   const handleCopy = async (text, field) => {
-    await navigator.clipboard.writeText(replaceVars(text));
+    await copyToClipboard(replaceVars(text), `toolcard-${field}`);
     setCopiedField(field);
     setTimeout(() => setCopiedField(null), 2000);
   };
@@ -43,47 +47,21 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
 
   const hasActiveProviders = activeProviders.length > 0;
 
-  const renderApiKeySelector = () => {
-    return (
-      <div className="mt-2 flex items-center gap-2">
-        {apiKeys && apiKeys.length > 0 ? (
-          <>
-            <select
-              value={selectedApiKey}
-              onChange={(e) => setSelectedApiKey(e.target.value)}
-              className="flex-1 px-3 py-2 bg-bg-secondary rounded-lg text-sm border border-border focus:outline-none focus:ring-1 focus:ring-primary/50"
-            >
-              {apiKeys.map((key) => (
-                <option key={key.id} value={key.key}>{key.key}</option>
-              ))}
-            </select>
-            <button
-              onClick={() => handleCopy(selectedApiKey, "apiKey")}
-              className="shrink-0 px-3 py-2 bg-bg-secondary hover:bg-bg-tertiary rounded-lg border border-border transition-colors"
-            >
-              <span className="material-symbols-outlined text-lg">
-                {copiedField === "apiKey" ? "check" : "content_copy"}
-              </span>
-            </button>
-          </>
-        ) : (
-          <span className="text-sm text-text-muted">
-            {cloudEnabled ? "No API keys - Create one in Keys page" : "sk_9router"}
-          </span>
-        )}
-      </div>
-    );
-  };
+  const renderApiKeySelector = () => (
+    <div className="mt-2 flex flex-col sm:flex-row sm:items-center gap-2">
+      <ApiKeySelect value={selectedApiKey} onChange={setSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} className="flex-1" />
+    </div>
+  );
 
   const renderModelSelector = () => {
     return (
-      <div className="mt-2 flex items-center gap-2">
+      <div className="mt-2 flex flex-col sm:flex-row sm:items-center gap-2">
         <input
           type="text"
           value={modelValue}
           onChange={(e) => setModelValue(e.target.value)}
           placeholder="provider/model-id"
-          className="flex-1 px-3 py-2 bg-bg-secondary rounded-lg text-sm border border-border focus:outline-none focus:ring-1 focus:ring-primary/50"
+          className="w-full sm:w-auto flex-1 px-3 py-2 bg-bg-secondary rounded-lg text-sm border border-border focus:outline-none focus:ring-1 focus:ring-primary/50"
         />
         <button
           onClick={() => setShowModelModal(true)}
@@ -185,8 +163,8 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
               {item.type === "apiKeySelector" && renderApiKeySelector()}
               {item.type === "modelSelector" && renderModelSelector()}
               {item.value && (
-                <div className="mt-2 flex items-center gap-2">
-                  <code className="flex-1 px-3 py-2 bg-bg-secondary rounded-lg text-sm font-mono border border-border truncate">
+                <div className="mt-2 flex flex-col sm:flex-row sm:items-center gap-2">
+                  <code className="w-full sm:w-auto flex-1 px-3 py-2 bg-bg-secondary rounded-lg text-sm font-mono border border-border truncate">
                     {replaceVars(item.value)}
                   </code>
                   {item.copyable && (
@@ -259,7 +237,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
   };
 
   return (
-    <Card padding="xs" className="overflow-hidden">
+    <Card padding="xs" className="overflow-hidden overflow-x-hidden">
       <div className="flex items-center justify-between hover:cursor-pointer" onClick={onToggle}>
         <div className="flex items-center gap-3">
           <div className="size-8 rounded-lg flex items-center justify-center shrink-0">

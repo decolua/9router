@@ -26,6 +26,24 @@ const CLAUDE_API_HEADERS = {
   "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14"
 };
 
+// Full Claude CLI fingerprint — required by providers that gate on client identity (e.g. agentrouter)
+const CLAUDE_CLI_SPOOF_HEADERS = {
+  "Anthropic-Version": "2023-06-01",
+  "Anthropic-Beta": "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05,advanced-tool-use-2025-11-20,effort-2025-11-24,structured-outputs-2025-12-15,fast-mode-2026-02-01,redact-thinking-2026-02-12,token-efficient-tools-2026-03-28",
+  "Anthropic-Dangerous-Direct-Browser-Access": "true",
+  "User-Agent": "claude-cli/2.1.92 (external, sdk-cli)",
+  "X-App": "cli",
+  "X-Stainless-Helper-Method": "stream",
+  "X-Stainless-Retry-Count": "0",
+  "X-Stainless-Runtime-Version": "v24.14.0",
+  "X-Stainless-Package-Version": "0.80.0",
+  "X-Stainless-Runtime": "node",
+  "X-Stainless-Lang": "js",
+  "X-Stainless-Arch": mapStainlessArch(),
+  "X-Stainless-Os": mapStainlessOs(),
+  "X-Stainless-Timeout": "600"
+};
+
 // Shared baseUrls
 const KIMI_CODING_BASE_URL = "https://api.kimi.com/coding/v1/messages";
 
@@ -33,22 +51,7 @@ export const PROVIDERS = {
   claude: {
     baseUrl: "https://api.anthropic.com/v1/messages",
     format: "claude",
-    headers: {
-      "Anthropic-Version": "2023-06-01",
-      "Anthropic-Beta": "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05,advanced-tool-use-2025-11-20,effort-2025-11-24,structured-outputs-2025-12-15,fast-mode-2026-02-01,redact-thinking-2026-02-12,token-efficient-tools-2026-03-28",
-      "Anthropic-Dangerous-Direct-Browser-Access": "true",
-      "User-Agent": "claude-cli/2.1.92 (external, sdk-cli)",
-      "X-App": "cli",
-      "X-Stainless-Helper-Method": "stream",
-      "X-Stainless-Retry-Count": "0",
-      "X-Stainless-Runtime-Version": "v24.14.0",
-      "X-Stainless-Package-Version": "0.80.0",
-      "X-Stainless-Runtime": "node",
-      "X-Stainless-Lang": "js",
-      "X-Stainless-Arch": mapStainlessArch(),
-      "X-Stainless-Os": mapStainlessOs(),
-      "X-Stainless-Timeout": "600"
-    },
+    headers: { ...CLAUDE_CLI_SPOOF_HEADERS },
     clientId: "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
     tokenUrl: "https://api.anthropic.com/v1/oauth/token"
   },
@@ -72,7 +75,6 @@ export const PROVIDERS = {
       "User-Agent": "codex-cli/1.0.18 (macOS; arm64)"
     },
     clientId: "app_EMoamEEZ73f0CkXaXp7hrann",
-    clientSecret: "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",
     tokenUrl: "https://auth.openai.com/oauth/token"
   },
   qwen: {
@@ -92,13 +94,13 @@ export const PROVIDERS = {
     authUrl: "https://iflow.cn/oauth"
   },
   qoder: {
-    baseUrl: "https://api.qoder.com/v1/chat/completions",
+    // The qoder executor builds the full URL itself (it has to append
+    // ?Encode=1 + sigPath query params and bypass any provider-level URL
+    // rewriting). baseUrl is kept for compatibility with introspection
+    // helpers but the executor ignores it.
+    baseUrl: "https://api3.qoder.sh/algo/api/v2/service/pro/sse/agent_chat_generation",
     format: "openai",
-    headers: { "User-Agent": "Qoder-Cli" },
-    clientId: process.env.QODER_OAUTH_CLIENT_ID || "10009311001",
-    clientSecret: process.env.QODER_OAUTH_CLIENT_SECRET || "4Z3YjXycVsQvyGF1etiNlIBB4RsqSDtW",
-    tokenUrl: "https://api.qoder.com/oauth/token",
-    authUrl: "https://qoder.com/oauth/authorize"
+    headers: {},
   },
   antigravity: {
     baseUrls: [
@@ -120,6 +122,10 @@ export const PROVIDERS = {
   },
   openai: {
     baseUrl: "https://api.openai.com/v1/chat/completions",
+    format: "openai"
+  },
+  "vercel-ai-gateway": {
+    baseUrl: "https://ai-gateway.vercel.sh/v1/chat/completions",
     format: "openai"
   },
   glm: {
@@ -154,6 +160,16 @@ export const PROVIDERS = {
   },
   "alicode-intl": {
     baseUrl: "https://coding-intl.dashscope.aliyuncs.com/v1/chat/completions",
+    format: "openai",
+    headers: {}
+  },
+  "volcengine-ark": {
+    baseUrl: "https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions",
+    format: "openai",
+    headers: {}
+  },
+  byteplus: {
+    baseUrl: "https://ark.ap-southeast.bytepluses.com/api/coding/v3/chat/completions",
     format: "openai",
     headers: {}
   },
@@ -242,13 +258,25 @@ export const PROVIDERS = {
     baseUrl: "https://api.deepseek.com/chat/completions",
     format: "openai"
   },
+  commandcode: {
+    baseUrl: "https://api.commandcode.ai/alpha/generate",
+    format: "commandcode",
+    headers: {
+      "x-command-code-version": "0.25.7",
+      "x-cli-environment": "cli"
+    }
+  },
   groq: {
     baseUrl: "https://api.groq.com/openai/v1/chat/completions",
     format: "openai"
   },
   xai: {
     baseUrl: "https://api.x.ai/v1/chat/completions",
-    format: "openai"
+    responsesUrl: "https://api.x.ai/v1/responses",
+    format: "openai",
+    clientId: "b1a00492-073a-47ea-816f-4c329264a828",
+    tokenUrl: "https://auth.x.ai/oauth2/token",
+    refreshUrl: "https://auth.x.ai/oauth2/token"
   },
   mistral: {
     baseUrl: "https://api.mistral.ai/v1/chat/completions",
@@ -338,4 +366,92 @@ export const PROVIDERS = {
     headers: { "x-opencode-client": "desktop" },
     noAuth: true
   },
+  "opencode-go": {
+    baseUrl: "https://opencode.ai/zen/go/v1/chat/completions",
+    format: "openai",
+    headers: {}
+  },
+  "grok-web": {
+    baseUrl: "https://grok.com/rest/app-chat/conversations/new",
+    format: "grok-web",
+    authType: "cookie"
+  },
+  "perplexity-web": {
+    baseUrl: "https://www.perplexity.ai/rest/sse/perplexity_ask",
+    format: "perplexity-web",
+    authType: "cookie"
+  },
+  azure: {
+    baseUrl: "",
+    format: "openai",
+    headers: {}
+  },
+  // Cloudflare Workers AI - {accountId} resolved from credentials.providerSpecificData.accountId
+  "cloudflare-ai": {
+    baseUrl: "https://api.cloudflare.com/client/v4/accounts/{accountId}/ai/v1/chat/completions",
+    format: "openai"
+  },
+  "xiaomi-mimo": {
+    baseUrl: "https://api.xiaomimimo.com/v1/chat/completions",
+    format: "openai"
+  },
+  "xiaomi-tokenplan": {
+    baseUrl: "https://token-plan-sgp.xiaomimimo.com/v1/chat/completions",
+    format: "openai"
+  },
+  // Region map for Xiaomi MiMo Token Plan (keys are cluster-specific)
+  // Used by resolveXiaomiTokenplanBaseUrl below
+  // === Free-tier providers (synced from OmniRoute) ===
+  // Claude-format with Claude CLI header spoofing (auth: x-api-key)
+  agentrouter: { baseUrl: "https://agentrouter.org/v1/messages", format: "claude", headers: { ...CLAUDE_CLI_SPOOF_HEADERS } },
+  // OpenAI-compatible (auth: bearer)
+  aimlapi: { baseUrl: "https://api.aimlapi.com/v1/chat/completions", format: "openai" },
+  novita: { baseUrl: "https://api.novita.ai/v3/openai/chat/completions", format: "openai" },
+  modal: { baseUrl: "https://api.modal.com/v1/chat/completions", format: "openai" },
+  reka: { baseUrl: "https://api.reka.ai/v1/chat/completions", format: "openai" },
+  nlpcloud: { baseUrl: "https://api.nlpcloud.io/v1/gpu/chatbot", format: "openai" },
+  bazaarlink: { baseUrl: "https://bazaarlink.ai/api/v1/chat/completions", format: "openai" },
+  completions: { baseUrl: "https://completions.me/api/v1/chat/completions", format: "openai" },
+  // enally uses X-API-Key header (not bearer); handled in validate route
+  enally: { baseUrl: "https://ai.enally.in/v1/chat/completions", format: "openai", authHeader: "x-api-key" },
+  freetheai: { baseUrl: "https://api.freetheai.xyz/v1/chat/completions", format: "openai" },
+  llm7: { baseUrl: "https://api.llm7.io/v1/chat/completions", format: "openai" },
+  lepton: { baseUrl: "https://api.lepton.ai/api/v1/chat/completions", format: "openai" },
+  kluster: { baseUrl: "https://api.kluster.ai/v1/chat/completions", format: "openai" },
+  ai21: { baseUrl: "https://api.ai21.com/studio/v1/chat/completions", format: "openai" },
+  "inference-net": { baseUrl: "https://api.inference.net/v1/chat/completions", format: "openai" },
+  predibase: { baseUrl: "https://serving.app.predibase.com/v1/chat/completions", format: "openai" },
+  bytez: { baseUrl: "https://api.bytez.com/models/v2", format: "openai" },
+  morph: { baseUrl: "https://api.morphllm.com/v1/chat/completions", format: "openai" },
+  longcat: { baseUrl: "https://api.longcat.chat/openai/v1/chat/completions", format: "openai" },
+  puter: { baseUrl: "https://api.puter.com/puterai/openai/v1/chat/completions", format: "openai" },
+  uncloseai: { baseUrl: "https://hermes.ai.unturf.com/v1/chat/completions", format: "openai", noAuth: true },
+  scaleway: { baseUrl: "https://api.scaleway.ai/v1/chat/completions", format: "openai" },
+  deepinfra: { baseUrl: "https://api.deepinfra.com/v1/openai/chat/completions", format: "openai" },
+  sambanova: { baseUrl: "https://api.sambanova.ai/v1/chat/completions", format: "openai" },
+  nscale: { baseUrl: "https://inference.api.nscale.com/v1/chat/completions", format: "openai" },
+  baseten: { baseUrl: "https://inference.baseten.co/v1/chat/completions", format: "openai" },
+  publicai: { baseUrl: "https://api.publicai.co/v1/chat/completions", format: "openai" },
+  "nous-research": { baseUrl: "https://inference-api.nousresearch.com/v1/chat/completions", format: "openai" },
+  glhf: { baseUrl: "https://glhf.chat/api/openai/v1/chat/completions", format: "openai" },
+  blackbox: { baseUrl: "https://api.blackbox.ai/chat/completions", format: "openai" },
 };
+
+export const OLLAMA_LOCAL_DEFAULT_HOST = "http://localhost:11434";
+
+export function resolveOllamaLocalHost(credentials) {
+  const raw = credentials?.providerSpecificData?.baseUrl?.trim();
+  return (raw || OLLAMA_LOCAL_DEFAULT_HOST).replace(/\/$/, "");
+}
+
+export const XIAOMI_TOKENPLAN_REGIONS = {
+  sgp: "https://token-plan-sgp.xiaomimimo.com/v1",
+  cn: "https://token-plan-cn.xiaomimimo.com/v1",
+  ams: "https://token-plan-ams.xiaomimimo.com/v1"
+};
+export const XIAOMI_TOKENPLAN_DEFAULT_REGION = "sgp";
+
+export function resolveXiaomiTokenplanBaseUrl(credentials) {
+  const region = credentials?.providerSpecificData?.region;
+  return XIAOMI_TOKENPLAN_REGIONS[region] || XIAOMI_TOKENPLAN_REGIONS[XIAOMI_TOKENPLAN_DEFAULT_REGION];
+}

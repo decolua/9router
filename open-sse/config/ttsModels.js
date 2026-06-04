@@ -24,6 +24,15 @@ const VOICES_STANDARD = v("alloy", "ash", "coral", "echo", "fable", "nova", "ony
 // 13 voices for gpt-4o-mini-tts
 const VOICES_FULL = v("alloy", "ash", "ballad", "cedar", "coral", "echo", "fable", "marin", "nova", "onyx", "sage", "shimmer", "verse");
 
+// Gemini prebuilt voices (30 voices, multi-language auto-detect)
+const GEMINI_VOICES = [
+  "Zephyr", "Puck", "Charon", "Kore", "Fenrir", "Leda", "Orus", "Aoede",
+  "Callirrhoe", "Autonoe", "Enceladus", "Iapetus", "Umbriel", "Algieba",
+  "Despina", "Erinome", "Algenib", "Rasalgethi", "Laomedeia", "Achernar",
+  "Alnilam", "Schedar", "Gacrux", "Pulcherrima", "Achird", "Zubenelgenubi",
+  "Vindemiatrix", "Sadachbia", "Sadaltager", "Sulafat",
+].map((id) => ({ id, name: id, type: "tts" }));
+
 // ── TTS Config (config-driven, single source of truth) ─────────────────────
 export const TTS_MODELS_CONFIG = {
   openai: {
@@ -84,6 +93,17 @@ export const TTS_MODELS_CONFIG = {
   },
   "google-tts": {
     defaults: GOOGLE_TTS_LANGUAGES,
+  },
+  gemini: {
+    models: [
+      { id: "gemini-2.5-flash-preview-tts", name: "Gemini 2.5 Flash TTS", type: "tts" },
+      { id: "gemini-2.5-pro-preview-tts",   name: "Gemini 2.5 Pro TTS",   type: "tts" },
+    ],
+    voices: {
+      "gemini-2.5-flash-preview-tts": GEMINI_VOICES,
+      "gemini-2.5-pro-preview-tts":   GEMINI_VOICES,
+    },
+    allVoices: GEMINI_VOICES,
   },
 };
 
