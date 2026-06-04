@@ -1,0 +1,58 @@
+{
+  "name": "@img/colour",
+  "version": "1.1.0",
+  "description": "The ESM-only 'color' package made compatible for use with CommonJS runtimes",
+  "license": "MIT",
+  "main": "index.cjs",
+  "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "require": "./index.cjs",
+      "default": "./index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "authors": [
+    "Heather Arthur <fayearthur@gmail.com>",
+    "Josh Junon <josh@junon.me>",
+    "Maxime Thirouin",
+    "Dyma Ywanov <dfcreative@gmail.com>",
+    "LitoMore (https://github.com/LitoMore)"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "color.cjs",
+    "index.d.ts"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lovell/colour.git"
+  },
+  "type": "commonjs",
+  "keywords": [
+    "color",
+    "colour",
+    "cjs",
+    "commonjs"
+  ],
+  "scripts": {
+    "build:cjs": "esbuild node_modules/color/index.js --bundle --platform=node --outfile=color.cjs",
+    "build:dts": "dts-bundle-generator ./dts-src.ts -o index.d.ts --project tsconfig.build.json --external-inlines color --external-inlines color-convert --export-referenced-types=false",
+    "build": "npm run build:cjs && npm run build:dts",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "color": "5.0.3",
+    "color-convert": "3.1.3",
+    "color-name": "2.1.0",
+    "color-string": "2.1.4",
+    "dts-bundle-generator": "^9.5.1",
+    "esbuild": "^0.27.3"
+  }
+}

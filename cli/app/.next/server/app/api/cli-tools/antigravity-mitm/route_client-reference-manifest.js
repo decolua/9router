@@ -1,0 +1,1 @@
+globalThis.__RSC_MANIFEST=(globalThis.__RSC_MANIFEST||{});globalThis.__RSC_MANIFEST["/api/cli-tools/antigravity-mitm/route"]={"moduleLoading":{"prefix":"/_next/"},"ssrModuleMapping":{},"edgeSSRModuleMapping":{},"clientModules":{},"entryCSSFiles":{"/home/runner/work/9router/9router/src/app/api/cli-tools/antigravity-mitm/route":[]},"rscModuleMapping":{},"edgeRscModuleMapping":{}};

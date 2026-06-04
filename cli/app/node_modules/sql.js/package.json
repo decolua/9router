@@ -1,0 +1,58 @@
+{
+	"name": "sql.js",
+	"version": "1.14.1",
+	"description": "SQLite library with support for opening and writing databases, prepared statements, and more. This SQLite library is in pure javascript (compiled with emscripten).",
+	"keywords": [
+		"sql",
+		"sqlite",
+		"stand-alone",
+		"relational",
+		"database",
+		"RDBMS",
+		"data",
+		"query",
+		"statement",
+		"emscripten",
+		"asm",
+		"asm.js"
+	],
+	"license": "MIT",
+	"main": "./dist/sql-wasm.js",
+	"exports": {
+		".": {
+			"browser": "./dist/sql-wasm-browser.js",
+			"default": "./dist/sql-wasm.js"
+		},
+		"./dist/*": "./dist/*"
+	},
+	"scripts": {
+		"build": "make",
+		"rebuild": "npm run clean && npm run build",
+		"clean": "make clean",
+		"test": "npm run lint && npm run test-asm && npm run test-asm-debug && npm run test-wasm && npm run test-wasm-debug && npm run test-wasm-browser && npm run test-asm-memory-growth",
+		"lint": "eslint .",
+		"prettify": "eslint . --fix",
+		"test-asm": "node --unhandled-rejections=strict test/all.js asm",
+		"test-asm-debug": "node --unhandled-rejections=strict test/all.js asm-debug",
+		"test-asm-memory-growth": "node --unhandled-rejections=strict test/all.js asm-memory-growth",
+		"test-wasm": "node --unhandled-rejections=strict test/all.js wasm",
+		"test-wasm-debug": "node --unhandled-rejections=strict test/all.js wasm-debug",
+		"test-wasm-browser": "node --unhandled-rejections=strict test/all.js wasm-browser",
+		"doc": "jsdoc -c .jsdoc.config.json"
+	},
+	"homepage": "http://github.com/sql-js/sql.js",
+	"repository": {
+		"type": "git",
+		"url": "http://github.com/sql-js/sql.js.git"
+	},
+	"bugs": {
+		"url": "https://github.com/sql-js/sql.js/issues"
+	},
+	"devDependencies": {
+		"@eslint/js": "^10.0.0",
+		"clean-jsdoc-theme": "^4.2.0",
+		"eslint": "^10.0.0",
+		"globals": "^16.4.0",
+		"jsdoc": "^4.0.2"
+	}
+}
