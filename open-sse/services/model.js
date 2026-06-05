@@ -253,6 +253,7 @@ function inferProviderFromModelName(modelName) {
   if (m.startsWith("o1") || m.startsWith("o3") || m.startsWith("o4"))
     return "openai";
   if (m.startsWith("deepseek-")) return "openrouter";
+  if (m.startsWith("grok-")) return "xai";
   // Default fallback
   return "openai";
 }
