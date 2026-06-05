@@ -310,23 +310,39 @@ export async function markAccountUnavailable(
     lowerError.includes("limit reached") ||
     lowerError.includes("monthly_request_count");
 
-  if (isReachLimit || isInvalidToken) {
+  const isSuspended =
+    lowerError.includes("suspended") ||
+    lowerError.includes("locked your account") ||
+    lowerError.includes("verify your identity") ||
+    lowerError.includes("support_form");
+
+  if (isReachLimit || isInvalidToken || isSuspended) {
     const reason =
       typeof errorText === "string"
         ? errorText.slice(0, 100)
         : isInvalidToken
           ? "Invalid/Revoked Token"
-          : "Quota reached";
+          : isSuspended
+            ? "Account suspended/locked"
+            : "Quota reached";
     log.warn(
       "AUTH",
-      `[Auto-Disable] Disabling connection ${connName} permanently due to ${isInvalidToken ? "invalid/revoked token" : "quota limit reached"}: ${reason}`,
+      `[Auto-Disable] Disabling connection ${connName} permanently due to ${
+        isInvalidToken
+          ? "invalid/revoked token"
+          : isSuspended
+            ? "account suspension"
+            : "quota limit reached"
+      }: ${reason}`,
     );
     await updateProviderConnection(connectionId, {
       isActive: false, // Disable account permanently in DB
       testStatus: "unavailable",
       lastError: isInvalidToken
         ? `Invalid Token: ${reason}`
-        : `Quota reached: ${reason}`,
+        : isSuspended
+          ? `Suspended: ${reason}`
+          : `Quota reached: ${reason}`,
       errorCode: status,
       lastErrorAt: new Date().toISOString(),
       backoffLevel: 0,
