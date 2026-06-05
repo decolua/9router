@@ -14,8 +14,43 @@ vi.mock("@/models", () => ({
   createProxyPool: vi.fn(async (input) => ({ id: "pool-1", ...input })),
 }));
 
+const execFileMock = vi.fn();
+vi.mock("child_process", () => ({
+  execFile: (cmd, args, options, cb) => execFileMock(cmd, args, options, cb),
+}));
+
 function request(body) {
   return { json: vi.fn(async () => body) };
+}
+
+function jsonResponse(body, status = 200) {
+  return { ok: status >= 200 && status < 300, status, json: async () => body };
+}
+
+function relayProbeResponse({ status = 400, contentType = "application/json", body = { error: "Missing x-relay-target header" } } = {}) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: { get: (name) => (name === "content-type" ? contentType : null) },
+    json: async () => body,
+  };
+}
+
+function mockCliSuccess({ deployUrl = "https://relay.netlify.app", deployId = "deploy-1" } = {}) {
+  execFileMock.mockImplementationOnce((cmd, args, options, cb) => {
+    cb(null, {
+      stdout: JSON.stringify({ deploy_url: deployUrl, deploy_id: deployId }) + "\n",
+      stderr: "",
+    });
+  });
+}
+
+function mockCliFailure(message = "JSONHTTPError: Forbidden") {
+  execFileMock.mockImplementationOnce((cmd, args, options, cb) => {
+    const err = new Error(message);
+    err.stderr = message;
+    cb(err);
+  });
 }
 
 describe("POST /api/proxy-pools/netlify-deploy", () => {
@@ -40,47 +75,15 @@ describe("POST /api/proxy-pools/netlify-deploy", () => {
     expect(body.error).toContain("Netlify API token is required");
   });
 
-  it("creates a Netlify site, uploads relay files, polls deployment, and persists a proxy pool", async () => {
+  it("creates a Netlify site, deploys via CLI, verifies relay, and persists a proxy pool", async () => {
+    mockCliSuccess();
     global.fetch = vi.fn(async (url, options = {}) => {
-      const urlString = String(url);
-      if (urlString.endsWith("/sites") && options.method === "POST") {
-        return {
-          ok: true,
-          status: 201,
-          json: async () => ({ id: "site-1", name: "relay", ssl_url: "https://relay.netlify.app" }),
-        };
+      const u = String(url);
+      if (u.endsWith("/sites") && options.method === "POST") {
+        return jsonResponse({ id: "site-1", name: "relay", ssl_url: "https://relay.netlify.app" }, 201);
       }
-      if (urlString.endsWith("/deploys") && options.method === "POST") {
-        const files = JSON.parse(options.body).files;
-        return {
-          ok: true,
-          status: 201,
-          json: async () => ({
-            id: "deploy-1",
-            ssl_url: "https://relay.netlify.app",
-            required: Object.values(files),
-          }),
-        };
-      }
-      if (urlString.includes("/deploys/deploy-1/files/")) {
-        return { ok: true, status: 200, text: async () => "" };
-      }
-      if (urlString.endsWith("/deploys/deploy-1")) {
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({ state: "ready" }),
-        };
-      }
-      if (urlString === "https://relay.netlify.app") {
-        return {
-          ok: false,
-          status: 400,
-          headers: { get: (name) => (name === "content-type" ? "application/json" : null) },
-          json: async () => ({ error: "Missing x-relay-target header" }),
-        };
-      }
-      throw new Error(`unexpected fetch: ${urlString}`);
+      if (u === "https://relay.netlify.app") return relayProbeResponse();
+      throw new Error(`unexpected fetch: ${u}`);
     });
 
     const { createProxyPool } = await import("@/models");
@@ -88,17 +91,14 @@ describe("POST /api/proxy-pools/netlify-deploy", () => {
     const res = await POST(request({ netlifyToken: "nfp_test", projectName: "relay" }));
     const body = await res.json();
 
-    const initDeployCall = global.fetch.mock.calls.find(([url]) => String(url).endsWith("/sites/site-1/deploys"));
-    expect(JSON.parse(initDeployCall[1].body).files).toEqual(expect.objectContaining({
-      "index.html": expect.any(String),
-      "netlify/edge-functions/relay.js": expect.any(String),
-      "netlify.toml": expect.any(String),
-    }));
-    expect(global.fetch.mock.calls.some(([url]) => decodeURIComponent(String(url)).includes("/files/index.html"))).toBe(true);
-    expect(global.fetch.mock.calls.some(([url]) => decodeURIComponent(String(url)).includes("/files/netlify/edge-functions/relay.js"))).toBe(true);
-    expect(global.fetch.mock.calls.some(([url]) => decodeURIComponent(String(url)).includes("/files/netlify.toml"))).toBe(true);
     expect(res.status).toBe(201);
     expect(body.deployUrl).toBe("https://relay.netlify.app");
+    expect(execFileMock).toHaveBeenCalledWith(
+      "npx",
+      expect.arrayContaining(["netlify-cli@17", "deploy", "--prod", "--site", "site-1", "--json"]),
+      expect.objectContaining({ env: expect.objectContaining({ NETLIFY_AUTH_TOKEN: "nfp_test" }) }),
+      expect.any(Function)
+    );
     expect(createProxyPool).toHaveBeenCalledWith(expect.objectContaining({
       name: "relay",
       proxyUrl: "https://relay.netlify.app",
@@ -107,14 +107,10 @@ describe("POST /api/proxy-pools/netlify-deploy", () => {
     }));
   });
 
-  it("returns the upstream status when site creation fails (invalid token)", async () => {
+  it("returns the upstream status when site creation fails", async () => {
     global.fetch = vi.fn(async (url, options = {}) => {
       if (String(url).endsWith("/sites") && options.method === "POST") {
-        return {
-          ok: false,
-          status: 401,
-          json: async () => ({ message: "Invalid token" }),
-        };
+        return jsonResponse({ message: "Invalid token" }, 401);
       }
       throw new Error(`unexpected fetch: ${url}`);
     });
@@ -126,23 +122,18 @@ describe("POST /api/proxy-pools/netlify-deploy", () => {
 
     expect(res.status).toBe(401);
     expect(body.error).toContain("Invalid token");
+    expect(execFileMock).not.toHaveBeenCalled();
     expect(createProxyPool).not.toHaveBeenCalled();
   });
 
-  it("cleans up the created site when deploy initiation fails", async () => {
+  it("deletes the created site and returns 502 when CLI deploy fails", async () => {
     const calls = [];
+    mockCliFailure("JSONHTTPError: Forbidden");
     global.fetch = vi.fn(async (url, options = {}) => {
       const u = String(url);
       calls.push({ url: u, method: options.method || "GET" });
-      if (u.endsWith("/sites") && options.method === "POST") {
-        return { ok: true, status: 201, json: async () => ({ id: "site-1", name: "relay", ssl_url: "https://relay.netlify.app" }) };
-      }
-      if (u.endsWith("/sites/site-1/deploys") && options.method === "POST") {
-        return { ok: false, status: 422, json: async () => ({ message: "Deploy init failed" }) };
-      }
-      if (u.endsWith("/sites/site-1") && options.method === "DELETE") {
-        return { ok: true, status: 204, json: async () => ({}) };
-      }
+      if (u.endsWith("/sites") && options.method === "POST") return jsonResponse({ id: "site-1", name: "relay", ssl_url: "https://relay.netlify.app" }, 201);
+      if (u.endsWith("/sites/site-1") && options.method === "DELETE") return jsonResponse({}, 204);
       throw new Error(`unexpected fetch: ${u}`);
     });
 
@@ -151,55 +142,21 @@ describe("POST /api/proxy-pools/netlify-deploy", () => {
     const res = await POST(request({ netlifyToken: "nfp_test", projectName: "relay" }));
     const body = await res.json();
 
-    expect(res.status).toBe(422);
-    expect(body.error).toContain("Deploy init failed");
+    expect(res.status).toBe(502);
+    expect(body.error).toContain("Forbidden");
     expect(createProxyPool).not.toHaveBeenCalled();
     expect(calls.some((c) => c.url.endsWith("/sites/site-1") && c.method === "DELETE")).toBe(true);
   });
 
-  it("surfaces deployment errors when Netlify reports state=error during polling", async () => {
-    global.fetch = vi.fn(async (url, options = {}) => {
-      const u = String(url);
-      if (u.endsWith("/sites") && options.method === "POST") {
-        return { ok: true, status: 201, json: async () => ({ id: "site-1", name: "relay", ssl_url: "https://relay.netlify.app" }) };
-      }
-      if (u.endsWith("/deploys") && options.method === "POST") {
-        return { ok: true, status: 201, json: async () => ({ id: "deploy-1", required: [] }) };
-      }
-      if (u.endsWith("/deploys/deploy-1")) {
-        return { ok: true, status: 200, json: async () => ({ state: "error", error_message: "build crashed" }) };
-      }
-      throw new Error(`unexpected fetch: ${u}`);
-    });
-
-    const { POST } = await import("../../src/app/api/proxy-pools/netlify-deploy/route.js");
-    const res = await POST(request({ netlifyToken: "nfp_test", projectName: "relay" }));
-    const body = await res.json();
-
-    expect(res.status).toBe(500);
-    expect(body.error).toContain("build crashed");
-  });
-
-  it("deletes the created site and returns 502 when relay verification fails (inactive edge function)", async () => {
+  it("deletes the created site and returns 502 when relay verification fails", async () => {
     const calls = [];
+    mockCliSuccess();
     global.fetch = vi.fn(async (url, options = {}) => {
       const u = String(url);
       calls.push({ url: u, method: options.method || "GET" });
-      if (u.endsWith("/sites") && options.method === "POST") {
-        return { ok: true, status: 201, json: async () => ({ id: "site-1", name: "relay", ssl_url: "https://relay.netlify.app" }) };
-      }
-      if (u.endsWith("/sites/site-1/deploys") && options.method === "POST") {
-        return { ok: true, status: 201, json: async () => ({ id: "deploy-1", required: [] }) };
-      }
-      if (u.endsWith("/deploys/deploy-1")) {
-        return { ok: true, status: 200, json: async () => ({ state: "ready" }) };
-      }
-      if (u === "https://relay.netlify.app") {
-        return { ok: true, status: 200, headers: { get: () => "text/html" }, json: async () => ({}) };
-      }
-      if (u.endsWith("/sites/site-1") && options.method === "DELETE") {
-        return { ok: true, status: 204, json: async () => ({}) };
-      }
+      if (u.endsWith("/sites") && options.method === "POST") return jsonResponse({ id: "site-1", name: "relay", ssl_url: "https://relay.netlify.app" }, 201);
+      if (u === "https://relay.netlify.app") return relayProbeResponse({ status: 404, contentType: "text/plain", body: {} });
+      if (u.endsWith("/sites/site-1") && options.method === "DELETE") return jsonResponse({}, 204);
       throw new Error(`unexpected fetch: ${u}`);
     });
 

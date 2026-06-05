@@ -1,263 +1,142 @@
 import { NextResponse } from "next/server";
 import { createProxyPool } from "@/models";
-import crypto from "crypto";
+import { execFile } from "child_process";
+import { promisify } from "util";
+import fs from "fs/promises";
+import path from "path";
+import os from "os";
 
-const NETLIFY_API = "https://api.netlify.com/api/v1";
+const execFileAsync = promisify(execFile);
 
-const RELAY_FUNCTION_CODE = `export default async (request, context) => {
-  const target = request.headers.get("x-relay-target");
-  const relayPath = request.headers.get("x-relay-path") || "/";
-
+const RELAY_FUNCTION_CODE = `exports.handler = async (event) => {
+  const target = event.headers["x-relay-target"];
+  const relayPath = event.headers["x-relay-path"] || "/";
   if (!target) {
-    return new Response(JSON.stringify({ error: "Missing x-relay-target header" }), {
-      status: 400,
-      headers: { "content-type": "application/json" },
-    });
+    return { statusCode: 400, headers: { "content-type": "application/json" }, body: JSON.stringify({ error: "Missing x-relay-target header" }) };
   }
-
   const targetUrl = target.replace(/\\/$/, "") + relayPath;
-  const newHeaders = new Headers(request.headers);
-  newHeaders.delete("x-relay-target");
-  newHeaders.delete("x-relay-path");
-  newHeaders.delete("host");
-
-  const init = {
-    method: request.method,
-    headers: newHeaders,
-  };
-
-  if (request.method !== "GET" && request.method !== "HEAD") {
-    init.body = request.body;
-    init.duplex = "half";
+  const headers = { ...event.headers };
+  delete headers["x-relay-target"]; delete headers["x-relay-path"]; delete headers["host"];
+  const init = { method: event.httpMethod, headers };
+  if (event.httpMethod !== "GET" && event.httpMethod !== "HEAD" && event.body) {
+    init.body = event.isBase64Encoded ? Buffer.from(event.body, "base64") : event.body;
   }
-
   try {
-    const response = await fetch(targetUrl, init);
-    return new Response(response.body, {
-      status: response.status,
-      headers: response.headers,
-    });
-  } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 502,
-      headers: { "content-type": "application/json" },
-    });
+    const resp = await fetch(targetUrl, init);
+    const buf = Buffer.from(await resp.arrayBuffer());
+    return { statusCode: resp.status, headers: { "content-type": resp.headers.get("content-type") || "application/octet-stream" }, body: buf.toString("base64"), isBase64Encoded: true };
+  } catch (e) {
+    return { statusCode: 502, headers: { "content-type": "application/json" }, body: JSON.stringify({ error: e.message }) };
   }
-};
+};`;
 
-export const config = {
-  path: "/*",
-};
+const NETLIFY_TOML = `[build]
+  functions = "functions"
+  publish = "."
+
+[[redirects]]
+  from = "/*"
+  to = "/.netlify/functions/relay"
+  status = 200
+  force = true
 `;
 
-const NETLIFY_TOML_CODE = `# Declarative edge function registration. Required because digest-based API
-# deploys do not run a build step, so the inline \`export const config\` in
-# relay.js is never detected. Without this block the function stays inactive
-# and Netlify serves a 404 HTML page for every request.
-[[edge_functions]]
-  path = "/*"
-  function = "relay"
-`;
+const INDEX_HTML = `<!DOCTYPE html><html><body style="font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0f172a;color:#f8fafc"><div style="text-align:center;border:1px solid rgba(255,255,255,.1);padding:2.5rem;border-radius:12px;background:rgba(255,255,255,.02);max-width:400px"><h1 style="color:#06b6d4;margin:0 0 1rem 0;font-size:1.75rem">9router Netlify Relay</h1><p style="margin:0;color:#94a3b8;font-size:.95rem;line-height:1.5">Your Netlify relay is active. Target requests are routed programmatically.</p></div></body></html>`;
 
-const INDEX_HTML_CODE = `<!DOCTYPE html>
-<html>
-<head>
-  <title>9router Netlify Relay</title>
-</head>
-<body style="font-family: system-ui, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #0f172a; color: #f8fafc;">
-  <div style="text-align: center; border: 1px solid rgba(255,255,255,0.1); padding: 2.5rem; border-radius: 12px; background: rgba(255,255,255,0.02); max-width: 400px; width: 100%;">
-    <h1 style="color: #06b6d4; margin: 0 0 1rem 0; font-size: 1.75rem;">9router Netlify Relay</h1>
-    <p style="margin: 0; color: #94a3b8; font-size: 0.95rem; line-height: 1.5;">Your Netlify Edge Relay is successfully deployed and active. Target requests will be routed programmatically.</p>
-  </div>
-</body>
-</html>
-`;
-
-function sha1(content) {
-  return crypto.createHash("sha1").update(content).digest("hex");
-}
-
-async function pollDeployment(deployId, token, maxMs = 120000) {
-  const start = Date.now();
-  while (Date.now() - start < maxMs) {
-    const res = await fetch(`${NETLIFY_API}/deploys/${deployId}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) {
-      throw new Error(`Failed to check deploy status (${res.status})`);
-    }
-    const data = await res.json();
-    if (data.state === "ready") return data;
-    if (data.state === "error") {
-      throw new Error(`Deployment failed in Netlify: ${data.error_message || "unknown error"}`);
-    }
-    await new Promise((r) => setTimeout(r, 3000));
+async function runNetlifyDeploy(siteId, netlifyToken, projectDir) {
+  // Token is passed via env only (NETLIFY_AUTH_TOKEN) — never on argv — so it
+  // does not leak to the process list and cannot break argument parsing.
+  // execFile with an arg array avoids shell interpolation entirely.
+  const args = [
+    "-y", "netlify-cli@17", "deploy",
+    "--prod", "--dir", ".", "--functions", "functions",
+    "--site", siteId, "--json",
+  ];
+  const { stdout, stderr } = await execFileAsync("npx", args, {
+    cwd: projectDir,
+    env: { ...process.env, NETLIFY_AUTH_TOKEN: netlifyToken },
+    timeout: 300000,
+    maxBuffer: 10 * 1024 * 1024,
+  });
+  if (stderr && stderr.includes("JSONHTTPError")) {
+    throw new Error(stderr.trim().split("\n").pop() || "Netlify CLI error");
   }
-  throw new Error("Deployment timed out");
+  const jsonStart = stdout.indexOf("{");
+  const jsonEnd = stdout.lastIndexOf("}");
+  if (jsonStart === -1 || jsonEnd === -1 || jsonEnd < jsonStart) {
+    throw new Error("Netlify CLI did not return JSON output");
+  }
+  const json = JSON.parse(stdout.slice(jsonStart, jsonEnd + 1));
+  return { deployUrl: json.deploy_url || json.url, deployId: json.deploy_id };
 }
 
 async function verifyRelayIsActive(deployUrl) {
   const res = await fetch(deployUrl, { method: "GET" });
-  const contentType = res.headers?.get?.("content-type") || "";
-
-  if (res.status !== 400 || !contentType.includes("application/json")) {
-    throw new Error(`Netlify relay verification failed (${res.status}). Edge function did not handle the request.`);
+  const ct = res.headers?.get?.("content-type") || "";
+  if (res.status !== 400 || !ct.includes("application/json")) {
+    throw new Error(`Netlify relay verification failed (${res.status}). Function did not handle the request.`);
   }
-
   const body = await res.json().catch(() => null);
   if (body?.error !== "Missing x-relay-target header") {
-    throw new Error("Netlify relay verification failed. Unexpected verification response.");
+    throw new Error("Netlify relay verification failed. Unexpected response.");
   }
 }
 
 export async function POST(request) {
+  let projectDir = null;
   try {
     const body = await request.json();
     const netlifyToken = body.netlifyToken?.trim();
     const projectName = body.projectName?.trim();
+    if (!netlifyToken) return NextResponse.json({ error: "Netlify API token is required" }, { status: 400 });
 
-    if (!netlifyToken) {
-      return NextResponse.json({ error: "Netlify API token is required" }, { status: 400 });
-    }
-
-    // 1. Create a site on Netlify
-    const sitePayload = {};
-    if (projectName) {
-      sitePayload.name = projectName;
-    }
-
-    const createSiteRes = await fetch(`${NETLIFY_API}/sites`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${netlifyToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(sitePayload),
+    // 1. Create site
+    const siteRes = await fetch("https://api.netlify.com/api/v1/sites", {
+      method: "POST", headers: { Authorization: `Bearer ${netlifyToken}`, "Content-Type": "application/json" }, body: JSON.stringify(projectName ? { name: projectName } : {}),
     });
-
-    if (!createSiteRes.ok) {
-      const err = await createSiteRes.json().catch(() => ({}));
-      return NextResponse.json(
-        { error: err.message || "Failed to create Netlify site. Ensure the site name is unique and token is valid." },
-        { status: createSiteRes.status }
-      );
+    if (!siteRes.ok) {
+      const err = await siteRes.json().catch(() => ({}));
+      return NextResponse.json({ error: err.message || "Failed to create Netlify site" }, { status: siteRes.status });
     }
-
-    const site = await createSiteRes.json();
+    const site = await siteRes.json();
     const siteId = site.id;
-    const finalProjectName = site.name;
+    const finalName = site.name;
     const deployUrl = site.ssl_url || site.url;
 
-    // 2. Prepare file digests
-    const indexSha = sha1(INDEX_HTML_CODE);
-    const relaySha = sha1(RELAY_FUNCTION_CODE);
-    const tomlSha = sha1(NETLIFY_TOML_CODE);
+    // 2. Create temp project with serverless function
+    projectDir = await fs.mkdtemp(path.join(os.tmpdir(), "9router-netlify-"));
+    await fs.writeFile(path.join(projectDir, "index.html"), INDEX_HTML);
+    await fs.writeFile(path.join(projectDir, "netlify.toml"), NETLIFY_TOML);
+    await fs.mkdir(path.join(projectDir, "functions"), { recursive: true });
+    await fs.writeFile(path.join(projectDir, "functions", "relay.js"), RELAY_FUNCTION_CODE);
 
-    const deployPayload = {
-      files: {
-        "index.html": indexSha,
-        "netlify/edge-functions/relay.js": relaySha,
-        "netlify.toml": tomlSha,
-      },
-    };
-
-    // 3. Initiate the deploy
-    const initDeployRes = await fetch(`${NETLIFY_API}/sites/${siteId}/deploys`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${netlifyToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(deployPayload),
-    });
-
-    if (!initDeployRes.ok) {
-      const err = await initDeployRes.json().catch(() => ({}));
-      // Clean up created site if deployment init fails
-      await fetch(`${NETLIFY_API}/sites/${siteId}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${netlifyToken}` },
-      }).catch(() => {});
-
-      return NextResponse.json(
-        { error: err.message || "Failed to initiate Netlify deployment" },
-        { status: initDeployRes.status }
-      );
+    // 3. Deploy via CLI
+    let deployInfo;
+    try {
+      deployInfo = await runNetlifyDeploy(siteId, netlifyToken, projectDir);
+    } catch (cliErr) {
+      await fetch(`https://api.netlify.com/api/v1/sites/${siteId}`, { method: "DELETE", headers: { Authorization: `Bearer ${netlifyToken}` } }).catch(() => {});
+      return NextResponse.json({ error: cliErr.message || "Netlify CLI deploy failed" }, { status: 502 });
     }
 
-    const deployData = await initDeployRes.json();
-    const deployId = deployData.id;
-    const requiredFiles = deployData.required || [];
-
-    // 4. Upload files that Netlify requests
-    const fileMap = {
-      [indexSha]: { path: "index.html", content: INDEX_HTML_CODE },
-      [relaySha]: { path: "netlify/edge-functions/relay.js", content: RELAY_FUNCTION_CODE },
-      [tomlSha]: { path: "netlify.toml", content: NETLIFY_TOML_CODE },
-    };
-
-    for (const sha of requiredFiles) {
-      const file = fileMap[sha];
-      if (!file) continue;
-
-      const uploadRes = await fetch(`${NETLIFY_API}/deploys/${deployId}/files/${encodeURIComponent(file.path)}`, {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${netlifyToken}`,
-          "Content-Type": "application/octet-stream",
-        },
-        body: file.content,
-      });
-
-      if (!uploadRes.ok) {
-        // Clean up created site if upload fails
-        await fetch(`${NETLIFY_API}/sites/${siteId}`, {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${netlifyToken}` },
-        }).catch(() => {});
-
-        return NextResponse.json(
-          { error: `Failed to upload file ${file.path}` },
-          { status: uploadRes.status }
-        );
-      }
-    }
-
-    // 5. Poll deploy status until ready
-    await pollDeployment(deployId, netlifyToken);
-
-    // 5b. Verify the edge function is actually live. A digest deploy can report
-    // "ready" while the edge function is inactive (404 HTML for every request).
-    // Probe the relay without x-relay-target; an active function must answer
-    // 400 JSON. Otherwise the relay is broken — delete the site and fail loudly
-    // instead of persisting a dead proxy pool.
+    // 4. Verify live relay
     try {
       await verifyRelayIsActive(deployUrl);
-    } catch (verifyError) {
-      await fetch(`${NETLIFY_API}/sites/${siteId}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${netlifyToken}` },
-      }).catch(() => {});
-
-      return NextResponse.json(
-        { error: verifyError.message || "Netlify relay verification failed" },
-        { status: 502 }
-      );
+    } catch (verifyErr) {
+      await fetch(`https://api.netlify.com/api/v1/sites/${siteId}`, { method: "DELETE", headers: { Authorization: `Bearer ${netlifyToken}` } }).catch(() => {});
+      return NextResponse.json({ error: verifyErr.message || "Netlify relay verification failed" }, { status: 502 });
     }
 
-    // 6. Create proxy pool entry in local database
+    // 5. Persist proxy pool
     const proxyPool = await createProxyPool({
-      name: finalProjectName,
-      proxyUrl: deployUrl,
-      type: "netlify",
-      noProxy: "",
-      isActive: true,
-      strictProxy: false,
+      name: finalName, proxyUrl: deployUrl, type: "netlify", noProxy: "", isActive: true, strictProxy: false,
     });
 
     return NextResponse.json({ proxyPool, deployUrl }, { status: 201 });
   } catch (error) {
     console.log("Error deploying Netlify relay:", error);
     return NextResponse.json({ error: error.message || "Deploy failed" }, { status: 500 });
+  } finally {
+    if (projectDir) await fs.rm(projectDir, { recursive: true, force: true }).catch(() => {});
   }
 }
