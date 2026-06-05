@@ -35,7 +35,8 @@ export const MEMORY_CONFIG = {
 export const STREAM_STALL_TIMEOUT_MS = 30 * 1000;
 
 // Fetch connect timeout: abort if upstream doesn't return response headers within this duration
-export const FETCH_CONNECT_TIMEOUT_MS = 60 * 1000;
+const envFetchTimeout = process.env.FETCH_CONNECT_TIMEOUT_MS ? parseInt(process.env.FETCH_CONNECT_TIMEOUT_MS, 10) : NaN;
+export const FETCH_CONNECT_TIMEOUT_MS = !isNaN(envFetchTimeout) && envFetchTimeout > 0 ? envFetchTimeout : 60 * 1000;
 
 
 // Default token limits
