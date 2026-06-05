@@ -1109,6 +1109,7 @@ docker pull decolua/9router:latest   # update to latest
 | `API_KEY_SECRET` | `endpoint-proxy-api-key-secret` | HMAC secret for generated API keys |
 | `MACHINE_ID_SALT` | `endpoint-proxy-salt` | Salt for stable machine ID hashing |
 | `ENABLE_REQUEST_LOGS` | `false` | Enables request/response logs under `logs/` |
+| `STREAM_STALL_TIMEOUT_MS` | `60000` | Abort a streaming upstream response if no bytes arrive within this duration (milliseconds) |
 | `AUTH_COOKIE_SECURE` | `false` | Force `Secure` auth cookie (set `true` behind HTTPS reverse proxy) |
 | `REQUIRE_API_KEY` | `false` | Enforce Bearer API key on `/v1/*` routes (recommended for internet-exposed deploys) |
 | `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | empty | Optional outbound proxy for upstream provider calls |

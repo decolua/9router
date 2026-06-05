@@ -31,8 +31,20 @@ export const MEMORY_CONFIG = {
   proxyDispatchersMaxSize: 20,
 };
 
+function parsePositiveIntegerEnv(name, fallback) {
+  const rawValue = process.env?.[name];
+  if (rawValue == null || rawValue === "") return fallback;
+
+  const parsed = Number.parseInt(rawValue, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 // Stream stall timeout: abort if no chunk received within this duration
-export const STREAM_STALL_TIMEOUT_MS = 30 * 1000;
+export const DEFAULT_STREAM_STALL_TIMEOUT_MS = 60 * 1000;
+export const STREAM_STALL_TIMEOUT_MS = parsePositiveIntegerEnv(
+  "STREAM_STALL_TIMEOUT_MS",
+  DEFAULT_STREAM_STALL_TIMEOUT_MS
+);
 
 // Fetch connect timeout: abort if upstream doesn't return response headers within this duration
 export const FETCH_CONNECT_TIMEOUT_MS = 20 * 1000;
