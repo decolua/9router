@@ -117,14 +117,15 @@ export const CLI_TOOLS = {
     description: "OpenCode AI Terminal Assistant",
     configType: "custom",
   },
-  cowork: {
-    id: "cowork",
-    name: "Claude Cowork",
-    image: "/providers/claude.png",
-    color: "#D97757",
-    description: "Claude Desktop Cowork (third-party inference)",
-    configType: "custom",
-  },
+  // Cowork disabled: spawns arbitrary processes (RCE risk). Hidden from CLI tools UI.
+  // cowork: {
+  //   id: "cowork",
+  //   name: "Claude Cowork",
+  //   image: "/providers/claude.png",
+  //   color: "#D97757",
+  //   description: "Claude Desktop Cowork (third-party inference)",
+  //   configType: "custom",
+  // },
   hermes: {
     id: "hermes",
     name: "Hermes Agent",
