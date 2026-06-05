@@ -106,7 +106,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
   trackDone();
 
   const ctx = {
-    provider, model, connectionId,
+    provider, model, connectionId, apiKey,
     request: extractRequestConfig(body, stream),
     providerRequest: finalBody || translatedBody || null
   };
@@ -120,7 +120,8 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
 
       const usage = jsonResponse.usage || {};
       appendLog({ tokens: usage, status: "200 OK" });
-      saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint });
+      // Only write for this request → canonical quota row
+      saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, countsTowardQuota: true });
 
       const { msgItem, textContent } = pickAssistantMessageForChatCompletion(jsonResponse.output);
       const totalLatency = Date.now() - requestStartTime;
@@ -195,7 +196,8 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
 
     const usage = parsed.usage || {};
     appendLog({ tokens: usage, status: "200 OK" });
-    saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint });
+    // Only write for this request → canonical quota row
+    saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, countsTowardQuota: true });
 
     const totalLatency = Date.now() - requestStartTime;
     saveRequestDetail(buildRequestDetail({

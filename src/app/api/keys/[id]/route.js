@@ -21,7 +21,7 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { isActive } = body;
+    const { isActive, costBudget5h } = body;
 
     const existing = await getApiKeyById(id);
     if (!existing) {
@@ -30,6 +30,13 @@ export async function PUT(request, { params }) {
 
     const updateData = {};
     if (isActive !== undefined) updateData.isActive = isActive;
+    if (costBudget5h !== undefined) {
+      // null = clear override (use global default); otherwise a positive number (USD-equivalent)
+      if (costBudget5h !== null && (typeof costBudget5h !== "number" || !Number.isFinite(costBudget5h) || costBudget5h <= 0)) {
+        return NextResponse.json({ error: "costBudget5h must be null or a positive number" }, { status: 400 });
+      }
+      updateData.costBudget5h = costBudget5h;
+    }
 
     const updated = await updateApiKey(id, updateData);
 
