@@ -470,6 +470,11 @@ export const PROVIDER_MODELS = {
     { id: "distil-whisper-large-v3-en", name: "Distil Whisper Large v3 EN", type: "stt", params: ["language", "response_format", "temperature", "prompt"] },
   ],
   xai: [
+    { id: "grok-4.3", name: "Grok 4.3" },
+    { id: "grok-4.20-reasoning", name: "Grok 4.20 Reasoning" },
+    { id: "grok-4.20-non-reasoning", name: "Grok 4.20" },
+    { id: "grok-4-1-fast-reasoning", name: "Grok 4.1 Fast Reasoning" },
+    { id: "grok-4-1-fast-non-reasoning", name: "Grok 4.1 Fast" },
     { id: "grok-4", name: "Grok 4" },
     { id: "grok-4-fast-reasoning", name: "Grok 4 Fast Reasoning" },
     { id: "grok-code-fast-1", name: "Grok Code Fast" },

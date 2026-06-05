@@ -15,6 +15,7 @@ import {
   CLINE_CONFIG,
   KILOCODE_CONFIG,
 } from "@/lib/oauth/constants/oauth";
+import { XAI_CONFIG } from "@/lib/oauth/constants/xai";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
 
 /**
@@ -80,6 +81,16 @@ const OAUTH_TEST_CONFIG = {
     authHeader: "Authorization",
     authPrefix: "Bearer ",
     extraHeaders: { "User-Agent": "9Router", "Accept": "application/vnd.github+json" },
+  },
+  xai: {
+    // Grok Build OAuth: probe the same inference host the model test uses
+    // (api.x.ai/v1/models). This surface is proven to accept the OAuth access
+    // token, avoiding any userinfo/audience mismatch. 401 triggers refresh+retry.
+    url: "https://api.x.ai/v1/models",
+    method: "GET",
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    refreshable: true,
   },
   iflow: {
     // iFlow getUserInfo requires accessToken as query param, not header
@@ -223,6 +234,22 @@ async function refreshOAuthToken(connection) {
           grant_type: "refresh_token",
           refresh_token: refreshToken,
           client_id: QWEN_CONFIG.clientId,
+        }),
+      });
+      if (!response.ok) return null;
+      const data = await response.json();
+      return { accessToken: data.access_token, expiresIn: data.expires_in, refreshToken: data.refresh_token || refreshToken };
+    }
+
+    if (provider === "xai") {
+      // xAI is a public PKCE client — refresh with client_id, no secret.
+      const response = await fetch(XAI_CONFIG.tokenUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          client_id: XAI_CONFIG.clientId,
+          refresh_token: refreshToken,
         }),
       });
       if (!response.ok) return null;
