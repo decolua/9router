@@ -109,8 +109,8 @@
   "/api/oauth/[provider]/[action]/route": "app/api/oauth/[provider]/[action]/route.js",
   "/api/provider-nodes/route": "app/api/provider-nodes/route.js",
   "/api/providers/[id]/route": "app/api/providers/[id]/route.js",
-  "/api/providers/suggested-models/route": "app/api/providers/suggested-models/route.js",
   "/api/providers/client/route": "app/api/providers/client/route.js",
+  "/api/providers/suggested-models/route": "app/api/providers/suggested-models/route.js",
   "/api/providers/route": "app/api/providers/route.js",
   "/api/proxy-pools/[id]/test/route": "app/api/proxy-pools/[id]/test/route.js",
   "/api/proxy-pools/[id]/route": "app/api/proxy-pools/[id]/route.js",
@@ -124,8 +124,8 @@
   "/api/translator/console-logs/stream/route": "app/api/translator/console-logs/stream/route.js",
   "/api/usage/[connectionId]/route": "app/api/usage/[connectionId]/route.js",
   "/api/usage/stats/route": "app/api/usage/stats/route.js",
-  "/api/v1/audio/transcriptions/route": "app/api/v1/audio/transcriptions/route.js",
   "/api/usage/stream/route": "app/api/usage/stream/route.js",
+  "/api/v1/audio/transcriptions/route": "app/api/v1/audio/transcriptions/route.js",
   "/callback/page": "app/callback/page.js",
   "/dashboard/settings/pricing/page": "app/dashboard/settings/pricing/page.js",
   "/landing/page": "app/landing/page.js",
@@ -149,7 +149,7 @@
   "/(dashboard)/dashboard/usage/page": "app/(dashboard)/dashboard/usage/page.js",
   "/(dashboard)/dashboard/console-log/page": "app/(dashboard)/dashboard/console-log/page.js",
   "/(dashboard)/dashboard/profile/page": "app/(dashboard)/dashboard/profile/page.js",
-  "/(dashboard)/dashboard/providers/[id]/page": "app/(dashboard)/dashboard/providers/[id]/page.js",
   "/(dashboard)/dashboard/providers/page": "app/(dashboard)/dashboard/providers/page.js",
-  "/(dashboard)/dashboard/proxy-pools/page": "app/(dashboard)/dashboard/proxy-pools/page.js"
+  "/(dashboard)/dashboard/proxy-pools/page": "app/(dashboard)/dashboard/proxy-pools/page.js",
+  "/(dashboard)/dashboard/providers/[id]/page": "app/(dashboard)/dashboard/providers/[id]/page.js"
 }

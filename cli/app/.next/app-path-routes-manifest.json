@@ -109,8 +109,8 @@
   "/api/oauth/[provider]/[action]/route": "/api/oauth/[provider]/[action]",
   "/api/provider-nodes/route": "/api/provider-nodes",
   "/api/providers/[id]/route": "/api/providers/[id]",
-  "/api/providers/suggested-models/route": "/api/providers/suggested-models",
   "/api/providers/client/route": "/api/providers/client",
+  "/api/providers/suggested-models/route": "/api/providers/suggested-models",
   "/api/providers/route": "/api/providers",
   "/api/proxy-pools/[id]/test/route": "/api/proxy-pools/[id]/test",
   "/api/proxy-pools/[id]/route": "/api/proxy-pools/[id]",
@@ -124,8 +124,8 @@
   "/api/translator/console-logs/stream/route": "/api/translator/console-logs/stream",
   "/api/usage/[connectionId]/route": "/api/usage/[connectionId]",
   "/api/usage/stats/route": "/api/usage/stats",
-  "/api/v1/audio/transcriptions/route": "/api/v1/audio/transcriptions",
   "/api/usage/stream/route": "/api/usage/stream",
+  "/api/v1/audio/transcriptions/route": "/api/v1/audio/transcriptions",
   "/callback/page": "/callback",
   "/dashboard/settings/pricing/page": "/dashboard/settings/pricing",
   "/landing/page": "/landing",
@@ -149,7 +149,7 @@
   "/(dashboard)/dashboard/usage/page": "/dashboard/usage",
   "/(dashboard)/dashboard/console-log/page": "/dashboard/console-log",
   "/(dashboard)/dashboard/profile/page": "/dashboard/profile",
-  "/(dashboard)/dashboard/providers/[id]/page": "/dashboard/providers/[id]",
   "/(dashboard)/dashboard/providers/page": "/dashboard/providers",
-  "/(dashboard)/dashboard/proxy-pools/page": "/dashboard/proxy-pools"
+  "/(dashboard)/dashboard/proxy-pools/page": "/dashboard/proxy-pools",
+  "/(dashboard)/dashboard/providers/[id]/page": "/dashboard/providers/[id]"
 }
