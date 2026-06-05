@@ -125,6 +125,27 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     log?.debug?.("CAVEMAN", `${cavemanLevel} | ${finalFormat}`);
   }
 
+  // Token Saver observability: summarize RTK byte savings + caveman state for the
+  // request-details record. Null when neither optimizer did anything (keeps records lean).
+  const rtkSaved = rtkStats ? (rtkStats.bytesBefore - rtkStats.bytesAfter) : 0;
+  const tokenSaver = (rtkStats && rtkStats.hits?.length) || (cavemanEnabled && cavemanLevel)
+    ? {
+        rtk: rtkStats && rtkStats.hits?.length
+          ? {
+              bytesBefore: rtkStats.bytesBefore,
+              bytesAfter: rtkStats.bytesAfter,
+              savedBytes: rtkSaved,
+              savedPercent: rtkStats.bytesBefore > 0
+                ? Number(((rtkSaved / rtkStats.bytesBefore) * 100).toFixed(1))
+                : 0,
+              hits: rtkStats.hits.length,
+              filtersUsed: [...new Set(rtkStats.hits.map((h) => h.filter))],
+            }
+          : null,
+        caveman: cavemanEnabled && cavemanLevel ? { level: cavemanLevel } : null,
+      }
+    : null;
+
   // Kiro: sanitize tool schemas — strip unsupported JSON Schema keys, truncate long names
   if (targetFormat === FORMATS.KIRO) {
     const kiroTools = translatedBody?.conversationState?.currentMessage?.userInputMessage?.userInputMessageContext?.tools;
@@ -217,7 +238,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       request: extractRequestConfig(body, stream),
       providerRequest: translatedBody || null,
       response: { error: error.message || String(error), status: error.name === "AbortError" ? 499 : 502, thinking: null },
-      status: "error"
+      status: "error",
+      tokenSaver
     })).catch(() => { });
 
     if (error.name === "AbortError") {
@@ -278,7 +300,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       request: extractRequestConfig(body, stream),
       providerRequest: finalBody || translatedBody || null,
       response: { error: message, status: statusCode, thinking: null },
-      status: "error"
+      status: "error",
+      tokenSaver
     })).catch(() => { });
 
     const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
@@ -310,7 +333,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     }
   }
 
-  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess };
+  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, tokenSaver };
   const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
 
