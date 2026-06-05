@@ -362,6 +362,39 @@ export async function saveRequestUsage(entry) {
   }
 }
 
+export async function getProviderUsageTotals({ provider, connectionId, since = null } = {}) {
+  const db = await getAdapter();
+  const where = [];
+  const params = [];
+  if (provider) {
+    where.push("provider = ?");
+    params.push(provider);
+  }
+  if (connectionId) {
+    where.push("connectionId = ?");
+    params.push(connectionId);
+  }
+  if (since) {
+    where.push("timestamp >= ?");
+    params.push(since);
+  }
+  const sql = `
+    SELECT
+      COUNT(*) AS requests,
+      COALESCE(SUM(promptTokens), 0) AS promptTokens,
+      COALESCE(SUM(completionTokens), 0) AS completionTokens
+    FROM usageHistory
+    ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+  `;
+  const row = db.get(sql, params) || {};
+  return {
+    requests: Number(row.requests || 0),
+    promptTokens: Number(row.promptTokens || 0),
+    completionTokens: Number(row.completionTokens || 0),
+    totalTokens: Number(row.promptTokens || 0) + Number(row.completionTokens || 0),
+  };
+}
+
 export async function getUsageHistory(filter = {}) {
   const db = await getAdapter();
   const conds = [];

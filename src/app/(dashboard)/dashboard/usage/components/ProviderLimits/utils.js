@@ -225,6 +225,7 @@ export function parseQuotaData(provider, data) {
               name,
               used: quota.used || 0,
               total: quota.total || 0,
+              remaining: quota.remaining,
               unit: quota.unit,
               resetAt: quota.resetAt || null,
             });
