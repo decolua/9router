@@ -255,12 +255,12 @@ export async function saveRequestUsage(entry) {
     // better-sqlite3 is sync → no JS yield mid-transaction → no race in same process.
     db.transaction(() => {
       db.run(
-        `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta, countsTowardQuota) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           entry.timestamp, entry.provider || null, entry.model || null,
           entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
           promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
-          stringifyJson(tokens), stringifyJson({}),
+          stringifyJson(tokens), stringifyJson({}), entry.countsTowardQuota ? 1 : 0,
         ]
       );
 
@@ -738,8 +738,14 @@ const DEFAULT_USER_TOKEN_BUDGET_5H = 25_000_000;
  * Check a user's (apiKey) token usage within a fixed 5h window anchored to the
  * window's first request (not rolling — matches codex's reset behavior).
  *
- * Sums promptTokens (incl. cache_read) of rows with endpoint IS NULL to avoid
- * double-write (each request is logged twice; only the null-endpoint row is correct).
+ * Prompt-token budget: sums promptTokens of rows flagged countsTowardQuota = 1 —
+ * each request writes exactly one such row regardless of streaming/non-streaming
+ * (streaming also writes a second stats row which stays unflagged). Completion
+ * tokens are intentionally excluded: input volume is what drains upstream pools.
+ *
+ * Eventually consistent by design: usage rows are written async after the response
+ * completes, so concurrent requests can all pass the check before any row lands and
+ * the budget may be overshot during a burst. Acceptable for a soft quota.
  *
  * @returns {{allowed:boolean, used?:number, budget?:number, windowStart?:string,
  *            retryAfterIso?:string, retryAfterSec?:number, disabled?:boolean}}
@@ -783,17 +789,22 @@ export async function checkUserQuota(apiKey) {
 
   const row = db.get(
     `SELECT COALESCE(SUM(promptTokens), 0) AS used FROM usageHistory
-     WHERE apiKey = ? AND endpoint IS NULL AND timestamp >= ?`,
+     WHERE apiKey = ? AND countsTowardQuota = 1 AND timestamp >= ?`,
     [apiKey, windowStartIso]
   );
   const used = row?.used || 0;
   const resetMs = new Date(windowStartIso).getTime() + QUOTA_WINDOW_MS;
   const retryAfterSec = Math.max(Math.ceil((resetMs - now) / 1000), 1);
 
-  // Reset time in the server's local timezone, formatted HH:MM DD/MM
+  // Reset time in the server's local timezone, formatted HH:MM DD/MM (UTC±H[:MM]).
+  // The explicit offset avoids confusion when the server runs in a container (usually UTC).
   const d = new Date(resetMs);
   const pad = (n) => String(n).padStart(2, "0");
-  const resetAtLocal = `${pad(d.getHours())}:${pad(d.getMinutes())} ${pad(d.getDate())}/${pad(d.getMonth() + 1)}`;
+  const offMin = -d.getTimezoneOffset();
+  const offSign = offMin >= 0 ? "+" : "-";
+  const offAbs = Math.abs(offMin);
+  const tzLabel = `UTC${offSign}${Math.floor(offAbs / 60)}${offAbs % 60 ? `:${pad(offAbs % 60)}` : ""}`;
+  const resetAtLocal = `${pad(d.getHours())}:${pad(d.getMinutes())} ${pad(d.getDate())}/${pad(d.getMonth() + 1)} (${tzLabel})`;
   const h = Math.floor(retryAfterSec / 3600);
   const m = Math.ceil((retryAfterSec % 3600) / 60);
   const retryAfterHuman = h > 0 ? `${h}h${m}m` : `${m}m`;

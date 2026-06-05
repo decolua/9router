@@ -119,6 +119,9 @@ export const TABLES = {
       status: "TEXT",
       tokens: "TEXT",
       meta: "TEXT",
+      // 1 = canonical row for per-key quota accounting (each request has exactly one);
+      // streaming writes a second stats row (endpoint set) which stays 0
+      countsTowardQuota: "INTEGER DEFAULT 0",
     },
     indexes: [
       "CREATE INDEX IF NOT EXISTS idx_uh_ts ON usageHistory(timestamp DESC)",

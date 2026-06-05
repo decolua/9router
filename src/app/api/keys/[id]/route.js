@@ -21,7 +21,7 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { isActive } = body;
+    const { isActive, tokenBudget5h } = body;
 
     const existing = await getApiKeyById(id);
     if (!existing) {
@@ -30,6 +30,13 @@ export async function PUT(request, { params }) {
 
     const updateData = {};
     if (isActive !== undefined) updateData.isActive = isActive;
+    if (tokenBudget5h !== undefined) {
+      // null = clear override (use global default); otherwise a positive integer
+      if (tokenBudget5h !== null && (!Number.isInteger(tokenBudget5h) || tokenBudget5h <= 0)) {
+        return NextResponse.json({ error: "tokenBudget5h must be null or a positive integer" }, { status: 400 });
+      }
+      updateData.tokenBudget5h = tokenBudget5h;
+    }
 
     const updated = await updateApiKey(id, updateData);
 
