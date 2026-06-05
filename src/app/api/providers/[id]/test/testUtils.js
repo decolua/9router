@@ -16,6 +16,7 @@ import {
   KILOCODE_CONFIG,
 } from "@/lib/oauth/constants/oauth";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
+import { createHmac, createHash } from "crypto";
 
 // OAuth provider test endpoints
 const OAUTH_TEST_CONFIG = {
@@ -405,6 +406,69 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         }, effectiveProxy);
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key or Azure configuration" };
+      }
+      case "bedrock": {
+        const psd             = connection.providerSpecificData || {};
+        const accessKeyId     = psd.accessKeyId || "";
+        const secretAccessKey = connection.apiKey || "";
+        const sessionToken    = psd.sessionToken || undefined;
+
+        if (!secretAccessKey) return { valid: false, error: "Missing API key (Bedrock API key or Secret Access Key)" };
+
+        // ── Bearer token mode (Bedrock API key) ──
+        if (!accessKeyId) {
+          const region    = psd.region || "us-east-1";
+          const probeUrl  = `https://bedrock-runtime.${region}.amazonaws.com/model/us.amazon.nova-micro-v1:0/converse`;
+          const probeBody = JSON.stringify({ messages: [{ role: "user", content: [{ text: "hi" }] }] });
+          const probeRes  = await fetchWithConnectionProxy(probeUrl, {
+            method:  "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${secretAccessKey}` },
+            body:    probeBody,
+          }, effectiveProxy);
+          const valid = probeRes.status !== 401 && probeRes.status !== 403;
+          return { valid, error: valid ? null : "Bedrock API key inválida. Gere uma nova em Bedrock → API keys." };
+        }
+
+        // ── SigV4 mode (IAM) ──
+        const stsUrl   = "https://sts.amazonaws.com/";
+        const body     = "Action=GetCallerIdentity&Version=2011-06-15";
+        const service  = "sts";
+        const region   = "us-east-1";
+        const now      = new Date();
+        const datetime = now.toISOString().replace(/[:\-]|\.\d{3}/g, "").slice(0, 15) + "Z";
+        const date     = datetime.slice(0, 8);
+        const bodyHash = createHash("sha256").update(body).digest("hex");
+
+        const signHeaders = {
+          "content-type":         "application/x-www-form-urlencoded",
+          "host":                 "sts.amazonaws.com",
+          "x-amz-content-sha256": bodyHash,
+          "x-amz-date":           datetime,
+        };
+        if (sessionToken) signHeaders["x-amz-security-token"] = sessionToken;
+
+        const sortedKeys       = Object.keys(signHeaders).sort();
+        const canonicalHeaders = sortedKeys.map(k => `${k}:${signHeaders[k]}\n`).join("");
+        const signedHeadersStr = sortedKeys.join(";");
+        const canonicalRequest = ["POST", "/", "", canonicalHeaders, signedHeadersStr, bodyHash].join("\n");
+        const credScope        = `${date}/${region}/${service}/aws4_request`;
+        const stringToSign     = ["AWS4-HMAC-SHA256", datetime, credScope, createHash("sha256").update(canonicalRequest).digest("hex")].join("\n");
+
+        const kDate    = createHmac("sha256", `AWS4${secretAccessKey}`).update(date).digest();
+        const kRegion  = createHmac("sha256", kDate).update(region).digest();
+        const kService = createHmac("sha256", kRegion).update(service).digest();
+        const kSign    = createHmac("sha256", kService).update("aws4_request").digest();
+        const sig      = createHmac("sha256", kSign).update(stringToSign).digest("hex");
+        const authorization = `AWS4-HMAC-SHA256 Credential=${accessKeyId}/${credScope}, SignedHeaders=${signedHeadersStr}, Signature=${sig}`;
+
+        const stsRes = await fetchWithConnectionProxy(stsUrl, {
+          method:  "POST",
+          headers: { ...signHeaders, "Authorization": authorization },
+          body,
+        }, effectiveProxy);
+
+        const valid = stsRes.ok;
+        return { valid, error: valid ? null : "Credenciais IAM inválidas (verifique Access Key ID e Secret Access Key)" };
       }
       case "openai": {
         const res = await fetchWithConnectionProxy("https://api.openai.com/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);

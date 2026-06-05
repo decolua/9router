@@ -1,5 +1,6 @@
 import { AntigravityExecutor } from "./antigravity.js";
 import { AzureExecutor } from "./azure.js";
+import { BedrockExecutor } from "./bedrock.js";
 import { GeminiCLIExecutor } from "./gemini-cli.js";
 import { GithubExecutor } from "./github.js";
 import { IFlowExecutor } from "./iflow.js";
@@ -20,6 +21,7 @@ import { DefaultExecutor } from "./default.js";
 const executors = {
   antigravity: new AntigravityExecutor(),
   azure: new AzureExecutor(),
+  bedrock: new BedrockExecutor(),
   "gemini-cli": new GeminiCLIExecutor(),
   github: new GithubExecutor(),
   iflow: new IFlowExecutor(),
@@ -54,6 +56,7 @@ export function hasSpecializedExecutor(provider) {
 export { BaseExecutor } from "./base.js";
 export { AntigravityExecutor } from "./antigravity.js";
 export { AzureExecutor } from "./azure.js";
+export { BedrockExecutor } from "./bedrock.js";
 export { GeminiCLIExecutor } from "./gemini-cli.js";
 export { GithubExecutor } from "./github.js";
 export { IFlowExecutor } from "./iflow.js";

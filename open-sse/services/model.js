@@ -138,6 +138,9 @@ const ALIAS_TO_PROVIDER_ID = {
   glhf: "glhf",
   bb: "blackbox",
   blackbox: "blackbox",
+  // Amazon Bedrock
+  bedrock: "bedrock",
+  br: "bedrock",
 };
 
 /**

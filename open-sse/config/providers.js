@@ -435,6 +435,14 @@ export const PROVIDERS = {
   "nous-research": { baseUrl: "https://inference-api.nousresearch.com/v1/chat/completions", format: "openai" },
   glhf: { baseUrl: "https://glhf.chat/api/openai/v1/chat/completions", format: "openai" },
   blackbox: { baseUrl: "https://api.blackbox.ai/chat/completions", format: "openai" },
+  // Amazon Bedrock — Converse API on bedrock-runtime
+  // Supports Bearer token (Bedrock API key) and SigV4 (IAM credentials).
+  // Model IDs: anthropic.claude-sonnet-4-6 / us.anthropic.claude-sonnet-4-6 etc.
+  bedrock: {
+    baseUrl: "https://bedrock-runtime.us-east-1.amazonaws.com",
+    format:  "openai",
+    headers: {},
+  },
 };
 
 export const OLLAMA_LOCAL_DEFAULT_HOST = "http://localhost:11434";
