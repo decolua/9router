@@ -53,6 +53,8 @@ export class DefaultExecutor extends BaseExecutor {
   }
 
   // Fallback json_schema → json_object for openai-compatible providers without native Structured Output.
+  // xAI, OpenAI, and several others support native response_format.json_schema (see docs.x.ai structured-outputs).
+  // Therefore the fallback is intentionally scoped to openai-compatible-* only.
   applyJsonSchemaFallback(body) {
     if (!this.provider?.startsWith?.("openai-compatible-")) return body;
     const rf = body?.response_format;
