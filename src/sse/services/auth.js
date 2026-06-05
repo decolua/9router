@@ -225,11 +225,17 @@ export async function getProviderCredentials(
       connection.providerSpecificData || {},
     );
 
+    const isKiro = providerId === "kiro";
+
     return {
       authType: connection.authType,
       apiKey: connection.apiKey,
       accessToken: connection.accessToken,
       refreshToken: connection.refreshToken,
+      ...(isKiro ? {
+        expiresAt: connection.expiresAt,
+        expiresIn: connection.expiresIn,
+      } : {}),
       projectId: connection.projectId,
       connectionName:
         connection.displayName ||

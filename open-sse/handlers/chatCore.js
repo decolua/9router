@@ -378,7 +378,7 @@ export async function handleChatCore({
   ) {
     try {
       const newCredentials = await refreshWithRetry(
-        () => executor.refreshCredentials(credentials, log),
+        () => executor.refreshCredentials(credentials, log, proxyOptions),
         3,
         log,
       );
