@@ -22,6 +22,3 @@
 {"level":30,"time":"2026-06-05T06:43:33.099Z","service":"9router","scope":"bootstrap","msg":"instrumentation.register() invoked"}
 {"level":30,"time":"2026-06-05T06:43:33.153Z","service":"9router","tag":"TOKEN_REFRESH_WORKER","msg":"Started (tick=60000ms)"}
 {"level":30,"time":"2026-06-05T06:43:33.154Z","service":"9router","scope":"bootstrap","msg":"initializeApp completed"}
-{"level":30,"time":"2026-06-05T12:26:35.160Z","service":"9router","scope":"bootstrap","msg":"instrumentation.register() invoked"}
-{"level":30,"time":"2026-06-05T12:26:35.211Z","service":"9router","tag":"TOKEN_REFRESH_WORKER","msg":"Started (tick=60000ms)"}
-{"level":30,"time":"2026-06-05T12:26:35.212Z","service":"9router","scope":"bootstrap","msg":"initializeApp completed"}
