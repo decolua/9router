@@ -75,7 +75,7 @@ export function getXaiUsage(connection) {
   if (snap.limitRequests != null) {
     const total = Number(snap.limitRequests) || 0;
     const remaining = snap.remainingRequests != null ? Number(snap.remainingRequests) : total;
-    quotas["Requests (window)"] = {
+    quotas["Rate limit requests (window)"] = {
       total,
       used: Math.max(0, total - remaining),
       unit: "requests",
@@ -85,7 +85,7 @@ export function getXaiUsage(connection) {
   if (snap.limitTokens != null) {
     const total = Number(snap.limitTokens) || 0;
     const remaining = snap.remainingTokens != null ? Number(snap.remainingTokens) : total;
-    quotas["Tokens (window)"] = {
+    quotas["Rate limit tokens (window)"] = {
       total,
       used: Math.max(0, total - remaining),
       unit: "tokens",

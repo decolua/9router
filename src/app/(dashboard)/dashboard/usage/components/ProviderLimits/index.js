@@ -17,6 +17,17 @@ function getConnectionLabel(connection) {
   return connection.name;
 }
 
+function formatCapturedAt(iso) {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return null;
+  const diffSec = Math.max(0, Math.round((Date.now() - t) / 1000));
+  if (diffSec < 60) return `${diffSec}s ago`;
+  if (diffSec < 3600) return `${Math.round(diffSec / 60)}m ago`;
+  if (diffSec < 86400) return `${Math.round(diffSec / 3600)}h ago`;
+  return `${Math.round(diffSec / 86400)}d ago`;
+}
+
 function getConnectionQuotaRemaining(connection, quotaData) {
   const quota = quotaData[connection.id]?.quotas?.[0];
   if (!quota) return Number.POSITIVE_INFINITY;
@@ -359,6 +370,7 @@ export default function ProviderLimits() {
         quotas: parsedQuotas,
         plan: data.plan || null,
         message: data.message || null,
+        capturedAt: data.capturedAt || null,
         raw: data,
       };
 
@@ -1092,14 +1104,22 @@ export default function ProviderLimits() {
                     <p className="text-xs text-text-muted">{quota.message}</p>
                   </div>
                 ) : (
-                  <QuotaTable
-                    quotas={quota?.quotas}
-                    compact
-                    sortMode="default"
-                    showSortLabel={
-                      conn.provider === "codex" && quotaSortMode !== "default"
-                    }
-                  />
+                  <>
+                    <QuotaTable
+                      quotas={quota?.quotas}
+                      compact
+                      sortMode="default"
+                      showSortLabel={
+                        conn.provider === "codex" && quotaSortMode !== "default"
+                      }
+                    />
+                    {quota?.capturedAt && (
+                      <p className="px-1.5 pt-1 text-[10px] text-text-muted">
+                        Rate-limit window · captured{" "}
+                        {formatCapturedAt(quota.capturedAt)} · not monthly quota
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
             </Card>

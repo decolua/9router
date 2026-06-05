@@ -23,12 +23,12 @@ describe("xAI usage (passive rate-limit snapshot)", () => {
 
     expect(usage.message).toBeUndefined();
     expect(usage.capturedAt).toBe("2026-06-05T01:00:00.000Z");
-    expect(usage.quotas["Requests (window)"]).toMatchObject({
+    expect(usage.quotas["Rate limit requests (window)"]).toMatchObject({
       total: 480,
       used: 5,
       unit: "requests",
     });
-    expect(usage.quotas["Tokens (window)"]).toMatchObject({
+    expect(usage.quotas["Rate limit tokens (window)"]).toMatchObject({
       total: 10_000_000,
       used: 100_000,
       unit: "tokens",
@@ -42,7 +42,7 @@ describe("xAI usage (passive rate-limit snapshot)", () => {
       rateLimitSnapshot: { limitRequests: 480, limitTokens: null },
     });
 
-    expect(usage.quotas["Requests (window)"]).toMatchObject({ total: 480, used: 0 });
-    expect(usage.quotas["Tokens (window)"]).toBeUndefined();
+    expect(usage.quotas["Rate limit requests (window)"]).toMatchObject({ total: 480, used: 0 });
+    expect(usage.quotas["Rate limit tokens (window)"]).toBeUndefined();
   });
 });
