@@ -284,7 +284,7 @@ export async function refreshQwenToken(refreshToken, log) {
  * Returns { error: 'unrecoverable_refresh_error' } when token already consumed/invalid,
  * so callers stop retrying and request re-authentication.
  */
-export async function refreshCodexToken(refreshToken, log) {
+export async function refreshCodexToken(refreshToken, log, currentIdToken = null) {
   if (!refreshToken) return null;
   return dedupRefresh("codex", refreshToken, async () => {
   try {
@@ -338,12 +338,15 @@ export async function refreshCodexToken(refreshToken, log) {
     hasNewAccessToken: !!tokens.access_token,
     hasNewRefreshToken: !!tokens.refresh_token,
     expiresIn: tokens.expires_in,
+    hasIdToken: !!tokens.id_token,
   });
 
   return {
     accessToken: tokens.access_token,
     refreshToken: tokens.refresh_token || refreshToken,
     expiresIn: tokens.expires_in,
+    // Preserve existing idToken when OpenAI does not return a new one (matches PR #1664 behavior)
+    idToken: tokens.id_token || currentIdToken || null,
   };
   } catch (error) {
     log?.error?.("TOKEN_REFRESH", `Network error refreshing Codex token: ${error.message}`);
@@ -702,7 +705,7 @@ async function _getAccessTokenInternal(provider, credentials, log) {
       return await refreshClaudeOAuthToken(credentials.refreshToken, log);
 
     case "codex":
-      return await refreshCodexToken(credentials.refreshToken, log);
+      return await refreshCodexToken(credentials.refreshToken, log, credentials.idToken);
 
     case "qwen":
       return await refreshQwenToken(credentials.refreshToken, log);
@@ -754,7 +757,7 @@ export async function refreshTokenByProvider(provider, credentials, log) {
     case "claude":
       return refreshClaudeOAuthToken(credentials.refreshToken, log);
     case "codex":
-      return refreshCodexToken(credentials.refreshToken, log);
+      return refreshCodexToken(credentials.refreshToken, log, credentials.idToken);
     case "qwen":
       return refreshQwenToken(credentials.refreshToken, log);
     case "iflow":

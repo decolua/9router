@@ -7,6 +7,7 @@ import { fetchImageAsBase64 } from "../translator/helpers/imageHelper.js";
 import { getModelUpstreamId } from "../config/providerModels.js";
 import { getConsistentMachineId } from "../../src/shared/utils/machineId.js";
 import { DEFAULT_RETRY_CONFIG, resolveRetryEntry } from "../config/runtimeConfig.js";
+import { refreshCodexToken } from "../services/tokenRefresh.js";
 import { dbg } from "../utils/debugLog.js";
 
 // SSE error patterns inside 200-OK body that should trigger retry as if 503
@@ -210,6 +211,22 @@ export class CodexExecutor extends BaseExecutor {
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
     const base = super.buildUrl(model, stream, urlIndex, credentials);
     return this._isCompact ? `${base}/compact` : base;
+  }
+
+  /**
+   * Reactive OAuth refresh for Codex (401/403 mid-request).
+   * Base class was a no-op, so a token that slipped past the proactive
+   * refresh worker never recovered in-flight. Reuses the centralized
+   * refreshCodexToken (single-flight via dedupRefresh) and preserves idToken.
+   */
+  async refreshCredentials(credentials, log, proxyOptions = null) {
+    if (!credentials?.refreshToken) return null;
+    try {
+      return await refreshCodexToken(credentials.refreshToken, log, credentials.idToken);
+    } catch (error) {
+      log?.error?.("TOKEN", `Codex refresh error: ${error.message}`);
+      return null;
+    }
   }
 
   /**
