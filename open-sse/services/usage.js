@@ -736,7 +736,20 @@ async function getCodexUsage(accessToken, proxyOptions = null) {
       return { message: `Codex connected. Usage API temporarily unavailable (${response.status}).` };
     }
 
-    const data = await response.json();
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      // Relay returned HTML (e.g. Netlify landing page / 404) or another non-JSON
+      // body. Do not attempt JSON.parse — return a clear, non-crashing message.
+      return { message: "Codex usage relay returned non-JSON response (possible relay outage)." };
+    }
+
+    let data;
+    try {
+      data = await response.json();
+    } catch {
+      // Body claimed JSON but failed to parse (mislabeled relay response).
+      return { message: "Codex usage response was not valid JSON (possible relay outage)." };
+    }
     const normalRateLimit = data.rate_limit || data.rate_limits || data.rate_limits_by_limit_id?.codex || {};
     const reviewRateLimit = getCodexReviewRateLimit(data);
     const quotas = {};

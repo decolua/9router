@@ -51,10 +51,15 @@ describe("POST /api/proxy-pools/netlify-deploy", () => {
         };
       }
       if (urlString.endsWith("/deploys") && options.method === "POST") {
+        const files = JSON.parse(options.body).files;
         return {
           ok: true,
           status: 201,
-          json: async () => ({ id: "deploy-1", ssl_url: "https://relay.netlify.app" }),
+          json: async () => ({
+            id: "deploy-1",
+            ssl_url: "https://relay.netlify.app",
+            required: Object.values(files),
+          }),
         };
       }
       if (urlString.includes("/deploys/deploy-1/files/")) {
@@ -67,6 +72,14 @@ describe("POST /api/proxy-pools/netlify-deploy", () => {
           json: async () => ({ state: "ready" }),
         };
       }
+      if (urlString === "https://relay.netlify.app") {
+        return {
+          ok: false,
+          status: 400,
+          headers: { get: (name) => (name === "content-type" ? "application/json" : null) },
+          json: async () => ({ error: "Missing x-relay-target header" }),
+        };
+      }
       throw new Error(`unexpected fetch: ${urlString}`);
     });
 
@@ -75,6 +88,15 @@ describe("POST /api/proxy-pools/netlify-deploy", () => {
     const res = await POST(request({ netlifyToken: "nfp_test", projectName: "relay" }));
     const body = await res.json();
 
+    const initDeployCall = global.fetch.mock.calls.find(([url]) => String(url).endsWith("/sites/site-1/deploys"));
+    expect(JSON.parse(initDeployCall[1].body).files).toEqual(expect.objectContaining({
+      "index.html": expect.any(String),
+      "netlify/edge-functions/relay.js": expect.any(String),
+      "netlify.toml": expect.any(String),
+    }));
+    expect(global.fetch.mock.calls.some(([url]) => decodeURIComponent(String(url)).includes("/files/index.html"))).toBe(true);
+    expect(global.fetch.mock.calls.some(([url]) => decodeURIComponent(String(url)).includes("/files/netlify/edge-functions/relay.js"))).toBe(true);
+    expect(global.fetch.mock.calls.some(([url]) => decodeURIComponent(String(url)).includes("/files/netlify.toml"))).toBe(true);
     expect(res.status).toBe(201);
     expect(body.deployUrl).toBe("https://relay.netlify.app");
     expect(createProxyPool).toHaveBeenCalledWith(expect.objectContaining({
@@ -156,5 +178,39 @@ describe("POST /api/proxy-pools/netlify-deploy", () => {
 
     expect(res.status).toBe(500);
     expect(body.error).toContain("build crashed");
+  });
+
+  it("deletes the created site and returns 502 when relay verification fails (inactive edge function)", async () => {
+    const calls = [];
+    global.fetch = vi.fn(async (url, options = {}) => {
+      const u = String(url);
+      calls.push({ url: u, method: options.method || "GET" });
+      if (u.endsWith("/sites") && options.method === "POST") {
+        return { ok: true, status: 201, json: async () => ({ id: "site-1", name: "relay", ssl_url: "https://relay.netlify.app" }) };
+      }
+      if (u.endsWith("/sites/site-1/deploys") && options.method === "POST") {
+        return { ok: true, status: 201, json: async () => ({ id: "deploy-1", required: [] }) };
+      }
+      if (u.endsWith("/deploys/deploy-1")) {
+        return { ok: true, status: 200, json: async () => ({ state: "ready" }) };
+      }
+      if (u === "https://relay.netlify.app") {
+        return { ok: true, status: 200, headers: { get: () => "text/html" }, json: async () => ({}) };
+      }
+      if (u.endsWith("/sites/site-1") && options.method === "DELETE") {
+        return { ok: true, status: 204, json: async () => ({}) };
+      }
+      throw new Error(`unexpected fetch: ${u}`);
+    });
+
+    const { createProxyPool } = await import("@/models");
+    const { POST } = await import("../../src/app/api/proxy-pools/netlify-deploy/route.js");
+    const res = await POST(request({ netlifyToken: "nfp_test", projectName: "relay" }));
+    const body = await res.json();
+
+    expect(res.status).toBe(502);
+    expect(body.error).toContain("Netlify relay verification failed");
+    expect(createProxyPool).not.toHaveBeenCalled();
+    expect(calls.some((c) => c.url.endsWith("/sites/site-1") && c.method === "DELETE")).toBe(true);
   });
 });

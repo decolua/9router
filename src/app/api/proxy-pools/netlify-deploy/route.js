@@ -50,6 +50,15 @@ export const config = {
 };
 `;
 
+const NETLIFY_TOML_CODE = `# Declarative edge function registration. Required because digest-based API
+# deploys do not run a build step, so the inline \`export const config\` in
+# relay.js is never detected. Without this block the function stays inactive
+# and Netlify serves a 404 HTML page for every request.
+[[edge_functions]]
+  path = "/*"
+  function = "relay"
+`;
+
 const INDEX_HTML_CODE = `<!DOCTYPE html>
 <html>
 <head>
@@ -85,6 +94,20 @@ async function pollDeployment(deployId, token, maxMs = 120000) {
     await new Promise((r) => setTimeout(r, 3000));
   }
   throw new Error("Deployment timed out");
+}
+
+async function verifyRelayIsActive(deployUrl) {
+  const res = await fetch(deployUrl, { method: "GET" });
+  const contentType = res.headers?.get?.("content-type") || "";
+
+  if (res.status !== 400 || !contentType.includes("application/json")) {
+    throw new Error(`Netlify relay verification failed (${res.status}). Edge function did not handle the request.`);
+  }
+
+  const body = await res.json().catch(() => null);
+  if (body?.error !== "Missing x-relay-target header") {
+    throw new Error("Netlify relay verification failed. Unexpected verification response.");
+  }
 }
 
 export async function POST(request) {
@@ -128,11 +151,13 @@ export async function POST(request) {
     // 2. Prepare file digests
     const indexSha = sha1(INDEX_HTML_CODE);
     const relaySha = sha1(RELAY_FUNCTION_CODE);
+    const tomlSha = sha1(NETLIFY_TOML_CODE);
 
     const deployPayload = {
       files: {
         "index.html": indexSha,
         "netlify/edge-functions/relay.js": relaySha,
+        "netlify.toml": tomlSha,
       },
     };
 
@@ -168,6 +193,7 @@ export async function POST(request) {
     const fileMap = {
       [indexSha]: { path: "index.html", content: INDEX_HTML_CODE },
       [relaySha]: { path: "netlify/edge-functions/relay.js", content: RELAY_FUNCTION_CODE },
+      [tomlSha]: { path: "netlify.toml", content: NETLIFY_TOML_CODE },
     };
 
     for (const sha of requiredFiles) {
@@ -199,6 +225,25 @@ export async function POST(request) {
 
     // 5. Poll deploy status until ready
     await pollDeployment(deployId, netlifyToken);
+
+    // 5b. Verify the edge function is actually live. A digest deploy can report
+    // "ready" while the edge function is inactive (404 HTML for every request).
+    // Probe the relay without x-relay-target; an active function must answer
+    // 400 JSON. Otherwise the relay is broken — delete the site and fail loudly
+    // instead of persisting a dead proxy pool.
+    try {
+      await verifyRelayIsActive(deployUrl);
+    } catch (verifyError) {
+      await fetch(`${NETLIFY_API}/sites/${siteId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${netlifyToken}` },
+      }).catch(() => {});
+
+      return NextResponse.json(
+        { error: verifyError.message || "Netlify relay verification failed" },
+        { status: 502 }
+      );
+    }
 
     // 6. Create proxy pool entry in local database
     const proxyPool = await createProxyPool({
