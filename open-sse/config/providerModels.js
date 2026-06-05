@@ -471,6 +471,7 @@ export const PROVIDER_MODELS = {
   ],
   xai: [
     { id: "grok-4.3", name: "Grok 4.3" },
+    { id: "grok-4.3-high", name: "Grok 4.3 (High Reasoning)" },
     { id: "grok-4.20-reasoning", name: "Grok 4.20 Reasoning" },
     { id: "grok-4.20-non-reasoning", name: "Grok 4.20" },
     { id: "grok-4-1-fast-reasoning", name: "Grok 4.1 Fast Reasoning" },

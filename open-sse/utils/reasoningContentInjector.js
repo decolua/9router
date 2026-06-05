@@ -27,6 +27,14 @@ const DEEPSEEK_V4_PRO_ALIASES = {
   }
 };
 
+// xAI synthetic reasoning-effort variant: grok-4.3-high maps to the single
+// upstream model `grok-4.3` with reasoning_effort=high. xAI has no separate
+// reasoning model name — effort is a request parameter.
+const GROK_43 = "grok-4.3";
+const GROK_43_REASONING_ALIASES = {
+  [`${GROK_43}-high`]: "high"
+};
+
 function shouldInject(message, scope) {
   if (message?.role !== "assistant") return false;
   const rc = message.reasoning_content;
@@ -68,10 +76,21 @@ function applyDeepSeekV4ProAlias({ provider, model, body }) {
   return nextBody;
 }
 
+function applyGrok43ReasoningAlias({ provider, model, body }) {
+  const effort = GROK_43_REASONING_ALIASES[model];
+  if (provider !== "xai" || !effort || !body) return body;
+  return {
+    ...body,
+    model: GROK_43,
+    reasoning_effort: effort
+  };
+}
+
 export function injectReasoningContent({ provider, model, body }) {
   const providerRule = PROVIDER_RULES[provider];
   const modelRule = MODEL_RULES.find(r => r.match(model));
   const rule = providerRule || modelRule;
-  const nextBody = applyDeepSeekV4ProAlias({ provider, model, body });
+  let nextBody = applyDeepSeekV4ProAlias({ provider, model, body });
+  nextBody = applyGrok43ReasoningAlias({ provider, model, body: nextBody });
   return applyRule(nextBody, rule);
 }
