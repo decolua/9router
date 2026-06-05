@@ -8,18 +8,34 @@ function getTimeString() {
 }
 
 /**
+ * Detect whether a request qualifies for xAI reasoning timeout override.
+ * Matches: reasoning_effort present, or model name contains "reasoning" / ends with "-high".
+ */
+export function isXaiReasoningRequest(provider, model, body) {
+  if (provider !== "xai") return false;
+  if (body?.reasoning_effort) return true;
+  if (typeof model === "string" && /reasoning|-high$/.test(model)) return true;
+  return false;
+}
+
+/**
  * Create stream controller with abort and disconnect detection
  * @param {object} options
  * @param {function} options.onDisconnect - Callback when client disconnects
  * @param {object} options.log - Logger instance
  * @param {string} options.provider - Provider name
  * @param {string} options.model - Model name
+ * @param {number} [options.firstChunkTimeoutMs] - Optional override for first-chunk timeout
+ * @param {number} [options.stallTimeoutMs] - Optional override for stall timeout
  */
-export function createStreamController({ onDisconnect, onError, log, provider, model } = {}) {
+export function createStreamController({ onDisconnect, onError, log, provider, model, firstChunkTimeoutMs, stallTimeoutMs } = {}) {
   const abortController = new AbortController();
   const startTime = Date.now();
   let disconnected = false;
   let abortTimeout = null;
+
+  const resolvedFirstChunkTimeoutMs = firstChunkTimeoutMs || STREAM_FIRST_CHUNK_TIMEOUT_MS;
+  const resolvedStallTimeoutMs = stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
 
   const logStream = (status) => {
     const duration = Date.now() - startTime;
@@ -30,6 +46,11 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
   return {
     signal: abortController.signal,
     startTime,
+
+    // Timeout budget for the stall watchdog in pipeWithDisconnect. Defaults to
+    // module constants; xAI reasoning requests pass longer overrides.
+    firstChunkTimeoutMs: resolvedFirstChunkTimeoutMs,
+    stallTimeoutMs: resolvedStallTimeoutMs,
 
     isConnected: () => !disconnected,
 
@@ -184,9 +205,12 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
     if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
   };
   // Generous TTFT timeout while the prompt prefills, then the stall timeout.
+  // Stream controller may carry per-request overrides (e.g. xAI reasoning).
   const armStall = () => {
     clearStall();
-    const timeout = chunkCount === 0 ? STREAM_FIRST_CHUNK_TIMEOUT_MS : STREAM_STALL_TIMEOUT_MS;
+    const fc = streamController.firstChunkTimeoutMs || STREAM_FIRST_CHUNK_TIMEOUT_MS;
+    const st = streamController.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
+    const timeout = chunkCount === 0 ? fc : st;
     stallTimer = setTimeout(() => {
       stallTimer = null;
       const phase = chunkCount === 0 ? "first-chunk timeout" : "stall timeout";
@@ -210,7 +234,7 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
   };
 
   armStall();
-  dbg(tag, `pipe start | firstChunkTimeout=${STREAM_FIRST_CHUNK_TIMEOUT_MS}ms | stallTimeout=${STREAM_STALL_TIMEOUT_MS}ms`);
+  dbg(tag, `pipe start | firstChunkTimeout=${streamController.firstChunkTimeoutMs || STREAM_FIRST_CHUNK_TIMEOUT_MS}ms | stallTimeout=${streamController.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS}ms`);
 
   const upstreamTap = new TransformStream({
     transform(chunk, controller) {

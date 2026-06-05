@@ -1,12 +1,12 @@
 import { detectFormat, getTargetFormat } from "../services/provider.js";
 import { translateRequest } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
-import { createStreamController } from "../utils/streamHandler.js";
+import { createStreamController, isXaiReasoningRequest } from "../utils/streamHandler.js";
 import { refreshWithRetry, isUnrecoverableRefreshError } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
 import { getModelTargetFormat, getModelStrip, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
-import { HTTP_STATUS } from "../config/runtimeConfig.js";
+import { HTTP_STATUS, XAI_REASONING_STREAM_TIMEOUT_MS } from "../config/runtimeConfig.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import { trackPendingRequest, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { getExecutor } from "../executors/index.js";
@@ -145,13 +145,23 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const msgCount = translatedBody.messages?.length || translatedBody.input?.length || translatedBody.contents?.length || translatedBody.request?.contents?.length || 0;
   log?.debug?.("REQUEST", `${provider.toUpperCase()} | ${model} | ${msgCount} msgs`);
 
+  const isXaiReasoning = isXaiReasoningRequest(provider, model, translatedBody || body);
+  const xaiReasoningTimeouts = isXaiReasoning ? {
+    connectTimeoutMs: XAI_REASONING_STREAM_TIMEOUT_MS,
+    firstChunkTimeoutMs: XAI_REASONING_STREAM_TIMEOUT_MS,
+    stallTimeoutMs: XAI_REASONING_STREAM_TIMEOUT_MS
+  } : null;
   const streamController = createStreamController({
     onDisconnect: (reason) => {
       trackPendingRequest(model, provider, connectionId, false);
       if (onDisconnect) onDisconnect(reason);
     },
     onError: () => trackPendingRequest(model, provider, connectionId, false),
-    log, provider, model
+    log, provider, model,
+    ...(xaiReasoningTimeouts ? {
+      firstChunkTimeoutMs: xaiReasoningTimeouts.firstChunkTimeoutMs,
+      stallTimeoutMs: xaiReasoningTimeouts.stallTimeoutMs
+    } : {})
   });
 
   const proxyOptions = {
@@ -191,7 +201,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Execute request
   let providerResponse, providerUrl, providerHeaders, finalBody;
   try {
-    const result = await executor.execute({ model, body: translatedBody, stream, credentials, signal: streamController.signal, log, proxyOptions });
+    const result = await executor.execute({ model, body: translatedBody, stream, credentials, signal: streamController.signal, log, proxyOptions, connectTimeoutMs: xaiReasoningTimeouts?.connectTimeoutMs });
     providerResponse = result.response;
     providerUrl = result.url;
     providerHeaders = result.headers;
@@ -230,7 +240,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
           try { await onCredentialsRefreshed(newCredentials); } catch (e) { log?.warn?.("TOKEN", `onCredentialsRefreshed failed: ${e.message}`); }
         }
         try {
-          const retryResult = await executor.execute({ model, body: translatedBody, stream, credentials, signal: streamController.signal, log, proxyOptions });
+          const retryResult = await executor.execute({ model, body: translatedBody, stream, credentials, signal: streamController.signal, log, proxyOptions, connectTimeoutMs: xaiReasoningTimeouts?.connectTimeoutMs });
           if (retryResult.response.ok) { providerResponse = retryResult.response; providerUrl = retryResult.url; }
         } catch { log?.warn?.("TOKEN", `${provider.toUpperCase()} | retry after refresh failed`); }
       } else {

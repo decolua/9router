@@ -96,7 +96,7 @@ export class BaseExecutor {
     return { status: response.status, message: bodyText || `HTTP ${response.status}` };
   }
 
-  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
+  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null, connectTimeoutMs }) {
     const fallbackCount = this.getFallbackCount();
     let lastError = null;
     let lastStatus = 0;
@@ -123,14 +123,16 @@ export class BaseExecutor {
       if (!retryAttemptsByUrl[urlIndex]) retryAttemptsByUrl[urlIndex] = 0;
 
       // Abort if upstream doesn't return response headers within FETCH_CONNECT_TIMEOUT_MS
+      // xAI reasoning requests may override with a longer budget (docs.x.ai recommends 3600s).
+      const effectiveConnectTimeout = connectTimeoutMs || FETCH_CONNECT_TIMEOUT_MS;
       const connectCtrl = new AbortController();
-      const connectTimer = setTimeout(() => connectCtrl.abort(new Error("fetch connect timeout")), FETCH_CONNECT_TIMEOUT_MS);
+      const connectTimer = setTimeout(() => connectCtrl.abort(new Error("fetch connect timeout")), effectiveConnectTimeout);
       const mergedSignal = signal ? AbortSignal.any([signal, connectCtrl.signal]) : connectCtrl.signal;
 
       try {
         const bodyStr = JSON.stringify(transformedBody);
         const fetchT0 = Date.now();
-        dbg("FETCH", `${this.provider.toUpperCase()} → ${url} | body=${bodyStr.length}B | connectTimeout=${FETCH_CONNECT_TIMEOUT_MS}ms`);
+        dbg("FETCH", `${this.provider.toUpperCase()} → ${url} | body=${bodyStr.length}B | connectTimeout=${effectiveConnectTimeout}ms`);
         const response = await proxyAwareFetch(url, {
           method: "POST",
           headers,

@@ -49,6 +49,10 @@ export const STREAM_FIRST_CHUNK_TIMEOUT_MS = envMs("STREAM_FIRST_CHUNK_TIMEOUT_M
 // Fetch connect timeout: abort if upstream doesn't return response headers within this duration
 export const FETCH_CONNECT_TIMEOUT_MS = envMs("FETCH_CONNECT_TIMEOUT_MS", 20 * 1000);
 
+// xAI reasoning models require long timeouts (docs.x.ai recommends 3600s).
+// Override only for xAI + reasoning_effort or *-reasoning / *-high aliases.
+export const XAI_REASONING_STREAM_TIMEOUT_MS = 3600 * 1000;
+
 // Default token limits
 export const DEFAULT_MAX_TOKENS = 64000;
 export const DEFAULT_MIN_TOKENS = 32000;
