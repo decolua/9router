@@ -4,8 +4,8 @@
  * per-model buckets with remainingFraction + resetTime.
  */
 
-import { proxyAwareFetch } from "../utils/proxyFetch.js";
-import { CLIENT_METADATA, parseResetTime } from "./usage-utils.js";
+import { proxyAwareFetch } from "../../utils/proxyFetch.js";
+import { CLIENT_METADATA, parseResetTime } from "./utils.js";
 
 function normalizeCloudCodeProjectId(project) {
   if (typeof project === "string") return project.trim() || null;

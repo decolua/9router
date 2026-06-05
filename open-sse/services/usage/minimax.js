@@ -2,8 +2,8 @@
  * MiniMax Token Plan / Coding Plan usage
  */
 
-import { proxyAwareFetch } from "../utils/proxyFetch.js";
-import { MINIMAX_USAGE_URLS, parseResetTime } from "./usage-utils.js";
+import { proxyAwareFetch } from "../../utils/proxyFetch.js";
+import { MINIMAX_USAGE_URLS, parseResetTime } from "./utils.js";
 
 // ── MiniMax helpers ──────────────────────────────────────────────────────
 function getMiniMaxField(model, snakeKey, camelKey) {

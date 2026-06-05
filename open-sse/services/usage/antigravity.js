@@ -2,12 +2,12 @@
  * Antigravity Usage - Fetch quota from Google Cloud Code API
  */
 
-import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import {
   ANTIGRAVITY_CONFIG,
   CLIENT_METADATA,
   parseResetTime,
-} from "./usage-utils.js";
+} from "./utils.js";
 
 /**
  * Get Antigravity subscription info

@@ -3,8 +3,8 @@
  * Uses GitHub accessToken (not copilotToken) to call copilot_internal/user API
  */
 
-import { proxyAwareFetch } from "../utils/proxyFetch.js";
-import { GITHUB_CONFIG, parseResetTime } from "./usage-utils.js";
+import { proxyAwareFetch } from "../../utils/proxyFetch.js";
+import { GITHUB_CONFIG, parseResetTime } from "./utils.js";
 
 function formatGitHubQuotaSnapshot(quota) {
   if (!quota) return { used: 0, total: 0, unlimited: true };

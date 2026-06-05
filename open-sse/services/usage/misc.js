@@ -2,8 +2,8 @@
  * Misc provider usage — Qwen, iFlow, Ollama, GLM
  */
 
-import { proxyAwareFetch } from "../utils/proxyFetch.js";
-import { GLM_QUOTA_URLS } from "./usage-utils.js";
+import { proxyAwareFetch } from "../../utils/proxyFetch.js";
+import { GLM_QUOTA_URLS } from "./utils.js";
 
 /**
  * Qwen Usage

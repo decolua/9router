@@ -2,8 +2,8 @@
  * Codex (OpenAI) Usage - Fetch from ChatGPT backend API
  */
 
-import { proxyAwareFetch } from "../utils/proxyFetch.js";
-import { CODEX_CONFIG, parseResetTime } from "./usage-utils.js";
+import { proxyAwareFetch } from "../../utils/proxyFetch.js";
+import { CODEX_CONFIG, parseResetTime } from "./utils.js";
 
 function toFiniteNumber(value, fallback = 0) {
   if (typeof value === "number" && Number.isFinite(value)) return value;

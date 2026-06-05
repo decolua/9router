@@ -5,7 +5,7 @@
 import {
   CLIENT_METADATA,
   getPlatformUserAgent,
-} from "../config/appConstants.js";
+} from "../../config/appConstants.js";
 
 // GitHub API config
 export const GITHUB_CONFIG = {

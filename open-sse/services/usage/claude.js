@@ -2,8 +2,8 @@
  * Claude Usage - Primary: OAuth endpoint, Fallback: legacy settings/org endpoint
  */
 
-import { proxyAwareFetch } from "../utils/proxyFetch.js";
-import { CLAUDE_CONFIG, parseResetTime } from "./usage-utils.js";
+import { proxyAwareFetch } from "../../utils/proxyFetch.js";
+import { CLAUDE_CONFIG, parseResetTime } from "./utils.js";
 
 /**
  * Legacy Claude usage for API key / org admin users

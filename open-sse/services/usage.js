@@ -2,30 +2,30 @@
  * Usage Fetcher barrel — routes to provider-specific modules.
  *
  * Actual implementations live in:
- *   - ./usage-utils.js         (shared constants, parseResetTime)
- *   - ./usage-github.js        (GitHub Copilot)
- *   - ./usage-gemini.js        (Gemini CLI)
- *   - ./usage-antigravity.js   (Antigravity / Cloud Code)
- *   - ./usage-claude.js        (Claude OAuth + legacy)
- *   - ./usage-codex.js         (Codex / OpenAI)
- *   - ./usage-kiro.js          (Kiro / AWS CodeWhisperer)
- *   - ./usage-minimax.js       (MiniMax Token/Coding Plan)
- *   - ./usage-misc.js          (Qwen, iFlow, Ollama, GLM)
+ *   - ./usage/utils.js         (shared constants, parseResetTime)
+ *   - ./usage/github.js        (GitHub Copilot)
+ *   - ./usage/gemini.js        (Gemini CLI)
+ *   - ./usage/antigravity.js   (Antigravity / Cloud Code)
+ *   - ./usage/claude.js        (Claude OAuth + legacy)
+ *   - ./usage/codex.js         (Codex / OpenAI)
+ *   - ./usage/kiro.js          (Kiro / AWS CodeWhisperer)
+ *   - ./usage/minimax.js       (MiniMax Token/Coding Plan)
+ *   - ./usage/misc.js          (Qwen, iFlow, Ollama, GLM)
  */
 
-import { getGitHubUsage } from "./usage-github.js";
-import { getGeminiUsage } from "./usage-gemini.js";
-import { getAntigravityUsage } from "./usage-antigravity.js";
-import { getClaudeUsage } from "./usage-claude.js";
-import { getCodexUsage } from "./usage-codex.js";
-import { getKiroUsage } from "./usage-kiro.js";
-import { getMiniMaxUsage } from "./usage-minimax.js";
+import { getGitHubUsage } from "./usage/github.js";
+import { getGeminiUsage } from "./usage/gemini.js";
+import { getAntigravityUsage } from "./usage/antigravity.js";
+import { getClaudeUsage } from "./usage/claude.js";
+import { getCodexUsage } from "./usage/codex.js";
+import { getKiroUsage } from "./usage/kiro.js";
+import { getMiniMaxUsage } from "./usage/minimax.js";
 import {
   getQwenUsage,
   getIflowUsage,
   getOllamaUsage,
   getGlmUsage,
-} from "./usage-misc.js";
+} from "./usage/misc.js";
 
 /**
  * Get usage data for a provider connection

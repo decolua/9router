@@ -2,8 +2,8 @@
  * Kiro (AWS CodeWhisperer) Usage
  */
 
-import { proxyAwareFetch } from "../utils/proxyFetch.js";
-import { parseResetTime } from "./usage-utils.js";
+import { proxyAwareFetch } from "../../utils/proxyFetch.js";
+import { parseResetTime } from "./utils.js";
 
 function parseKiroQuotaData(data) {
   const usageList = data.usageBreakdownList || [];
