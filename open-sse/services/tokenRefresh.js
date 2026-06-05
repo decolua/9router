@@ -48,11 +48,11 @@ export const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000;
 const REFRESH_RESULT_TTL_MS = 10_000;
 const refreshDedupCache = new Map();
 
-async function dedupRefresh(provider, oldToken, fn, log) {
+async function dedupRefresh(provider, oldToken, fn, log, force = false) {
   if (!oldToken) return fn();
   const key = `${provider}:${oldToken}`;
   const hit = refreshDedupCache.get(key);
-  if (hit) {
+  if (hit && !force) {
     if (hit.promise) {
       log?.info?.("TOKEN_REFRESH", `Reusing in-flight refresh for ${provider}`);
       return hit.promise;
@@ -469,6 +469,7 @@ export async function refreshKiroToken(
   providerSpecificData,
   log,
   proxyOptions = null,
+  force = false,
 ) {
   if (!refreshToken) return null;
   return dedupRefresh(
@@ -570,6 +571,7 @@ export async function refreshKiroToken(
       };
     },
     log,
+    force,
   );
 }
 

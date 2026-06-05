@@ -81,6 +81,7 @@ export async function handleChatCore({
   sourceFormatOverride,
   providerThinking,
   timing = null,
+  clientSignal = null,
 }) {
   const { provider, model } = modelInfo;
   const requestStartTime = timing?.requestStartTime || Date.now();
@@ -248,6 +249,7 @@ export async function handleChatCore({
     log,
     provider,
     model,
+    clientSignal,
   });
 
   const proxyOptions = {

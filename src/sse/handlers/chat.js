@@ -242,6 +242,11 @@ async function handleSingleModelChat(
   let lastStatus = null;
 
   while (true) {
+    if (request?.signal?.aborted) {
+      log.warn("CHAT", "Client disconnected, stopping fallback loop");
+      return getCustomErrorResponse(request, 499, "Client disconnected", body);
+    }
+
     const credentials = await getProviderCredentials(
       provider,
       excludeConnectionIds,
@@ -334,6 +339,7 @@ async function handleSingleModelChat(
       cavemanLevel: chatSettings.cavemanLevel || "full",
       midStreamResumeEnabled: chatSettings.midStreamResumeEnabled !== false,
       providerThinking,
+      clientSignal: request?.signal,
       // Detect source format by endpoint + body
       sourceFormatOverride: request?.url
         ? detectFormatByEndpoint(new URL(request.url).pathname, body)
