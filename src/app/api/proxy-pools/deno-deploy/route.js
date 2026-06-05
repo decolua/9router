@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createProxyPool } from "@/models";
+import { testRelay } from "@/lib/network/relayTest";
 
 const DENO_V2_API = "https://api.deno.com/v2";
 
@@ -158,6 +159,24 @@ export async function POST(request) {
     const deployUrl = `https://${projectName}.${orgSlug}.deno.net`;
     console.log("Deno deployUrl:", deployUrl);
 
+    // Verify relay is functional before marking active. Deno edge propagation
+    // can lag a few seconds, so retry briefly before giving up.
+    let verification = await testRelay(deployUrl);
+    if (!verification.ok) {
+      await new Promise((r) => setTimeout(r, 4000));
+      verification = await testRelay(deployUrl);
+    }
+    if (!verification.ok) {
+      await fetch(`${DENO_V2_API}/apps/${app.id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${denoToken}` },
+      }).catch(() => {});
+      return NextResponse.json(
+        { error: `Relay verification failed (${verification.status}): ${verification.error}` },
+        { status: 502 }
+      );
+    }
+
     const proxyPool = await createProxyPool({
       name: projectName,
       proxyUrl: deployUrl,
@@ -165,6 +184,9 @@ export async function POST(request) {
       noProxy: "",
       isActive: true,
       strictProxy: false,
+      testStatus: "active",
+      lastTestedAt: new Date().toISOString(),
+      lastError: null,
     });
 
     return NextResponse.json({ proxyPool, deployUrl }, { status: 201 });
