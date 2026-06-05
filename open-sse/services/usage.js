@@ -53,6 +53,50 @@ const CLAUDE_CONFIG = {
 };
 
 /**
+ * xAI (Grok) usage — passive rate-limit snapshot.
+ *
+ * xAI exposes no usage/quota endpoint. Instead we lift the x-ratelimit-*
+ * headers from successful /v1/chat/completions responses (see chatCore.js)
+ * and persist them per-connection as `rateLimitSnapshot`. This getter only
+ * reads that stored snapshot — it never makes a network request, so refresh
+ * is free and consumes no credit. The snapshot reflects the rate-limit window
+ * at the time of the last Grok request, not a monthly quota.
+ *
+ * @param {Object} connection
+ * @returns {Object} quotas-shaped usage, or a message when no snapshot exists
+ */
+export function getXaiUsage(connection) {
+  const snap = connection?.rateLimitSnapshot;
+  if (!snap || (snap.limitRequests == null && snap.limitTokens == null)) {
+    return { message: "xAI connected. Rate-limit data appears after the first Grok request." };
+  }
+
+  const quotas = {};
+  if (snap.limitRequests != null) {
+    const total = Number(snap.limitRequests) || 0;
+    const remaining = snap.remainingRequests != null ? Number(snap.remainingRequests) : total;
+    quotas["Requests (window)"] = {
+      total,
+      used: Math.max(0, total - remaining),
+      unit: "requests",
+      resetAt: null,
+    };
+  }
+  if (snap.limitTokens != null) {
+    const total = Number(snap.limitTokens) || 0;
+    const remaining = snap.remainingTokens != null ? Number(snap.remainingTokens) : total;
+    quotas["Tokens (window)"] = {
+      total,
+      used: Math.max(0, total - remaining),
+      unit: "tokens",
+      resetAt: null,
+    };
+  }
+
+  return { quotas, capturedAt: snap.capturedAt || null };
+}
+
+/**
  * Get usage data for a provider connection
  * @param {Object} connection - Provider connection with accessToken
  * @returns {Object} Usage data with quotas
@@ -91,6 +135,8 @@ export async function getUsageForProvider(connection, proxyOptions = null) {
     case "minimax":
     case "minimax-cn":
       return await getMiniMaxUsage(apiKey, provider, proxyOptions);
+    case "xai":
+      return getXaiUsage(connection);
     default:
       return { message: `Usage API not implemented for ${provider}` };
   }

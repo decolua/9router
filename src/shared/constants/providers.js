@@ -279,6 +279,7 @@ export const USAGE_SUPPORTED_PROVIDERS = [
   "minimax",
   "minimax-cn",
   "freebuff",
+  "xai",
 ];
 
 // Subset that uses apikey auth (still surfaced on quota page)

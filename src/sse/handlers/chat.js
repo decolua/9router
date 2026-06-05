@@ -245,6 +245,15 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       },
       onRequestSuccess: async () => {
         await clearAccountError(credentials.connectionId, credentials, model);
+      },
+      // xAI passive rate-limit capture: persist the snapshot lifted from the
+      // successful upstream response headers (no extra request).
+      onProviderRateLimit: async (snapshot) => {
+        try {
+          await updateProviderConnection(credentials.connectionId, { rateLimitSnapshot: snapshot });
+        } catch (err) {
+          log.warn("USAGE", `xai rate-limit persist failed: ${err?.message || err}`);
+        }
       }
     });
 

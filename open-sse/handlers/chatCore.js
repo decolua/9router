@@ -27,7 +27,7 @@ import { sanitizeKiroTools } from "../utils/kiroSanitizer.js";
  * @param {object} options.credentials - Provider credentials
  * @param {string} options.sourceFormatOverride - Override detected source format (e.g. "openai-responses")
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, cavemanEnabled, cavemanLevel, sourceFormatOverride, providerThinking }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, cavemanEnabled, cavemanLevel, sourceFormatOverride, providerThinking, onProviderRateLimit }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
 
@@ -275,6 +275,29 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     log?.error?.("ERROR", errMsg);
     reqLogger.logError(new Error(message), finalBody || translatedBody);
     return createErrorResult(statusCode, errMsg, resetsAtMs);
+  }
+
+  // xAI: passively capture rate-limit headers from the successful upstream
+  // response. xAI exposes no usage/quota endpoint, but `/v1/chat/completions`
+  // returns x-ratelimit-* headers. Persist per-connection (fire-and-forget, no
+  // extra request, no added latency) so the Usage page can render them.
+  if (provider === "xai" && typeof onProviderRateLimit === "function") {
+    const h = providerResponse.headers;
+    const num = (k) => {
+      const v = h?.get?.(k);
+      const n = v == null ? NaN : Number(v);
+      return Number.isFinite(n) ? n : null;
+    };
+    const snapshot = {
+      capturedAt: new Date().toISOString(),
+      limitRequests: num("x-ratelimit-limit-requests"),
+      remainingRequests: num("x-ratelimit-remaining-requests"),
+      limitTokens: num("x-ratelimit-limit-tokens"),
+      remainingTokens: num("x-ratelimit-remaining-tokens"),
+    };
+    if (snapshot.limitRequests != null || snapshot.limitTokens != null) {
+      Promise.resolve(onProviderRateLimit(snapshot)).catch(() => {});
+    }
   }
 
   const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess };

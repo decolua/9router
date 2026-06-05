@@ -207,6 +207,31 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
+      case "xai":
+        // xAI ships a passive rate-limit snapshot (Requests/Tokens per window)
+        // captured from the last Grok response. When no request has happened
+        // yet, surface the informational message instead of empty rows.
+        if (data.message) {
+          normalizedQuotas.push({
+            name: "info",
+            used: 0,
+            total: 0,
+            resetAt: null,
+            message: data.message,
+          });
+        } else if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              unit: quota.unit,
+              resetAt: quota.resetAt || null,
+            });
+          });
+        }
+        break;
+
       default:
         // Generic fallback for unknown providers
         if (data.quotas) {
