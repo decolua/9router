@@ -1,7 +1,7 @@
 // Pure display helpers for the Proxy Pools dashboard.
 // No mutation of stored data — all transformations are derive-on-render.
 
-const RELAY_KINDS = ["vercel", "cloudflare", "deno", "netlify"];
+const RELAY_KINDS = ["vercel", "cloudflare", "deno"];
 
 export const PROXY_KIND_ORDER = ["socks5", "http", ...RELAY_KINDS];
 
@@ -11,14 +11,12 @@ const KIND_LABELS = {
   vercel: "Vercel Relay",
   cloudflare: "Cloudflare Relay",
   deno: "Deno Relay",
-  netlify: "Netlify Relay",
 };
 
 const RELAY_NAME_LABELS = {
   vercel: "Vercel Relay",
   cloudflare: "Cloudflare Relay",
   deno: "Deno Relay",
-  netlify: "Netlify Relay",
 };
 
 function safeParseUrl(url) {

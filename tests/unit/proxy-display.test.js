@@ -50,7 +50,7 @@ describe("proxyHost", () => {
 describe("deriveProxyKind", () => {
   it("returns relay type from pool.type", () => {
     expect(deriveProxyKind({ type: "vercel", proxyUrl: "https://x.vercel.app" })).toBe("vercel");
-    expect(deriveProxyKind({ type: "netlify", proxyUrl: "https://x.netlify.app" })).toBe("netlify");
+    expect(deriveProxyKind({ type: "deno", proxyUrl: "https://x.deno.dev" })).toBe("deno");
   });
 
   it("derives socks5 from URL even when stored type is http", () => {
@@ -137,6 +137,6 @@ describe("PROXY_KIND_ORDER", () => {
   it("lists socks5 and http before relays", () => {
     expect(PROXY_KIND_ORDER.slice(0, 2)).toEqual(["socks5", "http"]);
     expect(PROXY_KIND_ORDER).toContain("vercel");
-    expect(PROXY_KIND_ORDER).toContain("netlify");
+    expect(PROXY_KIND_ORDER).toContain("deno");
   });
 });

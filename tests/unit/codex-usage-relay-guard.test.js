@@ -25,11 +25,11 @@ describe("Codex usage relay guard (non-JSON / HTML relay)", () => {
     vi.clearAllMocks();
   });
 
-  it("returns a safe message when relay returns HTML (Netlify 404)", async () => {
+  it("returns a safe message when relay returns HTML (404 page)", async () => {
     proxyAwareFetch.mockResolvedValueOnce(
       makeResponse({
         contentType: "text/html; charset=utf-8",
-        body: "<!DOCTYPE html><html><body>Netlify 404</body></html>",
+        body: "<!DOCTYPE html><html><body>404 Not Found</body></html>",
       })
     );
 

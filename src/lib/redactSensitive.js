@@ -30,8 +30,6 @@ const SENSITIVE_KEYS = [
   "api_key",
   "authtoken",
   "auth_token",
-  "netlifytoken",
-  "netlify_token",
   "cookie",
   "secret",
 ];

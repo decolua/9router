@@ -25,13 +25,13 @@ describe("redactSensitive (console-log redaction)", () => {
     expect(out).toContain('"email":"a@b.com"');
   });
 
-  it("redacts both freebuff and netlify token field names", () => {
-    const input = '{"netlifyToken":"nfp_abc","authToken":"fb_xyz"}';
+  it("redacts auth token field names", () => {
+    const input = '{"authToken":"fb_xyz","apiKey":"sk_abc"}';
     const out = redactSensitive(input);
-    expect(out).not.toContain("nfp_abc");
     expect(out).not.toContain("fb_xyz");
-    expect(out).toMatch(/"netlifyToken":"\[REDACTED\]"/);
+    expect(out).not.toContain("sk_abc");
     expect(out).toMatch(/"authToken":"\[REDACTED\]"/);
+    expect(out).toMatch(/"apiKey":"\[REDACTED\]"/);
   });
 
   it("does not mangle short non-secret values", () => {
@@ -81,10 +81,10 @@ describe("consoleLogBuffer redaction integration", () => {
 
   it("strips sensitive JSON keys from object args", () => {
     buffer.initConsoleLogCapture();
-    console.error("creds:", { netlifyToken: "nfp_abc123XYZ", note: "hi" });
+    console.error("creds:", { authToken: "fb_abc123XYZ", note: "hi" });
     const lines = buffer.getConsoleLogs();
     const last = lines[lines.length - 1];
-    expect(last).not.toContain("nfp_abc123XYZ");
+    expect(last).not.toContain("fb_abc123XYZ");
     expect(last).toContain("hi");
   });
 });

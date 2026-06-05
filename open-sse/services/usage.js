@@ -738,8 +738,8 @@ async function getCodexUsage(accessToken, proxyOptions = null) {
 
     const contentType = response.headers.get("content-type") || "";
     if (!contentType.includes("application/json")) {
-      // Relay returned HTML (e.g. Netlify landing page / 404) or another non-JSON
-      // body. Do not attempt JSON.parse — return a clear, non-crashing message.
+      // Relay returned HTML (e.g. a provider/proxy landing page or 404) or another
+      // non-JSON body. Do not attempt JSON.parse — return a clear, non-crashing message.
       return { message: "Codex usage relay returned non-JSON response (possible relay outage)." };
     }
 
