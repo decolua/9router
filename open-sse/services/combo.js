@@ -4,12 +4,94 @@
 
 import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { unavailableResponse } from "../utils/error.js";
+import { requestHasTools, deriveNamespacedSessionKey } from "../utils/sessionFingerprint.js";
+
+// Re-export so callers can keep the historical import path.
+export { requestHasTools };
 
 /**
  * Track rotation state per combo (for round-robin strategy)
  * @type {Map<string, { index: number, consecutiveUseCount: number }>}
  */
 const comboRotationState = new Map();
+
+/**
+ * Sticky-provider state for tool (coding-agent) sessions.
+ *
+ * Coding agents run long multi-turn sessions where each turn references
+ * tool_use / tool_call_id values produced by a specific provider in earlier
+ * turns. If a combo silently switches provider mid-session (e.g. on a transient
+ * error), the new provider receives tool ids it never issued and may reject or
+ * hallucinate. To keep continuity we remember which combo model last succeeded
+ * for a session and try it first on subsequent turns, while still allowing the
+ * normal ordered fallback if that model is now unavailable.
+ *
+ * Key = `${comboName}::${conversationFingerprint}`, Value = { model, lastUsed }.
+ * @type {Map<string, { model: string, lastUsed: number }>}
+ */
+const comboStickyStore = new Map();
+
+const STICKY_TTL_MS = 30 * 60 * 1000; // 30 min of inactivity
+const STICKY_MAX_ENTRIES = 2000;
+
+const stickyCleanup = setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of comboStickyStore) {
+    if (now - entry.lastUsed > STICKY_TTL_MS) comboStickyStore.delete(key);
+  }
+}, 5 * 60 * 1000);
+if (stickyCleanup.unref) stickyCleanup.unref();
+
+/**
+ * Derive a stable session key for sticky combo routing. Returns null when
+ * there is no usable anchor text (caller should skip sticky routing).
+ * @param {Object} body
+ * @param {string} [comboName]
+ * @returns {string|null}
+ */
+export function deriveComboSessionKey(body, comboName) {
+  return deriveNamespacedSessionKey(body, comboName);
+}
+
+function getStickyModel(sessionKey) {
+  if (!sessionKey) return null;
+  const entry = comboStickyStore.get(sessionKey);
+  if (!entry) return null;
+  entry.lastUsed = Date.now();
+  return entry.model;
+}
+
+function setStickyModel(sessionKey, model) {
+  if (!sessionKey || !model) return;
+  if (!comboStickyStore.has(sessionKey) && comboStickyStore.size >= STICKY_MAX_ENTRIES) {
+    const oldest = comboStickyStore.keys().next().value;
+    if (oldest !== undefined) comboStickyStore.delete(oldest);
+  }
+  comboStickyStore.set(sessionKey, { model, lastUsed: Date.now() });
+}
+
+/**
+ * Reorder models so the sticky model (if any and still part of the combo) is
+ * tried first, preserving the original relative order for the remainder.
+ * @param {string[]} models
+ * @param {string|null} stickyModel
+ * @returns {string[]}
+ */
+function applyStickyOrder(models, stickyModel) {
+  if (!stickyModel || !models.includes(stickyModel) || models[0] === stickyModel) {
+    return models;
+  }
+  return [stickyModel, ...models.filter(m => m !== stickyModel)];
+}
+
+/**
+ * Reset sticky session routing state (testing / explicit reset).
+ * @param {string} [sessionKey] - Specific key to clear; omit to clear all.
+ */
+export function resetComboStickySessions(sessionKey) {
+  if (sessionKey) comboStickyStore.delete(sessionKey);
+  else comboStickyStore.clear();
+}
 
 function normalizeStickyLimit(stickyLimit) {
   const parsed = Number.parseInt(stickyLimit, 10);
@@ -109,13 +191,23 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   // Coding agents send tools and need stable priority order. Keep the original
   // combo strategy for normal chat, but try tool-capable requests top-to-bottom
   // while preserving the exact same body (messages/tools/tool_choice/context).
-  const hasTools = Array.isArray(body?.tools) && body.tools.length > 0;
-  const rotatedModels = hasTools
-    ? models
+  const hasTools = requestHasTools(body);
+
+  // Sticky-provider continuity: within a tool session, prefer the model that
+  // last succeeded so tool_use/tool_call_id references stay with one provider
+  // across turns. Falls back through the remaining models if it is unavailable.
+  const sessionKey = hasTools ? deriveComboSessionKey(body, comboName) : null;
+  const stickyModel = sessionKey ? getStickyModel(sessionKey) : null;
+
+  const orderedModels = hasTools
+    ? applyStickyOrder(models, stickyModel)
     : getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
 
+  const rotatedModels = orderedModels;
+
   if (hasTools) {
-    log.info("COMBO", `Tool request: ordered fallback ${comboName || ""} (${rotatedModels.length} models), tools/context preserved`);
+    const stickyNote = stickyModel ? `, sticky=${stickyModel}` : "";
+    log.info("COMBO", `Tool request: ordered fallback ${comboName || ""} (${rotatedModels.length} models), tools/context preserved${stickyNote}`);
   }
   
   let lastError = null;
@@ -132,6 +224,9 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       // Success (2xx) - return response
       if (result.ok) {
         log.info("COMBO", `Model ${modelStr} succeeded`);
+        // Remember the winning model so the next turn of this tool session
+        // sticks with the same provider for tool-call continuity.
+        if (sessionKey) setStickyModel(sessionKey, modelStr);
         return result;
       }
 

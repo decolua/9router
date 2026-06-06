@@ -13,6 +13,8 @@ import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { handleComboChat } from "open-sse/services/combo.js";
+import { deriveStickyAccountKey, getStickyAccount, setStickyAccount, clearStickyAccount } from "open-sse/services/stickyAccount.js";
+import { requestHasTools } from "open-sse/utils/sessionFingerprint.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
@@ -158,13 +160,24 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   // Extract userAgent from request
   const userAgent = request?.headers?.get("user-agent") || "";
 
+  // Sticky-account: within a tool session, prefer the connection that last
+  // succeeded for this provider/model so prompt caches stay warm across turns.
+  // Falls back through other accounts if the preferred one is locked/excluded.
+  const stickyAccountKey = requestHasTools(body)
+    ? deriveStickyAccountKey(body, provider, model)
+    : null;
+  let preferredConnectionId = stickyAccountKey ? getStickyAccount(stickyAccountKey) : null;
+
   // Try with available accounts (fallback on errors)
   const excludeConnectionIds = new Set();
   let lastError = null;
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId });
+    // Only honor the sticky preference for the first attempt; subsequent
+    // iterations fall through normal selection so we don't loop on a bad pin.
+    preferredConnectionId = null;
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
@@ -226,6 +239,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       },
       onRequestSuccess: async () => {
         await clearAccountError(credentials.connectionId, credentials, model);
+        // Pin this connection for the session so prompt caches stay warm.
+        if (stickyAccountKey) setStickyAccount(stickyAccountKey, credentials.connectionId);
       }
     });
 
@@ -237,6 +252,11 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     if (shouldFallback) {
       log.warn("AUTH", `Account ${credentials.connectionName} unavailable (${result.status}), trying fallback`);
       excludeConnectionIds.add(credentials.connectionId);
+      // If the unavailable account is currently the sticky one, drop the pin
+      // so the next turn isn't biased toward an account that's locked.
+      if (stickyAccountKey && getStickyAccount(stickyAccountKey) === credentials.connectionId) {
+        clearStickyAccount(stickyAccountKey);
+      }
       lastError = result.error;
       lastStatus = result.status;
       continue;

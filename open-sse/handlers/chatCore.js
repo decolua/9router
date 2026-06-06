@@ -19,6 +19,7 @@ import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.j
 import { dedupeTools } from "../utils/toolDeduper.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
+import { cloneRequestBody } from "../utils/requestBody.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -30,6 +31,13 @@ import { compressMessages, formatRtkLog } from "../rtk/index.js";
 export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, cavemanEnabled, cavemanLevel, sourceFormatOverride, providerThinking }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
+
+  // Each dispatch may be one of several attempts for the same logical turn
+  // (combo model fallback, multi-account fallback). Downstream stages
+  // (translateRequest, RTK compressMessages, injectCaveman) mutate the body in
+  // place, so clone here to keep every attempt independent and leave the
+  // caller's object (and clientRawRequest.body used for logging) pristine.
+  body = cloneRequestBody(body);
 
   const sourceFormat = sourceFormatOverride || detectFormat(body);
 
