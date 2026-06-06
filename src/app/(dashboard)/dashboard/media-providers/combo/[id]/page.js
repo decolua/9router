@@ -22,6 +22,7 @@ const KIND_LABELS = {
   webFetch: "Web Fetch",
   image: "Text to Image",
   tts: "Text To Speech",
+  embedding: "Embedding",
 };
 
 const EXAMPLE_PATHS = {
@@ -29,6 +30,7 @@ const EXAMPLE_PATHS = {
   webFetch: "/v1/web/fetch",
   image: "/v1/images/generations",
   tts: "/v1/audio/speech",
+  embedding: "/v1/embeddings",
 };
 
 const EXAMPLE_BODIES = {
@@ -36,11 +38,13 @@ const EXAMPLE_BODIES = {
   webFetch: (n) => ({ model: n, url: "https://example.com", format: "markdown" }),
   image: (n) => ({ model: n, prompt: "A cute cat playing piano", n: 1, size: "1024x1024" }),
   tts: (n) => ({ model: n, input: "Hello, this is a test.", voice: "alloy" }),
+  embedding: (n) => ({ model: n, input: "Hello, this is a test." }),
 };
 
 // Map combo.kind → listing route to go back to
 function getListingHref(kind) {
   if (kind === "webSearch" || kind === "webFetch") return "/dashboard/media-providers/web";
+  if (kind === "embedding") return "/dashboard/combos";
   return `/dashboard/media-providers/${kind}`;
 }
 
@@ -61,6 +65,11 @@ export default function ComboDetailPage() {
   const [apiKey, setApiKey] = useState("");
   const [connections, setConnections] = useState([]);
   const [modelAliases, setModelAliases] = useState({});
+  const [dimensions, setDimensions] = useState(combo?.dimensions || "");
+
+  useEffect(() => {
+    if (combo) setDimensions(combo.dimensions || "");
+  }, [combo]);
 
   const fetchAll = async () => {
     try {
@@ -221,9 +230,13 @@ export default function ComboDetailPage() {
     if (Array.isArray(obj)) return obj.map(maskB64);
     const out = {};
     for (const [k, v] of Object.entries(obj)) {
-      out[k] = (k === "b64_json" && typeof v === "string" && v.length > 100)
-        ? `<${v.length} chars base64>`
-        : maskB64(v);
+      if (k === "b64_json" && typeof v === "string" && v.length > 100) {
+        out[k] = `<${v.length} chars base64>`;
+      } else if (k === "embedding" && Array.isArray(v) && v.length > 10) {
+        out[k] = `[${v.slice(0, 5).map(n => typeof n === "number" ? n.toFixed(4) : n).join(", ")}, ... (${v.length} total)]`;
+      } else {
+        out[k] = maskB64(v);
+      }
     }
     return out;
   }
@@ -268,6 +281,25 @@ export default function ComboDetailPage() {
             <Input label="Combo Name" value={name} onChange={(e) => { setName(e.target.value); validateName(e.target.value); }} onBlur={handleSaveName} error={nameError} />
             <p className="text-[10px] text-text-muted mt-0.5">Only letters, numbers, -, _ and .</p>
           </div>
+          {/* 维度配置 — 仅 embedding combo 显示 */}
+          {combo.kind === "embedding" && (
+            <div>
+              <Input
+                label="Dimensions"
+                value={dimensions}
+                onChange={(e) => setDimensions(e.target.value)}
+                onBlur={() => {
+                  const val = dimensions.trim();
+                  saveCombo({ dimensions: val || null });
+                }}
+                placeholder="e.g. 512, 1024, 1536 (leave empty for default)"
+                type="number"
+              />
+              <p className="text-[10px] text-text-muted mt-0.5">
+                指定向量维度。留空则使用模型默认值。仅部分 provider 支持（如 OpenAI text-embedding-3-*）。
+              </p>
+            </div>
+          )}
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium">Round Robin</p>
@@ -276,6 +308,44 @@ export default function ComboDetailPage() {
             <Toggle checked={roundRobin} onChange={handleToggleRoundRobin} />
           </div>
         </div>
+        {/* 维度警告 */}
+        {combo.kind === "embedding" && (() => {
+          const modelDims = combo.models.map(entry => {
+            const { providerId, model: modelId } = parseModelEntry(entry);
+            const provider = AI_PROVIDERS[providerId];
+            const dim = provider?.embeddingConfig?.models?.find(m => m.id === modelId)?.dimensions;
+            return { entry, providerId, modelId, dimensions: dim };
+          });
+          const uniqueDims = [...new Set(modelDims.map(m => m.dimensions).filter(Boolean))];
+          const hasUnknown = modelDims.some(m => m.dimensions === undefined);
+          
+          if (uniqueDims.length <= 1 && !hasUnknown) return null;
+          
+          return (
+            <div className="rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 p-3">
+              <div className="flex items-start gap-2">
+                <span className="material-symbols-outlined text-yellow-600 text-[18px]">warning</span>
+                <div className="text-xs">
+                  {uniqueDims.length > 1 && (
+                    <p className="text-yellow-700 dark:text-yellow-400 font-medium">
+                      ⚠️ 模型维度不一致 ({uniqueDims.join(", ")}). Fallback 可能导致维度不匹配。
+                    </p>
+                  )}
+                  {hasUnknown && (
+                    <p className="text-yellow-600 dark:text-yellow-500">
+                      部分模型维度未知。
+                    </p>
+                  )}
+                  {combo.dimensions && (
+                    <p className="text-yellow-600 dark:text-yellow-500 mt-1">
+                      将请求 {combo.dimensions} 维向量（仅支持维度截断的 provider 生效）。
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </Card>
 
       {/* Providers Card */}
