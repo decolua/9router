@@ -161,9 +161,15 @@ function convertMessages(messages, tools, model) {
         }
       }
       
-      // Handle tool role (from normalized)
+      // Handle tool role (from normalized). OpenAI-compatible coding agents may
+      // send tool content as an array of text blocks; preserve it instead of
+      // silently converting it to an empty Kiro tool result.
       if (msg.role === "tool") {
-        const toolContent = typeof msg.content === "string" ? msg.content : "";
+        const toolContent = typeof msg.content === "string"
+          ? msg.content
+          : Array.isArray(msg.content)
+            ? msg.content.map(c => typeof c === "string" ? c : (c?.text || c?.content || "")).join("\n")
+            : (msg.content ? JSON.stringify(msg.content) : "");
         pendingToolResults.push({
           toolUseId: msg.tool_call_id,
           status: "success",

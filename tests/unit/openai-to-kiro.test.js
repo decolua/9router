@@ -143,4 +143,33 @@ describe("buildKiroPayload", () => {
       expect(currentMsg.userInputMessage.content).toContain("[Image: https://example.com/photo.jpg]");
     });
   });
+
+  describe("tool results", () => {
+    it("should preserve OpenAI tool message array content", () => {
+      const body = {
+        messages: [
+          { role: "user", content: "Run tool" },
+          {
+            role: "assistant",
+            content: [],
+            tool_calls: [{ id: "call_1", type: "function", function: { name: "echo", arguments: "{}" } }]
+          },
+          {
+            role: "tool",
+            tool_call_id: "call_1",
+            content: [{ type: "text", text: "TOOL_ARRAY_OUTPUT" }]
+          },
+          { role: "user", content: "What was output?" }
+        ],
+        tools: [{ type: "function", function: { name: "echo", description: "echo", parameters: { type: "object", properties: {} } } }]
+      };
+
+      const result = buildKiroPayload("claude-sonnet-4.6", body, true, {});
+      const toolResults = result.conversationState.currentMessage.userInputMessage.userInputMessageContext.toolResults;
+
+      expect(toolResults).toHaveLength(1);
+      expect(toolResults[0].toolUseId).toBe("call_1");
+      expect(toolResults[0].content[0].text).toBe("TOOL_ARRAY_OUTPUT");
+    });
+  });
 });

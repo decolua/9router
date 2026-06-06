@@ -106,8 +106,17 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @returns {Promise<Response>}
  */
 export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1 }) {
-  // Apply rotation strategy if enabled
-  const rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
+  // Coding agents send tools and need stable priority order. Keep the original
+  // combo strategy for normal chat, but try tool-capable requests top-to-bottom
+  // while preserving the exact same body (messages/tools/tool_choice/context).
+  const hasTools = Array.isArray(body?.tools) && body.tools.length > 0;
+  const rotatedModels = hasTools
+    ? models
+    : getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
+
+  if (hasTools) {
+    log.info("COMBO", `Tool request: ordered fallback ${comboName || ""} (${rotatedModels.length} models), tools/context preserved`);
+  }
   
   let lastError = null;
   let earliestRetryAfter = null;
