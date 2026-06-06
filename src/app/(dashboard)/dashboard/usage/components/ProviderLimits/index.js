@@ -10,11 +10,22 @@ import { EditConnectionModal } from "@/shared/components";
 import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
 
 function getConnectionLabel(connection) {
-  const isEmail = (value) =>
-    typeof value === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-  if (isEmail(connection.email)) return connection.email;
-  if (isEmail(connection.name)) return connection.name;
-  return connection.name;
+  return connection.name?.trim()
+    || connection.email?.trim()
+    || connection.displayName?.trim()
+    || null;
+}
+
+function getConnectionSecondaryLabel(connection) {
+  if (connection.name?.trim() && connection.email?.trim() && connection.name.trim() !== connection.email.trim()) {
+    return connection.email.trim();
+  }
+
+  if (connection.name?.trim() && connection.displayName?.trim() && connection.name.trim() !== connection.displayName.trim()) {
+    return connection.displayName.trim();
+  }
+
+  return null;
 }
 
 function getConnectionQuotaRemaining(connection, quotaData) {
@@ -1003,6 +1014,11 @@ export default function ProviderLimits() {
                       {getConnectionLabel(conn) ? (
                         <p className="text-xs text-text-muted truncate">
                           {getConnectionLabel(conn)}
+                        </p>
+                      ) : null}
+                      {getConnectionSecondaryLabel(conn) ? (
+                        <p className="text-[11px] text-text-muted/80 truncate">
+                          {getConnectionSecondaryLabel(conn)}
                         </p>
                       ) : null}
                     </div>
