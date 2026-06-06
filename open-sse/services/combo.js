@@ -31,7 +31,7 @@ const comboRotationState = new Map();
  */
 const comboStickyStore = new Map();
 
-const STICKY_TTL_MS = 30 * 60 * 1000; // 30 min of inactivity
+const STICKY_TTL_MS = 90 * 60 * 1000; // 90 min of inactivity
 const STICKY_MAX_ENTRIES = 2000;
 
 const stickyCleanup = setInterval(() => {

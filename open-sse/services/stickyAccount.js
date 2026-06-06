@@ -18,7 +18,7 @@ import { deriveNamespacedSessionKey } from "../utils/sessionFingerprint.js";
 /** @type {Map<string, { connectionId: string, lastUsed: number }>} */
 const stickyAccountStore = new Map();
 
-const STICKY_TTL_MS = 30 * 60 * 1000; // 30 min idle
+const STICKY_TTL_MS = 90 * 60 * 1000; // 90 min idle
 const STICKY_MAX_ENTRIES = 5000;
 
 const cleanup = setInterval(() => {

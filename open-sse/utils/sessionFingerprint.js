@@ -33,7 +33,8 @@ function pushText(parts, content) {
 /**
  * Collect the stable leading text of a conversation. Uses the system prompt
  * plus the first user turn so the same session maps to the same fingerprint
- * across turns, regardless of how the conversation grows.
+ * across turns, regardless of how the conversation grows. A total-length line
+ * is appended so two near-identical texts of different lengths do not collide.
  * @param {Object} body
  * @returns {string}
  */
@@ -53,6 +54,12 @@ function collectFingerprintSource(body) {
 
   const firstUser = items.find(m => m?.role === "user");
   if (firstUser) pushText(parts, firstUser.content);
+
+  // Append a stable total-length signal so near-identical anchor texts of
+  // different lengths hash differently. Only when there is real anchor text,
+  // otherwise an empty body must stay empty so callers can skip sticky routing.
+  const totalChars = parts.reduce((sum, p) => sum + p.length, 0);
+  if (totalChars > 0) parts.push(`len:${totalChars}`);
 
   return parts.join("\n");
 }
