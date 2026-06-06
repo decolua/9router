@@ -6,9 +6,12 @@ import { PROVIDER_ENDPOINTS } from "@/shared/constants/config";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
 import {
+  refreshProviderCredentials,
+  shouldRefreshCredentials,
+} from "open-sse/services/oauthCredentialManager.js";
+import {
   GEMINI_CONFIG,
   ANTIGRAVITY_CONFIG,
-  CODEX_CONFIG,
   KIRO_CONFIG,
   QWEN_CONFIG,
   CLAUDE_CONFIG,
@@ -25,7 +28,7 @@ const OAUTH_TEST_CONFIG = {
     method: "POST",
     authHeader: "Authorization",
     authPrefix: "Bearer ",
-    extraHeaders: { "Content-Type": "application/json", "originator": "codex-cli", "User-Agent": "codex-cli/1.0.18 (macOS; arm64)" },
+    extraHeaders: { "Content-Type": "application/json", "originator": "codex_cli_rs", "User-Agent": "codex_cli_rs/0.136.0" },
     // Minimal invalid body — triggers fast 400 without consuming quota
     body: JSON.stringify({ model: "gpt-5.3-codex", input: [], stream: false, store: false }),
     // 400 (bad request) means auth succeeded; only 401/403 means token is bad
@@ -126,18 +129,7 @@ async function refreshOAuthToken(connection) {
     }
 
     if (provider === "codex") {
-      const response = await fetch(CODEX_CONFIG.tokenUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          grant_type: "refresh_token",
-          client_id: CODEX_CONFIG.clientId,
-          refresh_token: refreshToken,
-        }),
-      });
-      if (!response.ok) return null;
-      const data = await response.json();
-      return { accessToken: data.access_token, expiresIn: data.expires_in, refreshToken: data.refresh_token || refreshToken };
+      return await refreshProviderCredentials(provider, connection, console);
     }
 
     if (provider === "claude") {
@@ -227,10 +219,7 @@ async function refreshOAuthToken(connection) {
 }
 
 function isTokenExpired(connection) {
-  if (!connection.expiresAt) return false;
-  const expiresAt = new Date(connection.expiresAt).getTime();
-  const buffer = 5 * 60 * 1000;
-  return expiresAt <= Date.now() + buffer;
+  return shouldRefreshCredentials(connection.provider, connection);
 }
 
 async function testOAuthConnection(connection, effectiveProxy = null) {
@@ -673,14 +662,25 @@ export async function testSingleConnection(id) {
   };
 
   if (result.refreshed && result.newTokens) {
-    updateData.accessToken = result.newTokens.accessToken;
+    if (result.newTokens.accessToken) updateData.accessToken = result.newTokens.accessToken;
     if (result.newTokens.refreshToken) updateData.refreshToken = result.newTokens.refreshToken;
+    if (result.newTokens.idToken) updateData.idToken = result.newTokens.idToken;
+    if (result.newTokens.lastRefreshAt) updateData.lastRefreshAt = result.newTokens.lastRefreshAt;
+    if (result.newTokens.expiresIn) updateData.expiresIn = result.newTokens.expiresIn;
     if (result.newTokens.expiresIn) {
       updateData.expiresAt = new Date(Date.now() + result.newTokens.expiresIn * 1000).toISOString();
+    } else if (result.newTokens.expiresAt) {
+      updateData.expiresAt = result.newTokens.expiresAt;
+    }
+    if (result.newTokens.providerSpecificData) {
+      updateData.providerSpecificData = {
+        ...(connection.providerSpecificData || {}),
+        ...result.newTokens.providerSpecificData,
+      };
     }
   }
 
   await updateProviderConnection(id, updateData);
 
-  return { valid: result.valid, error: result.error, latencyMs, testedAt: new Date().toISOString() };
+  return { valid: result.valid, error: result.error, refreshed: !!result.refreshed, latencyMs, testedAt: new Date().toISOString() };
 }

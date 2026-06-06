@@ -2,6 +2,10 @@ import { createHash } from "crypto";
 import { BaseExecutor } from "./base.js";
 import { CODEX_DEFAULT_INSTRUCTIONS } from "../config/codexInstructions.js";
 import { PROVIDERS } from "../config/providers.js";
+import {
+  refreshProviderCredentials,
+  shouldRefreshCredentials,
+} from "../services/oauthCredentialManager.js";
 import { normalizeResponsesInput } from "../translator/helpers/responsesApiHelper.js";
 import { fetchImageAsBase64 } from "../translator/helpers/imageHelper.js";
 import { getModelUpstreamId } from "../config/providerModels.js";
@@ -210,6 +214,15 @@ export class CodexExecutor extends BaseExecutor {
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
     const base = super.buildUrl(model, stream, urlIndex, credentials);
     return this._isCompact ? `${base}/compact` : base;
+  }
+
+  async refreshCredentials(credentials, log) {
+    if (!credentials?.refreshToken) return null;
+    return refreshProviderCredentials("codex", credentials, log);
+  }
+
+  needsRefresh(credentials) {
+    return shouldRefreshCredentials("codex", credentials);
   }
 
   /**

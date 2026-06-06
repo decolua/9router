@@ -7,7 +7,7 @@ const dns = require("dns");
 const { promisify } = require("util");
 const { execSync } = require("child_process");
 const { log, err, dumpRequest, createResponseDumper, clearDumpDir } = require("./logger");
-const { IS_DEV, LSOF_BIN, TARGET_HOSTS, URL_PATTERNS, MODEL_SYNONYMS, MODEL_PATTERNS, getToolForHost } = require("./config");
+const { IS_DEV, LSOF_BIN, TARGET_HOSTS, URL_PATTERNS, MODEL_SYNONYMS, MODEL_PATTERNS, MODEL_NO_MAP, getToolForHost } = require("./config");
 const { DATA_DIR, MITM_DIR } = require("./paths");
 const { getCertForDomain } = require("./cert/generate");
 const { getMitmAlias } = require("./dbReader");
@@ -95,6 +95,10 @@ function collectBodyRaw(req) {
 function extractModel(url, body) {
   const urlMatch = url.match(/\/models\/([^/:]+)/);
   if (urlMatch) return urlMatch[1];
+  
+  // Skip parsing if body is binary (AWS EventStream, Protocol Buffers, etc.)
+  if (isBinaryData(body)) return null;
+  
   try {
     const parsed = JSON.parse(body.toString());
     if (parsed.conversationState) {
@@ -104,13 +108,33 @@ function extractModel(url, body) {
   } catch { return null; }
 }
 
+// Detect binary data vs JSON text
+function isBinaryData(buffer) {
+  if (!buffer || buffer.length === 0) return false;
+  // AWS EventStream signature: first 4 bytes = frame length (big-endian uint32)
+  // Check for non-printable chars in first 100 bytes (common in binary protocols)
+  const sample = buffer.slice(0, Math.min(100, buffer.length));
+  let nonPrintable = 0;
+  for (let i = 0; i < sample.length; i++) {
+    const byte = sample[i];
+    // Count non-ASCII printable chars (excluding whitespace)
+    if (byte < 0x20 && byte !== 0x09 && byte !== 0x0A && byte !== 0x0D) {
+      nonPrintable++;
+    }
+    if (byte > 0x7E) nonPrintable++;
+  }
+  // If >30% non-printable, treat as binary
+  return (nonPrintable / sample.length) > 0.3;
+}
+
 function getMappedModel(tool, model) {
   if (!model) return null;
   try {
     const aliases = getMitmAlias(tool);
     if (!aliases) return null;
-    // Normalize via synonym map (e.g., gemini-default → gemini-3-flash)
-    const lookup = MODEL_SYNONYMS?.[tool]?.[model] || model;
+    // Normalize via synonym map (e.g., public AG names -> backend model ids)
+    const normalizedModel = String(model).replace(/^models\//, "");
+    const lookup = MODEL_SYNONYMS?.[tool]?.[normalizedModel] || normalizedModel;
     if (aliases[lookup]) return aliases[lookup];
     // Prefix match fallback
     const prefixKey = Object.keys(aliases).find(k => k && aliases[k] && (lookup.startsWith(k) || k.startsWith(lookup)));
@@ -329,6 +353,14 @@ const server = https.createServer(sslOptions, async (req, res) => {
     }
 
     const model = extractModel(req.url, bodyBuffer);
+
+    // Intentional passthrough: some models must never be re-routed (e.g. Antigravity
+    // tab-autocomplete) so latency-critical inline completion stays native. Silent — this
+    // is by design, not a leak, and fires per keystroke. See MODEL_NO_MAP in config.js.
+    if (model && (MODEL_NO_MAP[tool] || []).some((re) => re.test(model))) {
+      return passthrough(req, res, bodyBuffer);
+    }
+
     const mappedModel = getMappedModel(tool, model);
     if (!mappedModel) {
       return passthrough(req, res, bodyBuffer);

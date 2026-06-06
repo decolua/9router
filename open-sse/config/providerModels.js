@@ -82,9 +82,9 @@ export const PROVIDER_MODELS = {
     { id: "iflow-rome-30ba3b", name: "iFlow ROME" },
   ],
   ag: [  // Antigravity - special case: models call different backends
-    { id: "gemini-3.5-flash-extra-low", name: "Gemini 3.5 Flash (Extra Low)" },
     { id: "gemini-3-flash-agent", name: "Gemini 3.5 Flash (High)" },
     { id: "gemini-3.5-flash-low", name: "Gemini 3.5 Flash (Medium)" },
+    { id: "gemini-3.5-flash-extra-low", name: "Gemini 3.5 Flash (Low)" },
     { id: "gemini-pro-agent", name: "Gemini 3.1 Pro (High)" },
     { id: "gemini-3.1-pro-low", name: "Gemini 3.1 Pro (Low)" },
     { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6 (Thinking)" },
@@ -153,6 +153,7 @@ export const PROVIDER_MODELS = {
     { id: "lite", name: "Qoder Lite" },
     // Frontier models — pin a specific backing model
     { id: "qmodel", name: "Qwen 3.6 Plus (Qoder)" },
+    { id: "qmodel_latest", name: "Qoder Qwen 3.7 Max" },
     { id: "dmodel", name: "DeepSeek V4 Pro (Qoder)" },
     { id: "dfmodel", name: "DeepSeek V4 Flash (Qoder)" },
     { id: "gm51model", name: "GLM 5.1 (Qoder)" },
@@ -337,6 +338,7 @@ export const PROVIDER_MODELS = {
     { id: "kimi-latest", name: "Kimi Latest" },
   ],
   minimax: [
+    { id: "MiniMax-M3", name: "MiniMax M3", targetFormat: "claude" },
     { id: "MiniMax-M2.7", name: "MiniMax M2.7" },
     { id: "MiniMax-M2.5", name: "MiniMax M2.5" },
     { id: "MiniMax-M2.1", name: "MiniMax M2.1" },
@@ -363,6 +365,7 @@ export const PROVIDER_MODELS = {
     { id: "qwen3-vl-plus", name: "Qwen3 VL Plus" },
   ],
   "minimax-cn": [
+    { id: "MiniMax-M3", name: "MiniMax M3", targetFormat: "claude" },
     { id: "MiniMax-M2.7", name: "MiniMax M2.7" },
     { id: "MiniMax-M2.5", name: "MiniMax M2.5" },
     { id: "MiniMax-M2.1", name: "MiniMax M2.1" },
@@ -547,6 +550,7 @@ export const PROVIDER_MODELS = {
   ],
   "xiaomi-tokenplan": [
     { id: "mimo-v2.5-pro", name: "MiMo V2.5 Pro" },
+    { id: "mimo-v2.5-pro-claude", name: "MiMo V2.5 Pro (Claude Native)", targetFormat: "claude", upstreamModelId: "mimo-v2.5-pro" },
     { id: "mimo-v2.5", name: "MiMo V2.5" },
     { id: "mimo-v2-pro", name: "MiMo V2 Pro" },
     { id: "mimo-v2-omni", name: "MiMo V2 Omni" },
@@ -852,6 +856,13 @@ export function getModelTargetFormat(aliasOrId, modelId) {
   if (!models) return null;
   const found = models.find(m => m.id === modelId);
   return found?.targetFormat || null;
+}
+
+export function getModelType(aliasOrId, modelId) {
+  const models = PROVIDER_MODELS[aliasOrId];
+  if (!models) return null;
+  const found = models.find(m => m.id === modelId);
+  return found?.type || null;
 }
 
 export function getModelUpstreamId(aliasOrId, modelId) {

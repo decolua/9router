@@ -9,11 +9,9 @@ import {
   getTunnelService, getTailscaleService, setTunnelUnexpectedExitCallback,
   killCloudflared, isCloudflaredRunning, ensureCloudflared,
   isTailscaleRunning, isTailscaleRunningStrict,
-  loadState,
   checkInternet,
-  probeCloudflareAlive, probeTailscaleAlive,
   RESTART_COOLDOWN_MS, NETWORK_SETTLE_MS,
-  WATCHDOG_INTERVAL_MS, NETWORK_CHECK_INTERVAL_MS,
+  WATCHDOG_INTERVAL_MS, NETWORK_CHECK_INTERVAL_MS, VIRTUAL_IFACE_REGEX,
 } from "@/lib/tunnel";
 import { getMitmStatus, startMitm, loadEncryptedPassword, initDbHooks, restoreToolDNS, removeAllDNSEntriesSync } from "@/mitm/manager";
 import { syncToJson as syncMitmAliasCache } from "@/lib/mitmAliasCache";
@@ -144,23 +142,9 @@ async function safeRestartTunnel(reason) {
 
   const force = FORCE_RESTART_REASONS.test(reason);
 
-  // Watchdog: process alive = trust it (cloudflared self-retries via --retries 99).
-  // Avoids killing a healthy tunnel on transient HTTP probe failures (app busy / slow DNS).
-  if (!force && isCloudflaredRunning()) return;
-
-  // Force reasons (netchange/sleep/online): process may be up but routing stale → probe to confirm
-  if (force && isCloudflaredRunning()) {
-    const state = loadState();
-    const publicUrl = state?.shortId ? `https://r${state.shortId}.abc-tunnel.us` : null;
-    const directUrl = state?.tunnelUrl || null;
-    if (publicUrl && directUrl) {
-      const [publicOk, directOk] = await Promise.all([
-        probeCloudflareAlive(publicUrl),
-        probeCloudflareAlive(directUrl),
-      ]);
-      if (publicOk && directOk) return;
-    }
-  }
+  // Process alive = trust cloudflared (self-reconnects via --retries 99, keeps same URL).
+  // Killing a live process on network change drops the tunnel and rotates the quick-tunnel URL.
+  if (isCloudflaredRunning()) return;
 
   if (!force && Date.now() - svc.lastRestartAt < RESTART_COOLDOWN_MS) {
     console.log(`[Tunnel] degraded but cooldown active, skip (${reason})`);
@@ -187,7 +171,7 @@ async function safeRestartTailscale(reason) {
   if (svc.cancelToken.cancelled) return;
   if (svc.spawnInProgress) return;
 
-  // Tailscale daemon is OS-level with built-in reconnect; trust it when running.
+  // Tailscale daemon is OS-level with built-in reconnect; trust it when running (even on netchange).
   // Startup uses strict probe — cached state is cold after process/dev reload.
   const running = reason === "startup" ? isTailscaleRunningStrict() : isTailscaleRunning();
   if (running) return;
@@ -227,6 +211,7 @@ function getNetworkFingerprint() {
   const active = [];
   for (const [name, addrs] of Object.entries(interfaces)) {
     if (!addrs) continue;
+    if (VIRTUAL_IFACE_REGEX.test(name)) continue;
     for (const addr of addrs) {
       if (!addr.internal && addr.family === "IPv4") {
         active.push(`${name}:${addr.address}`);

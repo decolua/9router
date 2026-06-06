@@ -225,9 +225,12 @@ const PROVIDERS = {
       const mapped = {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token,
+        idToken: tokens.id_token,
         expiresIn: tokens.expires_in,
+        lastRefreshAt: new Date().toISOString(),
       };
-      if (info.email) mapped.email = info.email;
+      const email = info.email || extractEmailFromAccessToken(tokens.access_token);
+      if (email) mapped.email = email;
       if (info.chatgptAccountId || info.chatgptPlanType) {
         mapped.providerSpecificData = {
           chatgptAccountId: info.chatgptAccountId,

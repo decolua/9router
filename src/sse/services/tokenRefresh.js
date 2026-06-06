@@ -23,6 +23,10 @@ import {
   refreshKiroToken as _refreshKiroToken,
   getRefreshLeadMs as _getRefreshLeadMs
 } from "open-sse/services/tokenRefresh.js";
+import {
+  refreshProviderCredentials as _refreshProviderCredentials,
+  shouldRefreshCredentials as _shouldRefreshCredentials,
+} from "open-sse/services/oauthCredentialManager.js";
 
 export const TOKEN_EXPIRY_BUFFER_MS = BUFFER_MS;
 
@@ -66,6 +70,9 @@ export const formatProviderCredentials = (provider, credentials) =>
 
 export const getAllAccessTokens = (userInfo) =>
   _getAllAccessTokens(userInfo, log);
+
+export const shouldRefreshCredentials = (provider, credentials) =>
+  _shouldRefreshCredentials(provider, credentials);
 
 // ─── Lifecycle hook ───────────────────────────────────────────────────────────
 
@@ -158,6 +165,9 @@ export async function updateProviderCredentials(connectionId, newCredentials) {
 
     if (newCredentials.accessToken)         updates.accessToken  = newCredentials.accessToken;
     if (newCredentials.refreshToken)        updates.refreshToken = newCredentials.refreshToken;
+    if (newCredentials.idToken)             updates.idToken = newCredentials.idToken;
+    if (newCredentials.lastRefreshAt)       updates.lastRefreshAt = newCredentials.lastRefreshAt;
+    if (newCredentials.expiresAt)           updates.expiresAt = newCredentials.expiresAt;
     if (newCredentials.expiresIn) {
       updates.expiresAt = toExpiresAt(newCredentials.expiresIn);
       updates.expiresIn = newCredentials.expiresIn;
@@ -172,6 +182,13 @@ export async function updateProviderCredentials(connectionId, newCredentials) {
       updates.providerSpecificData = {
         ...(newCredentials.existingProviderSpecificData || {}),
         ...newCredentials.providerSpecificData,
+      };
+    }
+    if (newCredentials.copilotToken || newCredentials.copilotTokenExpiresAt) {
+      updates.providerSpecificData = {
+        ...(updates.providerSpecificData || newCredentials.existingProviderSpecificData || {}),
+        ...(newCredentials.copilotToken ? { copilotToken: newCredentials.copilotToken } : {}),
+        ...(newCredentials.copilotTokenExpiresAt ? { copilotTokenExpiresAt: newCredentials.copilotTokenExpiresAt } : {}),
       };
     }
     if (newCredentials.projectId)            updates.projectId = newCredentials.projectId;
@@ -205,44 +222,41 @@ export async function checkAndRefreshToken(provider, credentials) {
   let creds = { ...credentials };
 
   // ── 1. Regular access-token expiry ────────────────────────────────────────
-  if (creds.expiresAt) {
-    const expiresAt = new Date(creds.expiresAt).getTime();
-    const now       = Date.now();
-    const remaining = expiresAt - now;
-
+  if (_shouldRefreshCredentials(provider, creds)) {
+    const expiresAt = creds.expiresAt ? new Date(creds.expiresAt).getTime() : null;
+    const remaining = expiresAt ? expiresAt - Date.now() : null;
     const refreshLead = _getRefreshLeadMs(provider);
-    if (remaining < refreshLead) {
-      log.info("TOKEN_REFRESH", "Token expiring soon, refreshing proactively", {
-        provider,
-        expiresIn: Math.round(remaining / 1000),
-        refreshLeadMs: refreshLead,
-      });
 
-      const newCreds = await getAccessToken(provider, creds);
-      if (newCreds?.accessToken) {
-        const mergedCreds = {
-          ...newCreds,
-          existingProviderSpecificData: creds.providerSpecificData,
-        };
+    log.info("TOKEN_REFRESH", "Refreshing provider credentials proactively", {
+      provider,
+      expiresIn: remaining === null ? null : Math.round(remaining / 1000),
+      refreshLeadMs: refreshLead,
+      lastRefreshAt: creds.lastRefreshAt || null,
+    });
 
-        // Persist to DB (non-blocking path continues below)
-        await updateProviderCredentials(creds.connectionId, mergedCreds);
+    const newCreds = await _refreshProviderCredentials(provider, creds, log);
+    if (newCreds?.accessToken || newCreds?.apiKey || newCreds?.copilotToken) {
+      const mergedCreds = {
+        ...newCreds,
+        existingProviderSpecificData: creds.providerSpecificData,
+      };
 
-        creds = {
-          ...creds,
-          accessToken:  newCreds.accessToken,
-          refreshToken: newCreds.refreshToken ?? creds.refreshToken,
-          providerSpecificData: newCreds.providerSpecificData
-            ? { ...creds.providerSpecificData, ...newCreds.providerSpecificData }
-            : creds.providerSpecificData,
-          expiresAt:    newCreds.expiresIn
-            ? toExpiresAt(newCreds.expiresIn)
-            : normalizeExpiresAt(newCreds.expiresAt) || creds.expiresAt,
-        };
+      // Persist to DB (non-blocking path continues below)
+      await updateProviderCredentials(creds.connectionId, mergedCreds);
 
-        // Non-blocking: refresh projectId with the new access token
-        _refreshProjectId(provider, creds.connectionId, creds.accessToken);
-      }
+      creds = {
+        ...creds,
+        ...newCreds,
+        expiresAt: newCreds.expiresIn
+          ? toExpiresAt(newCreds.expiresIn)
+          : normalizeExpiresAt(newCreds.expiresAt) || newCreds.expiresAt || creds.expiresAt,
+        providerSpecificData: newCreds.providerSpecificData
+          ? { ...creds.providerSpecificData, ...newCreds.providerSpecificData }
+          : creds.providerSpecificData,
+      };
+
+      // Non-blocking: refresh projectId with the new access token
+      _refreshProjectId(provider, creds.connectionId, creds.accessToken);
     }
   }
 
