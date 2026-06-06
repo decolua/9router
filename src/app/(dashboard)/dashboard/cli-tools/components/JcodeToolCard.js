@@ -100,6 +100,7 @@ export default function JcodeToolCard({
     }, 0);
 
     return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isExpanded, jcodeStatus]);
 
   const normalizeLocalhost = (url) =>

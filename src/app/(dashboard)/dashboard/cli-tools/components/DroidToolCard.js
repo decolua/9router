@@ -126,6 +126,7 @@ export default function DroidToolCard({
     }, 0);
 
     return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [droidStatus, isExpanded]);
 
   const getEffectiveBaseUrl = () => {

@@ -91,12 +91,14 @@ export default function APIPageClient({ machineId }) {
   const [isRemoteHost, setIsRemoteHost] = useState(false);
   useEffect(() => {
     if (typeof window !== "undefined")
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsRemoteHost(!["localhost", "127.0.0.1", "::1"].includes(window.location.hostname));
   }, []);
 
   // Track app UI locale to gate wenyan caveman levels
   const [locale, setLocale] = useState("en");
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLocale(getCurrentLocale());
     return onLocaleChange(() => setLocale(getCurrentLocale()));
   }, []);

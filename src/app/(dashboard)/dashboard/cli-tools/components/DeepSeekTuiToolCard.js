@@ -103,6 +103,7 @@ export default function DeepSeekTuiToolCard({
     }, 0);
 
     return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deepseekStatus, isExpanded]);
 
   const normalizeLocalhost = (url) =>

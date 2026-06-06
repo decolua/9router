@@ -1,4 +1,4 @@
-export default {
+const migration = {
   version: 2,
   name: "api-key-limits",
   up(db) {
@@ -22,3 +22,5 @@ export default {
     );
   },
 };
+
+export default migration;

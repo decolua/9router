@@ -120,6 +120,7 @@ export default function OpenClawToolCard({
     }, 0);
 
     return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isExpanded, openclawStatus]);
 
   const normalizeLocalhost = (url) =>

@@ -126,12 +126,9 @@ export function handleStreamingResponse({
 }) {
   if (onRequestSuccess) onRequestSuccess();
 
-  const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey });
-
   // Responses passthrough: synthesize response.failed + [DONE] if the stream aborts/stalls before a terminal event
   const isResponsesPassthrough = sourceFormat === FORMATS.OPENAI_RESPONSES && targetFormat === FORMATS.OPENAI_RESPONSES;
   const onAbortTerminal = isResponsesPassthrough ? buildAbortedResponsesTerminalBytes : null;
-  const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal);
 
   const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
   const wrappedOnStreamComplete = (contentObj, usage, ttftAt) =>
@@ -156,24 +153,7 @@ export function handleStreamingResponse({
     providerResponse,
     transformStream,
     streamController,
-    streamStateTracker,
-    midStreamResumeEnabled
-      ? {
-          body,
-          provider,
-          model,
-          credentials,
-          sourceFormat,
-          targetFormat,
-          userAgent,
-          apiKey,
-          connectionId,
-          toolNameMap,
-          reqLogger,
-          clientRawRequest,
-        }
-      : null,
-    timing,
+    onAbortTerminal,
   );
 
   setImmediate(() => {
