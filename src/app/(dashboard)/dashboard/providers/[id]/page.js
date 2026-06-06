@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, IFlowCookieModal, GitLabAuthModal, Toggle, Select, EditConnectionModal, NoAuthProxyCard, ConfirmModal } from "@/shared/components";
+import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, CodexSessionImportModal, IFlowCookieModal, GitLabAuthModal, Toggle, Select, EditConnectionModal, NoAuthProxyCard, ConfirmModal } from "@/shared/components";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS, THINKING_CONFIG } from "@/shared/constants/providers";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
@@ -33,6 +33,7 @@ export default function ProviderDetailPage() {
   const [providerNode, setProviderNode] = useState(null);
   const [proxyPools, setProxyPools] = useState([]);
   const [showOAuthModal, setShowOAuthModal] = useState(false);
+  const [showSessionImportModal, setShowSessionImportModal] = useState(false);
   const [showIFlowCookieModal, setShowIFlowCookieModal] = useState(false);
   const [showAddApiKeyModal, setShowAddApiKeyModal] = useState(false);
   const [addConnectionError, setAddConnectionError] = useState("");
@@ -1348,6 +1349,11 @@ export default function ProviderDetailPage() {
                     </Button>
                   </>
                 )}
+                {!isCompatible && providerId === "codex" && (
+                  <Button size="sm" variant="secondary" onClick={() => setShowSessionImportModal(true)}>
+                    Import Session
+                  </Button>
+                )}
               </div>
             </div>
           ) : (
@@ -1381,6 +1387,17 @@ export default function ProviderDetailPage() {
                       className="w-full sm:w-auto"
                     >
                       Cookie
+                    </Button>
+                  )}
+                  {providerId === "codex" && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => setShowSessionImportModal(true)}
+                      title="Import from ChatGPT session"
+                      className="w-full sm:w-auto"
+                    >
+                      Import Session
                     </Button>
                   )}
                   {hasDualAuthModes ? (
@@ -1491,6 +1508,13 @@ export default function ProviderDetailPage() {
           isOpen={showIFlowCookieModal}
           onSuccess={handleIFlowCookieSuccess}
           onClose={() => setShowIFlowCookieModal(false)}
+        />
+      )}
+      {providerId === "codex" && (
+        <CodexSessionImportModal
+          isOpen={showSessionImportModal}
+          onSuccess={handleOAuthSuccess}
+          onClose={() => setShowSessionImportModal(false)}
         />
       )}
       <AddApiKeyModal
