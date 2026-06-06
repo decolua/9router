@@ -4,6 +4,7 @@ import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.j
 import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
 import { createErrorResult } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
+import { validateChatCompletionToolCalls } from "../../utils/toolCallValidation.js";
 import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
@@ -173,6 +174,13 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     if (hasToolCalls && choice.finish_reason !== "tool_calls") {
       choice.finish_reason = "tool_calls";
     }
+  }
+
+  const toolValidation = validateChatCompletionToolCalls(translatedResponse);
+  if (!toolValidation.ok) {
+    appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+    console.warn(`[ChatCore] Invalid tool_call arguments from ${provider}/${model}: ${toolValidation.reason}`);
+    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid tool_call arguments from upstream: ${toolValidation.reason}`);
   }
 
   // Ensure OpenAI-required fields
