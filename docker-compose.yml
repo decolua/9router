@@ -1,0 +1,23 @@
+services:
+  9router:
+    build: .
+    container_name: 9router
+    ports:
+      - "20128:20128"
+      - "2030:2030"
+      - "2031:2031"
+      - "2032:2032"
+      - "2033:2033"
+      - "2034:2034"
+      - "2035:2035"
+      - "2036:2036"
+      - "2037:2037"
+      - "2038:2038"
+      - "2039:2039"
+      - "2040:2040"
+    volumes:
+      - 9router-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  9router-data:

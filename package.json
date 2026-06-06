@@ -4,12 +4,13 @@
   "description": "9Router web dashboard",
   "private": true,
   "scripts": {
-    "dev": "next dev --webpack --port 20128",
-    "build": "next build --webpack",
-    "start": "next start",
-    "dev:bun": "bun --bun next dev --webpack --port 20128",
-    "build:bun": "bun --bun next build --webpack",
-    "start:bun": "bun ./.next/standalone/server.js"
+    "dev": "next dev --port 20128",
+    "build": "cross-env NODE_ENV=production next build",
+    "postbuild": "node scripts/copy-standalone.js",
+    "start": "cross-env NODE_ENV=production next start",
+    "dev:bun": "bun --bun next dev --port 20128",
+    "build:bun": "cross-env NODE_ENV=production bun --bun next build",
+    "start:bun": "cross-env NODE_ENV=production bun ./.next/standalone/server.js"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -24,6 +25,8 @@
     "fs": "^0.0.1-security",
     "http-proxy-middleware": "^3.0.5",
     "jose": "^6.1.3",
+    "lowdb": "^7.0.1",
+    "proper-lockfile": "^4.1.2",
     "marked": "^18.0.1",
     "material-symbols": "^0.44.6",
     "monaco-editor": "^0.55.1",
@@ -49,6 +52,7 @@
   "comment_better_sqlite3": "kept in optionalDependencies so npm install doesn't fail on systems without build tools — sql.js is used as fallback at runtime",
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.18",
+    "cross-env": "^10.1.0",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "postcss": "^8.5.6",

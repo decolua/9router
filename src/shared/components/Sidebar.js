@@ -34,6 +34,7 @@ const debugItems = [
 ];
 
 const systemItems = [
+  { href: "/dashboard/instances", label: "Instances", icon: "hub" },
   { href: "/dashboard/proxy-pools", label: "Proxy Pools", icon: "lan" },
   { href: "/dashboard/skills", label: "Skills", icon: "extension" },
 ];
@@ -48,6 +49,7 @@ export default function Sidebar({ onClose }) {
   const [isUpdating, setIsUpdating] = useState(false);
   const [shutdownCountdown, setShutdownCountdown] = useState(0);
   const [enableTranslator, setEnableTranslator] = useState(false);
+  const [isChildInstance, setIsChildInstance] = useState(false);
   const { copied, copy } = useCopyToClipboard(2000);
 
   const INSTALL_CMD = UPDATER_CONFIG.installCmdLatest;
@@ -55,7 +57,15 @@ export default function Sidebar({ onClose }) {
   useEffect(() => {
     fetch("/api/settings")
       .then(res => res.json())
-      .then(data => { if (data.enableTranslator) setEnableTranslator(true); })
+      .then(data => { 
+        if (data.enableTranslator) setEnableTranslator(true); 
+        if (data.isChildInstance) {
+          setIsChildInstance(true);
+          if (data.instanceName) {
+            document.title = `[${data.instanceName}] 9Router`;
+          }
+        }
+      })
       .catch(() => {});
   }, []);
 
@@ -238,9 +248,11 @@ export default function Sidebar({ onClose }) {
               </div>
             )}
 
-            {systemItems.map((item) => (
-              <Link
-                key={item.href}
+            {systemItems.map((item) => {
+              if (isChildInstance && item.label === "Instances") return null;
+              return (
+                <Link
+                  key={item.href}
                 href={item.href}
                 onClick={onClose}
                 className={cn(
@@ -260,7 +272,8 @@ export default function Sidebar({ onClose }) {
                 </span>
                 <span className="text-[13px] font-medium">{item.label}</span>
               </Link>
-            ))}
+             );
+            })}
 
             {/* Debug items (inside System section, before Settings) */}
             {debugItems.map((item) => {
