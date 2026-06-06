@@ -6,8 +6,21 @@ import { createErrorResult } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats } from "./requestDetail.js";
-import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
+import { saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
+
+function shouldStripReasoningContent({ clientRawRequest, clientTool }) {
+  const headers = clientRawRequest?.headers || {};
+  const ua = String(headers["user-agent"] || headers["User-Agent"] || "").toLowerCase();
+
+  // Explicit client override via header
+  if (headers["x-strip-reasoning-content"] === "true") return true;
+
+  // Firecrawl: strip unconditionally (can't parse reasoning_content at all)
+  if (ua.includes("firecrawl") || clientTool === "firecrawl") return true;
+
+  return false;
+}
 
 /**
  * Translate non-streaming response body from provider format → OpenAI format.
@@ -132,7 +145,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
 /**
  * Handle non-streaming response from provider.
  */
-export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, trackDone, appendLog }) {
+export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, clientTool, onRequestSuccess, reqLogger, toolNameMap, trackDone, appendLog }) {
   trackDone();
   const contentType = providerResponse.headers.get("content-type") || "";
   let responseBody;
@@ -193,11 +206,16 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     translatedResponse.usage = filterUsageForFormat(addBufferToUsage(translatedResponse.usage), sourceFormat);
   }
 
-  // Strip reasoning_content — some clients (e.g. Firecrawl AI SDK) have JSON parsers that
-  // break on this non-standard field, even though OpenAI allows it in extensions.
-  if (translatedResponse?.choices) {
-    for (const choice of translatedResponse.choices) {
-      if (choice?.message) delete choice.message.reasoning_content;
+  // Keep reasoning_content by default; strip only for known incompatible clients
+  // (Firecrawl can't parse it) or explicit client override header.
+  // Strip reasoning_content only when content is non-empty.
+  // When content is empty (e.g. thinking models that used all tokens for reasoning),
+  // reasoning_content is the only useful output and must be preserved.
+  if (shouldStripReasoningContent({ clientRawRequest, clientTool })) {
+    for (const choice of translatedResponse?.choices || []) {
+      if (choice?.message?.reasoning_content && choice.message.content) {
+        delete choice.message.reasoning_content;
+      }
     }
   }
 
