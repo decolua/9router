@@ -700,7 +700,7 @@ export async function appendRequestLog() {}
 
 export async function getRecentLogs(limit = 200) {
   try {
-    const db = getAdapter();
+    const db = await getAdapter();
     const rows = db.all(
       `SELECT timestamp, provider, model, connectionId, promptTokens, completionTokens, status, tokens FROM usageHistory ORDER BY id DESC LIMIT ?`,
       [limit],

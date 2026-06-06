@@ -215,7 +215,7 @@ export default function TranslatorPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
         <div>
-          <h1 className="text-2xl font-bold text-text-main">Translator Debug</h1>
+          <p className="text-sm text-text-muted">Debug translation flow between API formats</p>
           <p className="text-sm text-text-muted mt-1">Replay request flow — matches log files</p>
         </div>
         {meta && (
@@ -246,7 +246,7 @@ export default function TranslatorPage() {
                   <span className="text-xs font-mono text-text-muted/60 w-4">{step.id}</span>
                   <h3 className="text-sm font-semibold text-text-main">{step.label}</h3>
                   <span className="text-xs text-text-muted/60 font-mono">{step.file}</span>
-                  {content && <span className="text-xs text-green-500">({content.length} chars)</span>}
+                  {content && <span className="text-xs text-success">({content.length} chars)</span>}
                 </button>
                 {!isExpanded && (
                   <div className="flex gap-1 shrink-0">

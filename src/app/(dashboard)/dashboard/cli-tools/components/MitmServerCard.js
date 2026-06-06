@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Card, Button, Badge, Input } from "@/shared/components";
+import InlineAlert from "@/shared/components/InlineAlert";
+import { revealApiKey } from "@/shared/utils/revealApiKey";
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 
@@ -75,7 +77,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
         });
       } else if (action === "start") {
         const keyToUse = selectedApiKey?.trim()
-          || (apiKeys?.length > 0 ? apiKeys[0].key : null)
+          || (apiKeys?.length > 0 ? await revealApiKey(apiKeys[0].id) : null)
           || (!cloudEnabled ? "sk_9router" : null);
         res = await fetch("/api/cli-tools/antigravity-mitm", {
           method: "POST",
@@ -152,7 +154,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
                 { label: "Trusted", ok: status?.certTrusted },
                 { label: "Server", ok: isRunning },
               ].map(({ label, ok }) => (
-                <span key={label} className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded ${ok ? "text-green-600" : "text-text-muted"}`}>
+                <span key={label} className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded ${ok ? "text-success" : "text-text-muted"}`}>
                   <span className="material-symbols-outlined text-[12px]">
                     {ok ? "check_circle" : "cancel"}
                   </span>
@@ -183,7 +185,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
                 onChange={(e) => setMitmRouterBaseUrl(e.target.value)}
                 placeholder={DEFAULT_MITM_ROUTER_BASE}
                 disabled={isRunning}
-                className="flex-1 min-w-0 px-2 py-1.5 bg-surface rounded border border-border text-xs text-text-main focus:outline-none focus:ring-1 focus:ring-primary/50 disabled:opacity-50"
+                className="flex-1 min-w-0 px-2 py-1.5 bg-surface rounded border border-border text-xs text-text-main focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500/40 disabled:opacity-50"
               />
             </div>
             {!isRunning && (
@@ -196,7 +198,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
                   value={selectedApiKey}
                   onChange={(e) => setSelectedApiKey(e.target.value)}
                   placeholder={cloudEnabled ? "Enter or pick API key" : "sk_9router (default)"}
-                  className="flex-1 min-w-0 px-2 py-1.5 bg-surface rounded border border-border text-xs text-text-main focus:outline-none focus:ring-1 focus:ring-primary/50"
+                  className="flex-1 min-w-0 px-2 py-1.5 bg-surface rounded border border-border text-xs text-text-main focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500/40"
                 />
                 {apiKeys?.length > 0 && (
                   <datalist id="mitm-api-keys">
@@ -212,10 +214,18 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
           {/* Action buttons */}
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center" data-i18n-skip="true">
             {status?.certExists && !status?.certTrusted && (
+              <InlineAlert
+                variant="caution"
+                message="Certificate exists but is not trusted by your system. Trust it so CLI tools accept HTTPS."
+                compact
+                className="w-full sm:flex-1"
+              />
+            )}
+            {status?.certExists && !status?.certTrusted && (
               <button
                 onClick={() => handleAction("trust-cert")}
                 disabled={loading}
-                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-2 text-xs font-medium text-yellow-600 transition-colors hover:bg-yellow-500/20 disabled:opacity-50 sm:w-auto sm:py-1.5"
+                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-warning/30 bg-warning/10 px-4 py-2 text-xs font-medium text-warning transition-colors hover:bg-warning/20 disabled:opacity-50 sm:w-auto sm:py-1.5"
               >
                 <span className="material-symbols-outlined text-[16px]">verified_user</span>
                 Trust Cert
@@ -225,7 +235,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
               <button
                 onClick={() => handleAction("stop")}
                 disabled={loading}
-                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-xs font-medium text-red-500 transition-colors hover:bg-red-500/20 disabled:opacity-50 sm:w-auto sm:py-1.5"
+                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-danger/30 bg-danger/10 px-4 py-2 text-xs font-medium text-danger transition-colors hover:bg-danger/20 disabled:opacity-50 sm:w-auto sm:py-1.5"
               >
                 <span className="material-symbols-outlined text-[16px]">stop_circle</span>
                 Stop Server
@@ -248,7 +258,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
 
           {/* Action error */}
           {actionError && (
-            <div className="flex items-start gap-2 px-2 py-1.5 rounded text-xs bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20">
+            <div className="flex items-start gap-2 px-2 py-1.5 rounded text-xs bg-danger/10 text-danger border border-danger/20">
               <span className="material-symbols-outlined text-[14px] mt-0.5 shrink-0">error</span>
               <span>{actionError}</span>
             </div>
@@ -256,7 +266,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
 
           {/* Windows admin warning */}
           {serverIsWindows && !isAdmin && (
-            <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-red-500/10 text-red-600 border border-red-500/20">
+            <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-danger/10 text-danger border border-danger/20">
               <span className="material-symbols-outlined text-[14px]">shield_lock</span>
               <span>Administrator required — restart 9Router as Administrator to use MITM</span>
             </div>
@@ -269,10 +279,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="mx-4 flex w-full max-w-sm flex-col gap-4 rounded-xl border border-border bg-surface p-5 shadow-xl sm:p-6">
             <h3 className="font-semibold text-text-main">Sudo Password Required</h3>
-            <div className="flex items-start gap-3 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-              <span className="material-symbols-outlined text-yellow-500 text-[20px]">warning</span>
-              <p className="text-xs text-text-muted">Required for SSL certificate and server startup</p>
-            </div>
+            <InlineAlert variant="caution" compact message="Required for SSL certificate and server startup." />
             <Input
               type="password"
               placeholder="Enter sudo password"
@@ -281,7 +288,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
               onKeyDown={(e) => { if (e.key === "Enter" && !loading) handleConfirmPassword(); }}
             />
             {modalError && (
-              <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-red-500/10 text-red-600">
+              <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-danger/10 text-danger">
                 <span className="material-symbols-outlined text-[14px]">error</span>
                 <span>{modalError}</span>
               </div>
@@ -303,16 +310,15 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="mx-4 flex w-full max-w-md flex-col gap-4 rounded-xl border border-border bg-surface p-5 shadow-xl sm:p-6">
             <h3 className="font-semibold text-text-main">Port 443 Already In Use</h3>
-            <div className="flex items-start gap-3 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-              <span className="material-symbols-outlined text-yellow-500 text-[20px]">warning</span>
-              <div className="flex flex-col gap-1 text-xs text-text-muted">
+            <InlineAlert variant="caution" compact>
+              <div className="flex flex-col gap-1 text-xs">
                 <p>Port 443 is currently used by another process:</p>
-                <p className="font-mono text-text-main" data-i18n-skip="true">
+                <p className="font-mono" data-i18n-skip="true">
                   {port443Conflict.owner.name} (PID {port443Conflict.owner.pid})
                 </p>
                 <p>Kill this process to start MITM Server?</p>
               </div>
-            </div>
+            </InlineAlert>
             <div className="flex items-center justify-end gap-2">
               <Button variant="ghost" size="sm" onClick={() => { setPort443Conflict(null); setLoading(false); }} disabled={loading}>
                 Cancel

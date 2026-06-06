@@ -29,11 +29,16 @@ export function getPublicOrigin(request) {
     return trimTrailingSlashes(configuredBaseUrl);
   }
 
-  const forwardedProto = request?.headers?.get?.("x-forwarded-proto") || "";
-  const forwardedHost = request?.headers?.get?.("x-forwarded-host") || "";
+  const trustProxyHeaders = process.env.TRUST_PROXY_HEADERS === "true";
+  const forwardedProto = trustProxyHeaders ? request?.headers?.get?.("x-forwarded-proto") || "" : "";
+  const forwardedHost = trustProxyHeaders ? request?.headers?.get?.("x-forwarded-host") || "" : "";
   const host = forwardedHost || request?.headers?.get?.("host") || "";
   if (host) {
-    const protocol = (forwardedProto || new URL(request.url).protocol || "http:").replace(/:$/, "");
+    const requestProtocol = new URL(request.url).protocol || "http:";
+    const protocol = (forwardedProto || requestProtocol).replace(/:$/, "").toLowerCase();
+    if (protocol !== "http" && protocol !== "https") {
+      return trimTrailingSlashes(new URL(request.url).origin);
+    }
     return `${protocol}://${host}`.replace(/\/+$/, "");
   }
 

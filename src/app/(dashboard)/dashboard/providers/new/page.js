@@ -85,7 +85,7 @@ export default function NewProviderPage() {
         </Link>
         <h1 className="text-3xl font-semibold tracking-tight">Add New Provider</h1>
         <p className="text-text-muted mt-2">
-          Configure a new AI provider to use with your applications.
+          Add a provider connection for app and CLI traffic.
         </p>
       </div>
 
@@ -128,7 +128,7 @@ export default function NewProviderPage() {
           {/* Auth Method */}
           <div className="flex flex-col gap-3">
             <label className="text-sm font-medium">
-              Authentication Method <span className="text-red-500">*</span>
+              Authentication Method <span className="text-danger">*</span>
             </label>
             <div className="flex gap-3">
               {authMethodOptions.map((method) => (
@@ -183,7 +183,7 @@ export default function NewProviderPage() {
             placeholder="e.g., Production API, Dev Environment"
             value={formData.displayName}
             onChange={(e) => handleChange("displayName", e.target.value)}
-            hint="Optional. A friendly name to identify this configuration."
+            hint="Optional label for this connection."
           />
 
           {/* Active Toggle */}
@@ -191,12 +191,12 @@ export default function NewProviderPage() {
             checked={formData.isActive}
             onChange={(checked) => handleChange("isActive", checked)}
             label="Active"
-            description="Enable this provider for use in your applications"
+            description="Allow 9Router to send traffic through this provider"
           />
 
           {/* Error Message */}
           {errors.submit && (
-            <div className="p-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-sm">
+            <div className="p-4 rounded-lg bg-danger/5 border border-danger/30 text-danger text-sm">
               {errors.submit}
             </div>
           )}
@@ -217,4 +217,3 @@ export default function NewProviderPage() {
     </div>
   );
 }
-

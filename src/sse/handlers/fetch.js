@@ -70,12 +70,13 @@ export async function handleFetch(request) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: url");
   }
 
-  // Validate URL format
+  // Validate URL format and block private/metadata hosts
   try {
-    new URL(targetUrl);
+    const { assertSafeFetchUrl } = await import("open-sse/utils/ssrfGuard.js");
+    assertSafeFetchUrl(targetUrl, { requireHttps: false, allowHttp: true });
   } catch {
-    log.warn("FETCH", "Invalid URL", { url: targetUrl });
-    return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid URL format");
+    log.warn("FETCH", "Invalid or blocked URL", { url: targetUrl });
+    return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid or blocked URL");
   }
 
   // Combo expansion: providerInput may be a combo name → run fallback/round-robin across providers

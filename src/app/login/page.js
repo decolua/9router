@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Card, Button, Input } from "@/shared/components";
+import { Card, Button, Input, InlineAlert } from "@/shared/components";
+import { SECURITY_COPY } from "@/shared/constants/securityCopy";
 import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
@@ -133,9 +134,11 @@ export default function LoginPage() {
             {passwordAvailable ? (
               <form onSubmit={handleLogin} className="flex flex-col gap-4">
                 {((authMode === "oidc" && !oidcConfigured) || (authMode === "both" && !oidcConfigured)) && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400 text-center">
-                    OIDC login is enabled, but the issuer/client fields are not configured yet. Password login is still available for recovery.
-                  </p>
+                  <InlineAlert
+                    variant="warning"
+                    message="OIDC login is enabled, but issuer/client fields are not configured yet. Password login remains available for recovery."
+                    compact
+                  />
                 )}
 
                 {authMode === "both" && oidcConfigured && (
@@ -154,9 +157,9 @@ export default function LoginPage() {
                     required
                     autoFocus={!oidcAvailable}
                   />
-                  {error && <p className="text-xs text-red-500">{error}</p>}
+                  {error && <p className="text-xs text-danger">{error}</p>}
                   {retryAfter > 0 && (
-                    <p className="text-xs text-amber-600 dark:text-amber-400">
+                    <p className="text-xs text-warning">
                       Locked. Retry in <span className="font-mono">{retryAfter}s</span>.
                     </p>
                   )}
@@ -177,17 +180,16 @@ export default function LoginPage() {
                   {retryAfter > 0 ? `Wait ${retryAfter}s` : "Login"}
                 </Button>
 
-                <p className="text-xs text-center text-text-muted mt-2">
-                  Default password is <code className="bg-sidebar px-1 rounded">123456</code>
-                </p>
                 {hasPassword === false && (
-                  <p className="text-xs text-center text-text-muted">
-                    No custom password is set yet. The default password above will work until you change it.
-                  </p>
+                  <InlineAlert
+                    variant="warning"
+                    message={SECURITY_COPY.loginDefaultPassword}
+                    compact
+                  />
                 )}
               </form>
             ) : (
-              error && <p className="text-xs text-red-500">{error}</p>
+              error && <p className="text-xs text-danger">{error}</p>
             )}
           </div>
         </Card>

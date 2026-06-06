@@ -5,9 +5,6 @@ import { fetchOidcDiscovery, getPublicOrigin, probeOidcClientSecret } from "@/li
 import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
 
 async function canAccessTestRoute() {
-  const settings = await getSettings();
-  if (settings.requireLogin === false) return true;
-
   const cookieStore = await cookies();
   const token = cookieStore.get("auth_token")?.value;
   return await verifyDashboardAuthToken(token);

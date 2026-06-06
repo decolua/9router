@@ -248,6 +248,7 @@ function inferProviderFromModelName(modelName) {
   const m = modelName.toLowerCase();
   if (m.startsWith("claude-")) return "anthropic";
   if (m.startsWith("gemini-")) return "gemini";
+  if (m.startsWith("gpt-5")) return "codex";
   if (m.startsWith("gpt-")) return "openai";
   if (m.startsWith("o1") || m.startsWith("o3") || m.startsWith("o4"))
     return "openai";

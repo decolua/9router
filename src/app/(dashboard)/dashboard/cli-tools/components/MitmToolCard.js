@@ -40,10 +40,6 @@ export default function MitmToolCard({
   const mitmHosts = TOOL_HOSTS[tool.id] ?? [];
   const canRunWithoutPassword = isWin || hasCachedPassword || needsSudoPassword === false;
 
-  useEffect(() => {
-    if (isExpanded) loadSavedMappings();
-  }, [isExpanded]);
-
   const loadSavedMappings = async () => {
     try {
       const res = await fetch(`/api/cli-tools/antigravity-mitm/alias?tool=${tool.id}`);
@@ -53,6 +49,12 @@ export default function MitmToolCard({
       }
     } catch { /* ignore */ }
   };
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (isExpanded) loadSavedMappings();
+  }, [isExpanded]);
+
 
   const saveMappings = useCallback(async (mappings) => {
     try {
@@ -183,7 +185,7 @@ export default function MitmToolCard({
             <div className="flex flex-col gap-0.5 text-[11px] text-text-muted px-1">
               <p>Toggle DNS to redirect {tool.name} traffic through 9Router via MITM.</p>
               {!dnsActive && (
-                <p className="text-amber-600 text-[10px] mt-1">
+                <p className="text-warning text-[10px] mt-1">
                   ⚠️ Enable DNS to edit model mappings
                 </p>
               )}
@@ -204,7 +206,7 @@ export default function MitmToolCard({
                         onBlur={(e) => handleMappingBlur(model.alias, e.target.value)}
                         placeholder="provider/model-id"
                         disabled={!dnsActive}
-                        className={`w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5 ${!dnsActive ? "opacity-50 cursor-not-allowed" : ""}`}
+                        className={`w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500/40 sm:py-1.5 ${!dnsActive ? "opacity-50 cursor-not-allowed" : ""}`}
                       />
                       {modelMappings[model.alias] && (
                         <button
@@ -212,7 +214,7 @@ export default function MitmToolCard({
                             handleModelMappingChange(model.alias, "");
                             saveMappings({ ...modelMappings, [model.alias]: "" });
                           }}
-                          className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-red-500 rounded transition-colors"
+                          className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-danger rounded transition-colors"
                           title="Clear"
                         >
                           <span className="material-symbols-outlined text-[14px]">close</span>
@@ -241,7 +243,7 @@ export default function MitmToolCard({
                 <button
                   onClick={handleDnsToggle}
                   disabled={!serverRunning || loading}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-xs font-medium text-red-500 transition-colors hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:py-1.5"
+                  className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-danger/30 bg-danger/10 px-4 py-2 text-xs font-medium text-danger transition-colors hover:bg-danger/20 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:py-1.5"
                 >
                   <span className="material-symbols-outlined text-[16px]">stop_circle</span>
                   Stop DNS
@@ -259,7 +261,7 @@ export default function MitmToolCard({
 
               {/* Warning below button */}
               {warning && (
-                <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs text-amber-500">
+                <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs text-warning">
                   <span className="material-symbols-outlined text-[14px]">warning</span>
                   <span>{warning}</span>
                 </div>
@@ -274,10 +276,7 @@ export default function MitmToolCard({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="mx-4 flex w-full max-w-sm flex-col gap-4 rounded-xl border border-border bg-surface p-5 shadow-xl sm:p-6">
             <h3 className="font-semibold text-text-main">Sudo Password Required</h3>
-            <div className="flex items-start gap-3 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-              <span className="material-symbols-outlined text-yellow-500 text-[20px]">warning</span>
-              <p className="text-xs text-text-muted">Required to modify /etc/hosts and flush DNS cache</p>
-            </div>
+            <InlineAlert variant="caution" compact message="Required to modify /etc/hosts and flush DNS cache." />
             <Input
               type="password"
               placeholder="Enter sudo password"
@@ -286,7 +285,7 @@ export default function MitmToolCard({
               onKeyDown={(e) => { if (e.key === "Enter" && !loading) handleConfirmPassword(); }}
             />
             {modalError && (
-              <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-red-500/10 text-red-600">
+              <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-danger/10 text-danger">
                 <span className="material-symbols-outlined text-[14px]">error</span>
                 <span>{modalError}</span>
               </div>

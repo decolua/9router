@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, it, beforeAll, afterAll, vi } from "vitest";
+import { Low, JSONFile } from "../fixtures/lowdb.js";
 
 const N_ITEMS = 500;
 const N_QUERIES = 200;
@@ -34,8 +35,6 @@ beforeAll(async () => {
 
   // Lowdb setup — direct lowdb usage (mimics legacy behavior)
   tempLowdb = fs.mkdtempSync(path.join(os.tmpdir(), "9router-bench-lowdb-"));
-  const { Low } = await import("lowdb");
-  const { JSONFile } = await import("lowdb/node");
   const dbFile = path.join(tempLowdb, "db.json");
   fs.writeFileSync(dbFile, JSON.stringify({ providerConnections: [], usageHistory: [] }));
   lowDb = new Low(new JSONFile(dbFile), { providerConnections: [], usageHistory: [] });

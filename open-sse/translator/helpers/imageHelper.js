@@ -1,3 +1,5 @@
+import { isSafeFetchUrl } from "../../utils/ssrfGuard.js";
+
 /**
  * Fetch a remote image URL and return it as a base64 data URI.
  * Used when upstream providers (Codex, etc.) require inline base64 images
@@ -11,6 +13,9 @@
 export async function fetchImageAsBase64(imageUrl, options = {}) {
   const { signal, timeoutMs = 10000 } = options;
   if (!imageUrl || (!imageUrl.startsWith("http://") && !imageUrl.startsWith("https://"))) {
+    return null;
+  }
+  if (!isSafeFetchUrl(imageUrl, { requireHttps: false, allowHttp: true })) {
     return null;
   }
 

@@ -12,8 +12,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 const originalFetch = global.fetch;
 
 describe("Codex Refresh Token", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
+    vi.resetModules();
+    const { __clearRefreshDedupCacheForTests } = await import("../../open-sse/services/tokenRefresh.js");
+    __clearRefreshDedupCacheForTests();
   });
 
   afterEach(() => {

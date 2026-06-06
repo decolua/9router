@@ -41,7 +41,7 @@ const getPageInfo = (pathname) => {
     const kindConfig = MEDIA_PROVIDER_KINDS.find((k) => k.id === kindId);
     return {
       title: kindConfig?.label || kindId,
-      description: `Manage your ${kindConfig?.label || kindId} providers`,
+      description: `Connect ${kindConfig?.label || kindId} providers`,
       icon: kindConfig?.icon || "perm_media",
       breadcrumbs: [],
     };
@@ -68,17 +68,24 @@ const getPageInfo = (pathname) => {
     }
   }
 
+  if (pathname.includes("/basic-chat"))
+    return {
+      title: "Basic Chat",
+      description: "Chat with models from your connected providers",
+      icon: "chat",
+      breadcrumbs: [],
+    };
   if (pathname.includes("/providers") && !pathname.includes("/media-providers"))
     return {
       title: "Providers",
-      description: "Manage your AI provider connections",
+      description: "Connect, test, and route AI providers",
       icon: "dns",
       breadcrumbs: [],
     };
   if (pathname.includes("/combos"))
     return {
       title: "Combos",
-      description: "Model combos with fallback",
+      description: "Build ordered model failover chains",
       icon: "layers",
       breadcrumbs: [],
     };
@@ -86,7 +93,7 @@ const getPageInfo = (pathname) => {
     return {
       title: "Usage & Analytics",
       description:
-        "Monitor your API usage, token consumption, and request logs",
+        "Review spend, tokens, quota, and request history",
       icon: "bar_chart",
       breadcrumbs: [],
     };
@@ -100,7 +107,7 @@ const getPageInfo = (pathname) => {
   if (pathname.includes("/quota"))
     return {
       title: "Quota Tracker",
-      description: "Track and manage your API quota limits",
+      description: "Watch provider limits before requests fail",
       icon: "data_usage",
       breadcrumbs: [],
     };
@@ -114,35 +121,35 @@ const getPageInfo = (pathname) => {
   if (pathname.includes("/cli-tools"))
     return {
       title: "CLI Tools",
-      description: "Configure CLI tools",
+      description: "Install and point local AI tools at 9Router",
       icon: "terminal",
       breadcrumbs: [],
     };
   if (pathname.includes("/proxy-pools"))
     return {
       title: "Proxy Pools",
-      description: "Manage your proxy pool configurations",
+      description: "Group outbound proxies for provider routing",
       icon: "lan",
       breadcrumbs: [],
     };
   if (pathname.includes("/skills"))
     return {
       title: "Agent Skills",
-      description: "Copy a link and paste to your AI to use 9Router — no install needed",
+      description: "Share ready-to-use capability links with AI agents",
       icon: "extension",
       breadcrumbs: [],
     };
   if (pathname.includes("/endpoint"))
     return {
       title: "Endpoint",
-      description: "API endpoint configuration",
+      description: "Copy local, tunnel, and secure API endpoints",
       icon: "api",
       breadcrumbs: [],
     };
   if (pathname.includes("/profile"))
     return {
       title: "Settings",
-      description: "Manage your preferences",
+      description: "Set account, security, and UI preferences",
       icon: "settings",
       breadcrumbs: [],
     };
@@ -157,14 +164,14 @@ const getPageInfo = (pathname) => {
     return {
       title: "Console Log",
       description: "Live server console output",
-      icon: "monitor",
+      icon: "article",
       breadcrumbs: [],
     };
   if (pathname === "/dashboard")
     return {
-      title: "Endpoint",
-      description: "API endpoint configuration",
-      icon: "api",
+      title: "Overview",
+      description: "Security status, quick links, and where to go next",
+      icon: "home",
       breadcrumbs: [],
     };
   return { title: "", description: "", breadcrumbs: [] };
@@ -340,7 +347,8 @@ function HeaderSearch() {
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder={placeholder}
-        className="w-full h-8 pl-7 pr-7 rounded-lg border border-border bg-surface/60 text-sm focus:outline-none focus:border-primary/50 transition-colors"
+        aria-label="Search current page"
+        className="w-full h-8 pl-7 pr-7 rounded-lg border border-border bg-surface/60 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500/40 transition-colors"
       />
       {query && (
         <button

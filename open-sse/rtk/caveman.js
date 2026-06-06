@@ -45,7 +45,13 @@ function injectMessagesSystem(body, prompt) {
 
   const idx = arr.findIndex(m => m && (m.role === "system" || m.role === "developer"));
   if (idx >= 0) {
-    appendToOpenAIMessage(arr[idx], prompt);
+    // If the system message is large enough to be in OpenAI's prefix cache, insert a
+    // separate system message after it rather than mutating it — preserves the cached prefix.
+    if (mightBeOpenAICached(arr[idx])) {
+      arr.splice(idx + 1, 0, { role: "system", content: prompt });
+    } else {
+      appendToOpenAIMessage(arr[idx], prompt);
+    }
   } else {
     arr.unshift({ role: "system", content: prompt });
   }
@@ -55,15 +61,27 @@ function appendToOpenAIMessage(msg, prompt) {
   if (typeof msg.content === "string") {
     msg.content = `${msg.content}${SEP}${prompt}`;
   } else if (Array.isArray(msg.content)) {
-    // Responses-style array of parts {type:"input_text"|"text", text}
     msg.content.push({ type: "input_text", text: prompt });
   } else {
     msg.content = prompt;
   }
 }
 
+// Returns true if a system message looks like it may be hitting OpenAI's prefix cache
+// (long enough to have been cached in a prior request — 1024 token threshold ≈ 4096 chars).
+function mightBeOpenAICached(msg) {
+  const MIN_CACHED_CHARS = 4096;
+  if (typeof msg.content === "string") return msg.content.length >= MIN_CACHED_CHARS;
+  if (Array.isArray(msg.content)) {
+    const total = msg.content.reduce((s, p) => s + (p?.text?.length || p?.content?.length || 0), 0);
+    return total >= MIN_CACHED_CHARS;
+  }
+  return false;
+}
+
 // Claude shape: body.system as string | array of {type:"text", text}
-// Insert before the last cache_control block to keep caveman inside the cached prefix.
+// Insert AFTER the last cache_control block so the cached prefix is never disturbed.
+// Caveman is small (~100 tokens) so not caching it is negligible.
 function injectClaudeSystem(body, prompt) {
   if (typeof body.system === "string" && body.system.length > 0) {
     body.system = `${body.system}${SEP}${prompt}`;
@@ -76,7 +94,8 @@ function injectClaudeSystem(body, prompt) {
       if (body.system[i]?.cache_control) { lastCacheIdx = i; break; }
     }
     if (lastCacheIdx >= 0) {
-      body.system.splice(lastCacheIdx, 0, block);
+      // Insert after the last cached block — cache prefix stays identical
+      body.system.splice(lastCacheIdx + 1, 0, block);
     } else {
       body.system.push(block);
     }

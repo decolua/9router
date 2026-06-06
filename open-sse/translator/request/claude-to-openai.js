@@ -1,6 +1,13 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
+
 import { adjustMaxTokens } from "../helpers/maxTokensHelper.js";
+
+function flattenTextOnlyParts(parts) {
+  if (!Array.isArray(parts) || parts.length === 0) return null;
+  if (!parts.every((part) => part?.type === "text")) return null;
+  return parts.map((part) => part.text || "").join("\n");
+}
 
 // Convert Claude request to OpenAI format
 export function claudeToOpenAIRequest(model, body, stream) {
@@ -177,9 +184,7 @@ function convertClaudeMessage(msg) {
     // If has tool results, return array of tool messages
     if (toolResults.length > 0) {
       if (parts.length > 0) {
-        const textContent = parts.length === 1 && parts[0].type === "text" 
-          ? parts[0].text 
-          : parts;
+        const textContent = flattenTextOnlyParts(parts) ?? parts;
         return [...toolResults, { role: "user", content: textContent }];
       }
       return toolResults;
@@ -189,9 +194,7 @@ function convertClaudeMessage(msg) {
     if (toolCalls.length > 0) {
       const result = { role: "assistant" };
       if (parts.length > 0) {
-        result.content = parts.length === 1 && parts[0].type === "text" 
-          ? parts[0].text 
-          : parts;
+        result.content = flattenTextOnlyParts(parts) ?? parts;
       }
       result.tool_calls = toolCalls;
       return result;
@@ -201,7 +204,7 @@ function convertClaudeMessage(msg) {
     if (parts.length > 0) {
       return {
         role,
-        content: parts.length === 1 && parts[0].type === "text" ? parts[0].text : parts
+        content: flattenTextOnlyParts(parts) ?? parts
       };
     }
     
@@ -229,4 +232,3 @@ function convertToolChoice(choice) {
 
 // Register
 register(FORMATS.CLAUDE, FORMATS.OPENAI, claudeToOpenAIRequest, null);
-

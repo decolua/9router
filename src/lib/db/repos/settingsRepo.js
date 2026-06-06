@@ -16,7 +16,7 @@ const DEFAULT_SETTINGS = {
   comboStickyRoundRobinLimit: 1,
   comboStrategies: {},
   requireLogin: true,
-  tunnelDashboardAccess: true,
+  tunnelDashboardAccess: false,
   authMode: "password",
   oidcIssuerUrl: "",
   oidcClientId: "",
@@ -36,6 +36,7 @@ const DEFAULT_SETTINGS = {
   rtkEnabled: true,
   cavemanEnabled: false,
   cavemanLevel: "full",
+  headroomEnabled: false,
 };
 
 async function readRaw() {

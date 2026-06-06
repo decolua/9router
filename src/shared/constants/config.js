@@ -10,6 +10,7 @@ export const APP_CONFIG = {
 // GitHub configuration
 export const GITHUB_CONFIG = {
   changelogUrl: "https://raw.githubusercontent.com/decolua/9router/refs/heads/master/CHANGELOG.md",
+  releasesApiUrl: "https://api.github.com/repos/decolua/9router/releases?per_page=30",
   donateUrl: "https://9router.com/api/donate",
 };
 

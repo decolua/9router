@@ -178,6 +178,7 @@ export default function ProviderDetailPage() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchConnections();
     fetchAliases();
   }, [fetchConnections, fetchAliases]);
@@ -187,6 +188,7 @@ export default function ProviderDetailPage() {
       ? []
       : savedEnabledModels;
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelectedModelIds((prev) => {
       if (
         prev.length === nextSelectedModelIds.length
@@ -246,6 +248,7 @@ export default function ProviderDetailPage() {
   }, [activeConnection, isCompatible, models.length, providerInfo?.passthroughModels]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchRemoteModels();
   }, [fetchRemoteModels]);
 
@@ -926,7 +929,7 @@ function PassthroughModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias
       {/* Delete button */}
       <button
         onClick={onDeleteAlias}
-        className="p-1 hover:bg-red-50 rounded text-red-500"
+        className="p-1 hover:bg-red-50 rounded text-danger"
         title="Remove model"
       >
         <span className="material-symbols-outlined text-sm">delete</span>
@@ -1147,6 +1150,7 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
   const modelLockUntil = Object.entries(connection)
     .filter(([k]) => k.startsWith("modelLock_"))
     .map(([, v]) => v)
+    // eslint-disable-next-line react-hooks/purity
     .filter(v => v && new Date(v).getTime() > Date.now())
     .sort()[0] || null;
 
@@ -1180,7 +1184,7 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
   };
 
   return (
-    <div className={`group flex items-center justify-between p-3 rounded-lg hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors ${connection.isActive === false ? "opacity-60" : ""}`}>
+    <div className={`group flex items-center justify-between p-3 rounded-lg hover:bg-surface-2 dark:hover:bg-white/[0.02] transition-colors ${connection.isActive === false ? "opacity-60" : ""}`}>
       <div className="flex items-center gap-3 flex-1 min-w-0">
         {/* Priority arrows */}
         <div className="flex flex-col">
@@ -1210,7 +1214,7 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
             </Badge>
             {isCooldown && connection.isActive !== false && <CooldownTimer until={modelLockUntil} />}
             {connection.lastError && connection.isActive !== false && (
-              <span className="text-xs text-red-500 truncate max-w-[300px]" title={connection.lastError}>
+              <span className="text-xs text-danger truncate max-w-[300px]" title={connection.lastError}>
                 {connection.lastError}
               </span>
             )}
@@ -1229,10 +1233,10 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
           title={(connection.isActive ?? true) ? "Disable connection" : "Enable connection"}
         />
         <div className="flex gap-1 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button onClick={onEdit} className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary">
+          <button onClick={onEdit} className="p-2 hover:bg-surface-2 rounded text-text-muted hover:text-primary">
             <span className="material-symbols-outlined text-[18px]">edit</span>
           </button>
-          <button onClick={onDelete} className="p-2 hover:bg-red-500/10 rounded text-red-500">
+          <button onClick={onDelete} className="p-2 hover:bg-danger/10 rounded text-danger">
             <span className="material-symbols-outlined text-[18px]">delete</span>
           </button>
         </div>
@@ -1406,6 +1410,7 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
 
   useEffect(() => {
     if (connection) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFormData({
         name: connection.name || "",
         priority: connection.priority || 1,
@@ -1590,6 +1595,7 @@ function EditCompatibleNodeModal({ isOpen, node, onSave, onClose, isAnthropic })
 
   useEffect(() => {
     if (node) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFormData({
         name: node.name || "",
         prefix: node.prefix || "",

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSettings, validateApiKey } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
+import { normalizeHostHeaderHostname } from "@/shared/utils/host";
 
 const CLI_TOKEN_HEADER = "x-9r-cli-token";
 const CLI_TOKEN_SALT = "9r-cli-auth";
@@ -31,8 +32,8 @@ const PUBLIC_API_PATHS = [
   "/api/settings/require-login",
 ];
 
-// Public top-level prefixes (LLM API endpoints with their own API key auth).
-const PUBLIC_PREFIXES = ["/v1", "/v1beta", "/api/v1", "/api/v1beta"];
+// Public top-level prefixes (LLM API endpoints gated here by API key or CLI token).
+const PUBLIC_PREFIXES = ["/v1", "/v1beta", "/api/v1", "/api/v1beta", "/codex"];
 
 // Always require JWT token regardless of requireLogin setting
 const ALWAYS_PROTECTED = [
@@ -83,9 +84,16 @@ const LOCAL_ONLY_PATHS = [
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 
 function isLoopbackHostname(h) {
-  if (!h) return false;
-  const name = h.split(":")[0].replace(/^\[|\]$/g, "").toLowerCase();
-  return LOOPBACK_HOSTS.has(name);
+  return LOOPBACK_HOSTS.has(normalizeHostHeaderHostname(h));
+}
+
+function isLoopbackIp(ip) {
+  if (!ip) return false;
+  const trimmed = ip.trim();
+  if (LOOPBACK_HOSTS.has(trimmed.toLowerCase())) return true;
+  if (trimmed.startsWith("127.")) return true;
+  if (trimmed === "::1" || trimmed.startsWith("fe80:")) return true;
+  return false;
 }
 
 function isLocalRequest(request) {
@@ -96,6 +104,14 @@ function isLocalRequest(request) {
       if (!isLoopbackHostname(new URL(origin).hostname)) return false;
     } catch { return false; }
   }
+  // Reject remote clients spoofing loopback Host via proxy headers
+  const xff = request.headers.get("x-forwarded-for");
+  if (xff) {
+    const clientIp = xff.split(",")[0].trim();
+    if (clientIp && !isLoopbackIp(clientIp)) return false;
+  }
+  const realIp = request.headers.get("x-real-ip");
+  if (realIp && !isLoopbackIp(realIp.trim())) return false;
   return true;
 }
 
@@ -116,15 +132,14 @@ async function hasValidApiKey(request) {
 }
 
 async function canAccessPublicLlmApi(request) {
-  if (isLocalRequest(request)) return true;
   if (await hasValidCliToken(request)) return true;
   return await hasValidApiKey(request);
 }
 
 async function canAccessLocalOnlyRoute(request) {
   if (await hasValidCliToken(request)) return true;
-  // Browser on host: loopback Host + Origin (blocks tunnel/CSRF) + auth (JWT or requireLogin=false)
-  if (isLocalRequest(request) && await isAuthenticated(request)) return true;
+  // Browser on host: loopback Host + Origin (blocks tunnel/CSRF) + dashboard session
+  if (isLocalRequest(request) && await isDashboardAccessAllowed(request)) return true;
   return false;
 }
 
@@ -142,11 +157,17 @@ async function loadSettings() {
   }
 }
 
-async function isAuthenticated(request) {
+/** Dashboard UI / local-only routes: JWT or requireLogin disabled. */
+async function isDashboardAccessAllowed(request) {
   if (await hasValidToken(request)) return true;
   const settings = await loadSettings();
   if (settings && settings.requireLogin === false) return true;
   return false;
+}
+
+/** Management API routes: JWT or CLI token only — never requireLogin=false. */
+async function isApiAuthenticated(request) {
+  return await hasValidToken(request);
 }
 
 function isPublicApi(pathname) {
@@ -165,10 +186,16 @@ export const __test__ = {
 export async function proxy(request) {
   const { pathname } = request.nextUrl;
 
+  const isLocalOnlyPath = LOCAL_ONLY_PATHS.some((p) => pathname.startsWith(p));
+
   // Local-only gate for spawn-capable / host-secret routes.
-  if (LOCAL_ONLY_PATHS.some((p) => pathname.startsWith(p))) {
+  if (isLocalOnlyPath) {
     if (!(await canAccessLocalOnlyRoute(request))) {
       return NextResponse.json({ error: "Local only: CLI token required" }, { status: 403 });
+    }
+    // Local-only routes are fully authenticated above unless also always-protected.
+    if (!ALWAYS_PROTECTED.some((p) => pathname.startsWith(p))) {
+      return NextResponse.next();
     }
   }
 
@@ -187,7 +214,7 @@ export async function proxy(request) {
   // Deny-by-default for /api/* — public allow-list bypasses, everything else requires auth.
   if (pathname.startsWith("/api/")) {
     if (isPublicApi(pathname)) return NextResponse.next();
-    if (await hasValidCliToken(request) || await isAuthenticated(request))
+    if (await hasValidCliToken(request) || await isApiAuthenticated(request))
       return NextResponse.next();
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -195,7 +222,7 @@ export async function proxy(request) {
   // Protect all dashboard routes
   if (pathname.startsWith("/dashboard")) {
     let requireLogin = true;
-    let tunnelDashboardAccess = true;
+    let tunnelDashboardAccess = false;
 
     try {
       const settings = await loadSettings();
@@ -205,9 +232,11 @@ export async function proxy(request) {
 
         // Block tunnel/tailscale access if disabled (redirect to login)
         if (!tunnelDashboardAccess) {
-          const host = (request.headers.get("host") || "").split(":")[0].toLowerCase();
-          const tunnelHost = settings.tunnelUrl ? new URL(settings.tunnelUrl).hostname.toLowerCase() : "";
-          const tailscaleHost = settings.tailscaleUrl ? new URL(settings.tailscaleUrl).hostname.toLowerCase() : "";
+          const host = normalizeHostHeaderHostname(request.headers.get("host"));
+          let tunnelHost = "";
+          let tailscaleHost = "";
+          try { tunnelHost = settings.tunnelUrl ? new URL(settings.tunnelUrl).hostname.toLowerCase() : ""; } catch {}
+          try { tailscaleHost = settings.tailscaleUrl ? new URL(settings.tailscaleUrl).hostname.toLowerCase() : ""; } catch {}
           if ((tunnelHost && host === tunnelHost) || (tailscaleHost && host === tailscaleHost)) {
             return NextResponse.redirect(new URL("/login", request.url));
           }

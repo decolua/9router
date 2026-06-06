@@ -17,3 +17,4 @@ export { default as MitmToolCard } from "./MitmToolCard";
 export { default as MitmLinkCard } from "./MitmLinkCard";
 export { default as EndpointPresetControl } from "./EndpointPresetControl";
 export { default as BaseUrlSelect } from "./BaseUrlSelect";
+export { default as CliNotDetectedPanel } from "./CliNotDetectedPanel";

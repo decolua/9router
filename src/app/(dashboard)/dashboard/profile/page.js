@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Card, Button, Toggle, Input } from "@/shared/components";
+import { Card, Button, Toggle, Input, SecurityWarning } from "@/shared/components";
 import { useTheme } from "@/shared/hooks/useTheme";
 import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
+import { SECURITY_COPY } from "@/shared/constants/securityCopy";
 
 export default function ProfilePage() {
   const { theme, setTheme, isDark } = useTheme();
@@ -68,6 +69,7 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (typeof window !== "undefined") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setOidcRedirectUri(`${window.location.origin}/api/auth/oidc/callback`);
     }
   }, []);
@@ -171,6 +173,11 @@ export default function ProfilePage() {
 
   const handlePasswordChange = async (e) => {
     e.preventDefault();
+    if (passwords.new.length < 8) {
+      setPassStatus({ type: "error", message: "Password must be at least 8 characters" });
+      return;
+    }
+
     if (passwords.new !== passwords.confirm) {
       setPassStatus({ type: "error", message: "Passwords do not match" });
       return;
@@ -192,7 +199,14 @@ export default function ProfilePage() {
       const data = await res.json();
 
       if (res.ok) {
-        setPassStatus({ type: "success", message: "Password updated successfully" });
+        const wasFirstPassword = !settings.hasPassword;
+        setSettings((prev) => ({ ...prev, hasPassword: true }));
+        setPassStatus({
+          type: "success",
+          message: wasFirstPassword
+            ? "Password set. You can now enable tunnels from Endpoint."
+            : "Password updated successfully",
+        });
         setPasswords({ current: "", new: "", confirm: "" });
       } else {
         setPassStatus({ type: "error", message: data.error || "Failed to update password" });
@@ -267,6 +281,22 @@ export default function ProfilePage() {
       }
     } catch (err) {
       console.error("Failed to update combo sticky limit:", err);
+    }
+  };
+
+
+  const updateRequireApiKey = async (requireApiKey) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requireApiKey }),
+      });
+      if (res.ok) {
+        setSettings((prev) => ({ ...prev, requireApiKey }));
+      }
+    } catch (err) {
+      console.error("Failed to update require API key:", err);
     }
   };
 
@@ -522,7 +552,7 @@ export default function ProfilePage() {
         <Card>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
             <div className="flex items-center gap-3 sm:gap-4">
-              <div className="size-10 sm:size-12 rounded-lg bg-green-500/10 text-green-500 flex items-center justify-center shrink-0">
+              <div className="size-10 sm:size-12 rounded-lg bg-success/10 text-success flex items-center justify-center shrink-0">
                 <span className="material-symbols-outlined text-xl sm:text-2xl">computer</span>
               </div>
               <div>
@@ -530,7 +560,7 @@ export default function ProfilePage() {
                 <p className="text-sm text-text-muted">Running on your machine</p>
               </div>
             </div>
-            <div className="inline-flex p-1 rounded-lg bg-black/5 dark:bg-white/5 w-full sm:w-auto">
+            <div className="inline-flex p-1 rounded-lg bg-bg-alt w-full sm:w-auto">
               {["light", "dark", "system"].map((option) => (
                 <button
                   key={option}
@@ -539,7 +569,7 @@ export default function ProfilePage() {
                   className={cn(
                     "flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-md font-medium transition-all flex-1 sm:flex-initial",
                     theme === option
-                      ? "bg-white dark:bg-white/10 text-text-main shadow-sm"
+                      ? "bg-surface text-text-main shadow-sm"
                       : "text-text-muted hover:text-text-main"
                   )}
                 >
@@ -586,7 +616,7 @@ export default function ProfilePage() {
               />
             </div>
             {dbStatus.message && (
-              <p className={`text-sm ${dbStatus.type === "error" ? "text-red-500" : "text-green-600 dark:text-green-400"}`}>
+              <p className={`text-sm ${dbStatus.type === "error" ? "text-danger" : "text-success"}`}>
                 {dbStatus.message}
               </p>
             )}
@@ -602,12 +632,10 @@ export default function ProfilePage() {
             <h3 className="text-base sm:text-lg font-semibold">Security</h3>
           </div>
           <div className="flex flex-col gap-4">
-            <div className="flex items-start sm:items-center justify-between gap-4">
+            <div id="require-login-toggle" className="flex items-start sm:items-center justify-between gap-4">
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-sm sm:text-base">Require login</p>
-                <p className="text-xs sm:text-sm text-text-muted">
-                  When ON, dashboard requires password. When OFF, access without login.
-                </p>
+                <p className="text-xs sm:text-sm text-text-muted">{SECURITY_COPY.requireLoginHelp}</p>
               </div>
               <Toggle
                 checked={settings.requireLogin === true}
@@ -615,6 +643,32 @@ export default function ProfilePage() {
                 disabled={loading}
               />
             </div>
+            {!loading && settings.requireLogin === false && (
+              <SecurityWarning
+                message={SECURITY_COPY.requireLoginOff}
+                action={{ label: "Enable login", href: "#require-login-toggle" }}
+              />
+            )}
+            {!loading && settings.hasPassword === false && (
+              <SecurityWarning message={SECURITY_COPY.defaultPassword} />
+            )}
+            <div id="require-api-key-toggle" className="flex items-start sm:items-center justify-between gap-4 pt-4 border-t border-border/50">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm sm:text-base">Require API key</p>
+                <p className="text-xs sm:text-sm text-text-muted">{SECURITY_COPY.requireApiKeyHelp}</p>
+              </div>
+              <Toggle
+                checked={settings.requireApiKey === true}
+                onChange={() => updateRequireApiKey(!settings.requireApiKey)}
+                disabled={loading}
+              />
+            </div>
+            {!loading && settings.requireApiKey !== true && (
+              <SecurityWarning
+                message={SECURITY_COPY.requireApiKeyOff}
+                action={{ label: "Endpoint settings", href: "/dashboard/endpoint" }}
+              />
+            )}
             {settings.requireLogin === true && (
               <form onSubmit={handlePasswordChange} className="flex flex-col gap-4 pt-4 border-t border-border/50">
                 {settings.hasPassword && (
@@ -660,7 +714,7 @@ export default function ProfilePage() {
                 </div>
 
                 {passStatus.message && (
-                  <p className={`text-xs sm:text-sm ${passStatus.type === "error" ? "text-red-500" : "text-green-500"}`}>
+                  <p className={`text-xs sm:text-sm ${passStatus.type === "error" ? "text-danger" : "text-success"}`}>
                     {passStatus.message}
                   </p>
                 )}
@@ -731,7 +785,7 @@ export default function ProfilePage() {
                         "text-left rounded-lg border p-3 transition-colors",
                         active
                           ? "border-primary bg-primary/5"
-                          : "border-border bg-bg hover:bg-black/5 dark:hover:bg-white/5"
+                          : "border-border bg-bg hover:bg-surface-2"
                       )}
                       disabled={loading || oidcLoading}
                     >
@@ -812,25 +866,25 @@ export default function ProfilePage() {
             </div>
 
             {oidcTestStatus.message && (
-              <p className={`text-xs sm:text-sm ${oidcTestStatus.type === "error" ? "text-red-500" : "text-green-500"}`}>
+              <p className={`text-xs sm:text-sm ${oidcTestStatus.type === "error" ? "text-danger" : "text-success"}`}>
                 {oidcTestStatus.message}
               </p>
             )}
 
             {oidcStatus.message && (
-              <p className={`text-xs sm:text-sm ${oidcStatus.type === "error" ? "text-red-500" : "text-green-500"}`}>
+              <p className={`text-xs sm:text-sm ${oidcStatus.type === "error" ? "text-danger" : "text-success"}`}>
                 {oidcStatus.message}
               </p>
             )}
 
             {settings.authMode === "oidc" && (
-              <p className="text-xs sm:text-sm text-amber-600 dark:text-amber-400">
+              <p className="text-xs sm:text-sm text-warning">
                 OIDC login is currently active. Password login is disabled until you switch back.
               </p>
             )}
 
             {settings.authMode === "both" && (
-              <p className="text-xs sm:text-sm text-amber-600 dark:text-amber-400">
+              <p className="text-xs sm:text-sm text-warning">
                 Password and OIDC login are both active.
               </p>
             )}
@@ -841,7 +895,7 @@ export default function ProfilePage() {
         {/* Routing Preferences */}
         <Card>
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500 shrink-0">
+            <div className="p-2 rounded-lg bg-info/10 text-info shrink-0">
               <span className="material-symbols-outlined text-[20px]">route</span>
             </div>
             <h3 className="text-base sm:text-lg font-semibold">Routing Strategy</h3>
@@ -994,7 +1048,7 @@ export default function ProfilePage() {
             )}
 
             {proxyStatus.message && (
-              <p className={`text-xs sm:text-sm ${proxyStatus.type === "error" ? "text-red-500" : "text-green-500"} pt-2 border-t border-border/50`}>
+              <p className={`text-xs sm:text-sm ${proxyStatus.type === "error" ? "text-danger" : "text-success"} pt-2 border-t border-border/50`}>
                 {proxyStatus.message}
               </p>
             )}

@@ -1,6 +1,7 @@
 import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG, resolveRetryEntry, FETCH_CONNECT_TIMEOUT_MS } from "../config/runtimeConfig.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { dbg } from "../utils/debugLog.js";
+import { validateProviderBaseUrl } from "../utils/ssrfGuard.js";
 
 /**
  * BaseExecutor - Base class for provider executors
@@ -27,13 +28,13 @@ export class BaseExecutor {
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
     if (this.provider?.startsWith?.("openai-compatible-")) {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || "https://api.openai.com/v1";
-      const normalized = baseUrl.replace(/\/$/, "");
+      const normalized = validateProviderBaseUrl(baseUrl);
       const path = this.provider.includes("responses") ? "/responses" : "/chat/completions";
       return `${normalized}${path}`;
     }
     if (this.provider?.startsWith?.("anthropic-compatible-")) {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || "https://api.anthropic.com/v1";
-      const normalized = baseUrl.replace(/\/$/, "");
+      const normalized = validateProviderBaseUrl(baseUrl);
       return `${normalized}/messages`;
     }
     const baseUrls = this.getBaseUrls();

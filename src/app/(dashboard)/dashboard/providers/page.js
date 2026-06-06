@@ -11,6 +11,7 @@ import {
   Modal,
   Select,
   Toggle,
+  EmptyState,
 } from "@/shared/components";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/config";
@@ -317,19 +318,27 @@ export default function ProvidersPage() {
 
   return (
     <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
+      {!searchQuery.trim() && connections.length === 0 && (
+        <EmptyState
+          icon="dns"
+          title="No providers connected yet"
+          description="Connect an OAuth account or add an API key to start routing requests."
+          action={{ label: "Browse providers below", href: "#oauth-providers" }}
+        />
+      )}
       {!hasAnyResult && (
         <div className="text-center py-8 border border-dashed border-border rounded-xl">
           <span className="material-symbols-outlined text-[32px] text-text-muted mb-2">
             search_off
           </span>
-          <p className="text-text-muted text-sm">No providers match your search</p>
+          <p className="text-text-muted text-sm">No providers found for this search</p>
         </div>
       )}
 
       {/* Custom Providers (OpenAI/Anthropic Compatible) — dynamic */}
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-lg sm:text-xl font-semibold flex items-center gap-2 leading-tight">
+          <h2 id="oauth-providers" className="text-lg sm:text-xl font-semibold flex items-center gap-2 leading-tight">
             Custom Providers (OpenAI/Anthropic Compatible){" "}
           </h2>
           <div className="grid grid-cols-1 gap-2 sm:flex sm:w-auto">
@@ -346,7 +355,7 @@ export default function ProvidersPage() {
               variant="secondary"
               icon="add"
               onClick={() => setShowAddCompatibleModal(true)}
-              className="w-full !bg-white !text-black hover:!bg-gray-100 sm:w-auto"
+              className="w-full sm:w-auto"
             >
               Add OpenAI Compatible
             </Button>
@@ -356,7 +365,7 @@ export default function ProvidersPage() {
         anthropicCompatibleProviders.length === 0 ? (
           <div className="flex items-center justify-center gap-2 py-2 border border-dashed border-border rounded-xl text-text-muted text-sm">
             <span className="material-symbols-outlined text-[18px]">extension</span>
-            <span>No custom providers — use buttons above to add OpenAI/Anthropic compatible endpoints</span>
+            <span>No custom endpoints yet. Add an OpenAI- or Anthropic-compatible endpoint above.</span>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
@@ -596,24 +605,11 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
   const { connected, error, errorCode, errorTime, allDisabled } = stats;
   const isNoAuth = !!provider.noAuth;
 
-  const dotColors = {
-    free: "bg-green-500",
-    oauth: "bg-blue-500",
-    apikey: "bg-amber-500",
-    compatible: "bg-orange-500",
-  };
-  const dotLabels = {
-    free: "Free",
-    oauth: "OAuth",
-    apikey: "API Key",
-    compatible: "Compatible",
-  };
-
   return (
     <Link href={`/dashboard/providers/${providerId}`} className="group min-w-0">
       <Card
         padding="xs"
-        className={`h-full hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors cursor-pointer ${allDisabled ? "opacity-50" : ""}`}
+        className={`h-full hover:bg-surface-2 transition-colors cursor-pointer ${allDisabled ? "opacity-50" : ""}`}
       >
         <div className="flex min-w-0 items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
@@ -715,19 +711,6 @@ function ApiKeyProviderCard({
     ANTHROPIC_COMPATIBLE_PREFIX,
   );
 
-  const dotColors = {
-    free: "bg-green-500",
-    oauth: "bg-blue-500",
-    apikey: "bg-amber-500",
-    compatible: "bg-orange-500",
-  };
-  const dotLabels = {
-    free: "Free",
-    oauth: "OAuth",
-    apikey: "API Key",
-    compatible: "Compatible",
-  };
-
   const getIconPath = () => {
     if (isCompatible)
       return provider.apiType === "responses"
@@ -741,7 +724,7 @@ function ApiKeyProviderCard({
     <Link href={`/dashboard/providers/${providerId}`} className="group min-w-0">
       <Card
         padding="xs"
-        className={`h-full hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors cursor-pointer ${allDisabled ? "opacity-50" : ""}`}
+        className={`h-full hover:bg-surface-2 transition-colors cursor-pointer ${allDisabled ? "opacity-50" : ""}`}
       >
         <div className="flex min-w-0 items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
@@ -861,6 +844,7 @@ function AddOpenAICompatibleModal({ isOpen, onClose, onCreated }) {
 
   useEffect(() => {
     const defaultBaseUrl = "https://api.openai.com/v1";
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setFormData((prev) => ({ ...prev, baseUrl: defaultBaseUrl }));
   }, [formData.apiType]);
 
@@ -945,7 +929,7 @@ function AddOpenAICompatibleModal({ isOpen, onClose, onCreated }) {
     return (
       <div className="flex flex-col gap-1">
         <Badge variant="error">Invalid</Badge>
-        {error && <span className="text-sm text-red-500">{error}</span>}
+        {error && <span className="text-sm text-danger">{error}</span>}
       </div>
     );
   };
@@ -1050,6 +1034,7 @@ function AddAnthropicCompatibleModal({ isOpen, onClose, onCreated }) {
 
   useEffect(() => {
     if (isOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setValidationResult(null);
       setCheckKey("");
       setCheckModelId("");
@@ -1135,7 +1120,7 @@ function AddAnthropicCompatibleModal({ isOpen, onClose, onCreated }) {
     return (
       <div className="flex flex-col gap-1">
         <Badge variant="error">Invalid</Badge>
-        {error && <span className="text-sm text-red-500">{error}</span>}
+        {error && <span className="text-sm text-danger">{error}</span>}
       </div>
     );
   };
@@ -1222,10 +1207,10 @@ function ProviderTestResultsView({ results }) {
   if (results.error && !results.results) {
     return (
       <div className="text-center py-6">
-        <span className="material-symbols-outlined text-red-500 text-[32px] mb-2 block">
+        <span className="material-symbols-outlined text-danger text-[32px] mb-2 block">
           error
         </span>
-        <p className="text-sm text-red-400">{results.error}</p>
+        <p className="text-sm text-danger">{results.error}</p>
       </div>
     );
   }
@@ -1246,11 +1231,11 @@ function ProviderTestResultsView({ results }) {
       {summary && (
         <div className="flex flex-wrap items-center gap-2 text-xs mb-1 sm:gap-3">
           <span className="text-text-muted">{modeLabel} Test</span>
-          <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-medium">
+          <span className="px-2 py-0.5 rounded bg-success/15 text-success font-medium">
             {summary.passed} passed
           </span>
           {summary.failed > 0 && (
-            <span className="px-2 py-0.5 rounded bg-red-500/15 text-red-400 font-medium">
+            <span className="px-2 py-0.5 rounded bg-danger/10 text-danger font-medium">
               {summary.failed} failed
             </span>
           )}
@@ -1262,10 +1247,10 @@ function ProviderTestResultsView({ results }) {
       {items.map((r, i) => (
         <div
           key={r.connectionId || i}
-          className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg bg-black/[0.03] px-3 py-2 text-xs dark:bg-white/[0.03] sm:flex-nowrap"
+          className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg bg-bg-alt px-3 py-2 text-xs sm:flex-nowrap"
         >
           <span
-            className={`material-symbols-outlined text-[16px] ${r.valid ? "text-emerald-500" : "text-red-500"}`}
+            className={`material-symbols-outlined text-[16px] ${r.valid ? "text-success" : "text-danger"}`}
           >
             {r.valid ? "check_circle" : "error"}
           </span>
@@ -1285,8 +1270,8 @@ function ProviderTestResultsView({ results }) {
           <span
             className={`shrink-0 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${
               r.valid
-                ? "bg-emerald-500/15 text-emerald-400"
-                : "bg-red-500/15 text-red-400"
+                ? "bg-success/15 text-success"
+                : "bg-danger/10 text-danger"
             }`}
           >
             {r.valid ? "OK" : r.diagnosis?.type || "ERROR"}

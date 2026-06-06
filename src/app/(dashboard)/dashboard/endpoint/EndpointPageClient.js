@@ -2,13 +2,22 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
-import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal } from "@/shared/components";
+import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal, SecurityWarning } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { SECURITY_COPY } from "@/shared/constants/securityCopy";
+import InlineAlert from "@/shared/components/InlineAlert";
+import { revealApiKey } from "@/shared/utils/revealApiKey";
+import { maskApiKeyForDisplay } from "@/shared/utils/apiKey";
+import { getExposureErrorAction } from "@/shared/utils/exposureErrorAction";
+
+function exposureStatus(type, message) {
+  return { type, message, action: getExposureErrorAction(message) };
+}
 
 const TUNNEL_BENEFITS = [
-  { icon: "public", title: "Access Anywhere", desc: "Use your API from any network" },
-  { icon: "group", title: "Share Endpoint", desc: "Share URL with team members" },
-  { icon: "code", title: "Use in Cursor/Cline", desc: "Connect AI tools remotely" },
+  { icon: "public", title: "Reach it remotely", desc: "Call your API from any network" },
+  { icon: "group", title: "Share with teammates", desc: "Give teammates a stable URL" },
+  { icon: "code", title: "Use in coding tools", desc: "Point coding tools at it" },
   { icon: "lock", title: "Encrypted", desc: "End-to-end TLS via Cloudflare" },
 ];
 
@@ -69,6 +78,9 @@ export default function APIPageClient({ machineId }) {
   const [rtkEnabled, setRtkEnabledState] = useState(true);
   const [cavemanEnabled, setCavemanEnabled] = useState(false);
   const [cavemanLevel, setCavemanLevel] = useState("full");
+  const [headroomEnabled, setHeadroomEnabled] = useState(false);
+  const [headroomStatus, setHeadroomStatus] = useState(null);
+  const [compressionStats, setCompressionStats] = useState(null);
 
   // Cloudflare Tunnel state
   const [tunnelChecking, setTunnelChecking] = useState(true);
@@ -89,6 +101,7 @@ export default function APIPageClient({ machineId }) {
   const [tsLoading, setTsLoading] = useState(false);
   const [tsProgress, setTsProgress] = useState("");
   const [tsStatus, setTsStatus] = useState(null);
+  const [settingsStatus, setSettingsStatus] = useState(null);
   const [tsAuthUrl, setTsAuthUrl] = useState("");
   const [tsAuthLabel, setTsAuthLabel] = useState("");
   const [tsInstalled, setTsInstalled] = useState(null); // null=checking, true/false
@@ -122,8 +135,8 @@ export default function APIPageClient({ machineId }) {
   // Security gate: block remote exposure while dashboard uses default password or login is off.
   const isLoginUnsafe = !requireLogin || !hasPassword;
   const unsafeReason = !requireLogin
-    ? "Enable \"Require login\" and set a custom password before activating the tunnel."
-    : "Change the default dashboard password before activating the tunnel.";
+    ? SECURITY_COPY.preEnableLoginOff
+    : SECURITY_COPY.preEnableDefaultPassword;
 
   // Auto-scroll install log
   useEffect(() => {
@@ -131,7 +144,9 @@ export default function APIPageClient({ machineId }) {
   }, [tsInstallLog]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/immutability
     fetchData();
+    // eslint-disable-next-line react-hooks/immutability
     loadSettings();
   }, []);
 
@@ -143,9 +158,11 @@ export default function APIPageClient({ machineId }) {
     const tunnelHealthy = !tunnelEnabled || tunnelReachable;
     const tsHealthy = !tsEnabled || tsReachable;
     const allHealthy = tunnelHealthy && tsHealthy;
+    // eslint-disable-next-line react-hooks/immutability
     const onVisible = () => { if (!document.hidden) syncTunnelStatus(); };
     document.addEventListener("visibilitychange", onVisible);
     if (allHealthy) return () => document.removeEventListener("visibilitychange", onVisible);
+    // eslint-disable-next-line react-hooks/immutability
     const timer = setInterval(() => { if (!document.hidden) syncTunnelStatus(); }, STATUS_POLL_FAST_MS);
     return () => {
       clearInterval(timer);
@@ -240,6 +257,9 @@ export default function APIPageClient({ machineId }) {
         setRtkEnabledState(data.rtkEnabled !== false);
         setCavemanEnabled(!!data.cavemanEnabled);
         setCavemanLevel(data.cavemanLevel || "full");
+        setHeadroomEnabled(!!data.headroomEnabled);
+        fetchHeadroomStatus();
+        fetchCompressionStats();
       }
       if (statusRes.ok) {
         const data = await statusRes.json();
@@ -264,15 +284,22 @@ export default function APIPageClient({ machineId }) {
   };
 
   const handleTunnelDashboardAccess = async (value) => {
+    setSettingsStatus(null);
     try {
       const res = await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tunnelDashboardAccess: value }),
       });
-      if (res.ok) setTunnelDashboardAccess(value);
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setTunnelDashboardAccess(value);
+      } else {
+        const msg = data.error || "Failed to update tunnel dashboard access";
+        setSettingsStatus(exposureStatus("error", msg));
+      }
     } catch (error) {
-      console.log("Error updating tunnelDashboardAccess:", error);
+      setSettingsStatus(exposureStatus("error", error.message));
     }
   };
 
@@ -322,6 +349,26 @@ export default function APIPageClient({ machineId }) {
   const handleCavemanLevel = (level) => {
     setCavemanLevel(level);
     patchSetting({ cavemanLevel: level });
+  };
+
+  const handleHeadroomEnabled = (value) => {
+    setHeadroomEnabled(value);
+    patchSetting({ headroomEnabled: value });
+    if (value) fetchHeadroomStatus();
+  };
+
+  const fetchHeadroomStatus = async () => {
+    try {
+      const res = await fetch("/api/headroom/status");
+      if (res.ok) setHeadroomStatus(await res.json());
+    } catch { /* ignore */ }
+  };
+
+  const fetchCompressionStats = async () => {
+    try {
+      const res = await fetch("/api/compression/stats");
+      if (res.ok) setCompressionStats(await res.json());
+    } catch { /* ignore */ }
   };
 
   const fetchData = async () => {
@@ -411,7 +458,7 @@ export default function APIPageClient({ machineId }) {
       polling = false;
       const data = await res.json();
       if (!res.ok) {
-        setTunnelStatus({ type: "error", message: data.error || "Failed to enable tunnel" });
+        setTunnelStatus(exposureStatus("error", data.error || "Failed to enable tunnel"));
         return;
       }
 
@@ -590,7 +637,7 @@ export default function APIPageClient({ machineId }) {
                 } else if (data2.funnelNotEnabled && data2.enableUrl) {
                   await pollFunnelEnable(data2.enableUrl);
                 } else {
-                  setTsStatus({ type: "error", message: data2.error || "Failed to start funnel" });
+                  setTsStatus(exposureStatus("error", data2.error || "Failed to start funnel"));
                 }
                 return;
               }
@@ -607,7 +654,7 @@ export default function APIPageClient({ machineId }) {
         return;
       }
 
-      setTsStatus({ type: "error", message: data.error || "Failed to connect" });
+      setTsStatus(exposureStatus("error", data.error || "Failed to connect"));
     } catch (error) {
       setTsStatus({ type: "error", message: error.message });
     } finally {
@@ -637,7 +684,7 @@ export default function APIPageClient({ machineId }) {
         if (data.funnelNotEnabled) continue;
         if (data.error) {
           clearUserAuth();
-          setTsStatus({ type: "error", message: data.error });
+          setTsStatus(exposureStatus("error", data.error));
           return;
         }
       } catch { /* retry */ }
@@ -658,7 +705,7 @@ export default function APIPageClient({ machineId }) {
         setShowDisableTsModal(false);
         setTsStatus({ type: "success", message: "Tailscale disabled" });
       } else {
-        setTsStatus({ type: "error", message: data.error || "Failed to disable Tailscale" });
+        setTsStatus(exposureStatus("error", data.error || "Failed to disable Tailscale"));
       }
     } catch (e) {
       setTsStatus({ type: "error", message: e.message });
@@ -738,18 +785,41 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
-  const maskKey = (fullKey) => {
-    if (!fullKey) return "";
-    return fullKey.length > 8 ? fullKey.slice(0, 8) + "..." : fullKey;
+  const [revealedKeys, setRevealedKeys] = useState({});
+
+  const displayKey = (key) => {
+    if (visibleKeys.has(key.id) && revealedKeys[key.id]) return revealedKeys[key.id];
+    return key.key?.includes("…") ? key.key : maskApiKeyForDisplay(key.key);
   };
 
-  const toggleKeyVisibility = (keyId) => {
-    setVisibleKeys(prev => {
-      const next = new Set(prev);
-      if (next.has(keyId)) next.delete(keyId);
-      else next.add(keyId);
-      return next;
-    });
+  const toggleKeyVisibility = async (keyId) => {
+    if (visibleKeys.has(keyId)) {
+      setVisibleKeys((prev) => {
+        const next = new Set(prev);
+        next.delete(keyId);
+        return next;
+      });
+      return;
+    }
+    const full = revealedKeys[keyId] || await revealApiKey(keyId);
+    if (!full) return;
+    setRevealedKeys((prev) => ({ ...prev, [keyId]: full }));
+    setVisibleKeys((prev) => new Set(prev).add(keyId));
+    setTimeout(() => {
+      setVisibleKeys((prev) => {
+        const next = new Set(prev);
+        next.delete(keyId);
+        return next;
+      });
+    }, 30000);
+  };
+
+  const copyKey = async (key) => {
+    const full = revealedKeys[key.id] || await revealApiKey(key.id);
+    if (full) {
+      setRevealedKeys((prev) => ({ ...prev, [key.id]: full }));
+      copy(full, key.id);
+    }
   };
 
   const [baseUrl, setBaseUrl] = useState("/v1");
@@ -757,6 +827,7 @@ export default function APIPageClient({ machineId }) {
   // Hydration fix: Only access window on client side
   useEffect(() => {
     if (typeof window !== "undefined") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setBaseUrl(`${window.location.origin}/v1`);
     }
   }, []);
@@ -801,13 +872,13 @@ export default function APIPageClient({ machineId }) {
                 <Input value={`${tunnelPublicUrl || tunnelUrl}/v1`} readOnly className="flex-1 font-mono text-sm" />
                 <button
                   onClick={() => copy(`${tunnelPublicUrl || tunnelUrl}/v1`, "tunnel_url")}
-                  className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-colors shrink-0"
+                  className="p-2 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-colors shrink-0"
                 >
                   <span className="material-symbols-outlined text-[18px]">{copied === "tunnel_url" ? "check" : "content_copy"}</span>
                 </button>
                 <button
                   onClick={() => setShowDisableTunnelModal(true)}
-                  className="p-2 hover:bg-red-500/10 rounded text-red-500 transition-colors shrink-0"
+                  className="p-2 hover:bg-danger/10 rounded text-danger transition-colors shrink-0"
                   title="Disable Tunnel"
                 >
                   <span className="material-symbols-outlined text-[18px]">power_settings_new</span>
@@ -815,13 +886,13 @@ export default function APIPageClient({ machineId }) {
               </>
             ) : tunnelEnabled && !tunnelLoading && !tunnelReachable ? (
               <>
-                <div className="flex-1 flex items-center gap-2 px-3 py-1.5 rounded border border-amber-300 dark:border-amber-800 bg-amber-500/5 text-sm text-amber-600 dark:text-amber-400">
+                <div className="flex-1 flex items-center gap-2 px-3 py-1.5 rounded border border-warning/40 bg-warning/10 text-sm text-warning">
                   <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
                   {tunnelEverReachable ? "Tunnel reconnecting..." : "Tunnel checking..."}
                 </div>
                 <button
                   onClick={() => setShowDisableTunnelModal(true)}
-                  className="p-2 hover:bg-red-500/10 rounded text-red-500 transition-colors shrink-0"
+                  className="p-2 hover:bg-danger/10 rounded text-danger transition-colors shrink-0"
                   title="Disable Tunnel"
                 >
                   <span className="material-symbols-outlined text-[18px]">power_settings_new</span>
@@ -835,7 +906,7 @@ export default function APIPageClient({ machineId }) {
                 </div>
                 <button
                   onClick={() => { setTunnelLoading(false); setTunnelProgress(""); }}
-                  className="p-2 hover:bg-red-500/10 rounded text-red-500 transition-colors shrink-0"
+                  className="p-2 hover:bg-danger/10 rounded text-danger transition-colors shrink-0"
                   title="Stop"
                 >
                   <span className="material-symbols-outlined text-[18px]">power_settings_new</span>
@@ -843,9 +914,8 @@ export default function APIPageClient({ machineId }) {
               </>
             ) : tunnelStatus?.type === "error" ? (
               <>
-                <div className="flex-1 flex items-center gap-2 px-3 py-1.5 rounded border border-red-300 dark:border-red-800 bg-red-500/5 text-sm text-red-600 dark:text-red-400">
-                  <span className="material-symbols-outlined text-sm">error</span>
-                  {tunnelStatus.message}
+                <div className="flex-1 min-w-0">
+                  <ExposureInlineAlert status={tunnelStatus} compact />
                 </div>
                 <Button size="sm" icon="cloud_upload" onClick={() => setShowEnableTunnelModal(true)}>Enable</Button>
               </>
@@ -857,7 +927,7 @@ export default function APIPageClient({ machineId }) {
                 </div>
                 <button
                   onClick={() => setTunnelChecking(false)}
-                  className="p-2 hover:bg-red-500/10 rounded text-red-500 transition-colors shrink-0"
+                  className="p-2 hover:bg-danger/10 rounded text-danger transition-colors shrink-0"
                   title="Stop"
                 >
                   <span className="material-symbols-outlined text-[18px]">power_settings_new</span>
@@ -893,13 +963,13 @@ export default function APIPageClient({ machineId }) {
                 <Input value={`${tsUrl}/v1`} readOnly className="flex-1 font-mono text-sm" />
                 <button
                   onClick={() => copy(`${tsUrl}/v1`, "ts_url")}
-                  className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-colors shrink-0"
+                  className="p-2 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-colors shrink-0"
                 >
                   <span className="material-symbols-outlined text-[18px]">{copied === "ts_url" ? "check" : "content_copy"}</span>
                 </button>
                 <button
                   onClick={() => setShowDisableTsModal(true)}
-                  className="p-2 hover:bg-red-500/10 rounded text-red-500 transition-colors shrink-0"
+                  className="p-2 hover:bg-danger/10 rounded text-danger transition-colors shrink-0"
                   title="Disable Tailscale"
                 >
                   <span className="material-symbols-outlined text-[18px]">power_settings_new</span>
@@ -907,13 +977,13 @@ export default function APIPageClient({ machineId }) {
               </>
             ) : tsEnabled && !tsLoading && !tsReachable ? (
               <>
-                <div className="flex-1 flex items-center gap-2 px-3 py-1.5 rounded border border-amber-300 dark:border-amber-800 bg-amber-500/5 text-sm text-amber-600 dark:text-amber-400">
+                <div className="flex-1 flex items-center gap-2 px-3 py-1.5 rounded border border-warning/40 bg-warning/10 text-sm text-warning">
                   <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
                   {tsEverReachable ? "Tailscale reconnecting..." : "Tailscale checking..."}
                 </div>
                 <button
                   onClick={() => setShowDisableTsModal(true)}
-                  className="p-2 hover:bg-red-500/10 rounded text-red-500 transition-colors shrink-0"
+                  className="p-2 hover:bg-danger/10 rounded text-danger transition-colors shrink-0"
                   title="Disable Tailscale"
                 >
                   <span className="material-symbols-outlined text-[18px]">power_settings_new</span>
@@ -936,7 +1006,7 @@ export default function APIPageClient({ machineId }) {
                 )}
                 <button
                   onClick={() => { setTsLoading(false); setTsConnecting(false); setTsProgress(""); clearUserAuth(); }}
-                  className="p-2 hover:bg-red-500/10 rounded text-red-500 transition-colors shrink-0"
+                  className="p-2 hover:bg-danger/10 rounded text-danger transition-colors shrink-0"
                   title="Stop"
                 >
                   <span className="material-symbols-outlined text-[18px]">power_settings_new</span>
@@ -944,7 +1014,7 @@ export default function APIPageClient({ machineId }) {
               </>
             ) : tsStatus?.type === "error" ? (
               <>
-                <div className="flex-1 flex items-center gap-2 px-3 py-1.5 rounded border border-red-300 dark:border-red-800 bg-red-500/5 text-sm text-red-600 dark:text-red-400">
+                <div className="flex-1 flex items-center gap-2 px-3 py-1.5 rounded border border-danger/30 bg-danger/5 text-sm text-danger">
                   <span className="material-symbols-outlined text-sm">error</span>
                   {tsStatus.message}
                 </div>
@@ -984,19 +1054,17 @@ export default function APIPageClient({ machineId }) {
           <div className="mt-4 flex flex-col gap-2">
             {!requireApiKey && (
               <SecurityWarning
-                message="Require API key is disabled — your endpoint is publicly accessible without authentication."
+                message={SECURITY_COPY.requireApiKeyOff}
                 action={{ label: "Enable", href: "#require-api-key" }}
               />
             )}
             {(!requireLogin || !hasPassword) && (
               <SecurityWarning
                 message={
-                  !requireLogin
-                    ? "Require login is disabled — anyone can access your dashboard via tunnel."
-                    : "Dashboard uses the default password — change it in Profile settings."
+                  !requireLogin ? SECURITY_COPY.tunnelLoginOff : SECURITY_COPY.tunnelDefaultPassword
                 }
                 action={{
-                  label: !requireLogin ? "Enable" : "Change password",
+                  label: !requireLogin ? "Open settings" : "Change password",
                   href: "/dashboard/profile",
                 }}
               />
@@ -1005,6 +1073,12 @@ export default function APIPageClient({ machineId }) {
         )}
 
         {/* Tunnel dashboard access option */}
+        {settingsStatus && (
+          <div className="mt-3">
+            <ExposureInlineAlert status={settingsStatus} />
+          </div>
+        )}
+
         {(tunnelEnabled || tsEnabled) && (
           <div className="mt-4 pt-4 border-t border-border flex items-center gap-3">
             <Toggle
@@ -1013,7 +1087,7 @@ export default function APIPageClient({ machineId }) {
             />
             <div className="flex items-center gap-1.5">
               <p className="font-medium text-sm">Allow dashboard access via tunnel</p>
-              <Tooltip text="When enabled, the dashboard can be accessed through your tunnel or Tailscale URL (login still required). When disabled, dashboard access via tunnel/Tailscale is completely blocked." />
+              <Tooltip text={SECURITY_COPY.tunnelDashboardAccessHelp} />
             </div>
           </div>
         )}
@@ -1043,6 +1117,7 @@ export default function APIPageClient({ machineId }) {
             <p className="text-sm text-text-muted">
               git/grep/ls/tree/logs → 60-90% fewer input tokens
             </p>
+            <CompressionStatRow stats={compressionStats?.tools?.rtk} kind="bytes" />
           </div>
           <Toggle
             checked={rtkEnabled}
@@ -1065,6 +1140,7 @@ export default function APIPageClient({ machineId }) {
             <p className="text-sm text-text-muted">
               Terse-style system prompt → ~65% fewer output tokens (up to 87%)
             </p>
+            <CompressionStatRow stats={compressionStats?.tools?.caveman} kind="injections" />
           </div>
           <div className="flex items-center gap-3 shrink-0">
             {cavemanEnabled && (
@@ -1091,6 +1167,30 @@ export default function APIPageClient({ machineId }) {
             />
           </div>
         </div>
+        <div className="flex items-center justify-between pt-4 gap-4 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">
+              Compress context history{" "}
+              <a
+                href="https://github.com/chopratejas/headroom"
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs font-normal text-primary underline hover:opacity-80"
+              >
+                (Headroom)
+              </a>
+            </p>
+            <p className="text-sm text-text-muted">
+              Headroom is coming soon. Context-history compression stays disabled until the proxy/cloud path is ready.
+            </p>
+            <span className="mt-2 inline-flex rounded-full bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning">Coming soon</span>
+          </div>
+          <Toggle
+            checked={false}
+            onChange={() => {}}
+            disabled
+          />
+        </div>
       </Card>
 
       {/* API Keys */}
@@ -1108,9 +1208,7 @@ export default function APIPageClient({ machineId }) {
         <div className="flex items-center justify-between pb-4 mb-4 border-b border-border">
           <div>
             <p className="font-medium">Require API key</p>
-            <p className="text-sm text-text-muted">
-              Requests without a valid key will be rejected
-            </p>
+            <p className="text-sm text-text-muted">{SECURITY_COPY.requireApiKeyHelp}</p>
           </div>
           <Toggle
             checked={requireApiKey}
@@ -1118,6 +1216,7 @@ export default function APIPageClient({ machineId }) {
           />
         </div>
 
+        <p className="text-xs text-text-muted mb-3">{SECURITY_COPY.apiKeysMasked}</p>
         {keys.length === 0 ? (
           <div className="text-center py-12">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 text-primary mb-4">
@@ -1134,17 +1233,17 @@ export default function APIPageClient({ machineId }) {
             {keys.map((key) => (
               <div
                 key={key.id}
-                className={`group flex items-center justify-between py-3 border-b border-black/[0.03] dark:border-white/[0.03] last:border-b-0 ${key.isActive === false ? "opacity-60" : ""}`}
+                className={`group flex items-center justify-between py-3 border-b border-border-subtle last:border-b-0 ${key.isActive === false ? "opacity-60" : ""}`}
               >
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium">{key.name}</p>
                   <div className="flex items-center gap-2 mt-1">
                     <code className="text-xs text-text-muted font-mono">
-                      {visibleKeys.has(key.id) ? key.key : maskKey(key.key)}
+                      {displayKey(key)}
                     </code>
                     <button
                       onClick={() => toggleKeyVisibility(key.id)}
-                      className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                      className="p-1 hover:bg-surface-2 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
                       title={visibleKeys.has(key.id) ? "Hide key" : "Show key"}
                     >
                       <span className="material-symbols-outlined text-[14px]">
@@ -1152,8 +1251,8 @@ export default function APIPageClient({ machineId }) {
                       </span>
                     </button>
                     <button
-                      onClick={() => copy(key.key, key.id)}
-                      className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                      onClick={() => copyKey(key)}
+                      className="p-1 hover:bg-surface-2 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
                     >
                       <span className="material-symbols-outlined text-[14px]">
                         {copied === key.id ? "check" : "content_copy"}
@@ -1164,7 +1263,7 @@ export default function APIPageClient({ machineId }) {
                     Created {new Date(key.createdAt).toLocaleDateString()}
                   </p>
                   {key.isActive === false && (
-                    <p className="text-xs text-orange-500 mt-1">Paused</p>
+                    <p className="text-xs text-warning mt-1">Paused</p>
                   )}
                 </div>
                 <div className="flex items-center gap-2">
@@ -1189,7 +1288,7 @@ export default function APIPageClient({ machineId }) {
                   />
                   <button
                     onClick={() => handleDeleteKey(key.id)}
-                    className="p-2 hover:bg-red-500/10 rounded text-red-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                    className="p-2 hover:bg-danger/10 rounded text-danger opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
                   >
                     <span className="material-symbols-outlined text-[18px]">delete</span>
                   </button>
@@ -1241,14 +1340,11 @@ export default function APIPageClient({ machineId }) {
         onClose={() => setCreatedKey(null)}
       >
         <div className="flex flex-col gap-4">
-          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
-            <p className="text-sm text-yellow-800 dark:text-yellow-200 mb-2 font-medium">
-              Save this key now!
-            </p>
-            <p className="text-sm text-yellow-700 dark:text-yellow-300">
-              This is the only time you will see this key. Store it securely.
-            </p>
-          </div>
+          <InlineAlert
+            variant="caution"
+            title="Save this key now!"
+            message="This is the only time you will see this key. Store it securely."
+          />
           <div className="flex gap-2">
             <Input
               value={createdKey || ""}
@@ -1366,7 +1462,7 @@ export default function APIPageClient({ machineId }) {
                 Installing Tailscale...
               </div>
               {tsInstallLog.length > 0 && (
-                <div ref={tsLogRef} className="bg-black/5 dark:bg-white/5 rounded p-2 max-h-40 overflow-y-auto font-mono text-xs text-text-muted">
+                <div ref={tsLogRef} className="bg-bg-alt rounded p-2 max-h-40 overflow-y-auto font-mono text-xs text-text-muted">
                   {tsInstallLog.map((line, i) => (
                     <div key={i}>{line}</div>
                   ))}
@@ -1378,7 +1474,7 @@ export default function APIPageClient({ machineId }) {
           {/* Installed: show Connect button */}
           {tsInstalled === true && !tsInstalling && (
             <div className="flex flex-col gap-3">
-              <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+              <div className="flex items-center gap-2 text-sm text-success">
                 <span className="material-symbols-outlined text-[16px]">check_circle</span>
                 Tailscale installed
               </div>
@@ -1394,7 +1490,7 @@ export default function APIPageClient({ machineId }) {
             </div>
           )}
 
-          {tsStatus && <StatusAlert status={tsStatus} />}
+          {tsStatus && <ExposureInlineAlert status={tsStatus} />}
         </div>
       </Modal>
 
@@ -1438,7 +1534,7 @@ function EndpointRow({ label, url, copyId, copied, onCopy, badge, actions }) {
       <Input value={url} readOnly className="flex-1 font-mono text-sm" />
       <button
         onClick={() => onCopy(url, copyId)}
-        className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-colors shrink-0"
+        className="p-2 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-colors shrink-0"
       >
         <span className="material-symbols-outlined text-[18px]">{copied === copyId ? "check" : "content_copy"}</span>
       </button>
@@ -1447,9 +1543,43 @@ function EndpointRow({ label, url, copyId, copied, onCopy, badge, actions }) {
   );
 }
 
-/** Reusable status alert */
-function StatusAlert({ status, className = "" }) {
-  // Render URLs in message as clickable links
+function formatBytes(value) {
+  const bytes = Number(value) || 0;
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${bytes} B`;
+}
+
+function CompressionStatRow({ stats, kind }) {
+  if (!stats) return null;
+  const detail = stats.lastDetail ? ` · ${stats.lastDetail}` : "";
+  const savedLabel = kind === "injections"
+    ? `Prompt injections ${stats.hits || 0}`
+    : `Saved ${formatBytes(stats.bytesSaved)}`;
+  const tokenLabel = stats.tokenSavingsAvailable
+    ? `Est. tokens saved ${stats.estimatedTokensSaved || 0}`
+    : "Savings not measurable";
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted">
+      <span>{savedLabel}</span>
+      <span>{tokenLabel}</span>
+      <span>Hits {stats.hits || 0}</span>
+      <span>Requests {stats.requests || 0}{detail}</span>
+    </div>
+  );
+}
+
+/** Status alert with optional exposure-gate action link */
+function ExposureInlineAlert({ status, className = "", compact = false }) {
+  const variantMap = {
+    success: "info",
+    warning: "caution",
+    info: "info",
+    error: "danger",
+  };
+  const variant = variantMap[status.type] || "danger";
+
   const renderMessage = (msg) => {
     const parts = msg.split(/(https?:\/\/[^\s]+)/g);
     return parts.map((part, i) =>
@@ -1459,14 +1589,25 @@ function StatusAlert({ status, className = "" }) {
     );
   };
 
+  if (status.type === "success") {
+    return (
+      <div className={`p-2 rounded text-sm bg-success/10 text-success ${className}`}>
+        {renderMessage(status.message)}
+      </div>
+    );
+  }
+
   return (
-    <div className={`p-2 rounded text-sm ${className} ${status.type === "success" ? "bg-green-500/10 text-green-600 dark:text-green-400" :
-        status.type === "warning" ? "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400" :
-        status.type === "info" ? "bg-blue-500/10 text-blue-600 dark:text-blue-400" :
-          "bg-red-500/10 text-red-600 dark:text-red-400"
-      }`}>
-      {renderMessage(status.message)}
-    </div>
+    <InlineAlert
+      variant={variant}
+      action={status.action}
+      className={className}
+      compact={compact}
+    >
+      <p className={compact ? "text-xs leading-relaxed" : "text-xs sm:text-sm leading-relaxed"}>
+        {renderMessage(status.message)}
+      </p>
+    </InlineAlert>
   );
 }
 
@@ -1475,32 +1616,10 @@ function Tooltip({ text }) {
   return (
     <span className="relative group inline-flex items-center">
       <span className="material-symbols-outlined text-[14px] text-text-muted cursor-help">help</span>
-      <span className="pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 z-50 w-64 rounded bg-gray-900 dark:bg-gray-800 text-white text-xs px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
+      <span className="pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 z-50 w-64 rounded bg-gray-900 text-white text-xs px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
         {text}
       </span>
     </span>
-  );
-}
-
-/** Security warning banner with optional action link */
-function SecurityWarning({ message, action }) {
-  return (
-    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400">
-      <span className="material-symbols-outlined text-[16px] shrink-0 mt-0.5">warning</span>
-      <p className="text-xs flex-1">{message}</p>
-      {action && (
-        <a
-          href={action.href}
-          className="text-xs font-medium underline shrink-0 hover:opacity-80"
-          onClick={action.href.startsWith("#") ? (e) => {
-            e.preventDefault();
-            document.getElementById(action.href.slice(1))?.scrollIntoView({ behavior: "smooth" });
-          } : undefined}
-        >
-          {action.label}
-        </a>
-      )}
-    </div>
   );
 }
 

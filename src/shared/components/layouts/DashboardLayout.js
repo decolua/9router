@@ -5,28 +5,31 @@ import { usePathname } from "next/navigation";
 import { useNotificationStore } from "@/store/notificationStore";
 import Sidebar from "../Sidebar";
 import Header from "../Header";
+import ConfirmDialogHost from "../ConfirmDialogHost";
+import DashboardSecurityBanner from "../DashboardSecurityBanner";
+import FirstRunSecurityWizard from "../FirstRunSecurityWizard";
 
 function getToastStyle(type) {
   if (type === "success") {
     return {
-      wrapper: "border-green-500/30 bg-green-500/10 text-green-600 dark:text-green-400",
+      wrapper: "border-success/30 bg-success/10 text-success",
       icon: "check_circle",
     };
   }
   if (type === "error") {
     return {
-      wrapper: "border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400",
+      wrapper: "border-danger/30 bg-danger/10 text-danger",
       icon: "error",
     };
   }
   if (type === "warning") {
     return {
-      wrapper: "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+      wrapper: "border-warning/30 bg-warning/10 text-warning",
       icon: "warning",
     };
   }
   return {
-    wrapper: "border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400",
+    wrapper: "border-info/30 bg-info/10 text-info",
     icon: "info",
   };
 }
@@ -39,6 +42,7 @@ export default function DashboardLayout({ children }) {
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-bg">
+      <ConfirmDialogHost />
       <div className="fixed top-4 right-4 z-[80] flex w-[min(92vw,380px)] flex-col gap-2">
         {notifications.map((n) => {
           const style = getToastStyle(n.type);
@@ -96,7 +100,15 @@ export default function DashboardLayout({ children }) {
         <div className="landing-grid absolute inset-0 pointer-events-none -z-10" aria-hidden="true" />
         <Header key={pathname} onMenuClick={() => setSidebarOpen(true)} />
         <div className={`flex-1 overflow-y-auto custom-scrollbar ${pathname === "/dashboard/basic-chat" ? "" : "p-6 lg:p-10"} ${pathname === "/dashboard/basic-chat" ? "flex flex-col overflow-hidden" : ""}`}>
-          <div className={`${pathname === "/dashboard/basic-chat" ? "flex-1 w-full h-full flex flex-col" : "max-w-7xl mx-auto"}`}>{children}</div>
+          <div className={`${pathname === "/dashboard/basic-chat" ? "flex-1 w-full h-full flex flex-col" : "max-w-7xl mx-auto"}`}>
+            {pathname !== "/dashboard/basic-chat" ? (
+              <>
+                <FirstRunSecurityWizard />
+                <DashboardSecurityBanner />
+              </>
+            ) : null}
+            {children}
+          </div>
         </div>
       </main>
     </div>

@@ -27,8 +27,9 @@ export default function SegmentedControl({
         <button
           key={option.value}
           onClick={() => onChange(option.value)}
+          aria-pressed={value === option.value}
           className={cn(
-            "shrink-0 px-4 rounded-[8px] font-medium transition-all",
+            "inline-flex items-center gap-1.5 shrink-0 px-4 rounded-[8px] font-medium transition-all",
             sizes[size],
             value === option.value
               ? "bg-surface text-text-main shadow-sm"
@@ -36,7 +37,7 @@ export default function SegmentedControl({
           )}
         >
           {option.icon && (
-            <span className="material-symbols-outlined text-[16px] mr-1.5">
+            <span className="material-symbols-outlined text-[16px]">
               {option.icon}
             </span>
           )}

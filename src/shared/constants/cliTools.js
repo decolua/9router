@@ -1,11 +1,11 @@
-// MITM Tools — IDE tools intercepted via MITM proxy
+// MITM Tools — IDE traffic captured and routed through 9Router.
 export const MITM_TOOLS = {
   antigravity: {
     id: "antigravity",
     name: "Antigravity",
     image: "/providers/antigravity.png",
     color: "#4285F4",
-    description: "Google Antigravity IDE with MITM",
+    description: "Route Antigravity IDE traffic through 9Router",
     configType: "mitm",
     mitmDomain: "daily-cloudcode-pa.googleapis.com",
     modelAliases: ["gemini-3.5-flash-low", "gemini-3-flash-agent", "gemini-3.5-flash-extra-low", "gemini-3.1-pro-low", "gemini-pro-agent", "claude-sonnet-4-6", "claude-opus-4-6-thinking", "gpt-oss-120b-medium", "gemini-3-flash"],
@@ -26,7 +26,7 @@ export const MITM_TOOLS = {
     name: "GitHub Copilot",
     image: "/providers/copilot.png",
     color: "#1F6FEB",
-    description: "GitHub Copilot IDE with MITM",
+    description: "Route Copilot IDE traffic through 9Router",
     configType: "mitm",
     mitmDomain: "api.individual.githubcopilot.com",
     modelAliases: ["gpt-4o-mini", "claude-haiku-4.5", "gpt-4o", "gpt-5-mini"],
@@ -41,7 +41,7 @@ export const MITM_TOOLS = {
     name: "Kiro",
     image: "/providers/kiro.png",
     color: "#FF6B00",
-    description: "Kiro IDE with MITM",
+    description: "Route Kiro IDE traffic through 9Router",
     configType: "mitm",
     mitmDomain: "q.us-east-1.amazonaws.com",
     defaultModels: [
@@ -58,7 +58,7 @@ export const MITM_TOOLS = {
   //   name: "Cursor",
   //   image: "/providers/cursor.png",
   //   color: "#000000",
-  //   description: "Cursor IDE with MITM",
+  //   description: "Route Cursor IDE traffic through 9Router",
   //   configType: "mitm",
   //   mitmDomain: "api2.cursor.sh",
   //   defaultModels: [
@@ -76,7 +76,7 @@ export const CLI_TOOLS = {
     name: "Claude Code",
     image: "/providers/claude.png",
     color: "#D97757",
-    description: "Anthropic Claude Code CLI",
+    description: "Route Claude Code through local providers",
     configType: "env",
     envVars: {
       baseUrl: "ANTHROPIC_BASE_URL",
@@ -98,7 +98,7 @@ export const CLI_TOOLS = {
     name: "Open Claw",
     image: "/providers/openclaw.png",
     color: "#FF6B35",
-    description: "Open Claw AI Assistant",
+    description: "Connect Open Claw to 9Router models",
     configType: "custom",
   },
   codex: {
@@ -106,7 +106,7 @@ export const CLI_TOOLS = {
     name: "OpenAI Codex CLI / App",
     image: "/providers/codex.png",
     color: "#10A37F",
-    description: "OpenAI Codex CLI",
+    description: "Connect Codex CLI and app requests",
     configType: "custom",
   },
   opencode: {
@@ -114,7 +114,7 @@ export const CLI_TOOLS = {
     name: "OpenCode",
     image: "/providers/opencode.png",
     color: "#E87040",
-    description: "OpenCode AI Terminal Assistant",
+    description: "Connect OpenCode terminal sessions",
     configType: "custom",
   },
   // Cowork disabled: spawns arbitrary processes (RCE risk). Hidden from CLI tools UI.
@@ -131,7 +131,7 @@ export const CLI_TOOLS = {
     name: "Hermes Agent",
     image: "/providers/hermes.png",
     color: "#8B5CF6",
-    description: "Nous Research self-improving AI agent",
+    description: "Connect Hermes agent runs to 9Router",
     configType: "custom",
   },
   droid: {
@@ -139,7 +139,7 @@ export const CLI_TOOLS = {
     name: "Factory Droid",
     image: "/providers/droid.png",
     color: "#00D4FF",
-    description: "Factory Droid AI Assistant",
+    description: "Connect Factory Droid to 9Router models",
     configType: "custom",
   },
   cursor: {
@@ -147,7 +147,7 @@ export const CLI_TOOLS = {
     name: "Cursor",
     image: "/providers/cursor.png",
     color: "#000000",
-    description: "Cursor AI Code Editor",
+    description: "Point Cursor at a routed model endpoint",
     configType: "guide",
     requiresExternalUrl: true,
     notes: [
@@ -168,7 +168,7 @@ export const CLI_TOOLS = {
     name: "Cline",
     image: "/providers/cline.png",
     color: "#00D1B2",
-    description: "Cline AI Coding Assistant",
+    description: "Connect Cline coding sessions",
     configType: "custom",
   },
   kilo: {
@@ -176,7 +176,7 @@ export const CLI_TOOLS = {
     name: "Kilo Code",
     image: "/providers/kilocode.png",
     color: "#FF6B6B",
-    description: "Kilo Code AI Assistant",
+    description: "Connect Kilo Code requests",
     configType: "custom",
   },
   roo: {
@@ -184,7 +184,7 @@ export const CLI_TOOLS = {
     name: "Roo",
     image: "/providers/roo.png",
     color: "#FF6B6B",
-    description: "Roo AI Assistant",
+    description: "Connect Roo workspace requests",
     configType: "guide",
     guideSteps: [
       { step: 1, title: "Open Settings", desc: "Go to Roo Settings panel" },
@@ -199,7 +199,7 @@ export const CLI_TOOLS = {
     name: "Continue",
     image: "/providers/continue.png",
     color: "#7C3AED",
-    description: "Continue AI Assistant",
+    description: "Connect Continue configs to 9Router",
     configType: "guide",
     guideSteps: [
       { step: 1, title: "Open Config", desc: "Open Continue configuration file" },
@@ -223,7 +223,7 @@ export const CLI_TOOLS = {
     name: "Amp CLI",
     image: "/providers/amp.png",
     color: "#F97316",
-    description: "Sourcegraph Amp coding assistant CLI",
+    description: "Connect Amp CLI shorthand models",
     docsUrl: "/docs?section=cli-tools&tool=amp",
     configType: "guide",
     defaultCommand: "amp",
@@ -381,4 +381,3 @@ export const getProviderModelsForMapping = (providers) => {
   });
   return result;
 };
-

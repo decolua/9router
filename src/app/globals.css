@@ -4,7 +4,8 @@
 
 /* Hide icon ligature text until font is ready */
 .material-symbols-outlined { visibility: hidden; }
-.fonts-loaded .material-symbols-outlined { visibility: visible; }
+.fonts-loaded .material-symbols-outlined,
+.fonts-failed .material-symbols-outlined { visibility: visible; }
 
 /* ============================================================
    9Router palette — adopted from 9remote_private/web
@@ -451,6 +452,10 @@ button {
   background: var(--color-bg-alt);
 }
 
+.react-flow-controls-custom button svg {
+  fill: currentColor;
+}
+
 /* Changelog markdown body */
 .changelog-body h1 {
   font-size: 1.4rem;
@@ -493,4 +498,10 @@ button {
   border: none;
   border-top: 1px solid var(--color-border);
   margin: 1.5rem 0;
+}
+
+/* Basic Chat — intentional dark chat canvas in light and dark app themes */
+.basic-chat-panel {
+  background: #1a1a1a;
+  color: #ededed;
 }

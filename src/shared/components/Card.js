@@ -73,15 +73,17 @@ Card.Section = function CardSection({ children, className, ...props }) {
   );
 };
 
-Card.Row = function CardRow({ children, className, ...props }) {
+Card.Row = function CardRow({ children, className, onClick, ...props }) {
   return (
     <div
       className={cn(
         "p-3 -mx-3 px-3 transition-colors",
         "border-b border-border-subtle last:border-b-0",
         "hover:bg-surface-2/50",
+        onClick && "cursor-pointer",
         className
       )}
+      onClick={onClick}
       {...props}
     >
       {children}
@@ -93,6 +95,7 @@ Card.ListItem = function CardListItem({
   children,
   actions,
   className,
+  onClick,
   ...props
 }) {
   return (
@@ -101,8 +104,10 @@ Card.ListItem = function CardListItem({
         "group flex items-center justify-between p-3 -mx-3 px-3",
         "border-b border-border-subtle last:border-b-0",
         "hover:bg-surface-2/50 transition-colors",
+        onClick && "cursor-pointer",
         className
       )}
+      onClick={onClick}
       {...props}
     >
       <div className="flex-1 min-w-0">{children}</div>

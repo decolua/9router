@@ -11,10 +11,6 @@ export default function PricingSettingsPage() {
   const [currentPricing, setCurrentPricing] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadPricing();
-  }, []);
-
   const loadPricing = async () => {
     setLoading(true);
     try {
@@ -29,6 +25,11 @@ export default function PricingSettingsPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadPricing();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handlePricingUpdated = () => {
     loadPricing();

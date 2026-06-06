@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Card, Button, Badge, Modal, Input, ModelSelectModal } from "@/shared/components";
+import { revealApiKey } from "@/shared/utils/revealApiKey";
 import Image from "next/image";
 
 export default function AntigravityToolCard({
@@ -27,27 +28,15 @@ export default function AntigravityToolCard({
   const [currentEditingAlias, setCurrentEditingAlias] = useState(null);
   const [modelAliases, setModelAliases] = useState({});
 
-  useEffect(() => {
-    if (apiKeys?.length > 0 && !selectedApiKey) {
-      setSelectedApiKey(apiKeys[0].key);
+  const fetchModelAliases = async () => {
+    try {
+      const res = await fetch("/api/models/alias");
+      const data = await res.json();
+      if (res.ok) setModelAliases(data.aliases || {});
+    } catch (error) {
+      console.log("Error fetching model aliases:", error);
     }
-  }, [apiKeys, selectedApiKey]);
-
-  useEffect(() => {
-    if (initialStatus) setStatus(initialStatus);
-  }, [initialStatus]);
-
-  useEffect(() => {
-    if (isExpanded && !status) {
-      fetchStatus();
-      loadSavedMappings();
-      fetchModelAliases();
-    }
-    if (isExpanded) {
-      loadSavedMappings();
-      fetchModelAliases();
-    }
-  }, [isExpanded]);
+  };
 
   const loadSavedMappings = async () => {
     try {
@@ -65,16 +54,6 @@ export default function AntigravityToolCard({
     }
   };
 
-  const fetchModelAliases = async () => {
-    try {
-      const res = await fetch("/api/models/alias");
-      const data = await res.json();
-      if (res.ok) setModelAliases(data.aliases || {});
-    } catch (error) {
-      console.log("Error fetching model aliases:", error);
-    }
-  };
-
   const fetchStatus = async () => {
     try {
       const res = await fetch("/api/cli-tools/antigravity-mitm");
@@ -87,6 +66,25 @@ export default function AntigravityToolCard({
       setStatus({ running: false });
     }
   };
+useEffect(() => {
+    if (initialStatus) queueMicrotask(() => setStatus(initialStatus));
+  }, [initialStatus]);
+
+  useEffect(() => {
+    if (isExpanded && !status) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      fetchStatus();
+      loadSavedMappings();
+      fetchModelAliases();
+    }
+    if (isExpanded) {
+      loadSavedMappings();
+      fetchModelAliases();
+    }
+  }, [isExpanded]);
+
+
+
 
   // MITM elevation is decided by the server OS, not by this browser's OS.
   const serverIsWindows = status?.isWin === true;
@@ -117,7 +115,7 @@ export default function AntigravityToolCard({
     setStartingStep("cert");
     try {
       const keyToUse = selectedApiKey?.trim()
-        || (apiKeys?.length > 0 ? apiKeys[0].key : null)
+        || (apiKeys?.length > 0 ? await revealApiKey(apiKeys[0].id) : null)
         || (!cloudEnabled ? "sk_9router" : null);
 
       const res = await fetch("/api/cli-tools/antigravity-mitm", {
@@ -276,11 +274,11 @@ export default function AntigravityToolCard({
                     {isLoading ? (
                       <span className="material-symbols-outlined text-[14px] text-primary animate-spin">progress_activity</span>
                     ) : (
-                      <span className={`material-symbols-outlined text-[14px] ${ok ? "text-green-500" : "text-text-muted"}`}>
+                      <span className={`material-symbols-outlined text-[14px] ${ok ? "text-success" : "text-text-muted"}`}>
                         {ok ? "check_circle" : "radio_button_unchecked"}
                       </span>
                     )}
-                    <span className={`text-xs font-medium ${isLoading ? "text-primary" : ok ? "text-green-500" : "text-text-muted"}`}>
+                    <span className={`text-xs font-medium ${isLoading ? "text-primary" : ok ? "text-success" : "text-text-muted"}`}>
                       {label}
                     </span>
                   </div>
@@ -296,7 +294,7 @@ export default function AntigravityToolCard({
               <button
                 onClick={handleStop}
                 disabled={loading}
-                className="px-4 py-2 rounded-lg bg-red-500/10 border border-red-500/30 text-red-500 font-medium text-sm flex items-center gap-2 hover:bg-red-500/20 transition-colors disabled:opacity-50"
+                className="px-4 py-2 rounded-lg bg-danger/10 border border-danger/30 text-danger font-medium text-sm flex items-center gap-2 hover:bg-danger/20 transition-colors disabled:opacity-50"
               >
                 <span className="material-symbols-outlined text-[18px]">stop_circle</span>
                 Stop MITM
@@ -314,7 +312,7 @@ export default function AntigravityToolCard({
           </div>
 
           {message?.type === "error" && (
-            <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-red-500/10 text-red-600">
+            <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-danger/10 text-danger">
               <span className="material-symbols-outlined text-[14px]">error</span>
               <span>{message.text}</span>
             </div>
@@ -330,7 +328,7 @@ export default function AntigravityToolCard({
                   <select
                     value={selectedApiKey}
                     onChange={(e) => setSelectedApiKey(e.target.value)}
-                    className="w-full min-w-0 px-2 py-2 bg-surface rounded text-xs border border-border focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5"
+                    className="w-full min-w-0 px-2 py-2 bg-surface rounded text-xs border border-border focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500/40 sm:py-1.5"
                   >
                     {apiKeys.map((key) => <option key={key.id} value={key.key}>{key.key}</option>)}
                   </select>
@@ -351,12 +349,12 @@ export default function AntigravityToolCard({
                       value={modelMappings[model.alias] || ""}
                       onChange={(e) => handleModelMappingChange(model.alias, e.target.value)}
                       placeholder="provider/model-id"
-                      className="w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5"
+                      className="w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500/40 sm:py-1.5"
                     />
                     {modelMappings[model.alias] && (
                       <button
                         onClick={() => handleModelMappingChange(model.alias, "")}
-                        className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-red-500 rounded transition-colors"
+                        className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-danger rounded transition-colors"
                         title="Clear"
                       >
                         <span className="material-symbols-outlined text-[14px]">close</span>
@@ -389,10 +387,7 @@ export default function AntigravityToolCard({
 
           {/* Windows admin warning */}
           {!isRunning && serverIsWindows && (
-            <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-yellow-500/10 text-yellow-600 border border-yellow-500/20">
-              <span className="material-symbols-outlined text-[14px]">warning</span>
-              <span>Windows: Run terminal (9Router) as Administrator to enable MITM</span>
-            </div>
+            <InlineAlert variant="caution" compact message="Windows: Run the 9Router terminal as Administrator to enable MITM." />
           )}
 
           {/* When stopped: how it works */}
@@ -423,10 +418,7 @@ export default function AntigravityToolCard({
         size="sm"
       >
         <div className="flex flex-col gap-4">
-          <div className="flex items-start gap-3 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-            <span className="material-symbols-outlined text-yellow-500 text-[20px]">warning</span>
-            <p className="text-xs text-text-muted">Required for SSL certificate and DNS configuration</p>
-          </div>
+          <InlineAlert variant="caution" compact message="Required for SSL certificate and DNS configuration." />
 
           <Input
             type="password"
@@ -439,7 +431,7 @@ export default function AntigravityToolCard({
           />
 
           {message && (
-            <div className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs ${message.type === "success" ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"}`}>
+            <div className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs ${message.type === "success" ? "bg-success/10 text-success" : "bg-danger/10 text-danger"}`}>
               <span className="material-symbols-outlined text-[14px]">{message.type === "success" ? "check_circle" : "error"}</span>
               <span>{message.text}</span>
             </div>

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
 import { Modal, Button, Input } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { isTrustedOAuthMessageOrigin } from "@/shared/utils/oauthOrigin";
 
 /**
  * OAuth Modal Component
@@ -30,6 +31,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   // Detect if running on localhost (client-side only)
   useEffect(() => {
     if (typeof window !== "undefined") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsLocalhost(
         window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
       );
@@ -64,7 +66,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setError(err.message);
       setStep("error");
     }
-  }, [authData, provider, onSuccess]);
+  }, [authData, provider, onSuccess, oauthMeta]);
 
   const completeXaiManualCode = useCallback(async (code) => {
     if (!authData?.state) return;
@@ -310,6 +312,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   // Reset state and start OAuth when modal opens
   useEffect(() => {
     if (isOpen && provider) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setAuthData(null);
       setCallbackUrl("");
       setError(null);
@@ -391,6 +394,13 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         return;
       }
 
+      if (authData.state && state !== authData.state) {
+        callbackProcessedRef.current = true;
+        setError("Invalid OAuth state");
+        setStep("error");
+        return;
+      }
+
       if (code) {
         callbackProcessedRef.current = true;
         await exchangeTokens(code, state);
@@ -400,9 +410,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     // Method 1: postMessage from popup
     const handleMessage = (event) => {
       // Allow messages from same origin or localhost (any port)
-      const isLocalhost = event.origin.includes("localhost") || event.origin.includes("127.0.0.1");
-      const isSameOrigin = event.origin === window.location.origin;
-      if (!isLocalhost && !isSameOrigin) return;
+      if (!isTrustedOAuthMessageOrigin(event.origin, window.location.origin)) return;
       
       if (event.data?.type === "oauth_callback") {
         handleCallback(event.data.data);
@@ -483,6 +491,10 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
       if (!code) {
         throw new Error(provider === "xai" ? "Paste the callback URL or copied xAI code" : "No authorization code found in URL");
+      }
+
+      if (authData?.state && state !== authData.state) {
+        throw new Error("Invalid OAuth state");
       }
 
       await exchangeTokens(code, state);
@@ -630,8 +642,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         {/* Success Step */}
         {step === "success" && (
           <div className="text-center py-6">
-            <div className="size-16 mx-auto mb-4 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-              <span className="material-symbols-outlined text-3xl text-green-600">check_circle</span>
+            <div className="size-16 mx-auto mb-4 rounded-full bg-success/15 flex items-center justify-center">
+              <span className="material-symbols-outlined text-3xl text-success">check_circle</span>
             </div>
             <h3 className="text-lg font-semibold mb-2">Connected Successfully!</h3>
             <p className="text-sm text-text-muted mb-4">
@@ -646,11 +658,11 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         {/* Error Step */}
         {step === "error" && (
           <div className="text-center py-6">
-            <div className="size-16 mx-auto mb-4 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
-              <span className="material-symbols-outlined text-3xl text-red-600">error</span>
+            <div className="size-16 mx-auto mb-4 rounded-full bg-danger/15 flex items-center justify-center">
+              <span className="material-symbols-outlined text-3xl text-danger">error</span>
             </div>
             <h3 className="text-lg font-semibold mb-2">Connection Failed</h3>
-            <p className="text-sm text-red-600 mb-4">{error}</p>
+            <p className="text-sm text-danger mb-4">{error}</p>
             <div className="flex gap-2">
               <Button onClick={startOAuthFlow} variant="secondary" fullWidth>
                 Try Again

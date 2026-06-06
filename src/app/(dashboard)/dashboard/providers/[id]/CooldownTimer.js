@@ -31,7 +31,7 @@ export default function CooldownTimer({ until }) {
   if (!remaining) return null;
 
   return (
-    <span className="text-xs text-orange-500 font-mono">
+    <span className="text-xs text-warning font-mono">
       ⏱ {remaining}
     </span>
   );

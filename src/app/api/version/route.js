@@ -27,12 +27,39 @@ function fetchLatestVersion() {
 }
 
 function compareVersions(a, b) {
-  const pa = a.split(".").map(Number);
-  const pb = b.split(".").map(Number);
-  for (let i = 0; i < 3; i++) {
-    if (pa[i] > pb[i]) return 1;
-    if (pa[i] < pb[i]) return -1;
+  // Split into numeric core segments and an optional pre-release tag
+  // (e.g. "0.4.66-beta.1" -> { parts: [0,4,66], pre: "beta.1" }). Missing or
+  // non-numeric segments default to 0 so versions with differing segment counts
+  // still compare correctly.
+  const parse = (v) => {
+    const [main, pre] = String(v).split("-");
+    const parts = main.split(".").map((n) => {
+      const num = parseInt(n, 10);
+      return Number.isFinite(num) ? num : 0;
+    });
+    return { parts, pre };
+  };
+
+  const pa = parse(a);
+  const pb = parse(b);
+
+  const maxLen = Math.max(pa.parts.length, pb.parts.length);
+  for (let i = 0; i < maxLen; i++) {
+    const x = pa.parts[i] || 0;
+    const y = pb.parts[i] || 0;
+    if (x > y) return 1;
+    if (x < y) return -1;
   }
+
+  // Equal numeric cores: a stable release outranks a pre-release of the same
+  // core (semver: 0.4.66 > 0.4.66-beta).
+  if (pa.pre && !pb.pre) return -1;
+  if (!pa.pre && pb.pre) return 1;
+  if (pa.pre && pb.pre) {
+    if (pa.pre > pb.pre) return 1;
+    if (pa.pre < pb.pre) return -1;
+  }
+
   return 0;
 }
 

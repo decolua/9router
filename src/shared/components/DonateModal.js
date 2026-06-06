@@ -13,6 +13,7 @@ export default function DonateModal({ isOpen, onClose }) {
 
   useEffect(() => {
     if (!isOpen || data) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setError("");
     fetch(GITHUB_CONFIG.donateUrl, { cache: "no-store" })
@@ -42,16 +43,16 @@ export default function DonateModal({ isOpen, onClose }) {
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
       <div
         ref={modalRef}
-        className="relative w-full bg-surface border border-black/10 dark:border-white/10 rounded-xl shadow-2xl animate-in fade-in zoom-in-95 duration-200 max-w-3xl flex flex-col max-h-[85vh]"
+        className="relative w-full bg-surface border border-border rounded-xl shadow-2xl animate-in fade-in zoom-in-95 duration-200 max-w-3xl flex flex-col max-h-[85vh]"
       >
-        <div className="flex items-center justify-between p-3 border-b border-black/5 dark:border-white/5">
+        <div className="flex items-center justify-between p-3 border-b border-border-subtle">
           <h2 className="text-lg font-semibold text-text-main flex items-center gap-2">
             <span className="material-symbols-outlined text-pink-500">volunteer_activism</span>
             {data?.title || "Support 9Router"}
           </h2>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-text-muted hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+            className="p-1.5 rounded-lg text-text-muted hover:bg-surface-2 transition-colors"
             aria-label="Close"
           >
             <span className="material-symbols-outlined text-[20px]">close</span>
@@ -66,7 +67,7 @@ export default function DonateModal({ isOpen, onClose }) {
             </div>
           )}
           {error && (
-            <div className="text-red-500 py-4">Failed to load donate info: {error}</div>
+            <div className="text-danger py-4">Failed to load donate info: {error}</div>
           )}
           {!loading && !error && data && (
             <>
@@ -112,7 +113,7 @@ function DonateChannelCard({ channel }) {
   );
 
   return (
-    <div className="flex flex-col items-center p-4 rounded-xl border border-black/10 dark:border-white/10 bg-surface/50 hover:border-pink-500/40 transition-colors">
+    <div className="flex flex-col items-center p-4 rounded-xl border border-border bg-surface/50 hover:border-pink-500/40 transition-colors">
       {content}
       {url && (
         <a

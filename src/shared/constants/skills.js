@@ -1,5 +1,5 @@
 // Agent Skills metadata — single source of truth for /dashboard/skills page.
-// Each skill = 1 raw GitHub URL the user copies and pastes to any AI agent.
+// Each skill = one raw GitHub URL the user can send to an AI agent.
 
 const REPO = "decolua/9router";
 const BRANCH = "master";
@@ -13,7 +13,7 @@ export const SKILLS = [
   {
     id: "9router",
     name: "9Router (Entry)",
-    description: "Setup + index of all capabilities. Start here — covers base URL, auth, model discovery, and links to every capability skill.",
+    description: "Start here: base URL, auth, model discovery, and every capability link.",
     endpoint: null,
     icon: "hub",
     isEntry: true,
@@ -21,49 +21,49 @@ export const SKILLS = [
   {
     id: "9router-chat",
     name: "Chat",
-    description: "Chat / code-gen via OpenAI or Anthropic format with streaming.",
+    description: "Stream chat and code requests in OpenAI or Anthropic format.",
     endpoint: "/v1/chat/completions",
     icon: "chat",
   },
   {
     id: "9router-image",
     name: "Image Generation",
-    description: "Text-to-image via DALL-E, Imagen, FLUX, MiniMax, SDWebUI…",
+    description: "Generate images through DALL-E, Imagen, FLUX, MiniMax, or SDWebUI.",
     endpoint: "/v1/images/generations",
     icon: "image",
   },
   {
     id: "9router-tts",
     name: "Text-to-Speech",
-    description: "OpenAI / ElevenLabs / Edge / Google / Deepgram voices.",
+    description: "Create speech with OpenAI, ElevenLabs, Edge, Google, or Deepgram voices.",
     endpoint: "/v1/audio/speech",
     icon: "record_voice_over",
   },
   {
     id: "9router-stt",
     name: "Speech-to-Text",
-    description: "Transcribe audio via OpenAI Whisper, Groq, Gemini, Deepgram, AssemblyAI…",
+    description: "Transcribe audio with Whisper, Groq, Gemini, Deepgram, or AssemblyAI.",
     endpoint: "/v1/audio/transcriptions",
     icon: "mic",
   },
   {
     id: "9router-embeddings",
     name: "Embeddings",
-    description: "Vectors for RAG / semantic search via OpenAI, Gemini, Mistral…",
+    description: "Create vectors for RAG and semantic search across embedding providers.",
     endpoint: "/v1/embeddings",
     icon: "scatter_plot",
   },
   {
     id: "9router-web-search",
     name: "Web Search",
-    description: "Tavily / Exa / Brave / Serper / SearXNG / Google PSE / You.com.",
+    description: "Search the web through Tavily, Exa, Brave, Serper, SearXNG, Google PSE, or You.com.",
     endpoint: "/v1/search",
     icon: "search",
   },
   {
     id: "9router-web-fetch",
     name: "Web Fetch",
-    description: "URL → markdown / text / HTML via Firecrawl, Jina, Tavily, Exa.",
+    description: "Fetch URLs as markdown, text, or HTML through Firecrawl, Jina, Tavily, or Exa.",
     endpoint: "/v1/web/fetch",
     icon: "language",
   },

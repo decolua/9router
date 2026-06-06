@@ -20,6 +20,19 @@ import {
   clearXaiSession,
 } from "@/lib/oauth/utils/server";
 
+// Upstream OAuth provider errors can embed raw response bodies containing
+// client_secret / code / code_verifier / tokens. Log the full diagnostic
+// server-side, but only return a redacted, generic message to the browser.
+function sanitizeOAuthError(error) {
+  let msg = String(error?.message || error || "");
+  msg = msg
+    .replace(/(client_secret|code_verifier|access_token|refresh_token|id_token|code)=([^&\s"']+)/gi, "$1=[redacted]")
+    .replace(/(eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)/g, "[redacted-jwt]");
+  // Cap length so full upstream HTML/JSON bodies are not echoed back.
+  if (msg.length > 200) msg = msg.slice(0, 200) + "…";
+  return msg || "OAuth request failed";
+}
+
 async function completeXaiManualCode(code, state) {
   const session = state ? getXaiSessionStatus(state) : null;
   if (!session) {
@@ -170,8 +183,8 @@ export async function GET(request, { params }) {
 
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   } catch (error) {
-    console.log("OAuth GET error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("OAuth GET error:", error);
+    return NextResponse.json({ error: sanitizeOAuthError(error) }, { status: 500 });
   }
 }
 
@@ -232,14 +245,27 @@ export async function POST(request, { params }) {
         });
       }
 
+      // Prefer the server-side stored PKCE verifier/redirectUri (bound to state
+      // at authorize time) over client-supplied values — prevents a caller from
+      // injecting arbitrary verifier/redirect material into the exchange.
+      let effectiveVerifier = codeVerifier;
+      let effectiveRedirectUri = redirectUri;
+      if (state && (provider === "codex" || provider === "xai")) {
+        const stored = provider === "xai" ? getXaiSessionStatus(state) : getCodexSessionStatus(state);
+        if (stored?.codeVerifier) {
+          effectiveVerifier = stored.codeVerifier;
+          effectiveRedirectUri = stored.redirectUri || redirectUri;
+        }
+      }
+
       // Cline uses authorization_code without PKCE
       const noPkceExchangeProviders = ["cline"];
-      if (!code || !redirectUri || (!codeVerifier && !noPkceExchangeProviders.includes(provider))) {
+      if (!code || !effectiveRedirectUri || (!effectiveVerifier && !noPkceExchangeProviders.includes(provider))) {
         return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
       }
 
       // Exchange code for tokens (meta carries provider-specific params, e.g. gitlab clientId/baseUrl)
-      const tokenData = await exchangeTokens(provider, code, redirectUri, codeVerifier, state, meta);
+      const tokenData = await exchangeTokens(provider, code, effectiveRedirectUri, effectiveVerifier, state, meta);
 
       // Save to database
       const connection = await createProviderConnection({
@@ -337,7 +363,7 @@ export async function POST(request, { params }) {
 
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   } catch (error) {
-    console.log("OAuth POST error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("OAuth POST error:", error);
+    return NextResponse.json({ error: sanitizeOAuthError(error) }, { status: 500 });
   }
 }

@@ -82,6 +82,23 @@ function copyRecursive(src, dest) {
   }
 }
 
+function findStandaloneApp(standaloneRootToUse) {
+  const candidates = [
+    standaloneRootToUse,
+    path.join(standaloneRootToUse, "app"),
+  ];
+
+  if (fs.existsSync(standaloneRootToUse)) {
+    for (const entry of fs.readdirSync(standaloneRootToUse, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        candidates.push(path.join(standaloneRootToUse, entry.name));
+      }
+    }
+  }
+
+  return candidates.find((candidate) => fs.existsSync(path.join(candidate, "server.js")));
+}
+
 console.log("📦 Building 9Router CLI package with Next.js...\n");
 
 fs.mkdirSync(buildHomeDir, { recursive: true });
@@ -137,12 +154,10 @@ console.log("3️⃣  Copying Next.js standalone build to app/cli/app...");
 const standaloneRoot = path.join(appDir, ".next", "standalone");
 const standaloneRootResolved = path.join(buildDistDir, "standalone");
 const standaloneRootToUse = fs.existsSync(standaloneRootResolved) ? standaloneRootResolved : standaloneRoot;
-const standaloneApp = fs.existsSync(path.join(standaloneRootToUse, "server.js"))
-  ? standaloneRootToUse
-  : path.join(standaloneRootToUse, "app");
-if (!fs.existsSync(standaloneApp)) {
+const standaloneApp = findStandaloneApp(standaloneRootToUse);
+if (!standaloneApp) {
   console.error("❌ Next.js standalone build not found under .next/standalone");
-  console.error("Expected either .next/standalone/server.js or .next/standalone/app/");
+  console.error("Expected .next/standalone/server.js, .next/standalone/app/server.js, or a workspace-nested server.js");
   process.exit(1);
 }
 copyRecursive(standaloneApp, cliAppDir);

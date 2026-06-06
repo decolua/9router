@@ -170,13 +170,13 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
           <div className="flex flex-col gap-3">
             <p className="text-xs text-text-muted">One key per line. Format: <code>name|apiKey</code> or just <code>apiKey</code> (auto-named by index).</p>
             <textarea
-              className="w-full rounded border border-accent/30 bg-sidebar p-2 text-sm font-mono resize-y min-h-[140px] focus:outline-none focus:ring-1 focus:ring-primary"
+              className="w-full rounded-[10px] border border-border bg-surface-2 p-2 text-sm font-mono resize-y min-h-[140px] focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500/40 transition-all"
               placeholder={BULK_PLACEHOLDER}
               value={bulkText}
               onChange={(e) => setBulkText(e.target.value)}
             />
             {bulkResult && (
-              <div className={`text-sm font-medium ${bulkResult.failed > 0 ? "text-yellow-400" : "text-green-400"}`}>
+              <div className={`text-sm font-medium ${bulkResult.failed > 0 ? "text-warning" : "text-success"}`}>
                 ✓ {bulkResult.success} added{bulkResult.failed > 0 ? `, ✗ ${bulkResult.failed} failed` : ""}
               </div>
             )}
@@ -274,7 +274,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
           </Badge>
         )}
         {error && (
-          <p className="text-xs text-red-500 break-words">{error}</p>
+          <p className="text-xs text-danger break-words">{error}</p>
         )}
         {isCompatible && (
           <p className="text-xs text-text-muted">

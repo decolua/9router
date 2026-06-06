@@ -33,7 +33,7 @@ export default function RootLayout({ children }) {
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: `if(document.fonts&&document.fonts.ready){document.fonts.ready.then(function(){document.documentElement.classList.add('fonts-loaded')})}else{document.documentElement.classList.add('fonts-loaded')}`,
+            __html: `var r=document.documentElement,t=setTimeout(function(){r.classList.add('fonts-failed')},2000);if(document.fonts&&document.fonts.ready){document.fonts.ready.then(function(){clearTimeout(t);r.classList.add('fonts-loaded')},function(){r.classList.add('fonts-failed')})}else{clearTimeout(t);r.classList.add('fonts-loaded')}`,
           }}
         />
       </head>

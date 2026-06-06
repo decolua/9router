@@ -96,3 +96,10 @@ export function isNewFormatKey(apiKey) {
   return parsed?.isNewFormat === true;
 }
 
+/** Mask API key for list display — never expose full secret in GET responses. */
+export function maskApiKeyForDisplay(apiKey) {
+  if (!apiKey || typeof apiKey !== "string") return "";
+  if (apiKey.length <= 16) return `${apiKey.slice(0, 4)}…`;
+  return `${apiKey.slice(0, 12)}…${apiKey.slice(-4)}`;
+}
+

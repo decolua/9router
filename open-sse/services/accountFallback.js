@@ -45,8 +45,11 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
     }
   }
 
-  // Default: transient cooldown for any unmatched error
-  return { shouldFallback: true, cooldownMs: TRANSIENT_COOLDOWN_MS };
+  // Default: do not rotate accounts on unmatched errors (often client/request issues)
+  if (status >= 500) {
+    return { shouldFallback: true, cooldownMs: TRANSIENT_COOLDOWN_MS };
+  }
+  return { shouldFallback: false, cooldownMs: 0 };
 }
 
 /**

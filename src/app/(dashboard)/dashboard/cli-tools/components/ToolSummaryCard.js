@@ -3,17 +3,10 @@
 import Link from "next/link";
 import Image from "next/image";
 import { Card } from "@/shared/components";
-
-// Derive simple connected/configured/not-installed status from API payload
-function getStatus(status) {
-  if (!status) return { label: "Unknown", cls: "bg-gray-500/10 text-gray-500" };
-  if (!status.installed) return { label: "Not installed", cls: "bg-gray-500/10 text-gray-500" };
-  if (status.has9Router) return { label: "Connected", cls: "bg-green-500/10 text-green-600 dark:text-green-400" };
-  return { label: "Not configured", cls: "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400" };
-}
+import ConfigStatusBadge, { getToolInstallStatus } from "@/shared/components/ConfigStatusBadge";
 
 export default function ToolSummaryCard({ toolId, tool, status }) {
-  const s = getStatus(status);
+  const s = getToolInstallStatus(status);
   return (
     <Link href={`/dashboard/cli-tools/${toolId}`} className="block">
       <Card padding="sm" className="h-full overflow-hidden hover:border-primary/50 transition-colors cursor-pointer">
@@ -28,7 +21,7 @@ export default function ToolSummaryCard({ toolId, tool, status }) {
             </div>
             <div className="min-w-0 flex-1">
               <h3 className="font-medium text-sm truncate">{tool.name}</h3>
-              <span className={`inline-block mt-1 px-1.5 py-0.5 text-[10px] font-medium rounded-full ${s.cls}`}>{s.label}</span>
+              <ConfigStatusBadge status={s.status} className="mt-1" />
             </div>
             <span className="material-symbols-outlined text-text-muted text-[18px] shrink-0">chevron_right</span>
           </div>

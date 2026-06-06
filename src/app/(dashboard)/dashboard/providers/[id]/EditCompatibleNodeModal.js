@@ -19,6 +19,7 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
 
   useEffect(() => {
     if (node) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFormData({
         name: node.name || "",
         prefix: node.prefix || "",

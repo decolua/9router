@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createProviderConnection } from "@/models";
+import { assertSafeFetchUrl } from "open-sse/utils/ssrfGuard.js";
 
 const GITLAB_DEFAULT_BASE = "https://gitlab.com";
 
@@ -22,6 +23,11 @@ export async function POST(request) {
     }
 
     const base = (baseUrl?.trim() || GITLAB_DEFAULT_BASE).replace(/\/$/, "");
+    try {
+      assertSafeFetchUrl(base);
+    } catch {
+      return NextResponse.json({ error: "Invalid or blocked GitLab base URL" }, { status: 400 });
+    }
 
     // Verify token by fetching current user
     const userRes = await fetch(`${base}/api/v4/user`, {

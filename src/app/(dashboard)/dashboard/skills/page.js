@@ -47,7 +47,7 @@ function SkillRow({ skill }) {
         <div className="flex items-center gap-2 flex-wrap">
           <h3 className="font-semibold text-sm text-text-main">{skill.name}</h3>
           {skill.isEntry && (
-            <Badge variant="primary" size="sm">START HERE</Badge>
+            <Badge variant="primary" size="sm">Primary skill</Badge>
           )}
           {skill.endpoint && (
             <Badge variant="default" size="sm">
@@ -76,7 +76,7 @@ export default function SkillsPage() {
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <Card padding="md">
-        <div className="text-xs text-text-muted mb-2">Paste this to your AI:</div>
+        <div className="text-xs text-text-muted mb-2">Send this to your agent:</div>
         <div className="px-3 py-2 rounded bg-surface-2 font-mono text-[12px] text-text-main">
           Read this skill and use it: {getSkillRawUrl("9router")}
         </div>
@@ -91,9 +91,9 @@ export default function SkillsPage() {
       <Card padding="md">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
-            <h2 className="text-sm font-semibold text-text-main">More on GitHub</h2>
+            <h2 className="text-sm font-semibold text-text-main">Source and examples</h2>
             <p className="text-xs text-text-muted mt-0.5">
-              Browse source, README, and examples.
+              Review source files, README, and examples.
             </p>
           </div>
           <a

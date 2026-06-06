@@ -4,8 +4,36 @@ import { RAW_CAP, MIN_COMPRESS_SIZE } from "./constants.js";
 import { autoDetectFilter } from "./autodetect.js";
 import { safeApply } from "./applyFilter.js";
 
+let rtkEnabled = false;
+
+export function setRtkEnabled(enabled) {
+  rtkEnabled = enabled === true;
+}
+
+export function isRtkEnabled() {
+  return rtkEnabled;
+}
+
+// Returns the index of the last message that carries a cache_control marker
+// (either at the top-level or inside a content block). RTK must not touch
+// any message at or before this index — doing so would change the content
+// hash and invalidate the Anthropic/OpenAI KV cache.
+export function findLastCacheBoundary(messages) {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (!msg) continue;
+    if (msg.cache_control) return i;
+    if (Array.isArray(msg.content)) {
+      for (const block of msg.content) {
+        if (block?.cache_control) return i;
+      }
+    }
+  }
+  return -1;
+}
+
 // Compress tool_result content in-place. Returns stats or null if disabled/failed.
-export function compressMessages(body, enabled) {
+export function compressMessages(body, enabled = rtkEnabled) {
   if (!enabled) return null;
   if (!body) return null;
 
@@ -20,9 +48,14 @@ export function compressMessages(body, enabled) {
     : null;
   if (!items) return null;
 
+  // Never compress messages at or before the last cache_control boundary —
+  // those bytes are part of the cached prefix; mutating them invalidates the cache.
+  const cacheFloor = findLastCacheBoundary(items);
+
   const stats = { bytesBefore: 0, bytesAfter: 0, hits: [] };
   try {
     for (let i = 0; i < items.length; i++) {
+      if (i <= cacheFloor) continue; // protected by cache boundary
       const msg = items[i];
       if (!msg) continue;
 

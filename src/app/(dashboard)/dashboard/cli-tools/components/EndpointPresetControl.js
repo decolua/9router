@@ -39,6 +39,7 @@ export default function EndpointPresetControl({
   const [selectedName, setSelectedName] = useState("");
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPresets(readPresets());
   }, []);
 
@@ -95,7 +96,7 @@ export default function EndpointPresetControl({
       <select
         value={selectedName}
         onChange={(event) => handleSelect(event.target.value)}
-        className="flex-1 px-2 py-1.5 bg-surface rounded text-xs border border-border focus:outline-none focus:ring-1 focus:ring-primary/50"
+        className="flex-1 px-2 py-1.5 bg-surface rounded text-xs border border-border focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500/40"
       >
         <option value="">Manual / current endpoint</option>
         {presets.map((preset) => (
@@ -117,7 +118,7 @@ export default function EndpointPresetControl({
         <button
           type="button"
           onClick={handleDelete}
-          className="p-1 text-text-muted hover:text-red-500 rounded transition-colors"
+          className="p-1 text-text-muted hover:text-danger rounded transition-colors"
           title="Delete selected preset"
         >
           <span className="material-symbols-outlined text-[14px]">delete</span>

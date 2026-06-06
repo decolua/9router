@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
+import ConfigStatusBadge from "@/shared/components/ConfigStatusBadge";
+import InlineAlert from "@/shared/components/InlineAlert";
 import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
 import ApiKeySelect from "./ApiKeySelect";
@@ -21,22 +23,39 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
   const [modalOpen, setModalOpen] = useState(false);
   const selectedModelsRef = useRef([]);
 
+  const fetchModelAliases = async () => {
+    try {
+      const res = await fetch("/api/models/alias");
+      const data = await res.json();
+      if (res.ok) setModelAliases(data.aliases || {});
+    } catch (error) {
+      console.log("Error fetching model aliases:", error);
+    }
+  };
+
+  const checkStatus = async () => {
+    setChecking(true);
+    try {
+      const res = await fetch("/api/cli-tools/copilot-settings");
+      const data = await res.json();
+      setStatus(data);
+    } catch (error) {
+      setStatus({ error: error.message });
+    } finally {
+      setChecking(false);
+    }
+  };
+
   useEffect(() => {
     selectedModelsRef.current = selectedModels;
   }, [selectedModels]);
-
-  useEffect(() => {
-    if (apiKeys?.length > 0 && !selectedApiKey) {
-      setSelectedApiKey(apiKeys[0].key);
-    }
-  }, [apiKeys, selectedApiKey]);
-
-  useEffect(() => {
-    if (initialStatus) setStatus(initialStatus);
+useEffect(() => {
+    if (initialStatus) queueMicrotask(() => setStatus(initialStatus));
   }, [initialStatus]);
 
   useEffect(() => {
     if (isExpanded && !status) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       checkStatus();
       fetchModelAliases();
     }
@@ -48,20 +67,12 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
     if (status?.config && Array.isArray(status.config) && selectedModels.length === 0) {
       const entry = status.config.find((e) => e.name === "9Router");
       if (entry?.models?.length > 0) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setSelectedModels(entry.models.map((m) => m.id));
       }
     }
   }, [status]);
 
-  const fetchModelAliases = async () => {
-    try {
-      const res = await fetch("/api/models/alias");
-      const data = await res.json();
-      if (res.ok) setModelAliases(data.aliases || {});
-    } catch (error) {
-      console.log("Error fetching model aliases:", error);
-    }
-  };
 
   const saveModels = async (models) => {
     try {
@@ -96,18 +107,6 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
 
   const removeModel = (id) => setSelectedModels((prev) => prev.filter((m) => m !== id));
 
-  const checkStatus = async () => {
-    setChecking(true);
-    try {
-      const res = await fetch("/api/cli-tools/copilot-settings");
-      const data = await res.json();
-      setStatus(data);
-    } catch (error) {
-      setStatus({ error: error.message });
-    } finally {
-      setChecking(false);
-    }
-  };
 
   const handleApply = async () => {
     setApplying(true);
@@ -189,9 +188,7 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
           <div className="min-w-0">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <h3 className="font-medium text-sm">{tool.name}</h3>
-              {configStatus === "configured" && <span className="px-1.5 py-0.5 text-[10px] font-medium bg-green-500/10 text-green-600 dark:text-green-400 rounded-full">Connected</span>}
-              {configStatus === "not_configured" && <span className="px-1.5 py-0.5 text-[10px] font-medium bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 rounded-full">Not configured</span>}
-              {configStatus === "other" && <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-full">Other</span>}
+              <ConfigStatusBadge status={configStatus} />
             </div>
             <p className="text-xs text-text-muted truncate">{tool.description}</p>
           </div>
@@ -210,13 +207,11 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
 
           {!checking && (
             <>
-              <div className="flex items-start gap-3 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-                <span className="material-symbols-outlined text-blue-500 text-lg">info</span>
-                <div className="text-xs text-blue-700 dark:text-blue-300">
-                  <p className="font-medium">Writes to <code className="px-1 bg-black/5 dark:bg-white/10 rounded">chatLanguageModels.json</code></p>
-                  <p className="mt-0.5 opacity-80">Reload VS Code after applying for changes to take effect.</p>
-                </div>
-              </div>
+              <InlineAlert
+                variant="info"
+                title={<>Writes to <code className="px-1 bg-surface-2 rounded">chatLanguageModels.json</code></>}
+                message="Reload VS Code after applying for changes to take effect."
+              />
 
               <div className="flex flex-col gap-2">
                 {/* Endpoint */}
@@ -251,9 +246,9 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
                         <span className="text-xs text-text-muted">No models selected</span>
                       ) : (
                         selectedModels.map((model) => (
-                          <span key={model} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-black/5 dark:bg-white/5 text-text-muted border border-transparent hover:border-border">
+                          <span key={model} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-surface-2 text-text-muted border border-transparent hover:border-border">
                             {model}
-                            <button onClick={(e) => { e.stopPropagation(); removeModel(model); }} className="ml-0.5 hover:text-red-500">
+                            <button onClick={(e) => { e.stopPropagation(); removeModel(model); }} className="ml-0.5 hover:text-danger">
                               <span className="material-symbols-outlined text-[12px]">close</span>
                             </button>
                           </span>
@@ -268,10 +263,11 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
               </div>
 
               {message && (
-                <div className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs ${message.type === "success" ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"}`}>
-                  <span className="material-symbols-outlined text-[14px]">{message.type === "success" ? "check_circle" : "error"}</span>
-                  <span>{message.text}</span>
-                </div>
+                <InlineAlert
+                  variant={message.type === "success" ? "info" : "danger"}
+                  message={message.text}
+                  compact
+                />
               )}
 
               <div className="grid grid-cols-1 gap-2 sm:flex sm:items-center">

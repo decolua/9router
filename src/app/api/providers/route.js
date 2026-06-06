@@ -122,6 +122,16 @@ export async function POST(request) {
 
     let providerSpecificData = normalizeProviderSpecificData(provider, body, body.providerSpecificData);
 
+    if (isOpenAICompatibleProvider(provider) || isAnthropicCompatibleProvider(provider) || isCustomEmbeddingProvider(provider)) {
+      const existing = await getProviderConnections({ provider });
+      if (existing.length > 0) {
+        return NextResponse.json(
+          { error: "Only one connection is allowed per compatible provider node" },
+          { status: 400 }
+        );
+      }
+    }
+
     if (isOpenAICompatibleProvider(provider)) {
       const node = await getProviderNodeById(provider);
       if (!node) {
@@ -164,6 +174,16 @@ export async function POST(request) {
 
     if (proxyPoolId !== null) {
       mergedProviderSpecificData.proxyPoolId = proxyPoolId;
+    }
+
+    if (isOpenAICompatibleProvider(provider) || isAnthropicCompatibleProvider(provider) || isCustomEmbeddingProvider(provider)) {
+      const existing = await getProviderConnections({ provider });
+      if (existing.length > 0) {
+        return NextResponse.json(
+          { error: "Only one connection is allowed per compatible node. Add another node if you need more connections." },
+          { status: 400 }
+        );
+      }
     }
 
     const newConnection = await createProviderConnection({

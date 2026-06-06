@@ -122,8 +122,30 @@ function getProcessUsingPort443() {
 let serverProcess = null;
 let serverPid = null;
 
-function getCachedPassword() { return globalThis.__mitmSudoPassword || null; }
-function setCachedPassword(pwd) { globalThis.__mitmSudoPassword = pwd; }
+const SUDO_CACHE_TTL_MS = 5 * 60 * 1000;
+let _cachedSudoPassword = null;
+let _sudoCacheExpiresAt = 0;
+
+function clearCachedPassword() {
+  _cachedSudoPassword = null;
+  _sudoCacheExpiresAt = 0;
+  if (globalThis.__mitmSudoPassword) delete globalThis.__mitmSudoPassword;
+}
+
+function getCachedPassword() {
+  if (_cachedSudoPassword && Date.now() < _sudoCacheExpiresAt) return _cachedSudoPassword;
+  clearCachedPassword();
+  return null;
+}
+
+function setCachedPassword(pwd) {
+  if (!pwd) {
+    clearCachedPassword();
+    return;
+  }
+  _cachedSudoPassword = pwd;
+  _sudoCacheExpiresAt = Date.now() + SUDO_CACHE_TTL_MS;
+}
 
 function isProcessAlive(pid) {
   try {
@@ -669,7 +691,7 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
       }
       // Detect wrong/missing password — clear cache and stop retry loop
       if (!IS_WIN && (msg.includes("incorrect password") || msg.includes("no password was provided"))) {
-        setCachedPassword(null);
+        clearCachedPassword();
         clearEncryptedPassword();
         mitmIsRestarting = true; // prevent scheduleMitmRestart from firing
       }
@@ -780,6 +802,7 @@ async function stopServer(sudoPassword) {
 
   try { fs.unlinkSync(PID_FILE); } catch { /* ignore */ }
   await saveMitmSettings(false, null);
+  clearCachedPassword();
   mitmIsRestarting = false;
 
   return { running: false, pid: null };
@@ -841,6 +864,7 @@ module.exports = {
   stopMitm,
   getCachedPassword,
   setCachedPassword,
+  clearCachedPassword,
   loadEncryptedPassword,
   clearEncryptedPassword,
   isSudoPasswordRequired,

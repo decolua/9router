@@ -140,7 +140,11 @@ Respond ONLY with the JSON object, no other text.`);
       // Pass-through built-in tools (e.g. web_search_20250305) without prefix or conversion
       const toolType = tool.type;
       if (toolType && toolType !== "function") {
-        result.tools.push(tool);
+        const passthrough = { ...tool };
+        if (typeof passthrough.model === "string" && passthrough.model.includes("/")) {
+          passthrough.model = passthrough.model.slice(passthrough.model.indexOf("/") + 1);
+        }
+        result.tools.push(passthrough);
         continue;
       }
 
@@ -294,12 +298,18 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
 // Convert OpenAI tool choice to Claude format
 function convertOpenAIToolChoice(choice) {
   if (!choice) return { type: "auto" };
-  if (typeof choice === "object" && choice.type) return choice;
   if (choice === "auto" || choice === "none") return { type: "auto" };
   if (choice === "required") return { type: "any" };
-  if (typeof choice === "object" && choice.function) {
+  if (typeof choice === "object" && choice.type === "function" && choice.function?.name) {
     return { type: "tool", name: choice.function.name };
   }
+  if (typeof choice === "object" && choice.type === "tool" && choice.name) {
+    return { type: "tool", name: choice.name };
+  }
+  if (typeof choice === "object" && choice.function?.name) {
+    return { type: "tool", name: choice.function.name };
+  }
+  if (typeof choice === "object" && choice.type) return choice;
   return { type: "auto" };
 }
 

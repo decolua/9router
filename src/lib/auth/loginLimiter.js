@@ -46,6 +46,7 @@ export function recordSuccess(ip) {
 }
 
 export function getClientIp(request) {
+  if (process.env.TRUST_PROXY_HEADERS !== "true") return "unknown";
   const xff = request.headers.get("x-forwarded-for");
   if (xff) return xff.split(",")[0].trim();
   return request.headers.get("x-real-ip") || "unknown";

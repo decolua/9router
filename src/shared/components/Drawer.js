@@ -12,10 +12,10 @@ export default function Drawer({
   className
 }) {
   const widths = {
-    sm: "w-[400px]",
-    md: "w-[500px]",
-    lg: "w-[600px]",
-    xl: "w-[800px]",
+    sm: "w-[min(400px,90vw)]",
+    md: "w-[min(500px,90vw)]",
+    lg: "w-[min(600px,90vw)]",
+    xl: "w-[min(800px,90vw)]",
     full: "w-full",
   };
 
@@ -66,6 +66,7 @@ export default function Drawer({
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close"
             className="p-1.5 rounded-[10px] text-text-muted hover:bg-surface-2 hover:text-text-main transition-colors"
           >
             <span className="material-symbols-outlined text-[20px]">close</span>

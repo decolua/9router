@@ -38,7 +38,7 @@ function ProviderCard({ provider, kind, connections }) {
 
   return (
     <Link href={`/dashboard/media-providers/${kind}/${provider.id}`} className="group">
-      <Card padding="xs" className={`h-full hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors cursor-pointer ${allDisabled ? "opacity-50" : ""}`}>
+      <Card padding="xs" className={`h-full hover:bg-surface-2  transition-colors cursor-pointer ${allDisabled ? "opacity-50" : ""}`}>
         <div className="flex min-w-0 items-center gap-3">
           <div
             className="size-8 rounded-lg flex items-center justify-center shrink-0"
@@ -71,7 +71,7 @@ function ComboList({ combos }) {
     <div className="flex flex-col gap-2">
       {combos.map((combo) => (
         <Link key={combo.id} href={`/dashboard/media-providers/combo/${combo.id}`}>
-          <Card padding="xs" className="hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors cursor-pointer">
+          <Card padding="xs" className="hover:bg-surface-2  transition-colors cursor-pointer">
             <div className="flex min-w-0 items-center gap-3">
               <span className="material-symbols-outlined text-primary text-[18px]">layers</span>
               <code className="text-sm font-mono font-medium flex-1 truncate">{combo.name}</code>

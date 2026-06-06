@@ -9,7 +9,7 @@ export default function GetStarted() {
   };
 
   return (
-    <section className="py-24 px-6 bg-[#120f0d]">
+    <section id="get-started" className="py-24 px-6 bg-[#120f0d]">
       <div className="max-w-7xl mx-auto">
         <div className="flex flex-col lg:flex-row gap-16 items-start">
           {/* Left: Steps */}
@@ -41,6 +41,14 @@ export default function GetStarted() {
                 <div>
                   <h4 className="font-bold text-lg">Route Requests</h4>
                   <p className="text-sm text-gray-500 mt-1">Point your CLI tools to http://localhost:20128</p>
+                </div>
+              </div>
+
+              <div className="flex gap-4">
+                <div className="flex-none w-8 h-8 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold">!</div>
+                <div>
+                  <h4 className="font-bold text-lg">Secure before you share</h4>
+                  <p className="text-sm text-gray-500 mt-1">Change the default password in Profile before enabling tunnels or remote dashboard access.</p>
                 </div>
               </div>
             </div>

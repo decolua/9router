@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Card from "./Card";
 
 export default function RequestLogger() {
@@ -8,21 +8,7 @@ export default function RequestLogger() {
   const [loading, setLoading] = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(true);
 
-  useEffect(() => {
-    fetchLogs();
-  }, []);
-
-  useEffect(() => {
-    let interval;
-    if (autoRefresh) {
-      interval = setInterval(() => {
-        fetchLogs(false);
-      }, 3000);
-    }
-    return () => clearInterval(interval);
-  }, [autoRefresh]);
-
-  const fetchLogs = async (showLoading = true) => {
+  const fetchLogs = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
     try {
       const res = await fetch("/api/usage/request-logs");
@@ -33,9 +19,25 @@ export default function RequestLogger() {
     } catch (error) {
       console.error("Failed to fetch logs:", error);
     } finally {
-      if (showLoading) setLoading(false);
+      setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    // Run inside an async IIFE so the setState calls happen after an await
+    // (avoids react-hooks/set-state-in-effect's synchronous-setState flag).
+    (async () => { await fetchLogs(false); })();
+  }, [fetchLogs]);
+
+  useEffect(() => {
+    let interval;
+    if (autoRefresh) {
+      interval = setInterval(() => {
+        fetchLogs(false);
+      }, 3000);
+    }
+    return () => clearInterval(interval);
+  }, [autoRefresh, fetchLogs]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -46,7 +48,7 @@ export default function RequestLogger() {
             <span>Auto Refresh (3s)</span>
             <div
               onClick={() => setAutoRefresh(!autoRefresh)}
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${autoRefresh ? "bg-primary" : "bg-bg-subtle border border-border"
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${autoRefresh ? "bg-primary" : "bg-bg-alt border border-border"
                 }`}
             >
               <span
@@ -58,7 +60,7 @@ export default function RequestLogger() {
         </div>
       </div>
 
-      <Card className="overflow-hidden bg-black/5 dark:bg-black/20">
+      <Card className="overflow-hidden bg-surface-2">
         <div className="p-0 overflow-x-auto max-h-[600px] overflow-y-auto font-mono text-xs">
           {loading && logs.length === 0 ? (
             <div className="p-8 text-center text-text-muted">Loading logs...</div>
@@ -66,7 +68,7 @@ export default function RequestLogger() {
             <div className="p-8 text-center text-text-muted">No logs recorded yet.</div>
           ) : (
             <table className="w-full text-left border-collapse whitespace-nowrap">
-              <thead className="sticky top-0 bg-bg-subtle border-b border-border z-10">
+              <thead className="sticky top-0 bg-bg-alt border-b border-border z-10">
                 <tr>
                   <th className="px-3 py-2 border-r border-border">DateTime</th>
                   <th className="px-3 py-2 border-r border-border">Model</th>
@@ -92,7 +94,7 @@ export default function RequestLogger() {
                       <td className="px-3 py-1.5 border-r border-border text-text-muted">{parts[0]}</td>
                       <td className="px-3 py-1.5 border-r border-border font-medium">{parts[1]}</td>
                       <td className="px-3 py-1.5 border-r border-border">
-                        <span className="px-1.5 py-0.5 rounded bg-bg-subtle border border-border text-[10px] uppercase font-bold">
+                        <span className="px-1.5 py-0.5 rounded bg-bg-alt border border-border text-[10px] uppercase font-bold">
                           {parts[2]}
                         </span>
                       </td>

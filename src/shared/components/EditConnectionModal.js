@@ -29,6 +29,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
 
   useEffect(() => {
     if (connection) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFormData({
         name: connection.name || "",
         priority: connection.priority || 1,

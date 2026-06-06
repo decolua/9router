@@ -86,7 +86,7 @@ export async function handleImageGenerationCore({
       providerResponse.status === HTTP_STATUS.FORBIDDEN)
   ) {
     const newCredentials = await refreshWithRetry(
-      () => executor.refreshCredentials(credentials, log),
+      () => executor.refreshCredentials(credentials, log, null),
       3,
       log
     );

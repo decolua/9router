@@ -113,6 +113,21 @@ npm run build
 PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run start
 ```
 
+Build and reinstall the local CLI package from a fork:
+
+```bash
+rm -rf .next/cache/webpack
+npm install
+npm --prefix cli install
+npm --prefix cli run build
+npm install -g ./cli
+9router --version
+```
+
+The CLI build bundles the Next.js standalone app into `cli/app` and installs the `9router` command from your checkout.
+
+Installed CLI builds also expose a **Versions** control in the sidebar. It fetches GitHub release history and can automatically upgrade or downgrade to a selected release, with a manual `npm i -g 9router@<version> --prefer-online` fallback command.
+
 Default URLs:
 - Dashboard: `http://localhost:20128/dashboard`
 - OpenAI-compatible API: `http://localhost:20128/v1`

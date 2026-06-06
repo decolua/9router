@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getApiKeys, createApiKey } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
+import { maskApiKeyForDisplay } from "@/shared/utils/apiKey";
 
 export const dynamic = "force-dynamic";
 
@@ -8,7 +9,12 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const keys = await getApiKeys();
-    return NextResponse.json({ keys });
+    const masked = keys.map(({ key, ...rest }) => ({
+      ...rest,
+      key: maskApiKeyForDisplay(key),
+      masked: true,
+    }));
+    return NextResponse.json({ keys: masked });
   } catch (error) {
     console.log("Error fetching keys:", error);
     return NextResponse.json({ error: "Failed to fetch keys" }, { status: 500 });

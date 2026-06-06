@@ -77,7 +77,16 @@ export class QwenExecutor extends DefaultExecutor {
   // Using portal.qwen.ai when the token is issued for another shard returns 401/403.
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
     const resourceUrl = credentials?.providerSpecificData?.resourceUrl;
-    const host = resourceUrl ? resourceUrl.replace(/^https?:\/\//, "").replace(/\/$/, "") : "portal.qwen.ai";
+    const defaultHost = "portal.qwen.ai";
+    const allowedSuffixes = [".qwen.ai", ".aliyuncs.com", ".dashscope.aliyuncs.com"];
+    let host = defaultHost;
+    if (resourceUrl) {
+      const candidate = resourceUrl.replace(/^https?:\/\//, "").replace(/\/$/, "").split("/")[0];
+      const lower = candidate.toLowerCase();
+      if (allowedSuffixes.some((suffix) => lower === suffix.slice(1) || lower.endsWith(suffix))) {
+        host = candidate;
+      }
+    }
     return `https://${host}/v1/chat/completions`;
   }
 

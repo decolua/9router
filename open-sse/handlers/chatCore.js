@@ -19,6 +19,10 @@ import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.j
 import { dedupeTools } from "../utils/toolDeduper.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
+import { compressWithHeadroom } from "../rtk/headroom.js";
+import { recordCompressionStats } from "@/lib/compressionStats.js";
+
+const HEADROOM_AVAILABLE = false;
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -27,7 +31,7 @@ import { compressMessages, formatRtkLog } from "../rtk/index.js";
  * @param {object} options.credentials - Provider credentials
  * @param {string} options.sourceFormatOverride - Override detected source format (e.g. "openai-responses")
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, cavemanEnabled, cavemanLevel, sourceFormatOverride, providerThinking }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, cavemanEnabled, cavemanLevel, headroomEnabled, sourceFormatOverride, providerThinking }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
 
@@ -114,15 +118,43 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Covers both passthrough (source shape) and translated (target shape) flows
   const finalFormat = passthrough ? sourceFormat : targetFormat;
 
+  // Headroom: ML compression of full message history (prose, RAG, long conversations)
+  if (HEADROOM_AVAILABLE && headroomEnabled) {
+    const hrStats = await compressWithHeadroom(translatedBody, model);
+    if (hrStats && hrStats.saved > 0) {
+      const pct = Math.round((hrStats.saved / hrStats.before) * 100);
+      console.log(`[HEADROOM] saved ${hrStats.saved}B / ${hrStats.before}B (${pct}%)`);
+    }
+    recordCompressionStats("headroom", {
+      bytesBefore: hrStats?.before || 0,
+      bytesAfter: hrStats?.after || 0,
+      hits: hrStats?.saved > 0 ? 1 : 0,
+      detail: hrStats?.saved > 0 ? model : "skipped",
+    }).catch(() => {});
+  }
+
   // RTK: compress tool_result content
   const rtkStats = compressMessages(translatedBody, rtkEnabled);
   const rtkLine = formatRtkLog(rtkStats);
   if (rtkLine) console.log(rtkLine);
+  if (rtkEnabled) {
+    const filters = Array.from(new Set((rtkStats?.hits || []).map((hit) => hit.filter))).join(",");
+    recordCompressionStats("rtk", {
+      bytesBefore: rtkStats?.bytesBefore || 0,
+      bytesAfter: rtkStats?.bytesAfter || 0,
+      hits: rtkStats?.hits?.length || 0,
+      detail: filters || "no compression",
+    }).catch(() => {});
+  }
 
   // Caveman: inject terse-style system prompt
   if (cavemanEnabled && cavemanLevel) {
     injectCaveman(translatedBody, finalFormat, cavemanLevel);
     log?.debug?.("CAVEMAN", `${cavemanLevel} | ${finalFormat}`);
+    recordCompressionStats("caveman", {
+      hits: 1,
+      detail: `level=${cavemanLevel}`,
+    }).catch(() => {});
   }
 
   const executor = getExecutor(provider);
@@ -208,7 +240,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Handle 401/403 - try token refresh (skip for noAuth providers)
   if (!executor.noAuth && (providerResponse.status === HTTP_STATUS.UNAUTHORIZED || providerResponse.status === HTTP_STATUS.FORBIDDEN)) {
     try {
-      const newCredentials = await refreshWithRetry(() => executor.refreshCredentials(credentials, log), 3, log);
+      const newCredentials = await refreshWithRetry(() => executor.refreshCredentials(credentials, log, proxyOptions), 3, log);
       if (newCredentials?.accessToken || newCredentials?.copilotToken) {
         log?.info?.("TOKEN", `${provider.toUpperCase()} | refreshed`);
         Object.assign(credentials, newCredentials);

@@ -4,17 +4,18 @@ import { FORMATS } from "../translator/formats.js";
 export function parseSSELine(line, format = null) {
   if (!line) return null;
 
-  // NDJSON format (Ollama): raw JSON lines without "data:" prefix
-  if (format === FORMATS.OLLAMA) {
-    const trimmed = line.trim();
+  const trimmed = line.trim();
+
+  // NDJSON / raw JSON lines without "data:" prefix
+  if (format === FORMATS.OLLAMA || trimmed.startsWith("{")) {
     if (trimmed.startsWith("{")) {
       try {
         return JSON.parse(trimmed);
-      } catch (error) {
+      } catch {
         return null;
       }
     }
-    return null;
+    if (format === FORMATS.OLLAMA) return null;
   }
 
   // Standard SSE format: "data: {...}"
@@ -78,45 +79,32 @@ function cleanUsagePayload(payload) {
     return payload;
   }
 
-  let cleaned = payload;
-
-  if ("usage" in cleaned) {
-    if (cleaned.usage === null) {
-      const { usage, ...payloadWithoutUsage } = cleaned;
-      cleaned = payloadWithoutUsage;
-    } else if (typeof cleaned.usage === "object" && cleaned.usage.perf_metrics === null) {
-      const { perf_metrics, ...usageWithoutPerf } = cleaned.usage;
-      cleaned = { ...cleaned, usage: usageWithoutPerf };
-    }
-  }
-
-  if (cleaned.response && typeof cleaned.response === "object" && !Array.isArray(cleaned.response)) {
-    const cleanedResponse = cleanUsagePayload(cleaned.response);
-    if (cleanedResponse !== cleaned.response) {
-      cleaned = { ...cleaned, response: cleanedResponse };
-    }
-  }
-
+  const cleaned = { ...payload };
+  delete cleaned.cache_creation_input_tokens;
+  delete cleaned.cache_read_input_tokens;
   return cleaned;
 }
 
-// Format output as SSE
-export function formatSSE(data, sourceFormat) {
-  if (data === null || data === undefined) return "data: null\n\n";
-  if (data && data.done) return "data: [DONE]\n\n";
-
-  // OpenAI Responses API format
-  if (data && data.event && data.data) {
-    const cleanedEventData = cleanUsagePayload(data.data);
-    return `event: ${data.event}\ndata: ${JSON.stringify(cleanedEventData)}\n\n`;
-  }
-
-  data = cleanUsagePayload(data);
-
-  // Claude format
-  if (sourceFormat === FORMATS.CLAUDE && data && data.type) {
-    return `event: ${data.type}\ndata: ${JSON.stringify(data)}\n\n`;
-  }
-
+export function formatSSE(data) {
+  if (data === null || data === undefined) return "";
+  if (typeof data === "string") return data;
   return `data: ${JSON.stringify(data)}\n\n`;
+}
+
+export function formatSSEDone() {
+  return "data: [DONE]\n\n";
+}
+
+export function extractUsageFromChunk(chunk, format) {
+  if (!chunk) return null;
+
+  if (format === FORMATS.CLAUDE && chunk.type === "message_delta" && chunk.usage) {
+    return cleanUsagePayload(chunk.usage);
+  }
+
+  if (format === FORMATS.OPENAI && chunk.usage) {
+    return cleanUsagePayload(chunk.usage);
+  }
+
+  return null;
 }

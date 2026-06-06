@@ -56,10 +56,11 @@ function getCandidatePaths(platform) {
     ];
   }
 
-  return [
-    join(home, ".config/Cursor/User/globalStorage/state.vscdb"),
-    join(home, ".config/cursor/User/globalStorage/state.vscdb"),
-  ];
+  if (platform === "linux") {
+    return [join(home, ".config/Cursor/User/globalStorage/state.vscdb")];
+  }
+
+  return null;
 }
 
 const normalize = (value) => {
@@ -76,15 +77,16 @@ const normalize = (value) => {
  * Extract tokens via better-sqlite3 (bundled dependency).
  * This is the preferred strategy — no external CLI required.
  */
-function extractTokensViaBetterSqlite(dbPath) {
+async function extractTokensViaBetterSqlite(dbPath) {
   // Dynamic require so the route stays importable even if native bindings fail
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const Database = require("better-sqlite3");
+  const { default: Database } = await import("better-sqlite3");
   const db = new Database(dbPath, { readonly: true, fileMustExist: true });
 
-  const query = (key) => {
-    const row = db.prepare("SELECT value FROM itemTable WHERE key=? LIMIT 1").get(key);
-    return row?.value || null;
+  const queryExact = () => {
+    const keys = [...ACCESS_TOKEN_KEYS, ...MACHINE_ID_KEYS];
+    return db
+      .prepare(`SELECT key, value FROM itemTable WHERE key IN (${keys.map(() => "?").join(",")})`)
+      .all(...keys);
   };
 
   const normalize = (value) => {
@@ -97,20 +99,22 @@ function extractTokensViaBetterSqlite(dbPath) {
     }
   };
 
-  let accessToken = null;
-  for (const key of ACCESS_TOKEN_KEYS) {
-    const raw = query(key);
-    if (raw) { accessToken = normalize(raw); break; }
-  }
+  const rows = queryExact();
+  const byKey = new Map(rows.map((row) => [row.key, row.value]));
 
-  let machineId = null;
-  for (const key of MACHINE_ID_KEYS) {
-    const raw = query(key);
-    if (raw) { machineId = normalize(raw); break; }
+  let accessToken = ACCESS_TOKEN_KEYS.map((key) => byKey.get(key)).find(Boolean) || null;
+  let machineId = MACHINE_ID_KEYS.map((key) => byKey.get(key)).find(Boolean) || null;
+
+  if ((!accessToken || !machineId) && process.platform === "darwin") {
+    const fuzzyRows = db
+      .prepare("SELECT key, value FROM itemTable WHERE key LIKE '%accessToken%' OR key LIKE '%MachineId%' OR key LIKE '%machineId%'")
+      .all();
+    accessToken ||= fuzzyRows.find((row) => /accessToken/i.test(row.key))?.value || null;
+    machineId ||= fuzzyRows.find((row) => /machineId/i.test(row.key))?.value || null;
   }
 
   db.close();
-  return { accessToken, machineId };
+  return { accessToken: normalize(accessToken), machineId: normalize(machineId) };
 }
 
 /**
@@ -179,6 +183,18 @@ export async function GET() {
     const platform = process.platform;
     const candidates = getCandidatePaths(platform);
 
+    if (!candidates) {
+      return NextResponse.json({ found: false, error: "Unsupported platform" }, { status: 400 });
+    }
+
+    if (platform === "linux") {
+      const dbPath = candidates[0];
+      return NextResponse.json({
+        found: false,
+        error: "Cursor database not found. Make sure Cursor IDE is installed and you are logged in.",
+      });
+    }
+
     let dbPath = null;
     for (const candidate of candidates) {
       try {
@@ -191,6 +207,12 @@ export async function GET() {
     }
 
     if (!dbPath) {
+      if (platform === "darwin") {
+        return NextResponse.json({
+          found: false,
+          error: "Cursor database not found in known macOS locations",
+        });
+      }
       return NextResponse.json({
         found: false,
         error: `Cursor database not found. Checked locations:\n${candidates.join("\n")}\n\nMake sure Cursor IDE is installed and opened at least once.`,
@@ -220,7 +242,7 @@ export async function GET() {
 
     // Strategy 1: better-sqlite3 (bundled — no external tools required)
     try {
-      const tokens = extractTokensViaBetterSqlite(dbPath);
+      const tokens = await extractTokensViaBetterSqlite(dbPath);
       if (tokens.accessToken && tokens.machineId) {
         return NextResponse.json({
           found: true,
@@ -228,7 +250,13 @@ export async function GET() {
           machineId: tokens.machineId,
         });
       }
-    } catch {
+    } catch (error) {
+      if (platform === "darwin") {
+        return NextResponse.json({
+          found: false,
+          error: `Cursor database exists but 9Router could not open it: ${error.message}`,
+        });
+      }
       // Native bindings unavailable — try CLI fallback
     }
 
@@ -247,6 +275,13 @@ export async function GET() {
     }
 
     // Strategy 3: ask user to paste manually
+    if (platform === "darwin") {
+      return NextResponse.json({
+        found: false,
+        error: "Please login to Cursor IDE first, then retry auto-import.",
+        dbPath,
+      });
+    }
     return NextResponse.json({ found: false, windowsManual: true, dbPath });
   } catch (error) {
     console.log("Cursor auto-import error:", error);

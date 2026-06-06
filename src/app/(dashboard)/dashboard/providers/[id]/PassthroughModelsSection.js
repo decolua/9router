@@ -6,15 +6,15 @@ import { Button } from "@/shared/components";
 
 function PassthroughModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting }) {
   const borderColor = testStatus === "ok"
-    ? "border-green-500/40"
+    ? "border-success/40"
     : testStatus === "error"
-    ? "border-red-500/40"
+    ? "border-danger/40"
     : "border-border";
 
   const iconColor = testStatus === "ok"
-    ? "#22c55e"
+    ? "var(--color-success)"
     : testStatus === "error"
-    ? "#ef4444"
+    ? "var(--color-danger)"
     : undefined;
 
   return (
@@ -66,7 +66,7 @@ function PassthroughModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias
       {/* Delete button */}
       <button
         onClick={onDeleteAlias}
-        className="p-1 hover:bg-red-50 rounded text-red-500"
+        className="p-1 hover:bg-danger/10 rounded text-danger"
         title="Remove model"
       >
         <span className="material-symbols-outlined text-sm">delete</span>
@@ -146,7 +146,7 @@ export default function PassthroughModelsSection({ providerAlias, modelAliases, 
             onChange={(e) => setNewModel(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleAdd()}
             placeholder="anthropic/claude-3-opus"
-            className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+            className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface-2 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500/40 transition-all"
           />
         </div>
         <Button size="sm" icon="add" onClick={handleAdd} disabled={!newModel.trim() || adding}>

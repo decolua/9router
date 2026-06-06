@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useId } from "react";
 import { cn } from "@/shared/utils/cn";
 import Button from "./Button";
 import Tooltip from "./Tooltip";
@@ -16,6 +16,7 @@ export default function Modal({
   showTrafficLights = true,
   className,
 }) {
+  const titleId = useId();
   const sizes = {
     sm: "max-w-sm",
     md: "max-w-md",
@@ -53,6 +54,9 @@ export default function Modal({
 
       {/* Modal content */}
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={title ? titleId : undefined}
         className={cn(
           "relative w-full bg-surface",
           "border border-border-subtle",
@@ -64,7 +68,7 @@ export default function Modal({
       >
         {/* Header */}
         {(title || showTrafficLights) && (
-          <div className="flex items-center justify-between p-2 border-b border-border-subtle">
+          <div className="flex items-center justify-between px-5 py-3.5 border-b border-border-subtle">
             <div className="flex items-center">
               {/* Traffic lights — desktop only */}
               {showTrafficLights && (
@@ -84,7 +88,7 @@ export default function Modal({
                 </div>
               )}
               {title && (
-                <h2 className="text-lg font-semibold text-text-main">{title}</h2>
+                <h2 id={titleId} className="text-lg font-semibold text-text-main">{title}</h2>
               )}
             </div>
             {/* X button — mobile only */}

@@ -226,6 +226,17 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
     flush() { dbg(tag, `upstream EOF | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); }
   });
 
+  if (!providerResponse.body) {
+    return createDisconnectAwareStream(
+      new ReadableStream({
+        start(controller) {
+          controller.close();
+        },
+      }),
+      wrappedController
+    );
+  }
+
   const transformedBody = providerResponse.body
     .pipeThrough(upstreamTap)
     .pipeThrough(transformStream);

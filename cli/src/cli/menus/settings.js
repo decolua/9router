@@ -1,6 +1,7 @@
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
+const { execSync } = require("child_process");
 const api = require("../api/client");
 const { confirm, pause } = require("../utils/input");
 const { showStatus } = require("../utils/display");
@@ -49,6 +50,15 @@ async function showSettingsMenu(breadcrumb = []) {
       // RTK section
       const rtkOn = data?.settings?.rtkEnabled !== false;
       lines.push(`  RTK:      ${rtkOn ? `${COLORS.green}ON${COLORS.reset}` : `${COLORS.red}OFF${COLORS.reset}`} ${COLORS.dim}(Token Saver)${COLORS.reset}`);
+
+      // Headroom section
+      const headroomOn = data?.settings?.headroomEnabled === true;
+      let headroomProxy = false;
+      try { execSync("headroom --version", { stdio: "ignore" }); headroomProxy = true; } catch {}
+      const headroomLabel = headroomOn
+        ? (headroomProxy ? `${COLORS.green}ON${COLORS.reset} ${COLORS.dim}(proxy detected)${COLORS.reset}` : `${COLORS.yellow}ON${COLORS.reset} ${COLORS.dim}(proxy not running)${COLORS.reset}`)
+        : `${COLORS.red}OFF${COLORS.reset}`;
+      lines.push(`  Headroom: ${headroomLabel} ${COLORS.dim}(ML compression)${COLORS.reset}`);
 
       // Auth mode section
       const authMode = data?.settings?.authMode || "password";

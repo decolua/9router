@@ -50,16 +50,20 @@ export function fixToolUseOrdering(messages) {
     }
   }
 
+  const contentHasToolUse = (content) =>
+    Array.isArray(content) && content.some((b) => b.type === "tool_use");
+
   // Pass 2: Merge consecutive same-role messages
   const merged = [];
 
   for (const msg of messages) {
     const last = merged[merged.length - 1];
+    const msgContent = Array.isArray(msg.content) ? msg.content : [{ type: "text", text: msg.content }];
+    const skipMerge = last?.role === "assistant" && (contentHasToolUse(last.content) || contentHasToolUse(msgContent));
 
-    if (last && last.role === msg.role) {
+    if (last && last.role === msg.role && !skipMerge) {
       // Merge content arrays
       const lastContent = Array.isArray(last.content) ? last.content : [{ type: "text", text: last.content }];
-      const msgContent = Array.isArray(msg.content) ? msg.content : [{ type: "text", text: msg.content }];
 
       // Put tool_result first, then other content
       const toolResults = [...lastContent.filter(b => b.type === "tool_result"), ...msgContent.filter(b => b.type === "tool_result")];
@@ -191,10 +195,22 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
 
     body.tools = body.tools.map((tool, i) => {
       const { cache_control, ...rest } = tool;
-      if (i === body.tools.length - 1) {
-        return { ...rest, cache_control: { type: "ephemeral", ttl: "1h" } };
+      let cleanedTool;
+      if (!tool.type || tool.type === "function") {
+        // Client tools — strip model and type
+        const { model, type, ...clientRest } = rest;
+        cleanedTool = { ...clientRest };
+      } else {
+        // Built-in tools — preserve all properties, but strip provider prefix from model
+        cleanedTool = { ...rest };
+        if (typeof cleanedTool.model === "string" && cleanedTool.model.includes("/")) {
+          cleanedTool.model = cleanedTool.model.slice(cleanedTool.model.indexOf("/") + 1);
+        }
       }
-      return rest;
+      if (i === body.tools.length - 1) {
+        return { ...cleanedTool, cache_control: { type: "ephemeral", ttl: "1h" } };
+      }
+      return cleanedTool;
     });
 
     // Remove tools array and tool_choice if empty after filtering

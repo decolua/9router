@@ -7,8 +7,9 @@ const variants = {
   secondary: "bg-surface-2 hover:bg-surface-3 text-text-main border border-border disabled:opacity-50",
   outline: "border border-border text-text-main hover:bg-surface-2 hover:border-brand-500/40",
   ghost: "text-text-muted hover:bg-surface-2 hover:text-text-main",
-  danger: "bg-red-500 hover:bg-red-600 text-white shadow-sm disabled:bg-surface-3 disabled:text-text-muted",
-  success: "bg-green-600 hover:bg-green-700 text-white shadow-sm disabled:bg-surface-3 disabled:text-text-muted",
+  danger: "bg-danger hover:bg-danger/90 text-white shadow-sm disabled:bg-surface-3 disabled:text-text-muted",
+  success: "bg-success hover:bg-success/90 text-white shadow-sm disabled:bg-surface-3 disabled:text-text-muted",
+  warning: "bg-warning/20 hover:bg-warning/30 text-warning border border-warning/40 disabled:opacity-50",
 };
 
 const sizes = {
@@ -33,6 +34,7 @@ export default function Button({
     <button
       className={cn(
         "inline-flex items-center justify-center gap-2 font-semibold transition-all duration-150 ease-out cursor-pointer",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 focus-visible:ring-offset-2",
         "active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100",
         variants[variant],
         sizes[size],
