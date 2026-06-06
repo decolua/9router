@@ -14,6 +14,11 @@ import { useEndpointApiKeys } from "./hooks/useEndpointApiKeys";
 import { useEndpointBaseUrl } from "./hooks/useEndpointBaseUrl";
 import { useEndpointRemoteAccess } from "./hooks/useEndpointRemoteAccess";
 import { useEndpointSettings } from "./hooks/useEndpointSettings";
+import { getCurrentLocale, onLocaleChange } from "@/i18n/runtime";
+import { CAVEMAN_LEVELS } from "./utils/endpointConstants";
+
+// Locales that unlock wenyan (classical Chinese) caveman levels
+const WENYAN_LOCALES = ["zh-CN", "zh-TW"];
 
 export default function APIPageClient({ machineId }) {
   const apiKeys = useEndpointApiKeys();
@@ -89,6 +94,18 @@ export default function APIPageClient({ machineId }) {
       setIsRemoteHost(!["localhost", "127.0.0.1", "::1"].includes(window.location.hostname));
   }, []);
 
+  // Track app UI locale to gate wenyan caveman levels
+  const [locale, setLocale] = useState("en");
+  useEffect(() => {
+    setLocale(getCurrentLocale());
+    return onLocaleChange(() => setLocale(getCurrentLocale()));
+  }, []);
+
+  const isWenyanLocale = WENYAN_LOCALES.includes(locale);
+  const visibleCavemanLevels = isWenyanLocale
+    ? CAVEMAN_LEVELS
+    : CAVEMAN_LEVELS.filter((lvl) => !lvl.wenyan);
+
   useEffect(() => {
     if (tsLogRef.current)
       tsLogRef.current.scrollTop = tsLogRef.current.scrollHeight;
@@ -125,6 +142,7 @@ export default function APIPageClient({ machineId }) {
         rtkEnabled={rtkEnabled}
         cavemanEnabled={cavemanEnabled}
         cavemanLevel={cavemanLevel}
+        cavemanLevels={visibleCavemanLevels}
         onRtkEnabledChange={handleRtkEnabled}
         onCavemanEnabledChange={handleCavemanEnabled}
         onCavemanLevelChange={handleCavemanLevel}

@@ -8,10 +8,13 @@ export function TokenSaverCard({
   rtkEnabled,
   cavemanEnabled,
   cavemanLevel,
+  cavemanLevels,
   onRtkEnabledChange,
   onCavemanEnabledChange,
   onCavemanLevelChange,
 }) {
+  // Use filtered levels from parent (locale-gated) or fall back to all levels
+  const levels = cavemanLevels ?? CAVEMAN_LEVELS;
   return (
     <Card id="rtk">
       <div className="flex items-center justify-between mb-2">
@@ -62,7 +65,7 @@ export function TokenSaverCard({
         <div className="flex items-center gap-3 shrink-0">
           {cavemanEnabled && (
             <div className="flex items-center gap-1.5">
-              {CAVEMAN_LEVELS.map((lvl) => (
+              {levels.map((lvl) => (
                 <button
                   key={lvl.id}
                   onClick={() => onCavemanLevelChange(lvl.id)}
@@ -92,6 +95,7 @@ TokenSaverCard.propTypes = {
   rtkEnabled: PropTypes.bool.isRequired,
   cavemanEnabled: PropTypes.bool.isRequired,
   cavemanLevel: PropTypes.string.isRequired,
+  cavemanLevels: PropTypes.arrayOf(PropTypes.object),
   onRtkEnabledChange: PropTypes.func.isRequired,
   onCavemanEnabledChange: PropTypes.func.isRequired,
   onCavemanLevelChange: PropTypes.func.isRequired,
