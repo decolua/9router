@@ -55,6 +55,7 @@ const PROVIDER_MODELS = {
   ag: [
     { id: "gemini-3-flash-agent" },
     { id: "gemini-3.5-flash-low" },
+    { id: "gemini-3.5-flash-extra-low" },
     { id: "gemini-pro-agent" },
     { id: "gemini-3.1-pro-low" },
     { id: "claude-sonnet-4-6" },

@@ -8,12 +8,10 @@ import {
   isTunnelManuallyDisabled, isTunnelReconnecting, isTailscaleReconnecting,
   getTunnelService, getTailscaleService, setTunnelUnexpectedExitCallback,
   killCloudflared, isCloudflaredRunning, ensureCloudflared,
-  isTailscaleRunning,
-  loadState,
+  isTailscaleRunning, isTailscaleRunningStrict,
   checkInternet,
-  probeCloudflareAlive, probeTailscaleAlive,
   RESTART_COOLDOWN_MS, NETWORK_SETTLE_MS,
-  WATCHDOG_INTERVAL_MS, NETWORK_CHECK_INTERVAL_MS,
+  WATCHDOG_INTERVAL_MS, NETWORK_CHECK_INTERVAL_MS, VIRTUAL_IFACE_REGEX,
 } from "@/lib/tunnel";
 import { getMitmStatus, startMitm, loadEncryptedPassword, initDbHooks, restoreToolDNS, removeAllDNSEntriesSync } from "@/mitm/manager";
 import { syncToJson as syncMitmAliasCache } from "@/lib/mitmAliasCache";
@@ -142,25 +140,12 @@ async function safeRestartTunnel(reason) {
   if (svc.cancelToken.cancelled) return;
   if (svc.spawnInProgress) return;
 
-  // Alive check FIRST: probe URLs to decide health (process up but tunnel 530 = dead)
-  let alive = false;
-  if (isCloudflaredRunning()) {
-    const state = loadState();
-    const publicUrl = state?.shortId ? `https://r${state.shortId}.abc-tunnel.us` : null;
-    const directUrl = state?.tunnelUrl || null;
-    if (publicUrl && directUrl) {
-      const [publicOk, directOk] = await Promise.all([
-        probeCloudflareAlive(publicUrl),
-        probeCloudflareAlive(directUrl),
-      ]);
-      alive = publicOk && directOk;
-    }
-  }
-  if (alive) return;
-
-  // Degraded/dead → cooldown only prevents hammer loop after a recent restart attempt.
-  // Bypass for network transitions (one-shot events) so user recovers fast after wifi change.
   const force = FORCE_RESTART_REASONS.test(reason);
+
+  // Process alive = trust cloudflared (self-reconnects via --retries 99, keeps same URL).
+  // Killing a live process on network change drops the tunnel and rotates the quick-tunnel URL.
+  if (isCloudflaredRunning()) return;
+
   if (!force && Date.now() - svc.lastRestartAt < RESTART_COOLDOWN_MS) {
     console.log(`[Tunnel] degraded but cooldown active, skip (${reason})`);
     return;
@@ -173,7 +158,9 @@ async function safeRestartTunnel(reason) {
     svc.lastRestartAt = Date.now();
     console.log("[Tunnel] restart success");
   } catch (err) {
-    console.log("[Tunnel] restart failed:", err.message);
+    if (!/cloudflared killed|tunnel cancelled/.test(err.message)) {
+      console.log("[Tunnel] restart failed:", err.message);
+    }
   }
 }
 
@@ -184,12 +171,10 @@ async function safeRestartTailscale(reason) {
   if (svc.cancelToken.cancelled) return;
   if (svc.spawnInProgress) return;
 
-  // Alive check FIRST: daemon up + URL responds = healthy
-  let alive = false;
-  if (isTailscaleRunning() && settings.tailscaleUrl) {
-    alive = await probeTailscaleAlive(settings.tailscaleUrl);
-  }
-  if (alive) return;
+  // Tailscale daemon is OS-level with built-in reconnect; trust it when running (even on netchange).
+  // Startup uses strict probe — cached state is cold after process/dev reload.
+  const running = reason === "startup" ? isTailscaleRunningStrict() : isTailscaleRunning();
+  if (running) return;
 
   const force = FORCE_RESTART_REASONS.test(reason);
   if (!force && Date.now() - svc.lastRestartAt < RESTART_COOLDOWN_MS) {
@@ -198,7 +183,7 @@ async function safeRestartTailscale(reason) {
   }
   if (!await checkInternet()) return;
 
-  console.log(`[Tailscale] safeRestart (${reason}) — tunnel unreachable${force ? " [force]" : ""}`);
+  console.log(`[Tailscale] safeRestart (${reason}) — daemon not running${force ? " [force]" : ""}`);
   try {
     await enableTailscale();
     svc.lastRestartAt = Date.now();
@@ -226,6 +211,7 @@ function getNetworkFingerprint() {
   const active = [];
   for (const [name, addrs] of Object.entries(interfaces)) {
     if (!addrs) continue;
+    if (VIRTUAL_IFACE_REGEX.test(name)) continue;
     for (const addr of addrs) {
       if (!addr.internal && addr.family === "IPv4") {
         active.push(`${name}:${addr.address}`);

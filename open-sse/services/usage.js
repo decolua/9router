@@ -37,6 +37,8 @@ export async function getUsageForProvider(connection, proxyOptions = null) {
       return await getCodexUsage(accessToken, proxyOptions);
     case "kiro":
       return await getKiroUsage(accessToken, providerSpecificData, proxyOptions);
+    case "qoder":
+      return await getQoderUsage(accessToken, proxyOptions);
     case "qwen":
       return await getQwenUsage(accessToken, providerSpecificData);
     case "iflow":
