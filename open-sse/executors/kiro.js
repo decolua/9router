@@ -569,6 +569,7 @@ export class KiroExecutor extends BaseExecutor {
         credentials.providerSpecificData,
         log,
         proxyOptions,
+        true,
       );
 
       return result;

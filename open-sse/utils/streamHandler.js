@@ -29,11 +29,30 @@ export function createStreamController({
   log,
   provider,
   model,
+  clientSignal,
 } = {}) {
   const abortController = new AbortController();
   const startTime = Date.now();
   let disconnected = false;
   let abortTimeout = null;
+
+  const onAbort = () => {
+    abortController.abort();
+  };
+
+  if (clientSignal) {
+    if (clientSignal.aborted) {
+      abortController.abort();
+    } else {
+      clientSignal.addEventListener("abort", onAbort);
+    }
+  }
+
+  const cleanupClientSignal = () => {
+    if (clientSignal) {
+      clientSignal.removeEventListener("abort", onAbort);
+    }
+  };
 
   const logStream = (status) => {
     const duration = Date.now() - startTime;
@@ -53,6 +72,7 @@ export function createStreamController({
     handleDisconnect: (reason = "client_closed") => {
       if (disconnected) return;
       disconnected = true;
+      cleanupClientSignal();
 
       logStream(`disconnect: ${reason}`);
       dbg(
@@ -72,6 +92,7 @@ export function createStreamController({
     handleComplete: () => {
       if (disconnected) return;
       disconnected = true;
+      cleanupClientSignal();
 
       logStream("complete");
 
@@ -85,6 +106,7 @@ export function createStreamController({
     handleError: (error) => {
       if (disconnected) return;
       disconnected = true;
+      cleanupClientSignal();
 
       if (abortTimeout) {
         clearTimeout(abortTimeout);
@@ -100,7 +122,10 @@ export function createStreamController({
       onError?.(error);
     },
 
-    abort: () => abortController.abort(),
+    abort: () => {
+      cleanupClientSignal();
+      abortController.abort();
+    },
   };
 }
 
