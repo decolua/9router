@@ -4,9 +4,10 @@ import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
 import { isOidcConfigured } from "@/lib/auth/oidc";
+import { isCasConfigured } from "@/lib/auth/cas";
 import { checkLock, recordFail, recordSuccess, getClientIp } from "@/lib/auth/loginLimiter";
-
 const RESET_HINT = "Forgot password? Reset to default via 9Router CLI → Settings → Reset Password to Default.";
+
 
 function isTunnelRequest(request, settings) {
   const host = (request.headers.get("host") || "").split(":")[0].toLowerCase();
@@ -39,6 +40,10 @@ export async function POST(request) {
 
     if (settings.authMode === "oidc" && isOidcConfigured(settings)) {
       return NextResponse.json({ error: "Password login is disabled. Use OIDC sign in." }, { status: 403 });
+    }
+
+    if (settings.authMode === "cas" && isCasConfigured(settings)) {
+      return NextResponse.json({ error: "Password login is disabled. Use CAS sign in." }, { status: 403 });
     }
 
     let isValid = false;

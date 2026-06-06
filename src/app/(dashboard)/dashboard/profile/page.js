@@ -40,6 +40,9 @@ export default function ProfilePage() {
     oidcClientId: "",
     oidcScopes: "openid profile email",
     oidcLoginLabel: "Sign in with OIDC",
+    casServerUrl: "",
+    casValidatePath: "/p3/serviceValidate",
+    casLoginLabel: "Sign in with CAS",
   });
   const [oidcClientSecret, setOidcClientSecret] = useState("");
   const [oidcStatus, setOidcStatus] = useState({ type: "", message: "" });
@@ -47,6 +50,7 @@ export default function ProfilePage() {
   const [oidcTestLoading, setOidcTestLoading] = useState(false);
   const [oidcTestStatus, setOidcTestStatus] = useState({ type: "", message: "" });
   const [oidcRedirectUri, setOidcRedirectUri] = useState("/api/auth/oidc/callback");
+  const [casRedirectUri, setCasRedirectUri] = useState("/api/auth/cas/callback");
   const [oidcExpanded, setOidcExpanded] = useState(false);
   const importFileRef = useRef(null);
   const [proxyForm, setProxyForm] = useState({
@@ -73,9 +77,12 @@ export default function ProfilePage() {
           oidcClientId: data?.oidcClientId || "",
           oidcScopes: data?.oidcScopes || "openid profile email",
           oidcLoginLabel: data?.oidcLoginLabel || "Sign in with OIDC",
+          casServerUrl: data?.casServerUrl || "",
+          casValidatePath: data?.casValidatePath || "/p3/serviceValidate",
+          casLoginLabel: data?.casLoginLabel || "Sign in with CAS",
         });
         setOidcClientSecret("");
-        if (data?.authMode === "oidc" || data?.authMode === "both") setOidcExpanded(true);
+        if (["oidc", "cas", "both"].includes(data?.authMode)) setOidcExpanded(true);
         setProxyForm({
           outboundProxyEnabled: data?.outboundProxyEnabled === true,
           outboundProxyUrl: data?.outboundProxyUrl || "",
@@ -92,6 +99,7 @@ export default function ProfilePage() {
   useEffect(() => {
     if (typeof window !== "undefined") {
       setOidcRedirectUri(`${window.location.origin}/api/auth/oidc/callback`);
+      setCasRedirectUri(`${window.location.origin}/api/auth/cas/callback`);
     }
   }, []);
 
@@ -318,9 +326,23 @@ export default function ProfilePage() {
     const scopes = oidcForm.oidcScopes.trim();
     const loginLabel = oidcForm.oidcLoginLabel.trim();
     const secret = oidcClientSecret.trim();
+    const casServerUrl = oidcForm.casServerUrl.trim();
+    const casValidatePath = oidcForm.casValidatePath.trim();
+    const casLoginLabel = oidcForm.casLoginLabel.trim();
 
     if (authMode !== "password" && (!issuerUrl || !clientId || !secret) && !settings.oidcConfigured) {
-      setOidcStatus({ type: "error", message: "Issuer URL, client ID, and client secret are required to enable OIDC." });
+      if (authMode === "cas" && casServerUrl) {
+        // CAS-only mode does not need OIDC fields.
+      } else if (authMode === "both" && casServerUrl) {
+        // Password + CAS is valid even when OIDC is not configured.
+      } else {
+        setOidcStatus({ type: "error", message: "Issuer URL, client ID, and client secret are required to enable OIDC." });
+        return;
+      }
+    }
+
+    if (authMode === "cas" && !casServerUrl && !settings.casConfigured) {
+      setOidcStatus({ type: "error", message: "CAS Server URL is required to enable CAS." });
       return;
     }
 
@@ -335,6 +357,9 @@ export default function ProfilePage() {
         oidcClientId: clientId,
         oidcScopes: scopes || "openid profile email",
         oidcLoginLabel: loginLabel || "Sign in with OIDC",
+        casServerUrl,
+        casValidatePath: casValidatePath || "/p3/serviceValidate",
+        casLoginLabel: casLoginLabel || "Sign in with CAS",
       };
       if (secret) {
         payload.oidcClientSecret = secret;
@@ -355,6 +380,9 @@ export default function ProfilePage() {
           oidcClientId: data?.oidcClientId || clientId,
           oidcScopes: data?.oidcScopes || scopes || "openid profile email",
           oidcLoginLabel: data?.oidcLoginLabel || loginLabel || "Sign in with OIDC",
+          casServerUrl: data?.casServerUrl || casServerUrl,
+          casValidatePath: data?.casValidatePath || casValidatePath || "/p3/serviceValidate",
+          casLoginLabel: data?.casLoginLabel || casLoginLabel || "Sign in with CAS",
         });
         setOidcClientSecret("");
         setOidcStatus({
@@ -362,9 +390,11 @@ export default function ProfilePage() {
           message:
             authMode === "oidc"
               ? "OIDC login enabled"
+              : authMode === "cas"
+                ? "CAS login enabled"
               : authMode === "both"
-                ? "Password and OIDC login enabled"
-                : "OIDC settings saved",
+                ? "Password and SSO login enabled"
+                : "SSO settings saved",
         });
       } else {
         setOidcStatus({ type: "error", message: data.error || "Failed to save OIDC settings" });
@@ -437,6 +467,65 @@ export default function ProfilePage() {
         });
       } else {
         setOidcTestStatus({ type: "error", message: data.error || "OIDC connection test failed" });
+      }
+    } catch (err) {
+      setOidcTestStatus({ type: "error", message: "An error occurred" });
+    } finally {
+      setOidcTestLoading(false);
+    }
+  };
+
+  const testCasConnection = async () => {
+    const serverUrl = oidcForm.casServerUrl.trim();
+    const validatePath = oidcForm.casValidatePath.trim();
+
+    if (!serverUrl) {
+      setOidcTestStatus({ type: "error", message: "CAS Server URL is required to test the connection." });
+      return;
+    }
+
+    setOidcTestLoading(true);
+    setOidcStatus({ type: "", message: "" });
+    setOidcTestStatus({ type: "", message: "" });
+
+    try {
+      const saveRes = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          authMode: oidcForm.authMode || settings.authMode || "password",
+          casServerUrl: serverUrl,
+          casValidatePath: validatePath || "/p3/serviceValidate",
+          casLoginLabel: oidcForm.casLoginLabel.trim() || "Sign in with CAS",
+        }),
+      });
+
+      const saved = await saveRes.json().catch(() => ({}));
+      if (!saveRes.ok) {
+        setOidcTestStatus({
+          type: "error",
+          message: saved.error || "Failed to save CAS settings before testing",
+        });
+        return;
+      }
+
+      const res = await fetch("/api/auth/cas/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          serverUrl: saved.casServerUrl || serverUrl,
+          validatePath: saved.casValidatePath || validatePath || "/p3/serviceValidate",
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.ok) {
+        setOidcTestStatus({
+          type: "success",
+          message: `CAS connection OK. Validation endpoint responded at ${data.validatePath}.`,
+        });
+      } else {
+        setOidcTestStatus({ type: "error", message: data.error || "CAS connection test failed" });
       }
     } catch (err) {
       setOidcTestStatus({ type: "error", message: "An error occurred" });
@@ -739,7 +828,7 @@ export default function ProfilePage() {
           </div>
         </Card>
 
-        {/* OIDC */}
+        {/* SSO */}
         <Card>
           <button
             type="button"
@@ -750,9 +839,9 @@ export default function ProfilePage() {
               <span className="material-symbols-outlined text-[20px]">lock_open</span>
             </div>
             <div className="flex-1 min-w-0">
-              <h3 className="text-base sm:text-lg font-semibold">OIDC Dashboard Login</h3>
+              <h3 className="text-base sm:text-lg font-semibold">SSO Dashboard Login</h3>
               <p className="text-xs text-text-muted">
-                {settings.authMode === "oidc" ? "OIDC active" : settings.authMode === "both" ? "Password + OIDC active" : "Optional SSO via Authentik/Keycloak/Google"}
+                {settings.authMode === "oidc" ? "OIDC active" : settings.authMode === "cas" ? "CAS active" : settings.authMode === "both" ? "Password + SSO active" : "Optional SSO via OIDC or CAS"}
               </p>
             </div>
             <span className="material-symbols-outlined text-text-muted shrink-0">
@@ -762,12 +851,12 @@ export default function ProfilePage() {
           {oidcExpanded && (
           <div className="flex flex-col gap-4 mt-4">
             <p className="text-xs sm:text-sm text-text-muted">
-              Use Authentik or any OIDC provider to sign in to the dashboard. You can enable password-only, OIDC-only, or both for the dashboard; model API access still uses API keys.
+              Use OIDC or CAS to sign in to the dashboard. You can enable password-only, one SSO provider only, or password plus SSO; model API access still uses API keys.
             </p>
 
             <div className="flex flex-col gap-2">
               <label className="font-medium text-sm sm:text-base">Auth Mode</label>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {[
                   {
                     value: "password",
@@ -780,9 +869,14 @@ export default function ProfilePage() {
                     desc: "Require OIDC for dashboard access.",
                   },
                   {
+                    value: "cas",
+                    title: "CAS only",
+                    desc: "Require CAS for dashboard access.",
+                  },
+                  {
                     value: "both",
-                    title: "Both",
-                    desc: "Allow either password or OIDC.",
+                    title: "Password + SSO",
+                    desc: "Allow password plus configured SSO.",
                   },
                 ].map((option) => {
                   const active = oidcForm.authMode === option.value;
@@ -862,8 +956,46 @@ export default function ProfilePage() {
             </div>
 
             <div className="rounded-lg border border-border bg-bg p-3 text-xs sm:text-sm text-text-muted">
-              <p className="font-medium text-text-main mb-1">Redirect URI</p>
+              <p className="font-medium text-text-main mb-1">OIDC Redirect URI</p>
               <code className="block break-all font-mono">{oidcRedirectUri}</code>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 pt-4 border-t border-border/50">
+              <div className="flex flex-col gap-2">
+                <label className="font-medium text-sm sm:text-base">CAS Server URL</label>
+                <Input
+                  placeholder="https://cas.example.com/cas"
+                  value={oidcForm.casServerUrl}
+                  onChange={(e) => updateOidcForm("casServerUrl", e.target.value)}
+                  disabled={loading || oidcLoading}
+                />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="font-medium text-sm sm:text-base">CAS Validate Path</label>
+                <Input
+                  placeholder="/p3/serviceValidate"
+                  value={oidcForm.casValidatePath}
+                  onChange={(e) => updateOidcForm("casValidatePath", e.target.value)}
+                  disabled={loading || oidcLoading}
+                />
+                <p className="text-xs sm:text-sm text-text-muted">Use /serviceValidate for CAS 2 servers, or /p3/serviceValidate for CAS 3 attributes.</p>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="font-medium text-sm sm:text-base">CAS Login Button Label</label>
+                <Input
+                  placeholder="Sign in with CAS"
+                  value={oidcForm.casLoginLabel}
+                  onChange={(e) => updateOidcForm("casLoginLabel", e.target.value)}
+                  disabled={loading || oidcLoading}
+                />
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-border bg-bg p-3 text-xs sm:text-sm text-text-muted">
+              <p className="font-medium text-text-main mb-1">CAS Service URL</p>
+              <code className="block break-all font-mono">{casRedirectUri}?state=...</code>
             </div>
 
             <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-border/50">
@@ -871,7 +1003,10 @@ export default function ProfilePage() {
                 Save auth mode
               </Button>
               <Button type="button" variant="outline" loading={oidcTestLoading} onClick={testOidcConnection} className="w-full sm:w-auto">
-                Test connection
+                Test OIDC
+              </Button>
+              <Button type="button" variant="outline" loading={oidcTestLoading} onClick={testCasConnection} className="w-full sm:w-auto">
+                Test CAS
               </Button>
             </div>
 
@@ -893,9 +1028,15 @@ export default function ProfilePage() {
               </p>
             )}
 
+            {settings.authMode === "cas" && (
+              <p className="text-xs sm:text-sm text-amber-600 dark:text-amber-400">
+                CAS login is currently active. Password login is disabled until you switch back.
+              </p>
+            )}
+
             {settings.authMode === "both" && (
               <p className="text-xs sm:text-sm text-amber-600 dark:text-amber-400">
-                Password and OIDC login are both active.
+                Password and SSO login are both active.
               </p>
             )}
           </div>

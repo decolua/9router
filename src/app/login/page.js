@@ -14,6 +14,8 @@ export default function LoginPage() {
   const [authMode, setAuthMode] = useState("password");
   const [oidcConfigured, setOidcConfigured] = useState(false);
   const [oidcLoginLabel, setOidcLoginLabel] = useState("Sign in with OIDC");
+  const [casConfigured, setCasConfigured] = useState(false);
+  const [casLoginLabel, setCasLoginLabel] = useState("Sign in with CAS");
   const router = useRouter();
 
   // Countdown for rate-limit
@@ -46,6 +48,8 @@ export default function LoginPage() {
           setAuthMode(data.authMode || "password");
           setOidcConfigured(data.oidcConfigured === true);
           setOidcLoginLabel(data.oidcLoginLabel || "Sign in with OIDC");
+          setCasConfigured(data.casConfigured === true);
+          setCasLoginLabel(data.casLoginLabel || "Sign in with CAS");
         } else {
           // Safe fallback on non-OK response to avoid infinite loading state.
           setHasPassword(true);
@@ -91,8 +95,14 @@ export default function LoginPage() {
     window.location.href = "/api/auth/oidc/start";
   };
 
+  const handleCasLogin = () => {
+    window.location.href = "/api/auth/cas/start";
+  };
+
   const oidcAvailable = oidcConfigured && ["oidc", "both"].includes(authMode);
-  const passwordAvailable = authMode !== "oidc" || !oidcConfigured;
+  const casAvailable = casConfigured && ["cas", "both"].includes(authMode);
+  const ssoAvailable = oidcAvailable || casAvailable;
+  const passwordAvailable = !((authMode === "oidc" && oidcConfigured) || (authMode === "cas" && casConfigured));
 
   // Show loading state while checking password
   if (hasPassword === null) {
@@ -116,6 +126,8 @@ export default function LoginPage() {
           <p className="text-text-muted">
             {authMode === "oidc" && oidcConfigured
               ? "Sign in with your OIDC provider to access the dashboard"
+              : authMode === "cas" && casConfigured
+                ? "Sign in with your CAS provider to access the dashboard"
               : "Enter your password to access the dashboard"}
           </p>
         </div>
@@ -128,7 +140,13 @@ export default function LoginPage() {
               </Button>
             )}
 
-            {oidcAvailable && passwordAvailable && <div className="h-px bg-border/60" />}
+            {casAvailable && (
+              <Button type="button" variant="primary" className="w-full" onClick={handleCasLogin}>
+                {casLoginLabel}
+              </Button>
+            )}
+
+            {ssoAvailable && passwordAvailable && <div className="h-px bg-border/60" />}
 
             {passwordAvailable ? (
               <form onSubmit={handleLogin} className="flex flex-col gap-4">
@@ -138,9 +156,21 @@ export default function LoginPage() {
                   </p>
                 )}
 
-                {authMode === "both" && oidcConfigured && (
+                {authMode === "cas" && !casConfigured && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 text-center">
+                    CAS login is enabled, but the server URL is not configured yet. Password login is still available for recovery.
+                  </p>
+                )}
+
+                {authMode === "both" && !oidcConfigured && !casConfigured && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 text-center">
+                    SSO login is enabled, but no OIDC or CAS provider is configured yet. Password login is still available for recovery.
+                  </p>
+                )}
+
+                {authMode === "both" && (oidcConfigured || casConfigured) && (
                   <p className="text-xs text-text-muted text-center">
-                    Password and OIDC login are both enabled.
+                    Password and SSO login are both enabled.
                   </p>
                 )}
 
@@ -152,7 +182,7 @@ export default function LoginPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
-                    autoFocus={!oidcAvailable}
+                    autoFocus={!ssoAvailable}
                   />
                   {error && <p className="text-xs text-red-500">{error}</p>}
                   {retryAfter > 0 && (
