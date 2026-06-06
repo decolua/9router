@@ -68,6 +68,8 @@ export const OAUTH_PROVIDERS = {
 };
 
 export const APIKEY_PROVIDERS = {
+  sumopod: { id: "sumopod", alias: "sp", name: "SumoPod", icon: "cloud", color: "#FF6B35", textIcon: "SP", website: "https://sumopod.com", notice: { text: "Top up via Billing first, then Services → AI → Top Up to convert balance to AI credits. Then go to API Keys tab and click Add API Key (top right).", apiKeyUrl: "https://sumopod.com/dashboard/ai/keys" }, passthroughModels: true, modelsFetcher: { url: "https://ai.sumopod.com/v1/models", type: "openai" } },
+  x5lab: { id: "x5lab", alias: "x5l", name: "X5Lab", icon: "science", color: "#6366F1", textIcon: "X5", website: "https://x5lab.dev", notice: { text: "28+ AI models via single endpoint. API key starts with x5-.", apiKeyUrl: "https://api.x5lab.dev/discord" }, passthroughModels: true, modelsFetcher: { url: "https://api.x5lab.dev/v1/models", type: "openai" } },
   glm: { id: "glm", alias: "glm", name: "GLM Coding", icon: "code", color: "#2563EB", textIcon: "GL", website: "https://open.bigmodel.cn", notice: { apiKeyUrl: "https://open.bigmodel.cn/usercenter/apikeys" } },
   "glm-cn": { id: "glm-cn", alias: "glm-cn", name: "GLM (China)", icon: "code", color: "#DC2626", textIcon: "GC", website: "https://open.bigmodel.cn", notice: { apiKeyUrl: "https://open.bigmodel.cn/usercenter/apikeys" } },
   kimi: { id: "kimi", alias: "kimi", name: "Kimi", icon: "psychology", color: "#1E3A8A", textIcon: "KM", website: "https://kimi.moonshot.cn", notice: { apiKeyUrl: "https://platform.moonshot.ai/console/api-keys" }, serviceKinds: ["llm", "webSearch"], searchViaChat: { defaultModel: "kimi-k2.5", pricingUrl: "https://platform.moonshot.ai/docs/pricing/chat" } },
