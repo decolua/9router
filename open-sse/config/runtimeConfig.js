@@ -39,8 +39,14 @@ export const MEMORY_CONFIG = {
 // Stream stall timeout: abort if no chunk received within this duration
 export const STREAM_STALL_TIMEOUT_MS = 60 * 1000;
 
+// Semantic stall timeout: abort if generated content size hasn't grown within this duration
+export const STREAM_SEMANTIC_STALL_TIMEOUT_MS = parseInt(process.env.STREAM_SEMANTIC_STALL_TIMEOUT_MS, 10) || 60 * 1000;
+
 // Fetch connect timeout: abort if upstream doesn't return response headers within this duration
 export const FETCH_CONNECT_TIMEOUT_MS = 60 * 1000;
+
+// Proxy headers timeout: abort if proxy doesn't return response headers within this duration
+export const CONNECTION_PROXY_HEADERS_TIMEOUT_MS = parseInt(process.env.CONNECTION_PROXY_HEADERS_TIMEOUT_MS, 10) || 60 * 1000;
 
 // Default token limits
 export const DEFAULT_MAX_TOKENS = 64000;

@@ -27,6 +27,7 @@ export {
 export {
   isTailscaleInstalled,
   isTailscaleRunning,
+  isTailscaleRunningStrict,
   isTailscaleLoggedIn,
   installTailscale,
   startLogin,
