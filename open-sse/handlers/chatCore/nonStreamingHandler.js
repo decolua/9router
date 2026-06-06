@@ -126,6 +126,35 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
     return ollamaBodyToOpenAI(responseBody);
   }
 
+  // Cohere v2 — non-OpenAI response shape
+  if (targetFormat === FORMATS.COHERE) {
+    const msg = responseBody?.message;
+    const textContent = Array.isArray(msg?.content)
+      ? msg.content.filter(c => c.type === "text").map(c => c.text).join("")
+      : (typeof msg?.content === "string" ? msg.content : "");
+
+    const rawReason = responseBody.finish_reason || "COMPLETE";
+    const finishReason = rawReason === "COMPLETE" ? "stop" : rawReason.toLowerCase();
+
+    const result = {
+      id: `chatcmpl-${responseBody.id || Date.now()}`,
+      object: "chat.completion",
+      created: Math.floor(Date.now() / 1000),
+      model: responseBody.model || "command-a-03-2025",
+      choices: [{ index: 0, message: { role: "assistant", content: textContent }, finish_reason: finishReason }]
+    };
+
+    const tokens = responseBody.usage?.tokens || responseBody.usage?.billed_units;
+    if (tokens) {
+      result.usage = {
+        prompt_tokens: tokens.input_tokens ?? 0,
+        completion_tokens: tokens.output_tokens ?? 0,
+        total_tokens: (tokens.input_tokens ?? 0) + (tokens.output_tokens ?? 0)
+      };
+    }
+    return result;
+  }
+
   return responseBody;
 }
 

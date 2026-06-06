@@ -371,7 +371,7 @@ export async function POST(request) {
             together: "https://api.together.xyz/v1/models",
             fireworks: "https://api.fireworks.ai/inference/v1/models",
             cerebras: "https://api.cerebras.ai/v1/models",
-            cohere: "https://api.cohere.ai/v1/models",
+            cohere: "https://api.cohere.com/v1/models",
             nebius: "https://api.studio.nebius.ai/v1/models",
             siliconflow: "https://api.siliconflow.cn/v1/models",
             hyperbolic: "https://api.hyperbolic.xyz/v1/models",
