@@ -5,16 +5,8 @@ import { COLORS } from "../utils/stream.js";
 import { createStreamController } from "../utils/streamHandler.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
-import {
-  getModelTargetFormat,
-  getModelStrip,
-  PROVIDER_ID_TO_ALIAS,
-} from "../config/providerModels.js";
-import {
-  createErrorResult,
-  parseUpstreamError,
-  formatProviderError,
-} from "../utils/error.js";
+import { getModelTargetFormat, getModelStrip, getModelUpstreamId, getModelType, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
+import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import {
@@ -211,6 +203,12 @@ export async function handleChatCore({
   // Token savers: applied at the final body just before dispatch
   // Covers both passthrough (source shape) and translated (target shape) flows
   const finalFormat = passthrough ? sourceFormat : targetFormat;
+
+  // TTS models don't support tool messages/function calling
+  if (getModelType(alias, model) === "tts" && translatedBody.messages) {
+    translatedBody.messages = translatedBody.messages.filter(msg => msg.role !== "tool");
+    delete translatedBody.tools;
+  }
 
   // RTK: compress tool_result content
   const rtkStats = compressMessages(translatedBody, rtkEnabled);
