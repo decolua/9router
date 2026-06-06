@@ -490,7 +490,7 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
   }
 
   // Response completed
-  if (eventType === "response.completed") {
+  if (eventType === "response.completed" || eventType === "response.done") {
     // Extract usage from response.completed event
     const responseUsage = data.response?.usage;
     if (responseUsage && typeof responseUsage === "object") {

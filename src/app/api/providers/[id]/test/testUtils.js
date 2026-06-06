@@ -50,7 +50,7 @@ const OAUTH_TEST_CONFIG = {
     method: "POST",
     authHeader: "Authorization",
     authPrefix: "Bearer ",
-    extraHeaders: { "Content-Type": "application/json", "originator": "codex-cli", "User-Agent": "codex-cli/1.0.18 (macOS; arm64)" },
+    extraHeaders: { "Content-Type": "application/json", "originator": "codex_cli_rs", "User-Agent": "codex_cli_rs/0.136.0" },
     // Minimal invalid body — triggers fast 400 without consuming quota
     body: JSON.stringify({ model: "gpt-5.3-codex", input: [], stream: false, store: false }),
     // 400 (bad request) means auth succeeded; only 401/403 means token is bad

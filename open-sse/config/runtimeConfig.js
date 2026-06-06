@@ -46,8 +46,10 @@ export const STREAM_STALL_TIMEOUT_MS = envMs("STREAM_STALL_TIMEOUT_MS", 180 * 10
 // Time-to-first-token timeout (prompt prefill). Env: STREAM_FIRST_CHUNK_TIMEOUT_MS.
 export const STREAM_FIRST_CHUNK_TIMEOUT_MS = envMs("STREAM_FIRST_CHUNK_TIMEOUT_MS", 120 * 1000);
 
-// Fetch connect timeout: abort if upstream doesn't return response headers within this duration
-export const FETCH_CONNECT_TIMEOUT_MS = envMs("FETCH_CONNECT_TIMEOUT_MS", 20 * 1000);
+// Fetch connect timeout: abort if upstream doesn't return response headers within this duration.
+// Raised to 60s (upstream 9caea88) to prevent codex Responses clients from hanging on slow
+// connects; still env-overridable. Env: FETCH_CONNECT_TIMEOUT_MS.
+export const FETCH_CONNECT_TIMEOUT_MS = envMs("FETCH_CONNECT_TIMEOUT_MS", 60 * 1000);
 
 // xAI reasoning models require long timeouts (docs.x.ai recommends 3600s).
 // Override only for xAI + reasoning_effort or *-reasoning / *-high aliases.
