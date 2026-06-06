@@ -187,58 +187,22 @@ export class BaseExecutor {
 
       if (!retryAttemptsByUrl[urlIndex]) retryAttemptsByUrl[urlIndex] = 0;
 
-      // Abort if upstream doesn't return response headers within FETCH_CONNECT_TIMEOUT_MS,
-      // while still preserving the branch-specific per-provider connection timeout.
-      const fetchController = new AbortController();
+      // Abort if upstream doesn't return response headers within connection timeout
       const connectCtrl = new AbortController();
-      const connectTimer = setTimeout(
-        () => connectCtrl.abort(new Error("fetch connect timeout")),
-        FETCH_CONNECT_TIMEOUT_MS,
-      );
-      const mergedSignal = AbortSignal.any([
-        fetchController.signal,
-        connectCtrl.signal,
-      ]);
-
-      // Forward client abort to fetch signal
-      let clientSignalListener = null;
-      if (signal) {
-        if (signal.aborted) {
-          fetchController.abort(signal.reason);
-        } else {
-          clientSignalListener = () => {
-            fetchController.abort(signal.reason);
-          };
-          signal.addEventListener("abort", clientSignalListener);
-        }
-      }
-
-      // Start branch-specific connection timeout timer.
-      let timedOut = false;
-      const timeoutTimer = setTimeout(() => {
-        timedOut = true;
-        const err = new DOMException("Connection timed out", "TimeoutError");
-        fetchController.abort(err);
-      }, timeoutMs);
+      const timeoutMs = this.config?.timeoutMs || FETCH_CONNECT_TIMEOUT_MS;
+      const connectTimer = setTimeout(() => connectCtrl.abort(new Error("fetch connect timeout")), timeoutMs);
+      const mergedSignal = signal ? AbortSignal.any([signal, connectCtrl.signal]) : connectCtrl.signal;
 
       try {
         const bodyStr = JSON.stringify(transformedBody);
         const fetchT0 = Date.now();
-        dbg(
-          "FETCH",
-          `${this.provider.toUpperCase()} → ${url} | body=${bodyStr.length}B | connectTimeout=${FETCH_CONNECT_TIMEOUT_MS}ms | providerTimeout=${timeoutMs}ms`,
-        );
-        const response = await proxyAwareFetch(
-          url,
-          {
-            method: "POST",
-            headers,
-            body: bodyStr,
-            signal: mergedSignal,
-          },
-          proxyOptions,
-        );
-
+        dbg("FETCH", `${this.provider.toUpperCase()} → ${url} | body=${bodyStr.length}B | connectTimeout=${timeoutMs}ms`);
+        const response = await proxyAwareFetch(url, {
+          method: "POST",
+          headers,
+          body: bodyStr,
+          signal: mergedSignal
+        }, proxyOptions);
         clearTimeout(connectTimer);
         clearTimeout(timeoutTimer);
 

@@ -138,23 +138,25 @@ export function createStreamController({
  * for long periods while raw bytes still flow (e.g. Kiro EventStream
  * binary frames buffering, Claude reasoning streams).
  */
-export function createDisconnectAwareStream(
-  transformStream,
-  streamController,
-  streamStateTracker = null,
-  resumeCtx = null,
-) {
-  let reader = transformStream.readable.getReader();
-  let writer = transformStream.writable
-    ? transformStream.writable.getWriter()
-    : { abort: () => Promise.resolve() };
-  let resumeAttempts = 0;
-  const maxResumeAttempts = 2;
-  let chunksReceived = 0;
+export function createDisconnectAwareStream(transformStream, streamController, onAbortTerminal = null) {
+  const reader = transformStream.readable.getReader();
+  const writer = transformStream.writable.getWriter();
+  let terminalEmitted = false;
+
+  // Emit a synthesized terminal payload (e.g. Responses response.failed + [DONE]) once
+  const emitTerminal = (controller) => {
+    if (terminalEmitted || !onAbortTerminal) return;
+    terminalEmitted = true;
+    try {
+      const bytes = onAbortTerminal();
+      if (bytes) controller.enqueue(bytes);
+    } catch { /* best-effort terminal */ }
+  };
 
   return new ReadableStream({
     async pull(controller) {
       if (!streamController.isConnected()) {
+        emitTerminal(controller);
         controller.close();
         return;
       }
@@ -383,19 +385,16 @@ export function createDisconnectAwareStream(
           code === "EPIPE" ||
           code === "UND_ERR_SOCKET";
 
-        if (!wasConnected || isNetworkClose) {
-          try {
+        // Graceful close on network/abort, or when a structured terminal is available
+        // (Responses passthrough prefers response.failed + [DONE] over a raw transport error)
+        try {
+          if (!wasConnected || isNetworkClose || onAbortTerminal) {
+            emitTerminal(controller);
             controller.close();
-          } catch (e) {
-            // Stream might already be closed or cancelled
-          }
-        } else {
-          try {
+          } else {
             controller.error(error);
-          } catch (e) {
-            /* already closed */
           }
-        }
+        } catch (e) { /* already closed or cancelled */ }
       }
     },
 
@@ -427,14 +426,7 @@ export function createDisconnectAwareStream(
  * @param {object} streamStateTracker - Stream state tracker to extract generated text
  * @param {object} resumeCtx - Context to resume the stream if connection breaks
  */
-export function pipeWithDisconnect(
-  providerResponse,
-  transformStream,
-  streamController,
-  streamStateTracker = null,
-  resumeCtx = null,
-  timing = null,
-) {
+export function pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal = null) {
   let stallTimer = null;
   let semanticStallTimer = null;
   let lastContentLength = 0;
@@ -600,12 +592,8 @@ export function pipeWithDisconnect(
   });
 
   return createDisconnectAwareStream(
-    {
-      readable: transformedBody.pipeThrough(clientTap),
-      writable: { getWriter: () => ({ abort: () => Promise.resolve() }) },
-    },
+    { readable: transformedBody, writable: { getWriter: () => ({ abort: () => Promise.resolve() }) } },
     wrappedController,
-    streamStateTracker,
-    resumeCtx,
+    onAbortTerminal
   );
 }

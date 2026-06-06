@@ -36,30 +36,11 @@ export const MEMORY_CONFIG = {
   proxyDispatchersMaxSize: 20,
 };
 
-// Stream stall timeout: abort if no chunk received within this duration.
-// Configurable via env for reasoning models that may need longer think times.
-export const STREAM_STALL_TIMEOUT_MS = parseInt(
-  process.env.STREAM_STALL_TIMEOUT_MS || String(5 * 60 * 1000),
-  10,
-);
+// Stream stall timeout: abort if no chunk received within this duration
+export const STREAM_STALL_TIMEOUT_MS = 60 * 1000;
 
-// Stream semantic stall timeout: abort if model stops generating tokens (after first token is received).
-export const STREAM_SEMANTIC_STALL_TIMEOUT_MS = parseInt(
-  process.env.STREAM_SEMANTIC_STALL_TIMEOUT_MS || String(35 * 1000),
-  10,
-);
-
-// Fetch connect timeout: abort if upstream doesn't return response headers within this duration.
-export const FETCH_CONNECT_TIMEOUT_MS = parseInt(
-  process.env.FETCH_CONNECT_TIMEOUT_MS || String(20 * 1000),
-  10,
-);
-
-// Connection proxy headers timeout: abort slow proxy paths before account fallback stalls.
-export const CONNECTION_PROXY_HEADERS_TIMEOUT_MS = parseInt(
-  process.env.CONNECTION_PROXY_HEADERS_TIMEOUT_MS || String(30 * 1000),
-  10,
-);
+// Fetch connect timeout: abort if upstream doesn't return response headers within this duration
+export const FETCH_CONNECT_TIMEOUT_MS = 60 * 1000;
 
 // Default token limits
 export const DEFAULT_MAX_TOKENS = 64000;

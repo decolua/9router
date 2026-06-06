@@ -5,11 +5,8 @@ import {
   createPassthroughStreamWithLogger,
 } from "../../utils/stream.js";
 import { pipeWithDisconnect } from "../../utils/streamHandler.js";
-import {
-  buildRequestDetail,
-  extractRequestConfig,
-  saveUsageStats,
-} from "./requestDetail.js";
+import { buildAbortedResponsesTerminalBytes } from "../../utils/responsesStreamHelpers.js";
+import { buildRequestDetail, extractRequestConfig, saveUsageStats } from "./requestDetail.js";
 import { saveRequestDetail } from "@/lib/usageDb.js";
 import * as log from "../../../src/sse/utils/logger.js";
 
@@ -129,11 +126,13 @@ export function handleStreamingResponse({
 }) {
   if (onRequestSuccess) onRequestSuccess();
 
-  const streamStateTracker = {
-    accumulatedContent: "",
-    accumulatedThinking: "",
-    totalContentLength: 0,
-  };
+  const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey });
+
+  // Responses passthrough: synthesize response.failed + [DONE] if the stream aborts/stalls before a terminal event
+  const isResponsesPassthrough = sourceFormat === FORMATS.OPENAI_RESPONSES && targetFormat === FORMATS.OPENAI_RESPONSES;
+  const onAbortTerminal = isResponsesPassthrough ? buildAbortedResponsesTerminalBytes : null;
+  const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal);
+
   const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
   const wrappedOnStreamComplete = (contentObj, usage, ttftAt) =>
     onStreamComplete?.(contentObj, usage, ttftAt, streamDetailId);
