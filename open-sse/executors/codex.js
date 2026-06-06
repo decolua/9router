@@ -614,21 +614,4 @@ export class CodexExecutor extends BaseExecutor {
 
     return body;
   }
-
-  async refreshCredentials(credentials, log) {
-    if (!credentials?.refreshToken) return null;
-    try {
-      const { refreshCodexToken } = await import("../services/tokenRefresh.js");
-      const result = await refreshCodexToken(credentials.refreshToken, log);
-      if (!result || result.error) return null;
-      return {
-        accessToken: result.accessToken,
-        refreshToken: result.refreshToken,
-        expiresIn: result.expiresIn,
-      };
-    } catch (error) {
-      log?.error?.("TOKEN", `Codex refresh error: ${error.message}`);
-      return null;
-    }
-  }
 }

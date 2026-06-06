@@ -326,14 +326,13 @@ export async function refreshCodexToken(refreshToken, log) {
         const response = await fetch(OAUTH_ENDPOINTS.openai.token, {
           method: "POST",
           headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
+            "Content-Type": "application/json",
             Accept: "application/json",
           },
-          body: new URLSearchParams({
+          body: JSON.stringify({
+            client_id: PROVIDERS.codex.clientId,
             grant_type: "refresh_token",
             refresh_token: refreshToken,
-            client_id: PROVIDERS.codex.clientId,
-            scope: "openid profile email offline_access",
           }),
         });
 
@@ -378,12 +377,14 @@ export async function refreshCodexToken(refreshToken, log) {
         log?.info?.("TOKEN_REFRESH", "Successfully refreshed Codex token", {
           hasNewAccessToken: !!tokens.access_token,
           hasNewRefreshToken: !!tokens.refresh_token,
+          hasIdToken: !!tokens.id_token,
           expiresIn: tokens.expires_in,
         });
 
         return {
           accessToken: tokens.access_token,
           refreshToken: tokens.refresh_token || refreshToken,
+          idToken: tokens.id_token,
           expiresIn: tokens.expires_in,
         };
       } catch (error) {
