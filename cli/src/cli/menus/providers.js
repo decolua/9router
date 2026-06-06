@@ -78,8 +78,34 @@ const PROVIDER_MODELS = {
     { id: "grok-code-fast-1" },
   ],
   kr: [
+    // Base
     { id: "claude-sonnet-4.5" },
     { id: "claude-haiku-4.5" },
+    { id: "deepseek-3.2" },
+    { id: "qwen3-coder-next" },
+    { id: "glm-5" },
+    { id: "MiniMax-M2.5" },
+    // Thinking
+    { id: "claude-sonnet-4.5-thinking" },
+    { id: "claude-haiku-4.5-thinking" },
+    { id: "deepseek-3.2-thinking" },
+    { id: "qwen3-coder-next-thinking" },
+    { id: "glm-5-thinking" },
+    { id: "MiniMax-M2.5-thinking" },
+    // Agentic
+    { id: "claude-sonnet-4.5-agentic" },
+    { id: "claude-haiku-4.5-agentic" },
+    { id: "deepseek-3.2-agentic" },
+    { id: "qwen3-coder-next-agentic" },
+    { id: "glm-5-agentic" },
+    { id: "MiniMax-M2.5-agentic" },
+    // Thinking + Agentic
+    { id: "claude-sonnet-4.5-thinking-agentic" },
+    { id: "claude-haiku-4.5-thinking-agentic" },
+    { id: "deepseek-3.2-thinking-agentic" },
+    { id: "qwen3-coder-next-thinking-agentic" },
+    { id: "glm-5-thinking-agentic" },
+    { id: "MiniMax-M2.5-thinking-agentic" },
   ],
   openai: [
     { id: "gpt-4o" },

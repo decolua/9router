@@ -5,75 +5,86 @@ import { join } from "path";
 
 /**
  * GET /api/oauth/kiro/auto-import
- * Auto-detect and extract Kiro refresh token from AWS SSO cache
+ *
+ * Auto-detect Kiro refresh token(s) from the AWS SSO cache.
+ *
+ * Query params:
+ *   - all=1 → return every refresh token found across the cache directory
+ *
+ * Single-token shape (default, backwards compatible):
+ *   { found: true, refreshToken, source }
+ *   { found: false, error }
+ *
+ * Multi-token shape (when `?all=1`):
+ *   { found: true, count, tokens: [{ refreshToken, source }] }
+ *   { found: false, error }
  */
-export async function GET() {
+export async function GET(request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const wantAll = ["1", "true", "yes"].includes(
+      (searchParams.get("all") || "").toLowerCase()
+    );
+
     const cachePath = join(homedir(), ".aws/sso/cache");
 
-    // Try to read cache directory
     let files;
     try {
       files = await readdir(cachePath);
-    } catch (error) {
+    } catch {
       return NextResponse.json({
         found: false,
         error: "AWS SSO cache not found. Please login to Kiro IDE first.",
       });
     }
 
-    // Look for kiro-auth-token.json or any .json file with refreshToken
-    let refreshToken = null;
-    let foundFile = null;
+    // Read every JSON file in the cache and collect any Kiro-shaped tokens.
+    // Sort `kiro-auth-token.json` first so single-token mode prefers it.
+    const sortedFiles = [
+      ...files.filter((f) => f === "kiro-auth-token.json"),
+      ...files.filter((f) => f !== "kiro-auth-token.json" && f.endsWith(".json")),
+    ];
 
-    // First try kiro-auth-token.json
-    const kiroTokenFile = "kiro-auth-token.json";
-    if (files.includes(kiroTokenFile)) {
+    const tokens = [];
+    const seen = new Set();
+    for (const file of sortedFiles) {
       try {
-        const content = await readFile(join(cachePath, kiroTokenFile), "utf-8");
+        const content = await readFile(join(cachePath, file), "utf-8");
         const data = JSON.parse(content);
-        if (data.refreshToken && data.refreshToken.startsWith("aorAAAAAG")) {
-          refreshToken = data.refreshToken;
-          foundFile = kiroTokenFile;
+        if (
+          typeof data?.refreshToken === "string"
+          && data.refreshToken.startsWith("aorAAAAAG")
+          && !seen.has(data.refreshToken)
+        ) {
+          seen.add(data.refreshToken);
+          tokens.push({ refreshToken: data.refreshToken, source: file });
+          if (!wantAll) break;
         }
-      } catch (error) {
-        // Continue to search other files
+      } catch {
+        // Skip unreadable / non-JSON files.
       }
     }
 
-    // If not found, search all .json files
-    if (!refreshToken) {
-      for (const file of files) {
-        if (!file.endsWith(".json")) continue;
-
-        try {
-          const content = await readFile(join(cachePath, file), "utf-8");
-          const data = JSON.parse(content);
-
-          // Look for Kiro refresh token (starts with aorAAAAAG)
-          if (data.refreshToken && data.refreshToken.startsWith("aorAAAAAG")) {
-            refreshToken = data.refreshToken;
-            foundFile = file;
-            break;
-          }
-        } catch (error) {
-          // Skip invalid JSON files
-          continue;
-        }
-      }
-    }
-
-    if (!refreshToken) {
+    if (tokens.length === 0) {
       return NextResponse.json({
         found: false,
         error: "Kiro token not found in AWS SSO cache. Please login to Kiro IDE first.",
       });
     }
 
+    if (wantAll) {
+      return NextResponse.json({
+        found: true,
+        count: tokens.length,
+        tokens,
+      });
+    }
+
+    // Single-token shape — backwards compatible.
     return NextResponse.json({
       found: true,
-      refreshToken,
-      source: foundFile,
+      refreshToken: tokens[0].refreshToken,
+      source: tokens[0].source,
     });
   } catch (error) {
     console.log("Kiro auto-import error:", error);
