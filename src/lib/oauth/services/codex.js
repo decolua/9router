@@ -54,6 +54,7 @@ export class CodexService extends OAuthService {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token,
         expiresIn: tokens.expires_in,
+        lastRefreshAt: new Date().toISOString(),
       }),
     });
 
