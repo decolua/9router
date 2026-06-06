@@ -8,6 +8,7 @@ import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
+import { shouldPreserveReasoningContent } from "../../utils/reasoningContentInjector.js";
 
 /**
  * Translate non-streaming response body from provider format → OpenAI format.
@@ -193,11 +194,14 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     translatedResponse.usage = filterUsageForFormat(addBufferToUsage(translatedResponse.usage), sourceFormat);
   }
 
-  // Strip reasoning_content — some clients (e.g. Firecrawl AI SDK) have JSON parsers that
-  // break on this non-standard field, even though OpenAI allows it in extensions.
+  // Strip reasoning_content except on DeepSeek tool-call turns. DeepSeek thinking
+  // mode requires those assistant messages to be replayed with reasoning_content.
+  // Other providers/models keep the old behavior for client compatibility.
   if (translatedResponse?.choices) {
     for (const choice of translatedResponse.choices) {
-      if (choice?.message) delete choice.message.reasoning_content;
+      const message = choice?.message;
+      const shouldPreserve = shouldPreserveReasoningContent({ provider, model, message });
+      if (message && !shouldPreserve) delete message.reasoning_content;
     }
   }
 

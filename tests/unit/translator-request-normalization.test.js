@@ -48,6 +48,113 @@ describe("request normalization", () => {
     expect(Array.isArray(result.messages[0].content)).toBe(true);
   });
 
+  it("translateRequest replays Claude thinking for providers that require reasoning_content", () => {
+    const body = {
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "Need to inspect the file first." },
+            {
+              type: "tool_use",
+              id: "toolu_01",
+              name: "Read",
+              input: { file_path: "/tmp/example.js" },
+            },
+          ],
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "toolu_01",
+              content: "const value = 1;",
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = translateRequest(
+      FORMATS.CLAUDE,
+      FORMATS.OPENAI,
+      "deepseek-v4-pro",
+      JSON.parse(JSON.stringify(body)),
+      true,
+      null,
+      "deepseek",
+    );
+    const assistantMessage = result.messages[0];
+
+    expect(assistantMessage.role).toBe("assistant");
+    expect(assistantMessage.reasoning_content).toBe("Need to inspect the file first.");
+    expect(assistantMessage.tool_calls[0].id).toBe("toolu_01");
+  });
+
+  it("translateRequest replays Claude thinking for matched models routed through another provider", () => {
+    const body = {
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "Need to inspect before calling Read." },
+            {
+              type: "tool_use",
+              id: "toolu_opencode",
+              name: "Read",
+              input: { file_path: "/tmp/example.js" },
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = translateRequest(
+      FORMATS.CLAUDE,
+      FORMATS.OPENAI,
+      "deepseek-v4-flash-free",
+      JSON.parse(JSON.stringify(body)),
+      true,
+      null,
+      "opencode",
+    );
+
+    expect(result.messages[0].reasoning_content).toBe("Need to inspect before calling Read.");
+    expect(result.messages[0].tool_calls[0].id).toBe("toolu_opencode");
+  });
+
+  it("translateRequest keeps original Claude thinking behavior when reasoning replay is not required", () => {
+    const body = {
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "Internal reasoning." },
+            {
+              type: "tool_use",
+              id: "toolu_01",
+              name: "Read",
+              input: { file_path: "/tmp/example.js" },
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = translateRequest(
+      FORMATS.CLAUDE,
+      FORMATS.OPENAI,
+      "gpt-4o",
+      JSON.parse(JSON.stringify(body)),
+      true,
+      null,
+      "openai",
+    );
+    expect(result.messages[0].reasoning_content).toBeUndefined();
+    expect(result.messages[0].tool_calls[0].id).toBe("toolu_01");
+  });
+
   it("filterToOpenAIFormat flattens text-only arrays to string", () => {
     const body = {
       messages: [

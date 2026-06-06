@@ -4,6 +4,7 @@ import { prepareClaudeRequest } from "./helpers/claudeHelper.js";
 import { cloakClaudeTools } from "../utils/claudeCloaking.js";
 import { filterToOpenAIFormat } from "./helpers/openaiHelper.js";
 import { normalizeThinkingConfig } from "../services/provider.js";
+import { needsReasoningContentReplay } from "../utils/reasoningContentInjector.js";
 import { AntigravityExecutor } from "../executors/antigravity.js";
 
 // Registry for translators
@@ -71,10 +72,54 @@ function stripContentTypes(body, stripList = []) {
   }
 }
 
+function collectClaudeAssistantReasoningForToolCalls(body) {
+  if (!body?.messages || !Array.isArray(body.messages)) return [];
+  const entries = [];
+
+  for (const msg of body.messages) {
+    if (msg?.role !== "assistant" || !Array.isArray(msg.content)) continue;
+
+    const reasoning = msg.content
+      .filter(block => block?.type === "thinking" && typeof block.thinking === "string" && block.thinking.length > 0)
+      .map(block => block.thinking)
+      .join("");
+    if (!reasoning) continue;
+
+    const toolUseIds = msg.content
+      .filter(block => block?.type === "tool_use" && block.id)
+      .map(block => block.id);
+    if (toolUseIds.length === 0) continue;
+
+    entries.push({ reasoning, toolUseIds });
+  }
+
+  return entries;
+}
+
+function replayClaudeReasoningContent(sourceBody, openaiBody) {
+  const entries = collectClaudeAssistantReasoningForToolCalls(sourceBody);
+  if (entries.length === 0 || !Array.isArray(openaiBody?.messages)) return openaiBody;
+
+  const pending = [...entries];
+  for (const msg of openaiBody.messages) {
+    if (msg?.role !== "assistant" || !Array.isArray(msg.tool_calls)) continue;
+
+    const toolCallIds = new Set(msg.tool_calls.map(tc => tc.id).filter(Boolean));
+    const index = pending.findIndex(entry => entry.toolUseIds.some(id => toolCallIds.has(id)));
+    if (index === -1) continue;
+
+    msg.reasoning_content = pending[index].reasoning;
+    pending.splice(index, 1);
+  }
+
+  return openaiBody;
+}
+
 // Translate request: source -> openai -> target
 export function translateRequest(sourceFormat, targetFormat, model, body, stream = true, credentials = null, provider = null, reqLogger = null, stripList = [], connectionId = null, clientTool = null) {
   ensureInitialized();
   let result = body;
+  const originalBody = body;
 
   // Strip explicit content types (opt-in via strip[] in PROVIDER_MODELS entry)
   stripContentTypes(result, stripList);
@@ -95,6 +140,9 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
       const toOpenAI = requestRegistry.get(`${sourceFormat}:${FORMATS.OPENAI}`);
       if (toOpenAI) {
         result = toOpenAI(model, result, stream, credentials);
+        if (needsReasoningContentReplay({ provider, model }) && sourceFormat === FORMATS.CLAUDE && targetFormat === FORMATS.OPENAI) {
+          result = replayClaudeReasoningContent(originalBody, result);
+        }
         // Log OpenAI intermediate format
         reqLogger?.logOpenAIRequest?.(result);
       }
