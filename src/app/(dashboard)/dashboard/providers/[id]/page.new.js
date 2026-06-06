@@ -1209,7 +1209,7 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
               {connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}
             </Badge>
             {isCooldown && connection.isActive !== false && <CooldownTimer until={modelLockUntil} />}
-            {connection.lastError && connection.isActive !== false && (
+            {connection.lastError && (
               <span className="text-xs text-red-500 truncate max-w-[300px]" title={connection.lastError}>
                 {connection.lastError}
               </span>
