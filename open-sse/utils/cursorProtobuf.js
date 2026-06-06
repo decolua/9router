@@ -371,8 +371,21 @@ export function encodeToolResult(toolResult) {
   );
 }
 
-export function encodeMessage(content, role, messageId, chatModeEnum = null, isLast = false, hasTools = false, toolResults = [], serverBubbleId = null) {
+function encodeSupportedTools(hasTools, forceAgentMode = false) {
+  if (hasTools) {
+    // Cursor's supported_tools is a packed enum list. Enum 1 is Cursor's
+    // built-in ask_question tool; custom OpenAI tools are exposed as MCP
+    // tools and must advertise enum 19. If we send 1 here, Composer models
+    // correctly report that only ask_question is available and ignore the
+    // MCP_TOOLS block below.
+    return encodeVarint(CLIENT_SIDE_TOOL_V2_MCP);
+  }
+  return forceAgentMode ? encodeVarint(1) : new Uint8Array(0);
+}
+
+export function encodeMessage(content, role, messageId, chatModeEnum = null, isLast = false, hasTools = false, toolResults = [], serverBubbleId = null, forceAgentMode = false) {
   const hasToolResults = toolResults.length > 0;
+  const supportedTools = encodeSupportedTools(hasTools, forceAgentMode);
   return concatArrays(
     encodeField(FIELD.MSG_CONTENT, WIRE_TYPE.LEN, content),
     encodeField(FIELD.MSG_ROLE, WIRE_TYPE.VARINT, role),
@@ -382,9 +395,9 @@ export function encodeMessage(content, role, messageId, chatModeEnum = null, isL
     ...(hasToolResults ? toolResults.map(tr =>
       encodeField(FIELD.MSG_TOOL_RESULTS, WIRE_TYPE.LEN, encodeToolResult(tr))
     ) : []),
-    encodeField(FIELD.MSG_IS_AGENTIC, WIRE_TYPE.VARINT, hasTools ? 1 : 0),
-    encodeField(FIELD.MSG_UNIFIED_MODE, WIRE_TYPE.VARINT, hasTools ? UNIFIED_MODE.AGENT : UNIFIED_MODE.CHAT),
-    ...(isLast && hasTools ? [encodeField(FIELD.MSG_SUPPORTED_TOOLS, WIRE_TYPE.LEN, encodeVarint(1))] : [])
+    encodeField(FIELD.MSG_IS_AGENTIC, WIRE_TYPE.VARINT, (hasTools || forceAgentMode) ? 1 : 0),
+    encodeField(FIELD.MSG_UNIFIED_MODE, WIRE_TYPE.VARINT, (hasTools || forceAgentMode) ? UNIFIED_MODE.AGENT : UNIFIED_MODE.CHAT),
+    ...(isLast && supportedTools.length > 0 ? [encodeField(FIELD.MSG_SUPPORTED_TOOLS, WIRE_TYPE.LEN, supportedTools)] : [])
   );
 }
 
@@ -443,6 +456,63 @@ export function encodeMcpTool(tool) {
     ...(Object.keys(inputSchema).length > 0 ? [encodeField(FIELD.MCP_TOOL_PARAMS, WIRE_TYPE.LEN, JSON.stringify(inputSchema))] : []),
     encodeField(FIELD.MCP_TOOL_SERVER, WIRE_TYPE.LEN, "custom")
   );
+}
+
+function isComposerModelName(modelName) {
+  const modelId = String(modelName || "").split("/").pop();
+  return /^composer(?:-|$)/i.test(modelId);
+}
+
+function getToolName(tool) {
+  return tool?.function?.name || tool?.name || "";
+}
+
+function getToolDescription(tool) {
+  return tool?.function?.description || tool?.description || "";
+}
+
+function getToolSchema(tool) {
+  return tool?.function?.parameters || tool?.input_schema || {};
+}
+
+function buildComposerToolInstruction(tools, isComposer = false) {
+  if (!tools?.length) return "";
+
+  const toolLines = tools
+    .map((tool) => {
+      const name = getToolName(tool);
+      if (!name) return "";
+      const description = getToolDescription(tool);
+      const parameters = getToolSchema(tool);
+      return JSON.stringify({ name, description, parameters });
+    })
+    .filter(Boolean)
+    .join("\n");
+
+  if (!toolLines) return "";
+
+  const header = "The following custom tools are available. Use them to complete the task. Do not use or mention unavailable tools such as ask_question unless they are listed here.";
+
+  if (isComposer) {
+    return [
+      header,
+      "Available tools, one JSON object per line:",
+      toolLines,
+      "When calling tools, output only Cursor Composer's DeepSeek tool-call sentinel format:",
+      "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>",
+      "TOOL_NAME",
+      "<｜tool▁sep｜>ARGUMENT_NAME",
+      "ARGUMENT_VALUE",
+      "<｜tool▁call▁end｜><｜tool▁calls▁end｜>",
+      "For multiple arguments, repeat <｜tool▁sep｜>ARGUMENT_NAME followed by ARGUMENT_VALUE. Do not wrap the arguments in JSON unless the schema asks for a JSON string value."
+    ].join("\n");
+  }
+
+  return [
+    header,
+    "Available tools, one JSON object per line:",
+    toolLines,
+  ].join("\n");
 }
 
 // ==================== REQUEST BUILDING ====================
@@ -511,6 +581,20 @@ export function encodeRequest(messages, modelName, tools = [], reasoningEffort =
     normalizedMessages.push(msg);
   }
 
+  // Visible tool instruction helps all Cursor-routed models (Composer and
+  // non-Composer alike) recognize available custom tools. Without it, models
+  // default to ask mode regardless of protobuf-level tool advertisement.
+  // Composer models additionally receive DeepSeek sentinel format guidance.
+  if (hasTools) {
+    const visibleToolInstruction = buildComposerToolInstruction(tools, isComposerModelName(modelName));
+    if (visibleToolInstruction) {
+      normalizedMessages.unshift({
+        role: "user",
+        content: visibleToolInstruction
+      });
+    }
+  }
+
   // Prepare messages
   for (let i = 0; i < normalizedMessages.length; i++) {
     const msg = normalizedMessages[i];
@@ -535,18 +619,20 @@ export function encodeRequest(messages, modelName, tools = [], reasoningEffort =
   if (reasoningEffort === "medium") thinkingLevel = THINKING_LEVEL.MEDIUM;
   else if (reasoningEffort === "high") thinkingLevel = THINKING_LEVEL.HIGH;
 
+  const instructionText = "";
+
   // Build request
   return concatArrays(
     // Messages
     ...formattedMessages.map(fm => 
       encodeField(FIELD.MESSAGES, WIRE_TYPE.LEN, 
-        encodeMessage(fm.content, fm.role, fm.messageId, null, fm.isLast, fm.hasTools, fm.toolResults)
+        encodeMessage(fm.content, fm.role, fm.messageId, null, fm.isLast, fm.hasTools, fm.toolResults, null, forceAgentMode)
       )
     ),
     
     // Static fields
     encodeField(FIELD.UNKNOWN_2, WIRE_TYPE.VARINT, 1),
-    encodeField(FIELD.INSTRUCTION, WIRE_TYPE.LEN, encodeInstruction("")),
+    encodeField(FIELD.INSTRUCTION, WIRE_TYPE.LEN, encodeInstruction(instructionText)),
     encodeField(FIELD.UNKNOWN_4, WIRE_TYPE.VARINT, 1),
     encodeField(FIELD.MODEL, WIRE_TYPE.LEN, encodeModel(modelName)),
     encodeField(FIELD.WEB_TOOL, WIRE_TYPE.LEN, ""),
@@ -558,7 +644,7 @@ export function encodeRequest(messages, modelName, tools = [], reasoningEffort =
 
     // Tool-related fields
     encodeField(FIELD.IS_AGENTIC, WIRE_TYPE.VARINT, isAgentic ? 1 : 0),
-    ...(isAgentic ? [encodeField(FIELD.SUPPORTED_TOOLS, WIRE_TYPE.LEN, encodeVarint(1))] : []),
+    ...(isAgentic ? [encodeField(FIELD.SUPPORTED_TOOLS, WIRE_TYPE.LEN, encodeSupportedTools(hasTools, forceAgentMode))] : []),
     
     // Message IDs
     ...messageIds.map(mid => 

@@ -69,25 +69,36 @@ function writeJsonFile(sessionPath, filename, data) {
   }
 }
 
-// Mask sensitive data in headers (DISABLED - keep full token for testing)
+// Mask sensitive data in headers
 function maskSensitiveHeaders(headers) {
   if (!headers) return {};
-  return { ...headers };
-  
-  // Old masking code (disabled):
-  // const masked = { ...headers };
-  // const sensitiveKeys = ["authorization", "x-api-key", "cookie", "token"];
-  // 
-  // for (const key of Object.keys(masked)) {
-  //   const lowerKey = key.toLowerCase();
-  //   if (sensitiveKeys.some(sk => lowerKey.includes(sk))) {
-  //     const value = masked[key];
-  //     if (value && value.length > 20) {
-  //       masked[key] = value.slice(0, 10) + "..." + value.slice(-5);
-  //     }
-  //   }
-  // }
-  // return masked;
+  const masked = { ...headers };
+  const sensitiveKeys = ["authorization", "x-api-key", "cookie", "token", "secret"];
+
+  for (const key of Object.keys(masked)) {
+    const lowerKey = key.toLowerCase();
+    if (sensitiveKeys.some(sk => lowerKey.includes(sk))) {
+      const value = String(masked[key] || "");
+      masked[key] = value ? "[REDACTED]" : value;
+    }
+  }
+  return masked;
+}
+
+function extractPrintableStrings(buffer) {
+  const text = Buffer.from(buffer).toString("utf8");
+  return (text.match(/[ -~]{4,}/g) || []).slice(0, 200);
+}
+
+function serializeBodyForLog(body) {
+  if (body instanceof Uint8Array || (typeof Buffer !== "undefined" && Buffer.isBuffer(body))) {
+    return {
+      type: body.constructor?.name || "Uint8Array",
+      byteLength: body.byteLength,
+      printableStrings: extractPrintableStrings(body)
+    };
+  }
+  return body;
 }
 
 // No-op logger when logging is disabled
@@ -159,7 +170,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
         timestamp: new Date().toISOString(),
         url,
         headers: maskSensitiveHeaders(headers),
-        body
+        body: serializeBodyForLog(body)
       });
     },
     
