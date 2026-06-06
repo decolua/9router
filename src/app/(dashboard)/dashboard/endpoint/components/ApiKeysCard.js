@@ -4,12 +4,14 @@ import Link from "next/link";
 import PropTypes from "prop-types";
 import { Button, Card, Toggle } from "@/shared/components";
 import { formatLimitState, getLimitBadgeClass } from "../utils/endpointLimitHelpers";
+import { SecurityWarning } from "./SecurityWarning";
 import { StatusAlert } from "./StatusAlert";
 
 export function ApiKeysCard({
   keys,
   copied,
   requireApiKey,
+  isRemoteHost,
   keyActionStatus,
   visibleKeys,
   savingKeyId,
@@ -49,6 +51,13 @@ export function ApiKeysCard({
           onChange={() => onRequireApiKeyChange(!requireApiKey)}
         />
       </div>
+
+      {/* Security warning when endpoint exposed without API key on remote host */}
+      {isRemoteHost && !requireApiKey && (
+        <div className="mb-4 -mt-2">
+          <SecurityWarning message="Endpoint is exposed without an API key." />
+        </div>
+      )}
 
       {keyActionStatus && (
         <StatusAlert status={keyActionStatus} className="mb-4" />
@@ -190,6 +199,7 @@ ApiKeysCard.propTypes = {
   keys: PropTypes.arrayOf(PropTypes.object).isRequired,
   copied: PropTypes.string,
   requireApiKey: PropTypes.bool.isRequired,
+  isRemoteHost: PropTypes.bool,
   keyActionStatus: PropTypes.object,
   visibleKeys: PropTypes.instanceOf(Set).isRequired,
   savingKeyId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
