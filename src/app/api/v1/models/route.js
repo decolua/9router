@@ -204,6 +204,22 @@ export async function buildModelsList(kindFilter) {
     }
   }
 
+  for (const [providerId, providerInfo] of Object.entries(AI_PROVIDERS)) {
+    if (providerInfo?.noAuth !== true || activeConnectionByProvider.has(providerId)) continue;
+    const staticAlias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
+    const hasStaticModels = Array.isArray(PROVIDER_MODELS[staticAlias]) && PROVIDER_MODELS[staticAlias].length > 0;
+    const hasLiveResolver = typeof LIVE_MODEL_RESOLVERS[providerId] === "function";
+    const hasSubConfigModels =
+      (Array.isArray(providerInfo?.ttsConfig?.models) && providerInfo.ttsConfig.models.length > 0) ||
+      (Array.isArray(providerInfo?.embeddingConfig?.models) && providerInfo.embeddingConfig.models.length > 0);
+    if (hasStaticModels || hasLiveResolver || hasSubConfigModels) {
+      activeConnectionByProvider.set(providerId, {
+        provider: providerId,
+        providerSpecificData: {},
+      });
+    }
+  }
+
   const models = [];
 
   // Combos first (filtered by kind). Web combos expose `kind` so AI knows search vs fetch.

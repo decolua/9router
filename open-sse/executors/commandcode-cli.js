@@ -1,7 +1,9 @@
 import { randomUUID } from "crypto";
 import { spawn } from "child_process";
+import os from "os";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
+import { resolveCommandCodeCliBin } from "../services/commandCodeCliBin.js";
 
 const DEFAULT_MAX_TURNS = 4;
 const DEFAULT_TIMEOUT_MS = 180000;
@@ -35,14 +37,14 @@ export class CommandCodeCLIExecutor extends BaseExecutor {
       "--max-turns", String(maxTurns),
     ];
 
-    log?.debug?.("COMMANDCODE-CLI", `cmd ${args.map(maskArgForLog).join(" ")} | timeout=${Math.round(timeoutMs / 1000)}s`);
+    log?.debug?.("COMMANDCODE-CLI", `command-code-cli ${args.map(maskArgForLog).join(" ")} | timeout=${Math.round(timeoutMs / 1000)}s`);
 
     const result = await runCommandCodeCli(args, timeoutMs, signal);
     if (result.stderr) {
       log?.debug?.("COMMANDCODE-CLI STDERR", sanitizeLog(result.stderr));
     }
 
-    const transformedBody = { model: upstreamModel, responseModel, prompt, maxTurns, timeoutMs };
+    const transformedBody = { model: upstreamModel, responseModel, maxTurns, timeoutMs };
     if (result.error) {
       return {
         response: errorResponse(result.status, result.error),
@@ -88,10 +90,11 @@ function runCommandCodeCli(args, timeoutMs, signal) {
     let settled = false;
     let timedOut = false;
 
-    const child = spawn("cmd", args, {
+    const child = spawn(resolveCommandCodeCliBin(), args, {
       shell: false,
       windowsHide: true,
       env: process.env,
+      cwd: os.tmpdir(),
     });
 
     const finish = (result) => {

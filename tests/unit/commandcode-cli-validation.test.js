@@ -1,4 +1,5 @@
 import { EventEmitter } from "events";
+import os from "os";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const spawnMock = vi.fn();
@@ -71,7 +72,7 @@ describe("commandcode-cli provider validation", () => {
       "--skip-onboarding",
       "--trust",
       "--max-turns", "1",
-    ], expect.objectContaining({ shell: false, windowsHide: true }));
+    ], expect.objectContaining({ shell: false, windowsHide: true, cwd: os.tmpdir() }));
     expect(global.fetch).not.toHaveBeenCalled();
   });
 

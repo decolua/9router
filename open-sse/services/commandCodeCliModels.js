@@ -1,4 +1,6 @@
 import { spawn } from "child_process";
+import os from "os";
+import { resolveCommandCodeCliBin } from "./commandCodeCliBin.js";
 
 export const COMMAND_CODE_CLI_STATIC_MODELS = [
   { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6 (Command Code CLI)", contextLength: 1000000 },
@@ -63,7 +65,11 @@ function listCliModels(timeoutMs) {
     let stdout = "";
     let stderr = "";
     let settled = false;
-    const child = spawn("cmd", ["--list-models"], { shell: false, windowsHide: true });
+    const child = spawn(resolveCommandCodeCliBin(), ["--list-models"], {
+      shell: false,
+      windowsHide: true,
+      cwd: os.tmpdir(),
+    });
 
     const finish = (models) => {
       if (settled) return;

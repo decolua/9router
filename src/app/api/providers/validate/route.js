@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { spawn } from "child_process";
+import os from "os";
 import { getProviderNodeById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
@@ -7,6 +8,7 @@ import { resolveOllamaLocalHost, resolveXiaomiTokenplanBaseUrl, PROVIDERS } from
 import { openaiToCommandCode } from "open-sse/translator/request/openai-to-commandcode.js";
 import { PROVIDER_ENDPOINTS } from "@/shared/constants/config";
 import { normalizeProviderId } from "@/lib/providerNormalization";
+import { resolveCommandCodeCliBin } from "open-sse/services/commandCodeCliBin.js";
 
 // Probe a webSearch/webFetch provider using its searchConfig/fetchConfig.
 // Returns true if API key is accepted (status !== 401 && !== 403).
@@ -87,7 +89,11 @@ function validateCommandCodeCli() {
     let stdout = "";
     let stderr = "";
     let settled = false;
-    const child = spawn("cmd", ["--model", "xiaomi/mimo-v2.5-pro", "-p", "Say pong only", "--skip-onboarding", "--trust", "--max-turns", "1"], { shell: false, windowsHide: true });
+    const child = spawn(resolveCommandCodeCliBin(), ["--model", "xiaomi/mimo-v2.5-pro", "-p", "Say pong only", "--skip-onboarding", "--trust", "--max-turns", "1"], {
+      shell: false,
+      windowsHide: true,
+      cwd: os.tmpdir(),
+    });
     const finish = (result) => {
       if (settled) return;
       settled = true;
