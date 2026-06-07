@@ -410,6 +410,10 @@ async function updateSettings(data) {
   return makeRequest("PATCH", "/api/settings", data);
 }
 
+async function resetPassword() {
+  return makeRequest("POST", "/api/auth/reset-password");
+}
+
 // ============================================================================
 // MODELS API
 // ============================================================================
@@ -528,6 +532,7 @@ module.exports = {
   // Settings
   getSettings,
   updateSettings,
+  resetPassword,
   
   // Tunnel
   getTunnelStatus,

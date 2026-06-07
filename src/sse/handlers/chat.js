@@ -8,7 +8,7 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
-import { getSettings } from "@/lib/localDb";
+import { getSettings, getProviderConnections } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -19,6 +19,8 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
+import { FREE_PROVIDERS } from "@/shared/constants/providers";
 
 /**
  * Handle chat completion request
@@ -111,13 +113,57 @@ export async function handleChat(request, clientRawRequest = null) {
   }
 
   // Single model request
-  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey);
+   return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey);
 }
 
-/**
- * Handle single model chat request
- */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
+async function findAlternativeProviders(model, originalProvider, triedProviders) {
+  const alternatives = [];
+  const seen = new Set();
+  const normalize = (name) => name.replace(/[\.\_]/g, "-").toLowerCase();
+  const normalizedModel = normalize(model);
+
+  let freeProviders = new Set();
+  try {
+    for (const [providerId, config] of Object.entries(FREE_PROVIDERS)) {
+      if (config.noAuth) freeProviders.add(providerId);
+    }
+  } catch {}
+
+  let providersWithConnections = new Set();
+  try {
+    const allConnections = await getProviderConnections({ isActive: true });
+    providersWithConnections = new Set(allConnections.map(c => c.provider));
+  } catch {}
+
+  const eligibleProviders = new Set([...freeProviders, ...providersWithConnections]);
+
+  for (const [alias, providerModels] of Object.entries(PROVIDER_MODELS)) {
+    const providerId = Object.entries(PROVIDER_ID_TO_ALIAS).find(([, a]) => a === alias)?.[0] || alias;
+    if (providerId === originalProvider || triedProviders.has(providerId) || !eligibleProviders.has(providerId)) continue;
+
+    const exactMatch = providerModels.find(m => m.id === model);
+    if (exactMatch) {
+      alternatives.push({ provider: providerId, model: exactMatch.id });
+      seen.add(providerId);
+      continue;
+    }
+
+    const fuzzyMatch = providerModels.find(m => normalize(m.id) === normalizedModel);
+    if (fuzzyMatch) {
+      alternatives.push({ provider: providerId, model: fuzzyMatch.id });
+      seen.add(providerId);
+    }
+  }
+
+  for (const providerId of freeProviders) {
+    if (providerId === originalProvider || triedProviders.has(providerId) || seen.has(providerId)) continue;
+    alternatives.push({ provider: providerId, model });
+  }
+
+  return alternatives;
+}
+
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, _triedProviders) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
@@ -148,6 +194,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
   const { provider, model } = modelInfo;
 
+  if (!_triedProviders) _triedProviders = new Set();
+  _triedProviders.add(provider);
+
   // Log model routing (alias → actual model)
   if (modelStr !== `${provider}/${model}`) {
     log.info("ROUTING", `${modelStr} → ${provider}/${model}`);
@@ -168,6 +217,27 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
+      const alternatives = await findAlternativeProviders(model, provider, _triedProviders);
+      for (const { provider: altProvider, model: altModel } of alternatives) {
+        _triedProviders.add(altProvider);
+        log.info("FALLBACK", `Primary provider ${provider} exhausted, trying alternative: ${altProvider}/${altModel}`);
+        try {
+          const altResult = await handleSingleModelChat(body, `${altProvider}/${altModel}`, clientRawRequest, request, apiKey, _triedProviders);
+          if (altResult.ok) {
+            log.info("FALLBACK", `Alternative ${altProvider}/${altModel} succeeded`);
+            return altResult;
+          }
+          const altStatus = altResult.status;
+          log.warn("FALLBACK", `Alternative ${altProvider}/${altModel} failed (${altStatus})`);
+          lastError = lastError || `[${provider}/${model}] unavailable`;
+          lastStatus = lastStatus || altStatus;
+        } catch (altErr) {
+          log.warn("FALLBACK", `Alternative ${altProvider}/${altModel} threw: ${altErr.message}`);
+          lastError = lastError || altErr.message;
+          lastStatus = lastStatus || 500;
+        }
+      }
+
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
