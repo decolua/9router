@@ -497,7 +497,7 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
   }
 
   // Response completed
-  if (eventType === "response.completed") {
+  if (eventType === "response.completed" || eventType === "response.done") {
     // Extract usage from response.completed event
     const responseUsage = data.response?.usage;
     if (responseUsage && typeof responseUsage === "object") {
@@ -575,10 +575,17 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     return null;
   }
 
-  // Reasoning events (convert to content or skip)
+  // Reasoning summary delta → emit as reasoning_content for client thinking display
   if (eventType === "response.reasoning_summary_text.delta") {
-    // Optionally include reasoning as content, or skip
-    return null;
+    const delta = data.delta || "";
+    if (!delta) return null;
+    return {
+      id: state.chatId,
+      object: "chat.completion.chunk",
+      created: state.created,
+      model: state.model || "unknown",
+      choices: [{ index: 0, delta: { reasoning_content: delta }, finish_reason: null }]
+    };
   }
 
   // Ignore other events

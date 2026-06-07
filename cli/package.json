@@ -1,6 +1,6 @@
 {
   "name": "9router",
-  "version": "0.4.39",
+  "version": "0.4.71",
   "description": "9Router CLI - Start and manage 9Router server",
   "bin": {
     "9router": "./cli.js"
@@ -42,6 +42,7 @@
   ],
   "license": "MIT",
   "devDependencies": {
+    "esbuild": "^0.25.12",
     "nodemon": "^3.1.14"
   }
 }

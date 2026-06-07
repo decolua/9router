@@ -159,9 +159,14 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     const resolvedProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
 
     return {
+      authType: connection.authType,
       apiKey: connection.apiKey,
       accessToken: connection.accessToken,
       refreshToken: connection.refreshToken,
+      idToken: connection.idToken,
+      expiresAt: connection.expiresAt,
+      expiresIn: connection.expiresIn,
+      lastRefreshAt: connection.lastRefreshAt,
       projectId: connection.projectId,
       connectionName: connection.displayName || connection.name || connection.email || connection.id,
       copilotToken: connection.providerSpecificData?.copilotToken,

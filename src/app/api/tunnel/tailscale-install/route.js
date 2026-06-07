@@ -2,10 +2,9 @@
 
 import os from "os";
 import { execSync } from "child_process";
-import { installTailscale } from "@/lib/tunnel/tailscale";
+import { installTailscale, loadState, generateShortId } from "@/lib/tunnel";
 import { getCachedPassword, loadEncryptedPassword, initDbHooks } from "@/mitm/manager";
 import { getSettings, updateSettings } from "@/lib/localDb";
-import { loadState, generateShortId } from "@/lib/tunnel/state.js";
 
 initDbHooks(getSettings, updateSettings);
 
@@ -36,8 +35,14 @@ export async function POST(request) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
+      let closed = false;
       const send = (event, data) => {
-        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        } catch {
+          closed = true;
+        }
       };
 
       try {
@@ -52,7 +57,7 @@ export async function POST(request) {
           : error.message;
         send("error", { error: msg });
       } finally {
-        controller.close();
+        if (!closed) { try { controller.close(); } catch {} }
       }
     },
   });

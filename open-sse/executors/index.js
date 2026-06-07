@@ -15,6 +15,7 @@ import { GrokWebExecutor } from "./grok-web.js";
 import { PerplexityWebExecutor } from "./perplexity-web.js";
 import { OllamaLocalExecutor } from "./ollama-local.js";
 import { CommandCodeExecutor } from "./commandcode.js";
+import { XiaomiTokenplanExecutor } from "./xiaomi-tokenplan.js";
 import { DefaultExecutor } from "./default.js";
 
 const executors = {
@@ -37,6 +38,7 @@ const executors = {
   "perplexity-web": new PerplexityWebExecutor(),
   "ollama-local": new OllamaLocalExecutor(),
   commandcode: new CommandCodeExecutor(),
+  "xiaomi-tokenplan": new XiaomiTokenplanExecutor(),
 };
 
 const defaultCache = new Map();
@@ -70,3 +72,4 @@ export { GrokWebExecutor } from "./grok-web.js";
 export { PerplexityWebExecutor } from "./perplexity-web.js";
 export { OllamaLocalExecutor } from "./ollama-local.js";
 export { CommandCodeExecutor } from "./commandcode.js";
+export { XiaomiTokenplanExecutor } from "./xiaomi-tokenplan.js";

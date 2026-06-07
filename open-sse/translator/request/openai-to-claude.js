@@ -291,15 +291,35 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
   return blocks;
 }
 
-// Convert OpenAI tool choice to Claude format
+// Convert OpenAI tool choice to Claude format.
+// Claude only accepts tool_choice.type of "auto" | "any" | "tool" | "none";
+// anything else (e.g. OpenAI's "function") triggers a 400, so we never pass an
+// unrecognized type through.
+const CLAUDE_TOOL_CHOICE_TYPES = new Set(["auto", "any", "tool", "none"]);
+
 function convertOpenAIToolChoice(choice) {
   if (!choice) return { type: "auto" };
-  if (typeof choice === "object" && choice.type) return choice;
-  if (choice === "auto" || choice === "none") return { type: "auto" };
-  if (choice === "required") return { type: "any" };
-  if (typeof choice === "object" && choice.function) {
-    return { type: "tool", name: choice.function.name };
+
+  // OpenAI string forms: "auto" | "none" | "required"
+  if (typeof choice === "string") {
+    if (choice === "required") return { type: "any" };
+    return { type: "auto" }; // "auto", "none", or anything unexpected
   }
+
+  if (typeof choice === "object") {
+    // OpenAI forced tool: { type: "function", function: { name } }.
+    // Checked before the native pass-through below, because the OpenAI shape
+    // also carries a `.type` ("function") that Claude rejects.
+    if (choice.function?.name) {
+      return { type: "tool", name: choice.function.name };
+    }
+    // Already Claude-native — only pass through types Claude actually accepts,
+    // so a malformed or unknown type can never leak into the upstream request.
+    if (CLAUDE_TOOL_CHOICE_TYPES.has(choice.type)) {
+      return choice;
+    }
+  }
+
   return { type: "auto" };
 }
 

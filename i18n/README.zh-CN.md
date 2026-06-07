@@ -1015,7 +1015,7 @@ docker stop 9router && docker rm 9router
 
 | 变量 | 默认值 | 描述 |
 |----------|---------|-------------|
-| `JWT_SECRET` | `9router-default-secret-change-me` | 仪表板认证 cookie 的 JWT 签名密钥（**生产环境中请更改**） |
+| `JWT_SECRET` | 自动生成（`~/.9router/jwt-secret`） | 仪表板认证 cookie 的 JWT 签名密钥（设置可在多实例间共享） |
 | `INITIAL_PASSWORD | `123456` | 当没有保存的哈希时的首次登录密码 |
 | `DATA_DIR` | `~/.9router` | 主应用数据库位置（`db.json`） |
 | `PORT` | 框架默认值 | 服务端口（示例中为 `20128`） |

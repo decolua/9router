@@ -76,6 +76,23 @@ export function calculatePercentage(used, total) {
 }
 
 /**
+ * Get remaining percentage from a normalized quota row
+ * @param {Object} quota - Normalized quota object
+ * @returns {number} Remaining percentage (0-100)
+ */
+export function getRemainingPercentage(quota) {
+  if (quota?.remaining !== undefined) {
+    return Math.max(0, Math.round(quota.remaining));
+  }
+
+  if (quota?.remainingPercentage !== undefined) {
+    return Math.round(quota.remainingPercentage);
+  }
+
+  return calculatePercentage(quota?.used, quota?.total);
+}
+
+/**
  * Parse provider-specific quota structures into normalized array
  * @param {string} provider - Provider name (github, antigravity, codex, kiro, claude)
  * @param {Object} data - Raw quota data from provider
@@ -123,6 +140,7 @@ export function parseQuotaData(provider, data) {
               name: quotaType,
               used: quota.used || 0,
               total: quota.total || 0,
+              remaining: quota.remaining,
               resetAt: quota.resetAt || null,
             });
           });
@@ -136,6 +154,31 @@ export function parseQuotaData(provider, data) {
               name: quotaType,
               used: quota.used || 0,
               total: quota.total || 0,
+              resetAt: quota.resetAt || null,
+            });
+          });
+        }
+        break;
+
+      case "qoder":
+        // Qoder ships a `user` quota and (optionally) an `organization`
+        // quota, both with same shape: {total, used, remaining, unit, resetAt}.
+        // Skip an organization bucket when its total is 0 — most personal
+        // Qoder accounts won't have one and rendering "0/0" is misleading.
+        // Don't forward Qoder's `remaining` field: it's an absolute credit
+        // count, but getRemainingPercentage / QuotaTable interpret
+        // `remaining` as a 0-100 percentage and would render 348 credits
+        // as "348%". The percentage is computed from used/total instead.
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([quotaType, quota]) => {
+            if (quotaType === "organization" && (!quota || (Number(quota.total) || 0) === 0)) {
+              return;
+            }
+            normalizedQuotas.push({
+              name: quotaType === "user" ? "Personal" : quotaType === "organization" ? "Organization" : quotaType,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              unit: quota.unit,
               resetAt: quota.resetAt || null,
             });
           });

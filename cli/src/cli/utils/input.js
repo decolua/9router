@@ -1,4 +1,4 @@
-const { Input, Confirm, Select } = require("enquirer");
+const readline = require("readline");
 
 const COLORS = {
   reset: "\x1b[0m",
@@ -18,123 +18,132 @@ const COLORS = {
   bgTerracotta: "\x1b[48;2;217;119;87m"
 };
 
-// Hex color used by enquirer styles
-const TERRACOTTA_HEX = "#D97757";
-
-function handleCancel(err) {
-  // Enquirer throws empty string on ESC/Ctrl+C — treat as cancel
-  if (err === "" || err === undefined) return null;
-  throw err;
-}
-
-// Workaround enquirer raw-mode bug (PR #460): prime stdin into raw mode
-// + utf8 encoding BEFORE each prompt so arrow keys don't leak as ^[[A/^[[B.
-function primeStdin() {
-  if (!process.stdin.isTTY) return;
+// Prime stdin once globally. Toggling raw mode between menus adds latency on
+// macOS, so we keep raw mode on for the whole TUI session.
+let rawPrimed = false;
+function primeRawOnce() {
+  if (rawPrimed || !process.stdin.isTTY) return;
   try {
+    readline.emitKeypressEvents(process.stdin);
     process.stdin.setRawMode(true);
     process.stdin.setEncoding("utf8");
     process.stdin.resume();
+    rawPrimed = true;
   } catch {}
 }
 
-function restoreStdin() {
-  if (!process.stdin.isTTY) return;
-  try {
-    process.stdin.setRawMode(false);
-  } catch {}
-  process.stdin.pause();
-}
-
-async function runPrompt(p) {
-  primeStdin();
-  try {
-    return await p.run();
-  } finally {
-    restoreStdin();
+function suspendRawFor(fn) {
+  // Temporarily drop raw mode so readline.question can buffer line input.
+  const wasPrimed = rawPrimed;
+  if (wasPrimed && process.stdin.isTTY) {
+    try { process.stdin.setRawMode(false); } catch {}
   }
+  return fn().finally(() => {
+    if (wasPrimed && process.stdin.isTTY) {
+      try { process.stdin.setRawMode(true); } catch {}
+      process.stdin.resume();
+    }
+  });
 }
 
 async function prompt(question) {
-  const p = new Input({ name: "value", message: question.replace(/:\s*$/, "") });
-  try {
-    const answer = await runPrompt(p);
-    return (answer || "").trim();
-  } catch (err) {
-    return handleCancel(err) ?? "";
-  }
+  return suspendRawFor(() => new Promise((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    rl.question(question, (answer) => {
+      rl.close();
+      resolve((answer || "").trim());
+    });
+  }));
 }
 
 async function select(question, options) {
-  const p = new Select({
-    name: "value",
-    message: question,
-    choices: options.map((label, i) => ({ name: String(i), message: label })),
-  });
-  try {
-    const answer = await runPrompt(p);
-    return parseInt(answer, 10);
-  } catch (err) {
-    handleCancel(err);
-    return -1;
+  console.log(question);
+  options.forEach((opt, i) => console.log(`  ${i + 1}. ${opt}`));
+  while (true) {
+    const answer = await prompt("\nSelect option (number): ");
+    const num = parseInt(answer, 10);
+    if (!isNaN(num) && num >= 1 && num <= options.length) return num - 1;
+    console.log(`Invalid selection. Please enter a number between 1 and ${options.length}`);
   }
 }
 
 async function confirm(question) {
-  const p = new Confirm({ name: "value", message: question });
-  try {
-    return await runPrompt(p);
-  } catch (err) {
-    handleCancel(err);
-    return false;
+  while (true) {
+    const answer = await prompt(`${question} (y/n): `);
+    const lower = answer.toLowerCase();
+    if (lower === "y" || lower === "yes") return true;
+    if (lower === "n" || lower === "no") return false;
+    console.log("Please answer 'y' or 'n'");
   }
 }
 
 async function pause(message = "Press Enter to continue...") {
-  const p = new Input({ name: "value", message });
-  try {
-    await runPrompt(p);
-  } catch (err) {
-    handleCancel(err);
-  }
+  return suspendRawFor(() => new Promise((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    rl.question(message, () => { rl.close(); resolve(); });
+  }));
 }
 
 /**
- * Interactive arrow-key menu using enquirer Select.
- * Header (title/subtitle/breadcrumb/headerContent) rendered before prompt.
+ * Interactive arrow-key menu. Renders ★/☆ icons; selected line uses reverse+bright
+ * (no underline). Uses readline keypress + raw 'data' fallback to prevent
+ * arrow-key escape sequence leaks on macOS.
  */
 async function selectMenu(title, items, defaultIndex = 0, subtitle = "", headerContent = "", breadcrumb = []) {
-  process.stdout.write("\x1b[2J\x1b[H");
-  const width = Math.min(process.stdout.columns || 40, 40);
-  console.log(`\n${COLORS.terracotta}${"=".repeat(width)}${COLORS.reset}`);
-  console.log(`  ${COLORS.bright}${COLORS.terracotta}${title}${COLORS.reset}`);
-  if (subtitle) {
-    console.log(`  ${COLORS.dim}${subtitle}${COLORS.reset}`);
-  }
-  console.log(`${COLORS.terracotta}${"=".repeat(width)}${COLORS.reset}`);
-  if (breadcrumb.length > 0) {
-    console.log(`  ${COLORS.dim}${breadcrumb.join(" > ")}${COLORS.reset}`);
-  }
-  console.log();
-  if (headerContent) {
-    console.log(headerContent);
-    console.log();
-  }
+  return new Promise((resolve) => {
+    let selectedIndex = defaultIndex;
+    let isActive = true;
 
-  const p = new Select({
-    name: "menu",
-    message: "Select",
-    initial: defaultIndex,
-    choices: items.map((item, i) => ({ name: String(i), message: item.label })),
+    primeRawOnce();
+    if (!process.stdin.isTTY) { resolve(-1); return; }
+
+    const renderMenu = () => {
+      if (!isActive) return;
+      process.stdout.write("\x1b[2J\x1b[H");
+      const width = Math.min(process.stdout.columns || 40, 40);
+      console.log(`\n${COLORS.terracotta}${"=".repeat(width)}${COLORS.reset}`);
+      console.log(`  ${COLORS.bright}${COLORS.terracotta}${title}${COLORS.reset}`);
+      if (subtitle) console.log(`  ${COLORS.dim}${subtitle}${COLORS.reset}`);
+      console.log(`${COLORS.terracotta}${"=".repeat(width)}${COLORS.reset}`);
+      if (breadcrumb.length > 0) console.log(`  ${COLORS.dim}${breadcrumb.join(" > ")}${COLORS.reset}`);
+      console.log();
+      if (headerContent) { console.log(headerContent); console.log(); }
+
+      const isWin = process.platform === "win32";
+      items.forEach((item, index) => {
+        const isSelected = index === selectedIndex;
+        const icon = isSelected ? (isWin ? ">" : "★") : (isWin ? " " : "☆");
+        if (isSelected) {
+          console.log(` ${COLORS.reverse}${COLORS.bright}${icon} ${item.label}${COLORS.reset}`);
+        } else {
+          console.log(`  ${icon} ${item.label}`);
+        }
+      });
+    };
+
+    const cleanup = () => {
+      if (!isActive) return;
+      isActive = false;
+      process.stdin.removeListener("keypress", onKeypress);
+    };
+
+    const move = (delta) => {
+      selectedIndex = (selectedIndex + delta + items.length) % items.length;
+      renderMenu();
+    };
+
+    const onKeypress = (_str, key) => {
+      if (!isActive || !key) return;
+      if (key.name === "up") return move(-1);
+      if (key.name === "down") return move(1);
+      if (key.name === "return") { cleanup(); resolve(selectedIndex); return; }
+      if (key.name === "escape") { cleanup(); resolve(-1); return; }
+      if (key.ctrl && key.name === "c") { cleanup(); process.exit(0); }
+    };
+
+    process.stdin.on("keypress", onKeypress);
+    renderMenu();
   });
-
-  try {
-    const answer = await runPrompt(p);
-    return parseInt(answer, 10);
-  } catch (err) {
-    handleCancel(err);
-    return -1;
-  }
 }
 
 module.exports = {

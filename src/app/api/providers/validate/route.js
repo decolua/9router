@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getProviderNodeById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
-import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
+import { resolveOllamaLocalHost, resolveXiaomiTokenplanBaseUrl, PROVIDERS } from "open-sse/config/providers.js";
 import { openaiToCommandCode } from "open-sse/translator/request/openai-to-commandcode.js";
 import { PROVIDER_ENDPOINTS } from "@/shared/constants/config";
 import { normalizeProviderId } from "@/lib/providerNormalization";
@@ -251,6 +251,13 @@ export async function POST(request) {
           isValid = openaiRes.ok;
           break;
 
+        case "vercel-ai-gateway":
+          const vercelAiGatewayRes = await fetch("https://ai-gateway.vercel.sh/v1/models", {
+            headers: { "Authorization": `Bearer ${apiKey}` },
+          });
+          isValid = vercelAiGatewayRes.ok;
+          break;
+
         case "anthropic":
           const anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
             method: "POST",
@@ -353,6 +360,7 @@ export async function POST(request) {
         case "nanobanana":
         case "chutes":
         case "xiaomi-mimo":
+        case "xiaomi-tokenplan":
         case "nvidia": {
           const endpoints = {
             deepseek: "https://api.deepseek.com/models",
@@ -373,7 +381,8 @@ export async function POST(request) {
             nanobanana: "https://api.nanobananaapi.ai/v1/models",
             chutes: "https://llm.chutes.ai/v1/models",
             nvidia: "https://integrate.api.nvidia.com/v1/models",
-            "xiaomi-mimo": "https://api.xiaomimimo.com/v1/models"
+            "xiaomi-mimo": "https://api.xiaomimimo.com/v1/models",
+            "xiaomi-tokenplan": `${resolveXiaomiTokenplanBaseUrl({ providerSpecificData })}/models`
           };
           const headers = {};
           if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;

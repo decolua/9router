@@ -7,9 +7,11 @@ const projectRoot = dirname(fileURLToPath(import.meta.url));
 const tracingRoot = process.env.NEXT_TRACING_ROOT_MODE === "workspace"
   ? join(projectRoot, "..")
   : projectRoot;
+const proxyClientMaxBodySize = process.env.NINEROUTER_PROXY_CLIENT_MAX_BODY_SIZE || "128mb";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   output: "standalone",
   serverExternalPackages: ["better-sqlite3", "sql.js", "node:sqlite", "bun:sqlite"],
   turbopack: {
@@ -23,6 +25,10 @@ const nextConfig = {
     unoptimized: true
   },
   env: {},
+  experimental: {
+    // #1529/#1572: LLM clients can send long context or base64 image payloads through /v1 rewrites.
+    proxyClientMaxBodySize,
+  },
   webpack: (config, { isServer }) => {
     // Ignore fs/path modules in browser bundle
     if (!isServer) {

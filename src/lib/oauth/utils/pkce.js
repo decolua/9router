@@ -2,9 +2,11 @@ import crypto from "crypto";
 
 /**
  * Generate PKCE code verifier (43-128 characters)
+ *
+ * @param {number} [bytes=32] number of random bytes (xAI uses 96)
  */
-export function generateCodeVerifier() {
-  return crypto.randomBytes(32).toString("base64url");
+export function generateCodeVerifier(bytes = 32) {
+  return crypto.randomBytes(bytes).toString("base64url");
 }
 
 /**
@@ -24,8 +26,8 @@ export function generateState() {
 /**
  * Generate complete PKCE pair
  */
-export function generatePKCE() {
-  const codeVerifier = generateCodeVerifier();
+export function generatePKCE(bytes = 32) {
+  const codeVerifier = generateCodeVerifier(bytes);
   const codeChallenge = generateCodeChallenge(codeVerifier);
   const state = generateState();
 
@@ -35,4 +37,3 @@ export function generatePKCE() {
     state,
   };
 }
-

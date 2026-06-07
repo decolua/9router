@@ -8,6 +8,9 @@ const cliDir = path.resolve(__dirname, "..");
 const appDir = path.resolve(cliDir, "..");
 const rootDir = path.resolve(appDir, "..");
 const cliAppDir = path.join(cliDir, "app");
+const buildHomeDir = path.join(cliDir, ".build-home");
+const buildDistDirName = ".next-cli-build";
+const buildDistDir = path.join(appDir, buildDistDirName);
 
 // Exclude patterns for files/folders we don't want to copy
 const EXCLUDE_PATTERNS = [
@@ -81,14 +84,22 @@ function copyRecursive(src, dest) {
 
 console.log("📦 Building 9Router CLI package with Next.js...\n");
 
+fs.mkdirSync(buildHomeDir, { recursive: true });
+fs.mkdirSync(path.join(buildHomeDir, "AppData", "Roaming"), { recursive: true });
+fs.mkdirSync(path.join(buildHomeDir, "AppData", "Local"), { recursive: true });
+
 // Step 0: Sync version from app/cli/package.json to app/package.json
 console.log("0️⃣  Syncing version to app/package.json...");
 const cliPkg = JSON.parse(fs.readFileSync(path.join(cliDir, "package.json"), "utf8"));
 const appPkgPath = path.join(appDir, "package.json");
 const appPkg = JSON.parse(fs.readFileSync(appPkgPath, "utf8"));
-appPkg.version = cliPkg.version;
-fs.writeFileSync(appPkgPath, JSON.stringify(appPkg, null, 2) + "\n");
-console.log(`✅ Version synced: ${cliPkg.version}\n`);
+if (appPkg.version !== cliPkg.version) {
+  appPkg.version = cliPkg.version;
+  fs.writeFileSync(appPkgPath, JSON.stringify(appPkg, null, 2) + "\n");
+  console.log(`✅ Version synced: ${cliPkg.version}\n`);
+} else {
+  console.log(`✅ Version already synced: ${cliPkg.version}\n`);
+}
 
 // Step 1: Build app with Next.js (workspace tracing root → traced node_modules in standalone).
 console.log("1️⃣  Building Next.js app...");
@@ -96,7 +107,15 @@ try {
   execSync("npm run build", {
     stdio: "inherit",
     cwd: appDir,
-    env: { ...process.env, NEXT_TRACING_ROOT_MODE: "workspace" }
+    env: {
+      ...process.env,
+      HOME: buildHomeDir,
+      USERPROFILE: buildHomeDir,
+      APPDATA: path.join(buildHomeDir, "AppData", "Roaming"),
+      LOCALAPPDATA: path.join(buildHomeDir, "AppData", "Local"),
+      NEXT_DIST_DIR: buildDistDirName,
+      NEXT_TRACING_ROOT_MODE: "workspace",
+    }
   });
   console.log("✅ Next.js build completed\n");
 } catch (error) {
@@ -112,21 +131,25 @@ if (fs.existsSync(cliAppDir)) {
 console.log("✅ Cleaned\n");
 
 // Step 3: Copy Next.js standalone build to app/cli/app.
-// With workspace tracing root, Next places app files under .next/standalone/app/ and traced
-// node_modules under .next/standalone/node_modules/ (slim, tracing-pruned).
+// Newer Next.js standalone output writes server.js/package.json plus .next/, src/, and
+// node_modules/ directly under .next/standalone. Older builds may still use a nested app/.
 console.log("3️⃣  Copying Next.js standalone build to app/cli/app...");
 const standaloneRoot = path.join(appDir, ".next", "standalone");
-const standaloneApp = path.join(standaloneRoot, "app");
+const standaloneRootResolved = path.join(buildDistDir, "standalone");
+const standaloneRootToUse = fs.existsSync(standaloneRootResolved) ? standaloneRootResolved : standaloneRoot;
+const standaloneApp = fs.existsSync(path.join(standaloneRootToUse, "server.js"))
+  ? standaloneRootToUse
+  : path.join(standaloneRootToUse, "app");
 if (!fs.existsSync(standaloneApp)) {
-  console.error("❌ Next.js standalone build not found at .next/standalone/app");
-  console.error("Make sure output: 'standalone' is set in next.config.js");
+  console.error("❌ Next.js standalone build not found under .next/standalone");
+  console.error("Expected either .next/standalone/server.js or .next/standalone/app/");
   process.exit(1);
 }
 copyRecursive(standaloneApp, cliAppDir);
 
-// Copy traced node_modules from standalone root into CLI bundle
-const standaloneNodeModules = path.join(standaloneRoot, "node_modules");
-if (fs.existsSync(standaloneNodeModules)) {
+// Older nested-app layout stores traced node_modules at standalone root.
+const standaloneNodeModules = path.join(standaloneRootToUse, "node_modules");
+if (standaloneApp !== standaloneRootToUse && fs.existsSync(standaloneNodeModules)) {
   copyRecursive(standaloneNodeModules, path.join(cliAppDir, "node_modules"));
 }
 console.log("✅ Copied standalone build\n");
@@ -166,9 +189,10 @@ console.log("");
 // Step 4: Copy static files
 console.log("4️⃣  Copying static files...");
 const staticSrc = path.join(appDir, ".next", "static");
-const staticDest = path.join(cliAppDir, ".next", "static");
-if (fs.existsSync(staticSrc)) {
-  copyRecursive(staticSrc, staticDest);
+const staticSrcResolved = path.join(buildDistDir, "static");
+const staticDest = path.join(cliAppDir, buildDistDirName, "static");
+if (fs.existsSync(staticSrcResolved) || fs.existsSync(staticSrc)) {
+  copyRecursive(fs.existsSync(staticSrcResolved) ? staticSrcResolved : staticSrc, staticDest);
   console.log("✅ Copied static files\n");
 } else {
   console.log("⏭️  No static files found\n");
@@ -188,9 +212,10 @@ if (fs.existsSync(publicSrc)) {
 // Step 6: Copy vendor-chunks (required for production)
 console.log("6️⃣  Copying vendor-chunks...");
 const vendorChunksSrc = path.join(appDir, ".next", "server", "vendor-chunks");
-const vendorChunksDest = path.join(cliAppDir, ".next", "server", "vendor-chunks");
-if (fs.existsSync(vendorChunksSrc)) {
-  copyRecursive(vendorChunksSrc, vendorChunksDest);
+const vendorChunksSrcResolved = path.join(buildDistDir, "server", "vendor-chunks");
+const vendorChunksDest = path.join(cliAppDir, buildDistDirName, "server", "vendor-chunks");
+if (fs.existsSync(vendorChunksSrcResolved) || fs.existsSync(vendorChunksSrc)) {
+  copyRecursive(fs.existsSync(vendorChunksSrcResolved) ? vendorChunksSrcResolved : vendorChunksSrc, vendorChunksDest);
   console.log("✅ Copied vendor-chunks\n");
 } else {
   console.log("⏭️  No vendor-chunks found\n");

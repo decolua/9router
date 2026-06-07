@@ -1,130 +1,38 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { Card, CardSkeleton } from "@/shared/components";
-import { CLI_TOOLS } from "@/shared/constants/cliTools";
-import { getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
-import { ClaudeToolCard, CodexToolCard, DroidToolCard, OpenClawToolCard, HermesToolCard, DefaultToolCard, OpenCodeToolCard, CoworkToolCard, CopilotToolCard, ClineToolCard, KiloToolCard, DeepSeekTuiToolCard, MitmLinkCard } from "./components";
-import { MITM_TOOLS } from "@/shared/constants/cliTools";
-
-const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
+import { useState, useEffect } from "react";
+import { CardSkeleton } from "@/shared/components";
+import { CLI_TOOLS, MITM_TOOLS } from "@/shared/constants/cliTools";
+import { MitmLinkCard } from "./components";
+import ToolSummaryCard from "./components/ToolSummaryCard";
 
 const ALL_STATUSES_URL = "/api/cli-tools/all-statuses";
 
 export default function CLIToolsPageClient({ machineId }) {
-  const [connections, setConnections] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [expandedTool, setExpandedTool] = useState(null);
-  const [modelMappings, setModelMappings] = useState({});
-  const [cloudEnabled, setCloudEnabled] = useState(false);
-  const [tunnelEnabled, setTunnelEnabled] = useState(false);
-  const [tunnelPublicUrl, setTunnelPublicUrl] = useState("");
-  const [tailscaleEnabled, setTailscaleEnabled] = useState(false);
-  const [tailscaleUrl, setTailscaleUrl] = useState("");
-  const [apiKeys, setApiKeys] = useState([]);
   const [toolStatuses, setToolStatuses] = useState({});
 
-  const fetchAllStatuses = async () => {
-    try {
-      const res = await fetch(ALL_STATUSES_URL);
-      if (res.ok) setToolStatuses(await res.json());
-    } catch (error) {
-      console.log("Error fetching tool statuses:", error);
-    }
-  };
-
-  const loadCloudSettings = async () => {
-    try {
-      const [settingsRes, tunnelRes] = await Promise.all([
-        fetch("/api/settings"),
-        fetch("/api/tunnel/status"),
-      ]);
-      if (settingsRes.ok) {
-        const data = await settingsRes.json();
-        setCloudEnabled(data.cloudEnabled || false);
-      }
-      if (tunnelRes.ok) {
-        const data = await tunnelRes.json();
-        setTunnelEnabled(!!(data.tunnel?.enabled || data.tunnel?.settingsEnabled));
-        setTunnelPublicUrl(data.tunnel?.publicUrl || "");
-        setTailscaleEnabled(!!(data.tailscale?.enabled || data.tailscale?.settingsEnabled));
-        setTailscaleUrl(data.tailscale?.tunnelUrl || "");
-      }
-    } catch (error) {
-      console.log("Error loading settings:", error);
-    }
-  };
-
-  const fetchApiKeys = async () => {
-    try {
-      const res = await fetch("/api/keys");
-      if (res.ok) {
-        const data = await res.json();
-        setApiKeys(data.keys || []);
-      }
-    } catch (error) {
-      console.log("Error fetching API keys:", error);
-    }
-  };
-
-  const fetchConnections = async () => {
-    try {
-      const res = await fetch("/api/providers");
-      const data = await res.json();
-      if (res.ok) {
-        setConnections(data.connections || []);
-      }
-    } catch (error) {
-      console.log("Error fetching connections:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    fetchConnections();
-    loadCloudSettings();
-    fetchApiKeys();
-    fetchAllStatuses();
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await fetch(ALL_STATUSES_URL);
+        if (res.ok && mounted) setToolStatuses(await res.json());
+      } catch (error) {
+        console.log("Error fetching tool statuses:", error);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+    return () => { mounted = false; };
   }, []);
-
-  const getActiveProviders = () => connections.filter(c => c.isActive !== false);
-
-  const getAllAvailableModels = () => {
-    const activeProviders = getActiveProviders();
-    const models = [];
-    const seenModels = new Set();
-    activeProviders.forEach(conn => {
-      const alias = PROVIDER_ID_TO_ALIAS[conn.provider] || conn.provider;
-      const providerModels = getModelsByProviderId(conn.provider);
-      providerModels.forEach(m => {
-        const modelValue = `${alias}/${m.id}`;
-        if (!seenModels.has(modelValue)) {
-          seenModels.add(modelValue);
-          models.push({ value: modelValue, label: `${alias}/${m.id}`, provider: conn.provider, alias, connectionName: conn.name, modelId: m.id });
-        }
-      });
-    });
-    return models;
-  };
-
-  const handleModelMappingChange = useCallback((toolId, modelAlias, targetModel) => {
-    setModelMappings(prev => {
-      if (prev[toolId]?.[modelAlias] === targetModel) return prev;
-      return { ...prev, [toolId]: { ...prev[toolId], [modelAlias]: targetModel } };
-    });
-  }, []);
-
-  const getBaseUrl = () => {
-    if (tunnelEnabled && tunnelPublicUrl) return tunnelPublicUrl;
-    if (cloudEnabled && CLOUD_URL) return CLOUD_URL;
-    if (typeof window !== "undefined") return window.location.origin;
-    return "http://localhost:20128";
-  };
 
   if (loading) {
     return (
-      <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+        <CardSkeleton />
+        <CardSkeleton />
+        <CardSkeleton />
         <CardSkeleton />
         <CardSkeleton />
         <CardSkeleton />
@@ -132,95 +40,26 @@ export default function CLIToolsPageClient({ machineId }) {
     );
   }
 
-  const availableModels = getAllAvailableModels();
-  const hasActiveProviders = availableModels.length > 0;
-
-  const renderToolCard = (toolId, tool) => {
-    const commonProps = {
-      tool,
-      isExpanded: expandedTool === toolId,
-      onToggle: () => setExpandedTool(expandedTool === toolId ? null : toolId),
-      baseUrl: getBaseUrl(),
-      apiKeys,
-      tunnelEnabled,
-      tunnelPublicUrl,
-      tailscaleEnabled,
-      tailscaleUrl,
-    };
-
-    switch (toolId) {
-      case "claude":
-        return (
-          <ClaudeToolCard
-            key={toolId}
-            {...commonProps}
-            activeProviders={getActiveProviders()}
-            modelMappings={modelMappings[toolId] || {}}
-            onModelMappingChange={(alias, target) => handleModelMappingChange(toolId, alias, target)}
-            hasActiveProviders={hasActiveProviders}
-            cloudEnabled={cloudEnabled}
-            initialStatus={toolStatuses.claude}
-          />
-        );
-      case "codex":
-        return <CodexToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} cloudEnabled={cloudEnabled} initialStatus={toolStatuses.codex} />;
-      case "opencode":
-        return <OpenCodeToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} cloudEnabled={cloudEnabled} initialStatus={toolStatuses.opencode} />;
-      case "cowork":
-        return (
-          <CoworkToolCard
-            key={toolId}
-            {...commonProps}
-            activeProviders={getActiveProviders()}
-            hasActiveProviders={hasActiveProviders}
-            cloudEnabled={cloudEnabled}
-            cloudUrl={CLOUD_URL}
-            tunnelEnabled={tunnelEnabled}
-            tunnelPublicUrl={tunnelPublicUrl}
-            tailscaleEnabled={tailscaleEnabled}
-            tailscaleUrl={tailscaleUrl}
-            initialStatus={toolStatuses.cowork}
-          />
-        );
-      case "droid":
-        return <DroidToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} hasActiveProviders={hasActiveProviders} cloudEnabled={cloudEnabled} initialStatus={toolStatuses.droid} />;
-      case "openclaw":
-        return <OpenClawToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} hasActiveProviders={hasActiveProviders} cloudEnabled={cloudEnabled} initialStatus={toolStatuses.openclaw} />;
-      case "hermes":
-        return <HermesToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} hasActiveProviders={hasActiveProviders} cloudEnabled={cloudEnabled} initialStatus={toolStatuses.hermes} />;
-      case "copilot":
-        return <CopilotToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} cloudEnabled={cloudEnabled} initialStatus={toolStatuses.copilot} />;
-      case "cline":
-        return <ClineToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} cloudEnabled={cloudEnabled} initialStatus={toolStatuses.cline} />;
-      case "kilo":
-        return <KiloToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} cloudEnabled={cloudEnabled} initialStatus={toolStatuses.kilo} />;
-      case "deepseek-tui":
-        return <DeepSeekTuiToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} hasActiveProviders={hasActiveProviders} cloudEnabled={cloudEnabled} initialStatus={toolStatuses["deepseek-tui"]} />;
-      default:
-        return <DefaultToolCard key={toolId} toolId={toolId} {...commonProps} activeProviders={getActiveProviders()} cloudEnabled={cloudEnabled} tunnelEnabled={tunnelEnabled} />;
-    }
-  };
-
   const regularTools = Object.entries(CLI_TOOLS);
   const mitmTools = Object.entries(MITM_TOOLS);
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-1 sm:px-0">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-xl font-semibold text-text-main sm:text-2xl">CLI Tools</h1>
-        <p className="text-sm text-text-muted">Configure local coding tools to use your 9Router providers.</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+        {regularTools.map(([toolId, tool]) => (
+          <ToolSummaryCard key={toolId} toolId={toolId} tool={tool} status={toolStatuses[toolId]} />
+        ))}
       </div>
-      <div className="grid gap-3 sm:gap-4">
-        {regularTools.map(([toolId, tool]) => renderToolCard(toolId, tool))}
-      </div>
-      <div className="grid gap-3 sm:gap-4">
+      <div className="flex flex-col gap-3 sm:gap-4">
         <div className="flex items-center gap-2 px-1">
           <span className="material-symbols-outlined text-[18px] text-primary">security</span>
           <h2 className="text-sm font-semibold text-text-main">MITM Tools</h2>
         </div>
-        {mitmTools.map(([toolId, tool]) => (
-          <MitmLinkCard key={toolId} tool={tool} />
-        ))}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+          {mitmTools.map(([toolId, tool]) => (
+            <MitmLinkCard key={toolId} tool={tool} />
+          ))}
+        </div>
       </div>
     </div>
   );

@@ -63,15 +63,20 @@ export const QWEN_CONFIG = {
   codeChallengeMethod: "S256",
 };
 
-// Qoder OAuth Configuration (Device Token Flow)
+// Qoder OAuth Configuration (Device Token Flow with PKCE).
+// Device tokens are long-lived (~30 days for access, ~360 for refresh).
+// The upstream refresh endpoint at center.qoder.sh returns 403 for our
+// flow — we accept that and surface it to the user as "re-login" instead
+// of attempting to silently rotate.
 export const QODER_CONFIG = {
-  apiBaseUrl: "https://api2.qoder.sh",
-  deviceTokenUrl: "https://api2.qoder.sh/api/v1/deviceToken/poll",
-  deviceRefreshUrl: "https://api2.qoder.sh/api/v1/deviceToken/refresh",
-  refreshUrl: "https://api2.qoder.sh/api/v3/user/refresh_token",
-  userInfoUrl: "https://api2.qoder.sh/api/v1/userinfo",
-  statusUrl: "https://api2.qoder.sh/api/v3/user/status",
-  loginUrl: "https://qoder.com/login",
+  openApiBaseUrl: "https://openapi.qoder.sh",
+  centerBaseUrl: "https://center.qoder.sh",
+  chatBaseUrl: "https://api3.qoder.sh",
+  deviceTokenUrl: "https://openapi.qoder.sh/api/v1/deviceToken/poll",
+  refreshUrl: "https://center.qoder.sh/algo/api/v3/user/refresh_token",
+  userInfoUrl: "https://openapi.qoder.sh/api/v1/userinfo",
+  quotaUsageUrl: "https://openapi.qoder.sh/api/v2/quota/usage",
+  loginUrl: "https://qoder.com/device/selectAccounts",
 };
 
 // iFlow OAuth Configuration (Authorization Code)
@@ -108,8 +113,8 @@ export const ANTIGRAVITY_CONFIG = {
   onboardUserEndpoint: "https://cloudcode-pa.googleapis.com/v1internal:onboardUser",
   loadCodeAssistUserAgent: "google-api-nodejs-client/9.15.1",
   loadCodeAssistApiClient: "google-cloud-sdk vscode_cloudshelleditor/0.1",
-  // String enum matches CLIProxyAPI Go source (internal/auth/antigravity/constants.go)
-  loadCodeAssistClientMetadata: JSON.stringify({ ideType: "IDE_UNSPECIFIED", platform: "PLATFORM_UNSPECIFIED", pluginType: "GEMINI" }),
+  // Numeric enums matching Antigravity binary ClientMetadata (see getOAuthClientMetadata below)
+  loadCodeAssistClientMetadata: JSON.stringify({ ideType: 9, platform: getOAuthPlatformEnum(), pluginType: 2 }),
 };
 
 /**

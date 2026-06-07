@@ -1,8 +1,22 @@
 import { SignJWT, jwtVerify } from "jose";
+import fs from "node:fs";
+import path from "node:path";
+import crypto from "node:crypto";
+import { DATA_DIR } from "@/lib/dataDir";
 
-const SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "9router-default-secret-change-me"
-);
+function loadJwtSecret() {
+  if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
+  const file = path.join(DATA_DIR, "jwt-secret");
+  try {
+    return fs.readFileSync(file, "utf8").trim();
+  } catch {}
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  const generated = crypto.randomBytes(32).toString("hex");
+  fs.writeFileSync(file, generated, { mode: 0o600 });
+  return generated;
+}
+
+const SECRET = new TextEncoder().encode(loadJwtSecret());
 
 export function shouldUseSecureCookie(request) {
   const forceSecureCookie = process.env.AUTH_COOKIE_SECURE === "true";
