@@ -19,6 +19,7 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import { routeModel, formatRoutingLog } from "open-sse/rtk/modelRouting.js";
 
 /**
  * Handle chat completion request
@@ -118,6 +119,21 @@ export async function handleChat(request, clientRawRequest = null) {
  * Handle single model chat request
  */
 async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
+  // Model Routing (Phase 6): swap the model BEFORE provider resolution so the routed
+  // model may belong to a different provider. Combo names are excluded — they're handled
+  // upstream and have their own fallback logic.
+  const routingSettings = await getSettings();
+  let routingDecision = null;
+  if (routingSettings.modelRoutingEnabled) {
+    routingDecision = routeModel(body, modelStr, true, routingSettings.modelRoutingRules || {});
+    if (routingDecision) {
+      const line = formatRoutingLog(routingDecision);
+      if (line) log.info("ROUTING", line);
+      modelStr = routingDecision.to;
+      body = { ...body, model: routingDecision.to };
+    }
+  }
+
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
@@ -215,6 +231,11 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       cavemanLevel: chatSettings.cavemanLevel || "full",
       compactPoliciesEnabled: !!chatSettings.compactPoliciesEnabled,
       prefixCacheEnabled: chatSettings.prefixCacheEnabled !== false,
+      promptDedupEnabled: !!chatSettings.promptDedupEnabled,
+      contextPruningEnabled: !!chatSettings.contextPruningEnabled,
+      contextPruningKeepLast: chatSettings.contextPruningKeepLast || 8,
+      contextPruningMinBytes: chatSettings.contextPruningMinBytes || 12000,
+      routingDecision,
       providerThinking,
       // Detect source format by endpoint + body
       sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,

@@ -21,6 +21,8 @@ import { injectCaveman } from "../rtk/caveman.js";
 import { injectCompactPolicies } from "../rtk/compactPolicies.js";
 import { applyPrefixCacheHints, formatPrefixCacheLog } from "../rtk/prefixCache.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
+import { dedupePrompt, formatDedupLog } from "../rtk/promptDedup.js";
+import { pruneContext, formatPruneLog } from "../rtk/contextPruning.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -29,7 +31,7 @@ import { compressMessages, formatRtkLog } from "../rtk/index.js";
  * @param {object} options.credentials - Provider credentials
  * @param {string} options.sourceFormatOverride - Override detected source format (e.g. "openai-responses")
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, cavemanEnabled, cavemanLevel, compactPoliciesEnabled, prefixCacheEnabled, sourceFormatOverride, providerThinking }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, cavemanEnabled, cavemanLevel, compactPoliciesEnabled, prefixCacheEnabled, promptDedupEnabled, contextPruningEnabled, contextPruningKeepLast, contextPruningMinBytes, routingDecision, sourceFormatOverride, providerThinking }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
 
@@ -123,6 +125,16 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Per-request optimization-layer attribution. Persisted into usage row's `meta` column.
   const attribution = { format: finalFormat, timings };
 
+  // Routing attribution (decision made upstream in chat.js before provider resolution)
+  if (routingDecision && routingDecision.to) {
+    attribution.routing = {
+      from: routingDecision.from,
+      to: routingDecision.to,
+      reason: routingDecision.reason,
+      classification: routingDecision.classification,
+    };
+  }
+
   // RTK: compress tool_result content
   const tRtk = Date.now();
   const rtkStats = compressMessages(translatedBody, rtkEnabled);
@@ -136,6 +148,45 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       saved: rtkStats.bytesBefore - rtkStats.bytesAfter,
       hits: rtkStats.hits.length,
     };
+  }
+
+  // Context Pruning (Phase 5): drop oldest middle turns when context grows past threshold.
+  // Runs after RTK so the byte estimate reflects the post-compression size.
+  if (contextPruningEnabled) {
+    const tPrune = Date.now();
+    const pruneStats = pruneContext(translatedBody, true, finalFormat, {
+      keepLast: contextPruningKeepLast,
+      minBytes: contextPruningMinBytes,
+    });
+    timings.contextPruning = Date.now() - tPrune;
+    const pruneLine = formatPruneLog(pruneStats);
+    if (pruneLine) console.log(pruneLine);
+    if (pruneStats) {
+      attribution.contextPruning = {
+        prunedMessages: pruneStats.prunedMessages,
+        prunedBytes: pruneStats.prunedBytes,
+        keptMessages: pruneStats.keptMessages,
+        totalBytesBefore: pruneStats.totalBytesBefore,
+      };
+    }
+  }
+
+  // Prompt Deduplication (Phase 4): collapse duplicate large blocks within the request.
+  // Runs after pruning so we don't waste cycles deduping content we just dropped.
+  if (promptDedupEnabled) {
+    const tDedup = Date.now();
+    const dedupStats = dedupePrompt(translatedBody, true, finalFormat);
+    timings.promptDedup = Date.now() - tDedup;
+    const dedupLine = formatDedupLog(dedupStats);
+    if (dedupLine) console.log(dedupLine);
+    if (dedupStats) {
+      attribution.promptDedup = {
+        bytesIn: dedupStats.bytesBefore,
+        bytesOut: dedupStats.bytesAfter,
+        saved: dedupStats.bytesBefore - dedupStats.bytesAfter,
+        dupBlocks: dedupStats.dupBlocks,
+      };
+    }
   }
 
   // Prefix Cache Awareness: mark stable prefix (system + tools) for upstream cache reuse.

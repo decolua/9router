@@ -1,3 +1,4 @@
+import { qAll, qGet, qRun, qExec } from "../query.js";
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
@@ -44,12 +45,13 @@ export async function getProviderNodes(filter = {}) {
   const params = [];
   if (filter.type) { where.push("type = ?"); params.push(filter.type); }
   const sql = `SELECT * FROM providerNodes${where.length ? ` WHERE ${where.join(" AND ")}` : ""}`;
-  return db.all(sql, params).map(rowToNode);
+  const rows = await qAll(db, sql, params);
+  return rows.map(rowToNode);
 }
 
 export async function getProviderNodeById(id) {
   const db = await getAdapter();
-  return rowToNode(db.get(`SELECT * FROM providerNodes WHERE id = ?`, [id]));
+  return rowToNode(await qGet(db, `SELECT * FROM providerNodes WHERE id = ?`, [id]));
 }
 
 export async function createProviderNode(data) {

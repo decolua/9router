@@ -71,6 +71,13 @@ export default function APIPageClient({ machineId }) {
   const [cavemanEnabled, setCavemanEnabled] = useState(false);
   const [cavemanLevel, setCavemanLevel] = useState("full");
   const [compactPoliciesEnabled, setCompactPoliciesEnabled] = useState(false);
+  const [promptDedupEnabled, setPromptDedupEnabled] = useState(false);
+  const [contextPruningEnabled, setContextPruningEnabled] = useState(false);
+  const [contextPruningKeepLast, setContextPruningKeepLast] = useState(8);
+  const [modelRoutingEnabled, setModelRoutingEnabled] = useState(false);
+  const [modelRoutingRules, setModelRoutingRules] = useState({});
+  const [routingRulesDraft, setRoutingRulesDraft] = useState("{}");
+  const [routingRulesError, setRoutingRulesError] = useState("");
 
   // Cloudflare Tunnel state
   const [tunnelChecking, setTunnelChecking] = useState(true);
@@ -242,6 +249,13 @@ export default function APIPageClient({ machineId }) {
         setCavemanEnabled(!!data.cavemanEnabled);
         setCavemanLevel(data.cavemanLevel || "full");
         setCompactPoliciesEnabled(!!data.compactPoliciesEnabled);
+        setPromptDedupEnabled(!!data.promptDedupEnabled);
+        setContextPruningEnabled(!!data.contextPruningEnabled);
+        setContextPruningKeepLast(Number(data.contextPruningKeepLast) || 8);
+        setModelRoutingEnabled(!!data.modelRoutingEnabled);
+        const rules = data.modelRoutingRules && typeof data.modelRoutingRules === "object" ? data.modelRoutingRules : {};
+        setModelRoutingRules(rules);
+        setRoutingRulesDraft(JSON.stringify(rules, null, 2));
       }
       if (statusRes.ok) {
         const data = await statusRes.json();
@@ -334,6 +348,46 @@ export default function APIPageClient({ machineId }) {
   const handleCompactPoliciesEnabled = (value) => {
     setCompactPoliciesEnabled(value);
     patchSetting({ compactPoliciesEnabled: value });
+  };
+
+  const handlePromptDedupEnabled = (value) => {
+    setPromptDedupEnabled(value);
+    patchSetting({ promptDedupEnabled: value });
+  };
+
+  const handleContextPruningEnabled = (value) => {
+    setContextPruningEnabled(value);
+    patchSetting({ contextPruningEnabled: value });
+  };
+
+  const handleContextPruningKeepLast = (value) => {
+    const n = Math.max(4, Math.min(64, Number(value) || 8));
+    setContextPruningKeepLast(n);
+    patchSetting({ contextPruningKeepLast: n });
+  };
+
+  const handleModelRoutingEnabled = (value) => {
+    setModelRoutingEnabled(value);
+    patchSetting({ modelRoutingEnabled: value });
+  };
+
+  const handleRoutingRulesSave = () => {
+    try {
+      const parsed = JSON.parse(routingRulesDraft || "{}");
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new Error("Expected an object mapping model → { cheap, strong }");
+      }
+      for (const [k, v] of Object.entries(parsed)) {
+        if (!v || typeof v !== "object" || Array.isArray(v)) {
+          throw new Error(`Rule for "${k}" must be an object with optional cheap/strong keys`);
+        }
+      }
+      setModelRoutingRules(parsed);
+      setRoutingRulesError("");
+      patchSetting({ modelRoutingRules: parsed });
+    } catch (e) {
+      setRoutingRulesError(e.message || "Invalid JSON");
+    }
   };
 
   const fetchData = async () => {
@@ -1127,6 +1181,81 @@ export default function APIPageClient({ machineId }) {
             onChange={() => handleCompactPoliciesEnabled(!compactPoliciesEnabled)}
           />
         </div>
+        <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">Prompt Deduplication</p>
+            <p className="text-sm text-text-muted">
+              Collapse duplicate large blocks within a request → drop repeated context across turns
+            </p>
+          </div>
+          <Toggle
+            checked={promptDedupEnabled}
+            onChange={() => handlePromptDedupEnabled(!promptDedupEnabled)}
+          />
+        </div>
+        <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">Context Pruning</p>
+            <p className="text-sm text-text-muted">
+              Drop oldest middle turns when conversation grows past threshold (keeps system + first user + last N)
+            </p>
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            {contextPruningEnabled && (
+              <label className="flex items-center gap-1.5 text-xs text-text-muted">
+                Keep last
+                <input
+                  type="number"
+                  min={4}
+                  max={64}
+                  value={contextPruningKeepLast}
+                  onChange={(e) => handleContextPruningKeepLast(e.target.value)}
+                  className="w-16 px-2 py-1 rounded border border-border bg-input text-sm font-mono text-text-main"
+                />
+              </label>
+            )}
+            <Toggle
+              checked={contextPruningEnabled}
+              onChange={() => handleContextPruningEnabled(!contextPruningEnabled)}
+            />
+          </div>
+        </div>
+        <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">Model Routing</p>
+            <p className="text-sm text-text-muted">
+              Re-target requested model based on request shape — simple → cheap, complex → strong
+            </p>
+          </div>
+          <Toggle
+            checked={modelRoutingEnabled}
+            onChange={() => handleModelRoutingEnabled(!modelRoutingEnabled)}
+          />
+        </div>
+        {modelRoutingEnabled && (
+          <div className="mt-3 flex flex-col gap-2">
+            <p className="text-xs text-text-muted">
+              Rules — JSON map of <code className="font-mono">"provider/model"</code> → <code className="font-mono">{`{ cheap, strong }`}</code>.
+              Example: <code className="font-mono">{`{ "anthropic/claude-sonnet-4-5": { "cheap": "anthropic/claude-haiku-4-5" } }`}</code>
+            </p>
+            <textarea
+              value={routingRulesDraft}
+              onChange={(e) => setRoutingRulesDraft(e.target.value)}
+              rows={6}
+              spellCheck={false}
+              className="w-full px-3 py-2 rounded border border-border bg-input text-xs font-mono text-text-main"
+            />
+            {routingRulesError && (
+              <p className="text-xs text-red-500">{routingRulesError}</p>
+            )}
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-text-muted">
+                {Object.keys(modelRoutingRules).length} rule{Object.keys(modelRoutingRules).length === 1 ? "" : "s"} saved
+              </span>
+              <Button size="sm" onClick={handleRoutingRulesSave}>Save rules</Button>
+            </div>
+          </div>
+        )}
       </Card>
 
       {/* API Keys */}

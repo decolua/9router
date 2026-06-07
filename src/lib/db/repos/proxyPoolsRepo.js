@@ -1,3 +1,4 @@
+import { qAll, qGet, qRun, qExec } from "../query.js";
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
@@ -46,14 +47,15 @@ export async function getProxyPools(filter = {}) {
   if (filter.isActive !== undefined) { where.push("isActive = ?"); params.push(filter.isActive ? 1 : 0); }
   if (filter.testStatus) { where.push("testStatus = ?"); params.push(filter.testStatus); }
   const sql = `SELECT * FROM proxyPools${where.length ? ` WHERE ${where.join(" AND ")}` : ""}`;
-  const list = db.all(sql, params).map(rowToPool);
+  const rows = await qAll(db, sql, params);
+  const list = rows.map(rowToPool);
   list.sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
   return list;
 }
 
 export async function getProxyPoolById(id) {
   const db = await getAdapter();
-  return rowToPool(db.get(`SELECT * FROM proxyPools WHERE id = ?`, [id]));
+  return rowToPool(await qGet(db, `SELECT * FROM proxyPools WHERE id = ?`, [id]));
 }
 
 export async function createProxyPool(data) {

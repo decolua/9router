@@ -1,5 +1,5 @@
 // Latest schema version — bumped when a migration is added in ./migrations/
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -75,12 +75,16 @@ export const TABLES = {
     columns: {
       id: "TEXT PRIMARY KEY",
       key: "TEXT UNIQUE NOT NULL",
+      keyHash: "TEXT",
       name: "TEXT",
       machineId: "TEXT",
       isActive: "INTEGER DEFAULT 1",
       createdAt: "TEXT NOT NULL",
     },
-    indexes: ["CREATE INDEX IF NOT EXISTS idx_ak_key ON apiKeys(key)"],
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_ak_key ON apiKeys(key)",
+      "CREATE INDEX IF NOT EXISTS idx_ak_keyhash ON apiKeys(keyHash)",
+    ],
   },
   combos: {
     columns: {
@@ -150,8 +154,25 @@ export const TABLES = {
   },
 };
 
-export function buildCreateTableSql(name, def) {
-  const cols = Object.entries(def.columns).map(([k, v]) => `${k} ${v}`);
-  if (def.primaryKey) cols.push(def.primaryKey);
-  return `CREATE TABLE IF NOT EXISTS ${name} (${cols.join(", ")})`;
+function mapColumnDef(colDef, dialect) {
+  if (dialect !== "postgres") return colDef;
+  return colDef
+    .replace(/INTEGER PRIMARY KEY AUTOINCREMENT/i, "SERIAL PRIMARY KEY")
+    .replace(/\bREAL\b/gi, "DOUBLE PRECISION");
+}
+
+function quoteTable(name, dialect) {
+  if (dialect !== "postgres") return name;
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
+function quoteCol(name, dialect) {
+  if (dialect !== "postgres") return name;
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
+export function buildCreateTableSql(name, def, dialect = "sqlite") {
+  const cols = Object.entries(def.columns).map(([k, v]) => `${quoteCol(k, dialect)} ${mapColumnDef(v, dialect)}`);
+  if (def.primaryKey) cols.push(def.primaryKey.replace(/\bscope\b/g, quoteCol("scope", dialect)).replace(/\bkey\b/g, quoteCol("key", dialect)));
+  return `CREATE TABLE IF NOT EXISTS ${quoteTable(name, dialect)} (${cols.join(", ")})`;
 }

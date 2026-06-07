@@ -64,11 +64,14 @@ export default function OptimizationSavings({ period }) {
     );
   }
 
-  const seriesHasData = series.some((s) => s.cacheReadTokens > 0 || s.rtkBytesSaved > 0);
+  const seriesHasData = series.some((s) => s.cacheReadTokens > 0 || s.rtkBytesSaved > 0 || s.dedupBytesSaved > 0 || s.prunedBytes > 0);
 
   const layerRows = [
     { id: "prefix",  label: "Prefix Cache",        count: data.prefixCacheRequests,    detail: `${fmt(data.cacheReadTokens)} cached input tokens` },
     { id: "rtk",     label: "RTK (tool compress)", count: data.rtkActiveRequests,      detail: `${fmtBytes(data.rtkBytesSaved)} saved` },
+    { id: "dedup",   label: "Prompt Dedup",        count: data.dedupActiveRequests || 0, detail: `${fmtBytes(data.dedupBytesSaved || 0)} saved / ${fmt(data.dedupBlocks || 0)} blocks collapsed` },
+    { id: "prune",   label: "Context Pruning",     count: data.pruningActiveRequests || 0, detail: `${fmt(data.prunedMessages || 0)} msgs / ${fmtBytes(data.prunedBytes || 0)} elided` },
+    { id: "route",   label: "Model Routing",       count: data.routedRequests || 0,    detail: `${fmt(data.routingSimple || 0)} simple→cheap · ${fmt(data.routingComplex || 0)} complex→strong` },
     { id: "caveman", label: "Caveman",             count: data.cavemanRequests,        detail: "Output style compression" },
     { id: "compact", label: "Compact Policies",    count: data.compactPoliciesRequests, detail: "Output behavior rules" },
   ];
@@ -101,6 +104,9 @@ export default function OptimizationSavings({ period }) {
           <span className="text-text-muted text-xs uppercase font-semibold">Layers Active</span>
           <div className="flex flex-wrap gap-1 mt-0.5">
             <Pill label="prefix" count={data.prefixCacheRequests} total={data.requests} />
+            <Pill label="dedup" count={data.dedupActiveRequests || 0} total={data.requests} />
+            <Pill label="prune" count={data.pruningActiveRequests || 0} total={data.requests} />
+            <Pill label="route" count={data.routedRequests || 0} total={data.requests} />
             <Pill label="caveman" count={data.cavemanRequests} total={data.requests} />
             <Pill label="compact" count={data.compactPoliciesRequests} total={data.requests} />
           </div>

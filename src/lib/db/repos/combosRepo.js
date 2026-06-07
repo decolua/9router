@@ -1,3 +1,4 @@
+import { qAll, qGet, qRun, qExec } from "../query.js";
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
@@ -16,19 +17,19 @@ function rowToCombo(row) {
 
 export async function getCombos() {
   const db = await getAdapter();
-  const rows = db.all(`SELECT * FROM combos ORDER BY createdAt ASC`);
+  const rows = await qAll(db, `SELECT * FROM combos ORDER BY createdAt ASC`);
   return rows.map(rowToCombo);
 }
 
 export async function getComboById(id) {
   const db = await getAdapter();
-  const row = db.get(`SELECT * FROM combos WHERE id = ?`, [id]);
+  const row = await qGet(db, `SELECT * FROM combos WHERE id = ?`, [id]);
   return rowToCombo(row);
 }
 
 export async function getComboByName(name) {
   const db = await getAdapter();
-  const row = db.get(`SELECT * FROM combos WHERE name = ?`, [name]);
+  const row = await qGet(db, `SELECT * FROM combos WHERE name = ?`, [name]);
   return rowToCombo(row);
 }
 
@@ -43,7 +44,7 @@ export async function createCombo(data) {
     createdAt: now,
     updatedAt: now,
   };
-  db.run(
+  await qRun(db, 
     `INSERT INTO combos(id, name, kind, models, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
     [combo.id, combo.name, combo.kind, stringifyJson(combo.models), combo.createdAt, combo.updatedAt]
   );
@@ -68,6 +69,6 @@ export async function updateCombo(id, data) {
 
 export async function deleteCombo(id) {
   const db = await getAdapter();
-  const res = db.run(`DELETE FROM combos WHERE id = ?`, [id]);
+  const res = await qRun(db, `DELETE FROM combos WHERE id = ?`, [id]);
   return (res?.changes ?? 0) > 0;
 }

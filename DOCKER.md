@@ -6,7 +6,7 @@ Run ebRouter in a container. Build from the included `Dockerfile` (multi-platfor
 
 # 👤 For Users
 
-## Quick start
+## Quick start (SQLite file in volume)
 
 ```bash
 docker run -d \
@@ -18,6 +18,23 @@ docker run -d \
 ```
 
 App listens on port `20128`. Open: http://localhost:20128
+
+## Quick start (PostgreSQL)
+
+For production-style deployments, use the included Compose stack (app + Postgres):
+
+```bash
+# Set a stable encryption key (recommended)
+export MASTER_KEY="$(openssl rand -base64 32)"
+
+docker compose up -d --build
+```
+
+- App: http://localhost:20128  
+- Data: PostgreSQL volume `pgdata` (via `DATABASE_URL` in compose)  
+- Certs/logs: `ebrouter_data` volume under `/app/data`
+
+**Testing guide:** [docs/POSTGRESQL_TESTING.md](docs/POSTGRESQL_TESTING.md)
 
 ## Manage container
 

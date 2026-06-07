@@ -52,7 +52,31 @@ async function trySqlJs() {
   }
 }
 
+async function tryPostgres() {
+  const url = process.env.DATABASE_URL?.trim();
+  if (!url) return null;
+  try {
+    const { createPostgresAdapter } = await import("./adapters/postgresAdapter.js");
+    const adapter = await createPostgresAdapter(url);
+    return adapter;
+  } catch (e) {
+    console.warn(`[DB] PostgreSQL (DATABASE_URL) unavailable: ${e.message}`);
+    return null;
+  }
+}
+
 async function initAdapter() {
+  const pg = await tryPostgres();
+  if (pg) {
+    if (!state.logged) {
+      console.log(`[DB] Driver: postgres | url: ${process.env.DATABASE_URL?.replace(/:[^:@/]+@/, ":***@")}`);
+      state.logged = true;
+    }
+    const { runMigrationOnce } = await import("./migrate.js");
+    await runMigrationOnce(pg);
+    return pg;
+  }
+
   ensureDirs();
   // Order per runtime:
   //   Bun:  bun:sqlite → sql.js

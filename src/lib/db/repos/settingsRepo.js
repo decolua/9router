@@ -1,5 +1,15 @@
+import { qGet, qRun } from "../query.js";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { parseEncryptedJson, stringifyEncryptedJson } from "../helpers/encryptedJsonCol.js";
+import { isMasterKeyConfigured } from "../../crypto/masterKey.js";
+
+function readSettingsData(raw) {
+  return isMasterKeyConfigured() ? parseEncryptedJson(raw, {}) : parseJson(raw, {});
+}
+function writeSettingsData(value) {
+  return isMasterKeyConfigured() ? stringifyEncryptedJson(value) : stringifyJson(value);
+}
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 
@@ -42,8 +52,8 @@ const DEFAULT_SETTINGS = {
 
 async function readRaw() {
   const db = await getAdapter();
-  const row = db.get(`SELECT data FROM settings WHERE id = 1`);
-  return row ? parseJson(row.data, {}) : {};
+  const row = await qGet(db, `SELECT data FROM settings WHERE id = 1`);
+  return row ? readSettingsData(row.data) : {};
 }
 
 // Merge raw settings with defaults; backward-compat for missing keys
@@ -76,11 +86,11 @@ export async function updateSettings(updates) {
   let next;
   db.transaction(() => {
     const row = db.get(`SELECT data FROM settings WHERE id = 1`);
-    const current = row ? parseJson(row.data, {}) : {};
+    const current = row ? readSettingsData(row.data) : {};
     next = { ...current, ...updates };
     db.run(
       `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
-      [stringifyJson(next)]
+      [writeSettingsData(next)]
     );
   });
   return mergeWithDefaults(next);
