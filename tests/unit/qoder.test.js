@@ -15,7 +15,12 @@ import crypto from "crypto";
 import { qoderEncodeBody } from "../../src/lib/qoder/encoding.js";
 import { buildCosyHeaders } from "../../src/lib/qoder/cosy.js";
 import { QoderService } from "../../src/lib/oauth/services/qoder.js";
-import { QODER_CHAT_URL_ENCODED, QODER_MODEL_LIST_URL } from "../../src/lib/qoder/constants.js";
+import {
+  QODER_CHAT_URL_ENCODED,
+  QODER_MODEL_LIST_URL,
+  QODER_MODEL_MAP,
+} from "../../src/lib/qoder/constants.js";
+import { PROVIDER_MODELS } from "../../open-sse/config/providerModels.js";
 import { __test__ as qoderExecutorInternals } from "../../open-sse/executors/qoder.js";
 
 // Convenience aliases — tests were originally written against module-level
@@ -24,6 +29,16 @@ import { __test__ as qoderExecutorInternals } from "../../open-sse/executors/qod
 const generatePkcePair = () => new QoderService().generatePkcePair();
 const initiateDeviceFlow = () => new QoderService().initiateDeviceFlow();
 const parseExpiry = QoderService.parseExpiry;
+
+describe("QODER_MODEL_MAP", () => {
+  it("allows Qoder's latest model key", () => {
+    expect(QODER_MODEL_MAP.qmodel_latest).toBe("qmodel_latest");
+  });
+
+  it("exposes Qoder's latest model in the static provider catalog", () => {
+    expect(PROVIDER_MODELS.qd.some((model) => model.id === "qmodel_latest")).toBe(true);
+  });
+});
 
 describe("qoderEncodeBody", () => {
   it("preserves base64 length (input length divisible by 3)", () => {

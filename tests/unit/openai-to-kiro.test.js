@@ -143,4 +143,141 @@ describe("buildKiroPayload", () => {
       expect(currentMsg.userInputMessage.content).toContain("[Image: https://example.com/photo.jpg]");
     });
   });
+
+  describe("tool interaction without client-provided tools", () => {
+    // When the client omits `tools` (e.g. after compaction), structured tool
+    // content must be flattened to text so Kiro's "tools required" 400 never
+    // fires and no phantom tool-calling capability is advertised.
+
+    it("should flatten OpenAI tool_calls + tool result into history text with no tools array", () => {
+      const body = {
+        messages: [
+          { role: "user", content: "Read the file" },
+          {
+            role: "assistant",
+            content: null,
+            tool_calls: [
+              { id: "call_1", type: "function", function: { name: "read_file", arguments: '{"path":"a.txt"}' } }
+            ]
+          },
+          { role: "tool", tool_call_id: "call_1", content: "file contents here" },
+          { role: "user", content: "Summarize it" }
+        ]
+        // note: no `tools`
+      };
+
+      const result = buildKiroPayload("claude-sonnet-4.6", body, true, {});
+      const cs = result.conversationState;
+
+      // No structured tool content anywhere
+      expect(cs.currentMessage.userInputMessage.userInputMessageContext).toBeUndefined();
+      const allJson = JSON.stringify(cs);
+      expect(allJson).not.toContain("toolUses");
+      expect(allJson).not.toContain("toolResults");
+
+      // Tool call + result preserved as readable text (call lands in history,
+      // result merges into the final currentMessage — assert across both)
+      expect(allJson).toContain("[Tool call: read_file(");
+      expect(allJson).toContain("[Tool result: file contents here]");
+    });
+
+    it("should flatten Claude tool_use / tool_result blocks with no tools array", () => {
+      const body = {
+        messages: [
+          { role: "user", content: "Do it" },
+          {
+            role: "assistant",
+            content: [
+              { type: "text", text: "Calling tool" },
+              { type: "tool_use", id: "tu_1", name: "search", input: { q: "kiro" } }
+            ]
+          },
+          {
+            role: "user",
+            content: [
+              { type: "tool_result", tool_use_id: "tu_1", content: "result text" }
+            ]
+          }
+        ]
+      };
+
+      const result = buildKiroPayload("claude-sonnet-4.6", body, true, {});
+      const cs = result.conversationState;
+
+      const allJson = JSON.stringify(cs);
+      expect(allJson).not.toContain("toolUses");
+      expect(allJson).not.toContain("toolResults");
+      expect(allJson).toContain("[Tool call: search(");
+      expect(allJson).toContain("[Tool result: result text]");
+    });
+
+    it("should keep structured tools when the client DOES provide a tools array", () => {
+      const body = {
+        messages: [
+          { role: "user", content: "Read the file" },
+          {
+            role: "assistant",
+            content: null,
+            tool_calls: [
+              { id: "call_1", type: "function", function: { name: "read_file", arguments: '{"path":"a.txt"}' } }
+            ]
+          },
+          { role: "tool", tool_call_id: "call_1", content: "file contents here" },
+          { role: "user", content: "Summarize it" }
+        ],
+        tools: [
+          {
+            type: "function",
+            function: { name: "read_file", description: "Read a file", parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } }
+          }
+        ]
+      };
+
+      const result = buildKiroPayload("claude-sonnet-4.6", body, true, {});
+      const cs = result.conversationState;
+
+      // Structured tool spec carried on currentMessage
+      const tools = cs.currentMessage.userInputMessage.userInputMessageContext?.tools;
+      expect(tools).toBeDefined();
+      expect(tools[0].toolSpecification.name).toBe("read_file");
+
+      // Structured tool history preserved (not flattened to text)
+      const allJson = JSON.stringify(cs);
+      expect(allJson).toContain("toolUses");
+      expect(allJson).not.toContain("[Tool call:");
+    });
+
+    it("should salvage orphaned tool_result content as text instead of discarding it", () => {
+      // Client provides tools, but compaction removed the assistant tool_use
+      // message, leaving a tool_result whose tool_use_id matches nothing.
+      const body = {
+        messages: [
+          { role: "user", content: "Start" },
+          // (assistant tool_use for "orphan_call" was compacted away)
+          {
+            role: "user",
+            content: [
+              { type: "tool_result", tool_use_id: "orphan_call", content: "important orphaned output" }
+            ]
+          },
+          { role: "user", content: "Now continue" }
+        ],
+        tools: [
+          {
+            type: "function",
+            function: { name: "some_tool", description: "x", parameters: { type: "object", properties: {}, required: [] } }
+          }
+        ]
+      };
+
+      const result = buildKiroPayload("claude-sonnet-4.6", body, true, {});
+      const cs = result.conversationState;
+      const allJson = JSON.stringify(cs);
+
+      // The dangling structured reference is gone (would trigger Kiro 400)...
+      expect(allJson).not.toContain("orphan_call");
+      // ...but the content is preserved as salvaged text, not discarded.
+      expect(allJson).toContain("[Tool result: important orphaned output]");
+    });
+  });
 });

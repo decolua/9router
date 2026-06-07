@@ -277,6 +277,27 @@ export async function refreshQwenToken(refreshToken, log) {
   }, log);
 }
 
+export function classifyOAuthRefreshError(errorText = "", status = 0) {
+  let parsed = null;
+  try {
+    parsed = errorText ? JSON.parse(errorText) : null;
+  } catch {
+    parsed = null;
+  }
+
+  const code = parsed?.error?.code || parsed?.error || parsed?.error_code || "";
+  const description = parsed?.error_description || parsed?.message || errorText || "";
+  const combined = `${code} ${description}`.toLowerCase();
+  const permanent = [
+    "refresh_token_expired",
+    "refresh_token_reused",
+    "refresh_token_invalidated",
+    "invalid_grant",
+  ].some((marker) => combined.includes(marker));
+
+  return { status, code, description, permanent };
+}
+
 /**
  * Specialized refresh for Codex (OpenAI) OAuth tokens.
  * OpenAI uses rotating (one-time-use) refresh tokens.
@@ -286,68 +307,59 @@ export async function refreshQwenToken(refreshToken, log) {
 export async function refreshCodexToken(refreshToken, log) {
   if (!refreshToken) return null;
   return dedupRefresh("codex", refreshToken, async () => {
-  try {
-  const response = await fetch(OAUTH_ENDPOINTS.openai.token, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Accept: "application/json",
-    },
-    body: new URLSearchParams({
-      grant_type: "refresh_token",
-      refresh_token: refreshToken,
-      client_id: PROVIDERS.codex.clientId,
-      scope: "openid profile email offline_access",
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-
-    // Detect unrecoverable errors (token reused/expired) — Auth0 revokes whole family on retry
-    let errorCode = null;
     try {
-      const parsed = JSON.parse(errorText);
-      errorCode = parsed?.error?.code || (typeof parsed?.error === "string" ? parsed.error : null);
-    } catch {}
-
-    if (
-      errorCode === "refresh_token_reused" ||
-      errorCode === "invalid_grant" ||
-      errorCode === "token_expired" ||
-      errorCode === "invalid_token"
-    ) {
-      log?.error?.("TOKEN_REFRESH", "Codex refresh token already used or invalid. Re-auth required.", {
-        status: response.status,
-        errorCode,
+      const response = await fetch(OAUTH_ENDPOINTS.openai.token, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          client_id: PROVIDERS.codex.clientId,
+          grant_type: "refresh_token",
+          refresh_token: refreshToken,
+        }),
       });
-      return { error: "unrecoverable_refresh_error", code: errorCode };
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        const failure = classifyOAuthRefreshError(errorText, response.status);
+        if (failure.permanent) {
+          log?.error?.("TOKEN_REFRESH", "Codex refresh token already used or invalid. Re-auth required.", {
+            status: response.status,
+            code: failure.code,
+          });
+          return { error: "unrecoverable_refresh_error", code: failure.code };
+        }
+
+        log?.error?.("TOKEN_REFRESH", "Failed to refresh Codex token", {
+          status: response.status,
+          error: errorText,
+          code: failure.code,
+          permanent: failure.permanent,
+        });
+        return null;
+      }
+
+      const tokens = await response.json();
+
+      log?.info?.("TOKEN_REFRESH", "Successfully refreshed Codex token", {
+        hasNewAccessToken: !!tokens.access_token,
+        hasNewRefreshToken: !!tokens.refresh_token,
+        hasIdToken: !!tokens.id_token,
+        expiresIn: tokens.expires_in,
+      });
+
+      return {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token || refreshToken,
+        idToken: tokens.id_token,
+        expiresIn: tokens.expires_in,
+      };
+    } catch (error) {
+      log?.error?.("TOKEN_REFRESH", `Network error refreshing Codex token: ${error.message}`);
+      return null;
     }
-
-    log?.error?.("TOKEN_REFRESH", "Failed to refresh Codex token", {
-      status: response.status,
-      error: errorText,
-    });
-    return null;
-  }
-
-  const tokens = await response.json();
-
-  log?.info?.("TOKEN_REFRESH", "Successfully refreshed Codex token", {
-    hasNewAccessToken: !!tokens.access_token,
-    hasNewRefreshToken: !!tokens.refresh_token,
-    expiresIn: tokens.expires_in,
-  });
-
-  return {
-    accessToken: tokens.access_token,
-    refreshToken: tokens.refresh_token || refreshToken,
-    expiresIn: tokens.expires_in,
-  };
-  } catch (error) {
-    log?.error?.("TOKEN_REFRESH", `Network error refreshing Codex token: ${error.message}`);
-    return null;
-  }
   }, log);
 }
 

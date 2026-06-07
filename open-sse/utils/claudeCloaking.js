@@ -35,13 +35,16 @@ export function cloakClaudeTools(body) {
   const tools = body.tools;
   if (!tools || tools.length === 0) return { body, toolNameMap: null };
 
+  const suffix = (name) => `${name}${CLAUDE_TOOL_SUFFIX}`;
   const toolNameMap = new Map();
+  const clientToolNames = new Set();
   const clientDeclarations = [];
 
   // All client tools get renamed with suffix
   for (const tool of tools) {
-    const suffixed = `${tool.name}${CLAUDE_TOOL_SUFFIX}`;
+    const suffixed = suffix(tool.name);
     toolNameMap.set(suffixed, tool.name);
+    clientToolNames.add(tool.name);
     clientDeclarations.push({ ...tool, name: suffixed });
   }
 
@@ -51,17 +54,27 @@ export function cloakClaudeTools(body) {
   // Rename tool_use in message history (all client tools get suffix)
   const renamedMessages = body.messages?.map(msg => {
     if (!Array.isArray(msg.content)) return msg;
-    const renamedContent = msg.content.map(block => {
-      if (block.type === "tool_use") {
-        return { ...block, name: `${block.name}${CLAUDE_TOOL_SUFFIX}` };
-      }
-      return block;
-    });
+    const renamedContent = msg.content.map(block =>
+      block.type === "tool_use" ? { ...block, name: suffix(block.name) } : block
+    );
     return { ...msg, content: renamedContent };
   });
 
+  const cloakedBody = { ...body, tools: allTools, messages: renamedMessages || body.messages };
+
+  // A forced tool_choice ({ type: "tool", name }) must point at the suffixed
+  // tool name, otherwise Claude rejects it: "Tool '<name>' not found in provided tools".
+  // Only rewrite when the choice targets one of the client tools we actually
+  // renamed — never a decoy/built-in name (those are sent unsuffixed).
+  if (
+    body.tool_choice?.type === "tool" &&
+    clientToolNames.has(body.tool_choice.name)
+  ) {
+    cloakedBody.tool_choice = { ...body.tool_choice, name: suffix(body.tool_choice.name) };
+  }
+
   return {
-    body: { ...body, tools: allTools, messages: renamedMessages || body.messages },
+    body: cloakedBody,
     toolNameMap: toolNameMap.size > 0 ? toolNameMap : null
   };
 }

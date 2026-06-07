@@ -190,5 +190,6 @@
   "Sudo Password": "Sudo-salasana",
   "Click to add, click again to remove. Changes are saved automatically.": "Napsauta lisätäksesi, napsauta uudelleen poistaaksesi. Muutokset tallennetaan automaattisesti.",
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ Riski-ilmoitus: Tämä palveluntarjoaja käyttää tilaus-/OAuth-istuntoa, jota ei ole virallisesti lisensoitu välityspalvelin-/reititinkäyttöön. Tili voidaan rajoittaa tai estää. Käyttö omalla vastuulla.",
-  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM sieppaa IDE-työkalujen (Antigravity, GitHub Copilot, Kiro) HTTPS-liikennettä paikallisen CA:n kautta uudelleenohjatakseen pyyntöjä palveluntarjoajillesi. Voi rikkoa ToS:ää → tilin estoriski. Käyttö omalla vastuulla."
+  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM sieppaa IDE-työkalujen (Antigravity, GitHub Copilot, Kiro) HTTPS-liikennettä paikallisen CA:n kautta uudelleenohjatakseen pyyntöjä palveluntarjoajillesi. Voi rikkoa ToS:ää → tilin estoriski. Käyttö omalla vastuulla.",
+  "Endpoint is exposed without an API key.": "Päätepiste on alttiina ilman API-avainta."
 }

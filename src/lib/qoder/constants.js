@@ -46,6 +46,7 @@ export const QODER_MODEL_MAP = {
   lite: "lite",
   // Frontier models
   qmodel: "qmodel",
+  qmodel_latest: "qmodel_latest",
   dmodel: "dmodel",
   dfmodel: "dfmodel",
   gm51model: "gm51model",
