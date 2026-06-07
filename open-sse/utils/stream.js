@@ -206,7 +206,18 @@ export function createSSEStream(options = {}) {
         }
 
         // Translate mode
-        if (!trimmed) continue;
+        // Responses API SSE: buffer "event:" lines (Codex uses multi-line format "event:\ndata:\n\n")
+        // parseSSELine only reads "data:" lines → "event:" lines get dropped → event type lost during translate
+        if (trimmed.startsWith("event:")) {
+          if (state) state._lastEventType = trimmed.slice(6).trim();
+          // When both formats are OPENAI_RESPONSES → forward event line as-is
+          if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
+            const output = line + "\n";
+            reqLogger?.appendConvertedChunk?.(output);
+            controller.enqueue(sharedEncoder.encode(output));
+          }
+          continue;
+        }
 
         const parsed = parseSSELine(trimmed, targetFormat);
         if (!parsed) continue;
