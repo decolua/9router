@@ -90,7 +90,62 @@ export class KiroExecutor extends BaseExecutor {
       hasReasoningContent: false,
       reasoningChunkCount: 0,
       toolCallIndex: 0,
-      seenToolIds: new Map()
+      seenToolIds: new Map(),
+      toolBuffers: new Map(),
+      toolArgsFlushed: false
+    };
+
+    // Emit buffered tool-call arguments once the response is finishing.
+    // Kiro (AWS CodeWhisperer) can abort the stream mid tool-call when the
+    // tool input exceeds its output limit, leaving the arguments JSON
+    // truncated. Streaming those partial bytes makes clients (e.g. kilo)
+    // reject the call with an opaque "Invalid Tool" error. Instead we buffer
+    // the input, validate it here, and substitute a well-formed JSON payload
+    // carrying an explicit error when the original was truncated. Idea
+    // borrowed from Krouter (src/main/proxy/kiroApi.ts).
+    const flushToolBuffers = (controller) => {
+      if (state.toolArgsFlushed) return;
+      state.toolArgsFlushed = true;
+
+      for (const [toolCallId, entry] of state.toolBuffers) {
+        const raw = entry.buffer || "";
+        let argumentsStr;
+
+        if (!raw) {
+          argumentsStr = "{}";
+        } else {
+          try {
+            JSON.parse(raw);
+            argumentsStr = raw;
+          } catch {
+            console.warn(`[Kiro] Tool input truncated by Kiro API (output token limit exceeded) | tool: ${toolCallId} | partial: ${raw.substring(0, 100)}`);
+            argumentsStr = JSON.stringify({
+              _error: "Tool input truncated by Kiro API (output token limit exceeded)",
+              _partialInput: raw.substring(0, 500)
+            });
+          }
+        }
+
+        const argsChunk = {
+          id: responseId,
+          object: "chat.completion.chunk",
+          created,
+          model,
+          choices: [{
+            index: 0,
+            delta: {
+              tool_calls: [{
+                index: entry.index,
+                function: {
+                  arguments: argumentsStr
+                }
+              }]
+            },
+            finish_reason: null
+          }]
+        };
+        controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(argsChunk)}\n\n`));
+      }
     };
 
     const transformStream = new TransformStream({
@@ -243,43 +298,29 @@ export class KiroExecutor extends BaseExecutor {
                 toolIndex = state.seenToolIds.get(toolCallId);
               }
 
+              if (!state.toolBuffers.has(toolCallId)) {
+                state.toolBuffers.set(toolCallId, { index: toolIndex, buffer: "" });
+              }
+
+              // Buffer the tool input instead of streaming it straight through.
+              // Kiro delivers the input either as incremental string fragments
+              // or as a complete object. We accumulate it and emit the
+              // validated arguments once in flushToolBuffers() at finish time.
               if (toolInput !== undefined) {
-                let argumentsStr;
+                const entry = state.toolBuffers.get(toolCallId);
 
                 if (typeof toolInput === 'string') {
-                  argumentsStr = toolInput;
+                  entry.buffer += toolInput;
                 } else if (typeof toolInput === 'object') {
-                  argumentsStr = JSON.stringify(toolInput);
-                } else {
-                  continue;
+                  entry.buffer = JSON.stringify(toolInput);
                 }
-
-                const argsChunk = {
-                  id: responseId,
-                  object: "chat.completion.chunk",
-                  created,
-                  model,
-                  choices: [{
-                    index: 0,
-                    delta: {
-                      tool_calls: [{
-                        index: toolIndex,
-                        function: {
-                          arguments: argumentsStr
-                        }
-                      }]
-                    },
-                    finish_reason: null
-                  }]
-                };
-                chunkIndex++;
-                controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(argsChunk)}\n\n`));
               }
             }
           }
 
           // Handle messageStopEvent
           if (eventType === "messageStopEvent") {
+            flushToolBuffers(controller);
             const chunk = {
               id: responseId,
               object: "chat.completion.chunk",
@@ -328,6 +369,7 @@ export class KiroExecutor extends BaseExecutor {
           // Emit final chunk only after receiving BOTH meteringEvent AND contextUsageEvent
           if (state.hasMeteringEvent && state.hasContextUsage && !state.finishEmitted) {
             state.finishEmitted = true;
+            flushToolBuffers(controller);
             
             // Estimate tokens if not available from events
             if (!state.usage) {
@@ -376,6 +418,11 @@ export class KiroExecutor extends BaseExecutor {
       },
 
       flush(controller) {
+        // Stream ended. If Kiro aborted mid tool-call (no messageStop /
+        // metering event fired), this is the only place the buffered tool
+        // arguments get validated and emitted, so always flush here first.
+        flushToolBuffers(controller);
+
         // Emit finish chunk if not already sent
         if (!state.finishEmitted) {
           state.finishEmitted = true;
