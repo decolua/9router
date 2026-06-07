@@ -20,14 +20,23 @@ const TAILSCALE_DIR = path.join(DATA_DIR, "tailscale");
 export const TAILSCALE_SOCKET = path.join(TAILSCALE_DIR, "tailscaled.sock");
 const SOCKET_FLAG = IS_WINDOWS ? [] : ["--socket", TAILSCALE_SOCKET];
 
+// System daemon socket (requires sudo install, lives in /var/run)
+const SYSTEM_TAILSCALE_SOCKET = IS_WINDOWS ? null : "/var/run/tailscale/tailscaled.sock";
+const SYSTEM_SOCKET_FLAG = IS_WINDOWS ? [] : SYSTEM_TAILSCALE_SOCKET ? ["--socket", SYSTEM_TAILSCALE_SOCKET] : [];
+
 // Well-known Windows install path
 const WINDOWS_TAILSCALE_BIN = "C:\\Program Files\\Tailscale\\tailscale.exe";
 
 // Common Unix install paths to probe synchronously (system tailscale)
+// - /usr/sbin/tailscale: official Tailscale apt package (Debian/Ubuntu)
+// - /snap/bin/tailscale: Snap package
+// - /Applications/Tailscale.app/Contents/MacOS/Tailscale: macOS App Store (CLI wrapper)
 const UNIX_TAILSCALE_CANDIDATES = [
   "/usr/local/bin/tailscale",
   "/opt/homebrew/bin/tailscale",
+  "/usr/sbin/tailscale",   // apt package on Debian/Ubuntu
   "/usr/bin/tailscale",
+  "/snap/bin/tailscale",   // Snap package
 ];
 
 // ─── Cache + background refresh (avoid blocking event loop on dead daemon) ──
@@ -49,7 +58,7 @@ function bgRefreshBin() {
   if (binCache.refreshing) return;
   binCache.refreshing = true;
   const cmd = IS_WINDOWS ? "where tailscale 2>nul" : "which tailscale 2>/dev/null";
-  execAsync(cmd, { windowsHide: true, timeout: PROBE_TIMEOUT_MS })
+  execAsync(cmd, { windowsHide: true, timeout: PROBE_TIMEOUT_MS, env: { ...process.env, PATH: EXTENDED_PATH } })
     .then(({ stdout }) => {
       const sys = stdout.trim();
       binCache.value = sys || fallbackBin();
@@ -62,7 +71,13 @@ function bgRefreshBin() {
 }
 
 // Sync getter: returns cached value, triggers background refresh if stale
-function getTailscaleBin() {
+/**
+ * Find the tailscale binary. Returns an absolute path or null.
+ * Uses three strategies: cached value, background refresh, synchronous fallback.
+ * 9Router uses a custom socket (--socket ~/.9router/tailscale/tailscaled.sock) for
+ * user-space isolation — this does NOT affect binary detection, which is path-only.
+ */
+export function getTailscaleBin() {
   if (Date.now() - binCache.fetchedAt > PROBE_TTL_MS) bgRefreshBin();
   // First call: synchronously probe common install paths (no exec, no event-loop block)
   if (binCache.value === undefined) {
@@ -85,22 +100,33 @@ function tsArgs(...args) {
   return [...SOCKET_FLAG, ...args];
 }
 
+/**
+ * Probe `tailscale status --json` trying both custom and system sockets.
+ * Returns parsed JSON on success, null on failure.
+ * Custom socket (9Router's userspace daemon) is always tried first.
+ */
+function probeStatus(bin) {
+  const sockets = [SOCKET_FLAG, SYSTEM_SOCKET_FLAG];
+  for (const socketArgs of sockets) {
+    try {
+      const out = execSync(`"${bin}" ${socketArgs.join(" ")} status --json`, {
+        encoding: "utf8",
+        windowsHide: true,
+        env: { ...process.env, PATH: EXTENDED_PATH },
+        timeout: PROBE_TIMEOUT_MS,
+      });
+      return JSON.parse(out);
+    } catch { }
+  }
+  return null;
+}
+
 export function isTailscaleLoggedIn() {
   const bin = getTailscaleBin();
   if (!bin) return false;
-  try {
-    const out = execSync(`"${bin}" ${SOCKET_FLAG.join(" ")} status --json`, {
-      encoding: "utf8",
-      windowsHide: true,
-      env: { ...process.env, PATH: EXTENDED_PATH },
-      timeout: 5000
-    });
-    const json = JSON.parse(out);
-    // BackendState=Running + Self.Online=true → device still exists in tailnet
-    return json.BackendState === "Running" && json.Self?.Online === true;
-  } catch (e) {
-    return false;
-  }
+  const json = probeStatus(bin);
+  if (!json) return false;
+  return json.BackendState === "Running" && json.Self?.Online === true;
 }
 
 function bgRefreshRunning() {
@@ -149,6 +175,26 @@ export function isTailscaleRunningStrict() {
     runningCache.value = running;
     runningCache.fetchedAt = Date.now();
     return running;
+  } catch {
+    return false;
+  }
+}
+
+/** Check if a system-level tailscaled is running (uses system socket, not 9Router's custom one). */
+export function isSystemDaemonRunning() {
+  if (IS_WINDOWS || !SYSTEM_TAILSCALE_SOCKET) return false;
+  if (!fs.existsSync(SYSTEM_TAILSCALE_SOCKET)) return false;
+  const bin = getTailscaleBin();
+  if (!bin) return false;
+  try {
+    const out = execSync(`"${bin}" ${SYSTEM_SOCKET_FLAG.join(" ")} status --json`, {
+      encoding: "utf8",
+      windowsHide: true,
+      env: { ...process.env, PATH: EXTENDED_PATH },
+      timeout: PROBE_TIMEOUT_MS,
+    });
+    const json = JSON.parse(out);
+    return json.BackendState === "Running";
   } catch {
     return false;
   }
@@ -222,7 +268,7 @@ export async function installTailscale(sudoPassword, hostname, onProgress) {
   return startLogin(hostname);
 }
 
-const EXTENDED_PATH = `/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:${process.env.PATH || ""}`;
+const EXTENDED_PATH = `/usr/local/bin:/opt/homebrew/bin:/usr/sbin:/usr/bin:/bin:/snap/bin:${process.env.PATH || ""}`;
 
 function hasBrew() {
   try { execSync("which brew", { stdio: "ignore", windowsHide: true, env: { ...process.env, PATH: EXTENDED_PATH } }); return true; } catch { return false; }

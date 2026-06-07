@@ -29,6 +29,8 @@ export {
   isTailscaleRunning,
   isTailscaleRunningStrict,
   isTailscaleLoggedIn,
+  isSystemDaemonRunning,
+  getTailscaleBin,
   installTailscale,
   startLogin,
   startDaemonWithPassword,
