@@ -19,6 +19,17 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
   const isDroidCLI = userAgent?.toLowerCase().includes("droid") || userAgent?.toLowerCase().includes("codex-cli");
   const needsCodexTranslation = provider === "codex" && targetFormat === FORMATS.OPENAI_RESPONSES && !isDroidCLI;
 
+  // The Kiro executor (executors/kiro.js) already converts the AWS EventStream
+  // response into OpenAI-shaped SSE before it reaches this stage. The provider
+  // format is still "kiro", so needsTranslation(kiro, openai) would (wrongly)
+  // re-translate already-OpenAI chunks here, mangling them and dropping the
+  // finish chunk + [DONE] terminator (clients then hang). Treat the
+  // post-executor target as OpenAI so translation/passthrough is chosen against
+  // the real shape of the data.
+  if (provider === "kiro") {
+    targetFormat = FORMATS.OPENAI;
+  }
+
   if (needsCodexTranslation) {
     // Codex returns Responses API SSE → translate to client format
     let codexTarget;

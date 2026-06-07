@@ -31,8 +31,12 @@ export const MEMORY_CONFIG = {
   proxyDispatchersMaxSize: 20,
 };
 
-// Stream stall timeout: abort if no chunk received within this duration
-export const STREAM_STALL_TIMEOUT_MS = 30 * 1000;
+// Stream stall timeout: abort if no chunk received within this duration.
+// Kiro/Claude can pause well over 30s mid-stream while generating a large
+// tool-call argument (e.g. a big file body) before emitting the next chunk;
+// too tight a timeout aborts those legitimate long writes and drops the
+// finish chunk + [DONE], hanging the client. 180s tolerates these pauses.
+export const STREAM_STALL_TIMEOUT_MS = 180 * 1000;
 
 // Fetch connect timeout: abort if upstream doesn't return response headers within this duration
 export const FETCH_CONNECT_TIMEOUT_MS = 20 * 1000;
