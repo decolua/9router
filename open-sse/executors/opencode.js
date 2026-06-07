@@ -1,6 +1,7 @@
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
+import { getModelUpstreamId } from "../config/providerModels.js";
 
 // Models that use /zen/v1/messages (claude format)
 const MESSAGES_MODELS = new Set();
@@ -28,5 +29,11 @@ export class OpenCodeExecutor extends BaseExecutor {
       "x-opencode-client": "desktop",
       "Accept": "text/event-stream"
     };
+  }
+
+  async execute(options) {
+    const upstreamModel = getModelUpstreamId("oc", options.model) || options.model;
+    options.body.model = upstreamModel;
+    return super.execute(options);
   }
 }
