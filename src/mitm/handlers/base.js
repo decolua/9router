@@ -1,6 +1,8 @@
 const { log, err } = require("../logger");
 
 const DEFAULT_LOCAL_ROUTER = "http://localhost:20128";
+const REQUEST_TIMEOUT_MS = 30_000;
+
 const ROUTER_BASE = String(process.env.MITM_ROUTER_BASE || DEFAULT_LOCAL_ROUTER)
   .trim()
   .replace(/\/+$/, "") || DEFAULT_LOCAL_ROUTER;
@@ -24,6 +26,8 @@ async function fetchRouter(openaiBody, path = "/v1/chat/completions", clientHead
 
   const response = await fetch(`${ROUTER_BASE}${path}`, {
     method: "POST",
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+
     headers: {
       ...forwarded,
       "Content-Type": "application/json",

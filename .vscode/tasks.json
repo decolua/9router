@@ -1,0 +1,73 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "🚀 Dev Server",
+      "type": "npm",
+      "script": "dev",
+      "problemMatcher": [],
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "9router"
+      }
+    },
+    {
+      "label": "🏗️ Build",
+      "type": "npm",
+      "script": "build",
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "🔑 Seed Providers",
+      "type": "shell",
+      "command": "node scripts/seed-providers.js",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "🐳 Docker Up",
+      "type": "shell",
+      "command": "docker-compose up --build -d",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "🐳 Docker Down",
+      "type": "shell",
+      "command": "docker-compose down",
+      "problemMatcher": []
+    },
+    {
+      "label": "🐳 Docker Logs",
+      "type": "shell",
+      "command": "docker-compose logs -f app",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "🤖 Ollama Check",
+      "type": "shell",
+      "command": "curl -s http://localhost:11434/api/tags | node -e \"const d=require('fs').readFileSync('/dev/stdin','utf8');const j=JSON.parse(d);console.log('Ollama models:');j.models.forEach(m=>console.log('  - '+m.name))\"",
+      "windows": {
+        "command": "powershell -Command \"try { $r = Invoke-RestMethod -Uri 'http://localhost:11434/api/tags'; Write-Host 'Ollama models:'; $r.models | ForEach-Object { Write-Host ('  - ' + $_.name) } } catch { Write-Host 'Ollama not running. Start with: ollama serve' }\""
+      },
+      "problemMatcher": []
+    }
+  ]
+}

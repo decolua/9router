@@ -50,6 +50,12 @@ export function filterToOpenAIFormat(body) {
         filteredContent.push({ type: "text", text: "" });
       }
       
+      // Flatten text-only arrays to string (join with newline)
+      const textParts = filteredContent.filter(p => p.type === "text");
+      if (textParts.length === filteredContent.length && textParts.length > 0) {
+        return { ...msg, content: textParts.map(p => p.text).join("\n") };
+      }
+      
       return { ...msg, content: filteredContent };
     }
     

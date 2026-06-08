@@ -7,6 +7,7 @@
     "dev": "next dev --webpack --port 20128",
     "build": "next build --webpack",
     "start": "next start",
+    "seed": "node scripts/seed-providers.js",
     "dev:bun": "bun --bun next dev --webpack --port 20128",
     "build:bun": "bun --bun next build --webpack",
     "start:bun": "bun ./.next/standalone/server.js"
@@ -19,6 +20,7 @@
     "@monaco-editor/react": "^4.7.0",
     "@xyflow/react": "^12.10.1",
     "bcryptjs": "^3.0.3",
+    "chalk": "^5.6.2",
     "confbox": "^0.2.4",
     "express": "^5.2.1",
     "fs": "^0.0.1-security",
@@ -48,7 +50,7 @@
   },
   "comment_better_sqlite3": "kept in optionalDependencies so npm install doesn't fail on systems without build tools — sql.js is used as fallback at runtime",
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.1.18",
+    "@tailwindcss/postcss": "^4.3.0",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "postcss": "^8.5.6",

@@ -1,23 +1,37 @@
 /**
  * API utility functions for making HTTP requests
+ * All requests get a default 30s timeout via AbortSignal.
  */
 
 const DEFAULT_HEADERS = {
   "Content-Type": "application/json",
 };
 
+const DEFAULT_TIMEOUT_MS = 30_000;
+
+/**
+ * Build merged options — avoid bug where `options` spreads override `headers`.
+ * Defaults: method, headers, signal (timeout). Caller can override via `options`.
+ */
+function buildOptions(method, options = {}, body) {
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, headers: extraHeaders, ...rest } = options;
+  return {
+    method,
+    headers: { ...DEFAULT_HEADERS, ...extraHeaders },
+    signal: AbortSignal.timeout(timeoutMs),
+    ...body !== undefined ? { body: JSON.stringify(body) } : {},
+    ...rest,
+  };
+}
+
 /**
  * Make a GET request
  * @param {string} url - API endpoint
- * @param {object} options - Fetch options
+ * @param {object} options - Fetch options (headers, signal, etc.)
  * @returns {Promise<object>}
  */
 export async function get(url, options = {}) {
-  const response = await fetch(url, {
-    method: "GET",
-    headers: { ...DEFAULT_HEADERS, ...options.headers },
-    ...options,
-  });
+  const response = await fetch(url, buildOptions("GET", options));
   return handleResponse(response);
 }
 
@@ -29,12 +43,7 @@ export async function get(url, options = {}) {
  * @returns {Promise<object>}
  */
 export async function post(url, data, options = {}) {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { ...DEFAULT_HEADERS, ...options.headers },
-    body: JSON.stringify(data),
-    ...options,
-  });
+  const response = await fetch(url, buildOptions("POST", options, data));
   return handleResponse(response);
 }
 
@@ -46,12 +55,7 @@ export async function post(url, data, options = {}) {
  * @returns {Promise<object>}
  */
 export async function put(url, data, options = {}) {
-  const response = await fetch(url, {
-    method: "PUT",
-    headers: { ...DEFAULT_HEADERS, ...options.headers },
-    body: JSON.stringify(data),
-    ...options,
-  });
+  const response = await fetch(url, buildOptions("PUT", options, data));
   return handleResponse(response);
 }
 
@@ -62,11 +66,7 @@ export async function put(url, data, options = {}) {
  * @returns {Promise<object>}
  */
 export async function del(url, options = {}) {
-  const response = await fetch(url, {
-    method: "DELETE",
-    headers: { ...DEFAULT_HEADERS, ...options.headers },
-    ...options,
-  });
+  const response = await fetch(url, buildOptions("DELETE", options));
   return handleResponse(response);
 }
 
@@ -90,4 +90,3 @@ async function handleResponse(response) {
 
 const api = { get, post, put, del };
 export default api;
-

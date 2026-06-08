@@ -1,0 +1,55 @@
+name: 9router
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    ports:
+      - "20128:20128"
+    environment:
+      - NODE_ENV=production
+      - PORT=20128
+      - HOSTNAME=0.0.0.0
+      - NEXT_TELEMETRY_DISABLED=1
+      # Ollama на хост-машине — доступ из контейнера
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      # Memory limit для Node
+      - NODE_OPTIONS=--max-old-space-size=2048 --enable-source-maps
+    env_file:
+      # Ключи провайдеров из .env файла (если есть)
+      - path: .env
+        required: false
+    extra_hosts:
+      # Для Linux: host.docker.internal → хост-машина
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Данные провайдеров, БД — персистентность между перезапусками
+      - 9router-data:/app/.next/standalone/data-home
+      - 9router-logs:/app/.9router/logs
+    restart: unless-stopped
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:20128/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2"
+        reservations:
+          memory: 512M
+          cpus: "1"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  9router-data:
+  9router-logs:

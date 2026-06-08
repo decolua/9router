@@ -44,6 +44,7 @@ async function getGitHubUsage(accessToken, providerSpecificData) {
     }
 
     const response = await fetch("https://api.github.com/copilot_internal/user", {
+      signal: AbortSignal.timeout(15_000),
       headers: {
         Authorization: `Bearer ${copilotToken}`,
         Accept: "application/json",
@@ -122,6 +123,7 @@ async function getGeminiUsage(accessToken) {
     const response = await fetch(
       "https://cloudresourcemanager.googleapis.com/v1/projects?filter=lifecycleState:ACTIVE",
       {
+        signal: AbortSignal.timeout(15_000),
         headers: {
           Authorization: `Bearer ${accessToken}`,
           Accept: "application/json",
