@@ -36,6 +36,7 @@ const PROBE_TIMEOUT_MS = 1500;
 
 const binCache = { value: undefined, fetchedAt: 0, refreshing: false };
 const runningCache = { value: false, fetchedAt: 0, refreshing: false };
+const loggedInCache = { value: false, fetchedAt: 0, refreshing: false };
 const funnelUrlCache = { value: null, port: null, fetchedAt: 0, refreshing: false };
 
 function fallbackBin() {
@@ -85,22 +86,54 @@ function tsArgs(...args) {
   return [...SOCKET_FLAG, ...args];
 }
 
-export function isTailscaleLoggedIn() {
+// Async strict probe: authoritative, awaitable (never blocks event loop). Updates cache.
+export async function isTailscaleLoggedInStrict() {
   const bin = getTailscaleBin();
   if (!bin) return false;
   try {
-    const out = execSync(`"${bin}" ${SOCKET_FLAG.join(" ")} status --json`, {
-      encoding: "utf8",
+    const { stdout } = await execAsync(`"${bin}" ${SOCKET_FLAG.join(" ")} status --json`, {
       windowsHide: true,
       env: { ...process.env, PATH: EXTENDED_PATH },
       timeout: 5000
     });
-    const json = JSON.parse(out);
+    const json = JSON.parse(stdout);
     // BackendState=Running + Self.Online=true → device still exists in tailnet
-    return json.BackendState === "Running" && json.Self?.Online === true;
-  } catch (e) {
+    const loggedIn = json.BackendState === "Running" && json.Self?.Online === true;
+    loggedInCache.value = loggedIn;
+    loggedInCache.fetchedAt = Date.now();
+    return loggedIn;
+  } catch {
     return false;
   }
+}
+
+function bgRefreshLoggedIn() {
+  if (loggedInCache.refreshing) return;
+  const bin = getTailscaleBin();
+  if (!bin) {
+    loggedInCache.value = false;
+    loggedInCache.fetchedAt = Date.now();
+    return;
+  }
+  loggedInCache.refreshing = true;
+  execAsync(`"${bin}" ${SOCKET_FLAG.join(" ")} status --json`, { windowsHide: true, env: { ...process.env, PATH: EXTENDED_PATH }, timeout: PROBE_TIMEOUT_MS })
+    .then(({ stdout }) => {
+      try {
+        const json = JSON.parse(stdout);
+        loggedInCache.value = json.BackendState === "Running" && json.Self?.Online === true;
+      } catch { loggedInCache.value = false; }
+    })
+    .catch(() => { loggedInCache.value = false; })
+    .finally(() => {
+      loggedInCache.fetchedAt = Date.now();
+      loggedInCache.refreshing = false;
+    });
+}
+
+// Sync getter: never blocks; returns last known state, refreshes in background
+export function isTailscaleLoggedIn() {
+  if (Date.now() - loggedInCache.fetchedAt > PROBE_TTL_MS) bgRefreshLoggedIn();
+  return loggedInCache.value;
 }
 
 function bgRefreshRunning() {
@@ -132,19 +165,17 @@ export function isTailscaleRunning() {
   return runningCache.value;
 }
 
-// Synchronous strict probe for hot user-initiated paths (enable/connect flow).
-// Blocks ~PROBE_TIMEOUT_MS at most; updates cache as a side effect.
-export function isTailscaleRunningStrict() {
+// Async strict probe for hot user-initiated paths (enable/connect flow).
+// Awaitable, never blocks event loop; updates cache as a side effect.
+export async function isTailscaleRunningStrict() {
   const bin = getTailscaleBin();
   if (!bin) return false;
   try {
-    const out = execSync(`"${bin}" ${SOCKET_FLAG.join(" ")} funnel status --json`, {
-      encoding: "utf8",
+    const { stdout } = await execAsync(`"${bin}" ${SOCKET_FLAG.join(" ")} funnel status --json`, {
       windowsHide: true,
-      stdio: ["ignore", "pipe", "ignore"],
       timeout: PROBE_TIMEOUT_MS,
     });
-    const json = JSON.parse(out);
+    const json = JSON.parse(stdout);
     const running = Object.keys(json.AllowFunnel || {}).length > 0;
     runningCache.value = running;
     runningCache.fetchedAt = Date.now();

@@ -173,7 +173,7 @@ async function safeRestartTailscale(reason) {
 
   // Tailscale daemon is OS-level with built-in reconnect; trust it when running (even on netchange).
   // Startup uses strict probe — cached state is cold after process/dev reload.
-  const running = reason === "startup" ? isTailscaleRunningStrict() : isTailscaleRunning();
+  const running = reason === "startup" ? await isTailscaleRunningStrict() : isTailscaleRunning();
   if (running) return;
 
   const force = FORCE_RESTART_REASONS.test(reason);
