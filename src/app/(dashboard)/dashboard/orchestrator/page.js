@@ -128,6 +128,13 @@ export default function OrchestratorPage() {
   const [rouletteLoading, setRouletteLoading] = useState(false);
   const [rouletteError, setRouletteError] = useState(null);
 
+  // Прозвон всех провайдеров
+  const [pingResults, setPingResults] = useState(null);
+  const [pingLoading, setPingLoading] = useState(false);
+  const [pingError, setPingError] = useState(null);
+  const [autoConfigResult, setAutoConfigResult] = useState(null);
+  const [autoConfigLoading, setAutoConfigLoading] = useState(false);
+
   // Ссылка на страницу usage
   const [usageLinkCopied, setUsageLinkCopied] = useState(false);
 
@@ -287,6 +294,48 @@ export default function OrchestratorPage() {
     }
   };
 
+  /* --- Прозвон всех провайдеров --- */
+  const handlePingAll = async () => {
+    setPingLoading(true);
+    setPingResults(null);
+    setPingError(null);
+    setAutoConfigResult(null);
+    try {
+      const res = await fetch('/api/orchestrator/ping-all', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      setPingResults(data);
+    } catch (err) {
+      setPingError(err.message);
+    } finally {
+      setPingLoading(false);
+    }
+  };
+
+  /* --- Автонастройка --- */
+  const handleAutoConfig = async () => {
+    if (!pingResults?.workingModels?.length) return;
+    setAutoConfigLoading(true);
+    try {
+      const res = await fetch('/api/orchestrator/auto-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workingModels: pingResults.workingModels })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      setAutoConfigResult(data);
+      setSaveMessage('✅ Оркестратор автонастроен по результатам теста');
+      setSaveMsgType('success');
+      setTimeout(fetchStatus, 500);
+    } catch (err) {
+      setSaveMessage('❌ ' + err.message);
+      setSaveMsgType('error');
+    } finally {
+      setAutoConfigLoading(false);
+    }
+  };
+
   /* --- Утилиты --- */
   const routerConfig = status?.modelRouter?.config || {};
   const routerStats = status?.modelRouter?.stats || {};
@@ -394,6 +443,7 @@ export default function OrchestratorPage() {
       <div className="flex gap-1 border-b border-border pb-1 overflow-x-auto">
         {[
           { id: 'overview', label: '📊 Обзор', icon: null },
+          { id: 'ping', label: '📡 Тест провайдеров', icon: null },
           { id: 'settings', label: '⚙️ Все настройки', icon: null },
           { id: 'simulation', label: '🧪 Симуляция', icon: null },
           { id: 'groups', label: '📦 Группы моделей', icon: null },
@@ -442,6 +492,11 @@ export default function OrchestratorPage() {
       {activeTab === 'history' && renderHistoryTab(history, fmtTime, fmtDate, routerStats, Icons)}
 
       {activeTab === 'health' && renderHealthTab(health, routerConfig, Icons, fmtNum, fmtTime)}
+
+      {activeTab === 'ping' && renderPingTab(
+        pingResults, pingLoading, pingError, handlePingAll,
+        autoConfigResult, autoConfigLoading, handleAutoConfig, Icons
+      )}
 
       {/* Быстрый доступ к странице Usage */}
       <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-gradient-to-r from-purple-500/5 to-blue-500/5 border border-border">
@@ -1418,6 +1473,256 @@ function ViewItem({ label, value }) {
     <div className="px-2 py-1.5 bg-bg-subtle rounded-lg">
       <div className="text-[10px] text-text-muted">{label}</div>
       <div className="text-xs font-medium">{value ?? '—'}</div>
+    </div>
+  );
+}
+
+/* ============================================================
+   TAB: Тест провайдеров (Ping All)
+   ============================================================ */
+function renderPingTab(
+  pingResults, pingLoading, pingError, handlePingAll,
+  autoConfigResult, autoConfigLoading, handleAutoConfig, Icons
+) {
+  return (
+    <div className="space-y-4">
+      {/* Header + Button */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-4 py-3 rounded-xl bg-surface border border-border">
+        <div>
+          <h2 className="text-lg font-bold" style={{ color: 'var(--color-text-main)' }}>📡 Тест провайдеров</h2>
+          <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+            Прозвонить все провайдеры и бесплатные модели. Результаты попадут в статистику.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={handlePingAll}
+            disabled={pingLoading}
+            style={{
+              padding: '8px 20px',
+              borderRadius: '10px',
+              fontWeight: 600,
+              fontSize: '14px',
+              color: '#fff',
+              background: pingLoading
+                ? 'linear-gradient(135deg, #6b7280, #9ca3af)'
+                : 'linear-gradient(135deg, #E56A4A, #cc5236)',
+              border: 'none',
+              cursor: pingLoading ? 'wait' : 'pointer',
+              transition: 'all 0.2s',
+              boxShadow: pingLoading ? 'none' : '0 4px 12px rgba(229, 106, 74, 0.3)',
+            }}
+          >
+            {pingLoading ? '⏳ Тестирую...' : '🔔 Прозвонить всех'}
+          </button>
+          {pingResults?.workingModels?.length > 0 && (
+            <button
+              onClick={handleAutoConfig}
+              disabled={autoConfigLoading}
+              style={{
+                padding: '8px 20px',
+                borderRadius: '10px',
+                fontWeight: 600,
+                fontSize: '14px',
+                color: '#fff',
+                background: autoConfigLoading
+                  ? 'linear-gradient(135deg, #6b7280, #9ca3af)'
+                  : 'linear-gradient(135deg, #10b981, #059669)',
+                border: 'none',
+                cursor: autoConfigLoading ? 'wait' : 'pointer',
+                transition: 'all 0.2s',
+                boxShadow: autoConfigLoading ? 'none' : '0 4px 12px rgba(16, 185, 129, 0.3)',
+              }}
+            >
+              {autoConfigLoading ? '⏳ Настраиваю...' : '⚡ Автонастройка'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Loading spinner */}
+      {pingLoading && (
+        <div className="flex items-center justify-center py-12">
+          <div className="flex flex-col items-center gap-3">
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2" style={{ borderColor: 'var(--color-primary)' }}></div>
+            <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Тестирую все модели и провайдеры...</span>
+          </div>
+        </div>
+      )}
+
+      {/* Error */}
+      {pingError && (
+        <div style={{
+          padding: '12px 16px',
+          borderRadius: '10px',
+          background: 'rgba(239, 68, 68, 0.1)',
+          border: '1px solid rgba(239, 68, 68, 0.3)',
+          color: '#ef4444',
+          fontSize: '14px',
+        }}>
+          ❌ {pingError}
+        </div>
+      )}
+
+      {/* Summary cards */}
+      {pingResults && (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
+            <SummaryCard label="Всего тестов" value={pingResults.summary.total} color="var(--color-info)" />
+            <SummaryCard label="Успешно" value={pingResults.summary.ok} color="var(--color-success)" />
+            <SummaryCard label="Ошибки" value={pingResults.summary.failed} color="var(--color-danger)" />
+            <SummaryCard label="Ср. задержка" value={`${pingResults.summary.avgLatencyMs}ms`} color="var(--color-warning)" />
+          </div>
+
+          {/* Results table */}
+          <div className="rounded-xl border border-border overflow-hidden">
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+              <thead>
+                <tr style={{ background: 'var(--color-surface-2)' }}>
+                  <th style={thStyle}>Статус</th>
+                  <th style={thStyle}>Провайдер</th>
+                  <th style={thStyle}>Модель</th>
+                  <th style={thStyle}>Задержка</th>
+                  <th style={thStyle}>Ответ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pingResults.results.map((r, i) => (
+                  <tr key={i} style={{
+                    borderTop: '1px solid var(--color-border)',
+                    background: r.status === 'ok' ? 'rgba(16, 185, 129, 0.05)' : 'rgba(239, 68, 68, 0.05)',
+                  }}>
+                    <td style={tdStyle}>
+                      <span style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        padding: '2px 8px',
+                        borderRadius: '9999px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        background: r.status === 'ok' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                        color: r.status === 'ok' ? '#10b981' : '#ef4444',
+                      }}>
+                        {r.status === 'ok' ? '✅' : '❌'} {r.status === 'ok' ? 'OK' : 'Fail'}
+                      </span>
+                    </td>
+                    <td style={tdStyle}>
+                      <span style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>{r.connectionName || r.provider}</span>
+                    </td>
+                    <td style={tdStyle}>
+                      <code style={{
+                        fontSize: '11px',
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        background: 'var(--color-surface-2)',
+                        color: 'var(--color-text-main)',
+                      }}>{r.model}</code>
+                    </td>
+                    <td style={tdStyle}>
+                      <LatencyBar ms={r.latencyMs} />
+                    </td>
+                    <td style={{ ...tdStyle, maxWidth: '200px' }}>
+                      {r.status === 'ok'
+                        ? <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>{r.response?.substring(0, 50)}</span>
+                        : <span style={{ color: '#ef4444', fontSize: '11px' }}>{r.error?.substring(0, 80)}</span>
+                      }
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {/* Auto-config result */}
+      {autoConfigResult && (
+        <div style={{
+          padding: '16px',
+          borderRadius: '12px',
+          background: 'rgba(16, 185, 129, 0.08)',
+          border: '1px solid rgba(16, 185, 129, 0.2)',
+        }}>
+          <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '8px', color: 'var(--color-text-main)' }}>
+            ⚡ Автонастройка выполнена
+          </h3>
+          <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '13px', color: 'var(--color-text-muted)', lineHeight: '1.8' }}>
+            {autoConfigResult.actions?.map((a, i) => (
+              <li key={i}>✓ {a}</li>
+            ))}
+          </ul>
+          {autoConfigResult.supervisorModel && (
+            <div style={{ marginTop: '8px', fontSize: '12px' }}>
+              <strong style={{ color: 'var(--color-text-main)' }}>Supervisor:</strong>{' '}
+              <code style={{ padding: '2px 6px', borderRadius: '4px', background: 'var(--color-surface-2)', color: 'var(--color-primary)' }}>
+                {autoConfigResult.supervisorModel}
+              </code>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const thStyle = {
+  textAlign: 'left',
+  padding: '8px 12px',
+  fontWeight: 600,
+  fontSize: '11px',
+  textTransform: 'uppercase',
+  letterSpacing: '0.05em',
+  color: 'var(--color-text-muted)',
+};
+
+const tdStyle = {
+  padding: '8px 12px',
+  verticalAlign: 'middle',
+};
+
+function SummaryCard({ label, value, color }) {
+  return (
+    <div style={{
+      padding: '12px 16px',
+      borderRadius: '12px',
+      background: 'var(--color-surface)',
+      border: '1px solid var(--color-border)',
+    }}>
+      <div style={{ fontSize: '11px', textTransform: 'uppercase', fontWeight: 600, color: 'var(--color-text-muted)', marginBottom: '4px' }}>
+        {label}
+      </div>
+      <div style={{ fontSize: '22px', fontWeight: 700, color }}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function LatencyBar({ ms }) {
+  const maxMs = 10000;
+  const pct = Math.min(100, (ms / maxMs) * 100);
+  const color = ms < 2000 ? '#10b981' : ms < 5000 ? '#f59e0b' : '#ef4444';
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+      <div style={{
+        width: '60px',
+        height: '6px',
+        borderRadius: '3px',
+        background: 'var(--color-surface-3)',
+        overflow: 'hidden',
+      }}>
+        <div style={{
+          width: `${pct}%`,
+          height: '100%',
+          borderRadius: '3px',
+          background: color,
+          transition: 'width 0.5s ease',
+        }} />
+      </div>
+      <span style={{ fontSize: '11px', fontWeight: 600, color, minWidth: '50px' }}>
+        {ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`}
+      </span>
     </div>
   );
 }
