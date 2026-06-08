@@ -50,7 +50,14 @@ export class DefaultExecutor extends BaseExecutor {
     }
     switch (this.provider) {
       case "claude":
-      case "glm":
+        return `${this.config.baseUrl}?beta=true`;
+      case "glm": {
+        const glmOutputFormat = credentials?.providerSpecificData?.outputFormat;
+        if (glmOutputFormat === "openai") {
+          return this.config.openaiBaseUrl || this.config.baseUrl;
+        }
+        return `${this.config.baseUrl}?beta=true`;
+      }
       case "kimi":
       case "minimax":
       case "minimax-cn":
@@ -113,7 +120,17 @@ export class DefaultExecutor extends BaseExecutor {
           : (headers["Authorization"] = `Bearer ${credentials.accessToken}`);
         break;
       }
-      case "glm":
+      case "glm": {
+        const glmOutputFormat = credentials?.providerSpecificData?.outputFormat;
+        if (glmOutputFormat === "openai") {
+          delete headers["Anthropic-Version"];
+          delete headers["Anthropic-Beta"];
+          headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
+        } else {
+          headers["x-api-key"] = credentials.apiKey || credentials.accessToken;
+        }
+        break;
+      }
       case "kimi":
       case "minimax":
       case "minimax-cn":

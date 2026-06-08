@@ -197,7 +197,13 @@ export function buildProviderUrl(provider, model, stream = true, options = {}) {
     case "github":
       return config.baseUrl;
 
-    case "glm":
+    case "glm": {
+      const glmOutputFormat = options?.providerSpecificData?.outputFormat;
+      if (glmOutputFormat === "openai") {
+        return config.openaiBaseUrl || config.baseUrl;
+      }
+      return `${config.baseUrl}?beta=true`;
+    }
     case "kimi":
     case "minimax":
       // Claude-compatible providers
@@ -292,7 +298,17 @@ export function buildProviderHeaders(provider, credentials, stream = true, body 
         Object.assign(headers, buildClineHeaders(credentials.apiKey || credentials.accessToken));
         break;
   
-      case "glm":
+      case "glm": {
+        const glmOutputFormat = credentials?.providerSpecificData?.outputFormat;
+        if (glmOutputFormat === "openai") {
+          delete headers["Anthropic-Version"];
+          delete headers["Anthropic-Beta"];
+          headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
+        } else {
+          headers["x-api-key"] = credentials.apiKey;
+        }
+        break;
+      }
       case "kimi":
       case "minimax":
         // Claude-compatible API providers use x-api-key
@@ -319,8 +335,10 @@ export function buildProviderHeaders(provider, credentials, stream = true, body 
   return headers;
 }
 
-// Get target format for provider
-export function getTargetFormat(provider) {
+// Get target format for provider, optionally overriding via connection-level outputFormat
+export function getTargetFormat(provider, credentials = null) {
+  const outputFormat = credentials?.providerSpecificData?.outputFormat;
+  if (outputFormat === "openai" && provider === "glm") return "openai";
   if (isOpenAICompatible(provider)) {
     return getOpenAICompatibleType(provider) === "responses" ? "openai-responses" : "openai";
   }

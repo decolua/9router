@@ -130,6 +130,7 @@ export const PROVIDERS = {
   },
   glm: {
     baseUrl: "https://api.z.ai/api/anthropic/v1/messages",
+    openaiBaseUrl: "https://api.z.ai/api/coding/paas/v4/chat/completions",
     format: "claude",
     headers: { ...CLAUDE_API_HEADERS }
   },

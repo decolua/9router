@@ -21,6 +21,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     organization: "",
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
+  const [glmOutputFormat, setGlmOutputFormat] = useState("claude");
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [validating, setValidating] = useState(false);
@@ -46,6 +47,9 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       if (connection.provider === "cloudflare-ai" && connection.providerSpecificData) {
         setCloudflareData({ accountId: connection.providerSpecificData.accountId || "" });
       }
+      if (connection.provider === "glm" && connection.providerSpecificData) {
+        setGlmOutputFormat(connection.providerSpecificData.outputFormat || "claude");
+      }
       setTestResult(null);
       setValidationResult(null);
     }
@@ -54,6 +58,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   const isOAuth = connection?.authType === "oauth";
   const isAzure = connection?.provider === "azure";
   const isCloudflareAi = connection?.provider === "cloudflare-ai";
+  const isGlm = connection?.provider === "glm";
   const isCompatible = connection
     ? (isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider))
     : false;
@@ -86,6 +91,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           apiKey: formData.apiKey,
           ...(isAzure ? { providerSpecificData: azureData } : {}),
           ...(isCloudflareAi ? { providerSpecificData: cloudflareData } : {}),
+          ...(isGlm ? { providerSpecificData: { outputFormat: glmOutputFormat } } : {}),
         }),
       });
       const data = await res.json();
@@ -120,6 +126,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
                 apiKey: formData.apiKey,
                 ...(isAzure ? { providerSpecificData: azureData } : {}),
                 ...(isCloudflareAi ? { providerSpecificData: cloudflareData } : {}),
+                ...(isGlm ? { providerSpecificData: { outputFormat: glmOutputFormat } } : {}),
               }),
             });
             const data = await res.json();
@@ -149,6 +156,9 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       }
       if (isCloudflareAi) {
         updates.providerSpecificData = { accountId: cloudflareData.accountId };
+      }
+      if (isGlm) {
+        updates.providerSpecificData = { ...(connection.providerSpecificData || {}), outputFormat: glmOutputFormat };
       }
       
       await onSave(updates);
@@ -243,7 +253,29 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           </div>
         )}
 
-        {!isCompatible && !isAzure && !isCloudflareAi && (
+        {isGlm && (
+          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+            <h3 className="font-semibold mb-3 text-sm">GLM Configuration</h3>
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-text-muted">Output Format</label>
+                <select
+                  value={glmOutputFormat}
+                  onChange={(e) => setGlmOutputFormat(e.target.value)}
+                  className="w-full px-3 py-2 bg-background border border-accent/20 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent/40"
+                >
+                  <option value="claude">Claude (Anthropic) — Default</option>
+                  <option value="openai">OpenAI Compatible</option>
+                </select>
+                <p className="text-xs text-text-muted">
+                  Choose the API protocol. Claude format uses the Anthropic Messages endpoint. OpenAI format uses the Chat Completions endpoint.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!isCompatible && !isAzure && !isCloudflareAi && !isGlm && (
           <div className="flex items-center gap-3">
             <Button onClick={handleTest} variant="secondary" disabled={testing}>
               {testing ? "Testing..." : "Test Connection"}

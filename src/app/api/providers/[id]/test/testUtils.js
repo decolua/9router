@@ -421,6 +421,16 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "glm": {
+        const glmOutputFormat = connection.providerSpecificData?.outputFormat;
+        if (glmOutputFormat === "openai") {
+          const res = await fetchWithConnectionProxy("https://api.z.ai/api/coding/paas/v4/chat/completions", {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${connection.apiKey}`, "content-type": "application/json" },
+            body: JSON.stringify({ model: "glm-4.7", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
+          }, effectiveProxy);
+          const valid = res.status !== 401 && res.status !== 403;
+          return { valid, error: valid ? null : "Invalid API key" };
+        }
         const res = await fetchWithConnectionProxy("https://api.z.ai/api/anthropic/v1/messages", {
           method: "POST",
           headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
