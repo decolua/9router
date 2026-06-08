@@ -20,6 +20,10 @@ const TAILSCALE_DIR = path.join(DATA_DIR, "tailscale");
 export const TAILSCALE_SOCKET = path.join(TAILSCALE_DIR, "tailscaled.sock");
 const SOCKET_FLAG = IS_WINDOWS ? [] : ["--socket", TAILSCALE_SOCKET];
 
+// System daemon socket (sudo install: apt/snap/systemd) — read-only status detection
+const SYSTEM_TAILSCALE_SOCKET = IS_WINDOWS ? null : "/var/run/tailscale/tailscaled.sock";
+const SYSTEM_SOCKET_FLAG = SYSTEM_TAILSCALE_SOCKET ? ["--socket", SYSTEM_TAILSCALE_SOCKET] : [];
+
 // Well-known Windows install path
 const WINDOWS_TAILSCALE_BIN = "C:\\Program Files\\Tailscale\\tailscale.exe";
 
@@ -27,7 +31,9 @@ const WINDOWS_TAILSCALE_BIN = "C:\\Program Files\\Tailscale\\tailscale.exe";
 const UNIX_TAILSCALE_CANDIDATES = [
   "/usr/local/bin/tailscale",
   "/opt/homebrew/bin/tailscale",
+  "/usr/sbin/tailscale",   // apt package on Debian/Ubuntu
   "/usr/bin/tailscale",
+  "/snap/bin/tailscale",   // Snap package
 ];
 
 // ─── Cache + background refresh (avoid blocking event loop on dead daemon) ──
@@ -50,7 +56,7 @@ function bgRefreshBin() {
   if (binCache.refreshing) return;
   binCache.refreshing = true;
   const cmd = IS_WINDOWS ? "where tailscale 2>nul" : "which tailscale 2>/dev/null";
-  execAsync(cmd, { windowsHide: true, timeout: PROBE_TIMEOUT_MS })
+  execAsync(cmd, { windowsHide: true, timeout: PROBE_TIMEOUT_MS, env: { ...process.env, PATH: EXTENDED_PATH } })
     .then(({ stdout }) => {
       const sys = stdout.trim();
       binCache.value = sys || fallbackBin();
@@ -63,7 +69,7 @@ function bgRefreshBin() {
 }
 
 // Sync getter: returns cached value, triggers background refresh if stale
-function getTailscaleBin() {
+export function getTailscaleBin() {
   if (Date.now() - binCache.fetchedAt > PROBE_TTL_MS) bgRefreshBin();
   // First call: synchronously probe common install paths (no exec, no event-loop block)
   if (binCache.value === undefined) {
@@ -116,18 +122,29 @@ function bgRefreshLoggedIn() {
     return;
   }
   loggedInCache.refreshing = true;
-  execAsync(`"${bin}" ${SOCKET_FLAG.join(" ")} status --json`, { windowsHide: true, env: { ...process.env, PATH: EXTENDED_PATH }, timeout: PROBE_TIMEOUT_MS })
-    .then(({ stdout }) => {
-      try {
-        const json = JSON.parse(stdout);
-        loggedInCache.value = json.BackendState === "Running" && json.Self?.Online === true;
-      } catch { loggedInCache.value = false; }
+  // Dual-socket aware: probe custom socket first, then system socket
+  probeStatusAsync(bin)
+    .then((json) => {
+      loggedInCache.value = !!json && json.BackendState === "Running" && json.Self?.Online === true;
     })
     .catch(() => { loggedInCache.value = false; })
     .finally(() => {
       loggedInCache.fetchedAt = Date.now();
       loggedInCache.refreshing = false;
     });
+}
+
+// Probe `status --json` over custom then system socket. Resolves parsed JSON or null. Never blocks event loop.
+async function probeStatusAsync(bin) {
+  for (const socketArgs of [SOCKET_FLAG, SYSTEM_SOCKET_FLAG]) {
+    try {
+      const { stdout } = await execAsync(`"${bin}" ${socketArgs.join(" ")} status --json`, {
+        windowsHide: true, env: { ...process.env, PATH: EXTENDED_PATH }, timeout: PROBE_TIMEOUT_MS,
+      });
+      return JSON.parse(stdout);
+    } catch { /* try next socket */ }
+  }
+  return null;
 }
 
 // Sync getter: never blocks; returns last known state, refreshes in background
@@ -180,6 +197,21 @@ export async function isTailscaleRunningStrict() {
     runningCache.value = running;
     runningCache.fetchedAt = Date.now();
     return running;
+  } catch {
+    return false;
+  }
+}
+
+// Check if a system-level tailscaled is running (uses system socket, not 9Router's custom one).
+export function isSystemDaemonRunning() {
+  if (IS_WINDOWS || !SYSTEM_TAILSCALE_SOCKET || !fs.existsSync(SYSTEM_TAILSCALE_SOCKET)) return false;
+  const bin = getTailscaleBin();
+  if (!bin) return false;
+  try {
+    const out = execSync(`"${bin}" ${SYSTEM_SOCKET_FLAG.join(" ")} status --json`, {
+      encoding: "utf8", windowsHide: true, env: { ...process.env, PATH: EXTENDED_PATH }, timeout: PROBE_TIMEOUT_MS,
+    });
+    return JSON.parse(out).BackendState === "Running";
   } catch {
     return false;
   }
@@ -253,7 +285,7 @@ export async function installTailscale(sudoPassword, hostname, onProgress) {
   return startLogin(hostname);
 }
 
-const EXTENDED_PATH = `/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:${process.env.PATH || ""}`;
+const EXTENDED_PATH = `/usr/local/bin:/opt/homebrew/bin:/usr/sbin:/usr/bin:/bin:/snap/bin:${process.env.PATH || ""}`;
 
 function hasBrew() {
   try { execSync("which brew", { stdio: "ignore", windowsHide: true, env: { ...process.env, PATH: EXTENDED_PATH } }); return true; } catch { return false; }
