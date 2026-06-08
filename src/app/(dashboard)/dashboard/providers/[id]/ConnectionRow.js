@@ -71,8 +71,11 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
   const authIcon = isCookieConnection ? "cookie" : isOAuthConnection ? "lock" : "key";
   const authLabel = isOAuthConnection ? "OAuth" : isCookieConnection ? "Cookie" : "API Key";
   const isEmail = (v) => typeof v === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+  const customName = [connection.name, connection.displayName]
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .find((value) => value && !isEmail(value));
   const displayName = isOAuthConnection
-    ? (isEmail(connection.email) ? connection.email : (isEmail(connection.name) ? connection.name : (connection.name || connection.email || connection.displayName || "OAuth Account")))
+    ? (customName || connection.email || connection.name || connection.displayName || "OAuth Account")
     : (connection.name || connection.email || connection.displayName || "API Key");
 
   // Use useState + useEffect for impure Date.now() to avoid calling during render

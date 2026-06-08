@@ -12,9 +12,10 @@ import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
 function getConnectionLabel(connection) {
   const isEmail = (value) =>
     typeof value === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-  if (isEmail(connection.email)) return connection.email;
-  if (isEmail(connection.name)) return connection.name;
-  return connection.name;
+  const customName = [connection.name, connection.displayName]
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .find((value) => value && !isEmail(value));
+  return customName || connection.email || connection.name || connection.displayName;
 }
 
 function getConnectionQuotaRemaining(connection, quotaData) {
@@ -997,14 +998,12 @@ export default function ProviderLimits() {
                       />
                     </div>
                     <div className="min-w-0">
-                      <h3 className="text-sm font-semibold text-text-primary capitalize truncate">
-                        {conn.provider}
+                      <h3 className="text-sm font-semibold text-text-primary truncate">
+                        {getConnectionLabel(conn) || conn.provider}
                       </h3>
-                      {getConnectionLabel(conn) ? (
-                        <p className="text-xs text-text-muted truncate">
-                          {getConnectionLabel(conn)}
-                        </p>
-                      ) : null}
+                      <p className="text-xs text-text-muted truncate capitalize">
+                        {conn.provider}
+                      </p>
                     </div>
                   </div>
 
