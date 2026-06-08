@@ -12,9 +12,11 @@ const PROVIDER_RULES = {
 };
 
 // Model-level rules: matched by predicate against model id
+// Note: model matching is case-insensitive for DeepSeek to support custom providers
+// that may send mixed-case ids (e.g. "DeepSeek-V4-Pro").
 const MODEL_RULES = [
-  { match: m => m?.startsWith?.("kimi-"), scope: "toolCalls" },
-  { match: m => m?.startsWith?.("deepseek-"), scope: "all" }
+  { match: m => m?.toLowerCase?.().startsWith?.("kimi-"), scope: "toolCalls" },
+  { match: m => m?.toLowerCase?.().startsWith?.("deepseek-"), scope: "all" }
 ];
 
 const DEEPSEEK_V4_PRO = "deepseek-v4-pro";
