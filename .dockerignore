@@ -38,8 +38,6 @@ skills
 autonomous
 tester
 mcp-switch-model
-open-sse/translator
-open-sse/utils
 data-home
 add-cline.json
 add-ollama.json
