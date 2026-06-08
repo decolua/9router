@@ -49,7 +49,7 @@ export const MITM_TOOLS = {
     color: "#FF6B00",
     description: "Kiro IDE with MITM",
     configType: "mitm",
-    mitmDomain: "q.us-east-1.amazonaws.com",
+    mitmDomain: "runtime.us-east-1.kiro.dev",
     defaultModels: [
       // Kiro's agent/"vibe" mode sends modelId "auto" for the main turn and "simple-task"
       // for background sub-tasks (verified via MITM request dump of generateAssistantResponse).
