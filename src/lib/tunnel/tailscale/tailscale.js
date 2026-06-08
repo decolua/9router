@@ -519,6 +519,11 @@ function isDaemonTunMode() {
   } catch { return null; }
 }
 
+/** Daemon process alive (independent of funnel state) — mirrors cloudflared PID check semantic. */
+export function isDaemonAlive() {
+  return isDaemonTunMode() !== null;
+}
+
 /**
  * Start tailscaled.
  * - With sudoPassword: TUN mode (root) → Funnel TLS works
@@ -550,8 +555,9 @@ export async function startDaemonWithPassword(sudoPassword) {
     return;
   }
 
-  const wantTun = !!sudoPassword;
   const currentMode = isDaemonTunMode(); // true=TUN, false=userspace, null=not running
+  // No password but a healthy TUN daemon already runs → keep TUN, never downgrade-kill it.
+  const wantTun = sudoPassword ? true : currentMode === true;
 
   // Daemon already running in correct mode → reuse
   if (currentMode !== null && currentMode === wantTun) {

@@ -8,7 +8,7 @@ import {
   isTunnelManuallyDisabled, isTunnelReconnecting, isTailscaleReconnecting,
   getTunnelService, getTailscaleService, setTunnelUnexpectedExitCallback,
   killCloudflared, isCloudflaredRunning, ensureCloudflared,
-  isTailscaleRunning, isTailscaleRunningStrict,
+  isTailscaleRunning, isTailscaleRunningStrict, isDaemonAlive, startFunnel,
   checkInternet,
   RESTART_COOLDOWN_MS, NETWORK_SETTLE_MS,
   WATCHDOG_INTERVAL_MS, NETWORK_CHECK_INTERVAL_MS, VIRTUAL_IFACE_REGEX,
@@ -175,6 +175,18 @@ async function safeRestartTailscale(reason) {
   // Startup uses strict probe — cached state is cold after process/dev reload.
   const running = reason === "startup" ? await isTailscaleRunningStrict() : isTailscaleRunning();
   if (running) return;
+
+  // Daemon alive but funnel dropped → recover funnel only; never full-restart (preserves login/daemon).
+  if (isDaemonAlive() && svc.activeLocalPort) {
+    try {
+      await startFunnel(svc.activeLocalPort);
+      svc.lastRestartAt = Date.now();
+      console.log("[Tailscale] funnel re-established (daemon alive)");
+    } catch (err) {
+      console.log("[Tailscale] funnel recovery failed:", err.message);
+    }
+    return;
+  }
 
   const force = FORCE_RESTART_REASONS.test(reason);
   if (!force && Date.now() - svc.lastRestartAt < RESTART_COOLDOWN_MS) {

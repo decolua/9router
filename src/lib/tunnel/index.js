@@ -31,6 +31,8 @@ export {
   isTailscaleLoggedIn,
   isTailscaleLoggedInStrict,
   isSystemDaemonRunning,
+  isDaemonAlive,
+  startFunnel,
   getTailscaleBin,
   installTailscale,
   startLogin,
