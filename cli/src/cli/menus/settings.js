@@ -2,6 +2,7 @@ const path = require("path");
 const fs = require("fs");
 const os = require("os");
 const api = require("../api/client");
+const { getRuntimeNodeModules } = require("../../../hooks/sqliteRuntime");
 const { confirm, pause } = require("../utils/input");
 const { showStatus } = require("../utils/display");
 const { showMenuWithBack } = require("../utils/menuHelper");
@@ -18,11 +19,76 @@ const COLORS = {
 
 const DEFAULT_PASSWORD = "123456";
 
-// Resolve db.json path (matches app/src/lib/dataDir.js convention)
-function getDbPath() {
+function getDataDir() {
+  if (process.env.DATA_DIR) return process.env.DATA_DIR;
   return process.platform === "win32"
-    ? path.join(process.env.APPDATA || "", "9router", "db.json")
-    : path.join(os.homedir(), ".9router", "db.json");
+    ? path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "9router")
+    : path.join(os.homedir(), ".9router");
+}
+
+// Legacy lowdb path kept only as a fallback for pre-SQLite installs.
+function getLegacyDbPath() {
+  return path.join(getDataDir(), "db.json");
+}
+
+function getSqliteDbPath() {
+  return path.join(getDataDir(), "db", "data.sqlite");
+}
+
+function loadBetterSqlite() {
+  try {
+    return require("better-sqlite3");
+  } catch {}
+  try {
+    return require(path.join(getRuntimeNodeModules(), "better-sqlite3"));
+  } catch {
+    return null;
+  }
+}
+
+function loadNodeSqlite() {
+  try {
+    return require("node:sqlite").DatabaseSync;
+  } catch {
+    return null;
+  }
+}
+
+function openOfflineSqliteDb(dbPath) {
+  const BetterSqlite = loadBetterSqlite();
+  if (BetterSqlite) return new BetterSqlite(dbPath);
+
+  const NodeSqlite = loadNodeSqlite();
+  if (NodeSqlite) return new NodeSqlite(dbPath);
+
+  return null;
+}
+
+function resetPasswordInSqlite() {
+  const dbPath = getSqliteDbPath();
+  if (!fs.existsSync(dbPath)) return { success: false, error: `SQLite DB not found at ${dbPath}` };
+
+  let db;
+  try {
+    db = openOfflineSqliteDb(dbPath);
+    if (!db) {
+      return { success: false, error: "No offline SQLite driver available (better-sqlite3 or node:sqlite)" };
+    }
+    const row = db.prepare("SELECT data FROM settings WHERE id = 1").get();
+    const settings = row?.data ? JSON.parse(row.data) : {};
+    // Offline recovery for #1482: no server is available to call /api/settings,
+    // so edit the same JSON payload the SQLite-backed settings repo stores.
+    delete settings.password;
+    settings.authMode = "password";
+    db.prepare(
+      "INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data"
+    ).run(JSON.stringify(settings));
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  } finally {
+    try { db?.close?.(); } catch {}
+  }
 }
 
 /**
@@ -171,18 +237,11 @@ async function toggleRtk(currentlyOn) {
 }
 
 /**
- * Reset dashboard password by clearing the hash in db.json (Phase B).
- * After reset, user can log in with the default password "123456".
+ * Reset dashboard password through the app API so SQLite-backed installs are updated.
+ * Falls back to offline SQLite and then legacy db.json when the server/API is unavailable.
+ * Fixes #1482: the previous reset edited db.json after the app had migrated to SQLite.
  */
 async function resetPassword() {
-  const dbPath = getDbPath();
-
-  if (!fs.existsSync(dbPath)) {
-    showStatus(`db.json not found at ${dbPath}`, "error");
-    await pause();
-    return;
-  }
-
   const ok = await confirm(`Reset dashboard password to default "${DEFAULT_PASSWORD}"?`);
   if (!ok) {
     showStatus("Cancelled", "info");
@@ -190,7 +249,28 @@ async function resetPassword() {
     return;
   }
 
+  const result = await api.updateSettings({ password: null, authMode: "password" });
+  if (result.success) {
+    showStatus(`Password reset. Default: ${DEFAULT_PASSWORD}`, "success");
+    await pause();
+    return;
+  }
+
+  const sqliteResult = resetPasswordInSqlite();
+  if (sqliteResult.success) {
+    showStatus(`Password reset offline. Default: ${DEFAULT_PASSWORD}`, "success");
+    await pause();
+    return;
+  }
+
   try {
+    const dbPath = getLegacyDbPath();
+    if (!fs.existsSync(dbPath)) {
+      showStatus(`Failed: ${result.error}; ${sqliteResult.error}. Legacy db.json not found at ${dbPath}`, "error");
+      await pause();
+      return;
+    }
+
     const raw = fs.readFileSync(dbPath, "utf-8");
     const db = JSON.parse(raw);
     if (db.settings && Object.prototype.hasOwnProperty.call(db.settings, "password")) {
