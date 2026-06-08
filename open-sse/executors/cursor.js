@@ -4,8 +4,10 @@ import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import {
   generateCursorBody,
   parseConnectRPCFrame,
-  extractTextFromResponse
+  extractTextFromResponse,
+  parseNativeToolCallsFromText,
 } from "../utils/cursorProtobuf.js";
+import { shouldForceAgentMode } from "../utils/cursorToolMapping.js";
 import { buildCursorHeaders } from "../utils/cursorChecksum.js";
 import { estimateUsage } from "../utils/usageTracking.js";
 import { FORMATS } from "../translator/formats.js";
@@ -145,9 +147,8 @@ export class CursorExecutor extends BaseExecutor {
     const messages = body.messages || [];
     const tools = body.tools || [];
     const reasoningEffort = body.reasoning_effort || null;
-    // Detect Claude Code UA to force Agent mode (issue #643)
     const ua = credentials?.rawHeaders?.["user-agent"] || "";
-    const forceAgentMode = ua.includes("claude-cli") || ua.includes("claude-code") || ua.includes("Claude Code");
+    const forceAgentMode = shouldForceAgentMode(ua);
     return generateCursorBody(messages, model, tools, reasoningEffort, forceAgentMode);
   }
 
@@ -417,6 +418,13 @@ export class CursorExecutor extends BaseExecutor {
 
     debugLog(`[CURSOR BUFFER] Final toolCalls count: ${toolCalls.length}`);
 
+    if (toolCalls.length === 0 && finalContent) {
+      const parsedNative = parseNativeToolCallsFromText(finalContent);
+      if (parsedNative.length > 0) {
+        debugLog(`[CURSOR BUFFER] Parsed ${parsedNative.length} native text tool call(s)`);
+        toolCalls.push(...parsedNative);
+      }
+    }
 
     const message = {
       role: "assistant",
