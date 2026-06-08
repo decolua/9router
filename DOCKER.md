@@ -36,6 +36,23 @@ docker compose up -d --build
 
 **Testing guide:** [docs/POSTGRESQL_TESTING.md](docs/POSTGRESQL_TESTING.md)
 
+## Production client bundle (sell / on-prem)
+
+For shipping to customers (install scripts, backups, pinned image, hardened defaults):
+
+→ **[deploy/client/](deploy/client/)** — zip this folder and send with [README-CLIENT.md](deploy/client/README-CLIENT.md).
+
+Quick start on client machine:
+
+```powershell
+cd deploy\client
+.\install.ps1
+```
+
+Vendor packaging notes: [deploy/client/VENDOR.md](deploy/client/VENDOR.md)
+
+**Full guide (simple language):** [docs/BUNDLING-AND-DEPLOYMENT.md](docs/BUNDLING-AND-DEPLOYMENT.md)
+
 ## Manage container
 
 ```bash
@@ -104,16 +121,17 @@ docker run --rm -p 20128:20128 \
   ebrouter
 ```
 
-## Publish (automatic via CI)
+## Publish to GitHub Container Registry (GHCR)
 
-Push a git tag `v*` → GitHub Actions builds multi-platform (amd64+arm64) and pushes images.
+Images are published as **`ghcr.io/YOUR_GITHUB_ORG/ebrouter:<version>`** (not legacy `9router`).
+
+**Automatic:** push a git tag `v*` → GitHub Actions builds multi-platform (amd64+arm64) and pushes to GHCR.
 
 ```bash
-# Use scripts/release.js (recommended)
-node scripts/release.js "Release title" "Notes"
-
-# Or manually
-git tag v0.4.x && git push origin v0.4.x
+git tag v0.4.56
+git push origin v0.4.56
 ```
 
-Workflow: `app/.github/workflows/docker-publish.yml`
+**Manual push from your machine:** see [deploy/GHCR-PUBLISH.md](deploy/GHCR-PUBLISH.md).
+
+Workflow: `.github/workflows/docker-publish.yml`
