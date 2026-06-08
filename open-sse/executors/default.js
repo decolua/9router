@@ -14,8 +14,10 @@ export class DefaultExecutor extends BaseExecutor {
   transformRequest(model, body) {
     const transformed = this.applyJsonSchemaFallback(body);
 
-    if (this.provider === "cerebras" && transformed && typeof transformed === "object") {
-      delete transformed.client_metadata;
+    if (transformed && typeof transformed === "object") {
+      if (this.provider === "cerebras" || this.provider === "mistral") {
+        delete transformed.client_metadata;
+      }
     }
 
     return injectReasoningContent({ provider: this.provider, model, body: transformed });
