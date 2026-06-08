@@ -4,10 +4,6 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
 import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
-import { getCurrentLocale, onLocaleChange } from "@/i18n/runtime";
-
-// Locales that unlock wenyan (classical Chinese) caveman levels
-const WENYAN_LOCALES = ["zh-CN", "zh-TW"];
 
 const TUNNEL_BENEFITS = [
   { icon: "public", title: "Access Anywhere", desc: "Use your API from any network" },
@@ -57,9 +53,6 @@ const CAVEMAN_LEVELS = [
   { id: "lite", label: "Lite", desc: "Drop filler, keep grammar" },
   { id: "full", label: "Full", desc: "Drop articles, fragments OK" },
   { id: "ultra", label: "Ultra", desc: "Telegraphic, max compression" },
-  { id: "wenyan-lite", label: "文 Lite", desc: "Classical Chinese, light compression", wenyan: true },
-  { id: "wenyan", label: "文 Full", desc: "Maximum 文言文, 80-90% reduction", wenyan: true },
-  { id: "wenyan-ultra", label: "文 Ultra", desc: "Extreme classical compression", wenyan: true },
 ];
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
@@ -76,7 +69,7 @@ export default function APIPageClient({ machineId }) {
   const [rtkEnabled, setRtkEnabledState] = useState(true);
   const [cavemanEnabled, setCavemanEnabled] = useState(false);
   const [cavemanLevel, setCavemanLevel] = useState("full");
-  const [locale, setLocale] = useState("en");
+  const [ruBypassEnabled, setRuBypassEnabled] = useState(false);
 
   // Cloudflare Tunnel state
   const [tunnelChecking, setTunnelChecking] = useState(true);
@@ -124,33 +117,6 @@ export default function APIPageClient({ machineId }) {
 
   // API key visibility toggle state
   const [visibleKeys, setVisibleKeys] = useState(new Set());
-
-  // Client-side local/remote detection (UI hint only, not a security gate)
-  const [isRemoteHost, setIsRemoteHost] = useState(false);
-  useEffect(() => {
-    if (typeof window !== "undefined")
-      setIsRemoteHost(!["localhost", "127.0.0.1", "::1"].includes(window.location.hostname));
-  }, []);
-
-  // Track app UI locale to gate wenyan caveman levels
-  useEffect(() => {
-    setLocale(getCurrentLocale());
-    return onLocaleChange(() => setLocale(getCurrentLocale()));
-  }, []);
-
-  const isWenyanLocale = WENYAN_LOCALES.includes(locale);
-  const visibleCavemanLevels = isWenyanLocale
-    ? CAVEMAN_LEVELS
-    : CAVEMAN_LEVELS.filter((lvl) => !lvl.wenyan);
-
-  // Reset wenyan level to "ultra" when leaving a Chinese locale
-  useEffect(() => {
-    const current = CAVEMAN_LEVELS.find((lvl) => lvl.id === cavemanLevel);
-    if (current?.wenyan && !isWenyanLocale) {
-      setCavemanLevel("ultra");
-      patchSetting({ cavemanLevel: "ultra" });
-    }
-  }, [isWenyanLocale, cavemanLevel]);
 
   const { copied, copy } = useCopyToClipboard();
 
@@ -275,6 +241,7 @@ export default function APIPageClient({ machineId }) {
         setRtkEnabledState(data.rtkEnabled !== false);
         setCavemanEnabled(!!data.cavemanEnabled);
         setCavemanLevel(data.cavemanLevel || "full");
+        setRuBypassEnabled(data.ruBypassEnabled === true);
       }
       if (statusRes.ok) {
         const data = await statusRes.json();
@@ -357,6 +324,11 @@ export default function APIPageClient({ machineId }) {
   const handleCavemanLevel = (level) => {
     setCavemanLevel(level);
     patchSetting({ cavemanLevel: level });
+  };
+
+  const handleRuBypassEnabled = (value) => {
+    setRuBypassEnabled(value);
+    patchSetting({ ruBypassEnabled: value });
   };
 
   const fetchData = async () => {
@@ -1103,31 +1075,44 @@ export default function APIPageClient({ machineId }) {
           </div>
           <div className="flex items-center gap-3 shrink-0">
             {cavemanEnabled && (
-              <div className="flex flex-col items-end gap-1">
-                <div className="flex items-center gap-1.5">
-                  {visibleCavemanLevels.map((lvl) => (
-                    <button
-                      key={lvl.id}
-                      onClick={() => handleCavemanLevel(lvl.id)}
-                      className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
-                        cavemanLevel === lvl.id
-                          ? "bg-primary text-white border-primary"
-                          : "bg-transparent border-border text-text-muted hover:bg-surface-2"
-                      }`}
-                      title={lvl.desc}
-                    >
-                      {lvl.label}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-xs text-primary">
-                  {CAVEMAN_LEVELS.find((lvl) => lvl.id === cavemanLevel)?.desc}
-                </p>
+              <div className="flex items-center gap-1.5">
+                {CAVEMAN_LEVELS.map((lvl) => (
+                  <button
+                    key={lvl.id}
+                    onClick={() => handleCavemanLevel(lvl.id)}
+                    className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
+                      cavemanLevel === lvl.id
+                        ? "bg-primary text-white border-primary"
+                        : "bg-transparent border-border text-text-muted hover:bg-surface-2"
+                    }`}
+                    title={lvl.desc}
+                  >
+                    {lvl.label}
+                  </button>
+                ))}
               </div>
             )}
             <Toggle
               checked={cavemanEnabled}
               onChange={() => handleCavemanEnabled(!cavemanEnabled)}
+            />
+          </div>
+        </div>
+
+        {/* RU Mode: region bypass toggle */}
+        <div className="flex items-center justify-between pt-4 gap-4 flex-wrap border-t border-border">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">
+              RU Mode <span className="text-xs font-normal text-text-muted">(Russia bypass)</span>
+            </p>
+            <p className="text-sm text-text-muted">
+              Skip region-blocked providers (Google, Antigravity, GitHub) — use alternatives only
+            </p>
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            <Toggle
+              checked={ruBypassEnabled}
+              onChange={() => handleRuBypassEnabled(!ruBypassEnabled)}
             />
           </div>
         </div>
@@ -1157,12 +1142,6 @@ export default function APIPageClient({ machineId }) {
             onChange={() => handleRequireApiKey(!requireApiKey)}
           />
         </div>
-
-        {isRemoteHost && !requireApiKey && (
-          <div className="mb-4 -mt-2">
-            <SecurityWarning message="Endpoint is exposed without an API key." />
-          </div>
-        )}
 
         {keys.length === 0 ? (
           <div className="text-center py-12">

@@ -1,4 +1,3 @@
-import { Readable } from "stream";
 import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
 import { dbg } from "./debugLog.js";
 
@@ -269,7 +268,13 @@ async function createBypassRequest(parsedUrl, realIP, options) {
           status: res.statusCode,
           statusText: res.statusMessage,
           headers: new Map(Object.entries(res.headers)),
-          body: Readable.toWeb(res),
+          body: new ReadableStream({
+            start(controller) {
+              res.on("data", (chunk) => controller.enqueue(chunk));
+              res.on("end", () => controller.close());
+              res.on("error", (err) => controller.error(err));
+            },
+          }),
           text: async () => {
             const chunks = [];
             for await (const chunk of res) chunks.push(chunk);

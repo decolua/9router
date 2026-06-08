@@ -20,8 +20,18 @@
   [🇻🇳 Tiếng Việt](./i18n/README.vi.md) • [🇨🇳 中文](./i18n/README.zh-CN.md) • [🇯🇵 日本語](./i18n/README.ja-JP.md) • [🇷🇺 Русский](./i18n/README.ru.md)
 </div>
 
----
-
+> ## 🇷🇺 9Router Russian Fork — Чем эта версия круче
+>
+> **Форк `mdn77/9router-russian` — все фичи оригинала +:**
+>
+> - **👁️ Vision Auto-Routing** — при отправке картинки комбо автоматом выбирает только зрячие модели, скипает не-зрячие. Больше никаких ошибок при отправке изображений в модели без vision.
+> - **🔤 Полная русская локализация CLI** — всё меню, подсказки и сообщения на русском.
+> - **🆓 OpenCode Free по умолчанию** — предустановлен `oc/deepseek-v4-flash-free`, работает без ключа и регистрации.
+> - **🐳 Docker fix** — исправлен MITM-сервер в Docker-образе, который падал с `MODULE_NOT_FOUND`. Файл `shared/constants` корректно копируется.
+> - **🛠️ Alias resolution** — возможность алиаснить любую модель в формат `provider/model`.
+>
+> ---
+>
 ## 🤔 Why 9Router?
 
 **Stop wasting money, tokens and hitting limits:**

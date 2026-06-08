@@ -106,7 +106,8 @@ export async function handleChat(request, clientRawRequest = null) {
       log,
       comboName: modelStr,
       comboStrategy,
-      comboStickyLimit
+      comboStickyLimit,
+      ruBypassEnabled: settings.ruBypassEnabled === true
     });
   }
 

@@ -1,9 +1,160 @@
 /**
  * Shared combo (model combo) handling with fallback support
+ * Auto-filters vision-capable models when request contains images.
+ * Smart Combo: tracks model health, auto-skips failed/rate-limited models.
  */
 
 import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { unavailableResponse } from "../utils/error.js";
+
+// ─── RU Mode: region-locked provider filter ─────────────────────────────────
+
+/**
+ * Provider prefixes known to be blocked in Russia (region-locked).
+ * When ruBypassEnabled is true, these are auto-skipped in combos.
+ */
+const RU_BLOCKED_PROVIDERS = new Set([
+  "gemini/", "gc/", "ag/", "gh/",
+]);
+
+/**
+ * Check if a model uses a region-blocked provider.
+ */
+function isRuBlocked(modelStr) {
+  for (const prefix of RU_BLOCKED_PROVIDERS) {
+    if (modelStr.startsWith(prefix)) return true;
+  }
+  return false;
+}
+
+// ─── Model Health Tracking ──────────────────────────────────────────────────
+
+/**
+ * In-memory health state per combo model.
+ * @type {Map<string, { fails: number, lastError: string|null, until: number }>}
+ */
+const modelHealth = new Map();
+const HEALTH_TTL_BASE_MS = 30 * 1000; // 30s initial cooldown
+const HEALTH_TTL_MAX_MS = 10 * 60 * 1000; // 10 min max cooldown
+
+function healthKey(comboName, modelStr) { return `${comboName}::${modelStr}`; }
+
+/** Mark model failed — exponential backoff. */
+function markModelFailed(comboName, modelStr, errorText) {
+  const key = healthKey(comboName, modelStr);
+  const prev = modelHealth.get(key);
+  const fails = (prev?.fails || 0) + 1;
+  const cooldown = Math.min(HEALTH_TTL_BASE_MS * Math.pow(2, fails - 1), HEALTH_TTL_MAX_MS);
+  modelHealth.set(key, { fails, lastError: errorText || "error", until: Date.now() + cooldown });
+}
+
+/** Mark model success — reset health. */
+function markModelSuccess(comboName, modelStr) {
+  const key = healthKey(comboName, modelStr);
+  modelHealth.delete(key);
+}
+
+/** Check if model is in cooldown. */
+function isModelUnhealthy(comboName, modelStr) {
+  const h = modelHealth.get(healthKey(comboName, modelStr));
+  if (!h) return false;
+  if (Date.now() >= h.until) { modelHealth.delete(healthKey(comboName, modelStr)); return false; }
+  return true;
+}
+
+/** Sort models: healthy first, cooldown last. */
+function prioritizeModels(models, comboName) {
+  return [...models].sort((a, b) => {
+    const aBad = isModelUnhealthy(comboName, a);
+    const bBad = isModelUnhealthy(comboName, b);
+    if (aBad && !bBad) return 1;
+    if (!aBad && bBad) return -1;
+    return 0;
+  });
+}
+
+// ─── Vision Detection ───────────────────────────────────────────────────────
+
+/**
+ * Set of model prefixes that support vision (image-to-text).
+ * Used by combo to auto-filter non-vision models when request has images.
+ */
+const VISION_MODEL_PREFIXES = new Set([
+  "gemini/",
+  "gc/",
+  "gh/gpt-4o",
+  "gh/gpt-4.1",
+  "gh/gpt-5",
+  "openrouter/",
+  "ag/",
+  "xai/grok",
+  "anthropic/claude",
+  "openai/gpt",
+  "mistral/",
+  "groq/llama",
+  "oc/",
+]);
+
+/**
+ * Check if a model string supports vision based on known prefixes.
+ */
+function isVisionModel(modelStr) {
+  for (const prefix of VISION_MODEL_PREFIXES) {
+    if (modelStr.startsWith(prefix)) return true;
+  }
+  return false;
+}
+
+/**
+ * Check if request body contains image content (vision request).
+ * Supports OpenAI messages[] and Anthropic input[] formats.
+ */
+function hasImageContent(body) {
+  const messages = body?.messages || body?.input || [];
+
+  for (const msg of messages) {
+    const content = msg?.content;
+    if (!content) continue;
+
+    // Array format: [{ type: "image_url" | "image", ... }]
+    if (Array.isArray(content)) {
+      for (const part of content) {
+        if (part?.type === "image_url" || part?.type === "image" || part?.type === "image_base64") {
+          return true;
+        }
+      }
+    }
+  }
+
+  // Anthropic Messages API uses source.type === "image" inside content blocks
+  for (const msg of messages) {
+    const content = msg?.content;
+    if (Array.isArray(content)) {
+      for (const part of content) {
+        if (part?.source?.type === "image" || part?.source?.type === "image_base64") {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Filter combo models to only those supporting vision when request has images.
+ */
+function filterModelsForRequest(models, body) {
+  if (!models || models.length === 0) return models;
+  if (!hasImageContent(body)) return models;
+
+  const filtered = models.filter((m) => isVisionModel(m));
+  if (filtered.length === 0) {
+    // Fallback: if no vision models found in combo, return all (let it fail naturally)
+    return models;
+  }
+  return filtered;
+}
 
 /**
  * Track rotation state per combo (for round-robin strategy)
@@ -95,6 +246,7 @@ export function getComboModelsFromData(modelStr, combosData) {
 
 /**
  * Handle combo chat with fallback
+ * Auto-filters vision models when request contains images.
  * @param {Object} options
  * @param {Object} options.body - Request body
  * @param {string[]} options.models - Array of model strings to try
@@ -105,9 +257,38 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
  * @returns {Promise<Response>}
  */
-export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1 }) {
+export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, ruBypassEnabled = false }) {
+  // Auto-filter: if request has images, use only vision-capable models
+  let effectiveModels = filterModelsForRequest(models, body);
+  const hasVision = hasImageContent(body);
+  if (hasVision) {
+    const skipped = models.length - effectiveModels.length;
+    if (skipped > 0) {
+      log.info("COMBO", `Vision request detected, skipped ${skipped} non-vision models`);
+    }
+  }
+
+  // RU Mode: skip region-blocked providers (gemini, antigravity, github)
+  // Activated via settings.ruBypassEnabled (persistent toggle in Dashboard)
+  if (ruBypassEnabled) {
+    const before = effectiveModels.length;
+    effectiveModels = effectiveModels.filter(m => !isRuBlocked(m));
+    const skipped = before - effectiveModels.length;
+    if (skipped > 0) {
+      log.info("COMBO", `RU Mode: skipped ${skipped} region-blocked model(s)`);
+    }
+  }
+
+  // Smart Combo: skip unhealthy models, prioritize healthy ones
+  const healthyModels = effectiveModels.filter(m => !isModelUnhealthy(comboName, m));
+  const sickCount = effectiveModels.length - healthyModels.length;
+  if (sickCount > 0) {
+    log.info("COMBO", `Smart Combo: ${sickCount} model(s) in cooldown, skipping`);
+  }
+  const prioritizedModels = prioritizeModels(healthyModels.length > 0 ? healthyModels : effectiveModels, comboName);
+
   // Apply rotation strategy if enabled
-  const rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
+  const rotatedModels = getRotatedModels(prioritizedModels, comboName, comboStrategy, comboStickyLimit);
   
   let lastError = null;
   let earliestRetryAfter = null;
@@ -120,8 +301,9 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
     try {
       const result = await handleSingleModel(body, modelStr);
       
-      // Success (2xx) - return response
+      // Success (2xx) - return response + reset health
       if (result.ok) {
+        markModelSuccess(comboName, modelStr);
         log.info("COMBO", `Model ${modelStr} succeeded`);
         return result;
       }
@@ -164,15 +346,17 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         await new Promise(r => setTimeout(r, cooldownMs));
       }
 
-      // Fallback to next model
+      // Fallback to next model — Smart Combo: mark model unhealthy
+      markModelFailed(comboName, modelStr, errorText);
       lastError = errorText || String(result.status);
       if (!lastStatus) lastStatus = result.status;
-      log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
+      log.warn("COMBO", `Model ${modelStr} failed (cooldown ${HEALTH_TTL_BASE_MS/1000}s-${HEALTH_TTL_MAX_MS/60000}min), trying next`, { status: result.status });
     } catch (error) {
       // Catch unexpected exceptions to ensure fallback continues
+      markModelFailed(comboName, modelStr, error.message);
       lastError = error.message || String(error);
       if (!lastStatus) lastStatus = 500;
-      log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
+      log.warn("COMBO", `Model ${modelStr} threw error (cooldown), trying next`, { error: lastError });
     }
   }
 

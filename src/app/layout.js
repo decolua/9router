@@ -1,4 +1,5 @@
 import { Inter } from "next/font/google";
+import Script from "next/script";
 import "material-symbols/outlined.css";
 import "./globals.css";
 import { ThemeProvider } from "@/shared/components/ThemeProvider";
@@ -31,14 +32,15 @@ export const viewport = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <head>
-        <script
+      <head />
+      <body className={`${inter.variable} font-sans antialiased`}>
+        <Script
+          id="font-loader"
+          strategy="beforeInteractive"
           dangerouslySetInnerHTML={{
             __html: `if(document.fonts&&document.fonts.ready){document.fonts.ready.then(function(){document.documentElement.classList.add('fonts-loaded')})}else{document.documentElement.classList.add('fonts-loaded')}`,
           }}
         />
-      </head>
-      <body className={`${inter.variable} font-sans antialiased`}>
         <ThemeProvider>
           <RuntimeI18nProvider>
             {children}

@@ -93,17 +93,17 @@ for (let i = 0; i < args.length; i++) {
     process.env.TRAY_MODE = "1";
   } else if (args[i] === "--help" || args[i] === "-h") {
     console.log(`
-Usage: ${APP_NAME} [options]
+Использование: ${APP_NAME} [опции]
 
-Options:
-  -p, --port <port>   Port to run the server (default: ${DEFAULT_PORT})
-  -H, --host <host>   Host to bind (default: ${DEFAULT_HOST})
-  -n, --no-browser    Don't open browser automatically
-  -l, --log           Show server logs (default: hidden)
-  -t, --tray          Run in system tray mode (background)
-  --skip-update       Skip auto-update check
-  -h, --help          Show this help message
-  -v, --version       Show version
+Опции:
+  -p, --port <порт>   Порт для запуска сервера (по умолч.: ${DEFAULT_PORT})
+  -H, --host <хост>   Хост для привязки (по умолч.: ${DEFAULT_HOST})
+  -n, --no-browser    Не открывать браузер автоматически
+  -l, --log           Показывать логи сервера (по умолч.: скрыты)
+  -t, --tray          Запуск в системном трее (фоновый режим)
+  --skip-update       Пропустить проверку обновлений
+  -h, --help          Показать эту справку
+  -v, --version       Показать версию
 `);
     process.exit(0);
   } else if (args[i] === "--version" || args[i] === "-v") {
@@ -409,7 +409,7 @@ function checkForUpdate() {
       return;
     }
 
-    const spinner = createSpinner("Checking for updates...").start();
+    const spinner = createSpinner("Проверка обновлений...").start();
     let resolved = false;
 
     const safetyTimeout = setTimeout(() => {
@@ -465,7 +465,7 @@ function openBrowser(url) {
 
   exec(cmd, { windowsHide: true }, (err) => {
     if (err) {
-      console.log(`Open browser manually: ${url}`);
+      console.log(`Откройте браузер вручную: ${url}`);
     }
   });
 }
@@ -475,8 +475,8 @@ const standaloneDir = path.join(__dirname, "app");
 const serverPath = path.join(standaloneDir, "server.js");
 
 if (!fs.existsSync(serverPath)) {
-  console.error("Error: Standalone build not found.");
-  console.error("Please run 'npm run build:cli' first.");
+  console.error("Ошибка: Сборка не найдена.");
+  console.error("Сначала выполните 'npm run build:cli'.");
   process.exit(1);
 }
 
@@ -508,22 +508,22 @@ async function showInterfaceMenu(latestVersion) {
     serverUrl = `http://${displayHost}:${port}`;
   }
 
-  const subtitle = `🚀 Server: \x1b[32m${serverUrl}\x1b[0m`;
+  const subtitle = `🚀 Сервер: \x1b[32m${serverUrl}\x1b[0m`;
 
   const menuItems = [];
 
   if (latestVersion) {
-    menuItems.push({ label: `Update to v${latestVersion} (current: v${pkg.version})`, icon: "⬆" });
+    menuItems.push({ label: `Обновить до v${latestVersion} (текущая: v${pkg.version})`, icon: "⬆" });
   }
 
   menuItems.push(
-    { label: "Web UI (Open in Browser)", icon: "🌐" },
-    { label: "Terminal UI (Interactive CLI)", icon: "💻" },
-    { label: "Hide to Tray (Background)", icon: "🔔" },
-    { label: "Exit", icon: "🚪" }
+    { label: "Веб-интерфейс (открыть в браузере)", icon: "🌐" },
+    { label: "Терминальный интерфейс (интерактивный CLI)", icon: "💻" },
+    { label: "Скрыть в трей (фоновый режим)", icon: "🔔" },
+    { label: "Выход", icon: "🚪" }
   );
 
-  const selected = await selectMenu(`Choose Interface (v${pkg.version})`, menuItems, 0, subtitle);
+  const selected = await selectMenu(`Выбор интерфейса (v${pkg.version})`, menuItems, 0, subtitle);
 
   const offset = latestVersion ? 1 : 0;
 
@@ -601,14 +601,14 @@ function startServer(latestVersion) {
   let isShuttingDown = false;
   process.on("uncaughtException", (err) => {
     if (isShuttingDown) return;
-    console.error("Error:", err.message);
+    console.error("Ошибка:", err.message);
   });
 
   // Handle all exit scenarios
   process.on("SIGINT", () => {
     if (isShuttingDown) return;
     isShuttingDown = true;
-    console.log("\nExiting...");
+    console.log("\nВыход...");
     cleanup();
     setTimeout(() => process.exit(0), 100);
   });
@@ -633,7 +633,7 @@ function startServer(latestVersion) {
         port,
         onQuit: () => {
           isShuttingDown = true;
-          console.log("\n👋 Shutting down from tray...");
+          console.log("\n👋 Завершение работы из трея...");
           cleanup();
           setTimeout(() => process.exit(0), 100);
         },
@@ -651,12 +651,12 @@ function startServer(latestVersion) {
     process.on("SIGHUP", () => {});
 
     console.log(`\n🚀 ${pkg.name} v${pkg.version}`);
-    console.log(`Server: http://${displayHost}:${port}`);
+    console.log(`Сервер: http://${displayHost}:${port}`);
 
     setTimeout(() => {
       initTrayIcon();
-      console.log("\n💡 Router is now running in system tray. Close this terminal if you want.");
-      console.log("   Right-click tray icon to open dashboard or quit.\n");
+      console.log("\n💡 Роутер работает в системном трее. Можете закрыть этот терминал.");
+      console.log("   Правый клик по иконке в трее — открыть панель или выйти.\n");
     }, 2000);
 
     return;
@@ -675,8 +675,8 @@ function startServer(latestVersion) {
           isShuttingDown = true;
           const { clearScreen } = require("./src/cli/utils/display");
           clearScreen();
-          console.log(`\n⬆  Update v${pkg.version} → v${latestVersion}\n`);
-          console.log(`Run this after exit:\n`);
+          console.log(`\n⬆  Обновление v${pkg.version} → v${latestVersion}\n`);
+          console.log(`Выполните после выхода:\n`);
           console.log(`   \x1b[33m${INSTALL_CMD_LATEST}\x1b[0m\n`);
           cleanup();
           await killAllAppProcesses(port);
@@ -687,7 +687,7 @@ function startServer(latestVersion) {
           openBrowser(url);
           // Wait for user to come back
           const { pause } = require("./src/cli/utils/input");
-          await pause("\nPress Enter to go back to menu...");
+          await pause("\nНажмите Enter для возврата в меню...");
         } else if (choice === "terminal") {
           // Start Terminal UI - it will return when user selects Back
           const { startTerminalUI } = require("./src/cli/terminalUI");
@@ -709,17 +709,17 @@ function startServer(latestVersion) {
             process.removeAllListeners("SIGHUP");
             process.on("SIGHUP", () => {});
 
-            console.log(`\n⏳ Switching to tray mode... (icon already visible in menu bar)`);
-            console.log(`🔔 9Router is running in tray (PID: ${process.pid})`);
-            console.log(`   Server: http://${displayHost}:${port}`);
-            console.log(`\n💡 You can close this terminal. Right-click tray icon to quit.\n`);
+            console.log(`\n⏳ Переключение в режим трея... (иконка уже видна в строке меню)`);
+            console.log(`🔔 9Router работает в трее (PID: ${process.pid})`);
+            console.log(`   Сервер: http://${displayHost}:${port}`);
+            console.log(`\n💡 Можете закрыть этот терминал. Правый клик по иконке — выход.\n`);
 
             // Tray already init'd at startup — just keep event loop alive.
             return;
           }
 
           // Windows/Linux: spawn detached bgProcess (systray works fine in child)
-          console.log(`\n⏳ Starting background process... (tray icon will appear in ~3s)`);
+          console.log(`\n⏳ Запуск фонового процесса... (иконка в трее появится через ~3 с)`);
 
           const bgProcess = spawn(process.execPath, [__filename, "--tray", "--skip-update", "-p", port.toString()], {
             detached: true,
@@ -729,22 +729,22 @@ function startServer(latestVersion) {
           });
           bgProcess.unref();
 
-          console.log(`🔔 9Router is now running in background (PID: ${bgProcess.pid})`);
-          console.log(`   Server: http://${displayHost}:${port}`);
-          console.log(`\n💡 You can close this terminal. Right-click tray icon to quit.\n`);
+          console.log(`🔔 9Router работает в фоне (PID: ${bgProcess.pid})`);
+          console.log(`   Сервер: http://${displayHost}:${port}`);
+          console.log(`\n💡 Можете закрыть этот терминал. Правый клик по иконке — выход.\n`);
 
           // cleanup() kills server so bgProcess can claim the port fresh
           cleanup();
           process.exit(0);
         } else if (choice === "exit") {
           isShuttingDown = true;
-          console.log("\nExiting...");
+          console.log("\nВыход...");
           cleanup();
           setTimeout(() => process.exit(0), 100);
         }
       }
     } catch (err) {
-      console.error("Error:", err.message);
+      console.error("Ошибка:", err.message);
       cleanup();
       process.exit(1);
     }
@@ -752,7 +752,7 @@ function startServer(latestVersion) {
 
   function attachServerEvents() {
     server.on("error", (err) => {
-      console.error("Failed to start server:", err.message);
+      console.error("Не удалось запустить сервер:", err.message);
       if (!isShuttingDown) tryRestart();
       else { cleanup(); process.exit(1); }
     });
@@ -772,7 +772,7 @@ function startServer(latestVersion) {
     if (aliveMs >= RESTART_RESET_MS) restartCount = 0;
 
     if (restartCount >= MAX_RESTARTS) {
-      console.error(`\n⚠️  Server crashed ${MAX_RESTARTS} times. Disabling MIT and restarting...`);
+      console.error(`\n⚠️  Сервер упал ${MAX_RESTARTS} раза. Отключаем MIT и перезапускаем...`);
       try {
         const dbPath = path.join(os.homedir(), process.platform === "win32" ? path.join("AppData", "Roaming", "9router", "db.json") : path.join(".9router", "db.json"));
         if (fs.existsSync(dbPath)) {
@@ -789,11 +789,11 @@ function startServer(latestVersion) {
 
     restartCount++;
     const delay = Math.min(1000 * restartCount, 10000);
-    console.error(`\n⚠️  Server exited (code=${code ?? "unknown"}). Restarting in ${delay / 1000}s... (${restartCount}/${MAX_RESTARTS})`);
+    console.error(`\n⚠️  Сервер завершился (код=${code ?? "неизвестно"}). Перезапуск через ${delay / 1000}с... (${restartCount}/${MAX_RESTARTS})`);
     if (crashLog.length) {
-      console.error("\n--- Server crash log ---");
+      console.error("\n--- Лог аварийного завершения сервера ---");
       crashLog.forEach(l => console.error(l));
-      console.error("--- End crash log ---\n");
+      console.error("--- Конец лога ---\n");
     }
 
     setTimeout(() => {
