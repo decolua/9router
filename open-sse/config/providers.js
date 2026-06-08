@@ -101,6 +101,9 @@ export const PROVIDERS = {
     baseUrl: "https://api3.qoder.sh/algo/api/v2/service/pro/sse/agent_chat_generation",
     format: "openai",
     headers: {},
+    // Reasoning models think long before first byte; raise both timeouts.
+    timeoutMs: 120000,
+    stallTimeoutMs: 120000,
   },
   antigravity: {
     baseUrls: [
