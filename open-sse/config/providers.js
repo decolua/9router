@@ -195,7 +195,19 @@ export const PROVIDERS = {
     clientId: "Iv1.b507a08c87ecfe98"
   },
   kiro: {
-    baseUrl: "https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse",
+    // All three hosts resolve to the same regional CodeWhisperer streaming service
+    // (GenerateAssistantResponse). They are alternate DNS surfaces, NOT separate quota
+    // buckets — AWS throttles per authenticated identity (token + profileArn), not per
+    // hostname. Listing them enables edge-level failover (5xx / connect timeout / a
+    // degraded surface); it does NOT multiply 429 headroom. To actually spread 429 load,
+    // add multiple Kiro accounts — account rotation in sse/handlers/chat.js handles that.
+    // Order: newest Kiro IDE endpoint first, legacy AWS domains as fallback.
+    baseUrl: "https://runtime.us-east-1.kiro.dev/generateAssistantResponse",
+    baseUrls: [
+      "https://runtime.us-east-1.kiro.dev/generateAssistantResponse",
+      "https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse",
+      "https://q.us-east-1.amazonaws.com/generateAssistantResponse",
+    ],
     format: "kiro",
     retry: { 429: 2 },
     headers: {
