@@ -1,50 +1,63 @@
-# 9Router Dockerfile — production-ready
-# Защита от падений через node --max-old-space-size + dumb-init
+# syntax=docker/dockerfile:1.7
+# 9Router Russian Edition — Dockerfile
+# Совместим с оригиналом (decolua/9router) + Ollama + crash protection
 
-FROM node:20-alpine AS base
-RUN apk add --no-cache libc6-compat curl dumb-init
+ARG NODE_IMAGE=node:22-alpine
+FROM ${NODE_IMAGE} AS base
 WORKDIR /app
 
-# Dependencies stage
-FROM base AS deps
-COPY package.json package-lock.json* ./
-RUN npm ci --no-audit --no-fund
-
-# Build stage
 FROM base AS builder
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+
+RUN apk --no-cache upgrade && apk --no-cache add python3 make g++ linux-headers
+
+COPY package.json ./
+RUN --mount=type=cache,target=/root/.npm \
+  npm install
+
+COPY . ./
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV NODE_ENV=production
 RUN npm run build
 
-# Production stage
-FROM base AS runner
+FROM ${NODE_IMAGE} AS runner
+WORKDIR /app
+
+LABEL org.opencontainers.image.title="9router-russian"
+LABEL org.opencontainers.image.description="9Router Russian Edition — Orchestrator + Ollama"
+
 ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=20128
 ENV HOSTNAME=0.0.0.0
-
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 nextjs
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV DATA_DIR=/app/data
+# Ollama на хост-машине (для Docker)
+ENV OLLAMA_BASE_URL=http://host.docker.internal:11434
 
 COPY --from=builder /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/open-sse ./open-sse
+# Next file tracing can omit sibling files; MITM runs server.js as a separate process.
+COPY --from=builder /app/src/mitm ./src/mitm
+# Standalone node_modules may omit deps only required by the MITM child process.
+COPY --from=builder /app/node_modules/node-forge ./node_modules/node-forge
+# Ensure `next` is available at runtime in case tracing did not include it.
+COPY --from=builder /app/node_modules/next ./node_modules/next
+# Seed script для загрузки ключей провайдеров
+COPY --from=builder /app/scripts ./scripts
 
-# Logs dir for crash.log
-RUN mkdir -p /app/.9router/logs && chown -R nextjs:nodejs /app/.9router
+RUN mkdir -p /app/data && chown -R node:node /app && \
+  mkdir -p /app/data-home && chown node:node /app/data-home && \
+  ln -sf /app/data-home /root/.9router 2>/dev/null || true
 
-USER nextjs
+# Fix permissions at runtime (handles mounted volumes)
+RUN apk --no-cache upgrade && apk --no-cache add su-exec curl && \
+  printf '#!/bin/sh\nchown -R node:node /app/data /app/data-home 2>/dev/null\nexec su-exec node "$@"\n' > /entrypoint.sh && \
+  chmod +x /entrypoint.sh
+
 EXPOSE 20128
 
-# Healthcheck — uses our /api/health endpoint
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
   CMD curl -f http://localhost:20128/api/health || exit 1
 
-# dumb-init — правильный PID 1, ловит zombie и graceful shutdown
-ENTRYPOINT ["dumb-init", "--"]
-
-# --max-old-space-size — heap limit
-# --enable-source-maps — читаемые стектрейсы в crash.log
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["node", "--max-old-space-size=2048", "--enable-source-maps", "server.js"]
