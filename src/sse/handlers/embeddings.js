@@ -114,9 +114,8 @@ export async function handleEmbeddings(request) {
       log,
       onCredentialsRefreshed: async (newCreds) => {
         await updateProviderCredentials(credentials.connectionId, {
-          accessToken: newCreds.accessToken,
-          refreshToken: newCreds.refreshToken,
-          providerSpecificData: newCreds.providerSpecificData,
+          ...newCreds,
+          existingProviderSpecificData: credentials.providerSpecificData,
           testStatus: "active"
         });
       },

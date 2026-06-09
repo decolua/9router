@@ -94,13 +94,25 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
  * for long periods while raw bytes still flow (e.g. Kiro EventStream
  * binary frames buffering, Claude reasoning streams).
  */
-export function createDisconnectAwareStream(transformStream, streamController) {
+export function createDisconnectAwareStream(transformStream, streamController, onAbortTerminal = null) {
   const reader = transformStream.readable.getReader();
   const writer = transformStream.writable.getWriter();
+  let terminalEmitted = false;
+
+  // Emit a synthesized terminal payload (e.g. Responses response.failed + [DONE]) once
+  const emitTerminal = (controller) => {
+    if (terminalEmitted || !onAbortTerminal) return;
+    terminalEmitted = true;
+    try {
+      const bytes = onAbortTerminal();
+      if (bytes) controller.enqueue(bytes);
+    } catch { /* best-effort terminal */ }
+  };
 
   return new ReadableStream({
     async pull(controller) {
       if (!streamController.isConnected()) {
+        emitTerminal(controller);
         controller.close();
         return;
       }
@@ -135,17 +147,16 @@ export function createDisconnectAwareStream(transformStream, streamController) {
           code === "EPIPE" ||
           code === "UND_ERR_SOCKET";
 
-        if (!wasConnected || isNetworkClose) {
-          try {
+        // Graceful close on network/abort, or when a structured terminal is available
+        // (Responses passthrough prefers response.failed + [DONE] over a raw transport error)
+        try {
+          if (!wasConnected || isNetworkClose || onAbortTerminal) {
+            emitTerminal(controller);
             controller.close();
-          } catch (e) {
-            // Stream might already be closed or cancelled
-          }
-        } else {
-          try {
+          } else {
             controller.error(error);
-          } catch (e) { /* already closed */ }
-        }
+          }
+        } catch (e) { /* already closed or cancelled */ }
       }
     },
 
@@ -173,7 +184,7 @@ export function createDisconnectAwareStream(transformStream, streamController) {
  * @param {TransformStream} transformStream - Transform stream for SSE
  * @param {object} streamController - Stream controller from createStreamController
  */
-export function pipeWithDisconnect(providerResponse, transformStream, streamController) {
+export function pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal = null) {
   let stallTimer = null;
   let chunkCount = 0;
   let totalBytes = 0;
@@ -232,7 +243,8 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
 
   return createDisconnectAwareStream(
     { readable: transformedBody, writable: { getWriter: () => ({ abort: () => Promise.resolve() }) } },
-    wrappedController
+    wrappedController,
+    onAbortTerminal
   );
 }
 
