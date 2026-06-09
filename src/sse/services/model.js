@@ -86,6 +86,23 @@ export async function getModelInfo(modelStr) {
 }
 
 /**
+ * Build a mapping from provider name/id/connectionId to node prefix.
+ * Used to normalize combo model objects into routable "prefix/model" strings.
+ */
+async function buildProviderPrefixMap() {
+  const map = {};
+  const allNodes = await getProviderNodes();
+  for (const node of allNodes) {
+    if (!node.prefix) continue;
+    // Map by node ID
+    if (node.id) map[node.id] = node.prefix;
+    // Map by node name (case-insensitive)
+    if (node.name) map[node.name.toLowerCase()] = node.prefix;
+  }
+  return map;
+}
+
+/**
  * Check if model is a combo and get models list
  * @returns {Promise<string[]|null>} Array of models or null if not a combo
  */
@@ -95,7 +112,27 @@ export async function getComboModels(modelStr) {
 
   const combo = await getComboByName(modelStr);
   if (combo && combo.models && combo.models.length > 0) {
-    return combo.models;
+    // Build prefix map to resolve provider names/IDs to routable prefixes
+    const prefixMap = await buildProviderPrefixMap();
+
+    // Normalize: combo models can be strings or objects {provider, connectionId, model, priority}
+    // Must build "prefix/model" format for proper routing through getModelInfo
+    return combo.models.map(m => {
+      if (typeof m === 'string') return m;
+      if (typeof m === 'object' && m.model) {
+        // Try to find the node prefix for this provider
+        const providerKey = m.provider;
+        if (providerKey) {
+          // Try direct match (by ID) then case-insensitive name match
+          const prefix = prefixMap[providerKey] || prefixMap[providerKey.toLowerCase()];
+          if (prefix) return `${prefix}/${m.model}`;
+          // Fallback: use provider ID directly (may be node ID)
+          return `${providerKey}/${m.model}`;
+        }
+        return m.model;
+      }
+      return String(m);
+    });
   }
   return null;
 }
