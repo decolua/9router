@@ -16,7 +16,7 @@ export async function OPTIONS() {
   });
 }
 
-function groupByKind(models) {
+function groupModelsByKind(models) {
   return PUBLIC_CAPABILITY_KINDS.reduce((acc, kind) => {
     acc[kind] = models.filter((model) => model.kind === kind);
     return acc;
@@ -58,12 +58,12 @@ export async function GET(request) {
       object: "capability_catalog",
       summary: summarizeCapabilities(models),
       data: models,
-      byKind: groupByKind(models),
+      groupedByKind: groupModelsByKind(models),
     }, {
       headers: { "Access-Control-Allow-Origin": "*" },
     });
   } catch (error) {
-    console.log("Error fetching model capabilities:", error);
+    console.error("Error fetching model capabilities:", error);
     return Response.json(
       { error: { message: error.message, type: "server_error" } },
       { status: 500, headers: { "Access-Control-Allow-Origin": "*" } },

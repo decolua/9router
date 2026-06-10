@@ -18,9 +18,6 @@ function getLocaleFromCookie() {
 
 // Load translation map
 async function loadTranslations(locale) {
-  if (typeof document !== "undefined") {
-    document.documentElement.lang = locale;
-  }
   if (locale === "en") {
     translationMap = {};
     return;

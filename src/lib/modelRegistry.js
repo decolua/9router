@@ -6,6 +6,10 @@ import {
   isOpenAICompatibleProvider,
 } from "@/shared/constants/providers";
 
+// Capability entries extend the OpenAI-style model list with routing metadata:
+// - kind: primary service bucket used for filtering and auto-routing.
+// - capabilities: endpoint and feature hints exposed to downstream clients.
+// - availability: whether at least one configured connection can serve the model.
 const LLM_KIND = "llm";
 
 const MODEL_TYPE_TO_KIND = {
