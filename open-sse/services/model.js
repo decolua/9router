@@ -140,6 +140,8 @@ const ALIAS_TO_PROVIDER_ID = {
   glhf: "glhf",
   bb: "blackbox",
   blackbox: "blackbox",
+  ms: "modelscope",
+  modelscope: "modelscope",
 };
 
 /**

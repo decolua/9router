@@ -380,6 +380,12 @@ Default URLs:
         <sub>SiliconFlow</sub>
       </td>
     </tr>
+    <tr>
+      <td align="center" width="100">
+        <img src="./public/providers/modelscope.png" width="50" alt="ModelScope"/><br/>
+        <sub>ModelScope</sub>
+      </td>
+    </tr>
   </table>
   <p><i>...and 20+ more providers including Nebius, Chutes, Hyperbolic, and custom OpenAI/Anthropic compatible endpoints</i></p>
 </div>
@@ -806,6 +812,18 @@ Models:
 <details>
 <summary><b>💰 Cheap Providers (Backup)</b></summary>
 
+### ModelScope (Free tier, GLM/DeepSeek/Qwen)
+
+1. Sign up: [ModelScope](https://modelscope.cn/)
+2. Get API key: [My Access Tokens](https://modelscope.cn/my/myaccesstoken)
+3. Dashboard → Add API Key:
+   - Provider: `modelscope`
+   - API Key: `your-key`
+
+**Use:** `ms/zai-org/GLM-5.1`, `ms/deepseek-ai/DeepSeek-V4-Pro`, `ms/zai-org/GLM-5`
+
+**Pro Tip:** ModelScope provides an OpenAI-compatible endpoint with GLM, Qwen, DeepSeek, Kimi, MiniMax and more. Free tier available with extended thinking support!
+
 ### GLM-5.1 / GLM-4.7 (Daily reset, $0.6/1M)
 
 1. Sign up: [Zhipu AI](https://open.bigmodel.cn/)
@@ -1192,6 +1210,13 @@ Notes:
 - `vertex/gemini-2.5-flash`
 - `vertex-partner/glm-5-maas`
 - `vertex-partner/deepseek-v3.2-maas`
+
+**ModelScope (`ms/`)** - Free tier available:
+- `ms/zai-org/GLM-5.1` (GLM 5.1)
+- `ms/deepseek-ai/DeepSeek-V4-Pro` (DeepSeek V4 Pro)
+- `ms/deepseek-ai/DeepSeek-V4-Flash` (DeepSeek V4 Flash)
+- `ms/nex-agi/Nex-N2-Pro` (Nex N2 Pro)
+- `ms/zai-org/GLM-5` (GLM 5)
 
 </details>
 
