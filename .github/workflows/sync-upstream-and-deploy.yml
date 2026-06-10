@@ -1,0 +1,64 @@
+name: Sync Upstream & Deploy to Hugging Face Space
+
+on:
+  schedule:
+    # Run every 6 hours to check for upstream updates
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+env:
+  HF_USERNAME: F4bC0d3
+  HF_SPACE_NAME: 9router
+
+jobs:
+  sync-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/decolua/9router.git || true
+          git fetch upstream
+
+      - name: Check if upstream has updates
+        id: check
+        run: |
+          UPSTREAM_SHA=$(git rev-parse upstream/master)
+          CURRENT_SHA=$(git rev-parse HEAD)
+          if [ "$UPSTREAM_SHA" = "$CURRENT_SHA" ]; then
+            echo "No upstream updates found."
+            echo "has_updates=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Upstream updates found!"
+            echo "has_updates=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Merge upstream changes into huggingface-spaces branch
+        if: steps.check.outputs.has_updates == 'true'
+        run: |
+          git checkout huggingface-spaces
+          # Pull upstream master and rebase our HF-specific changes on top
+          git pull upstream master --rebase || true
+          # If rebase has conflicts, we might need to handle them.
+          # For now, let's merge instead to be safer
+          git merge upstream/master -m "Merge upstream updates into huggingface-spaces"
+          git push origin huggingface-spaces
+
+      - name: Push to Hugging Face Space
+        if: steps.check.outputs.has_updates == 'true' || github.event_name == 'workflow_dispatch'
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          git remote add space https://huggingface.co/spaces/${{ env.HF_USERNAME }}/${{ env.HF_SPACE_NAME }} || true
+          git remote set-url space https://user:$HF_TOKEN@huggingface.co/spaces/${{ env.HF_USERNAME }}/${{ env.HF_SPACE_NAME }}
+          git push space huggingface-spaces:main --force

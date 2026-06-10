@@ -1,3 +1,8 @@
+---
+sdk: docker
+app_port: 7860
+---
+
 <div align="center">
   <img src="./images/9router.png?1" alt="9Router Dashboard" width="800"/>
   
