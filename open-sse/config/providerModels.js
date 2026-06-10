@@ -131,6 +131,8 @@ export const PROVIDER_MODELS = {
     { id: "text-embedding-3-large", name: "Text Embedding 3 Large (GitHub)", type: "embedding" },
   ],
   kr: [  // Kiro AI
+    { id: "claude-opus-4.7", name: "Claude Opus 4.7" },
+    { id: "claude-sonnet-4.6", name: "Claude Sonnet 4.6" },
     // { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
     { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5" },
     { id: "claude-haiku-4.5", name: "Claude Haiku 4.5" },

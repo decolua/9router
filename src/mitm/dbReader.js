@@ -16,7 +16,12 @@ function trySqlite() {
   if (sqliteFailed) return null;
   try {
     if (!fs.existsSync(DB_FILE)) return null;
-    const Database = require("better-sqlite3");
+    let Database;
+    if (typeof Bun !== "undefined") {
+      Database = require("bun:sqlite").Database;
+    } else {
+      Database = require("better-sqlite3");
+    }
     sqliteDb = new Database(DB_FILE, { readonly: true, fileMustExist: true });
     return sqliteDb;
   } catch {

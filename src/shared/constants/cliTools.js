@@ -42,6 +42,8 @@ export const MITM_TOOLS = {
     configType: "mitm",
     mitmDomain: "q.us-east-1.amazonaws.com",
     defaultModels: [
+      { id: "claude-opus-4.7", name: "Claude Opus 4.7", alias: "claude-opus-4.7" },
+      { id: "claude-sonnet-4.6", name: "Claude Sonnet 4.6", alias: "claude-sonnet-4.6" },
       { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5", alias: "claude-sonnet-4.5" },
       { id: "claude-sonnet-4", name: "Claude Sonnet 4", alias: "claude-sonnet-4" },
       { id: "claude-haiku-4.5", name: "Claude Haiku 4.5", alias: "claude-haiku-4.5" },
@@ -100,7 +102,7 @@ export const CLI_TOOLS = {
   },
   codex: {
     id: "codex",
-    name: "OpenAI Codex CLI / App", 
+    name: "OpenAI Codex CLI / App",
     image: "/providers/codex.png",
     color: "#10A37F",
     description: "OpenAI Codex CLI",

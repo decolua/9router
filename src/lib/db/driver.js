@@ -4,6 +4,18 @@ import { ensureDirs, DATA_FILE } from "./paths.js";
 if (!global._dbAdapter) global._dbAdapter = { instance: null, initPromise: null, logged: false };
 const state = global._dbAdapter;
 
+async function tryBunSqlite() {
+  try {
+    const { createBunSqliteAdapter } = await import("./adapters/bunSqliteAdapter.js");
+    return createBunSqliteAdapter(DATA_FILE);
+  } catch (e) {
+    if (typeof Bun !== "undefined") {
+      console.warn(`[DB] bun:sqlite unavailable: ${e.message}`);
+    }
+    return null;
+  }
+}
+
 async function tryBetterSqlite() {
   try {
     const { createBetterSqliteAdapter } = await import("./adapters/betterSqliteAdapter.js");
@@ -26,9 +38,10 @@ async function trySqlJs() {
 
 async function initAdapter() {
   ensureDirs();
-  let adapter = await tryBetterSqlite();
+  let adapter = await tryBunSqlite();
+  if (!adapter) adapter = await tryBetterSqlite();
   if (!adapter) adapter = await trySqlJs();
-  if (!adapter) throw new Error("[DB] No SQLite driver available (better-sqlite3 + sql.js both failed)");
+  if (!adapter) throw new Error("[DB] No SQLite driver available (bun:sqlite + better-sqlite3 + sql.js all failed)");
 
   if (!state.logged) {
     console.log(`[DB] Driver: ${adapter.driver} | file: ${DATA_FILE}`);

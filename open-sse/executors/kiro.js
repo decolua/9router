@@ -56,6 +56,11 @@ export class KiroExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
+    // If body is already in Kiro format (translated by translator layer), skip transformation
+    if (body.conversationState) {
+      return body;
+    }
+
     const kiroModel = this.mapModelToKiro(model);
 
     const messages = body.messages || [];
@@ -193,7 +198,9 @@ export class KiroExecutor extends BaseExecutor {
       finishEmitted: false,
       hasToolCalls: false,
       toolCallIndex: 0,
-      seenToolIds: new Map()
+      seenToolIds: new Map(),
+      isThinking: false,
+      contentBuffer: ""
     };
 
     const transformStream = new TransformStream({
@@ -230,22 +237,69 @@ export class KiroExecutor extends BaseExecutor {
           if (eventType === "assistantResponseEvent" && event.payload?.content) {
             const content = event.payload.content;
             state.totalContentLength += content.length;
+            state.contentBuffer += content;
 
-            const chunk = {
-              id: responseId,
-              object: "chat.completion.chunk",
-              created,
-              model,
-              choices: [{
-                index: 0,
-                delta: chunkIndex === 0
-                  ? { role: "assistant", content }
-                  : { content },
-                finish_reason: null
-              }]
-            };
-            chunkIndex++;
-            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\n`));
+            let emitContent = "";
+            let emitReasoning = "";
+
+            while (state.contentBuffer.length > 0) {
+              if (!state.isThinking) {
+                const startIdx = state.contentBuffer.indexOf('<thinking>');
+                if (startIdx !== -1) {
+                  emitContent += state.contentBuffer.slice(0, startIdx);
+                  state.contentBuffer = state.contentBuffer.slice(startIdx + 10);
+                  state.isThinking = true;
+                } else {
+                  const lastLess = state.contentBuffer.lastIndexOf('<');
+                  if (lastLess !== -1 && '<thinking>'.startsWith(state.contentBuffer.slice(lastLess))) {
+                    emitContent += state.contentBuffer.slice(0, lastLess);
+                    state.contentBuffer = state.contentBuffer.slice(lastLess);
+                    break;
+                  } else {
+                    emitContent += state.contentBuffer;
+                    state.contentBuffer = "";
+                  }
+                }
+              } else {
+                const endIdx = state.contentBuffer.indexOf('</thinking>');
+                if (endIdx !== -1) {
+                  emitReasoning += state.contentBuffer.slice(0, endIdx);
+                  state.contentBuffer = state.contentBuffer.slice(endIdx + 11);
+                  state.isThinking = false;
+                } else {
+                  const lastLess = state.contentBuffer.lastIndexOf('<');
+                  if (lastLess !== -1 && '</thinking>'.startsWith(state.contentBuffer.slice(lastLess))) {
+                    emitReasoning += state.contentBuffer.slice(0, lastLess);
+                    state.contentBuffer = state.contentBuffer.slice(lastLess);
+                    break;
+                  } else {
+                    emitReasoning += state.contentBuffer;
+                    state.contentBuffer = "";
+                  }
+                }
+              }
+            }
+
+            if (emitContent || emitReasoning) {
+              const delta = {};
+              if (chunkIndex === 0) delta.role = "assistant";
+              if (emitContent) delta.content = emitContent;
+              if (emitReasoning) delta.reasoning_content = emitReasoning;
+
+              const chunkObj = {
+                id: responseId,
+                object: "chat.completion.chunk",
+                created,
+                model,
+                choices: [{
+                  index: 0,
+                  delta,
+                  finish_reason: null
+                }]
+              };
+              chunkIndex++;
+              controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunkObj)}\n\n`));
+            }
           }
 
           // Handle codeEvent
@@ -444,6 +498,30 @@ export class KiroExecutor extends BaseExecutor {
       },
 
       flush(controller) {
+        // Emit any remaining buffer
+        if (state.contentBuffer) {
+          const delta = {};
+          if (state.isThinking) {
+            delta.reasoning_content = state.contentBuffer;
+          } else {
+            delta.content = state.contentBuffer;
+          }
+          const chunkObj = {
+            id: responseId,
+            object: "chat.completion.chunk",
+            created,
+            model,
+            choices: [{
+              index: 0,
+              delta,
+              finish_reason: null
+            }]
+          };
+          chunkIndex++;
+          controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunkObj)}\n\n`));
+          state.contentBuffer = "";
+        }
+
         // Emit finish chunk if not already sent
         if (!state.finishEmitted) {
           state.finishEmitted = true;

@@ -40,7 +40,8 @@ function ensureInitialized() {
   require("./request/openai-to-kiro.js");
   require("./request/openai-to-cursor.js");
   require("./request/openai-to-ollama.js");
-  require("./request/openai-to-commandcode.js");
+  require("./request/claude-to-kiro.js");
+  require("./request/claude-to-gemini.js");
 
   // Response translators
   require("./response/claude-to-openai.js");
@@ -51,7 +52,8 @@ function ensureInitialized() {
   require("./response/kiro-to-openai.js");
   require("./response/cursor-to-openai.js");
   require("./response/ollama-to-openai.js");
-  require("./response/commandcode-to-openai.js");
+  require("./response/kiro-to-claude.js");
+  require("./response/gemini-to-claude.js");
 }
 
 // Strip specific content types from messages (explicit opt-in via strip[] in PROVIDER_MODELS)
@@ -72,7 +74,7 @@ function stripContentTypes(body, stripList = []) {
 }
 
 // Translate request: source -> openai -> target
-export function translateRequest(sourceFormat, targetFormat, model, body, stream = true, credentials = null, provider = null, reqLogger = null, stripList = [], connectionId = null, clientTool = null) {
+export function translateRequest(sourceFormat, targetFormat, model, body, stream = true, credentials = null, provider = null, reqLogger = null, stripList = [], connectionId = null) {
   ensureInitialized();
   let result = body;
 
@@ -84,27 +86,33 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
 
   // Always ensure tool_calls have id (some providers require it)
   ensureToolCallIds(result);
-  
+
   // Fix missing tool responses (insert empty tool_result if needed)
   fixMissingToolResponses(result);
 
   // If same format, skip translation steps
   if (sourceFormat !== targetFormat) {
-    // Step 1: source -> openai (if source is not openai)
-    if (sourceFormat !== FORMATS.OPENAI) {
-      const toOpenAI = requestRegistry.get(`${sourceFormat}:${FORMATS.OPENAI}`);
-      if (toOpenAI) {
-        result = toOpenAI(model, result, stream, credentials);
-        // Log OpenAI intermediate format
-        reqLogger?.logOpenAIRequest?.(result);
+    // Check for direct translator (optimized path)
+    const directTranslator = requestRegistry.get(`${sourceFormat}:${targetFormat}`);
+    if (directTranslator) {
+      result = directTranslator(model, result, stream, credentials);
+    } else {
+      // Step 1: source -> openai (if source is not openai)
+      if (sourceFormat !== FORMATS.OPENAI) {
+        const toOpenAI = requestRegistry.get(`${sourceFormat}:${FORMATS.OPENAI}`);
+        if (toOpenAI) {
+          result = toOpenAI(model, result, stream, credentials);
+          // Log OpenAI intermediate format
+          reqLogger?.logOpenAIRequest?.(result);
+        }
       }
-    }
 
-    // Step 2: openai -> target (if target is not openai)
-    if (targetFormat !== FORMATS.OPENAI) {
-      const fromOpenAI = requestRegistry.get(`${FORMATS.OPENAI}:${targetFormat}`);
-      if (fromOpenAI) {
-        result = fromOpenAI(model, result, stream, credentials);
+      // Step 2: openai -> target (if target is not openai)
+      if (targetFormat !== FORMATS.OPENAI) {
+        const fromOpenAI = requestRegistry.get(`${FORMATS.OPENAI}:${targetFormat}`);
+        if (fromOpenAI) {
+          result = fromOpenAI(model, result, stream, credentials);
+        }
       }
     }
   }
@@ -134,14 +142,15 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
     }
   }
 
-  // Antigravity cloaking disabled
-  // if (provider === FORMATS.ANTIGRAVITY && body.userAgent !== FORMATS.ANTIGRAVITY) {
-  //   const { cloakedBody, toolNameMap } = AntigravityExecutor.cloakTools(result);
-  //   result = cloakedBody;
-  //   if (toolNameMap?.size > 0) {
-  //     result._toolNameMap = toolNameMap;
-  //   }
-  // }
+  // Antigravity cloaking: rename client tools + inject decoys (anti-ban)
+  // Skip if client is native AG (userAgent = antigravity)
+  if (provider === FORMATS.ANTIGRAVITY && body.userAgent !== FORMATS.ANTIGRAVITY) {
+    const { cloakedBody, toolNameMap } = AntigravityExecutor.cloakTools(result);
+    result = cloakedBody;
+    if (toolNameMap?.size > 0) {
+      result._toolNameMap = toolNameMap;
+    }
+  }
 
   return result;
 }
@@ -157,31 +166,40 @@ export function translateResponse(targetFormat, sourceFormat, chunk, state) {
   let results = [chunk];
   let openaiResults = null; // Store OpenAI intermediate results
 
-  // Step 1: target -> openai (if target is not openai)
-  if (targetFormat !== FORMATS.OPENAI) {
-    const toOpenAI = responseRegistry.get(`${targetFormat}:${FORMATS.OPENAI}`);
-    if (toOpenAI) {
-      results = [];
-      const converted = toOpenAI(chunk, state);
-      if (converted) {
-        results = Array.isArray(converted) ? converted : [converted];
-        openaiResults = results; // Store OpenAI intermediate
-      }
+  // Check for direct translator (optimized path)
+  const directResponse = responseRegistry.get(`${targetFormat}:${sourceFormat}`);
+  if (directResponse) {
+    const converted = directResponse(chunk, state);
+    if (converted) {
+      results = Array.isArray(converted) ? converted : [converted];
     }
-  }
-
-  // Step 2: openai -> source (if source is not openai)
-  if (sourceFormat !== FORMATS.OPENAI) {
-    const fromOpenAI = responseRegistry.get(`${FORMATS.OPENAI}:${sourceFormat}`);
-    if (fromOpenAI) {
-      const finalResults = [];
-      for (const r of results) {
-        const converted = fromOpenAI(r, state);
+  } else {
+    // Step 1: target -> openai (if target is not openai)
+    if (targetFormat !== FORMATS.OPENAI) {
+      const toOpenAI = responseRegistry.get(`${targetFormat}:${FORMATS.OPENAI}`);
+      if (toOpenAI) {
+        results = [];
+        const converted = toOpenAI(chunk, state);
         if (converted) {
-          finalResults.push(...(Array.isArray(converted) ? converted : [converted]));
+          results = Array.isArray(converted) ? converted : [converted];
+          openaiResults = results; // Store OpenAI intermediate
         }
       }
-      results = finalResults;
+    }
+
+    // Step 2: openai -> source (if source is not openai)
+    if (sourceFormat !== FORMATS.OPENAI) {
+      const fromOpenAI = responseRegistry.get(`${FORMATS.OPENAI}:${sourceFormat}`);
+      if (fromOpenAI) {
+        const finalResults = [];
+        for (const r of results) {
+          const converted = fromOpenAI(r, state);
+          if (converted) {
+            finalResults.push(...(Array.isArray(converted) ? converted : [converted]));
+          }
+        }
+        results = finalResults;
+      }
     }
   }
 
