@@ -644,11 +644,7 @@ export default function ProviderDetailPage() {
               </Button>
             </div>
           </div>
-          {connections.length > 0 && (
-            <p className="text-sm text-text-muted">
-              Only one connection is allowed per compatible node. Add another node if you need more connections.
-            </p>
-          )}
+          
         </Card>
       )}
 
@@ -656,7 +652,6 @@ export default function ProviderDetailPage() {
       <Card>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">Connections</h2>
-          {!isCompatible && (
             <Button
               size="sm"
               icon="add"
@@ -664,7 +659,6 @@ export default function ProviderDetailPage() {
             >
               Add
             </Button>
-          )}
         </div>
 
         {connections.length === 0 ? (
@@ -674,11 +668,9 @@ export default function ProviderDetailPage() {
             </div>
             <p className="text-text-main font-medium mb-1">No connections yet</p>
             <p className="text-sm text-text-muted mb-4">Add your first connection to get started</p>
-            {!isCompatible && (
               <Button icon="add" onClick={() => isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true)}>
                 Add Connection
               </Button>
-            )}
           </div>
         ) : (
           <div className="flex flex-col divide-y divide-black/[0.03] dark:divide-white/[0.03]">

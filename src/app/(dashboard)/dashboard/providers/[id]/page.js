@@ -1334,18 +1334,18 @@ export default function ProviderDetailPage() {
                   </>
                 ) : (
                   <>
-                    {!isCompatible && providerId === "iflow" && (
-                      <Button size="sm" icon="cookie" variant="secondary" onClick={() => setShowIFlowCookieModal(true)}>
-                        Cookie
-                      </Button>
-                    )}
-                    <Button
-                      size="sm"
-                      icon="add"
-                      onClick={triggerAddConnection}
-                    >
-                      {isCompatible ? "Add API Key" : (providerId === "iflow" ? "OAuth" : "Add Connection")}
+                  {!isCompatible && providerId === "iflow" && (
+                    <Button size="sm" icon="cookie" variant="secondary" onClick={() => setShowIFlowCookieModal(true)}>
+                      Cookie
                     </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    icon="add"
+                    onClick={triggerAddConnection}
+                  >
+                    {providerId === "iflow" ? "OAuth" : "Add Connection"}
+                  </Button>
                   </>
                 )}
               </div>
@@ -1369,7 +1369,6 @@ export default function ProviderDetailPage() {
                 </div>
               )}
               {connectionsList}
-              {!isCompatible && (
                 <div className="mt-4 grid grid-cols-1 gap-2 sm:flex">
                   {providerId === "iflow" && (
                     <Button
@@ -1414,7 +1413,6 @@ export default function ProviderDetailPage() {
                     </Button>
                   )}
                 </div>
-              )}
             </>
           )}
         </Card>
