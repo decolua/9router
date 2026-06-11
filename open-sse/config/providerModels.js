@@ -224,6 +224,9 @@ export const PROVIDER_MODELS = {
   ],
 
   // API Key Providers (alias = id)
+  qiniu: [
+    { id: "deepseek-v3", name: "DeepSeek V3" },
+  ],
   openai: [
     // Flagship models
     { id: "gpt-5.4", name: "GPT-5.4" },

@@ -190,6 +190,7 @@ const PROVIDER_MODELS_CONFIG = {
     }
   },
   openai: createOpenAIModelsConfig("https://api.openai.com/v1/models"),
+  qiniu: createOpenAIModelsConfig("https://api.qnaigc.com/v1/models"),
   openrouter: createOpenAIModelsConfig("https://openrouter.ai/api/v1/models"),
   anthropic: {
     url: "https://api.anthropic.com/v1/models",

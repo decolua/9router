@@ -120,6 +120,10 @@ export const PROVIDERS = {
       "X-Title": "Endpoint Proxy"
     }
   },
+  qiniu: {
+    baseUrl: "https://api.qnaigc.com/v1/chat/completions",
+    format: "openai"
+  },
   openai: {
     baseUrl: "https://api.openai.com/v1/chat/completions",
     format: "openai"
