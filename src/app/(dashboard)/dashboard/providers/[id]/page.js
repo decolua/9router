@@ -389,12 +389,15 @@ export default function ProviderDetailPage() {
       });
       if (res.ok) {
         await fetchAliases();
+        return true;
       } else {
         const data = await res.json();
         alert(data.error || "Failed to set alias");
+        return false;
       }
     } catch (error) {
       console.log("Error setting alias:", error);
+      return false;
     }
   };
 
