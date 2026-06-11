@@ -113,6 +113,52 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
 }
 
 // Helper functions
+function ensureCompletedOutputState(state) {
+  if (Array.isArray(state.completedOutputItems)) {
+    return state.completedOutputItems;
+  }
+
+  if (state.completedOutputItems instanceof Map) {
+    state.completedOutputItems = Array.from(state.completedOutputItems.entries()).map(
+      ([output_index, item], seq) => ({ output_index, item, seq })
+    );
+    return state.completedOutputItems;
+  }
+
+  state.completedOutputItems = [];
+
+  return state.completedOutputItems;
+}
+
+function normalizeOutputIndex(outputIndex) {
+  const normalized = Number(outputIndex);
+  return Number.isInteger(normalized) && normalized >= 0 ? normalized : 0;
+}
+
+function recordCompletedItem(state, outputIndex, item) {
+  const completedOutputItems = ensureCompletedOutputState(state);
+  const normalized = normalizeOutputIndex(outputIndex);
+
+  completedOutputItems.push({
+    output_index: normalized,
+    item,
+    seq: state.seq
+  });
+  return normalized;
+}
+
+function buildDenseOutput(state) {
+  return ensureCompletedOutputState(state)
+    .slice()
+    .sort((left, right) => {
+      if (left.output_index !== right.output_index) {
+        return left.output_index - right.output_index;
+      }
+      return left.seq - right.seq;
+    })
+    .map(({ item }) => item);
+}
+
 function startReasoning(state, emit, idx) {
   if (!state.reasoningId) {
     state.reasoningId = `rs_${state.responseId}_${idx}`;
@@ -167,15 +213,19 @@ function closeReasoning(state, emit) {
       part: { type: "summary_text", text: state.reasoningBuf }
     });
 
+    const item = {
+      id: state.reasoningId,
+      type: "reasoning",
+      summary: [{ type: "summary_text", text: state.reasoningBuf }]
+    };
+
     emit("response.output_item.done", {
       type: "response.output_item.done",
       output_index: state.reasoningIndex,
-      item: {
-        id: state.reasoningId,
-        type: "reasoning",
-        summary: [{ type: "summary_text", text: state.reasoningBuf }]
-      }
+      item
     });
+
+    recordCompletedItem(state, state.reasoningIndex, item);
   }
 }
 
@@ -219,13 +269,14 @@ function emitTextContent(state, emit, idx, content) {
 function closeMessage(state, emit, idx) {
   if (state.msgItemAdded[idx] && !state.msgItemDone[idx]) {
     state.msgItemDone[idx] = true;
+    const normalizedIndex = normalizeOutputIndex(idx);
     const fullText = state.msgTextBuf[idx] || "";
-    const msgId = `msg_${state.responseId}_${idx}`;
+    const msgId = `msg_${state.responseId}_${normalizedIndex}`;
 
     emit("response.output_text.done", {
       type: "response.output_text.done",
       item_id: msgId,
-      output_index: parseInt(idx),
+      output_index: normalizedIndex,
       content_index: 0,
       text: fullText,
       logprobs: []
@@ -234,21 +285,25 @@ function closeMessage(state, emit, idx) {
     emit("response.content_part.done", {
       type: "response.content_part.done",
       item_id: msgId,
-      output_index: parseInt(idx),
+      output_index: normalizedIndex,
       content_index: 0,
       part: { type: "output_text", annotations: [], logprobs: [], text: fullText }
     });
 
+    const item = {
+      id: msgId,
+      type: "message",
+      content: [{ type: "output_text", annotations: [], logprobs: [], text: fullText }],
+      role: "assistant"
+    };
+
     emit("response.output_item.done", {
       type: "response.output_item.done",
-      output_index: parseInt(idx),
-      item: {
-        id: msgId,
-        type: "message",
-        content: [{ type: "output_text", annotations: [], logprobs: [], text: fullText }],
-        role: "assistant"
-      }
+      output_index: normalizedIndex,
+      item
     });
+
+    recordCompletedItem(state, normalizedIndex, item);
   }
 }
 
@@ -294,26 +349,31 @@ function emitToolCall(state, emit, tc) {
 function closeToolCall(state, emit, idx) {
   const callId = state.funcCallIds[idx];
   if (callId && !state.funcItemDone[idx]) {
+    const normalizedIndex = normalizeOutputIndex(idx);
     const args = state.funcArgsBuf[idx] || "{}";
     
     emit("response.function_call_arguments.done", {
       type: "response.function_call_arguments.done",
       item_id: `fc_${callId}`,
-      output_index: parseInt(idx),
+      output_index: normalizedIndex,
       arguments: args
     });
 
+    const item = {
+      id: `fc_${callId}`,
+      type: "function_call",
+      arguments: args,
+      call_id: callId,
+      name: state.funcNames[idx] || ""
+    };
+
     emit("response.output_item.done", {
       type: "response.output_item.done",
-      output_index: parseInt(idx),
-      item: {
-        id: `fc_${callId}`,
-        type: "function_call",
-        arguments: args,
-        call_id: callId,
-        name: state.funcNames[idx] || ""
-      }
+      output_index: normalizedIndex,
+      item
     });
+
+    recordCompletedItem(state, normalizedIndex, item);
 
     state.funcItemDone[idx] = true;
     state.funcArgsDone[idx] = true;
@@ -331,7 +391,8 @@ function sendCompleted(state, emit) {
         created_at: state.created,
         status: "completed",
         background: false,
-        error: null
+        error: null,
+        output: buildDenseOutput(state)
       }
     });
   }

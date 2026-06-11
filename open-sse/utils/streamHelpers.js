@@ -35,6 +35,10 @@ export function parseSSELine(line, format = null) {
 
 // Check if chunk has valuable content (not empty)
 export function hasValuableContent(chunk, format) {
+  if (chunk === null || chunk === undefined) {
+    return false;
+  }
+
   // OpenAI format
   if (format === FORMATS.OPENAI && chunk.choices?.[0]?.delta) {
     const delta = chunk.choices[0].delta;
