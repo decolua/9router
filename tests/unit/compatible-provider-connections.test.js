@@ -153,6 +153,25 @@ describe("compatible provider connections API", () => {
     });
   });
 
+  it("rejects an OpenAI-compatible id whose node type is anthropic-compatible", async () => {
+    const ctx = await setupTestContext({
+      id: "openai-compatible-mismatch",
+      type: "anthropic-compatible",
+      name: "Mismatched Node",
+      prefix: "mis",
+      baseUrl: "https://mismatch.test/v1",
+    });
+    cleanup = ctx.cleanup;
+
+    const res = await ctx.POST(makeRequestWith(ctx.node.id, { apiKey: "k", name: "K" }));
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.error).toContain("node type");
+    const stored = await ctx.getProviderConnections({ provider: ctx.node.id });
+    expect(stored).toHaveLength(0);
+  });
+
   it("allows multiple distinctly named API-key connections on one compatible node", async () => {
     const ctx = await setupTestContext({
       id: "openai-compatible-multikey-test",
