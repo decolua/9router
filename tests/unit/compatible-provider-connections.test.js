@@ -51,6 +51,14 @@ function makeRequest(provider) {
   });
 }
 
+function makeRequestWith(provider, { apiKey, name }) {
+  return new Request("https://9router.local/api/providers", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ provider, apiKey, name, defaultModel: "test-model" }),
+  });
+}
+
 function expectCompatibleConnection(connection, node, { apiType } = {}) {
   expect(connection.provider).toBe(node.id);
   expect(connection.authType).toBe("apikey");
@@ -145,26 +153,25 @@ describe("compatible provider connections API", () => {
     });
   });
 
-  it("returns 400 for a duplicate connection on the same compatible node", async () => {
+  it("allows multiple distinctly named API-key connections on one compatible node", async () => {
     const ctx = await setupTestContext({
-      id: "openai-compatible-duplicate-test",
+      id: "openai-compatible-multikey-test",
       type: "openai-compatible",
-      name: "Duplicate Guard Node",
-      prefix: "dup",
+      name: "OpenAI Compatible Multi-Key Node",
+      prefix: "ocm",
       apiType: "chat",
-      baseUrl: "https://duplicate-guard.test/v1",
+      baseUrl: "https://openai-multikey.test/v1",
     });
     cleanup = ctx.cleanup;
 
-    const firstResponse = await ctx.POST(makeRequest(ctx.node.id));
-    const secondResponse = await ctx.POST(makeRequest(ctx.node.id));
-    const secondBody = await secondResponse.json();
-    const storedConnections = await ctx.getProviderConnections({ provider: ctx.node.id });
+    const first = await ctx.POST(makeRequestWith(ctx.node.id, { apiKey: "key-1", name: "Key One" }));
+    const second = await ctx.POST(makeRequestWith(ctx.node.id, { apiKey: "key-2", name: "Key Two" }));
 
-    expect(firstResponse.status).toBe(201);
-    expect(secondResponse.status).toBe(400);
-    expect(secondBody.error).toContain("Only one connection is allowed");
-    expect(storedConnections).toHaveLength(1);
-    expectCompatibleConnection(storedConnections[0], ctx.node, { apiType: "chat" });
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+
+    const stored = await ctx.getProviderConnections({ provider: ctx.node.id });
+    expect(stored).toHaveLength(2);
+    expect(stored.map((c) => c.name).sort()).toEqual(["Key One", "Key Two"]);
   });
 });
