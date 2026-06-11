@@ -65,6 +65,11 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
 
   // Handle text content
   if (delta.content) {
+    // Close reasoning if we had reasoning_content and now have content
+    if (state.reasoningId && !state.reasoningDone) {
+      closeReasoning(state, emit);
+    }
+
     let content = delta.content;
 
     if (content.includes("<think>")) {
@@ -89,13 +94,16 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
     }
 
     if (content) {
-      emitTextContent(state, emit, idx, content);
+      // Use different output_index if reasoning was emitted
+      const msgIdx = state.reasoningId ? state.reasoningIndex + 1 : idx;
+      emitTextContent(state, emit, msgIdx, content);
     }
   }
 
   // Handle tool_calls
   if (delta.tool_calls) {
-    closeMessage(state, emit, idx);
+    const msgIdx = state.reasoningId ? state.reasoningIndex + 1 : idx;
+    closeMessage(state, emit, msgIdx);
     for (const tc of delta.tool_calls) {
       emitToolCall(state, emit, tc);
     }
