@@ -38,7 +38,7 @@ async function setupTestContext(nodeData) {
   };
 }
 
-function makeRequest(provider) {
+function makeRequest(provider, overrides = {}) {
   return new Request("https://9router.local/api/providers", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -47,6 +47,7 @@ function makeRequest(provider) {
       apiKey: "test-key",
       name: "Test Connection",
       defaultModel: "test-model",
+      ...overrides,
     }),
   });
 }
@@ -145,14 +146,35 @@ describe("compatible provider connections API", () => {
     });
   });
 
-  it("returns 400 for a duplicate connection on the same compatible node", async () => {
+  it("allows multiple API-key connections for the same OpenAI-compatible node", async () => {
     const ctx = await setupTestContext({
-      id: "openai-compatible-duplicate-test",
+      id: "openai-compatible-multi-key-test",
       type: "openai-compatible",
-      name: "Duplicate Guard Node",
-      prefix: "dup",
+      name: "Multi Key Node",
+      prefix: "multi",
       apiType: "chat",
-      baseUrl: "https://duplicate-guard.test/v1",
+      baseUrl: "https://multi-key.test/v1",
+    });
+    cleanup = ctx.cleanup;
+
+    const firstResponse = await ctx.POST(makeRequest(ctx.node.id, { name: "Primary Key", apiKey: "test-key-1" }));
+    const secondResponse = await ctx.POST(makeRequest(ctx.node.id, { name: "Backup Key", apiKey: "test-key-2" }));
+    const storedConnections = await ctx.getProviderConnections({ provider: ctx.node.id });
+
+    expect(firstResponse.status).toBe(201);
+    expect(secondResponse.status).toBe(201);
+    expect(storedConnections).toHaveLength(2);
+    expectCompatibleConnection(storedConnections[0], ctx.node, { apiType: "chat" });
+    expectCompatibleConnection(storedConnections[1], ctx.node, { apiType: "chat" });
+  });
+
+  it("returns 400 for a duplicate connection on the same Anthropic-compatible node", async () => {
+    const ctx = await setupTestContext({
+      id: "anthropic-compatible-duplicate-test",
+      type: "anthropic-compatible",
+      name: "Anthropic Duplicate Guard Node",
+      prefix: "adg",
+      baseUrl: "https://anthropic-duplicate-guard.test/v1",
     });
     cleanup = ctx.cleanup;
 
@@ -165,6 +187,6 @@ describe("compatible provider connections API", () => {
     expect(secondResponse.status).toBe(400);
     expect(secondBody.error).toContain("Only one connection is allowed");
     expect(storedConnections).toHaveLength(1);
-    expectCompatibleConnection(storedConnections[0], ctx.node, { apiType: "chat" });
+    expectCompatibleConnection(storedConnections[0], ctx.node);
   });
 });
