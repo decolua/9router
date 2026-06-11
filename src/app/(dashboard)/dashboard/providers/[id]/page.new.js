@@ -646,7 +646,7 @@ export default function ProviderDetailPage() {
           </div>
           {connections.length > 0 && (
             <p className="text-sm text-text-muted">
-              Only one connection is allowed per compatible node. Add another node if you need more connections.
+              Add multiple API keys to run this endpoint across several keys.
             </p>
           )}
         </Card>
