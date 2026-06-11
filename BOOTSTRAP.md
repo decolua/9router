@@ -1,66 +1,81 @@
-# BOOTSTRAP.md - 9Router Session Initialization Protocol
+# BOOTSTRAP.md - Giao thức Khởi tạo Session 9Router
 
-> **Ghi nhớ:** Boot sequence chi tiết xem `AGENTS.md` §1. File này bổ sung rules vận hành.
+> **Quan trọng:** File này được aiagent OpenClaw và các agent khác đọc khi khởi tạo session.
+> Chi tiết boot sequence đầy đủ xem `AGENTS.md`. File này bổ sung các quy tắc vận hành riêng cho 9Router.
 
 ---
 
 ## 1. Boot Sequence
 
-Xem `AGENTS.md` §1 — bắt buộc đọc SOUL.md → IDENTITY.md → USER.md → AGENTS.md → memory trước khi xử lý task.
+Xem `AGENTS.md` §1 — **Bắt buộc** đọc SOUL.md → IDENTITY.md → USER.md → AGENTS.md → memory trước khi xử lý tác vụ.
 
 ---
 
-## 2. Context Validation Checklist
+## 2. Danh sách kiểm tra Xác thực Ngữ cảnh
 
-Trước khi action, tự hỏi:
+**Trước khi hành động, tự hỏi:**
 
-| Câu hỏi | Ưu tiên |
+| Câu hỏi | Mức ưu tiên |
 |---------|---------|
-| Task đã rõ scope chưa? | — |
-| Có ảnh hưởng RTK compression? | Cao nhất — sai = mất token |
-| Có ảnh hưởng proxy routing/fallback? | Test fallback trước khi merge |
-| Có thay đổi config/providers? | Kiểm tra backward compatibility |
-| Cần update docs (`docs/UPDATE-*.md`)? | Nếu có thay đổi đáng kể |
+| Tác vụ đã rõ phạm vi chưa? | — |
+| Có ảnh hưởng đến nén RTK compression? | **Cao nhất** — sai = mất token |
+| Có ảnh hưởng đến proxy routing/fallback? | Kiểm tra fallback trước khi merge |
+| Có thay đổi config/providers? | Kiểm tra tương thích ngược |
+| Cần tạo tài liệu (`docs/UPDATE-*.md`)? | Nếu có thay đổi đáng kể |
 
-Chưa rõ → hỏi Sếp, đừng đoán.
-
----
-
-## 3. Execution Guard
-
-Tuyệt đối không:
-- Bỏ qua boot sequence
-- Push/merge trực tiếp lên main
-- Tạo PR lên `decolua/9router` (upstream) — chỉ trên fork `diepxuan/9router`
-- Sửa PR cũ (tạo branch mới cho mọi thay đổi)
-- Phá backward compatibility
-- Commit secrets/API keys
-
-Chi tiết git workflow: xem `AGENTS.md` §3.
+**Chưa rõ ràng → hỏi Sếp, tuyệt đối không đoán.**
 
 ---
 
-## 4. Documentation Trigger
+## 3. Biên giới Thực thi
 
-Tạo/cập nhật tài liệu khi:
-- Thêm provider mới
-- Thay đổi RTK compression logic
-- Sửa fallback routing
-- Thay đổi dashboard UI đáng kể
-- Fix bug ảnh hưởng proxy/token savings
+**TUYỆT ĐỐI KHÔNG được thực hiện:**
 
-File: `docs/UPDATE-YYYY-MM-DD.md`
-Changelog: `CHANGELOG.md`
+- Bỏ qua boot sequence.
+- Push hoặc merge trực tiếp lên nhánh main.
+- Tạo PR lên `decolua/9router` (upstream) — chỉ trên fork `diepxuan/9router`.
+- Chỉnh sửa PR cũ (tạo nhánh mới cho mọi thay đổi).
+- Phá tương thích ngược.
+- Commit secrets/API keys.
 
----
-
-## 5. Failure Handling
-
-1. Dừng ngay
-2. Phân tích root cause
-3. Không patch trực tiếp main — tạo branch fix mới
-4. Báo cáo Sếp
+**Chi tiết kỷ luật Git:** Xem `AGENTS.md` §3.
 
 ---
 
-BOOTSTRAP.md + AGENTS.md = bộ rules vận hành 9Router. Không bỏ qua.
+## 4. Trigger Tạo Tài liệu
+
+**Tạo hoặc cập nhật tài liệu khi:**
+
+- Thêm nhà cung cấp (provider) mới.
+- Thay đổi logic nén RTK compression.
+- Sửa fallback routing.
+- Thay đổi dashboard UI đáng kể.
+- Sửa lỗi ảnh hưởng đến proxy/token savings.
+
+| Loại | File |
+|------|------|
+| Changelog | `CHANGELOG.md` |
+| Cập nhật chi tiết | `docs/UPDATE-YYYY-MM-DD.md` |
+
+---
+
+## 5. Xử lý Sự cố
+
+1. **Dừng ngay** — không tiếp tục hành động.
+2. **Phân tích nguyên nhân gốc** (root cause analysis).
+3. **Không vá trực tiếp trên main** — tạo nhánh sửa mới.
+4. **Báo cáo Sếp** — kèm phân tích và hướng xử lý.
+
+---
+
+## 6. Các Agent khác
+
+Khi các agent khác đọc BOOTSTRAP.md này, chúng cần:
+
+1. Đọc đầy đủ nội dung.
+2. Tuân thủ boot sequence trong `AGENTS.md`.
+3. Không thực hiện các hành động bị cấm trong §3.
+
+---
+
+*BOOTSTRAP.md bổ sung cho AGENTS.md với các quy tắc vận hành cụ thể của 9Router.*

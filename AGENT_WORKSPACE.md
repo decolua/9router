@@ -1,59 +1,68 @@
-# 9Router Agent Workspace
+# AGENT_WORKSPACE.md - Không gian làm việc 9Router Agent
 
-Workspace của agent **9router** trong hệ thống OpenClaw.
-
----
-
-## Dự án: 9Router
-
-AI Router & Token Saver — kết nối CLI coding tools với 40+ AI providers.
-
-- **Repo:** `git@github.com:diepxuan/9router.git`
-- **Dashboard:** `http://localhost:20128`
-- **Tech:** Next.js 16, Express.js 5, SQLite, Zustand, TailwindCSS 4
+Không gian làm việc của Agent **9router** trong hệ thống OpenClaw.
 
 ---
 
-## Identity Files
+## 1. Dự án: 9Router
+
+AI Router & Token Saver — kết nối các công cụ lập trình CLI với hơn 40 nhà cung cấp AI.
+
+| Thuộc tính | Giá trị |
+|------------|---------|
+| **Kho lưu trữ** | `git@github.com:diepxuan/9router.git` |
+| **Dashboard** | `http://localhost:20128` |
+| **Tập hợp công nghệ** | Next.js ^16.1.6, React 19, Express.js 5, SQLite, Zustand, TailwindCSS 4 |
+
+---
+
+## 2. Các File Định danh
 
 | File | Mô tả |
 |------|-------|
 | `SOUL.md` | Bản sắc cốt lõi, phong cách, chuyên môn |
-| `IDENTITY.md` | Định danh agent, quan hệ quyền hạn |
-| `AGENTS.md` | Quy trình làm việc, boot sequence, git rules |
+| `IDENTITY.md` | Con trỏ định danh + cấu hình |
+| `AGENTS.md` | Giao thức làm việc, boot sequence, kỷ luật Git |
+| `BOOTSTRAP.md` | Giao thức khởi tạo session (cho aiagent và agent khác) |
+| `TOOLS.md` | Dev quick reference (commands, paths, providers) |
+| `HEARTBEAT.md` | Điều khiển heartbeat task |
+| `memory/` | Thư mục nhật ký hàng ngày |
+| `docs/` | Tài liệu cập nhật (UPDATE-YYYY-MM-DD.md) |
 
 ---
 
-## Agent Config (openclaw.json)
+## 3. Tính năng chính
 
-- **ID:** `9router`
-- **Workspace:** `/root/.openclaw/workspace/projects/9router`
-- **Agent Dir:** `/root/.openclaw/agents/9router/agent`
-- **Memory Search:** enabled
-- **Model:** `9router/openclaw-coder` (default)
-
----
-
-## Key Features to Know
-
-1. **RTK Token Saver** — Nén tool_result, tiết kiệm 20-40% tokens
-2. **Auto Fallback** — Subscription → Cheap → Free, zero downtime
-3. **Quota Tracking** — Theo dõi hạn mức, auto-refresh
-4. **Multi-account** — Round-robin giữa accounts
-5. **Format Translation** — OpenAI ↔ Claude
+1. **RTK Token Saver** — Nén `tool_result`, tiết kiệm 20-40% tokens.
+2. **Auto Fallback** — Subscription → Cheap → Free, không gián đoạn.
+3. **Quota Tracking** — Theo dõi hạn mức, tự động làm mới.
+4. **Multi-account** — Phân phối tải round-robin giữa các tài khoản.
+5. **Format Translation** — Chuyển đổi OpenAI ↔ Claude ↔ Gemini.
 
 ---
 
-## Quick Commands
+## 4. Lệnh thường dùng
 
 ```bash
 cd /root/.openclaw/workspace/projects/9router
 
-# Development
-npm run dev          # Next.js dev server (port 20128)
-npm run build        # Production build
-npm start            # Production server
+# Phát triển
+npm run dev          # Server phát triển Next.js (cổng 20128)
+npm run build        # Build sản phẩm
+npm start            # Chạy server sản phẩm
 
 # Docker
 docker build -t 9router .
 ```
+
+---
+
+## 5. Cấu hình Agent (openclaw.json)
+
+| Thuộc tính | Giá trị |
+|------------|---------|
+| ID | 9router |
+| Workspace | `/root/.openclaw/workspace/projects/9router` |
+| Agent Dir | `/root/.openclaw/agents/9router/agent` |
+| Memory Search | enabled |
+| Model | `9router/openclaw-coder` (mặc định) |
