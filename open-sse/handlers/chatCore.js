@@ -17,6 +17,7 @@ import { handleNonStreamingResponse } from "./chatCore/nonStreamingHandler.js";
 import { handleStreamingResponse, buildOnStreamComplete } from "./chatCore/streamingHandler.js";
 import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.js";
 import { dedupeTools } from "../utils/toolDeduper.js";
+import { stripUnsupportedAssistantPrefill } from "../utils/requestNormalization.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
 
@@ -101,6 +102,15 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     delete translatedBody._toolNameMap;
     translatedBody.model = upstreamModel;
   }
+
+  translatedBody = stripUnsupportedAssistantPrefill({
+    provider,
+    sourceFormat,
+    targetFormat,
+    body: translatedBody,
+    clientTool,
+    log,
+  });
 
   // Dedupe duplicate built-in tools when equivalent MCP tools are present (Claude clients only).
   if (clientTool === "claude" && Array.isArray(translatedBody.tools)) {
