@@ -55,12 +55,12 @@ export async function handleChat(request, clientRawRequest = null) {
   const effort = body.reasoning_effort || body.reasoning?.effort || null;
   log.request("POST", `${url.pathname} | ${modelStr} | ${msgCount} msgs${toolCount ? ` | ${toolCount} tools` : ""}${effort ? ` | effort=${effort}` : ""}`);
 
-  // Log API key (masked)
+  // Log API key presence only. Even prefix/last4 values can become
+  // sensitive when logs are copied into bug reports or support tickets.
   const authHeader = request.headers.get("Authorization");
   const apiKey = extractApiKey(request);
   if (authHeader && apiKey) {
-    const masked = log.maskKey(apiKey);
-    log.debug("AUTH", `API Key: ${masked}`);
+    log.debug("AUTH", "API key provided");
   } else {
     log.debug("AUTH", "No API key provided (local mode)");
   }
