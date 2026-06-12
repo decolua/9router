@@ -7,12 +7,20 @@ data/
 src/
 docs/
 test/
+tests/
 agents/
 scripts/
 worker/
 shared-sse/
 copilot-api/
 CLIProxyAPI/
+gitbook/
+
+# Repository/ops metadata
+.github/
+.vscode/
+Dockerfile
+captain-definition
 
 # Config files
 *.md
@@ -26,6 +34,9 @@ next.config.mjs
 tsconfig.json
 
 # Build artifacts that shouldn't be published
-.next/cache/
-.next/standalone/data/
-
+.next/
+.next-cli-build/
+out/
+coverage/
+dist/
+build/

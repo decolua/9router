@@ -3,6 +3,12 @@
 import { useState } from "react";
 import PropTypes from "prop-types";
 import { Button } from "@/shared/components";
+import { useNotificationStore } from "@/store/notificationStore";
+import {
+  createCompatibleModelImportPlan,
+  formatCompatibleModelImportSummary,
+  resolveCompatibleModelAlias,
+} from "@/shared/utils/compatibleModelImport";
 function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting }) {
   const borderColor = testStatus === "ok"
     ? "border-green-500/40"
@@ -76,6 +82,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
   const [importing, setImporting] = useState(false);
   const [testingModelId, setTestingModelId] = useState(null);
   const [modelTestResults, setModelTestResults] = useState({});
+  const notify = useNotificationStore();
 
   const handleTestModel = async (modelId) => {
     if (testingModelId) return;
@@ -105,20 +112,14 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
     alias,
   }));
 
-  const generateDefaultAlias = (modelId) => {
-    const parts = modelId.split("/");
-    return parts[parts.length - 1];
-  };
-
   const resolveAlias = (modelId) => {
-    const fullModel = `${providerStorageAlias}/${modelId}`;
-    // Skip if this exact model already has an alias
-    if (Object.values(modelAliases).includes(fullModel)) return null;
-    const baseAlias = generateDefaultAlias(modelId);
-    if (!modelAliases[baseAlias]) return baseAlias;
-    const prefixedAlias = `${providerDisplayAlias}-${baseAlias}`;
-    if (!modelAliases[prefixedAlias]) return prefixedAlias;
-    return null;
+    const resolved = resolveCompatibleModelAlias(modelId, {
+      providerStorageAlias,
+      providerDisplayAlias,
+      usedAliases: new Set(Object.keys(modelAliases)),
+      usedModels: new Set(Object.values(modelAliases)),
+    });
+    return resolved.status === "ready" ? resolved.alias : null;
   };
 
   const handleAdd = async () => {
@@ -126,7 +127,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
     const modelId = newModel.trim();
     const resolvedAlias = resolveAlias(modelId);
     if (!resolvedAlias) {
-      alert("All suggested aliases already exist. Please choose a different model or remove conflicting aliases.");
+      notify.warning("This model already exists or no usable alias could be generated.", "Model not added");
       return;
     }
 
@@ -136,6 +137,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
       setNewModel("");
     } catch (error) {
       console.log("Error adding model:", error);
+      notify.error(error.message || "Failed to add model", "Add failed");
     } finally {
       setAdding(false);
     }
@@ -151,28 +153,51 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
       const res = await fetch(`/api/providers/${activeConnection.id}/models`);
       const data = await res.json();
       if (!res.ok) {
-        alert(data.error || "Failed to import models");
+        notify.error(data.error || "Failed to import models", "Import failed");
         return;
       }
       const models = data.models || [];
       if (models.length === 0) {
-        alert("No models returned from /models.");
+        notify.warning("The provider /models endpoint returned an empty list.", "No models returned");
         return;
       }
+
+      const { plan, skipped, fetched } = createCompatibleModelImportPlan(models, {
+        providerStorageAlias,
+        providerDisplayAlias,
+        modelAliases,
+      });
+
       let importedCount = 0;
-      for (const model of models) {
-        const modelId = model.id || model.name || model.model;
-        if (!modelId) continue;
-        const resolvedAlias = resolveAlias(modelId);
-        if (!resolvedAlias) continue;
-        await onSetAlias(modelId, resolvedAlias, providerStorageAlias);
-        importedCount += 1;
+      let failedCount = 0;
+      for (const item of plan) {
+        try {
+          const ok = await onSetAlias(item.modelId, item.alias, providerStorageAlias);
+          if (ok === false) failedCount += 1;
+          else importedCount += 1;
+        } catch (error) {
+          failedCount += 1;
+          console.log("Error importing model:", item.modelId, error);
+        }
       }
-      if (importedCount === 0) {
-        alert("No new models were added.");
+
+      const summary = formatCompatibleModelImportSummary({
+        fetched,
+        imported: importedCount,
+        failed: failedCount,
+        skipped,
+      });
+
+      if (importedCount > 0) {
+        notify.success(summary, "Models imported");
+      } else if (failedCount > 0) {
+        notify.error(summary, "Import failed");
+      } else {
+        notify.info(summary, "No new models added");
       }
     } catch (error) {
       console.log("Error importing models:", error);
+      notify.error(error.message || "Failed to import models", "Import failed");
     } finally {
       setImporting(false);
     }

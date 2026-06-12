@@ -134,6 +134,7 @@ export default function ProviderDetailPage() {
   const isOpenAICompatible = isOpenAICompatibleProvider(providerId);
   const isAnthropicCompatible = isAnthropicCompatibleProvider(providerId);
   const isCompatible = isOpenAICompatible || isAnthropicCompatible;
+  const canAddConnectionAfterFirst = !isCompatible || isOpenAICompatible;
   const hasDualAuthModes = !isCompatible && isOAuth && supportsApiKeyAuth;
   const oauthConnectionLabel = providerId === "xai" ? "Grok Build OAuth" : "OAuth";
   const apiKeyConnectionLabel = providerId === "xai" ? "xAI API Key" : "API Key";
@@ -389,12 +390,15 @@ export default function ProviderDetailPage() {
       });
       if (res.ok) {
         await fetchAliases();
+        return true;
       } else {
         const data = await res.json();
         alert(data.error || "Failed to set alias");
+        return false;
       }
     } catch (error) {
       console.log("Error setting alias:", error);
+      return false;
     }
   };
 
@@ -1369,7 +1373,7 @@ export default function ProviderDetailPage() {
                 </div>
               )}
               {connectionsList}
-              {!isCompatible && (
+              {canAddConnectionAfterFirst && (
                 <div className="mt-4 grid grid-cols-1 gap-2 sm:flex">
                   {providerId === "iflow" && (
                     <Button

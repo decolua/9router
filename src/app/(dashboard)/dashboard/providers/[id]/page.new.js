@@ -50,6 +50,7 @@ export default function ProviderDetailPage() {
   const isOpenAICompatible = isOpenAICompatibleProvider(providerId);
   const isAnthropicCompatible = isAnthropicCompatibleProvider(providerId);
   const isCompatible = isOpenAICompatible || isAnthropicCompatible;
+  const canAddConnectionAfterFirst = !isCompatible || isOpenAICompatible;
 
   const providerStorageAlias = isCompatible ? providerId : providerAlias;
   const providerDisplayAlias = isCompatible
@@ -644,9 +645,9 @@ export default function ProviderDetailPage() {
               </Button>
             </div>
           </div>
-          {connections.length > 0 && (
+          {isAnthropicCompatible && connections.length > 0 && (
             <p className="text-sm text-text-muted">
-              Only one connection is allowed per compatible node. Add another node if you need more connections.
+              Only one connection is allowed per Anthropic Compatible node. Add another node if you need more connections.
             </p>
           )}
         </Card>
@@ -656,7 +657,7 @@ export default function ProviderDetailPage() {
       <Card>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">Connections</h2>
-          {!isCompatible && (
+          {canAddConnectionAfterFirst && (
             <Button
               size="sm"
               icon="add"
