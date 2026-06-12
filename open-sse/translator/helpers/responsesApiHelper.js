@@ -134,6 +134,7 @@ export function convertResponsesApiFormat(body) {
   delete result.prompt_cache_key;
   delete result.store;
   delete result.reasoning;
+  delete result.client_metadata;
 
   return result;
 }

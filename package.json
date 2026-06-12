@@ -1,8 +1,7 @@
 {
-  "name": "9router-app",
-  "version": "0.4.71",
-  "description": "9Router web dashboard",
-  "private": true,
+  "name": "9rudy",
+  "version": "0.4.72",
+  "description": "9Rudy web dashboard",
   "scripts": {
     "dev": "next dev --webpack --port 20128",
     "build": "next build --webpack",

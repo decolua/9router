@@ -13,6 +13,9 @@ export class DefaultExecutor extends BaseExecutor {
 
   transformRequest(model, body) {
     const transformed = this.applyJsonSchemaFallback(body);
+    if (this.provider?.startsWith?.("openai-compatible-") && !this.provider.includes("responses")) {
+      delete transformed.client_metadata;
+    }
     return injectReasoningContent({ provider: this.provider, model, body: transformed });
   }
 
