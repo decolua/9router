@@ -5,6 +5,10 @@ import { buildClineHeaders } from "../../src/shared/utils/clineAuth.js";
 import { getCachedClaudeHeaders } from "../utils/claudeHeaderCache.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
+import { openaiToOpenAIResponsesRequest } from "../translator/request/openai-responses.js";
+import { openaiResponsesToOpenAIResponse } from "../translator/response/openai-responses.js";
+import { initState } from "../translator/index.js";
+import { parseSSELine, formatSSE } from "../utils/streamHelpers.js";
 
 export class DefaultExecutor extends BaseExecutor {
   constructor(provider) {
@@ -12,8 +16,177 @@ export class DefaultExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body) {
-    const transformed = this.applyJsonSchemaFallback(body);
+    let transformed = this.applyJsonSchemaFallback(body);
+    transformed = this.rewriteMaxTokensParam(model, transformed);
     return injectReasoningContent({ provider: this.provider, model, body: transformed });
+  }
+
+  requiresMaxCompletionTokens(model) {
+    return /gpt-5|o[134]-/i.test(String(model || ""));
+  }
+
+  rewriteMaxTokensParam(model, body) {
+    if (!body || typeof body !== "object") return body;
+    if (body.max_completion_tokens !== undefined || body.max_tokens === undefined) return body;
+    if (!this.requiresMaxCompletionTokens(model)) return body;
+
+    const transformed = { ...body, max_completion_tokens: body.max_tokens };
+    delete transformed.max_tokens;
+    return transformed;
+  }
+
+  isUnsupportedMaxTokensError(payload) {
+    const err = payload?.error;
+    if (!err || typeof err !== "object") return false;
+    const code = String(err.code || "").toLowerCase();
+    const param = String(err.param || "").toLowerCase();
+    const message = String(err.message || "").toLowerCase();
+    return (
+      ((code.includes("unsupported_parameter") || code.includes("unknown_parameter")) && param === "max_tokens")
+      || (message.includes("unknown parameter") && message.includes("max_tokens"))
+      || (message.includes("max_tokens") && message.includes("max_completion_tokens"))
+    );
+  }
+
+  isChatCompletionsUnsupportedModelError(payload) {
+    const message = String(payload?.error?.message || "").toLowerCase();
+    return (
+      message.includes("not a chat model")
+      && message.includes("/chat/completions")
+    );
+  }
+
+  isResponsesRequiredForChatError(payload) {
+    const message = String(payload?.error?.message || "").toLowerCase();
+    return (
+      message.includes("/chat/completions")
+      && message.includes("/v1/responses")
+      && message.includes("instead")
+    );
+  }
+
+  buildResponsesUrl(chatCompletionsUrl) {
+    return String(chatCompletionsUrl || "").replace(/\/chat\/completions(\?.*)?$/i, "/responses$1");
+  }
+
+  async executeWithResponsesFallback(options, priorResult) {
+    const { model, body, stream, credentials, signal, proxyOptions = null } = options;
+    const url = this.buildResponsesUrl(priorResult.url);
+    const headers = this.buildHeaders(credentials, stream);
+    const transformedBody = openaiToOpenAIResponsesRequest(model, body, stream, credentials);
+
+    const response = await proxyAwareFetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(transformedBody),
+      signal
+    }, proxyOptions);
+
+    if (!response.ok || !stream) {
+      return { response, url, headers, transformedBody };
+    }
+
+    const state = initState("openai-responses");
+    state.model = model;
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    const transformStream = new TransformStream({
+      transform(chunk, controller) {
+        buffer += decoder.decode(chunk, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+
+          const parsed = parseSSELine(trimmed);
+          if (!parsed) continue;
+
+          if (parsed.done) {
+            controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
+            continue;
+          }
+
+          const converted = openaiResponsesToOpenAIResponse(parsed, state);
+          if (converted) {
+            controller.enqueue(new TextEncoder().encode(formatSSE(converted, "openai")));
+          }
+        }
+      },
+      flush(controller) {
+        if (buffer.trim()) {
+          const parsed = parseSSELine(buffer.trim());
+          if (parsed && !parsed.done) {
+            const converted = openaiResponsesToOpenAIResponse(parsed, state);
+            if (converted) {
+              controller.enqueue(new TextEncoder().encode(formatSSE(converted, "openai")));
+            }
+          }
+        }
+
+        const finalChunk = openaiResponsesToOpenAIResponse(null, state);
+        if (finalChunk) {
+          controller.enqueue(new TextEncoder().encode(formatSSE(finalChunk, "openai")));
+        }
+      }
+    });
+
+    const convertedStream = response.body.pipeThrough(transformStream);
+    const convertedHeaders = new Headers(response.headers);
+    convertedHeaders.set("content-type", "text/event-stream");
+    const convertedResponse = new Response(convertedStream, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: convertedHeaders
+    });
+
+    return { response: convertedResponse, url, headers, transformedBody };
+  }
+
+  async execute(options) {
+    let currentResult = await super.execute({ ...options, proxyOptions: options.proxyOptions || null });
+
+    if (currentResult.response.status === 400 && options?.body && options.body.max_tokens !== undefined) {
+      let payload;
+      try {
+        payload = await currentResult.response.clone().json();
+      } catch {
+        return currentResult;
+      }
+      if (this.isUnsupportedMaxTokensError(payload)) {
+        const retryMax = currentResult.transformedBody?.max_tokens ?? options.body.max_tokens;
+        if (retryMax === undefined) return currentResult;
+
+        const retryBody = { ...currentResult.transformedBody, max_completion_tokens: retryMax };
+        delete retryBody.max_tokens;
+
+        const retryResponse = await proxyAwareFetch(currentResult.url, {
+          method: "POST",
+          headers: currentResult.headers,
+          body: JSON.stringify(retryBody),
+          signal: options.signal
+        }, options.proxyOptions || null);
+
+        currentResult = { ...currentResult, response: retryResponse, transformedBody: retryBody };
+      }
+    }
+
+    if (this.provider !== "openai" || !options?.body) return currentResult;
+    if (currentResult.response.status !== 404 && currentResult.response.status !== 400) return currentResult;
+
+    let payload;
+    try {
+      payload = await currentResult.response.clone().json();
+    } catch {
+      return currentResult;
+    }
+    const shouldFallbackToResponses = this.isChatCompletionsUnsupportedModelError(payload) || this.isResponsesRequiredForChatError(payload);
+    if (!shouldFallbackToResponses) return currentResult;
+
+    return this.executeWithResponsesFallback(options, currentResult);
   }
 
   // Fallback json_schema → json_object for openai-compatible providers without native Structured Output.
