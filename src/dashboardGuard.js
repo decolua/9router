@@ -18,6 +18,23 @@ async function hasValidCliToken(request) {
   return token === await getCliToken();
 }
 
+// Detect basePath from reverse-proxy headers or environment variable.
+// The Zo reverse proxy sends x-forwarded-prefix; falls back to env var.
+function getBasePath(request) {
+  const forwarded = request.headers.get("x-forwarded-prefix");
+  if (forwarded) return forwarded.replace(/\/+$/, "");
+  return process.env.NEXT_PUBLIC_BASE_PATH || "";
+}
+
+// Strip basePath prefix from pathname so route matching still works
+// when the reverse proxy forwards the full prefixed path.
+function stripBasePath(pathname, basePath) {
+  if (basePath && pathname.startsWith(basePath)) {
+    return pathname.slice(basePath.length) || "/";
+  }
+  return pathname;
+}
+
 // Public API paths — no auth required (LLM API has its own key auth inside handler).
 const PUBLIC_API_PATHS = [
   "/api/health",
@@ -163,7 +180,12 @@ export const __test__ = {
 };
 
 export async function proxy(request) {
-  const { pathname } = request.nextUrl;
+  const rawPathname = request.nextUrl.pathname;
+  const basePath = getBasePath(request);
+  const pathname = stripBasePath(rawPathname, basePath);
+
+  // Helper: build a redirect URL that includes the basePath prefix
+  const redirectTo = (path) => new URL(`${basePath}${path}`, request.url);
 
   // Local-only gate for spawn-capable / host-secret routes.
   if (LOCAL_ONLY_PATHS.some((p) => pathname.startsWith(p))) {
@@ -209,7 +231,7 @@ export async function proxy(request) {
           const tunnelHost = settings.tunnelUrl ? new URL(settings.tunnelUrl).hostname.toLowerCase() : "";
           const tailscaleHost = settings.tailscaleUrl ? new URL(settings.tailscaleUrl).hostname.toLowerCase() : "";
           if ((tunnelHost && host === tunnelHost) || (tailscaleHost && host === tailscaleHost)) {
-            return NextResponse.redirect(new URL("/login", request.url));
+            return NextResponse.redirect(redirectTo("/login"));
           }
         }
       }
@@ -226,16 +248,16 @@ export async function proxy(request) {
       if (await verifyDashboardAuthToken(token)) {
         return NextResponse.next();
       } else {
-        return NextResponse.redirect(new URL("/login", request.url));
+        return NextResponse.redirect(redirectTo("/login"));
       }
     }
 
-    return NextResponse.redirect(new URL("/login", request.url));
+    return NextResponse.redirect(redirectTo("/login"));
   }
 
   // Redirect / to /dashboard if logged in, or /dashboard if it's the root
   if (pathname === "/") {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    return NextResponse.redirect(redirectTo("/dashboard"));
   }
 
   return NextResponse.next();
