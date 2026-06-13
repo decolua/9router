@@ -4,6 +4,7 @@
 
 import { CLIENT_METADATA, getPlatformUserAgent } from "../config/appConstants.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { resolveDefaultProfileArn } from "../config/kiroConstants.js";
 
 // GitHub API config
 const GITHUB_CONFIG = {
@@ -753,10 +754,8 @@ function parseKiroQuotaData(data) {
 }
 
 async function getKiroUsage(accessToken, providerSpecificData, proxyOptions = null) {
-  // Default profileArn fallback
-  const DEFAULT_PROFILE_ARN = "arn:aws:codewhisperer:us-east-1:638616132270:profile/AAAACCCCXXXX";
-  const profileArn = providerSpecificData?.profileArn || DEFAULT_PROFILE_ARN;
   const authMethod = providerSpecificData?.authMethod || "builder-id";
+  const profileArn = providerSpecificData?.profileArn || resolveDefaultProfileArn(authMethod);
 
   const getUsageParams = new URLSearchParams({
     isEmailRequired: "true",

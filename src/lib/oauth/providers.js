@@ -105,6 +105,27 @@ function extractEmailFromAccessToken(accessToken) {
   return payload.email || payload.preferred_username || payload.sub || undefined;
 }
 
+// Resolve Kiro profileArn via CodeWhisperer (IDC/Builder-ID tokens omit it, causing 403)
+export async function fetchKiroProfileArn(accessToken) {
+  if (!accessToken) return null;
+  try {
+    const response = await fetch("https://codewhisperer.us-east-1.amazonaws.com/ListAvailableProfiles", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ maxResults: 10 }),
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data.profiles?.find((p) => p.arn?.trim())?.arn?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 // Extract codex account info from id_token or access token
 export function extractCodexAccountInfo(idToken) {
   const payload = decodeJwtPayload(idToken);
@@ -1413,7 +1434,13 @@ export async function pollForToken(providerName, deviceCode, codeVerifier, extra
       if (provider.postExchange) {
         extra = await provider.postExchange(result.data);
       }
-      return { success: true, tokens: provider.mapTokens(result.data, extra) };
+      const tokens = provider.mapTokens(result.data, extra);
+      // Kiro IDC/Builder-ID tokens lack profileArn; resolve it to avoid 403
+      if (providerName === "kiro" && !tokens.providerSpecificData?.profileArn) {
+        const profileArn = await fetchKiroProfileArn(tokens.accessToken);
+        if (profileArn) tokens.providerSpecificData.profileArn = profileArn;
+      }
+      return { success: true, tokens };
     } else {
       // Check if it's still pending authorization
       if (result.data.error === 'authorization_pending' || result.data.error === 'slow_down') {

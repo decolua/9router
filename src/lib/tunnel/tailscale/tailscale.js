@@ -20,6 +20,10 @@ const TAILSCALE_DIR = path.join(DATA_DIR, "tailscale");
 export const TAILSCALE_SOCKET = path.join(TAILSCALE_DIR, "tailscaled.sock");
 const SOCKET_FLAG = IS_WINDOWS ? [] : ["--socket", TAILSCALE_SOCKET];
 
+// System daemon socket (sudo install: apt/snap/systemd) — read-only status detection
+const SYSTEM_TAILSCALE_SOCKET = IS_WINDOWS ? null : "/var/run/tailscale/tailscaled.sock";
+const SYSTEM_SOCKET_FLAG = SYSTEM_TAILSCALE_SOCKET ? ["--socket", SYSTEM_TAILSCALE_SOCKET] : [];
+
 // Well-known Windows install path
 const WINDOWS_TAILSCALE_BIN = "C:\\Program Files\\Tailscale\\tailscale.exe";
 
@@ -27,7 +31,9 @@ const WINDOWS_TAILSCALE_BIN = "C:\\Program Files\\Tailscale\\tailscale.exe";
 const UNIX_TAILSCALE_CANDIDATES = [
   "/usr/local/bin/tailscale",
   "/opt/homebrew/bin/tailscale",
+  "/usr/sbin/tailscale",   // apt package on Debian/Ubuntu
   "/usr/bin/tailscale",
+  "/snap/bin/tailscale",   // Snap package
 ];
 
 // ─── Cache + background refresh (avoid blocking event loop on dead daemon) ──
@@ -36,6 +42,7 @@ const PROBE_TIMEOUT_MS = 1500;
 
 const binCache = { value: undefined, fetchedAt: 0, refreshing: false };
 const runningCache = { value: false, fetchedAt: 0, refreshing: false };
+const loggedInCache = { value: false, fetchedAt: 0, refreshing: false };
 const funnelUrlCache = { value: null, port: null, fetchedAt: 0, refreshing: false };
 
 function fallbackBin() {
@@ -49,7 +56,7 @@ function bgRefreshBin() {
   if (binCache.refreshing) return;
   binCache.refreshing = true;
   const cmd = IS_WINDOWS ? "where tailscale 2>nul" : "which tailscale 2>/dev/null";
-  execAsync(cmd, { windowsHide: true, timeout: PROBE_TIMEOUT_MS })
+  execAsync(cmd, { windowsHide: true, timeout: PROBE_TIMEOUT_MS, env: { ...process.env, PATH: EXTENDED_PATH } })
     .then(({ stdout }) => {
       const sys = stdout.trim();
       binCache.value = sys || fallbackBin();
@@ -62,7 +69,7 @@ function bgRefreshBin() {
 }
 
 // Sync getter: returns cached value, triggers background refresh if stale
-function getTailscaleBin() {
+export function getTailscaleBin() {
   if (Date.now() - binCache.fetchedAt > PROBE_TTL_MS) bgRefreshBin();
   // First call: synchronously probe common install paths (no exec, no event-loop block)
   if (binCache.value === undefined) {
@@ -85,22 +92,65 @@ function tsArgs(...args) {
   return [...SOCKET_FLAG, ...args];
 }
 
-export function isTailscaleLoggedIn() {
+// Async strict probe: authoritative, awaitable (never blocks event loop). Updates cache.
+export async function isTailscaleLoggedInStrict() {
   const bin = getTailscaleBin();
   if (!bin) return false;
   try {
-    const out = execSync(`"${bin}" ${SOCKET_FLAG.join(" ")} status --json`, {
-      encoding: "utf8",
+    const { stdout } = await execAsync(`"${bin}" ${SOCKET_FLAG.join(" ")} status --json`, {
       windowsHide: true,
       env: { ...process.env, PATH: EXTENDED_PATH },
       timeout: 5000
     });
-    const json = JSON.parse(out);
+    const json = JSON.parse(stdout);
     // BackendState=Running + Self.Online=true → device still exists in tailnet
-    return json.BackendState === "Running" && json.Self?.Online === true;
-  } catch (e) {
+    const loggedIn = json.BackendState === "Running" && json.Self?.Online === true;
+    loggedInCache.value = loggedIn;
+    loggedInCache.fetchedAt = Date.now();
+    return loggedIn;
+  } catch {
     return false;
   }
+}
+
+function bgRefreshLoggedIn() {
+  if (loggedInCache.refreshing) return;
+  const bin = getTailscaleBin();
+  if (!bin) {
+    loggedInCache.value = false;
+    loggedInCache.fetchedAt = Date.now();
+    return;
+  }
+  loggedInCache.refreshing = true;
+  // Dual-socket aware: probe custom socket first, then system socket
+  probeStatusAsync(bin)
+    .then((json) => {
+      loggedInCache.value = !!json && json.BackendState === "Running" && json.Self?.Online === true;
+    })
+    .catch(() => { loggedInCache.value = false; })
+    .finally(() => {
+      loggedInCache.fetchedAt = Date.now();
+      loggedInCache.refreshing = false;
+    });
+}
+
+// Probe `status --json` over custom then system socket. Resolves parsed JSON or null. Never blocks event loop.
+async function probeStatusAsync(bin) {
+  for (const socketArgs of [SOCKET_FLAG, SYSTEM_SOCKET_FLAG]) {
+    try {
+      const { stdout } = await execAsync(`"${bin}" ${socketArgs.join(" ")} status --json`, {
+        windowsHide: true, env: { ...process.env, PATH: EXTENDED_PATH }, timeout: PROBE_TIMEOUT_MS,
+      });
+      return JSON.parse(stdout);
+    } catch { /* try next socket */ }
+  }
+  return null;
+}
+
+// Sync getter: never blocks; returns last known state, refreshes in background
+export function isTailscaleLoggedIn() {
+  if (Date.now() - loggedInCache.fetchedAt > PROBE_TTL_MS) bgRefreshLoggedIn();
+  return loggedInCache.value;
 }
 
 function bgRefreshRunning() {
@@ -132,23 +182,36 @@ export function isTailscaleRunning() {
   return runningCache.value;
 }
 
-// Synchronous strict probe for hot user-initiated paths (enable/connect flow).
-// Blocks ~PROBE_TIMEOUT_MS at most; updates cache as a side effect.
-export function isTailscaleRunningStrict() {
+// Async strict probe for hot user-initiated paths (enable/connect flow).
+// Awaitable, never blocks event loop; updates cache as a side effect.
+export async function isTailscaleRunningStrict() {
   const bin = getTailscaleBin();
   if (!bin) return false;
   try {
-    const out = execSync(`"${bin}" ${SOCKET_FLAG.join(" ")} funnel status --json`, {
-      encoding: "utf8",
+    const { stdout } = await execAsync(`"${bin}" ${SOCKET_FLAG.join(" ")} funnel status --json`, {
       windowsHide: true,
-      stdio: ["ignore", "pipe", "ignore"],
       timeout: PROBE_TIMEOUT_MS,
     });
-    const json = JSON.parse(out);
+    const json = JSON.parse(stdout);
     const running = Object.keys(json.AllowFunnel || {}).length > 0;
     runningCache.value = running;
     runningCache.fetchedAt = Date.now();
     return running;
+  } catch {
+    return false;
+  }
+}
+
+// Check if a system-level tailscaled is running (uses system socket, not 9Router's custom one).
+export function isSystemDaemonRunning() {
+  if (IS_WINDOWS || !SYSTEM_TAILSCALE_SOCKET || !fs.existsSync(SYSTEM_TAILSCALE_SOCKET)) return false;
+  const bin = getTailscaleBin();
+  if (!bin) return false;
+  try {
+    const out = execSync(`"${bin}" ${SYSTEM_SOCKET_FLAG.join(" ")} status --json`, {
+      encoding: "utf8", windowsHide: true, env: { ...process.env, PATH: EXTENDED_PATH }, timeout: PROBE_TIMEOUT_MS,
+    });
+    return JSON.parse(out).BackendState === "Running";
   } catch {
     return false;
   }
@@ -222,7 +285,7 @@ export async function installTailscale(sudoPassword, hostname, onProgress) {
   return startLogin(hostname);
 }
 
-const EXTENDED_PATH = `/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:${process.env.PATH || ""}`;
+const EXTENDED_PATH = `/usr/local/bin:/opt/homebrew/bin:/usr/sbin:/usr/bin:/bin:/snap/bin:${process.env.PATH || ""}`;
 
 function hasBrew() {
   try { execSync("which brew", { stdio: "ignore", windowsHide: true, env: { ...process.env, PATH: EXTENDED_PATH } }); return true; } catch { return false; }
@@ -456,6 +519,11 @@ function isDaemonTunMode() {
   } catch { return null; }
 }
 
+/** Daemon process alive (independent of funnel state) — mirrors cloudflared PID check semantic. */
+export function isDaemonAlive() {
+  return isDaemonTunMode() !== null;
+}
+
 /**
  * Start tailscaled.
  * - With sudoPassword: TUN mode (root) → Funnel TLS works
@@ -487,8 +555,9 @@ export async function startDaemonWithPassword(sudoPassword) {
     return;
   }
 
-  const wantTun = !!sudoPassword;
   const currentMode = isDaemonTunMode(); // true=TUN, false=userspace, null=not running
+  // No password but a healthy TUN daemon already runs → keep TUN, never downgrade-kill it.
+  const wantTun = sudoPassword ? true : currentMode === true;
 
   // Daemon already running in correct mode → reuse
   if (currentMode !== null && currentMode === wantTun) {
