@@ -1092,6 +1092,27 @@ docker pull decolua/9router:latest   # update to latest
 
 **Data persistence:** `$HOME/.9router/db/data.sqlite` on host ↔ `/app/data/db/data.sqlite` in container.
 
+### Cloudflare Pages/Workers Deployment
+
+Deploy globally on Cloudflare's edge network with zero server costs.
+
+**Cloudflare Pages (Recommended for Next.js):**
+1. Push this repo to GitHub
+2. Go to [Cloudflare Pages](https://pages.cloudflare.com)
+3. Select **Create a project** → **Connect Git**
+4. Build command: `npm run build` | Output: `.next`
+5. Add environment variables (JWT_SECRET, INITIAL_PASSWORD, etc.)
+6. Deploy automatically on every push
+
+**Cloudflare Workers (Advanced routing):**
+```bash
+npm install -g @cloudflare/wrangler
+wrangler login
+wrangler deploy --env production
+```
+
+**Full guide:** See [CLOUDFLARE_DEPLOYMENT.md](./CLOUDFLARE_DEPLOYMENT.md)
+
 ### Environment Variables
 
 | Variable | Default | Description |

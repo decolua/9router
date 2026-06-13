@@ -1,0 +1,43 @@
+name = "ai-router-proxy"
+type = "javascript"
+account_id = ""  # Set via wrangler login or env var CLOUDFLARE_ACCOUNT_ID
+workers_dev = true
+
+[env.production]
+name = "ai-router-proxy-prod"
+route = "api.yourdomain.com/*"
+zone_id = ""  # Set your Cloudflare zone ID
+
+[env.staging]
+name = "ai-router-proxy-staging"
+route = "staging-api.yourdomain.com/*"
+zone_id = ""  # Set your Cloudflare zone ID
+
+# KV namespace bindings for data persistence
+kv_namespaces = [
+  { binding = "DATA", id = "", preview_id = "" }
+]
+
+# Durable Objects for stateful routing (optional)
+# [durable_objects.bindings]
+# name = "ROUTER_STATE"
+# class_name = "RouterState"
+# script_name = "ai-router-proxy"
+
+# Environment variables
+[env.production.vars]
+NODE_ENV = "production"
+LOG_LEVEL = "info"
+
+[env.staging.vars]
+NODE_ENV = "staging"
+LOG_LEVEL = "debug"
+
+# Build configuration
+build = { command = "npm run build", cwd = "." }
+compatibility_date = "2025-06-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Analytics Engine binding (optional for usage tracking)
+# [analytics]
+# enabled = true
