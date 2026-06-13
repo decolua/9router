@@ -53,6 +53,9 @@ function stripStoredItemReferences(body) {
     if (typeof item === "string" && SERVER_ID_PATTERN.test(item)) return false;
     if (item && typeof item === "object" && !Array.isArray(item)) {
       if (item.type === "item_reference") return false;
+      // Reasoning blobs (encrypted_content) are unusable with store=false since
+      // previous_response_id is deleted — strip them to avoid wasting context tokens
+      if (item.type === "reasoning") return false;
       if (typeof item.id === "string" && SERVER_ID_PATTERN.test(item.id)) delete item.id;
     }
     return true;

@@ -29,23 +29,9 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   // Group items by conversation turn
   let currentAssistantMsg = null;
   let pendingToolResults = [];
-  let pendingReasoning = "";
 
   const inputItems = normalizeResponsesInput(body.input);
   if (!inputItems) return body;
-
-  // Extract reasoning text from summary[].text or encrypted_content fallback
-  const extractReasoningText = (item) => {
-    if (Array.isArray(item.summary)) {
-      const txt = item.summary.map(s => s?.text || "").filter(Boolean).join("\n");
-      if (txt) return txt;
-    }
-    if (Array.isArray(item.content)) {
-      const txt = item.content.map(c => c?.text || "").filter(Boolean).join("\n");
-      if (txt) return txt;
-    }
-    return "";
-  };
 
   for (const item of inputItems) {
     // Determine item type - Droid CLI sends role-based items without 'type' field
@@ -79,11 +65,6 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
         })
         : item.content;
       const msg = { role: item.role, content };
-      // Attach buffered reasoning to assistant turn (required by xiaomi-mimo thinking mode)
-      if (item.role === "assistant" && pendingReasoning) {
-        msg.reasoning_content = pendingReasoning;
-      }
-      pendingReasoning = "";
       result.messages.push(msg);
     }
     else if (itemType === "function_call") {
@@ -94,10 +75,6 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
           content: null,
           tool_calls: []
         };
-        if (pendingReasoning) {
-          currentAssistantMsg.reasoning_content = pendingReasoning;
-          pendingReasoning = "";
-        }
       }
       // Skip items with empty/missing name — Codex/OpenAI reject nameless tool calls (#444)
       if (!item.name || typeof item.name !== "string" || item.name.trim() === "") continue;
@@ -131,9 +108,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       });
     }
     else if (itemType === "reasoning") {
-      // Buffer reasoning text; attached to next assistant message/function_call
-      const txt = extractReasoningText(item);
-      if (txt) pendingReasoning = pendingReasoning ? `${pendingReasoning}\n${txt}` : txt;
+      // Skip — reasoning summaries inflate context on every subsequent request
       continue;
     }
   }

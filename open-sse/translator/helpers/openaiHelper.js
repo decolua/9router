@@ -16,8 +16,14 @@ export function filterToOpenAIFormat(body) {
     // Keep tool messages as-is (OpenAI format)
     if (msg.role === "tool") return msg;
     
-    // Keep assistant messages with tool_calls as-is
-    if (msg.role === "assistant" && msg.tool_calls) return msg;
+    // Keep assistant messages with tool_calls but strip reasoning_content (inflates context)
+    if (msg.role === "assistant" && msg.tool_calls) {
+      if (msg.reasoning_content !== undefined) {
+        const { reasoning_content, ...cleanMsg } = msg;
+        return cleanMsg;
+      }
+      return msg;
+    }
     
     // Handle string content
     if (typeof msg.content === "string") return msg;
