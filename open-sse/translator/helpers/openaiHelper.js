@@ -49,8 +49,11 @@ export function filterToOpenAIFormat(body) {
       if (filteredContent.length === 0) {
         filteredContent.push({ type: "text", text: "" });
       }
-      
-      return { ...msg, content: filteredContent };
+
+      const content = filteredContent.every((block) => block.type === "text")
+        ? filteredContent.map((block) => block.text || "").join("\n")
+        : filteredContent;
+      return { ...msg, content };
     }
     
     return msg;

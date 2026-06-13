@@ -9,7 +9,7 @@ import {
 } from "../services/auth.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
 import { getSettings } from "@/lib/localDb";
-import { getModelInfo, getComboModels } from "../services/model.js";
+import { getModelInfo, getComboModels, filterDisabledComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { handleComboChat } from "open-sse/services/combo.js";
@@ -98,10 +98,14 @@ export async function handleChat(request, clientRawRequest = null) {
     const comboStrategy = comboSpecificStrategy || settings.comboStrategy || "fallback";
     
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
-    log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
+    const filteredCombo = await filterDisabledComboModels(comboModels);
+    for (const skipped of filteredCombo.skipped) log.info("CHAT", `Combo "${modelStr}" skipped disabled model: ${skipped}`);
+    if (filteredCombo.models.length === 0) return unavailableResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, `Combo "${modelStr}" has no enabled models`);
+
+    log.info("CHAT", `Combo "${modelStr}" with ${filteredCombo.models.length}/${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
     return handleComboChat({
       body,
-      models: comboModels,
+      models: filteredCombo.models,
       handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
       log,
       comboName: modelStr,
@@ -131,10 +135,14 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       const comboStrategy = comboSpecificStrategy || chatSettings.comboStrategy || "fallback";
       
       const comboStickyLimit = chatSettings.comboStickyRoundRobinLimit;
-      log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
+      const filteredCombo = await filterDisabledComboModels(comboModels);
+      for (const skipped of filteredCombo.skipped) log.info("CHAT", `Combo "${modelStr}" skipped disabled model: ${skipped}`);
+      if (filteredCombo.models.length === 0) return unavailableResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, `Combo "${modelStr}" has no enabled models`);
+
+      log.info("CHAT", `Combo "${modelStr}" with ${filteredCombo.models.length}/${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
       return handleComboChat({
         body,
-        models: comboModels,
+        models: filteredCombo.models,
         handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
         log,
         comboName: modelStr,

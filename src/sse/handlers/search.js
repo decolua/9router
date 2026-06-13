@@ -12,6 +12,7 @@ import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
+import { filterDisabledComboModels } from "../services/model.js";
 import { handleComboChat, getComboModelsFromData } from "open-sse/services/combo.js";
 
 /**
@@ -75,10 +76,14 @@ export async function handleSearch(request) {
     const comboStrategies = settings.comboStrategies || {};
     const comboStrategy = comboStrategies[providerInput]?.fallbackStrategy || settings.comboStrategy || "fallback";
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
-    log.info("SEARCH", `Combo "${providerInput}" with ${comboModels.length} providers (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
+    const filteredCombo = await filterDisabledComboModels(comboModels);
+    for (const skipped of filteredCombo.skipped) log.info("SEARCH", `Combo "${providerInput}" skipped disabled provider: ${skipped}`);
+    if (filteredCombo.models.length === 0) return unavailableResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, `Combo "${providerInput}" has no enabled providers`);
+
+    log.info("SEARCH", `Combo "${providerInput}" with ${filteredCombo.models.length}/${comboModels.length} providers (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
     return handleComboChat({
       body,
-      models: comboModels,
+      models: filteredCombo.models,
       handleSingleModel: (b, m) => handleSingleProviderSearch(b, m, request, apiKey, settings),
       log,
       comboName: providerInput,

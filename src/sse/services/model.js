@@ -1,5 +1,6 @@
 // Re-export from open-sse with localDb integration
 import { getModelAliases, getComboByName, getProviderNodes } from "@/lib/localDb";
+import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { parseModel as parseModelCore, resolveModelAliasFromMap, getModelInfoCore } from "open-sse/services/model.js";
 
 // Local provider alias overrides (HMR-friendly, applied on top of open-sse map)
@@ -80,4 +81,38 @@ export async function getComboModels(modelStr) {
     return combo.models;
   }
   return null;
+}
+
+async function getDisabledKey(modelStr) {
+  const aliases = await getModelAliases();
+  const aliasTarget = aliases?.[modelStr];
+  const target = typeof aliasTarget === "string" ? aliasTarget : modelStr;
+  if (!target || !target.includes("/")) return null;
+
+  const firstSlash = target.indexOf("/");
+  return {
+    providerAlias: target.slice(0, firstSlash),
+    modelId: target.slice(firstSlash + 1),
+  };
+}
+
+export async function isModelDisabled(modelStr) {
+  const key = await getDisabledKey(modelStr);
+  if (!key) return false;
+
+  const disabledByProvider = await getDisabledModels();
+  return Array.isArray(disabledByProvider?.[key.providerAlias]) &&
+    disabledByProvider[key.providerAlias].includes(key.modelId);
+}
+
+export async function filterDisabledComboModels(models) {
+  const enabled = [];
+  const skipped = [];
+
+  for (const model of models || []) {
+    if (await isModelDisabled(model)) skipped.push(model);
+    else enabled.push(model);
+  }
+
+  return { models: enabled, skipped };
 }

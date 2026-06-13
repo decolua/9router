@@ -6,7 +6,7 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
-import { getModelInfo, getComboModels } from "../services/model.js";
+import { getModelInfo, getComboModels, filterDisabledComboModels } from "../services/model.js";
 import { handleImageGenerationCore } from "open-sse/handlers/imageGenerationCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
@@ -52,10 +52,14 @@ export async function handleImageGeneration(request) {
     const comboStrategies = settings.comboStrategies || {};
     const comboStrategy = comboStrategies[modelStr]?.fallbackStrategy || settings.comboStrategy || "fallback";
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
-    log.info("IMAGE", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
+    const filteredCombo = await filterDisabledComboModels(comboModels);
+    for (const skipped of filteredCombo.skipped) log.info("IMAGE", `Combo "${modelStr}" skipped disabled model: ${skipped}`);
+    if (filteredCombo.models.length === 0) return unavailableResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, `Combo "${modelStr}" has no enabled models`);
+
+    log.info("IMAGE", `Combo "${modelStr}" with ${filteredCombo.models.length}/${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
     return handleComboChat({
       body,
-      models: comboModels,
+      models: filteredCombo.models,
       handleSingleModel: (b, m) => handleSingleModelImage(b, m, { wantsStream, binaryOutput, preferredConnectionId }),
       log,
       comboName: modelStr,
