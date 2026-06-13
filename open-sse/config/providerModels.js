@@ -435,6 +435,13 @@ export const PROVIDER_MODELS = {
     { id: "glm-4-7-251222", name: "GLM 4.7" },
     { id: "gpt-oss-120b-250805", name: "GPT-OSS-120B" },
   ],
+  modelscope: [  // ModelScope
+    { id: "zai-org/GLM-5.1", name: "GLM 5.1" },
+    { id: "deepseek-ai/DeepSeek-V4-Pro", name: "DeepSeek V4 Pro" },
+    { id: "deepseek-ai/DeepSeek-V4-Flash", name: "DeepSeek V4 Flash" },
+    { id: "nex-agi/Nex-N2-Pro", name: "Nex N2 Pro" },
+    { id: "zai-org/GLM-5", name: "GLM 5" },
+  ],
   deepseek: [
     { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro" },
     { id: "deepseek-v4-pro-max", name: "DeepSeek V4 Pro Max", upstreamModelId: "deepseek-v4-pro" },
