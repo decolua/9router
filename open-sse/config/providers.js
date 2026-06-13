@@ -323,7 +323,7 @@ export const PROVIDERS = {
     format: "openai"
   },
   siliconflow: {
-    baseUrl: "https://api.siliconflow.cn/v1/chat/completions",
+    baseUrl: "https://api.siliconflow.com/v1/chat/completions",
     format: "openai"
   },
   hyperbolic: {
