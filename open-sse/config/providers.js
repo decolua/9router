@@ -131,6 +131,10 @@ export const PROVIDERS = {
     baseUrl: "https://ai-gateway.vercel.sh/v1/chat/completions",
     format: "openai"
   },
+  "crof-ai": {
+    baseUrl: "https://crof.ai/v1/chat/completions",
+    format: "openai"
+  },
   glm: {
     baseUrl: "https://api.z.ai/api/anthropic/v1/messages",
     format: "claude",
