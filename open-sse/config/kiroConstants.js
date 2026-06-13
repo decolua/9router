@@ -18,6 +18,23 @@
 export const KIRO_AGENTIC_SUFFIX = "-agentic";
 export const KIRO_THINKING_SUFFIX = "-thinking";
 
+// Public default CodeWhisperer profile ARNs (us-east-1), keyed by auth method.
+// Used when an account cannot resolve its own profileArn. Builder ID and social
+// (Google/GitHub) sign-ins map to different shared profiles.
+export const KIRO_DEFAULT_PROFILE_ARNS = {
+  "builder-id": "arn:aws:codewhisperer:us-east-1:638616132270:profile/AAAACCCCXXXX",
+  social: "arn:aws:codewhisperer:us-east-1:699475941385:profile/EHGA3GRVQMUK",
+};
+
+// Back-compat single default (Builder ID).
+export const KIRO_DEFAULT_PROFILE_ARN = KIRO_DEFAULT_PROFILE_ARNS["builder-id"];
+
+/** Resolve the shared default profileArn for a given auth method. */
+export function resolveDefaultProfileArn(authMethod) {
+  const social = authMethod === "google" || authMethod === "github";
+  return social ? KIRO_DEFAULT_PROFILE_ARNS.social : KIRO_DEFAULT_PROFILE_ARNS["builder-id"];
+}
+
 export const KIRO_THINKING_BUDGET_DEFAULT = 16000;
 
 export const KIRO_AGENTIC_SYSTEM_PROMPT = `

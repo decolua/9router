@@ -230,22 +230,21 @@ export function openaiToGeminiCLIRequest(model, body, stream) {
   const gemini = openaiToGeminiBase(model, body, stream, DEFAULT_THINKING_GEMINI_CLI_SIGNATURE);
   const isClaude = model.toLowerCase().includes("claude");
 
-  // Add thinking config for CLI
-  if (body.reasoning_effort) {
-    const budgetMap = { low: 1024, medium: 8192, high: 32768 };
-    const budget = budgetMap[body.reasoning_effort] || 8192;
-    gemini.generationConfig.thinkingConfig = {
-      thinkingBudget: budget,
-      include_thoughts: true
-    };
+  // Map reasoning effort → thinkingConfig.thinkingLevel (gemini-3 enum: minimal|low|medium|high)
+  // Gemini 3 cannot fully disable thinking; "none"/"off" map to "minimal" (closest to no-thinking)
+  // Accept both OpenAI chat (reasoning_effort) and Responses (reasoning.effort) shapes
+  const reasoningEffort = body.reasoning_effort ?? body.reasoning?.effort;
+  if (reasoningEffort) {
+    const effort = String(reasoningEffort).toLowerCase().trim();
+    const level = (effort === "none" || effort === "off") ? "minimal" : effort;
+    gemini.generationConfig.thinkingConfig = { thinkingLevel: level, includeThoughts: level !== "minimal" };
   }
 
-  // Thinking config from Claude format
-  if (body.thinking?.type === "enabled" && body.thinking.budget_tokens) {
-    gemini.generationConfig.thinkingConfig = {
-      thinkingBudget: body.thinking.budget_tokens,
-      include_thoughts: true
-    };
+  // Claude-format thinking: disabled → minimal, enabled → high
+  if (body.thinking?.type === "disabled") {
+    gemini.generationConfig.thinkingConfig = { thinkingLevel: "minimal", includeThoughts: false };
+  } else if (body.thinking?.type === "enabled") {
+    gemini.generationConfig.thinkingConfig = { thinkingLevel: "high", includeThoughts: true };
   }
 
   // Clean schema for tools
