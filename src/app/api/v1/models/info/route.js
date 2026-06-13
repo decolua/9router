@@ -4,6 +4,7 @@ import { AI_PROVIDERS, ALIAS_TO_ID } from "@/shared/constants/providers";
 const KIND_ENDPOINT = {
   llm: "/v1/chat/completions",
   image: "/v1/images/generations",
+  video: "/v1/video/generations",
   tts: "/v1/audio/speech",
   stt: "/v1/audio/transcriptions",
   embedding: "/v1/embeddings",
