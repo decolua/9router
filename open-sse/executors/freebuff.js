@@ -16,7 +16,19 @@ const MODEL_TO_AGENT = {
   "moonshotai/kimi-k2.6": "base2-free-kimi",
   "deepseek/deepseek-v4-flash": "base2-free-deepseek-flash",
   "minimax/minimax-m2.7": "base2-free",
+  "minimax/minimax-m3": "base2-free-minimax-m3",
+  "mimo/mimo-v2.5": "base2-free-mimo",
+  "mimo/mimo-v2.5-pro": "base2-free-mimo-pro",
 };
+
+function getHostHeader(rawUrl) {
+  try {
+    const parsed = new URL(rawUrl);
+    return parsed.host || "www.codebuff.com";
+  } catch (e) {
+    return "www.codebuff.com";
+  }
+}
 
 export class FreebuffExecutor extends BaseExecutor {
   constructor() {
@@ -24,7 +36,7 @@ export class FreebuffExecutor extends BaseExecutor {
       baseUrl: "https://www.codebuff.com/api/v1/chat/completions",
       format: "openai",
       headers: {
-        "User-Agent": "ai-sdk/openai-compatible/1.0.25/codebuff",
+        "User-Agent": "ai-sdk/openai-compatible/0.0.0-test/codebuff ai-sdk/provider-utils/3.0.20 runtime/browser",
       }
     });
   }
@@ -36,7 +48,11 @@ export class FreebuffExecutor extends BaseExecutor {
         method: "DELETE",
         headers: {
           "Authorization": `Bearer ${token}`,
-          "User-Agent": this.config.headers["User-Agent"]
+          "Accept": "*/*",
+          "Accept-Encoding": "gzip, deflate",
+          "Connection": "keep-alive",
+          "Host": getHostHeader(url),
+          "User-Agent": "Bun/1.3.11"
         }
       }, proxyOptions);
       if (!response.ok) {
@@ -73,8 +89,11 @@ export class FreebuffExecutor extends BaseExecutor {
     const headers = {
       "Authorization": `Bearer ${token}`,
       "Content-Type": "application/json",
-      "Accept": "application/json",
-      "User-Agent": this.config.headers["User-Agent"]
+      "Accept": "*/*",
+      "Accept-Encoding": "gzip, deflate",
+      "Connection": "keep-alive",
+      "Host": getHostHeader(url),
+      "User-Agent": "Bun/1.3.11"
     };
     if (model) {
       headers["x-freebuff-model"] = model;
@@ -118,9 +137,17 @@ export class FreebuffExecutor extends BaseExecutor {
         throw new Error("Freebuff session active response missing instanceId");
       }
 
+      let expiresAt = data.expiresAt || null;
+      if (data.remainingMs !== undefined && data.remainingMs !== null) {
+        expiresAt = new Date(Date.now() + data.remainingMs).toISOString();
+      }
+      if (!expiresAt) {
+        expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // fallback 30 mins
+      }
+
       sessionCache[token] = {
         instanceId: data.instanceId,
-        expiresAt: data.expiresAt || null,
+        expiresAt: expiresAt,
         model: model
       };
       return data.instanceId;
@@ -143,14 +170,19 @@ export class FreebuffExecutor extends BaseExecutor {
 
     // Start run
     const url = "https://www.codebuff.com/api/v1/agent-runs";
+    const headers = {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "Accept": "*/*",
+      "Accept-Encoding": "gzip, deflate",
+      "Connection": "keep-alive",
+      "Host": getHostHeader(url),
+      "User-Agent": "Bun/1.3.11"
+    };
+
     const response = await proxyAwareFetch(url, {
       method: "POST",
-      headers: {
-        "Authorization": `Bearer ${token}`,
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "User-Agent": this.config.headers["User-Agent"]
-      },
+      headers: headers,
       body: JSON.stringify({
         action: "START",
         agentId: agentId
@@ -181,12 +213,13 @@ export class FreebuffExecutor extends BaseExecutor {
   buildHeaders(credentials, stream = true) {
     const headers = {
       "Content-Type": "application/json",
-      ...this.config.headers,
+      "Accept": stream ? "text/event-stream" : "*/*",
+      "Accept-Encoding": "gzip, deflate",
+      "Connection": "keep-alive",
+      "Host": getHostHeader(this.config.baseUrl),
+      "User-Agent": "ai-sdk/openai-compatible/0.0.0-test/codebuff ai-sdk/provider-utils/3.0.20 runtime/browser",
       "Authorization": `Bearer ${credentials.accessToken || credentials.apiKey}`
     };
-    if (stream) {
-      headers["Accept"] = "text/event-stream";
-    }
     return headers;
   }
 

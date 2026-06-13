@@ -32,6 +32,9 @@ export const PROVIDER_MODELS = {
     { id: "moonshotai/kimi-k2.6", name: "Kimi K2.6" },
     { id: "deepseek/deepseek-v4-flash", name: "DeepSeek V4 Flash" },
     { id: "minimax/minimax-m2.7", name: "MiniMax M2.7" },
+    { id: "minimax/minimax-m3", name: "MiniMax M3" },
+    { id: "mimo/mimo-v2.5", name: "MiMo V2.5" },
+    { id: "mimo/mimo-v2.5-pro", name: "MiMo V2.5 Pro" },
   ],
   // OAuth Providers (using alias)
   cc: [  // Claude Code
