@@ -21,6 +21,43 @@ import { dedupeTools } from "../utils/toolDeduper.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
 
+function getHeaderValue(headers, name) {
+  if (!headers) return "";
+  if (typeof headers.get === "function") return headers.get(name) || "";
+  const lowerName = name.toLowerCase();
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === lowerName) return String(value || "");
+  }
+  return "";
+}
+
+export function resolveChatStreamMode({ body = {}, sourceFormat, provider, clientHeaders = {}, clientTool = null }) {
+  const acceptHeader = getHeaderValue(clientHeaders, "accept").toLowerCase();
+  const clientPrefersJson = acceptHeader.includes("application/json");
+  const clientPrefersSSE = acceptHeader.includes("text/event-stream");
+  const formatAlwaysStreams = sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI;
+  const clientRequestedStreaming = body.stream === true || (body.stream !== false && clientPrefersSSE) || formatAlwaysStreams;
+  const providerRequiresStreaming = provider === "openai" || provider === "codex" || provider === "commandcode";
+  let stream = providerRequiresStreaming ? true : (body.stream !== false);
+
+  // #1396: Anthropic /v1/messages defaults to JSON; only stream when the client asks.
+  if (sourceFormat === FORMATS.CLAUDE && !clientRequestedStreaming) {
+    stream = false;
+  }
+
+  // DeepSeek-TUI: interactive TUI panel sends stream:true and needs SSE.
+  // Non-interactive mode (-p flag) sends without stream and can't parse SSE.
+  // Only force non-streaming when client didn't explicitly request it.
+  if (clientTool === "deepseek-tui" && body.stream !== true) stream = false;
+
+  // AI SDK and browser clients often advertise JSON instead of setting stream:false.
+  if (clientPrefersJson && !clientPrefersSSE && body.stream !== true) {
+    stream = false;
+  }
+
+  return { stream, clientRequestedStreaming, providerRequiresStreaming };
+}
+
 /**
  * Core chat handler - shared between SSE and Worker
  * @param {object} options.body - Request body
@@ -58,24 +95,14 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     }
   }
 
-  const clientRequestedStreaming = body.stream === true || sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI;
-  const providerRequiresStreaming = provider === "openai" || provider === "codex" || provider === "commandcode";
-  let stream = providerRequiresStreaming ? true : (body.stream !== false);
-
-  // DeepSeek-TUI: interactive TUI panel sends stream:true and needs SSE.
-  // Non-interactive mode (-p flag) sends without stream and can't parse SSE.
-  // Only force non-streaming when client didn't explicitly request it.
-  const detectedTool = detectClientTool(clientRawRequest?.headers || {}, body);
-  if (detectedTool === "deepseek-tui" && body.stream !== true) stream = false;
-
-  // Check client Accept header preference for non-streaming requests
-  // This fixes AI SDK compatibility where clients send Accept: application/json
-  const acceptHeader = clientRawRequest?.headers?.accept || "";
-  const clientPrefersJson = acceptHeader.includes("application/json");
-  const clientPrefersSSE = acceptHeader.includes("text/event-stream");
-  if (clientPrefersJson && !clientPrefersSSE && body.stream !== true) {
-    stream = false;
-  }
+  const clientTool = detectClientTool(clientRawRequest?.headers || {}, body);
+  const { stream, clientRequestedStreaming, providerRequiresStreaming } = resolveChatStreamMode({
+    body,
+    sourceFormat,
+    provider,
+    clientHeaders: clientRawRequest?.headers || {},
+    clientTool
+  });
 
   const reqLogger = await createRequestLogger(sourceFormat, targetFormat, model);
   if (clientRawRequest) reqLogger.logClientRawRequest(clientRawRequest.endpoint, clientRawRequest.body, clientRawRequest.headers);
@@ -84,7 +111,6 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Native passthrough: CLI tool and provider are the same ecosystem
   // Skip all translation/normalization — only model and Bearer are swapped
-  const clientTool = detectClientTool(clientRawRequest?.headers || {}, body);
   const passthrough = isNativePassthrough(clientTool, provider);
 
   let translatedBody;
