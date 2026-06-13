@@ -9,6 +9,7 @@ import { getProviderConnections, getCombos, getCustomModels, getModelAliases } f
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
+import { resolveCommandCodeCliModels } from "open-sse/services/commandCodeCliModels.js";
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
@@ -34,6 +35,13 @@ const LIVE_MODEL_RESOLVERS = {
     return {
       models: result.models.map((m) => ({ id: m.id, name: m.name })),
     };
+  },
+  "commandcode-cli": async (conn) => {
+    const result = await resolveCommandCodeCliModels({
+      providerSpecificData: conn.providerSpecificData || {},
+      timeoutMs: 10000,
+    });
+    return result?.models?.length ? { models: result.models } : null;
   }
 };
 
@@ -193,6 +201,22 @@ export async function buildModelsList(kindFilter) {
   for (const conn of connections) {
     if (!activeConnectionByProvider.has(conn.provider)) {
       activeConnectionByProvider.set(conn.provider, conn);
+    }
+  }
+
+  for (const [providerId, providerInfo] of Object.entries(AI_PROVIDERS)) {
+    if (providerInfo?.noAuth !== true || activeConnectionByProvider.has(providerId)) continue;
+    const staticAlias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
+    const hasStaticModels = Array.isArray(PROVIDER_MODELS[staticAlias]) && PROVIDER_MODELS[staticAlias].length > 0;
+    const hasLiveResolver = typeof LIVE_MODEL_RESOLVERS[providerId] === "function";
+    const hasSubConfigModels =
+      (Array.isArray(providerInfo?.ttsConfig?.models) && providerInfo.ttsConfig.models.length > 0) ||
+      (Array.isArray(providerInfo?.embeddingConfig?.models) && providerInfo.embeddingConfig.models.length > 0);
+    if (hasStaticModels || hasLiveResolver || hasSubConfigModels) {
+      activeConnectionByProvider.set(providerId, {
+        provider: providerId,
+        providerSpecificData: {},
+      });
     }
   }
 

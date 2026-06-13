@@ -281,6 +281,12 @@ export const PROVIDERS = {
       "x-cli-environment": "cli"
     }
   },
+  "commandcode-cli": {
+    baseUrl: "cmd",
+    format: "openai",
+    headers: {},
+    noAuth: true
+  },
   groq: {
     baseUrl: "https://api.groq.com/openai/v1/chat/completions",
     format: "openai"

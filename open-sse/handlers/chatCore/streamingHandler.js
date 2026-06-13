@@ -9,8 +9,8 @@ import { buildRequestDetail, extractRequestConfig, saveUsageStats } from "./requ
 import { saveRequestDetail } from "@/lib/usageDb.js";
 
 const SSE_HEADERS = {
-  "Content-Type": "text/event-stream",
-  "Cache-Control": "no-cache",
+  "Content-Type": "text/event-stream; charset=utf-8",
+  "Cache-Control": "no-cache, no-transform",
   "Connection": "keep-alive",
   "Access-Control-Allow-Origin": "*"
 };

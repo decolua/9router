@@ -6,6 +6,7 @@ import { refreshGoogleToken, updateProviderCredentials } from "@/sse/services/to
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
+import { resolveCommandCodeCliModels } from "open-sse/services/commandCodeCliModels.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -342,6 +343,15 @@ const PROVIDER_MODELS_CONFIG = {
       parseFn: parseGeminiCliModels,
       errorLabel: "Failed to fetch Gemini CLI models"
     })
+  },
+  "commandcode-cli": {
+    customResolver: async (connection) => {
+      const result = await resolveCommandCodeCliModels({
+        providerSpecificData: connection.providerSpecificData || {},
+        timeoutMs: 10000,
+      });
+      return { models: result.models, warning: result.source === "static" ? "Using static fallback model list." : undefined };
+    }
   },
   "ollama-local": {
     customResolver: async (connection) => {
