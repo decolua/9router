@@ -45,6 +45,7 @@ export default function ModelSelectModal({
   const [providerNodes, setProviderNodes] = useState([]);
   const [customModels, setCustomModels] = useState([]);
   const [disabledModels, setDisabledModels] = useState({});
+  const [dynamicModels, setDynamicModels] = useState({});
 
   const fetchCombos = async () => {
     try {
@@ -58,10 +59,6 @@ export default function ModelSelectModal({
     }
   };
 
-  useEffect(() => {
-    if (isOpen) fetchCombos();
-  }, [isOpen]);
-
   const fetchProviderNodes = async () => {
     try {
       const res = await fetch("/api/provider-nodes");
@@ -73,10 +70,6 @@ export default function ModelSelectModal({
       setProviderNodes([]);
     }
   };
-
-  useEffect(() => {
-    if (isOpen) fetchProviderNodes();
-  }, [isOpen]);
 
   const fetchCustomModels = async () => {
     try {
@@ -90,10 +83,6 @@ export default function ModelSelectModal({
     }
   };
 
-  useEffect(() => {
-    if (isOpen) fetchCustomModels();
-  }, [isOpen]);
-
   const fetchDisabledModels = async () => {
     try {
       const res = await fetch("/api/models/disabled");
@@ -106,11 +95,39 @@ export default function ModelSelectModal({
     }
   };
 
-  useEffect(() => {
-    if (isOpen) fetchDisabledModels();
-  }, [isOpen]);
-
   const allProviders = useMemo(() => ({ ...OAUTH_PROVIDERS, ...FREE_PROVIDERS, ...FREE_TIER_PROVIDERS, ...APIKEY_PROVIDERS }), []);
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchCombos();
+      fetchProviderNodes();
+      fetchCustomModels();
+      fetchDisabledModels();
+
+      // Fetch dynamic models for providers that have modelsFetcher defined
+      const providersWithFetcher = Object.values(allProviders).filter(p => p.modelsFetcher);
+      providersWithFetcher.forEach(provider => {
+        const fetchUrl = provider.modelsFetcher.url.startsWith("http") 
+          ? `/api/proxy?url=${encodeURIComponent(provider.modelsFetcher.url)}`
+          : provider.modelsFetcher.url;
+
+        fetch(fetchUrl)
+          .then((res) => (res.ok ? res.json() : { models: [] }))
+          .then((data) => {
+            setDynamicModels(prev => ({
+              ...prev,
+              [provider.id]: data.models || []
+            }));
+          })
+          .catch(() => {
+            setDynamicModels(prev => ({
+              ...prev,
+              [provider.id]: []
+            }));
+          });
+      });
+    }
+  }, [isOpen, allProviders]);
 
   // Group models by provider with priority order
   const groupedModels = useMemo(() => {
@@ -169,6 +186,9 @@ export default function ModelSelectModal({
       }
 
       if (providerInfo.passthroughModels) {
+        const hardcodedModels = getModelsByProviderId(providerId);
+        const hardcodedIds = new Set(hardcodedModels.map((m) => m.id));
+
         const aliasModels = Object.entries(modelAliases)
           .filter(([, fullModel]) => fullModel.startsWith(`${alias}/`))
           .map(([aliasName, fullModel]) => ({
@@ -177,8 +197,18 @@ export default function ModelSelectModal({
             value: fullModel,
           }));
 
+        const dynamicModelsForProvider = dynamicModels[providerId] || [];
+        const aliasIds = new Set(aliasModels.map((m) => m.id));
+
         // For typed kinds, only include hardcoded typed models (aliases are typically LLM-only and lack type info)
-        let combined = aliasModels;
+        let combined = [
+          ...hardcodedModels.map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, type: m.type })),
+          ...aliasModels,
+          ...dynamicModelsForProvider
+            .filter((fm) => !aliasIds.has(fm.id) && !hardcodedIds.has(fm.id))
+            .map((m) => ({ id: m.id, name: m.name || m.id, value: `${alias}/${m.id}` })),
+        ];
+
         if (kindFilter && TYPED_KINDS.has(kindFilter)) {
           combined = getModelsByProviderId(providerId)
             .filter((m) => m.type === kindFilter)
@@ -262,10 +292,14 @@ export default function ModelSelectModal({
           .filter((m) => m.providerAlias === alias && !hardcodedIds.has(m.id) && !customAliasIds.has(m.id))
           .map((m) => ({ id: m.id, name: m.name || m.id, value: `${alias}/${m.id}`, isCustom: true }));
 
+        const dynamicModelsForProvider = dynamicModels[providerId] || [];
         const merged = [
           ...hardcodedModels.map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, type: m.type })),
           ...customAliasModels,
           ...customRegisteredModels,
+          ...dynamicModelsForProvider
+            .filter((fm) => !hardcodedIds.has(fm.id))
+            .map((m) => ({ id: m.id, name: m.name || m.id, value: `${alias}/${m.id}` })),
         ];
         // Dedupe by value (alias may equal hardcoded id, causing React key collision)
         const seen = new Set();
@@ -308,7 +342,7 @@ export default function ModelSelectModal({
     });
 
     return groups;
-  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, activeProviders]);
+  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, dynamicModels, kindFilter, activeProviders]);
 
   // Filter combos by search query (and hide combos when kindFilter is set — combos are LLM-only by design)
   const filteredCombos = useMemo(() => {

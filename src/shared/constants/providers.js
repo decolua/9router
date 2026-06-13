@@ -62,7 +62,7 @@ export const OAUTH_PROVIDERS = {
   cursor: { id: "cursor", alias: "cu", name: "Cursor IDE", icon: "edit_note", color: "#00D4AA", website: "https://cursor.com", notice: { signupUrl: "https://cursor.com" } },
   xai: { id: "xai", alias: "xai", name: "xAI (Grok)", icon: "auto_awesome", color: "#1DA1F2", textIcon: "XA", website: "https://x.ai", notice: { apiKeyUrl: "https://console.x.ai", signupUrl: "https://x.ai" }, serviceKinds: ["llm", "imageToText", "webSearch", "image"], searchViaChat: { defaultModel: "grok-4.20-reasoning", pricingUrl: "https://x.ai/api#pricing" }, authModes: ["oauth", "apikey"], hasOAuth: true },
   // "kimi-coding": { id: "kimi-coding", alias: "kmc", name: "Kimi Coding", icon: "psychology", color: "#1E40AF", textIcon: "KC" },
-  kilocode: { id: "kilocode", alias: "kc", name: "Kilo Code", icon: "code", color: "#FF6B35", textIcon: "KC", website: "https://kilocode.ai", notice: { signupUrl: "https://kilocode.ai" } },
+  kilocode: { id: "kilocode", alias: "kc", name: "Kilo Code", icon: "code", color: "#FF6B35", textIcon: "KC", website: "https://kilocode.ai", notice: { signupUrl: "https://kilocode.ai" }, passthroughModels: true, modelsFetcher: { url: "/api/providers/kilo/free-models", type: "dynamic" } },
   cline: { id: "cline", alias: "cl", name: "Cline", icon: "smart_toy", color: "#5B9BD5", textIcon: "CL", website: "https://cline.bot", notice: { signupUrl: "https://cline.bot" } },
   // opencode: { id: "opencode", alias: "oc", name: "OpenCode", icon: "terminal", color: "#E87040", textIcon: "OC" },
 };
