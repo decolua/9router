@@ -210,7 +210,9 @@ export const PROVIDERS = {
       "https://q.us-east-1.amazonaws.com/generateAssistantResponse",
     ],
     format: "kiro",
-    retry: { 429: 2 },
+    // 429 = identity-level throttle; retrying the same identity only spams AWS.
+    // Rotate across the 3 host surfaces once each (shouldRetry) without per-host retries.
+    retry: { 429: 0 },
     headers: {
       "Content-Type": "application/json",
       "Accept": "application/vnd.amazon.eventstream",
