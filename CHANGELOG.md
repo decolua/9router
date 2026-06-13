@@ -1,4 +1,4 @@
-# v0.4.77 (2026-06-13)
+# v0.4.80 (2026-06-13)
 
 ## Features
 - Vercel AI Gateway: support embeddings, images and credit usage (#1183)
