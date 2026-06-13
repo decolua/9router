@@ -92,7 +92,10 @@ export function geminiToOpenAIResponse(chunk, state) {
         continue;
       }
 
-      // Text content (non-thinking)
+      // Text content. Gemini marks model-internal thinking with `thought: true`.
+      // Some responses include a thoughtSignature, but Google AI Studio/Gemini API
+      // can also stream thought parts without a signature; those must not be
+      // surfaced as normal assistant content in OpenAI-compatible clients.
       if (part.text !== undefined && part.text !== "") {
         results.push({
           id: `chatcmpl-${state.messageId}`,
@@ -101,7 +104,9 @@ export function geminiToOpenAIResponse(chunk, state) {
           model: state.model,
           choices: [{
             index: 0,
-            delta: { content: part.text },
+            delta: isThought
+              ? { reasoning_content: part.text }
+              : { content: part.text },
             finish_reason: null
           }]
         });

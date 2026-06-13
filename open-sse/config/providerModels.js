@@ -211,6 +211,9 @@ export const PROVIDER_MODELS = {
     // { id: "minimax-m2.5-free", name: "MiniMax M2.5", targetFormat: "claude" },
     // { id: "trinity-large-preview-free", name: "Trinity Large Preview" },
   ],
+  mmf: [  // MiMo Free — free channel only serves mimo-auto
+    { id: "mimo-auto", name: "MiMo Auto" },
+  ],
 
   cl: [  // Cline
     { id: "anthropic/claude-opus-4.7", name: "Claude Opus 4.7" },
@@ -531,16 +534,27 @@ export const PROVIDER_MODELS = {
     { id: "voyage-multilingual-2", name: "Voyage Multilingual 2", type: "embedding" },
   ],
   siliconflow: [
+    // DeepSeek models
+    { id: "deepseek-ai/DeepSeek-V4-Pro", name: "DeepSeek V4 Pro" },
+    { id: "deepseek-ai/DeepSeek-V4-Flash", name: "DeepSeek V4 Flash" },
     { id: "deepseek-ai/DeepSeek-V3.2", name: "DeepSeek V3.2" },
+    { id: "deepseek-ai/DeepSeek-V3.2-Exp", name: "DeepSeek V3.2 Exp" },
     { id: "deepseek-ai/DeepSeek-V3.1", name: "DeepSeek V3.1" },
+    { id: "deepseek-ai/DeepSeek-V3.1-Terminus", name: "DeepSeek V3.1 Terminus" },
     { id: "deepseek-ai/DeepSeek-R1", name: "DeepSeek R1" },
-    { id: "Qwen/Qwen3-235B-A22B-Instruct-2507", name: "Qwen3 235B" },
-    { id: "Qwen/Qwen3-Coder-480B-A35B-Instruct", name: "Qwen3 Coder 480B" },
-    { id: "Qwen/Qwen3-32B", name: "Qwen3 32B" },
+    // Qwen models
+    { id: "Qwen/Qwen3.5-397B-A17B", name: "Qwen 3.5 397B A17B" },
+    { id: "Qwen/Qwen3.5-122B-A10B", name: "Qwen 3.5 122B A10B" },
+    // GLM models
+    { id: "zai-org/GLM-5.1", name: "GLM 5.1" },
+    { id: "zai-org/GLM-5", name: "GLM 5" },
+    // Kimi models
+    { id: "moonshotai/Kimi-K2.6", name: "Kimi K2.6" },
     { id: "moonshotai/Kimi-K2.5", name: "Kimi K2.5" },
-    { id: "zai-org/GLM-4.7", name: "GLM 4.7" },
+    // Other models
     { id: "openai/gpt-oss-120b", name: "GPT OSS 120B" },
-    { id: "baidu/ERNIE-4.5-300B-A47B", name: "ERNIE 4.5 300B" },
+    { id: "MiniMaxAI/MiniMax-M2.5", name: "MiniMax M2.5" },
+    { id: "inclusionAI/Ling-flash-2.0", name: "Ling Flash 2.0" },
   ],
   "xiaomi-mimo": [
     { id: "mimo-v2.5-pro", name: "MiMo V2.5 Pro" },
@@ -897,6 +911,7 @@ const OAUTH_ALIASES = {
   cline: "cl",
   opencode: "oc",
   qoder: "qd",
+  "mimo-free": "mmf",
   vertex: "vertex",
   "vertex-partner": "vertex-partner",
 };
