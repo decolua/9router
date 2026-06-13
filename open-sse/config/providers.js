@@ -129,7 +129,8 @@ export const PROVIDERS = {
   },
   "vercel-ai-gateway": {
     baseUrl: "https://ai-gateway.vercel.sh/v1/chat/completions",
-    format: "openai"
+    format: "openai",
+    retry: { 429: 2 }
   },
   glm: {
     baseUrl: "https://api.z.ai/api/anthropic/v1/messages",

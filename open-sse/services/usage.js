@@ -39,6 +39,11 @@ const MINIMAX_USAGE_URLS = {
   ],
 };
 
+// Vercel AI Gateway credits endpoint
+// Returns { balance: "95.50", total_used: "4.50" } (USD as decimal strings).
+// Docs: https://vercel.com/docs/ai-gateway/usage
+const VERCEL_AI_GATEWAY_CREDITS_URL = "https://ai-gateway.vercel.sh/v1/credits";
+
 // Antigravity API config (from Quotio)
 const ANTIGRAVITY_CONFIG = {
   quotaApiUrl: "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
@@ -101,6 +106,8 @@ export async function getUsageForProvider(connection, proxyOptions = null) {
     case "minimax":
     case "minimax-cn":
       return await getMiniMaxUsage(apiKey, provider, proxyOptions);
+    case "vercel-ai-gateway":
+      return await getVercelAiGatewayUsage(apiKey, proxyOptions);
     default:
       return { message: `Usage API not implemented for ${provider}` };
   }
