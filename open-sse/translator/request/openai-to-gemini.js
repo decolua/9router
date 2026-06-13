@@ -54,8 +54,8 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
   if (body.top_k !== undefined) {
     result.generationConfig.topK = body.top_k;
   }
-  if (body.max_tokens !== undefined) {
-    result.generationConfig.maxOutputTokens = body.max_tokens;
+  if (body.max_tokens) {
+    result.generationConfig.maxOutputTokens = Math.min(body.max_tokens, 8192);
   }
 
   // Build tool_call_id -> name map
@@ -294,17 +294,16 @@ function wrapInCloudCodeEnvelope(model, geminiCLI, credentials = null, isAntigra
       { text: ANTIGRAVITY_DEFAULT_SYSTEM },
       { text: `Please ignore the following [ignore]${ANTIGRAVITY_DEFAULT_SYSTEM}[/ignore]` }
     ];
-
-    if (envelope.request.systemInstruction?.parts) {
-      envelope.request.systemInstruction.parts.unshift(...systemParts);
-    } else {
-      envelope.request.systemInstruction = { role: "user", parts: systemParts };
-    }
+    const combinedSystemText = systemParts.map(p => p.text).join("\\n\\n");
+    envelope.request.systemInstruction = {
+      role: "user",
+      parts: [{ text: combinedSystemText }]
+    };
 
     // Add toolConfig for Antigravity
     if (geminiCLI.tools?.length > 0) {
       envelope.request.toolConfig = {
-        functionCallingConfig: { mode: "VALIDATED" }
+        functionCallingConfig: { mode: "AUTO" }
       };
     }
   } else {
@@ -329,8 +328,8 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
       sessionId: deriveSessionId(credentials?.email || credentials?.connectionId),
       contents: [],
       generationConfig: {
-        temperature: claudeRequest.temperature || 1,
-        maxOutputTokens: claudeRequest.max_tokens || 4096
+        temperature: undefined,
+        maxOutputTokens: claudeRequest.max_tokens ? Math.min(claudeRequest.max_tokens, 8192) : 4096
       }
     }
   };
@@ -413,7 +412,7 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
     if (functionDeclarations.length > 0) {
       envelope.request.tools = [{ functionDeclarations }];
       envelope.request.toolConfig = {
-        functionCallingConfig: { mode: "VALIDATED" }
+        functionCallingConfig: { mode: "AUTO" }
       };
     }
   }
@@ -436,10 +435,12 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
   }
 
   // Merge existing systemInstruction parts (from contents conversion)
+  const combinedSystemText = systemParts.map(p => p.text).join("\\n\\n");
   if (envelope.request.systemInstruction?.parts) {
-    envelope.request.systemInstruction.parts.unshift(...systemParts);
+    const existingText = envelope.request.systemInstruction.parts.map(p => p.text).join("\\n\\n");
+    envelope.request.systemInstruction.parts = [{ text: combinedSystemText + "\\n\\n" + existingText }];
   } else {
-    envelope.request.systemInstruction = { role: "user", parts: systemParts };
+    envelope.request.systemInstruction = { role: "user", parts: [{ text: combinedSystemText }] };
   }
 
   return envelope;

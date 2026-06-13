@@ -85,7 +85,17 @@ export async function parseUpstreamError(response, executor = null) {
   const messageStr = typeof message === "string" ? message : JSON.stringify(message);
   const finalMessage = messageStr || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
 
-  return { statusCode: response.status, message: finalMessage };
+  // If the upstream returned 401 or 403, the provider's credentials are bad/rotating.
+  // For a proxy, we must NEVER pass 401/403 back to the client directly if the client's 
+  // own proxy credentials are valid. Passing 401/403 causes tools like Claude Code to think
+  // their proxy API key is invalid and drop the session.
+  // We mask upstream auth errors as 429 (Too Many Requests) to force a graceful client retry.
+  let finalStatusCode = response.status;
+  if (finalStatusCode === 401 || finalStatusCode === 403) {
+    finalStatusCode = 429;
+  }
+
+  return { statusCode: finalStatusCode, message: finalMessage };
 }
 
 /**

@@ -107,8 +107,6 @@ const CC_DECOY_TOOLS = [
   { name: "Edit", description: "This tool is currently unavailable.", input_schema: { type: "object", properties: {} } },
   { name: "Write", description: "This tool is currently unavailable.", input_schema: { type: "object", properties: {} } },
   { name: "NotebookEdit", description: "This tool is currently unavailable.", input_schema: { type: "object", properties: {} } },
-  { name: "WebFetch", description: "This tool is currently unavailable.", input_schema: { type: "object", properties: {} } },
-  { name: "WebSearch", description: "This tool is currently unavailable.", input_schema: { type: "object", properties: {} } },
   { name: "AskUserQuestion", description: "This tool is currently unavailable.", input_schema: { type: "object", properties: {} } },
   { name: "Skill", description: "This tool is currently unavailable.", input_schema: { type: "object", properties: {} } },
   { name: "EnterPlanMode", description: "This tool is currently unavailable.", input_schema: { type: "object", properties: {} } },

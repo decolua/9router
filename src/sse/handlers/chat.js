@@ -20,6 +20,61 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 
+function messageTextContainsSubagentCue(body) {
+  const explicitSubagentRegex =
+    /\b(?:use|run|spawn|start|launch|create|delegate(?:\s+to)?|ask)\s+(?:a|an|the|one|another)?\s*(?:background\s+agent|subagent)\b|\b(?:background\s+agent|subagent)\s+(?:to|for)\b/i;
+
+  const extractText = (value) => {
+    if (!value) return false;
+    if (typeof value === "string") return value;
+    if (Array.isArray(value)) return value.map(extractText).join(" ");
+    if (typeof value === "object") {
+      if (typeof value.text === "string") return value.text;
+      if (typeof value.content === "string") return value.content;
+      if (Array.isArray(value.content)) return value.content.map(extractText).join(" ");
+      if (Array.isArray(value.parts)) return value.parts.map(extractText).join(" ");
+      if (Array.isArray(value.input)) return value.input.map(extractText).join(" ");
+    }
+    return "";
+  };
+
+  const getLatestUserText = (list) => {
+    if (!Array.isArray(list)) return "";
+    for (let i = list.length - 1; i >= 0; i--) {
+      const item = list[i];
+      if (!item || typeof item !== "object") continue;
+      const role = String(item.role || item.type || "").toLowerCase();
+      if (role.includes("user") || role.includes("message")) {
+        const text = extractText(item);
+        if (text) return text;
+      }
+    }
+    return "";
+  };
+
+  const latestMessageText = getLatestUserText(body?.messages);
+  if (latestMessageText && shouldRouteToSubagent(latestMessageText, explicitSubagentRegex)) return true;
+
+  const latestInputText = getLatestUserText(body?.input);
+  if (latestInputText && shouldRouteToSubagent(latestInputText, explicitSubagentRegex)) return true;
+
+  return false;
+}
+
+function shouldRouteToSubagent(text, explicitSubagentRegex) {
+  if (!text) return false;
+
+  // Compact/skill payloads can include documentation that mentions "subagent"
+  // without asking 9Router to change the main model. Keep this interceptor
+  // narrow so long-running main-agent turns survive compaction.
+  if (text.length > 4000) return false;
+  if (/Base directory for this skill:|skill_listing|Skills restored|Context compaction/i.test(text)) {
+    return false;
+  }
+
+  return explicitSubagentRegex.test(text);
+}
+
 /**
  * Handle chat completion request
  * Supports: OpenAI, Claude, Gemini, OpenAI Responses API formats
@@ -146,7 +201,26 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
   }
 
-  const { provider, model } = modelInfo;
+  let { provider, model } = modelInfo;
+
+  // --- SUBAGENT ROUTING INTERCEPTOR ---
+  if (messageTextContainsSubagentCue(body)) {
+    const subagentTarget = process.env.ROUTER_SUBAGENT_MODEL || "ag/gemini-3.1-pro-high";
+    const subagentModelInfo = await getModelInfo(subagentTarget);
+    const subagentProvider = subagentModelInfo.provider || "antigravity";
+    const subagentModel = subagentModelInfo.model || "gemini-3.1-pro-high";
+
+    log.info(
+      "9ROUTER",
+      `Intercepted subagent request! Routing from ${provider}/${model} to ${subagentProvider}/${subagentModel}`
+    );
+
+    provider = subagentProvider;
+    model = subagentModel;
+    modelInfo.provider = subagentProvider;
+    modelInfo.model = subagentModel;
+    if (body.thinking) delete body.thinking;
+  }
 
   // Log model routing (alias → actual model)
   if (modelStr !== `${provider}/${model}`) {

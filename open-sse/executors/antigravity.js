@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, INTERNAL_REQUEST_HEADER, AG_DEFAULT_TOOLS, AG_TOOL_SUFFIX } from "../config/appConstants.js";
+import { getModelUpstreamId } from "../config/providerModels.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { deriveSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
@@ -16,7 +17,20 @@ function sanitizeFunctionName(name) {
 }
 
 const MAX_RETRY_AFTER_MS = 10000;
-const MAX_ANTIGRAVITY_OUTPUT_TOKENS = 16384;
+const MAX_ANTIGRAVITY_OUTPUT_TOKENS = 8192;
+const RETRYABLE_DEPRECATED_MODEL_STATUSES = new Set([HTTP_STATUS.NOT_FOUND, HTTP_STATUS.SERVICE_UNAVAILABLE]);
+function getAgModelFallbacks() {
+  const primary = process.env.ROUTER_AG_PRIMARY_REPLACEMENT || "gemini-2.5-flash";
+  const secondary = process.env.ROUTER_AG_SECONDARY_REPLACEMENT || "gemini-2.5-pro";
+  return {
+    "gemini-3.1-pro-high": [primary, secondary],
+    "gemini-pro-agent": [primary, secondary],
+    "gemini-3.1-pro-low": [primary],
+    "gemini-3-flash": [primary],
+    "gemini-3-pro-preview": [secondary, primary],
+    "gemini-3-flash-preview": [primary],
+  };
+}
 
 export class AntigravityExecutor extends BaseExecutor {
   constructor() {
@@ -39,6 +53,13 @@ export class AntigravityExecutor extends BaseExecutor {
       ...(sessionId && { "X-Machine-Session-Id": sessionId }),
       "Accept": stream ? "text/event-stream" : "application/json"
     };
+  }
+
+  resolveModelCandidates(model) {
+    const requestedModel = (model || "").replace(/^ag\//, "");
+    const primary = getModelUpstreamId("ag", requestedModel);
+    const fallbackModels = getAgModelFallbacks()[requestedModel] || [];
+    return Array.from(new Set([primary, ...fallbackModels].filter(Boolean)));
   }
 
   transformRequest(model, body, stream, credentials) {
@@ -80,7 +101,9 @@ export class AntigravityExecutor extends BaseExecutor {
       tools = allDeclarations.length > 0 ? [{ functionDeclarations: allDeclarations }] : [];
     }
 
-    const { tools: _originalTools, toolConfig: _originalToolConfig, ...requestWithoutTools } = body.request || {};
+    // Drop sessionId from request (it is sent in X-Machine-Session-Id header)
+    const { tools: _t, toolConfig: _tc, sessionId: _droppedSessionId, ...requestWithoutTools } = body.request || {};
+    delete requestWithoutTools.systemInstruction;
     const generationConfig = { ...(requestWithoutTools.generationConfig || {}) };
     if (generationConfig.maxOutputTokens > MAX_ANTIGRAVITY_OUTPUT_TOKENS) {
       generationConfig.maxOutputTokens = MAX_ANTIGRAVITY_OUTPUT_TOKENS;
@@ -91,19 +114,21 @@ export class AntigravityExecutor extends BaseExecutor {
       generationConfig,
       ...(contents && { contents }),
       ...(tools && { tools }),
-      sessionId: body.request?.sessionId || deriveSessionId(credentials?.email || credentials?.connectionId),
-      safetySettings: undefined,
-      ...(tools?.length > 0 && { toolConfig: { functionCallingConfig: { mode: "VALIDATED" } } })
+      ...(tools?.length > 0 && { toolConfig: { functionCallingConfig: { mode: "VALIDATED" } } }),
+      safetySettings: undefined
     };
 
+    // Drop extra metadata fields from body root — Antigravity API is very strict
+    const { sessionId: _droppedBodySessionId, userAgent, requestId, requestType, ...bodyWithoutSessionId } = body || {};
+
     return {
-      ...body,
-      project: projectId,
-      model: model,
+      ...bodyWithoutSessionId,
+      request: transformedRequest,
+      model: model.replace(/^ag\//, ""),
       userAgent: "antigravity",
       requestType: "agent",
       requestId: `agent-${crypto.randomUUID()}`,
-      request: transformedRequest
+      project: projectId
     };
   }
 
@@ -196,8 +221,11 @@ export class AntigravityExecutor extends BaseExecutor {
     return totalMs > 0 ? totalMs : null;
   }
 
+
+
   async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
     const fallbackCount = this.getFallbackCount();
+    const modelCandidates = this.resolveModelCandidates(model);
     let lastError = null;
     let lastStatus = 0;
     const MAX_AUTO_RETRIES = 3;
@@ -207,8 +235,7 @@ export class AntigravityExecutor extends BaseExecutor {
 
     for (let urlIndex = 0; urlIndex < fallbackCount; urlIndex++) {
       const url = this.buildUrl(model, stream, urlIndex);
-      const transformedBody = this.transformRequest(model, body, stream, credentials);
-      const sessionId = transformedBody.request?.sessionId;
+      const sessionId = body.request?.sessionId || deriveSessionId(credentials?.email || credentials?.connectionId);
       const headers = this.buildHeaders(credentials, stream, sessionId);
 
       // Initialize retry counters for this URL
@@ -219,71 +246,82 @@ export class AntigravityExecutor extends BaseExecutor {
         retryAfterAttemptsByUrl[urlIndex] = 0;
       }
 
-      try {
-        const response = await proxyAwareFetch(url, {
-          method: "POST",
-          headers,
-          body: JSON.stringify(transformedBody),
-          signal
-        }, proxyOptions);
+      for (let modelIndex = 0; modelIndex < modelCandidates.length; modelIndex++) {
+        const candidateModel = modelCandidates[modelIndex];
+        const transformedBody = this.transformRequest(candidateModel, body, stream, credentials);
+        try {
+          const response = await proxyAwareFetch(url, {
+            method: "POST",
+            headers,
+            body: JSON.stringify(transformedBody),
+            signal
+          }, proxyOptions);
 
-        if (response.status === HTTP_STATUS.RATE_LIMITED || response.status === HTTP_STATUS.SERVICE_UNAVAILABLE) {
-          // Try to get retry time from headers first
-          let retryMs = this.parseRetryHeaders(response.headers);
+          if (RETRYABLE_DEPRECATED_MODEL_STATUSES.has(response.status) && modelIndex + 1 < modelCandidates.length) {
+            const nextModel = modelCandidates[modelIndex + 1];
+            log?.warn?.("MODEL", `Antigravity model "${candidateModel}" returned ${response.status}, retrying with "${nextModel}"`);
+            lastStatus = response.status;
+            continue;
+          }
 
-          // If no retry time in headers, try to parse from error message body
-          if (!retryMs) {
-            try {
-              const errorBody = await response.clone().text();
-              const errorJson = JSON.parse(errorBody);
-              const errorMessage = errorJson?.error?.message || errorJson?.message || "";
-              retryMs = this.parseRetryFromErrorMessage(errorMessage);
-            } catch (e) {
-              // Ignore parse errors, will fall back to exponential backoff
+          if (response.status === HTTP_STATUS.RATE_LIMITED || response.status === HTTP_STATUS.SERVICE_UNAVAILABLE) {
+            // Try to get retry time from headers first
+            let retryMs = this.parseRetryHeaders(response.headers);
+
+            // If no retry time in headers, try to parse from error message body
+            if (!retryMs) {
+              try {
+                const errorBody = await response.clone().text();
+                const errorJson = JSON.parse(errorBody);
+                const errorMessage = errorJson?.error?.message || errorJson?.message || "";
+                retryMs = this.parseRetryFromErrorMessage(errorMessage);
+              } catch (e) {
+                // Ignore parse errors, will fall back to exponential backoff
+              }
+            }
+
+            if (retryMs && retryMs <= MAX_RETRY_AFTER_MS && retryAfterAttemptsByUrl[urlIndex] < MAX_RETRY_AFTER_RETRIES) {
+              retryAfterAttemptsByUrl[urlIndex]++;
+              log?.debug?.("RETRY", `${response.status} with Retry-After: ${Math.ceil(retryMs / 1000)}s, waiting... (${retryAfterAttemptsByUrl[urlIndex]}/${MAX_RETRY_AFTER_RETRIES})`);
+              await new Promise(resolve => setTimeout(resolve, retryMs));
+              modelIndex--;
+              continue;
+            }
+
+            // Auto retry only for 429 when retryMs is 0 or undefined
+            if (response.status === HTTP_STATUS.RATE_LIMITED && (!retryMs || retryMs === 0) && retryAttemptsByUrl[urlIndex] < MAX_AUTO_RETRIES) {
+              retryAttemptsByUrl[urlIndex]++;
+              // Exponential backoff: 2s, 4s, 8s...
+              const backoffMs = Math.min(1000 * (2 ** retryAttemptsByUrl[urlIndex]), MAX_RETRY_AFTER_MS);
+              log?.debug?.("RETRY", `429 auto retry ${retryAttemptsByUrl[urlIndex]}/${MAX_AUTO_RETRIES} after ${backoffMs / 1000}s`);
+              await new Promise(resolve => setTimeout(resolve, backoffMs));
+              modelIndex--;
+              continue;
+            }
+
+            log?.debug?.("RETRY", `${response.status}, Retry-After ${retryMs ? `too long (${Math.ceil(retryMs / 1000)}s)` : 'missing'}, trying fallback`);
+            lastStatus = response.status;
+
+            if (urlIndex + 1 < fallbackCount) {
+              break;
             }
           }
 
-          if (retryMs && retryMs <= MAX_RETRY_AFTER_MS && retryAfterAttemptsByUrl[urlIndex] < MAX_RETRY_AFTER_RETRIES) {
-            retryAfterAttemptsByUrl[urlIndex]++;
-            log?.debug?.("RETRY", `${response.status} with Retry-After: ${Math.ceil(retryMs / 1000)}s, waiting... (${retryAfterAttemptsByUrl[urlIndex]}/${MAX_RETRY_AFTER_RETRIES})`);
-            await new Promise(resolve => setTimeout(resolve, retryMs));
-            urlIndex--;
-            continue;
+          if (this.shouldRetry(response.status, urlIndex)) {
+            log?.debug?.("RETRY", `${response.status} on ${url}, trying fallback ${urlIndex + 1}`);
+            lastStatus = response.status;
+            break;
           }
 
-          // Auto retry only for 429 when retryMs is 0 or undefined
-          if (response.status === HTTP_STATUS.RATE_LIMITED && (!retryMs || retryMs === 0) && retryAttemptsByUrl[urlIndex] < MAX_AUTO_RETRIES) {
-            retryAttemptsByUrl[urlIndex]++;
-            // Exponential backoff: 2s, 4s, 8s...
-            const backoffMs = Math.min(1000 * (2 ** retryAttemptsByUrl[urlIndex]), MAX_RETRY_AFTER_MS);
-            log?.debug?.("RETRY", `429 auto retry ${retryAttemptsByUrl[urlIndex]}/${MAX_AUTO_RETRIES} after ${backoffMs / 1000}s`);
-            await new Promise(resolve => setTimeout(resolve, backoffMs));
-            urlIndex--;
-            continue;
-          }
-
-          log?.debug?.("RETRY", `${response.status}, Retry-After ${retryMs ? `too long (${Math.ceil(retryMs / 1000)}s)` : 'missing'}, trying fallback`);
-          lastStatus = response.status;
-
+          return { response, url, headers, transformedBody };
+        } catch (error) {
+          lastError = error;
           if (urlIndex + 1 < fallbackCount) {
-            continue;
+            log?.debug?.("RETRY", `Error on ${url}, trying fallback ${urlIndex + 1}`);
+            break;
           }
+          throw error;
         }
-
-        if (this.shouldRetry(response.status, urlIndex)) {
-          log?.debug?.("RETRY", `${response.status} on ${url}, trying fallback ${urlIndex + 1}`);
-          lastStatus = response.status;
-          continue;
-        }
-
-        return { response, url, headers, transformedBody };
-      } catch (error) {
-        lastError = error;
-        if (urlIndex + 1 < fallbackCount) {
-          log?.debug?.("RETRY", `Error on ${url}, trying fallback ${urlIndex + 1}`);
-          continue;
-        }
-        throw error;
       }
     }
 

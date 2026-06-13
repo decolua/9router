@@ -25,11 +25,27 @@ export function shouldUseSecureCookie(request) {
   return forceSecureCookie || isHttpsRequest;
 }
 
+// Single canonical TTL in seconds — drives both JWT exp and cookie maxAge so they
+// cannot diverge. Accepts "Nd" / "Nh" / "Nm" or a plain integer (seconds).
+// Clamped to [60, 30 days]. Defaults to 30 days.
+const MAX_SESSION_S = 30 * 86400;
+function parseTtlSeconds(raw) {
+  const s = String(raw || "").trim();
+  const unit = { d: 86400, h: 3600, m: 60 };
+  const m = s.match(/^(\d+)(d|h|m)$/);
+  if (m) return Math.min(parseInt(m[1], 10) * unit[m[2]], MAX_SESSION_S);
+  const n = parseInt(s, 10);
+  if (!isNaN(n) && n > 0) return Math.min(n, MAX_SESSION_S);
+  return MAX_SESSION_S;
+}
+const SESSION_MAX_AGE_S = parseTtlSeconds(process.env.AUTH_SESSION_TTL);
+
 export async function createDashboardAuthToken(claims = {}) {
+  const exp = Math.floor(Date.now() / 1000) + SESSION_MAX_AGE_S;
   return new SignJWT({ authenticated: true, ...claims })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime("24h")
+    .setExpirationTime(exp)
     .sign(SECRET);
 }
 
@@ -60,6 +76,7 @@ export async function setDashboardAuthCookie(cookieStore, request, claims = {}) 
     secure: shouldUseSecureCookie(request),
     sameSite: "lax",
     path: "/",
+    maxAge: SESSION_MAX_AGE_S,
   });
 }
 

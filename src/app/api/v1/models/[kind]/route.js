@@ -42,7 +42,7 @@ export async function GET(_request, { params }) {
     }
 
     const data = await buildModelsList(kindFilter);
-    return Response.json({ object: "list", data }, {
+    return Response.json({ object: "list", data, models: data }, {
       headers: { "Access-Control-Allow-Origin": "*" },
     });
   } catch (error) {

@@ -6,15 +6,18 @@ const CLAUDE_OAUTH_TOOL_PREFIX = "proxy_";
 
 // Sanitize tool call arguments to fix bad params from non-Anthropic models
 function sanitizeToolArgs(toolName, argsJson) {
+  const cleaned = typeof argsJson === "string"
+    ? argsJson.trim().replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim()
+    : argsJson;
   try {
-    const args = JSON.parse(argsJson);
+    const args = JSON.parse(cleaned);
     const name = toolName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)
       ? toolName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length)
       : toolName;
     if (name === "Read") sanitizeReadArgs(args);
     return JSON.stringify(args);
   } catch {
-    return argsJson;
+    return cleaned;
   }
 }
 

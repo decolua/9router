@@ -11,7 +11,7 @@ import { extractCodexAccountInfo } from "@/lib/oauth/providers";
  */
 export async function POST(request) {
   try {
-    const { accessToken, name } = await request.json();
+    const { accessToken, refreshToken, name } = await request.json();
 
     if (!accessToken || typeof accessToken !== "string") {
       return NextResponse.json(
@@ -24,7 +24,8 @@ export async function POST(request) {
 
     // Extract account info from the JWT (email, workspace, plan)
     let email = null;
-    let providerSpecificData = { authMethod: "access_token" };
+    let providerSpecificData = { authMethod: refreshToken ? "oauth" : "access_token" };
+    let expiresAt = null;
 
     // Try decoding as JWT to extract email + workspace
     try {
@@ -50,6 +51,7 @@ export async function POST(request) {
         // Store expiry info from JWT if available
         if (payload.exp) {
           providerSpecificData.jwtExp = payload.exp;
+          expiresAt = new Date(payload.exp * 1000).toISOString();
         }
       }
     } catch {
@@ -67,11 +69,13 @@ export async function POST(request) {
 
     const connectionName = name || email || "ChatGPT Access Token";
 
-    // Save to database as access_token authType (no refresh token)
+    // Save to database
     const connection = await createProviderConnection({
       provider: "codex",
-      authType: "access_token",
+      authType: refreshToken ? "oauth" : "access_token",
       accessToken: token,
+      ...(refreshToken && { refreshToken }),
+      ...(expiresAt && { expiresAt }),
       name: connectionName,
       email: email,
       providerSpecificData,

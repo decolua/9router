@@ -433,7 +433,7 @@ export async function OPTIONS() {
 export async function GET() {
   try {
     const data = await buildModelsList([LLM_KIND]);
-    return Response.json({ object: "list", data }, {
+    return Response.json({ object: "list", data, models: data }, {
       headers: { "Access-Control-Allow-Origin": "*" },
     });
   } catch (error) {
