@@ -150,6 +150,30 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
 
   // 2. Messages: process in optimized passes
   if (body.messages && Array.isArray(body.messages)) {
+    // Extract any lingering system/developer messages from messages[] and promote to top-level system.
+    // Anthropic API rejects role:'system' in messages[]; it must be the top-level system field.
+    // This acts as a safety net for the passthrough path and any translation edge cases. Closes #1580.
+    const systemTexts = [];
+    body.messages = body.messages.filter(msg => {
+      if (msg.role === "system" || msg.role === "developer") {
+        const text = typeof msg.content === "string" ? msg.content
+          : Array.isArray(msg.content) ? msg.content.filter(b => b.type === "text").map(b => b.text).join("\n") : "";
+        if (text.trim()) systemTexts.push(text);
+        return false;
+      }
+      return true;
+    });
+    if (systemTexts.length > 0) {
+      const promoted = { type: "text", text: systemTexts.join("\n") };
+      if (Array.isArray(body.system)) {
+        body.system = [...body.system, promoted];
+      } else if (typeof body.system === "string") {
+        body.system = [{ type: "text", text: body.system }, promoted];
+      } else {
+        body.system = [promoted];
+      }
+    }
+
     const len = body.messages.length;
     let filtered = [];
 

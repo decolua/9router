@@ -13,6 +13,12 @@ const proxyClientMaxBodySize = process.env.NINEROUTER_PROXY_CLIENT_MAX_BODY_SIZE
 const nextConfig = {
   distDir: process.env.NEXT_DIST_DIR || ".next",
   output: "standalone",
+  experimental: {
+    // Default 10MB Next.js body limit is too low for long agentic sessions
+    // (many tool call results + conversation history can exceed 10MB).
+    // Configurable via env var; defaults to 128MB. Closes #1529 #1572.
+    proxyClientMaxBodySize: process.env.NEXT_MAX_BODY_SIZE || "128mb"
+  },
   serverExternalPackages: ["better-sqlite3", "sql.js", "node:sqlite", "bun:sqlite"],
   turbopack: {
     root: tracingRoot

@@ -31,11 +31,17 @@ export const MEMORY_CONFIG = {
   proxyDispatchersMaxSize: 20,
 };
 
-// Stream stall timeout: abort if no chunk received within this duration
-export const STREAM_STALL_TIMEOUT_MS = 60 * 1000;
+// Stream stall timeout: abort if no chunk received within this duration.
+// Configurable via STREAM_STALL_TIMEOUT_MS env var (ms). Closes #1557.
+export const STREAM_STALL_TIMEOUT_MS = process.env.STREAM_STALL_TIMEOUT_MS
+  ? Math.max(5000, parseInt(process.env.STREAM_STALL_TIMEOUT_MS, 10))
+  : 60 * 1000;
 
-// Fetch connect timeout: abort if upstream doesn't return response headers within this duration
-export const FETCH_CONNECT_TIMEOUT_MS = 60 * 1000;
+// Fetch connect timeout: abort if upstream doesn't return response headers within this duration.
+// Configurable via FETCH_CONNECT_TIMEOUT_MS env var (ms). Closes #1557.
+export const FETCH_CONNECT_TIMEOUT_MS = process.env.FETCH_CONNECT_TIMEOUT_MS
+  ? Math.max(3000, parseInt(process.env.FETCH_CONNECT_TIMEOUT_MS, 10))
+  : 60 * 1000;
 
 // Default token limits
 export const DEFAULT_MAX_TOKENS = 64000;

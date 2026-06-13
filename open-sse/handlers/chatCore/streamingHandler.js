@@ -101,6 +101,16 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
     });
 
     saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, label: "STREAM USAGE" });
+
+    // Detect suspicious near-empty response when tools were present. Closes #1382.
+    // DeepSeek and GLM occasionally return ~0 useful tokens when given 5+ tools.
+    // The response is already forwarded so combo fallback can't happen retroactively,
+    // but a clear log helps users diagnose why their agentic session returned empty.
+    const outTokens = usage?.completion_tokens ?? usage?.output_tokens ?? 0;
+    const hasTools = Array.isArray(body?.tools) && body.tools.length >= 5;
+    if (hasTools && outTokens > 0 && outTokens < 50) {
+      console.warn(`[WARN] [EMPTY-RESPONSE] ${provider?.toUpperCase()} | ${model} | out=${outTokens} tok but ${body.tools.length} tools sent — provider may not handle large tool lists. Remove this provider from tool-heavy combos.`);
+    }
   };
 
   return { onStreamComplete, streamDetailId };
