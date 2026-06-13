@@ -29,6 +29,7 @@ export default function ProviderDetailPage() {
   const params = useParams();
   const router = useRouter();
   const providerId = params.id;
+  const hasSpeedTest = providerId !== "codex" && providerId !== "antigravity";
   const [connections, setConnections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [providerNode, setProviderNode] = useState(null);
@@ -47,6 +48,9 @@ export default function ProviderDetailPage() {
   const [modelTestResults, setModelTestResults] = useState({});
   const [modelsTestError, setModelsTestError] = useState("");
   const [testingModelId, setTestingModelId] = useState(null);
+  const [speedTestingModelId, setSpeedTestingModelId] = useState(null);
+  const [modelSpeedResults, setModelSpeedResults] = useState({});
+  const [bulkSpeedTesting, setBulkSpeedTesting] = useState(false);
   const [showAddCustomModel, setShowAddCustomModel] = useState(false);
   const [selectedConnectionIds, setSelectedConnectionIds] = useState([]);
   const [bulkProxyPoolId, setBulkProxyPoolId] = useState("__none__");
@@ -893,6 +897,111 @@ export default function ProviderDetailPage() {
     }
   };
 
+  const handleSpeedTestModel = async (modelId) => {
+    if (providerId === "codex" || providerId === "antigravity") {
+      alert(`Speed (Latency & TPS) check is not supported for ${providerId === "codex" ? "Codex" : "Antigravity"}.`);
+      return;
+    }
+    if (speedTestingModelId) return;
+    setSpeedTestingModelId(modelId);
+    try {
+      const res = await fetch("/api/models/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: `${providerStorageAlias}/${modelId}`, speedTest: true }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setModelSpeedResults((prev) => ({
+          ...prev,
+          [modelId]: { latencyMs: data.latencyMs, tps: data.tps }
+        }));
+        setModelsTestError("");
+      } else {
+        setModelsTestError(data.error || "Failed to check speed");
+      }
+    } catch {
+      setModelsTestError("Network error checking speed");
+    } finally {
+      setSpeedTestingModelId(null);
+    }
+  };
+
+  const handleSpeedTestAllModels = async () => {
+    if (providerId === "codex" || providerId === "antigravity") {
+      alert(`Speed test is not supported for ${providerId === "codex" ? "Codex" : "Antigravity"}.`);
+      return;
+    }
+    if (bulkSpeedTesting || connections.length === 0) return;
+    
+    setBulkSpeedTesting(true);
+    
+    // Dynamically retrieve active/enabled model IDs for the current provider
+    let activeModelIds = [];
+    if (isCompatible) {
+      const providerAliases = Object.entries(modelAliases).filter(
+        ([, model]) => model.startsWith(`${providerStorageAlias}/`)
+      );
+      activeModelIds = providerAliases.map(([, fullModel]) => 
+        fullModel.replace(`${providerStorageAlias}/`, "")
+      );
+    } else {
+      // 1. Get user-added custom models
+      const customModels = Object.entries(modelAliases)
+        .filter(([alias, fullModel]) => {
+          const prefix = `${providerStorageAlias}/`;
+          if (!fullModel.startsWith(prefix)) return false;
+          const modelId = fullModel.slice(prefix.length);
+          if (providerInfo?.passthroughModels) return !models.some((m) => m.id === modelId);
+          return !models.some((m) => m.id === modelId) && alias === modelId;
+        })
+        .map(([, fullModel]) => fullModel.slice(`${providerStorageAlias}/`.length));
+
+      // 2. Get standard active models
+      const allIds = [
+        ...models,
+        ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
+      ].filter((m) => !m.type || m.type === "llm").map((m) => m.id);
+      
+      const disabledSet = new Set(disabledModelIds);
+      const displayModelIds = allIds.filter((id) => !disabledSet.has(id));
+
+      // 3. Combine custom models and standard models
+      activeModelIds = [...customModels, ...displayModelIds];
+    }
+
+    try {
+      for (const modelId of activeModelIds) {
+        // Optimistically show spinner on the individual model card
+        setSpeedTestingModelId(modelId);
+        try {
+          const res = await fetch("/api/models/test", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model: `${providerStorageAlias}/${modelId}`, speedTest: true }),
+          });
+          const data = await res.json();
+          if (data.ok) {
+            setModelSpeedResults((prev) => ({
+              ...prev,
+              [modelId]: { latencyMs: data.latencyMs, tps: data.tps }
+            }));
+          }
+        } catch (err) {
+          console.error(`Failed to speed test ${modelId}:`, err);
+        }
+        // Let's add a small sleep to avoid rate limiting
+        await sleep(300);
+      }
+      setModelsTestError("");
+    } catch (err) {
+      setModelsTestError("Failed during speed test of all models");
+    } finally {
+      setSpeedTestingModelId(null);
+      setBulkSpeedTesting(false);
+    }
+  };
+
   const renderModelsSection = () => {
     if (isCompatible) {
       return (
@@ -906,6 +1015,9 @@ export default function ProviderDetailPage() {
           onDeleteAlias={handleDeleteAlias}
           connections={connections}
           isAnthropic={isAnthropicCompatible}
+          onSpeedTest={hasSpeedTest && (connections.length > 0 || isFreeNoAuth) ? handleSpeedTestModel : undefined}
+          speedTestingModelId={speedTestingModelId}
+          modelSpeedResults={modelSpeedResults}
         />
       );
     }
@@ -953,6 +1065,9 @@ export default function ProviderDetailPage() {
             isTesting={testingModelId === model.id}
             isCustom
             isFree={false}
+            onSpeedTest={hasSpeedTest && (connections.length > 0 || isFreeNoAuth) ? () => handleSpeedTestModel(model.id) : undefined}
+            isSpeedTesting={speedTestingModelId === model.id}
+            speedTestData={modelSpeedResults[model.id]}
           />
         ))}
 
@@ -977,6 +1092,9 @@ export default function ProviderDetailPage() {
               isTesting={testingModelId === model.id}
               isFree={model.isFree}
               onDisable={() => handleDisableModel(model.id)}
+              onSpeedTest={hasSpeedTest && (connections.length > 0 || isFreeNoAuth) ? () => handleSpeedTestModel(model.id) : undefined}
+              isSpeedTesting={speedTestingModelId === model.id}
+              speedTestData={modelSpeedResults[model.id]}
             />
           );
         })}
@@ -1269,6 +1387,17 @@ export default function ProviderDetailPage() {
                     </Button>
                   )}
                 </>
+              )}
+              {providerId !== "codex" && providerId !== "antigravity" && connections.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  icon="speed"
+                  onClick={handleSpeedTestAllModels}
+                  disabled={bulkSpeedTesting || oneByOneRunning}
+                >
+                  {bulkSpeedTesting ? "Speed Testing All Models..." : "Speed Test All Models"}
+                </Button>
               )}
               {/* Thinking config */}
               {/* {thinkingConfig && (
