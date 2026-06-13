@@ -47,8 +47,8 @@ function getCliJsPath(cliPath) {
 function enableAutoStart(cliPath) {
   const platform = process.platform;
 
-  if (!["darwin", "win32", "linux"].includes(platform)) return false;
-  if (platform === "linux" && !process.env.DISPLAY) return false;
+  if (!['darwin', 'win32', 'linux'].includes(platform)) return false;
+  // Linux: systemd runs headless — no DISPLAY required
 
   try {
     if (platform === "darwin") return enableMacOS(cliPath);
@@ -70,7 +70,7 @@ function disableAutoStart() {
     if (platform === "darwin") return disableMacOS();
     if (platform === "win32") return disableWindows();
     if (platform === "linux") return disableLinux();
-  } catch (err) {}
+  } catch (err) { }
   return false;
 }
 
@@ -100,11 +100,16 @@ function isAutoStartEnabled() {
     } else if (platform === "win32") {
       const startupPath = path.join(process.env.APPDATA || "", "Microsoft", "Windows", "Start Menu", "Programs", "Startup", `${APP_NAME}.vbs`);
       return fs.existsSync(startupPath);
-    } else if (platform === "linux") {
-      const desktopPath = path.join(os.homedir(), ".config", "autostart", `${APP_NAME}.desktop`);
+    } else if (platform === 'linux') {
+      // Prefer systemd; fall back to .desktop file check
+      try {
+        const { isSystemdAvailable, isServiceEnabled } = require('../utils/systemd');
+        if (isSystemdAvailable()) return isServiceEnabled();
+      } catch (e) { }
+      const desktopPath = path.join(os.homedir(), '.config', 'autostart', `${APP_NAME}.desktop`);
       return fs.existsSync(desktopPath);
     }
-  } catch (e) {}
+  } catch (e) { }
   return false;
 }
 
@@ -204,7 +209,7 @@ function enableMacOS(cliPath) {
   // replacing an existing plist.
   try {
     execSync(`launchctl unload "${plistPath}"`, { stdio: "ignore" });
-  } catch (e) {}
+  } catch (e) { }
   try {
     execSync(`launchctl load -w "${plistPath}"`, { stdio: "ignore" });
   } catch (e) {
@@ -225,7 +230,7 @@ function disableMacOS() {
   if (!isAgentSelfMacOS()) {
     try {
       execSync(`launchctl unload "${plistPath}"`, { stdio: "ignore" });
-    } catch (e) {}
+    } catch (e) { }
   }
 
   if (fs.existsSync(plistPath)) {
@@ -266,7 +271,16 @@ function disableWindows() {
 // ============ Linux ============
 
 function enableLinux(cliPath) {
-  const autostartDir = path.join(os.homedir(), ".config", "autostart");
+  // Prefer systemd user service (works headless + GUI; survives reboots cleanly)
+  try {
+    const { isSystemdAvailable, enableService } = require('../utils/systemd');
+    if (isSystemdAvailable()) {
+      return enableService(cliPath);
+    }
+  } catch (e) { }
+
+  // Fallback: XDG autostart .desktop file (GUI / desktop session only)
+  const autostartDir = path.join(os.homedir(), '.config', 'autostart');
   const desktopPath = path.join(autostartDir, `${APP_NAME}.desktop`);
 
   if (!fs.existsSync(autostartDir)) {
@@ -287,14 +301,21 @@ Hidden=false
 NoDisplay=false
 X-GNOME-Autostart-enabled=true
 `;
-  fs.writeFileSync(desktopPath, desktopContent);
+  try { fs.writeFileSync(desktopPath, desktopContent); } catch (e) { return false; }
   return true;
 }
 
 function disableLinux() {
-  const desktopPath = path.join(os.homedir(), ".config", "autostart", `${APP_NAME}.desktop`);
+  // Disable systemd service if active
+  try {
+    const { isSystemdAvailable, disableService } = require('../utils/systemd');
+    if (isSystemdAvailable()) disableService();
+  } catch (e) { }
+
+  // Also clean up any legacy .desktop file
+  const desktopPath = path.join(os.homedir(), '.config', 'autostart', `${APP_NAME}.desktop`);
   if (fs.existsSync(desktopPath)) {
-    fs.unlinkSync(desktopPath);
+    try { fs.unlinkSync(desktopPath); } catch (e) { }
   }
   return true;
 }

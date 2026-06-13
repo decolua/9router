@@ -50,10 +50,10 @@ const args = process.argv.slice(2);
 // Self-heal SQLite runtime deps (sql.js + better-sqlite3) into ~/.9router/runtime
 // so the server can resolve them via NODE_PATH. Best-effort — sql.js is required,
 // better-sqlite3 is optional. Logs to stderr only on failure.
-try { ensureSqliteRuntime({ silent: true }); } catch {}
+try { ensureSqliteRuntime({ silent: true }); } catch { }
 
 // Self-heal tray runtime (systray for macOS/Linux only). Windows skipped.
-try { ensureTrayRuntime({ silent: true }); } catch {}
+try { ensureTrayRuntime({ silent: true }); } catch { }
 
 // Configuration constants
 const APP_NAME = pkg.name; // Use from package.json
@@ -523,7 +523,12 @@ async function showInterfaceMenu(latestVersion) {
   menuItems.push(
     { label: "Web UI (Open in Browser)", icon: "🌐" },
     { label: "Terminal UI (Interactive CLI)", icon: "💻" },
-    { label: "Hide to Tray (Background)", icon: "🔔" },
+    {
+      label: (process.platform === "linux" && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY)
+        ? "Run as Systemd Service (Background)"
+        : "Hide to Tray (Background)",
+      icon: "🔔"
+    },
     { label: "Exit", icon: "🚪" }
   );
 
@@ -650,12 +655,27 @@ function startServer(latestVersion) {
 
   // Tray-only mode: no TUI, just tray icon
   if (trayMode) {
-    // Ignore SIGHUP so macOS terminal close doesn't kill the background tray process
+    // Ignore SIGHUP so macOS terminal close / systemd service stop doesn't
+    // kill the process before cleanup can run.
     process.removeAllListeners("SIGHUP");
-    process.on("SIGHUP", () => {});
+    process.on("SIGHUP", () => { });
 
     console.log(`\n🚀 ${pkg.name} v${pkg.version}`);
     console.log(`Server: http://${displayHost}:${port}`);
+
+    // Linux headless (systemd service): no tray binary available — just keep
+    // the event loop alive.  Log messages go to journald via stdout.
+    const isLinuxHeadless =
+      process.platform === "linux" &&
+      !process.env.DISPLAY &&
+      !process.env.WAYLAND_DISPLAY;
+
+    if (isLinuxHeadless) {
+      console.log(`\n💡 Running as systemd service. Use 'systemctl --user status 9router' to check.`);
+      console.log(`   Logs: journalctl --user -u 9router -f\n`);
+      // Event loop is kept alive by the server child process — nothing extra needed.
+      return;
+    }
 
     setTimeout(() => {
       initTrayIcon();
@@ -711,7 +731,7 @@ function startServer(latestVersion) {
             // macOS: keep current process alive — spawning a detached child puts
             // it outside the login session so NSStatusItem silently fails.
             process.removeAllListeners("SIGHUP");
-            process.on("SIGHUP", () => {});
+            process.on("SIGHUP", () => { });
 
             console.log(`\n⏳ Switching to tray mode... (icon already visible in menu bar)`);
             console.log(`🔔 9Router is running in tray (PID: ${process.pid})`);
@@ -722,7 +742,47 @@ function startServer(latestVersion) {
             return;
           }
 
-          // Windows/Linux: spawn detached bgProcess (systray works fine in child)
+          // Linux headless (no DISPLAY/WAYLAND_DISPLAY): use systemd user service
+          if (
+            process.platform === "linux" &&
+            !process.env.DISPLAY &&
+            !process.env.WAYLAND_DISPLAY
+          ) {
+            let systemdOk = false;
+            try {
+              const { isSystemdAvailable, enableService, isServiceActive, getServiceStatus } = require("./src/cli/utils/systemd");
+              if (isSystemdAvailable()) {
+                console.log(`\n⏳ Installing systemd user service...`);
+                // Stop current server so the service can claim the port
+                cleanup();
+                await new Promise(r => setTimeout(r, 800));
+
+                systemdOk = enableService(__filename);
+                if (systemdOk) {
+                  // Brief wait for service to become active
+                  await new Promise(r => setTimeout(r, 2000));
+                  const active = isServiceActive();
+                  const status = getServiceStatus();
+                  console.log(`\n✅ 9Router systemd service ${active ? "started" : "installed"}.`);
+                  console.log(`   Status : ${status || "unknown"}`);
+                  console.log(`   Server : http://${displayHost}:${port}`);
+                  console.log(`\n💡 Service runs on boot automatically.`);
+                  console.log(`   Manage: systemctl --user status 9router`);
+                  console.log(`           systemctl --user stop   9router`);
+                  console.log(`           journalctl --user -u 9router -f\n`);
+                  process.exit(0);
+                }
+              }
+            } catch (e) { }
+
+            if (!systemdOk) {
+              // systemd unavailable or install failed — spawn detached fallback
+              console.log(`\n⚠️  systemd not available, falling back to detached process...`);
+            }
+          }
+
+          // Windows / Linux-with-GUI / Linux-systemd-fallback:
+          // spawn detached bgProcess (systray works fine in child on GUI sessions)
           console.log(`\n⏳ Starting background process... (tray icon will appear in ~3s)`);
 
           const bgProcess = spawn(process.execPath, [__filename, "--tray", "--skip-update", "-p", port.toString()], {
