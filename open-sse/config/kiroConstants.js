@@ -17,6 +17,9 @@
 
 export const KIRO_AGENTIC_SUFFIX = "-agentic";
 export const KIRO_THINKING_SUFFIX = "-thinking";
+export const KIRO_UNSUPPORTED_CONTEXT_1M_SUFFIX = "[1m]";
+export const KIRO_UNSUPPORTED_CONTEXT_1M_MESSAGE =
+  "[kr/*] '[1m]' suffix is not supported by Kiro upstream. Kiro is AWS Bedrock-backed and does not honor Anthropic's context-1m beta. Use a direct-Anthropic provider for 1M-context routing.";
 
 // Public default CodeWhisperer profile ARNs (us-east-1), keyed by auth method.
 // Used when an account cannot resolve its own profileArn. Builder ID and social
@@ -197,6 +200,18 @@ export function stripThinkingSuffix(model) {
 }
 
 /**
+ * Kiro is AWS Bedrock-backed, so Anthropic's direct-provider `[1m]` context
+ * beta cannot be forwarded as part of a `kr/*` model id.
+ *
+ * @param {string} model
+ * @returns {boolean}
+ */
+export function hasUnsupportedKiroContextSuffix(model) {
+  return typeof model === "string"
+    && model.toLowerCase().includes(KIRO_UNSUPPORTED_CONTEXT_1M_SUFFIX);
+}
+
+/**
  * Resolve a 9router model id to the real upstream Kiro model id, plus flags
  * describing which behaviours the suffixes implied.
  *
@@ -211,8 +226,14 @@ export function stripThinkingSuffix(model) {
  *
  * @param {string} model
  * @returns {{ upstream: string, agentic: boolean, thinking: boolean }}
+ * @throws {Error} when the model requests an Anthropic-only context suffix Kiro cannot honor
  */
 export function resolveKiroModel(model) {
+  // Fixes #1503: forwarding `[1m]` to Kiro/Bedrock produces a malformed upstream model id.
+  if (hasUnsupportedKiroContextSuffix(model)) {
+    throw new Error(KIRO_UNSUPPORTED_CONTEXT_1M_MESSAGE);
+  }
+
   let upstream = model;
   let agentic = false;
   let thinking = false;

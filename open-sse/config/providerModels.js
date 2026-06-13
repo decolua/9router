@@ -125,6 +125,8 @@ export const PROVIDER_MODELS = {
     { id: "text-embedding-3-large", name: "Text Embedding 3 Large (GitHub)", type: "embedding" },
   ],
   kr: [  // Kiro AI
+    // Kiro is AWS Bedrock-backed; Anthropic's `[1m]` context beta is
+    // intentionally rejected before upstream for kr/* routes (#1503).
     // --- Base Claude variants ---
     // { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
     { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5" },

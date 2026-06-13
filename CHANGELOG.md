@@ -46,6 +46,7 @@
 ## Fixes
 - GitHub Copilot: never route Gemini/Claude models to the `/responses` endpoint; prevents misleading "does not support Responses API" 400s (#1062)
 - proxyFetch: restore missing `Readable` import causing runtime `ReferenceError` in DNS-bypass fetch path
+- Kiro: reject unsupported `[1m]` context suffixes before forwarding malformed model IDs to AWS Bedrock (#1503)
 
 ## Improvements
 - Lower stream stall timeout from 60s → 35s for faster hang detection

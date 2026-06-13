@@ -36,6 +36,17 @@ describe("buildKiroPayload", () => {
     });
   });
 
+  describe("model suffix handling", () => {
+    it("should reject Anthropic-only 1m context suffixes before Kiro upstream", () => {
+      const body = {
+        messages: [{ role: "user", content: "Hello" }]
+      };
+
+      expect(() => buildKiroPayload("claude-opus-4.7-thinking-agentic[1m]", body, true, {}))
+        .toThrow("[kr/*] '[1m]' suffix is not supported by Kiro upstream");
+    });
+  });
+
   describe("image forwarding", () => {
     it("should forward base64 image from image_url content part", () => {
       const fakeBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
