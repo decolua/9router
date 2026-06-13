@@ -10,6 +10,7 @@ import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { translate } from "@/i18n/runtime";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
+import { collectBulkTestModelIds } from "@/shared/utils/providerModelBulkActions";
 import ModelRow from "./ModelRow";
 import PassthroughModelsSection from "./PassthroughModelsSection";
 import CompatibleModelsSection from "./CompatibleModelsSection";
@@ -20,6 +21,7 @@ import AddCustomModelModal from "./AddCustomModelModal";
 import BulkImportCodexModal from "./BulkImportCodexModal";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
+const BULK_MODEL_TEST_DELAY_MS = 250;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -46,7 +48,9 @@ export default function ProviderDetailPage() {
   const [headerImgError, setHeaderImgError] = useState(false);
   const [modelTestResults, setModelTestResults] = useState({});
   const [modelsTestError, setModelsTestError] = useState("");
+  const [modelsTestMessage, setModelsTestMessage] = useState("");
   const [testingModelId, setTestingModelId] = useState(null);
+  const [bulkTestingModels, setBulkTestingModels] = useState(false);
   const [showAddCustomModel, setShowAddCustomModel] = useState(false);
   const [selectedConnectionIds, setSelectedConnectionIds] = useState([]);
   const [bulkProxyPoolId, setBulkProxyPoolId] = useState("__none__");
@@ -873,9 +877,7 @@ export default function ProviderDetailPage() {
     </Modal>
   );
 
-  const handleTestModel = async (modelId) => {
-    if (testingModelId) return;
-    setTestingModelId(modelId);
+  const runModelTest = async (modelId) => {
     try {
       const res = await fetch("/api/models/test", {
         method: "POST",
@@ -883,13 +885,67 @@ export default function ProviderDetailPage() {
         body: JSON.stringify({ model: `${providerStorageAlias}/${modelId}` }),
       });
       const data = await res.json();
-      setModelTestResults((prev) => ({ ...prev, [modelId]: data.ok ? "ok" : "error" }));
-      setModelsTestError(data.ok ? "" : (data.error || "Model not reachable"));
+      const ok = !!data.ok;
+      setModelTestResults((prev) => ({ ...prev, [modelId]: ok ? "ok" : "error" }));
+      return { modelId, ok, error: ok ? "" : (data.error || "Model not reachable") };
     } catch {
       setModelTestResults((prev) => ({ ...prev, [modelId]: "error" }));
-      setModelsTestError("Network error");
+      return { modelId, ok: false, error: "Network error" };
+    }
+  };
+
+  const handleTestModel = async (modelId) => {
+    if (testingModelId || bulkTestingModels) return;
+    setTestingModelId(modelId);
+    setModelsTestMessage("");
+    try {
+      const result = await runModelTest(modelId);
+      setModelsTestError(result.ok ? "" : result.error);
     } finally {
       setTestingModelId(null);
+    }
+  };
+
+  const handleDisableErrorModels = async (modelIds) => {
+    if (bulkTestingModels || testingModelId || modelIds.length === 0) return;
+    setBulkTestingModels(true);
+    setModelsTestError("");
+    setModelsTestMessage("");
+
+    const errorIds = [];
+    try {
+      for (let index = 0; index < modelIds.length; index += 1) {
+        const modelId = modelIds[index];
+        setTestingModelId(modelId);
+        const result = await runModelTest(modelId);
+        if (!result.ok) errorIds.push(modelId);
+        if (index < modelIds.length - 1) await sleep(BULK_MODEL_TEST_DELAY_MS);
+      }
+
+      if (errorIds.length === 0) {
+        setModelsTestMessage("No error models found.");
+        return;
+      }
+
+      const res = await fetch("/api/models/disabled", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ providerAlias: providerStorageAlias, ids: errorIds }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setModelsTestError(data.error || "Failed to disable error models");
+        return;
+      }
+
+      await fetchDisabledModels();
+      setModelsTestMessage(`Disabled ${errorIds.length} error model${errorIds.length === 1 ? "" : "s"}.`);
+    } catch (error) {
+      setModelsTestError(error.message || "Failed to disable error models");
+    } finally {
+      setTestingModelId(null);
+      setBulkTestingModels(false);
     }
   };
 
@@ -924,6 +980,7 @@ export default function ProviderDetailPage() {
         const prefix = `${providerStorageAlias}/`;
         if (!fullModel.startsWith(prefix)) return false;
         const modelId = fullModel.slice(prefix.length);
+        if (disabledSet.has(modelId)) return false;
         // Only show if not already in hardcoded list
         // For passthroughModels, include all aliases (model IDs may contain slashes like "anthropic/claude-3")
         if (providerInfo.passthroughModels) return !models.some((m) => m.id === modelId);
@@ -1446,20 +1503,36 @@ export default function ProviderDetailPage() {
             {"Available Models"}
           </h2>
           {!isCompatible && (() => {
-            const allIds = [
-              ...models,
-              ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
-            ].filter((m) => !m.type || m.type === "llm").map((m) => m.id);
+            const allIds = collectBulkTestModelIds({
+              models,
+              kiloFreeModels,
+              modelAliases,
+              providerStorageAlias,
+              providerInfo,
+              disabledModelIds: [],
+            });
             const activeIds = allIds.filter((id) => !disabledModelIds.includes(id));
+            const canTestModels = connections.length > 0 || isFreeNoAuth;
             return (
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 {disabledModelIds.length > 0 && (
-                  <Button size="sm" variant="secondary" icon="restart_alt" onClick={handleEnableAll}>
+                  <Button size="sm" variant="secondary" icon="restart_alt" onClick={handleEnableAll} disabled={bulkTestingModels}>
                     Active All
                   </Button>
                 )}
                 {activeIds.length > 0 && (
-                  <Button size="sm" variant="secondary" icon="block" onClick={() => handleDisableAll(activeIds)}>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    icon={bulkTestingModels ? "progress_activity" : "science"}
+                    onClick={() => handleDisableErrorModels(activeIds)}
+                    disabled={!canTestModels || bulkTestingModels || !!testingModelId}
+                  >
+                    {bulkTestingModels ? "Testing Models..." : "Test & Disable Failed Models"}
+                  </Button>
+                )}
+                {activeIds.length > 0 && (
+                  <Button size="sm" variant="secondary" icon="block" onClick={() => handleDisableAll(activeIds)} disabled={bulkTestingModels}>
                     Disable All
                   </Button>
                 )}
@@ -1469,6 +1542,9 @@ export default function ProviderDetailPage() {
         </div>
         {!!modelsTestError && (
           <p className="text-xs text-red-500 mb-3 break-words">{modelsTestError}</p>
+        )}
+        {!!modelsTestMessage && (
+          <p className="text-xs text-green-600 dark:text-green-400 mb-3 break-words">{modelsTestMessage}</p>
         )}
         {renderModelsSection()}
       </Card>
