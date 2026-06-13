@@ -25,13 +25,16 @@ export default function createOpenAIEmbeddingAdapter(providerId) {
       }
       return headers;
     },
-    buildBody: (model, { input, encoding_format, dimensions }) => {
+    buildBody: (model, { input, encoding_format, dimensions }, modelInfo) => {
       const body = { model, input };
       if (encoding_format) body.encoding_format = encoding_format;
       if (dimensions != null && dimensions !== "") {
         const dim = Number(dimensions);
         if (Number.isFinite(dim) && dim > 0) body.dimensions = dim;
       }
+      // nv-embedqa-e5-v5 and other asymmetric embedding models require input_type="query"
+      // See: https://docs.api.nvidia.com/embeddings.html
+      if (modelInfo?.params?.input_type) body.input_type = modelInfo.params.input_type;
       return body;
     },
     normalize: (responseBody) => responseBody,
