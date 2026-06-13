@@ -428,7 +428,7 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken || refreshToken,
       expiresIn: tokens.expiresIn,
-      ...(await resolveKiroProfileArnPatch(providerSpecificData, tokens.accessToken)),
+      ...(await resolveKiroProfileArnPatch(providerSpecificData, tokens.accessToken, tokens.profileArn)),
     };
   }
 

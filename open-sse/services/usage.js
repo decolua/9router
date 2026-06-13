@@ -11,6 +11,56 @@ import { getGlmUsage } from "./usage/providers/glmUsage.js";
 import { getKiroUsage } from "./usage/providers/kiroUsage.js";
 import { getMiniMaxUsage } from "./usage/providers/minimaxUsage.js";
 import { getIflowUsage, getOllamaUsage, getQwenUsage } from "./usage/providers/passiveUsage.js";
+import { CLIENT_METADATA, getPlatformUserAgent } from "../config/appConstants.js";
+import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { resolveDefaultProfileArn } from "../config/kiroConstants.js";
+
+// GitHub API config
+const GITHUB_CONFIG = {
+  apiVersion: "2022-11-28",
+  userAgent: "GitHubCopilotChat/0.26.7",
+};
+
+// GLM quota endpoints (region-aware)
+const GLM_QUOTA_URLS = {
+  international: "https://api.z.ai/api/monitor/usage/quota/limit",
+  china: "https://open.bigmodel.cn/api/monitor/usage/quota/limit",
+};
+
+// MiniMax usage endpoints (try in order, fallback on transient errors)
+const MINIMAX_USAGE_URLS = {
+  minimax: [
+    "https://www.minimax.io/v1/token_plan/remains",
+    "https://api.minimax.io/v1/api/openplatform/coding_plan/remains",
+  ],
+  "minimax-cn": [
+    "https://www.minimaxi.com/v1/api/openplatform/coding_plan/remains",
+    "https://api.minimaxi.com/v1/api/openplatform/coding_plan/remains",
+  ],
+};
+
+// Antigravity API config (from Quotio)
+const ANTIGRAVITY_CONFIG = {
+  quotaApiUrl: "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
+  loadProjectApiUrl: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
+  tokenUrl: "https://oauth2.googleapis.com/token",
+  clientId: "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com",
+  clientSecret: "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",
+  userAgent: getPlatformUserAgent(),
+};
+
+// Codex (OpenAI) API config
+const CODEX_CONFIG = {
+  usageUrl: "https://chatgpt.com/backend-api/wham/usage",
+};
+
+// Claude API config
+const CLAUDE_CONFIG = {
+  oauthUsageUrl: "https://api.anthropic.com/api/oauth/usage",
+  usageUrl: "https://api.anthropic.com/v1/organizations/{org_id}/usage",
+  settingsUrl: "https://api.anthropic.com/v1/settings",
+  apiVersion: "2023-06-01",
+};
 
 /**
  * Get usage data for a provider connection
