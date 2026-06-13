@@ -63,6 +63,7 @@ export function openaiToAntigravityResponse(chunk, state) {
       const originalName = state.toolNameMap?.get(accum.name) || accum.name;
       parts.push({
         functionCall: {
+          id:   accum.id || undefined,  // include tool call ID for result matching
           name: originalName,
           args
         }

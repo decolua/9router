@@ -8,6 +8,7 @@ import CooldownTimer from "./CooldownTimer";
 export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
+  const [clearingCooldown, setClearingCooldown] = useState(false);
   const proxyDropdownRef = useRef(null);
 
   const proxyPoolMap = new Map((proxyPools || []).map((pool) => [pool.id, pool]));
@@ -84,6 +85,30 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
     .map(([, v]) => v)
     .filter(v => !!v)
     .sort()[0] || null;
+
+  // Get locked model names
+  const lockedModels = Object.entries(connection)
+    .filter(([k, v]) => k.startsWith("modelLock_") && v && new Date(v).getTime() > Date.now())
+    .map(([k]) => k.replace("modelLock_", ""));
+
+  const handleClearCooldown = async () => {
+    setClearingCooldown(true);
+    try {
+      await Promise.all(lockedModels.map(model =>
+        fetch("/api/models/availability", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "clearCooldown", provider: connection.provider, model }),
+        })
+      ));
+      // Reload page to reflect updated state
+      window.location.reload();
+    } catch (e) {
+      console.error("Failed to clear cooldown:", e);
+    } finally {
+      setClearingCooldown(false);
+    }
+  };
 
   useEffect(() => {
     const checkCooldown = () => {
@@ -168,7 +193,19 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                 Proxy
               </Badge>
             )}
-            {isCooldown && connection.isActive !== false && <CooldownTimer until={modelLockUntil} />}
+            {isCooldown && connection.isActive !== false && (
+              <span className="flex items-center gap-1">
+                <CooldownTimer until={modelLockUntil} />
+                <button
+                  onClick={handleClearCooldown}
+                  disabled={clearingCooldown}
+                  className="rounded px-1.5 py-0.5 text-[10px] font-medium text-orange-500 hover:bg-orange-500/10 transition-colors disabled:opacity-50"
+                  title="Clear cooldown lock"
+                >
+                  {clearingCooldown ? "..." : "Clear"}
+                </button>
+              </span>
+            )}
             {connection.lastError && connection.isActive !== false && (
               <span className="max-w-full truncate text-xs text-red-500 sm:max-w-[300px]" title={connection.lastError}>
                 {connection.lastError}

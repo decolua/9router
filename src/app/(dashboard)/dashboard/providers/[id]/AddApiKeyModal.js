@@ -19,6 +19,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
 
   const isAzure = provider === "azure";
   const isCloudflareAi = provider === "cloudflare-ai";
+  const isBedrock = provider === "bedrock";
   const providerRegions = AI_PROVIDERS?.[provider]?.regions || null;
   const defaultRegion = AI_PROVIDERS?.[provider]?.defaultRegion || providerRegions?.[0]?.id || "";
 
@@ -37,6 +38,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     organization: "",
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
+  const [bedrockData, setBedrockData] = useState({ accessKeyId: "", region: "us-east-1" });
   const [region, setRegion] = useState(defaultRegion);
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
@@ -59,6 +61,12 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     }
     if (isCloudflareAi) {
       return { accountId: cloudflareData.accountId };
+    }
+    if (isBedrock) {
+      return {
+        accessKeyId: bedrockData.accessKeyId,
+        region: bedrockData.region || "us-east-1",
+      };
     }
     if (providerRegions && region) {
       return { region };
@@ -323,6 +331,41 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
                 onChange={(e) => setAzureData({ ...azureData, organization: e.target.value })}
                 placeholder="Organization ID"
               />
+            </div>
+          </div>
+        )}
+
+        {isBedrock && (
+          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+            <h3 className="font-semibold mb-3 text-sm">Amazon Bedrock Configuration</h3>
+            <div className="flex flex-col gap-3">
+              <div className="bg-primary/5 border border-primary/20 rounded-lg p-3">
+                <p className="text-xs text-text-main font-medium mb-1">Modo recomendado: Bedrock API Key</p>
+                <p className="text-xs text-text-muted">
+                  Gere uma <strong>long-term API key</strong> no console AWS em{" "}
+                  <a href="https://console.aws.amazon.com/bedrock/home#/api-keys" target="_blank" rel="noopener noreferrer" className="text-primary underline">Bedrock → API keys</a>.
+                  Cole-a no campo <strong>API Key</strong> acima. Não precisa de Access Key ID.
+                </p>
+              </div>
+              <Input
+                label="Region"
+                value={bedrockData.region}
+                onChange={(e) => setBedrockData({ ...bedrockData, region: e.target.value })}
+                placeholder="us-east-1"
+                hint="AWS region onde o Bedrock está habilitado (ex: us-east-1, us-west-2, eu-west-1)"
+              />
+              <details className="text-xs text-text-muted">
+                <summary className="cursor-pointer hover:text-text-main">Usar IAM (Access Key ID + Secret) em vez disso</summary>
+                <div className="mt-2 flex flex-col gap-2">
+                  <Input
+                    label="Access Key ID"
+                    value={bedrockData.accessKeyId}
+                    onChange={(e) => setBedrockData({ ...bedrockData, accessKeyId: e.target.value })}
+                    placeholder="AKIAIOSFODNN7EXAMPLE"
+                    hint="Se preenchido, usa SigV4 (IAM). API Key vira o Secret Access Key."
+                  />
+                </div>
+              </details>
             </div>
           </div>
         )}

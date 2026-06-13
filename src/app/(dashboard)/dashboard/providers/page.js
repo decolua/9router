@@ -624,7 +624,7 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
               }}
             >
               <ProviderIcon
-                src={`/providers/${provider.id}.png`}
+                src={provider.iconFile || `/providers/${provider.id}.png`}
                 alt={provider.name}
                 size={30}
                 className="object-contain rounded-lg max-w-[32px] max-h-[32px]"
@@ -734,6 +734,7 @@ function ApiKeyProviderCard({
         ? "/providers/oai-r.png"
         : "/providers/oai-cc.png";
     if (isAnthropicCompatible) return "/providers/anthropic-m.png";
+    if (provider.iconFile) return provider.iconFile;
     return `/providers/${provider.id}.png`;
   };
 

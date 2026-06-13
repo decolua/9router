@@ -6,6 +6,7 @@ import { resolveOllamaLocalHost, resolveXiaomiTokenplanBaseUrl, PROVIDERS } from
 import { openaiToCommandCode } from "open-sse/translator/request/openai-to-commandcode.js";
 import { PROVIDER_ENDPOINTS } from "@/shared/constants/config";
 import { normalizeProviderId } from "@/lib/providerNormalization";
+import { createHmac, createHash } from "crypto";
 
 // Probe a webSearch/webFetch provider using its searchConfig/fetchConfig.
 // Returns true if API key is accepted (status !== 401 && !== 403).
@@ -222,6 +223,85 @@ export async function POST(request) {
         return NextResponse.json({
           valid: isValid,
           error: isValid ? null : "Invalid API key or Azure configuration",
+        });
+      }
+
+      if (provider === "bedrock") {
+        const accessKeyId     = providerSpecificData?.accessKeyId || "";
+        const secretAccessKey = apiKey || "";
+        const sessionToken    = providerSpecificData?.sessionToken || undefined;
+
+        if (!secretAccessKey) {
+          return NextResponse.json({ valid: false, error: "API Key é obrigatória" });
+        }
+
+        // ── Mode: Bearer token (Bedrock API key, long-term or short-term) ──
+        // If no accessKeyId, use simple Bearer auth against the Converse endpoint.
+        if (!accessKeyId) {
+          const region     = providerSpecificData?.region || "us-east-1";
+          // Probe with a minimal converse request — 400 (bad model) = auth OK, 401/403 = bad key
+          const probeModel = "us.amazon.nova-micro-v1:0";
+          const probeUrl   = `https://bedrock-runtime.${region}.amazonaws.com/model/${probeModel}/converse`;
+          const probeBody  = JSON.stringify({ messages: [{ role: "user", content: [{ text: "hi" }] }] });
+          const probeRes   = await fetch(probeUrl, {
+            method:  "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${secretAccessKey}` },
+            body:    probeBody,
+            signal:  AbortSignal.timeout(10000),
+          });
+          // 200 or 400 (model/body issues) = auth valid; 401/403 = invalid key
+          isValid = probeRes.status !== 401 && probeRes.status !== 403;
+          return NextResponse.json({
+            valid: isValid,
+            error: isValid ? null : "Bedrock API key inválida. Gere uma nova em Bedrock → API keys.",
+          });
+        }
+
+        // ── Mode: IAM SigV4 (Access Key ID + Secret Access Key) ──
+        // Validate using STS GetCallerIdentity — works with ANY valid AWS credentials,
+        // requires NO specific IAM permissions.
+        const stsUrl  = "https://sts.amazonaws.com/";
+        const body    = "Action=GetCallerIdentity&Version=2011-06-15";
+        const service = "sts";
+        const region  = "us-east-1";
+        const now     = new Date();
+        const datetime = now.toISOString().replace(/[:\-]|\.\d{3}/g, "").slice(0, 15) + "Z";
+        const date     = datetime.slice(0, 8);
+        const bodyHash = createHash("sha256").update(body).digest("hex");
+
+        const signedHdrs = {
+          "content-type":          "application/x-www-form-urlencoded",
+          "host":                  "sts.amazonaws.com",
+          "x-amz-content-sha256":  bodyHash,
+          "x-amz-date":            datetime,
+        };
+        if (sessionToken) signedHdrs["x-amz-security-token"] = sessionToken;
+
+        const sortedKeys       = Object.keys(signedHdrs).sort();
+        const canonicalHeaders = sortedKeys.map(k => `${k}:${signedHdrs[k]}\n`).join("");
+        const signedHeadersStr = sortedKeys.join(";");
+        const canonicalRequest = ["POST", "/", "", canonicalHeaders, signedHeadersStr, bodyHash].join("\n");
+        const credScope        = `${date}/${region}/${service}/aws4_request`;
+        const stringToSign     = ["AWS4-HMAC-SHA256", datetime, credScope, createHash("sha256").update(canonicalRequest).digest("hex")].join("\n");
+
+        const kDate    = createHmac("sha256", `AWS4${secretAccessKey}`).update(date).digest();
+        const kRegion  = createHmac("sha256", kDate).update(region).digest();
+        const kService = createHmac("sha256", kRegion).update(service).digest();
+        const kSign    = createHmac("sha256", kService).update("aws4_request").digest();
+        const sig      = createHmac("sha256", kSign).update(stringToSign).digest("hex");
+        const authorization = `AWS4-HMAC-SHA256 Credential=${accessKeyId}/${credScope}, SignedHeaders=${signedHeadersStr}, Signature=${sig}`;
+
+        const stsRes = await fetch(stsUrl, {
+          method:  "POST",
+          headers: { ...signedHdrs, "Authorization": authorization },
+          body,
+          signal:  AbortSignal.timeout(10000),
+        });
+
+        isValid = stsRes.ok;
+        return NextResponse.json({
+          valid: isValid,
+          error: isValid ? null : "Credenciais IAM inválidas (verifique Access Key ID e Secret Access Key)",
         });
       }
 

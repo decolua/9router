@@ -21,6 +21,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     organization: "",
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
+  const [bedrockData, setBedrockData] = useState({ accessKeyId: "", region: "us-east-1" });
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [validating, setValidating] = useState(false);
@@ -46,6 +47,12 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       if (connection.provider === "cloudflare-ai" && connection.providerSpecificData) {
         setCloudflareData({ accountId: connection.providerSpecificData.accountId || "" });
       }
+      if (connection.provider === "bedrock" && connection.providerSpecificData) {
+        setBedrockData({
+          accessKeyId: connection.providerSpecificData.accessKeyId || "",
+          region: connection.providerSpecificData.region || "us-east-1",
+        });
+      }
       setTestResult(null);
       setValidationResult(null);
     }
@@ -54,6 +61,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   const isOAuth = connection?.authType === "oauth";
   const isAzure = connection?.provider === "azure";
   const isCloudflareAi = connection?.provider === "cloudflare-ai";
+  const isBedrock = connection?.provider === "bedrock";
   const isCompatible = connection
     ? (isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider))
     : false;
@@ -86,6 +94,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           apiKey: formData.apiKey,
           ...(isAzure ? { providerSpecificData: azureData } : {}),
           ...(isCloudflareAi ? { providerSpecificData: cloudflareData } : {}),
+          ...(isBedrock ? { providerSpecificData: bedrockData } : {}),
         }),
       });
       const data = await res.json();
@@ -120,6 +129,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
                 apiKey: formData.apiKey,
                 ...(isAzure ? { providerSpecificData: azureData } : {}),
                 ...(isCloudflareAi ? { providerSpecificData: cloudflareData } : {}),
+                ...(isBedrock ? { providerSpecificData: bedrockData } : {}),
               }),
             });
             const data = await res.json();
@@ -149,6 +159,12 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       }
       if (isCloudflareAi) {
         updates.providerSpecificData = { accountId: cloudflareData.accountId };
+      }
+      if (isBedrock) {
+        updates.providerSpecificData = {
+          accessKeyId: bedrockData.accessKeyId,
+          region: bedrockData.region || "us-east-1",
+        };
       }
       
       await onSave(updates);
@@ -243,7 +259,29 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           </div>
         )}
 
-        {!isCompatible && !isAzure && !isCloudflareAi && (
+        {isBedrock && (
+          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+            <h3 className="font-semibold mb-3 text-sm">Amazon Bedrock Configuration</h3>
+            <div className="flex flex-col gap-3">
+              <Input
+                label="Access Key ID"
+                value={bedrockData.accessKeyId}
+                onChange={(e) => setBedrockData({ ...bedrockData, accessKeyId: e.target.value })}
+                placeholder="AKIAIOSFODNN7EXAMPLE"
+                hint="Your AWS Access Key ID"
+              />
+              <Input
+                label="Region"
+                value={bedrockData.region}
+                onChange={(e) => setBedrockData({ ...bedrockData, region: e.target.value })}
+                placeholder="us-east-1"
+                hint="AWS region (e.g. us-east-1, us-west-2, eu-west-1)"
+              />
+            </div>
+          </div>
+        )}
+
+        {!isCompatible && !isAzure && !isCloudflareAi && !isBedrock && (
           <div className="flex items-center gap-3">
             <Button onClick={handleTest} variant="secondary" disabled={testing}>
               {testing ? "Testing..." : "Test Connection"}

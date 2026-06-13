@@ -41,5 +41,19 @@ export function normalizeProviderSpecificData(provider, body = {}, providerSpeci
     if (baseUrl) next.baseUrl = baseUrl;
   }
 
+  if (provider === "bedrock") {
+    // accessKeyId: from providerSpecificData or top-level body
+    const accessKeyId = (next.accessKeyId || body.accessKeyId || "").trim();
+    if (accessKeyId) next.accessKeyId = accessKeyId;
+
+    // region: default us-east-1
+    const region = (next.region || body.region || "us-east-1").trim();
+    if (region) next.region = region;
+
+    // sessionToken (optional, for temporary STS credentials)
+    const sessionToken = (next.sessionToken || body.sessionToken || "").trim();
+    if (sessionToken) next.sessionToken = sessionToken;
+  }
+
   return Object.keys(next).length > 0 ? next : null;
 }

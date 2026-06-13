@@ -66,8 +66,14 @@ export const ERROR_RULES = [
   { text: "quota exceeded",           backoff: true },
   { text: "capacity",                 backoff: true },
   { text: "overloaded",               backoff: true },
+  // 400: invalid model/request — config error, do not lock (short cooldown only)
+  { text: "model identifier is invalid", cooldownMs: COOLDOWN.short },
+  { text: "invalid model",              cooldownMs: COOLDOWN.short },
+  { text: "model not found",            cooldownMs: COOLDOWN.short },
+  { text: "model access denied",        cooldownMs: COOLDOWN.short },
 
   // --- Status-based rules (fallback when text doesn't match) ---
+  { status: 400, cooldownMs: COOLDOWN.short },   // bad request — short lock only
   { status: 401, cooldownMs: COOLDOWN.long },
   { status: 402, cooldownMs: COOLDOWN.long },
   { status: 403, cooldownMs: COOLDOWN.long },

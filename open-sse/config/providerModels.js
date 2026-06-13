@@ -825,6 +825,8 @@ export const PROVIDER_MODELS = {
     { id: "gen4_turbo", name: "Gen-4 Turbo", type: "video", params: [] },
     { id: "gen3a_turbo", name: "Gen-3 Alpha Turbo", type: "video", params: [] },
   ],
+  // Amazon Bedrock — add models manually via the "Add Model" button on the provider page
+  bedrock: [],
 };
 
 // Helper functions
