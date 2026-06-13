@@ -20,6 +20,7 @@ import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.j
 import { dedupeTools } from "../utils/toolDeduper.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
+import { sanitizeKiroTools } from "../utils/kiroSanitizer.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -133,6 +134,19 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (cavemanEnabled && cavemanLevel) {
     injectCaveman(translatedBody, finalFormat, cavemanLevel);
     log?.debug?.("CAVEMAN", `${cavemanLevel} | ${finalFormat}`);
+  }
+
+  // Kiro: sanitize tool schemas — strip unsupported JSON Schema keys, truncate long names
+  if (targetFormat === FORMATS.KIRO) {
+    const kiroTools = translatedBody?.conversationState?.currentMessage?.userInputMessage?.userInputMessageContext?.tools;
+    if (kiroTools) {
+      const { tools: sanitized, nameMap } = sanitizeKiroTools(kiroTools);
+      translatedBody.conversationState.currentMessage.userInputMessage.userInputMessageContext.tools = sanitized;
+      if (nameMap.size > 0) {
+        if (!toolNameMap) toolNameMap = new Map();
+        nameMap.forEach((original, truncated) => toolNameMap.set(truncated, original));
+      }
+    }
   }
 
   const executor = getExecutor(provider);
