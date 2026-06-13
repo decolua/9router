@@ -86,7 +86,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       pendingReasoning = "";
       result.messages.push(msg);
     }
-    else if (itemType === "function_call") {
+    else if (itemType === "function_call" || itemType === "custom_tool_call") {
       // Start or append to assistant message with tool_calls
       if (!currentAssistantMsg) {
         currentAssistantMsg = {
@@ -101,16 +101,18 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       }
       // Skip items with empty/missing name — Codex/OpenAI reject nameless tool calls (#444)
       if (!item.name || typeof item.name !== "string" || item.name.trim() === "") continue;
+      // #1371: Responses custom_tool_call uses raw `input` instead of JSON
+      // `arguments`; preserve it while projecting history into Chat tool_calls.
       currentAssistantMsg.tool_calls.push({
         id: item.call_id,
         type: "function",
         function: {
           name: item.name,
-          arguments: item.arguments
+          arguments: itemType === "custom_tool_call" ? (item.input || "") : item.arguments
         }
       });
     }
-    else if (itemType === "function_call_output") {
+    else if (itemType === "function_call_output" || itemType === "custom_tool_call_output" || itemType === "apply_patch_call_output") {
       // Flush assistant message first if exists
       if (currentAssistantMsg) {
         result.messages.push(currentAssistantMsg);
