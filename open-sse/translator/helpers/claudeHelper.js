@@ -76,6 +76,52 @@ export function fixToolUseOrdering(messages) {
   return merged;
 }
 
+// Models that reject thinking.type "adaptive" (only Sonnet/Opus support it)
+const ADAPTIVE_THINKING_UNSUPPORTED = /haiku/i;
+
+// Normalize a native Claude passthrough body to match Anthropic Messages API spec.
+// Newer Cowork/Claude Code clients emit beta-only shapes that OAuth endpoints reject:
+// 1. thinking.type "adaptive" → unsupported on Haiku
+// 2. role "system" messages (mid-conversation-system beta) → only top-level system is allowed
+export function normalizeClaudePassthrough(body, model = "") {
+  if (!body || typeof body !== "object") return body;
+
+  // 1. Downgrade adaptive thinking for models that don't support it
+  if (body.thinking?.type === "adaptive" && ADAPTIVE_THINKING_UNSUPPORTED.test(model)) {
+    body.thinking = { type: "enabled", budget_tokens: 10000 };
+  }
+
+  // 2. Hoist mid-conversation system messages into the top-level system field
+  if (Array.isArray(body.messages)) {
+    const systemBlocks = [];
+    const messages = [];
+    for (const msg of body.messages) {
+      if (msg.role === "system") {
+        const text = typeof msg.content === "string"
+          ? msg.content
+          : Array.isArray(msg.content)
+            ? msg.content.map(b => (typeof b === "string" ? b : b?.text || "")).join("\n")
+            : "";
+        if (text.trim()) systemBlocks.push({ type: "text", text });
+        continue;
+      }
+      messages.push(msg);
+    }
+
+    if (systemBlocks.length > 0) {
+      const existing = Array.isArray(body.system)
+        ? body.system
+        : typeof body.system === "string" && body.system.trim()
+          ? [{ type: "text", text: body.system }]
+          : [];
+      body.system = [...existing, ...systemBlocks];
+      body.messages = messages;
+    }
+  }
+
+  return body;
+}
+
 const CLAUDE_FORMAT_PROVIDERS_WITHOUT_OUTPUT_CONFIG = new Set(["minimax", "minimax-cn"]);
 
 // Prepare request for Claude format endpoints

@@ -211,6 +211,9 @@ export const PROVIDER_MODELS = {
     // { id: "minimax-m2.5-free", name: "MiniMax M2.5", targetFormat: "claude" },
     // { id: "trinity-large-preview-free", name: "Trinity Large Preview" },
   ],
+  mmf: [  // MiMo Free — free channel only serves mimo-auto
+    { id: "mimo-auto", name: "MiMo Auto" },
+  ],
 
   cl: [  // Cline
     { id: "anthropic/claude-opus-4.7", name: "Claude Opus 4.7" },
@@ -607,6 +610,20 @@ export const PROVIDER_MODELS = {
     { id: "google/gemma-4-31B-it", name: "Gemma 4 31B" },
     { id: "google/gemma-4-26B-A4B-it", name: "Gemma 4 26B" },
     { id: "ByteDance-Seed/Seed-OSS-36B-Instruct", name: "Seed OSS 36B" },
+    { id: "deepseek-ai/DeepSeek-R1", name: "DeepSeek R1" },
+    // Qwen models
+    { id: "Qwen/Qwen3.5-397B-A17B", name: "Qwen 3.5 397B A17B" },
+    { id: "Qwen/Qwen3.5-122B-A10B", name: "Qwen 3.5 122B A10B" },
+    // GLM models
+    { id: "zai-org/GLM-5.1", name: "GLM 5.1" },
+    { id: "zai-org/GLM-5", name: "GLM 5" },
+    // Kimi models
+    { id: "moonshotai/Kimi-K2.6", name: "Kimi K2.6" },
+    { id: "moonshotai/Kimi-K2.5", name: "Kimi K2.5" },
+    // Other models
+    { id: "openai/gpt-oss-120b", name: "GPT OSS 120B" },
+    { id: "MiniMaxAI/MiniMax-M2.5", name: "MiniMax M2.5" },
+    { id: "inclusionAI/Ling-flash-2.0", name: "Ling Flash 2.0" },
   ],
   "xiaomi-mimo": [
     { id: "mimo-v2.5-pro", name: "MiMo V2.5 Pro" },
@@ -963,6 +980,7 @@ const OAUTH_ALIASES = {
   cline: "cl",
   opencode: "oc",
   qoder: "qd",
+  "mimo-free": "mmf",
   vertex: "vertex",
   "vertex-partner": "vertex-partner",
 };
