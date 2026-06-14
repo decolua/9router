@@ -10,6 +10,7 @@ import { getModelsByProviderId } from "@/shared/constants/models";
 import { formatLatency } from "@/lib/proxyDisplay";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
+import { translate } from "@/i18n/runtime";
 import ModelRow from "./ModelRow";
 import PassthroughModelsSection from "./PassthroughModelsSection";
 import CompatibleModelsSection from "./CompatibleModelsSection";
