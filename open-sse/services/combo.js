@@ -25,6 +25,28 @@ function rotateModelsFromIndex(models, currentIndex) {
   return rotatedModels;
 }
 
+function readRotationState(rotationKey) {
+  const existing = comboRotationState.get(rotationKey);
+  if (typeof existing === "number") return { index: existing, consecutiveUseCount: 0 };
+  return existing || { index: 0, consecutiveUseCount: 0 };
+}
+
+/**
+ * Peek the next index that getRotatedModels would use without mutating state.
+ * Used by handleComboChat so it can correct rotation after a fallback hop.
+ *
+ * @param {string} comboName
+ * @param {number} modelsLength
+ * @param {string} strategy
+ * @returns {number} 0-based absolute index into the original models array
+ */
+export function peekRotationIndex(comboName, modelsLength, strategy) {
+  if (!modelsLength || modelsLength <= 0 || strategy !== "round-robin") return 0;
+  const rotationKey = comboName || "__default__";
+  const state = readRotationState(rotationKey);
+  return state.index % modelsLength;
+}
+
 /**
  * Get rotated model list based on strategy
  * @param {string[]} models - Array of model strings
@@ -40,10 +62,7 @@ export function getRotatedModels(models, comboName, strategy, stickyLimit = 1) {
 
   const rotationKey = comboName || "__default__";
   const normalizedStickyLimit = normalizeStickyLimit(stickyLimit);
-  const existingState = comboRotationState.get(rotationKey);
-  const state = typeof existingState === "number"
-    ? { index: existingState, consecutiveUseCount: 0 }
-    : (existingState || { index: 0, consecutiveUseCount: 0 });
+  const state = readRotationState(rotationKey);
 
   const currentIndex = state.index % models.length;
   const rotatedModels = rotateModelsFromIndex(models, currentIndex);
@@ -65,6 +84,32 @@ export function getRotatedModels(models, comboName, strategy, stickyLimit = 1) {
 }
 
 /**
+ * Override rotation state after a fallback hop served the request from a model
+ * other than the originally-selected one. Without this, the pointer advance
+ * baked into getRotatedModels (which assumes models[currentIndex] served the
+ * request) leaves the next request landing on the same fallback model again,
+ * defeating round-robin distribution.
+ *
+ * Sticky budget is reset to 0 because the originally-planned model is unhealthy.
+ * Spending more sticky requests on a model that just failed wastes the budget
+ * on a guaranteed-failing path.
+ *
+ * @param {string} comboName
+ * @param {number} currentIndex - The index that was peeked before getRotatedModels ran
+ * @param {number} usedRelativeIndex - Position in the rotated array of the model that succeeded (>0 means fallback occurred)
+ * @param {number} modelsLength
+ */
+export function commitRotationAfterFallback(comboName, currentIndex, usedRelativeIndex, modelsLength) {
+  if (!modelsLength || modelsLength <= 0) return;
+  const rotationKey = comboName || "__default__";
+  const usedAbsoluteIndex = (currentIndex + usedRelativeIndex) % modelsLength;
+  comboRotationState.set(rotationKey, {
+    index: (usedAbsoluteIndex + 1) % modelsLength,
+    consecutiveUseCount: 0,
+  });
+}
+
+/**
  * Reset in-memory rotation state when combo/settings change
  * @param {string} [comboName] - Combo name to reset; omit to clear all
  */
@@ -82,10 +127,10 @@ export function resetComboRotation(comboName) {
 export function getComboModelsFromData(modelStr, combosData) {
   // Don't check if it's in provider/model format
   if (modelStr.includes("/")) return null;
-  
+
   // Handle both array and object formats
   const combos = Array.isArray(combosData) ? combosData : (combosData?.combos || []);
-  
+
   const combo = combos.find(c => c.name === modelStr);
   if (combo && combo.models && combo.models.length > 0) {
     return combo.models;
@@ -106,9 +151,15 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @returns {Promise<Response>}
  */
 export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1 }) {
+  // Snapshot the rotation pointer BEFORE getRotatedModels advances it. Needed
+  // so we can correct the pointer if a fallback hop ends up serving from a
+  // different model than originally selected.
+  const isRotating = comboStrategy === "round-robin" && models && models.length > 1;
+  const currentIndex = isRotating ? peekRotationIndex(comboName, models.length, comboStrategy) : 0;
+
   // Apply rotation strategy if enabled
   const rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
-  
+
   let lastError = null;
   let earliestRetryAfter = null;
   let lastStatus = null;
@@ -119,10 +170,17 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
 
     try {
       const result = await handleSingleModel(body, modelStr);
-      
+
       // Success (2xx) - return response
       if (result.ok) {
         log.info("COMBO", `Model ${modelStr} succeeded`);
+        // Fallback hop succeeded. Advance rotation past the model that actually
+        // served the request so the next call skips it instead of immediately
+        // re-trying the same fallback model. Skipped when i === 0 because
+        // getRotatedModels already advanced correctly for that case.
+        if (isRotating && i > 0) {
+          commitRotationAfterFallback(comboName, currentIndex, i, models.length);
+        }
         return result;
       }
 
@@ -152,6 +210,12 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
 
       if (!shouldFallback) {
         log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
+        // Same correction logic as the success path: this model served the
+        // final response (even if it's a non-retryable error), so advance
+        // rotation past it.
+        if (isRotating && i > 0) {
+          commitRotationAfterFallback(comboName, currentIndex, i, models.length);
+        }
         return result;
       }
 
@@ -176,7 +240,13 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
     }
   }
 
-  // All models failed
+  // All models failed. Advance rotation past the last attempted model so the
+  // next request doesn't restart on a known-failing model (it gives the next
+  // entry a chance instead).
+  if (isRotating) {
+    commitRotationAfterFallback(comboName, currentIndex, rotatedModels.length - 1, models.length);
+  }
+
   // Use 503 (Service Unavailable) rather than 406 (Not Acceptable) — 406 implies
   // the request itself is invalid, but here the providers are simply unavailable
   // or have no active credentials. 503 is more accurate and retryable by clients.
