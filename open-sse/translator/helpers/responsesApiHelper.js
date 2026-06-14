@@ -127,6 +127,10 @@ export function convertResponsesApiFormat(body) {
     }
   }
 
+  if (body.reasoning?.effort) {
+    result.reasoning_effort = body.reasoning.effort;
+  }
+
   // Cleanup Responses API specific fields
   delete result.input;
   delete result.instructions;
