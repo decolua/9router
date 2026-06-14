@@ -88,9 +88,9 @@ export const PROVIDER_MODELS = {
     { id: "iflow-rome-30ba3b", name: "iFlow ROME" },
   ],
   ag: [  // Antigravity - special case: models call different backends
-    { id: "gemini-3.5-flash-extra-low", name: "Gemini 3.5 Flash (Extra Low)" },
     { id: "gemini-3-flash-agent", name: "Gemini 3.5 Flash (High)" },
     { id: "gemini-3.5-flash-low", name: "Gemini 3.5 Flash (Medium)" },
+    { id: "gemini-3.5-flash-extra-low", name: "Gemini 3.5 Flash (Low)" },
     { id: "gemini-pro-agent", name: "Gemini 3.1 Pro (High)" },
     { id: "gemini-3.1-pro-low", name: "Gemini 3.1 Pro (Low)" },
     { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6 (Thinking)" },
@@ -159,6 +159,7 @@ export const PROVIDER_MODELS = {
     { id: "lite", name: "Qoder Lite" },
     // Frontier models — pin a specific backing model
     { id: "qmodel", name: "Qwen 3.6 Plus (Qoder)" },
+    { id: "qmodel_latest", name: "Qoder Qwen 3.7 Max" },
     { id: "dmodel", name: "DeepSeek V4 Pro (Qoder)" },
     { id: "dfmodel", name: "DeepSeek V4 Flash (Qoder)" },
     { id: "gm51model", name: "GLM 5.1 (Qoder)" },
@@ -215,6 +216,9 @@ export const PROVIDER_MODELS = {
     // { id: "big-pickle", name: "Big Pickle", targetFormat: "claude" },
     // { id: "minimax-m2.5-free", name: "MiniMax M2.5", targetFormat: "claude" },
     // { id: "trinity-large-preview-free", name: "Trinity Large Preview" },
+  ],
+  mmf: [  // MiMo Free — free channel only serves mimo-auto
+    { id: "mimo-auto", name: "MiMo Auto" },
   ],
 
   cl: [  // Cline
@@ -556,16 +560,27 @@ export const PROVIDER_MODELS = {
     { id: "voyage-multilingual-2", name: "Voyage Multilingual 2", type: "embedding" },
   ],
   siliconflow: [
+    // DeepSeek models
+    { id: "deepseek-ai/DeepSeek-V4-Pro", name: "DeepSeek V4 Pro" },
+    { id: "deepseek-ai/DeepSeek-V4-Flash", name: "DeepSeek V4 Flash" },
     { id: "deepseek-ai/DeepSeek-V3.2", name: "DeepSeek V3.2" },
+    { id: "deepseek-ai/DeepSeek-V3.2-Exp", name: "DeepSeek V3.2 Exp" },
     { id: "deepseek-ai/DeepSeek-V3.1", name: "DeepSeek V3.1" },
+    { id: "deepseek-ai/DeepSeek-V3.1-Terminus", name: "DeepSeek V3.1 Terminus" },
     { id: "deepseek-ai/DeepSeek-R1", name: "DeepSeek R1" },
-    { id: "Qwen/Qwen3-235B-A22B-Instruct-2507", name: "Qwen3 235B" },
-    { id: "Qwen/Qwen3-Coder-480B-A35B-Instruct", name: "Qwen3 Coder 480B" },
-    { id: "Qwen/Qwen3-32B", name: "Qwen3 32B" },
+    // Qwen models
+    { id: "Qwen/Qwen3.5-397B-A17B", name: "Qwen 3.5 397B A17B" },
+    { id: "Qwen/Qwen3.5-122B-A10B", name: "Qwen 3.5 122B A10B" },
+    // GLM models
+    { id: "zai-org/GLM-5.1", name: "GLM 5.1" },
+    { id: "zai-org/GLM-5", name: "GLM 5" },
+    // Kimi models
+    { id: "moonshotai/Kimi-K2.6", name: "Kimi K2.6" },
     { id: "moonshotai/Kimi-K2.5", name: "Kimi K2.5" },
-    { id: "zai-org/GLM-4.7", name: "GLM 4.7" },
+    // Other models
     { id: "openai/gpt-oss-120b", name: "GPT OSS 120B" },
-    { id: "baidu/ERNIE-4.5-300B-A47B", name: "ERNIE 4.5 300B" },
+    { id: "MiniMaxAI/MiniMax-M2.5", name: "MiniMax M2.5" },
+    { id: "inclusionAI/Ling-flash-2.0", name: "Ling Flash 2.0" },
   ],
   "xiaomi-mimo": [
     { id: "mimo-v2.5-pro", name: "MiMo V2.5 Pro" },
@@ -575,6 +590,7 @@ export const PROVIDER_MODELS = {
   ],
   "xiaomi-tokenplan": [
     { id: "mimo-v2.5-pro", name: "MiMo V2.5 Pro" },
+    { id: "mimo-v2.5-pro-claude", name: "MiMo V2.5 Pro (Claude Native)", targetFormat: "claude", upstreamModelId: "mimo-v2.5-pro" },
     { id: "mimo-v2.5", name: "MiMo V2.5" },
     { id: "mimo-v2-pro", name: "MiMo V2 Pro" },
     { id: "mimo-v2-omni", name: "MiMo V2 Omni" },
@@ -922,6 +938,7 @@ const OAUTH_ALIASES = {
   cline: "cl",
   opencode: "oc",
   qoder: "qd",
+  "mimo-free": "mmf",
   vertex: "vertex",
   "vertex-partner": "vertex-partner",
 };

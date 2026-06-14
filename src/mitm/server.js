@@ -7,7 +7,7 @@ const dns = require("dns");
 const { promisify } = require("util");
 const { execSync } = require("child_process");
 const { log, err, dumpRequest, createResponseDumper, clearDumpDir } = require("./logger");
-const { IS_DEV, LSOF_BIN, TARGET_HOSTS, URL_PATTERNS, MODEL_SYNONYMS, MODEL_PATTERNS, getToolForHost } = require("./config");
+const { IS_DEV, LSOF_BIN, TARGET_HOSTS, URL_PATTERNS, MODEL_SYNONYMS, MODEL_PATTERNS, MODEL_NO_MAP, getToolForHost } = require("./config");
 const { DATA_DIR, MITM_DIR } = require("./paths");
 const { getCertForDomain } = require("./cert/generate");
 const { getMitmAlias } = require("./dbReader");
@@ -132,8 +132,9 @@ function getMappedModel(tool, model) {
   try {
     const aliases = getMitmAlias(tool);
     if (!aliases) return null;
-    // Normalize via synonym map (e.g., gemini-default → gemini-3-flash)
-    const lookup = MODEL_SYNONYMS?.[tool]?.[model] || model;
+    // Normalize via synonym map (e.g., public AG names -> backend model ids)
+    const normalizedModel = String(model).replace(/^models\//, "");
+    const lookup = MODEL_SYNONYMS?.[tool]?.[normalizedModel] || normalizedModel;
     if (aliases[lookup]) return aliases[lookup];
     // Prefix match fallback
     const prefixKey = Object.keys(aliases).find(k => k && aliases[k] && (lookup.startsWith(k) || k.startsWith(lookup)));
@@ -352,6 +353,14 @@ const server = https.createServer(sslOptions, async (req, res) => {
     }
 
     const model = extractModel(req.url, bodyBuffer);
+
+    // Intentional passthrough: some models must never be re-routed (e.g. Antigravity
+    // tab-autocomplete) so latency-critical inline completion stays native. Silent — this
+    // is by design, not a leak, and fires per keystroke. See MODEL_NO_MAP in config.js.
+    if (model && (MODEL_NO_MAP[tool] || []).some((re) => re.test(model))) {
+      return passthrough(req, res, bodyBuffer);
+    }
+
     const mappedModel = getMappedModel(tool, model);
     if (!mappedModel) {
       return passthrough(req, res, bodyBuffer);

@@ -124,7 +124,7 @@ export class BaseExecutor {
 
       // Abort if upstream doesn't return response headers within FETCH_CONNECT_TIMEOUT_MS
       // xAI reasoning requests may override with a longer budget (docs.x.ai recommends 3600s).
-      const effectiveConnectTimeout = connectTimeoutMs || FETCH_CONNECT_TIMEOUT_MS;
+      const effectiveConnectTimeout = connectTimeoutMs || this.config?.timeoutMs || FETCH_CONNECT_TIMEOUT_MS;
       const connectCtrl = new AbortController();
       const connectTimer = setTimeout(() => connectCtrl.abort(new Error("fetch connect timeout")), effectiveConnectTimeout);
       const mergedSignal = signal ? AbortSignal.any([signal, connectCtrl.signal]) : connectCtrl.signal;

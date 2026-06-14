@@ -208,9 +208,7 @@ export function parseQuotaData(provider, data) {
         break;
 
       case "xai":
-        // xAI ships a passive rate-limit snapshot (Requests/Tokens per window)
-        // captured from the last Grok response. When no request has happened
-        // yet, surface the informational message instead of empty rows.
+        // Passive rate-limit snapshot captured from the last Grok response.
         if (data.message) {
           normalizedQuotas.push({
             name: "info",
@@ -228,6 +226,20 @@ export function parseQuotaData(provider, data) {
               remaining: quota.remaining,
               unit: quota.unit,
               resetAt: quota.resetAt || null,
+            });
+          });
+        }
+        break;
+
+      case "vercel-ai-gateway":
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              resetAt: quota.resetAt || null,
+              remainingPercentage: quota.remainingPercentage,
             });
           });
         }

@@ -232,6 +232,9 @@ export async function updateProviderCredentials(connectionId, newCredentials) {
  */
 export async function checkAndRefreshToken(provider, credentials, options = {}) {
   let creds = { ...credentials };
+  if (!creds.connectionId && creds.id) {
+    creds.connectionId = creds.id;
+  }
   let didRefresh = false;
   let needsRelogin = false;
   let copilotRefreshed = false;
@@ -310,15 +313,18 @@ export async function checkAndRefreshToken(provider, credentials, options = {}) 
   }
 
   // ── 2. GitHub Copilot token expiry ────────────────────────────────────────
-  if (provider === "github" && creds.providerSpecificData?.copilotTokenExpiresAt) {
-    const copilotExpiresAt = creds.providerSpecificData.copilotTokenExpiresAt * 1000;
+  if (provider === "github") {
+    const existingCopilotToken = creds.providerSpecificData?.copilotToken;
+    const copilotExpiresAt = creds.providerSpecificData?.copilotTokenExpiresAt
+      ? creds.providerSpecificData.copilotTokenExpiresAt * 1000
+      : 0;
     const now              = Date.now();
     const remaining        = copilotExpiresAt - now;
 
-    if (remaining < TOKEN_EXPIRY_BUFFER_MS) {
-      log.info("TOKEN_REFRESH", "Copilot token expiring soon, refreshing proactively", {
+    if (!existingCopilotToken || remaining < TOKEN_EXPIRY_BUFFER_MS) {
+      log.info("TOKEN_REFRESH", "Copilot token expiring soon or missing, refreshing proactively", {
         provider,
-        expiresIn: Math.round(remaining / 1000),
+        expiresIn: existingCopilotToken ? Math.round(remaining / 1000) : "missing",
       });
 
       const copilotToken = await refreshCopilotToken(creds.accessToken);

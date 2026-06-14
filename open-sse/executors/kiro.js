@@ -2,8 +2,7 @@ import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { v4 as uuidv4 } from "uuid";
 import { refreshKiroToken } from "../services/tokenRefresh.js";
-import { proxyAwareFetch } from "../utils/proxyFetch.js";
-import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG, resolveRetryEntry } from "../config/runtimeConfig.js";
+import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { splitInlineThinking, flushPendingThinking } from "./kiroThinking.js";
 import { acquireToken, reportRateLimit, reportSuccess } from "../services/kiroRateLimiter.js";
 import { logger as rootLogger } from "@/lib/logger";
@@ -38,15 +37,13 @@ export class KiroExecutor extends BaseExecutor {
   /**
    * Custom execute for Kiro - handles AWS EventStream binary response with retry support
    */
-  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
+  async execute(args) {
+    const { model, body, stream, credentials } = args;
     const connectionId = credentials?.connectionId || credentials?.connectionName || "default";
     const token = acquireToken(connectionId);
-    const url = this.buildUrl(model, stream, 0);
-    const transformedBody = this.transformRequest(model, body, stream, credentials);
 
     if (!token.allowed) {
-      const retryAfterMs = token.retryAfterMs || 1000;
-      const retryAfterSeconds = Math.max(1, Math.ceil(retryAfterMs / 1000));
+      const retryAfterSeconds = Math.max(1, Math.ceil((token.retryAfterMs || 1000) / 1000));
       const response = new Response(JSON.stringify({
         error: {
           type: "rate_limit_error",
@@ -63,55 +60,26 @@ export class KiroExecutor extends BaseExecutor {
           "x-kiro-rate-limit": "preemptive",
         },
       });
-      return { response, url, headers: {}, transformedBody };
+      return {
+        response,
+        url: this.buildUrl(model, stream, 0, credentials),
+        headers: {},
+        transformedBody: this.transformRequest(model, body, stream, credentials),
+      };
     }
 
-    // Merge default retry config with provider-specific config
-    const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...this.config.retry };
-    let retryAttempts = 0;
-
-    while (true) {
-      const headers = this.buildHeaders(credentials, stream);
-      
-      const response = await proxyAwareFetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(transformedBody),
-        signal
-      }, proxyOptions);
-
-      // Check if should retry based on status code
-      const { attempts: maxRetries, delayMs } = resolveRetryEntry(retryConfig[response.status]);
-      if (!response.ok && maxRetries > 0 && retryAttempts < maxRetries) {
-        retryAttempts++;
-        log?.debug?.("RETRY", `${response.status} retry ${retryAttempts}/${maxRetries} after ${delayMs / 1000}s`);
-        await new Promise(resolve => setTimeout(resolve, delayMs));
-        continue;
-      }
-
-      if (!response.ok) {
-        if (response.status === HTTP_STATUS.RATE_LIMITED) {
-          reportRateLimit(connectionId);
-        }
-        return { response, url, headers, transformedBody };
-      }
-
-      // Success - transform and return
-      // For Kiro, we need to transform the binary EventStream to SSE.
-      //
-      // We pass a `thinkingExpected` hint based on the request body. When the
-      // user enabled thinking, Claude on Kiro streams its reasoning inline
-      // as thinking blocks inside `assistantResponseEvent` rather than as
-      // separate `reasoningContentEvent` frames. The transform stream uses
-      // this flag to split that inline reasoning back into the OpenAI
-      // `delta.reasoning_content` channel.
+    const result = await super.execute(args);
+    if (result?.response?.status === HTTP_STATUS.RATE_LIMITED) {
+      reportRateLimit(connectionId);
+    }
+    if (result?.response?.ok) {
       const upstreamUserContent =
-        transformedBody?.conversationState?.currentMessage?.userInputMessage?.content || "";
+        result.transformedBody?.conversationState?.currentMessage?.userInputMessage?.content || "";
       const thinkingExpected = upstreamUserContent.includes("<thinking_mode>enabled</thinking_mode>");
       reportSuccess(connectionId);
-      const transformedResponse = this.transformEventStreamToSSE(response, model, { thinkingExpected });
-      return { response: transformedResponse, url, headers, transformedBody };
+      result.response = this.transformEventStreamToSSE(result.response, model, { thinkingExpected });
     }
+    return result;
   }
 
   /**

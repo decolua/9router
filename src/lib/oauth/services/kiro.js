@@ -203,6 +203,7 @@ export class KiroService {
       return {
         accessToken: data.accessToken,
         refreshToken: data.refreshToken || refreshToken,
+        profileArn: data.profileArn,
         expiresIn: data.expiresIn,
       };
     }

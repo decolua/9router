@@ -1,5 +1,5 @@
 import { BaseExecutor } from "./base.js";
-import { PROVIDERS, resolveXiaomiTokenplanBaseUrl } from "../config/providers.js";
+import { PROVIDERS } from "../config/providers.js";
 import { OAUTH_ENDPOINTS, buildKimiHeaders } from "../config/appConstants.js";
 import { buildClineHeaders } from "../../src/shared/utils/clineAuth.js";
 import { getCachedClaudeHeaders } from "../utils/claudeHeaderCache.js";
@@ -49,6 +49,13 @@ export class DefaultExecutor extends BaseExecutor {
 
   transformRequest(model, body) {
     const transformed = this.applyJsonSchemaFallback(body);
+
+    if (transformed && typeof transformed === "object") {
+      if (this.provider === "cerebras" || this.provider === "mistral") {
+        delete transformed.client_metadata;
+      }
+    }
+
     return injectReasoningContent({ provider: this.provider, model, body: transformed });
   }
 
@@ -98,9 +105,6 @@ export class DefaultExecutor extends BaseExecutor {
       case "gemini":
         return `${this.config.baseUrl}/${model}:${stream ? "streamGenerateContent?alt=sse" : "generateContent"}`;
       default: {
-        if (this.provider === "xiaomi-tokenplan") {
-          return `${resolveXiaomiTokenplanBaseUrl(credentials)}/chat/completions`;
-        }
         const url = this.config.baseUrl;
         if (url?.includes("{accountId}")) {
           const accountId = credentials?.providerSpecificData?.accountId;
@@ -198,6 +202,12 @@ export class DefaultExecutor extends BaseExecutor {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || "";
       const isOfficialAnthropic = baseUrl === "" || baseUrl.includes("api.anthropic.com");
       if (!isOfficialAnthropic) {
+        // Some third-party Anthropic-compatible gateways require Bearer auth in
+        // addition to x-api-key. Send both (x-api-key already set above) so
+        // gateways that read either header succeed.
+        if (credentials.apiKey && !headers["Authorization"]) {
+          headers["Authorization"] = `Bearer ${credentials.apiKey}`;
+        }
         delete headers["anthropic-dangerous-direct-browser-access"];
         delete headers["Anthropic-Dangerous-Direct-Browser-Access"];
         delete headers["x-app"];
