@@ -22,6 +22,13 @@ import { convertResponsesStreamToJson } from "../transformer/streamToJsonConvert
  * @returns {Promise<{success: boolean, response?: Response, status?: number, error?: string}>}
  */
 export async function handleResponsesCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, connectionId }) {
+  // Capture freeform/custom tool names BEFORE conversion so the outbound
+  // transformer can re-emit them as `custom_tool_call` items instead of
+  // downgrading to `function_call` with empty JSON args (#1371).
+  const customToolNames = Array.isArray(body?.tools)
+    ? body.tools.filter(t => t && t.type === "custom" && typeof t.name === "string" && t.name).map(t => t.name)
+    : [];
+
   // Convert Responses API format to Chat Completions format
   const convertedBody = convertResponsesApiFormat(body);
 
@@ -80,7 +87,7 @@ export async function handleResponsesCore({ body, modelInfo, credentials, log, o
 
   // Case 2: Client wants streaming, got SSE - transform it
   if (clientRequestedStreaming && contentType.includes("text/event-stream")) {
-    const transformStream = createResponsesApiTransformStream(null);
+    const transformStream = createResponsesApiTransformStream(null, customToolNames);
     const transformedBody = response.body.pipeThrough(transformStream);
 
     return {

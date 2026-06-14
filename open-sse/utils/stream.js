@@ -54,7 +54,19 @@ export function createSSEStream(options = {}) {
   // Per-stream decoder with stream:true to correctly handle multi-byte chars split across chunks
   const decoder = new TextDecoder("utf-8", { fatal: false });
 
-  const state = mode === STREAM_MODE.TRANSLATE ? { ...initState(sourceFormat), provider, toolNameMap, model } : null;
+  // Capture freeform/custom tool names from the original client body so the
+  // response translator can re-emit them as Codex `custom_tool_call` items
+  // instead of downgrading to `function_call` with empty JSON args (#1371).
+  const customTools = new Set();
+  if (body?.tools && Array.isArray(body.tools)) {
+    for (const t of body.tools) {
+      if (t && t.type === "custom" && typeof t.name === "string" && t.name) {
+        customTools.add(t.name);
+      }
+    }
+  }
+
+  const state = mode === STREAM_MODE.TRANSLATE ? { ...initState(sourceFormat), provider, toolNameMap, model, customTools } : null;
 
   let totalContentLength = 0;
   let accumulatedContent = "";

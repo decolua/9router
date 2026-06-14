@@ -78,7 +78,7 @@ export function convertResponsesApiFormat(body) {
         : item.content;
       result.messages.push({ role: item.role, content });
     }
-    else if (itemType === "function_call") {
+    else if (itemType === "function_call" || itemType === "custom_tool_call") {
       // Start or append to assistant message with tool_calls
       if (!currentAssistantMsg) {
         currentAssistantMsg = {
@@ -89,16 +89,21 @@ export function convertResponsesApiFormat(body) {
       }
       // Skip items with empty/missing name — upstream APIs reject nameless tool calls (#444)
       if (!item.name || typeof item.name !== "string" || item.name.trim() === "") continue;
+      // custom_tool_call carries raw freeform `input` — wrap as `{ "input": ... }`
+      // so it round-trips through the synthesized function-tool schema (#1371).
+      const argsString = itemType === "custom_tool_call"
+        ? JSON.stringify({ input: typeof item.input === "string" ? item.input : (item.input ?? "") })
+        : (item.arguments ?? "{}");
       currentAssistantMsg.tool_calls.push({
         id: item.call_id,
         type: "function",
         function: {
           name: item.name,
-          arguments: item.arguments
+          arguments: argsString
         }
       });
     }
-    else if (itemType === "function_call_output") {
+    else if (itemType === "function_call_output" || itemType === "custom_tool_call_output") {
       // Flush assistant message first if exists
       if (currentAssistantMsg) {
         result.messages.push(currentAssistantMsg);
@@ -127,6 +132,12 @@ export function convertResponsesApiFormat(body) {
     }
   }
 
+  // Normalize tools so freeform `custom` tools survive downstream Chat Completions
+  // round-tripping (Codex `apply_patch` etc. — see #1371).
+  if (Array.isArray(result.tools)) {
+    result.tools = normalizeResponsesTools(result.tools);
+  }
+
   // Cleanup Responses API specific fields
   delete result.input;
   delete result.instructions;
@@ -136,4 +147,69 @@ export function convertResponsesApiFormat(body) {
   delete result.reasoning;
 
   return result;
+}
+
+/**
+ * Ensure object schema has properties (Chat Completions tool param requirement).
+ */
+function ensureObjectProperties(params) {
+  if (!params) return { type: "object", properties: {} };
+  if (params.type === "object" && !params.properties) return { ...params, properties: {} };
+  return params;
+}
+
+/**
+ * Convert a Responses API tools[] array to Chat Completions tools[]:
+ *   - Pass through tools that are already in Chat shape (`{ function: {...} }`)
+ *   - Drop hosted tools without a `name`
+ *   - Convert `{ type: "function", name, parameters, ... }` → Chat function tool
+ *   - Convert `{ type: "custom", name, format, ... }` (freeform / `apply_patch`)
+ *     into a function tool with a single string `input` parameter so downstream
+ *     models that don't support freeform tools still emit the raw payload as
+ *     `{"input":"<raw>"}`. The response translator unwraps it back to
+ *     `custom_tool_call_input` for the client (#1371).
+ */
+export function normalizeResponsesTools(tools) {
+  if (!Array.isArray(tools)) return tools;
+  return tools
+    .map(tool => {
+      if (!tool) return null;
+      if (tool.function) return tool;
+      const name = tool.name;
+      if (!name || typeof name !== "string" || name.trim() === "") return null;
+
+      if (tool.type === "custom") {
+        const baseDesc = String(tool.description || "");
+        return {
+          type: "function",
+          function: {
+            name,
+            description: baseDesc
+              ? `${baseDesc}\n\nCall this tool by passing the full raw payload as the string parameter "input".`
+              : `Call this tool by passing the full raw payload as the string parameter "input".`,
+            parameters: {
+              type: "object",
+              properties: {
+                input: {
+                  type: "string",
+                  description: "Raw text input passed verbatim to the tool."
+                }
+              },
+              required: ["input"]
+            }
+          }
+        };
+      }
+
+      return {
+        type: "function",
+        function: {
+          name,
+          description: String(tool.description || ""),
+          parameters: ensureObjectProperties(tool.parameters),
+          strict: tool.strict
+        }
+      };
+    })
+    .filter(Boolean);
 }
