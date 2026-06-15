@@ -33,8 +33,10 @@ export async function synthesizeViaConfig(provider, text, model, credentials) {
   if (!handler) return null;
   const apiKey = credentials?.apiKey;
   if (cfg.authType !== "none" && !apiKey) throw new Error(`${provider} API key required`);
-  const defaultModel = cfg.models?.[0]?.id || "";
-  const { modelId, voiceId } = parseModelVoice(model, defaultModel, "", cfg.models || []);
+  const { PROVIDER_MODELS } = await import("open-sse/config/providerModels.js");
+  const ttsModels = (PROVIDER_MODELS[provider] || []).filter(m => (m.kind || m.type) === "tts");
+  const defaultModel = ttsModels[0]?.id || "";
+  const { modelId, voiceId } = parseModelVoice(model, defaultModel, "", ttsModels);
   return handler({ baseUrl: cfg.baseUrl, apiKey, text, modelId, voiceId });
 }
 

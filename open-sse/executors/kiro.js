@@ -2,6 +2,7 @@ import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { v4 as uuidv4 } from "uuid";
 import { refreshKiroToken } from "../services/tokenRefresh.js";
+import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
 
 /**
  * KiroExecutor - Executor for Kiro AI (AWS CodeWhisperer)
@@ -372,24 +373,20 @@ export class KiroExecutor extends BaseExecutor {
         }
 
         // Send final done message
-        controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
+        controller.enqueue(new TextEncoder().encode(SSE_DONE));
       }
     });
 
     // Pipe response body through transform stream
     if (!response.body) {
-      return new Response("data: [DONE]\n\n", { status: response.status, headers: { "Content-Type": "text/event-stream" } });
+      return new Response(SSE_DONE, { status: response.status, headers: { "Content-Type": "text/event-stream" } });
     }
     const transformedStream = response.body.pipeThrough(transformStream);
 
     return new Response(transformedStream, {
       status: response.status,
       statusText: response.statusText,
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        "Connection": "keep-alive"
-      }
+      headers: { ...SSE_HEADERS }
     });
   }
 

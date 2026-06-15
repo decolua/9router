@@ -14,7 +14,9 @@ Components:
 - `formats.js` — `FORMATS` enum (openai, claude, gemini, gemini-cli, openai-responses, antigravity, kiro, cursor, commandcode, ollama, vertex).
 - `request/<from>-to-<to>.js` — one-way request translation.
 - `response/<from>-to-<to>.js` — one-way SSE response translation.
-- `helpers/` — `openaiHelper.js` (filterToOpenAIFormat), `toolCallHelper.js` (id/arguments), `claudeHelper.js`, `geminiHelper.js`.
+- `schema/` — pure data enums (no logic): `roles.js` (ROLE, GEMINI_ROLE), `blocks.js` (OPENAI_BLOCK, CLAUDE_BLOCK, RESPONSES_ITEM, valid-type lists), `finishReasons.js` (OPENAI_FINISH, CLAUDE_STOP, GEMINI_FINISH), `defaults.js` (MODEL_FALLBACK, DEFAULT_IMAGE_MIME). Import via `schema/index.js`.
+- `concerns/` — cross-format translation LOGIC: `chunk.js`, `usage.js`, `reasoning.js`, `thinking.js` (effort↔budget/level), `toolCall.js`, `finishReason.js` (mapping fns), `image.js`, `json.js`.
+- `formats/` — per-format logic: `openai.js` (filterToOpenAIFormat), `claude.js`, `gemini.js`, `responsesApi.js`, `maxTokens.js`.
 
 **OpenAI-bridge pitfalls** (source of most bugs): going through OpenAI easily loses `thinking`/`reasoning`, image URLs (non-base64), `input_audio`, `is_error`; tool `id`/`index` become unstable (parallel tool calls), non-text system blocks, `tool_choice:"none"`.
 

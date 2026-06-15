@@ -1,4 +1,4 @@
-import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
+import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS, getModelKind } from "@/shared/constants/models";
 import {
   AI_PROVIDERS,
   getProviderAlias,
@@ -59,8 +59,9 @@ const MODEL_TYPE_TO_KIND = {
 };
 
 function modelKind(model) {
-  if (!model?.type) return LLM_KIND;
-  return MODEL_TYPE_TO_KIND[model.type] || LLM_KIND;
+  const k = model?.kind || model?.type;
+  if (!k) return LLM_KIND;
+  return MODEL_TYPE_TO_KIND[k] || LLM_KIND;
 }
 
 // For dynamic/unknown model IDs (compatible providers, alias map, custom models)
@@ -315,7 +316,7 @@ export async function buildModelsList(kindFilter) {
 
       const customModelIds = customModels
         .filter((m) => {
-          if (!m?.id || (m.type && m.type !== "llm")) return false;
+          if (!m?.id || (getModelKind(m) && getModelKind(m) !== "llm")) return false;
           const alias = m.providerAlias;
           return alias === staticAlias || alias === outputAlias || alias === providerId;
         })
@@ -360,29 +361,8 @@ export async function buildModelsList(kindFilter) {
         });
       }
 
-      // Merge sub-config models (TTS / embedding) that live on AI_PROVIDERS, not PROVIDER_MODELS
-      const providerInfo = AI_PROVIDERS[providerId];
-      const subConfigModels = [];
-      if (kindFilter.includes("tts") && Array.isArray(providerInfo?.ttsConfig?.models)) {
-        for (const m of providerInfo.ttsConfig.models) {
-          if (m?.id) subConfigModels.push(m.id);
-        }
-      }
-      if (kindFilter.includes("embedding") && Array.isArray(providerInfo?.embeddingConfig?.models)) {
-        for (const m of providerInfo.embeddingConfig.models) {
-          if (m?.id) subConfigModels.push(m.id);
-        }
-      }
-      for (const subId of subConfigModels) {
-        if (isDisabled(outputAlias, subId) || isDisabled(staticAlias, subId)) continue;
-        models.push({
-          id: `${outputAlias}/${subId}`,
-          object: "model",
-          owned_by: outputAlias,
-        });
-      }
-
       // Web search/fetch — provider IS the model, expose as {alias}/search and/or {alias}/fetch with explicit kind
+      const providerInfo = AI_PROVIDERS[providerId];
       if (kindFilter.includes("webSearch") && providerInfo?.searchConfig) {
         models.push({
           id: `${outputAlias}/search`,

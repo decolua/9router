@@ -1,6 +1,7 @@
 import PropTypes from "prop-types";
+import { CapacityBadges } from "@/shared/components";
 
-export default function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting, onDisable }) {
+export default function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting, onDisable, caps }) {
   const borderColor = testStatus === "ok"
     ? "border-green-500/40"
     : testStatus === "error"
@@ -24,7 +25,10 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
         </span>
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <code className="max-w-[72vw] truncate rounded bg-sidebar px-1.5 py-0.5 font-mono text-xs text-text-muted sm:max-w-[360px]">{fullModel}</code>
-          {model.name && <span className="truncate pl-1 text-[9px] italic text-text-muted/70">{model.name}</span>}
+          <span className="flex min-w-0 items-center text-[9px] gap-1 pl-1">
+            {model.name && <span className="truncate text-[9px] italic text-text-muted/70">{model.name}</span>}
+            <CapacityBadges caps={caps} colorOverride="text-text-muted/70" size={12} />
+          </span>
         </div>
         {onTest && (
           <div className="relative shrink-0 group/btn">
@@ -92,4 +96,5 @@ ModelRow.propTypes = {
   onTest: PropTypes.func,
   isTesting: PropTypes.bool,
   onDisable: PropTypes.func,
+  caps: PropTypes.object,
 };

@@ -7,6 +7,7 @@ import { openaiResponsesToOpenAIResponse } from "../translator/response/openai-r
 import { initState } from "../translator/index.js";
 import { parseSSELine, formatSSE } from "../utils/streamHelpers.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { SSE_DONE } from "../utils/sseConstants.js";
 import crypto from "crypto";
 
 export class GithubExecutor extends BaseExecutor {
@@ -244,7 +245,7 @@ export class GithubExecutor extends BaseExecutor {
           if (!parsed) continue;
 
           if (parsed.done && stream === true) {
-            controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
+            controller.enqueue(new TextEncoder().encode(SSE_DONE));
             continue;
           }
 

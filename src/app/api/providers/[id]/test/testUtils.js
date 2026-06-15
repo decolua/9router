@@ -2,9 +2,8 @@ import { getProviderConnectionById, updateProviderConnection } from "@/lib/local
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { testProxyUrl } from "@/lib/network/proxyTest";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
-import { PROVIDER_ENDPOINTS } from "@/shared/constants/config";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
-import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
+import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
 import {
   refreshProviderCredentials,
   shouldRefreshCredentials,
@@ -474,7 +473,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
       }
       case "volcengine-ark":
       case "byteplus": {
-        const res = await fetchWithConnectionProxy(PROVIDER_ENDPOINTS[connection.provider], {
+        const res = await fetchWithConnectionProxy(PROVIDERS[connection.provider]?.baseUrl, {
           method: "POST",
           headers: { "Authorization": `Bearer ${connection.apiKey}`, "content-type": "application/json" },
           body: JSON.stringify({ model: getDefaultModel(connection.provider), max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
