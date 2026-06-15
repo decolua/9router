@@ -119,9 +119,12 @@ export function generateProjectId() {
   return `${adj}-${noun}-${crypto.randomUUID().slice(0, 5)}`;
 }
 
-// Helper: Remove unsupported keywords recursively from object/array
-// Also strips all vendor extension fields (x- prefixed) not supported by Gemini
-function removeUnsupportedKeywords(obj, keywords) {
+// Helper: Remove unsupported schema keywords recursively from object/array.
+// Keys inside a JSON Schema `properties` map are user-defined parameter names,
+// not schema keywords. Preserve them even when they are named `pattern`,
+// `default`, etc., and only clean the schema nested under each parameter.
+// Also strips all vendor extension fields (x- prefixed) not supported by Gemini.
+function removeUnsupportedKeywords(obj, keywords, context = {}) {
   if (!obj || typeof obj !== "object") return;
 
   if (Array.isArray(obj)) {
@@ -132,12 +135,25 @@ function removeUnsupportedKeywords(obj, keywords) {
   }
 
   for (const key of Object.keys(obj)) {
+    const value = obj[key];
+
+    if (context.inPropertiesMap) {
+      if (value && typeof value === "object") {
+        removeUnsupportedKeywords(value, keywords);
+      }
+      continue;
+    }
+
     if (keywords.includes(key) || key.startsWith("x-")) {
       delete obj[key];
       continue;
     }
 
-    const value = obj[key];
+    if (key === "properties" && value && typeof value === "object" && !Array.isArray(value)) {
+      removeUnsupportedKeywords(value, keywords, { inPropertiesMap: true });
+      continue;
+    }
+
     if (value && typeof value === "object") {
       removeUnsupportedKeywords(value, keywords);
     }
@@ -369,4 +385,3 @@ export function cleanJSONSchemaForAntigravity(schema) {
 
   return cleaned;
 }
-

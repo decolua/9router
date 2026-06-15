@@ -3,9 +3,52 @@ import { describe, it, expect } from "vitest";
 import "./registerAll.js";
 import { translateRequest } from "../../open-sse/translator/index.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
+import { AntigravityExecutor } from "../../open-sse/executors/antigravity.js";
 
 const AG2O = (req) =>
   translateRequest(FORMATS.ANTIGRAVITY, FORMATS.OPENAI, "m", { request: req }, true, null, null);
+
+const O2AG = (body) =>
+  translateRequest(
+    FORMATS.OPENAI,
+    FORMATS.ANTIGRAVITY,
+    "gemini-3-flash",
+    body,
+    true,
+    { email: "test@example.com", connectionId: "test-conn" },
+    "antigravity"
+  );
+
+const opencodeGrepTool = () => ({
+  type: "function",
+  function: {
+    name: "grep",
+    description: "Search content",
+    parameters: {
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "object",
+      properties: {
+        pattern: {
+          type: "string",
+          description: "The regex pattern to search for in file contents",
+        },
+        path: {
+          type: "string",
+          description: "The directory to search in",
+        },
+        include: {
+          type: "string",
+          description: "Optional file include pattern",
+          pattern: "\\\\.js$",
+        },
+      },
+      required: ["pattern"],
+    },
+  },
+});
+
+const firstFunctionParameters = (body) =>
+  body.request.tools[0].functionDeclarations[0].parameters;
 
 describe("Antigravity → OpenAI", () => {
   // antigravity-to-openai.js:177-189 — content with BOTH functionResponse and functionCall/text
@@ -50,5 +93,35 @@ describe("Antigravity → OpenAI", () => {
       ? content.some((c) => c.type === "text" && c.text === "")
       : content === "";
     expect(hasEmpty, "empty text part emitted").toBe(false);
+  });
+});
+
+describe("OpenAI → Antigravity", () => {
+  it("preserves OpenCode grep/glob parameter named pattern", () => {
+    const out = O2AG({
+      messages: [{ role: "user", content: "Search for TODO comments" }],
+      tools: [opencodeGrepTool()],
+    });
+    const parameters = firstFunctionParameters(out);
+
+    expect(parameters.properties.pattern?.type).toBe("string");
+    expect(parameters.required).toContain("pattern");
+    expect(parameters.properties.include?.pattern).toBeUndefined();
+  });
+
+  it("keeps required pattern after Antigravity executor sanitizes tools again", () => {
+    const translated = O2AG({
+      messages: [{ role: "user", content: "Search for TODO comments" }],
+      tools: [opencodeGrepTool()],
+    });
+    const executor = new AntigravityExecutor();
+    const finalBody = executor.transformRequest("gemini-3-flash", translated, true, {
+      email: "test@example.com",
+      connectionId: "test-conn",
+    });
+    const parameters = firstFunctionParameters(finalBody);
+
+    expect(parameters.properties.pattern?.type).toBe("string");
+    expect(parameters.required).toContain("pattern");
   });
 });
