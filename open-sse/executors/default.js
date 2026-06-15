@@ -6,6 +6,19 @@ import { getCachedClaudeHeaders } from "../utils/claudeHeaderCache.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 
+function ensureSingleHeader(headers, name, fallbackValue) {
+  const lowerName = name.toLowerCase();
+  let value = headers[name];
+
+  for (const key of Object.keys(headers)) {
+    if (key.toLowerCase() !== lowerName) continue;
+    if (value === undefined) value = headers[key];
+    if (key !== name) delete headers[key];
+  }
+
+  headers[name] = value ?? fallbackValue;
+}
+
 export class DefaultExecutor extends BaseExecutor {
   constructor(provider) {
     super(provider, PROVIDERS[provider] || PROVIDERS.openai);
@@ -135,9 +148,7 @@ export class DefaultExecutor extends BaseExecutor {
           } else if (credentials.accessToken) {
             headers["Authorization"] = `Bearer ${credentials.accessToken}`;
           }
-          if (!headers["anthropic-version"]) {
-            headers["anthropic-version"] = "2023-06-01";
-          }
+          ensureSingleHeader(headers, "anthropic-version", "2023-06-01");
         } else if (this.provider === "gitlab") {
           // GitLab Duo uses Bearer token (PAT with ai_features scope, or OAuth access token)
           headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
@@ -153,7 +164,7 @@ export class DefaultExecutor extends BaseExecutor {
         } else if (this.config?.format === "claude") {
           // Generic claude-format provider (e.g. agentrouter): x-api-key + anthropic-version
           headers["x-api-key"] = credentials.apiKey || credentials.accessToken;
-          if (!headers["anthropic-version"]) headers["anthropic-version"] = "2023-06-01";
+          ensureSingleHeader(headers, "anthropic-version", "2023-06-01");
         } else {
           headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
         }
