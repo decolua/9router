@@ -27,7 +27,7 @@ describe("Antigravity → OpenAI", () => {
 
   // antigravity-to-openai.js:167 — functionCall without id gets a random Date.now() id
   // KNOWN BUG: unstable id breaks matching with its functionResponse
-  it.fails("functionCall without id keeps a stable matchable id", () => {
+  it("functionCall without id keeps a stable matchable id", () => {
     const out = AG2O({
       contents: [
         { role: "model", parts: [{ functionCall: { name: "search", args: { q: "x" } } }] },

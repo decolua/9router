@@ -4,10 +4,10 @@
   "description": "9Router web dashboard",
   "private": true,
   "scripts": {
-    "dev": "next dev --webpack --port 20128",
+    "dev": "next dev --webpack --port 20127",
     "build": "next build --webpack",
     "start": "next start",
-    "dev:bun": "bun --bun next dev --webpack --port 20128",
+    "dev:bun": "bun --bun next dev --webpack --port 20127",
     "build:bun": "bun --bun next build --webpack",
     "start:bun": "bun ./.next/standalone/server.js",
     "cli:pack": "npm --prefix cli run pack:cli",

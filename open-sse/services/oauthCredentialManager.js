@@ -3,8 +3,10 @@ import {
   isUnrecoverableRefreshError,
   refreshTokenByProvider,
 } from "./tokenRefresh.js";
+import { PROVIDER_OAUTH } from "../providers/index.js";
 
-export const CODEX_MAX_REFRESH_AGE_MS = 8 * 24 * 60 * 60 * 1000;
+// Single source: codex.oauth.maxRefreshAgeMs (8 days) — proactive refresh window
+export const CODEX_MAX_REFRESH_AGE_MS = PROVIDER_OAUTH["codex"]?.maxRefreshAgeMs;
 
 const refreshLocks = new Map();
 
@@ -35,9 +37,9 @@ export function getCredentialLastRefreshMs(credentials) {
   );
 }
 
-export function isCodexRefreshStale(credentials, nowMs = Date.now()) {
+export function isCodexRefreshStale(credentials, nowMs = Date.now(), maxAgeMs = CODEX_MAX_REFRESH_AGE_MS) {
   const lastRefreshMs = getCredentialLastRefreshMs(credentials);
-  return !lastRefreshMs || nowMs - lastRefreshMs >= CODEX_MAX_REFRESH_AGE_MS;
+  return !lastRefreshMs || nowMs - lastRefreshMs >= maxAgeMs;
 }
 
 export function shouldRefreshCredentials(provider, credentials, nowMs = Date.now()) {
@@ -48,7 +50,9 @@ export function shouldRefreshCredentials(provider, credentials, nowMs = Date.now
     return true;
   }
 
-  if (provider === "codex" && credentials.refreshToken && isCodexRefreshStale(credentials, nowMs)) {
+  // Proactive stale refresh for providers declaring oauth.maxRefreshAgeMs (e.g. codex)
+  const maxAgeMs = PROVIDER_OAUTH[provider]?.maxRefreshAgeMs;
+  if (maxAgeMs && credentials.refreshToken && isCodexRefreshStale(credentials, nowMs, maxAgeMs)) {
     return true;
   }
 
@@ -101,8 +105,9 @@ export function mergeRefreshedCredentials(provider, currentCredentials, refreshe
     next.copilotTokenExpiresAt = refreshedCredentials.copilotTokenExpiresAt;
   }
 
+  // trackRefreshAt providers (e.g. codex) always stamp lastRefreshAt for staleness tracking
   if (
-    provider === "codex" ||
+    PROVIDER_OAUTH[provider]?.trackRefreshAt ||
     next.accessToken ||
     next.apiKey ||
     next.token ||

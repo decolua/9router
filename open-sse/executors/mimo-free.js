@@ -5,7 +5,7 @@ import { createHash } from "crypto";
 import os from "os";
 
 const BOOTSTRAP_URL = "https://api.xiaomimimo.com/api/free-ai/bootstrap";
-const CHAT_URL = "https://api.xiaomimimo.com/api/free-ai/openai/chat";
+const CHAT_URL = PROVIDERS["mimo-free"].baseUrl;
 const SESSION_AFFINITY_PREFIX = "ses_";
 const SESSION_ID_LENGTH = 24;
 const JWT_FALLBACK_TTL_SEC = 3000;

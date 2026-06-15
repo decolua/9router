@@ -1,7 +1,8 @@
 // Runway ML — async submit + /tasks/{id} polling
 import { sleep, nowSec, sizeToAspectRatio, POLL_INTERVAL_MS, POLL_TIMEOUT_MS } from "./_base.js";
+import { PROVIDER_MEDIA } from "../../providers/index.js";
 
-const BASE_URL = "https://api.dev.runwayml.com/v1";
+const BASE_URL = PROVIDER_MEDIA["runwayml"]?.imageConfig?.baseUrl;
 
 export default {
   async: true,

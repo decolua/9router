@@ -1,20 +1,23 @@
 import { FORMATS } from "./formats.js";
-import { ensureToolCallIds, fixMissingToolResponses } from "./helpers/toolCallHelper.js";
-import { prepareClaudeRequest } from "./helpers/claudeHelper.js";
+import { ensureToolCallIds, fixMissingToolResponses } from "./concerns/toolCall.js";
+import { prepareClaudeRequest } from "./formats/claude.js";
 import { cloakClaudeTools } from "../utils/claudeCloaking.js";
-import { filterToOpenAIFormat } from "./helpers/openaiHelper.js";
+import { filterToOpenAIFormat } from "./formats/openai.js";
 import { normalizeThinkingConfig } from "../services/provider.js";
+import { applyThinking, captureThinking } from "./concerns/thinkingUnified.js";
 import { AntigravityExecutor } from "../executors/antigravity.js";
+import { PROVIDERS } from "../providers/index.js";
 
-// Registry for translators
-const requestRegistry = new Map();
-const responseRegistry = new Map();
-
-// Track initialization state
-let initialized = false;
+// Registry for translators. Lazy-init guards against circular-import order:
+// translator modules call register() (side-effect) before this module's body runs.
+// var (not let): hoisted as undefined so register() can run during circular import (no TDZ).
+var requestRegistry;
+var responseRegistry;
 
 // Register translator
 export function register(from, to, requestFn, responseFn) {
+  requestRegistry ??= new Map();
+  responseRegistry ??= new Map();
   const key = `${from}:${to}`;
   if (requestFn) {
     requestRegistry.set(key, requestFn);
@@ -24,35 +27,8 @@ export function register(from, to, requestFn, responseFn) {
   }
 }
 
-// Lazy load translators (called once on first use)
-function ensureInitialized() {
-  if (initialized) return;
-  initialized = true;
-
-  // Request translators - sync require pattern for bundler
-  require("./request/claude-to-openai.js");
-  require("./request/openai-to-claude.js");
-  require("./request/gemini-to-openai.js");
-  require("./request/openai-to-gemini.js");
-  require("./request/openai-to-vertex.js");
-  require("./request/antigravity-to-openai.js");
-  require("./request/openai-responses.js");
-  require("./request/openai-to-kiro.js");
-  require("./request/openai-to-cursor.js");
-  require("./request/openai-to-ollama.js");
-  require("./request/openai-to-commandcode.js");
-
-  // Response translators
-  require("./response/claude-to-openai.js");
-  require("./response/openai-to-claude.js");
-  require("./response/gemini-to-openai.js");
-  require("./response/openai-to-antigravity.js");
-  require("./response/openai-responses.js");
-  require("./response/kiro-to-openai.js");
-  require("./response/cursor-to-openai.js");
-  require("./response/ollama-to-openai.js");
-  require("./response/commandcode-to-openai.js");
-}
+// No-op: translators self-register via the static imports at the bottom of this file.
+function ensureInitialized() {}
 
 // Strip specific content types from messages (explicit opt-in via strip[] in PROVIDER_MODELS)
 function stripContentTypes(body, stripList = []) {
@@ -88,6 +64,10 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   // Fix missing tool responses (insert empty tool_result if needed)
   fixMissingToolResponses(result);
 
+  // Capture thinking intent from the original (pre-translation) body, before any
+  // format conversion strips/renames the fields. Applied after translation.
+  const thinkingIntent = captureThinking(result);
+
   // If same format, skip translation steps
   if (sourceFormat !== targetFormat) {
     // Step 1: source -> openai (if source is not openai)
@@ -109,6 +89,9 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
     }
   }
 
+  // Normalize thinking to the target provider-native format (config-driven, capability-aware)
+  applyThinking(targetFormat, model, result, provider, thinkingIntent);
+
   // Always normalize to clean OpenAI format when target is OpenAI
   // This handles hybrid requests (e.g., OpenAI messages + Claude tools)
   if (targetFormat === FORMATS.OPENAI) {
@@ -122,8 +105,8 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   }
 
   // Claude cloaking: rename client tools with _cc suffix (anti-ban)
-  // Only for claude provider (not anthropic-compatible-*) with OAuth token
-  if (provider === "claude") {
+  // quirk: only providers flagged cloakToolsOnOAuth, and only with an OAuth token
+  if (PROVIDERS[provider]?.quirks?.cloakToolsOnOAuth) {
     const apiKey = credentials?.accessToken || credentials?.apiKey || null;
     if (apiKey?.includes("sk-ant-oat")) {
       const { body: cloakedBody, toolNameMap } = cloakClaudeTools(result);
@@ -245,7 +228,29 @@ export function initState(sourceFormat) {
   return base;
 }
 
-// Initialize all translators (kept for backward compatibility)
+// Kept for backward compatibility; translators are already registered at import time.
 export function initTranslators() {
   ensureInitialized();
 }
+
+// Static side-effect imports: each module calls register() at load (works in ESM + bundler).
+import "./request/claude-to-openai.js";
+import "./request/openai-to-claude.js";
+import "./request/gemini-to-openai.js";
+import "./request/openai-to-gemini.js";
+import "./request/openai-to-vertex.js";
+import "./request/antigravity-to-openai.js";
+import "./request/openai-responses.js";
+import "./request/openai-to-kiro.js";
+import "./request/openai-to-cursor.js";
+import "./request/openai-to-ollama.js";
+import "./request/openai-to-commandcode.js";
+import "./response/claude-to-openai.js";
+import "./response/openai-to-claude.js";
+import "./response/gemini-to-openai.js";
+import "./response/openai-to-antigravity.js";
+import "./response/openai-responses.js";
+import "./response/kiro-to-openai.js";
+import "./response/cursor-to-openai.js";
+import "./response/ollama-to-openai.js";
+import "./response/commandcode-to-openai.js";

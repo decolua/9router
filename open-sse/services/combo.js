@@ -4,12 +4,87 @@
 
 import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { unavailableResponse } from "../utils/error.js";
+import { getCapabilitiesForModel } from "../providers/capabilities.js";
+
+// Hard capabilities = input modalities; missing one drops request data (e.g. image
+// stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
+const HARD_CAPS = new Set(["vision", "pdf", "audioInput", "videoInput"]);
+
+// Reorder combo models by capability fit. Stable; never drops a model (fallback intact).
+// Tier 0: satisfies all hard + all soft. Tier 1: all hard only. Tier 2: rest.
+export function reorderByCapabilities(models, required) {
+  if (!required || required.size === 0 || !Array.isArray(models) || models.length <= 1) return models;
+  const hard = [...required].filter((c) => HARD_CAPS.has(c));
+  const soft = [...required].filter((c) => !HARD_CAPS.has(c));
+
+  const tierOf = (m) => {
+    const slash = typeof m === "string" ? m.indexOf("/") : -1;
+    const provider = slash > 0 ? m.slice(0, slash) : "";
+    const model = slash > 0 ? m.slice(slash + 1) : m;
+    const caps = getCapabilitiesForModel(provider, model);
+    if (!hard.every((c) => caps[c] === true)) return 2;
+    return soft.every((c) => caps[c] === true) ? 0 : 1;
+  };
+
+  // Stable sort by tier (Array.prototype.sort is stable in modern engines).
+  return models
+    .map((m, i) => ({ m, i, t: tierOf(m) }))
+    .sort((a, b) => a.t - b.t || a.i - b.i)
+    .map((x) => x.m);
+}
 
 /**
  * Track rotation state per combo (for round-robin strategy)
  * @type {Map<string, { index: number, consecutiveUseCount: number }>}
  */
 const comboRotationState = new Map();
+
+// Last array item whose role is "user" (current turn), or the last item when no
+// role is present. History media (older turns) must not pin the combo to a vision
+// model — those get stripped + placeholdered downstream instead.
+function lastUserItem(arr) {
+  if (!Array.isArray(arr) || arr.length === 0) return null;
+  for (let i = arr.length - 1; i >= 0; i--) {
+    if (!arr[i]?.role || arr[i].role === "user") return arr[i];
+  }
+  return arr[arr.length - 1];
+}
+
+// Detect which capabilities a request needs. Modalities (vision/pdf) are scanned
+// only on the current user turn; "search" is request-wide (lives in tools).
+// Returns a Set of: "vision" | "pdf" | "search".
+export function detectRequiredCapabilities(body) {
+  const required = new Set();
+  if (!body || typeof body !== "object") return required;
+
+  const scanBlock = (b) => {
+    if (!b || typeof b !== "object") return;
+    const t = b.type;
+    if (t === "image_url" || t === "image" || t === "input_image") required.add("vision");
+    if (t === "file" || t === "document" || t === "input_file") required.add("pdf");
+    // gemini parts: inlineData/fileData carry a mime
+    const mime = b.inlineData?.mimeType || b.fileData?.mimeType;
+    if (typeof mime === "string" && mime.startsWith("image/")) required.add("vision");
+    if (mime === "application/pdf") required.add("pdf");
+  };
+
+  const scanContent = (content) => {
+    if (Array.isArray(content)) for (const b of content) scanBlock(b);
+  };
+
+  // Modalities: current user turn only (last item across each known shape).
+  const lastMsg = lastUserItem(body.messages);     // openai / claude
+  if (lastMsg) scanContent(lastMsg.content);
+  const lastInput = lastUserItem(body.input);      // responses
+  if (lastInput) scanContent(lastInput.content);
+  const contents = body.contents || body.request?.contents; // gemini / antigravity
+  const lastContent = lastUserItem(contents);
+  if (lastContent) scanContent(lastContent.parts);
+
+  // search: temporarily disabled in auto-switch (feature not wired yet).
+
+  return required;
+}
 
 function normalizeStickyLimit(stickyLimit) {
   const parsed = Number.parseInt(stickyLimit, 10);
@@ -105,9 +180,21 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
  * @returns {Promise<Response>}
  */
-export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1 }) {
+export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true }) {
   // Apply rotation strategy if enabled
-  const rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
+  let rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
+
+  // Auto-switch: float models that satisfy the request's required capabilities to the front.
+  if (autoSwitch) {
+    const required = detectRequiredCapabilities(body);
+    if (required.size > 0) {
+      const reordered = reorderByCapabilities(rotatedModels, required);
+      if (reordered[0] !== rotatedModels[0]) {
+        log.info("COMBO", `auto-switch for [${[...required].join(",")}] → ${reordered[0]}`);
+      }
+      rotatedModels = reordered;
+    }
+  }
   
   let lastError = null;
   let earliestRetryAfter = null;
