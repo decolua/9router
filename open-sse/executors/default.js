@@ -11,12 +11,25 @@ export class DefaultExecutor extends BaseExecutor {
     super(provider, PROVIDERS[provider] || PROVIDERS.openai);
   }
 
+  // Anthropic models that reject the deprecated `temperature` parameter
+  supportsTemperature(model) {
+    if (!model) return true;
+    // claude-opus-4 series: temperature is deprecated
+    if (/claude-opus-4/i.test(model)) return false;
+    return true;
+  }
+
   transformRequest(model, body) {
     const transformed = this.applyJsonSchemaFallback(body);
 
     if (transformed && typeof transformed === "object") {
       if (this.provider === "cerebras" || this.provider === "mistral") {
         delete transformed.client_metadata;
+      }
+
+      // Strip temperature for models that reject it (e.g. claude-opus-4)
+      if (!this.supportsTemperature(model) && transformed.temperature !== undefined) {
+        delete transformed.temperature;
       }
     }
 
