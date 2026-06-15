@@ -40,6 +40,11 @@ function isValidPdfPagesArg(filePath, pages) {
     /^\d+(?:-\d+)?$/.test(pages);
 }
 
+function shouldSuppressReasoningContent(state) {
+  const provider = String(state?.provider || "").toLowerCase();
+  return provider.startsWith("opencode") || provider === "mimo-free" || provider === "mmf";
+}
+
 // Helper: stop thinking block if started
 function stopThinkingBlock(state, results) {
   if (!state.thinkingBlockStarted) return;
@@ -131,7 +136,7 @@ export function openaiToClaudeResponse(chunk, state) {
 
   // Handle reasoning_content (thinking) - GLM, DeepSeek, etc.
   const reasoningContent = delta?.reasoning_content || delta?.reasoning;
-  if (reasoningContent) {
+  if (reasoningContent && !shouldSuppressReasoningContent(state)) {
     stopTextBlock(state, results);
 
     if (!state.thinkingBlockStarted) {
