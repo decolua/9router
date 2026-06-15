@@ -30,30 +30,48 @@ export const MODEL_PRICING = {
   "claude-opus-4-6-thinking":     { input: 5.00,  output: 25.00, cached: 0.50,  reasoning: 37.50,  cache_creation: 5.00  },
 
   // === OpenAI / GPT ===
-  "gpt-3.5-turbo":                { input: 0.50,  output: 1.50,  cached: 0.25,  reasoning: 2.25,   cache_creation: 0.50  },
-  "gpt-4":                        { input: 2.50,  output: 10.00, cached: 1.25,  reasoning: 15.00,  cache_creation: 2.50  },
-  "gpt-4-turbo":                  { input: 10.00, output: 30.00, cached: 5.00,  reasoning: 45.00,  cache_creation: 10.00 },
-  "gpt-4o":                       { input: 2.50,  output: 10.00, cached: 1.25,  reasoning: 15.00,  cache_creation: 2.50  },
-  "gpt-4o-mini":                  { input: 0.15,  output: 0.60,  cached: 0.075, reasoning: 0.90,   cache_creation: 0.15  },
-  "gpt-4.1":                      { input: 2.50,  output: 10.00, cached: 1.25,  reasoning: 15.00,  cache_creation: 2.50  },
-  "gpt-5":                        { input: 3.00,  output: 12.00, cached: 1.50,  reasoning: 18.00,  cache_creation: 3.00  },
-  "gpt-5-mini":                   { input: 0.75,  output: 3.00,  cached: 0.375, reasoning: 4.50,   cache_creation: 0.75  },
-  "gpt-5-codex":                  { input: 3.00,  output: 12.00, cached: 1.50,  reasoning: 18.00,  cache_creation: 3.00  },
-  "gpt-5.1":                      { input: 4.00,  output: 16.00, cached: 2.00,  reasoning: 24.00,  cache_creation: 4.00  },
-  "gpt-5.1-codex":                { input: 4.00,  output: 16.00, cached: 2.00,  reasoning: 24.00,  cache_creation: 4.00  },
+  // Standard API pricing from https://developers.openai.com/api/docs/pricing
+  // (input/cached input/output in $ per 1M tokens).
+  "gpt-3.5-turbo":                { input: 0.50,  output: 1.50,  cached: null,  reasoning: 1.50,   cache_creation: 0.50  },
+  "gpt-4":                        { input: 30.00, output: 60.00, cached: null,  reasoning: 60.00,  cache_creation: 30.00 },
+  "gpt-4-turbo":                  { input: 10.00, output: 30.00, cached: null,  reasoning: 30.00,  cache_creation: 10.00 },
+  "gpt-4o":                       { input: 2.50,  output: 10.00, cached: 1.25,  reasoning: 10.00,  cache_creation: 2.50  },
+  "gpt-4o-mini":                  { input: 0.15,  output: 0.60,  cached: 0.075, reasoning: 0.60,   cache_creation: 0.15  },
+  "gpt-4.1":                      { input: 2.00,  output: 8.00,  cached: 0.50,  reasoning: 8.00,   cache_creation: 2.00  },
+  "gpt-4.1-mini":                 { input: 0.40,  output: 1.60,  cached: 0.10,  reasoning: 1.60,   cache_creation: 0.40  },
+  "gpt-4.1-nano":                 { input: 0.10,  output: 0.40,  cached: 0.025, reasoning: 0.40,   cache_creation: 0.10  },
+  "gpt-5.5":                      { input: 5.00,  output: 30.00, cached: 0.50,  reasoning: 30.00,  cache_creation: 5.00  },
+  "gpt-5.5-pro":                  { input: 30.00, output: 180.00, cached: null, reasoning: 180.00, cache_creation: 30.00 },
+  "gpt-5.4":                      { input: 2.50,  output: 15.00, cached: 0.25,  reasoning: 15.00,  cache_creation: 2.50  },
+  "gpt-5.4-mini":                 { input: 0.75,  output: 4.50,  cached: 0.075, reasoning: 4.50,   cache_creation: 0.75  },
+  "gpt-5.4-nano":                 { input: 0.20,  output: 1.25,  cached: 0.02,  reasoning: 1.25,   cache_creation: 0.20  },
+  "gpt-5.4-pro":                  { input: 30.00, output: 180.00, cached: null, reasoning: 180.00, cache_creation: 30.00 },
+  "gpt-5":                        { input: 1.25,  output: 10.00, cached: 0.125, reasoning: 10.00,  cache_creation: 1.25  },
+  "gpt-5-mini":                   { input: 0.25,  output: 2.00,  cached: 0.025, reasoning: 2.00,   cache_creation: 0.25  },
+  "gpt-5-nano":                   { input: 0.05,  output: 0.40,  cached: 0.005, reasoning: 0.40,   cache_creation: 0.05  },
+  "gpt-5-pro":                    { input: 15.00, output: 120.00, cached: null, reasoning: 120.00, cache_creation: 15.00 },
+  "gpt-5-codex":                  { input: 1.25,  output: 10.00, cached: 0.125, reasoning: 10.00,  cache_creation: 1.25  },
+  "gpt-5.1":                      { input: 1.25,  output: 10.00, cached: 0.125, reasoning: 10.00,  cache_creation: 1.25  },
+  "gpt-5.1-codex":                { input: 1.25,  output: 10.00, cached: 0.125, reasoning: 10.00,  cache_creation: 1.25  },
   "gpt-5.1-codex-mini":           { input: 1.50,  output: 6.00,  cached: 0.75,  reasoning: 9.00,   cache_creation: 1.50  },
   "gpt-5.1-codex-mini-high":      { input: 2.00,  output: 8.00,  cached: 1.00,  reasoning: 12.00,  cache_creation: 2.00  },
   "gpt-5.1-codex-max":            { input: 8.00,  output: 32.00, cached: 4.00,  reasoning: 48.00,  cache_creation: 8.00  },
-  "gpt-5.2":                      { input: 5.00,  output: 20.00, cached: 2.50,  reasoning: 30.00,  cache_creation: 5.00  },
-  "gpt-5.2-codex":                { input: 5.00,  output: 20.00, cached: 2.50,  reasoning: 30.00,  cache_creation: 5.00  },
+  "gpt-5.2":                      { input: 1.75,  output: 14.00, cached: 0.175, reasoning: 14.00,  cache_creation: 1.75  },
+  "gpt-5.2-pro":                  { input: 21.00, output: 168.00, cached: null, reasoning: 168.00, cache_creation: 21.00 },
+  "gpt-5.2-codex":                { input: 1.75,  output: 14.00, cached: 0.175, reasoning: 14.00,  cache_creation: 1.75  },
   "gpt-5.3-codex":                { input: 6.00,  output: 24.00, cached: 3.00,  reasoning: 36.00,  cache_creation: 6.00  },
   "gpt-5.3-codex-xhigh":         { input: 10.00, output: 40.00, cached: 5.00,  reasoning: 60.00,  cache_creation: 10.00 },
   "gpt-5.3-codex-high":          { input: 8.00,  output: 32.00, cached: 4.00,  reasoning: 48.00,  cache_creation: 8.00  },
   "gpt-5.3-codex-low":           { input: 4.00,  output: 16.00, cached: 2.00,  reasoning: 24.00,  cache_creation: 4.00  },
   "gpt-5.3-codex-none":          { input: 3.00,  output: 12.00, cached: 1.50,  reasoning: 18.00,  cache_creation: 3.00  },
   "gpt-5.3-codex-spark":         { input: 3.00,  output: 12.00, cached: 0.30,  reasoning: 12.00,  cache_creation: 3.00  },
-  "o1":                           { input: 15.00, output: 60.00, cached: 7.50,  reasoning: 90.00,  cache_creation: 15.00 },
-  "o1-mini":                      { input: 3.00,  output: 12.00, cached: 1.50,  reasoning: 18.00,  cache_creation: 3.00  },
+  "o1":                           { input: 15.00, output: 60.00, cached: 7.50,  reasoning: 60.00,  cache_creation: 15.00 },
+  "o1-mini":                      { input: 1.10,  output: 4.40,  cached: 0.55,  reasoning: 4.40,   cache_creation: 1.10  },
+  "o1-pro":                       { input: 150.00, output: 600.00, cached: null, reasoning: 600.00, cache_creation: 150.00 },
+  "o3":                           { input: 2.00,  output: 8.00,  cached: 0.50,  reasoning: 8.00,   cache_creation: 2.00  },
+  "o3-mini":                      { input: 1.10,  output: 4.40,  cached: 0.55,  reasoning: 4.40,   cache_creation: 1.10  },
+  "o3-pro":                       { input: 20.00, output: 80.00, cached: null, reasoning: 80.00,  cache_creation: 20.00 },
+  "o4-mini":                      { input: 1.10,  output: 4.40,  cached: 0.275, reasoning: 4.40,   cache_creation: 1.10  },
 
   // === Gemini ===
   "gemini-3-flash-preview":       { input: 0.50,  output: 3.00,  cached: 0.03,  reasoning: 4.50,   cache_creation: 0.50  },
@@ -161,20 +179,40 @@ export const PATTERN_PRICING = [
   { pattern: "gemini-*",        pricing: { input: 0.50,  output: 3.00,  cached: 0.03,  reasoning: 4.50,   cache_creation: 0.50  } },
 
   // --- GPT (specific first, generic last) ---
+  { pattern: "gpt-5.5-pro",     pricing: { input: 30.00, output: 180.00, cached: null, reasoning: 180.00, cache_creation: 30.00 } },
+  { pattern: "gpt-5.5",         pricing: { input: 5.00,  output: 30.00, cached: 0.50,  reasoning: 30.00,  cache_creation: 5.00  } },
+  { pattern: "gpt-5.4-pro",     pricing: { input: 30.00, output: 180.00, cached: null, reasoning: 180.00, cache_creation: 30.00 } },
+  { pattern: "gpt-5.4-mini",    pricing: { input: 0.75,  output: 4.50,  cached: 0.075, reasoning: 4.50,   cache_creation: 0.75  } },
+  { pattern: "gpt-5.4-nano",    pricing: { input: 0.20,  output: 1.25,  cached: 0.02,  reasoning: 1.25,   cache_creation: 0.20  } },
+  { pattern: "gpt-5.4",         pricing: { input: 2.50,  output: 15.00, cached: 0.25,  reasoning: 15.00,  cache_creation: 2.50  } },
   { pattern: "gpt-5.3-*",       pricing: { input: 6.00,  output: 24.00, cached: 3.00,  reasoning: 36.00,  cache_creation: 6.00  } },
-  { pattern: "gpt-5.2-*",       pricing: { input: 5.00,  output: 20.00, cached: 2.50,  reasoning: 30.00,  cache_creation: 5.00  } },
-  { pattern: "gpt-5.1-*",       pricing: { input: 4.00,  output: 16.00, cached: 2.00,  reasoning: 24.00,  cache_creation: 4.00  } },
-  { pattern: "gpt-5-*",         pricing: { input: 3.00,  output: 12.00, cached: 1.50,  reasoning: 18.00,  cache_creation: 3.00  } },
-  { pattern: "gpt-5*",          pricing: { input: 3.00,  output: 12.00, cached: 1.50,  reasoning: 18.00,  cache_creation: 3.00  } },
-  { pattern: "gpt-4o-*",        pricing: { input: 0.15,  output: 0.60,  cached: 0.075, reasoning: 0.90,   cache_creation: 0.15  } },
-  { pattern: "gpt-4o",          pricing: { input: 2.50,  output: 10.00, cached: 1.25,  reasoning: 15.00,  cache_creation: 2.50  } },
-  { pattern: "gpt-4*",          pricing: { input: 2.50,  output: 10.00, cached: 1.25,  reasoning: 15.00,  cache_creation: 2.50  } },
+  { pattern: "gpt-5.2-pro",     pricing: { input: 21.00, output: 168.00, cached: null, reasoning: 168.00, cache_creation: 21.00 } },
+  { pattern: "gpt-5.2-*",       pricing: { input: 1.75,  output: 14.00, cached: 0.175, reasoning: 14.00,  cache_creation: 1.75  } },
+  { pattern: "gpt-5.1-*",       pricing: { input: 1.25,  output: 10.00, cached: 0.125, reasoning: 10.00,  cache_creation: 1.25  } },
+  { pattern: "gpt-5-pro",       pricing: { input: 15.00, output: 120.00, cached: null, reasoning: 120.00, cache_creation: 15.00 } },
+  { pattern: "gpt-5-mini",      pricing: { input: 0.25,  output: 2.00,  cached: 0.025, reasoning: 2.00,   cache_creation: 0.25  } },
+  { pattern: "gpt-5-nano",      pricing: { input: 0.05,  output: 0.40,  cached: 0.005, reasoning: 0.40,   cache_creation: 0.05  } },
+  { pattern: "gpt-5-*",         pricing: { input: 1.25,  output: 10.00, cached: 0.125, reasoning: 10.00,  cache_creation: 1.25  } },
+  { pattern: "gpt-5*",          pricing: { input: 1.25,  output: 10.00, cached: 0.125, reasoning: 10.00,  cache_creation: 1.25  } },
+  { pattern: "gpt-4.1-mini*",   pricing: { input: 0.40,  output: 1.60,  cached: 0.10,  reasoning: 1.60,   cache_creation: 0.40  } },
+  { pattern: "gpt-4.1-nano*",   pricing: { input: 0.10,  output: 0.40,  cached: 0.025, reasoning: 0.40,   cache_creation: 0.10  } },
+  { pattern: "gpt-4.1*",        pricing: { input: 2.00,  output: 8.00,  cached: 0.50,  reasoning: 8.00,   cache_creation: 2.00  } },
+  { pattern: "gpt-4o-mini*",    pricing: { input: 0.15,  output: 0.60,  cached: 0.075, reasoning: 0.60,   cache_creation: 0.15  } },
+  { pattern: "gpt-4o-*",        pricing: { input: 2.50,  output: 10.00, cached: 1.25,  reasoning: 10.00,  cache_creation: 2.50  } },
+  { pattern: "gpt-4o",          pricing: { input: 2.50,  output: 10.00, cached: 1.25,  reasoning: 10.00,  cache_creation: 2.50  } },
+  { pattern: "gpt-4-turbo*",    pricing: { input: 10.00, output: 30.00, cached: null,  reasoning: 30.00,  cache_creation: 10.00 } },
+  { pattern: "gpt-4*",          pricing: { input: 30.00, output: 60.00, cached: null,  reasoning: 60.00,  cache_creation: 30.00 } },
 
   // --- o1 / o-series ---
-  { pattern: "o1-*",            pricing: { input: 3.00,  output: 12.00, cached: 1.50,  reasoning: 18.00,  cache_creation: 3.00  } },
-  { pattern: "o1",              pricing: { input: 15.00, output: 60.00, cached: 7.50,  reasoning: 90.00,  cache_creation: 15.00 } },
-  { pattern: "o3-*",            pricing: { input: 10.00, output: 40.00, cached: 5.00,  reasoning: 60.00,  cache_creation: 10.00 } },
-  { pattern: "o4-*",            pricing: { input: 2.00,  output: 8.00,  cached: 1.00,  reasoning: 12.00,  cache_creation: 2.00  } },
+  { pattern: "o1-pro",          pricing: { input: 150.00, output: 600.00, cached: null, reasoning: 600.00, cache_creation: 150.00 } },
+  { pattern: "o1-mini",         pricing: { input: 1.10,   output: 4.40,   cached: 0.55,  reasoning: 4.40,   cache_creation: 1.10   } },
+  { pattern: "o1",              pricing: { input: 15.00,  output: 60.00,  cached: 7.50,  reasoning: 60.00,  cache_creation: 15.00  } },
+  { pattern: "o3-pro",          pricing: { input: 20.00,  output: 80.00,  cached: null,  reasoning: 80.00,  cache_creation: 20.00  } },
+  { pattern: "o3-mini",         pricing: { input: 1.10,   output: 4.40,   cached: 0.55,  reasoning: 4.40,   cache_creation: 1.10   } },
+  { pattern: "o3-*",            pricing: { input: 2.00,   output: 8.00,   cached: 0.50,  reasoning: 8.00,   cache_creation: 2.00   } },
+  { pattern: "o3",              pricing: { input: 2.00,   output: 8.00,   cached: 0.50,  reasoning: 8.00,   cache_creation: 2.00   } },
+  { pattern: "o4-mini",         pricing: { input: 1.10,   output: 4.40,   cached: 0.275, reasoning: 4.40,   cache_creation: 1.10   } },
+  { pattern: "o4-*",            pricing: { input: 1.10,   output: 4.40,   cached: 0.275, reasoning: 4.40,   cache_creation: 1.10   } },
 
   // --- Qwen ---
   { pattern: "qwen3-coder-*",   pricing: { input: 1.00,  output: 4.00,  cached: 0.50,  reasoning: 6.00,   cache_creation: 1.00  } },
@@ -263,7 +301,121 @@ export function getDefaultPricing() {
  */
 export function formatCost(cost) {
   if (cost === null || cost === undefined || isNaN(cost)) return "$0.00";
-  return `$${cost.toFixed(2)}`;
+  const value = Number(cost || 0);
+  if (!Number.isFinite(value) || value === 0) return "$0.00";
+  const abs = Math.abs(value);
+  if (abs < 0.0001) return `$${value.toFixed(6)}`;
+  if (abs < 0.01) return `$${value.toFixed(4)}`;
+  return `$${value.toFixed(2)}`;
+}
+
+/**
+ * Calculate itemized cost from tokens and pricing.
+ *
+ * Reasoning tokens reported by OpenAI-compatible APIs are output-token details,
+ * not extra billable tokens. Only add separate reasoning cost when a pricing
+ * entry explicitly opts into reasoning_billed_separately.
+ *
+ * @param {object} tokens
+ * @param {object} pricing
+ * @returns {object} cost breakdown in dollars and tokens
+ */
+export function calculateCostBreakdownFromTokens(tokens, pricing) {
+  if (!tokens || !pricing) {
+    return {
+      promptTokens: 0,
+      completionTokens: 0,
+      uncachedPromptTokens: 0,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      reasoningTokens: 0,
+      inputCost: 0,
+      uncachedInputCost: 0,
+      cachedInputCost: 0,
+      cacheCreationCost: 0,
+      outputCost: 0,
+      visibleOutputCost: 0,
+      reasoningCost: 0,
+      totalCost: 0,
+      cacheSavings: 0,
+    };
+  }
+
+  const readNumber = (...values) => {
+    for (const value of values) {
+      const n = Number(value);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+    return 0;
+  };
+
+  const reportedPromptTokens = readNumber(tokens.prompt_tokens, tokens.input_tokens);
+  const cacheReadTokens = readNumber(
+    tokens.cache_read_input_tokens,
+    tokens.cached_tokens,
+    tokens.input_tokens_details?.cached_tokens,
+    tokens.prompt_tokens_details?.cached_tokens,
+  );
+  const cacheCreationTokens = readNumber(
+    tokens.cache_creation_input_tokens,
+    tokens.input_tokens_details?.cache_creation_tokens,
+    tokens.prompt_tokens_details?.cache_creation_tokens,
+  );
+  const cacheSideTokens = cacheReadTokens + cacheCreationTokens;
+
+  const promptTokensIncludesCache = tokens.prompt_tokens !== undefined || tokens.input_tokens_include_cache === true;
+  const promptTokens = promptTokensIncludesCache
+    ? reportedPromptTokens
+    : reportedPromptTokens + cacheSideTokens;
+
+  const uncachedPromptTokens = promptTokensIncludesCache
+    ? Math.max(0, reportedPromptTokens - cacheSideTokens)
+    : reportedPromptTokens;
+
+  const completionTokens = readNumber(tokens.completion_tokens, tokens.output_tokens);
+  const reasoningTokens = readNumber(
+    tokens.reasoning_tokens,
+    tokens.output_tokens_details?.reasoning_tokens,
+    tokens.completion_tokens_details?.reasoning_tokens,
+  );
+
+  const inputRate = pricing.input || 0;
+  const cachedRate = pricing.cached ?? inputRate;
+  const cacheCreationRate = pricing.cache_creation ?? inputRate;
+  const outputRate = pricing.output || 0;
+  const reasoningRate = pricing.reasoning ?? outputRate;
+
+  const uncachedInputCost = uncachedPromptTokens * (inputRate / 1000000);
+  const cachedInputCost = cacheReadTokens * (cachedRate / 1000000);
+  const cacheCreationCost = cacheCreationTokens * (cacheCreationRate / 1000000);
+  const inputCost = uncachedInputCost + cachedInputCost + cacheCreationCost;
+
+  const outputCost = completionTokens * (outputRate / 1000000);
+  const reasoningBilledSeparately = pricing.reasoning_billed_separately === true;
+  const reasoningCost = reasoningTokens * ((reasoningBilledSeparately ? reasoningRate : outputRate) / 1000000);
+  const visibleOutputTokens = Math.max(0, completionTokens - reasoningTokens);
+  const visibleOutputCost = visibleOutputTokens * (outputRate / 1000000);
+  const separateReasoningCost = reasoningBilledSeparately ? reasoningTokens * (reasoningRate / 1000000) : 0;
+  const totalCost = inputCost + outputCost + separateReasoningCost;
+  const cacheSavings = cacheReadTokens * (Math.max(0, inputRate - cachedRate) / 1000000);
+
+  return {
+    promptTokens,
+    completionTokens,
+    uncachedPromptTokens,
+    cacheReadTokens,
+    cacheCreationTokens,
+    reasoningTokens,
+    inputCost,
+    uncachedInputCost,
+    cachedInputCost,
+    cacheCreationCost,
+    outputCost,
+    visibleOutputCost,
+    reasoningCost,
+    totalCost,
+    cacheSavings,
+  };
 }
 
 /**
@@ -273,32 +425,5 @@ export function formatCost(cost) {
  * @returns {number} cost in dollars
  */
 export function calculateCostFromTokens(tokens, pricing) {
-  if (!tokens || !pricing) return 0;
-
-  let cost = 0;
-
-  const inputTokens = tokens.prompt_tokens || tokens.input_tokens || 0;
-  const cachedTokens = tokens.cached_tokens || tokens.cache_read_input_tokens || 0;
-  const nonCachedInput = Math.max(0, inputTokens - cachedTokens);
-
-  cost += nonCachedInput * (pricing.input / 1000000);
-
-  if (cachedTokens > 0) {
-    cost += cachedTokens * ((pricing.cached || pricing.input) / 1000000);
-  }
-
-  const outputTokens = tokens.completion_tokens || tokens.output_tokens || 0;
-  cost += outputTokens * (pricing.output / 1000000);
-
-  const reasoningTokens = tokens.reasoning_tokens || 0;
-  if (reasoningTokens > 0) {
-    cost += reasoningTokens * ((pricing.reasoning || pricing.output) / 1000000);
-  }
-
-  const cacheCreationTokens = tokens.cache_creation_input_tokens || 0;
-  if (cacheCreationTokens > 0) {
-    cost += cacheCreationTokens * ((pricing.cache_creation || pricing.input) / 1000000);
-  }
-
-  return cost;
+  return calculateCostBreakdownFromTokens(tokens, pricing).totalCost;
 }

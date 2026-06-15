@@ -61,6 +61,10 @@ function RecentRequests({ requests = [] }) {
             <tbody className="divide-y divide-border/50">
               {requests.map((r, i) => {
                 const ok = !r.status || r.status === "ok" || r.status === "success";
+                const cacheInfo = [
+                  r.cacheReadTokens ? `${fmt(r.cacheReadTokens)} cached` : null,
+                  r.reasoningTokens ? `${fmt(r.reasoningTokens)} reasoning` : null,
+                ].filter(Boolean).join(" | ");
                 return (
                   <tr key={i} className="hover:bg-bg-subtle transition-colors">
                     <td className="py-1.5">
@@ -71,6 +75,7 @@ function RecentRequests({ requests = [] }) {
                       <span className="text-primary">{fmt(r.promptTokens)}↑</span>
                       {" "}
                       <span className="text-success">{fmt(r.completionTokens)}↓</span>
+                      {cacheInfo && <div className="text-[10px] text-text-muted">{cacheInfo}</div>}
                     </td>
                     <td className="py-1.5 text-right text-text-muted whitespace-nowrap"><TimeAgo timestamp={r.timestamp} /></td>
                   </tr>
@@ -89,9 +94,35 @@ function sortData(dataMap, pendingMap = {}, sortBy, sortOrder) {
     .map(([key, data]) => {
       const totalTokens = (data.promptTokens || 0) + (data.completionTokens || 0);
       const totalCost = data.cost || 0;
-      const inputCost = totalTokens > 0 ? (data.promptTokens || 0) * (totalCost / totalTokens) : 0;
-      const outputCost = totalTokens > 0 ? (data.completionTokens || 0) * (totalCost / totalTokens) : 0;
-      return { ...data, key, totalTokens, totalCost, inputCost, outputCost, pending: pendingMap[key] || 0 };
+      const fallbackInputCost = totalTokens > 0 ? (data.promptTokens || 0) * (totalCost / totalTokens) : 0;
+      const fallbackOutputCost = totalTokens > 0 ? (data.completionTokens || 0) * (totalCost / totalTokens) : 0;
+      const hasItemizedCost = [
+        data.inputCost,
+        data.outputCost,
+        data.uncachedInputCost,
+        data.cachedInputCost,
+        data.cacheCreationCost,
+      ].some((value) => Number(value || 0) > 0);
+      const inputCost = hasItemizedCost ? (data.inputCost || 0) : fallbackInputCost;
+      const outputCost = hasItemizedCost ? (data.outputCost || 0) : fallbackOutputCost;
+      const cacheReadTokens = data.cacheReadTokens || 0;
+      const cacheCreationTokens = data.cacheCreationTokens || 0;
+      const hasTokenBreakdown = (data.uncachedPromptTokens || cacheReadTokens || cacheCreationTokens) > 0;
+      const uncachedPromptTokens = hasTokenBreakdown
+        ? (data.uncachedPromptTokens || 0)
+        : Math.max(0, (data.promptTokens || 0) - cacheReadTokens - cacheCreationTokens);
+      return {
+        ...data,
+        key,
+        totalTokens,
+        totalCost,
+        inputCost,
+        outputCost,
+        uncachedPromptTokens,
+        cacheReadTokens,
+        cacheCreationTokens,
+        pending: pendingMap[key] || 0,
+      };
     })
     .sort((a, b) => {
       let valA = a[sortBy];
@@ -114,6 +145,19 @@ function getGroupKey(item, keyField) {
   }
 }
 
+const USAGE_SUMMARY_FIELDS = [
+  "uncachedPromptTokens",
+  "cacheReadTokens",
+  "cacheCreationTokens",
+  "reasoningTokens",
+  "uncachedInputCost",
+  "cachedInputCost",
+  "cacheCreationCost",
+  "visibleOutputCost",
+  "reasoningCost",
+  "cacheSavings",
+];
+
 function groupDataByKey(data, keyField) {
   if (!Array.isArray(data)) return [];
   const groups = {};
@@ -135,6 +179,9 @@ function groupDataByKey(data, keyField) {
     s.inputCost += item.inputCost || 0;
     s.outputCost += item.outputCost || 0;
     s.pending += item.pending || 0;
+    for (const field of USAGE_SUMMARY_FIELDS) {
+      s[field] = (s[field] || 0) + (item[field] || 0);
+    }
     if (item.lastUsed && (!s.lastUsed || new Date(item.lastUsed) > new Date(s.lastUsed))) {
       s.lastUsed = item.lastUsed;
     }

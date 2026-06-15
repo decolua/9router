@@ -6,7 +6,14 @@ import Card from "@/shared/components/Card";
 import Badge from "@/shared/components/Badge";
 
 const fmt = (n) => new Intl.NumberFormat().format(n || 0);
-const fmtCost = (n) => `$${(n || 0).toFixed(2)}`;
+const fmtCost = (n) => {
+  const value = Number(n || 0);
+  if (!Number.isFinite(value) || value === 0) return "$0.00";
+  const abs = Math.abs(value);
+  if (abs < 0.0001) return `$${value.toFixed(6)}`;
+  if (abs < 0.01) return `$${value.toFixed(4)}`;
+  return `$${value.toFixed(2)}`;
+};
 
 function fmtTime(iso) {
   if (!iso) return "Never";
@@ -32,14 +39,33 @@ SortIcon.propTypes = {
  * Render 3 token or cost cells based on viewMode
  */
 function ValueCells({ item, viewMode, isSummary = false }) {
+  const hasInputBreakdown = (item.cacheReadTokens || item.cacheCreationTokens || item.uncachedPromptTokens) > 0;
+  const hasInputCostBreakdown = (item.cachedInputCost || item.cacheCreationCost || item.uncachedInputCost) > 0;
+  const inputTokenParts = [
+    item.uncachedPromptTokens ? `${fmt(item.uncachedPromptTokens)} uncached` : null,
+    item.cacheReadTokens ? `${fmt(item.cacheReadTokens)} cached` : null,
+    item.cacheCreationTokens ? `${fmt(item.cacheCreationTokens)} write` : null,
+  ].filter(Boolean);
+  const inputCostParts = [
+    item.uncachedInputCost ? `${fmtCost(item.uncachedInputCost)} uncached` : null,
+    item.cachedInputCost ? `${fmtCost(item.cachedInputCost)} cached` : null,
+    item.cacheCreationCost ? `${fmtCost(item.cacheCreationCost)} write` : null,
+  ].filter(Boolean);
+
   if (viewMode === "tokens") {
     return (
       <>
         <td className="px-6 py-3 text-right text-text-muted">
-          {isSummary && item.promptTokens === undefined ? "—" : fmt(item.promptTokens)}
+          <div>{isSummary && item.promptTokens === undefined ? "—" : fmt(item.promptTokens)}</div>
+          {hasInputBreakdown && inputTokenParts.length > 0 && (
+            <div className="text-[10px] leading-4 text-text-muted/80">{inputTokenParts.join(" | ")}</div>
+          )}
         </td>
         <td className="px-6 py-3 text-right text-text-muted">
-          {isSummary && item.completionTokens === undefined ? "—" : fmt(item.completionTokens)}
+          <div>{isSummary && item.completionTokens === undefined ? "—" : fmt(item.completionTokens)}</div>
+          {item.reasoningTokens > 0 && (
+            <div className="text-[10px] leading-4 text-text-muted/80">{fmt(item.reasoningTokens)} reasoning</div>
+          )}
         </td>
         <td className="px-6 py-3 text-right font-medium">
           {fmt(item.totalTokens)}
@@ -50,13 +76,22 @@ function ValueCells({ item, viewMode, isSummary = false }) {
   return (
     <>
       <td className="px-6 py-3 text-right text-text-muted">
-        {isSummary && item.inputCost === undefined ? "—" : fmtCost(item.inputCost)}
+        <div>{isSummary && item.inputCost === undefined ? "—" : fmtCost(item.inputCost)}</div>
+        {hasInputCostBreakdown && inputCostParts.length > 0 && (
+          <div className="text-[10px] leading-4 text-text-muted/80">{inputCostParts.join(" | ")}</div>
+        )}
       </td>
       <td className="px-6 py-3 text-right text-text-muted">
-        {isSummary && item.outputCost === undefined ? "—" : fmtCost(item.outputCost)}
+        <div>{isSummary && item.outputCost === undefined ? "—" : fmtCost(item.outputCost)}</div>
+        {item.reasoningCost > 0 && (
+          <div className="text-[10px] leading-4 text-text-muted/80">{fmtCost(item.reasoningCost)} reasoning incl.</div>
+        )}
       </td>
       <td className="px-6 py-3 text-right font-medium text-warning">
-        {fmtCost(item.totalCost || item.cost)}
+        <div>{fmtCost(item.totalCost || item.cost)}</div>
+        {item.cacheSavings > 0 && (
+          <div className="text-[10px] leading-4 text-text-muted/80">{fmtCost(item.cacheSavings)} cache saved</div>
+        )}
       </td>
     </>
   );

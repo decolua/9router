@@ -174,11 +174,14 @@ export function extractUsage(chunk) {
 
   // Claude format (message_delta event)
   if (chunk.type === "message_delta" && chunk.usage && typeof chunk.usage === "object") {
+    const inputTokens = chunk.usage.input_tokens || 0;
+    const cacheReadTokens = chunk.usage.cache_read_input_tokens || 0;
+    const cacheCreationTokens = chunk.usage.cache_creation_input_tokens || 0;
     return normalizeUsage({
-      prompt_tokens: chunk.usage.input_tokens || 0,
+      prompt_tokens: inputTokens + cacheReadTokens + cacheCreationTokens,
       completion_tokens: chunk.usage.output_tokens || 0,
-      cache_read_input_tokens: chunk.usage.cache_read_input_tokens,
-      cache_creation_input_tokens: chunk.usage.cache_creation_input_tokens
+      cache_read_input_tokens: cacheReadTokens,
+      cache_creation_input_tokens: cacheCreationTokens
     });
   }
 
@@ -186,12 +189,17 @@ export function extractUsage(chunk) {
   if ((chunk.type === "response.completed" || chunk.type === "response.done") && chunk.response?.usage && typeof chunk.response.usage === "object") {
     const usage = chunk.response.usage;
     const cachedTokens = usage.input_tokens_details?.cached_tokens;
+    const cacheCreationTokens = usage.input_tokens_details?.cache_creation_tokens;
     return normalizeUsage({
       prompt_tokens: usage.input_tokens || usage.prompt_tokens || 0,
       completion_tokens: usage.output_tokens || usage.completion_tokens || 0,
       cached_tokens: cachedTokens,
+      cache_creation_input_tokens: cacheCreationTokens,
       reasoning_tokens: usage.output_tokens_details?.reasoning_tokens,
-      prompt_tokens_details: cachedTokens ? { cached_tokens: cachedTokens } : undefined
+      prompt_tokens_details: (cachedTokens || cacheCreationTokens) ? {
+        ...(cachedTokens ? { cached_tokens: cachedTokens } : {}),
+        ...(cacheCreationTokens ? { cache_creation_tokens: cacheCreationTokens } : {}),
+      } : undefined
     });
   }
 
@@ -308,10 +316,15 @@ export function logUsage(provider, usage, model = null, connectionId = null, api
 
   const p = provider?.toUpperCase() || "UNKNOWN";
 
+  // Add cache info if present (unified from different formats)
+  const cacheRead = usage.cache_read_input_tokens || usage.cached_tokens || usage.prompt_tokens_details?.cached_tokens || usage.input_tokens_details?.cached_tokens;
+  const cacheCreation = usage.cache_creation_input_tokens || usage.prompt_tokens_details?.cache_creation_tokens || usage.input_tokens_details?.cache_creation_tokens;
+  const reasoning = usage.reasoning_tokens || usage.completion_tokens_details?.reasoning_tokens || usage.output_tokens_details?.reasoning_tokens;
+
   // Support both formats:
   // - OpenAI: prompt_tokens, completion_tokens
   // - Claude: input_tokens, output_tokens
-  const inTokens = usage?.prompt_tokens || usage?.input_tokens || 0;
+  const inTokens = usage?.prompt_tokens || ((usage?.input_tokens || 0) + (cacheRead || 0) + (cacheCreation || 0));
   const outTokens = usage?.completion_tokens || usage?.output_tokens || 0;
   const accountPrefix = connectionId ? connectionId.slice(0, 8) + "..." : "unknown";
 
@@ -322,14 +335,10 @@ export function logUsage(provider, usage, model = null, connectionId = null, api
     msg += ` ${COLORS.yellow}(estimated)${COLORS.reset}`;
   }
 
-  // Add cache info if present (unified from different formats)
-  const cacheRead = usage.cache_read_input_tokens || usage.cached_tokens || usage.prompt_tokens_details?.cached_tokens;
   if (cacheRead) msg += ` | cache_read=${cacheRead}`;
 
-  const cacheCreation = usage.cache_creation_input_tokens;
   if (cacheCreation) msg += ` | cache_create=${cacheCreation}`;
 
-  const reasoning = usage.reasoning_tokens;
   if (reasoning) msg += ` | reasoning=${reasoning}`;
 
   console.log(msg);
