@@ -45,7 +45,7 @@
 │  Your CLI   │  (Claude Code, Codex, Gemini CLI, OpenClaw, Cursor, Cline...)
 │   Tool      │
 └──────┬──────┘
-       │ http://localhost:201281
+       │ http://localhost:20128
        ↓
 ┌─────────────────────────────────────────┐
 │           9Router (Smart Router)        │
