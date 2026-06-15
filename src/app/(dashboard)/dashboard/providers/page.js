@@ -26,6 +26,7 @@ import { getErrorCode, getRelativeTime } from "@/shared/utils";
 import { useNotificationStore } from "@/store/notificationStore";
 import { useHeaderSearchStore } from "@/store/headerSearchStore";
 import ModelAvailabilityBadge from "./components/ModelAvailabilityBadge";
+import { resolveProviderIconInfo } from "@/shared/helpers/providerIconInfo";
 
 function getStatusDisplay(connected, error, errorCode) {
   const parts = [];
@@ -254,23 +255,29 @@ export default function ProvidersPage() {
 
   const compatibleProviders = providerNodes
     .filter((node) => node.type === "openai-compatible")
-    .map((node) => ({
-      id: node.id,
-      name: node.name || "OpenAI Compatible",
-      color: "#10A37F",
-      textIcon: "OC",
-      apiType: node.apiType,
-    }))
+    .map((node) => {
+      const info = resolveProviderIconInfo(node.id, node.name);
+      return {
+        id: node.id,
+        name: node.name || "OpenAI Compatible",
+        color: info.fallbackColor,
+        textIcon: info.fallbackText,
+        apiType: node.apiType,
+      };
+    })
     .filter((p) => matchSearch(p.name));
 
   const anthropicCompatibleProviders = providerNodes
     .filter((node) => node.type === "anthropic-compatible")
-    .map((node) => ({
-      id: node.id,
-      name: node.name || "Anthropic Compatible",
-      color: "#D97757",
-      textIcon: "AC",
-    }))
+    .map((node) => {
+      const info = resolveProviderIconInfo(node.id, node.name);
+      return {
+        id: node.id,
+        name: node.name || "Anthropic Compatible",
+        color: info.fallbackColor,
+        textIcon: info.fallbackText,
+      };
+    })
     .filter((p) => matchSearch(p.name));
 
   const oauthEntries = Object.entries(OAUTH_PROVIDERS).filter(
@@ -628,9 +635,7 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
                 alt={provider.name}
                 size={30}
                 className="object-contain rounded-lg max-w-[32px] max-h-[32px]"
-                fallbackText={
-                  provider.textIcon || provider.id.slice(0, 2).toUpperCase()
-                }
+                fallbackText={provider.textIcon}
                 fallbackColor={provider.color}
               />
             </div>
@@ -756,9 +761,7 @@ function ApiKeyProviderCard({
                 alt={provider.name}
                 size={30}
                 className="object-contain rounded-lg max-w-[30px] max-h-[30px]"
-                fallbackText={
-                  provider.textIcon || provider.id.slice(0, 2).toUpperCase()
-                }
+                fallbackText={provider.textIcon}
                 fallbackColor={provider.color}
               />
             </div>

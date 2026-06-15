@@ -6,6 +6,7 @@ import Modal from "./Modal";
 import ProviderIcon from "./ProviderIcon";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, AI_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, getProviderAlias } from "@/shared/constants/providers";
+import { resolveProviderIconInfo } from "@/shared/helpers/providerIconInfo";
 
 // Provider order: OAuth first, then Free Tier, then API Key (matches dashboard/providers)
 const PROVIDER_ORDER = [
@@ -447,8 +448,8 @@ export default function ModelSelectModal({
                 src={`/providers/${providerId}.png`}
                 alt={group.name}
                 size={14}
-                fallbackText={(group.name || providerId).slice(0, 2).toUpperCase()}
-                fallbackColor={group.color}
+                fallbackText={resolveProviderIconInfo(providerId, group.name).fallbackText}
+                fallbackColor={resolveProviderIconInfo(providerId, group.name).fallbackColor}
               />
               <span className="text-xs font-medium text-primary">
                 {group.name}

@@ -10,6 +10,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
+import { resolveProviderIconInfo } from "@/shared/helpers/providerIconInfo";
 
 // Force-stop FE animation if a provider stays active longer than this
 const FE_ACTIVE_TIMEOUT_MS = 60000;
@@ -144,15 +145,16 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
 
   providers.forEach((p, i) => {
     const config = getProviderConfig(p.provider);
+    const iconInfo = resolveProviderIconInfo(p.provider, p.nodeName || p.name);
     const active = activeSet.has(p.provider?.toLowerCase());
     const last = !active && lastSet.has(p.provider?.toLowerCase());
     const error = !active && errorSet.has(p.provider?.toLowerCase());
     const nodeId = `provider-${p.provider}`;
     const data = {
       label: (config.name !== p.provider ? config.name : null) || p.nodeName || p.name || p.provider,
-      color: config.color || "#6b7280",
+      color: iconInfo.fallbackColor,
       imageUrl: getProviderImageUrl(p.provider),
-      textIcon: config.textIcon || (p.provider || "?").slice(0, 2).toUpperCase(),
+      textIcon: iconInfo.fallbackText,
       active,
     };
 

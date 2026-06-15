@@ -10,6 +10,7 @@ import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { translate } from "@/i18n/runtime";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
+import { resolveProviderIconInfo } from "@/shared/helpers/providerIconInfo";
 import ModelRow from "./ModelRow";
 import PassthroughModelsSection from "./PassthroughModelsSection";
 import CompatibleModelsSection from "./CompatibleModelsSection";
@@ -116,15 +117,18 @@ export default function ProviderDetailPage() {
   };
 
   const providerInfo = providerNode
-    ? {
-        id: providerNode.id,
-        name: providerNode.name || (providerNode.type === "anthropic-compatible" ? "Anthropic Compatible" : "OpenAI Compatible"),
-        color: providerNode.type === "anthropic-compatible" ? "#D97757" : "#10A37F",
-        textIcon: providerNode.type === "anthropic-compatible" ? "AC" : "OC",
-        apiType: providerNode.apiType,
-        baseUrl: providerNode.baseUrl,
-        type: providerNode.type,
-      }
+    ? (() => {
+        const iconInfo = resolveProviderIconInfo(providerNode.id, providerNode.name)
+        return {
+          id: providerNode.id,
+          name: providerNode.name || (providerNode.type === "anthropic-compatible" ? "Anthropic Compatible" : "OpenAI Compatible"),
+          textIcon: iconInfo.fallbackText,
+          color: iconInfo.fallbackColor,
+          apiType: providerNode.apiType,
+          baseUrl: providerNode.baseUrl,
+          type: providerNode.type,
+        }
+      })()
     : (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId] || FREE_TIER_PROVIDERS[providerId] || WEB_COOKIE_PROVIDERS[providerId]);
   const authModes = providerInfo?.authModes || [];
   const isOAuth = !!OAUTH_PROVIDERS[providerId] || !!FREE_PROVIDERS[providerId] || authModes.includes("oauth");
@@ -1107,7 +1111,7 @@ export default function ProviderDetailPage() {
           >
             {headerImgError ? (
               <span className="text-sm font-bold" style={{ color: providerInfo.color }}>
-                {providerInfo.textIcon || providerInfo.id.slice(0, 2).toUpperCase()}
+                {providerInfo.textIcon}
               </span>
             ) : (
               <Image
