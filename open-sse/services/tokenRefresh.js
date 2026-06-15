@@ -288,12 +288,22 @@ export function classifyOAuthRefreshError(errorText = "", status = 0) {
   const code = parsed?.error?.code || parsed?.error || parsed?.error_code || "";
   const description = parsed?.error_description || parsed?.message || errorText || "";
   const combined = `${code} ${description}`.toLowerCase();
-  const permanent = [
+  const markerPermanent = [
     "refresh_token_expired",
     "refresh_token_reused",
     "refresh_token_invalidated",
     "invalid_grant",
+    // OpenAI's token endpoint returns HTTP 401
+    // {error:{code:"token_expired", type:"invalid_request_error"}} for a dead/invalid
+    // (rotated-away or expired) refresh token. None of the markers above match
+    // "token_expired", so it was classified as transient and retried instead of
+    // surfacing re-authentication.
+    "token_expired",
+    "could not validate your token",
   ].some((marker) => combined.includes(marker));
+  // A 401 from the OAuth token endpoint means the refresh credential itself was
+  // rejected -> re-authenticate, never retry. (429 / 5xx remain transient.)
+  const permanent = status === 401 || markerPermanent;
 
   return { status, code, description, permanent };
 }
