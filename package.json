@@ -9,7 +9,9 @@
     "start": "next start",
     "dev:bun": "bun --bun next dev --webpack --port 20128",
     "build:bun": "bun --bun next build --webpack",
-    "start:bun": "bun ./.next/standalone/server.js"
+    "start:bun": "bun ./.next/standalone/server.js",
+    "security:sbom": "node scripts/generate-sbom.mjs",
+    "security:licenses": "node scripts/generate-license-register.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

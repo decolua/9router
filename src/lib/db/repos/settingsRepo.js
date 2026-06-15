@@ -48,6 +48,8 @@ const DEFAULT_SETTINGS = {
   cavemanEnabled: false,
   cavemanLevel: "full",
   compactPoliciesEnabled: false,
+  multiUserEnabled: true,
+  signupMode: "invite",
 };
 
 async function readRaw() {

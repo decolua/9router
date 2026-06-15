@@ -138,6 +138,13 @@ const getPageInfo = (pathname) => {
       icon: "api",
       breadcrumbs: [],
     };
+  if (pathname.includes("/users"))
+    return {
+      title: "Team",
+      description: "Invite members and manage user access",
+      icon: "group",
+      breadcrumbs: [],
+    };
   if (pathname.includes("/profile"))
     return {
       title: "Settings",

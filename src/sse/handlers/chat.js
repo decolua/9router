@@ -6,9 +6,11 @@ import {
   clearAccountError,
   extractApiKey,
   isValidApiKey,
+  resolveRequestUserId,
 } from "../services/auth.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
-import { getSettings } from "@/lib/localDb";
+import { getSettings, getEffectiveSettings } from "@/lib/localDb";
+import { runWithUserId } from "@/lib/auth/runtimeUserContext.js";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -67,8 +69,8 @@ export async function handleChat(request, clientRawRequest = null) {
   }
 
   // Enforce API key if enabled in settings
-  const settings = await getSettings();
-  if (settings.requireApiKey) {
+  const orgSettings = await getSettings();
+  if (orgSettings.requireApiKey) {
     if (!apiKey) {
       log.warn("AUTH", "Missing API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
@@ -80,8 +82,14 @@ export async function handleChat(request, clientRawRequest = null) {
     }
   }
 
+  const userId = await resolveRequestUserId(apiKey);
+  return runWithUserId(userId, () => handleChatForUser(request, body, clientRawRequest, apiKey, userId, modelStr));
+}
+
+async function handleChatForUser(request, body, clientRawRequest, apiKey, userId, modelStr) {
+  const settings = userId ? await getEffectiveSettings(userId) : await getSettings();
+
   if (!modelStr) {
-    log.warn("CHAT", "Missing model");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   }
 
@@ -93,36 +101,31 @@ export async function handleChat(request, clientRawRequest = null) {
   // Check if model is a combo (has multiple models with fallback)
   const comboModels = await getComboModels(modelStr);
   if (comboModels) {
-    // Check for combo-specific strategy first, fallback to global
     const comboStrategies = settings.comboStrategies || {};
     const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
     const comboStrategy = comboSpecificStrategy || settings.comboStrategy || "fallback";
-    
+
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
     log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, userId),
       log,
       comboName: modelStr,
       comboStrategy,
-      comboStickyLimit
+      comboStickyLimit,
     });
   }
 
-  // Single model request
-  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey);
+  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey, userId);
 }
 
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
-  // Model Routing (Phase 6): swap the model BEFORE provider resolution so the routed
-  // model may belong to a different provider. Combo names are excluded — they're handled
-  // upstream and have their own fallback logic.
-  const routingSettings = await getSettings();
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, userId = null) {
+  const routingSettings = userId ? await getEffectiveSettings(userId) : await getSettings();
   let routingDecision = null;
   if (routingSettings.modelRoutingEnabled) {
     routingDecision = routeModel(body, modelStr, true, routingSettings.modelRoutingRules || {});
@@ -140,7 +143,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   if (!modelInfo.provider) {
     const comboModels = await getComboModels(modelStr);
     if (comboModels) {
-      const chatSettings = await getSettings();
+      const chatSettings = userId ? await getEffectiveSettings(userId) : await getSettings();
       // Check for combo-specific strategy first, fallback to global
       const comboStrategies = chatSettings.comboStrategies || {};
       const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;

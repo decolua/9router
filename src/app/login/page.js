@@ -3,20 +3,22 @@
 import { useState, useEffect } from "react";
 import { Card, Button, Input } from "@/shared/components";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 export default function LoginPage() {
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [resetHint, setResetHint] = useState("");
   const [retryAfter, setRetryAfter] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [hasPassword, setHasPassword] = useState(null);
   const [authMode, setAuthMode] = useState("password");
   const [oidcConfigured, setOidcConfigured] = useState(false);
   const [oidcLoginLabel, setOidcLoginLabel] = useState("Sign in with OIDC");
+  const [signupMode, setSignupMode] = useState("invite");
+  const [ready, setReady] = useState(false);
   const router = useRouter();
 
-  // Countdown for rate-limit
   useEffect(() => {
     if (retryAfter <= 0) return;
     const id = setInterval(() => setRetryAfter((s) => (s > 0 ? s - 1 : 0)), 1000);
@@ -25,34 +27,24 @@ export default function LoginPage() {
 
   useEffect(() => {
     async function checkAuth() {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
-      const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
-
       try {
-        const res = await fetch(`${baseUrl}/api/auth/status`, {
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-
+        const res = await fetch("/api/auth/status", { cache: "no-store" });
         if (res.ok) {
           const data = await res.json();
-          if (data.requireLogin === false) {
+          if (data.requireLogin === false || data.currentUser) {
             router.push("/dashboard");
             router.refresh();
             return;
           }
-          setHasPassword(!!data.hasPassword);
           setAuthMode(data.authMode || "password");
           setOidcConfigured(data.oidcConfigured === true);
           setOidcLoginLabel(data.oidcLoginLabel || "Sign in with OIDC");
-        } else {
-          // Safe fallback on non-OK response to avoid infinite loading state.
-          setHasPassword(true);
+          setSignupMode(data.signupMode || "invite");
         }
-      } catch (err) {
-        clearTimeout(timeoutId);
-        setHasPassword(true);
+      } catch {
+        // allow login attempt
+      } finally {
+        setReady(true);
       }
     }
     checkAuth();
@@ -68,7 +60,7 @@ export default function LoginPage() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ email, password }),
       });
 
       if (res.ok) {
@@ -76,11 +68,11 @@ export default function LoginPage() {
         router.refresh();
       } else {
         const data = await res.json();
-        setError(data.error || "Invalid password");
+        setError(data.error || "Invalid email or password");
         if (data.resetHint) setResetHint(data.resetHint);
         if (data.retryAfter) setRetryAfter(Number(data.retryAfter));
       }
-    } catch (err) {
+    } catch {
       setError("An error occurred. Please try again.");
     } finally {
       setLoading(false);
@@ -93,13 +85,13 @@ export default function LoginPage() {
 
   const oidcAvailable = oidcConfigured && ["oidc", "both"].includes(authMode);
   const passwordAvailable = authMode !== "oidc" || !oidcConfigured;
+  const showSignupLink = signupMode !== "closed";
 
-  // Show loading state while checking password
-  if (hasPassword === null) {
+  if (!ready) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-bg p-4">
         <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
           <p className="text-text-muted mt-4">Loading...</p>
         </div>
       </div>
@@ -108,15 +100,14 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-bg p-4 relative overflow-hidden">
-      {/* Faint grid background */}
       <div className="landing-grid absolute inset-0 pointer-events-none" aria-hidden="true" />
       <div className="relative z-10 w-full max-w-md">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-primary mb-2">ebRouter</h1>
           <p className="text-text-muted">
             {authMode === "oidc" && oidcConfigured
-              ? "Sign in with your OIDC provider to access the dashboard"
-              : "Enter your password to access the dashboard"}
+              ? "Sign in with your OIDC provider"
+              : "Sign in to your workspace"}
           </p>
         </div>
 
@@ -130,19 +121,19 @@ export default function LoginPage() {
 
             {oidcAvailable && passwordAvailable && <div className="h-px bg-border/60" />}
 
-            {passwordAvailable ? (
+            {passwordAvailable && (
               <form onSubmit={handleLogin} className="flex flex-col gap-4">
-                {((authMode === "oidc" && !oidcConfigured) || (authMode === "both" && !oidcConfigured)) && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400 text-center">
-                    OIDC login is enabled, but the issuer/client fields are not configured yet. Password login is still available for recovery.
-                  </p>
-                )}
-
-                {authMode === "both" && oidcConfigured && (
-                  <p className="text-xs text-text-muted text-center">
-                    Password and OIDC login are both enabled.
-                  </p>
-                )}
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-medium">Email</label>
+                  <Input
+                    type="email"
+                    placeholder="you@company.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    autoFocus={!oidcAvailable}
+                  />
+                </div>
 
                 <div className="flex flex-col gap-2">
                   <label className="text-sm font-medium">Password</label>
@@ -152,7 +143,6 @@ export default function LoginPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
-                    autoFocus={!oidcAvailable}
                   />
                   {error && <p className="text-xs text-red-500">{error}</p>}
                   {retryAfter > 0 && (
@@ -160,34 +150,20 @@ export default function LoginPage() {
                       Locked. Retry in <span className="font-mono">{retryAfter}s</span>.
                     </p>
                   )}
-                  {resetHint && (
-                    <p className="text-xs text-text-muted">
-                      Forgot password? Open <code className="bg-sidebar px-1 rounded">ebrouter</code> CLI on the host → <b>Settings</b> → <b>Reset Password to Default</b>.
-                    </p>
-                  )}
+                  {resetHint && <p className="text-xs text-text-muted">{resetHint}</p>}
                 </div>
 
-                <Button
-                  type="submit"
-                  variant="primary"
-                  className="w-full"
-                  loading={loading}
-                  disabled={retryAfter > 0}
-                >
-                  {retryAfter > 0 ? `Wait ${retryAfter}s` : "Login"}
+                <Button type="submit" variant="primary" className="w-full" loading={loading} disabled={retryAfter > 0}>
+                  {retryAfter > 0 ? `Wait ${retryAfter}s` : "Sign in"}
                 </Button>
 
-                <p className="text-xs text-center text-text-muted mt-2">
-                  Default password is <code className="bg-sidebar px-1 rounded">123456</code>
-                </p>
-                {hasPassword === false && (
+                {showSignupLink && (
                   <p className="text-xs text-center text-text-muted">
-                    No custom password is set yet. The default password above will work until you change it.
+                    Need an account? <Link href="/signup" className="text-primary hover:underline">Create one</Link>
                   </p>
                 )}
+
               </form>
-            ) : (
-              error && <p className="text-xs text-red-500">{error}</p>
             )}
           </div>
         </Card>

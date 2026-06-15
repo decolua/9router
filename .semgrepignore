@@ -1,0 +1,7 @@
+gitbook/
+cli/
+deploy/
+tests/
+.next/
+node_modules/
+*.min.js

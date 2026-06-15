@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { getSettings, validateApiKey } from "@/lib/localDb";
+import { getSettings, validateApiKey, isApiKeyValid } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
-import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
+import { verifyDashboardAuthToken, getDashboardAuthSession } from "@/lib/auth/dashboardSession";
+import { attachUserHeaders, getCliContextUser } from "@/lib/auth/requestContext";
 
 const CLI_TOKEN_HEADER = "x-9r-cli-token";
 const CLI_TOKEN_SALT = "9r-cli-auth";
@@ -25,6 +26,7 @@ const PUBLIC_API_PATHS = [
   "/api/locale",
   "/api/auth/login",
   "/api/auth/logout",
+  "/api/auth/signup",
   "/api/auth/status",
   "/api/auth/oidc",
   "/api/version",
@@ -63,6 +65,8 @@ const PROTECTED_API_PATHS = [
   "/api/mcp",
   "/api/translator",
   "/api/tunnel",
+  "/api/users",
+  "/api/audit",
 ];
 
 // Routes that spawn child processes or read host secrets — restrict to localhost.
@@ -114,7 +118,29 @@ function extractApiKey(request) {
 async function hasValidApiKey(request) {
   const apiKey = extractApiKey(request);
   if (!apiKey) return false;
-  return await validateApiKey(apiKey);
+  return await isApiKeyValid(apiKey);
+}
+
+async function forwardWithUser(request, user) {
+  const headers = attachUserHeaders(request, user);
+  return NextResponse.next({ request: { headers } });
+}
+
+async function forwardAuthenticated(request) {
+  const token = request.cookies.get("auth_token")?.value;
+  if (token) {
+    const session = await getDashboardAuthSession(token);
+    if (session?.userId) {
+      const { getUserById } = await import("@/lib/db/repos/usersRepo.js");
+      const user = await getUserById(session.userId);
+      if (user?.status === "active") return forwardWithUser(request, user);
+    }
+  }
+  if (await hasValidCliToken(request)) {
+    const admin = await getCliContextUser();
+    if (admin) return forwardWithUser(request, admin);
+  }
+  return NextResponse.next();
 }
 
 async function canAccessPublicLlmApi(request) {
@@ -189,10 +215,16 @@ export async function proxy(request) {
   // Deny-by-default for /api/* — public allow-list bypasses, everything else requires auth.
   if (pathname.startsWith("/api/")) {
     if (isPublicApi(pathname)) return NextResponse.next();
-    if (await hasValidCliToken(request) || await isAuthenticated(request))
+    if (await hasValidCliToken(request)) {
+      const admin = await getCliContextUser();
+      if (admin) return forwardWithUser(request, admin);
       return NextResponse.next();
+    }
+    if (await isAuthenticated(request)) return forwardAuthenticated(request);
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  if (pathname === "/signup") return NextResponse.next();
 
   // Protect all dashboard routes
   if (pathname.startsWith("/dashboard")) {
@@ -226,6 +258,12 @@ export async function proxy(request) {
     const token = request.cookies.get("auth_token")?.value;
     if (token) {
       if (await verifyDashboardAuthToken(token)) {
+        const session = await getDashboardAuthSession(token);
+        if (session?.userId) {
+          const { getUserById } = await import("@/lib/db/repos/usersRepo.js");
+          const user = await getUserById(session.userId);
+          if (user?.status === "active") return forwardWithUser(request, user);
+        }
         return NextResponse.next();
       } else {
         return NextResponse.redirect(new URL("/login", request.url));

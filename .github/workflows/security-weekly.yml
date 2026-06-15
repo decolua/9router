@@ -1,0 +1,73 @@
+name: Security Weekly Scan
+
+on:
+  schedule:
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  semgrep:
+    name: Weekly SAST (Semgrep)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: semgrep/semgrep-action@v1
+        with:
+          config: >-
+            p/default
+            p/javascript
+            p/typescript
+            p/nodejs
+            p/nextjs
+            p/owasp-top-ten
+            p/secrets
+      - name: Save Semgrep report
+        if: always()
+        run: |
+          mkdir -p reports
+          echo '{"scan":"semgrep","date":"'"$(date -u +%Y-%m-%d)"'","status":"completed"}' > reports/semgrep-weekly.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: semgrep-weekly-report
+          path: reports/
+          retention-days: 90
+
+  npm-audit:
+    name: Weekly SCA (npm audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install --ignore-scripts
+      - run: npm audit --json > npm-audit-weekly.json || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-weekly-report
+          path: npm-audit-weekly.json
+          retention-days: 90
+
+  trivy-fs:
+    name: Weekly SCA (Trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: table
+          severity: CRITICAL,HIGH,MEDIUM
+          output: trivy-weekly.txt
+          exit-code: "0"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trivy-weekly-report
+          path: trivy-weekly.txt
+          retention-days: 90

@@ -48,6 +48,7 @@ export default function Sidebar({ onClose }) {
   const [isUpdating, setIsUpdating] = useState(false);
   const [shutdownCountdown, setShutdownCountdown] = useState(0);
   const [enableTranslator, setEnableTranslator] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const { copied, copy } = useCopyToClipboard(2000);
 
   const INSTALL_CMD = UPDATER_CONFIG.installCmdLatest;
@@ -56,6 +57,11 @@ export default function Sidebar({ onClose }) {
     fetch("/api/settings")
       .then(res => res.json())
       .then(data => { if (data.enableTranslator) setEnableTranslator(true); })
+      .catch(() => {});
+
+    fetch("/api/auth/status")
+      .then(res => res.json())
+      .then(data => { setIsAdmin(data?.currentUser?.role === "admin"); })
       .catch(() => {});
   }, []);
 
@@ -301,6 +307,29 @@ export default function Sidebar({ onClose }) {
                 </Link>
               ) : null;
             })}
+
+            {isAdmin && (
+              <Link
+                href="/dashboard/users"
+                onClick={onClose}
+                className={cn(
+                  "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
+                  isActive("/dashboard/users")
+                    ? "bg-primary/10 text-primary"
+                    : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+                )}
+              >
+                <span
+                  className={cn(
+                    "material-symbols-outlined text-[18px]",
+                    isActive("/dashboard/users") ? "fill-1" : "group-hover:text-primary transition-colors"
+                  )}
+                >
+                  group
+                </span>
+                <span className="text-[13px] font-medium">Team</span>
+              </Link>
+            )}
 
             {/* Settings */}
             <Link

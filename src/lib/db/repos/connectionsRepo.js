@@ -20,10 +20,10 @@ const OPTIONAL_FIELDS = [
   "consecutiveUseCount",
 ];
 
-const UPSERT_SQL = `INSERT INTO providerConnections(id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt)
- VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+const UPSERT_SQL = `INSERT INTO providerConnections(id, userId, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt)
+ VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
  ON CONFLICT(id) DO UPDATE SET
-   provider=excluded.provider, authType=excluded.authType, name=excluded.name,
+   userId=excluded.userId, provider=excluded.provider, authType=excluded.authType, name=excluded.name,
    email=excluded.email, priority=excluded.priority, isActive=excluded.isActive,
    data=excluded.data, updatedAt=excluded.updatedAt`;
 
@@ -45,9 +45,10 @@ function rowToConn(row) {
 }
 
 function connToRow(c) {
-  const { id, provider, authType, name, email, priority, isActive, createdAt, updatedAt, ...rest } = c;
+  const { id, userId, provider, authType, name, email, priority, isActive, createdAt, updatedAt, ...rest } = c;
   return {
     id,
+    userId: userId ?? null,
     provider,
     authType,
     name: name ?? null,
@@ -62,7 +63,7 @@ function connToRow(c) {
 
 function upsertParams(c) {
   const r = connToRow(c);
-  return [r.id, r.provider, r.authType, r.name, r.email, r.priority, r.isActive, r.data, r.createdAt, r.updatedAt];
+  return [r.id, r.userId, r.provider, r.authType, r.name, r.email, r.priority, r.isActive, r.data, r.createdAt, r.updatedAt];
 }
 
 function upsertSync(db, c) {
@@ -73,8 +74,8 @@ async function upsertAsync(db, c) {
   await qRun(db, UPSERT_SQL, upsertParams(c));
 }
 
-function reorderInTxSync(db, providerId) {
-  const list = db.all(`SELECT * FROM providerConnections WHERE provider = ?`, [providerId]).map(rowToConn);
+function reorderInTxSync(db, providerId, userId) {
+  const list = db.all(`SELECT * FROM providerConnections WHERE provider = ? AND userId = ?`, [providerId, userId]).map(rowToConn);
   list.sort((a, b) => {
     const pDiff = (a.priority || 0) - (b.priority || 0);
     if (pDiff !== 0) return pDiff;
@@ -85,8 +86,8 @@ function reorderInTxSync(db, providerId) {
   });
 }
 
-async function reorderInTxAsync(db, providerId) {
-  const rows = await qAll(db, `SELECT * FROM providerConnections WHERE provider = ?`, [providerId]);
+async function reorderInTxAsync(db, providerId, userId) {
+  const rows = await qAll(db, `SELECT * FROM providerConnections WHERE provider = ? AND userId = ?`, [providerId, userId]);
   const list = rows.map(rowToConn);
   list.sort((a, b) => {
     const pDiff = (a.priority || 0) - (b.priority || 0);
@@ -125,6 +126,7 @@ function buildNewConnection(data, all, now) {
   }
   const conn = {
     id: uuidv4(),
+    userId: data.userId,
     provider: data.provider,
     authType: data.authType || "oauth",
     name: connectionName,
@@ -143,10 +145,18 @@ function buildNewConnection(data, all, now) {
   return conn;
 }
 
+import { getRuntimeUserId } from "../../auth/runtimeUserContext.js";
+
+async function scopedUserId(userId) {
+  return userId || getRuntimeUserId() || null;
+}
+
 export async function getProviderConnections(filter = {}) {
   const db = await getAdapter();
   const where = [];
   const params = [];
+  const userId = await scopedUserId(filter.userId);
+  if (userId) { where.push("userId = ?"); params.push(userId); }
   if (filter.provider) { where.push("provider = ?"); params.push(filter.provider); }
   if (filter.isActive !== undefined) { where.push("isActive = ?"); params.push(filter.isActive ? 1 : 0); }
   const sql = `SELECT * FROM providerConnections${where.length ? ` WHERE ${where.join(" AND ")}` : ""}`;
@@ -156,20 +166,25 @@ export async function getProviderConnections(filter = {}) {
   return list;
 }
 
-export async function getProviderConnectionById(id) {
+export async function getProviderConnectionById(id, userId = null) {
   const db = await getAdapter();
-  const row = await qGet(db, `SELECT * FROM providerConnections WHERE id = ?`, [id]);
+  const row = userId
+    ? await qGet(db, `SELECT * FROM providerConnections WHERE id = ? AND userId = ?`, [id, userId])
+    : await qGet(db, `SELECT * FROM providerConnections WHERE id = ?`, [id]);
   return rowToConn(row);
 }
 
 export async function createProviderConnection(data) {
+  const userId = data.userId || getRuntimeUserId();
+  if (!userId) throw new Error("userId is required");
+  data = { ...data, userId };
   const db = await getAdapter();
   const now = new Date().toISOString();
 
   if (db.dialect === "postgres") {
     let result;
     await db.transaction(async (tx) => {
-      const rows = await tx.all(`SELECT * FROM providerConnections WHERE provider = ?`, [data.provider]);
+      const rows = await tx.all(`SELECT * FROM providerConnections WHERE provider = ? AND userId = ?`, [data.provider, data.userId]);
       const all = rows.map(rowToConn);
       const existing = findExistingConnection(all, data);
       if (existing) {
@@ -180,7 +195,7 @@ export async function createProviderConnection(data) {
       }
       const conn = buildNewConnection(data, all, now);
       await upsertAsync(tx, conn);
-      await reorderInTxAsync(tx, data.provider);
+      await reorderInTxAsync(tx, data.provider, data.userId);
       result = conn;
     });
     return result;
@@ -188,7 +203,7 @@ export async function createProviderConnection(data) {
 
   let result;
   db.transaction(() => {
-    const all = db.all(`SELECT * FROM providerConnections WHERE provider = ?`, [data.provider]).map(rowToConn);
+    const all = db.all(`SELECT * FROM providerConnections WHERE provider = ? AND userId = ?`, [data.provider, data.userId]).map(rowToConn);
     const existing = findExistingConnection(all, data);
     if (existing) {
       const merged = { ...existing, ...data, updatedAt: now };
@@ -198,24 +213,26 @@ export async function createProviderConnection(data) {
     }
     const conn = buildNewConnection(data, all, now);
     upsertSync(db, conn);
-    reorderInTxSync(db, data.provider);
+    reorderInTxSync(db, data.provider, data.userId);
     result = conn;
   });
   return result;
 }
 
-export async function updateProviderConnection(id, data) {
+export async function updateProviderConnection(id, data, userId = null) {
   const db = await getAdapter();
 
   if (db.dialect === "postgres") {
     let result;
     await db.transaction(async (tx) => {
-      const row = await tx.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
+      const row = userId
+        ? await tx.get(`SELECT * FROM providerConnections WHERE id = ? AND userId = ?`, [id, userId])
+        : await tx.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
       if (!row) { result = null; return; }
       const existing = rowToConn(row);
       const merged = { ...existing, ...data, updatedAt: new Date().toISOString() };
       await upsertAsync(tx, merged);
-      if (data.priority !== undefined) await reorderInTxAsync(tx, existing.provider);
+      if (data.priority !== undefined) await reorderInTxAsync(tx, existing.provider, existing.userId || userId);
       result = merged;
     });
     return result;
@@ -223,27 +240,31 @@ export async function updateProviderConnection(id, data) {
 
   let result;
   db.transaction(() => {
-    const row = db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
+    const row = userId
+      ? db.get(`SELECT * FROM providerConnections WHERE id = ? AND userId = ?`, [id, userId])
+      : db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
     if (!row) { result = null; return; }
     const existing = rowToConn(row);
     const merged = { ...existing, ...data, updatedAt: new Date().toISOString() };
     upsertSync(db, merged);
-    if (data.priority !== undefined) reorderInTxSync(db, existing.provider);
+    if (data.priority !== undefined) reorderInTxSync(db, existing.provider, existing.userId || userId);
     result = merged;
   });
   return result;
 }
 
-export async function deleteProviderConnection(id) {
+export async function deleteProviderConnection(id, userId = null) {
   const db = await getAdapter();
 
   if (db.dialect === "postgres") {
     let ok = false;
     await db.transaction(async (tx) => {
-      const row = await tx.get(`SELECT provider FROM providerConnections WHERE id = ?`, [id]);
+      const row = userId
+        ? await tx.get(`SELECT provider, userId FROM providerConnections WHERE id = ? AND userId = ?`, [id, userId])
+        : await tx.get(`SELECT provider, userId FROM providerConnections WHERE id = ?`, [id]);
       if (!row) return;
       await tx.run(`DELETE FROM providerConnections WHERE id = ?`, [id]);
-      await reorderInTxAsync(tx, row.provider);
+      await reorderInTxAsync(tx, row.provider, row.userId);
       ok = true;
     });
     return ok;
@@ -251,28 +272,35 @@ export async function deleteProviderConnection(id) {
 
   let ok = false;
   db.transaction(() => {
-    const row = db.get(`SELECT provider FROM providerConnections WHERE id = ?`, [id]);
+    const row = userId
+      ? db.get(`SELECT provider, userId FROM providerConnections WHERE id = ? AND userId = ?`, [id, userId])
+      : db.get(`SELECT provider, userId FROM providerConnections WHERE id = ?`, [id]);
     if (!row) return;
     db.run(`DELETE FROM providerConnections WHERE id = ?`, [id]);
-    reorderInTxSync(db, row.provider);
+    reorderInTxSync(db, row.provider, row.userId);
     ok = true;
   });
   return ok;
 }
 
-export async function deleteProviderConnectionsByProvider(providerId) {
+export async function deleteProviderConnectionsByProvider(providerId, userId = null) {
   const db = await getAdapter();
+  if (userId) {
+    const before = await qGet(db, `SELECT COUNT(*) AS n FROM providerConnections WHERE provider = ? AND userId = ?`, [providerId, userId]);
+    await qRun(db, `DELETE FROM providerConnections WHERE provider = ? AND userId = ?`, [providerId, userId]);
+    return before?.n || 0;
+  }
   const before = await qGet(db, `SELECT COUNT(*) AS n FROM providerConnections WHERE provider = ?`, [providerId]);
   await qRun(db, `DELETE FROM providerConnections WHERE provider = ?`, [providerId]);
   return before?.n || 0;
 }
 
-export async function reorderProviderConnections(providerId) {
+export async function reorderProviderConnections(providerId, userId) {
   const db = await getAdapter();
   if (db.dialect === "postgres") {
-    await db.transaction(async (tx) => reorderInTxAsync(tx, providerId));
+    await db.transaction(async (tx) => reorderInTxAsync(tx, providerId, userId));
   } else {
-    db.transaction(() => reorderInTxSync(db, providerId));
+    db.transaction(() => reorderInTxSync(db, providerId, userId));
   }
 }
 

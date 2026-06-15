@@ -29,8 +29,19 @@ export {
 
 // API keys
 export {
-  getApiKeys, getApiKeyById, createApiKey, updateApiKey, deleteApiKey, validateApiKey,
+  getApiKeys, getApiKeyById, createApiKey, updateApiKey, deleteApiKey, validateApiKey, resolveApiKeyUserId, isApiKeyValid,
 } from "./repos/apiKeysRepo.js";
+
+// Users
+export {
+  getUsers, getUserById, getUserByEmail, getUserByOidcSub, getAdminUser, countUsers,
+  createUser, verifyUserPassword, updateUser, setUserStatus, createInvite, consumeInvite, deleteUser,
+} from "./repos/usersRepo.js";
+
+// Per-user settings
+export {
+  getUserSettings, updateUserSettings, getEffectiveSettings,
+} from "./repos/userSettingsRepo.js";
 
 // Combos
 export {
@@ -66,6 +77,11 @@ export {
 export {
   saveRequestDetail, getRequestDetails, getRequestDetailById,
 } from "./repos/requestDetailsRepo.js";
+
+// Audit log
+export {
+  recordAuditEvent, getAuditLogs, AUDIT_RETENTION_DAYS,
+} from "./repos/auditLogRepo.js";
 
 // Export/import full DB
 export async function exportDb() {

@@ -1,4 +1,7 @@
-import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings } from "@/lib/localDb";
+import { getProviderConnections, validateApiKey, resolveApiKeyUserId, isApiKeyValid, updateProviderConnection, getSettings } from "@/lib/localDb";
+import { getEffectiveSettings } from "@/lib/db/repos/userSettingsRepo.js";
+import { getAdminUser } from "@/lib/db/repos/usersRepo.js";
+import { getRuntimeUserId, runWithUserId } from "@/lib/auth/runtimeUserContext.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
@@ -34,7 +37,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
 
     // Inject a virtual connection for no-auth free providers (with optional proxy pool from settings)
     if (FREE_PROVIDERS[providerId]?.noAuth) {
-      const settings = await getSettings();
+      const userId = options?.userId || getRuntimeUserId();
+      const settings = userId ? await getEffectiveSettings(userId) : await getSettings();
       const override = (settings.providerStrategies || {})[providerId] || {};
       const resolvedProxy = await resolveConnectionProxyConfig({ proxyPoolId: override.proxyPoolId || "" });
       return {
@@ -304,5 +308,16 @@ export function extractApiKey(request) {
  */
 export async function isValidApiKey(apiKey) {
   if (!apiKey) return false;
-  return await validateApiKey(apiKey);
+  return await isApiKeyValid(apiKey);
+}
+
+export async function resolveRequestUserId(apiKey) {
+  if (apiKey) {
+    const userId = await resolveApiKeyUserId(apiKey);
+    if (userId) return userId;
+  }
+  const runtime = getRuntimeUserId();
+  if (runtime) return runtime;
+  const admin = await getAdminUser();
+  return admin?.id || null;
 }

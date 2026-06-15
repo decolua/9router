@@ -1,5 +1,5 @@
 // Latest schema version — bumped when a migration is added in ./migrations/
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 5;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -27,9 +27,48 @@ export const TABLES = {
       data: "TEXT NOT NULL",
     },
   },
+  users: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      email: "TEXT UNIQUE NOT NULL",
+      name: "TEXT",
+      passwordHash: "TEXT",
+      role: "TEXT NOT NULL DEFAULT 'member'",
+      oidcSub: "TEXT UNIQUE",
+      status: "TEXT NOT NULL DEFAULT 'active'",
+      createdAt: "TEXT NOT NULL",
+      updatedAt: "TEXT NOT NULL",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)",
+      "CREATE INDEX IF NOT EXISTS idx_users_oidcSub ON users(oidcSub)",
+    ],
+  },
+  userSettings: {
+    columns: {
+      userId: "TEXT PRIMARY KEY",
+      data: "TEXT NOT NULL",
+    },
+  },
+  userInvites: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      email: "TEXT",
+      tokenHash: "TEXT UNIQUE NOT NULL",
+      role: "TEXT NOT NULL DEFAULT 'member'",
+      createdBy: "TEXT",
+      expiresAt: "TEXT",
+      usedAt: "TEXT",
+      createdAt: "TEXT NOT NULL",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_invites_tokenHash ON userInvites(tokenHash)",
+    ],
+  },
   providerConnections: {
     columns: {
       id: "TEXT PRIMARY KEY",
+      userId: "TEXT",
       provider: "TEXT NOT NULL",
       authType: "TEXT NOT NULL",
       name: "TEXT",
@@ -41,6 +80,7 @@ export const TABLES = {
       updatedAt: "TEXT NOT NULL",
     },
     indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_pc_userId ON providerConnections(userId)",
       "CREATE INDEX IF NOT EXISTS idx_pc_provider ON providerConnections(provider)",
       "CREATE INDEX IF NOT EXISTS idx_pc_provider_active ON providerConnections(provider, isActive)",
       "CREATE INDEX IF NOT EXISTS idx_pc_priority ON providerConnections(provider, priority)",
@@ -74,6 +114,7 @@ export const TABLES = {
   apiKeys: {
     columns: {
       id: "TEXT PRIMARY KEY",
+      userId: "TEXT",
       key: "TEXT UNIQUE NOT NULL",
       keyHash: "TEXT",
       name: "TEXT",
@@ -82,6 +123,7 @@ export const TABLES = {
       createdAt: "TEXT NOT NULL",
     },
     indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_ak_userId ON apiKeys(userId)",
       "CREATE INDEX IF NOT EXISTS idx_ak_key ON apiKeys(key)",
       "CREATE INDEX IF NOT EXISTS idx_ak_keyhash ON apiKeys(keyHash)",
     ],
@@ -89,13 +131,17 @@ export const TABLES = {
   combos: {
     columns: {
       id: "TEXT PRIMARY KEY",
-      name: "TEXT UNIQUE NOT NULL",
+      userId: "TEXT",
+      name: "TEXT NOT NULL",
       kind: "TEXT",
       models: "TEXT NOT NULL",
       createdAt: "TEXT NOT NULL",
       updatedAt: "TEXT NOT NULL",
     },
-    indexes: ["CREATE INDEX IF NOT EXISTS idx_combo_name ON combos(name)"],
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_combo_userId ON combos(userId)",
+      "CREATE INDEX IF NOT EXISTS idx_combo_name ON combos(name)",
+    ],
   },
   kv: {
     columns: {
@@ -109,6 +155,7 @@ export const TABLES = {
   usageHistory: {
     columns: {
       id: "INTEGER PRIMARY KEY AUTOINCREMENT",
+      userId: "TEXT",
       timestamp: "TEXT NOT NULL",
       provider: "TEXT",
       model: "TEXT",
@@ -123,6 +170,7 @@ export const TABLES = {
       meta: "TEXT",
     },
     indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_uh_userId ON usageHistory(userId)",
       "CREATE INDEX IF NOT EXISTS idx_uh_ts ON usageHistory(timestamp DESC)",
       "CREATE INDEX IF NOT EXISTS idx_uh_provider ON usageHistory(provider)",
       "CREATE INDEX IF NOT EXISTS idx_uh_model ON usageHistory(model)",
@@ -138,6 +186,7 @@ export const TABLES = {
   requestDetails: {
     columns: {
       id: "TEXT PRIMARY KEY",
+      userId: "TEXT",
       timestamp: "TEXT NOT NULL",
       provider: "TEXT",
       model: "TEXT",
@@ -146,10 +195,30 @@ export const TABLES = {
       data: "TEXT NOT NULL",
     },
     indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_rd_userId ON requestDetails(userId)",
       "CREATE INDEX IF NOT EXISTS idx_rd_ts ON requestDetails(timestamp DESC)",
       "CREATE INDEX IF NOT EXISTS idx_rd_provider ON requestDetails(provider)",
       "CREATE INDEX IF NOT EXISTS idx_rd_model ON requestDetails(model)",
       "CREATE INDEX IF NOT EXISTS idx_rd_conn ON requestDetails(connectionId)",
+    ],
+  },
+  auditLogs: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      timestamp: "TEXT NOT NULL",
+      action: "TEXT NOT NULL",
+      actorUserId: "TEXT",
+      actorEmail: "TEXT",
+      targetType: "TEXT",
+      targetId: "TEXT",
+      ip: "TEXT",
+      outcome: "TEXT NOT NULL DEFAULT 'success'",
+      meta: "TEXT NOT NULL DEFAULT '{}'",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_audit_ts ON auditLogs(timestamp DESC)",
+      "CREATE INDEX IF NOT EXISTS idx_audit_action ON auditLogs(action)",
+      "CREATE INDEX IF NOT EXISTS idx_audit_actor ON auditLogs(actorUserId)",
     ],
   },
 };

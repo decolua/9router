@@ -1,6 +1,7 @@
 import { qAll, qGet, qRun, qExec } from "../query.js";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { getRuntimeUserId } from "../../auth/runtimeUserContext.js";
 
 const DEFAULT_MAX_RECORDS = 200;
 const DEFAULT_BATCH_SIZE = 20;
@@ -102,8 +103,8 @@ async function flushToDatabase() {
           };
 
           db.run(
-            `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data`,
-            [record.id, record.timestamp, record.provider, record.model, record.connectionId, record.status, stringifyJson(record)]
+            `INSERT INTO requestDetails(id, userId, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET userId = excluded.userId, timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data`,
+            [record.id, item.userId || getRuntimeUserId(), record.timestamp, record.provider, record.model, record.connectionId, record.status, stringifyJson(record)]
           );
         }
 
@@ -147,6 +148,11 @@ export async function getRequestDetails(filter = {}) {
   const conds = [];
   const params = [];
 
+  if (filter.userId) { conds.push("userId = ?"); params.push(filter.userId); }
+  else {
+    const userId = getRuntimeUserId();
+    if (userId) { conds.push("userId = ?"); params.push(userId); }
+  }
   if (filter.provider) { conds.push("provider = ?"); params.push(filter.provider); }
   if (filter.model) { conds.push("model = ?"); params.push(filter.model); }
   if (filter.connectionId) { conds.push("connectionId = ?"); params.push(filter.connectionId); }
@@ -175,9 +181,12 @@ export async function getRequestDetails(filter = {}) {
   };
 }
 
-export async function getRequestDetailById(id) {
+export async function getRequestDetailById(id, userId = null) {
   const db = await getAdapter();
-  const row = await qGet(db, `SELECT data FROM requestDetails WHERE id = ?`, [id]);
+  const scoped = userId || getRuntimeUserId();
+  const row = scoped
+    ? await qGet(db, `SELECT data FROM requestDetails WHERE id = ? AND userId = ?`, [id, scoped])
+    : await qGet(db, `SELECT data FROM requestDetails WHERE id = ?`, [id]);
   return row ? parseJson(row.data, null) : null;
 }
 

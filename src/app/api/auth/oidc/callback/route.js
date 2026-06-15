@@ -10,6 +10,7 @@ import {
   verifyOidcIdToken,
 } from "@/lib/auth/oidc";
 import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
+import { getUserByOidcSub, getUserByEmail, createUser } from "@/lib/db/repos/usersRepo.js";
 
 function clearOidcCookies(cookieStore) {
   cookieStore.delete("oidc_state");
@@ -71,12 +72,40 @@ export async function GET(request) {
       nonce: storedNonce,
     });
 
+    const oidcSub = payload.sub || null;
+    const oidcEmail = pickOidcEmail(payload) || null;
+    const oidcName = pickOidcDisplayName(payload);
+
+    let user = await getUserByOidcSub(oidcSub);
+    if (!user && oidcEmail) {
+      user = await getUserByEmail(oidcEmail);
+      if (user) {
+        const { updateUser } = await import("@/lib/db/repos/usersRepo.js");
+        user = await updateUser(user.id, { oidcSub });
+      }
+    }
+    if (!user) {
+      user = await createUser({
+        email: oidcEmail || `${oidcSub}@oidc.local`,
+        name: oidcName || oidcEmail || "OIDC User",
+        role: "member",
+        oidcSub,
+      });
+    }
+    if (user.status !== "active") {
+      throw new Error("Account is disabled");
+    }
+
     clearOidcCookies(cookieStore);
     await setDashboardAuthCookie(cookieStore, request, {
+      userId: user.id,
+      role: user.role,
+      email: user.email,
+      name: user.name,
       oidc: true,
-      oidcSub: payload.sub || null,
-      oidcEmail: pickOidcEmail(payload) || null,
-      oidcName: pickOidcDisplayName(payload),
+      oidcSub,
+      oidcEmail,
+      oidcName,
     });
 
     return NextResponse.redirect(new URL("/dashboard", getPublicOrigin(request)));

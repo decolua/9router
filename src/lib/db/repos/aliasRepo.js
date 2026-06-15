@@ -1,63 +1,76 @@
-import { qAll, qGet, qRun, qExec } from "../query.js";
+import { qAll, qGet, qRun } from "../query.js";
 import { getAdapter } from "../driver.js";
-import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { stringifyJson } from "../helpers/jsonCol.js";
 import { makeKv } from "../helpers/kvStore.js";
+import { getRuntimeUserId } from "../../auth/runtimeUserContext.js";
 
-const aliasKv = makeKv("modelAliases");
-const customKv = makeKv("customModels");
-const mitmKv = makeKv("mitmAlias");
-
-// modelAliases: key=alias, value=modelString
-export async function getModelAliases() {
-  return await aliasKv.getAll();
+function scopedUserId(userId) {
+  return userId || getRuntimeUserId() || null;
 }
 
-export async function setModelAlias(alias, model) {
-  await aliasKv.set(alias, model);
+function kv(userId) {
+  const id = scopedUserId(userId);
+  if (!id) throw new Error("userId is required");
+  return {
+    alias: makeKv("modelAliases", userId),
+    custom: makeKv("customModels", userId),
+    mitm: makeKv("mitmAlias", userId),
+  };
 }
 
-export async function deleteModelAlias(alias) {
-  await aliasKv.remove(alias);
-}
-
-// customModels: key=`${providerAlias}|${id}|${type}`, value=full model object
 function customKey(providerAlias, id, type) {
   return `${providerAlias}|${id}|${type}`;
 }
 
-export async function getCustomModels() {
-  const all = await customKv.getAll();
+function customScope(userId) {
+  return makeKv("customModels", userId).scope;
+}
+
+// modelAliases: key=alias, value=modelString
+export async function getModelAliases(userId) {
+  return await kv(userId).alias.getAll();
+}
+
+export async function setModelAlias(userId, alias, model) {
+  await kv(userId).alias.set(alias, model);
+}
+
+export async function deleteModelAlias(userId, alias) {
+  await kv(userId).alias.remove(alias);
+}
+
+export async function getCustomModels(userId) {
+  const all = await kv(userId).custom.getAll();
   return Object.values(all);
 }
 
-// Atomic check-then-insert inside transaction to prevent duplicate races
-export async function addCustomModel({ providerAlias, id, type = "llm", name }) {
+export async function addCustomModel(userId, { providerAlias, id, type = "llm", name }) {
   const k = customKey(providerAlias, id, type);
+  const scope = customScope(userId);
   const db = await getAdapter();
   let added = false;
   db.transaction(() => {
-    const row = db.get(`SELECT 1 FROM kv WHERE scope = 'customModels' AND key = ?`, [k]);
+    const row = db.get(`SELECT 1 FROM kv WHERE scope = ? AND key = ?`, [scope, k]);
     if (row) return;
     const value = stringifyJson({ providerAlias, id, type, name: name || id });
-    db.run(`INSERT INTO kv(scope, key, value) VALUES('customModels', ?, ?)`, [k, value]);
+    db.run(`INSERT INTO kv(scope, key, value) VALUES(?, ?, ?)`, [scope, k, value]);
     added = true;
   });
   return added;
 }
 
-export async function deleteCustomModel({ providerAlias, id, type = "llm" }) {
-  await customKv.remove(customKey(providerAlias, id, type));
+export async function deleteCustomModel(userId, { providerAlias, id, type = "llm" }) {
+  await kv(userId).custom.remove(customKey(providerAlias, id, type));
 }
 
-// mitmAlias: key=toolName, value=mappings object
-export async function getMitmAlias(toolName) {
+export async function getMitmAlias(userId, toolName) {
   if (toolName) {
-    const v = await mitmKv.get(toolName);
+    const v = await kv(userId).mitm.get(toolName);
     return v || {};
   }
-  return await mitmKv.getAll();
+  return await kv(userId).mitm.getAll();
 }
 
-export async function setMitmAliasAll(toolName, mappings) {
-  await mitmKv.set(toolName, mappings || {});
+export async function setMitmAliasAll(userId, toolName, mappings) {
+  await kv(userId).mitm.set(toolName, mappings || {});
 }

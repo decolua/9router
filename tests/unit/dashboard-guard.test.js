@@ -23,14 +23,26 @@ vi.mock("next/server", () => ({
 vi.mock("@/lib/localDb", () => ({
   getSettings: mocks.getSettings,
   validateApiKey: mocks.validateApiKey,
+  isApiKeyValid: mocks.validateApiKey,
 }));
 
-vi.mock("@/shared/utils/machineId", () => ({
-  getConsistentMachineId: mocks.getConsistentMachineId,
+vi.mock("@/lib/auth/requestContext", () => ({
+  attachUserHeaders: vi.fn((req, user) => {
+    const h = new Headers(req.headers);
+    h.set("x-ebr-user-id", user.id);
+    h.set("x-ebr-user-role", user.role);
+    return h;
+  }),
+  getCliContextUser: vi.fn(async () => ({ id: "admin-id", role: "admin", status: "active" })),
 }));
 
 vi.mock("@/lib/auth/dashboardSession", () => ({
   verifyDashboardAuthToken: mocks.verifyDashboardAuthToken,
+  getDashboardAuthSession: vi.fn(async () => null),
+}));
+
+vi.mock("@/shared/utils/machineId", () => ({
+  getConsistentMachineId: mocks.getConsistentMachineId,
 }));
 
 const { proxy, __test__ } = await import("../../src/dashboardGuard.js");

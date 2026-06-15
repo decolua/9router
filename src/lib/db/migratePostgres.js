@@ -6,6 +6,8 @@ import { LEGACY_FILES, DB_DIR } from "./paths.js";
 import { TABLES, buildCreateTableSql } from "./schema.js";
 import { latestVersion } from "./migrations/index.js";
 import { encryptSecretsPostgres } from "./migrations/002-encrypt-secrets.js";
+import { multiUserPostgres } from "./migrations/003-multi-user.js";
+import { repairPostgresUserSchema } from "./migrations/004-fix-pg-user-columns.js";
 import { stringifyJson } from "./helpers/jsonCol.js";
 import { isMasterKeyConfigured, getKeyFingerprint } from "../crypto/masterKey.js";
 
@@ -75,8 +77,9 @@ async function syncSchemaFromTables(adapter) {
       [tableName]
     );
     const existingNames = new Set(existing.map((r) => r.name));
+    const existingLower = new Set(existing.map((r) => r.name.toLowerCase()));
     for (const [colName, colDef] of Object.entries(def.columns)) {
-      if (!existingNames.has(colName)) {
+      if (!existingNames.has(colName) && !existingLower.has(colName.toLowerCase())) {
         const safeDef = colDef
           .replace(/PRIMARY KEY( AUTOINCREMENT)?/i, "")
           .replace(/UNIQUE/i, "")
@@ -109,6 +112,18 @@ async function runVersionedMigrations(adapter) {
     await setMeta(adapter, "schemaVersion", 2);
     lastApplied = 2;
     console.log("[DB][migrate] applied #2 encrypt-secrets");
+  }
+  if (lastApplied < 3) {
+    await multiUserPostgres(adapter);
+    await setMeta(adapter, "schemaVersion", 3);
+    lastApplied = 3;
+    console.log("[DB][migrate] applied #3 multi-user");
+  }
+  if (lastApplied < 4) {
+    await repairPostgresUserSchema(adapter);
+    await setMeta(adapter, "schemaVersion", 4);
+    lastApplied = 4;
+    console.log("[DB][migrate] applied #4 fix-pg-user-columns");
   }
   return { applied: lastApplied - current, from: current, to: lastApplied };
 }
