@@ -207,6 +207,24 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
+      case "vercel-ai-gateway":
+        // Vercel returns currency credit balance, not request quotas.
+        // The 'Remaining (USD)' row needs explicit remainingPercentage because
+        // its used/total values would otherwise compute the wrong direction
+        // (e.g. used=95.5 / total=100 → 4% instead of 96%).
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              resetAt: quota.resetAt || null,
+              remainingPercentage: quota.remainingPercentage,
+            });
+          });
+        }
+        break;
+
       default:
         // Generic fallback for unknown providers
         if (data.quotas) {

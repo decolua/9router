@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import PropTypes from "prop-types";
 import Modal from "./Modal";
 import Button from "./Button";
@@ -18,6 +18,12 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
   const [callbackUrl, setCallbackUrl] = useState("");
   const [error, setError] = useState(null);
   const { copied, copy } = useCopyToClipboard();
+  const openedRef = useRef(false);
+
+  // Reset auto-open guard when modal closes so it can re-open next session.
+  useEffect(() => {
+    if (!isOpen) openedRef.current = false;
+  }, [isOpen]);
 
   // Initialize auth flow
   useEffect(() => {
@@ -39,8 +45,11 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
         setAuthUrl(data.authUrl);
         setStep("input");
 
-        // Auto-open browser
-        window.open(data.authUrl, "_blank");
+        // Auto-open browser once per modal session.
+        if (!openedRef.current) {
+          openedRef.current = true;
+          window.open(data.authUrl, "_blank");
+        }
       } catch (err) {
         setError(err.message);
         setStep("error");

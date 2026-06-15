@@ -101,6 +101,9 @@ export const PROVIDERS = {
     baseUrl: "https://api3.qoder.sh/algo/api/v2/service/pro/sse/agent_chat_generation",
     format: "openai",
     headers: {},
+    // Reasoning models think long before first byte; raise both timeouts.
+    timeoutMs: 120000,
+    stallTimeoutMs: 120000,
   },
   antigravity: {
     baseUrls: [
@@ -126,7 +129,8 @@ export const PROVIDERS = {
   },
   "vercel-ai-gateway": {
     baseUrl: "https://ai-gateway.vercel.sh/v1/chat/completions",
-    format: "openai"
+    format: "openai",
+    retry: { 429: 2 }
   },
   glm: {
     baseUrl: "https://api.z.ai/api/anthropic/v1/messages",
@@ -192,9 +196,23 @@ export const PROVIDERS = {
     clientId: "Iv1.b507a08c87ecfe98"
   },
   kiro: {
-    baseUrl: "https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse",
+    // All three hosts resolve to the same regional CodeWhisperer streaming service
+    // (GenerateAssistantResponse). They are alternate DNS surfaces, NOT separate quota
+    // buckets — AWS throttles per authenticated identity (token + profileArn), not per
+    // hostname. Listing them enables edge-level failover (5xx / connect timeout / a
+    // degraded surface); it does NOT multiply 429 headroom. To actually spread 429 load,
+    // add multiple Kiro accounts — account rotation in sse/handlers/chat.js handles that.
+    // Order: newest Kiro IDE endpoint first, legacy AWS domains as fallback.
+    baseUrl: "https://runtime.us-east-1.kiro.dev/generateAssistantResponse",
+    baseUrls: [
+      "https://runtime.us-east-1.kiro.dev/generateAssistantResponse",
+      "https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse",
+      "https://q.us-east-1.amazonaws.com/generateAssistantResponse",
+    ],
     format: "kiro",
-    retry: { 429: 2 },
+    // 429 = identity-level throttle; retrying the same identity only spams AWS.
+    // Rotate across the 3 host surfaces once each (shouldRetry) without per-host retries.
+    retry: { 429: 0 },
     headers: {
       "Content-Type": "application/json",
       "Accept": "application/vnd.amazon.eventstream",
@@ -307,7 +325,7 @@ export const PROVIDERS = {
     format: "openai"
   },
   siliconflow: {
-    baseUrl: "https://api.siliconflow.cn/v1/chat/completions",
+    baseUrl: "https://api.siliconflow.com/v1/chat/completions",
     format: "openai"
   },
   hyperbolic: {
@@ -395,6 +413,8 @@ export const PROVIDERS = {
     baseUrl: "https://api.xiaomimimo.com/v1/chat/completions",
     format: "openai"
   },
+  "mimo-free": { baseUrl: "https://api.xiaomimimo.com/api/free-ai/openai/chat", format: "openai", noAuth: true },
+  mmf: { baseUrl: "https://api.xiaomimimo.com/api/free-ai/openai/chat", format: "openai", noAuth: true },
   "xiaomi-tokenplan": {
     baseUrl: "https://token-plan-sgp.xiaomimimo.com/v1/chat/completions",
     format: "openai"

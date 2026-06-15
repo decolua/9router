@@ -1,3 +1,34 @@
+# v0.4.77 (2026-06-13)
+
+## Features
+- Vercel AI Gateway: support embeddings, images and credit usage (#1183)
+- Add MiMo Free no-auth provider (#1789)
+- Vertex: support ADC `authorized_user` credential
+- Cowork: re-enable Claude Cowork with preset-only stdio MCP
+- Codex: bulk add accounts via JSON (#1719)
+- Kiro: enable multi-endpoint failover for GenerateAssistantResponse (#1722)
+
+## Fixes
+- Security: re-auth on DB export/import + SSRF guard on web fetch
+- Auth: real client IP rate-limiting + remote default-password guard
+- Cerebras/Mistral: strip unsupported `client_metadata` from downstream requests (#1742)
+- SiliconFlow: update baseUrl `.cn` -> `.com` + curate verified model list (#1760)
+- Gemini-to-OpenAI: route unsigned thought parts to `reasoning_content` (#1752)
+- Claude-to-OpenAI: strip Anthropic billing header from system prompt (#1765)
+- Anthropic-compatible: send Bearer auth for third-party gateways (#1795)
+- Usage-stats: avoid partial stats on initial SSE race (#1767)
+- Proxy: use `export default` in proxy.js for Next.js 16 middleware detection
+- Claude passthrough: add body normalization
+- GitHub Copilot: refresh missing/expired token on models discovery (#1727) + add mappable gpt-5-mini/gpt-5.4-nano slots for Copilot MITM (#1653)
+- Kiro: auto-resolve profileArn to prevent 403 on IDC login, enhance profile ARN resolution, update endpoint to `runtime.us-east-1.kiro.dev` (#1713)
+- Tunnel: detect system-installed Tailscale via dual-socket probe (#1723) + non-blocking probes to prevent UI freeze
+- CommandCode: force `stream=true` in transformRequest (#1706)
+- Qoder: increase timeouts for reasoning models and improve stream handling
+- Dashboard: show provider node name instead of connection name in topology (#1770) + show explicit `kind="llm"` combos on combos page (#1684)
+
+## Docs
+- README: add Indonesian 9Router tutorial video (#1709)
+
 # v0.4.71 (2026-06-06)
 
 ## Features

@@ -12,6 +12,7 @@ const ENDPOINTS = {
   github: "https://models.github.ai/inference/embeddings",
   nvidia: "https://integrate.api.nvidia.com/v1/embeddings",
   "jina-ai": "https://api.jina.ai/v1/embeddings",
+  "vercel-ai-gateway": "https://ai-gateway.vercel.sh/v1/embeddings",
 };
 
 export default function createOpenAIEmbeddingAdapter(providerId) {

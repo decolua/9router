@@ -12,6 +12,7 @@ export const FREE_PROVIDERS = {
   qoder: { id: "qoder", alias: "qd", name: "Qoder", icon: "water_drop", color: "#EC4899", deprecated: true, deprecationNotice: RISK_NOTICE, website: "https://qoder.com", notice: { signupUrl: "https://qoder.com" } },
   // iflow: { id: "iflow", alias: "if", name: "iFlow AI", icon: "water_drop", color: "#6366F1", website: "https://iflow.cn", notice: { signupUrl: "https://iflow.cn" } },
   opencode: { id: "opencode", alias: "oc", name: "OpenCode Free", icon: "terminal", color: "#E87040", textIcon: "OC", noAuth: true, passthroughModels: true, modelsFetcher: { url: "https://opencode.ai/zen/v1/models", type: "opencode-free" } },
+  "mimo-free": { id: "mimo-free", alias: "mmf", name: "MiMo Code Free", icon: "smart_toy", color: "#FF6900", textIcon: "MF", noAuth: true, passthroughModels: true, modelsFetcher: { url: "https://models.dev/api.json", type: "mimo-free" } },
 };
 
 // Free Tier Providers (has free access but may require account/API key)
@@ -79,7 +80,7 @@ export const APIKEY_PROVIDERS = {
   "xiaomi-tokenplan": { id: "xiaomi-tokenplan", alias: "xmtp", name: "Xiaomi MiMo (Token Plan)", icon: "smart_toy", color: "#FF6700", textIcon: "XT", website: "https://mimo.xiaomi.com", notice: { text: "Xiaomi MiMo Token Plan subscription (API key starts with tp-). Token Plan keys are cluster-specific — select the region matching your subscription.", apiKeyUrl: "https://mimo.xiaomi.com" }, hasProviderSpecificData: true, regions: [{ id: "sgp", label: "Singapore", baseUrl: "https://token-plan-sgp.xiaomimimo.com/v1" }, { id: "cn", label: "China", baseUrl: "https://token-plan-cn.xiaomimimo.com/v1" }, { id: "ams", label: "Europe", baseUrl: "https://token-plan-ams.xiaomimimo.com/v1" }], defaultRegion: "sgp" },
   "volcengine-ark": { id: "volcengine-ark", alias: "ark", name: "Volcengine Ark", icon: "cloud", color: "#1677FF", textIcon: "ARK", website: "https://ark.cn-beijing.volces.com", notice: { apiKeyUrl: "https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey" } },
   openai: { id: "openai", alias: "openai", name: "OpenAI", icon: "auto_awesome", color: "#10A37F", textIcon: "OA", website: "https://platform.openai.com", notice: { apiKeyUrl: "https://platform.openai.com/api-keys" }, serviceKinds: ["llm", "embedding", "tts", "stt", "image", "imageToText", "webSearch"], thinkingConfig: THINKING_CONFIG.effort, searchViaChat: { defaultModel: "gpt-4o-mini", pricingUrl: "https://openai.com/api/pricing" }, ttsConfig: { baseUrl: "https://api.openai.com/v1/audio/speech", authType: "apikey", authHeader: "bearer", format: "openai", models: [{ id: "tts-1", name: "TTS-1" }, { id: "tts-1-hd", name: "TTS-1 HD" }, { id: "gpt-4o-mini-tts", name: "GPT-4o Mini TTS" }] }, sttConfig: { baseUrl: "https://api.openai.com/v1/audio/transcriptions", authType: "apikey", authHeader: "bearer", format: "openai", models: [{ id: "whisper-1", name: "Whisper 1" }, { id: "gpt-4o-transcribe", name: "GPT-4o Transcribe" }, { id: "gpt-4o-mini-transcribe", name: "GPT-4o Mini Transcribe" }] }, embeddingConfig: { baseUrl: "https://api.openai.com/v1/embeddings", authType: "apikey", authHeader: "bearer", models: [{ id: "text-embedding-3-small", name: "Text Embedding 3 Small", dimensions: 1536 }, { id: "text-embedding-3-large", name: "Text Embedding 3 Large", dimensions: 3072 }, { id: "text-embedding-ada-002", name: "Text Embedding Ada 002", dimensions: 1536 }] } },
-  "vercel-ai-gateway": { id: "vercel-ai-gateway", alias: "vercel", name: "Vercel AI Gateway", icon: "deployed_code", color: "#111827", textIcon: "VG", website: "https://vercel.com/ai-gateway", notice: { text: "Unified OpenAI-compatible endpoint from Vercel. Use your AI Gateway API key, then pick models with provider/model IDs like anthropic/claude-sonnet-4.6 or openai/gpt-5.4.", apiKeyUrl: "https://vercel.com/dashboard/~/ai-gateway" }, passthroughModels: true, serviceKinds: ["llm"] },
+  "vercel-ai-gateway": { id: "vercel-ai-gateway", alias: "vercel", name: "Vercel AI Gateway", icon: "deployed_code", color: "#111827", textIcon: "VG", website: "https://vercel.com/ai-gateway", notice: { text: "Unified OpenAI-compatible endpoint from Vercel. Use your AI Gateway API key, then pick models with provider/model IDs like anthropic/claude-sonnet-4.6 or openai/gpt-5.4.", apiKeyUrl: "https://vercel.com/dashboard/~/ai-gateway" }, passthroughModels: true, serviceKinds: ["llm", "embedding", "image", "imageToText", "webSearch"], searchViaChat: { defaultModel: "openai/gpt-4o-mini", pricingUrl: "https://vercel.com/docs/ai-gateway/pricing" }, modelsFetcher: { url: "https://ai-gateway.vercel.sh/v1/models", type: "openai" } },
   anthropic: { id: "anthropic", alias: "anthropic", name: "Anthropic", icon: "smart_toy", color: "#D97757", textIcon: "AN", website: "https://console.anthropic.com", notice: { apiKeyUrl: "https://console.anthropic.com/settings/keys" }, serviceKinds: ["llm", "imageToText"] },
   "opencode-go": { id: "opencode-go", alias: "ocg", name: "OpenCode Go", icon: "terminal", color: "#E87040", textIcon: "OC", website: "https://opencode.ai/auth", notice: { text: "OpenCode Go subscription: $5/mo (then $10/mo). Access to Kimi, GLM, Qwen, MiMo, MiniMax models.", apiKeyUrl: "https://opencode.ai/auth" } },
   azure: { id: "azure", alias: "azure", name: "Azure OpenAI", icon: "cloud", color: "#0078D4", textIcon: "AZ", website: "https://azure.microsoft.com/en-us/products/ai-services/openai-service", notice: { apiKeyUrl: "https://portal.azure.com/#view/Microsoft_Azure_ProjectOxford/CognitiveServicesHub/~/OpenAI" }, hasProviderSpecificData: true },
@@ -277,6 +278,7 @@ export const USAGE_SUPPORTED_PROVIDERS = [
   "glm-cn",
   "minimax",
   "minimax-cn",
+  "vercel-ai-gateway",
 ];
 
 // Subset that uses apikey auth (still surfaced on quota page)
@@ -285,4 +287,5 @@ export const USAGE_APIKEY_PROVIDERS = [
   "glm-cn",
   "minimax",
   "minimax-cn",
+  "vercel-ai-gateway",
 ];

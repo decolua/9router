@@ -220,6 +220,9 @@ export async function updateProviderCredentials(connectionId, newCredentials) {
  */
 export async function checkAndRefreshToken(provider, credentials) {
   let creds = { ...credentials };
+  if (!creds.connectionId && creds.id) {
+    creds.connectionId = creds.id;
+  }
 
   // ── 1. Regular access-token expiry ────────────────────────────────────────
   if (_shouldRefreshCredentials(provider, creds)) {
@@ -261,23 +264,26 @@ export async function checkAndRefreshToken(provider, credentials) {
   }
 
   // ── 2. GitHub Copilot token expiry ────────────────────────────────────────
-  if (provider === "github" && creds.providerSpecificData?.copilotTokenExpiresAt) {
-    const copilotExpiresAt = creds.providerSpecificData.copilotTokenExpiresAt * 1000;
+  if (provider === "github") {
+    const copilotToken = creds.providerSpecificData?.copilotToken;
+    const copilotExpiresAt = creds.providerSpecificData?.copilotTokenExpiresAt
+      ? creds.providerSpecificData.copilotTokenExpiresAt * 1000
+      : 0;
     const now              = Date.now();
     const remaining        = copilotExpiresAt - now;
 
-    if (remaining < TOKEN_EXPIRY_BUFFER_MS) {
-      log.info("TOKEN_REFRESH", "Copilot token expiring soon, refreshing proactively", {
+    if (!copilotToken || remaining < TOKEN_EXPIRY_BUFFER_MS) {
+      log.info("TOKEN_REFRESH", "Copilot token expiring soon or missing, refreshing proactively", {
         provider,
-        expiresIn: Math.round(remaining / 1000),
+        expiresIn: copilotToken ? Math.round(remaining / 1000) : "missing",
       });
 
-      const copilotToken = await refreshCopilotToken(creds.accessToken);
-      if (copilotToken) {
+      const copilotTokenResult = await refreshCopilotToken(creds.accessToken);
+      if (copilotTokenResult) {
         const updatedSpecific = {
           ...creds.providerSpecificData,
-          copilotToken:          copilotToken.token,
-          copilotTokenExpiresAt: copilotToken.expiresAt,
+          copilotToken:          copilotTokenResult.token,
+          copilotTokenExpiresAt: copilotTokenResult.expiresAt,
         };
 
         await updateProviderCredentials(creds.connectionId, {
@@ -285,7 +291,7 @@ export async function checkAndRefreshToken(provider, credentials) {
         });
 
         creds.providerSpecificData = updatedSpecific;
-        creds.copilotToken = copilotToken.token;
+        creds.copilotToken = copilotTokenResult.token;
       }
     }
   }

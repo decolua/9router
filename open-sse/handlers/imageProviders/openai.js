@@ -5,6 +5,7 @@ const ENDPOINTS = {
   minimax: "https://api.minimaxi.com/v1/images/generations",
   openrouter: "https://openrouter.ai/api/v1/images/generations",
   recraft: "https://external.api.recraft.ai/v1/images/generations",
+  "vercel-ai-gateway": "https://ai-gateway.vercel.sh/v1/images/generations",
   xai: "https://api.x.ai/v1/images/generations",
 };
 
