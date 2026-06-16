@@ -111,28 +111,125 @@ export async function testMcpServer(id) {
 
   try {
     if (server.type === "local-stdio") {
-      // For stdio, try spawning the process briefly
       const { spawn } = await import("child_process");
       return await new Promise((resolve) => {
         const proc = spawn(server.command, server.args || [], {
           stdio: ["pipe", "pipe", "pipe"],
           env: { ...process.env, ...(server.env || {}) },
-          timeout: 10000,
+          timeout: 45000,
+          shell: process.platform === "win32",
         });
-        let output = "";
-        proc.stdout.on("data", (d) => { output += d.toString(); });
-        proc.stderr.on("data", (d) => { output += d.toString(); });
+
+        let buffer = "";
+        let stderrOutput = "";
+        let resolved = false;
+        let serverInfo = null;
+
+        const timeoutId = setTimeout(() => {
+          safeResolve({
+            ok: false,
+            error: `Timeout waiting for MCP response. Stderr: ${stderrOutput.slice(0, 300)}`,
+          });
+        }, 40000);
+
+        const cleanup = () => {
+          clearTimeout(timeoutId);
+          if (!proc.killed && proc.exitCode === null) {
+            try { proc.kill(); } catch {}
+          }
+        };
+
+        const safeResolve = (val) => {
+          if (!resolved) {
+            resolved = true;
+            cleanup();
+            resolve(val);
+          }
+        };
+
+        proc.stdin.on("error", (err) => {
+          safeResolve({ ok: false, error: `stdin error: ${err.message}` });
+        });
+
+        proc.stdout.on("error", (err) => {
+          safeResolve({ ok: false, error: `stdout error: ${err.message}` });
+        });
+
+        // Write initialize immediately
+        try {
+          proc.stdin.write(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: 1,
+              method: "initialize",
+              params: {
+                protocolVersion: "2024-11-05",
+                capabilities: {},
+                clientInfo: { name: "9router-test", version: "1.0.0" },
+              },
+            }) + "\n"
+          );
+        } catch (err) {
+          safeResolve({ ok: false, error: `Failed to write initialize: ${err.message}` });
+        }
+
+        proc.stdout.on("data", (chunk) => {
+          buffer += chunk.toString("utf8");
+          let idx;
+          while ((idx = buffer.indexOf("\n")) >= 0) {
+            const raw = buffer.slice(0, idx).trim();
+            buffer = buffer.slice(idx + 1);
+            if (!raw) continue;
+
+            try {
+              const response = JSON.parse(raw);
+              if (response.id === 1) {
+                serverInfo = response.result?.serverInfo;
+                // Send initialized notification
+                proc.stdin.write(
+                  JSON.stringify({
+                    jsonrpc: "2.0",
+                    method: "notifications/initialized",
+                  }) + "\n"
+                );
+                // Send tools/list request
+                proc.stdin.write(
+                  JSON.stringify({
+                    jsonrpc: "2.0",
+                    id: 2,
+                    method: "tools/list",
+                    params: {},
+                  }) + "\n"
+                );
+              } else if (response.id === 2) {
+                const tools = response.result?.tools || [];
+                safeResolve({
+                  ok: true,
+                  toolCount: tools.length,
+                  tools: tools.map((t) => t.name),
+                  serverInfo,
+                });
+              }
+            } catch {
+              // Ignore non-JSON or invalid lines (some servers print debug output to stdout)
+            }
+          }
+        });
+
+        proc.stderr.on("data", (d) => {
+          stderrOutput += d.toString();
+        });
+
         proc.on("error", (err) => {
-          resolve({ ok: false, error: err.message });
+          safeResolve({ ok: false, error: err.message });
         });
-        proc.on("close", () => {
-          resolve({ ok: true, output: output.slice(0, 500) });
+
+        proc.on("close", (code) => {
+          safeResolve({
+            ok: false,
+            error: `Process exited with code ${code}. Stderr: ${stderrOutput.slice(0, 300)}`,
+          });
         });
-        // Kill after 5 seconds if still running
-        setTimeout(() => {
-          try { proc.kill(); } catch {}
-          resolve({ ok: true, output: output.slice(0, 500) });
-        }, 5000);
       });
     }
 
@@ -178,9 +275,15 @@ export async function testMcpServer(id) {
           }
 
           // Step 2: List tools (proves auth key works)
+          const mcpSessionId = initRes.headers.get("mcp-session-id");
+          const toolsHeaders = {
+            ...headers,
+            ...(mcpSessionId ? { "mcp-session-id": mcpSessionId } : {}),
+          };
+
           const toolsRes = await fetch(server.url, {
             method: "POST",
-            headers,
+            headers: toolsHeaders,
             body: JSON.stringify({
               jsonrpc: "2.0",
               method: "tools/list",
@@ -220,14 +323,140 @@ export async function testMcpServer(id) {
           };
         }
 
-        // For remote-sse: just GET the endpoint
+        // For remote-sse: GET the endpoint, read the endpoint event, then POST initialize & tools/list
         const res = await fetch(server.url, {
           method: "GET",
           headers: { Accept: "text/event-stream", ...(server.headers || {}) },
           signal: controller.signal,
         });
+
+        if (!res.ok) {
+          clearTimeout(timeout);
+          return {
+            ok: false,
+            status: res.status,
+            error: `Connection failed: HTTP ${res.status}`,
+            hint: res.status === 401 || res.status === 403
+              ? "API key may be invalid or missing"
+              : undefined,
+          };
+        }
+
+        // Read the response stream until we get the "endpoint" event
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let sseBuffer = "";
+        let postUrl = null;
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            sseBuffer += decoder.decode(value, { stream: true });
+            const lines = sseBuffer.split("\n");
+            sseBuffer = lines.pop() || "";
+
+            let currentEvent = "";
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (trimmed.startsWith("event: ")) {
+                currentEvent = trimmed.slice(7).trim();
+              } else if (trimmed.startsWith("data: ")) {
+                const data = trimmed.slice(6).trim();
+                if (currentEvent === "endpoint") {
+                  postUrl = new URL(data, server.url).toString();
+                  break;
+                }
+              } else if (trimmed === "") {
+                currentEvent = "";
+              }
+            }
+
+            if (postUrl) break;
+          }
+        } finally {
+          try { reader.releaseLock(); } catch {}
+          try { await res.body.cancel(); } catch {}
+        }
+
+        if (!postUrl) {
+          clearTimeout(timeout);
+          return { ok: false, error: "Failed to receive endpoint event from SSE stream" };
+        }
+
+        // Now perform HTTP POST handshake via postUrl
+        const initRes = await fetch(postUrl, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            method: "initialize",
+            params: {
+              protocolVersion: "2024-11-05",
+              capabilities: {},
+              clientInfo: { name: "9router-test", version: "1.0.0" },
+            },
+            id: 1,
+          }),
+          signal: controller.signal,
+        });
+
+        if (!initRes.ok) {
+          clearTimeout(timeout);
+          return {
+            ok: false,
+            status: initRes.status,
+            error: `Initialize POST failed: HTTP ${initRes.status}`,
+          };
+        }
+
+        const sseMcpSessionId = initRes.headers.get("mcp-session-id");
+        const sseToolsHeaders = {
+          ...headers,
+          ...(sseMcpSessionId ? { "mcp-session-id": sseMcpSessionId } : {}),
+        };
+
+        const toolsRes = await fetch(postUrl, {
+          method: "POST",
+          headers: sseToolsHeaders,
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            method: "tools/list",
+            params: {},
+            id: 2,
+          }),
+          signal: controller.signal,
+        });
+
         clearTimeout(timeout);
-        return { ok: res.ok, status: res.status };
+
+        if (!toolsRes.ok) {
+          return { ok: false, status: toolsRes.status, error: `tools/list POST failed: HTTP ${toolsRes.status}` };
+        }
+
+        // Parse response (could be JSON or SSE data)
+        const contentType = toolsRes.headers.get("content-type") || "";
+        let result;
+        if (contentType.includes("text/event-stream")) {
+          const text = await toolsRes.text();
+          for (const line of text.split("\n")) {
+            if (line.startsWith("data: ")) {
+              try { result = JSON.parse(line.slice(6)); } catch {}
+            }
+          }
+        } else {
+          result = await toolsRes.json();
+        }
+
+        const tools = result?.result?.tools || [];
+        return {
+          ok: true,
+          status: toolsRes.status,
+          toolCount: tools.length,
+          tools: tools.map((t) => t.name),
+          serverInfo: result?.result?.serverInfo,
+        };
       } catch (err) {
         clearTimeout(timeout);
         return { ok: false, error: err.name === "AbortError" ? "Timeout (15s)" : err.message };

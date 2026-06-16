@@ -1,6 +1,7 @@
 import { getMcpServers, getMcpServerById } from "@/models";
 import { sendToMcpServer } from "@/lib/mcp/mcpServerManager";
 import { checkRateLimit } from "@/lib/mcp/rateLimiter";
+import { validateApiKey } from "@/lib/localDb";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,8 +11,23 @@ export const dynamic = "force-dynamic";
 // When __mcpServerId is provided, routes to that specific server.
 // For tools/list without __mcpServerId, aggregates from ALL active servers.
 // For tools/call, auto-routes based on tool name prefix (e.g. "stitch__create_project").
+// Auth: Accepts Bearer token, X-Api-Key, X-9r-Api-Key, or X-Goog-Api-Key headers.
 export async function POST(request) {
   try {
+    // Auth check: accept Bearer token, X-Api-Key, X-9r-Api-Key, or X-Goog-Api-Key
+    const authHeader = request.headers.get("Authorization");
+    const apiKeyHeader = request.headers.get("x-api-key") || request.headers.get("x-9r-api-key") || request.headers.get("x-goog-api-key");
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : apiKeyHeader;
+    if (token) {
+      const valid = await validateApiKey(token);
+      if (!valid) {
+        return Response.json(
+          { error: "Invalid API key" },
+          { status: 401 }
+        );
+      }
+    }
+
     // Rate limit: 60 requests per minute per IP
     const ip = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown";
     const rateCheck = checkRateLimit(`mcp:message:${ip}`, {
@@ -32,19 +48,38 @@ export async function POST(request) {
       );
     }
 
-    const body = await request.json();
+    const { searchParams } = new URL(request.url);
+    const sessionId = searchParams.get("sessionId");
+
+    const text = await request.text();
+    if (!text || text.trim() === "") {
+      return new Response("", { status: 202 });
+    }
+
+    let body;
+    try {
+      body = JSON.parse(text);
+    } catch (err) {
+      return Response.json(
+        { jsonrpc: "2.0", error: { code: -32700, message: "Parse error: invalid JSON" } },
+        { status: 400 }
+      );
+    }
+
     const { __mcpServerId, ...jsonRpc } = body;
 
     // ─── tools/list aggregation ──────────────────────────────────────────
     // If no __mcpServerId and method is tools/list, aggregate from ALL servers
     if (!__mcpServerId && jsonRpc.method === "tools/list") {
-      return await handleToolsList(jsonRpc);
+      const response = await handleToolsList(jsonRpc);
+      return await sendResponse(response);
     }
 
     // ─── tools/call auto-routing ─────────────────────────────────────────
     // If no __mcpServerId and method is tools/call, find server from prefix
     if (!__mcpServerId && jsonRpc.method === "tools/call") {
-      return await handleToolsCall(jsonRpc);
+      const response = await handleToolsCall(jsonRpc);
+      return await sendResponse(response);
     }
 
     // ─── Direct routing ──────────────────────────────────────────────────
@@ -67,10 +102,33 @@ export async function POST(request) {
     }
 
     const response = await sendToMcpServer(server, jsonRpc);
-    if (response) {
-      return Response.json(response);
+
+    // Helper function to return response or route it to SSE
+    async function sendResponse(result) {
+      let data = result;
+      if (result instanceof Response) {
+        data = await result.json();
+      }
+
+      if (sessionId) {
+        const G_SESSIONS = "__9routerMcpGatewaySessions";
+        const session = globalThis[G_SESSIONS]?.get(sessionId);
+        if (session) {
+          session.send(`event: message\ndata: ${JSON.stringify(data)}\n\n`);
+        }
+        return new Response("", { status: 202 });
+      }
+
+      if (result instanceof Response) {
+        return result;
+      }
+      return Response.json(data);
     }
-    return new Response(null, { status: 202 });
+
+    if (response) {
+      return await sendResponse(response);
+    }
+    return new Response("", { status: 202 });
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 });
   }
@@ -151,13 +209,17 @@ async function handleToolsCall(jsonRpc) {
   const toolName = jsonRpc.params?.name || "";
   const servers = await getMcpServers({ isActive: true });
 
-  // Check if tool name has a prefix (e.g. "stitch__create_project")
-  const prefixMatch = toolName.match(/^([a-z0-9]+)__(.+)$/);
+  // Check if tool name has a prefix (e.g. "stitch__create_project" or "Hacker-News__get_stories")
+  const prefixMatch = toolName.match(/^(.+?)__(.+)$/);
 
   if (prefixMatch) {
     const [, prefix, originalName] = prefixMatch;
-    // Find server matching this prefix
-    const server = servers.find((s) => getServerPrefix(s) === prefix);
+    // Find server matching this prefix by normalized prefix or exact name match
+    const normalizedPrefix = prefix.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 12);
+    const server = servers.find((s) => {
+      const sPrefix = getServerPrefix(s);
+      return sPrefix === normalizedPrefix || s.name.toLowerCase() === prefix.toLowerCase();
+    });
     if (!server) {
       return Response.json({
         jsonrpc: "2.0",

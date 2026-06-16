@@ -76,10 +76,50 @@ async function sendToRemoteServer(server, jsonRpc) {
   const url = server.url;
   if (!url) throw new Error("No URL configured for remote MCP server");
 
+  const store = getConnections();
+  if (!store.remoteSessions) store.remoteSessions = new Map();
+  let mcpSessionId = store.remoteSessions.get(server.id);
+
+  // Auto-initialize if no session exists and this is not already an initialize call
+  if (!mcpSessionId && jsonRpc.method !== "initialize") {
+    try {
+      console.log(`[mcp-manager] Auto-initializing remote server "${server.name}"...`);
+      const initRes = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json, text/event-stream",
+          ...(server.headers || {}),
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          method: "initialize",
+          params: {
+            protocolVersion: "2024-11-05",
+            capabilities: {},
+            clientInfo: { name: "9router-mcp", version: "1.0.0" },
+          },
+          id: `auto-init-${crypto.randomUUID()}`,
+        }),
+      });
+
+      if (initRes.ok) {
+        mcpSessionId = initRes.headers.get("mcp-session-id");
+        if (mcpSessionId) {
+          store.remoteSessions.set(server.id, mcpSessionId);
+          console.log(`[mcp-manager] Successfully auto-initialized "${server.name}", session ID: ${mcpSessionId}`);
+        }
+      }
+    } catch (err) {
+      console.error(`[mcp-manager] Auto-initialize failed for "${server.name}":`, err.message);
+    }
+  }
+
   const headers = {
     "Content-Type": "application/json",
     Accept: "application/json, text/event-stream",
     ...(server.headers || {}),
+    ...(mcpSessionId ? { "mcp-session-id": mcpSessionId } : {}),
   };
 
   const controller = new AbortController();
@@ -94,6 +134,11 @@ async function sendToRemoteServer(server, jsonRpc) {
     });
 
     clearTimeout(timeout);
+
+    const newSessionId = res.headers.get("mcp-session-id");
+    if (newSessionId) {
+      store.remoteSessions.set(server.id, newSessionId);
+    }
 
     const contentType = res.headers.get("content-type") || "";
 
@@ -112,13 +157,20 @@ async function sendToRemoteServer(server, jsonRpc) {
       throw new Error("No JSON-RPC response found in SSE stream");
     }
 
-    // Handle JSON response
+    const text = await res.text();
+    if (!text || text.trim() === "") {
+      return null;
+    }
+
     if (contentType.includes("application/json")) {
-      return await res.json();
+      try {
+        return JSON.parse(text);
+      } catch (e) {
+        throw new Error(`Failed to parse JSON response: ${e.message}`);
+      }
     }
 
     // Try parsing as JSON anyway
-    const text = await res.text();
     try {
       return JSON.parse(text);
     } catch {
@@ -154,6 +206,7 @@ function spawnLocalServer(server) {
   const proc = spawn(server.command, server.args || [], {
     stdio: ["pipe", "pipe", "pipe"],
     env: { ...process.env, ...(server.env || {}) },
+    shell: process.platform === "win32",
   });
 
   entry = { proc, sessions: new Map(), buffer: "", startTime: commandStartTime };

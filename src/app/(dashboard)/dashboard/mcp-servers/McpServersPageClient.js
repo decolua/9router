@@ -12,8 +12,14 @@ const SERVER_TYPES = [
 
 const PRESET_SERVERS = [
   { name: "Exa Search", type: "remote-http", url: "https://mcp.exa.ai/mcp", description: "Real-time web search and code documentation", toolNames: ["web_search_exa", "web_fetch_exa"] },
-  { name: "Tavily", type: "remote-sse", url: "https://mcp.tavily.com/mcp", description: "Real-time web search optimized for LLM agents", toolNames: ["tavily_search", "tavily_extract"] },
+  { name: "Tavily", type: "remote-http", url: "https://mcp.tavily.com/mcp", description: "Real-time web search optimized for LLM agents", headers: { "Authorization": "Bearer " }, toolNames: ["tavily_search", "tavily_extract"] },
   { name: "Google Stitch", type: "remote-http", url: "https://stitch.googleapis.com/mcp", description: "Generate UI screens and manage design systems with Google Stitch", headers: { "X-Goog-Api-Key": "" }, toolNames: ["list_projects", "list_screens", "get_project", "get_screen", "create_project", "generate_screen_from_text", "edit_screens", "generate_variants", "create_design_system", "update_design_system", "apply_design_system", "upload_design_md", "create_design_system_from_design_md", "list_design_systems"] },
+  { name: "Astro Docs", type: "remote-http", url: "https://mcp.docs.astro.build/mcp", description: "Astro documentation and resources search" },
+  { name: "Firecrawl", type: "local-stdio", command: "npx", args: ["-y", "firecrawl-mcp"], env: { "FIRECRAWL_API_KEY": "" }, description: "Convert websites into LLM-ready markdown or structured data" },
+  { name: "Git", type: "local-stdio", command: "npx", args: ["-y", "@modelcontextprotocol/server-git"], description: "Run git commands, inspect repository history, diffs, and staging" },
+  { name: "Puppeteer", type: "local-stdio", command: "npx", args: ["-y", "@modelcontextprotocol/server-puppeteer"], description: "Web scraping and browser automation using headless Chrome" },
+  { name: "PostgreSQL", type: "local-stdio", command: "npx", args: ["-y", "@modelcontextprotocol/server-postgres"], description: "Inspect and query PostgreSQL databases" },
+  { name: "Memory", type: "local-stdio", command: "npx", args: ["-y", "@modelcontextprotocol/server-memory"], description: "Graph-based knowledge representation and semantic memory" },
   { name: "Filesystem", type: "local-stdio", command: "npx", args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"], description: "Read/write files on local filesystem" },
   { name: "GitHub", type: "local-stdio", command: "npx", args: ["-y", "@modelcontextprotocol/server-github"], description: "GitHub API integration" },
   { name: "Browser MCP", type: "local-stdio", command: "npx", args: ["-y", "@browsermcp/mcp@latest"], description: "Control your running Chrome browser" },
@@ -29,6 +35,11 @@ export default function McpServersPageClient() {
   const [testResults, setTestResults] = useState({});
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [expandedServer, setExpandedServer] = useState(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const fetchServers = useCallback(async () => {
     try {
@@ -149,7 +160,7 @@ export default function McpServersPageClient() {
               All active servers are accessible through a single gateway. Configure your MCP client to use:
             </p>
             <code className="block mt-2 px-3 py-1.5 rounded-lg bg-surface-2 text-xs font-mono text-brand-400 break-all">
-              {typeof window !== "undefined" ? `${window.location.origin}/api/mcp-gateway` : "/api/mcp-gateway"}
+              {mounted ? `${window.location.origin}/api/mcp-gateway` : "/api/mcp-gateway"}
             </code>
             <div className="flex flex-wrap gap-3 mt-2 text-xs text-text-muted">
               <span className="flex items-center gap-1">
@@ -622,7 +633,7 @@ function PresetModal({ onSelect, onClose }) {
               <button
                 key={preset.name}
                 onClick={() => onSelect(preset)}
-                className="flex items-center gap-3 p-3 rounded-xl bg-surface-2 hover:bg-surface-3 border border-transparent hover:border-border-subtle transition-all cursor-pointer text-left"
+                className="flex items-center w-full min-w-0 gap-3 p-3 rounded-xl bg-surface-2 hover:bg-surface-3 border border-transparent hover:border-border-subtle transition-all cursor-pointer text-left"
               >
                 <div className="flex items-center justify-center size-9 rounded-lg bg-brand-500/10 shrink-0">
                   <span className="material-symbols-outlined text-[18px] text-brand-500">{typeInfo.icon}</span>
