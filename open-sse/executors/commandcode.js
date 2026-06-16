@@ -20,7 +20,13 @@ export class CommandCodeExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
+    // CommandCode API requires stream=true unconditionally.
+    // Set both top-level (OpenAI-format bodies) and params.stream
+    // (CommandCode-native bodies) to cover all code paths.
     body.stream = true;
+    if (body.params) {
+      body.params.stream = true;
+    }
     return body;
   }
 
