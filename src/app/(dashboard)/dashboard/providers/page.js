@@ -165,9 +165,21 @@ export default function ProvidersPage() {
     fetchData();
   }, []);
 
+  const getProviderAuthTypes = (providerId, sectionAuthType) => {
+    const provider =
+      APIKEY_PROVIDERS[providerId] || OAUTH_PROVIDERS[providerId];
+    const authModes = provider?.authModes;
+    // Dual-auth providers (e.g. glm, xai): one card, count oauth + apikey connections.
+    if (authModes?.includes("oauth") && authModes?.includes("apikey")) {
+      return authModes;
+    }
+    return [sectionAuthType];
+  };
+
   const getProviderStats = (providerId, authType) => {
+    const authTypes = getProviderAuthTypes(providerId, authType);
     const providerConnections = connections.filter(
-      (c) => c.provider === providerId && c.authType === authType,
+      (c) => c.provider === providerId && authTypes.includes(c.authType),
     );
 
     const getEffectiveStatus = (conn) => {
@@ -210,12 +222,13 @@ export default function ProvidersPage() {
 
   // Toggle all connections for a provider on/off
   const handleToggleProvider = async (providerId, authType, newActive) => {
+    const authTypes = getProviderAuthTypes(providerId, authType);
     const providerConns = connections.filter(
-      (c) => c.provider === providerId && c.authType === authType,
+      (c) => c.provider === providerId && authTypes.includes(c.authType),
     );
     setConnections((prev) =>
       prev.map((c) =>
-        c.provider === providerId && c.authType === authType
+        c.provider === providerId && authTypes.includes(c.authType)
           ? { ...c, isActive: newActive }
           : c,
       ),
