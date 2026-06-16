@@ -1,7 +1,6 @@
 import { Buffer } from "node:buffer";
 import { createErrorResult } from "../utils/error.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
-import { AI_PROVIDERS } from "../../src/shared/constants/providers.js";
 
 // Build auth headers from sttConfig + token
 function buildAuthHeaders(cfg, token) {
@@ -167,11 +166,11 @@ function jsonResponse(obj) {
  * STT core handler — dispatch by sttConfig.format.
  * @returns {Promise<{success, response, status?, error?}>}
  */
-export async function handleSttCore({ provider, model, formData, credentials }) {
+export async function handleSttCore({ provider, model, formData, credentials, sttConfig }) {
   const file = formData.get("file");
   if (!file) return createErrorResult(HTTP_STATUS.BAD_REQUEST, "Missing required field: file");
 
-  const cfg = AI_PROVIDERS[provider]?.sttConfig;
+  const cfg = sttConfig;
   if (!cfg) return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Provider '${provider}' does not support STT`);
 
   const token = cfg.authType === "none" ? null : (credentials?.apiKey || credentials?.accessToken);

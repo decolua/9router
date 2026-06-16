@@ -32,7 +32,7 @@ const PUBLIC_API_PATHS = [
 ];
 
 // Public top-level prefixes (LLM API endpoints with their own API key auth).
-const PUBLIC_PREFIXES = ["/v1", "/v1beta", "/api/v1", "/api/v1beta"];
+const PUBLIC_PREFIXES = ["/v1", "/v1beta", "/api/v1", "/api/v1beta", "/codex"];
 
 // Always require JWT token regardless of requireLogin setting
 const ALWAYS_PROTECTED = [
@@ -78,6 +78,7 @@ const LOCAL_ONLY_PATHS = [
   "/api/tunnel/disable",
   "/api/oauth/cursor/auto-import",
   "/api/oauth/kiro/auto-import",
+  "/api/auth/reset-password",
 ];
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
@@ -88,8 +89,15 @@ function isLoopbackHostname(h) {
   return LOOPBACK_HOSTS.has(name);
 }
 
-function isLocalRequest(request) {
-  if (!isLoopbackHostname(request.headers.get("host"))) return false;
+export function isLocalRequest(request) {
+  // Trusted peer IP from TCP socket (custom-server.js); unspoofable. Primary anchor for "local".
+  const realIp = request.headers.get("x-9r-real-ip");
+  if (realIp) {
+    if (!isLoopbackHostname(realIp)) return false;
+  } else if (!isLoopbackHostname(request.headers.get("host"))) {
+    // Fallback for bare server.js (dev) without custom-server: legacy Host-based check.
+    return false;
+  }
   const origin = request.headers.get("origin");
   if (origin) {
     try {

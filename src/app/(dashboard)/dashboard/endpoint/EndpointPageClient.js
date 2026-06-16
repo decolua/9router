@@ -1927,7 +1927,6 @@ function SecurityWarning({ message, action }) {
 		</div>
 	);
 }
-
 APIPageClient.propTypes = {
 	machineId: PropTypes.string.isRequired,
 };

@@ -250,6 +250,10 @@ export async function getProviderCredentials(
 			apiKey: connection.apiKey,
 			accessToken: connection.accessToken,
 			refreshToken: connection.refreshToken,
+			idToken: connection.idToken,
+			expiresAt: connection.expiresAt,
+			expiresIn: connection.expiresIn,
+			lastRefreshAt: connection.lastRefreshAt,
 			projectId: connection.projectId,
 			connectionName:
 				connection.displayName ||
@@ -274,8 +278,7 @@ export async function getProviderCredentials(
 		};
 	} finally {
 		if (resolveMutex) resolveMutex();
-	}
-}
+	}}
 
 /**
  * Mark account+model as unavailable — locks modelLock_${model} in DB.

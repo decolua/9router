@@ -69,7 +69,4 @@ function buildManagedMcpServers(plugins) {
   return out;
 }
 
-// Allowlist of executables that may be spawned for custom stdio MCP plugins.
-const ALLOWED_MCP_COMMANDS = new Set(["npx", "node", "uvx", "python", "python3", "bunx", "bun"]);
-
-module.exports = { DEFAULT_PLUGINS, LOCAL_STDIO_PLUGINS, ALLOWED_MCP_COMMANDS, buildManagedMcpServers };
+module.exports = { DEFAULT_PLUGINS, LOCAL_STDIO_PLUGINS, buildManagedMcpServers };

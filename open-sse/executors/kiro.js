@@ -2,8 +2,7 @@ import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { v4 as uuidv4 } from "uuid";
 import { refreshKiroToken } from "../services/tokenRefresh.js";
-import { proxyAwareFetch } from "../utils/proxyFetch.js";
-import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG, resolveRetryEntry } from "../config/runtimeConfig.js";
+import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
 
 /**
  * KiroExecutor - Executor for Kiro AI (AWS CodeWhisperer)
@@ -33,45 +32,25 @@ export class KiroExecutor extends BaseExecutor {
   }
 
   /**
-   * Custom execute for Kiro - handles AWS EventStream binary response with retry support
+   * Kiro execute — delegate to BaseExecutor for endpoint fallback + retry, then
+   * transform the binary AWS EventStream into OpenAI-shaped SSE on success.
+   *
+   * BaseExecutor.execute() walks config.baseUrls (runtime.us-east-1.kiro.dev →
+   * codewhisperer → q) advancing to the next host on 429 (shouldRetry) and on
+   * network/5xx errors, while tryRetry handles in-place retries per `retry: {429: 2}`.
+   * Note: the baseUrls are alternate surfaces of one regional service, so rotation
+   * is edge-level failover — it does not grant fresh 429 quota. Per-account 429
+   * spreading is handled upstream by account rotation in sse/handlers/chat.js.
+   *
+   * Errors are returned untransformed so the upstream handler can read the body,
+   * classify the status, and trigger account fallback/cooldown.
    */
-  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
-    const url = this.buildUrl(model, stream, 0);
-    const transformedBody = this.transformRequest(model, body, stream, credentials);
-    
-    // Merge default retry config with provider-specific config
-    const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...this.config.retry };
-    let retryAttempts = 0;
-
-    while (true) {
-      const headers = this.buildHeaders(credentials, stream);
-      
-      const response = await proxyAwareFetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(transformedBody),
-        signal
-      }, proxyOptions);
-
-      // Check if should retry based on status code
-      const { attempts: maxRetries, delayMs } = resolveRetryEntry(retryConfig[response.status]);
-      if (!response.ok && maxRetries > 0 && retryAttempts < maxRetries) {
-        retryAttempts++;
-        log?.debug?.("RETRY", `${response.status} retry ${retryAttempts}/${maxRetries} after ${delayMs / 1000}s`);
-        await new Promise(resolve => setTimeout(resolve, delayMs));
-        continue;
-      }
-
-      if (!response.ok) {
-        return { response, url, headers, transformedBody };
-      }
-
-      // Success - transform and return
-      // For Kiro, we need to transform the binary EventStream to SSE
-      // Create a TransformStream to convert binary to SSE text
-      const transformedResponse = this.transformEventStreamToSSE(response, model);
-      return { response: transformedResponse, url, headers, transformedBody };
+  async execute(args) {
+    const result = await super.execute(args);
+    if (result?.response?.ok) {
+      result.response = this.transformEventStreamToSSE(result.response, args.model);
     }
+    return result;
   }
 
   /**
@@ -394,24 +373,20 @@ export class KiroExecutor extends BaseExecutor {
         }
 
         // Send final done message
-        controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
+        controller.enqueue(new TextEncoder().encode(SSE_DONE));
       }
     });
 
     // Pipe response body through transform stream
     if (!response.body) {
-      return new Response("data: [DONE]\n\n", { status: response.status, headers: { "Content-Type": "text/event-stream" } });
+      return new Response(SSE_DONE, { status: response.status, headers: { "Content-Type": "text/event-stream" } });
     }
     const transformedStream = response.body.pipeThrough(transformStream);
 
     return new Response(transformedStream, {
       status: response.status,
       statusText: response.statusText,
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        "Connection": "keep-alive"
-      }
+      headers: { ...SSE_HEADERS }
     });
   }
 

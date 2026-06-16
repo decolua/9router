@@ -34,8 +34,9 @@ import {
 	AI_PROVIDERS,
 	THINKING_CONFIG,
 } from "@/shared/constants/providers";
-import { getModelsByProviderId } from "@/shared/constants/models";
-import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { useModelCaps } from "@/shared/hooks/useModelCaps";
+import { translate } from "@/i18n/runtime";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 import ModelRow from "./ModelRow";
 import PassthroughModelsSection from "./PassthroughModelsSection";
@@ -44,6 +45,7 @@ import ConnectionRow from "./ConnectionRow";
 import AddApiKeyModal from "./AddApiKeyModal";
 import EditCompatibleNodeModal from "./EditCompatibleNodeModal";
 import AddCustomModelModal from "./AddCustomModelModal";
+import BulkImportCodexModal from "./BulkImportCodexModal";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
 
@@ -84,6 +86,7 @@ export default function ProviderDetailPage() {
 	const [disabledModelIds, setDisabledModelIds] = useState([]);
 	const [confirmState, setConfirmState] = useState(null);
 	const [keyGroups, setKeyGroups] = useState([]);
+	const [showBulkImportCodex, setShowBulkImportCodex] = useState(false);
 	const [showAgRiskModal, setShowAgRiskModal] = useState(false);
 	const [oneByOneRunning, setOneByOneRunning] = useState(false);
 	const [oneByOneStopping, setOneByOneStopping] = useState(false);
@@ -1499,8 +1502,7 @@ export default function ProviderDetailPage() {
 								</>
 							)}
 							{/* Thinking config */}
-							{/* {thinkingConfig && (
-                <div className="flex items-center gap-2">
+							{/* {thinkingConfig && (                <div className="flex items-center gap-2">
                   <span className="text-xs text-text-muted font-medium">Thinking</span>
                   <select
                     value={thinkingMode}
@@ -1585,6 +1587,11 @@ export default function ProviderDetailPage() {
 												onClick={() => setShowIFlowCookieModal(true)}
 											>
 												Cookie
+											</Button>
+										)}
+										{providerId === "codex" && (
+											<Button size="sm" icon="playlist_add" variant="secondary" onClick={() => setShowBulkImportCodex(true)}>
+												Bulk Add
 											</Button>
 										)}
 										<Button size="sm" icon="add" onClick={triggerAddConnection}>
@@ -1725,7 +1732,6 @@ export default function ProviderDetailPage() {
 				)}
 				{renderModelsSection()}
 			</Card>
-
 			{bulkActionModal}
 
 			{/* Modals */}
@@ -1827,6 +1833,14 @@ export default function ProviderDetailPage() {
 				/>
 			)}
 
+			{providerId === "codex" && (
+				<BulkImportCodexModal
+					isOpen={showBulkImportCodex}
+					onClose={() => setShowBulkImportCodex(false)}
+					onSuccess={fetchConnections}
+				/>
+			)}
+
 			{/* AG Risk Confirmation Modal */}
 			<ConfirmModal
 				isOpen={showAgRiskModal}
@@ -1838,7 +1852,6 @@ export default function ProviderDetailPage() {
 				cancelText="Cancel"
 				variant="danger"
 			/>
-
 			{/* Confirm Modal */}
 			<ConfirmModal
 				isOpen={!!confirmState}

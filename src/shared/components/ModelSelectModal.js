@@ -4,7 +4,9 @@ import { useState, useMemo, useEffect } from "react";
 import PropTypes from "prop-types";
 import Modal from "./Modal";
 import ProviderIcon from "./ProviderIcon";
-import { getModelsByProviderId } from "@/shared/constants/models";
+import CapacityBadges from "./CapacityBadges";
+import { useModelCaps } from "@/shared/hooks/useModelCaps";
+import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, AI_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, getProviderAlias } from "@/shared/constants/providers";
 
 // Provider order: OAuth first, then Free Tier, then API Key (matches dashboard/providers)
@@ -40,6 +42,7 @@ export default function ModelSelectModal({
       return kinds.includes(kindFilter);
     });
   }, [activeProviders, kindFilter]);
+  const { getCaps } = useModelCaps();
   const [searchQuery, setSearchQuery] = useState("");
   const [combos, setCombos] = useState([]);
   const [providerNodes, setProviderNodes] = useState([]);
@@ -123,12 +126,11 @@ export default function ModelSelectModal({
     // For these kinds, providers without hardcoded models can still be picked (provider-as-model fallback)
     const ALLOW_PROVIDER_FALLBACK_KINDS = new Set(["tts", "image", "webFetch"]);
 
-    // Filter a models[] array by kindFilter (keep only matching m.type)
+    // Filter a models[] array by kindFilter (keep only matching kind)
     const filterByKind = (models) => {
-      // No kindFilter → LLM context: keep only LLM models (no type or type === "llm")
-      if (!kindFilter) return models.filter((m) => m.isPlaceholder || !m.type || m.type === "llm");
+      if (!kindFilter) return models.filter((m) => m.isPlaceholder || !getModelKind(m) || getModelKind(m) === "llm");
       if (!TYPED_KINDS.has(kindFilter)) return models;
-      return models.filter((m) => m.isPlaceholder || m.type === kindFilter);
+      return models.filter((m) => m.isPlaceholder || getModelKind(m) === kindFilter);
     };
 
     // Get all active provider IDs from connections (filtered by kindFilter if set)
@@ -181,13 +183,21 @@ export default function ModelSelectModal({
         let combined = aliasModels;
         if (kindFilter && TYPED_KINDS.has(kindFilter)) {
           combined = getModelsByProviderId(providerId)
-            .filter((m) => m.type === kindFilter)
-            .map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, type: m.type }));
+            .filter((m) => getModelKind(m) === kindFilter)
+            .map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, kind: getModelKind(m) }));
           // Fallback: provider-as-model when no hardcoded models match (tts/image/webFetch only)
           if (combined.length === 0 && ALLOW_PROVIDER_FALLBACK_KINDS.has(kindFilter)) {
             const supports = (providerInfo.serviceKinds || ["llm"]).includes(kindFilter);
             if (supports) combined = [{ id: providerId, name: providerInfo.name, value: alias }];
           }
+        } else {
+          // LLM/null kind: merge hardcoded models (e.g. mimo-free → mimo-auto) with aliases
+          const seen = new Set(aliasModels.map((m) => m.value));
+          const hardcoded = getModelsByProviderId(providerId)
+            .filter((m) => !getModelKind(m) || getModelKind(m) === "llm")
+            .map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, kind: getModelKind(m) }))
+            .filter((m) => !seen.has(m.value));
+          combined = [...aliasModels, ...hardcoded];
         }
 
         if (combined.length > 0) {
@@ -208,7 +218,7 @@ export default function ModelSelectModal({
         // Find connection object to get prefix synchronously without waiting for providerNodes fetch
         const connection = activeProviders.find(p => p.provider === providerId);
         const matchedNode = providerNodes.find(node => node.id === providerId);
-        const displayName = connection?.name || matchedNode?.name || providerInfo.name;
+        const displayName = matchedNode?.name || connection?.name || providerInfo.name;
         const nodePrefix = connection?.providerSpecificData?.prefix || matchedNode?.prefix || providerId;
 
         // Aliases are stored using the raw providerId as key (e.g. "openai-compatible-chat-<uuid>/glm-4.7"),
@@ -263,7 +273,7 @@ export default function ModelSelectModal({
           .map((m) => ({ id: m.id, name: m.name || m.id, value: `${alias}/${m.id}`, isCustom: true }));
 
         const merged = [
-          ...hardcodedModels.map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, type: m.type })),
+          ...hardcodedModels.map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, kind: getModelKind(m) })),
           ...customAliasModels,
           ...customRegisteredModels,
         ];
@@ -492,9 +502,13 @@ export default function ModelSelectModal({
                         <>
                           {model.name}
                           <span className="text-[9px] opacity-60 font-normal">custom</span>
+                          <CapacityBadges caps={getCaps(model.value)} />
                         </>
                       ) : (
-                        model.name
+                        <>
+                          {model.name}
+                          <CapacityBadges caps={getCaps(model.value)} />
+                        </>
                       )}
                     </span>
                   </button>

@@ -1,7 +1,8 @@
 import { randomUUID } from "crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
-import { convertCommandCodeToOpenAI } from "../translator/response/commandcode-to-openai.js";
+import { commandCodeToOpenAIResponse } from "../translator/response/commandcode-to-openai.js";
+import { SSE_DONE } from "../utils/sseConstants.js";
 
 /**
  * CommandCodeExecutor — talks to https://api.commandcode.ai/alpha/generate
@@ -17,6 +18,11 @@ import { convertCommandCodeToOpenAI } from "../translator/response/commandcode-t
 export class CommandCodeExecutor extends BaseExecutor {
   constructor() {
     super("commandcode", PROVIDERS.commandcode);
+  }
+
+  transformRequest(model, body, stream, credentials) {
+    body.stream = true;
+    return body;
   }
 
   buildHeaders(credentials, stream = true) {
@@ -65,15 +71,15 @@ function wrapNdjsonAsOpenAISse(originalResponse, model) {
         const trimmed = line.trim();
         if (!trimmed) continue;
         // Translate AI SDK v5 NDJSON line to one or more OpenAI chunks
-        emitChunks(convertCommandCodeToOpenAI(trimmed, state), controller);
+        emitChunks(commandCodeToOpenAIResponse(trimmed, state), controller);
       }
     },
     flush(controller) {
       const trimmed = buffer.trim();
       if (trimmed) {
-        emitChunks(convertCommandCodeToOpenAI(trimmed, state), controller);
+        emitChunks(commandCodeToOpenAIResponse(trimmed, state), controller);
       }
-      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+      controller.enqueue(encoder.encode(SSE_DONE));
     },
   });
 

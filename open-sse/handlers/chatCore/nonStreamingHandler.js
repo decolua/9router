@@ -72,12 +72,16 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
 
   // Claude
   if (targetFormat === FORMATS.CLAUDE) {
-    if (!responseBody.content) return responseBody;
+    // Always translate a Claude-format body to OpenAI, even if `content` is
+    // missing/null (e.g. M3 with max_tokens:1 spends the budget on thinking
+    // and returns `content: null`). Returning the raw body would leave the
+    // OpenAI client without a `choices` array and surface as a UI test error.
+    if (responseBody.content && !Array.isArray(responseBody.content)) return responseBody;
 
     let textContent = "", thinkingContent = "";
     const toolCalls = [];
 
-    for (const block of responseBody.content) {
+    for (const block of (responseBody.content || [])) {
       if (block.type === "text") {
         // Strip markdown code block markers (e.g. kimi wraps JSON in ```json...```)
         const raw = block.text ?? "";

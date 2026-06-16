@@ -9,13 +9,13 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { openaiToCommandCode } from "../../open-sse/translator/request/openai-to-commandcode.js";
+import { openaiToCommandCodeRequest } from "../../open-sse/translator/request/openai-to-commandcode.js";
 
 const MODEL = "moonshotai/Kimi-K2.6";
 
-describe("openaiToCommandCode — basic envelope", () => {
+describe("openaiToCommandCodeRequest — basic envelope", () => {
   it("returns the expected top-level envelope shape", () => {
-    const out = openaiToCommandCode(MODEL, {
+    const out = openaiToCommandCodeRequest(MODEL, {
       messages: [{ role: "user", content: "hi" }],
     }, true);
 
@@ -28,9 +28,9 @@ describe("openaiToCommandCode — basic envelope", () => {
   });
 });
 
-describe("openaiToCommandCode — system handling", () => {
+describe("openaiToCommandCodeRequest — system handling", () => {
   it("hoists system messages to params.system (string), not messages[]", () => {
-    const out = openaiToCommandCode(MODEL, {
+    const out = openaiToCommandCodeRequest(MODEL, {
       messages: [
         { role: "system", content: "You are concise." },
         { role: "user", content: "hi" },
@@ -44,7 +44,7 @@ describe("openaiToCommandCode — system handling", () => {
   });
 
   it("joins multiple system messages with blank line", () => {
-    const out = openaiToCommandCode(MODEL, {
+    const out = openaiToCommandCodeRequest(MODEL, {
       messages: [
         { role: "system", content: "A" },
         { role: "system", content: "B" },
@@ -56,16 +56,16 @@ describe("openaiToCommandCode — system handling", () => {
   });
 
   it("omits params.system when no system messages", () => {
-    const out = openaiToCommandCode(MODEL, {
+    const out = openaiToCommandCodeRequest(MODEL, {
       messages: [{ role: "user", content: "hi" }],
     }, true);
     expect(out.params.system).toBeUndefined();
   });
 });
 
-describe("openaiToCommandCode — content shape", () => {
+describe("openaiToCommandCodeRequest — content shape", () => {
   it("MUST always emit content as Array (never string) for user", () => {
-    const out = openaiToCommandCode(MODEL, {
+    const out = openaiToCommandCodeRequest(MODEL, {
       messages: [{ role: "user", content: "hello" }],
     }, true);
 
@@ -75,7 +75,7 @@ describe("openaiToCommandCode — content shape", () => {
   });
 
   it("MUST always emit content as Array for assistant", () => {
-    const out = openaiToCommandCode(MODEL, {
+    const out = openaiToCommandCodeRequest(MODEL, {
       messages: [
         { role: "user", content: "a" },
         { role: "assistant", content: "b" },
@@ -87,9 +87,9 @@ describe("openaiToCommandCode — content shape", () => {
   });
 });
 
-describe("openaiToCommandCode — tool role / tool-result (AI SDK)", () => {
+describe("openaiToCommandCodeRequest — tool role / tool-result (AI SDK)", () => {
   it("converts role:\"tool\" to role:\"tool\" with tool-result block; output is {type:\"text\",value}", () => {
-    const out = openaiToCommandCode(MODEL, {
+    const out = openaiToCommandCodeRequest(MODEL, {
       messages: [
         { role: "user", content: "run X" },
         {
@@ -113,9 +113,9 @@ describe("openaiToCommandCode — tool role / tool-result (AI SDK)", () => {
   });
 });
 
-describe("openaiToCommandCode — assistant tool_calls / tool-call", () => {
+describe("openaiToCommandCodeRequest — assistant tool_calls / tool-call", () => {
   it("converts assistant.tool_calls[] into content blocks of type tool-call", () => {
-    const out = openaiToCommandCode(MODEL, {
+    const out = openaiToCommandCodeRequest(MODEL, {
       messages: [
         { role: "user", content: "go" },
         {
@@ -138,9 +138,9 @@ describe("openaiToCommandCode — assistant tool_calls / tool-call", () => {
   });
 });
 
-describe("openaiToCommandCode — tools schema conversion", () => {
+describe("openaiToCommandCodeRequest — tools schema conversion", () => {
   it("converts OpenAI {type:\"function\", function:{...}} to Anthropic plain {name, input_schema}", () => {
-    const out = openaiToCommandCode(MODEL, {
+    const out = openaiToCommandCodeRequest(MODEL, {
       messages: [{ role: "user", content: "hi" }],
       tools: [
         {
@@ -163,7 +163,7 @@ describe("openaiToCommandCode — tools schema conversion", () => {
   });
 
   it("preserves description on converted tool", () => {
-    const out = openaiToCommandCode(MODEL, {
+    const out = openaiToCommandCodeRequest(MODEL, {
       messages: [{ role: "user", content: "hi" }],
       tools: [
         { type: "function", function: { name: "ping", description: "Ping the server", parameters: { type: "object" } } },
@@ -173,7 +173,7 @@ describe("openaiToCommandCode — tools schema conversion", () => {
   });
 
   it("does not include tools field when input has none", () => {
-    const out = openaiToCommandCode(MODEL, {
+    const out = openaiToCommandCodeRequest(MODEL, {
       messages: [{ role: "user", content: "hi" }],
     }, true);
     expect(out.params.tools).toBeUndefined();

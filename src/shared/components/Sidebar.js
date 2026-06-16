@@ -10,6 +10,7 @@ import { MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import Button from "./Button";
 import { ConfirmModal } from "./Modal";
+import NineRemotePromoModal from "./NineRemotePromoModal";
 
 // const VISIBLE_MEDIA_KINDS = ["embedding", "image", "imageToText", "tts", "stt", "webSearch", "webFetch", "video", "music"];
 const VISIBLE_MEDIA_KINDS = ["embedding", "image", "tts", "stt"];
@@ -47,6 +48,7 @@ export default function Sidebar({ onClose }) {
 	const pathname = usePathname();
 	const [mediaOpen, setMediaOpen] = useState(false);
 	const [showShutdownModal, setShowShutdownModal] = useState(false);
+	const [showRemoteModal, setShowRemoteModal] = useState(false);
 	const [isShuttingDown, setIsShuttingDown] = useState(false);
 	const [isDisconnected, setIsDisconnected] = useState(false);
 	const [updateInfo, setUpdateInfo] = useState(null);
@@ -55,7 +57,6 @@ export default function Sidebar({ onClose }) {
 	const [shutdownCountdown, setShutdownCountdown] = useState(0);
 	const [enableTranslator, setEnableTranslator] = useState(false);
 	const { copied, copy } = useCopyToClipboard(2000);
-
 	const INSTALL_CMD = UPDATER_CONFIG.installCmdLatest;
 
 	useEffect(() => {
@@ -185,7 +186,6 @@ export default function Sidebar({ onClose }) {
 						</div>
 					)}
 				</div>
-
 				{/* Navigation */}
 				<nav className="flex-1 px-4 py-2 space-y-0.5 overflow-y-auto custom-scrollbar">
 					{navItems.map((item) => (
@@ -372,7 +372,20 @@ export default function Sidebar({ onClose }) {
 				</nav>
 
 				{/* Footer section */}
-				<div className="p-3 border-t border-border-subtle">
+				<div className="p-3 border-t border-border-subtle flex flex-col gap-2">
+					{/* Remote */}
+					<button
+						onClick={() => setShowRemoteModal(true)}
+						className={cn(
+							"flex items-center gap-3 px-3 py-1 rounded-lg transition-all group w-full",
+							"text-text-muted hover:bg-surface-2 hover:text-text-main",
+						)}
+					>
+						<span className="material-symbols-outlined text-[18px] group-hover:text-primary transition-colors">
+							computer
+						</span>
+						<span className="text-[13px] font-medium">Remote</span>
+					</button>
 					{/* Shutdown button */}
 					<Button
 						variant="outline"
@@ -410,6 +423,9 @@ export default function Sidebar({ onClose }) {
 				cancelText="Cancel"
 				variant="primary"
 			/>
+
+			{/* Remote Promo Modal */}
+			<NineRemotePromoModal isOpen={showRemoteModal} onClose={() => setShowRemoteModal(false)} />
 
 			{/* Disconnected / Updating Overlay */}
 			{(isDisconnected || isUpdating) && (
