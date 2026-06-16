@@ -1,5 +1,5 @@
 import { getMcpServers, getMcpServerById } from "@/models";
-import { sendToMcpServer } from "@/lib/mcp/mcpServerManager";
+import { sendToMcpServer, getGatewaySession } from "@/lib/mcp/mcpServerManager";
 import { checkRateLimit } from "@/lib/mcp/rateLimiter";
 import { validateApiKey } from "@/lib/localDb";
 
@@ -68,6 +68,31 @@ export async function POST(request) {
 
     const { __mcpServerId, ...jsonRpc } = body;
 
+    // Intercept client's initialize/initialized notifications
+    if (!__mcpServerId && jsonRpc.method === "initialize") {
+      const response = {
+        jsonrpc: "2.0",
+        id: jsonRpc.id,
+        result: {
+          protocolVersion: "2024-11-05",
+          capabilities: {
+            tools: {
+              listChanged: true
+            }
+          },
+          serverInfo: {
+            name: "9router-mcp-gateway",
+            version: "1.0.0"
+          }
+        }
+      };
+      return await sendResponse(response);
+    }
+
+    if (!__mcpServerId && jsonRpc.method === "notifications/initialized") {
+      return new Response("", { status: 202 });
+    }
+
     // ─── tools/list aggregation ──────────────────────────────────────────
     // If no __mcpServerId and method is tools/list, aggregate from ALL servers
     if (!__mcpServerId && jsonRpc.method === "tools/list") {
@@ -111,17 +136,13 @@ export async function POST(request) {
       }
 
       if (sessionId) {
-        const G_SESSIONS = "__9routerMcpGatewaySessions";
-        const session = globalThis[G_SESSIONS]?.get(sessionId);
+        const session = getGatewaySession(sessionId);
         if (session) {
           session.send(`event: message\ndata: ${JSON.stringify(data)}\n\n`);
+          return new Response("", { status: 202 });
         }
-        return new Response("", { status: 202 });
       }
 
-      if (result instanceof Response) {
-        return result;
-      }
       return Response.json(data);
     }
 
@@ -157,7 +178,7 @@ async function handleToolsList(jsonRpc) {
 
   const allTools = [];
 
-  for (const server of servers) {
+  const promises = servers.map(async (server) => {
     try {
       const response = await sendToMcpServer(server, {
         jsonrpc: "2.0",
@@ -183,7 +204,9 @@ async function handleToolsList(jsonRpc) {
     } catch (err) {
       console.error(`[mcp-gateway] tools/list failed for ${server.name}:`, err.message);
     }
-  }
+  });
+
+  await Promise.all(promises);
 
   return Response.json({
     jsonrpc: "2.0",

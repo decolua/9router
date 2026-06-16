@@ -18,7 +18,11 @@ const getConnections = () => {
       transports: new Map(), // `stdio:{serverId}` -> entry
       sessions: new Map(), // `session:{sessionId}` -> { serverId, transport }
       cooldowns: new Map(), // cooldownKey -> expiry timestamp
+      gatewaySessions: new Map(), // sessionId -> { send }
     };
+  }
+  if (!globalThis[G_KEY].gatewaySessions) {
+    globalThis[G_KEY].gatewaySessions = new Map();
   }
   return globalThis[G_KEY];
 };
@@ -84,6 +88,8 @@ async function sendToRemoteServer(server, jsonRpc) {
   if (!mcpSessionId && jsonRpc.method !== "initialize") {
     try {
       console.log(`[mcp-manager] Auto-initializing remote server "${server.name}"...`);
+      const initController = new AbortController();
+      const initTimeout = setTimeout(() => initController.abort(), 8000);
       const initRes = await fetch(url, {
         method: "POST",
         headers: {
@@ -101,14 +107,21 @@ async function sendToRemoteServer(server, jsonRpc) {
           },
           id: `auto-init-${crypto.randomUUID()}`,
         }),
+        signal: initController.signal,
       });
+      clearTimeout(initTimeout);
 
       if (initRes.ok) {
         mcpSessionId = initRes.headers.get("mcp-session-id");
         if (mcpSessionId) {
           store.remoteSessions.set(server.id, mcpSessionId);
           console.log(`[mcp-manager] Successfully auto-initialized "${server.name}", session ID: ${mcpSessionId}`);
+        } else {
+          // Some remote servers might not use mcp-session-id header but still return 200 OK
+          console.log(`[mcp-manager] Auto-initialized "${server.name}" with status OK (no session ID header)`);
         }
+      } else {
+        console.warn(`[mcp-manager] Auto-initialize "${server.name}" returned status ${initRes.status}`);
       }
     } catch (err) {
       console.error(`[mcp-manager] Auto-initialize failed for "${server.name}":`, err.message);
@@ -187,6 +200,50 @@ async function sendToRemoteServer(server, jsonRpc) {
 
 // ─── Local Stdio Transport ─────────────────────────────────────────────────
 
+async function initializeStdioServer(entry, server) {
+  try {
+    console.log(`[mcp-stdio:${server.name}] Starting auto-initialization...`);
+    const initResponse = await new Promise((resolve) => {
+      const requestId = `init-${crypto.randomUUID()}`;
+      const timeout = setTimeout(() => {
+        entry.pendingRequests.delete(requestId);
+        console.log(`[mcp-stdio:${server.name}] Auto-initialization timed out`);
+        resolve(null);
+      }, 8000);
+
+      entry.pendingRequests.set(requestId, (res) => {
+        clearTimeout(timeout);
+        resolve(res);
+      });
+
+      entry.proc.stdin.write(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: requestId,
+          method: "initialize",
+          params: {
+            protocolVersion: "2024-11-05",
+            capabilities: {},
+            clientInfo: { name: "9router-mcp", version: "1.0.0" },
+          },
+        }) + "\n"
+      );
+    });
+
+    if (initResponse) {
+      console.log(`[mcp-stdio:${server.name}] Auto-initialization response received`);
+      entry.proc.stdin.write(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          method: "notifications/initialized",
+        }) + "\n"
+      );
+    }
+  } catch (err) {
+    console.error(`[mcp-stdio:${server.name}] Auto-initialization failed:`, err.message);
+  }
+}
+
 function spawnLocalServer(server) {
   const store = getConnections();
   const entryKey = `stdio:${server.id}`;
@@ -209,7 +266,7 @@ function spawnLocalServer(server) {
     shell: process.platform === "win32",
   });
 
-  entry = { proc, sessions: new Map(), buffer: "", startTime: commandStartTime };
+  entry = { proc, sessions: new Map(), buffer: "", startTime: commandStartTime, pendingRequests: new Map() };
   store.transports.set(entryKey, entry);
 
   proc.stdout.on("data", (chunk) => {
@@ -219,6 +276,17 @@ function spawnLocalServer(server) {
       const raw = entry.buffer.slice(0, idx).trim();
       entry.buffer = entry.buffer.slice(idx + 1);
       if (!raw) continue;
+
+      try {
+        const json = JSON.parse(raw);
+        if (json.id && entry.pendingRequests.has(json.id)) {
+          const resolve = entry.pendingRequests.get(json.id);
+          entry.pendingRequests.delete(json.id);
+          resolve(json);
+          continue;
+        }
+      } catch (e) {}
+
       for (const send of entry.sessions.values()) {
         try { send(`event: message\ndata: ${raw}\n\n`); } catch {}
       }
@@ -257,18 +325,55 @@ function spawnLocalServer(server) {
   });
 
   console.log(`[mcp-stdio:${server.name}] spawned (command: ${server.command} ${(server.args || []).join(" ")})`);
+  entry.initPromise = initializeStdioServer(entry, server);
   return entry;
 }
 
 function sendToStdioServer(server, jsonRpc) {
-  const entryKey = `stdio:${server.id}`;
-  const entry = getConnections().transports.get(entryKey);
-  if (!entry?.proc?.stdin?.writable) {
-    const newEntry = spawnLocalServer(server);
-    newEntry.proc.stdin.write(`${JSON.stringify(jsonRpc)}\n`);
-    return;
-  }
-  entry.proc.stdin.write(`${JSON.stringify(jsonRpc)}\n`);
+  return new Promise(async (resolve) => {
+    const entryKey = `stdio:${server.id}`;
+    let entry = getConnections().transports.get(entryKey);
+    if (!entry || !entry.proc || entry.proc.killed || entry.proc.exitCode !== null) {
+      try {
+        entry = spawnLocalServer(server);
+      } catch (e) {
+        resolve({ jsonrpc: "2.0", id: jsonRpc.id, error: { code: -32603, message: e.message } });
+        return;
+      }
+    }
+
+    if (!entry.pendingRequests) {
+      entry.pendingRequests = new Map();
+    }
+
+    // Wait for the initialization handshake to complete
+    if (entry.initPromise) {
+      await entry.initPromise;
+    }
+
+    const requestId = jsonRpc.id || crypto.randomUUID();
+    const timeout = setTimeout(() => {
+      if (entry.pendingRequests.has(requestId)) {
+        entry.pendingRequests.delete(requestId);
+        console.log(`[mcp-stdio:${server.name}] Request ${requestId} timed out`);
+        resolve({ jsonrpc: "2.0", id: jsonRpc.id, error: { code: -32603, message: "Request timed out" } });
+      }
+    }, 15000); // 15 second timeout for tools/list and execution
+
+    entry.pendingRequests.set(requestId, (res) => {
+      clearTimeout(timeout);
+      resolve({ ...res, id: jsonRpc.id }); // Map request id back
+    });
+
+    const msg = { ...jsonRpc, id: requestId };
+    try {
+      entry.proc.stdin.write(`${JSON.stringify(msg)}\n`);
+    } catch (err) {
+      clearTimeout(timeout);
+      entry.pendingRequests.delete(requestId);
+      resolve({ jsonrpc: "2.0", id: jsonRpc.id, error: { code: -32603, message: `Failed to write to stdin: ${err.message}` } });
+    }
+  });
 }
 
 // ─── Public API ────────────────────────────────────────────────────────────
@@ -279,8 +384,7 @@ function sendToStdioServer(server, jsonRpc) {
  */
 async function sendToMcpServer(server, jsonRpc) {
   if (server.type === "local-stdio") {
-    sendToStdioServer(server, jsonRpc);
-    return null; // Stdio is fire-and-forget; responses come via SSE
+    return await sendToStdioServer(server, jsonRpc);
   }
   return await sendToRemoteServer(server, jsonRpc);
 }
@@ -450,5 +554,24 @@ function getServerManagerStatus() {
   };
 }
 
-export { sendToMcpServer, createMcpSSEStream, getServerManagerStatus };
+function registerGatewaySession(sessionId, send) {
+  getConnections().gatewaySessions.set(sessionId, { send });
+}
+
+function unregisterGatewaySession(sessionId) {
+  getConnections().gatewaySessions.delete(sessionId);
+}
+
+function getGatewaySession(sessionId) {
+  return getConnections().gatewaySessions.get(sessionId);
+}
+
+export {
+  sendToMcpServer,
+  createMcpSSEStream,
+  getServerManagerStatus,
+  registerGatewaySession,
+  unregisterGatewaySession,
+  getGatewaySession,
+};
 

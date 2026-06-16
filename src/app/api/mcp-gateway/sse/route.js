@@ -1,5 +1,5 @@
 import { getMcpServers } from "@/models";
-import { createMcpSSEStream } from "@/lib/mcp/mcpServerManager";
+import { createMcpSSEStream, registerGatewaySession, unregisterGatewaySession } from "@/lib/mcp/mcpServerManager";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,11 +48,7 @@ export async function GET(request) {
         } catch {}
       };
 
-      const G_SESSIONS = "__9routerMcpGatewaySessions";
-      if (!globalThis[G_SESSIONS]) {
-        globalThis[G_SESSIONS] = new Map();
-      }
-      globalThis[G_SESSIONS].set(sessionId, { send });
+      registerGatewaySession(sessionId, send);
 
       // MCP SSE handshake: endpoint first (tells client where to POST), then connected
       // Return endpoint with sessionId query param so clients route POSTs to this session!
@@ -116,10 +112,7 @@ export async function GET(request) {
     },
     cancel() {
       clientConnected = false;
-      const G_SESSIONS = "__9routerMcpGatewaySessions";
-      if (globalThis[G_SESSIONS]) {
-        globalThis[G_SESSIONS].delete(sessionId);
-      }
+      unregisterGatewaySession(sessionId);
     },
   });
 
