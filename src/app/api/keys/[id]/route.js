@@ -3,56 +3,74 @@ import { deleteApiKey, getApiKeyById, updateApiKey } from "@/lib/localDb";
 
 // GET /api/keys/[id] - Get single key
 export async function GET(request, { params }) {
-  try {
-    const { id } = await params;
-    const key = await getApiKeyById(id);
-    if (!key) {
-      return NextResponse.json({ error: "Key not found" }, { status: 404 });
-    }
-    return NextResponse.json({ key });
-  } catch (error) {
-    console.log("Error fetching key:", error);
-    return NextResponse.json({ error: "Failed to fetch key" }, { status: 500 });
-  }
+	try {
+		const { id } = await params;
+		const key = await getApiKeyById(id);
+		if (!key) {
+			return NextResponse.json({ error: "Key not found" }, { status: 404 });
+		}
+		return NextResponse.json({ key });
+	} catch (error) {
+		console.log("Error fetching key:", error);
+		return NextResponse.json({ error: "Failed to fetch key" }, { status: 500 });
+	}
 }
 
 // PUT /api/keys/[id] - Update key
 export async function PUT(request, { params }) {
-  try {
-    const { id } = await params;
-    const body = await request.json();
-    const { isActive } = body;
+	try {
+		const { id } = await params;
+		const body = await request.json();
+		const { isActive } = body;
 
-    const existing = await getApiKeyById(id);
-    if (!existing) {
-      return NextResponse.json({ error: "Key not found" }, { status: 404 });
-    }
+		const existing = await getApiKeyById(id);
+		if (!existing) {
+			return NextResponse.json({ error: "Key not found" }, { status: 404 });
+		}
 
-    const updateData = {};
-    if (isActive !== undefined) updateData.isActive = isActive;
+		const updateData = {};
+		if (isActive !== undefined) updateData.isActive = isActive;
+		if ("groupId" in body) {
+			if (body.groupId !== null && body.groupId !== undefined) {
+				const { getKeyGroupById } = await import("@/models");
+				const grp = await getKeyGroupById(body.groupId);
+				if (!grp)
+					return NextResponse.json(
+						{ error: "Key group not found" },
+						{ status: 400 },
+					);
+			}
+			updateData.groupId = body.groupId ?? null;
+		}
 
-    const updated = await updateApiKey(id, updateData);
+		const updated = await updateApiKey(id, updateData);
 
-    return NextResponse.json({ key: updated });
-  } catch (error) {
-    console.log("Error updating key:", error);
-    return NextResponse.json({ error: "Failed to update key" }, { status: 500 });
-  }
+		return NextResponse.json({ key: updated });
+	} catch (error) {
+		console.log("Error updating key:", error);
+		return NextResponse.json(
+			{ error: "Failed to update key" },
+			{ status: 500 },
+		);
+	}
 }
 
 // DELETE /api/keys/[id] - Delete API key
 export async function DELETE(request, { params }) {
-  try {
-    const { id } = await params;
+	try {
+		const { id } = await params;
 
-    const deleted = await deleteApiKey(id);
-    if (!deleted) {
-      return NextResponse.json({ error: "Key not found" }, { status: 404 });
-    }
+		const deleted = await deleteApiKey(id);
+		if (!deleted) {
+			return NextResponse.json({ error: "Key not found" }, { status: 404 });
+		}
 
-    return NextResponse.json({ message: "Key deleted successfully" });
-  } catch (error) {
-    console.log("Error deleting key:", error);
-    return NextResponse.json({ error: "Failed to delete key" }, { status: 500 });
-  }
+		return NextResponse.json({ message: "Key deleted successfully" });
+	} catch (error) {
+		console.log("Error deleting key:", error);
+		return NextResponse.json(
+			{ error: "Failed to delete key" },
+			{ status: 500 },
+		);
+	}
 }

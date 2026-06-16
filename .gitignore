@@ -72,6 +72,7 @@ ecosystem.config.*
 scripts/agSniffer/*
 gitbooks/*
 gitbook/README.md
+EVIDENCE_KEY_GROUPS.md
 
 # Refactor backup reference (do not bundle/lint)
 open-sse.old/
