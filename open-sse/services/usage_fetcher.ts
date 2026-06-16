@@ -1,7 +1,3 @@
-/**
- * Usage Fetcher - Get usage data from provider APIs
- */
-
 import { getGitHubUsage } from "./usage/github.js";
 import { getGeminiUsage, getAntigravityUsage } from "./usage/google.js";
 import { getClaudeUsage } from "./usage/claude.js";
@@ -17,15 +13,10 @@ import {
   getGlmUsage,
   getVercelAiGatewayUsage,
   getQoderUsage,
-} from "./usage/misc.js";
+}      "./usage/misc.js";
 
-/**
- * Get usage data for a provider connection
- * @param {Object} connection - Provider connection with accessToken
- * @returns {Object} Usage data with quotas
- */
-// provider → usage handler (ctx carries every arg each handler needs)
-const USAGE_HANDLERS = {
+
+      USAGE_HANDLERS = {
   github: (c) => getGitHubUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
   "gemini-cli": (c) => getGeminiUsage(c.accessToken, c.providerDataWithProjectId, c.proxyOptions),
   antigravity: (c) => getAntigravityUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
@@ -43,14 +34,14 @@ const USAGE_HANDLERS = {
   "vercel-ai-gateway": (c) => getVercelAiGatewayUsage(c.apiKey, c.proxyOptions),
 };
 
-export async function getUsageForProvider(connection, proxyOptions = null) {
-  const { provider, accessToken, apiKey, providerSpecificData, projectId } = connection;
-  const providerDataWithProjectId = {
+                      getUsageForProvider(connection, proxyOptions = null) {
+        { provider, accessToken, apiKey, providerSpecificData, projectId } = connection;
+        providerDataWithProjectId = {
     ...(providerSpecificData || {}),
     ...(projectId ? { projectId } : {}),
   };
 
-  const handler = USAGE_HANDLERS[provider];
-  if (!handler) return { message: `Usage API not implemented for ${provider}` };
-  return await handler({ provider, accessToken, apiKey, providerSpecificData, providerDataWithProjectId, proxyOptions });
+        handler = USAGE_HANDLERS[provider];
+     (!handler)        { message: `Usage API not implemented for ${provider}` };
+               handler({ provider, accessToken, apiKey, providerSpecificData, providerDataWithProjectId, proxyOptions });
 }
