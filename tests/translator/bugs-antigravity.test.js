@@ -1,6 +1,7 @@
 // Real Antigravity-MITM requests (Gemini-internal: { request: { contents, ... } }) → OpenAI.
 import { describe, it, expect } from "vitest";
 import "./registerAll.js";
+import { AntigravityExecutor } from "../../open-sse/executors/antigravity.js";
 import { translateRequest } from "../../open-sse/translator/index.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
 
@@ -50,5 +51,34 @@ describe("Antigravity → OpenAI", () => {
       ? content.some((c) => c.type === "text" && c.text === "")
       : content === "";
     expect(hasEmpty, "empty text part emitted").toBe(false);
+  });
+});
+
+describe("Antigravity executor", () => {
+  it("strips optional from nested tool schemas", () => {
+    const out = new AntigravityExecutor().transformRequest("gemini-2.5-pro", {
+      request: {
+        contents: [{ role: "user", parts: [{ text: "hi" }] }],
+        tools: [{
+          functionDeclarations: [{
+            name: "lookup",
+            description: "Lookup a value",
+            parameters: {
+              type: "object",
+              properties: {
+                query: {
+                  type: "string",
+                  description: "Search query",
+                  optional: true,
+                },
+              },
+            },
+          }],
+        }],
+      },
+    }, true, { projectId: "project-1", connectionId: "conn-1" });
+
+    const query = out.request.tools[0].functionDeclarations[0].parameters.properties.query;
+    expect(query).toEqual({ type: "string", description: "Search query" });
   });
 });
