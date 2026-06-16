@@ -43,14 +43,7 @@ if %ERRORLEVEL% neq 0 (
 
 :: Release port 20128 if it is in use to avoid locked files during build
 echo Checking if port 20128 is already in use...
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr :20128 ^| findstr LISTENING') do (
-    set PID_TO_KILL=%%a
-    echo Port 20128 is currently in use by process ID !PID_TO_KILL!. Releasing port...
-    taskkill /F /PID !PID_TO_KILL! >nul 2>&1
-    if !ERRORLEVEL! equ 0 (
-        echo [✓] Successfully stopped process !PID_TO_KILL! to release port.
-    )
-)
+powershell -Command "try { Get-NetTCPConnection -LocalPort 20128 -ErrorAction Stop | ForEach-Object { Write-Host 'Port 20128 is currently in use by process ID' $_.OwningProcess '. Releasing port...'; Stop-Process -Id $_.OwningProcess -Force; Write-Host '[✓] Successfully stopped process' $_.OwningProcess 'to release port.' } } catch {}; exit 0"
 echo.
 echo [1/3] Node.js and npm verified:
 for /f "tokens=*" %%i in ('node -v') do set NODE_VER=%%i
