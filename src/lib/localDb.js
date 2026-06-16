@@ -17,5 +17,8 @@ export {
   getCustomModels, addCustomModel, deleteCustomModel,
   getMitmAlias, setMitmAliasAll,
   getPricing, getPricingForModel, updatePricing, resetPricing, resetAllPricing,
+  getMcpServers, getMcpServerById,
+  createMcpServer, updateMcpServer,
+  deleteMcpServer, testMcpServer, sanitizeMcpServer,
   exportDb, importDb,
 } from "@/lib/db/index.js";

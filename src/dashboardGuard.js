@@ -29,10 +29,12 @@ const PUBLIC_API_PATHS = [
   "/api/auth/oidc",
   "/api/version",
   "/api/settings/require-login",
+  "/api/mcp-gateway",          // MCP gateway — accessed by external MCP clients
+  "/api/mcp-servers/status",    // Server diagnostics — read-only status
 ];
 
 // Public top-level prefixes (LLM API endpoints with their own API key auth).
-const PUBLIC_PREFIXES = ["/v1", "/v1beta", "/api/v1", "/api/v1beta"];
+const PUBLIC_PREFIXES = ["/v1", "/v1beta", "/api/v1", "/api/v1beta", "/api/mcp-gateway"];
 
 // Always require JWT token regardless of requireLogin setting
 const ALWAYS_PROTECTED = [

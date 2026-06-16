@@ -18,6 +18,30 @@ const DEFAULT_PLUGINS = [
     oauth: true,
     toolNames: ["tavily_search", "tavily_extract", "tavily_crawl", "tavily_map"],
   },
+  {
+    name: "stitch",
+    title: "Google Stitch",
+    description: "Connect to Google Stitch design projects and generate UI screens",
+    url: "https://stitch.googleapis.com/mcp",
+    transport: "http",
+    oauth: false,
+    toolNames: [
+      "list_projects",
+      "list_screens",
+      "get_project",
+      "get_screen",
+      "create_project",
+      "generate_screen_from_text",
+      "edit_screens",
+      "generate_variants",
+      "create_design_system",
+      "update_design_system",
+      "apply_design_system",
+      "upload_design_md",
+      "create_design_system_from_design_md",
+      "list_design_systems"
+    ],
+  },
 ];
 
 // Local stdio plugins bridged via inline SSE endpoint on the app's port.

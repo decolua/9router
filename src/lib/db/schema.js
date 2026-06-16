@@ -148,6 +148,22 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_rd_conn ON requestDetails(connectionId)",
     ],
   },
+  mcpServers: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      name: "TEXT NOT NULL",
+      type: "TEXT NOT NULL",
+      isActive: "INTEGER DEFAULT 1",
+      testStatus: "TEXT",
+      data: "TEXT NOT NULL",
+      createdAt: "TEXT NOT NULL",
+      updatedAt: "TEXT NOT NULL",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_ms_active ON mcpServers(isActive)",
+      "CREATE INDEX IF NOT EXISTS idx_ms_type ON mcpServers(type)",
+    ],
+  },
 };
 
 export function buildCreateTableSql(name, def) {

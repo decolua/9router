@@ -3,13 +3,16 @@
 
 const { spawn } = require("child_process");
 const crypto = require("crypto");
-const { LOCAL_STDIO_PLUGINS } = require("@/shared/constants/coworkPlugins");
+// Use the plugin registry instead of hardcoded constants
+const { findPlugin: findPluginInRegistry } = require("./pluginRegistry");
+const { SessionLifetimeManager } = require("./sessionManager");
 
 const G_KEY = "__9routerMcpBridges";
 const MAX_TEXT_CHARS = 50000;
 const COLLAPSE_THRESHOLD = 30;
 const COLLAPSE_KEEP_HEAD = 10;
 const COLLAPSE_KEEP_TAIL = 5;
+const IDLE_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
 // Drop noise nodes, collapse repeated siblings, hard-truncate. Preserve [ref=eXX].
 function smartFilterText(text) {
@@ -101,21 +104,32 @@ const getStore = () => {
   return globalThis[G_KEY];
 };
 
-// Only preset stdio plugins may spawn. No user-defined commands (RCE prevention).
+// Only registered stdio plugins may spawn. No user-defined commands (RCE prevention).
 function findPlugin(name) {
-  return LOCAL_STDIO_PLUGINS.find((p) => p.name === name) || null;
+  return findPluginInRegistry(name) || null;
 }
 
 function getOrSpawn(name) {
   const store = getStore();
   let entry = store.get(name);
-  if (entry?.proc && !entry.proc.killed && entry.proc.exitCode === null) return entry;
+  if (entry?.proc && !entry.proc.killed && entry.proc.exitCode === null) {
+    // Reset idle timer since it's being used
+    resetIdleTimer(name, entry);
+    return entry;
+  }
+
+  // Clear any stale entry
+  if (entry) {
+    clearIdleTimer(name, entry);
+    store.delete(name);
+  }
 
   const plugin = findPlugin(name);
   if (!plugin) throw new Error(`Unknown local plugin: ${name}`);
 
+  const startTime = Date.now();
   const proc = spawn(plugin.command, plugin.args, { stdio: ["pipe", "pipe", "pipe"], env: process.env });
-  entry = { proc, sessions: new Map(), buffer: "" };
+  entry = { proc, sessions: new Map(), buffer: "", startTime, idleTimer: null };
   store.set(name, entry);
 
   // Parse newline-delimited JSON-RPC from child stdout, broadcast to all sessions.
@@ -131,21 +145,89 @@ function getOrSpawn(name) {
         try { send(`event: message\ndata: ${line}\n\n`); } catch { /* ignore broken pipe */ }
       }
     }
+    resetIdleTimer(name, entry);
   });
 
-  proc.stderr.on("data", (d) => console.log(`[mcp:${name}]`, d.toString().trim()));
-  proc.on("exit", (code) => {
-    console.log(`[mcp:${name}] exited`, code);
-    store.delete(name);
+  proc.stderr.on("data", (d) => {
+    const msg = d.toString().trim();
+    if (!msg) return;
+    console.log(`[mcp:${name}] stderr:`, msg);
+    // Notify all sessions of stderr
+    for (const send of entry.sessions.values()) {
+      try { send(`event: stderr\ndata: ${JSON.stringify({ plugin: name, message: msg })}\n\n`); } catch {}
+    }
   });
 
+  proc.on("error", (err) => {
+    console.error(`[mcp:${name}] process error:`, err.message);
+    cleanupEntry(name, entry);
+  });
+
+  proc.on("exit", (code, signal) => {
+    const runtime = Date.now() - startTime;
+    console.log(`[mcp:${name}] exited code=${code} signal=${signal} runtime=${runtime}ms`);
+    cleanupEntry(name, entry);
+    // Notify sessions
+    for (const send of entry.sessions.values()) {
+      try { send(`event: process_exit\ndata: ${JSON.stringify({ plugin: name, code, signal })}\n\n`); } catch {}
+    }
+  });
+
+  console.log(`[mcp:${name}] spawned (command: ${plugin.command} ${(plugin.args || []).join(" ")})`);
+  startIdleTimer(name, entry);
   return entry;
+}
+
+// ─── Idle timeout ──────────────────────────────────────────────────────────
+
+function startIdleTimer(name, entry) {
+  clearIdleTimer(name, entry);
+  entry.idleTimer = setTimeout(() => {
+    if (entry.sessions.size === 0) {
+      console.log(`[mcp:${name}] idle timeout, killing process`);
+      killEntry(name, entry);
+    } else {
+      // Has active sessions, skip idle kill but log
+      console.log(`[mcp:${name}] idle timeout but has ${entry.sessions.size} active session(s), skipping`);
+    }
+  }, IDLE_TIMEOUT_MS);
+}
+
+function resetIdleTimer(name, entry) {
+  if (entry.idleTimer) startIdleTimer(name, entry);
+}
+
+function clearIdleTimer(_name, entry) {
+  if (entry.idleTimer) {
+    clearTimeout(entry.idleTimer);
+    entry.idleTimer = null;
+  }
+}
+
+function killEntry(name, entry) {
+  clearIdleTimer(name, entry);
+  if (entry.proc && !entry.proc.killed && entry.proc.exitCode === null) {
+    try { entry.proc.kill("SIGTERM"); } catch {}
+    // Force kill after 5 seconds
+    setTimeout(() => {
+      if (entry.proc && !entry.proc.killed && entry.proc.exitCode === null) {
+        try { entry.proc.kill("SIGKILL"); } catch {}
+      }
+    }, 5000);
+  }
+}
+
+function cleanupEntry(name, entry) {
+  clearIdleTimer(name, entry);
+  const store = getStore();
+  store.delete(name);
 }
 
 function registerSession(name, sendFn) {
   const entry = getOrSpawn(name);
   const sid = crypto.randomUUID();
   entry.sessions.set(sid, sendFn);
+  console.log(`[mcp:${name}] session registered: ${sid} (total: ${entry.sessions.size})`);
   return sid;
 }
 
@@ -153,6 +235,12 @@ function unregisterSession(name, sid) {
   const entry = getStore().get(name);
   if (!entry) return;
   entry.sessions.delete(sid);
+  console.log(`[mcp:${name}] session unregistered: ${sid} (total: ${entry.sessions.size})`);
+  // If no sessions left and process is still running, start idle timer
+  if (entry.sessions.size === 0 && entry.proc && !entry.proc.killed && entry.proc.exitCode === null) {
+    console.log(`[mcp:${name}] no active sessions, starting idle timer`);
+    startIdleTimer(name, entry);
+  }
 }
 
 function sendToChild(name, jsonRpc) {
@@ -166,4 +254,17 @@ function isRunning(name) {
   return !!(entry?.proc && !entry.proc.killed && entry.proc.exitCode === null);
 }
 
-module.exports = { getOrSpawn, registerSession, unregisterSession, sendToChild, isRunning, findPlugin };
+function getStatus() {
+  const store = getStore();
+  const status = {};
+  for (const [name, entry] of store.entries()) {
+    status[name] = {
+      running: !!(entry.proc && !entry.proc.killed && entry.proc.exitCode === null),
+      sessions: entry.sessions.size,
+      uptime: entry.startTime ? Date.now() - entry.startTime : 0,
+    };
+  }
+  return status;
+}
+
+module.exports = { getOrSpawn, registerSession, unregisterSession, sendToChild, isRunning, findPlugin, getStatus };

@@ -21,6 +21,14 @@ export {
   createProviderNode, updateProviderNode, deleteProviderNode,
 } from "./repos/nodesRepo.js";
 
+// MCP Servers
+export {
+  getMcpServers, getMcpServerById,
+  createMcpServer, updateMcpServer,
+  deleteMcpServer, testMcpServer,
+  sanitizeMcpServer,
+} from "./repos/mcpServersRepo.js";
+
 // Proxy pools
 export {
   getProxyPools, getProxyPoolById,

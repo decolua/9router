@@ -35,4 +35,11 @@ export {
   deleteApiKey,
   validateApiKey,
   isCloudEnabled,
+  getMcpServers,
+  getMcpServerById,
+  createMcpServer,
+  updateMcpServer,
+  deleteMcpServer,
+  testMcpServer,
+  sanitizeMcpServer,
 } from "@/lib/localDb";
