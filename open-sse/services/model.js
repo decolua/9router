@@ -74,6 +74,8 @@ const ALIAS_TO_PROVIDER_ID = {
   "perplexity-web": "perplexity-web",
   mimo: "xiaomi-mimo",
   "xiaomi-mimo": "xiaomi-mimo",
+  mmf: "mimo-free",
+  "mimo-free": "mimo-free",
   xmtp: "xiaomi-tokenplan",
   "xiaomi-tokenplan": "xiaomi-tokenplan",
   cf: "cloudflare-ai",

@@ -382,7 +382,6 @@ function convertOpenAIToKiro(chunk, state) {
           name: init?.name || tc.function?.name || "",
           toolUseId: init?.id || tc.id || ""
         }));
->>>>>>> upstream/master
       }
     }
   }

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { MITM_TOOLS } from "@/shared/constants/cliTools";
 import { getModelsByProviderId } from "@/shared/constants/models";
-import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, FREE_PROVIDERS } from "@/shared/constants/providers";
 import { MitmServerCard, MitmToolCard } from "@/app/(dashboard)/dashboard/cli-tools/components";
 
 export default function MitmPageClient() {
@@ -65,11 +65,13 @@ export default function MitmPageClient() {
 
   const hasActiveProviders = () => {
     const active = getActiveProviders();
-    return active.some(conn =>
+    const hasConnections = active.some(conn =>
       getModelsByProviderId(conn.provider).length > 0 ||
       isOpenAICompatibleProvider(conn.provider) ||
       isAnthropicCompatibleProvider(conn.provider)
     );
+    const hasNoAuth = Object.values(FREE_PROVIDERS).some(p => p.noAuth);
+    return hasConnections || hasNoAuth;
   };
 
   const mitmTools = Object.entries(MITM_TOOLS);
