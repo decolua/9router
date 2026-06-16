@@ -1,5 +1,17 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { GlmExecutor } from "../../open-sse/executors/glm.js";
+import { GlmExecutor, glmRequestContext } from "../../open-sse/executors/glm.js";
+
+function withGlmRequest(credentials, fn, urlIndex = 0) {
+  return glmRequestContext.run({ credentials, urlIndex }, fn);
+}
+
+/** buildUrl sets urlIndex on the active ALS store (same as production execute loop). */
+function atUrlIndex(executor, urlIndex, credentials, fn) {
+  return withGlmRequest(credentials, () => {
+    executor.buildUrl("glm-5.2", true, urlIndex, credentials);
+    return fn();
+  });
+}
 
 describe("GlmExecutor", () => {
   let executor;
@@ -23,15 +35,16 @@ describe("GlmExecutor", () => {
   });
 
   it("uses full ZCode fingerprint on coding plan primary URL", () => {
-    executor._glmUrlIndex = 0;
-    const headers = executor.buildHeaders({
-      ...codingPlanCreds,
-      connectionId: "conn-1",
-      providerSpecificData: {
-        ...codingPlanCreds.providerSpecificData,
-        _captchaVerifyParam: "captcha-token",
-      },
-    });
+    const headers = atUrlIndex(executor, 0, codingPlanCreds, () =>
+      executor.buildHeaders({
+        ...codingPlanCreds,
+        connectionId: "conn-1",
+        providerSpecificData: {
+          ...codingPlanCreds.providerSpecificData,
+          _captchaVerifyParam: "captcha-token",
+        },
+      })
+    );
     expect(headers.Authorization).toBe("Bearer jwt-token");
     expect(headers["x-api-key"]).toBeUndefined();
     expect(headers["User-Agent"]).toBe("ZCode/3.1.0");
@@ -58,23 +71,23 @@ describe("GlmExecutor", () => {
   });
 
   it("reuses x-session-id for the same connection", () => {
-    executor._glmUrlIndex = 0;
     const creds = { ...codingPlanCreds, connectionId: "conn-stable" };
-    const first = executor.buildHeaders(creds);
-    const second = executor.buildHeaders(creds);
+    const first = atUrlIndex(executor, 0, creds, () => executor.buildHeaders(creds));
+    const second = atUrlIndex(executor, 0, creds, () => executor.buildHeaders(creds));
     expect(second["x-session-id"]).toBe(first["x-session-id"]);
     expect(second["x-request-id"]).not.toBe(first["x-request-id"]);
   });
 
   it("uses ZCode API key fingerprint on fallback URL after JWT expiry", () => {
-    executor._glmUrlIndex = 1;
-    const headers = executor.buildHeaders({
-      ...codingPlanCreds,
-      providerSpecificData: {
-        ...codingPlanCreds.providerSpecificData,
-        _captchaVerifyParam: "captcha-token",
-      },
-    });
+    const headers = atUrlIndex(executor, 1, codingPlanCreds, () =>
+      executor.buildHeaders({
+        ...codingPlanCreds,
+        providerSpecificData: {
+          ...codingPlanCreds.providerSpecificData,
+          _captchaVerifyParam: "captcha-token",
+        },
+      })
+    );
     expect(headers["x-api-key"]).toBe("org.key.secret");
     expect(headers.Authorization).toBeUndefined();
     expect(headers["User-Agent"]).toBe("ZCode/3.1.0");
@@ -124,22 +137,31 @@ describe("GlmExecutor", () => {
   });
 
   it("retries with API key fallback on 401 when apiKey is present", () => {
-    executor._currentCredentials = codingPlanCreds;
-    expect(executor.shouldRetry(401, 0)).toBe(true);
-    expect(executor.shouldRetry(401, 1)).toBe(false);
+    withGlmRequest(codingPlanCreds, () => {
+      expect(executor.shouldRetry(401, 0)).toBe(true);
+      expect(executor.shouldRetry(401, 1)).toBe(false);
+    });
+  });
+
+  it("exposes two URL fallbacks only within request scope for coding plan + api key", () => {
+    withGlmRequest(codingPlanCreds, () => {
+      expect(executor.getFallbackCount()).toBe(2);
+    });
+    expect(executor.getFallbackCount()).toBe(1);
   });
 
   it("maps glm-5.2 and applies ZCode system on coding plan URL", () => {
-    executor._glmUrlIndex = 0;
-    const body = executor.transformRequest(
-      "glm-5.2",
-      {
-        model: "glm-5.2",
-        system: [{ type: "text", text: "You are Claude Code, Anthropic's official CLI for Claude." }],
-        messages: [{ role: "user", content: "hi" }],
-      },
-      false,
-      codingPlanCreds
+    const body = atUrlIndex(executor, 0, codingPlanCreds, () =>
+      executor.transformRequest(
+        "glm-5.2",
+        {
+          model: "glm-5.2",
+          system: [{ type: "text", text: "You are Claude Code, Anthropic's official CLI for Claude." }],
+          messages: [{ role: "user", content: "hi" }],
+        },
+        false,
+        codingPlanCreds
+      )
     );
     expect(body.model).toBe("GLM-5.2");
     expect(JSON.stringify(body.system)).toContain("You are ZCode");

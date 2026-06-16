@@ -35,7 +35,7 @@
     "node-machine-id": "^1.1.12",
     "open": "^11.0.0",
     "ora": "^9.1.0",
-    "playwright-core": "^1.61.0",
+    "playwright-core": "^1.60.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-is": "^16.13.1",

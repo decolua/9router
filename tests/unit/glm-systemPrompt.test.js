@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { GlmExecutor } from "../../open-sse/executors/glm.js";
+import { GlmExecutor, glmRequestContext } from "../../open-sse/executors/glm.js";
+
+function atUrlIndex(executor, urlIndex, credentials, fn) {
+  return glmRequestContext.run({ credentials, urlIndex }, () => {
+    executor.buildUrl("glm-5.2", true, urlIndex, credentials);
+    return fn();
+  });
+}
 import {
   injectZcodeSystemPrompt,
   ZCODE_SYSTEM_IDENTITY_MARKER,
@@ -72,8 +79,7 @@ describe("GlmExecutor ZCode system prompt", () => {
 
   it("injects ZCode system on coding plan primary URL", () => {
     const executor = new GlmExecutor();
-    executor._glmUrlIndex = 0;
-    const body = executor.transformRequest(
+    const body = atUrlIndex(executor, 0, codingPlanCreds, () => executor.transformRequest(
       "glm-5.2",
       {
         model: "glm-5.2",
@@ -82,7 +88,7 @@ describe("GlmExecutor ZCode system prompt", () => {
       },
       false,
       codingPlanCreds
-    );
+    ));
 
     expect(JSON.stringify(body.system)).toContain(ZCODE_SYSTEM_IDENTITY_MARKER);
     expect(JSON.stringify(body.system)).not.toContain("Claude Code");
@@ -90,13 +96,14 @@ describe("GlmExecutor ZCode system prompt", () => {
 
   it("does not inject ZCode system on API key fallback URL", () => {
     const executor = new GlmExecutor();
-    executor._glmUrlIndex = 1;
     const input = {
       model: "glm-5.2",
       system: [{ type: "text", text: "You are Claude Code, Anthropic's official CLI for Claude." }],
       messages: [],
     };
-    const body = executor.transformRequest("glm-5.2", input, false, codingPlanCreds);
+    const body = atUrlIndex(executor, 1, codingPlanCreds, () =>
+      executor.transformRequest("glm-5.2", input, false, codingPlanCreds)
+    );
     expect(body.system).toEqual(input.system);
   });
 });

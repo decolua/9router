@@ -212,9 +212,15 @@ export class CaptchaManager {
       this._resolvePending(verifyParam);
     }
 
+    if (this._clearCacheTimer) {
+      clearTimeout(this._clearCacheTimer);
+      this._clearCacheTimer = null;
+    }
+
     this.cachedVerifyParam = verifyParam;
     this._clearCacheTimer = setTimeout(() => {
       this.cachedVerifyParam = null;
+      this._clearCacheTimer = null;
     }, config.captchaCacheTTL);
   }
 

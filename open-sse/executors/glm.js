@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { DefaultExecutor } from "./default.js";
 import zcodeConfig from "../../src/lib/zcode/config.js";
 import { GLM_CODING_PLAN_MODEL_MAP } from "../../src/lib/zcode/constants.js";
@@ -15,10 +16,16 @@ import {
 
 const MAX_CAPTCHA_RETRIES = 3;
 
+/** Per-request context — avoids singleton executor cross-request credential races. */
+export const glmRequestContext = new AsyncLocalStorage();
+
+function getGlmRequestContext() {
+  return glmRequestContext.getStore();
+}
+
 export class GlmExecutor extends DefaultExecutor {
   constructor() {
     super("glm");
-    this._glmUrlIndex = 0;
   }
 
   usesCodingPlan(credentials) {
@@ -30,10 +37,15 @@ export class GlmExecutor extends DefaultExecutor {
     return !!credentials?.apiKey && !this.usesCodingPlan(credentials);
   }
 
+  getUrlIndex() {
+    return getGlmRequestContext()?.urlIndex ?? 0;
+  }
+
   usesZcodeApiKeyUpstream(credentials) {
+    const urlIndex = this.getUrlIndex();
     return (
       this.usesApiKeyOnly(credentials) ||
-      (this.usesCodingPlan(credentials) && this._glmUrlIndex === 1)
+      (this.usesCodingPlan(credentials) && urlIndex === 1)
     );
   }
 
@@ -42,12 +54,15 @@ export class GlmExecutor extends DefaultExecutor {
   }
 
   getFallbackCount() {
-    if (!this._currentCredentials) return 1;
-    return this.canFallbackToApiKey(this._currentCredentials) ? 2 : 1;
+    const credentials = getGlmRequestContext()?.credentials;
+    if (!credentials) return 1;
+    return this.canFallbackToApiKey(credentials) ? 2 : 1;
   }
 
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
-    this._glmUrlIndex = urlIndex;
+    const ctx = getGlmRequestContext();
+    if (ctx) ctx.urlIndex = urlIndex;
+
     if (this.usesCodingPlan(credentials)) {
       if (urlIndex === 0) return zcodeConfig.codingPlanUrl;
       if (this.canFallbackToApiKey(credentials)) {
@@ -76,7 +91,7 @@ export class GlmExecutor extends DefaultExecutor {
       transformed.model = mapped;
     }
 
-    if (this.usesCodingPlan(credentials) && this._glmUrlIndex === 0) {
+    if (this.usesCodingPlan(credentials) && this.getUrlIndex() === 0) {
       return injectZcodeSystemPrompt(transformed, {
         modelRef: `builtin:zai-start-plan/${transformed.model || mapped}`,
       });
@@ -88,7 +103,7 @@ export class GlmExecutor extends DefaultExecutor {
   buildHeaders(credentials, stream = true) {
     const headers = super.buildHeaders(credentials, stream);
 
-    if (this.usesCodingPlan(credentials) && this._glmUrlIndex === 0) {
+    if (this.usesCodingPlan(credentials) && this.getUrlIndex() === 0) {
       applyZcodeCodingPlanHeaders(headers, credentials);
     } else if (this.usesZcodeApiKeyUpstream(credentials)) {
       applyZcodeApiKeyHeaders(headers, credentials);
@@ -98,10 +113,12 @@ export class GlmExecutor extends DefaultExecutor {
   }
 
   shouldRetry(status, urlIndex) {
+    const credentials = getGlmRequestContext()?.credentials;
     if (
       status === 401 &&
       urlIndex === 0 &&
-      this.canFallbackToApiKey(this._currentCredentials)
+      credentials &&
+      this.canFallbackToApiKey(credentials)
     ) {
       return true;
     }
@@ -146,10 +163,8 @@ export class GlmExecutor extends DefaultExecutor {
     return super.parseError(response, bodyText);
   }
 
-  async execute(params) {
+  async executeWithCaptcha(params) {
     const { credentials } = params;
-    this._currentCredentials = credentials;
-
     const captchaManager = getCaptchaManager();
     const port = getZcodeCaptchaPort();
 
@@ -180,6 +195,13 @@ export class GlmExecutor extends DefaultExecutor {
     }
 
     throw new Error("Captcha expired multiple times. Restart the service or check CloakBrowser.");
+  }
+
+  async execute(params) {
+    const { credentials } = params;
+    return glmRequestContext.run({ credentials, urlIndex: 0 }, () =>
+      this.executeWithCaptcha(params)
+    );
   }
 }
 

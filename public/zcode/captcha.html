@@ -371,14 +371,21 @@
 
             // Post back to backend
             try {
-              await fetch('/api/zcode/captcha/submit', {
+              const res = await fetch('/api/zcode/captcha/submit', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ verifyParam })
               });
+              if (!res.ok) {
+                const errText = await res.text().catch(() => '');
+                throw new Error(errText || `HTTP ${res.status}`);
+              }
               console.log('[Captcha] Posted to backend successfully');
             } catch (err) {
               console.error('[Captcha] Failed to post to backend:', err);
+              successTitle.innerText = 'Backend submit failed';
+              successSub.innerText = err?.message || 'Could not send token to 9router';
+              successSub.className = 'subtitle dynamic-error';
             }
             // Keep page open for reuse via __resetCaptcha
           },

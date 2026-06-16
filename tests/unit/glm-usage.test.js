@@ -85,7 +85,8 @@ describe("GLM Coding Plan usage", () => {
 
     const usage = await getUsageForProvider({
       provider: "glm",
-      providerSpecificData: { zcodeJwtToken: "bad-jwt" },
+      accessToken: "bad-jwt",
+      providerSpecificData: { useCodingPlan: true, zcodeJwtToken: "bad-jwt" },
     });
 
     expect(usage.message).toMatch(/invalid or expired/i);

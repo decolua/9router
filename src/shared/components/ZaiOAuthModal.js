@@ -27,7 +27,7 @@ export default function ZaiOAuthModal({ isOpen, providerInfo, onSuccess, onClose
     pollCountRef.current = 0;
   }, []);
 
-  const handleClose = useCallback(() => {
+  const resetInternal = useCallback(() => {
     initAbortRef.current?.abort();
     initAbortRef.current = null;
     activeFlowIdRef.current = null;
@@ -37,8 +37,12 @@ export default function ZaiOAuthModal({ isOpen, providerInfo, onSuccess, onClose
     setFlowId(null);
     setAuthorizeUrl(null);
     setError(null);
+  }, [stopPolling]);
+
+  const handleClose = useCallback(() => {
+    resetInternal();
     onClose?.();
-  }, [onClose, stopPolling]);
+  }, [onClose, resetInternal]);
 
   const startPoll = useCallback(
     (id) => {
@@ -63,9 +67,11 @@ export default function ZaiOAuthModal({ isOpen, providerInfo, onSuccess, onClose
           const data = await res.json();
 
           if (!res.ok) {
-            if (res.status === 404 && pollCountRef.current <= SESSION_NOT_FOUND_RETRIES) {
+            if (res.status === 404) {
               sessionMissRef.current += 1;
-              return;
+              if (sessionMissRef.current <= SESSION_NOT_FOUND_RETRIES) {
+                return;
+              }
             }
             stopPolling();
             setError(
@@ -144,7 +150,7 @@ export default function ZaiOAuthModal({ isOpen, providerInfo, onSuccess, onClose
 
   useEffect(() => {
     if (!isOpen) {
-      handleClose();
+      resetInternal();
       return undefined;
     }
 
