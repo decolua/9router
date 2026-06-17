@@ -286,6 +286,20 @@ export async function buildModelsList(kindFilter) {
       });
     }
   } else {
+    // noAuth providers (e.g. opencode, uncloseai) have no stored connections but
+    // should appear in /v1/models when they have static models OR a live resolver
+    // (e.g. opencode fetches its catalog live, so its static list is empty).
+    for (const [providerId, providerConfig] of Object.entries(AI_PROVIDERS)) {
+      if (!providerConfig.noAuth) continue;
+      if (activeConnectionByProvider.has(providerId)) continue;
+      const staticAlias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
+      if (!PROVIDER_MODELS[staticAlias]?.length && !LIVE_MODEL_RESOLVERS[providerId]) continue;
+      activeConnectionByProvider.set(providerId, {
+        provider: providerId,
+        providerSpecificData: {},
+      });
+    }
+
     for (const [providerId, conn] of activeConnectionByProvider.entries()) {
       if (!providerMatchesKinds(providerId, kindFilter)) continue;
 
