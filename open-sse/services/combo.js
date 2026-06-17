@@ -468,8 +468,32 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
   // 1. Fan out to the panel in parallel: non-streaming, tools stripped (we want prose).
   const { tools, tool_choice, ...rest } = body;
   const panelBody = { ...rest, stream: false };
+
+  // Strip tool history from messages so models don't get tempted to emit tool_calls.
+  if (Array.isArray(panelBody.messages)) {
+    panelBody.messages = panelBody.messages
+      .filter((msg) => msg && msg.role !== "tool" && msg.role !== "function")
+      .map((msg) => {
+        if (msg.role === "assistant" && msg.tool_calls) {
+          const { tool_calls, ...cleanMsg } = msg;
+          return cleanMsg;
+        }
+        return msg;
+      });
+  } else if (Array.isArray(panelBody.input)) {
+    panelBody.input = panelBody.input
+      .filter((msg) => msg && msg.role !== "tool" && msg.role !== "function")
+      .map((msg) => {
+        if (msg.role === "assistant" && msg.tool_calls) {
+          const { tool_calls, ...cleanMsg } = msg;
+          return cleanMsg;
+        }
+        return msg;
+      });
+  }
+
   const t0 = Date.now();
-  const calls = panel.map((m) => withTimeout(handleSingleModel(panelBody, m), cfg.panelHardTimeoutMs));
+  const calls = panel.map((m) => withTimeout(handleSingleModel(panelBody, m, true), cfg.panelHardTimeoutMs));
   const settled = await collectPanel(calls, { ...cfg, minPanel });
   log.info("FUSION", `fan-out collected in ${Date.now() - t0}ms`);
 
