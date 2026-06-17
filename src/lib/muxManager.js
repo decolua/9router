@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import os from "os";
+import net from "net";
 import { spawn, execSync } from "child_process";
 import { DATA_DIR } from "./dataDir.js";
 
@@ -97,6 +98,15 @@ function isPidRunning(pid) {
   if (!pid) return false;
   try {
     process.kill(pid, 0);
+    // On Windows, double check that the process name contains 'node' or 'bun'
+    if (process.platform === "win32") {
+      try {
+        const name = execSync(`tasklist /FI "PID eq ${pid}" /NH`, { encoding: "utf8", windowsHide: true }).toLowerCase();
+        return name.includes("node") || name.includes("bun");
+      } catch {
+        return false;
+      }
+    }
     return true;
   } catch {
     return false;
@@ -173,17 +183,104 @@ export function isMuxRunning() {
   return false;
 }
 
+// Helper to get process command line
+function getProcessCommandLine(pid) {
+  try {
+    if (process.platform === "win32") {
+      const cmd = `powershell -NoProfile -NonInteractive -Command "(Get-CimInstance Win32_Process -Filter 'ProcessId = ${pid}').CommandLine"`;
+      return execSync(cmd, { encoding: "utf8", windowsHide: true }).trim();
+    } else {
+      return execSync(`ps -p ${pid} -o args=`, { encoding: "utf8" }).trim();
+    }
+  } catch {
+    return "";
+  }
+}
+
+// Helper to kill any process listening on a specific port
+function killProcessOnPort(port) {
+  try {
+    if (process.platform === "win32") {
+      const output = execSync(`netstat -ano | findstr :${port}`, { encoding: "utf8" });
+      const lines = output.split("\n");
+      for (const line of lines) {
+        const parts = line.trim().split(/\s+/);
+        if (parts.length >= 5 && parts[1].endsWith(`:${port}`) && parts[3] === "LISTENING") {
+          const pid = parseInt(parts[parts.length - 1], 10);
+          if (pid > 0 && pid !== process.pid) {
+            const cmdLine = getProcessCommandLine(pid).toLowerCase();
+            const isMux = cmdLine.includes("mux") && (cmdLine.includes("node") || cmdLine.includes("bun"));
+            if (isMux) {
+              console.log(`[MuxManager] Port ${port} in use by Mux (PID ${pid}). Killing process using taskkill`);
+              execSync(`taskkill /F /PID ${pid}`, { stdio: "ignore" });
+            } else {
+              console.log(`[MuxManager] Port ${port} in use by another service (PID ${pid}). NOT killing.`);
+            }
+          }
+        }
+      }
+    } else {
+      const pid = execSync(`lsof -t -i:${port}`, { encoding: "utf8" }).trim();
+      if (pid) {
+        const pids = pid.split("\n");
+        for (const p of pids) {
+          const pNum = parseInt(p, 10);
+          if (pNum > 0 && pNum !== process.pid) {
+            const cmdLine = getProcessCommandLine(pNum).toLowerCase();
+            const isMux = cmdLine.includes("mux") && (cmdLine.includes("node") || cmdLine.includes("bun"));
+            if (isMux) {
+              console.log(`[MuxManager] Port ${port} in use by Mux (PID ${pNum}). Killing process`);
+              execSync(`kill -9 ${pNum}`, { stdio: "ignore" });
+            } else {
+              console.log(`[MuxManager] Port ${port} in use by another service (PID ${pNum}). NOT killing.`);
+            }
+          }
+        }
+      }
+    }
+  } catch (e) {
+    // Ignore errors (e.g. netstat/lsof returned empty because port not in use)
+  }
+}
+
+// Helper to find an open port programmatically
+function findOpenPort(startPort, host = "127.0.0.1") {
+  return new Promise((resolve) => {
+    let port = startPort;
+    const checkPort = () => {
+      const server = net.createServer();
+      server.unref();
+      server.on("error", () => {
+        port++;
+        checkPort();
+      });
+      server.listen(port, host, () => {
+        server.close(() => {
+          resolve(port);
+        });
+      });
+    };
+    checkPort();
+  });
+}
+
 // Stop Mux process
 export function stopMux() {
   const savedPid = loadPid();
   if (savedPid) {
     try {
-      process.kill(savedPid, "SIGTERM");
+      if (process.platform === "win32") {
+        execSync(`taskkill /F /PID ${savedPid}`, { stdio: "ignore" });
+      } else {
+        process.kill(savedPid, "SIGTERM");
+      }
       console.log(`[MuxManager] Stopped Mux process with PID ${savedPid}`);
     } catch {
-      try {
-        process.kill(savedPid, "SIGKILL");
-      } catch { /* ignore */ }
+      if (process.platform !== "win32") {
+        try {
+          process.kill(savedPid, "SIGKILL");
+        } catch { /* ignore */ }
+      }
     }
   }
   if (muxProcess) {
@@ -193,6 +290,11 @@ export function stopMux() {
     muxProcess = null;
   }
   clearPid();
+
+  // Also clean up port just to be safe
+  const config = loadMuxConfig();
+  killProcessOnPort(config.port);
+
   return true;
 }
 
@@ -231,7 +333,18 @@ export async function startMux() {
     };
   }
 
-  const config = loadMuxConfig();
+  let config = loadMuxConfig();
+
+  // Kill any process currently listening on the target port to prevent EADDRINUSE
+  killProcessOnPort(config.port);
+
+  // Find an open port programmatically starting from the configured port (in case port kill failed or was not allowed)
+  const openPort = await findOpenPort(config.port, config.host);
+  if (openPort !== config.port) {
+    console.log(`[MuxManager] Port ${config.port} is busy. Found open port programmatically: ${openPort}`);
+    config.port = openPort;
+    saveMuxConfig(config);
+  }
 
   // Inject 9Router into Mux's providers.jsonc
   try {
@@ -252,18 +365,55 @@ export async function startMux() {
 
   console.log(`[MuxManager] Starting Mux: node ${args.join(" ")}`);
 
-  const child = spawn("node", args, {
+  // Set up logging using synchronous file descriptor to avoid spawn ERR_INVALID_ARG_VALUE
+  const LOG_FILE = path.join(DATA_DIR, "mux.log");
+  let fd;
+  try {
+    fd = fs.openSync(LOG_FILE, "a");
+    fs.writeSync(fd, `\n--- Mux Server Start Attempt: ${new Date().toISOString()} ---\n`);
+    fs.writeSync(fd, `Command: ${process.execPath} ${args.join(" ")}\n`);
+  } catch (e) {
+    console.error("[MuxManager] Failed to open/write mux.log:", e);
+  }
+
+  const child = spawn(process.execPath, args, {
     cwd: entry.cwd,
     detached: true,
-    stdio: "ignore",
+    stdio: fd !== undefined ? ["ignore", fd, fd] : "ignore",
     windowsHide: true,
   });
+
+  if (fd !== undefined) {
+    try {
+      fs.closeSync(fd);
+    } catch { /* ignore */ }
+  }
 
   child.unref();
   muxProcess = child;
   savePid(child.pid);
 
-  return { success: true, pid: child.pid };
+  // Wait a short duration to verify the process didn't crash immediately
+  await new Promise((resolve) => setTimeout(resolve, 800));
+
+  if (!isPidRunning(child.pid)) {
+    // Read the last few lines of the log to see if there's any error
+    let errorTail = "";
+    try {
+      if (fs.existsSync(LOG_FILE)) {
+        const logs = fs.readFileSync(LOG_FILE, "utf-8");
+        const lines = logs.split("\n");
+        errorTail = lines.slice(-10).join("\n");
+      }
+    } catch { /* ignore */ }
+
+    return {
+      success: false,
+      message: `Mux server failed to start. Log output:\n${errorTail || "No log output."}`,
+    };
+  }
+
+  return { success: true, pid: child.pid, port: config.port };
 }
 
 // Inject 9Router as a provider in Mux's config
