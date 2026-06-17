@@ -1,4 +1,4 @@
-name: Deploy GitBook to 9router.github.io
+name: GitBook
 
 on:
   push:
