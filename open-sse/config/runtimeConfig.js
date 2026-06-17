@@ -37,8 +37,25 @@ export const MEMORY_CONFIG = {
 // aborts mid-conversation. The agentic system prompt itself notes the Kiro
 // upstream has a 2-3 minute timeout, so we match that ceiling here.
 export const STREAM_STALL_TIMEOUT_MS = 180 * 1000;
-// Fetch connect timeout: abort if upstream doesn't return response headers within this duration
+// Fetch connect timeout: abort if upstream doesn't return response headers within this duration.
 export const FETCH_CONNECT_TIMEOUT_MS = 20 * 1000;
+// Claude-compatible proxy pools can legitimately take longer to return headers,
+// especially when routing to overloaded free/pooled backends.
+export const ANTHROPIC_COMPATIBLE_FETCH_CONNECT_TIMEOUT_MS = 90 * 1000;
+export const FETCH_CONNECT_TIMEOUT_MAX_MS = 10 * 60 * 1000;
+
+export function resolveFetchConnectTimeoutMs(provider, config = {}, credentials = null) {
+  const raw = credentials?.providerSpecificData?.fetchConnectTimeoutMs
+    ?? config?.fetchConnectTimeoutMs;
+  const parsed = Number(raw);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return Math.min(Math.max(parsed, 1000), FETCH_CONNECT_TIMEOUT_MAX_MS);
+  }
+  if (provider?.startsWith?.("anthropic-compatible-")) {
+    return ANTHROPIC_COMPATIBLE_FETCH_CONNECT_TIMEOUT_MS;
+  }
+  return FETCH_CONNECT_TIMEOUT_MS;
+}
 
 // Default token limits
 export const DEFAULT_MAX_TOKENS = 64000;
@@ -58,6 +75,30 @@ export const DEFAULT_RETRY_CONFIG = {
   503: { attempts: 3, delayMs: 2000 },
   504: { attempts: 2, delayMs: 3000 }
 };
+
+// Default aggressive 429-contention config (used by Kiro). Overridable per
+// provider via PROVIDERS[x].kiroRateLimit.
+export const KIRO_RATE_LIMIT_DEFAULT = {
+  maxAttempts: 8,
+  baseDelayMs: 400,
+  maxDelayMs: 8000,
+  jitterRatio: 0.5
+};
+
+/**
+ * Jittered exponential backoff for a given retry attempt (1-based).
+ * delay = clamp(base * 2^(attempt-1), 0, max), then apply ± jitterRatio noise.
+ * Jitter de-synchronizes our retries from other clients hammering the same
+ * upstream so we don't all wake up and collide on the same freed slot.
+ */
+export function jitteredBackoff(attempt, { baseDelayMs, maxDelayMs, jitterRatio } = {}) {
+  const base = baseDelayMs ?? KIRO_RATE_LIMIT_DEFAULT.baseDelayMs;
+  const max = maxDelayMs ?? KIRO_RATE_LIMIT_DEFAULT.maxDelayMs;
+  const ratio = jitterRatio ?? KIRO_RATE_LIMIT_DEFAULT.jitterRatio;
+  const exp = Math.min(base * Math.pow(2, Math.max(0, attempt - 1)), max);
+  const noise = exp * ratio * (Math.random() * 2 - 1); // ± ratio
+  return Math.max(0, Math.round(exp + noise));
+}
 
 // Normalize a retry entry to { attempts, delayMs }
 export function resolveRetryEntry(entry) {

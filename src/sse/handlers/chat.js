@@ -14,7 +14,7 @@ import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { handleComboChat } from "open-sse/services/combo.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
-import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
+import { HTTP_STATUS, jitteredBackoff } from "open-sse/config/runtimeConfig.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
@@ -163,11 +163,38 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   let lastError = null;
   let lastStatus = null;
 
+  // Kiro budgeted rescan: when every account is briefly 429-locked (slot
+  // contention, not real quota), don't give up immediately — clear the
+  // per-attempt exclusion set, wait a short jittered interval, and rescan.
+  // Kiro 429 cooldowns are clamped to a few seconds (see markAccountUnavailable),
+  // so accounts rejoin rotation fast. Bounded by KIRO_RESCAN_BUDGET_MS.
+  const KIRO_RESCAN_BUDGET_MS = 60 * 1000;
+  const kiroRescanEnabled = provider === "kiro";
+  const rescanDeadline = Date.now() + KIRO_RESCAN_BUDGET_MS;
+  let rescanRound = 0;
+
   while (true) {
     const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
+      // Kiro: rescan within budget instead of surfacing 503 right away.
+      // Only when the blockage is rate-limit contention (429), not hard errors
+      // like 401/500 — those accounts are genuinely broken and rescanning them
+      // would just burn the budget.
+      const blockedByRateLimit = credentials?.allRateLimited === true || lastStatus === HTTP_STATUS.RATE_LIMITED;
+      if (kiroRescanEnabled && blockedByRateLimit && Date.now() < rescanDeadline) {
+        rescanRound++;
+        const waitMs = Math.min(
+          jitteredBackoff(rescanRound, { baseDelayMs: 600, maxDelayMs: 5000, jitterRatio: 0.4 }),
+          Math.max(0, rescanDeadline - Date.now())
+        );
+        log.info("CHAT", `[${provider}/${model}] all accounts busy, rescan ${rescanRound} after ${Math.round(waitMs)}ms`);
+        await new Promise(resolve => setTimeout(resolve, waitMs));
+        excludeConnectionIds.clear(); // give every account another shot
+        continue;
+      }
+
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
@@ -200,13 +227,20 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     // Use shared chatCore
     const chatSettings = await getSettings();
     const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
-    const result = await handleChatCore({
+    // Kiro request-contention mode: "balance" (default) | "stress"
+    const kiroMode = provider === "kiro"
+      ? ((chatSettings.providerStrategies || {}).kiro?.kiroMode || "balance")
+      : undefined;
+
+    // Run a single account attempt. `creds`/`refreshed` are the chosen account;
+    // `externalSignal` lets a hedged race abort the loser mid-flight.
+    const runAttempt = (creds, refreshed, externalSignal) => handleChatCore({
       body: { ...body, model: `${provider}/${model}` },
       modelInfo: { provider, model },
-      credentials: refreshedCredentials,
+      credentials: refreshed,
       log,
       clientRawRequest,
-      connectionId: credentials.connectionId,
+      connectionId: creds.connectionId,
       userAgent,
       apiKey,
       ccFilterNaming: !!chatSettings.ccFilterNaming,
@@ -214,10 +248,12 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       cavemanEnabled: !!chatSettings.cavemanEnabled,
       cavemanLevel: chatSettings.cavemanLevel || "full",
       providerThinking,
+      kiroMode,
+      externalSignal,
       // Detect source format by endpoint + body
       sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
       onCredentialsRefreshed: async (newCreds) => {
-        await updateProviderCredentials(credentials.connectionId, {
+        await updateProviderCredentials(creds.connectionId, {
           accessToken: newCreds.accessToken,
           refreshToken: newCreds.refreshToken,
           providerSpecificData: newCreds.providerSpecificData,
@@ -225,9 +261,49 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         });
       },
       onRequestSuccess: async () => {
-        await clearAccountError(credentials.connectionId, credentials, model);
+        await clearAccountError(creds.connectionId, creds, model);
       }
     });
+
+    // STRESS-mode hedging: when Kiro is in "stress" mode and a second account is
+    // free, fire both in parallel and take the first success, aborting the
+    // loser. This roughly doubles upstream load (and quota burn) but wins the
+    // slot race far more often under heavy contention.
+    let result;
+    let secondCreds = null;
+    if (kiroMode === "stress") {
+      secondCreds = await getProviderCredentials(
+        provider,
+        new Set([...excludeConnectionIds, credentials.connectionId]),
+        model
+      );
+    }
+
+    if (secondCreds && !secondCreds.allRateLimited && secondCreds.connectionId) {
+      const secondRefreshed = await checkAndRefreshToken(provider, secondCreds);
+      log.info("AUTH", `\x1b[35m[STRESS] hedging ${credentials.connectionName} + ${secondCreds.connectionName}\x1b[0m`);
+      result = await runHedged(
+        [
+          { creds: credentials, refreshed: refreshedCredentials },
+          { creds: secondCreds, refreshed: secondRefreshed }
+        ],
+        runAttempt,
+        async (loserCreds, loserResult) => {
+          // Loser failed (or was aborted) — cool it down briefly so rotation
+          // skips it on the next pass, mirroring the normal failure path.
+          if (loserResult && !loserResult.success) {
+            await markAccountUnavailable(loserCreds.connectionId, loserResult.status, loserResult.error, provider, model, loserResult.resetsAtMs);
+          }
+        },
+        log
+      );
+      // If both lost, exclude both so the loop advances.
+      if (!result.success) {
+        excludeConnectionIds.add(secondCreds.connectionId);
+      }
+    } else {
+      result = await runAttempt(credentials, refreshedCredentials, undefined);
+    }
 
     if (result.success) return result.response;
 
@@ -244,4 +320,59 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
     return result.response;
   }
+}
+
+/**
+ * Race multiple account attempts in parallel; return the first that succeeds
+ * and abort the rest. If none succeed, return the last failure.
+ *
+ * Each candidate gets its own AbortController so the losers can be torn down
+ * cleanly (the signal is forwarded into handleChatCore's stream controller).
+ *
+ * @param {Array<{creds:object, refreshed:object}>} candidates
+ * @param {(creds, refreshed, signal) => Promise<object>} runAttempt
+ * @param {(loserCreds, loserResult) => Promise<void>} onLoser - cleanup hook
+ * @param {object} log
+ */
+async function runHedged(candidates, runAttempt, onLoser, log) {
+  const controllers = candidates.map(() => new AbortController());
+  const settled = new Array(candidates.length).fill(false);
+
+  const attempts = candidates.map((c, i) =>
+    runAttempt(c.creds, c.refreshed, controllers[i].signal)
+      .then(result => ({ i, result }))
+      .catch(error => ({ i, result: { success: false, status: 502, error: error?.message || String(error) } }))
+  );
+
+  let firstFailure = null;
+  const pending = attempts.map((p, idx) => p.then(v => ({ v, idx })));
+  const remaining = new Set(pending.map((_, idx) => idx));
+
+  while (remaining.size > 0) {
+    const { v, idx } = await Promise.race([...remaining].map(i => pending[i]));
+    remaining.delete(idx);
+    settled[v.i] = true;
+
+    if (v.result.success) {
+      // Winner found — abort all other in-flight attempts.
+      controllers.forEach((ctrl, j) => {
+        if (j !== v.i && !settled[j]) {
+          try { ctrl.abort(); } catch { /* noop */ }
+        }
+      });
+      // Best-effort cleanup of losers (cooldown) in the background.
+      candidates.forEach((c, j) => {
+        if (j !== v.i) {
+          Promise.resolve(attempts[j]).then(other => onLoser?.(c.creds, other?.result)).catch(() => {});
+        }
+      });
+      return v.result;
+    }
+
+    if (!firstFailure) firstFailure = v;
+    else Promise.resolve(onLoser?.(candidates[v.i].creds, v.result)).catch(() => {});
+  }
+
+  // All lost — surface the first failure.
+  return firstFailure ? firstFailure.result : { success: false, status: 502, error: "All hedged attempts failed" };
 }
