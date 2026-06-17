@@ -62,6 +62,18 @@ export const CONSOLE_LOG_CONFIG = {
 // Client-side store TTL: how long fetched data stays fresh before re-fetching
 export const CLIENT_STORE_TTL_MS = 60000;
 
+// Claude auto-ping: keep 5h window warm by sending a tiny request right after reset
+export const CLAUDE_AUTOPING_CONFIG = {
+  settingsKey: "claudeAutoPing",        // settings table field
+  tickIntervalMs: 60000,                // scheduler tick
+  pingLeadMs: 5000,                     // fire once reset passes (within tolerance)
+  pingModel: "claude-haiku-4-5-20251001", // cheapest model
+  pingText: "hi",
+  pingMaxTokens: 1,
+  refreshAheadMs: 300000,               // refetch usage when within 5min of reset
+  fiveHourKey: "session (5h)",          // quota key returned by usage handler
+};
+
 // Re-export from providers.js for backward compatibility
 export {
   FREE_PROVIDERS,

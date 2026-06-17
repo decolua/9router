@@ -17,7 +17,7 @@ import {
   generateProjectId,
   cleanJSONSchemaForAntigravity
 } from "../formats/gemini.js";
-import { deriveSessionId } from "../../utils/sessionManager.js";
+import { deriveSessionId, toNumericSessionId } from "../../utils/sessionManager.js";
 import { ROLE, GEMINI_ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
 
 // Sanitize function names for Gemini API.
@@ -259,7 +259,7 @@ function wrapInCloudCodeEnvelope(model, geminiCLI, credentials = null, isAntigra
     userAgent: isAntigravity ? "antigravity" : "gemini-cli",
     requestId: isAntigravity ? `agent-${generateUUID()}` : generateRequestId(),
     request: {
-      sessionId: isAntigravity ? deriveSessionId(credentials?.email || credentials?.connectionId) : generateSessionId(),
+      sessionId: toNumericSessionId(credentials?._clientSessionId) || (isAntigravity ? deriveSessionId(credentials?.email || credentials?.connectionId) : generateSessionId()),
       contents: geminiCLI.contents,
       systemInstruction: geminiCLI.systemInstruction,
       generationConfig: geminiCLI.generationConfig,
@@ -309,7 +309,7 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
     requestId: `agent-${generateUUID()}`,
     requestType: "agent",
     request: {
-      sessionId: deriveSessionId(credentials?.email || credentials?.connectionId),
+      sessionId: toNumericSessionId(credentials?._clientSessionId) || deriveSessionId(credentials?.email || credentials?.connectionId),
       contents: [],
       generationConfig: {
         temperature: claudeRequest.temperature || 1,

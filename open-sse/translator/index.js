@@ -5,6 +5,7 @@ import { cloakClaudeTools } from "../utils/claudeCloaking.js";
 import { filterToOpenAIFormat } from "./formats/openai.js";
 import { normalizeThinkingConfig } from "../services/provider.js";
 import { applyThinking, captureThinking } from "./concerns/thinkingUnified.js";
+import { captureSessionId } from "../utils/sessionManager.js";
 import { AntigravityExecutor } from "../executors/antigravity.js";
 import { PROVIDERS } from "../providers/index.js";
 
@@ -68,23 +69,36 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   // format conversion strips/renames the fields. Applied after translation.
   const thinkingIntent = captureThinking(result);
 
+  // Capture session id from the original body (envelope still intact, e.g. antigravity request.sessionId)
+  const clientSessionId = captureSessionId(result, credentials, connectionId, targetFormat);
+  // Expose to downstream translators (gemini-cli/antigravity envelopes) that run after envelope is stripped
+  if (credentials) credentials._clientSessionId = clientSessionId;
+
   // If same format, skip translation steps
   if (sourceFormat !== targetFormat) {
-    // Step 1: source -> openai (if source is not openai)
-    if (sourceFormat !== FORMATS.OPENAI) {
-      const toOpenAI = requestRegistry.get(`${sourceFormat}:${FORMATS.OPENAI}`);
-      if (toOpenAI) {
-        result = toOpenAI(model, result, stream, credentials);
-        // Log OpenAI intermediate format
-        reqLogger?.logOpenAIRequest?.(result);
+    // Direct route: if a translator is registered for this exact source:target
+    // pair, use it instead of pivoting through OpenAI. This is lossless for
+    // pairs like claude:kiro (avoids the claude->openai->kiro double-hop).
+    const directFn = requestRegistry.get(`${sourceFormat}:${targetFormat}`);
+    if (directFn) {
+      result = directFn(model, result, stream, credentials);
+    } else {
+      // Step 1: source -> openai (if source is not openai)
+      if (sourceFormat !== FORMATS.OPENAI) {
+        const toOpenAI = requestRegistry.get(`${sourceFormat}:${FORMATS.OPENAI}`);
+        if (toOpenAI) {
+          result = toOpenAI(model, result, stream, credentials);
+          // Log OpenAI intermediate format
+          reqLogger?.logOpenAIRequest?.(result);
+        }
       }
-    }
 
-    // Step 2: openai -> target (if target is not openai)
-    if (targetFormat !== FORMATS.OPENAI) {
-      const fromOpenAI = requestRegistry.get(`${FORMATS.OPENAI}:${targetFormat}`);
-      if (fromOpenAI) {
-        result = fromOpenAI(model, result, stream, credentials);
+      // Step 2: openai -> target (if target is not openai)
+      if (targetFormat !== FORMATS.OPENAI) {
+        const fromOpenAI = requestRegistry.get(`${FORMATS.OPENAI}:${targetFormat}`);
+        if (fromOpenAI) {
+          result = fromOpenAI(model, result, stream, credentials);
+        }
       }
     }
   }
@@ -101,7 +115,7 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   // Final step: prepare request for Claude format endpoints
   if (targetFormat === FORMATS.CLAUDE) {
     const apiKey = credentials?.accessToken || credentials?.apiKey || null;
-    result = prepareClaudeRequest(result, provider, apiKey, connectionId);
+    result = prepareClaudeRequest(result, provider, apiKey, connectionId, credentials?.rawHeaders, clientSessionId);
   }
 
   // Claude cloaking: rename client tools with _cc suffix (anti-ban)
@@ -139,6 +153,16 @@ export function translateResponse(targetFormat, sourceFormat, chunk, state) {
 
   let results = [chunk];
   let openaiResults = null; // Store OpenAI intermediate results
+
+  // Direct route: if a response translator is registered for this exact
+  // target:source pair, use it instead of pivoting through OpenAI. Mirrors the
+  // request-side direct route (e.g. kiro:claude — KiroExecutor already emits
+  // OpenAI-shaped chunks, so this converts them straight to Claude SSE).
+  const directFn = responseRegistry.get(`${targetFormat}:${sourceFormat}`);
+  if (directFn) {
+    const converted = directFn(chunk, state);
+    return converted ? (Array.isArray(converted) ? converted : [converted]) : [];
+  }
 
   // Step 1: target -> openai (if target is not openai)
   if (targetFormat !== FORMATS.OPENAI) {
@@ -245,6 +269,7 @@ import "./request/openai-to-kiro.js";
 import "./request/openai-to-cursor.js";
 import "./request/openai-to-ollama.js";
 import "./request/openai-to-commandcode.js";
+import "./request/claude-to-kiro.js";
 import "./response/claude-to-openai.js";
 import "./response/openai-to-claude.js";
 import "./response/gemini-to-openai.js";
@@ -254,3 +279,4 @@ import "./response/kiro-to-openai.js";
 import "./response/cursor-to-openai.js";
 import "./response/ollama-to-openai.js";
 import "./response/commandcode-to-openai.js";
+import "./response/kiro-to-claude.js";

@@ -89,7 +89,7 @@ const ASSISTANT_CAP_LEN = 200;
 const MAX_ASSISTANT_SESSIONS = 5000;
 
 // Client headers/body fields that carry an upstream session id (priority order)
-const SESSION_HEADER_KEYS = ["x-session-id", "session_id", "x-amp-thread-id", "x-client-request-id"];
+const SESSION_HEADER_KEYS = ["x-session-id", "session-id", "session_id", "x-amp-thread-id", "x-client-request-id"];
 const CLAUDE_CODE_SESSION_RE = /_session_([a-f0-9-]+)$/;
 
 function sha16(text) {
@@ -122,9 +122,20 @@ function headerValue(headers, key) {
 }
 
 // Read client-provided session id from headers/body (no generation)
+// Antigravity envelope carries session in request.sessionId; requestId embeds conversation uuid
+const ANTIGRAVITY_CONV_RE = /^[a-z]+\/([0-9a-f-]{36})\//i;
+function extractAntigravitySession(body) {
+    const sid = body?.request?.sessionId;
+    if (sid != null && sid !== "") return normalizeSessionId(String(sid));
+    const m = typeof body?.requestId === "string" ? body.requestId.match(ANTIGRAVITY_CONV_RE) : null;
+    return m ? normalizeSessionId(m[1]) : null;
+}
+
 function extractClientSessionId(headers, body) {
     const claude = extractClaudeCodeSession(body?.metadata?.user_id);
     if (claude) return `claude:${claude}`;
+    const antigravity = extractAntigravitySession(body);
+    if (antigravity) return `antigravity:${antigravity}`;
     for (const key of SESSION_HEADER_KEYS) {
         const v = headerValue(headers, key);
         if (v) return v;
@@ -192,6 +203,22 @@ export function resolveSessionId({ headers, body, connectionId, workspaceId, sco
     const ws = normalizeSessionId(workspaceId);
     if (ws) return ws;
     return deriveSessionId(connectionId);
+}
+
+// Capture session id from request body + credentials (envelope still intact here)
+export function captureSessionId(body, credentials, connectionId, scope = "") {
+    return resolveSessionId({ headers: credentials?.rawHeaders, body, connectionId, scope });
+}
+
+// Convert any session id to Antigravity numeric format "-<int64>" (matches real AG / CLIProxyAPI).
+// Already-numeric ids (native AG sessionId) pass through unchanged.
+export function toNumericSessionId(sessionId) {
+    const v = normalizeSessionId(sessionId);
+    if (!v) return null;
+    if (/^-?\d+$/.test(v)) return v;
+    const h = crypto.createHash("sha256").update(v).digest();
+    const n = h.readBigUInt64BE(0) & 0x7fffffffffffffffn;
+    return `-${n.toString()}`;
 }
 
 // Cleanup expired assistant-session entries

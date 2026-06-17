@@ -13,6 +13,7 @@ export function parseDataUri(url) {
 }
 
 import { lookup } from "node:dns/promises";
+import { Agent } from "undici";
 import { MAX_IMAGE_BYTES, FETCH_TIMEOUT_MS, IMAGE_SIGNATURES, BLOCKED_HOSTS } from "../../config/mediaConfig.js";
 
 // True if an IPv4/IPv6 address is private/reserved (SSRF target).
@@ -33,14 +34,16 @@ function isPrivateIp(ip) {
   return false;
 }
 
-// Resolve host and reject if it points at a private/blocked address (SSRF guard).
-async function assertPublicHost(hostname) {
-  if (!hostname || BLOCKED_HOSTS.has(hostname.toLowerCase())) return false;
+// Resolve host once and return only public IPs (SSRF guard).
+// Rejects if any resolved record is private/reserved (defeats multi-A tricks).
+async function resolvePinnedIps(hostname) {
+  if (!hostname || BLOCKED_HOSTS.has(hostname.toLowerCase())) return null;
   try {
-    const { address } = await lookup(hostname);
-    return !isPrivateIp(address);
+    const records = await lookup(hostname, { all: true });
+    if (!records.length || records.some((r) => isPrivateIp(r.address))) return null;
+    return records;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -78,15 +81,21 @@ export async function fetchImageAsBase64(imageUrl, options = {}) {
 
   let url;
   try { url = new URL(imageUrl); } catch { return null; }
-  if (!(await assertPublicHost(url.hostname))) return null;
+  const pinnedIps = await resolvePinnedIps(url.hostname);
+  if (!pinnedIps) return null;
 
   const controller = new AbortController();
   const timeout = signal ? null : setTimeout(() => controller.abort(), timeoutMs);
   const fetchSignal = signal || controller.signal;
 
+  // Pin connect to the validated IP so no second DNS resolution can rebind (TOCTOU fix).
+  const dispatcher = new Agent({
+    connect: { lookup: (_h, _o, cb) => cb(null, [{ address: pinnedIps[0].address, family: pinnedIps[0].family }]) },
+  });
+
   try {
     // redirect:"manual" prevents a public URL redirecting to a private one (SSRF bypass).
-    const response = await fetch(imageUrl, { signal: fetchSignal, redirect: "manual" });
+    const response = await fetch(imageUrl, { signal: fetchSignal, redirect: "manual", dispatcher });
     if (!response.ok || !response.body) return null;
 
     // Stream-read with a hard byte cap to avoid loading huge payloads into memory.
@@ -110,5 +119,6 @@ export async function fetchImageAsBase64(imageUrl, options = {}) {
     return null;
   } finally {
     if (timeout) clearTimeout(timeout);
+    dispatcher.close().catch(() => {});
   }
 }

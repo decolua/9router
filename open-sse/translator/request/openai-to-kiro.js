@@ -524,8 +524,16 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
 
   const { history, currentMessage } = convertMessages(messages, tools, upstreamModel);
 
-  const profileArn = credentials?.providerSpecificData?.profileArn
-    || resolveDefaultProfileArn(credentials?.providerSpecificData?.authMethod);
+  // API-key (headless) auth uses a raw CodeWhisperer credential whose profile is
+  // account-specific. Injecting the shared builder-id/social *default* placeholder
+  // ARN makes CodeWhisperer reject the request with 403 "bearer token invalid"
+  // (the ARN doesn't belong to the key's account). So for api_key, only send a
+  // profileArn that was actually resolved for this connection — never the default.
+  // OAuth/social keep the default fallback (their tokens accept it).
+  const authMethod = credentials?.providerSpecificData?.authMethod;
+  const profileArn = authMethod === "api_key"
+    ? (credentials?.providerSpecificData?.profileArn || "")
+    : (credentials?.providerSpecificData?.profileArn || resolveDefaultProfileArn(authMethod));
 
   let finalContent = currentMessage?.userInputMessage?.content || "";
 

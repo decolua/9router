@@ -26,6 +26,7 @@ import {
   setQuotaCache,
   QUOTA_CACHE_KEY,
   REFRESH_INTERVAL_MS,
+  CLAUDE_REFRESH_INTERVAL_MS,
   DEPLETED_QUOTA_THRESHOLD,
   AUTO_REFRESH_STORAGE_KEY,
   CONNECTIONS_PAGE_SIZE,
@@ -37,6 +38,48 @@ import {
 import Card from "@/shared/components/Card";
 import { ConfirmModal, EditConnectionModal } from "@/shared/components";
 import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
+import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+
+// Maps the stored providerSpecificData.authMethod to a human label for Kiro.
+// Values come from the Kiro connect flows: builder-id/idc (device code),
+// google/github (social), imported (refresh-token paste), api_key (headless).
+const KIRO_METHOD_LABELS = {
+  "builder-id": "AWS Builder ID",
+  idc: "IAM Identity Center",
+  google: "Google",
+  github: "GitHub",
+  imported: "Imported Token",
+  api_key: "API Key",
+};
+
+function kiroMethodLabel(conn) {
+  const m = conn.providerSpecificData?.authMethod;
+  if (m && KIRO_METHOD_LABELS[m]) return KIRO_METHOD_LABELS[m];
+  return conn.authType === "api_key" ? "API Key" : "OAuth";
+}
+
+function getConnectionSecondaryLabel(connection) {
+  if (connection.name?.trim() && connection.email?.trim() && connection.name.trim() !== connection.email.trim()) {
+    return connection.email.trim();
+  }
+
+  if (connection.name?.trim() && connection.displayName?.trim() && connection.name.trim() !== connection.displayName.trim()) {
+    return connection.displayName.trim();
+  }
+
+  return null;
+}
+
+// Region is stored for builder-id/idc/api_key flows; social and imported flows
+// omit it, so fall back to the region segment of the profileArn
+// (arn:aws:codewhisperer:<region>:...).
+function kiroRegion(conn) {
+  const r = conn.providerSpecificData?.region;
+  if (r) return r;
+  const arn = conn.providerSpecificData?.profileArn;
+  const seg = typeof arn === "string" ? arn.split(":")[3] : "";
+  return seg || "";
+}
 
 function getCodexResetCreditCount(quota) {
   const value = quota?.raw?.resetCredits?.availableCount;
@@ -45,11 +88,13 @@ function getCodexResetCreditCount(quota) {
 }
 
 export default function ProviderLimits() {
+  const { copied, copy } = useCopyToClipboard();
   const [connections, setConnections] = useState([]);
   const [quotaData, setQuotaData] = useState({});
   const [loading, setLoading] = useState({});
   const [errors, setErrors] = useState({});
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [autoPingMap, setAutoPingMap] = useState({});
   const [lastUpdated, setLastUpdated] = useState(null);
   const [hasHydratedAutoRefresh, setHasHydratedAutoRefresh] = useState(false);
   const [refreshingAll, setRefreshingAll] = useState(false);
@@ -87,6 +132,7 @@ export default function ProviderLimits() {
 
   const intervalRef = useRef(null);
   const countdownRef = useRef(null);
+  const tickCountRef = useRef(0);
 
   const fetchConnections = useCallback(
     async (targetPage = page) => {
@@ -357,11 +403,17 @@ export default function ProviderLimits() {
     };
   }, []);
 
-  const refreshAll = useCallback(async () => {
+  const refreshAll = useCallback(async (force = false) => {
     if (refreshingAll) return;
 
     setRefreshingAll(true);
     setCountdown(60);
+
+    // Throttle Claude: poll its quota every Nth auto-tick (manual force bypasses)
+    const tick = (tickCountRef.current += 1);
+    const claudeEvery = Math.round(CLAUDE_REFRESH_INTERVAL_MS / REFRESH_INTERVAL_MS);
+    const shouldFetch = (conn) =>
+      force || conn.provider !== "claude" || tick % claudeEvery === 0;
 
     try {
       const visibleConnections = await fetchConnections(page);
@@ -375,7 +427,9 @@ export default function ProviderLimits() {
       );
 
       await Promise.all(
-        visibleConnections.map((conn) => fetchQuota(conn.id, conn.provider)),
+        visibleConnections
+          .filter(shouldFetch)
+          .map((conn) => fetchQuota(conn.id, conn.provider)),
       );
 
       setLastUpdated(new Date());
@@ -422,6 +476,31 @@ export default function ProviderLimits() {
     if (typeof window === "undefined" || !hasHydratedAutoRefresh) return;
     window.localStorage.setItem(AUTO_REFRESH_STORAGE_KEY, String(autoRefresh));
   }, [autoRefresh, hasHydratedAutoRefresh]);
+
+  // Load Claude auto-ping per-connection map
+  useEffect(() => {
+    fetch("/api/settings", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : {}))
+      .then((s) => setAutoPingMap(s?.claudeAutoPing?.connections || {}))
+      .catch(() => {});
+  }, []);
+
+  const toggleAutoPing = useCallback(async (connectionId, on) => {
+    const next = { ...autoPingMap, [connectionId]: on };
+    setAutoPingMap(next);
+    try {
+      const r = await fetch("/api/settings", { cache: "no-store" });
+      const s = r.ok ? await r.json() : {};
+      const cfg = { ...(s.claudeAutoPing || {}), connections: next };
+      await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ claudeAutoPing: cfg }),
+      });
+    } catch {
+      setAutoPingMap(autoPingMap);
+    }
+  }, [autoPingMap]);
 
   // Auto-refresh interval
   useEffect(() => {
@@ -470,7 +549,7 @@ export default function ProviderLimits() {
         }
       } else if (autoRefresh && hasHydratedAutoRefresh) {
         // Resume auto-refresh when tab becomes visible
-        intervalRef.current = setInterval(refreshAll, REFRESH_INTERVAL_MS);
+        intervalRef.current = setInterval(() => refreshAll(), REFRESH_INTERVAL_MS);
         countdownRef.current = setInterval(() => {
           setCountdown((prev) => (prev <= 1 ? 60 : prev - 1));
         }, 1000);
@@ -793,10 +872,11 @@ export default function ProviderLimits() {
             )}
           </button>
 
+
           {/* Refresh all button */}
           <button
             type="button"
-            onClick={refreshAll}
+            onClick={() => refreshAll(true)}
             disabled={refreshingAll}
             className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-black/10 px-2 text-xs text-text-primary transition-colors hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5 disabled:opacity-50"
             title="Refresh all"
@@ -860,10 +940,55 @@ export default function ProviderLimits() {
                           {getConnectionLabel(conn)}
                         </p>
                       ) : null}
+                      {getConnectionSecondaryLabel(conn) ? (
+                        <p className="text-[11px] text-text-muted/80 truncate">
+                          {getConnectionSecondaryLabel(conn)}
+                        </p>
+                      ) : null}
                       {isCodex && (
                         <p className="text-[11px] text-text-muted truncate">
                           Reset eligible: {resetCreditCount}
                         </p>
+                      )}
+                      {conn.provider === "kiro" && (
+                        <div className="mt-1 flex flex-wrap items-center gap-1">
+                          <span className="rounded-full bg-brand-500/10 px-2 py-0.5 text-[10px] font-semibold text-brand-600 dark:text-brand-300">
+                            {kiroMethodLabel(conn)}
+                          </span>
+                          {kiroRegion(conn) && (
+                            <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-600 dark:text-blue-400">
+                              {kiroRegion(conn)}
+                            </span>
+                          )}
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                              isInactive
+                                ? "bg-surface-2 text-text-muted"
+                                : conn.testStatus === "active" || conn.testStatus === "success"
+                                  ? "bg-green-500/10 text-green-600 dark:text-green-400"
+                                  : conn.testStatus === "error" || conn.testStatus === "expired" || conn.testStatus === "unavailable"
+                                    ? "bg-red-500/10 text-red-600 dark:text-red-400"
+                                    : "bg-surface-2 text-text-muted"
+                            }`}
+                          >
+                            {isInactive ? "disabled" : conn.testStatus || "unknown"}
+                          </span>
+                          {conn.providerSpecificData?.profileArn && (
+                            <button
+                              type="button"
+                              onClick={() => copy(conn.providerSpecificData.profileArn, conn.id)}
+                              title={conn.providerSpecificData.profileArn}
+                              className="inline-flex max-w-full items-center gap-1 rounded-full border border-border-subtle px-2 py-0.5 text-[10px] text-text-muted transition-colors hover:text-primary"
+                            >
+                              <span className="material-symbols-outlined text-[12px]">
+                                {copied === conn.id ? "check" : "content_copy"}
+                              </span>
+                              <code className="truncate font-mono">
+                                {conn.providerSpecificData.profileArn}
+                              </code>
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>
@@ -895,6 +1020,18 @@ export default function ProviderLimits() {
                             {isResettingLimit ? "progress_activity" : "bolt"}
                           </span>
                           <span className="hidden lg:inline">Reset limit</span>
+                        </button>
+                      </Tooltip>
+                    )}
+                    {conn.provider === "claude" && conn.authType === "oauth" && (
+                      <Tooltip text="When your 5h quota runs out, auto-sends a request the moment it resets so a new window starts right away.">
+                        <button
+                          type="button"
+                          onClick={() => toggleAutoPing(conn.id, !(autoPingMap[conn.id] === true))}
+                          aria-label="Toggle auto-ping"
+                          className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${autoPingMap[conn.id] === true ? "text-primary" : "text-text-muted"}`}
+                        >
+                          <span className="material-symbols-outlined text-[18px]">bolt</span>
                         </button>
                       </Tooltip>
                     )}

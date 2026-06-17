@@ -733,8 +733,8 @@ export default function APIPageClient({ machineId }) {
   };
 
   const maskKey = (fullKey) => {
-    if (!fullKey) return "";
-    return fullKey.length > 8 ? fullKey.slice(0, 8) + "..." : fullKey;
+    if (!fullKey || fullKey.length <= 10) return fullKey || "";
+    return fullKey.slice(0, 6) + "•".repeat(fullKey.length - 10) + fullKey.slice(-4);
   };
 
   const toggleKeyVisibility = (keyId) => {

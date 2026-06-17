@@ -5,6 +5,8 @@ import { adjustMaxTokens } from "./maxTokens.js";
 import { applyCloaking } from "../../utils/claudeCloaking.js";
 import { resolveSessionId } from "../../utils/sessionManager.js";
 import { PROVIDERS } from "../../providers/index.js";
+import { getCapabilitiesForModel } from "../../providers/capabilities.js";
+import { DEFAULT_MAX_TOKENS } from "../../config/runtimeConfig.js";
 
 // Check if message has valid non-empty content
 export function hasValidContent(msg) {
@@ -130,10 +132,16 @@ export function normalizeClaudePassthrough(body, model = "") {
 // - Add thinking block for Anthropic endpoint (provider === "claude")
 // - Fix tool_use/tool_result ordering
 // - Apply cloaking (billing header + fake user ID) for OAuth tokens
-export function prepareClaudeRequest(body, provider = null, apiKey = null, connectionId = null) {
+export function prepareClaudeRequest(body, provider = null, apiKey = null, connectionId = null, rawHeaders = null, sessionId = null) {
   // quirk: MiniMax's Claude-compatible endpoint rejects Anthropic's output_config (400 invalid params)
   if (PROVIDERS[provider]?.quirks?.dropOutputConfig) {
     delete body.output_config;
+  }
+
+  // Clamp max_tokens to the model output ceiling (never above DEFAULT_MAX_TOKENS)
+  if (body.max_tokens) {
+    const ceiling = Math.min(getCapabilitiesForModel(provider, body.model).maxOutput, DEFAULT_MAX_TOKENS);
+    if (body.max_tokens > ceiling) body.max_tokens = ceiling;
   }
 
   // 1. System: remove all cache_control, add only to last block with ttl 1h
@@ -252,8 +260,8 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
   // Apply cloaking for OAuth tokens (billing header + fake user ID)
   // session_id in user_id must match X-Claude-Code-Session-Id for fingerprint consistency
   if ((provider === "claude" || provider?.startsWith("anthropic-compatible")) && apiKey) {
-    const sessionId = resolveSessionId({ body, connectionId, scope: "claude" });
-    body = applyCloaking(body, apiKey, sessionId);
+    const sid = sessionId || resolveSessionId({ headers: rawHeaders, body, connectionId, scope: "claude" });
+    body = applyCloaking(body, apiKey, sid);
   }
 
   return body;

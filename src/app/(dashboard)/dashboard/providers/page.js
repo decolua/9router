@@ -166,8 +166,9 @@ export default function ProvidersPage() {
   }, []);
 
   const getProviderStats = (providerId, authType) => {
+    const authTypes = Array.isArray(authType) ? authType : [authType];
     const providerConnections = connections.filter(
-      (c) => c.provider === providerId && c.authType === authType,
+      (c) => c.provider === providerId && authTypes.includes(c.authType),
     );
 
     const getEffectiveStatus = (conn) => {
@@ -208,17 +209,15 @@ export default function ProvidersPage() {
     return { connected, error, total, errorCode, errorTime, allDisabled };
   };
 
-  // Toggle all connections for a provider on/off
+  // Toggle all connections for a provider on/off. authType may be a single
+  // string or an array (kiro counts oauth + api_key/apikey together).
   const handleToggleProvider = async (providerId, authType, newActive) => {
-    const providerConns = connections.filter(
-      (c) => c.provider === providerId && c.authType === authType,
-    );
+    const authTypes = Array.isArray(authType) ? authType : [authType];
+    const matches = (c) =>
+      c.provider === providerId && authTypes.includes(c.authType);
+    const providerConns = connections.filter(matches);
     setConnections((prev) =>
-      prev.map((c) =>
-        c.provider === providerId && c.authType === authType
-          ? { ...c, isActive: newActive }
-          : c,
-      ),
+      prev.map((c) => (matches(c) ? { ...c, isActive: newActive } : c)),
     );
     await Promise.allSettled(
       providerConns.map((c) =>
@@ -281,15 +280,18 @@ export default function ProvidersPage() {
     Object.entries(OAUTH_PROVIDERS).filter(([, info]) => !info.hidden && matchSearch(info.name)),
     "oauth",
   );
-  const freeEntries = Object.entries(FREE_PROVIDERS).filter(
-    ([, info]) => !info.hidden && matchSearch(info.name),
-  );
+  const freeEntries = Object.entries(FREE_PROVIDERS)
+    .filter(([, info]) => !info.hidden && matchSearch(info.name))
+    .sort(([, a], [, b]) => (b.noAuth ? 1 : 0) - (a.noAuth ? 1 : 0));
   const freeTierEntries = sortByPriority(
     Object.entries(FREE_TIER_PROVIDERS).filter(
-      ([, info]) => !info.hidden && matchSearch(info.name),
+      ([, info]) =>
+        !info.hidden &&
+        matchSearch(info.name) &&
+        (info.serviceKinds ?? ["llm"]).includes("llm"),
     ),
     "freeTier",
-  );
+  ).sort(([, a], [, b]) => (b.noAuth ? 1 : 0) - (a.noAuth ? 1 : 0));
   // API Key: connected providers first, then alphabetical by name
   const apikeyEntries = Object.entries(APIKEY_PROVIDERS)
     .filter(
@@ -462,16 +464,26 @@ export default function ProvidersPage() {
           </button>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
-          {freeEntries.map(([key, info]) => (
-            <ProviderCard
-              key={key}
-              providerId={key}
-              provider={info}
-              stats={getProviderStats(key, "oauth")}
-              authType="free"
-              onToggle={(active) => handleToggleProvider(key, "oauth", active)}
-            />
-          ))}
+          {freeEntries.map(([key, info]) => {
+            // Kiro accepts both OAuth and api-key connections; count/toggle both
+            // so the card total matches the provider detail page (#kiro-apikey).
+            // Kiro's headless api-key flow persists authType "api_key" (underscore),
+            // while generic apikey providers use "apikey" — include both spellings.
+            const freeAuthTypes =
+              key === "kiro" ? ["oauth", "apikey", "api_key"] : "oauth";
+            return (
+              <ProviderCard
+                key={key}
+                providerId={key}
+                provider={info}
+                stats={getProviderStats(key, freeAuthTypes)}
+                authType="free"
+                onToggle={(active) =>
+                  handleToggleProvider(key, freeAuthTypes, active)
+                }
+              />
+            );
+          })}
           {freeTierEntries.map(([key, info]) => (
             <ApiKeyProviderCard
               key={key}

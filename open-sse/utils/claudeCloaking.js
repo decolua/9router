@@ -13,11 +13,18 @@ function generateBillingHeader(payload) {
   return `x-anthropic-billing-header: cc_version=${CLAUDE_VERSION}.${buildHash}; cc_entrypoint=${CC_ENTRYPOINT}; cch=${cch};`;
 }
 
+// Derive a deterministic UUID-v4-shaped string from a seed (stable per account)
+function deriveUuid(seed) {
+  const h = createHash("sha256").update(seed).digest("hex");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-${((parseInt(h[16], 16) & 0x3) | 0x8).toString(16)}${h.slice(17, 20)}-${h.slice(20, 32)}`;
+}
+
 // Generate fake user ID in Claude Code 2.1.92+ JSON format:
 // {"device_id":"<64hex>","account_uuid":"<uuid>","session_id":"<uuid>"}
-function generateFakeUserID(sessionId) {
-  const deviceId = randomBytes(32).toString("hex");
-  const accountUuid = randomUUID();
+// device_id/account_uuid derive from apiKey (stable per account), session_id per-conversation
+function generateFakeUserID(sessionId, apiKey) {
+  const deviceId = apiKey ? createHash("sha256").update(`device:${apiKey}`).digest("hex") : randomBytes(32).toString("hex");
+  const accountUuid = apiKey ? deriveUuid(`account:${apiKey}`) : randomUUID();
   const sessionUuid = sessionId || randomUUID();
   return `{"device_id":"${deviceId}","account_uuid":"${accountUuid}","session_id":"${sessionUuid}"}`;
 }
@@ -151,7 +158,7 @@ export function applyCloaking(body, apiKey, sessionId) {
   // Inject fake user ID into metadata (session_id must match X-Claude-Code-Session-Id)
   const existingUserId = result.metadata?.user_id;
   if (!existingUserId) {
-    result.metadata = { ...result.metadata, user_id: generateFakeUserID(sessionId) };
+    result.metadata = { ...result.metadata, user_id: generateFakeUserID(sessionId, apiKey) };
   }
 
   return result;
