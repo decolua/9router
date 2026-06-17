@@ -169,11 +169,20 @@ export async function POST(request) {
         data = await result.json();
       }
 
-      if (sessionId) {
-        const session = getGatewaySession(sessionId);
+      let targetSessionId = sessionId;
+      if (!targetSessionId) {
+        const connections = globalThis.__9routerMcpServerConnections;
+        const sessions = connections?.gatewaySessions;
+        if (sessions && sessions.size > 0) {
+          targetSessionId = Array.from(sessions.keys()).pop();
+        }
+      }
+
+      if (targetSessionId) {
+        const session = getGatewaySession(targetSessionId);
         if (session) {
           session.send(`event: message\ndata: ${JSON.stringify(data)}\n\n`);
-          return new Response("", { status: 202 });
+          return Response.json(data);
         }
       }
 
