@@ -11,7 +11,7 @@ export class XiaomiTokenplanExecutor extends DefaultExecutor {
   // Claude-native aliases route to the Anthropic-compatible messages endpoint
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
     const baseUrl = resolveXiaomiTokenplanBaseUrl(credentials);
-    if (getModelTargetFormat(model, model) === FORMATS.CLAUDE) {
+    if (getModelTargetFormat("xiaomi-tokenplan", model) === FORMATS.CLAUDE) {
       return `${baseUrl.replace(/\/v1\/?$/, "/anthropic/v1")}/messages`;
     }
     return `${baseUrl}/chat/completions`;
