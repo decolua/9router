@@ -27,11 +27,56 @@ export async function GET(request, { params }) {
       );
       
       const reader = stream.getReader();
+      let buffer = "";
       try {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          controller.enqueue(value);
+
+          buffer += encoder.decode(value, { stream: true });
+          let match;
+          while ((match = buffer.match(/\r?\n\r?\n/))) {
+            const boundaryIdx = match.index;
+            const block = buffer.slice(0, boundaryIdx).trim();
+            buffer = buffer.slice(boundaryIdx + match[0].length);
+            if (!block) continue;
+
+            const lines = block.split(/\r?\n/);
+            let eventType = "message";
+            let data = "";
+            for (const line of lines) {
+              if (line.startsWith("event: ")) {
+                eventType = line.slice(7).trim();
+              } else if (line.startsWith("data: ")) {
+                data += (data ? "\n" : "") + line.slice(6);
+              } else if (line.startsWith("data:")) {
+                data += (data ? "\n" : "") + line.slice(5);
+              }
+            }
+
+            // Only forward message events to MCP client
+            if (eventType !== "message") {
+              continue;
+            }
+
+            try {
+              const json = JSON.parse(data.trim());
+              if (json.jsonrpc === "2.0") {
+                // Discard internal initialize responses
+                if (json.result && json.result.protocolVersion) {
+                  continue;
+                }
+                // Discard initialize requests/notifications
+                if (json.method === "initialize" || json.method === "notifications/initialized") {
+                  continue;
+                }
+
+                controller.enqueue(encoder.encode(`event: message\ndata: ${JSON.stringify(json)}\n\n`));
+              }
+            } catch {
+              // Ignore parsing errors/non-JSON message events to keep client connection healthy
+            }
+          }
         }
       } finally {
         controller.close();

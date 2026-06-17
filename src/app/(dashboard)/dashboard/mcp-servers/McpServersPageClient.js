@@ -24,6 +24,7 @@ const PRESET_SERVERS = [
   { name: "Filesystem", type: "local-stdio", command: "npx", args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"], description: "Read/write files on local filesystem" },
   { name: "GitHub", type: "local-stdio", command: "npx", args: ["-y", "@modelcontextprotocol/server-github"], description: "GitHub API integration" },
   { name: "Browser MCP", type: "local-stdio", command: "npx", args: ["-y", "@browsermcp/mcp@latest"], description: "Control your running Chrome browser" },
+  { name: "TestSprite", type: "local-stdio", command: "npx", args: ["-y", "@testsprite/testsprite-mcp@latest"], env: { "API_KEY": "" }, description: "Autonomous AI-powered testing assistant for IDEs" },
 ];
 
 export default function McpServersPageClient() {

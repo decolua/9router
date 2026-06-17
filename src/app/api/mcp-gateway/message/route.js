@@ -78,6 +78,12 @@ export async function POST(request) {
           capabilities: {
             tools: {
               listChanged: true
+            },
+            prompts: {
+              listChanged: true
+            },
+            resources: {
+              listChanged: true
             }
           },
           serverInfo: {
@@ -94,16 +100,44 @@ export async function POST(request) {
     }
 
     // ─── tools/list aggregation ──────────────────────────────────────────
-    // If no __mcpServerId and method is tools/list, aggregate from ALL servers
     if (!__mcpServerId && jsonRpc.method === "tools/list") {
       const response = await handleToolsList(jsonRpc);
       return await sendResponse(response);
     }
 
     // ─── tools/call auto-routing ─────────────────────────────────────────
-    // If no __mcpServerId and method is tools/call, find server from prefix
     if (!__mcpServerId && jsonRpc.method === "tools/call") {
       const response = await handleToolsCall(jsonRpc);
+      return await sendResponse(response);
+    }
+
+    // ─── prompts/list aggregation ────────────────────────────────────────
+    if (!__mcpServerId && jsonRpc.method === "prompts/list") {
+      const response = await handlePromptsList(jsonRpc);
+      return await sendResponse(response);
+    }
+
+    // ─── prompts/get auto-routing ────────────────────────────────────────
+    if (!__mcpServerId && jsonRpc.method === "prompts/get") {
+      const response = await handlePromptsGet(jsonRpc);
+      return await sendResponse(response);
+    }
+
+    // ─── resources/list aggregation ──────────────────────────────────────
+    if (!__mcpServerId && jsonRpc.method === "resources/list") {
+      const response = await handleResourcesList(jsonRpc);
+      return await sendResponse(response);
+    }
+
+    // ─── resources/templates/list aggregation ────────────────────────────
+    if (!__mcpServerId && jsonRpc.method === "resources/templates/list") {
+      const response = await handleResourceTemplatesList(jsonRpc);
+      return await sendResponse(response);
+    }
+
+    // ─── resources/read auto-routing ─────────────────────────────────────
+    if (!__mcpServerId && jsonRpc.method === "resources/read") {
+      const response = await handleResourcesRead(jsonRpc);
       return await sendResponse(response);
     }
 
@@ -159,21 +193,27 @@ export async function POST(request) {
 
 // Map server names to short prefixes for tool names
 function getServerPrefix(server) {
-  // "Google Stitch" -> "stitch", "GitHub" -> "github", "Tavily" -> "tavily"
-  return server.name
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, "")
-    .slice(0, 12);
+  const name = server.name.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (name.includes("testsprite")) return "ts";
+  if (name.includes("sentry")) return "sr";
+  if (name.includes("firecrawl")) return "fc";
+  if (name.includes("puppeteer")) return "pp";
+  if (name.includes("astro")) return "ad";
+  if (name.includes("stitch")) return "st";
+  if (name.includes("github")) return "gh";
+  if (name.includes("tavily")) return "tv";
+  
+  return name.slice(0, 3);
 }
 
 async function handleToolsList(jsonRpc) {
   const servers = await getMcpServers({ isActive: true });
   if (servers.length === 0) {
-    return Response.json({
+    return {
       jsonrpc: "2.0",
       id: jsonRpc.id,
       result: { tools: [] },
-    });
+    };
   }
 
   const allTools = [];
@@ -191,13 +231,9 @@ async function handleToolsList(jsonRpc) {
         const prefix = getServerPrefix(server);
         for (const tool of response.result.tools) {
           allTools.push({
-            ...tool,
-            // Prefix name so AI knows which server to route to
             name: `${prefix}__${tool.name}`,
-            // Keep original name in description for reference
-            originalName: tool.name,
-            _serverId: server.id,
-            _serverName: server.name,
+            description: tool.description,
+            inputSchema: tool.inputSchema,
           });
         }
       }
@@ -208,22 +244,13 @@ async function handleToolsList(jsonRpc) {
 
   await Promise.all(promises);
 
-  return Response.json({
+  return {
     jsonrpc: "2.0",
     id: jsonRpc.id,
     result: {
       tools: allTools,
-      _9router: {
-        message: "Tools are prefixed with server name (e.g. stitch__create_project). Call tools directly — 9Router will route to the correct server.",
-        servers: servers.map((s) => ({
-          prefix: getServerPrefix(s),
-          name: s.name,
-          type: s.type,
-          toolCount: allTools.filter((t) => t._serverId === s.id).length,
-        })),
-      },
     },
-  });
+  };
 }
 
 // ─── Auto-route tools/call by prefix ────────────────────────────────────────
@@ -244,14 +271,14 @@ async function handleToolsCall(jsonRpc) {
       return sPrefix === normalizedPrefix || s.name.toLowerCase() === prefix.toLowerCase();
     });
     if (!server) {
-      return Response.json({
+      return {
         jsonrpc: "2.0",
         id: jsonRpc.id,
         result: {
           content: [{ type: "text", text: `No server found with prefix "${prefix}". Available: ${servers.map((s) => getServerPrefix(s)).join(", ")}` }],
           isError: true,
         },
-      });
+      };
     }
 
     const response = await sendToMcpServer(server, {
@@ -260,7 +287,7 @@ async function handleToolsCall(jsonRpc) {
       method: "tools/call",
       params: { ...jsonRpc.params, name: originalName },
     });
-    return Response.json(response);
+    return response;
   }
 
   // No prefix — try all servers, return first success
@@ -272,16 +299,244 @@ async function handleToolsCall(jsonRpc) {
         method: "tools/call",
         params: jsonRpc.params,
       });
-      if (response?.result) return Response.json(response);
+      if (response?.result) return response;
     } catch { /* try next server */ }
   }
 
-  return Response.json({
+  return {
     jsonrpc: "2.0",
     id: jsonRpc.id,
     result: {
       content: [{ type: "text", text: `No server could handle tool "${toolName}". Try prefixed name like "stitch__${toolName}".` }],
       isError: true,
     },
+  };
+}
+
+// ─── Aggregate and route prompts ───────────────────────────────────────────
+
+async function handlePromptsList(jsonRpc) {
+  const servers = await getMcpServers({ isActive: true });
+  if (servers.length === 0) {
+    return {
+      jsonrpc: "2.0",
+      id: jsonRpc.id,
+      result: { prompts: [] },
+    };
+  }
+
+  const allPrompts = [];
+
+  const promises = servers.map(async (server) => {
+    try {
+      const response = await sendToMcpServer(server, {
+        jsonrpc: "2.0",
+        id: `prompts-list-${server.id}`,
+        method: "prompts/list",
+        params: jsonRpc.params || {},
+      });
+
+      if (response?.result?.prompts) {
+        const prefix = getServerPrefix(server);
+        for (const prompt of response.result.prompts) {
+          allPrompts.push({
+            name: `${prefix}__${prompt.name}`,
+            description: prompt.description,
+            arguments: prompt.arguments,
+          });
+        }
+      }
+    } catch (err) {
+      console.error(`[mcp-gateway] prompts/list failed for ${server.name}:`, err.message);
+    }
   });
+
+  await Promise.all(promises);
+
+  return {
+    jsonrpc: "2.0",
+    id: jsonRpc.id,
+    result: {
+      prompts: allPrompts,
+    },
+  };
+}
+
+async function handlePromptsGet(jsonRpc) {
+  const promptName = jsonRpc.params?.name || "";
+  const prefixMatch = promptName.match(/^(.+?)__(.+)$/);
+
+  if (prefixMatch) {
+    const [, prefix, originalName] = prefixMatch;
+    const servers = await getMcpServers({ isActive: true });
+    const normalizedPrefix = prefix.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 12);
+    const server = servers.find((s) => {
+      const sPrefix = getServerPrefix(s);
+      return sPrefix === normalizedPrefix || s.name.toLowerCase() === prefix.toLowerCase();
+    });
+
+    if (server) {
+      const response = await sendToMcpServer(server, {
+        jsonrpc: "2.0",
+        id: jsonRpc.id,
+        method: "prompts/get",
+        params: {
+          ...jsonRpc.params,
+          name: originalName,
+        },
+      });
+      return response;
+    }
+  }
+
+  return {
+    jsonrpc: "2.0",
+    id: jsonRpc.id,
+    error: {
+      code: -32602,
+      message: `Prompt "${promptName}" not found or prefix invalid.`,
+    },
+  };
+}
+
+// ─── Aggregate and route resources ─────────────────────────────────────────
+
+async function handleResourcesList(jsonRpc) {
+  const servers = await getMcpServers({ isActive: true });
+  if (servers.length === 0) {
+    return {
+      jsonrpc: "2.0",
+      id: jsonRpc.id,
+      result: { resources: [] },
+    };
+  }
+
+  const allResources = [];
+
+  const promises = servers.map(async (server) => {
+    try {
+      const response = await sendToMcpServer(server, {
+        jsonrpc: "2.0",
+        id: `resources-list-${server.id}`,
+        method: "resources/list",
+        params: jsonRpc.params || {},
+      });
+
+      if (response?.result?.resources) {
+        const prefix = getServerPrefix(server);
+        for (const res of response.result.resources) {
+          allResources.push({
+            uri: `mcp-gateway://${prefix}?uri=${encodeURIComponent(res.uri)}`,
+            name: res.name,
+            description: res.description,
+            mimeType: res.mimeType,
+          });
+        }
+      }
+    } catch (err) {
+      console.error(`[mcp-gateway] resources/list failed for ${server.name}:`, err.message);
+    }
+  });
+
+  await Promise.all(promises);
+
+  return {
+    jsonrpc: "2.0",
+    id: jsonRpc.id,
+    result: {
+      resources: allResources,
+    },
+  };
+}
+
+async function handleResourceTemplatesList(jsonRpc) {
+  const servers = await getMcpServers({ isActive: true });
+  if (servers.length === 0) {
+    return {
+      jsonrpc: "2.0",
+      id: jsonRpc.id,
+      result: { resourceTemplates: [] },
+    };
+  }
+
+  const allTemplates = [];
+
+  const promises = servers.map(async (server) => {
+    try {
+      const response = await sendToMcpServer(server, {
+        jsonrpc: "2.0",
+        id: `resource-templates-${server.id}`,
+        method: "resources/templates/list",
+        params: jsonRpc.params || {},
+      });
+
+      if (response?.result?.resourceTemplates) {
+        const prefix = getServerPrefix(server);
+        for (const tpl of response.result.resourceTemplates) {
+          allTemplates.push({
+            uriTemplate: `mcp-gateway://${prefix}?uriTemplate=${encodeURIComponent(tpl.uriTemplate)}`,
+            name: tpl.name,
+            description: tpl.description,
+            mimeType: tpl.mimeType,
+          });
+        }
+      }
+    } catch (err) {
+      console.error(`[mcp-gateway] resources/templates/list failed for ${server.name}:`, err.message);
+    }
+  });
+
+  await Promise.all(promises);
+
+  return {
+    jsonrpc: "2.0",
+    id: jsonRpc.id,
+    result: {
+      resourceTemplates: allTemplates,
+    },
+  };
+}
+
+async function handleResourcesRead(jsonRpc) {
+  const uriStr = jsonRpc.params?.uri || "";
+  if (uriStr.startsWith("mcp-gateway://")) {
+    try {
+      const url = new URL(uriStr);
+      const prefix = url.hostname;
+      const originalUri = url.searchParams.get("uri");
+
+      if (originalUri) {
+        const servers = await getMcpServers({ isActive: true });
+        const normalizedPrefix = prefix.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 12);
+        const server = servers.find((s) => {
+          const sPrefix = getServerPrefix(s);
+          return sPrefix === normalizedPrefix || s.name.toLowerCase() === prefix.toLowerCase();
+        });
+
+        if (server) {
+          const response = await sendToMcpServer(server, {
+            jsonrpc: "2.0",
+            id: jsonRpc.id,
+            method: "resources/read",
+            params: {
+              ...jsonRpc.params,
+              uri: originalUri,
+            },
+          });
+          return response;
+        }
+      }
+    } catch (err) {
+      console.error(`[mcp-gateway] Failed to parse resource read URI:`, err.message);
+    }
+  }
+
+  return {
+    jsonrpc: "2.0",
+    id: jsonRpc.id,
+    error: {
+      code: -32602,
+      message: `Resource URI "${uriStr}" not found or invalid.`,
+    },
+  };
 }

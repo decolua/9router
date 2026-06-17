@@ -67,28 +67,58 @@ export async function GET(request) {
           const reader = serverStream.getReader();
           activeReaders.set(server.id, reader);
 
+          let buffer = "";
+          const decoder = new TextDecoder();
+
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
             if (!clientConnected) break;
 
-            // Forward the raw SSE chunk, preserving event type and data
-            const text = new TextDecoder().decode(value);
-            const lines = text.split("\n");
-            for (const line of lines) {
-              if (line.startsWith("data: ")) {
-                try {
-                  const json = JSON.parse(line.slice(6));
+            buffer += decoder.decode(value, { stream: true });
+            let match;
+            while ((match = buffer.match(/\r?\n\r?\n/))) {
+              const boundaryIdx = match.index;
+              const block = buffer.slice(0, boundaryIdx).trim();
+              buffer = buffer.slice(boundaryIdx + match[0].length);
+              if (!block) continue;
+
+              const lines = block.split(/\r?\n/);
+              let eventType = "message";
+              let data = "";
+              for (const line of lines) {
+                if (line.startsWith("event: ")) {
+                  eventType = line.slice(7).trim();
+                } else if (line.startsWith("data: ")) {
+                  data += (data ? "\n" : "") + line.slice(6);
+                } else if (line.startsWith("data:")) {
+                  data += (data ? "\n" : "") + line.slice(5);
+                }
+              }
+
+              // Only forward message events to MCP client
+              if (eventType !== "message") {
+                continue;
+              }
+
+              try {
+                const json = JSON.parse(data.trim());
+                if (json.jsonrpc === "2.0") {
+                  // Discard internal initialize responses
+                  if (json.result && json.result.protocolVersion) {
+                    continue;
+                  }
+                  // Discard initialize requests/notifications
+                  if (json.method === "initialize" || json.method === "notifications/initialized") {
+                    continue;
+                  }
+
                   json.__mcpServerId = server.id;
                   json.__mcpServerName = server.name;
                   send(`event: message\ndata: ${JSON.stringify(json)}\n\n`);
-                } catch {
-                  // Not JSON, pass through with server tag
-                  send(`event: message\ndata: ${JSON.stringify({ data: line.slice(6), __mcpServerId: server.id })}\n\n`);
                 }
-              } else if (line.startsWith("event: ")) {
-                // Pass through event types (connected, error, process_exit, etc.)
-                send(`${line}\n`);
+              } catch {
+                // Ignore parsing errors/non-JSON message events to keep client connection healthy
               }
             }
           }
