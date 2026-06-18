@@ -82,11 +82,48 @@ That's it! Start coding with FREE AI models.
 9router                    # Start with default settings
 9router --port 8080        # Custom port
 9router --no-browser       # Don't open browser
+9router --headless          # API/CLI only, no dashboard terminal UI
 9router --skip-update      # Skip auto-update check
 9router --help             # Show all options
 ```
 
 **Dashboard**: `http://localhost:20128/dashboard`
+
+## 🧩 Headless/CLI API Commands
+
+`9router` now supports direct non-interactive commands for automation:
+
+```bash
+9router --headless                   # Run server in API-only mode (no dashboard / terminal UI)
+9router api-keys list                # List all router API keys
+9router api-keys create "ci-token"    # Create API key
+9router api-keys usage <id> --period 7d
+9router api-keys delete <id>          # Delete API key
+
+# aliases
+9router keys list
+9router k list
+
+9router providers list                 # List provider connections
+9router providers add openrouter <key> # Add API-key provider
+9router providers test <id>            # Test provider connection
+9router providers models <id>          # Show available models for connection
+9router providers delete <id>          # Delete provider connection
+
+9router prov list
+9router p list
+
+9router usage key <key_id> --period 30d         # Usage by API key
+9router usage connection <provider_connection_id> # Usage from provider connection
+
+9router usage key <key_id>                 # alias command variant
+9router u key <key_id>
+9router usg connection <provider_connection_id>
+```
+
+All commands use the same runtime config as the running server (`--port` / `--host` flags can be passed).
+
+Detailed examples and quick scripts are available in [CLI Headless API Guide](CLI_HEADLESS.md).
 
 ---
 

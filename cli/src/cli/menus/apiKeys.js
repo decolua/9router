@@ -1,10 +1,12 @@
 const api = require("../api/client");
 const { prompt, confirm, pause } = require("../utils/input");
-const { clearScreen, showStatus, showHeader } = require("../utils/display");
-const { maskKey, formatDate, getRelativeTime } = require("../utils/format");
+const { clearScreen, showStatus } = require("../utils/display");
+const { maskKey, formatDate, formatNumber, getRelativeTime } = require("../utils/format");
 const { showMenuWithBack } = require("../utils/menuHelper");
 const { copyToClipboard } = require("../utils/clipboard");
 const { getEndpoint } = require("../utils/endpoint");
+
+const VALID_USAGE_PERIODS = new Set(["today", "24h", "7d", "30d", "60d", "all"]);
 
 /**
  * Display API keys list with formatted output
@@ -129,6 +131,68 @@ async function handleCopyKey(key) {
   await pause();
 }
 
+function normalizeUsagePeriod(period) {
+  const candidate = (period || "").trim().toLowerCase();
+  return VALID_USAGE_PERIODS.has(candidate) ? candidate : "7d";
+}
+
+function formatUsageCost(cost) {
+  if (typeof cost !== "number" || Number.isNaN(cost)) return "0.000000";
+  return cost.toFixed(6);
+}
+
+/**
+ * Handle showing usage summary of a specific key
+ * @param {Object} key - API key object
+ */
+async function handleViewUsage(key) {
+  console.log("\n📈 Usage Summary");
+  console.log("─".repeat(30));
+  console.log(`Key: ${key.name}`);
+  
+  const rawPeriod = await prompt("Period [today|24h|7d|30d|60d|all] (default 7d): ");
+  const period = normalizeUsagePeriod(rawPeriod);
+
+  const result = await api.getApiKeyUsageSummary(key.id, period);
+
+  if (!result.success) {
+    showStatus(`Failed to fetch usage: ${result.error}`, "error");
+    await pause();
+    return;
+  }
+
+  const usage = result.data || {};
+  const summary = usage.summary || {};
+  const topModels = usage.topModels || [];
+
+  console.log(`\nPeriod: ${usage.period || period}`);
+  console.log(`From: ${usage.startDate ? formatDate(usage.startDate) : "All time"}`);
+  console.log(`To: ${usage.endDate ? formatDate(usage.endDate) : "Now"}`);
+  console.log(`Requests: ${formatNumber(summary.requests || 0)}`);
+  console.log(`Prompt tokens: ${formatNumber(summary.promptTokens || 0)}`);
+  console.log(`Completion tokens: ${formatNumber(summary.completionTokens || 0)}`);
+  console.log(`Total tokens: ${formatNumber(summary.totalTokens || 0)}`);
+  console.log(`Estimated cost: ${formatUsageCost(summary.cost)}`);
+  if (summary.lastUsed) {
+    console.log(`Last used: ${formatDate(summary.lastUsed)}`);
+  }
+
+  if (topModels.length === 0) {
+    console.log("\nNo request in this period.");
+  } else {
+    console.log("\nTop Models:");
+    topModels.forEach((model, index) => {
+      const totalTokens = formatNumber(model.totalTokens || 0);
+      const requestCount = formatNumber(model.requests || 0);
+      const providerLabel = model.provider && model.provider !== "unknown" ? ` (${model.provider})` : "";
+      console.log(`  ${index + 1}. ${model.model || "unknown"}${providerLabel}`);
+      console.log(`     Requests: ${requestCount} | Tokens: ${totalTokens} | Cost: ${formatUsageCost(model.cost)}`);
+    });
+  }
+
+  await pause();
+}
+
 /**
  * Handle deleting API key
  * @param {Object} key - API key object
@@ -178,6 +242,13 @@ async function showKeyActions(key, port, breadcrumb = []) {
         label: "Copy to Clipboard",
         action: async () => {
           await handleCopyKey(key);
+          return true;
+        }
+      },
+      {
+        label: "View Usage",
+        action: async () => {
+          await handleViewUsage(key);
           return true;
         }
       },
