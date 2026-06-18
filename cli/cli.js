@@ -199,6 +199,8 @@ async function runHeadlessCommand() {
   const effectivePort = parsed.options.port || port;
   const positional = parsed.positional;
   const options = parsed.options;
+
+  api.configure({ host: effectiveHost, port: effectivePort });
   let resource = (positional[0] || "").toLowerCase();
   const action = (positional[1] || "").toLowerCase();
   const normalizedResource = resource;
