@@ -13,7 +13,15 @@ export default {
   },
   category: "oauth",
   transport: {
-    baseUrl: "https://copilot.tencent.com/v1/chat/completions",
+    baseUrl: "https://copilot.tencent.com/v2/chat/completions",
+    headers: {
+      "User-Agent": "CLI/2.108.1 CodeBuddy/2.108.1",
+      "X-Product": "SaaS",
+      "X-IDE-Type": "CLI",
+      "X-IDE-Name": "CLI",
+      "x-requested-with": "XMLHttpRequest",
+      "x-codebuddy-request": "1",
+    },
     auth: {
       combined: true,
       header: "Authorization",
