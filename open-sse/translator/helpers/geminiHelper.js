@@ -4,7 +4,7 @@
 export const UNSUPPORTED_SCHEMA_CONSTRAINTS = [
   // Basic constraints (not supported by Gemini API)
   "minLength", "maxLength", "exclusiveMinimum", "exclusiveMaximum",
-  "pattern", "minItems", "maxItems", "format",
+  "minItems", "maxItems", "format",
   // Claude rejects these in VALIDATED mode
   "default", "examples",
   // JSON Schema meta keywords
