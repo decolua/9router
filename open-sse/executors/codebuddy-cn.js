@@ -17,6 +17,18 @@ export class CodeBuddyExecutor extends DefaultExecutor {
   transformRequest(model, body, stream, credentials) {
     const transformed = super.transformRequest(model, body, stream, credentials);
     transformed.stream = true;
+
+    // CodeBuddy only surfaces model reasoning when the request carries the CLI's
+    // OpenAI-style params: reasoning_effort + reasoning_summary:"auto". 9router's
+    // thinking pipeline sets reasoning_effort only when the client asks, and never
+    // sets reasoning_summary — so reasoning never shows. Mirror the CLI here.
+    const eff = transformed.reasoning_effort;
+    if (eff === "none" || eff === "off") {
+      delete transformed.reasoning_effort; // gateway has no "none" — just omit
+    } else {
+      if (!eff) transformed.reasoning_effort = "medium";
+      transformed.reasoning_summary = "auto";
+    }
     return transformed;
   }
 }
