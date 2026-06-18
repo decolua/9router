@@ -1,9 +1,9 @@
 export default {
-  id: "codebuddy",
+  id: "codebuddy-cn",
   hidden: false,
   priority: 90,
   display: {
-    name: "CodeBuddy",
+    name: "CodeBuddy CN",
     icon: "smart_toy",
     color: "#006EFF",
     website: "https://copilot.tencent.com",

@@ -90,7 +90,7 @@ const OAUTH_TEST_CONFIG = {
     authHeader: "Authorization",
     authPrefix: "Bearer ",
   },
-  codebuddy: { tokenExists: true },
+  "codebuddy-cn": { tokenExists: true },
 };
 
 async function probeClineAccessToken(accessToken) {

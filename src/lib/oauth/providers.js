@@ -1177,7 +1177,7 @@ const PROVIDERS = {
   // 1. POST stateUrl → get { state, authUrl }
   // 2. Open authUrl in browser
   // 3. Poll tokenUrl with state until success (code 0) or timeout
-  codebuddy: {
+  "codebuddy-cn": {
     config: CODEBUDDY_CONFIG,
     flowType: "device_code",
     requestDeviceCode: async (config) => {

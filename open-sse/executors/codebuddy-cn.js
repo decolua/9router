@@ -11,7 +11,7 @@ import { DefaultExecutor } from "./default.js";
  */
 export class CodeBuddyExecutor extends DefaultExecutor {
   constructor() {
-    super("codebuddy");
+    super("codebuddy-cn");
   }
 
   transformRequest(model, body, stream, credentials) {

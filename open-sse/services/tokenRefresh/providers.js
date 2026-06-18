@@ -530,8 +530,8 @@ export async function refreshCopilotToken(githubAccessToken, log) {
 // matching the official CodeBuddy CLI. Response: { code: 0, data: <token> }.
 export async function refreshCodebuddyToken(refreshToken, log) {
   if (!refreshToken) return null;
-  return dedupRefresh("codebuddy", refreshToken, async () => {
-    const oauth = PROVIDER_OAUTH["codebuddy"] || {};
+  return dedupRefresh("codebuddy-cn", refreshToken, async () => {
+    const oauth = PROVIDER_OAUTH["codebuddy-cn"] || {};
     const response = await fetch(oauth.refreshUrl, {
       method: "POST",
       headers: {
