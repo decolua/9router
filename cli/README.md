@@ -47,6 +47,23 @@ npm install -g 9router
 npx 9router
 ```
 
+**Option 1b — local source checkout (development):**
+
+```bash
+cd /path/ke/9router
+npm run build:cli
+node cli/cli.js --headless --port 20128
+```
+
+If you want `9router` command available in PATH:
+
+```bash
+cd /path/ke/9router/cli
+npm install -g .
+export PATH="$(npm prefix -g)/bin:$PATH"
+9router
+```
+
 **Option 2 — Docker (server/VPS):**
 
 ```bash
@@ -94,11 +111,15 @@ That's it! Start coding with FREE AI models.
 `9router` now supports direct non-interactive commands for automation:
 
 ```bash
-9router --headless                   # Run server in API-only mode (no dashboard / terminal UI)
-9router api-keys list                # List all router API keys
-9router api-keys create "ci-token"    # Create API key
+9router --headless --host 127.0.0.1 --port 20128
+                                 # Flow A: server mode (keeps API process running)
+
+9router --host 127.0.0.1 --port 20128 api-keys list
+                                 # Flow B: command mode (requires a running server)
+9router api-keys list                # command mode with default host/port
+9router api-keys create "ci-token"   # Create API key
 9router api-keys usage <id> --period 7d
-9router api-keys delete <id>          # Delete API key
+9router api-keys delete <id>         # Delete API key
 
 # aliases
 9router keys list
@@ -119,6 +140,16 @@ That's it! Start coding with FREE AI models.
 9router usage key <key_id>                 # alias command variant
 9router u key <key_id>
 9router usg connection <provider_connection_id>
+```
+
+Common gotcha:
+
+- `List API keys failed: Network error: connect ECONNREFUSED 127.0.0.1:20128`
+  means server is not running yet.
+  Start one server first in another terminal:
+
+```bash
+9router --headless --host 127.0.0.1 --port 20128
 ```
 
 All commands use the same runtime config as the running server (`--port` / `--host` flags can be passed).

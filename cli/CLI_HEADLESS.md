@@ -2,13 +2,57 @@
 
 Use this when dashboard is not needed (CI, script, or remote automation).
 
-## 1) Run server without UI
+## 1) Run 9Router in headless mode
+
+Headless has two flows:
+
+- Server mode: keep 9Router API alive without UI.
+- Command mode: run API commands against a running server.
+
+Command mode **must** target a running server first.
+
+### Flow A: start server (terminal 1)
 
 ```bash
+9router --headless --host 127.0.0.1 --port 20128
+```
+
+When running from source (not installed from npm), the binary isn't on PATH by default.
+Use these fallback commands:
+
+```bash
+cd /path/ke/9router
+npm run build:cli
+node cli/cli.js --headless --port 20128
+```
+
+After one-time local install, PATH command works:
+
+```bash
+cd /path/ke/9router/cli
+npm install -g .
 9router --headless --port 20128
 ```
 
-Then in another terminal, run non-interactive commands against the same API endpoint.
+If `9router` still says command not found, export your npm global bin:
+
+```bash
+export PATH="$(npm prefix -g)/bin:$PATH"
+```
+
+If 9router is not found after install, run `hash -r` in your shell.
+
+### Flow B: run command mode (terminal 2)
+
+Then in another terminal, run command mode with same host/port.
+
+```bash
+9router --host 127.0.0.1 --port 20128 api-keys list
+9router --host 127.0.0.1 --port 20128 providers models <connection_id>
+9router --host 127.0.0.1 --port 20128 api-keys delete <key_id>
+```
+
+`--headless` is optional in command mode, but keep `--host/--port` explicit to avoid endpoint mismatch.
 
 ## 2) API Key management
 
@@ -46,12 +90,16 @@ Supported usage periods: `today`, `24h`, `7d`, `30d`, `60d`, `all`.
 9router usage key <key_id> --period 30d
 9router usage connection <provider_connection_id>
 
-9router u key <key_id> --period 30d
+9router u key <key_id>
 9router usg connection <provider_connection_id>
 ```
 
 `usage key` calls `/api/usage/keys/:id`.
 `usage connection` calls `/api/usage/:connectionId`.
+
+Common gotcha:
+
+- `connect ECONNREFUSED <host>:<port>` means the target endpoint is not running or host/port is wrong.
 
 ## 5) Endpoint mode flags
 

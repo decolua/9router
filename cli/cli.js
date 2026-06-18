@@ -117,6 +117,10 @@ Global options:
   -h, --help           Show startup + command help
   -v, --version        Show version
 
+Note:
+  Running <resource> <action> uses API command mode and requires a running server on host/port.
+  Use server mode (no command) to start the API process, or use --host/--port to target an existing one.
+
 Resource/action examples (headless/non-interactive mode):
   ${APP_NAME} api-keys list
   ${APP_NAME} api-keys create <name>
@@ -139,6 +143,7 @@ Aliases:
   u      -> usage
 
 Examples:
+  ${APP_NAME} --headless --port 20128
   ${APP_NAME} --port 20128 api-keys list
   ${APP_NAME} --port 20128 providers add openrouter sk-or-xxx
   ${APP_NAME} --port 20128 providers test cmpl_xxx
@@ -732,7 +737,7 @@ const serverPath = fs.existsSync(customServerPath)
 
 if (!fs.existsSync(serverPath)) {
   console.error("Error: Standalone build not found.");
-  console.error("Please run 'npm run build:cli' first.");
+  console.error("Please run 'npm run build:cli' (repo root) or 'npm --prefix cli run build' first.");
   process.exit(1);
 }
 
