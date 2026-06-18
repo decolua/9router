@@ -1,6 +1,6 @@
 {
   "name": "9router-app",
-  "version": "0.5.2",
+  "version": "0.5.4",
   "description": "9Router web dashboard",
   "private": true,
   "scripts": {
@@ -19,6 +19,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@monaco-editor/react": "^4.7.0",
+    "@next/third-parties": "^16.2.9",
     "@xyflow/react": "^12.10.1",
     "bcryptjs": "^3.0.3",
     "confbox": "^0.2.4",

@@ -85,7 +85,7 @@ export function clearSessionStore() {
 // Conversation-stable session store: Key = hash(scope+assistant text), Value = { sessionId, lastUsed }
 const assistantSessionStore = new Map();
 const ASSISTANT_MIN_LEN = 50;
-const ASSISTANT_CAP_LEN = 200;
+const ASSISTANT_CAP_LEN = 50;
 const MAX_ASSISTANT_SESSIONS = 5000;
 
 // Client headers/body fields that carry an upstream session id (priority order)

@@ -11,6 +11,30 @@ import { extractTextContent } from "../translator/formats/gemini.js";
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
 const HARD_CAPS = new Set(["vision", "pdf", "audioInput", "videoInput"]);
 
+// Prefixes used when flattening tool turns into plain prose for panel models.
+const TOOL_CALL_PREFIX = "[Called tools: ";
+const TOOL_RESULT_PREFIX = "[Tool result: ";
+
+// Flatten tool turns into prose so panel models keep the context but can't loop
+// on tools: drop the request's tools, turn tool/function results into assistant
+// text, and inline assistant tool_calls names instead of the structured field.
+function flattenToolHistory(messages) {
+  return messages
+    .filter((msg) => msg)
+    .map((msg) => {
+      if (msg.role === "tool" || msg.role === "function") {
+        return { role: "assistant", content: `${TOOL_RESULT_PREFIX}${extractTextContent(msg.content) || String(msg.content ?? "")}]` };
+      }
+      if (msg.role === "assistant" && Array.isArray(msg.tool_calls)) {
+        const { tool_calls, ...rest } = msg;
+        const names = tool_calls.map((c) => c?.function?.name || c?.name || "tool").join(", ");
+        const base = extractTextContent(rest.content) || (typeof rest.content === "string" ? rest.content : "");
+        return { ...rest, content: `${base}${base ? "\n" : ""}${TOOL_CALL_PREFIX}${names}]` };
+      }
+      return msg;
+    });
+}
+
 // Reorder combo models by capability fit. Stable; never drops a model (fallback intact).
 // Tier 0: satisfies all hard + all soft. Tier 1: all hard only. Tier 2: rest.
 export function reorderByCapabilities(models, required) {
@@ -468,8 +492,16 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
   // 1. Fan out to the panel in parallel: non-streaming, tools stripped (we want prose).
   const { tools, tool_choice, ...rest } = body;
   const panelBody = { ...rest, stream: false };
+
+  // Flatten tool turns to prose so panel models keep context without emitting tool_calls.
+  if (Array.isArray(panelBody.messages)) {
+    panelBody.messages = flattenToolHistory(panelBody.messages);
+  } else if (Array.isArray(panelBody.input)) {
+    panelBody.input = flattenToolHistory(panelBody.input);
+  }
+
   const t0 = Date.now();
-  const calls = panel.map((m) => withTimeout(handleSingleModel(panelBody, m), cfg.panelHardTimeoutMs));
+  const calls = panel.map((m) => withTimeout(handleSingleModel(panelBody, m, true), cfg.panelHardTimeoutMs));
   const settled = await collectPanel(calls, { ...cfg, minPanel });
   log.info("FUSION", `fan-out collected in ${Date.now() - t0}ms`);
 
