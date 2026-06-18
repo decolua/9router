@@ -1,6 +1,6 @@
 export default {
   id: "codebuddy",
-  hidden: true,
+  hidden: false,
   priority: 90,
   display: {
     name: "CodeBuddy",
