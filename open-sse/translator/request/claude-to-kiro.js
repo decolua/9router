@@ -27,7 +27,7 @@ import { FORMATS } from "../formats.js";
 import { v4 as uuidv4 } from "uuid";
 import {
   resolveKiroModel,
-  isThinkingEnabled,
+  resolveKiroThinkingBudget,
   buildThinkingSystemPrefix,
   KIRO_AGENTIC_SYSTEM_PROMPT,
 } from "../../config/kiroConstants.js";
@@ -376,10 +376,8 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
   const {
     upstream: upstreamModel,
     agentic,
-    thinking: modelImpliesThinking,
   } = resolveKiroModel(model);
-  const thinkingEnabled =
-    modelImpliesThinking || isThinkingEnabled(body, null, model);
+  const thinkingBudget = resolveKiroThinkingBudget(body, credentials?.rawHeaders, model);
 
   // Guard 1: no client tools → flatten all tool interactions to text.
   if (!clientProvidedTools) {
@@ -415,7 +413,7 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
   // Prefix order: thinking_mode tag, timestamp marker, then agentic prompt.
   const timestamp = new Date().toISOString();
   const prefixParts = [];
-  if (thinkingEnabled) prefixParts.push(buildThinkingSystemPrefix());
+  if (thinkingBudget !== null) prefixParts.push(buildThinkingSystemPrefix(thinkingBudget));
   prefixParts.push(`[Context: Current time is ${timestamp}]`);
   if (agentic) prefixParts.push(KIRO_AGENTIC_SYSTEM_PROMPT);
   finalContent = `${prefixParts.join("\n\n")}\n\n${finalContent}`;
