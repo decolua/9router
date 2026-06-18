@@ -100,6 +100,7 @@ Supported usage periods: `today`, `24h`, `7d`, `30d`, `60d`, `all`.
 Common gotcha:
 
 - `connect ECONNREFUSED <host>:<port>` means the target endpoint is not running or host/port is wrong.
+- In headless server mode, the CLI keeps the child server supervised (with bounded restarts) and prints crash snippets when failures occur.
 
 ## 5) Endpoint mode flags
 

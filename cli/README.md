@@ -152,6 +152,11 @@ Common gotcha:
 9router --headless --host 127.0.0.1 --port 20128
 ```
 
+Runtime behavior in headless mode:
+
+- `--headless` keeps the API child server supervised and prints a compact startup banner.
+- If the child exits unexpectedly, the wrapper prints crash logs (when available) and attempts bounded restarts.
+
 All commands use the same runtime config as the running server (`--port` / `--host` flags can be passed).
 
 Detailed examples and quick scripts are available in [CLI Headless API Guide](CLI_HEADLESS.md).
