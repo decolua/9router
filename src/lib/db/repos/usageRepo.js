@@ -295,6 +295,14 @@ export async function getUsageHistory(filter = {}) {
   if (filter.model) { conds.push("model = ?"); params.push(filter.model); }
   if (filter.startDate) { conds.push("timestamp >= ?"); params.push(new Date(filter.startDate).toISOString()); }
   if (filter.endDate) { conds.push("timestamp <= ?"); params.push(new Date(filter.endDate).toISOString()); }
+  if (filter.apiKey !== undefined) {
+    if (filter.apiKey === "local-no-key" || filter.apiKey === null) {
+      conds.push("apiKey IS NULL");
+    } else {
+      conds.push("apiKey = ?");
+      params.push(filter.apiKey);
+    }
+  }
 
   const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
   const rows = db.all(`SELECT timestamp, provider, model, connectionId, apiKey, endpoint, cost, status, tokens FROM usageHistory ${where} ORDER BY id ASC`, params);

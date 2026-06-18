@@ -1,4 +1,3 @@
-import { Inter } from "next/font/google";
 import "material-symbols/outlined.css";
 import "./globals.css";
 import { ThemeProvider } from "@/shared/components/ThemeProvider";
@@ -9,11 +8,6 @@ import { RuntimeI18nProvider } from "@/i18n/RuntimeI18nProvider";
 
 // Hook console immediately at module load time (server-side only, runs once)
 initConsoleLogCapture();
-
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-});
 
 export const metadata = {
   title: "9Router - AI Infrastructure Management",
@@ -37,7 +31,7 @@ export default function RootLayout({ children }) {
           }}
         />
       </head>
-      <body className={`${inter.variable} font-sans antialiased`}>
+      <body className="font-sans antialiased">
         <ThemeProvider>
           <RuntimeI18nProvider>
             {children}

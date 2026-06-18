@@ -6,6 +6,14 @@ import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
 const CLI_TOKEN_HEADER = "x-9r-cli-token";
 const CLI_TOKEN_SALT = "9r-cli-auth";
 
+function isTruthy(value) {
+  return value === "1" || value === "true";
+}
+
+function isHeadlessMode() {
+  return isTruthy(process.env.HEADLESS_DASHBOARD) || isTruthy(process.env.HEADLESS_MODE) || isTruthy(process.env.HEADLESS);
+}
+
 let cachedCliToken = null;
 async function getCliToken() {
   if (!cachedCliToken) cachedCliToken = await getConsistentMachineId(CLI_TOKEN_SALT);
@@ -175,6 +183,16 @@ export const __test__ = {
 
 export async function proxy(request) {
   const { pathname } = request.nextUrl;
+
+  if (isHeadlessMode()) {
+    if (pathname === "/") {
+      return NextResponse.redirect(new URL("/api/health", request.url));
+    }
+
+    if (pathname === "/login" || pathname.startsWith("/dashboard")) {
+      return NextResponse.json({ error: "Dashboard is disabled in headless mode" }, { status: 404 });
+    }
+  }
 
   // Local-only gate for spawn-capable / host-secret routes.
   if (LOCAL_ONLY_PATHS.some((p) => pathname.startsWith(p))) {

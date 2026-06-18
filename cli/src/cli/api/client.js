@@ -300,6 +300,26 @@ async function createApiKey(name) {
 }
 
 /**
+ * Get usage summary for API key
+ * @param {string} id - API key ID
+ * @param {string} period - Period: today,24h,7d,30d,60d,all
+ * @returns {Promise<Object>} { success, data: { key, summary, topModels, period, startDate, endDate } }
+ */
+async function getApiKeyUsageSummary(id, period = "7d") {
+  const query = new URLSearchParams({ period });
+  return makeRequest("GET", `/api/usage/keys/${encodeURIComponent(id)}?${query}`);
+}
+
+/**
+ * Get usage by connection ID
+ * @param {string} id - Provider connection ID
+ * @returns {Promise<Object>} { success, data }
+ */
+async function getConnectionUsage(id) {
+  return makeRequest("GET", `/api/usage/${encodeURIComponent(id)}`);
+}
+
+/**
  * Delete API key
  * @param {string} id - Key ID
  * @returns {Promise<Object>} { success, data: { success } }
@@ -519,7 +539,9 @@ module.exports = {
   // API Keys
   getApiKeys,
   createApiKey,
+  getApiKeyUsageSummary,
   deleteApiKey,
+  getConnectionUsage,
   
   // Combos
   getCombos,

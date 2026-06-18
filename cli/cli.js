@@ -89,6 +89,249 @@ let noBrowser = false;
 let skipUpdate = false;
 let showLog = false;
 let trayMode = false;
+let headlessMode = false;
+let commandArgs = null;
+
+function isTruthyEnvFlag(value) {
+  return value === "1" || value === "true";
+}
+
+headlessMode = isTruthyEnvFlag(process.env.HEADLESS_DASHBOARD)
+  || isTruthyEnvFlag(process.env.HEADLESS_MODE)
+  || isTruthyEnvFlag(process.env.HEADLESS);
+
+function printHeadlessCommandHelp() {
+  console.log(`
+Usage:
+  ${APP_NAME} [global options]
+  ${APP_NAME} <resource> <action> [arguments...]
+
+Global options:
+  -p, --port <port>   Port for API endpoint (default: ${DEFAULT_PORT})
+  -H, --host <host>   Host for API endpoint (default: ${DEFAULT_HOST})
+  -n, --no-browser    Don't open browser automatically
+  --headless           Run server without dashboard/terminal UI
+  -l, --log           Show server logs (default: hidden)
+  -t, --tray          Run in system tray mode (background)
+  --skip-update       Skip auto-update check
+  -h, --help           Show startup + command help
+  -v, --version        Show version
+
+Note:
+  Running <resource> <action> uses API command mode and requires a running server on host/port.
+  Use server mode (no command) to start the API process, or use --host/--port to target an existing one.
+
+Resource/action examples (headless/non-interactive mode):
+  ${APP_NAME} api-keys list
+  ${APP_NAME} api-keys create <name>
+  ${APP_NAME} api-keys usage <key_id> [--period today|24h|7d|30d|60d|all]
+  ${APP_NAME} api-keys delete <key_id>
+  ${APP_NAME} providers list
+  ${APP_NAME} providers add <provider> <api_key> [--name <name>] [--priority <n>] [--default-model <model>]
+  ${APP_NAME} providers test <connection_id>
+  ${APP_NAME} providers models <connection_id>
+  ${APP_NAME} providers delete <connection_id>
+  ${APP_NAME} usage key <key_id> [--period today|24h|7d|30d|60d|all]
+  ${APP_NAME} usage connection <connection_id>
+
+Aliases:
+  keys   -> api-keys
+  k      -> api-keys (shortcut)
+  prov   -> providers
+  p      -> providers
+  usg    -> usage
+  u      -> usage
+
+Examples:
+  ${APP_NAME} --headless --port 20128
+  ${APP_NAME} --port 20128 api-keys list
+  ${APP_NAME} --port 20128 providers add openrouter sk-or-xxx
+  ${APP_NAME} --port 20128 providers test cmpl_xxx
+  ${APP_NAME} --port 20128 api-keys usage kidxxx --period 30d
+`);
+}
+
+function parseCliOptions(argv) {
+  const options = {};
+  const positional = [];
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i];
+    if (token === "--host" || token === "-H") {
+      options.host = argv[i + 1] || DEFAULT_HOST;
+      i++;
+    } else if (token === "--port" || token === "-p") {
+      options.port = parseInt(argv[i + 1], 10) || DEFAULT_PORT;
+      i++;
+    } else if (token === "--period") {
+      options.period = (argv[i + 1] || "7d").toLowerCase();
+      i++;
+    } else if (token === "--name") {
+      options.name = argv[i + 1] || "";
+      i++;
+    } else if (token === "--priority") {
+      options.priority = parseInt(argv[i + 1], 10);
+      i++;
+    } else if (token === "--global-priority") {
+      options.globalPriority = parseInt(argv[i + 1], 10);
+      i++;
+    } else if (token === "--default-model") {
+      options.defaultModel = argv[i + 1] || "";
+      i++;
+    } else if (token.startsWith("-")) {
+      throw new Error(`Unknown option: ${token}`);
+    } else {
+      positional.push(token);
+    }
+  }
+  return { options, positional };
+}
+
+function printResultOrFail(action, result) {
+  if (!result || !result.success) {
+    const status = result?.statusCode ? ` (HTTP ${result.statusCode})` : "";
+    console.error(`${action} failed${status}: ${result?.error || "Unknown error"}`);
+    return 1;
+  }
+  console.log(JSON.stringify(result.data, null, 2));
+  return 0;
+}
+
+async function runHeadlessCommand() {
+  const api = require("./src/cli/api/client");
+
+  const parsed = parseCliOptions(commandArgs);
+  const effectiveHost = parsed.options.host || host;
+  const effectivePort = parsed.options.port || port;
+  const positional = parsed.positional;
+  const options = parsed.options;
+
+  api.configure({ host: effectiveHost, port: effectivePort });
+  let resource = (positional[0] || "").toLowerCase();
+  const action = (positional[1] || "").toLowerCase();
+  const normalizedResource = resource;
+  if (resource === "k" || resource === "keys") resource = "api-keys";
+  if (resource === "prov" || resource === "p") resource = "providers";
+  if (resource === "usg" || resource === "u") resource = "usage";
+  if (resource === "key" && normalizedResource === "key") {
+    if (action === "create" || action === "list" || action === "usage" || action === "delete") {
+      resource = "api-keys";
+    }
+  }
+  const args = positional.slice(2);
+
+  if (!resource || !action) {
+    printHeadlessCommandHelp();
+    return 1;
+  }
+
+  if (resource === "api-keys" || resource === "apikeys") {
+    if (action === "list") {
+      return printResultOrFail("List API keys", await api.getApiKeys());
+    }
+    if (action === "create") {
+      const name = args[0];
+      if (!name) {
+        console.error("API key name is required.");
+        return 1;
+      }
+      return printResultOrFail("Create API key", await api.createApiKey(name));
+    }
+    if (action === "usage") {
+      const id = args[0];
+      if (!id) {
+        console.error("API key id is required.");
+        return 1;
+      }
+      const period = options.period || "7d";
+      return printResultOrFail("Get API key usage", await api.getApiKeyUsageSummary(id, period));
+    }
+    if (action === "delete") {
+      const id = args[0];
+      if (!id) {
+        console.error("API key id is required.");
+        return 1;
+      }
+      return printResultOrFail("Delete API key", await api.deleteApiKey(id));
+    }
+    console.error(`Unsupported api-keys action: ${action}`);
+    return 1;
+  }
+
+  if (resource === "providers") {
+    if (action === "list") {
+      return printResultOrFail("List providers", await api.getProviders());
+    }
+    if (action === "add") {
+      const provider = args[0];
+      const apiKey = args[1];
+      if (!provider || !apiKey) {
+        console.error("Provider and api key are required.");
+        return 1;
+      }
+      const body = {
+        provider,
+        apiKey,
+        name: options.name,
+        priority: Number.isInteger(options.priority) ? options.priority : undefined,
+        globalPriority: Number.isInteger(options.globalPriority) ? options.globalPriority : undefined,
+        defaultModel: options.defaultModel || undefined,
+      };
+      Object.keys(body).forEach((k) => body[k] === undefined && delete body[k]);
+      return printResultOrFail("Add provider", await api.createApiKeyProvider(body));
+    }
+    if (action === "test") {
+      const id = args[0];
+      if (!id) {
+        console.error("Provider connection id is required.");
+        return 1;
+      }
+      return printResultOrFail("Test provider", await api.testProvider(id));
+    }
+    if (action === "models") {
+      const id = args[0];
+      if (!id) {
+        console.error("Provider connection id is required.");
+        return 1;
+      }
+      return printResultOrFail("List provider models", await api.getProviderModels(id));
+    }
+    if (action === "delete") {
+      const id = args[0];
+      if (!id) {
+        console.error("Provider connection id is required.");
+        return 1;
+      }
+      return printResultOrFail("Delete provider", await api.deleteProvider(id));
+    }
+    console.error(`Unsupported providers action: ${action}`);
+    return 1;
+  }
+
+  if (resource === "usage") {
+    if (action === "key") {
+      const id = args[0];
+      if (!id) {
+        console.error("API key id is required.");
+        return 1;
+      }
+      const period = options.period || "7d";
+      return printResultOrFail("Get API key usage", await api.getApiKeyUsageSummary(id, period));
+    }
+    if (action === "connection") {
+      const id = args[0];
+      if (!id) {
+        console.error("Connection id is required.");
+        return 1;
+      }
+      return printResultOrFail("Get connection usage", await api.getConnectionUsage(id));
+    }
+    console.error(`Unsupported usage action: ${action}`);
+    return 1;
+  }
+
+  console.error(`Unknown resource: ${resource}`);
+  return 1;
+}
 
 for (let i = 0; i < args.length; i++) {
   if (args[i] === "--port" || args[i] === "-p") {
@@ -101,29 +344,26 @@ for (let i = 0; i < args.length; i++) {
     noBrowser = true;
   } else if (args[i] === "--log" || args[i] === "-l") {
     showLog = true;
+  } else if (args[i] === "--headless") {
+    headlessMode = true;
   } else if (args[i] === "--skip-update") {
     skipUpdate = true;
   } else if (args[i] === "--tray" || args[i] === "-t") {
     trayMode = true;
     process.env.TRAY_MODE = "1";
   } else if (args[i] === "--help" || args[i] === "-h") {
-    console.log(`
-Usage: ${APP_NAME} [options]
-
-Options:
-  -p, --port <port>   Port to run the server (default: ${DEFAULT_PORT})
-  -H, --host <host>   Host to bind (default: ${DEFAULT_HOST})
-  -n, --no-browser    Don't open browser automatically
-  -l, --log           Show server logs (default: hidden)
-  -t, --tray          Run in system tray mode (background)
-  --skip-update       Skip auto-update check
-  -h, --help          Show this help message
-  -v, --version       Show version
-`);
+    printHeadlessCommandHelp();
     process.exit(0);
   } else if (args[i] === "--version" || args[i] === "-v") {
     console.log(pkg.version);
     process.exit(0);
+  } else if (args[i].startsWith("-")) {
+    console.error(`Unknown option: ${args[i]}`);
+    printHeadlessCommandHelp();
+    process.exit(1);
+  } else {
+    commandArgs = args.slice(i);
+    break;
   }
 }
 
@@ -132,6 +372,8 @@ if (skipUpdate && !trayMode && !process.stdin.isTTY) {
   trayMode = true;
   process.env.TRAY_MODE = "1";
 }
+
+if (headlessMode) trayMode = false;
 
 // Always use Node.js runtime with absolute path
 const RUNTIME = process.execPath;
@@ -495,18 +737,31 @@ const serverPath = fs.existsSync(customServerPath)
 
 if (!fs.existsSync(serverPath)) {
   console.error("Error: Standalone build not found.");
-  console.error("Please run 'npm run build:cli' first.");
+  console.error("Please run 'npm run build:cli' (repo root) or 'npm --prefix cli run build' first.");
   process.exit(1);
 }
 
-// Check for updates FIRST, then start server
-checkForUpdate().then((latestVersion) => {
-  killAllAppProcesses(port).then(() => {
-    return killProcessOnPort(port);
-  }).then(() => {
-    startServer(latestVersion);
+// Check for updates, then start server, unless running in headless command mode.
+(async () => {
+  if (commandArgs) {
+    try {
+      const exitCode = await runHeadlessCommand();
+      process.exit(exitCode);
+    } catch (error) {
+      console.error(error.message || String(error));
+      process.exit(1);
+    }
+    return;
+  }
+
+  checkForUpdate().then((latestVersion) => {
+    killAllAppProcesses(port).then(() => {
+      return killProcessOnPort(port);
+    }).then(() => {
+      startServer(latestVersion, headlessMode);
+    });
   });
-});
+})();
 
 // Show interface selection menu
 async function showInterfaceMenu(latestVersion) {
@@ -556,9 +811,10 @@ async function showInterfaceMenu(latestVersion) {
 const MAX_RESTARTS = 2;
 const RESTART_RESET_MS = 30000; // Reset counter if alive > 30s
 
-function startServer(latestVersion) {
+function startServer(latestVersion, headlessMode = false) {
   const displayHost = getDisplayHost();
-  const url = `http://${displayHost}:${port}/dashboard`;
+  const url = `http://${displayHost}:${port}`;
+  const dashboardUrl = `${url}/dashboard`;
   // Surface real network exposure when bound to all interfaces (default 0.0.0.0).
   if (host === DEFAULT_HOST) {
     const lanIp = getLanIp();
@@ -582,7 +838,8 @@ function startServer(latestVersion) {
       env: {
         ...buildEnvWithRuntime(process.env),
         PORT: port.toString(),
-        HOSTNAME: host
+        HOSTNAME: host,
+        HEADLESS_DASHBOARD: headlessMode ? "1" : "0"
       }
     });
     if (!showLog && child.stderr) {
@@ -649,6 +906,16 @@ function startServer(latestVersion) {
     setTimeout(() => process.exit(0), 100);
   });
 
+  if (headlessMode) {
+    console.log(`\n🚀 ${pkg.name} v${pkg.version} (headless)`);
+    console.log(`Server: ${url}`);
+    console.log(`LLM API: ${url}/v1`);
+    console.log(`Health:  ${url}/api/health`);
+    console.log("Mode:   API + CLI management only (dashboard disabled)\n");
+    attachServerEvents();
+    return;
+  }
+
   // Initialize tray icon (runs alongside TUI)
   const initTrayIcon = () => {
     try {
@@ -661,7 +928,7 @@ function startServer(latestVersion) {
           cleanup();
           setTimeout(() => process.exit(0), 100);
         },
-        onOpenDashboard: () => openBrowser(url)
+        onOpenDashboard: () => openBrowser(dashboardUrl)
       });
     } catch (err) {
       // Tray not available - continue without it
@@ -708,7 +975,7 @@ function startServer(latestVersion) {
           setTimeout(() => process.exit(0), 200);
           return;
         } else if (choice === "web") {
-          openBrowser(url);
+          openBrowser(dashboardUrl);
           // Wait for user to come back
           const { pause } = require("./src/cli/utils/input");
           await pause("\nPress Enter to go back to menu...");

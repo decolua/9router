@@ -79,6 +79,14 @@ npm install -g 9router
 9router
 ```
 
+Headless (no dashboard/UI, endpoint + CLI only):
+
+```bash
+9router --headless
+# or
+HEADLESS_DASHBOARD=1 9router
+```
+
 🎉 Dashboard opens at `http://localhost:20128`
 
 **2. Connect a FREE provider (no signup needed):**
