@@ -74,8 +74,9 @@ export async function GET(request, { params }) {
 
     for (const row of rows) {
       totalRequests += 1;
-      const promptTokens = toNumber(row.promptTokens);
-      const completionTokens = toNumber(row.completionTokens);
+      const tokens = row.tokens || {};
+      const promptTokens = toNumber(tokens.promptTokens ?? tokens.prompt_tokens ?? tokens.input_tokens);
+      const completionTokens = toNumber(tokens.completionTokens ?? tokens.completion_tokens ?? tokens.output_tokens);
       const rowCost = toNumber(row.cost);
 
       totalPromptTokens += promptTokens;

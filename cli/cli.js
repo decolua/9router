@@ -912,6 +912,7 @@ function startServer(latestVersion, headlessMode = false) {
     console.log(`LLM API: ${url}/v1`);
     console.log(`Health:  ${url}/api/health`);
     console.log("Mode:   API + CLI management only (dashboard disabled)\n");
+    attachServerEvents();
     return;
   }
 
