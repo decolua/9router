@@ -413,11 +413,15 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
   }
 
   // Prefix order: thinking_mode tag, timestamp marker, then agentic prompt.
+  // The agentic prompt is injected ONLY on the first turn (empty history): it
+  // is a one-time behavioural instruction, and re-prepending it to every user
+  // message made the model read it as fresh user-authored input each turn.
   const timestamp = new Date().toISOString();
+  const isFirstTurn = !Array.isArray(history) || history.length === 0;
   const prefixParts = [];
   if (thinkingBudget !== null) prefixParts.push(buildThinkingSystemPrefix(thinkingBudget));
   prefixParts.push(`[Context: Current time is ${timestamp}]`);
-  if (agentic) prefixParts.push(KIRO_AGENTIC_SYSTEM_PROMPT);
+  if (agentic && isFirstTurn) prefixParts.push(KIRO_AGENTIC_SYSTEM_PROMPT);
   finalContent = `${prefixParts.join("\n\n")}\n\n${finalContent}`;
 
   const payload = {

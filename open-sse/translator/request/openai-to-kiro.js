@@ -539,15 +539,17 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
 
   const timestamp = new Date().toISOString();
 
-  // Build the system-prompt prefix that goes ABOVE the user message body.
-  // Order: thinking_mode tag first (so Kiro sees it before any user text),
-  // then context/timestamp marker, then optional agentic chunked-write prompt.
+  // Inject the agentic chunked-write prompt ONLY on the first turn (empty
+  // history). It is a one-time behavioural instruction; re-prepending it to
+  // every user message made the model read it as fresh user-authored input
+  // each turn. thinking_mode tag and timestamp stay per-turn by design.
+  const isFirstTurn = !Array.isArray(history) || history.length === 0;
   const prefixParts = [];
   if (thinkingBudget !== null) {
     prefixParts.push(buildThinkingSystemPrefix(thinkingBudget));
   }
   prefixParts.push(`[Context: Current time is ${timestamp}]`);
-  if (agentic) {
+  if (agentic && isFirstTurn) {
     prefixParts.push(KIRO_AGENTIC_SYSTEM_PROMPT);
   }
   finalContent = `${prefixParts.join("\n\n")}\n\n${finalContent}`;
