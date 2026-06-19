@@ -19,8 +19,10 @@ export default function McpGatewayKeysPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
   const [createdKey, setCreatedKey] = useState(null);
-  const [editingKey, setEditingKey] = useState(null); // key id for grants
+  const [editingKey, setEditingKey] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [revealedKeys, setRevealedKeys] = useState({}); // {id: rawKey}
+  const [showKeyForRow, setShowKeyForRow] = useState(new Set());
   const notify = useNotificationStore((s) => s.addNotification);
   const { copied, copy } = useCopyToClipboard(2000);
 
@@ -77,6 +79,8 @@ export default function McpGatewayKeysPage() {
     }
     notify({ type: "success", message: "Key deleted" });
     setConfirmDelete(null);
+    setRevealedKeys((m) => { const n = { ...m }; delete n[id]; return n; });
+    setShowKeyForRow((s) => { const n = new Set(s); n.delete(id); return n; });
     await reload();
   }
 
@@ -93,6 +97,35 @@ export default function McpGatewayKeysPage() {
     }
     notify({ type: "success", message: "Grants updated" });
     await reload();
+  }
+
+  // Fetch raw key via reveal=1; cache locally for toggle/copy
+  async function revealKey(k) {
+    if (revealedKeys[k.id]) {
+      setShowKeyForRow((s) => { const n = new Set(s); n.add(k.id); return n; });
+      return revealedKeys[k.id];
+    }
+    try {
+      const r = await fetch(`/api/mcp-gateway/keys/${k.id}?reveal=1`);
+      const body = await r.json();
+      if (!r.ok) { notify({ type: "error", message: body.error || "reveal failed" }); return ""; }
+      const raw = body.key?.key || "";
+      setRevealedKeys((m) => ({ ...m, [k.id]: raw }));
+      setShowKeyForRow((s) => { const n = new Set(s); n.add(k.id); return n; });
+      return raw;
+    } catch (e) {
+      notify({ type: "error", message: e.message });
+      return "";
+    }
+  }
+
+  function hideKey(id) {
+    setShowKeyForRow((s) => { const n = new Set(s); n.delete(id); return n; });
+  }
+
+  function maskKey(fullKey) {
+    if (!fullKey || fullKey.length <= 10) return fullKey || "";
+    return fullKey.slice(0, 6) + "•".repeat(fullKey.length - 10) + fullKey.slice(-4);
   }
 
   return (
@@ -121,33 +154,68 @@ export default function McpGatewayKeysPage() {
           </div>
         ) : (
           <div className="flex flex-col">
-            {keys.map((k) => (
-              <div
-                key={k.id}
-                className="group flex items-center justify-between py-3 border-b border-black/[0.03] dark:border-white/[0.03] last:border-b-0"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="font-medium text-text-main">{k.name || <span className="text-text-muted">unnamed</span>}</div>
-                  <div className="text-xs text-text-muted mt-1">
-                    {k.machineId ? `machine ${k.machineId.slice(0, 8)}… · ` : ""}created {k.createdAt?.slice(0, 10)}
+            {keys.map((k) => {
+              const isShown = showKeyForRow.has(k.id);
+              const raw = revealedKeys[k.id] || "";
+              return (
+                <div
+                  key={k.id}
+                  className="group flex items-start justify-between py-3 border-b border-black/[0.03] dark:border-white/[0.03] last:border-b-0"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium text-text-main">{k.name || <span className="text-text-muted">unnamed</span>}</div>
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      {isShown ? (
+                        <code className="text-xs text-text-muted font-mono break-all">{raw}</code>
+                      ) : (
+                        <code className="text-xs text-text-muted font-mono">
+                          {raw ? maskKey(raw) : "••••••••••"}
+                        </code>
+                      )}
+                      <button
+                        onClick={() => isShown ? hideKey(k.id) : revealKey(k)}
+                        className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                        title={isShown ? "Hide key" : "Show key"}
+                      >
+                        <span className="material-symbols-outlined text-[14px]">
+                          {isShown ? "visibility_off" : "visibility"}
+                        </span>
+                      </button>
+                      <button
+                        onClick={async () => {
+                          const cached = revealedKeys[k.id];
+                          const val = cached || (await revealKey(k));
+                          if (val) copy(val, k.id);
+                        }}
+                        className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                        title="Copy key"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">
+                          {copied === k.id ? "check" : "content_copy"}
+                        </span>
+                      </button>
+                    </div>
+                    <div className="text-xs text-text-muted mt-1">
+                      {k.machineId ? `machine ${k.machineId.slice(0, 8)}… · ` : ""}created {k.createdAt?.slice(0, 10)}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button size="sm" variant="ghost" icon="tune" onClick={() => setEditingKey(k.id)}>Grants</Button>
+                    <button
+                      onClick={() => setConfirmDelete(k.id)}
+                      className="p-2 hover:bg-red-500/10 rounded text-red-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">delete</span>
+                    </button>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <Button size="sm" variant="ghost" icon="tune" onClick={() => setEditingKey(k.id)}>Grants</Button>
-                  <button
-                    onClick={() => setConfirmDelete(k.id)}
-                    className="p-2 hover:bg-red-500/10 rounded text-red-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">delete</span>
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </Card>
 
-      {/* Add Key Modal — API-Key-style */}
+      {/* Add Key Modal */}
       <Modal
         isOpen={showAddModal}
         title="Create Gateway Key"
@@ -167,7 +235,7 @@ export default function McpGatewayKeysPage() {
         </div>
       </Modal>
 
-      {/* Created Key reveal modal — API-Key-style */}
+      {/* Created Key reveal modal */}
       {createdKey && (
         <Modal
           isOpen

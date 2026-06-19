@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { runWithModelFallback, getModelFallback, isDeterministicPayloadError } from "../../open-sse/services/modelFallback.js";
+import { runWithModelFallback, getModelFallback, getModelFallbacks, isDeterministicPayloadError } from "../../open-sse/services/modelFallback.js";
 
 // Minimal Response stub: status + clone().text()
 function makeResponse(status, body = "", json = null) {
@@ -143,5 +143,116 @@ describe("runWithModelFallback", () => {
     expect(runner).toHaveBeenCalledTimes(2);
     expect(res.status).toBe(200);
     expect(await res.clone().text()).toBe("ok-B");
+  });
+});
+
+
+describe("getModelFallbacks (ordered list)", () => {
+  it("returns [] for missing entry", () => {
+    expect(getModelFallbacks("A", {})).toEqual([]);
+  });
+
+  it("returns [] when disabled", () => {
+    expect(getModelFallbacks("A", { A: { fallbacks: ["B", "C"], enabled: false } })).toEqual([]);
+  });
+
+  it("returns ordered list when configured", () => {
+    expect(getModelFallbacks("A", { A: { fallbacks: ["B", "C", "D"], enabled: true } })).toEqual(["B", "C", "D"]);
+  });
+
+  it("reads legacy single-fallback shape", () => {
+    expect(getModelFallbacks("A", { A: { fallback: "B", enabled: true } })).toEqual(["B"]);
+  });
+
+  it("drops self-references and dupes preserve-order", () => {
+    expect(getModelFallbacks("A", { A: { fallbacks: ["A", "B", "B", "C", "B"], enabled: true } })).toEqual(["B", "C"]);
+  });
+
+  it("drops blanks and non-strings", () => {
+    expect(getModelFallbacks("A", { A: { fallbacks: ["B", "", null, 3, "C"], enabled: true } })).toEqual(["B", "C"]);
+  });
+  it("mode defaults to ordered when not specified", () => {
+    expect(getModelFallbacks("A", { A: { fallbacks: ["B", "C", "D"], enabled: true } })).toEqual(["B", "C", "D"]);
+  });
+
+  it("returns shuffled list (same set) in random mode", () => {
+    const result = getModelFallbacks("RAND-PRIMARY", { "RAND-PRIMARY": { fallbacks: ["B", "C", "D"], mode: "random", enabled: true } });
+    expect(result.length).toBe(3);
+    expect([...result].sort()).toEqual(["B", "C", "D"]);
+  });
+
+  it("returns rotated list in roundrobin mode (cursor advances per call)", () => {
+    const calls = [];
+    for (let i = 0; i < 4; i += 1) {
+      calls.push(getModelFallbacks("RR-PRIMARY", { "RR-PRIMARY": { fallbacks: ["B", "C", "D"], mode: "roundrobin", enabled: true } }));
+    }
+    for (const c of calls) expect([...c].sort()).toEqual(["B", "C", "D"]);
+    expect(calls[0]).toEqual(["B", "C", "D"]);
+    expect(calls[1][0]).not.toBe("B");
+  });
+});
+
+describe("runWithModelFallback ordered chain", () => {
+  it("tries fallbacks in order, returns first 2xx", async () => {
+    const calls = [];
+    const runner = async (m) => {
+      calls.push(m);
+      if (m === "A") return makeResponse(429, "rate");
+      if (m === "B") return makeResponse(503, "unavail");
+      if (m === "C") return makeResponse(200, "ok");
+      return makeResponse(500, "err");
+    };
+    const res = await runWithModelFallback("A", { A: { fallbacks: ["B", "C", "D"], enabled: true } }, runner, noopLog);
+    expect(res.status).toBe(200);
+    expect(calls).toEqual(["A", "B", "C"]);
+  });
+
+  it("returns last fallback result when all fallbacks fail (not stale primary)", async () => {
+    const calls = [];
+    const runner = async (m) => {
+      calls.push(m);
+      if (m === "A") return makeResponse(429, "primary-rate");
+      if (m === "B") return makeResponse(503, "b-down");
+      if (m === "C") return makeResponse(401, "c-auth");
+      return makeResponse(500, "err");
+    };
+    const res = await runWithModelFallback("A", { A: { fallbacks: ["B", "C"], enabled: true } }, runner, noopLog);
+    expect(res.status).toBe(401);
+    expect(calls).toEqual(["A", "B", "C"]);
+  });
+
+  it("swallows runner throw and tries next fallback", async () => {
+    const calls = [];
+    const runner = async (m) => {
+      calls.push(m);
+      if (m === "B") throw new Error("network");
+      if (m === "C") return makeResponse(200, "ok");
+      return makeResponse(429, "rate");
+    };
+    const res = await runWithModelFallback("A", { A: { fallbacks: ["B", "C"], enabled: true } }, runner, noopLog);
+    expect(res.status).toBe(200);
+    expect(calls).toEqual(["A", "B", "C"]);
+  });
+
+  it("returns primary response when every fallback threw", async () => {
+    const runner = async (m) => {
+      if (m === "A") return makeResponse(429, "rate");
+      throw new Error("network");
+    };
+    const res = await runWithModelFallback("A", { A: { fallbacks: ["B", "C"], enabled: true } }, runner, noopLog);
+    expect(res.status).toBe(429);
+  });
+  it("stops chain on deterministic payload error from a fallback", async () => {
+    const calls = [];
+    const runner = async (m) => {
+      calls.push(m);
+      if (m === "A") return makeResponse(429, "rate");
+      if (m === "B") return makeResponse(400, "input is too long");
+      if (m === "C") return makeResponse(200, "ok");
+      return makeResponse(500, "err");
+    };
+    const res = await runWithModelFallback("A", { A: { fallbacks: ["B", "C"], enabled: true } }, runner, noopLog);
+    expect(res.status).toBe(400);
+    expect(calls).toEqual(["A", "B"]); // C never tried — B's payload error stops chain
   });
 });

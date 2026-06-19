@@ -14,13 +14,17 @@ function stripKey(k) {
   return rest;
 }
 
-export async function GET(_request, { params }) {
+export async function GET(request, { params }) {
   try {
     const { id } = await params;
     const k = await getGatewayKeyById(id);
     if (!k) return NextResponse.json({ error: "not found" }, { status: 404 });
     const grants = await getGrantsForKeyDetailed(id);
-    return NextResponse.json({ key: stripKey(k), grants });
+    const url = new URL(request.url);
+    const reveal = url.searchParams.get("reveal") === "1";
+    // reveal=1 returns the raw key for local copy-to-clipboard. The list endpoint
+    // strips the key, so this is the only way to copy an already-created key.
+    return NextResponse.json({ key: reveal ? k : stripKey(k), grants });
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }

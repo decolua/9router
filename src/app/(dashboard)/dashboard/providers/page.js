@@ -99,6 +99,7 @@ export default function ProvidersPage() {
   const [providerNodes, setProviderNodes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAllApikey, setShowAllApikey] = useState(false);
+  const [connectedOnly, setConnectedOnly] = useState(false);
   const [showAddCompatibleModal, setShowAddCompatibleModal] = useState(false);
   const [showAddAnthropicCompatibleModal, setShowAddAnthropicCompatibleModal] =
     useState(false);
@@ -113,10 +114,16 @@ export default function ProvidersPage() {
     registerSearch("Search providers...");
     return () => unregisterSearch();
   }, [registerSearch, unregisterSearch]);
-
   const matchSearch = (name) =>
     !searchQuery.trim() ||
     name.toLowerCase().includes(searchQuery.trim().toLowerCase());
+
+  // When connectedOnly is on, drop providers with zero connected
+  // accounts/keys. authType matches getProviderStats.
+  const passesConnectionFilter = (providerId, authType) => {
+    if (!connectedOnly) return true;
+    return getProviderStats(providerId, authType).connected > 0;
+  };
 
   const sortByPriority = (entries, authType) =>
     [...entries].sort(([ka, a], [kb, b]) => {
@@ -264,7 +271,7 @@ export default function ProvidersPage() {
       textIcon: "OC",
       apiType: node.apiType,
     }))
-    .filter((p) => matchSearch(p.name));
+    .filter((p) => matchSearch(p.name) && passesConnectionFilter(p.id, "apikey"));
 
   const anthropicCompatibleProviders = providerNodes
     .filter((node) => node.type === "anthropic-compatible")
@@ -274,31 +281,39 @@ export default function ProvidersPage() {
       color: "#D97757",
       textIcon: "AC",
     }))
-    .filter((p) => matchSearch(p.name));
+    .filter((p) => matchSearch(p.name) && passesConnectionFilter(p.id, "apikey"));
 
   const oauthEntries = sortByPriority(
-    Object.entries(OAUTH_PROVIDERS).filter(([, info]) => !info.hidden && matchSearch(info.name)),
+    Object.entries(OAUTH_PROVIDERS).filter(
+      ([id, info]) => !info.hidden && matchSearch(info.name) && passesConnectionFilter(id, "oauth"),
+    ),
     "oauth",
   );
   const freeEntries = Object.entries(FREE_PROVIDERS)
-    .filter(([, info]) => !info.hidden && matchSearch(info.name))
+    .filter(([id, info]) => {
+      if (!(!info.hidden && matchSearch(info.name))) return false;
+      const freeAuthTypes = id === "kiro" ? ["oauth", "apikey", "api_key"] : "oauth";
+      return passesConnectionFilter(id, freeAuthTypes);
+    })
     .sort(([, a], [, b]) => (b.noAuth ? 1 : 0) - (a.noAuth ? 1 : 0));
   const freeTierEntries = sortByPriority(
     Object.entries(FREE_TIER_PROVIDERS).filter(
-      ([, info]) =>
+      ([id, info]) =>
         !info.hidden &&
         matchSearch(info.name) &&
-        (info.serviceKinds ?? ["llm"]).includes("llm"),
+        (info.serviceKinds ?? ["llm"]).includes("llm") &&
+        passesConnectionFilter(id, "apikey"),
     ),
     "freeTier",
   ).sort(([, a], [, b]) => (b.noAuth ? 1 : 0) - (a.noAuth ? 1 : 0));
   // API Key: connected providers first, then alphabetical by name
   const apikeyEntries = Object.entries(APIKEY_PROVIDERS)
     .filter(
-      ([, info]) =>
+      ([id, info]) =>
         !info.hidden &&
         (info.serviceKinds ?? ["llm"]).includes("llm") &&
-        matchSearch(info.name),
+        matchSearch(info.name) &&
+        passesConnectionFilter(id, "apikey"),
     )
     .sort(([ka, a], [kb, b]) => {
       const ca = getProviderStats(ka, "apikey").total > 0 ? 0 : 1;
@@ -332,6 +347,26 @@ export default function ProvidersPage() {
 
   return (
     <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
+      {/* Connection filter */}
+      <div className="flex items-center gap-2 text-sm">
+        <button
+          onClick={() => setConnectedOnly(false)}
+          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+            !connectedOnly ? "bg-primary/10 text-primary" : "bg-surface-2 text-text-muted hover:bg-surface-3"
+          }`}
+        >
+          All providers
+        </button>
+        <button
+          onClick={() => setConnectedOnly(true)}
+          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+            connectedOnly ? "bg-primary/10 text-primary" : "bg-surface-2 text-text-muted hover:bg-surface-3"
+          }`}
+        >
+          Connected only
+        </button>
+      </div>
+
       {!hasAnyResult && (
         <div className="text-center py-8 border border-dashed border-border rounded-xl">
           <span className="material-symbols-outlined text-[32px] text-text-muted mb-2">
