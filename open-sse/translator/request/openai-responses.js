@@ -176,6 +176,10 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       .filter(Boolean);
   }
 
+  if (body.reasoning?.effort) {
+    result.reasoning_effort = body.reasoning.effort;
+  }
+
   // Cleanup Responses API specific fields
   // Map Responses-only max_output_tokens to Chat max_tokens (avoid leaking unknown field upstream)
   if (result.max_output_tokens !== undefined) {
@@ -316,6 +320,9 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
   if (body.temperature !== undefined) result.temperature = body.temperature;
   if (body.max_tokens !== undefined) result.max_tokens = body.max_tokens;
   if (body.top_p !== undefined) result.top_p = body.top_p;
+  if (body.reasoning_effort !== undefined) {
+    result.reasoning = { effort: body.reasoning_effort };
+  }
 
   return result;
 }
