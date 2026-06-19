@@ -6,7 +6,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const BETTER_SQLITE3_VERSION = "12.6.2";
+const BETTER_SQLITE3_VERSION = "12.10.1";
 
 function getDataDir() {
   if (process.env.DATA_DIR) return process.env.DATA_DIR;
