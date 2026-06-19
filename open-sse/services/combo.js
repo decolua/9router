@@ -31,6 +31,29 @@ function flattenToolHistory(messages) {
         const base = extractTextContent(rest.content) || (typeof rest.content === "string" ? rest.content : "");
         return { ...rest, content: `${base}${base ? "\n" : ""}${TOOL_CALL_PREFIX}${names}]` };
       }
+      if (Array.isArray(msg.content)) {
+        const hasToolUse = msg.content.some((c) => c.type === "tool_use");
+        const hasToolResult = msg.content.some((c) => c.type === "tool_result");
+        if (hasToolUse || hasToolResult) {
+          const textParts = [];
+          const toolNames = [];
+          const toolResults = [];
+          for (const block of msg.content) {
+            if (block.type === "text" && block.text) textParts.push(block.text);
+            if (block.type === "tool_use") toolNames.push(block.name || "tool");
+            if (block.type === "tool_result") toolResults.push(extractTextContent(block.content) || String(block.content ?? ""));
+          }
+          const { ...rest } = msg;
+          let newContent = textParts.join("\n");
+          if (toolNames.length > 0) {
+            newContent = `${newContent}${newContent ? "\n" : ""}${TOOL_CALL_PREFIX}${toolNames.join(", ")}]`;
+          }
+          if (toolResults.length > 0) {
+            newContent = `${newContent}${newContent ? "\n" : ""}${TOOL_RESULT_PREFIX}${toolResults.join("\n")}]`;
+          }
+          return { ...rest, content: newContent };
+        }
+      }
       return msg;
     });
 }
