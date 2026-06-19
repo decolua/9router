@@ -7,6 +7,7 @@ import {
 } from "@/shared/constants/providers";
 import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
+import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { capabilitiesFromServiceKind } from "open-sse/providers/capabilities.js";
@@ -20,7 +21,25 @@ const LIVE_MODEL_RESOLVERS = {
       accessToken: conn.accessToken,
       refreshToken: conn.refreshToken,
       providerSpecificData: conn.providerSpecificData || {}
-    }, { log: console });
+    }, {
+      log: console,
+      onCredentialsRefreshed: async (refreshed) => {
+        if (!refreshed?.accessToken || !conn.id) return;
+        await updateProviderCredentials(conn.id, {
+          ...refreshed,
+          existingProviderSpecificData: conn.providerSpecificData || {},
+          testStatus: "active",
+        });
+        conn.accessToken = refreshed.accessToken;
+        if (refreshed.refreshToken) conn.refreshToken = refreshed.refreshToken;
+        if (refreshed.providerSpecificData) {
+          conn.providerSpecificData = {
+            ...(conn.providerSpecificData || {}),
+            ...refreshed.providerSpecificData,
+          };
+        }
+      }
+    });
     return result?.models?.length ? { models: result.models } : null;
   },
   qoder: async (conn) => {
