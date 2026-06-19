@@ -1,5 +1,8 @@
 import { saveRequestUsage, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
+import { FORMATS } from "../../translator/formats.js";
+import { toOpenAIUsage } from "../../translator/concerns/usage.js";
 import { COLORS } from "../../utils/stream.js";
+import { estimateInputTokens } from "../../utils/usageTracking.js";
 
 const OPTIONAL_PARAMS = [
   "temperature", "top_p", "top_k",
@@ -20,36 +23,134 @@ export function extractRequestConfig(body, stream) {
   return config;
 }
 
-export function extractUsageFromResponse(responseBody) {
+function completeEstimatedPromptTokens(usage, requestBody) {
+  if (!usage || typeof usage !== "object") return usage;
+
+  const promptTokens = usage.prompt_tokens ?? usage.input_tokens ?? 0;
+  const completionTokens = usage.completion_tokens ?? usage.output_tokens ?? 0;
+  if (promptTokens !== 0 || completionTokens === 0 || !requestBody) return usage;
+
+  const estimatedPromptTokens = estimateInputTokens(requestBody);
+  if (estimatedPromptTokens <= 0) return usage;
+
+  return {
+    ...usage,
+    prompt_tokens: estimatedPromptTokens,
+    total_tokens: estimatedPromptTokens + completionTokens,
+    estimated: true
+  };
+}
+
+function hasUsableTokenData(usage) {
+  if (!usage || typeof usage !== "object") return false;
+
+  const promptTokens = usage.prompt_tokens ?? usage.input_tokens ?? 0;
+  const completionTokens = usage.completion_tokens ?? usage.output_tokens ?? 0;
+  const totalTokens = usage.total_tokens ?? 0;
+
+  return promptTokens > 0 || completionTokens > 0 || totalTokens > 0;
+}
+
+function extractOpenAIResponsesUsage(usage) {
+  if (!usage || typeof usage !== "object") return null;
+
+  if (usage.input_tokens !== undefined || usage.output_tokens !== undefined) {
+    return {
+      prompt_tokens: usage.input_tokens || 0,
+      completion_tokens: usage.output_tokens || 0,
+      total_tokens: (usage.input_tokens || 0) + (usage.output_tokens || 0),
+      cached_tokens: usage.input_tokens_details?.cached_tokens,
+      reasoning_tokens: usage.output_tokens_details?.reasoning_tokens,
+      prompt_tokens_details: usage.input_tokens_details?.cached_tokens
+        ? { cached_tokens: usage.input_tokens_details.cached_tokens }
+        : undefined,
+      completion_tokens_details: usage.output_tokens_details
+    };
+  }
+
+  if (usage.prompt_tokens !== undefined) {
+    return {
+      prompt_tokens: usage.prompt_tokens || 0,
+      completion_tokens: usage.completion_tokens || 0,
+      total_tokens: usage.total_tokens,
+      cached_tokens: usage.prompt_tokens_details?.cached_tokens,
+      reasoning_tokens: usage.completion_tokens_details?.reasoning_tokens,
+      prompt_tokens_details: usage.prompt_tokens_details,
+      completion_tokens_details: usage.completion_tokens_details
+    };
+  }
+
+  return null;
+}
+
+function extractGeminiUsage(usageMetadata) {
+  if (!usageMetadata || typeof usageMetadata !== "object") return null;
+
+  return {
+    prompt_tokens: usageMetadata.promptTokenCount || 0,
+    completion_tokens: usageMetadata.candidatesTokenCount || 0,
+    total_tokens: usageMetadata.totalTokenCount,
+    cached_tokens: usageMetadata.cachedContentTokenCount,
+    reasoning_tokens: usageMetadata.thoughtsTokenCount
+  };
+}
+
+function providerUsageKind(targetFormat, provider) {
+  const providerName = String(provider || "").toLowerCase();
+
+  if (targetFormat === FORMATS.OLLAMA || providerName === "ollama" || providerName === "ollama-local") return "ollama";
+  if (targetFormat === FORMATS.KIRO || providerName === "kiro") return "kiro";
+  if (targetFormat === FORMATS.COMMANDCODE || providerName === "commandcode") return "commandcode";
+  if (targetFormat === FORMATS.GEMINI || targetFormat === FORMATS.GEMINI_CLI || targetFormat === FORMATS.ANTIGRAVITY || targetFormat === FORMATS.VERTEX) return "gemini";
+  if (targetFormat === FORMATS.CLAUDE || providerName === "claude") return "claude";
+
+  return null;
+}
+
+export function extractUsageFromResponse(responseBody, { targetFormat, provider, requestBody } = {}) {
   if (!responseBody || typeof responseBody !== "object") return null;
 
   // Claude format
   if (responseBody.usage?.input_tokens !== undefined) {
-    return {
+    return completeEstimatedPromptTokens({
       prompt_tokens: responseBody.usage.input_tokens || 0,
       completion_tokens: responseBody.usage.output_tokens || 0,
+      total_tokens: (responseBody.usage.input_tokens || 0) + (responseBody.usage.output_tokens || 0),
       cache_read_input_tokens: responseBody.usage.cache_read_input_tokens,
       cache_creation_input_tokens: responseBody.usage.cache_creation_input_tokens
-    };
+    }, requestBody);
   }
 
   // OpenAI format
   if (responseBody.usage?.prompt_tokens !== undefined) {
-    return {
+    return completeEstimatedPromptTokens({
       prompt_tokens: responseBody.usage.prompt_tokens || 0,
       completion_tokens: responseBody.usage.completion_tokens || 0,
+      total_tokens: responseBody.usage.total_tokens,
       cached_tokens: responseBody.usage.prompt_tokens_details?.cached_tokens,
-      reasoning_tokens: responseBody.usage.completion_tokens_details?.reasoning_tokens
-    };
+      reasoning_tokens: responseBody.usage.completion_tokens_details?.reasoning_tokens,
+      prompt_tokens_details: responseBody.usage.prompt_tokens_details,
+      completion_tokens_details: responseBody.usage.completion_tokens_details
+    }, requestBody);
+  }
+
+  // OpenAI Responses API format nested under response
+  const responseUsage = extractOpenAIResponsesUsage(responseBody.response?.usage);
+  if (responseUsage) {
+    return completeEstimatedPromptTokens(responseUsage, requestBody);
   }
 
   // Gemini format
-  if (responseBody.usageMetadata) {
-    return {
-      prompt_tokens: responseBody.usageMetadata.promptTokenCount || 0,
-      completion_tokens: responseBody.usageMetadata.candidatesTokenCount || 0,
-      reasoning_tokens: responseBody.usageMetadata.thoughtsTokenCount
-    };
+  const geminiUsage = extractGeminiUsage(responseBody.usageMetadata || responseBody.response?.usageMetadata);
+  if (geminiUsage) {
+    return completeEstimatedPromptTokens(geminiUsage, requestBody);
+  }
+
+  const usageKind = providerUsageKind(targetFormat, provider);
+  if (usageKind) {
+    const mappedUsage = toOpenAIUsage(responseBody, usageKind);
+    const completedUsage = completeEstimatedPromptTokens(mappedUsage, requestBody);
+    return hasUsableTokenData(completedUsage) ? completedUsage : null;
   }
 
   return null;
@@ -87,7 +188,15 @@ export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, 
   // Normalize to OpenAI token shape for storage
   const normalized = {
     prompt_tokens: tokens.prompt_tokens ?? tokens.input_tokens ?? 0,
-    completion_tokens: tokens.completion_tokens ?? tokens.output_tokens ?? 0
+    completion_tokens: tokens.completion_tokens ?? tokens.output_tokens ?? 0,
+    total_tokens: tokens.total_tokens,
+    cache_read_input_tokens: tokens.cache_read_input_tokens,
+    cache_creation_input_tokens: tokens.cache_creation_input_tokens,
+    cached_tokens: tokens.cached_tokens ?? tokens.prompt_tokens_details?.cached_tokens,
+    reasoning_tokens: tokens.reasoning_tokens ?? tokens.completion_tokens_details?.reasoning_tokens,
+    prompt_tokens_details: tokens.prompt_tokens_details,
+    completion_tokens_details: tokens.completion_tokens_details,
+    estimated: tokens.estimated
   };
 
   saveRequestUsage({
