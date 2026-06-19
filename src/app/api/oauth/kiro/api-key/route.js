@@ -58,6 +58,10 @@ export async function POST(request) {
     });
   } catch (error) {
     console.log("Kiro API key import error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    // Do not reflect upstream response body to the client (SSRF hardening)
+    return NextResponse.json(
+      { error: "API key validation failed" },
+      { status: 500 }
+    );
   }
 }
