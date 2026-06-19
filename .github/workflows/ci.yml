@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [dev, main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx next lint
+        continue-on-error: true
+      - run: npm run build
+        env:
+          NEXT_TRACING_ROOT_MODE: workspace
+      - run: npx vitest run --config tests/vitest.config.js "tests/unit/" "tests/translator/"
+      - run: node tests/__baseline__/verify-no-regression.mjs tests/__baseline__/current.json
+        if: always()

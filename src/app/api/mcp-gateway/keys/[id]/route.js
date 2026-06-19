@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isLocalRequest } from "@/dashboardGuard";
 import {
   getGatewayKeyById,
   deleteGatewayKey,
@@ -22,13 +23,20 @@ export async function GET(request, { params }) {
     const grants = await getGrantsForKeyDetailed(id);
     const url = new URL(request.url);
     const reveal = url.searchParams.get("reveal") === "1";
-    // reveal=1 returns the raw key for local copy-to-clipboard. The list endpoint
-    // strips the key, so this is the only way to copy an already-created key.
+    // reveal=1 returns the raw key. Restrict to local requests (SSRF-style
+    // protection — remote callers must copy keys from the creation modal).
+    if (reveal && !isLocalRequest(request)) {
+      return NextResponse.json(
+        { error: "Key reveal is only available from local requests." },
+        { status: 403 }
+      );
+    }
     return NextResponse.json({ key: reveal ? k : stripKey(k), grants });
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
 }
+
 
 export async function PUT(request, { params }) {
   try {

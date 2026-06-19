@@ -190,6 +190,19 @@ describe("getModelFallbacks (ordered list)", () => {
     expect(calls[0]).toEqual(["B", "C", "D"]);
     expect(calls[1][0]).not.toBe("B");
   });
+
+  it("roundrobin cursor map does not exceed 500 entries", () => {
+    for (let i = 0; i < 600; i += 1) {
+      getModelFallbacks(`RR-STRESS-${i}`, {
+        [`RR-STRESS-${i}`]: { fallbacks: ["A", "B"], mode: "roundrobin", enabled: true },
+      });
+    }
+    // Re-call an evicted entry; cursor should have reset (starts at 0).
+    const first = getModelFallbacks("RR-STRESS-0", {
+      "RR-STRESS-0": { fallbacks: ["A", "B"], mode: "roundrobin", enabled: true },
+    });
+    expect(first).toEqual(["A", "B"]);
+  });
 });
 
 describe("runWithModelFallback ordered chain", () => {

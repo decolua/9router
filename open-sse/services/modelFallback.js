@@ -49,7 +49,7 @@ export function getModelFallbacks(primaryModelStr, modelFallbacks) {
     }
   } else if (strategy === "roundrobin" && out.length > 1) {
     const next = (ROUNDROBIN_CURSORS.get(primaryModelStr) ?? 0) % out.length;
-    ROUNDROBIN_CURSORS.set(primaryModelStr, (next + 1) % out.length);
+    setRoundrobinCursor(primaryModelStr, (next + 1) % out.length);
     if (next > 0) {
       const head = out.slice(0, next);
       const tail = out.slice(next);
@@ -61,9 +61,25 @@ export function getModelFallbacks(primaryModelStr, modelFallbacks) {
 }
 
 // Module-level cursor map for roundrobin mode. Keyed by primaryModelStr so
-// each primary rotates independently. Bounded by the number of primaries the
-// user configures — never grows unboundedly in practice.
+// each primary rotates independently. Capped (LRU) to prevent unbounded growth
+// from deleted fallback rules; oldest entry evicted when the cap is exceeded.
+const ROUNDROBIN_MAX_CURSORS = 500;
 const ROUNDROBIN_CURSORS = new Map();
+
+function setRoundrobinCursor(key, value) {
+  // LRU: delete-then-set moves the key to insertion-order end (most recent).
+  ROUNDROBIN_CURSORS.delete(key);
+  ROUNDROBIN_CURSORS.set(key, value);
+  if (ROUNDROBIN_CURSORS.size > ROUNDROBIN_MAX_CURSORS) {
+    const oldestKey = ROUNDROBIN_CURSORS.keys().next().value;
+    ROUNDROBIN_CURSORS.delete(oldestKey);
+  }
+}
+
+/** Clear all roundrobin cursors — call when fallback settings are updated. */
+export function resetRoundrobinCursors() {
+  ROUNDROBIN_CURSORS.clear();
+}
 
 /** @deprecated alias — returns first fallback only. Use getModelFallbacks. */
 export function getModelFallback(primaryModelStr, modelFallbacks) {

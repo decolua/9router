@@ -2,6 +2,7 @@
 // whether an external headroom server is already running on the machine and
 // to validate custom URLs the user enters.
 import { NextResponse } from "next/server";
+import { validateProbeUrl } from "@/lib/headroom/probeGuard";
 
 export const dynamic = "force-dynamic";
 
@@ -41,15 +42,19 @@ async function probeUrl(url) {
 
 // GET /api/headroom/probe?url=<custom-url>
 //   No url param → probe default candidates and return first reachable
-//   url param    → probe only that URL
+//   url param    → probe only that URL (must be loopback-allowed)
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
     const custom = searchParams.get("url");
 
     if (custom) {
-      const result = await probeUrl(custom);
-      return NextResponse.json({ url: custom, ...result });
+      const validation = validateProbeUrl(custom);
+      if (!validation.ok) {
+        return NextResponse.json({ ok: false, error: validation.error }, { status: 400 });
+      }
+      const result = await probeUrl(validation.url.origin);
+      return NextResponse.json({ url: validation.url.origin, ...result });
     }
 
     // Probe candidates in order; return first that responds like headroom
@@ -62,7 +67,7 @@ export async function GET(request) {
           status: result.status,
           detected: true,
         });
-    }
+      }
       // Continue to next candidate on failure
     }
 

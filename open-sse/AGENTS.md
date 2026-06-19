@@ -2,7 +2,12 @@
 
 Provider-agnostic SSE engine: one OpenAI-style request → any provider (LLM chat, image, embedding, tts, stt, search), streamed back in the client's format.
 
-## Request lifecycle (chat)
+Per-model fallback: a primary model string may have an ordered list of fallback
+models with a selection strategy (ordered / random / round-robin). On a
+fallback-eligible failure of the primary, the request is retried against each
+fallback in resolved order until one succeeds. The chain stops early on
+deterministic payload errors (context-length / too-many-tokens).
+
 
 `handlers/chatCore.js` → `services/model.js` `parseModel` (resolve `provider/model`) → `executors/index.js` `getExecutor(provider)` → `translator/index.js` `translateRequest` (client format → provider format) → `executor.execute()` (streams upstream) → `translateResponse` (provider chunks → client format) → SSE out.
 
@@ -13,7 +18,7 @@ Provider-agnostic SSE engine: one OpenAI-style request → any provider (LLM cha
 - `executors/` — per-provider upstream call. `base.js` (BaseExecutor), one file per special provider, `index.js` map.
 - `providers/` — registry build + `capabilities.js` + `pricing.js`. Entry: `index.js` (PROVIDERS).
 - `handlers/` — per-modality cores (chat/image/embedding/tts/stt/search) + sub-provider folders.
-- `services/` — `tokenRefresh/`, `usage/`, `combo.js`, `accountFallback.js`, `modelFallback.js` (per-model primary→fallback hop), `model.js`.
+- `services/` — `tokenRefresh/`, `usage/`, `combo.js`, `accountFallback.js`, `modelFallback.js` (per-model primary→ordered fallback chain, strategy-aware), `model.js`.
 - `utils/` — streamHandler, error, sessionManager, claudeCloaking.
 
 ## Conventions
@@ -32,4 +37,4 @@ Provider-agnostic SSE engine: one OpenAI-style request → any provider (LLM cha
 
 - OpenAI bridge is lossy (thinking, non-base64 images, tool ids, is_error) — prefer a direct route for fragile pairs.
 - `registry/index.js` is an auto-generated static import list; regenerate it (don't hand-edit) after adding a `registry/{id}.js`. REGISTRY_TEMPLATE is excluded by design.
-- Per-model fallback (`runWithModelFallback` in `services/modelFallback.js`) wraps ONLY the direct single-model dispatch at each handler's entry (`handleChat`, `handleFetch`, `handleSearch`, `handleImageGeneration`, `handleTts`, `handleStt`, `handleEmbeddings`). Combos call the handler's `handleSingleModel*` directly and bypass per-model fallback by design — combos already have their own fallback semantics. The wrapper skips the hop on 2xx (streaming-safe) and on deterministic payload errors (`isDeterministicPayloadError`: context-length / too-many-tokens); every other non-2xx is eligible. One hop only — no chaining.
+- Per-model fallback (`runWithModelFallback` in `services/modelFallback.js`) wraps ONLY the direct single-model dispatch at each handler's entry (`handleChat`, `handleFetch`, `handleSearch`, `handleImageGeneration`, `handleTts`, `handleStt`, `handleEmbeddings`). Combos call the handler's `handleSingleModel*` directly and bypass per-model fallback by design — combos already have their own fallback semantics. The wrapper skips the chain on 2xx (streaming-safe) and stops on deterministic payload errors (`isDeterministicPayloadError`: context-length / too-many-tokens) from any fallback in the chain. Strategy: "ordered" (try in configured order), "random" (shuffle per resolve), "roundrobin" (rotate starting index). When all fallbacks fail, the LAST fallback's response is returned (not the stale primary error). Combos bypass this entirely.

@@ -118,13 +118,6 @@ export default function ProvidersPage() {
     !searchQuery.trim() ||
     name.toLowerCase().includes(searchQuery.trim().toLowerCase());
 
-  // When connectedOnly is on, drop providers with zero connected
-  // accounts/keys. authType matches getProviderStats.
-  const passesConnectionFilter = (providerId, authType) => {
-    if (!connectedOnly) return true;
-    return getProviderStats(providerId, authType).connected > 0;
-  };
-
   const sortByPriority = (entries, authType) =>
     [...entries].sort(([ka, a], [kb, b]) => {
       const pa = a.priority ?? 999;
@@ -215,7 +208,12 @@ export default function ProvidersPage() {
 
     return { connected, error, total, errorCode, errorTime, allDisabled };
   };
-
+  // When connectedOnly is on, drop providers with zero connected
+  // accounts/keys. authType matches getProviderStats.
+  const passesConnectionFilter = (providerId, authType) => {
+    if (!connectedOnly) return true;
+    return getProviderStats(providerId, authType).connected > 0;
+  };
   // Toggle all connections for a provider on/off. authType may be a single
   // string or an array (kiro counts oauth + api_key/apikey together).
   const handleToggleProvider = async (providerId, authType, newActive) => {

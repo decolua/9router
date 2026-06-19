@@ -10,4 +10,11 @@ export default defineConfig({
       "@": resolve(root, "src"),
     },
   },
+  test: {
+    exclude: [
+      "**/node_modules/**",
+      "**/.next/**",
+      "**/.worktrees/**",
+    ],
+  },
 });
