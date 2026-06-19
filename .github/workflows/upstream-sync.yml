@@ -1,0 +1,60 @@
+name: Sync upstream
+
+on:
+  schedule:
+    # Every day at 06:00 UTC
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions@users.noreply.github.com"
+          git remote add upstream https://github.com/decolua/9router.git
+
+      - name: Fetch upstream
+        run: git fetch upstream
+
+      - name: Fast-forward master to upstream/master
+        id: ff
+        run: |
+          set -euo pipefail
+          OLD=$(git rev-parse HEAD)
+          git merge --ff-only upstream/master
+          NEW=$(git rev-parse HEAD)
+          git push origin master
+          if [ "$OLD" = "$NEW" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No upstream changes."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Master advanced $OLD..$NEW"
+          fi
+
+      - name: Merge master into dev
+        if: steps.ff.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          git checkout dev
+          git merge master --no-edit
+          git push origin dev
+
+      - name: Report conflict
+        if: failure()
+        run: |
+          echo "::warning::Upstream sync failed — likely merge conflict on dev. Resolve manually: fetch upstream, merge master into dev."
