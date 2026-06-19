@@ -1097,6 +1097,8 @@ export default function ProviderDetailPage() {
 
     const filteredDisplayModels = sortModels(applyModelFilter(displayModels, modelFilter), modelSort);
     const filteredActiveCustomModels = sortModels(applyModelFilter(activeCustomModels, modelFilter), modelSort);
+    const filteredDisabledDisplayModels = sortModels(applyModelFilter(disabledDisplayModels, modelFilter), modelSort);
+    const filteredDisabledCustomModels = sortModels(applyModelFilter(disabledCustomModels, modelFilter), modelSort);
     const allVisibleIds = [...filteredActiveCustomModels.map((m) => m.id), ...filteredDisplayModels.map((m) => m.id)];
     const allVisibleSelected = allVisibleIds.length > 0 && allVisibleIds.every((id) => selectedModelIds.includes(id));
 
@@ -1223,10 +1225,10 @@ export default function ProviderDetailPage() {
             );
           })()}
 
-          {(disabledDisplayModels.length + disabledCustomModels.length) > 0 && (
+          {(filteredDisabledDisplayModels.length + filteredDisabledCustomModels.length) > 0 && (
             <div className="w-full mt-2">
               <div className="flex items-center gap-2 mb-2">
-                <p className="text-xs text-text-muted">Disabled models ({disabledDisplayModels.length + disabledCustomModels.length}):</p>
+                <p className="text-xs text-text-muted">Disabled models ({filteredDisabledDisplayModels.length + filteredDisabledCustomModels.length}):</p>
                 <label className="flex items-center gap-1 cursor-pointer select-none">
                   <input
                     type="checkbox"
@@ -1241,10 +1243,10 @@ export default function ProviderDetailPage() {
                 </label>
                 {selectDisabledMode && (
                   <>
-                    {selectedDisabledModelIds.length < (disabledDisplayModels.length + disabledCustomModels.length) && (
+                    {selectedDisabledModelIds.length < (filteredDisabledDisplayModels.length + filteredDisabledCustomModels.length) && (
                       <button
                         onClick={() => {
-                          const allIds = [...disabledDisplayModels.map((m) => m.id), ...disabledCustomModels.map((m) => m.id)];
+                          const allIds = [...filteredDisabledDisplayModels.map((m) => m.id), ...filteredDisabledCustomModels.map((m) => m.id)];
                           setSelectedDisabledModelIds(allIds);
                         }}
                         className="text-[11px] text-text-muted/60 hover:text-primary underline"
@@ -1276,7 +1278,7 @@ export default function ProviderDetailPage() {
               )}
 
               <div className="flex flex-wrap gap-2">
-                {disabledDisplayModels.map((m) => (
+                {filteredDisabledDisplayModels.map((m) => (
                   <button
                     key={m.id}
                     onClick={() => {
@@ -1307,7 +1309,7 @@ export default function ProviderDetailPage() {
                     <span className={selectDisabledMode ? "text-xs" : ""}>{m.id}</span>
                   </button>
                 ))}
-                {disabledCustomModels.map((m) => (
+                {filteredDisabledCustomModels.map((m) => (
                   <button
                     key={m.id}
                     onClick={() => {
