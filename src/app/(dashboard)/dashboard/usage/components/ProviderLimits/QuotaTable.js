@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { formatResetTime, getRemainingPercentage } from "./utils";
 
 const PAGE_SIZE = 10;
+const DEFAULT_VISIBLE_ROWS = 2;
 
 /**
  * Format reset time display (Today, 12:00 PM)
@@ -74,11 +75,8 @@ function sortQuotas(quotas, sortMode) {
     return [...quotas].sort((a, b) => a.remaining - b.remaining || a.name.localeCompare(b.name));
   }
 
-  if (sortMode === "remaining-desc") {
-    return [...quotas].sort((a, b) => b.remaining - a.remaining || a.name.localeCompare(b.name));
-  }
-
-  return quotas;
+  // Default: remaining-desc (most remaining on top, depleted at bottom)
+  return [...quotas].sort((a, b) => b.remaining - a.remaining || a.name.localeCompare(b.name));
 }
 
 /**
@@ -91,6 +89,7 @@ export default function QuotaTable({
   showSortLabel = false,
 }) {
   const [page, setPage] = useState(1);
+  const [collapsed, setCollapsed] = useState(true);
 
   const normalizedQuotas = useMemo(
     () => quotas.map((quota, index) => ({
@@ -106,24 +105,30 @@ export default function QuotaTable({
     [normalizedQuotas, sortMode],
   );
 
-  const totalPages = Math.max(1, Math.ceil(sortedQuotas.length / PAGE_SIZE));
+  const isExpandable = sortedQuotas.length > DEFAULT_VISIBLE_ROWS;
+  const visibleQuotas = collapsed
+    ? sortedQuotas.slice(0, DEFAULT_VISIBLE_ROWS)
+    : sortedQuotas;
+
+  const expandedPageTotal = Math.max(1, Math.ceil(sortedQuotas.length / PAGE_SIZE));
 
   useEffect(() => {
     setPage(1);
   }, [sortMode, quotas]);
 
   useEffect(() => {
-    setPage((currentPage) => Math.min(currentPage, totalPages));
-  }, [totalPages]);
+    setPage((currentPage) => Math.min(currentPage, expandedPageTotal));
+  }, [expandedPageTotal]);
 
   if (!quotas || quotas.length === 0) {
     return null;
   }
 
-  const currentPageRows = sortedQuotas.slice(
-    (page - 1) * PAGE_SIZE,
-    page * PAGE_SIZE,
-  );
+  // When collapsed: show only DEFAULT_VISIBLE_ROWS
+  // When expanded: show paginated results
+  const displayRows = collapsed
+    ? visibleQuotas
+    : sortedQuotas.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const pageStart = sortedQuotas.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const pageEnd = Math.min(page * PAGE_SIZE, sortedQuotas.length);
 
@@ -131,7 +136,7 @@ export default function QuotaTable({
   const nameText = compact ? "text-[11px]" : "text-sm";
   const resetPrimary = compact ? "text-[11px]" : "text-sm";
   const resetSecondary = compact ? "text-[10px] leading-tight" : "text-xs";
-  const sortLabel = "Sorted by account remaining";
+  const sortLabel = "Sorted by remaining";
 
   return (
     <div className="space-y-2">
@@ -149,7 +154,7 @@ export default function QuotaTable({
       <div className="overflow-x-auto">
         <table className="w-full table-fixed text-left">
           <tbody>
-            {currentPageRows.map((quota) => {
+            {displayRows.map((quota) => {
               const colors = getColorClasses(quota.remaining);
               const countdown = formatResetTime(quota.resetAt);
               const resetDisplay = formatResetTimeDisplay(quota.resetAt);
@@ -224,14 +229,32 @@ export default function QuotaTable({
         </table>
       </div>
 
-      {totalPages > 1 && (
+      {isExpandable && (
+        <button
+          type="button"
+          onClick={() => {
+            setCollapsed((prev) => !prev);
+            setPage(1);
+          }}
+          className="flex w-full items-center justify-center gap-1 rounded-md border border-black/10 bg-black/[0.02] px-2 py-1.5 text-[10px] text-text-muted transition-colors hover:bg-black/5 hover:text-text-primary dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/5 dark:hover:text-text-primary"
+        >
+          {collapsed
+            ? `Show ${sortedQuotas.length - DEFAULT_VISIBLE_ROWS} more`
+            : "Show less"}
+          <span className="material-symbols-outlined text-[14px]">
+            {collapsed ? "expand_more" : "expand_less"}
+          </span>
+        </button>
+      )}
+
+      {!collapsed && expandedPageTotal > 1 && (
         <div className="rounded-md border border-black/10 bg-black/[0.02] px-2 py-1.5 dark:border-white/10 dark:bg-white/[0.03]">
           <div className="flex items-center justify-between gap-2 text-[10px] text-text-muted">
             <span>
               Showing {pageStart}-{pageEnd} of {sortedQuotas.length}
             </span>
             <span>
-              Page {page} / {totalPages}
+              Page {page} / {expandedPageTotal}
             </span>
           </div>
           <div className="mt-1.5 flex items-center justify-end gap-1">
@@ -245,8 +268,8 @@ export default function QuotaTable({
             </button>
             <button
               type="button"
-              onClick={() => setPage((currentPage) => Math.min(totalPages, currentPage + 1))}
-              disabled={page === totalPages}
+              onClick={() => setPage((currentPage) => Math.min(expandedPageTotal, currentPage + 1))}
+              disabled={page === expandedPageTotal}
               className="flex h-6 items-center rounded-md border border-black/10 px-2 text-[10px] text-text-primary transition-colors hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:hover:bg-white/5"
             >
               Next
