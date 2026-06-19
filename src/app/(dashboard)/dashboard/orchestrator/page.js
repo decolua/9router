@@ -17,7 +17,7 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 /* ============================================================
    Иконки inline SVG
@@ -86,6 +86,7 @@ export default function OrchestratorPage() {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const editingRef = useRef({});
   const [saveMessage, setSaveMessage] = useState('');
   const [saveMsgType, setSaveMsgType] = useState('success');
 
@@ -148,19 +149,29 @@ export default function OrchestratorPage() {
       const data = await res.json();
       setStatus(data);
       const cfg = data.modelRouter?.config || {};
-      setSwitchingForm(cfg.switching || {});
-      setRouterAIForm(cfg.routerAI || {});
-      setRateLimitingForm(cfg.rateLimiting || {});
-      setSchedulingForm(cfg.scheduling || {});
-      setMonitoringForm(cfg.monitoring || {});
-      setTimeRulesForm(cfg.switching?.timeBasedRules || []);
+      // НЕ затираем формы, которые сейчас в режиме редактирования
+      if (!editingSwitching) setSwitchingForm(cfg.switching || {});
+      if (!editingRouterAI) setRouterAIForm(cfg.routerAI || {
+        enabled: true,
+        manageFreeModels: true,
+        includeOllama: true,
+        freeModelTimeout: 90000,
+        maxFreeModelsPerGroup: 5,
+        freeModelCooldownSeconds: 5,
+        autoEnableAfterError: true
+      });
+      if (!editingRateLimiting) setRateLimitingForm(cfg.rateLimiting || {});
+      if (!editingScheduling) setSchedulingForm(cfg.scheduling || {});
+      if (!editingMonitoring) setMonitoringForm(cfg.monitoring || {});
+      if (!editingTimeRules) setTimeRulesForm(cfg.switching?.timeBasedRules || []);
       setError(null);
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [editingSwitching, editingRouterAI, editingRateLimiting, editingScheduling,
+      editingMonitoring, editingTimeRules]);
 
   useEffect(() => {
     fetchStatus();
@@ -196,8 +207,17 @@ export default function OrchestratorPage() {
 
   const handleSaveRouterAI = (e) => {
     e.preventDefault();
-    saveSettings(routerAIForm, 'Настройки RouterAI сохранены');
-    setEditingRouterAI(false);
+    // Optimistic update: сразу фиксируем значения в форме, не дожидаясь ответа сервера
+    const formValues = { ...routerAIForm };
+    // Гарантируем, что timeout — число, не NaN
+    if (typeof formValues.freeModelTimeout !== 'number' || isNaN(formValues.freeModelTimeout)) {
+      formValues.freeModelTimeout = 90000;
+    }
+    saveSettings(formValues, 'Настройки RouterAI сохранены');
+    // Не сбрасываем editingRouterAI немедленно — даём серверу время ответить
+    // fetchStatus обновится через 200мс и уже подхватит сохранённые значения
+    // Но защитимся от затирания: ставим флаг после получения ответа
+    setTimeout(() => setEditingRouterAI(false), 300);
   };
 
   const handleSaveRateLimiting = (e) => {
@@ -1455,13 +1475,20 @@ function TinyToggleField({ label, value, onChange }) {
 }
 
 function NumberField({ label, value, onChange, min, max, step }) {
+  // Защита от NaN: показываем пустую строку, если value невалидное
+  const displayValue = (value === null || value === undefined || Number.isNaN(value)) ? '' : value;
   return (
     <div>
       <label className="text-[10px] text-text-muted">{label}</label>
-      <input type="number" min={min} max={max} step={step} value={value ?? ''}
+      <input type="number" min={min} max={max} step={step} value={displayValue}
         onChange={(e) => {
-          const v = e.target.value === '' ? '' : parseFloat(e.target.value);
-          onChange(v);
+          const raw = e.target.value;
+          if (raw === '') {
+            onChange('');
+            return;
+          }
+          const v = parseFloat(raw);
+          onChange(Number.isNaN(v) ? '' : v);
         }}
         className="w-full px-2 py-1.5 text-xs rounded border border-border bg-bg-main" />
     </div>

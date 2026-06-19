@@ -192,6 +192,17 @@ class ModelRouter {
         weekendStrategy: 'round_robin'
       },
 
+      // Настройки RouterAI — управление бесплатными моделями и Ollama
+      routerAI: {
+        enabled: true,
+        manageFreeModels: true,
+        includeOllama: true,
+        freeModelTimeout: 90000,
+        maxFreeModelsPerGroup: 5,
+        freeModelCooldownSeconds: 5,
+        autoEnableAfterError: true
+      },
+
       // Настройки мониторинга
       monitoring: {
         enabled: true,
@@ -797,6 +808,29 @@ class ModelRouter {
     } else if (level === 'info' || level === 'warn' || level === 'error') {
       const prefix = level === 'error' ? '[ModelRouter ERROR]' : level === 'warn' ? '[ModelRouter WARN]' : '[ModelRouter]';
       console.log(`${prefix} ${message}`);
+    }
+  }
+
+  /**
+   * Загрузить сохранённый routerAI-конфиг из постоянного хранилища (SQLite)
+   * Нужно вызвать после инстанциирования, когда DB уже доступна.
+   */
+  async restoreFromSettings(getSettingsFn) {
+    try {
+      if (typeof getSettingsFn !== 'function') {
+        this._log('warn', 'restoreFromSettings: getSettingsFn is not a function, skipping');
+        return;
+      }
+      const dbSettings = await getSettingsFn();
+      if (dbSettings && dbSettings.routerAI && typeof dbSettings.routerAI === 'object') {
+        this.updateConfig({ routerAI: dbSettings.routerAI });
+        this._log('info', 'RouterAI config restored from DB: enabled=' + dbSettings.routerAI.enabled +
+          ', timeout=' + dbSettings.routerAI.freeModelTimeout);
+      } else {
+        this._log('info', 'No saved RouterAI config in DB, using defaults');
+      }
+    } catch (err) {
+      this._log('warn', `restoreFromSettings failed: ${err.message}`);
     }
   }
 }

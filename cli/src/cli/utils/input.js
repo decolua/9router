@@ -58,7 +58,7 @@ async function prompt(question) {
 
 async function select(question, options) {
   console.log(question);
-  options.forEach((opt, i) => console.log(`  ${i + 1}. ${opt}`));
+  options.forEach((opt, i) => { console.log(`  ${i + 1}. ${opt}`); });
   while (true) {
     const answer = await prompt("\nВыберите опцию (номер): ");
     const num = parseInt(answer, 10);

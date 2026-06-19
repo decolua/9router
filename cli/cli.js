@@ -816,7 +816,7 @@ function startServer(latestVersion) {
     console.error(`\n⚠️  Сервер завершился (код=${code ?? "неизвестно"}). Перезапуск через ${delay / 1000}с... (${restartCount}/${MAX_RESTARTS})`);
     if (crashLog.length) {
       console.error("\n--- Лог аварийного завершения сервера ---");
-      crashLog.forEach(l => console.error(l));
+      crashLog.forEach(l => { console.error(l); });
       console.error("--- Конец лога ---\n");
     }
 

@@ -32,7 +32,7 @@ function renderHeader(port, keys, tunnel) {
     lines.push(`Ключ:     ${COLORS.dim}Ключи API не найдены${COLORS.reset}`);
   } else {
     lines.push(`Ключ:     ${COLORS.cyan}${keys[0].key}${COLORS.reset}`);
-    keys.slice(1).forEach(k => lines.push(`          ${COLORS.cyan}${k.key}${COLORS.reset}`));
+    keys.slice(1).forEach(k => { lines.push(`          ${COLORS.cyan}${k.key}${COLORS.reset}`); });
   }
   return lines.join("\n");
 }

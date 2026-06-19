@@ -10,6 +10,7 @@
 import { NextResponse } from 'next/server';
 import { supervisor } from '@/orchestrator/supervisor.js';
 import { modelRouter } from '@/orchestrator/modelRouter.js';
+import { updateSettings, getSettings } from '@/lib/localDb.js';
 
 /**
  * POST /api/orchestrator
@@ -77,6 +78,17 @@ export async function GET() {
     const settings = await supervisor.getEffectiveSettings();
     const activeWorkflows = supervisor.getActiveWorkflows();
     const allWorkflows = supervisor.getAllWorkflows();
+
+    // Восстанавливаем routerAI из постоянного хранилища (переживает рестарты)
+    try {
+      const dbSettings = await getSettings();
+      if (dbSettings.routerAI && typeof dbSettings.routerAI === 'object') {
+        modelRouter.updateConfig({ routerAI: dbSettings.routerAI });
+      }
+    } catch (e) {
+      // не фатально — используем дефолты
+    }
+
     const modelStats = modelRouter.getStats();
     const modelConfig = modelRouter.getConfig();
 
@@ -242,6 +254,15 @@ export async function PUT(request) {
       if (key in body) {
         if (!modelRouterUpdates.monitoring) modelRouterUpdates.monitoring = {};
         modelRouterUpdates.monitoring[key] = body[key];
+      }
+    }
+
+    // Сохраняем routerAI в постоянное хранилище (SQLite/Settings)
+    if (modelRouterUpdates.routerAI) {
+      try {
+        await updateSettings({ routerAI: modelRouterUpdates.routerAI });
+      } catch (e) {
+        console.error('[Orchestrator] Failed to persist routerAI settings:', e.message);
       }
     }
 

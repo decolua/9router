@@ -365,7 +365,7 @@ async function editSingleCombo(combo) {
       console.log(`Выбрано моделей (${newModels.length}):`);
       
       if (newModels.length > 0) {
-        newModels.forEach((m, i) => console.log(`  ${i + 1}. ${m}`));
+        newModels.forEach((m, i) => { console.log(`  ${i + 1}. ${m}`); });
       } else {
         console.log("  (нет)");
       }

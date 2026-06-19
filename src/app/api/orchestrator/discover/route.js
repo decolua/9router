@@ -9,7 +9,7 @@
 import { NextResponse } from 'next/server';
 import { fetchWithTimeout } from '@/shared/utils/fetchWithTimeout';
 
-const OLLAMA_BASE = process.env.OLLAMA_HOST || 'http://host.docker.internal:11434';
+const OLLAMA_BASE = process.env.OLLAMA_HOST || process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
 const TIMEOUT = 10000;
 
 export async function GET() {
