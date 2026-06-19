@@ -47,7 +47,7 @@ export async function handleStt(request) {
 
   // noAuth providers
   if (!CREDENTIALED_PROVIDERS.has(provider)) {
-    const result = await handleSttCore({ provider, model, formData });
+    const result = await handleSttCore({ provider, model, formData, sttConfig: AI_PROVIDERS[provider]?.sttConfig });
     if (result.success) return result.response;
     return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "STT failed");
   }
@@ -72,7 +72,7 @@ export async function handleStt(request) {
 
     log.info("AUTH", `\x1b[32mUsing ${provider} account: ${credentials.connectionName}\x1b[0m`);
 
-    const result = await handleSttCore({ provider, model, formData, credentials });
+    const result = await handleSttCore({ provider, model, formData, credentials, sttConfig: AI_PROVIDERS[provider]?.sttConfig });
 
     if (result.success) return result.response;
 

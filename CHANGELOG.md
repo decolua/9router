@@ -1,3 +1,66 @@
+# v0.5.4 (2026-06-18)
+
+## Fixes
+- **Kiro**: honor thinking effort budgets
+- **AG/Kiro/Xiaomi**: provider fixes
+- **Combo/Fusion**: flatten tool history in panel calls to prevent 503
+- **LLM selector**: show custom vision models in selector and model list
+- **Image**: prevent compatible nodes from shadowing provider aliases
+
+# v0.5.2 (2026-06-17)
+
+## Features
+- **Combo Fusion strategy** — fans the prompt out to all member models in parallel, then a configurable judge model synthesizes one final answer (quorum-grace, anonymized sources, graceful degradation)
+- **Per-combo strategy selector** — pick `fallback` / `round-robin` / `fusion` / `capacity` per combo (replaces the old round-robin toggle), with a judge picker for fusion
+- **Capacity auto-switch** — reorders models per request so images/PDFs route to capable models first
+- **Kiro headless API-key auth** (`ksk_`) + direct `claude↔kiro` route that avoids the lossy OpenAI two-hop pivot
+- **Claude auto-ping** — warms the 5h quota window right after reset so a fresh window starts immediately (per-connection toggle)
+
+## Fixes
+- **Claude 429**: stop hammering the OAuth usage endpoint — cache resetAt, throttle quota refresh to 3 min, cool down after a 429 (chat unaffected)
+- **Usage logs always empty**: missing `await` on `getAdapter()` in `getRecentLogs` made `/api/usage/logs` & `/api/usage/request-logs` return nothing
+- **Executors**: strip params unsupported by the provider/model (drops deprecated `temperature` for claude-opus-4 → Anthropic 400)
+- **Translator**: derive deterministic tool_call ids for gemini/antigravity → OpenAI so function call/response pair correctly (fixes tool-pairing 400s)
+- **Antigravity**: strip `optional` from tool schemas before sending to Gemini
+- **Claude-to-OpenAI**: handle OpenAI-format responses in the non-streaming path (e.g. xiaomi-tokenplan)
+- **Usage views**: show edited connection names consistently across Providers & Quota Tracker
+- **Security**: hardened reverse-proxy local-access trust
+- **Security**: SSRF hardening on web fetch
+
+## Internal
+- Large **open-sse / translator refactor** (~40 commits): unified provider/model registry (LiteLLM-style `models[]` + `kind` field, 100 co-located registry files), single-sourced media/OAuth/refresh/token URLs, registry-based dispatch for usage & token-refresh, DRY translator concerns (buildUsage, encodeDataUri, finishReasonMap, chunkBuilder, reasoningDelta…), ESM-safe registry init, large-file splits, dead-code removal, and golden/no-regression test gates
+
+# v0.4.80 (2026-06-13)
+
+## Features
+- Vercel AI Gateway: support embeddings, images and credit usage (#1183)
+- Add MiMo Free no-auth provider (#1789)
+- Vertex: support ADC `authorized_user` credential
+- Cowork: re-enable Claude Cowork with preset-only stdio MCP
+- Codex: bulk add accounts via JSON (#1719)
+- Kiro: enable multi-endpoint failover for GenerateAssistantResponse (#1722)
+
+## Fixes
+- Security: re-auth on DB export/import + SSRF guard on web fetch
+- Auth: real client IP rate-limiting + remote default-password guard
+- Cerebras/Mistral: strip unsupported `client_metadata` from downstream requests (#1742)
+- SiliconFlow: update baseUrl `.cn` -> `.com` + curate verified model list (#1760)
+- Gemini-to-OpenAI: route unsigned thought parts to `reasoning_content` (#1752)
+- Claude-to-OpenAI: strip Anthropic billing header from system prompt (#1765)
+- Anthropic-compatible: send Bearer auth for third-party gateways (#1795)
+- Usage-stats: avoid partial stats on initial SSE race (#1767)
+- Proxy: use `export default` in proxy.js for Next.js 16 middleware detection
+- Claude passthrough: add body normalization
+- GitHub Copilot: refresh missing/expired token on models discovery (#1727) + add mappable gpt-5-mini/gpt-5.4-nano slots for Copilot MITM (#1653)
+- Kiro: auto-resolve profileArn to prevent 403 on IDC login, enhance profile ARN resolution, update endpoint to `runtime.us-east-1.kiro.dev` (#1713)
+- Tunnel: detect system-installed Tailscale via dual-socket probe (#1723) + non-blocking probes to prevent UI freeze
+- CommandCode: force `stream=true` in transformRequest (#1706)
+- Qoder: increase timeouts for reasoning models and improve stream handling
+- Dashboard: show provider node name instead of connection name in topology (#1770) + show explicit `kind="llm"` combos on combos page (#1684)
+
+## Docs
+- README: add Indonesian 9Router tutorial video (#1709)
+
 # v0.4.71 (2026-06-06)
 
 ## Features

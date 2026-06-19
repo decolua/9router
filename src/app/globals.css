@@ -324,6 +324,20 @@ button {
   user-select: none;
 }
 
+/* Tailwind v4 dropped default button cursor — restore globally */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+label[for],
+summary,
+select {
+  cursor: pointer;
+}
+
+button:disabled,
+[role="button"][aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
 /* ============================================================
    Animations
    ============================================================ */

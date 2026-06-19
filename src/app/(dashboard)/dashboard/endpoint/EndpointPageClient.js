@@ -5,62 +5,21 @@ import PropTypes from "prop-types";
 import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { getCurrentLocale, onLocaleChange } from "@/i18n/runtime";
-
-// Locales that unlock wenyan (classical Chinese) caveman levels
-const WENYAN_LOCALES = ["zh-CN", "zh-TW"];
-
-const TUNNEL_BENEFITS = [
-  { icon: "public", title: "Access Anywhere", desc: "Use your API from any network" },
-  { icon: "group", title: "Share Endpoint", desc: "Share URL with team members" },
-  { icon: "code", title: "Use in Cursor/Cline", desc: "Connect AI tools remotely" },
-  { icon: "lock", title: "Encrypted", desc: "End-to-end TLS via Cloudflare" },
-];
-
-const TUNNEL_PING_INTERVAL_MS = 2000;
-const TUNNEL_PING_MAX_MS = 300000;
-const STATUS_POLL_FAST_MS = 5000;
-const STATUS_POLL_SLOW_MS = 30000;
-const REACHABLE_MISS_THRESHOLD = 5;
-const CLIENT_PING_FAST_MS = 10000;
-const CLIENT_PING_SLOW_MS = 60000;
-const CLIENT_PING_TIMEOUT_MS = 5000;
-
-// Browser-side health probe: must reach origin (not just CF/TS edge).
-// cors mode → res.ok=false for 5xx (e.g. Cloudflare 530 when origin dead).
-// /api/health route sets Access-Control-Allow-Origin: * → CORS works through tunnel.
-async function clientPingUrl(url) {
-  if (!url) return false;
-  try {
-    const res = await fetch(`${url}/api/health`, {
-      mode: "cors",
-      cache: "no-store",
-      signal: AbortSignal.timeout(CLIENT_PING_TIMEOUT_MS),
-    });
-    return res.ok;
-  } catch { return false; }
-}
-
-// Race multiple URLs: resolve true as soon as any one passes ping.
-async function clientPingAny(...urls) {
-  const checks = urls.filter(Boolean).map(clientPingUrl);
-  if (!checks.length) return false;
-  return new Promise((resolve) => {
-    let pending = checks.length;
-    checks.forEach((p) => p.then((ok) => {
-      if (ok) resolve(true);
-      else if (--pending === 0) resolve(false);
-    }));
-  });
-}
-
-const CAVEMAN_LEVELS = [
-  { id: "lite", label: "Lite", desc: "Drop filler, keep grammar" },
-  { id: "full", label: "Full", desc: "Drop articles, fragments OK" },
-  { id: "ultra", label: "Ultra", desc: "Telegraphic, max compression" },
-  { id: "wenyan-lite", label: "文 Lite", desc: "Classical Chinese, light compression", wenyan: true },
-  { id: "wenyan", label: "文 Full", desc: "Maximum 文言文, 80-90% reduction", wenyan: true },
-  { id: "wenyan-ultra", label: "文 Ultra", desc: "Extreme classical compression", wenyan: true },
-];
+import {
+  WENYAN_LOCALES,
+  TUNNEL_BENEFITS,
+  TUNNEL_PING_INTERVAL_MS,
+  TUNNEL_PING_MAX_MS,
+  STATUS_POLL_FAST_MS,
+  REACHABLE_MISS_THRESHOLD,
+  CLIENT_PING_FAST_MS,
+  CAVEMAN_LEVELS,
+} from "./endpointConstants";
+import { clientPingUrl, clientPingAny } from "./endpointPing";
+import EndpointRow from "./components/EndpointRow";
+import StatusAlert from "./components/StatusAlert";
+import Tooltip from "./components/Tooltip";
+import SecurityWarning from "./components/SecurityWarning";
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -774,8 +733,8 @@ export default function APIPageClient({ machineId }) {
   };
 
   const maskKey = (fullKey) => {
-    if (!fullKey) return "";
-    return fullKey.length > 8 ? fullKey.slice(0, 8) + "..." : fullKey;
+    if (!fullKey || fullKey.length <= 10) return fullKey || "";
+    return fullKey.slice(0, 6) + "•".repeat(fullKey.length - 10) + fullKey.slice(-4);
   };
 
   const toggleKeyVisibility = (keyId) => {
@@ -1474,81 +1433,6 @@ export default function APIPageClient({ machineId }) {
   );
 }
 
-/** Reusable endpoint row component */
-function EndpointRow({ label, url, copyId, copied, onCopy, badge, actions }) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className={`text-xs font-mono px-1.5 py-0.5 rounded shrink-0 min-w-[88px] text-center ${
-          (badge === "CF" || badge === "TS") ? "bg-primary/10 text-primary" : "bg-surface-2 text-text-muted"
-        }`}>{label}</span>
-      <Input value={url} readOnly className="flex-1 font-mono text-sm" />
-      <button
-        onClick={() => onCopy(url, copyId)}
-        className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-colors shrink-0"
-      >
-        <span className="material-symbols-outlined text-[18px]">{copied === copyId ? "check" : "content_copy"}</span>
-      </button>
-      {actions}
-    </div>
-  );
-}
-
-/** Reusable status alert */
-function StatusAlert({ status, className = "" }) {
-  // Render URLs in message as clickable links
-  const renderMessage = (msg) => {
-    const parts = msg.split(/(https?:\/\/[^\s]+)/g);
-    return parts.map((part, i) =>
-      /^https?:\/\//.test(part)
-        ? <a key={i} href={part} target="_blank" rel="noreferrer" className="underline font-medium">{part}</a>
-        : part
-    );
-  };
-
-  return (
-    <div className={`p-2 rounded text-sm ${className} ${status.type === "success" ? "bg-green-500/10 text-green-600 dark:text-green-400" :
-        status.type === "warning" ? "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400" :
-        status.type === "info" ? "bg-blue-500/10 text-blue-600 dark:text-blue-400" :
-          "bg-red-500/10 text-red-600 dark:text-red-400"
-      }`}>
-      {renderMessage(status.message)}
-    </div>
-  );
-}
-
-/** Inline tooltip, Claude Code CLI style */
-function Tooltip({ text }) {
-  return (
-    <span className="relative group inline-flex items-center">
-      <span className="material-symbols-outlined text-[14px] text-text-muted cursor-help">help</span>
-      <span className="pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 z-50 w-64 rounded bg-gray-900 dark:bg-gray-800 text-white text-xs px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
-        {text}
-      </span>
-    </span>
-  );
-}
-
-/** Security warning banner with optional action link */
-function SecurityWarning({ message, action }) {
-  return (
-    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400">
-      <span className="material-symbols-outlined text-[16px] shrink-0 mt-0.5">warning</span>
-      <p className="text-xs flex-1">{message}</p>
-      {action && (
-        <a
-          href={action.href}
-          className="text-xs font-medium underline shrink-0 hover:opacity-80"
-          onClick={action.href.startsWith("#") ? (e) => {
-            e.preventDefault();
-            document.getElementById(action.href.slice(1))?.scrollIntoView({ behavior: "smooth" });
-          } : undefined}
-        >
-          {action.label}
-        </a>
-      )}
-    </div>
-  );
-}
 
 APIPageClient.propTypes = {
   machineId: PropTypes.string.isRequired,

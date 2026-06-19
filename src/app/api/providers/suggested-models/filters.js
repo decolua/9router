@@ -18,12 +18,9 @@ export const FILTERS = {
       .filter((m) => m.id?.endsWith("-free") || KNOWN_FREE_OPENCODE_MODELS.includes(m.id))
       .map((m) => ({ id: m.id, name: m.id })),
 
-  "mimo-free": (models) => {
-    if (!models) return [];
-    // models.dev returns a large catalog; filter for mimo models
-    const mimoModels = Array.isArray(models)
-      ? models.filter((m) => m.id?.startsWith("mimo") || m.name?.toLowerCase().includes("mimo"))
-      : [];
-    return mimoModels.map((m) => ({ id: m.id, name: m.name || m.id }));
-  },
+  // models.dev returns a large catalog; keep only mimo models
+  "mimo-free": (models) =>
+    (Array.isArray(models) ? models : [])
+      .filter((m) => m.id?.startsWith("mimo") || m.name?.toLowerCase().includes("mimo"))
+      .map((m) => ({ id: m.id, name: m.name || m.id })),
 };

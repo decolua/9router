@@ -44,7 +44,7 @@ const executors = {
   fb: new FreebuffExecutor(),
   "xiaomi-tokenplan": new XiaomiTokenplanExecutor(),
   "mimo-free": new MimoFreeExecutor(),
-  mmf: new MimoFreeExecutor(),
+  mmf: new MimoFreeExecutor(), // Alias for mimo-free
 };
 
 const defaultCache = new Map();

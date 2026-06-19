@@ -5,59 +5,79 @@ import { createHash } from "crypto";
 import os from "os";
 
 const BOOTSTRAP_URL = "https://api.xiaomimimo.com/api/free-ai/bootstrap";
-const CHAT_URL = "https://api.xiaomimimo.com/api/free-ai/openai/chat";
+const CHAT_URL = PROVIDERS["mimo-free"].baseUrl;
 const SESSION_AFFINITY_PREFIX = "ses_";
+const SESSION_ID_LENGTH = 24;
+const JWT_FALLBACK_TTL_SEC = 3000;
+const JWT_EXPIRY_BUFFER_MS = 300000;
+const SESSION_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789";
 
-// In-memory JWT cache
+// Anti-abuse gate marker: the free chat endpoint returns 403 "Illegal access"
+// unless a system message contains this exact MiMoCode signature substring.
+export const MIMO_SYSTEM_MARKER =
+  "You are MiMoCode, an interactive CLI tool that helps users with software engineering tasks.";
+
+// In-memory JWT cache (per-process, survives across requests but not restarts)
 let cachedJwt = null;
 let jwtExpiresAt = 0;
 
-function getClientFingerprint() {
-  const cpu = os.cpus()[0]?.model ?? "unknown-cpu";
-  const username = os.userInfo().username;
-  const seed = [os.hostname(), process.platform, process.arch, cpu, username].join("|");
-  const fingerprint = createHash("sha256").update(seed).digest("hex");
-  return fingerprint;
-}
-
-function getJwtExpiry(jwt) {
+// Device fingerprint reused as the bootstrap "client" — stable per machine
+function generateFingerprint() {
+  let username = "unknown-user";
   try {
-    const parts = jwt.split(".");
-    if (parts.length < 2) return 0;
-    const payload = JSON.parse(Buffer.from(parts[1], "base64").toString("utf-8"));
-    if (payload && typeof payload.exp === "number") {
-      return payload.exp * 1000; // Convert to milliseconds
-    }
-  } catch (e) {
+    username = os.userInfo().username;
+  } catch {
     // ignore
   }
-  return 0;
+  const cpu = (os.cpus()[0]?.model || "unknown-cpu").trim();
+  const seed = `${os.hostname()}|${os.platform()}|${os.arch()}|${cpu}|${username}`;
+  return createHash("sha256").update(seed).digest("hex");
 }
 
 function generateSessionId() {
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
   let id = SESSION_AFFINITY_PREFIX;
-  for (let i = 0; i < 24; i++) {
-    id += chars[Math.floor(Math.random() * chars.length)];
+  for (let i = 0; i < SESSION_ID_LENGTH; i++) {
+    id += SESSION_CHARS[Math.floor(Math.random() * SESSION_CHARS.length)];
   }
   return id;
 }
 
+// Derive expiry from the JWT exp claim; fall back to a fixed TTL when unparseable
+function parseJwtExp(jwt) {
+  try {
+    const payload = JSON.parse(Buffer.from(jwt.split(".")[1], "base64").toString());
+    if (payload.exp) return payload.exp * 1000;
+  } catch {
+    // ignore
+  }
+  return Date.now() + JWT_FALLBACK_TTL_SEC * 1000;
+}
+
+// Ensure the body carries the anti-abuse marker in a system message (idempotent)
+function injectSystemMarker(body) {
+  const messages = body?.messages;
+  if (!Array.isArray(messages)) return body;
+  const hasMarker = messages.some(
+    (m) => m?.role === "system" && typeof m.content === "string" && m.content.includes(MIMO_SYSTEM_MARKER)
+  );
+  if (hasMarker) return body;
+  return { ...body, messages: [{ role: "system", content: MIMO_SYSTEM_MARKER }, ...messages] };
+}
+
+function resetJwtCache() {
+  cachedJwt = null;
+  jwtExpiresAt = 0;
+}
+
 async function bootstrapJwt(proxyOptions = null) {
-  // Return cached JWT if still valid (with 5-minute buffer)
-  if (cachedJwt && Date.now() < jwtExpiresAt - 300000) {
+  if (cachedJwt && Date.now() < jwtExpiresAt - JWT_EXPIRY_BUFFER_MS) {
     return cachedJwt;
   }
 
-  const clientHash = getClientFingerprint();
   const response = await proxyAwareFetch(BOOTSTRAP_URL, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "User-Agent": "mimocode/latest/local/cli",
-      "Accept": "*/*",
-    },
-    body: JSON.stringify({ client: clientHash }),
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ client: generateFingerprint() }),
   }, proxyOptions);
 
   if (!response.ok) {
@@ -70,9 +90,7 @@ async function bootstrapJwt(proxyOptions = null) {
   }
 
   cachedJwt = data.jwt;
-  const expiry = getJwtExpiry(data.jwt);
-  jwtExpiresAt = expiry || (Date.now() + 3600000); // fallback to 1 hour cache
-
+  jwtExpiresAt = parseJwtExp(data.jwt);
   return cachedJwt;
 }
 
@@ -82,7 +100,7 @@ export class MimoFreeExecutor extends BaseExecutor {
     this.sessionId = generateSessionId();
   }
 
-  buildUrl(model, stream, urlIndex = 0, credentials = null) {
+  buildUrl() {
     return CHAT_URL;
   }
 
@@ -91,16 +109,15 @@ export class MimoFreeExecutor extends BaseExecutor {
       "Content-Type": "application/json",
       "X-Mimo-Source": "mimocode-cli-free",
       "x-session-affinity": this.sessionId,
-      "User-Agent": "mimocode/latest/local/cli",
-      "HTTP-Referer": "https://mimo.xiaomi.com/coder/",
-      "Referer": "https://mimo.xiaomi.com/coder/",
-      "x-opencode-client": "cli",
       "Accept": stream ? "text/event-stream" : "application/json",
     };
   }
 
+  transformRequest(model, body) {
+    return injectSystemMarker(body);
+  }
+
   async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
-    // Get JWT via bootstrap
     let jwt;
     try {
       jwt = await bootstrapJwt(proxyOptions);
@@ -109,73 +126,31 @@ export class MimoFreeExecutor extends BaseExecutor {
       throw error;
     }
 
-    const url = this.buildUrl(model, stream);
+    const url = this.buildUrl();
     const transformedBody = this.transformRequest(model, body);
-    const headers = {
-      ...this.buildHeaders(credentials, stream),
-      "Authorization": `Bearer ${jwt}`,
-    };
-
+    const headers = { ...this.buildHeaders(credentials, stream), "Authorization": `Bearer ${jwt}` };
     const bodyStr = JSON.stringify(transformedBody);
     log?.debug?.("FETCH", `MIMO-FREE → ${url} | body=${bodyStr.length}B`);
 
-    const response = await proxyAwareFetch(url, {
-      method: "POST",
-      headers,
-      body: bodyStr,
-      signal,
-    }, proxyOptions);
+    const response = await proxyAwareFetch(url, { method: "POST", headers, body: bodyStr, signal }, proxyOptions);
 
-    // If 401, invalidate cache and retry once
-    if (response.status === 401) {
-      log?.debug?.("AUTH", "MiMo JWT expired, re-bootstrapping...");
-      cachedJwt = null;
-      jwtExpiresAt = 0;
-      try {
-        jwt = await bootstrapJwt(proxyOptions);
-      } catch (error) {
-        throw error;
-      }
+    // On auth failure, invalidate cache and retry once with a fresh JWT
+    if (response.status === 401 || response.status === 403) {
+      log?.debug?.("AUTH", `MiMo auth failed (${response.status}), re-bootstrapping...`);
+      resetJwtCache();
+      jwt = await bootstrapJwt(proxyOptions);
       headers["Authorization"] = `Bearer ${jwt}`;
-      const retryResponse = await proxyAwareFetch(url, {
-        method: "POST",
-        headers,
-        body: bodyStr,
-        signal,
-      }, proxyOptions);
+      const retryResponse = await proxyAwareFetch(url, { method: "POST", headers, body: bodyStr, signal }, proxyOptions);
       return { response: retryResponse, url, headers, transformedBody };
     }
 
     return { response, url, headers, transformedBody };
   }
-
-  transformRequest(model, body) {
-    const transformed = { ...body };
-    if (!transformed.messages) {
-      transformed.messages = [];
-    }
-
-    const signature = "You are MiMoCode, an interactive CLI tool that helps users with software engineering tasks.";
-    const hasSignature = transformed.messages.some(msg => 
-      msg.role === "system" && msg.content && msg.content.includes(signature)
-    );
-
-    if (!hasSignature) {
-      const systemIndex = transformed.messages.findIndex(msg => msg.role === "system");
-      if (systemIndex !== -1) {
-        const currentContent = transformed.messages[systemIndex].content || "";
-        transformed.messages[systemIndex].content = currentContent ? `${signature}\n${currentContent}` : signature;
-      } else {
-        transformed.messages.unshift({
-          role: "system",
-          content: signature
-        });
-      }
-    }
-
-    transformed.model = "mimo-auto";
-    return transformed;
-  }
 }
+
+export const __test__ = {
+  generateFingerprint, generateSessionId, bootstrapJwt, resetJwtCache, parseJwtExp,
+  injectSystemMarker, MIMO_SYSTEM_MARKER, BOOTSTRAP_URL, CHAT_URL, SESSION_AFFINITY_PREFIX,
+};
 
 export default MimoFreeExecutor;

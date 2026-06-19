@@ -11,9 +11,14 @@ http.createServer = (...args) => {
   if (!handler) return origCreate(...args);
   const wrapped = (req, res) => {
     const ip = req.socket && req.socket.remoteAddress ? req.socket.remoteAddress : "";
+    // Forwarding headers present = request arrived via a reverse proxy; loopback
+    // socket is the proxy hop, not the end-user, so it must not be trusted as local.
+    const viaProxy = !!(req.headers["x-forwarded-for"] || req.headers["x-real-ip"]);
     delete req.headers["x-9r-real-ip"];
     delete req.headers["x-forwarded-for"];
+    delete req.headers["x-9r-via-proxy"];
     req.headers["x-9r-real-ip"] = ip;
+    if (viaProxy) req.headers["x-9r-via-proxy"] = "1";
     return handler(req, res);
   };
   return origCreate(...rest, wrapped);

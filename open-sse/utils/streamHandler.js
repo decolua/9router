@@ -128,7 +128,10 @@ export function createDisconnectAwareStream(transformStream, streamController, o
         controller.enqueue(value);
       } catch (error) {
         const wasConnected = streamController.isConnected();
-        streamController.handleError(error);
+        // Controller already closed = downstream ended; not an upstream error, skip noisy log.
+        const msg0 = error?.message || "";
+        const isControllerClosed = msg0.includes("already closed") || msg0.includes("Invalid state");
+        if (!isControllerClosed) streamController.handleError(error);
         reader.cancel().catch(() => {});
         writer.abort().catch(() => {});
 

@@ -1,6 +1,7 @@
 import PropTypes from "prop-types";
+import { CapacityBadges } from "@/shared/components";
 
-export default function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting, onDisable, onSpeedTest, isSpeedTesting, speedTestData }) {
+export default function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting, onDisable, onSpeedTest, isSpeedTesting, speedTestData, caps }) {
   const borderColor = testStatus === "ok"
     ? "border-green-500/40"
     : testStatus === "error"
@@ -61,7 +62,10 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
               </span>
             )}
           </div>
-          {model.name && <span className="truncate pl-1 text-[9px] italic text-text-muted/70">{model.name}</span>}
+          <span className="flex min-w-0 items-center text-[9px] gap-1 pl-1">
+            {model.name && <span className="truncate text-[9px] italic text-text-muted/70">{model.name}</span>}
+            <CapacityBadges caps={caps} colorOverride="text-text-muted/70" size={12} />
+          </span>
         </div>
         {onTest && (
           <div className="relative shrink-0 group/btn">
@@ -151,4 +155,5 @@ ModelRow.propTypes = {
     latencyMs: PropTypes.number,
     tps: PropTypes.number,
   }),
+  caps: PropTypes.object,
 };
