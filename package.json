@@ -6,7 +6,7 @@
   "scripts": {
 "dev": "next dev --webpack --port 20128",
     "build": "next build --webpack",
-    "start": "next start",
+    "start": "next start --port 20128",
     "dev:bun": "bun --bun next dev --webpack --port 20127",
     "build:bun": "bun --bun next build --webpack",
     "start:bun": "bun ./.next/standalone/server.js",
