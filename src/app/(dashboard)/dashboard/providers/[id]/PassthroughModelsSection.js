@@ -92,7 +92,7 @@ export default function PassthroughModelsSection({ providerAlias, modelAliases, 
 
   // Filter aliases for this provider - models are persisted via alias
   const providerAliases = Object.entries(modelAliases).filter(
-    ([, model]) => model.startsWith(`${providerAlias}/`)
+    ([, model]) => typeof model === "string" && model.startsWith(`${providerAlias}/`)
   );
 
   const allModels = providerAliases.map(([alias, fullModel]) => ({

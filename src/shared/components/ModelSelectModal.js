@@ -175,7 +175,7 @@ export default function ModelSelectModal({
 
       if (providerInfo.passthroughModels) {
         const aliasModels = Object.entries(modelAliases)
-          .filter(([, fullModel]) => fullModel.startsWith(`${alias}/`))
+          .filter(([, fullModel]) => typeof fullModel === "string" && fullModel.startsWith(`${alias}/`))
           .map(([aliasName, fullModel]) => ({
             id: fullModel.replace(`${alias}/`, ""),
             name: aliasName,
@@ -227,7 +227,7 @@ export default function ModelSelectModal({
         // Aliases are stored using the raw providerId as key (e.g. "openai-compatible-chat-<uuid>/glm-4.7"),
         // so we must filter by providerId, not by the display prefix.
         const nodeModels = Object.entries(modelAliases)
-          .filter(([, fullModel]) => fullModel.startsWith(`${providerId}/`))
+          .filter(([, fullModel]) => typeof fullModel === "string" && fullModel.startsWith(`${providerId}/`))
           .map(([aliasName, fullModel]) => ({
             id: fullModel.replace(`${providerId}/`, ""),
             name: aliasName,
@@ -260,6 +260,7 @@ export default function ModelSelectModal({
         const hasHardcoded = hardcodedModels.length > 0;
         const customAliasModels = Object.entries(modelAliases)
           .filter(([aliasName, fullModel]) =>
+            typeof fullModel === "string" &&
             fullModel.startsWith(`${alias}/`) &&
             (hasHardcoded ? aliasName === fullModel.replace(`${alias}/`, "") : true) &&
             !hardcodedIds.has(fullModel.replace(`${alias}/`, ""))

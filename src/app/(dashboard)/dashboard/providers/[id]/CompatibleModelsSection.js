@@ -96,7 +96,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
   };
 
   const providerAliases = Object.entries(modelAliases).filter(
-    ([, model]) => model.startsWith(`${providerStorageAlias}/`)
+    ([, model]) => typeof model === "string" && model.startsWith(`${providerStorageAlias}/`)
   );
 
   const allModels = providerAliases.map(([alias, fullModel]) => ({
