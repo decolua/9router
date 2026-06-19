@@ -1,4 +1,3 @@
-import { createHash } from "crypto";
 import { BaseExecutor } from "./base.js";
 import { CODEX_DEFAULT_INSTRUCTIONS } from "../config/codexInstructions.js";
 import { PROVIDERS } from "../config/providers.js";
@@ -6,20 +5,16 @@ import {
   refreshProviderCredentials,
   shouldRefreshCredentials,
 } from "../services/oauthCredentialManager.js";
-import { normalizeResponsesInput } from "../translator/helpers/responsesApiHelper.js";
-import { fetchImageAsBase64 } from "../translator/helpers/imageHelper.js";
+import { normalizeResponsesInput } from "../translator/formats/responsesApi.js";
+import { fetchImageAsBase64 } from "../translator/concerns/image.js";
 import { getModelUpstreamId } from "../config/providerModels.js";
-import { getConsistentMachineId } from "../../src/shared/utils/machineId.js";
 import { DEFAULT_RETRY_CONFIG, resolveRetryEntry } from "../config/runtimeConfig.js";
 import { dbg } from "../utils/debugLog.js";
+import { resolveSessionId } from "../utils/sessionManager.js";
 
 // SSE error patterns inside 200-OK body that should trigger retry as if 503
 const CODEX_SSE_OVERLOADED_PATTERNS = ["server_is_overloaded", "service_unavailable_error"];
 const CODEX_SSE_PEEK_BYTES = 4096;
-
-// In-memory map: hash(machineId + first assistant content) → { sessionId, lastUsed }
-const SESSION_TTL_MS = 60 * 60 * 1000; // 1 hour
-const assistantSessionMap = new Map();
 
 // Server-generated item id prefixes that Codex /responses cannot resolve when store=false
 const SERVER_ID_PATTERN = /^(rs|fc|resp|msg)_/;
@@ -104,85 +99,16 @@ function normalizeCodexTools(body) {
   }
 }
 
-// Cache machine ID at module level (resolved once)
-let cachedMachineId = null;
-getConsistentMachineId().then(id => { cachedMachineId = id; });
-
-function hashContent(text) {
-  return createHash("sha256").update(text).digest("hex").slice(0, 16);
+// Resolve prompt-cache session id: client session → assistant-text-hash → workspaceId → connection
+function resolveCacheSessionId(body, credentials) {
+  return resolveSessionId({
+    headers: credentials?.rawHeaders,
+    body,
+    connectionId: credentials?.connectionId,
+    workspaceId: credentials?.providerSpecificData?.workspaceId,
+    scope: "codex"
+  });
 }
-
-function generateSessionId() {
-  return `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
-}
-
-// Extract text content from an input item
-function extractItemText(item) {
-  if (!item) return "";
-  if (typeof item.content === "string") return item.content;
-  if (Array.isArray(item.content)) {
-    return item.content.map(c => c.text || c.output || "").filter(Boolean).join("");
-  }
-  return "";
-}
-
-// Normalize a session id candidate (trim, length cap)
-function normalizeSessionId(value) {
-  if (typeof value !== "string") return null;
-  const v = value.trim();
-  if (!v || v.length > 256) return null;
-  return v;
-}
-
-// Resolve prompt-cache session id with priority: body → assistant-text-hash → workspaceId → machineId
-function resolveCacheSessionId(body, credentials, machineId) {
-  // 1. Client-provided session/conversation id (highest priority — stable per conversation)
-  const fromBody =
-    normalizeSessionId(body?.prompt_cache_key) ||
-    normalizeSessionId(body?.session_id) ||
-    normalizeSessionId(body?.conversation_id);
-  if (fromBody) return fromBody;
-
-  // 2. Hash accumulated assistant text (≥50 chars) — sticky session across turns
-  if (Array.isArray(body?.input) && body.input.length > 0) {
-    let text = "";
-    const MIN_LEN = 50;
-    const CAP_LEN = 200;
-    for (const item of body.input) {
-      if (item?.role !== "assistant") continue;
-      const t = extractItemText(item);
-      if (!t) continue;
-      text += t;
-      if (text.length >= CAP_LEN) break;
-    }
-    if (text.length >= MIN_LEN) {
-      const hash = hashContent((machineId || "") + text.slice(0, CAP_LEN));
-      const entry = assistantSessionMap.get(hash);
-      if (entry) {
-        entry.lastUsed = Date.now();
-        return entry.sessionId;
-      }
-      const sessionId = generateSessionId();
-      assistantSessionMap.set(hash, { sessionId, lastUsed: Date.now() });
-      return sessionId;
-    }
-  }
-
-  // 3. Account-wide fallback (workspaceId from connection)
-  const workspaceId = normalizeSessionId(credentials?.providerSpecificData?.workspaceId);
-  if (workspaceId) return workspaceId;
-
-  // 4. Last resort — stable per-machine id
-  return machineId ? `sess_${hashContent(machineId)}` : generateSessionId();
-}
-
-// Cleanup expired entries periodically
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of assistantSessionMap) {
-    if (now - entry.lastUsed > SESSION_TTL_MS) assistantSessionMap.delete(key);
-  }
-}, 10 * 60 * 1000);
 
 /**
  * Codex Executor - handles OpenAI Codex API (Responses API format)
@@ -377,7 +303,7 @@ export class CodexExecutor extends BaseExecutor {
     this._isCompact = !!body._compact;
     delete body._compact;
     // Resolve conversation-stable session_id (priority: body → assistant-text → workspace → machine)
-    this._currentSessionId = resolveCacheSessionId(body, credentials, cachedMachineId);
+    this._currentSessionId = resolveCacheSessionId(body, credentials);
     // Convert string input to array format (Codex API requires input as array)
     const normalized = normalizeResponsesInput(body.input);
     if (normalized) body.input = normalized;

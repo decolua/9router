@@ -255,6 +255,67 @@ export class KiroService {
   }
 
   /**
+   * List available CodeWhisperer profiles for a token (or API key) and return
+   * the best-matching profileArn. AWS SSO OIDC logins return no profileArn, so
+   * it must be fetched separately — the same call works for API-key auth.
+   * Accepts both `arn` and `profileArn` response field names (the API-key
+   * JSON-1.0 surface returns `arn`).
+   */
+  async listAvailableProfiles(accessToken, region = "us-east-1") {
+    const endpoint = `https://codewhisperer.${region}.amazonaws.com`;
+
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-amz-json-1.0",
+        "x-amz-target": "AmazonCodeWhispererService.ListAvailableProfiles",
+        "Authorization": `Bearer ${accessToken}`,
+        "Accept": "application/json",
+      },
+      body: JSON.stringify({ maxResults: 10 }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Failed to list profiles: ${error}`);
+    }
+
+    const data = await response.json();
+    const profiles = Array.isArray(data?.profiles) ? data.profiles : [];
+    const arnOf = (p) => p?.arn || p?.profileArn || null;
+    const match = profiles.find((p) => arnOf(p)?.split(":")[3] === region) || profiles[0];
+    return arnOf(match);
+  }
+
+  /**
+   * Validate an API-key credential by listing profiles with it. API keys are
+   * long-lived bearer tokens (no refresh), so the only way to validate one is
+   * to make an authenticated CodeWhisperer call. Returns a credential object
+   * ready to persist as a "kiro" connection with authMethod="api_key".
+   */
+  async validateApiKey(apiKey, region = "us-east-1") {
+    if (!apiKey || typeof apiKey !== "string" || !apiKey.trim()) {
+      throw new Error("API key is required");
+    }
+    const trimmed = apiKey.trim();
+
+    let profileArn = null;
+    try {
+      profileArn = await this.listAvailableProfiles(trimmed, region);
+    } catch (error) {
+      throw new Error(`API key validation failed: ${error.message}`);
+    }
+
+    return {
+      accessToken: trimmed,
+      refreshToken: null,
+      profileArn,
+      region,
+      authMethod: "api_key",
+    };
+  }
+
+  /**
    * List available models from CodeWhisperer API
    */
   async listAvailableModels(accessToken, profileArn) {

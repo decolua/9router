@@ -1,20 +1,17 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/connectionStatus";
 import PropTypes from "prop-types";
-import { Badge, Toggle } from "@/shared/components";
+import { Badge, Toggle, Tooltip } from "@/shared/components";
 import CooldownTimer from "./CooldownTimer";
 
-export default function ConnectionRow({ connection, proxyPools, apiKeys, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onUpdateApiKeys, onEdit, onDelete, oneByOneStatus }) {
+export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
-  const [showApiKeyDropdown, setShowApiKeyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
-  const [updatingApiKeys, setUpdatingApiKeys] = useState(false);
   const proxyDropdownRef = useRef(null);
-  const apiKeyDropdownRef = useRef(null);
 
   const proxyPoolMap = new Map((proxyPools || []).map((pool) => [pool.id, pool]));
-  const apiKeyMap = new Map((apiKeys || []).map((key) => [key.id, key]));
   const boundProxyPoolId = connection.providerSpecificData?.proxyPoolId || null;
   const boundProxyPool = boundProxyPoolId ? proxyPoolMap.get(boundProxyPoolId) : null;
   const hasLegacyProxy = connection.providerSpecificData?.connectionProxyEnabled === true && !!connection.providerSpecificData?.connectionProxyUrl;
@@ -39,13 +36,6 @@ export default function ConnectionRow({ connection, proxyPools, apiKeys, isOAuth
   }
 
   const noProxyText = boundProxyPool?.noProxy || connection.providerSpecificData?.connectionNoProxy || "";
-  const allowedApiKeyIds = Array.isArray(connection.providerSpecificData?.allowedApiKeyIds)
-    ? connection.providerSpecificData.allowedApiKeyIds
-    : [];
-  const hasApiKeyScope = allowedApiKeyIds.length > 0;
-  const apiKeyDisplayText = hasApiKeyScope
-    ? allowedApiKeyIds.map((id) => apiKeyMap.get(id)?.name || id).join(", ")
-    : "";
 
   let proxyBadgeVariant = "default";
   if (boundProxyPool?.isActive === true) {
@@ -66,17 +56,6 @@ export default function ConnectionRow({ connection, proxyPools, apiKeys, isOAuth
     return () => document.removeEventListener("mousedown", handler);
   }, [showProxyDropdown]);
 
-  useEffect(() => {
-    if (!showApiKeyDropdown) return;
-    const handler = (e) => {
-      if (apiKeyDropdownRef.current && !apiKeyDropdownRef.current.contains(e.target)) {
-        setShowApiKeyDropdown(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [showApiKeyDropdown]);
-
   const handleSelectProxy = async (poolId) => {
     setUpdatingProxy(true);
     try {
@@ -87,35 +66,20 @@ export default function ConnectionRow({ connection, proxyPools, apiKeys, isOAuth
     }
   };
 
-  const handleToggleApiKey = async (keyId) => {
-    const nextIds = allowedApiKeyIds.includes(keyId)
-      ? allowedApiKeyIds.filter((id) => id !== keyId)
-      : [...allowedApiKeyIds, keyId];
-    setUpdatingApiKeys(true);
-    try {
-      await onUpdateApiKeys(nextIds);
-    } finally {
-      setUpdatingApiKeys(false);
-    }
-  };
-
-  const handleClearApiKeys = async () => {
-    setUpdatingApiKeys(true);
-    try {
-      await onUpdateApiKeys([]);
-    } finally {
-      setUpdatingApiKeys(false);
-      setShowApiKeyDropdown(false);
-    }
-  };
-
-  const isEmail = (v) => typeof v === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
-  const isOAuthConnection = !!isOAuth;
-  const authLabel = isOAuthConnection ? "OAuth" : "API Key";
-  const authIcon = isOAuthConnection ? "lock" : "vpn_key";
-  const displayName = isOAuthConnection
-    ? (isEmail(connection.email) ? connection.email : (isEmail(connection.name) ? connection.name : (connection.name || connection.email || connection.displayName || "OAuth Account")))
-    : (connection.name || connection.email || connection.displayName || "API Key");
+  const rowAuthType = connection.authType || (isOAuth ? "oauth" : "apikey");
+  const isOAuthConnection = rowAuthType === "oauth";
+  const isCookieConnection = rowAuthType === "cookie";
+  const authIcon = isCookieConnection ? "cookie" : isOAuthConnection ? "lock" : "key";
+  const authLabel = isOAuthConnection ? "OAuth" : isCookieConnection ? "Cookie" : "API Key";
+  const displayName = connection.name?.trim()
+    || connection.email?.trim()
+    || connection.displayName?.trim()
+    || (isOAuthConnection ? "OAuth Account" : isCookieConnection ? "Cookie Account" : "API Key");
+  const secondaryDisplayName = connection.name?.trim() && connection.email?.trim() && connection.name.trim() !== connection.email.trim()
+    ? connection.email.trim()
+    : connection.name?.trim() && connection.displayName?.trim() && connection.name.trim() !== connection.displayName.trim()
+      ? connection.displayName.trim()
+      : null;
 
   // Use useState + useEffect for impure Date.now() to avoid calling during render
   const [isCooldown, setIsCooldown] = useState(false);
@@ -149,12 +113,7 @@ export default function ConnectionRow({ connection, proxyPools, apiKeys, isOAuth
     ? "active"  // Cooldown expired u2192 treat as active
     : connection.testStatus;
 
-  const getStatusVariant = () => {
-    if (connection.isActive === false) return "default";
-    if (effectiveStatus === "active" || effectiveStatus === "success") return "success";
-    if (effectiveStatus === "error" || effectiveStatus === "expired" || effectiveStatus === "unavailable") return "error";
-    return "default";
-  };
+  const getStatusVariant = () => getConnectionStatusVariant(connection.isActive, effectiveStatus);
 
   const getOneByOneVariant = () => {
     if (!oneByOneStatus) return "default";
@@ -198,6 +157,9 @@ export default function ConnectionRow({ connection, proxyPools, apiKeys, isOAuth
         </span>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium truncate">{displayName}</p>
+          {secondaryDisplayName && (
+            <p className="text-xs text-text-muted truncate">{secondaryDisplayName}</p>
+          )}
           <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
             <Badge variant={getStatusVariant()} size="sm" dot>
               {connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}
@@ -208,11 +170,6 @@ export default function ConnectionRow({ connection, proxyPools, apiKeys, isOAuth
             {hasAnyProxy && (
               <Badge variant={proxyBadgeVariant} size="sm">
                 Proxy
-              </Badge>
-            )}
-            {hasApiKeyScope && (
-              <Badge variant="success" size="sm">
-                API Key
               </Badge>
             )}
             {isCooldown && connection.isActive !== false && <CooldownTimer until={modelLockUntil} />}
@@ -231,28 +188,19 @@ export default function ConnectionRow({ connection, proxyPools, apiKeys, isOAuth
               </Badge>
             )}
           </div>
-          {(hasAnyProxy || hasApiKeyScope) && (
+          {hasAnyProxy && (
             <div className="mt-1 flex items-center gap-2 flex-wrap">
-              {hasAnyProxy && (
-                <>
-                  <span className="max-w-full truncate text-[11px] text-text-muted sm:max-w-[420px]" title={proxyDisplayText}>
-                    {proxyDisplayText}
-                  </span>
-                  {maskedProxyUrl && (
-                    <code className="max-w-full truncate rounded bg-black/5 px-1 py-0.5 font-mono text-[10px] text-text-muted dark:bg-white/5 sm:max-w-[260px]">
-                      {maskedProxyUrl}
-                    </code>
-                  )}
-                  {noProxyText && (
-                    <span className="max-w-full truncate text-[11px] text-text-muted sm:max-w-[320px]" title={noProxyText}>
-                      no_proxy: {noProxyText}
-                    </span>
-                  )}
-                </>
+              <span className="max-w-full truncate text-[11px] text-text-muted sm:max-w-[420px]" title={proxyDisplayText}>
+                {proxyDisplayText}
+              </span>
+              {maskedProxyUrl && (
+                <code className="max-w-full truncate rounded bg-black/5 px-1 py-0.5 font-mono text-[10px] text-text-muted dark:bg-white/5 sm:max-w-[260px]">
+                  {maskedProxyUrl}
+                </code>
               )}
-              {hasApiKeyScope && (
-                <span className="max-w-full truncate text-[11px] text-text-muted sm:max-w-[420px]" title={apiKeyDisplayText}>
-                  API keys: {apiKeyDisplayText}
+              {noProxyText && (
+                <span className="max-w-full truncate text-[11px] text-text-muted sm:max-w-[320px]" title={noProxyText}>
+                  no_proxy: {noProxyText}
                 </span>
               )}
             </div>
@@ -260,7 +208,7 @@ export default function ConnectionRow({ connection, proxyPools, apiKeys, isOAuth
         </div>
       </div>
       <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end">
-        <div className="grid flex-1 grid-cols-4 gap-1 sm:flex sm:flex-none">
+        <div className="grid flex-1 grid-cols-3 gap-1 sm:flex sm:flex-none">
           {/* Proxy button with inline dropdown */}
           {(proxyPools || []).length > 0 && (
             <div className="relative" ref={proxyDropdownRef}>
@@ -295,46 +243,16 @@ export default function ConnectionRow({ connection, proxyPools, apiKeys, isOAuth
               )}
             </div>
           )}
-          {(apiKeys || []).length > 0 && (
-            <div className="relative" ref={apiKeyDropdownRef}>
+          {autoPing && (
+            <Tooltip text="When your 5h quota runs out, auto-sends a request the moment it resets so a new window starts right away.">
               <button
-                onClick={() => setShowApiKeyDropdown((v) => !v)}
-                className={`flex w-full flex-col items-center rounded px-2 py-1 transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${hasApiKeyScope ? "text-primary" : "text-text-muted hover:text-primary"}`}
-                disabled={updatingApiKeys}
+                onClick={() => autoPing.onToggle(!autoPing.on)}
+                className={`flex w-full flex-col items-center rounded px-2 py-1 transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${autoPing.on ? "text-primary" : "text-text-muted hover:text-primary"}`}
               >
-                <span className="material-symbols-outlined text-[18px]">
-                  {updatingApiKeys ? "progress_activity" : "vpn_key"}
-                </span>
-                <span className="text-[10px] leading-tight">API Key</span>
+                <span className="material-symbols-outlined text-[18px]">bolt</span>
+                <span className="text-[10px] leading-tight">Auto-ping</span>
               </button>
-              {showApiKeyDropdown && (
-                <div className="absolute right-0 top-full z-50 mt-1 max-w-[78vw] min-w-[220px] rounded-lg border border-border bg-bg py-1 shadow-lg">
-                  <button
-                    onClick={handleClearApiKeys}
-                    className={`w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/5 ${!hasApiKeyScope ? "text-primary font-medium" : "text-text-main"}`}
-                  >
-                    Any key (unrestricted)
-                  </button>
-                  {(apiKeys || []).map((key) => (
-                    <label
-                      key={key.id}
-                      className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/5"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={allowedApiKeyIds.includes(key.id)}
-                        onChange={() => handleToggleApiKey(key.id)}
-                        disabled={updatingApiKeys || key.isActive === false}
-                      />
-                      <span className={allowedApiKeyIds.includes(key.id) ? "text-primary font-medium" : "text-text-main"}>
-                        {key.name || key.id}
-                      </span>
-                      {key.isActive === false && <span className="text-[10px] text-text-muted">(disabled)</span>}
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
+            </Tooltip>
           )}
           <button onClick={onEdit} className="flex flex-col items-center rounded px-2 py-1 text-text-muted hover:bg-black/5 hover:text-primary dark:hover:bg-white/5">
             <span className="material-symbols-outlined text-[18px]">edit</span>
@@ -376,11 +294,6 @@ ConnectionRow.propTypes = {
     noProxy: PropTypes.string,
     isActive: PropTypes.bool,
   })),
-  apiKeys: PropTypes.arrayOf(PropTypes.shape({
-    id: PropTypes.string,
-    name: PropTypes.string,
-    isActive: PropTypes.bool,
-  })),
   isOAuth: PropTypes.bool.isRequired,
   isFirst: PropTypes.bool.isRequired,
   isLast: PropTypes.bool.isRequired,
@@ -388,11 +301,14 @@ ConnectionRow.propTypes = {
   onMoveDown: PropTypes.func.isRequired,
   onToggleActive: PropTypes.func.isRequired,
   onUpdateProxy: PropTypes.func,
-  onUpdateApiKeys: PropTypes.func,
   onEdit: PropTypes.func.isRequired,
   onDelete: PropTypes.func.isRequired,
   oneByOneStatus: PropTypes.shape({
     state: PropTypes.string,
     error: PropTypes.string,
+  }),
+  autoPing: PropTypes.shape({
+    on: PropTypes.bool,
+    onToggle: PropTypes.func,
   }),
 };

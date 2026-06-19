@@ -31,11 +31,23 @@ export const MEMORY_CONFIG = {
   proxyDispatchersMaxSize: 20,
 };
 
-// Stream stall timeout: abort if no chunk received within this duration
-export const STREAM_STALL_TIMEOUT_MS = 60 * 1000;
+// Parse a positive integer env override, falling back to a default.
+function envMs(name, def) {
+  const raw = process.env[name];
+  if (raw == null || raw === "") return def;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : def;
+}
+
+// Inter-chunk stall timeout (once tokens are flowing). Generous headroom so
+// slow reasoning models aren't aborted mid-stream. Env: STREAM_STALL_TIMEOUT_MS.
+export const STREAM_STALL_TIMEOUT_MS = envMs("STREAM_STALL_TIMEOUT_MS", 360 * 1000);
+
+// Time-to-first-token timeout (prompt prefill). Env: STREAM_FIRST_CHUNK_TIMEOUT_MS.
+export const STREAM_FIRST_CHUNK_TIMEOUT_MS = envMs("STREAM_FIRST_CHUNK_TIMEOUT_MS", 200 * 1000);
 
 // Fetch connect timeout: abort if upstream doesn't return response headers within this duration
-export const FETCH_CONNECT_TIMEOUT_MS = 60 * 1000;
+export const FETCH_CONNECT_TIMEOUT_MS = envMs("FETCH_CONNECT_TIMEOUT_MS", 60 * 1000);
 
 // Default token limits
 export const DEFAULT_MAX_TOKENS = 64000;
