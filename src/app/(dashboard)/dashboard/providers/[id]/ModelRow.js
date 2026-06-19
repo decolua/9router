@@ -1,12 +1,16 @@
 import PropTypes from "prop-types";
 import { CapacityBadges } from "@/shared/components";
 
-export default function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting, onDisable, caps }) {
+export default function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, isDisabled, onTest, isTesting, onDisable, caps, selected, onToggleSelect }) {
   const borderColor = testStatus === "ok"
     ? "border-green-500/40"
     : testStatus === "error"
     ? "border-red-500/40"
-    : "border-border";
+    : selected
+    ? "border-primary/40"
+    : isDisabled
+    ? "border-text-muted/10"
+    : "border-success/15";
 
   const iconColor = testStatus === "ok"
     ? "#22c55e"
@@ -14,9 +18,23 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
     ? "#ef4444"
     : undefined;
 
+  const rowBg = selected
+    ? "bg-primary/5"
+    : isDisabled
+    ? "bg-surface-2"
+    : "bg-success/[0.03] hover:bg-success/[0.06]";
+
   return (
-    <div className={`group min-w-0 max-w-full rounded-lg border px-3 py-2 ${borderColor} hover:bg-sidebar/50`}>
+    <div className={`group min-w-0 max-w-full rounded-lg border px-3 py-2 ${borderColor} ${rowBg}`}>
       <div className="flex min-w-0 items-start gap-2 sm:items-center">
+        {onToggleSelect && (
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={() => onToggleSelect(model.id)}
+            className="size-4 shrink-0 rounded border-border text-primary focus:ring-primary/20 cursor-pointer mt-0.5 sm:mt-0"
+          />
+        )}
         <span
           className="material-symbols-outlined shrink-0 text-base"
           style={iconColor ? { color: iconColor } : undefined}
@@ -91,10 +109,13 @@ ModelRow.propTypes = {
   onCopy: PropTypes.func.isRequired,
   testStatus: PropTypes.oneOf(["ok", "error"]),
   isCustom: PropTypes.bool,
+  isDisabled: PropTypes.bool,
   isFree: PropTypes.bool,
   onDeleteAlias: PropTypes.func,
   onTest: PropTypes.func,
   isTesting: PropTypes.bool,
   onDisable: PropTypes.func,
   caps: PropTypes.object,
+  selected: PropTypes.bool,
+  onToggleSelect: PropTypes.func,
 };
