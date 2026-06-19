@@ -303,7 +303,7 @@ async function handleCreateCombo() {
   
   const createResult = await api.createCombo({
     name,
-    models: selectedModels
+    models: selectedModels.map(m => `${m.provider}/${m.model}`)
   });
   
   if (!createResult.success) {
@@ -372,7 +372,7 @@ async function editSingleCombo(combo) {
       
       console.log("\nType 'done' to finish (min 2 models) or 'cancel' to abort\n");
       
-      const model = await selectModelFromList("Add Model", "");
+      const model = await selectModelFromList("Add Model", "", { allowDone: true });
       
       if (model === null) {
         showStatus("Cancelled", "warning");

@@ -121,14 +121,14 @@ export default function ProviderDetailPage() {
 
   const providerInfo = providerNode
     ? {
-        id: providerNode.id,
-        name: providerNode.name || (providerNode.type === "anthropic-compatible" ? "Anthropic Compatible" : "OpenAI Compatible"),
-        color: providerNode.type === "anthropic-compatible" ? "#D97757" : "#10A37F",
-        textIcon: providerNode.type === "anthropic-compatible" ? "AC" : "OC",
-        apiType: providerNode.apiType,
-        baseUrl: providerNode.baseUrl,
-        type: providerNode.type,
-      }
+      id: providerNode.id,
+      name: providerNode.name || (providerNode.type === "anthropic-compatible" ? "Anthropic Compatible" : "OpenAI Compatible"),
+      color: providerNode.type === "anthropic-compatible" ? "#D97757" : "#10A37F",
+      textIcon: providerNode.type === "anthropic-compatible" ? "AC" : "OC",
+      apiType: providerNode.apiType,
+      baseUrl: providerNode.baseUrl,
+      type: providerNode.type,
+    }
     : (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId] || FREE_TIER_PROVIDERS[providerId] || WEB_COOKIE_PROVIDERS[providerId]);
   const authModes = providerInfo?.authModes || [];
   const isOAuth = !!OAUTH_PROVIDERS[providerId] || !!FREE_PROVIDERS[providerId] || authModes.includes("oauth");
@@ -136,7 +136,7 @@ export default function ProviderDetailPage() {
   const isFreeNoAuth = !!FREE_PROVIDERS[providerId]?.noAuth;
   const models = getModelsByProviderId(providerId);
   const providerAlias = getProviderAlias(providerId);
-  
+
   const isOpenAICompatible = isOpenAICompatibleProvider(providerId);
   const isAnthropicCompatible = isAnthropicCompatibleProvider(providerId);
   const isCompatible = isOpenAICompatible || isAnthropicCompatible;
@@ -144,7 +144,7 @@ export default function ProviderDetailPage() {
   const oauthConnectionLabel = providerId === "xai" ? "Grok Build OAuth" : "OAuth";
   const apiKeyConnectionLabel = providerId === "xai" ? "xAI API Key" : "API Key";
   const thinkingConfig = AI_PROVIDERS[providerId]?.thinkingConfig || THINKING_CONFIG.extended;
-  
+
   const providerStorageAlias = isCompatible ? providerId : providerAlias;
   const providerDisplayAlias = isCompatible
     ? (providerNode?.prefix || providerId)
@@ -231,7 +231,7 @@ export default function ProviderDetailPage() {
     fetch("/api/providers/kilo/free-models")
       .then((res) => res.json())
       .then((data) => { if (data.models?.length) setKiloFreeModels(data.models); })
-      .catch(() => {});
+      .catch(() => { });
   }, [providerId]);
 
   const fetchConnections = useCallback(async () => {
@@ -444,26 +444,26 @@ export default function ProviderDetailPage() {
       for (const model of models) {
         const modelId = model.id || model.name;
         if (!modelId) continue;
-        
+
         // Qoder model ID format may be "qoder/auto" or "auto", need to remove prefix
         const cleanModelId = modelId.replace(/^qoder\//, "");
         const fullModel = `${providerStorageAlias}/${cleanModelId}`;
-        
+
         // Check if already exists
         if (Object.values(modelAliases).includes(fullModel)) {
           continue;
         }
-        
+
         // Use model ID as alias
         const alias = cleanModelId;
         if (modelAliases[alias]) {
           continue;
         }
-        
+
         await handleSetAlias(cleanModelId, alias, providerStorageAlias);
         importedCount += 1;
       }
-      
+
       if (importedCount === 0) {
         alert(translate("All models already exist, no new models added"));
       } else {
@@ -933,16 +933,16 @@ export default function ProviderDetailPage() {
       return;
     }
     if (bulkSpeedTesting || connections.length === 0) return;
-    
+
     setBulkSpeedTesting(true);
-    
+
     // Dynamically retrieve active/enabled model IDs for the current provider
     let activeModelIds = [];
     if (isCompatible) {
       const providerAliases = Object.entries(modelAliases).filter(
         ([, model]) => model.startsWith(`${providerStorageAlias}/`)
       );
-      activeModelIds = providerAliases.map(([, fullModel]) => 
+      activeModelIds = providerAliases.map(([, fullModel]) =>
         fullModel.replace(`${providerStorageAlias}/`, "")
       );
     } else {
@@ -962,7 +962,7 @@ export default function ProviderDetailPage() {
         ...models,
         ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
       ].filter((m) => !m.type || m.type === "llm").map((m) => m.id);
-      
+
       const disabledSet = new Set(disabledModelIds);
       const displayModelIds = allIds.filter((id) => !disabledSet.has(id));
 
@@ -1058,7 +1058,7 @@ export default function ProviderDetailPage() {
             alias={model.alias}
             copied={copied}
             onCopy={copy}
-            onSetAlias={() => {}}
+            onSetAlias={() => { }}
             onDeleteAlias={() => handleDeleteAlias(model.alias)}
             testStatus={modelTestResults[model.id]}
             onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
@@ -1183,7 +1183,7 @@ export default function ProviderDetailPage() {
         <CardSkeleton />
       </div>
     );
-}
+  }
 
   if (!providerInfo) {
     return (

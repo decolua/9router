@@ -62,7 +62,7 @@ async function getAvailableModelsGrouped() {
  * @returns {Promise<string|null>} Selected model ID or null if cancelled
  */
 async function selectModelFromList(title, currentValue = "", options = {}) {
-  const { excludeCombos = false } = options;
+  const { excludeCombos = false, allowDone = false } = options;
   const { combos: rawCombos, groups } = await getAvailableModelsGrouped();
   const combos = excludeCombos ? [] : rawCombos;
 
@@ -119,6 +119,9 @@ async function selectModelFromList(title, currentValue = "", options = {}) {
   
   // Prompt for number input
   const input = await prompt("Enter number: ");
+  if (allowDone && input && input.trim().toLowerCase() === "done") {
+    return "done";
+  }
   const num = parseInt(input, 10);
   
   if (isNaN(num) || num === 0 || num < 0 || num > allModels.length) {

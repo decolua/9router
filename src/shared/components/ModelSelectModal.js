@@ -1,4 +1,4 @@
-"use client";
+fixed "use client";
 
 import { useState, useMemo, useEffect } from "react";
 import PropTypes from "prop-types";
@@ -188,6 +188,18 @@ export default function ModelSelectModal({
             const supports = (providerInfo.serviceKinds || ["llm"]).includes(kindFilter);
             if (supports) combined = [{ id: providerId, name: providerInfo.name, value: alias }];
           }
+        } else {
+          // LLM context: merge hardcoded models
+          const hardcodedModels = getModelsByProviderId(providerId);
+          const hardcodedMapped = hardcodedModels.map((m) => ({
+            id: m.id,
+            name: m.name,
+            value: `${alias}/${m.id}`,
+            type: m.type,
+          }));
+          const seenValues = new Set(aliasModels.map((m) => m.value));
+          const hardcodedFiltered = hardcodedMapped.filter((m) => !seenValues.has(m.value));
+          combined = filterByKind([...aliasModels, ...hardcodedFiltered]);
         }
 
         if (combined.length > 0) {

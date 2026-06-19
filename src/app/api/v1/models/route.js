@@ -196,6 +196,18 @@ export async function buildModelsList(kindFilter) {
     }
   }
 
+  // Always include noAuth providers as virtual active connections so they are returned in /v1/models
+  for (const [id, info] of Object.entries(AI_PROVIDERS)) {
+    if (info?.noAuth && !activeConnectionByProvider.has(id)) {
+      activeConnectionByProvider.set(id, {
+        provider: id,
+        isActive: true,
+        providerSpecificData: {}
+      });
+    }
+  }
+
+
   const models = [];
 
   // Combos first (filtered by kind). Web combos expose `kind` so AI knows search vs fetch.
