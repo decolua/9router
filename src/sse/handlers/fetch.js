@@ -14,7 +14,7 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { handleComboChat, getComboModelsFromData } from "open-sse/services/combo.js";
 import { runWithModelFallback } from "open-sse/services/modelFallback.js";
-import { assertPublicUrl } from "@/shared/utils/ssrGuard.js";
+import { assertPublicUrl } from "@/shared/utils/ssrfGuard.js";
 
 /**
  * Handle web fetch (URL extraction) request for the SSE/Next.js server.
