@@ -208,7 +208,7 @@ export default function ProvidersPage() {
 
     return { connected, error, total, errorCode, errorTime, allDisabled };
   };
-
+ 
   // Toggle all connections for a provider on/off. authType may be a single
   // string or an array (kiro counts oauth + api_key/apikey together).
   const handleToggleProvider = async (providerId, authType, newActive) => {
@@ -228,6 +228,56 @@ export default function ProvidersPage() {
         }),
       ),
     );
+  };
+
+  const isLocalConnection = (c) => {
+    const localIds = [
+      "ollama-local",
+      "local-device",
+      "google-tts",
+      "edge-tts",
+      "coqui",
+      "tortoise",
+      "sdwebui",
+      "comfyui",
+      "searxng",
+    ];
+    if (localIds.includes(c.provider) || c.provider.toLowerCase().includes("local")) {
+      return true;
+    }
+    const baseUrl = c.providerSpecificData?.baseUrl || "";
+    if (
+      baseUrl.includes("localhost") ||
+      baseUrl.includes("127.0.0.1") ||
+      baseUrl.includes("::1")
+    ) {
+      return true;
+    }
+    return false;
+  };
+
+  const handleToggleAllLocal = async (newActive) => {
+    const localConns = connections.filter(isLocalConnection);
+    if (localConns.length === 0) {
+      notify.info("No local providers configured");
+      return;
+    }
+
+    setConnections((prev) =>
+      prev.map((c) => (isLocalConnection(c) ? { ...c, isActive: newActive } : c)),
+    );
+
+    await Promise.allSettled(
+      localConns.map((c) =>
+        fetch(`/api/providers/${c.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isActive: newActive }),
+        }),
+      ),
+    );
+
+    notify.success(`${newActive ? "Enabled" : "Disabled"} ${localConns.length} local provider connections`);
   };
 
   const handleBatchTest = async (mode, providerId = null) => {
@@ -332,6 +382,35 @@ export default function ProvidersPage() {
 
   return (
     <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
+      {/* Quick Controls Bar */}
+      <div className="flex flex-col gap-3 p-4 bg-surface border border-border rounded-xl sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-0.5">
+          <h3 className="font-semibold text-sm">Local Providers Quick Controls</h3>
+          <p className="text-xs text-text-muted">
+            Quickly enable or disable all local-based provider connections (Ollama, local device, local TTS/ASR, localhost endpoints).
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            icon="pause_circle"
+            onClick={() => handleToggleAllLocal(false)}
+            className="w-full sm:w-auto"
+          >
+            Disable All Local
+          </Button>
+          <Button
+            size="sm"
+            icon="play_circle"
+            onClick={() => handleToggleAllLocal(true)}
+            className="w-full sm:w-auto"
+          >
+            Enable All Local
+          </Button>
+        </div>
+      </div>
+
       {!hasAnyResult && (
         <div className="text-center py-8 border border-dashed border-border rounded-xl">
           <span className="material-symbols-outlined text-[32px] text-text-muted mb-2">
