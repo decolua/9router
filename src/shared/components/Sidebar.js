@@ -12,42 +12,50 @@ import Button from "./Button";
 import { ConfirmModal } from "./Modal";
 import NineRemotePromoModal from "./NineRemotePromoModal";
 
-// const VISIBLE_MEDIA_KINDS = ["embedding", "image", "imageToText", "tts", "stt", "webSearch", "webFetch", "video", "music"];
 const VISIBLE_MEDIA_KINDS = ["embedding", "image", "tts", "stt"];
+
 // Combined entry: webSearch + webFetch share one page at /dashboard/media-providers/web
 const COMBINED_WEB_ITEM = { id: "web", label: "Web Fetch & Search", icon: "travel_explore", href: "/dashboard/media-providers/web" };
 
-const navItems = [
+const LLM_ITEMS = [
   { href: "/dashboard/providers", label: "Providers", icon: "dns" },
-  // { href: "/dashboard/basic-chat", label: "Basic Chat", icon: "chat" }, // Hidden
   { href: "/dashboard/combos", label: "Combos", icon: "layers" },
   { href: "/dashboard/model-fallbacks", label: "Model Fallbacks", icon: "sync_alt" },
+];
+
+const MCP_ITEMS = [
+  { href: "/dashboard/mcp-gateway/servers", label: "Servers", icon: "dns" },
+  { href: "/dashboard/mcp-gateway/keys", label: "Keys", icon: "vpn_key" },
+];
+
+const OBSERVABILITY_ITEMS = [
+  { href: "/dashboard/console-log", label: "Console Log", icon: "terminal" },
   { href: "/dashboard/usage", label: "Usage", icon: "bar_chart" },
   { href: "/dashboard/quota", label: "Quota Tracker", icon: "data_usage" },
-  { href: "/dashboard/mitm", label: "MITM", icon: "security" },
-  { href: "/dashboard/cli-tools", label: "CLI Tools", icon: "terminal" },
-  { href: "/dashboard/mcp-gateway", label: "MCP Gateway", icon: "hub" },
 ];
 
-const debugItems = [
-  { href: "/dashboard/console-log", label: "Console Log", icon: "terminal" },
-  { href: "/dashboard/translator", label: "Translator", icon: "translate" },
-];
-
-const systemItems = [
-  { href: "/dashboard/endpoint", label: "Endpoint", icon: "api" },
-  { href: "/dashboard/system/api-keys", label: "API Keys", icon: "vpn_key" },
+const COMPRESS_ITEMS = [
   { href: "/dashboard/system/compress/rtk", label: "RTK", icon: "bolt" },
   { href: "/dashboard/system/compress/headroom", label: "Headroom", icon: "compress" },
   { href: "/dashboard/system/compress/caveman", label: "Caveman", icon: "format_size" },
   { href: "/dashboard/system/compress/ponytail", label: "Ponytail", icon: "low_priority" },
+];
+
+const SYSTEM_ITEMS = [
+  { href: "/dashboard/endpoint", label: "Endpoint", icon: "api" },
+  { href: "/dashboard/system/api-keys", label: "API Keys", icon: "vpn_key" },
+  { href: "/dashboard/mitm", label: "MITM", icon: "security" },
+  { href: "/dashboard/cli-tools", label: "CLI Tools", icon: "terminal" },
   { href: "/dashboard/proxy-pools", label: "Proxy Pools", icon: "lan" },
   { href: "/dashboard/skills", label: "Skills", icon: "extension" },
 ];
 
 export default function Sidebar({ onClose }) {
   const pathname = usePathname();
-  const [mediaOpen, setMediaOpen] = useState(false);
+  const [openSections, setOpenSections] = useState({
+    llm: true, mcp: false, media: false, observability: false,
+    compress: false, system: false,
+  });
   const [showRemoteModal, setShowRemoteModal] = useState(false);
   const [isDisconnected, setIsDisconnected] = useState(false);
   const [updateInfo, setUpdateInfo] = useState(null);
@@ -57,7 +65,10 @@ export default function Sidebar({ onClose }) {
   const [enableTranslator, setEnableTranslator] = useState(false);
   const { copied, copy } = useCopyToClipboard(2000);
 
+  const toggleSection = (key) => setOpenSections((s) => ({ ...s, [key]: !s[key] }));
+
   const INSTALL_CMD = UPDATER_CONFIG.installCmdLatest;
+
 
   useEffect(() => {
     fetch("/api/settings")
@@ -165,140 +176,112 @@ export default function Sidebar({ onClose }) {
 
         {/* Navigation */}
         <nav className="flex-1 px-4 py-2 space-y-0.5 overflow-y-auto custom-scrollbar">
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={onClose}
-              className={cn(
-                "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
-                isActive(item.href)
-                  ? "bg-primary/10 text-primary"
-                  : "text-text-muted hover:bg-surface-2 hover:text-text-main"
-              )}
-            >
-              <span
+          {/* LLM accordion */}
+          <AccordionSection
+            label="LLM" icon="hub" isOpen={openSections.llm}
+            onToggle={() => toggleSection("llm")}
+            isActive={pathname?.startsWith("/dashboard/providers") || pathname?.startsWith("/dashboard/combos") || pathname?.startsWith("/dashboard/model-fallbacks") || pathname?.startsWith("/dashboard/mcp-gateway")}
+            onClose={onClose}
+          >
+            {LLM_ITEMS.map((item) => (
+              <SubLink key={item.href} href={item.href} icon={item.icon} label={item.label}
+                active={isActive(item.href)} onClose={onClose} />
+            ))}
+
+            {/* Nested MCP Gateway accordion */}
+            <div className="mt-1">
+              <button
+                onClick={() => toggleSection("mcp")}
                 className={cn(
-                  "material-symbols-outlined text-[18px]",
-                  isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
-                )}
-              >
-                {item.icon}
-              </span>
-              <span className="text-[13px] font-medium">{item.label}</span>
-            </Link>
-          ))}
-
-          {/* System section */}
-          <div className="pt-3 mt-2 space-y-0.5">
-            <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
-              System
-            </p>
-
-            {/* Media Providers accordion */}
-            <button
-              onClick={() => setMediaOpen((v) => !v)}
-              className={cn(
-                "w-full flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
-                pathname?.startsWith("/dashboard/media-providers")
-                  ? "bg-primary/10 text-primary"
-                  : "text-text-muted hover:bg-surface-2 hover:text-text-main"
-              )}
-            >
-              <span className="material-symbols-outlined text-[18px]">perm_media</span>
-              <span className="text-[13px] font-medium flex-1 text-left">Media Providers</span>
-              <span className="material-symbols-outlined text-[14px] transition-transform" style={{ transform: mediaOpen ? "rotate(180deg)" : "rotate(0deg)" }}>
-                expand_more
-              </span>
-            </button>
-            {mediaOpen && (
-              <div className="pl-4">
-                {MEDIA_PROVIDER_KINDS.filter((k) => VISIBLE_MEDIA_KINDS.includes(k.id)).map((kind) => (
-                  <Link
-                    key={kind.id}
-                    href={`/dashboard/media-providers/${kind.id}`}
-                    onClick={onClose}
-                    className={cn(
-                      "flex items-center gap-3 px-4 py-1 rounded-lg transition-all group",
-                      pathname?.startsWith(`/dashboard/media-providers/${kind.id}`)
-                        ? "bg-primary/10 text-primary"
-                        : "text-text-muted hover:bg-surface-2 hover:text-text-main"
-                    )}
-                  >
-                    <span className="material-symbols-outlined text-[16px]">{kind.icon}</span>
-                    <span className="text-sm">{kind.label}</span>
-                  </Link>
-                ))}
-                <Link
-                  key={COMBINED_WEB_ITEM.id}
-                  href={COMBINED_WEB_ITEM.href}
-                  onClick={onClose}
-                  className={cn(
-                    "flex items-center gap-3 px-4 py-1 rounded-lg transition-all group",
-                    pathname?.startsWith(COMBINED_WEB_ITEM.href)
-                      ? "bg-primary/10 text-primary"
-                      : "text-text-muted hover:bg-surface-2 hover:text-text-main"
-                  )}
-                >
-                  <span className="material-symbols-outlined text-[16px]">{COMBINED_WEB_ITEM.icon}</span>
-                  <span className="text-sm">{COMBINED_WEB_ITEM.label}</span>
-                </Link>
-              </div>
-            )}
-
-            {systemItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={onClose}
-                className={cn(
-                  "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
-                  isActive(item.href)
+                  "w-full flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
+                  pathname?.startsWith("/dashboard/mcp-gateway")
                     ? "bg-primary/10 text-primary"
                     : "text-text-muted hover:bg-surface-2 hover:text-text-main"
                 )}
               >
-                <span
-                  className={cn(
-                    "material-symbols-outlined text-[18px]",
-                    isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
-                  )}
-                >
-                  {item.icon}
+                <span className="material-symbols-outlined text-[18px]">account_tree</span>
+                <span className="text-[13px] font-medium flex-1 text-left">MCP Gateway</span>
+                <span className="material-symbols-outlined text-[14px] transition-transform" style={{ transform: openSections.mcp ? "rotate(180deg)" : "rotate(0deg)" }}>
+                  expand_more
                 </span>
-                <span className="text-[13px] font-medium">{item.label}</span>
-              </Link>
+              </button>
+              {openSections.mcp && (
+                <div className="pl-4">
+                  {MCP_ITEMS.map((item) => (
+                    <SubLink key={item.href} href={item.href} icon={item.icon} label={item.label}
+                      active={pathname?.startsWith(item.href)} onClose={onClose} indent />
+                  ))}
+                </div>
+              )}
+            </div>
+          </AccordionSection>
+
+          {/* Observability accordion */}
+          <AccordionSection
+            label="Observability" icon="monitoring" isOpen={openSections.observability}
+            onToggle={() => toggleSection("observability")}
+            isActive={pathname?.startsWith("/dashboard/console-log") || pathname?.startsWith("/dashboard/usage") || pathname?.startsWith("/dashboard/quota")}
+            onClose={onClose}
+          >
+            {OBSERVABILITY_ITEMS.map((item) => (
+              <SubLink key={item.href} href={item.href} icon={item.icon} label={item.label}
+                active={isActive(item.href)} onClose={onClose} />
             ))}
+          </AccordionSection>
 
-            {/* Debug items (inside System section, before Settings) */}
-            {debugItems.map((item) => {
-              const show = item.href !== "/dashboard/translator" || enableTranslator;
-              return show ? (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={onClose}
-                  className={cn(
-                    "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
-                    isActive(item.href)
-                      ? "bg-primary/10 text-primary"
-                      : "text-text-muted hover:bg-surface-2 hover:text-text-main"
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "material-symbols-outlined text-[18px]",
-                      isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
-                    )}
-                  >
-                    {item.icon}
-                  </span>
-                  <span className="text-[13px] font-medium">{item.label}</span>
-                </Link>
-              ) : null;
-            })}
+          {/* Media Providers accordion */}
+          <AccordionSection
+            label="Media Providers" icon="perm_media" isOpen={openSections.media}
+            onToggle={() => toggleSection("media")}
+            isActive={pathname?.startsWith("/dashboard/media-providers")}
+            onClose={onClose}
+          >
+            {MEDIA_PROVIDER_KINDS.filter((k) => VISIBLE_MEDIA_KINDS.includes(k.id)).map((kind) => (
+              <SubLink key={kind.id} href={`/dashboard/media-providers/${kind.id}`} icon={kind.icon} label={kind.label}
+                active={pathname?.startsWith(`/dashboard/media-providers/${kind.id}`)} onClose={onClose} />
+            ))}
+            <SubLink href={COMBINED_WEB_ITEM.href} icon={COMBINED_WEB_ITEM.icon} label={COMBINED_WEB_ITEM.label}
+              active={pathname?.startsWith(COMBINED_WEB_ITEM.href)} onClose={onClose} />
+          </AccordionSection>
 
-            {/* Remote */}
+          {/* Compression accordion */}
+          <AccordionSection
+            label="Compression" icon="compress" isOpen={openSections.compress}
+            onToggle={() => toggleSection("compress")}
+            isActive={pathname?.startsWith("/dashboard/system/compress")}
+            onClose={onClose}
+          >
+            {COMPRESS_ITEMS.map((item) => (
+              <SubLink key={item.href} href={item.href} icon={item.icon} label={item.label}
+                active={pathname?.startsWith(item.href)} onClose={onClose} />
+            ))}
+          </AccordionSection>
+
+          {/* System accordion */}
+          <AccordionSection
+            label="System" icon="settings_applications" isOpen={openSections.system}
+            onToggle={() => toggleSection("system")}
+            isActive={
+              pathname === "/dashboard" || pathname?.startsWith("/dashboard/endpoint") ||
+              pathname?.startsWith("/dashboard/system/api-keys") || pathname?.startsWith("/dashboard/mitm") ||
+              pathname?.startsWith("/dashboard/cli-tools") || pathname?.startsWith("/dashboard/proxy-pools") ||
+              pathname?.startsWith("/dashboard/skills") || (enableTranslator && pathname?.startsWith("/dashboard/translator"))
+            }
+            onClose={onClose}
+          >
+            {SYSTEM_ITEMS.map((item) => (
+              <SubLink key={item.href} href={item.href} icon={item.icon} label={item.label}
+                active={isActive(item.href)} onClose={onClose} />
+            ))}
+            {/* Translator gated */}
+            {enableTranslator && (
+              <SubLink href="/dashboard/translator" icon="translate" label="Translator"
+                active={pathname?.startsWith("/dashboard/translator")} onClose={onClose} />
+            )}
+          </AccordionSection>
+
+          {/* Remote + Settings pinned at bottom */}
+          <div className="pt-3 mt-2 space-y-0.5 border-t border-border-subtle">
             <button
               onClick={() => setShowRemoteModal(true)}
               className={cn(
@@ -306,13 +289,10 @@ export default function Sidebar({ onClose }) {
                 "text-text-muted hover:bg-surface-2 hover:text-text-main"
               )}
             >
-              <span className="material-symbols-outlined text-[18px] group-hover:text-primary transition-colors">
-                computer
-              </span>
+              <span className="material-symbols-outlined text-[18px] group-hover:text-primary transition-colors">computer</span>
               <span className="text-[13px] font-medium">Remote</span>
             </button>
 
-            {/* Settings */}
             <Link
               href="/dashboard/profile"
               onClick={onClose}
@@ -323,12 +303,10 @@ export default function Sidebar({ onClose }) {
                   : "text-text-muted hover:bg-surface-2 hover:text-text-main"
               )}
             >
-              <span
-                className={cn(
-                  "material-symbols-outlined text-[18px]",
-                  isActive("/dashboard/profile") ? "fill-1" : "group-hover:text-primary transition-colors"
-                )}
-              >
+              <span className={cn(
+                "material-symbols-outlined text-[18px]",
+                isActive("/dashboard/profile") ? "fill-1" : "group-hover:text-primary transition-colors"
+              )}>
                 settings
               </span>
               <span className="text-[13px] font-medium">Settings</span>
@@ -445,4 +423,76 @@ ManualUpdatePanel.propTypes = {
   onCancel: PropTypes.func.isRequired,
   countdown: PropTypes.number,
   isDisconnected: PropTypes.bool,
+};
+
+function SubLink({ href, icon, label, active, onClose, indent }) {
+  return (
+    <Link
+      href={href}
+      onClick={onClose}
+      className={cn(
+        "flex items-center gap-3 py-1 rounded-lg transition-all group",
+        indent ? "px-4" : "px-3",
+        active
+          ? "bg-primary/10 text-primary"
+          : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+      )}
+    >
+      <span
+        className={cn(
+          "material-symbols-outlined",
+          indent ? "text-[16px]" : "text-[18px]",
+          active ? "fill-1" : "group-hover:text-primary transition-colors"
+        )}
+      >
+        {icon}
+      </span>
+      <span className={indent ? "text-sm" : "text-[13px] font-medium"}>{label}</span>
+    </Link>
+  );
+}
+
+SubLink.propTypes = {
+  href: PropTypes.string.isRequired,
+  icon: PropTypes.string.isRequired,
+  label: PropTypes.string.isRequired,
+  active: PropTypes.bool,
+  onClose: PropTypes.func,
+  indent: PropTypes.bool,
+};
+
+function AccordionSection({ label, icon, isOpen, onToggle, isActive, onClose, children }) {
+  return (
+    <div className="space-y-0.5">
+      <button
+        onClick={onToggle}
+        className={cn(
+          "w-full flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
+          isActive
+            ? "bg-primary/10 text-primary"
+            : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+        )}
+      >
+        <span className="material-symbols-outlined text-[18px]">{icon}</span>
+        <span className="text-[13px] font-medium flex-1 text-left">{label}</span>
+        <span
+          className="material-symbols-outlined text-[14px] transition-transform"
+          style={{ transform: isOpen ? "rotate(180deg)" : "rotate(0deg)" }}
+        >
+          expand_more
+        </span>
+      </button>
+      {isOpen && <div className="pl-2">{children}</div>}
+    </div>
+  );
+}
+
+AccordionSection.propTypes = {
+  label: PropTypes.string.isRequired,
+  icon: PropTypes.string.isRequired,
+  isOpen: PropTypes.bool,
+  onToggle: PropTypes.func.isRequired,
+  isActive: PropTypes.bool,
+  onClose: PropTypes.func,
+  children: PropTypes.node,
 };
