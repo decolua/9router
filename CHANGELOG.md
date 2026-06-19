@@ -1,5 +1,8 @@
 # v0.5.4 (2026-06-18)
 
+## Features
+- **Ponytail**: inject a lazy-senior-dev (minimal-code) system prompt to curb over-engineering; dashboard toggle next to Caveman, lite/full levels. Caveman and Ponytail now share one format-aware system-prompt injector.
+
 ## Fixes
 - **Kiro**: honor thinking effort budgets
 - **AG/Kiro/Xiaomi**: provider fixes

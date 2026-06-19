@@ -408,6 +408,7 @@ Default URLs:
 |---------|--------------|----------------|
 | 🚀 **RTK Token Saver** ([RTK](https://github.com/rtk-ai/rtk) ⭐40K) | Compress tool outputs (`git diff`, `grep`, `ls`, `tree`...) before sending to LLM | Save **20-40% input tokens** per request |
 | 🪨 **Caveman Mode** ([Caveman](https://github.com/JuliusBrussee/caveman) ⭐52K) | Inject caveman-speak prompt → LLM replies terse, technical substance preserved | Save **up to 65% output tokens** |
+| 🐴 **Ponytail Mode** ([Ponytail](https://github.com/DietrichGebert/ponytail) ⭐38K) | Inject lazy-senior-dev prompt → LLM writes the minimum code that works, never cutting validation/security | **Less over-engineering**, fewer files |
 | 🎯 **Smart 3-Tier Fallback** | Auto-route: Subscription → Cheap → Free | Never stop coding, zero downtime |
 | 📊 **Real-Time Quota Tracking** | Live token count + reset countdown | Maximize subscription value |
 | 🔄 **Format Translation** | OpenAI ↔ Claude ↔ Gemini ↔ Cursor ↔ Kiro ↔ Vertex | Works with any CLI tool |

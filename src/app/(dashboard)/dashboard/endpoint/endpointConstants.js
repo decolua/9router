@@ -24,3 +24,8 @@ export const CAVEMAN_LEVELS = [
   { id: "wenyan", label: "文 Full", desc: "Maximum 文言文, 80-90% reduction", wenyan: true },
   { id: "wenyan-ultra", label: "文 Ultra", desc: "Extreme classical compression", wenyan: true },
 ];
+
+export const PONYTAIL_LEVELS = [
+  { id: "lite", label: "Lite", desc: "Smallest change that solves it" },
+  { id: "full", label: "Full", desc: "YAGNI ladder, fewest files" },
+];
