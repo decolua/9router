@@ -22,7 +22,8 @@ const SERVER_ID_PATTERN = /^(rs|fc|resp|msg)_/;
 // Hosted tool types that Codex/OpenAI Responses executes server-side
 const CODEX_HOSTED_TOOL_TYPES = new Set([
   "image_generation", "web_search", "web_search_preview", "file_search",
-  "computer", "computer_use_preview", "code_interpreter", "mcp", "local_shell"
+  "computer", "computer_use_preview", "code_interpreter", "mcp", "local_shell",
+  "tool_search"
 ]);
 
 // Allowlist of fields accepted by Codex Responses API — anything else is stripped
