@@ -11,6 +11,7 @@ import { NextResponse } from 'next/server';
 import { supervisor } from '@/orchestrator/supervisor.js';
 import { modelRouter } from '@/orchestrator/modelRouter.js';
 import { updateSettings, getSettings } from '@/lib/localDb.js';
+import { makeKv } from '@/lib/db/helpers/kvStore.js';
 
 /**
  * POST /api/orchestrator
@@ -92,10 +93,18 @@ export async function GET() {
     const modelStats = modelRouter.getStats();
     const modelConfig = modelRouter.getConfig();
 
+    // Load last ping results from persistent store
+    let lastPingResults = null;
+    try {
+      const orchestratorKv = makeKv('orchestrator');
+      lastPingResults = await orchestratorKv.get('lastPingResults');
+    } catch { /* not fatal */ }
+
     return NextResponse.json({
       status: 'enabled',
       activeWorkflows: activeWorkflows.length,
       totalWorkflows: allWorkflows.length,
+      lastPingResults,
       supervisorModel: settings.supervisorModel,
       supervisorEndpoint: settings.supervisorEndpoint,
       settings: {

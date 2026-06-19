@@ -9,6 +9,7 @@
 import { NextResponse } from 'next/server';
 import { getProviderConnections } from '@/lib/localDb';
 import { getAdapter } from '@/lib/db/driver.js';
+import { makeKv } from '@/lib/db/helpers/kvStore.js';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120; // 2 min max
@@ -340,6 +341,31 @@ export async function POST() {
     const avgLatency = ok.length > 0 ? Math.round(ok.reduce((s, r) => s + r.latencyMs, 0) / ok.length) : 0;
 
     console.log(`[ping-all] Done: ${ok.length}/${results.length} OK, avg ${avgLatency}ms`);
+
+    // Persist results so they survive page navigation
+    try {
+      const orchestratorKv = makeKv('orchestrator');
+      await orchestratorKv.set('lastPingResults', {
+        timestamp: new Date().toISOString(),
+        summary: {
+          total: results.length,
+          ok: ok.length,
+          failed: failed.length,
+          avgLatencyMs: avgLatency,
+        },
+        results: results.map(r => ({
+          provider: r.provider,
+          connectionName: r.connectionName,
+          model: r.model,
+          status: r.status,
+          latencyMs: r.latencyMs,
+          response: r.response,
+          error: r.error,
+        })),
+      });
+    } catch (err) {
+      console.warn('[ping-all] Failed to persist results:', err.message);
+    }
 
     return NextResponse.json({
       status: 'ok',

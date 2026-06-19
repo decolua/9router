@@ -148,6 +148,7 @@ export default function OrchestratorPage() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setStatus(data);
+      if (data.lastPingResults) setPingResults(data.lastPingResults);
       const cfg = data.modelRouter?.config || {};
       // НЕ затираем формы, которые сейчас в режиме редактирования
       if (!editingSwitching) setSwitchingForm(cfg.switching || {});
@@ -317,7 +318,6 @@ export default function OrchestratorPage() {
   /* --- Прозвон всех провайдеров --- */
   const handlePingAll = async () => {
     setPingLoading(true);
-    setPingResults(null);
     setPingError(null);
     setAutoConfigResult(null);
     try {
