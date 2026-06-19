@@ -633,9 +633,12 @@ export async function getUsageStats(period = "all") {
   return stats;
 }
 
-export async function getChartData(period = "7d") {
+export async function getChartData(period = "7d", filterBy = "all") {
   const db = await getAdapter();
   const now = Date.now();
+  const isGrouped = filterBy !== "all";
+  const filterColMap = { model: "model", account: "connectionId", apiKey: "apiKey", endpoint: "endpoint" };
+  const filterCol = filterColMap[filterBy];
 
   if (period === "today") {
     const bucketCount = 24;
@@ -645,28 +648,51 @@ export async function getChartData(period = "7d") {
     const startTime = startOfDay.getTime();
     const endTime = startTime + bucketCount * bucketMs;
     const labelFn = (ts) => new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
-    const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cachedTokens: 0, promptTokens: 0, cacheHitRatio: 0, cost: 0 }));
 
+    const selectCols = isGrouped ? `timestamp, promptTokens, completionTokens, cost, tokens, ${filterCol}` : "timestamp, promptTokens, completionTokens, cost, tokens";
     const rows = db.all(
-      `SELECT timestamp, promptTokens, completionTokens, cost, tokens FROM usageHistory WHERE timestamp >= ?`,
+      `SELECT ${selectCols} FROM usageHistory WHERE timestamp >= ?`,
       [new Date(startTime).toISOString()]
     );
+
+    if (!isGrouped) {
+      const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cachedTokens: 0, promptTokens: 0, cacheHitRatio: 0, cost: 0 }));
+      for (const r of rows) {
+        const t = new Date(r.timestamp).getTime();
+        if (t < startTime || t >= endTime) continue;
+        const idx = Math.floor((t - startTime) / bucketMs);
+        if (idx >= 0 && idx < bucketCount) {
+          buckets[idx].tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
+          buckets[idx].promptTokens += (r.promptTokens || 0);
+          const parsedTokens = parseJson(r.tokens, {}) || {};
+          buckets[idx].cachedTokens += parsedTokens.cache_read_input_tokens || parsedTokens.cached_tokens || 0;
+          buckets[idx].cost += r.cost || 0;
+        }
+      }
+      for (const b of buckets) b.cacheHitRatio = b.promptTokens > 0 ? b.cachedTokens / b.promptTokens : 0;
+      return buckets;
+    }
+
+    // Grouped mode
+    const groups = {};
     for (const r of rows) {
       const t = new Date(r.timestamp).getTime();
       if (t < startTime || t >= endTime) continue;
       const idx = Math.floor((t - startTime) / bucketMs);
-      if (idx >= 0 && idx < bucketCount) {
-        buckets[idx].tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
-        buckets[idx].promptTokens += (r.promptTokens || 0);
-        const parsedTokens = parseJson(r.tokens, {}) || {};
-        buckets[idx].cachedTokens += parsedTokens.cache_read_input_tokens || parsedTokens.cached_tokens || 0;
-        buckets[idx].cost += r.cost || 0;
-      }
+      if (idx < 0 || idx >= bucketCount) continue;
+      const gk = r[filterCol] || "unknown";
+      if (!groups[gk]) groups[gk] = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cachedTokens: 0, promptTokens: 0, cacheHitRatio: 0, cost: 0 }));
+      const g = groups[gk][idx];
+      g.tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
+      g.promptTokens += (r.promptTokens || 0);
+      const parsedTokens = parseJson(r.tokens, {}) || {};
+      g.cachedTokens += parsedTokens.cache_read_input_tokens || parsedTokens.cached_tokens || 0;
+      g.cost += r.cost || 0;
     }
-    for (const b of buckets) {
-      b.cacheHitRatio = b.promptTokens > 0 ? b.cachedTokens / b.promptTokens : 0;
+    for (const group of Object.values(groups)) {
+      for (const b of group) b.cacheHitRatio = b.promptTokens > 0 ? b.cachedTokens / b.promptTokens : 0;
     }
-    return buckets;
+    return { grouped: true, filterBy, groups };
   }
 
   if (period === "24h") {
@@ -674,55 +700,114 @@ export async function getChartData(period = "7d") {
     const bucketMs = 3600000;
     const labelFn = (ts) => new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
     const startTime = now - bucketCount * bucketMs;
-    const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cachedTokens: 0, promptTokens: 0, cacheHitRatio: 0, cost: 0 }));
 
+    const selectCols = isGrouped ? `timestamp, promptTokens, completionTokens, cost, tokens, ${filterCol}` : "timestamp, promptTokens, completionTokens, cost, tokens";
     const rows = db.all(
-      `SELECT timestamp, promptTokens, completionTokens, cost, tokens FROM usageHistory WHERE timestamp >= ?`,
+      `SELECT ${selectCols} FROM usageHistory WHERE timestamp >= ?`,
       [new Date(startTime).toISOString()]
     );
+
+    if (!isGrouped) {
+      const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cachedTokens: 0, promptTokens: 0, cacheHitRatio: 0, cost: 0 }));
+      for (const r of rows) {
+        const t = new Date(r.timestamp).getTime();
+        if (t < startTime || t > now) continue;
+        const idx = Math.min(Math.floor((t - startTime) / bucketMs), bucketCount - 1);
+        buckets[idx].tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
+        buckets[idx].promptTokens += (r.promptTokens || 0);
+        const parsedTokens = parseJson(r.tokens, {}) || {};
+        buckets[idx].cachedTokens += parsedTokens.cache_read_input_tokens || parsedTokens.cached_tokens || 0;
+        buckets[idx].cost += r.cost || 0;
+      }
+      for (const b of buckets) b.cacheHitRatio = b.promptTokens > 0 ? b.cachedTokens / b.promptTokens : 0;
+      return buckets;
+    }
+
+    // Grouped mode
+    const groups = {};
     for (const r of rows) {
       const t = new Date(r.timestamp).getTime();
       if (t < startTime || t > now) continue;
       const idx = Math.min(Math.floor((t - startTime) / bucketMs), bucketCount - 1);
-      buckets[idx].tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
-      buckets[idx].promptTokens += (r.promptTokens || 0);
+      const gk = r[filterCol] || "unknown";
+      if (!groups[gk]) groups[gk] = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cachedTokens: 0, promptTokens: 0, cacheHitRatio: 0, cost: 0 }));
+      const g = groups[gk][idx];
+      g.tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
+      g.promptTokens += (r.promptTokens || 0);
       const parsedTokens = parseJson(r.tokens, {}) || {};
-      buckets[idx].cachedTokens += parsedTokens.cache_read_input_tokens || parsedTokens.cached_tokens || 0;
-      buckets[idx].cost += r.cost || 0;
+      g.cachedTokens += parsedTokens.cache_read_input_tokens || parsedTokens.cached_tokens || 0;
+      g.cost += r.cost || 0;
     }
-    for (const b of buckets) {
-      b.cacheHitRatio = b.promptTokens > 0 ? b.cachedTokens / b.promptTokens : 0;
+    for (const group of Object.values(groups)) {
+      for (const b of group) b.cacheHitRatio = b.promptTokens > 0 ? b.cachedTokens / b.promptTokens : 0;
     }
-    return buckets;
+    return { grouped: true, filterBy, groups };
   }
 
+  // 7d / 30d / 60d
   const bucketCount = period === "7d" ? 7 : period === "30d" ? 30 : 60;
   const today = new Date();
   const labelFn = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
-  // Build map of dateKey → day data
-  const dayRows = loadDaysInRange(db, bucketCount);
-  const dayMap = {};
-  for (const r of dayRows) dayMap[r.dateKey] = parseJson(r.data, {});
+  if (!isGrouped) {
+    const dayRows = loadDaysInRange(db, bucketCount);
+    const dayMap = {};
+    for (const r of dayRows) dayMap[r.dateKey] = parseJson(r.data, {});
 
-  return Array.from({ length: bucketCount }, (_, i) => {
-    const d = new Date(today);
-    d.setDate(d.getDate() - (bucketCount - 1 - i));
-    const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    const dayData = dayMap[dateKey];
-    const promptTokens = dayData ? (dayData.promptTokens || 0) : 0;
-    const cachedTokens = dayData ? (dayData.cacheReadTokens || 0) : 0;
-    return {
-      label: labelFn(d),
-      tokens: dayData ? (dayData.promptTokens || 0) + (dayData.completionTokens || 0) : 0,
-      cachedTokens,
-      promptTokens,
-      cacheHitRatio: promptTokens > 0 ? cachedTokens / promptTokens : 0,
-      cost: dayData ? (dayData.cost || 0) : 0,
-    };
-  });
+    return Array.from({ length: bucketCount }, (_, i) => {
+      const d = new Date(today);
+      d.setDate(d.getDate() - (bucketCount - 1 - i));
+      const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const dayData = dayMap[dateKey];
+      const promptTokens = dayData ? (dayData.promptTokens || 0) : 0;
+      const cachedTokens = dayData ? (dayData.cacheReadTokens || 0) : 0;
+      return {
+        label: labelFn(d),
+        tokens: dayData ? (dayData.promptTokens || 0) + (dayData.completionTokens || 0) : 0,
+        cachedTokens,
+        promptTokens,
+        cacheHitRatio: promptTokens > 0 ? cachedTokens / promptTokens : 0,
+        cost: dayData ? (dayData.cost || 0) : 0,
+      };
+    });
+  }
+
+  // Grouped mode for 7d/30d/60d: query usageHistory directly
+  const startTime2 = new Date(today);
+  startTime2.setDate(today.getDate() - (bucketCount - 1));
+  startTime2.setHours(0, 0, 0, 0);
+  const bucketMs2 = 86400000;
+
+  const selectCols2 = `timestamp, promptTokens, completionTokens, cost, tokens, ${filterCol}`;
+  const rows2 = db.all(
+    `SELECT ${selectCols2} FROM usageHistory WHERE timestamp >= ?`,
+    [startTime2.toISOString()]
+  );
+
+  const groups2 = {};
+  for (const r of rows2) {
+    const t = new Date(r.timestamp).getTime();
+    if (t < startTime2.getTime()) continue;
+    const idx = Math.min(Math.floor((t - startTime2.getTime()) / bucketMs2), bucketCount - 1);
+    if (idx < 0) continue;
+    const gk = r[filterCol] || "unknown";
+    if (!groups2[gk]) groups2[gk] = Array.from({ length: bucketCount }, (_, i) => {
+      const d = new Date(today);
+      d.setDate(d.getDate() - (bucketCount - 1 - i));
+      return { label: labelFn(d), tokens: 0, cachedTokens: 0, promptTokens: 0, cacheHitRatio: 0, cost: 0 };
+    });
+    const g = groups2[gk][idx];
+    g.tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
+    g.promptTokens += (r.promptTokens || 0);
+    const parsedTokens = parseJson(r.tokens, {}) || {};
+    g.cachedTokens += parsedTokens.cache_read_input_tokens || parsedTokens.cached_tokens || 0;
+    g.cost += r.cost || 0;
+  }
+  for (const group of Object.values(groups2)) {
+    for (const b of group) b.cacheHitRatio = b.promptTokens > 0 ? b.cachedTokens / b.promptTokens : 0;
+  }
+  return { grouped: true, filterBy, groups: groups2 };
 }
-
 function formatLogDate(date = new Date()) {
   const pad = (n) => String(n).padStart(2, "0");
   return `${pad(date.getDate())}-${pad(date.getMonth() + 1)}-${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
