@@ -1,5 +1,48 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`GOLDEN buildHeaders (default executor providers) > agentrouter → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Anthropic-Beta": "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05,advanced-tool-use-2025-11-20,effort-2025-11-24,structured-outputs-2025-12-15,fast-mode-2026-02-01,redact-thinking-2026-02-12,token-efficient-tools-2026-03-28",
+    "Anthropic-Dangerous-Direct-Browser-Access": "true",
+    "Anthropic-Version": "2023-06-01",
+    "Content-Type": "application/json",
+    "User-Agent": "claude-cli/2.1.92 (external, sdk-cli)",
+    "X-App": "cli",
+    "X-Stainless-Helper-Method": "stream",
+    "X-Stainless-Lang": "js",
+    "X-Stainless-Runtime": "node",
+    "x-api-key": "<CRED>",
+  },
+  "nonStream": {
+    "Anthropic-Beta": "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05,advanced-tool-use-2025-11-20,effort-2025-11-24,structured-outputs-2025-12-15,fast-mode-2026-02-01,redact-thinking-2026-02-12,token-efficient-tools-2026-03-28",
+    "Anthropic-Dangerous-Direct-Browser-Access": "true",
+    "Anthropic-Version": "2023-06-01",
+    "Content-Type": "application/json",
+    "User-Agent": "claude-cli/2.1.92 (external, sdk-cli)",
+    "X-App": "cli",
+    "X-Stainless-Helper-Method": "stream",
+    "X-Stainless-Lang": "js",
+    "X-Stainless-Runtime": "node",
+    "x-api-key": "<CRED>",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Anthropic-Beta": "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05,advanced-tool-use-2025-11-20,effort-2025-11-24,structured-outputs-2025-12-15,fast-mode-2026-02-01,redact-thinking-2026-02-12,token-efficient-tools-2026-03-28",
+    "Anthropic-Dangerous-Direct-Browser-Access": "true",
+    "Anthropic-Version": "2023-06-01",
+    "Content-Type": "application/json",
+    "User-Agent": "claude-cli/2.1.92 (external, sdk-cli)",
+    "X-App": "cli",
+    "X-Stainless-Helper-Method": "stream",
+    "X-Stainless-Lang": "js",
+    "X-Stainless-Runtime": "node",
+    "x-api-key": "<CRED>",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > ai21 → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -195,6 +238,28 @@ exports[`GOLDEN buildHeaders (default executor providers) > baidu → headers (a
     "Accept": "text/event-stream",
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
+  },
+}
+`;
+
+exports[`GOLDEN buildHeaders (default executor providers) > bailian-coding-plan → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Anthropic-Version": "2023-06-01",
+    "Content-Type": "application/json",
+    "x-api-key": "<CRED>",
+  },
+  "nonStream": {
+    "Anthropic-Version": "2023-06-01",
+    "Content-Type": "application/json",
+    "x-api-key": "<CRED>",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Anthropic-Version": "2023-06-01",
+    "Content-Type": "application/json",
+    "x-api-key": "<CRED>",
   },
 }
 `;
@@ -2222,6 +2287,28 @@ exports[`GOLDEN buildHeaders (default executor providers) > volcengine-ark → h
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > wafer → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Anthropic-Version": "2023-06-01",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Anthropic-Version": "2023-06-01",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Anthropic-Version": "2023-06-01",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > wandb → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -2317,6 +2404,13 @@ exports[`GOLDEN buildHeaders (default executor providers) > zenmux → headers (
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > agentrouter → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://agentrouter.org/v1/messages",
+  "stream": "https://agentrouter.org/v1/messages",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > ai21 → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://api.ai21.com/studio/v1/chat/completions",
@@ -2384,6 +2478,13 @@ exports[`GOLDEN buildUrl (default executor providers) > baidu → url (stream + 
 {
   "nonStream": "https://qianfan.baidubce.com/v2/chat/completions",
   "stream": "https://qianfan.baidubce.com/v2/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > bailian-coding-plan → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://coding-intl.dashscope.aliyuncs.com/apps/anthropic/v1/messages",
+  "stream": "https://coding-intl.dashscope.aliyuncs.com/apps/anthropic/v1/messages",
 }
 `;
 
@@ -3084,6 +3185,13 @@ exports[`GOLDEN buildUrl (default executor providers) > volcengine-ark → url (
 {
   "nonStream": "https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions",
   "stream": "https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > wafer → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://pass.wafer.ai/v1/messages",
+  "stream": "https://pass.wafer.ai/v1/messages",
 }
 `;
 
