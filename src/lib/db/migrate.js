@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { LEGACY_FILES, DB_DIR, DATA_FILE } from "./paths.js";
+import { normalizeApiKeyUsageId, normalizeUsageDailySummary } from "./helpers/apiKeyUsageId.js";
 import { TABLES, buildCreateTableSql } from "./schema.js";
 import { MIGRATIONS, latestVersion } from "./migrations/index.js";
 import { getMetaSync, setMetaSync } from "./helpers/metaStore.js";
@@ -177,7 +178,7 @@ function importLegacyUsage(adapter, data) {
       `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         e.timestamp || new Date().toISOString(),
-        e.provider || null, e.model || null, e.connectionId || null, e.apiKey || null, e.endpoint || null,
+        e.provider || null, e.model || null, e.connectionId || null, normalizeApiKeyUsageId(e.apiKey), e.endpoint || null,
         t.prompt_tokens || t.input_tokens || 0,
         t.completion_tokens || t.output_tokens || 0,
         e.cost || 0,
@@ -188,7 +189,7 @@ function importLegacyUsage(adapter, data) {
     );
   }
   for (const [dateKey, day] of Object.entries(data.dailySummary || {})) {
-    adapter.run(`INSERT OR REPLACE INTO usageDaily(dateKey, data) VALUES(?, ?)`, [dateKey, stringifyJson(day)]);
+    adapter.run(`INSERT OR REPLACE INTO usageDaily(dateKey, data) VALUES(?, ?)`, [dateKey, stringifyJson(normalizeUsageDailySummary(day))]);
   }
   if (typeof data.totalRequestsLifetime === "number") {
     setMetaSync(adapter, "totalRequestsLifetime", data.totalRequestsLifetime);
