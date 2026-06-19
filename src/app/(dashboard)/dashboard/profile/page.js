@@ -462,6 +462,21 @@ export default function ProfilePage() {
     }
   };
 
+  const updateLogToolSources = async (enabled) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ logToolSources: enabled }),
+      });
+      if (res.ok) {
+        setSettings(prev => ({ ...prev, logToolSources: enabled }));
+      }
+    } catch (err) {
+      console.error("Failed to update logToolSources:", err);
+    }
+  };
+
   const reloadSettings = async () => {
     try {
       const res = await fetch("/api/settings");
@@ -553,6 +568,7 @@ export default function ProfilePage() {
   };
 
   const observabilityEnabled = settings.enableObservability === true;
+  const logToolSourcesEnabled = settings.logToolSources === true;
 
   const handleShutdown = async () => {
     setIsShuttingDown(true);
@@ -1089,18 +1105,34 @@ export default function ProfilePage() {
             </div>
             <h3 className="text-base sm:text-lg font-semibold">Observability</h3>
           </div>
-          <div className="flex items-start sm:items-center justify-between gap-4">
-            <div className="flex-1 min-w-0">
-              <p className="font-medium text-sm sm:text-base">Enable Observability</p>
-              <p className="text-xs sm:text-sm text-text-muted">
-                Record request details for inspection in the logs view
-              </p>
+          <div className="flex flex-col gap-4">
+            <div className="flex items-start sm:items-center justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm sm:text-base">Enable Observability</p>
+                <p className="text-xs sm:text-sm text-text-muted">
+                  Record request details for inspection in the logs view
+                </p>
+              </div>
+              <Toggle
+                checked={observabilityEnabled}
+                onChange={updateObservabilityEnabled}
+                disabled={loading}
+              />
             </div>
-            <Toggle
-              checked={observabilityEnabled}
-              onChange={updateObservabilityEnabled}
-              disabled={loading}
-            />
+
+            <div className="flex items-start sm:items-center justify-between gap-4 pt-4 border-t border-border/50">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm sm:text-base">Log Tool Sources</p>
+                <p className="text-xs sm:text-sm text-text-muted">
+                  Add a diagnostic [TOOLS] line with tool names and MCP/source counts for each request
+                </p>
+              </div>
+              <Toggle
+                checked={logToolSourcesEnabled}
+                onChange={updateLogToolSources}
+                disabled={loading}
+              />
+            </div>
           </div>
         </Card>
 
