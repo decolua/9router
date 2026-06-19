@@ -34,6 +34,8 @@ const DEFAULT_SETTINGS = {
   mitmRouterBaseUrl: DEFAULT_MITM_ROUTER_BASE,
   dnsToolEnabled: {},
   rtkEnabled: true,
+  headroomEnabled: false,
+  headroomUrl: "http://localhost:8787",
   cavemanEnabled: false,
   cavemanLevel: "full",
 };

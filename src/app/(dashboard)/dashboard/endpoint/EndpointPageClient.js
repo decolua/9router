@@ -33,6 +33,8 @@ export default function APIPageClient({ machineId }) {
   const [hasPassword, setHasPassword] = useState(true);
   const [tunnelDashboardAccess, setTunnelDashboardAccess] = useState(false);
   const [rtkEnabled, setRtkEnabledState] = useState(true);
+  const [headroomEnabled, setHeadroomEnabled] = useState(false);
+  const [headroomUrl, setHeadroomUrl] = useState("http://localhost:8787");
   const [cavemanEnabled, setCavemanEnabled] = useState(false);
   const [cavemanLevel, setCavemanLevel] = useState("full");
   const [locale, setLocale] = useState("en");
@@ -232,6 +234,8 @@ export default function APIPageClient({ machineId }) {
         setHasPassword(data.hasPassword || false);
         setTunnelDashboardAccess(data.tunnelDashboardAccess || false);
         setRtkEnabledState(data.rtkEnabled !== false);
+        setHeadroomEnabled(!!data.headroomEnabled);
+        setHeadroomUrl(data.headroomUrl || "http://localhost:8787");
         setCavemanEnabled(!!data.cavemanEnabled);
         setCavemanLevel(data.cavemanLevel || "full");
       }
@@ -311,6 +315,19 @@ export default function APIPageClient({ machineId }) {
   const handleCavemanEnabled = (value) => {
     setCavemanEnabled(value);
     patchSetting({ cavemanEnabled: value });
+  };
+
+  const handleHeadroomEnabled = (value) => {
+    const nextUrl = headroomUrl.trim() || "http://localhost:8787";
+    setHeadroomUrl(nextUrl);
+    setHeadroomEnabled(value);
+    patchSetting({ headroomEnabled: value, headroomUrl: nextUrl });
+  };
+
+  const handleHeadroomUrlBlur = () => {
+    const next = headroomUrl.trim() || "http://localhost:8787";
+    setHeadroomUrl(next);
+    patchSetting({ headroomUrl: next });
   };
 
   const handleCavemanLevel = (level) => {
@@ -1041,6 +1058,37 @@ export default function APIPageClient({ machineId }) {
           <Toggle
             checked={rtkEnabled}
             onChange={() => handleRtkEnabled(!rtkEnabled)}
+          />
+        </div>
+        <div className="flex items-center justify-between py-4 border-b border-border gap-4 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">
+              Compress context{" "}
+              <a
+                href="https://github.com/chopratejas/headroom"
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs font-normal text-primary underline hover:opacity-80"
+              >
+                (Headroom)
+              </a>
+            </p>
+            <p className="text-sm text-text-muted">
+              Run Headroom separately → compress via /v1/compress before provider routing
+            </p>
+            {headroomEnabled && (
+              <Input
+                value={headroomUrl}
+                onChange={(e) => setHeadroomUrl(e.target.value)}
+                onBlur={handleHeadroomUrlBlur}
+                placeholder="http://localhost:8787"
+                className="mt-3 font-mono text-sm"
+              />
+            )}
+          </div>
+          <Toggle
+            checked={headroomEnabled}
+            onChange={() => handleHeadroomEnabled(!headroomEnabled)}
           />
         </div>
         <div className="flex items-center justify-between pt-4 gap-4 flex-wrap">

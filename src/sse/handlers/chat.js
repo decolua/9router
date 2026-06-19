@@ -251,6 +251,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       apiKey,
       ccFilterNaming: !!chatSettings.ccFilterNaming,
       rtkEnabled: !!chatSettings.rtkEnabled,
+      headroomEnabled: !!chatSettings.headroomEnabled,
+      headroomUrl: chatSettings.headroomUrl || "http://localhost:8787",
       cavemanEnabled: !!chatSettings.cavemanEnabled,
       cavemanLevel: chatSettings.cavemanLevel || "full",
       providerThinking,
