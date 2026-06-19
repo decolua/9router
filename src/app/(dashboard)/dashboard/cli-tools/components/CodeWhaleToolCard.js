@@ -7,9 +7,11 @@ import BaseUrlSelect from "./BaseUrlSelect";
 import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 
-const ENDPOINT = "/api/cli-tools/deepseek-tui-settings";
+const ENDPOINT = "/api/cli-tools/codewhale-settings";
+const PRIMARY_CONFIG_PATH = "~/.codewhale/config.toml";
+const LEGACY_CONFIG_PATH = "~/.deepseek/config.toml";
 
-export default function DeepSeekTuiToolCard({
+export default function CodeWhaleToolCard({
   tool,
   isExpanded,
   onToggle,
@@ -24,7 +26,7 @@ export default function DeepSeekTuiToolCard({
   tailscaleEnabled,
   tailscaleUrl,
 }) {
-  const [deepseekStatus, setDeepseekStatus] = useState(initialStatus || null);
+  const [codewhaleStatus, setCodewhaleStatus] = useState(initialStatus || null);
   const [checking, setChecking] = useState(false);
   const [applying, setApplying] = useState(false);
   const [restoring, setRestoring] = useState(false);
@@ -38,8 +40,8 @@ export default function DeepSeekTuiToolCard({
   const hasInitializedModel = useRef(false);
 
   const getConfigStatus = () => {
-    if (!deepseekStatus?.installed) return null;
-    const openaiSection = deepseekStatus.settings?.["providers.openai"];
+    if (!codewhaleStatus?.installed) return null;
+    const openaiSection = codewhaleStatus.settings?.["providers.openai"];
     if (!openaiSection?.base_url) return "not_configured";
     if (matchKnownEndpoint(openaiSection.base_url, { tunnelPublicUrl, tailscaleUrl })) return "configured";
     return "other";
@@ -54,11 +56,11 @@ export default function DeepSeekTuiToolCard({
   }, [apiKeys, selectedApiKey]);
 
   useEffect(() => {
-    if (initialStatus) setDeepseekStatus(initialStatus);
+    if (initialStatus) setCodewhaleStatus(initialStatus);
   }, [initialStatus]);
 
   useEffect(() => {
-    if (isExpanded && !deepseekStatus) {
+    if (isExpanded && !codewhaleStatus) {
       checkStatus();
       fetchModelAliases();
     }
@@ -76,21 +78,21 @@ export default function DeepSeekTuiToolCard({
   };
 
   useEffect(() => {
-    if (deepseekStatus?.installed && !hasInitializedModel.current) {
+    if (codewhaleStatus?.installed && !hasInitializedModel.current) {
       hasInitializedModel.current = true;
-      const openaiSection = deepseekStatus.settings?.["providers.openai"];
+      const openaiSection = codewhaleStatus.settings?.["providers.openai"];
       if (openaiSection?.model) setSelectedModel(openaiSection.model);
     }
-  }, [deepseekStatus]);
+  }, [codewhaleStatus]);
 
   const checkStatus = async () => {
     setChecking(true);
     try {
       const res = await fetch(ENDPOINT);
       const data = await res.json();
-      setDeepseekStatus(data);
+      setCodewhaleStatus(data);
     } catch (error) {
-      setDeepseekStatus({ installed: false, error: error.message });
+      setCodewhaleStatus({ installed: false, error: error.message });
     } finally {
       setChecking(false);
     }
@@ -178,7 +180,8 @@ model = "${selectedModel || "provider/model-id"}"
 `;
 
     return [
-      { filename: "~/.deepseek/config.toml", content: tomlContent },
+      { filename: PRIMARY_CONFIG_PATH, content: tomlContent },
+      { filename: LEGACY_CONFIG_PATH, content: tomlContent },
     ];
   };
 
@@ -187,7 +190,7 @@ model = "${selectedModel || "provider/model-id"}"
       <div className="flex items-start justify-between gap-3 hover:cursor-pointer sm:items-center" onClick={onToggle}>
         <div className="flex min-w-0 items-center gap-3">
           <div className="size-8 flex items-center justify-center shrink-0">
-            <Image src={tool.image || "/providers/deepseek-tui.png"} alt={tool.name} width={32} height={32} className="size-8 object-contain rounded-lg" sizes="32px" onError={(e) => { e.target.style.display = "none"; }} />
+            <Image src={tool.image || "/providers/codewhale.png"} alt={tool.name} width={32} height={32} className="size-8 object-contain rounded-lg" sizes="32px" onError={(e) => { e.target.style.display = "none"; }} />
           </div>
           <div className="min-w-0">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -207,19 +210,20 @@ model = "${selectedModel || "provider/model-id"}"
           {checking && (
             <div className="flex items-center gap-2 text-text-muted">
               <span className="material-symbols-outlined animate-spin">progress_activity</span>
-              <span>Checking DeepSeek TUI...</span>
+              <span>Checking CodeWhale...</span>
             </div>
           )}
 
-          {!checking && deepseekStatus && !deepseekStatus.installed && (
+          {!checking && codewhaleStatus && !codewhaleStatus.installed && (
             <div className="flex flex-col gap-4">
               <div className="flex flex-col gap-3 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
                 <div className="flex items-start gap-3">
                   <span className="material-symbols-outlined text-yellow-500">warning</span>
                   <div className="flex-1">
-                    <p className="font-medium text-yellow-600 dark:text-yellow-400">DeepSeek TUI not detected locally</p>
-                    <p className="text-sm text-text-muted mt-1">Install via npm:</p>
-                    <code className="block mt-2 p-2 bg-black/20 rounded text-xs font-mono">npm install -g deepseek-tui</code>
+                    <p className="font-medium text-yellow-600 dark:text-yellow-400">CodeWhale not detected locally</p>
+                    <p className="text-sm text-text-muted mt-1">Install via Cargo (recommended):</p>
+                    <code className="block mt-2 p-2 bg-black/20 rounded text-xs font-mono">cargo install codewhale-cli --locked</code>
+                    <code className="block mt-1 p-2 bg-black/20 rounded text-xs font-mono">cargo install codewhale-tui --locked</code>
                     <p className="text-sm text-text-muted mt-2">Manual configuration is still available if 9router is deployed on a remote server.</p>
                   </div>
                 </div>
@@ -233,7 +237,7 @@ model = "${selectedModel || "provider/model-id"}"
             </div>
           )}
 
-          {!checking && deepseekStatus?.installed && (
+          {!checking && codewhaleStatus?.installed && (
             <>
               <div className="flex flex-col gap-2">
                 {tool.notes && tool.notes.length > 0 && (
@@ -267,12 +271,12 @@ model = "${selectedModel || "provider/model-id"}"
                   />
                 </div>
 
-                {deepseekStatus?.settings?.["providers.openai"]?.base_url && (
+                {codewhaleStatus?.settings?.["providers.openai"]?.base_url && (
                   <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                     <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Current</span>
                     <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
                     <span className="min-w-0 truncate rounded bg-surface/40 px-2 py-2 text-xs text-text-muted sm:py-1.5">
-                      {deepseekStatus.settings["providers.openai"].base_url}
+                      {codewhaleStatus.settings["providers.openai"].base_url}
                     </span>
                   </div>
                 )}
@@ -305,7 +309,7 @@ model = "${selectedModel || "provider/model-id"}"
                 <Button variant="primary" size="sm" onClick={handleApply} disabled={!selectedModel} loading={applying}>
                   <span className="material-symbols-outlined text-[14px] mr-1">save</span>Apply
                 </Button>
-                <Button variant="outline" size="sm" onClick={handleReset} disabled={!deepseekStatus?.has9Router} loading={restoring}>
+                <Button variant="outline" size="sm" onClick={handleReset} disabled={!codewhaleStatus?.has9Router} loading={restoring}>
                   <span className="material-symbols-outlined text-[14px] mr-1">restore</span>Reset
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setShowManualConfigModal(true)}>
@@ -324,13 +328,13 @@ model = "${selectedModel || "provider/model-id"}"
         selectedModel={selectedModel}
         activeProviders={activeProviders}
         modelAliases={modelAliases}
-        title="Select Model for DeepSeek TUI"
+        title="Select Model for CodeWhale"
       />
 
       <ManualConfigModal
         isOpen={showManualConfigModal}
         onClose={() => setShowManualConfigModal(false)}
-        title="DeepSeek TUI - Manual Configuration"
+        title="CodeWhale - Manual Configuration"
         configs={getManualConfigs()}
       />
     </Card>

@@ -70,6 +70,7 @@
 - xiaomi-tokenplan: add Claude-native MiMo V2.5 Pro alias via dedicated executor
 - Qoder: fetch latest model + dashboard import-model button (#1642)
 - MiniMax: add MiniMax-M3 + update Quota Tracker coding/CN (#1631)
+- CLI Tools: replace DeepSeek TUI with CodeWhale (config folder `~/.codewhale` with legacy `~/.deepseek` read-fallback)
 
 ## Fixes
 - Codex: harden streaming timeouts (stall/connect raised to 60s, configurable per-provider), accept `response.done` event, and always emit a terminal `response.failed` + `[DONE]` for Responses passthrough when a stream closes, stalls, or aborts before a terminal event — prevents codex clients from hanging (#1648, #1680, #1688, #1618)

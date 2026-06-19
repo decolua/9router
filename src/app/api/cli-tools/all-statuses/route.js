@@ -11,7 +11,7 @@ import { GET as coworkGet } from "../cowork-settings/route";
 import { GET as copilotGet } from "../copilot-settings/route";
 import { GET as clineGet } from "../cline-settings/route";
 import { GET as kiloGet } from "../kilo-settings/route";
-import { GET as deepseekTuiGet } from "../deepseek-tui-settings/route";
+import { GET as codewhaleGet } from "../codewhale-settings/route";
 import { GET as jcodeGet } from "../jcode-settings/route";
 
 const STATUS_GETTERS = {
@@ -25,7 +25,7 @@ const STATUS_GETTERS = {
   copilot: copilotGet,
   cline: clineGet,
   kilo: kiloGet,
-  "deepseek-tui": deepseekTuiGet,
+  codewhale: codewhaleGet,
   jcode: jcodeGet,
 };
 

@@ -10,9 +10,14 @@ import os from "os";
 const execAsync = promisify(exec);
 
 const PROVIDER_NAME = "9router";
+const LEGACY_DIR_NAME = ".deepseek";
+const PRIMARY_DIR_NAME = ".codewhale";
 
-const getDeepSeekDir = () => path.join(os.homedir(), ".deepseek");
-const getDeepSeekConfigPath = () => path.join(getDeepSeekDir(), "config.toml");
+const getLegacyDir = () => path.join(os.homedir(), LEGACY_DIR_NAME);
+const getPrimaryDir = () => path.join(os.homedir(), PRIMARY_DIR_NAME);
+
+const getPrimaryConfigPath = () => path.join(getPrimaryDir(), "config.toml");
+const getLegacyConfigPath = () => path.join(getLegacyDir(), "config.toml");
 
 // Simple TOML parser for key = "value" and [section] patterns
 const parseToml = (content) => {
@@ -63,32 +68,71 @@ model = "${model}"
 `;
 };
 
-// Default DeepSeek config (reset state)
+// Default CodeWhale config (reset state)
 const DEFAULT_CONFIG = `provider = "deepseek"
 `;
 
-const checkDeepSeekInstalled = async () => {
+const checkCodeWhaleInstalled = async () => {
     try {
         const isWindows = os.platform() === "win32";
-        const command = isWindows ? "where deepseek" : "which deepseek";
+        const command = isWindows ? "where codewhale" : "which codewhale";
         await execAsync(command, { windowsHide: true });
         return true;
     } catch {
         try {
-            await fs.access(getDeepSeekConfigPath());
+            await fs.access(getPrimaryConfigPath());
             return true;
         } catch {
-            return false;
+            try {
+                await fs.access(getLegacyConfigPath());
+                return true;
+            } catch {
+                return false;
+            }
         }
     }
 };
 
+// Read config from primary path, falling back to legacy path for upgrading users.
 const readConfigToml = async () => {
+    for (const candidate of [getPrimaryConfigPath(), getLegacyConfigPath()]) {
+        try {
+            return await fs.readFile(candidate, "utf-8");
+        } catch (error) {
+            if (error.code !== "ENOENT") throw error;
+        }
+    }
+    return "";
+};
+
+// Pick the path to use for a new write: prefer the primary ~/.codewhale folder,
+// or fall back to legacy ~/.deepseek if the primary does not exist and legacy does.
+const resolveWriteConfigPath = async () => {
     try {
-        return await fs.readFile(getDeepSeekConfigPath(), "utf-8");
-    } catch (error) {
-        if (error.code === "ENOENT") return "";
-        throw error;
+        await fs.access(getPrimaryConfigPath());
+        return getPrimaryConfigPath();
+    } catch {
+        try {
+            await fs.access(getLegacyConfigPath());
+            return getLegacyConfigPath();
+        } catch {
+            return getPrimaryConfigPath();
+        }
+    }
+};
+
+// The path exposed to the UI for the active config file (read location).
+const getActiveConfigPath = async () => {
+    try {
+        await fs.access(getPrimaryConfigPath());
+        return getPrimaryConfigPath();
+    } catch {
+        try {
+            await fs.access(getLegacyConfigPath());
+            return getLegacyConfigPath();
+        } catch {
+            return getPrimaryConfigPath();
+        }
     }
 };
 
@@ -104,9 +148,9 @@ const has9RouterConfig = (config) => {
 
 export async function GET() {
     try {
-        const installed = await checkDeepSeekInstalled();
+        const installed = await checkCodeWhaleInstalled();
         if (!installed) {
-            return NextResponse.json({ installed: false, settings: null, message: "DeepSeek TUI is not installed" });
+            return NextResponse.json({ installed: false, settings: null, message: "CodeWhale is not installed" });
         }
         const toml = await readConfigToml();
         const config = parseToml(toml);
@@ -114,11 +158,11 @@ export async function GET() {
             installed: true,
             settings: config,
             has9Router: has9RouterConfig(config),
-            configPath: getDeepSeekConfigPath(),
+            configPath: await getActiveConfigPath(),
         });
     } catch (error) {
-        console.log("Error checking deepseek-tui settings:", error);
-        return NextResponse.json({ error: "Failed to check deepseek-tui settings" }, { status: 500 });
+        console.log("Error checking codewhale settings:", error);
+        return NextResponse.json({ error: "Failed to check codewhale settings" }, { status: 500 });
     }
 }
 
@@ -129,26 +173,26 @@ export async function POST(request) {
             return NextResponse.json({ error: "baseUrl and model are required" }, { status: 400 });
         }
 
-        const dir = getDeepSeekDir();
-        await fs.mkdir(dir, { recursive: true });
+        const targetPath = await resolveWriteConfigPath();
+        await fs.mkdir(path.dirname(targetPath), { recursive: true });
 
         const newConfig = build9RouterConfig(baseUrl, apiKey || "sk_9router", model);
-        await fs.writeFile(getDeepSeekConfigPath(), newConfig);
+        await fs.writeFile(targetPath, newConfig);
 
         return NextResponse.json({
             success: true,
-            message: "DeepSeek TUI settings applied successfully!",
-            configPath: getDeepSeekConfigPath(),
+            message: "CodeWhale settings applied successfully!",
+            configPath: targetPath,
         });
     } catch (error) {
-        console.log("Error updating deepseek-tui settings:", error);
-        return NextResponse.json({ error: "Failed to update deepseek-tui settings" }, { status: 500 });
+        console.log("Error updating codewhale settings:", error);
+        return NextResponse.json({ error: "Failed to update codewhale settings" }, { status: 500 });
     }
 }
 
 export async function DELETE() {
     try {
-        const configPath = getDeepSeekConfigPath();
+        const configPath = await resolveWriteConfigPath();
         try {
             await fs.access(configPath);
         } catch {
@@ -156,9 +200,9 @@ export async function DELETE() {
         }
 
         await fs.writeFile(configPath, DEFAULT_CONFIG);
-        return NextResponse.json({ success: true, message: `${PROVIDER_NAME} config reset to DeepSeek defaults` });
+        return NextResponse.json({ success: true, message: `${PROVIDER_NAME} config reset to CodeWhale defaults` });
     } catch (error) {
-        console.log("Error resetting deepseek-tui settings:", error);
-        return NextResponse.json({ error: "Failed to reset deepseek-tui settings" }, { status: 500 });
+        console.log("Error resetting codewhale settings:", error);
+        return NextResponse.json({ error: "Failed to reset codewhale settings" }, { status: 500 });
     }
 }
