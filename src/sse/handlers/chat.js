@@ -12,6 +12,7 @@ import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
+import { runWithModelFallback, isDeterministicPayloadError } from "open-sse/services/modelFallback.js";
 import { handleComboChat, handleFusionChat } from "open-sse/services/combo.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
@@ -50,15 +51,6 @@ function summarizeToolSources(tools) {
   return `${tools.length} tools | sources: ${sources} | names: ${visibleNames}${suffix}`;
 }
 
-function isDeterministicPayloadError(status, errorText) {
-  if (status !== HTTP_STATUS.BAD_REQUEST) return false;
-  const text = typeof errorText === "string" ? errorText.toLowerCase() : "";
-  return text.includes("content_length_exceeds_threshold") ||
-    text.includes("input is too long") ||
-    text.includes("context length") ||
-    text.includes("maximum context") ||
-    text.includes("too many tokens");
-}
 
 function isNonAccountRecoverableError(provider, status, errorText) {
   if (isDeterministicPayloadError(status, errorText)) return true;
@@ -181,8 +173,12 @@ export async function handleChat(request, clientRawRequest = null) {
     });
   }
 
-  // Single model request
-  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey);
+  return runWithModelFallback(
+    modelStr,
+    settings.modelFallbacks,
+    (m) => handleSingleModelChat(body, m, clientRawRequest, request, apiKey),
+    log
+  );
 }
 
 /**

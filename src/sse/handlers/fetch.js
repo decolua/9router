@@ -13,7 +13,8 @@ import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { handleComboChat, getComboModelsFromData } from "open-sse/services/combo.js";
-import { assertPublicUrl } from "@/shared/utils/ssrfGuard.js";
+import { runWithModelFallback } from "open-sse/services/modelFallback.js";
+import { assertPublicUrl } from "@/shared/utils/ssrGuard.js";
 
 /**
  * Handle web fetch (URL extraction) request for the SSE/Next.js server.
@@ -107,7 +108,12 @@ export async function handleFetch(request) {
     });
   }
 
-  return handleSingleProviderFetch(body, providerInput, request, apiKey, settings);
+  return runWithModelFallback(
+    providerInput,
+    settings.modelFallbacks,
+    (m) => handleSingleProviderFetch(body, m, request, apiKey, settings),
+    log
+  );
 }
 
 async function handleSingleProviderFetch(body, providerInput, request, apiKey, settings) {

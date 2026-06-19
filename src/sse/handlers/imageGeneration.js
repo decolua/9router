@@ -12,6 +12,7 @@ import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { handleComboChat } from "open-sse/services/combo.js";
+import { runWithModelFallback } from "open-sse/services/modelFallback.js";
 import * as log from "../utils/logger.js";
 
 // Providers that don't require credentials (noAuth)
@@ -63,8 +64,12 @@ export async function handleImageGeneration(request) {
       comboStickyLimit,
     });
   }
-
-  return handleSingleModelImage(body, modelStr, { wantsStream, binaryOutput, preferredConnectionId });
+  return runWithModelFallback(
+    modelStr,
+    settings.modelFallbacks,
+    (m) => handleSingleModelImage(body, m, { wantsStream, binaryOutput, preferredConnectionId }),
+    log
+  );
 }
 
 async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutput, preferredConnectionId } = {}) {

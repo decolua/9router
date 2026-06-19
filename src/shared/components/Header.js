@@ -79,8 +79,15 @@ const getPageInfo = (pathname) => {
   if (pathname.includes("/combos"))
     return {
       title: "Combos",
-      description: "Model combos with fallback",
+      description: "Multi-model chains and fusion strategies",
       icon: "layers",
+      breadcrumbs: [],
+    };
+  if (pathname.includes("/model-fallbacks"))
+    return {
+      title: "Model Fallbacks",
+      description: "Per-model fallback when a model fails",
+      icon: "sync_alt",
       breadcrumbs: [],
     };
   if (pathname.includes("/usage"))

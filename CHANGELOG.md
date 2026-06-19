@@ -1,4 +1,12 @@
-# v0.5.4 (2026-06-18)
+# v0.5.5 (2026-06-19) — fork
+
+## Features
+- **Per-model fallback** — each primary model/alias may name one fallback model; when a direct request to the primary fails with a fallback-eligible error (quota / rate-limit / transient / auth), the whole request is retried once against the fallback and that response is returned. One hop only (no chaining), self-fallback is a no-op, and deterministic payload errors (context-length / too-many-tokens) are NOT fallen back. Configured on a new Dashboard → Model Fallbacks page (`/dashboard/model-fallbacks`); stored as `settings.modelFallbacks`. Applies to all request types (chat, image, tts, stt, embeddings, web-search, web-fetch) but ONLY when the user requests a bare model/alias directly — combo-internal hops keep their existing fallback semantics. Backed by `open-sse/services/modelFallback.js` (`runWithModelFallback`, `getModelFallback`, `isDeterministicPayloadError`).
+- **Usage: cached-token tracking** (from upstream PR #1900) — OverviewCards adds Cached Tokens + Cache Hit %, UsageChart gains Cached / Cache % view modes and a filter dropdown (All / By Model / By Account / By API Key / By Endpoint), UsageTable + RequestDetailsTab gain Cached Tokens + Cache Hit % columns. `usageRepo.js` aggregates `cacheReadTokens` across all buckets.
+- **CommandCode: init `body.params`** (from upstream PR #1902) — `transformRequest` ensures `body.params` exists before setting `params.stream`, preventing a crash on OpenAI-format requests that omit `params`.
+
+## Internal
+- **Fork swap:** this fork (`bloodf/9router`) replaces the upstream npm package on the host. `/etc/systemd/system/9router.service` now runs the fork's `cli/app/server.js` directly; data path `~/.9router/` is unchanged so existing DB / auth / logs survive the swap.
 
 ## Fixes
 - **Kiro**: honor thinking effort budgets

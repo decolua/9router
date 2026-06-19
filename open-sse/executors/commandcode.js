@@ -25,9 +25,8 @@ export class CommandCodeExecutor extends BaseExecutor {
     // Set both top-level (OpenAI-format bodies) and params.stream
     // (CommandCode-native bodies) to cover all code paths.
     body.stream = true;
-    if (body.params) {
-      body.params.stream = true;
-    }
+    if (!body.params) body.params = {};
+    body.params.stream = true;
     return body;
   }
 

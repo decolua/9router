@@ -13,6 +13,7 @@ import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { handleComboChat, getComboModelsFromData } from "open-sse/services/combo.js";
+import { runWithModelFallback } from "open-sse/services/modelFallback.js";
 
 /**
  * Handle web search request for the SSE/Next.js server.
@@ -87,8 +88,12 @@ export async function handleSearch(request) {
       comboStickyLimit
     });
   }
-
-  return handleSingleProviderSearch(body, providerInput, request, apiKey, settings);
+  return runWithModelFallback(
+    providerInput,
+    settings.modelFallbacks,
+    (m) => handleSingleProviderSearch(body, m, request, apiKey, settings),
+    log
+  );
 }
 
 async function handleSingleProviderSearch(body, providerInput, request, apiKey, settings) {

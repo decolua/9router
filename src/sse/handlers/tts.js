@@ -9,6 +9,7 @@ import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { handleComboChat } from "open-sse/services/combo.js";
+import { runWithModelFallback } from "open-sse/services/modelFallback.js";
 import * as log from "../utils/logger.js";
 
 // Derived from providers.js: any TTS provider not noAuth requires stored credentials
@@ -60,8 +61,12 @@ export async function handleTts(request) {
       comboStickyLimit,
     });
   }
-
-  return handleSingleModelTts(body, modelStr, responseFormat, language);
+  return runWithModelFallback(
+    modelStr,
+    settings.modelFallbacks,
+    (m) => handleSingleModelTts(body, m, responseFormat, language),
+    log
+  );
 }
 
 async function handleSingleModelTts(body, modelStr, responseFormat, language) {
