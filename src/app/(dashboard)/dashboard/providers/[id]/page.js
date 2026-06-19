@@ -19,6 +19,8 @@ import AddApiKeyModal from "./AddApiKeyModal";
 import EditCompatibleNodeModal from "./EditCompatibleNodeModal";
 import AddCustomModelModal from "./AddCustomModelModal";
 import BulkImportCodexModal from "./BulkImportCodexModal";
+import ModelFilterBar, { applyModelFilter, sortModels } from "./ModelFilterBar";
+import ModelBulkActions from "./ModelBulkActions";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
 
@@ -69,6 +71,11 @@ export default function ProviderDetailPage() {
   const [oneByOneSummary, setOneByOneSummary] = useState(null);
   const stopOneByOneRef = useRef(false);
   const [importingQoderModels, setImportingQoderModels] = useState(false);
+  const [modelFilter, setModelFilter] = useState({ text: "", operator: "contains" });
+  const [modelSort, setModelSort] = useState(null);
+  const [selectedModelIds, setSelectedModelIds] = useState([]);
+  const [selectDisabledMode, setSelectDisabledMode] = useState(false);
+  const [selectedDisabledModelIds, setSelectedDisabledModelIds] = useState([]);
   const { copied, copy } = useCopyToClipboard();
 
   const AG_RISK_STORAGE_KEY = "ag_risk_confirmed";
@@ -209,6 +216,136 @@ export default function ProviderDetailPage() {
     } catch (error) {
       console.log("Error enabling all models:", error);
     }
+  };
+
+  // Bulk model actions
+  const handleBulkEnable = async () => {
+    if (!selectedModelIds.length) return;
+    const idsToEnable = [...selectedModelIds];
+    setConfirmState({
+      title: "Enable Selected Models",
+      message: `Enable ${idsToEnable.length} model(s)?`,
+      onConfirm: async () => {
+        setConfirmState(null);
+        try {
+          let failed = 0;
+          for (const modelId of idsToEnable) {
+            const res = await fetch(`/api/models/disabled?providerAlias=${encodeURIComponent(providerStorageAlias)}&id=${encodeURIComponent(modelId)}`, { method: "DELETE" });
+            if (!res.ok) failed += 1;
+          }
+          await fetchDisabledModels();
+          if (failed > 0) alert(`Failed to enable ${failed} model(s).`);
+          setSelectedModelIds([]);
+        } catch (error) {
+          console.log("Error enabling selected models:", error);
+        }
+      }
+    });
+  };
+
+  const handleBulkDisable = async () => {
+    if (!selectedModelIds.length) return;
+    const idsToDisable = [...selectedModelIds];
+    setConfirmState({
+      title: "Disable Selected Models",
+      message: `Disable ${idsToDisable.length} model(s)?`,
+      onConfirm: async () => {
+        setConfirmState(null);
+        try {
+          const res = await fetch("/api/models/disabled", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ providerAlias: providerStorageAlias, ids: idsToDisable }),
+          });
+          if (res.ok) {
+            await fetchDisabledModels();
+            setSelectedModelIds([]);
+          } else {
+            const data = await res.json().catch(() => ({}));
+            alert(data.error || "Failed to disable models");
+          }
+        } catch (error) {
+          console.log("Error disabling selected models:", error);
+        }
+      }
+    });
+  };
+
+  const handleBulkDelete = async () => {
+    if (!selectedModelIds.length) return;
+    setConfirmState({
+      title: "Delete Selected Models",
+      message: `Permanently delete ${selectedModelIds.length} model(s)? This cannot be undone.`,
+      onConfirm: async () => {
+        setConfirmState(null);
+        try {
+          for (const modelId of selectedModelIds) {
+            const alias = Object.entries(modelAliases).find(([, m]) => m === `${providerStorageAlias}/${modelId}`)?.[0];
+            if (alias) {
+              await fetch(`/api/models/alias?alias=${encodeURIComponent(alias)}`, { method: "DELETE" });
+            }
+          }
+          await fetchAliases();
+          setSelectedModelIds([]);
+        } catch (error) {
+          console.log("Error deleting selected models:", error);
+        }
+      }
+    });
+  };
+
+  const handleBulkEnableDisabled = async () => {
+    if (!selectedDisabledModelIds.length) return;
+    const idsToEnable = [...selectedDisabledModelIds];
+    try {
+      let failed = 0;
+      for (const modelId of idsToEnable) {
+        const res = await fetch(`/api/models/disabled?providerAlias=${encodeURIComponent(providerStorageAlias)}&id=${encodeURIComponent(modelId)}`, { method: "DELETE" });
+        if (!res.ok) failed += 1;
+      }
+      await fetchDisabledModels();
+      if (failed > 0) alert(`Failed to enable ${failed} model(s).`);
+      setSelectedDisabledModelIds([]);
+    } catch (error) {
+      console.log("Error enabling disabled models:", error);
+    }
+  };
+
+  const handleBulkDeleteDisabled = async () => {
+    if (!selectedDisabledModelIds.length) return;
+    try {
+      for (const modelId of selectedDisabledModelIds) {
+        const alias = Object.entries(modelAliases).find(([, m]) => m === `${providerStorageAlias}/${modelId}`)?.[0];
+        if (alias) {
+          await fetch(`/api/models/alias?alias=${encodeURIComponent(alias)}`, { method: "DELETE" });
+        }
+      }
+      await fetchAliases();
+      setSelectedDisabledModelIds([]);
+    } catch (error) {
+      console.log("Error deleting disabled models:", error);
+    }
+  };
+
+  const toggleSelectModel = (modelId) => {
+    setSelectedModelIds((prev) =>
+      prev.includes(modelId) ? prev.filter((id) => id !== modelId) : [...prev, modelId]
+    );
+  };
+
+  const selectAllFilteredModels = (select, filteredIds) => {
+    setSelectedModelIds(select ? filteredIds : []);
+  };
+
+  const toggleSelectDisabledModel = (modelId) => {
+    setSelectedDisabledModelIds((prev) =>
+      prev.includes(modelId) ? prev.filter((id) => id !== modelId) : [...prev, modelId]
+    );
+  };
+
+  const selectAllDisabledModels = (select) => {
+    const allDisabledIds = [...disabledDisplayModels.map((m) => m.id), ...disabledCustomModels.map((m) => m.id)];
+    setSelectedDisabledModelIds(select ? allDisabledIds : []);
   };
 
   // Define callbacks BEFORE the useEffect that uses them
@@ -935,8 +1072,6 @@ export default function ProviderDetailPage() {
         />
       );
     }
-    // Combine hardcoded models with Kilo free models (deduplicated)
-    // Exclude non-llm models (embedding, tts, etc.) — they have dedicated pages under media-providers
     const allModels = [
       ...models,
       ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
@@ -944,14 +1079,11 @@ export default function ProviderDetailPage() {
     const disabledSet = new Set(disabledModelIds);
     const displayModels = allModels.filter((m) => !disabledSet.has(m.id));
     const disabledDisplayModels = allModels.filter((m) => disabledSet.has(m.id));
-    // Custom models added by user (stored as aliases: modelId → providerAlias/modelId)
     const customModels = Object.entries(modelAliases)
       .filter(([alias, fullModel]) => {
         const prefix = `${providerStorageAlias}/`;
         if (!fullModel.startsWith(prefix)) return false;
         const modelId = fullModel.slice(prefix.length);
-        // Only show if not already in hardcoded list
-        // For passthroughModels, include all aliases (model IDs may contain slashes like "anthropic/claude-3")
         if (providerInfo.passthroughModels) return !models.some((m) => m.id === modelId);
         return !models.some((m) => m.id === modelId) && alias === modelId;
       })
@@ -960,131 +1092,260 @@ export default function ProviderDetailPage() {
         alias,
         fullModel,
       }));
+    const activeCustomModels = customModels.filter((m) => !disabledSet.has(m.id));
+    const disabledCustomModels = customModels.filter((m) => disabledSet.has(m.id));
+
+    const filteredDisplayModels = sortModels(applyModelFilter(displayModels, modelFilter), modelSort);
+    const filteredActiveCustomModels = sortModels(applyModelFilter(activeCustomModels, modelFilter), modelSort);
+    const allVisibleIds = [...filteredActiveCustomModels.map((m) => m.id), ...filteredDisplayModels.map((m) => m.id)];
+    const allVisibleSelected = allVisibleIds.length > 0 && allVisibleIds.every((id) => selectedModelIds.includes(id));
 
     return (
-      <div className="flex flex-wrap gap-3">
-        {/* Custom models first */}
-        {customModels.map((model) => (
-          <ModelRow
-            key={model.id}
-            model={{ id: model.id }}
-            fullModel={`${providerDisplayAlias}/${model.id}`}
-            alias={model.alias}
-            copied={copied}
-            onCopy={copy}
-            onSetAlias={() => {}}
-            onDeleteAlias={() => handleDeleteAlias(model.alias)}
-            testStatus={modelTestResults[model.id]}
-            onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
-            isTesting={testingModelIds.has(model.id)}
-            isCustom
-            isFree={false}
-            caps={getCaps(`${providerId}/${model.id}`)}
-          />
-        ))}
+      <div className="flex flex-col gap-3">
+        <ModelFilterBar
+          onFilterChange={setModelFilter}
+          onSortChange={setModelSort}
+          onSelectAll={(select) => selectAllFilteredModels(select, allVisibleIds)}
+          allSelected={allVisibleSelected}
+          selectedCount={selectedModelIds.length}
+          totalCount={allVisibleIds.length}
+          currentSort={modelSort}
+          currentFilter={modelFilter}
+        />
 
-        {displayModels.map((model) => {
-          const fullModel = `${providerStorageAlias}/${model.id}`;
-          const oldFormatModel = `${providerId}/${model.id}`;
-          const existingAlias = Object.entries(modelAliases).find(
-            ([, m]) => m === fullModel || m === oldFormatModel
-          )?.[0];
-          return (
+        <ModelBulkActions
+          selectedCount={selectedModelIds.length}
+          onEnable={handleBulkEnable}
+          onDisable={handleBulkDisable}
+          onDelete={handleBulkDelete}
+          onClearSelection={() => setSelectedModelIds([])}
+          hideEnable
+        />
+
+        <div className="flex flex-wrap gap-3">
+          {filteredActiveCustomModels.map((model) => (
             <ModelRow
               key={model.id}
-              model={model}
+              model={{ id: model.id }}
               fullModel={`${providerDisplayAlias}/${model.id}`}
-              alias={existingAlias}
+              alias={model.alias}
               copied={copied}
               onCopy={copy}
-              onSetAlias={(alias) => handleSetAlias(model.id, alias, providerStorageAlias)}
-              onDeleteAlias={() => handleDeleteAlias(existingAlias)}
+              onSetAlias={() => {}}
+              onDeleteAlias={() => handleDeleteAlias(model.alias)}
               testStatus={modelTestResults[model.id]}
               onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
               isTesting={testingModelIds.has(model.id)}
-              isFree={model.isFree}
-              onDisable={() => handleDisableModel(model.id)}
+              isCustom
+              isFree={false}
               caps={getCaps(`${providerId}/${model.id}`)}
+              selected={selectedModelIds.includes(model.id)}
+              onToggleSelect={toggleSelectModel}
             />
-          );
-        })}
+          ))}
 
-        {/* Add model button — inline, same style as model chips */}
-        <button
-          onClick={() => setShowAddCustomModel(true)}
-          className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-primary/40 px-3 py-2 text-xs text-primary transition-colors hover:border-primary hover:bg-primary/5 sm:w-auto"
-        >
-          <span className="material-symbols-outlined text-sm">add</span>
-          Add Model
-        </button>
+          {filteredDisplayModels.map((model) => {
+            const fullModel = `${providerStorageAlias}/${model.id}`;
+            const oldFormatModel = `${providerId}/${model.id}`;
+            const existingAlias = Object.entries(modelAliases).find(
+              ([, m]) => m === fullModel || m === oldFormatModel
+            )?.[0];
+            return (
+              <ModelRow
+                key={model.id}
+                model={model}
+                fullModel={`${providerDisplayAlias}/${model.id}`}
+                alias={existingAlias}
+                copied={copied}
+                onCopy={copy}
+                onSetAlias={(alias) => handleSetAlias(model.id, alias, providerStorageAlias)}
+                onDeleteAlias={() => handleDeleteAlias(existingAlias)}
+                testStatus={modelTestResults[model.id]}
+                onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
+                isTesting={testingModelIds.has(model.id)}
+                isFree={model.isFree}
+                onDisable={() => handleDisableModel(model.id)}
+                caps={getCaps(`${providerId}/${model.id}`)}
+                selected={selectedModelIds.includes(model.id)}
+                onToggleSelect={toggleSelectModel}
+              />
+            );
+          })}
 
-        {/* Import Qoder models button — only show for qoder provider */}
-        {providerId === "qoder" && connections.some((conn) => conn.isActive !== false) && (
           <button
-            onClick={handleImportQoderModels}
-            disabled={importingQoderModels}
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-blue-500/40 px-3 py-2 text-xs text-blue-600 dark:text-blue-400 transition-colors hover:border-blue-500 hover:bg-blue-500/5 sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={() => setShowAddCustomModel(true)}
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-primary/40 px-3 py-2 text-xs text-primary transition-colors hover:border-primary hover:bg-primary/5 sm:w-auto"
           >
-            <span className="material-symbols-outlined text-sm" style={importingQoderModels ? { animation: "spin 1s linear infinite" } : undefined}>
-              {importingQoderModels ? "progress_activity" : "download"}
-            </span>
-            {importingQoderModels ? translate("Fetching...") : translate("Fetch Qoder Models")}
+            <span className="material-symbols-outlined text-sm">add</span>
+            Add Model
           </button>
-        )}
 
-        {/* Suggested models from provider API — show only models not yet added */}
-        {suggestedModels.length > 0 && (() => {
-          const addedFullModels = new Set(Object.values(modelAliases));
-          const hardcodedIds = new Set(models.map((m) => m.id));
-          const notAdded = suggestedModels.filter(
-            (m) => !addedFullModels.has(`${providerStorageAlias}/${m.id}`) && !hardcodedIds.has(m.id)
-          );
-          if (notAdded.length === 0) return null;
-          return (
+          {providerId === "qoder" && connections.some((conn) => conn.isActive !== false) && (
+            <button
+              onClick={handleImportQoderModels}
+              disabled={importingQoderModels}
+              className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-blue-500/40 px-3 py-2 text-xs text-blue-600 dark:text-blue-400 transition-colors hover:border-blue-500 hover:bg-blue-500/5 sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span className="material-symbols-outlined text-sm" style={importingQoderModels ? { animation: "spin 1s linear infinite" } : undefined}>
+                {importingQoderModels ? "progress_activity" : "download"}
+              </span>
+              {importingQoderModels ? translate("Fetching...") : translate("Fetch Qoder Models")}
+            </button>
+          )}
+
+          {suggestedModels.length > 0 && (() => {
+            const addedFullModels = new Set(Object.values(modelAliases));
+            const hardcodedIds = new Set(models.map((m) => m.id));
+            const notAdded = suggestedModels.filter(
+              (m) => !addedFullModels.has(`${providerStorageAlias}/${m.id}`) && !hardcodedIds.has(m.id)
+            );
+            if (notAdded.length === 0) return null;
+            return (
+              <div className="w-full mt-2">
+                <p className="text-xs text-text-muted mb-2">Suggested free models (≥200k context):</p>
+                <div className="flex flex-wrap gap-2">
+                  {notAdded.map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={async () => {
+                        const alias = m.id.split("/").pop();
+                        await handleSetAlias(m.id, alias, providerStorageAlias);
+                      }}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-black/10 dark:border-white/10 text-xs text-text-muted hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
+                      title={`${m.name} · ${(m.contextLength / 1000).toFixed(0)}k ctx`}
+                    >
+                      <span className="material-symbols-outlined text-[13px]">add</span>
+                      {m.id.split("/").pop()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
+          {(disabledDisplayModels.length + disabledCustomModels.length) > 0 && (
             <div className="w-full mt-2">
-              <p className="text-xs text-text-muted mb-2">Suggested free models (≥200k context):</p>
+              <div className="flex items-center gap-2 mb-2">
+                <p className="text-xs text-text-muted">Disabled models ({disabledDisplayModels.length + disabledCustomModels.length}):</p>
+                <label className="flex items-center gap-1 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={selectDisabledMode}
+                    onChange={() => {
+                      setSelectDisabledMode((prev) => !prev);
+                      setSelectedDisabledModelIds([]);
+                    }}
+                    className="size-3.5 rounded border-border text-primary focus:ring-primary/20 cursor-pointer"
+                  />
+                  <span className="text-[11px] text-text-muted">{selectDisabledMode ? "Close" : "Select"}</span>
+                </label>
+                {selectDisabledMode && (
+                  <>
+                    {selectedDisabledModelIds.length < (disabledDisplayModels.length + disabledCustomModels.length) && (
+                      <button
+                        onClick={() => {
+                          const allIds = [...disabledDisplayModels.map((m) => m.id), ...disabledCustomModels.map((m) => m.id)];
+                          setSelectedDisabledModelIds(allIds);
+                        }}
+                        className="text-[11px] text-text-muted/60 hover:text-primary underline"
+                      >
+                        Select All
+                      </button>
+                    )}
+                    {selectedDisabledModelIds.length > 0 && (
+                      <button
+                        onClick={() => setSelectedDisabledModelIds([])}
+                        className="text-[11px] text-text-muted/60 hover:text-primary underline"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {selectDisabledMode && selectedDisabledModelIds.length > 0 && (
+                <ModelBulkActions
+                  selectedCount={selectedDisabledModelIds.length}
+                  onEnable={handleBulkEnableDisabled}
+                  onDisable={() => {}}
+                  onDelete={handleBulkDeleteDisabled}
+                  onClearSelection={() => setSelectedDisabledModelIds([])}
+                  hideDisable
+                />
+              )}
+
               <div className="flex flex-wrap gap-2">
-                {notAdded.map((m) => (
+                {disabledDisplayModels.map((m) => (
                   <button
                     key={m.id}
-                    onClick={async () => {
-                      const alias = m.id.split("/").pop();
-                      await handleSetAlias(m.id, alias, providerStorageAlias);
+                    onClick={() => {
+                      if (selectDisabledMode) {
+                        toggleSelectDisabledModel(m.id);
+                      } else {
+                        handleEnableModel(m.id);
+                      }
                     }}
-                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-black/10 dark:border-white/10 text-xs text-text-muted hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
-                    title={`${m.name} · ${(m.contextLength / 1000).toFixed(0)}k ctx`}
+                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg border transition-colors ${
+                      selectDisabledMode && selectedDisabledModelIds.includes(m.id)
+                        ? "border-primary/40 bg-primary/10 text-primary"
+                        : "border border-dashed border-text-muted/20 bg-surface-2 text-xs text-text-muted/80 hover:text-primary hover:border-primary/40 hover:bg-primary/5"
+                    }`}
+                    title={selectDisabledMode ? "Toggle select" : "Restore model"}
                   >
-                    <span className="material-symbols-outlined text-[13px]">add</span>
-                    {m.id.split("/").pop()}
+                    {selectDisabledMode ? (
+                      <input
+                        type="checkbox"
+                        checked={selectedDisabledModelIds.includes(m.id)}
+                        onChange={() => toggleSelectDisabledModel(m.id)}
+                        className="size-3.5 rounded border-border text-primary focus:ring-primary/20 cursor-pointer"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    ) : (
+                      <span className="material-symbols-outlined text-[13px]">add</span>
+                    )}
+                    <span className={selectDisabledMode ? "text-xs" : ""}>{m.id}</span>
+                  </button>
+                ))}
+                {disabledCustomModels.map((m) => (
+                  <button
+                    key={m.id}
+                    onClick={() => {
+                      if (selectDisabledMode) {
+                        toggleSelectDisabledModel(m.id);
+                      } else {
+                        handleEnableModel(m.id);
+                      }
+                    }}
+                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg border transition-colors ${
+                      selectDisabledMode && selectedDisabledModelIds.includes(m.id)
+                        ? "border-primary/40 bg-primary/10 text-primary"
+                        : "border border-dashed border-text-muted/20 bg-surface-2 text-xs text-text-muted/80 hover:text-primary hover:border-primary/40 hover:bg-primary/5"
+                    }`}
+                    title={selectDisabledMode ? "Toggle select" : "Restore custom model"}
+                  >
+                    {selectDisabledMode ? (
+                      <input
+                        type="checkbox"
+                        checked={selectedDisabledModelIds.includes(m.id)}
+                        onChange={() => toggleSelectDisabledModel(m.id)}
+                        className="size-3.5 rounded border-border text-primary focus:ring-primary/20 cursor-pointer"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    ) : (
+                      <span className="material-symbols-outlined text-[13px]">add</span>
+                    )}
+                    <span className={selectDisabledMode ? "text-xs" : ""}>{m.id}</span>
                   </button>
                 ))}
               </div>
             </div>
-          );
-        })()}
-
-        {/* Disabled models — restorable */}
-        {disabledDisplayModels.length > 0 && (
-          <div className="w-full mt-2">
-            <p className="text-xs text-text-muted mb-2">Disabled models ({disabledDisplayModels.length}):</p>
-            <div className="flex flex-wrap gap-2">
-              {disabledDisplayModels.map((m) => (
-                <button
-                  key={m.id}
-                  onClick={() => handleEnableModel(m.id)}
-                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-dashed border-black/10 dark:border-white/10 text-xs text-text-muted hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
-                  title="Restore model"
-                >
-                  <span className="material-symbols-outlined text-[13px]">add</span>
-                  {m.id}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     );
   };
+;
 
   if (loading) {
     return (
@@ -1473,23 +1734,35 @@ export default function ProviderDetailPage() {
           <h2 className="text-lg font-semibold">
             {"Available Models"}
           </h2>
-          {!isCompatible && (() => {
+          {(() => {
             const allIds = [
-              ...models,
-              ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
-            ].filter((m) => { const k = getModelKind(m); return !k || k === "llm"; }).map((m) => m.id);
+              ...Object.values(modelAliases)
+                .filter((fm) => fm.startsWith(providerStorageAlias + "/"))
+                .map((fm) => fm.slice(providerStorageAlias.length + 1)),
+              ...(!isCompatible ? [
+                ...models,
+                ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
+              ].filter((m) => { const k = getModelKind(m); return !k || k === "llm"; }).map((m) => m.id) : []),
+            ].filter((id, i, arr) => arr.indexOf(id) === i);
             const activeIds = allIds.filter((id) => !disabledModelIds.includes(id));
+            if (allIds.length === 0) return null;
             return (
               <div className="flex gap-2">
-                {disabledModelIds.length > 0 && (
-                  <Button size="sm" variant="secondary" icon="restart_alt" onClick={handleEnableAll}>
-                    Active All
-                  </Button>
-                )}
+                <button
+                  onClick={handleEnableAll}
+                  className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-500/10 hover:bg-green-100 dark:hover:bg-green-500/20 rounded-md transition-colors"
+                >
+                  <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                  Enable All
+                </button>
                 {activeIds.length > 0 && (
-                  <Button size="sm" variant="secondary" icon="block" onClick={() => handleDisableAll(activeIds)}>
+                  <button
+                    onClick={() => handleDisableAll(activeIds)}
+                    className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-yellow-700 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-500/10 hover:bg-yellow-100 dark:hover:bg-yellow-500/20 rounded-md transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">block</span>
                     Disable All
-                  </Button>
+                  </button>
                 )}
               </div>
             );
