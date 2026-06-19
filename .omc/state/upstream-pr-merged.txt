@@ -1,0 +1,19 @@
+1794 fix: avoid exposing api keys in logs and usage history
+1827 @ fix: bump better-sqlite3 to 12.10.1 for Node 26 compatibility
+1893 fix(auth): preserve client IP behind local reverse proxy
+1898 fix(usage): eliminate zero-token duplicate entries in streaming usage
+1843 @ fix(commandcode): force params.stream=true for non-streaming requests
+1738 fix: count alternate usage token fields
+1875 fix(kiro): inject agentic chunked-write prompt only on first turn
+1895 Fix Perplexity models endpoint
+1897 fix(cli-tools): tolerate JSONC configs in CLI tool settings routes
+1816 fix: guard against null modelAliases values causing startsWith crash
+1823 fix: refresh Kiro model discovery on invalid token
+1818 fix(cli): detect standalone server path
+1817 fix(translator): preserve reasoning effort
+1761 Merge branch 'master' of github.com:decolua/9router
+1854 feat(quota): persist per-account quota + skip depleted Kiro accounts
+1805 fix(qoder): propagate upstream error status code via HTTP status instead of SSE text, enabling combo/account fallback
+1899 feat: add optional Headroom token saver
+1825 feat: add tool source log toggle
+1845 feat(provider): add CodeBuddy international (www.codebuddy.ai) support

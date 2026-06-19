@@ -1,0 +1,23 @@
+1837 CONFLICT fix(usage): account for cached token pricing
+1810 CONFLICT fix: rename proxyHandler to middleware in proxy.js for Next.js 16 proxy registration
+1824 CONFLICT fix: synthesize MMF Claude streams
+1821 CONFLICT fix(codex): treat OpenAI 401/token_expired as permanent refresh failure
+1820 CONFLICT fix(codex): normalize fast service tier
+1819 CONFLICT fix(codex): bind ChatGPT workspace accounts
+1774 CONFLICT fix: remove single-connection restriction for compatible provider nodes
+1775 CONFLICT chore: remove stale single-connection copy from unused provider page
+1773 CONFLICT test: cover empty-static + live-resolver seeding for noAuth providers
+1784 CONFLICT fix: resolve ReferenceError for allProviders in ModelSelectModal
+1760 CONFLICT Merge branch 'master' into master
+1764 CONFLICT feat(provider): add ModelScope as a free-tier provider
+1900 CONFLICT feat(usage): add cached tokens and cache hit % metrics
+1883 CONFLICT docs(cli): mention headless supervised restart behavior
+1797 CONFLICT fix(openai): fallback to responses for gpt-5/codex
+1740 CONFLICT Add bulk disable for failed provider models
+1741 CONFLICT feat(glm): add configurable OpenAI-compatible output format for GLM Coding
+1781 CONFLICT chore: prepare 0.4.72 release
+1892 CONFLICT feat: support custom baseUrl for Anthropic-compatible proxies
+1896 CONFLICT fix: preserve 'pattern' in antigravity tool schema translation (#1368)
+1829 CONFLICT fix(dashboard): use provider icon resolver in model UI
+1848 CONFLICT fix(glm): address cubic review — ALS context, OAuth poll, captcha
+1889 CONFLICT feat(codebuddy-cn): per-model capabilities from gateway config
