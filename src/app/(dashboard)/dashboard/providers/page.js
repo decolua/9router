@@ -230,45 +230,18 @@ export default function ProvidersPage() {
     );
   };
 
-  const isLocalConnection = (c) => {
-    const localIds = [
-      "ollama-local",
-      "local-device",
-      "google-tts",
-      "edge-tts",
-      "coqui",
-      "tortoise",
-      "sdwebui",
-      "comfyui",
-      "searxng",
-    ];
-    if (localIds.includes(c.provider) || c.provider.toLowerCase().includes("local")) {
-      return true;
-    }
-    const baseUrl = c.providerSpecificData?.baseUrl || "";
-    if (
-      baseUrl.includes("localhost") ||
-      baseUrl.includes("127.0.0.1") ||
-      baseUrl.includes("::1")
-    ) {
-      return true;
-    }
-    return false;
-  };
-
-  const handleToggleAllLocal = async (newActive) => {
-    const localConns = connections.filter(isLocalConnection);
-    if (localConns.length === 0) {
-      notify.info("No local providers configured");
+  const handleToggleAll = async (newActive) => {
+    if (connections.length === 0) {
+      notify.info("No provider connections configured");
       return;
     }
 
     setConnections((prev) =>
-      prev.map((c) => (isLocalConnection(c) ? { ...c, isActive: newActive } : c)),
+      prev.map((c) => ({ ...c, isActive: newActive })),
     );
 
     await Promise.allSettled(
-      localConns.map((c) =>
+      connections.map((c) =>
         fetch(`/api/providers/${c.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -277,7 +250,7 @@ export default function ProvidersPage() {
       ),
     );
 
-    notify.success(`${newActive ? "Enabled" : "Disabled"} ${localConns.length} local provider connections`);
+    notify.success(`${newActive ? "Enabled" : "Disabled"} all ${connections.length} provider connections`);
   };
 
   const handleBatchTest = async (mode, providerId = null) => {
@@ -385,9 +358,9 @@ export default function ProvidersPage() {
       {/* Quick Controls Bar */}
       <div className="flex flex-col gap-3 p-4 bg-surface border border-border rounded-xl sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-col gap-0.5">
-          <h3 className="font-semibold text-sm">Local Providers Quick Controls</h3>
+          <h3 className="font-semibold text-sm">Provider Quick Controls</h3>
           <p className="text-xs text-text-muted">
-            Quickly enable or disable all local-based provider connections (Ollama, local device, local TTS/ASR, localhost endpoints).
+            Quickly enable or disable all configured provider connections at once.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -395,18 +368,18 @@ export default function ProvidersPage() {
             size="sm"
             variant="secondary"
             icon="pause_circle"
-            onClick={() => handleToggleAllLocal(false)}
+            onClick={() => handleToggleAll(false)}
             className="w-full sm:w-auto"
           >
-            Disable All Local
+            Disable All
           </Button>
           <Button
             size="sm"
             icon="play_circle"
-            onClick={() => handleToggleAllLocal(true)}
+            onClick={() => handleToggleAll(true)}
             className="w-full sm:w-auto"
           >
-            Enable All Local
+            Enable All
           </Button>
         </div>
       </div>
