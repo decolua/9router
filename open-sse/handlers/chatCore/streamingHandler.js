@@ -2,15 +2,21 @@ import { FORMATS } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
 import { createSSETransformStreamWithLogger, createPassthroughStreamWithLogger } from "../../utils/stream.js";
 import { pipeWithDisconnect } from "../../utils/streamHandler.js";
+import { PROVIDERS } from "../../config/providers.js";
+import { STREAM_STALL_TIMEOUT_MS } from "../../config/runtimeConfig.js";
 import { buildAbortedResponsesTerminalBytes } from "../../utils/responsesStreamHelpers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats } from "./requestDetail.js";
 import { saveRequestDetail } from "@/lib/usageDb.js";
+import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
 
-const SSE_HEADERS = {
-  "Content-Type": "text/event-stream",
-  "Cache-Control": "no-cache",
-  "Connection": "keep-alive",
-  "Access-Control-Allow-Origin": "*"
+// Codex returns Responses API SSE → which client format to translate INTO, by request sourceFormat.
+// Gemini-family all map to ANTIGRAVITY decoder; unknown sources fall back to OPENAI.
+const CODEX_SOURCE_TO_TARGET = {
+  [FORMATS.OPENAI_RESPONSES]: FORMATS.OPENAI_RESPONSES,
+  [FORMATS.CLAUDE]: FORMATS.CLAUDE,
+  [FORMATS.ANTIGRAVITY]: FORMATS.ANTIGRAVITY,
+  [FORMATS.GEMINI]: FORMATS.ANTIGRAVITY,
+  [FORMATS.GEMINI_CLI]: FORMATS.ANTIGRAVITY,
 };
 
 /**
@@ -18,15 +24,12 @@ const SSE_HEADERS = {
  */
 function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey }) {
   const isDroidCLI = userAgent?.toLowerCase().includes("droid") || userAgent?.toLowerCase().includes("codex-cli");
-  const needsCodexTranslation = provider === "codex" && targetFormat === FORMATS.OPENAI_RESPONSES && !isDroidCLI;
+  // Responses-API providers (e.g. codex) emit Responses SSE → translate into client format
+  const isResponsesProvider = PROVIDERS[provider]?.format === FORMATS.OPENAI_RESPONSES;
+  const needsCodexTranslation = isResponsesProvider && targetFormat === FORMATS.OPENAI_RESPONSES && !isDroidCLI;
 
   if (needsCodexTranslation) {
-    // Codex returns Responses API SSE → translate to client format
-    let codexTarget;
-    if (sourceFormat === FORMATS.OPENAI_RESPONSES) codexTarget = FORMATS.OPENAI_RESPONSES;
-    else if (sourceFormat === FORMATS.CLAUDE) codexTarget = FORMATS.CLAUDE;
-    else if (sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI) codexTarget = FORMATS.ANTIGRAVITY;
-    else codexTarget = FORMATS.OPENAI;
+    const codexTarget = CODEX_SOURCE_TO_TARGET[sourceFormat] || FORMATS.OPENAI;
     return createSSETransformStreamWithLogger(FORMATS.OPENAI_RESPONSES, codexTarget, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey);
   }
 
@@ -48,7 +51,8 @@ export function handleStreamingResponse({ providerResponse, provider, model, sou
   // Responses passthrough: synthesize response.failed + [DONE] if the stream aborts/stalls before a terminal event
   const isResponsesPassthrough = sourceFormat === FORMATS.OPENAI_RESPONSES && targetFormat === FORMATS.OPENAI_RESPONSES;
   const onAbortTerminal = isResponsesPassthrough ? buildAbortedResponsesTerminalBytes : null;
-  const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal);
+  const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
+  const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs);
 
   const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
   saveRequestDetail(buildRequestDetail({

@@ -222,6 +222,21 @@ describe("buildEmbeddingsUrl", () => {
     expect(url).toBe("https://openrouter.ai/api/v1/embeddings");
   });
 
+  it("vercel-ai-gateway → https://ai-gateway.vercel.sh/v1/embeddings", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
+
+    await handleEmbeddingsCore(makeOptions({
+      modelInfo: { provider: "vercel-ai-gateway", model: "openai/text-embedding-3-small" },
+      credentials: { apiKey: "vag-test-key" },
+    }));
+
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    const sent = JSON.parse(init.body);
+    expect(url).toBe("https://ai-gateway.vercel.sh/v1/embeddings");
+    expect(init.headers.Authorization).toBe("Bearer vag-test-key");
+    expect(sent.model).toBe("openai/text-embedding-3-small");
+  });
+
   it("openai-compatible-* → uses baseUrl from providerSpecificData", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
 

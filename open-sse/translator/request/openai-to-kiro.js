@@ -5,12 +5,17 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { v4 as uuidv4 } from "uuid";
+import { resolveSessionId } from "../../utils/sessionManager.js";
 import {
   resolveKiroModel,
-  isThinkingEnabled,
+  resolveKiroThinkingBudget,
   buildThinkingSystemPrefix,
-  KIRO_AGENTIC_SYSTEM_PROMPT
+  KIRO_AGENTIC_SYSTEM_PROMPT,
+  resolveDefaultProfileArn
 } from "../../config/kiroConstants.js";
+import { parseDataUri } from "../concerns/image.js";
+import { DEFAULT_IMAGE_MIME } from "../schema/index.js";
+import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
 
 /** Render a single tool call as a readable text line. */
 function toolCallToText(name, input) {
@@ -54,18 +59,18 @@ function flattenToolInteractions(messages) {
 
   for (const msg of messages) {
     // OpenAI tool-result message → user text line
-    if (msg.role === "tool") {
-      out.push({ role: "user", content: toolResultToText(msg.content) });
+    if (msg.role === ROLE.TOOL) {
+      out.push({ role: ROLE.USER, content: toolResultToText(msg.content) });
       continue;
     }
 
-    if (msg.role === "assistant") {
+    if (msg.role === ROLE.ASSISTANT) {
       const parts = [];
       if (Array.isArray(msg.content)) {
         for (const c of msg.content) {
-          if (c.type === "tool_use") {
+          if (c.type === CLAUDE_BLOCK.TOOL_USE) {
             parts.push(toolCallToText(c.name, c.input));
-          } else if (c.type === "text" || c.text) {
+          } else if (c.type === OPENAI_BLOCK.TEXT || c.text) {
             parts.push(c.text || "");
           }
         }
@@ -75,15 +80,15 @@ function flattenToolInteractions(messages) {
       for (const tc of msg.tool_calls || []) {
         parts.push(toolCallToText(tc.function?.name, tc.function?.arguments));
       }
-      out.push({ role: "assistant", content: parts.filter(Boolean).join("\n") });
+      out.push({ role: ROLE.ASSISTANT, content: parts.filter(Boolean).join("\n") });
       continue;
     }
 
     // User messages: replace tool_result blocks with text, keep text + images.
-    if (msg.role === "user" && Array.isArray(msg.content)) {
+    if (msg.role === ROLE.USER && Array.isArray(msg.content)) {
       const newContent = msg.content.map(c =>
-        c.type === "tool_result"
-          ? { type: "text", text: toolResultToText(c.content) }
+        c.type === CLAUDE_BLOCK.TOOL_RESULT
+          ? { type: OPENAI_BLOCK.TEXT, text: toolResultToText(c.content) }
           : c
       );
       out.push({ ...msg, content: newContent });
@@ -265,8 +270,8 @@ function convertMessages(messages, tools, model) {
     let role = msg.role;
 
     // Normalize: system/tool -> user
-    if (role === "system" || role === "tool") {
-      role = "user";
+    if (role === ROLE.SYSTEM || role === ROLE.TOOL) {
+      role = ROLE.USER;
     }
 
     // If role changes, flush pending
@@ -275,7 +280,7 @@ function convertMessages(messages, tools, model) {
     }
     currentRole = role;
 
-    if (role === "user") {
+    if (role === ROLE.USER) {
       // Extract content
       let content = "";
       if (typeof msg.content === "string") {
@@ -283,24 +288,23 @@ function convertMessages(messages, tools, model) {
       } else if (Array.isArray(msg.content)) {
         const textParts = [];
         for (const c of msg.content) {
-          if (c.type === "text" || c.text) {
+          if (c.type === OPENAI_BLOCK.TEXT || c.text) {
             textParts.push(c.text || "");
-          } else if (c.type === "image_url") {
+          } else if (c.type === OPENAI_BLOCK.IMAGE_URL) {
             // OpenAI format: image_url.url with data URI
             const url = c.image_url?.url || "";
-            const base64Match = url.match(/^data:([^;]+);base64,(.+)$/);
-            if (base64Match) {
-              const mediaType = base64Match[1];
-              const format = mediaType.split("/")[1] || mediaType;
-              pendingImages.push({ format, source: { bytes: base64Match[2] } });
+            const parsed = parseDataUri(url);
+            if (parsed) {
+              const format = parsed.mimeType.split("/")[1] || parsed.mimeType;
+              pendingImages.push({ format, source: { bytes: parsed.base64 } });
             } else if (url.startsWith("http://") || url.startsWith("https://")) {
               // Kiro only supports base64 — fallback to URL text
               textParts.push(`[Image: ${url}]`);
             }
-          } else if (c.type === "image") {
+          } else if (c.type === CLAUDE_BLOCK.IMAGE) {
             // Claude format: source.type = "base64", source.media_type, source.data
             if (c.source?.type === "base64" && c.source?.data) {
-              const mediaType = c.source.media_type || "image/png";
+              const mediaType = c.source.media_type || DEFAULT_IMAGE_MIME;
               const format = mediaType.split("/")[1] || mediaType;
               pendingImages.push({ format, source: { bytes: c.source.data } });
             }
@@ -309,7 +313,7 @@ function convertMessages(messages, tools, model) {
         content = textParts.join("\n");
 
         // Check for tool_result blocks
-        const toolResultBlocks = msg.content.filter(c => c.type === "tool_result");
+        const toolResultBlocks = msg.content.filter(c => c.type === CLAUDE_BLOCK.TOOL_RESULT);
         if (toolResultBlocks.length > 0) {
           toolResultBlocks.forEach(block => {
             const text = Array.isArray(block.content)
@@ -326,7 +330,7 @@ function convertMessages(messages, tools, model) {
       }
 
       // Handle tool role (from normalized)
-      if (msg.role === "tool") {
+      if (msg.role === ROLE.TOOL) {
         const toolContent = typeof msg.content === "string" ? msg.content : "";
         pendingToolResults.push({
           toolUseId: msg.tool_call_id,
@@ -336,16 +340,16 @@ function convertMessages(messages, tools, model) {
       } else if (content) {
         pendingUserContent.push(content);
       }
-    } else if (role === "assistant") {
+    } else if (role === ROLE.ASSISTANT) {
       // Extract text content and tool uses
       let textContent = "";
       let toolUses = [];
 
       if (Array.isArray(msg.content)) {
-        const textBlocks = msg.content.filter(c => c.type === "text");
+        const textBlocks = msg.content.filter(c => c.type === OPENAI_BLOCK.TEXT);
         textContent = textBlocks.map(b => b.text).join("\n").trim();
 
-        const toolUseBlocks = msg.content.filter(c => c.type === "tool_use");
+        const toolUseBlocks = msg.content.filter(c => c.type === CLAUDE_BLOCK.TOOL_USE);
         toolUses = toolUseBlocks;
       } else if (typeof msg.content === "string") {
         textContent = msg.content.trim();
@@ -508,19 +512,28 @@ function convertMessages(messages, tools, model) {
  *    `thinking`, OpenAI `reasoning_effort`, AMP/Cursor magic tags, and model
  *    name hints.
  */
-export function buildKiroPayload(model, body, stream, credentials) {
+export function openaiToKiroRequest(model, body, stream, credentials) {
   const messages = body.messages || [];
   const tools = body.tools || [];
   const maxTokens = 32000;
   const temperature = body.temperature;
   const topP = body.top_p;
 
-  const { upstream: upstreamModel, agentic, thinking: modelImpliesThinking } = resolveKiroModel(model);
-  const thinkingEnabled = modelImpliesThinking || isThinkingEnabled(body, null, model);
+  const { upstream: upstreamModel, agentic } = resolveKiroModel(model);
+  const thinkingBudget = resolveKiroThinkingBudget(body, credentials?.rawHeaders, model);
 
   const { history, currentMessage } = convertMessages(messages, tools, upstreamModel);
 
-  const profileArn = credentials?.providerSpecificData?.profileArn || "";
+  // API-key (headless) auth uses a raw CodeWhisperer credential whose profile is
+  // account-specific. Injecting the shared builder-id/social *default* placeholder
+  // ARN makes CodeWhisperer reject the request with 403 "bearer token invalid"
+  // (the ARN doesn't belong to the key's account). So for api_key, only send a
+  // profileArn that was actually resolved for this connection — never the default.
+  // OAuth/social keep the default fallback (their tokens accept it).
+  const authMethod = credentials?.providerSpecificData?.authMethod;
+  const profileArn = authMethod === "api_key"
+    ? (credentials?.providerSpecificData?.profileArn || "")
+    : (credentials?.providerSpecificData?.profileArn || resolveDefaultProfileArn(authMethod));
 
   let finalContent = currentMessage?.userInputMessage?.content || "";
 
@@ -530,8 +543,8 @@ export function buildKiroPayload(model, body, stream, credentials) {
   // Order: thinking_mode tag first (so Kiro sees it before any user text),
   // then context/timestamp marker, then optional agentic chunked-write prompt.
   const prefixParts = [];
-  if (thinkingEnabled) {
-    prefixParts.push(buildThinkingSystemPrefix());
+  if (thinkingBudget !== null) {
+    prefixParts.push(buildThinkingSystemPrefix(thinkingBudget));
   }
   prefixParts.push(`[Context: Current time is ${timestamp}]`);
   if (agentic) {
@@ -542,7 +555,7 @@ export function buildKiroPayload(model, body, stream, credentials) {
   const payload = {
     conversationState: {
       chatTriggerType: "MANUAL",
-      conversationId: uuidv4(),
+      conversationId: resolveSessionId({ headers: credentials?.rawHeaders, body, connectionId: credentials?.connectionId, scope: "kiro" }),
       currentMessage: {
         userInputMessage: {
           content: finalContent,
@@ -580,4 +593,4 @@ export function buildKiroPayload(model, body, stream, credentials) {
   return payload;
 }
 
-register(FORMATS.OPENAI, FORMATS.KIRO, buildKiroPayload, null);
+register(FORMATS.OPENAI, FORMATS.KIRO, openaiToKiroRequest, null);

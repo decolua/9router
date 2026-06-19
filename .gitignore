@@ -73,26 +73,5 @@ scripts/agSniffer/*
 gitbooks/*
 gitbook/README.md
 
-# PM2 ecosystem config — включаем в репозиторий
-!ecosystem.config.js
-
-# Временные файлы
-dev-error.txt
-dev-output.txt
-next-error.txt
-next-output.txt
-devnull.txt
-cookies.txt
-logs/
-
-# Данные приложения (SQLite БД с ключами провайдеров)
-data-home/
-
-# Утилитарные скрипты отладки (не для репо)
-_*.js
-
-# Планы задач (локальные)
-task-plan.md
-
-# Cline (локальный AI-ассистент)
-cline-russian/
+# Refactor backup reference (do not bundle/lint)
+open-sse.old/

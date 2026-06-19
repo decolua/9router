@@ -1,6 +1,3 @@
-const path = require("path");
-const fs = require("fs");
-const os = require("os");
 const api = require("../api/client");
 const { confirm, pause } = require("../utils/input");
 const { showStatus } = require("../utils/display");
@@ -18,20 +15,13 @@ const COLORS = {
 
 const DEFAULT_PASSWORD = "123456";
 
-// Resolve db.json path (matches app/src/lib/dataDir.js convention)
-function getDbPath() {
-  return process.platform === "win32"
-    ? path.join(process.env.APPDATA || "", "9router", "db.json")
-    : path.join(os.homedir(), ".9router", "db.json");
-}
-
 /**
  * Show settings menu (tunnel + RTK + reset password)
  * @param {Array<string>} breadcrumb - Breadcrumb path
  */
 async function showSettingsMenu(breadcrumb = []) {
   await showMenuWithBack({
-    title: "⚙️  Настройки",
+    title: "⚙️  Settings",
     breadcrumb,
     headerContent: async (data) => {
       const lines = [];
@@ -39,21 +29,21 @@ async function showSettingsMenu(breadcrumb = []) {
       // Tunnel section
       const tunnel = data?.tunnel || {};
       if (tunnel.enabled && tunnel.publicUrl) {
-        lines.push(`  Адрес:    ${COLORS.green}${tunnel.publicUrl}/v1${COLORS.reset}`);
-        lines.push(`  Туннель:  ${COLORS.green}ВКЛ${COLORS.reset} ${COLORS.dim}(${tunnel.shortId})${COLORS.reset}`);
+        lines.push(`  Endpoint: ${COLORS.green}${tunnel.publicUrl}/v1${COLORS.reset}`);
+        lines.push(`  Tunnel:   ${COLORS.green}ON${COLORS.reset} ${COLORS.dim}(${tunnel.shortId})${COLORS.reset}`);
       } else {
-        lines.push(`  Адрес:    http://localhost:20128/v1`);
-        lines.push(`  Туннель:  ${COLORS.red}ВЫКЛ${COLORS.reset} ${COLORS.dim}(только локально)${COLORS.reset}`);
+        lines.push(`  Endpoint: http://localhost:20128/v1`);
+        lines.push(`  Tunnel:   ${COLORS.red}OFF${COLORS.reset} ${COLORS.dim}(local only)${COLORS.reset}`);
       }
 
       // RTK section
       const rtkOn = data?.settings?.rtkEnabled !== false;
-      lines.push(`  RTK:      ${rtkOn ? `${COLORS.green}ВКЛ${COLORS.reset}` : `${COLORS.red}ВЫКЛ${COLORS.reset}`} ${COLORS.dim}(Сохранение токенов)${COLORS.reset}`);
+      lines.push(`  RTK:      ${rtkOn ? `${COLORS.green}ON${COLORS.reset}` : `${COLORS.red}OFF${COLORS.reset}`} ${COLORS.dim}(Token Saver)${COLORS.reset}`);
 
       // Auth mode section
       const authMode = data?.settings?.authMode || "password";
       const authColor = authMode === "password" ? COLORS.green : COLORS.yellow;
-      lines.push(`  Вход:     ${authColor}${authMode.toUpperCase()}${COLORS.reset} ${COLORS.dim}(режим входа)${COLORS.reset}`);
+      lines.push(`  Auth:     ${authColor}${authMode.toUpperCase()}${COLORS.reset} ${COLORS.dim}(login mode)${COLORS.reset}`);
 
       return lines.join("\n");
     },
@@ -69,28 +59,28 @@ async function showSettingsMenu(breadcrumb = []) {
     },
     items: [
       {
-        label: "Туннель ВКЛ",
+        label: "Tunnel ON",
         action: async () => { await enableTunnel(); return true; }
       },
       {
-        label: "Туннель ВЫКЛ",
+        label: "Tunnel OFF",
         action: async () => { await disableTunnel(); return true; }
       },
       {
         label: (d) => {
           const on = d?.settings?.rtkEnabled !== false;
-          return `Сохранение токенов (RTK): ${on ? "ВКЛ" : "ВЫКЛ"} → переключить`;
+          return `Token Saver (RTK): ${on ? "ON" : "OFF"} → toggle`;
         },
         action: async (d) => { await toggleRtk(d?.settings?.rtkEnabled !== false); return true; }
       },
       {
-        label: "🔑 Сбросить пароль на стандартный",
+        label: "🔑 Reset Password to Default",
         action: async () => { await resetPassword(); return true; }
       },
       {
         label: (d) => {
           const mode = d?.settings?.authMode || "password";
-          return mode === "password" ? "🔓 Режим входа (уже password)" : `🔓 Сбросить режим входа на password (сейчас: ${mode})`;
+          return mode === "password" ? "🔓 Reset Auth Mode (already password)" : `🔓 Reset Auth Mode to Password (current: ${mode})`;
         },
         action: async () => { await resetAuthMode(); return true; }
       }
@@ -103,18 +93,18 @@ async function showSettingsMenu(breadcrumb = []) {
  * and user is locked out of dashboard. CLI bypasses auth via x-9r-cli-token.
  */
 async function resetAuthMode() {
-  const ok = await confirm("Сбросить режим входа на PASSWORD (отключить OIDC)?");
+  const ok = await confirm("Reset auth mode to PASSWORD (disable OIDC)?");
   if (!ok) {
-    showStatus("Отменено", "info");
+    showStatus("Cancelled", "info");
     await pause();
     return;
   }
 
   const result = await api.updateSettings({ authMode: "password" });
   if (result.success) {
-    showStatus("Режим входа сброшен на password. OIDC отключён.", "success");
+    showStatus("Auth mode reset to password. OIDC disabled.", "success");
   } else {
-    showStatus(`Ошибка: ${result.error}`, "error");
+    showStatus(`Failed: ${result.error}`, "error");
   }
   await pause();
 }
@@ -123,18 +113,18 @@ async function resetAuthMode() {
  * Enable tunnel via API
  */
 async function enableTunnel() {
-  showStatus("Создание туннеля...", "info");
+  showStatus("Creating tunnel...", "info");
   const result = await api.enableTunnel();
 
   if (result.success) {
     const { publicUrl, shortId, alreadyRunning } = result.data || {};
     if (alreadyRunning) {
-      showStatus(`Туннель уже запущен: ${publicUrl}`, "success");
+      showStatus(`Tunnel already running: ${publicUrl}`, "success");
     } else {
-      showStatus(`Туннель включён: ${publicUrl} (${shortId})`, "success");
+      showStatus(`Tunnel enabled: ${publicUrl} (${shortId})`, "success");
     }
   } else {
-    showStatus(`Ошибка: ${result.error}`, "error");
+    showStatus(`Failed: ${result.error}`, "error");
   }
 
   await pause();
@@ -147,9 +137,9 @@ async function disableTunnel() {
   const result = await api.disableTunnel();
 
   if (result.success) {
-    showStatus("Туннель отключён", "success");
+    showStatus("Tunnel disabled", "success");
   } else {
-    showStatus(`Ошибка: ${result.error}`, "error");
+    showStatus(`Failed: ${result.error}`, "error");
   }
 
   await pause();
@@ -163,43 +153,30 @@ async function toggleRtk(currentlyOn) {
   const next = !currentlyOn;
   const result = await api.updateSettings({ rtkEnabled: next });
   if (result.success) {
-    showStatus(`Сохранение токенов ${next ? "включено" : "отключено"}`, "success");
+    showStatus(`Token Saver ${next ? "enabled" : "disabled"}`, "success");
   } else {
-    showStatus(`Ошибка: ${result.error}`, "error");
+    showStatus(`Failed: ${result.error}`, "error");
   }
   await pause();
 }
 
 /**
- * Reset dashboard password by clearing the hash in db.json (Phase B).
+ * Reset dashboard password to default via server API (writes the live SQLite DB).
  * After reset, user can log in with the default password "123456".
  */
 async function resetPassword() {
-  const dbPath = getDbPath();
-
-  if (!fs.existsSync(dbPath)) {
-    showStatus(`db.json не найден в ${dbPath}`, "error");
-    await pause();
-    return;
-  }
-
-  const ok = await confirm(`Сбросить пароль панели управления на стандартный "${DEFAULT_PASSWORD}"?`);
+  const ok = await confirm(`Reset dashboard password to default "${DEFAULT_PASSWORD}"?`);
   if (!ok) {
-    showStatus("Отменено", "info");
+    showStatus("Cancelled", "info");
     await pause();
     return;
   }
 
-  try {
-    const raw = fs.readFileSync(dbPath, "utf-8");
-    const db = JSON.parse(raw);
-    if (db.settings && Object.prototype.hasOwnProperty.call(db.settings, "password")) {
-      delete db.settings.password;
-    }
-    fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
-    showStatus(`Пароль сброшен. Стандартный: ${DEFAULT_PASSWORD}`, "success");
-  } catch (err) {
-    showStatus(`Ошибка сброса пароля: ${err.message}`, "error");
+  const result = await api.resetPassword();
+  if (result.success) {
+    showStatus(`Password reset. Default: ${DEFAULT_PASSWORD}`, "success");
+  } else {
+    showStatus(`Failed to reset password: ${result.error}`, "error");
   }
   await pause();
 }

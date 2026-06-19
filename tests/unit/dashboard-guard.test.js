@@ -61,6 +61,26 @@ describe("dashboard guard public LLM API access", () => {
     expect(mocks.validateApiKey).not.toHaveBeenCalled();
   });
 
+  it("rejects remote Host-spoof when real peer IP is non-loopback", async () => {
+    const response = await proxy(request("/v1/chat/completions", {
+      host: "localhost",
+      "x-9r-real-ip": "10.204.111.34",
+    }));
+
+    expect(response.status).toBe(401);
+    expect(response.body.error).toBe("API key required for remote API access");
+  });
+
+  it("allows loopback peer IP regardless of Host", async () => {
+    const response = await proxy(request("/v1/chat/completions", {
+      host: "localhost:20128",
+      "x-9r-real-ip": "127.0.0.1",
+    }));
+
+    expect(response).toBe(mocks.nextResponse);
+    expect(mocks.validateApiKey).not.toHaveBeenCalled();
+  });
+
   it("rejects remote rewritten public LLM API without API key", async () => {
     const response = await proxy(request("/api/v1/chat/completions", { host: "router.example.com" }));
 
@@ -87,6 +107,25 @@ describe("dashboard guard public LLM API access", () => {
 
     expect(response.status).toBe(401);
     expect(response.body.error).toBe("API key required for remote API access");
+  });
+
+  it("rejects remote codex rewrite without API key", async () => {
+    const response = await proxy(request("/codex/x", { host: "router.example.com" }));
+
+    expect(response.status).toBe(401);
+    expect(response.body.error).toBe("API key required for remote API access");
+  });
+
+  it("allows remote codex rewrite with valid API key", async () => {
+    mocks.validateApiKey.mockResolvedValue(true);
+
+    const response = await proxy(request("/codex/x", {
+      host: "router.example.com",
+      authorization: "Bearer sk-valid",
+    }));
+
+    expect(response).toBe(mocks.nextResponse);
+    expect(mocks.validateApiKey).toHaveBeenCalledWith("sk-valid");
   });
 
   it("allows remote public LLM API with valid bearer API key", async () => {

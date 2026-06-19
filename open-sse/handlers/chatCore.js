@@ -1,11 +1,13 @@
 import { detectFormat, getTargetFormat } from "../services/provider.js";
 import { translateRequest } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
+import { normalizeClaudePassthrough } from "../translator/formats/claude.js";
 import { COLORS } from "../utils/stream.js";
 import { createStreamController } from "../utils/streamHandler.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
 import { getModelTargetFormat, getModelStrip, getModelUpstreamId, getModelType, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
+import { PROVIDERS } from "../config/providers.js";
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
@@ -19,6 +21,9 @@ import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.j
 import { dedupeTools } from "../utils/toolDeduper.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
+import { getCapabilitiesForModel } from "../providers/capabilities.js";
+import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
+import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -58,7 +63,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   }
 
   const clientRequestedStreaming = body.stream === true || sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI;
-  const providerRequiresStreaming = provider === "openai" || provider === "codex" || provider === "commandcode";
+  const providerRequiresStreaming = PROVIDERS[provider]?.forceStream === true;
   let stream = providerRequiresStreaming ? true : (body.stream !== false);
 
   // DeepSeek-TUI: interactive TUI panel sends stream:true and needs SSE.
@@ -86,11 +91,29 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const clientTool = detectClientTool(clientRawRequest?.headers || {}, body);
   const passthrough = isNativePassthrough(clientTool, provider);
 
+  // Expose raw client headers to translators/executors for session-id resolution
+  if (credentials) credentials.rawHeaders = clientRawRequest?.headers || {};
+
+  // Auto-strip media blocks the model can't read (vision/audio/pdf) before translation.
+  if (!passthrough) {
+    const caps = getCapabilitiesForModel(provider, model);
+    if (stripUnsupportedModalities(body, sourceFormat, caps)) {
+      log?.debug?.("MODALITY", `stripped unsupported media for ${provider}/${model}`);
+    }
+    // Convert remote image URLs to base64 for targets that can't fetch URLs.
+    try {
+      const n = await prefetchRemoteImages(body, sourceFormat, targetFormat, { signal: undefined });
+      if (n > 0) log?.debug?.("MODALITY", `prefetched ${n} remote image(s) for ${targetFormat}`);
+    } catch (e) { log?.warn?.("MODALITY", `image prefetch failed: ${e.message}`); }
+  }
+
   let translatedBody;
   let toolNameMap;
   if (passthrough) {
     log?.debug?.("PASSTHROUGH", `${clientTool} → ${provider} | native lossless`);
     translatedBody = { ...body, model: upstreamModel };
+    // Normalize newer Cowork/CC beta shapes (adaptive thinking, mid-conversation system) the API rejects
+    if (clientTool === "claude") normalizeClaudePassthrough(translatedBody, upstreamModel);
   } else {
     translatedBody = translateRequest(sourceFormat, targetFormat, upstreamModel, body, stream, credentials, provider, reqLogger, stripList, connectionId, clientTool);
     if (!translatedBody) {
