@@ -180,40 +180,26 @@ export default function Sidebar({ onClose }) {
           <AccordionSection
             label="LLM" icon="hub" isOpen={openSections.llm}
             onToggle={() => toggleSection("llm")}
-            isActive={pathname?.startsWith("/dashboard/providers") || pathname?.startsWith("/dashboard/combos") || pathname?.startsWith("/dashboard/model-fallbacks") || pathname?.startsWith("/dashboard/mcp-gateway")}
+            isActive={pathname?.startsWith("/dashboard/providers") || pathname?.startsWith("/dashboard/combos") || pathname?.startsWith("/dashboard/model-fallbacks")}
             onClose={onClose}
           >
             {LLM_ITEMS.map((item) => (
               <SubLink key={item.href} href={item.href} icon={item.icon} label={item.label}
                 active={isActive(item.href)} onClose={onClose} />
             ))}
+          </AccordionSection>
 
-            {/* Nested MCP Gateway accordion */}
-            <div className="mt-1">
-              <button
-                onClick={() => toggleSection("mcp")}
-                className={cn(
-                  "w-full flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
-                  pathname?.startsWith("/dashboard/mcp-gateway")
-                    ? "bg-primary/10 text-primary"
-                    : "text-text-muted hover:bg-surface-2 hover:text-text-main"
-                )}
-              >
-                <span className="material-symbols-outlined text-[18px]">account_tree</span>
-                <span className="text-[13px] font-medium flex-1 text-left">MCP Gateway</span>
-                <span className="material-symbols-outlined text-[14px] transition-transform" style={{ transform: openSections.mcp ? "rotate(180deg)" : "rotate(0deg)" }}>
-                  expand_more
-                </span>
-              </button>
-              {openSections.mcp && (
-                <div className="pl-4">
-                  {MCP_ITEMS.map((item) => (
-                    <SubLink key={item.href} href={item.href} icon={item.icon} label={item.label}
-                      active={pathname?.startsWith(item.href)} onClose={onClose} indent />
-                  ))}
-                </div>
-              )}
-            </div>
+          {/* MCP Gateway accordion */}
+          <AccordionSection
+            label="MCP Gateway" icon="account_tree" isOpen={openSections.mcp}
+            onToggle={() => toggleSection("mcp")}
+            isActive={pathname?.startsWith("/dashboard/mcp-gateway")}
+            onClose={onClose}
+          >
+            {MCP_ITEMS.map((item) => (
+              <SubLink key={item.href} href={item.href} icon={item.icon} label={item.label}
+                active={pathname?.startsWith(item.href)} onClose={onClose} />
+            ))}
           </AccordionSection>
 
           {/* Observability accordion */}
