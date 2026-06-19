@@ -32,7 +32,7 @@ describe("fusion combo", () => {
 
   it("fans out to the panel then routes a synthesis turn to the judge", async () => {
     const seen = [];
-    const handleSingleModel = vi.fn(async (body, model) => {
+    const handleSingleModel = vi.fn(async (body, model, isPanel) => {
       seen.push(model);
       if (model === "p/judge") return okResponse("FINAL");
       return okResponse(`ans-${model}`);
@@ -52,19 +52,21 @@ describe("fusion combo", () => {
     expect(seen[3]).toBe("p/judge");
 
     // Panel calls are non-streaming with tools stripped.
-    for (const [body, model] of handleSingleModel.mock.calls.filter(([, m]) => m !== "p/judge")) {
+    for (const [body, model, isPanel] of handleSingleModel.mock.calls.filter(([, m]) => m !== "p/judge")) {
       expect(body.stream).toBe(false);
       expect(body.tools).toBeUndefined();
+      expect(isPanel).toBe(true);
     }
 
     // Judge call carries every panel answer + keeps the client's stream flag.
-    const [judgeBody] = handleSingleModel.mock.calls.find(([, m]) => m === "p/judge");
+    const [judgeBody, , isPanel] = handleSingleModel.mock.calls.find(([, m]) => m === "p/judge");
     const judgeText = judgeBody.messages.at(-1).content;
     expect(judgeText).toContain("ans-p/a");
     expect(judgeText).toContain("ans-p/b");
     expect(judgeText).toContain("ans-p/c");
     expect(judgeText).toContain("Source 1");
     expect(judgeBody.stream).toBe(true);
+    expect(isPanel).toBeUndefined();
 
     expect(res.ok).toBe(true);
   });
@@ -138,5 +140,46 @@ describe("fusion combo", () => {
       tuning: { minPanel: 2, stragglerGraceMs: 50, panelHardTimeoutMs: 5000 },
     });
     expect(res.status).toBe(503);
+  });
+
+  it("flattens previous tool history and assistant tool_calls into prose for panel calls", async () => {
+    const handleSingleModel = vi.fn(async () => okResponse("ans"));
+    await handleFusionChat({
+      body: {
+        messages: [
+          { role: "user", content: "find files" },
+          { role: "assistant", content: "", tool_calls: [{ id: "c1", type: "function", function: { name: "find" } }] },
+          { role: "tool", tool_call_id: "c1", content: "['a.js']" },
+          { role: "user", content: "describe it" }
+        ],
+        tools: [{ type: "function" }]
+      },
+      models: ["p/a", "p/b"],
+      handleSingleModel,
+      log,
+      judgeModel: "p/judge"
+    });
+
+    // Panel calls keep every turn but tool turns are flattened to assistant prose.
+    const panelCalls = handleSingleModel.mock.calls.filter(([,, isPanel]) => isPanel === true);
+    expect(panelCalls.length).toBe(2);
+    for (const [panelBody] of panelCalls) {
+      expect(panelBody.tools).toBeUndefined();
+      expect(panelBody.messages.length).toBe(4);
+      expect(panelBody.messages[0]).toEqual({ role: "user", content: "find files" });
+      expect(panelBody.messages[1].tool_calls).toBeUndefined();
+      expect(panelBody.messages[1].content).toContain("find");
+      expect(panelBody.messages[2].role).toBe("assistant");
+      expect(panelBody.messages[2].content).toContain("['a.js']");
+      expect(panelBody.messages[3]).toEqual({ role: "user", content: "describe it" });
+    }
+
+    // Judge call still receives the unmodified history + synthesis prompt.
+    const judgeCall = handleSingleModel.mock.calls.find(([, m]) => m === "p/judge");
+    expect(judgeCall).toBeDefined();
+    const judgeBody = judgeCall[0];
+    expect(judgeBody.messages.length).toBe(5); // original 4 + judge prompt turn
+    expect(judgeBody.messages[1].tool_calls).toBeDefined();
+    expect(judgeBody.messages[2].role).toBe("tool");
   });
 });

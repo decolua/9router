@@ -1,3 +1,12 @@
+# v0.5.3 (2026-06-18)
+
+## Fixes
+- **Kiro**: honor thinking effort budgets
+- **AG/Kiro/Xiaomi**: provider fixes
+- **Combo/Fusion**: flatten tool history in panel calls to prevent 503
+- **LLM selector**: show custom vision models in selector and model list
+- **Image**: prevent compatible nodes from shadowing provider aliases
+
 # v0.5.2 (2026-06-17)
 
 ## Features

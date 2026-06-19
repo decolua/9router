@@ -29,7 +29,7 @@ export default {
     },
     retry: {
       "429": {
-        attempts: 6,
+        attempts: 3,
       },
       "503": {
         attempts: 3,
