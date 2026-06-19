@@ -21,7 +21,7 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { isActive } = body;
+    const { isActive, name, role, allowedModels, allowedProviders, monthlyTokenLimit, monthlyBudgetUsd } = body;
 
     const existing = await getApiKeyById(id);
     if (!existing) {
@@ -30,6 +30,22 @@ export async function PUT(request, { params }) {
 
     const updateData = {};
     if (isActive !== undefined) updateData.isActive = isActive;
+    if (name !== undefined) updateData.name = name;
+    if (role !== undefined) updateData.role = role;
+    if (allowedModels !== undefined) {
+      if (!Array.isArray(allowedModels)) {
+        return NextResponse.json({ error: "allowedModels must be an array" }, { status: 400 });
+      }
+      updateData.allowedModels = allowedModels;
+    }
+    if (allowedProviders !== undefined) {
+      if (!Array.isArray(allowedProviders)) {
+        return NextResponse.json({ error: "allowedProviders must be an array" }, { status: 400 });
+      }
+      updateData.allowedProviders = allowedProviders;
+    }
+    if (monthlyTokenLimit !== undefined) updateData.monthlyTokenLimit = monthlyTokenLimit;
+    if (monthlyBudgetUsd !== undefined) updateData.monthlyBudgetUsd = monthlyBudgetUsd;
 
     const updated = await updateApiKey(id, updateData);
 

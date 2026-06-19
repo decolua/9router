@@ -29,8 +29,19 @@ export {
 
 // API keys
 export {
-  getApiKeys, getApiKeyById, createApiKey, updateApiKey, deleteApiKey, validateApiKey,
+  getApiKeys, getApiKeyById, createApiKey, updateApiKey, deleteApiKey,
+  validateApiKey, resolveApiKeyRecord,
 } from "./repos/apiKeysRepo.js";
+
+// MCP gateway: upstream instances, gateway API keys, per-key grants
+export {
+  getInstances, getInstanceById, getInstanceBySlug, getEnabledInstancesByIds,
+  createInstance, updateInstance, deleteInstance,
+} from "./repos/mcpInstancesRepo.js";
+export {
+  getGatewayKeys, getGatewayKeyById, createGatewayKey, deleteGatewayKey,
+  validateGatewayKey, getGrantsForKey, getGrantsForKeyDetailed, setGrants,
+} from "./repos/mcpGatewayRepo.js";
 
 // Combos
 export {
@@ -60,12 +71,14 @@ export {
   statsEmitter, trackPendingRequest, getActiveRequests,
   saveRequestUsage, getUsageHistory, getUsageStats, getChartData,
   appendRequestLog, getRecentLogs,
+  getMonthlyUsageForKey, getMonthlyUsageBreakdownForKey,
 } from "./repos/usageRepo.js";
 
 // Request details
 export {
   saveRequestDetail, getRequestDetails, getRequestDetailById,
 } from "./repos/requestDetailsRepo.js";
+
 
 // Export/import full DB
 export async function exportDb() {

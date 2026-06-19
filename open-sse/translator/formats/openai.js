@@ -125,6 +125,17 @@ export function filterToOpenAIFormat(body) {
     }
   }
 
-  return body;
+
+  // P4.2: OpenAI's newer `max_completion_tokens` (Responses-style) is also
+  // accepted on the Chat Completions endpoint for forward-compatibility.
+  // The chat-completions path traditionally reads `max_tokens`, so we
+  // normalize: if the client sent `max_completion_tokens` and no
+  // `max_tokens`, copy the value over. The Responses translator
+  // (`openai-responses.js`) handles `max_completion_tokens` natively.
+  if (body.max_completion_tokens != null && body.max_tokens == null) {
+    body.max_tokens = body.max_completion_tokens;
+  }
+
+   return body;
 }
 

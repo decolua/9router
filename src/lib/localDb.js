@@ -10,12 +10,25 @@ export {
   createProviderNode, updateProviderNode, deleteProviderNode,
   getProxyPools, getProxyPoolById,
   createProxyPool, updateProxyPool, deleteProxyPool,
-  getApiKeys, getApiKeyById, createApiKey, updateApiKey, deleteApiKey, validateApiKey,
+  getApiKeys, getApiKeyById, createApiKey, updateApiKey, deleteApiKey,
+  validateApiKey, resolveApiKeyRecord,
+  getMonthlyUsageForKey, getMonthlyUsageBreakdownForKey,
   getCombos, getComboById, getComboByName,
   createCombo, updateCombo, deleteCombo,
   getModelAliases, setModelAlias, deleteModelAlias,
   getCustomModels, addCustomModel, deleteCustomModel,
   getMitmAlias, setMitmAliasAll,
+  // MCP gateway
+  getInstances, getInstanceById, getInstanceBySlug, getEnabledInstancesByIds,
+  createInstance, updateInstance, deleteInstance,
+  getGatewayKeys, getGatewayKeyById, createGatewayKey, deleteGatewayKey,
+  validateGatewayKey, getGrantsForKey, getGrantsForKeyDetailed, setGrants,
+  // Disabled models
+  getDisabledModels, getDisabledByProvider, disableModels, enableModels,
+  // Usage / request details
+  saveRequestUsage, getUsageHistory, getUsageStats, getChartData,
+  appendRequestLog, getRecentLogs,
+  saveRequestDetail, getRequestDetails, getRequestDetailById,
   getPricing, getPricingForModel, updatePricing, resetPricing, resetAllPricing,
   exportDb, importDb,
 } from "@/lib/db/index.js";

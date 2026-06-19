@@ -61,3 +61,33 @@ describe("OpenAI → Codex Responses (reverse)", () => {
     expect(fc.call_id.length).toBeLessThanOrEqual(64);
   });
 });
+
+describe("Codex normalizeCodexTools: tool_search + custom passthrough (#1907)", () => {
+  it("preserves tool_search and custom tools with their fields", async () => {
+    const { CodexExecutor } = await import("../../open-sse/executors/codex.js");
+    const executor = new CodexExecutor();
+    const body = {
+      model: "gpt-5",
+      input: [{ type: "message", role: "user", content: "hi" }],
+      tools: [
+        { type: "tool_search", execution: { providers: ["web"] }, description: "search the web", parameters: { type: "object" } },
+        { type: "custom", name: "apply_patch", description: "apply a patch", format: { diff: true } },
+        { type: "function", name: "x", description: "x", parameters: { type: "object" } },
+      ],
+      tool_choice: { type: "function", name: "apply_patch" },
+    };
+    executor.transformRequest("gpt-5", body, true, null);
+    const types = (body.tools || []).map((t) => t.type);
+    expect(types).toContain("tool_search");
+    expect(types).toContain("custom");
+    const ts = body.tools.find((t) => t.type === "tool_search");
+    expect(ts?.execution).toBeTruthy();
+    expect(ts?.parameters).toBeTruthy();
+    const cu = body.tools.find((t) => t.type === "custom");
+    expect(cu?.name).toBe("apply_patch");
+    expect(cu?.format).toBeTruthy();
+    // custom name added to validNames → tool_choice referencing it survives
+    expect(body.tool_choice).toBeTruthy();
+    expect(body.tool_choice?.name).toBe("apply_patch");
+  });
+});

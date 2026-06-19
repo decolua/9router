@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { getSettings, validateApiKey } from "@/lib/localDb";
+import { getSettings, validateApiKey, validateGatewayKey } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
+import { extractApiKey } from "@/shared/utils/extractApiKey";
 
 const CLI_TOKEN_HEADER = "x-9r-cli-token";
 const CLI_TOKEN_SALT = "9r-cli-auth";
@@ -114,16 +115,16 @@ function isPublicLlmApi(pathname) {
   return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
-function extractApiKey(request) {
-  const authHeader = request.headers.get("Authorization");
-  if (authHeader?.startsWith("Bearer ")) return authHeader.slice(7);
-  return request.headers.get("x-api-key");
-}
-
 async function hasValidApiKey(request) {
   const apiKey = extractApiKey(request);
   if (!apiKey) return false;
   return await validateApiKey(apiKey);
+}
+
+async function hasValidGatewayKey(request) {
+  const apiKey = extractApiKey(request);
+  if (!apiKey) return false;
+  return !!(await validateGatewayKey(apiKey));
 }
 
 async function canAccessPublicLlmApi(request) {
@@ -190,9 +191,41 @@ export async function proxy(request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Management & Control API: dedicated branch. `/api/v1/admin/{anything}`
+  // accepts an active apiKeys record (admin OR user role; role enforcement
+  // happens inside each route handler). Spec + docs endpoints are PUBLIC so
+  // tooling can fetch them without a key. MUST precede isPublicLlmApi so
+  // admin paths are not treated as open LLM API (PUBLIC_PREFIX /api/v1).
+  const MGMT_PREFIX = "/api/v1/admin";
+  const isMgmtOpenPath =
+    pathname === "/api/v1/admin/openapi.json" ||
+    pathname === "/api/v1/admin/docs";
+  if (pathname === MGMT_PREFIX || pathname.startsWith(MGMT_PREFIX + "/")) {
+    if (isMgmtOpenPath) return NextResponse.next();
+    if (isLocalRequest(request)) return NextResponse.next();
+    if (await hasValidCliToken(request)) return NextResponse.next();
+    if (await hasValidApiKey(request)) return NextResponse.next();
+    return NextResponse.json({ error: "API key required" }, { status: 401 });
+  }
+
   if (isPublicLlmApi(pathname)) {
     if (await canAccessPublicLlmApi(request)) return NextResponse.next();
     return NextResponse.json({ error: "API key required for remote API access" }, { status: 401 });
+  }
+
+  // MCP gateway: dedicated branch — only the exact MCP protocol surfaces
+  // (`/api/mcp-gateway`, `/sse`, `/message`) accept a gateway API key.
+  // CRUD subpaths (`/instances/*`, `/keys/*`) fall through to the standard
+  // JWT/CLI auth below.
+  const isGatewayProtocolSurface =
+    pathname === "/api/mcp-gateway" ||
+    pathname === "/api/mcp-gateway/sse" ||
+    pathname === "/api/mcp-gateway/message";
+  if (isGatewayProtocolSurface) {
+    if (isLocalRequest(request)) return NextResponse.next();
+    if (await hasValidCliToken(request)) return NextResponse.next();
+    if (await hasValidGatewayKey(request)) return NextResponse.next();
+    return NextResponse.json({ error: "gateway key required" }, { status: 401 });
   }
 
   // Deny-by-default for /api/* — public allow-list bypasses, everything else requires auth.

@@ -60,8 +60,10 @@ export default function ModelFallbacksPage() {
     }
   };
 
-  const handlePick = (modelStr) => {
+  const handlePick = (model) => {
     if (!picker) return;
+    const modelStr = typeof model === "string" ? model : (model?.value || model?.name || "");
+    if (!modelStr) return;
     const { kind, editIndex } = picker;
 
     if (kind === "primary" && editIndex === null) {
@@ -216,6 +218,7 @@ export default function ModelFallbacksPage() {
           activeProviders={activeProviders}
           onClose={() => setPicker(null)}
           onSelect={handlePick}
+          closeOnSelect={false}
         />
       )}
 

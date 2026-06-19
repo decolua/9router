@@ -58,6 +58,22 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
     result.generationConfig.maxOutputTokens = body.max_tokens;
   }
 
+  // P4.3: response_format → Gemini responseMimeType/responseSchema.
+  // json_object → application/json; json_schema → application/json + schema.
+  // Absent / null / unknown → no-op (don't crash on unsupported types).
+  if (body.response_format && typeof body.response_format === "object") {
+    if (body.response_format.type === "json_object") {
+      result.generationConfig.responseMimeType = "application/json";
+    } else if (
+      body.response_format.type === "json_schema" &&
+      body.response_format.json_schema &&
+      body.response_format.json_schema.schema
+    ) {
+      result.generationConfig.responseMimeType = "application/json";
+      result.generationConfig.responseSchema = body.response_format.json_schema.schema;
+    }
+  }
+
   // Build tool_call_id -> name map
   const tcID2Name = {};
   if (body.messages && Array.isArray(body.messages)) {

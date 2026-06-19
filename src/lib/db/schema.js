@@ -1,5 +1,5 @@
 // Latest schema version — bumped when a migration is added in ./migrations/
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 5;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -79,6 +79,12 @@ export const TABLES = {
       machineId: "TEXT",
       isActive: "INTEGER DEFAULT 1",
       createdAt: "TEXT NOT NULL",
+      role: "TEXT NOT NULL DEFAULT 'user'",
+      allowedModels: "TEXT",
+      allowedProviders: "TEXT",
+      monthlyTokenLimit: "INTEGER DEFAULT 0",
+      monthlyBudgetUsd: "REAL DEFAULT 0",
+      updatedAt: "TEXT",
     },
     indexes: ["CREATE INDEX IF NOT EXISTS idx_ak_key ON apiKeys(key)"],
   },

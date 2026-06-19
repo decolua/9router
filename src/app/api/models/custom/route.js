@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCustomModels, addCustomModel, deleteCustomModel } from "@/models";
+import { setCustomModelCapabilities } from "open-sse/providers/capabilities.js";
 
 export const dynamic = "force-dynamic";
 
@@ -14,14 +15,14 @@ export async function GET() {
   }
 }
 
-// POST /api/models/custom - Add custom model
 export async function POST(request) {
   try {
-    const { providerAlias, id, type, name } = await request.json();
+    const { providerAlias, id, type, name, vision } = await request.json();
     if (!providerAlias || !id) {
       return NextResponse.json({ error: "providerAlias and id required" }, { status: 400 });
     }
-    const added = await addCustomModel({ providerAlias, id, type: type || "llm", name });
+    const added = await addCustomModel({ providerAlias, id, type: type || "llm", name, vision: !!vision });
+    setCustomModelCapabilities(await getCustomModels());
     return NextResponse.json({ success: true, added });
   } catch (error) {
     console.log("Error adding custom model:", error);
@@ -40,6 +41,7 @@ export async function DELETE(request) {
       return NextResponse.json({ error: "providerAlias and id required" }, { status: 400 });
     }
     await deleteCustomModel({ providerAlias, id, type });
+    setCustomModelCapabilities(await getCustomModels());
     return NextResponse.json({ success: true });
   } catch (error) {
     console.log("Error deleting custom model:", error);

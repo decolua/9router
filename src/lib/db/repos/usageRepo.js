@@ -777,3 +777,58 @@ export async function getRecentLogs(limit = 200) {
     return [];
   }
 }
+
+// ── Per-key monthly usage (calendar month, server local time) ────────────────
+// Usage rows store createApiKeyUsageId(rawKey) (sha256-prefix), NOT the raw key.
+// These queries mirror that storage so callers pass the raw key.
+
+function startOfCurrentMonthLocalISO() {
+  const d = new Date();
+  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString();
+}
+
+export async function getMonthlyUsageForKey(rawKey) {
+  if (!rawKey) return { tokens: 0, cost: 0, requests: 0, monthStart: startOfCurrentMonthLocalISO() };
+  const db = await getAdapter();
+  const usageId = createApiKeyUsageId(rawKey);
+  const start = startOfCurrentMonthLocalISO();
+  const row = db.get(
+    `SELECT COALESCE(SUM(promptTokens + completionTokens), 0) as tokens,
+            COALESCE(SUM(cost), 0) as cost,
+            COUNT(*) as requests
+       FROM usageHistory
+      WHERE apiKey = ? AND timestamp >= ?`,
+    [usageId, start]
+  );
+  return {
+    tokens: row?.tokens || 0,
+    cost: row?.cost || 0,
+    requests: row?.requests || 0,
+    monthStart: start,
+  };
+}
+
+export async function getMonthlyUsageBreakdownForKey(rawKey) {
+  if (!rawKey) return [];
+  const db = await getAdapter();
+  const usageId = createApiKeyUsageId(rawKey);
+  const start = startOfCurrentMonthLocalISO();
+  const rows = db.all(
+    `SELECT model, provider,
+            SUM(promptTokens + completionTokens) as tokens,
+            SUM(cost) as cost,
+            COUNT(*) as requests
+       FROM usageHistory
+      WHERE apiKey = ? AND timestamp >= ?
+      GROUP BY model, provider
+      ORDER BY tokens DESC`,
+    [usageId, start]
+  );
+  return rows.map((r) => ({
+    model: r.model,
+    provider: r.provider,
+    tokens: r.tokens || 0,
+    cost: r.cost || 0,
+    requests: r.requests || 0,
+  }));
+}

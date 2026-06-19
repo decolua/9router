@@ -1,0 +1,48 @@
+{"mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","number":1893,"reviewDecision":"","statusCheckRollup":[],"title":"fix(auth): preserve client IP behind local reverse proxy"}
+{"mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","number":1895,"reviewDecision":"","statusCheckRollup":[],"title":"[codex] Fix Perplexity models endpoint"}
+{"mergeStateStatus":"DIRTY","mergeable":"CONFLICTING","number":1896,"reviewDecision":"","statusCheckRollup":[],"title":"fix: preserve 'pattern' in antigravity tool schema translation (#1368)"}
+{"mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","number":1897,"reviewDecision":"","statusCheckRollup":[],"title":"fix(cli-tools): tolerate JSONC configs in CLI tool settings routes"}
+{"mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","number":1898,"reviewDecision":"","statusCheckRollup":[],"title":"fix(usage): eliminate zero-token duplicate entries in streaming usage"}
+{"mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","number":1892,"reviewDecision":"","statusCheckRollup":[],"title":"feat: support custom baseUrl for Anthropic-compatible proxies"}
+{"mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","number":1900,"reviewDecision":"","statusCheckRollup":[],"title":"feat(usage): add cached tokens and cache hit % metrics"}
+{"mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","number":1899,"reviewDecision":"","statusCheckRollup":[],"title":"feat: add optional Headroom token saver"}
+{"mergeStateStatus":"DIRTY","mergeable":"CONFLICTING","number":1883,"reviewDecision":"","statusCheckRollup":[],"title":"feat(cli): add and document headless command mode and API key/provider management"}
+{"mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","number":1875,"reviewDecision":"","statusCheckRollup":[],"title":"fix(kiro): inject agentic chunked-write prompt only on first turn (not every turn)"}
+{"mergeStateStatus":"DIRTY","mergeable":"CONFLICTING","number":1848,"reviewDecision":"","statusCheckRollup":[],"title":"feat(glm): add Z.AI OAuth Coding Plan with captcha and API key parity"}
+{"mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","number":1854,"reviewDecision":"","statusCheckRollup":[],"title":"feat(quota): persist per-account quota and skip out-of-quota Kiro accounts during routing"}
+{"mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","number":1845,"reviewDecision":"","statusCheckRollup":[],"title":"feat(provider): add CodeBuddy international provider (www.codebuddy.ai)"}
+{"mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","number":1837,"reviewDecision":"","statusCheckRollup":[],"title":"fix(usage): account for cached token pricing"}
+{"mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","number":1843,"reviewDecision":"","statusCheckRollup":[],"title":"fix(commandcode): force params.stream=true for non-streaming requests"}
+{"mergeStateStatus":"DIRTY","mergeable":"CONFLICTING","number":1829,"reviewDecision":"","statusCheckRollup":[],"title":"fix(dashboard): unify custom provider icon fallbacks"}
+{"mergeStateStatus":"DIRTY","mergeable":"CONFLICTING","number":1828,"reviewDecision":"","statusCheckRollup":[],"title":"fix: rename max_tokens to max_completion_tokens for newer OpenAI models"}
+{"mergeStateStatus":"DIRTY","mergeable":"CONFLICTING","number":1824,"reviewDecision":"","statusCheckRollup":[],"title":"fix: stabilize MiMo Free Claude streams"}
+{"mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","number":1827,"reviewDecision":"","statusCheckRollup":[],"title":"fix: bump better-sqlite3 to 12.10.1 for Node 26 compatibility"}
+{"mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","number":1823,"reviewDecision":"","statusCheckRollup":[],"title":"fix: refresh Kiro model discovery on invalid bearer token"}
+{"mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","number":1825,"reviewDecision":"","statusCheckRollup":[],"title":"feat: add toggleable tool source diagnostics"}
+{"mergeStateStatus":"DIRTY","mergeable":"CONFLICTING","number":1821,"reviewDecision":"","statusCheckRollup":[],"title":"fix(codex): treat OpenAI 401/token_expired as permanent refresh failure (re-auth, not retry)"}
+{"mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","number":1820,"reviewDecision":"","statusCheckRollup":[],"title":"fix(codex): normalize fast service tier"}
+{"mergeStateStatus":"DIRTY","mergeable":"CONFLICTING","number":1819,"reviewDecision":"","statusCheckRollup":[],"title":"fix(codex): bind ChatGPT workspace accounts"}
+{"mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","number":1818,"reviewDecision":"","statusCheckRollup":[],"title":"fix(cli): detect standalone server path"}
+{"mergeStateStatus":"DIRTY","mergeable":"CONFLICTING","number":1817,"reviewDecision":"","statusCheckRollup":[],"title":"fix(translator): preserve reasoning effort"}
+{"mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","number":1816,"reviewDecision":"","statusCheckRollup":[],"title":"fix: add error boundaries for provider detail and MITM pages (Docker hydration crash)"}
+{"mergeStateStatus":"DIRTY","mergeable":"CONFLICTING","number":1810,"reviewDecision":"","statusCheckRollup":[],"title":"fix: reverse proxy basePath + auth redirects for Next.js 16"}
+{"mergeStateStatus":"DIRTY","mergeable":"CONFLICTING","number":1813,"reviewDecision":"","statusCheckRollup":[],"title":"Fix Xiaomi Token Plan Claude-native routing"}
+{"mergeStateStatus":"DIRTY","mergeable":"CONFLICTING","number":1803,"reviewDecision":"","statusCheckRollup":[],"title":"feat(provider): integrate MiMo Free provider with signature-gated auth"}
+{"mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","number":1805,"reviewDecision":"","statusCheckRollup":[],"title":"fix(qoder): propagate upstream error status via HTTP status instead of SSE text, enabling combo/account fallback"}
+{"mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","number":1802,"reviewDecision":"","statusCheckRollup":[],"title":"feat: implement Mux agent integration with server-side management and client-side monitoring UI"}
+{"mergeStateStatus":"DIRTY","mergeable":"CONFLICTING","number":1801,"reviewDecision":"","statusCheckRollup":[],"title":"feat: add Netlify Proxy Deployer support and Speedtest Latency & TPS checks"}
+{"mergeStateStatus":"DIRTY","mergeable":"CONFLICTING","number":1797,"reviewDecision":"","statusCheckRollup":[],"title":"fix(openai): fallback to responses for gpt-5/codex"}
+{"mergeStateStatus":"DIRTY","mergeable":"CONFLICTING","number":1792,"reviewDecision":"","statusCheckRollup":[],"title":"fix: remove --webpack flag and make auth redirects basePath-aware"}
+{"mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","number":1793,"reviewDecision":"","statusCheckRollup":[],"title":"fix: middleware detection + basePath-aware auth redirects"}
+{"mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","number":1794,"reviewDecision":"","statusCheckRollup":[],"title":"fix: avoid exposing api keys in logs and usage history"}
+{"mergeStateStatus":"DIRTY","mergeable":"CONFLICTING","number":1781,"reviewDecision":"","statusCheckRollup":[],"title":"Improve compatible provider model imports"}
+{"mergeStateStatus":"DIRTY","mergeable":"CONFLICTING","number":1784,"reviewDecision":"","statusCheckRollup":[],"title":"fix: resolve ReferenceError for allProviders in ModelSelectModal"}
+{"mergeStateStatus":"DIRTY","mergeable":"CONFLICTING","number":1775,"reviewDecision":"","statusCheckRollup":[],"title":"fix: allow multiple API keys for OpenAI/Anthropic compatible providers"}
+{"mergeStateStatus":"DIRTY","mergeable":"CONFLICTING","number":1774,"reviewDecision":"","statusCheckRollup":[],"title":"fix: remove single-connection restriction for compatible provider nodes"}
+{"mergeStateStatus":"DIRTY","mergeable":"CONFLICTING","number":1764,"reviewDecision":"","statusCheckRollup":[],"title":"feat(provider): add ModelScope as a free-tier provider"}
+{"mergeStateStatus":"DIRTY","mergeable":"CONFLICTING","number":1773,"reviewDecision":"","statusCheckRollup":[],"title":"fix: include noAuth providers (opencode) in GET /v1/models"}
+{"mergeStateStatus":"DIRTY","mergeable":"CONFLICTING","number":1760,"reviewDecision":"","statusCheckRollup":[],"title":"fix(siliconflow): update baseUrl .cn -> .com + sync full model list from API"}
+{"mergeStateStatus":"DIRTY","mergeable":"CONFLICTING","number":1741,"reviewDecision":"","statusCheckRollup":[],"title":"feat(glm): add configurable OpenAI-compatible output format for GLM Coding"}
+{"mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","number":1761,"reviewDecision":"","statusCheckRollup":[],"title":"feat(cli-tools): replace DeepSeek TUI with CodeWhale & fix: duplicate anthropic-version header for Anthropic provider"}
+{"mergeStateStatus":"DIRTY","mergeable":"CONFLICTING","number":1740,"reviewDecision":"","statusCheckRollup":[],"title":"feat(providers): Add bulk disable for failed provider models"}
+{"mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","number":1738,"reviewDecision":"","statusCheckRollup":[],"title":"fix: count alternate usage token fields"}

@@ -118,6 +118,16 @@ Default URLs:
 - Dashboard: `http://localhost:20128/dashboard`
 - OpenAI-compatible API: `http://localhost:20128/v1`
 
+## 🛡️ Management & Control API
+
+A first-class admin surface for managing API keys, viewing usage, and listing providers/models lives at `/api/v1/admin/*`. Auth via existing `sk-…` API keys (Bearer or `x-api-key`); admin role required for write operations.
+
+- Live OpenAPI 3.1 spec: [`/api/v1/admin/openapi.json`](/api/v1/admin/openapi.json) (public — no key)
+- Self-contained docs page: [`/api/v1/admin/docs`](/api/v1/admin/docs)
+- Reference endpoints: `GET /me`, `GET /me/usage`, `GET/POST /keys`, `GET/PATCH/DELETE /keys/{id}`, `GET /providers`, `GET /models`, `GET /usage`
+
+Per-key role (`admin`/`user`) + model/provider allow-lists + monthly token/USD caps are also enforced on `/v1` traffic (429 token-cap, 402 budget-cap). Unknown/inactive keys are rejected even when `requireApiKey=false` (auth fails-closed; limits fail-open on transient DB errors).
+
 ---
 
 ## Video Guides

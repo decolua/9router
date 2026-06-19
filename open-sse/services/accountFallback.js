@@ -167,7 +167,7 @@ export function buildClearModelLocksUpdate(connection) {
  * usage API but does not surface it on chat errors, so depletion can only be
  * known from the persisted quota snapshot.
  */
-export const QUOTA_DEPLETION_PROVIDERS = new Set(["kiro"]);
+export const QUOTA_DEPLETION_PROVIDERS = new Set(["kiro", "qoder", "antigravity", "codex"]);
 
 /**
  * Earliest future resetAt among a connection's depleted quota buckets, or null

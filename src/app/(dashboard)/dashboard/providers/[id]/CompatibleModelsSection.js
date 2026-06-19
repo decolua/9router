@@ -115,9 +115,21 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
     // Skip if this exact model already has an alias
     if (Object.values(modelAliases).includes(fullModel)) return null;
     const baseAlias = generateDefaultAlias(modelId);
-    if (!modelAliases[baseAlias]) return baseAlias;
-    const prefixedAlias = `${providerDisplayAlias}-${baseAlias}`;
-    if (!modelAliases[prefixedAlias]) return prefixedAlias;
+    const flattened = modelId.replace(/\//g, "-");
+    const candidates = [
+      baseAlias,
+      `${providerDisplayAlias}-${baseAlias}`,
+      flattened,
+      `${providerDisplayAlias}-${flattened}`,
+    ];
+    for (const c of candidates) {
+      if (!modelAliases[c]) return c;
+    }
+    // Numeric fallback: baseAlias-2, -3, ... -20
+    for (let n = 2; n <= 20; n += 1) {
+      const c = `${baseAlias}-${n}`;
+      if (!modelAliases[c]) return c;
+    }
     return null;
   };
 

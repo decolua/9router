@@ -178,7 +178,7 @@ export const PATTERN_CAPABILITIES = [
 
   // ── MiniMax (M3 = adaptive; M2.x cannot disable) ─────────────────
   { pattern: "*minimax*image*", caps: { imageOutput: true } },
-  { pattern: "*minimax-m3*",    caps: { reasoning: true, thinkingFormat: "minimax", contextWindow: 1048576, maxOutput: 512000 } },
+  { pattern: "*minimax-m3*",    caps: { reasoning: true, vision: true, thinkingFormat: "minimax", contextWindow: 1048576, maxOutput: 512000 } },
   { pattern: "*minimax-m2.7*",  caps: { reasoning: true, thinkingFormat: "minimax", thinkingCanDisable: false, contextWindow: 204800, maxOutput: 131072 } },
   { pattern: "*minimax*",       caps: { reasoning: true, thinkingFormat: "minimax", thinkingCanDisable: false, contextWindow: 200000, maxOutput: 131072 } },
 
@@ -213,6 +213,31 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*ling-*",         caps: { reasoning: true, contextWindow: 128000 } },
 ];
 
+// In-memory capabilities override for user-added custom models.
+// Keyed by `${providerAlias}/${id}` AND bare `id`; value is a partial caps object.
+const CUSTOM_MODEL_CAPABILITIES = new Map();
+
+export function setCustomModelCapabilities(entries) {
+  CUSTOM_MODEL_CAPABILITIES.clear();
+  if (!Array.isArray(entries)) return;
+  for (const e of entries) {
+    if (!e || !e.id) continue;
+    const caps = {};
+    if (e.vision) caps.vision = true;
+    if (Object.keys(caps).length === 0) continue;
+    if (e.providerAlias) CUSTOM_MODEL_CAPABILITIES.set(`${e.providerAlias}/${e.id}`, caps);
+    CUSTOM_MODEL_CAPABILITIES.set(e.id, caps);
+  }
+}
+
+export function getCustomModelCapabilityOverride(provider, model) {
+  if (!model) return null;
+  if (provider && CUSTOM_MODEL_CAPABILITIES.has(`${provider}/${model}`)) {
+    return CUSTOM_MODEL_CAPABILITIES.get(`${provider}/${model}`);
+  }
+  return CUSTOM_MODEL_CAPABILITIES.has(model) ? CUSTOM_MODEL_CAPABILITIES.get(model) : null;
+}
+
 /**
  * Resolve capabilities for a model using the 4-step fallback chain,
  * merged over DEFAULT_CAPABILITIES so the result is always complete.
@@ -224,6 +249,9 @@ export const PATTERN_CAPABILITIES = [
 export function getCapabilitiesForModel(provider, model) {
   if (!model) return { ...DEFAULT_CAPABILITIES };
 
+  // 0. User-defined custom-model override (highest priority)
+  const custom = getCustomModelCapabilityOverride(provider, model);
+  if (custom) return { ...DEFAULT_CAPABILITIES, ...custom };
   // 1. Provider-specific override
   if (provider && PROVIDER_CAPABILITIES[provider]?.[model]) {
     return { ...DEFAULT_CAPABILITIES, ...PROVIDER_CAPABILITIES[provider][model] };

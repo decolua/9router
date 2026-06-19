@@ -25,6 +25,9 @@ const CODEX_HOSTED_TOOL_TYPES = new Set([
   "computer", "computer_use_preview", "code_interpreter", "mcp", "local_shell"
 ]);
 
+// Tool types Codex passes through untouched (preserve tool fields, don't flatten).
+const CODEX_PASSTHROUGH_TOOL_TYPES = new Set(["tool_search", "custom"]);
+
 // Allowlist of fields accepted by Codex Responses API — anything else is stripped
 const RESPONSES_API_ALLOWLIST = new Set([
   "model", "input", "instructions", "tools", "tool_choice", "stream", "store",
@@ -68,6 +71,11 @@ function normalizeCodexTools(body) {
           if (n) validNames.add(n);
         }
       }
+      return true;
+    }
+    if (CODEX_PASSTHROUGH_TOOL_TYPES.has(type)) {
+      const n = typeof tool.name === "string" ? tool.name.trim() : "";
+      if (n) validNames.add(n);
       return true;
     }
     if (type !== "function") {

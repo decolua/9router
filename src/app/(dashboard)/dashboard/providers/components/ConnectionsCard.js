@@ -30,7 +30,7 @@ function CooldownTimer({ until }) {
 CooldownTimer.propTypes = { until: PropTypes.string.isRequired };
 
 // ── ConnectionRow ──────────────────────────────────────────────
-function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete }) {
+function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, onReauth }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
   const [isCooldown, setIsCooldown] = useState(false);
@@ -155,6 +155,16 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
               )}
             </div>
           )}
+          {isOAuth && onReauth && (
+            <button
+              onClick={() => onReauth(connection)}
+              className="flex flex-col items-center px-2 py-1 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary"
+              title="Re-authenticate (refresh OAuth token in place)"
+            >
+              <span className="material-symbols-outlined text-[18px]">cached</span>
+              <span className="text-[10px] leading-tight">Re-auth</span>
+            </button>
+          )}
           <button onClick={onEdit} className="flex flex-col items-center px-2 py-1 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary">
             <span className="material-symbols-outlined text-[18px]">edit</span>
             <span className="text-[10px] leading-tight">Edit</span>
@@ -191,6 +201,7 @@ ConnectionRow.propTypes = {
   onUpdateProxy: PropTypes.func,
   onEdit: PropTypes.func.isRequired,
   onDelete: PropTypes.func.isRequired,
+  onReauth: PropTypes.func,
 };
 
 // ── AddApiKeyModal ─────────────────────────────────────────────
@@ -396,6 +407,29 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
     } catch (e) { console.log("update connection error:", e); }
   };
 
+  const handleReauth = async (conn) => {
+    if (!conn?.id) return;
+    try {
+      const res = await fetch(`/api/providers/${conn.id}/reauth`, { method: "POST" });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok) {
+        window.dispatchEvent(new CustomEvent("toast", { detail: { type: "success", message: "Token refreshed" } }));
+        await fetch_();
+        return;
+      }
+      // 401 → refresh token dead; route to provider's OAuth start flow
+      if (res.status === 401) {
+        window.dispatchEvent(new CustomEvent("toast", { detail: { type: "error", message: "Refresh token expired — redirecting to re-login" } }));
+        window.location.href = `/api/oauth/${providerId}/start`;
+        return;
+      }
+      window.dispatchEvent(new CustomEvent("toast", { detail: { type: "error", message: body?.error || "Re-auth failed" } }));
+    } catch (e) {
+      console.log("reauth error:", e);
+      window.dispatchEvent(new CustomEvent("toast", { detail: { type: "error", message: "Re-auth failed" } }));
+    }
+  };
+
   if (loading) return <Card><div className="h-20 animate-pulse bg-black/5 rounded-lg" /></Card>;
 
   return (
@@ -449,6 +483,7 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
                   onUpdateProxy={(poolId) => handleUpdateProxy(conn.id, poolId)}
                   onEdit={() => { setSelectedConnection(conn); setShowEditModal(true); }}
                   onDelete={() => handleDelete(conn.id)}
+                  onReauth={isOAuth ? () => handleReauth(conn) : undefined}
                 />
               ))}
             </div>

@@ -69,11 +69,13 @@ ModelRow.propTypes = {
 // ── AddCustomModelModal ────────────────────────────────────────
 function AddCustomModelModal({ isOpen, onSave, onClose }) {
   const [modelId, setModelId] = useState("");
+  const [vision, setVision] = useState(false);
 
   const handleSave = () => {
     if (!modelId.trim()) return;
-    onSave(modelId.trim());
+    onSave({ modelId: modelId.trim(), vision });
     setModelId("");
+    setVision(false);
   };
 
   return (
@@ -90,6 +92,15 @@ function AddCustomModelModal({ isOpen, onSave, onClose }) {
             autoFocus
           />
         </div>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={vision}
+            onChange={(e) => setVision(e.target.checked)}
+            className="h-4 w-4 rounded border-border"
+          />
+          <span>Vision-capable (accepts image input)</span>
+        </label>
         <div className="flex gap-2">
           <Button onClick={handleSave} fullWidth disabled={!modelId.trim()}>Add</Button>
           <Button onClick={onClose} variant="ghost" fullWidth>Cancel</Button>
@@ -151,19 +162,13 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
     } catch (e) { console.log("set alias error:", e); }
   };
 
-  const handleDeleteAlias = async (alias) => {
-    try {
-      const res = await fetch(`/api/models/alias?alias=${encodeURIComponent(alias)}`, { method: "DELETE" });
-      if (res.ok) await fetchData();
-    } catch (e) { console.log("delete alias error:", e); }
-  };
-
-  const handleAddCustomModel = async (modelId) => {
+  const handleAddCustomModel = async ({ modelId, vision } = {}) => {
+    if (!modelId) return;
     try {
       const res = await fetch("/api/models/custom", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ providerAlias, id: modelId, type: effectiveType }),
+        body: JSON.stringify({ providerAlias, id: modelId, type: effectiveType, vision: !!vision }),
       });
       if (res.ok) {
         await fetchData();
@@ -277,8 +282,8 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
 
       <AddCustomModelModal
         isOpen={showAddCustomModel}
-        onSave={async (modelId) => {
-          await handleAddCustomModel(modelId);
+        onSave={async ({ modelId, vision }) => {
+          await handleAddCustomModel({ modelId, vision });
           setShowAddCustomModel(false);
         }}
         onClose={() => setShowAddCustomModel(false)}

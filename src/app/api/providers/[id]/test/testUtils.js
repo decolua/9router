@@ -350,15 +350,32 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
   }
 
   if (isAnthropicCompatibleProvider(connection.provider)) {
-    let modelsBase = connection.providerSpecificData?.baseUrl;
-    if (!modelsBase) return { valid: false, error: "Missing base URL" };
+    let baseUrl = connection.providerSpecificData?.baseUrl;
+    if (!baseUrl) return { valid: false, error: "Missing base URL" };
     try {
-      modelsBase = modelsBase.replace(/\/$/, "");
-      if (modelsBase.endsWith("/messages")) modelsBase = modelsBase.slice(0, -9);
-      const res = await fetchWithConnectionProxy(`${modelsBase}/models`, {
-        headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "Authorization": `Bearer ${connection.apiKey}` },
+      baseUrl = baseUrl.replace(/\/$/, "");
+      if (baseUrl.endsWith("/messages")) baseUrl = baseUrl.slice(0, -9);
+      // PR #1916: POST /v1/messages with a 1-token request to confirm auth
+      // and endpoint reachability. Many anthropic-compatible providers do
+      // not implement GET /models; /v1/messages is the universal surface.
+      // Treat any non-401/403 as a valid connection.
+      const defaultModel =
+        connection.providerSpecificData?.defaultModel || "claude-3-haiku-20240307";
+      const res = await fetchWithConnectionProxy(`${baseUrl}/v1/messages`, {
+        method: "POST",
+        headers: {
+          "x-api-key": connection.apiKey,
+          "anthropic-version": "2023-06-01",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: defaultModel,
+          max_tokens: 1,
+          messages: [{ role: "user", content: "hi" }],
+        }),
       }, effectiveProxy);
-      return { valid: res.ok, error: res.ok ? null : "Invalid API key or base URL" };
+      const valid = res.status !== 401 && res.status !== 403;
+      return { valid, error: valid ? null : "Invalid API key or base URL" };
     } catch (err) {
       return { valid: false, error: err.message };
     }

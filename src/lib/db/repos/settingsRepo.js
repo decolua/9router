@@ -39,6 +39,8 @@ const DEFAULT_SETTINGS = {
   headroomUrl: "http://localhost:8787",
   cavemanEnabled: false,
   cavemanLevel: "full",
+  ponytailEnabled: false,
+  ponytailLevel: "full",
   modelFallbacks: {},
 };
 

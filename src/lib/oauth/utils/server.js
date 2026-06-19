@@ -414,3 +414,43 @@ export function stopXaiProxy() {
   }
 }
 
+
+// ───────────────────────────────────────────────────────────────────────────
+// MCP Gateway session storage — same shape as Codex/xAI but keyed by
+// (instanceId, state) so concurrent gateway OAuth flows don't collide.
+// Used by the dashboard's "Connect" flow to poll for completion.
+// ───────────────────────────────────────────────────────────────────────────
+
+const mcpPendingExchanges = new Map();
+
+export function registerMcpSession({ instanceId, state, codeVerifier, redirectUri, resource, clientId }) {
+  if (!state || !instanceId || !codeVerifier) return false;
+  mcpPendingExchanges.set(`${instanceId}:${state}`, {
+    instanceId,
+    codeVerifier,
+    redirectUri,
+    resource,
+    clientId,
+    status: "pending",
+    createdAt: Date.now(),
+  });
+  return true;
+}
+
+export function getMcpSessionStatus(instanceId, state) {
+  return mcpPendingExchanges.get(`${instanceId}:${state}`) || null;
+}
+
+export function completeMcpSession(instanceId, state, { status, error, tokens }) {
+  const key = `${instanceId}:${state}`;
+  const cur = mcpPendingExchanges.get(key);
+  if (!cur) return false;
+  cur.status = status || "complete";
+  if (error) cur.error = error;
+  if (tokens) cur.tokens = tokens;
+  return true;
+}
+
+export function clearMcpSession(instanceId, state) {
+  mcpPendingExchanges.delete(`${instanceId}:${state}`);
+}

@@ -67,12 +67,27 @@ export const SKILLS = [
     endpoint: "/v1/web/fetch",
     icon: "language",
   },
+  {
+    id: "9router-mcp-gateway",
+    name: "MCP Gateway",
+    description: "Connect one MCP endpoint to 9router's gateway to reach many upstream MCP servers with per-key scoping. Use when an AI harness should access multiple MCP tools through 9router instead of wiring each server individually.",
+    endpoint: "/api/mcp-gateway",
+    icon: "hub",
+    repo: "bloodf/9router",
+    branch: "dev",
+  },
 ];
 
 export function getSkillRawUrl(id) {
-  return `${SKILLS_RAW_BASE}/${id}/SKILL.md`;
+  const skill = SKILLS.find((s) => s.id === id);
+  const repo = skill?.repo || REPO;
+  const branch = skill?.branch || BRANCH;
+  return `https://raw.githubusercontent.com/${repo}/refs/heads/${branch}/${SKILL_PATH}/${id}/SKILL.md`;
 }
 
 export function getSkillBlobUrl(id) {
-  return `${SKILLS_BLOB_BASE}/${id}/SKILL.md`;
+  const skill = SKILLS.find((s) => s.id === id);
+  const repo = skill?.repo || REPO;
+  const branch = skill?.branch || BRANCH;
+  return `https://github.com/${repo}/blob/${branch}/${SKILL_PATH}/${id}/SKILL.md`;
 }

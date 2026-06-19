@@ -20,6 +20,7 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import { loadKeyPolicy, checkModelAllowed, checkMonthlyLimits } from "../services/keyPolicy.js";
 
 function getToolName(tool) {
   return tool?.name || tool?.function?.name || tool?.type || "unknown";
@@ -125,6 +126,49 @@ export async function handleChat(request, clientRawRequest = null) {
   if (!modelStr) {
     log.warn("CHAT", "Missing model");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
+  }
+
+  // Per-key policy enforcement (RBAC + monthly caps + model allow-list).
+  // Skipped entirely when no API key is present (local mode without key).
+  // Tightens present-but-unknown / present-but-inactive keys even when
+  // settings.requireApiKey is false (auth fails-closed; limits fail-open).
+  if (apiKey) {
+    const keyRecord = await loadKeyPolicy(apiKey);
+    if (!keyRecord) {
+      log.warn("AUTH", "Unknown API key (supplied but not found)");
+      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
+    }
+    if (!keyRecord.isActive) {
+      log.warn("AUTH", "Inactive API key");
+      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Inactive API key");
+    }
+    const lim = await checkMonthlyLimits(keyRecord, apiKey);
+    if (!lim.allowed) {
+      const code = lim.scope === "budget" ? HTTP_STATUS.PAYMENT_REQUIRED : HTTP_STATUS.RATE_LIMITED;
+      log.warn("AUTH", `Monthly cap: ${lim.reason}`);
+      return errorResponse(code, lim.reason);
+    }
+    // Resolve model (combo-aware) before checking allow-lists.
+    const comboPrecheck = await getComboModels(modelStr);
+    if (comboPrecheck) {
+      for (const m of comboPrecheck) {
+        const subInfo = await getModelInfo(m);
+        const r = checkModelAllowed(keyRecord, m, subInfo);
+        if (!r.allowed) {
+          log.warn("AUTH", `Combo member model blocked: ${m} (${r.reason})`);
+          return errorResponse(HTTP_STATUS.FORBIDDEN, `combo member '${m}' not allowed for this key`);
+        }
+      }
+    } else {
+      const info = await getModelInfo(modelStr);
+      if (info?.provider) {
+        const r = checkModelAllowed(keyRecord, modelStr, info);
+        if (!r.allowed) {
+          log.warn("AUTH", `Model blocked: ${modelStr} (${r.reason})`);
+          return errorResponse(HTTP_STATUS.FORBIDDEN, r.reason || "model not allowed for this key");
+        }
+      }
+    }
   }
 
   // Bypass naming/warmup requests before combo rotation to avoid wasting rotation slots
@@ -302,6 +346,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       headroomUrl: chatSettings.headroomUrl || "http://localhost:8787",
       cavemanEnabled: !!chatSettings.cavemanEnabled,
       cavemanLevel: chatSettings.cavemanLevel || "full",
+      ponytailEnabled: !!chatSettings.ponytailEnabled,
+      ponytailLevel: chatSettings.ponytailLevel || "full",
       providerThinking,
       // Detect source format by endpoint + body
       sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,

@@ -18,7 +18,6 @@ const VISIBLE_MEDIA_KINDS = ["embedding", "image", "tts", "stt"];
 const COMBINED_WEB_ITEM = { id: "web", label: "Web Fetch & Search", icon: "travel_explore", href: "/dashboard/media-providers/web" };
 
 const navItems = [
-  { href: "/dashboard/endpoint", label: "Endpoint", icon: "api" },
   { href: "/dashboard/providers", label: "Providers", icon: "dns" },
   // { href: "/dashboard/basic-chat", label: "Basic Chat", icon: "chat" }, // Hidden
   { href: "/dashboard/combos", label: "Combos", icon: "layers" },
@@ -36,6 +35,12 @@ const debugItems = [
 ];
 
 const systemItems = [
+  { href: "/dashboard/endpoint", label: "Endpoint", icon: "api" },
+  { href: "/dashboard/system/api-keys", label: "API Keys", icon: "vpn_key" },
+  { href: "/dashboard/system/compress/rtk", label: "RTK", icon: "bolt" },
+  { href: "/dashboard/system/compress/headroom", label: "Headroom", icon: "compress" },
+  { href: "/dashboard/system/compress/caveman", label: "Caveman", icon: "format_size" },
+  { href: "/dashboard/system/compress/ponytail", label: "Ponytail", icon: "low_priority" },
   { href: "/dashboard/proxy-pools", label: "Proxy Pools", icon: "lan" },
   { href: "/dashboard/skills", label: "Skills", icon: "extension" },
 ];

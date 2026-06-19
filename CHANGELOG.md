@@ -1,4 +1,24 @@
+# v0.5.6 (in-progress)
+
+## Features
+- **Management & Control API** — first-class admin surface at `/api/v1/admin/*`. Auth via existing `sk-…` API keys (Bearer or `x-api-key`); admin role required for write operations. Endpoints: `GET /me`, `GET /me/usage`, `GET/POST /keys`, `GET/PATCH/DELETE /keys/{id}`, `GET /providers`, `GET /models`, `GET /usage`. Per-key last-admin guard prevents demoting/deactivating/deleting the final admin key. **Live OpenAPI 3.1 spec served at `/api/v1/admin/openapi.json` (public, no key); self-contained docs page at `/api/v1/admin/docs`.**
+
+- **Per-key RBAC + allowlists + monthly caps** — `apiKeys` table extended with `role` (admin/user), `allowedModels` (JSON array), `allowedProviders` (JSON array), `monthlyTokenLimit` (INTEGER), `monthlyBudgetUsd` (REAL), `updatedAt`. First-ever key is forced admin (bootstrap). Migration 005-apikey-rbac. Backward compatible — existing keys default to `role='user'`, no allow-lists.
+
+- **Per-key enforcement on live `/v1` traffic** — present-but-unknown keys now rejected 401 even when `settings.requireApiKey=false` (auth fails-closed). Inactive keys → 401. Monthly token cap → 429; monthly USD cap → 402 (PAYMENT_REQUIRED). Provider/model allow-list checked once before dispatch (combos: ANY disallowed member blocks). Limits fail-open on transient DB errors; auth fails-closed.
+
+- **Anthropic-compatible connection test** (from upstream #1916) — switched from `GET /models` to `POST /v1/messages` with `max_tokens:1` to confirm reachability. Honors `connection.providerSpecificData.defaultModel`, falls back to `claude-3-haiku-20240307`. Treats any non-401/403 as valid.
+
+- **Ponytail prompt ruleset** — tail-focus ruleset (`lite`/`full`) that composes AFTER caveman via shared `open-sse/rtk/systemInject.js` (one parsed body, no double parse). Gated on new settings `ponytailEnabled` (default false) + `ponyLevel` (default "full"). Toggle wires through `chatCore.js` and the `chatSettings` chain.
+
+## Internal
+- **MCP gateway upstream #1918 review** — `docs/mcp-gateway-upstream-1918-review.md` classifies all 6 upstream capabilities as ALREADY-HAVE / MISSING-ADOPT / MISSING-SKIP. Recommended adopts (rate limiter, `.well-known/oauth-authorization-server`, MCP tables in exportDb/importDb) filed as independent follow-ups; no fork code replaced wholesale.
+
+## Fixes
+- `apiKeys` rowToKey now coerces malformed `allowedModels`/`allowedProviders` JSON to `[]` (= allow all) instead of leaking `null` downstream.
+
 # v0.5.5 (2026-06-19) — fork
+
 
 ## Features
 - **Per-model fallback** — each primary model/alias may name one fallback model; when a direct request to the primary fails with a fallback-eligible error (quota / rate-limit / transient / auth), the whole request is retried once against the fallback and that response is returned. One hop only (no chaining), self-fallback is a no-op, and deterministic payload errors (context-length / too-many-tokens) are NOT fallen back. Configured on a new Dashboard → Model Fallbacks page (`/dashboard/model-fallbacks`); stored as `settings.modelFallbacks`. Applies to all request types (chat, image, tts, stt, embeddings, web-search, web-fetch) but ONLY when the user requests a bare model/alias directly — combo-internal hops keep their existing fallback semantics. Backed by `open-sse/services/modelFallback.js` (`runWithModelFallback`, `getModelFallback`, `isDeterministicPayloadError`).

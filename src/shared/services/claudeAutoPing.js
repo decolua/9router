@@ -6,7 +6,7 @@ import { getClaudeUsage } from "open-sse/services/usage/claude.js";
 import { CLAUDE_CLI_SPOOF_HEADERS } from "open-sse/providers/shared.js";
 import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
-import { refreshAndUpdateCredentials } from "@/app/api/usage/[connectionId]/route.js";
+import { refreshAndUpdateCredentials } from "@/lib/providers/refreshCredentials.js";
 import { CLAUDE_AUTOPING_CONFIG } from "@/shared/constants/config";
 
 const C = CLAUDE_AUTOPING_CONFIG;
