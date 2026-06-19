@@ -40,8 +40,9 @@ export function detectClientTool(headers = {}, body = {}) {
   // Codex CLI
   if (ua.includes("codex-cli")) return "codex";
 
-  // DeepSeek TUI
-  if (ua.includes("deepseek-tui")) return "deepseek-tui";
+  // CodeWhale (formerly DeepSeek TUI). Keep the legacy UA substring as a
+  // transition fallback for users still on the deepseek-tui build.
+  if (ua.includes("codewhale") || ua.includes("deepseek-tui")) return "codewhale";
 
   return null;
 }
