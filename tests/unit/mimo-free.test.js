@@ -235,8 +235,8 @@ describe("MiMo Free provider registration", () => {
     expect(PROVIDERS.mmf?.noAuth).toBe(true);
   });
 
-  it("exposes only mimo-auto (the sole free-channel model)", () => {
-    expect(PROVIDER_MODELS.mmf.map((m) => m.id)).toEqual(["mimo-auto"]);
+  it("exposes the free-channel models", () => {
+    expect(PROVIDER_MODELS.mmf.map((m) => m.id)).toEqual(["mimo-auto", "mimo-v2.5-pro"]);
   });
 
   it("maps the mimo-free alias to mmf", () => {

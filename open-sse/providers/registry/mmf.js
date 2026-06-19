@@ -15,5 +15,6 @@ export default {
   },
   models: [
     { id: "mimo-auto", name: "MiMo Auto" },
+    { id: "mimo-v2.5-pro", name: "MiMo v2.5 Pro" },
   ],
 };

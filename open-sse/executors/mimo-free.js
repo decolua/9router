@@ -114,7 +114,8 @@ export class MimoFreeExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body) {
-    return injectSystemMarker(body);
+    const updated = { ...body, model: "mimo-auto" };
+    return injectSystemMarker(updated);
   }
 
   async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
