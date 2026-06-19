@@ -161,6 +161,53 @@ export function buildClearModelLocksUpdate(connection) {
 }
 
 /**
+ * Providers whose persisted quota `resetAt` is trustworthy enough to
+ * proactively skip a fully-depleted account during routing (instead of
+ * waiting for it to error out). Kiro reports an exact reset timestamp via its
+ * usage API but does not surface it on chat errors, so depletion can only be
+ * known from the persisted quota snapshot.
+ */
+export const QUOTA_DEPLETION_PROVIDERS = new Set(["kiro"]);
+
+/**
+ * Earliest future resetAt among a connection's depleted quota buckets, or null
+ * when the account is still usable.
+ *
+ * Returns a timestamp only when EVERY known bucket (total > 0) is used up and
+ * its reset is still in the future. An account that still has room in any
+ * bucket — or whose reset has already passed (quota refreshed, snapshot stale) —
+ * is never blocked.
+ *
+ * @param {object} connection - Full connection record (must carry quotaInfos)
+ * @returns {string|null} ISO reset timestamp to skip until, or null
+ */
+export function getQuotaResetUntil(connection) {
+  if (!connection || !QUOTA_DEPLETION_PROVIDERS.has(connection.provider)) return null;
+  const quotas = connection.quotaInfos;
+  if (!Array.isArray(quotas) || quotas.length === 0) return null;
+
+  const now = Date.now();
+  let earliest = null;
+  for (const q of quotas) {
+    const total = Number(q?.total) || 0;
+    if (total <= 0) continue; // unlimited/unknown bucket — not blocking
+    const used = Number(q?.used) || 0;
+    if (used < total) return null; // still has room somewhere → usable
+    const resetMs = q?.resetAt ? new Date(q.resetAt).getTime() : 0;
+    if (!resetMs || resetMs <= now) return null; // reset passed/unknown → usable
+    if (!earliest || resetMs < earliest) earliest = resetMs;
+  }
+  return earliest ? new Date(earliest).toISOString() : null;
+}
+
+/**
+ * True when a connection's persisted quota is fully depleted and not yet reset.
+ */
+export function isQuotaDepleted(connection) {
+  return getQuotaResetUntil(connection) !== null;
+}
+
+/**
  * Filter available accounts (not in cooldown)
  */
 export function filterAvailableAccounts(accounts, excludeId = null) {

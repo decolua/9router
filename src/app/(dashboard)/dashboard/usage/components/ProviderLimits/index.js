@@ -159,6 +159,27 @@ export default function ProviderLimits() {
         const nextTotals = getSafeTotals(data.totals, connectionList.length);
 
         setConnections(connectionList);
+
+        // Hydrate quota from the persisted snapshot bundled with each
+        // connection, so the table shows last-known values instantly before
+        // the live refetch completes. Live fetchQuota() overwrites this later.
+        const hydrated = {};
+        connectionList.forEach((conn) => {
+          if (Array.isArray(conn.quotaInfos) && conn.quotaInfos.length > 0) {
+            const quotaEntry = {
+              quotas: conn.quotaInfos,
+              plan: conn.quotaPlan || null,
+              message: conn.quotaMessage || null,
+              raw: null,
+            };
+            hydrated[conn.id] = quotaEntry;
+            setQuotaCache(conn.id, quotaEntry);
+          }
+        });
+        if (Object.keys(hydrated).length > 0) {
+          setQuotaData((prev) => ({ ...hydrated, ...prev }));
+        }
+
         setProviderOptions(getProviderOptions(data.providerOptions));
         setPagination(nextPagination);
         setTotals(nextTotals);
@@ -1103,7 +1124,7 @@ export default function ProviderLimits() {
               </div>
 
               <div className="px-2 py-1.5">
-                {isLoading ? (
+                {isLoading && !quota ? (
                   <div className="text-center py-5 text-text-muted">
                     <span className="material-symbols-outlined text-[28px] animate-spin">
                       progress_activity
