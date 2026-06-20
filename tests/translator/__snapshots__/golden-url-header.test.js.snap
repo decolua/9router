@@ -2173,6 +2173,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > stepfun → headers 
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > suno → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Content-Type": "application/json",
+    "Cookie": "<CRED>",
+  },
+  "nonStream": {
+    "Content-Type": "application/json",
+    "Cookie": "<CRED>",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Content-Type": "application/json",
+    "Cookie": "<CRED>",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > synthetic → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -3219,6 +3238,13 @@ exports[`GOLDEN buildUrl (default executor providers) > stepfun → url (stream 
 {
   "nonStream": "https://api.stepfun.com/v1/chat/completions",
   "stream": "https://api.stepfun.com/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > suno → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://studio-api.suno.ai/api/generate/v2/",
+  "stream": "https://studio-api.suno.ai/api/generate/v2/",
 }
 `;
 
