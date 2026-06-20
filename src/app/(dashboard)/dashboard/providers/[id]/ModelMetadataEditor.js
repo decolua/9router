@@ -29,6 +29,13 @@ const BOOLEAN_FIELDS = [
   { key: "thinkingCanDisable", label: "Thinking Can Disable" },
 ];
 
+/* ── thinking constants ────────────────────────────────────────────── */
+
+const THINKING_LEVELS = ["none", "low", "medium", "high", "xhigh", "max"];
+
+const LEVEL_FORMATS = ["openai", "claude-adaptive", "gemini-level", "deepseek", "kimi", "minimax"];
+const BUDGET_FORMATS = ["claude-budget", "gemini-budget", "qwen"];
+
 /* ── small helpers ─────────────────────────────────────────────────── */
 
 function formatNum(n) {
@@ -112,6 +119,84 @@ function BooleanField({ field, value, defaultValue, onChange }) {
   );
 }
 
+/* ── thinking section ──────────────────────────────────────────────── */
+
+function ThinkingSection({ defaults, draft, setField }) {
+  const format = draft.thinkingFormat ?? defaults.thinkingFormat ?? null;
+  const isLevel = LEVEL_FORMATS.includes(format);
+  const isBudget = BUDGET_FORMATS.includes(format);
+  const range = defaults.thinkingRange;
+
+  return (
+    <div className="mb-3">
+      <p className="mb-1.5 text-[10px] uppercase tracking-wider text-text-muted/50">Thinking</p>
+      <div className="flex flex-wrap items-end gap-x-5 gap-y-2">
+        {/* Format badge */}
+        {format && (
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-text-muted">Format</label>
+            <span className="inline-block w-fit rounded bg-background px-1.5 py-0.5 font-mono text-[11px] text-text-muted/70 border border-border">
+              {format}
+            </span>
+          </div>
+        )}
+
+        {/* Level selector */}
+        {isLevel && (
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-text-muted">
+              Level
+              <span className="ml-1 font-normal text-text-muted/60">(default: —)</span>
+            </label>
+            <select
+              value={draft.thinkingLevel ?? ""}
+              onChange={(e) => setField("thinkingLevel", e.target.value || null)}
+              className="rounded border border-border bg-background px-2 py-1 text-sm focus:outline-none focus:border-primary"
+            >
+              <option value="">—</option>
+              {THINKING_LEVELS.map((l) => (
+                <option key={l} value={l}>{l}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Budget input */}
+        {isBudget && (
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-text-muted">
+              Budget Tokens
+              {range?.min != null && range?.max != null && (
+                <span className="ml-1 font-normal text-text-muted/60">
+                  ({formatNum(range.min)}–{formatNum(range.max)})
+                </span>
+              )}
+              {range?.min != null && range?.max == null && (
+                <span className="ml-1 font-normal text-text-muted/60">(min: {formatNum(range.min)})</span>
+              )}
+              {range?.min == null && range?.max != null && (
+                <span className="ml-1 font-normal text-text-muted/60">(max: {formatNum(range.max)})</span>
+              )}
+            </label>
+            <input
+              type="number"
+              min={0}
+              step={1}
+              value={draft.thinkingBudget ?? ""}
+              onChange={(e) => {
+                const v = e.target.value;
+                setField("thinkingBudget", v === "" ? null : Number(v));
+              }}
+              placeholder="—"
+              className="w-full max-w-[180px] rounded border border-border bg-background px-2 py-1 text-sm focus:outline-none focus:border-primary"
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ── per-model card ────────────────────────────────────────────────── */
 
 function ModelOverrideCard({ modelId, fullModel, providerAlias, override, defaults, onSave, onDelete }) {
@@ -168,21 +253,19 @@ function ModelOverrideCard({ modelId, fullModel, providerAlias, override, defaul
   const hasOverride = override && Object.keys(override).length > 0;
 
   return (
-    <div className="rounded-lg border border-border p-3">
+    <div className="rounded-lg border border-border bg-sidebar p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
         <code className="truncate rounded bg-sidebar px-1.5 py-0.5 font-mono text-xs text-text-muted">
           {fullModel}
         </code>
-        {hasOverride && (
-          <button
-            onClick={handleDelete}
-            disabled={saving}
-            className="shrink-0 rounded px-2 py-0.5 text-[11px] text-text-muted transition-colors hover:bg-red-500/10 hover:text-red-500 disabled:opacity-50"
-            title="Reset to defaults"
-          >
-            Reset to Default
-          </button>
-        )}
+        <button
+          onClick={handleDelete}
+          disabled={saving || !hasOverride}
+          className="shrink-0 rounded px-2 py-0.5 text-[11px] text-text-muted transition-colors hover:bg-red-500/10 hover:text-red-500 disabled:opacity-30 disabled:cursor-not-allowed"
+          title="Reset to defaults"
+        >
+          Reset to Default
+        </button>
       </div>
 
       {/* Limits */}
@@ -216,6 +299,11 @@ function ModelOverrideCard({ modelId, fullModel, providerAlias, override, defaul
           ))}
         </div>
       </div>
+
+      {/* Thinking */}
+      {defaults.reasoning && (
+        <ThinkingSection defaults={defaults} draft={draft} setField={setField} />
+      )}
 
       {/* Actions */}
       {dirty && (
@@ -334,6 +422,8 @@ export default function ModelMetadataEditor({ providerAlias, models }) {
                   audioOutput: caps.audioOutput,
                   search: caps.search,
                   thinkingCanDisable: caps.thinkingCanDisable,
+                  thinkingFormat: caps.thinkingFormat,
+                  thinkingRange: caps.thinkingRange,
                 };
                 return (
                   <ModelOverrideCard
