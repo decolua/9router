@@ -21,6 +21,7 @@ import { CodeBuddyExecutor } from "./codebuddy.js";
 import { TheOldLlmExecutor } from "./theoldllm.js";
 import { PhindExecutor } from "./phind.js";
 import { HuggingChatExecutor } from "./huggingchat.js";
+import { InnerAiExecutor } from "./inner-ai.js";
 import { DefaultExecutor } from "./default.js";
 
 const executors = {
@@ -49,6 +50,7 @@ const executors = {
   codebuddy: new CodeBuddyExecutor(),
   phind: new PhindExecutor(),
   huggingchat: new HuggingChatExecutor(),
+  "inner-ai": new InnerAiExecutor(),
 };
 
 const defaultCache = new Map();
@@ -88,3 +90,4 @@ export { CodeBuddyExecutor } from "./codebuddy.js";
 export { TheOldLlmExecutor } from "./theoldllm.js";
 export { PhindExecutor } from "./phind.js";
 export { HuggingChatExecutor } from "./huggingchat.js";
+export { InnerAiExecutor } from "./inner-ai.js";
