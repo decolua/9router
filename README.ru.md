@@ -1,104 +1,25 @@
-# 9Router — Russian Edition (Server)
+# 9Router — Русская версия (Server Edition)
 
-Форк [decolua/9router](https://github.com/decolua/9router) с фокусом на **бесплатные провайдеры**, **авто-переключение** и **работу на сервере** (без Docker).
-
----
-
-## Российская адаптация
-
-Оригинал заточен под западного пользователя: Docker, Cloudflare, английский язык, недоступные в РФ способы оплаты. Наша версия:
-
-- **RouterAI** — провайдер добавлен как native registry entry, работает через `https://routerai.ru/api/v1` без танцев с бубном
-- **Cloudflare отключён** — регион-блок (403), ключи не работают. Бесполезен для РФ
-- **OpenCode Free** — endpoint исправлен на `opencode.ai/zen/v1` (работающий)
-- **Бесплатные провайдеры по умолчанию** — список тестовых моделей заточен под РФ-доступные
-- **Донат** — ЮMoney (Яндекс.Деньги), T-Bank, Boosty, USDT. Вместо недоступного Stripe/Patreon
-- **seed-providers.js** — исправлены provider ID: `cloudflare` → `cloudflare-ai`, `vercel` → `vercel-ai-gateway`
-- **registry/index.js** — восстановлен export-массив (был обрезан, не импортировались grok-web и другие)
-- **Kiro AI** — снят флаг deprecated (всё ещё работает, бесплатный Claude 4.5)
+**Русскоязычный форк** [decolua/9router](https://github.com/decolua/9router) с фокусом на бесплатные провайдеры, авто-переключение, рейтинг моделей и лёгкий запуск на сервере. Без Docker.
 
 ---
 
-## Оркестратор
+## 🇷🇺 Чем отличается от оригинала
 
-Оркестратор — это система автоматического выбора моделей, пинга здоровья и накопления статистики. То, чего в оригинале нет вообще.
-
-### Как это работает
-
-```
-Пинг всех провайдеров → запись результатов в SQLite → рейтинг моделей
-         ↓                     ↓                            ↓
-   health check       переживает рестарт           tier A/B/C/D
-   на дашборде                                     (скорость + надёжность)
-```
-
-### Команды
-
-| Метод | Endpoint | Что делает |
-|-------|----------|------------|
-| `POST` | `/api/orchestrator/ping-all` | Пингует всех активных провайдеров с их моделями. Записывает latency, статус, ошибки в `usageHistory` и результат в `kv` таблицу. Concurrency 5, таймаут 30s на модель |
-| `GET` | `/api/orchestrator` | Возвращает Health Check (статусы моделей: ✅/❌), конфигурацию ModelRouter, настройки супервизора, список воркфлоу |
-| `GET` | `/api/orchestrator/stats?period=7d` | Накопительная статистика: рейтинг моделей, успешность, latency, количество токенов |
-| `GET` | `/api/orchestrator/discover` | Auto-discovery моделей Ollama (локальные) |
-
-### Free-first priority chain
-
-При пинге модели сортируются по приоритету: **сначала бесплатные, потом платные (резерв)**.
-
-```
-1. OpenCode Free   — 6 моделей, стабильно 0.4-6s
-2. Ollama          — локальные + облачные, 7 моделей
-3. LM Studio       — локальные, 2 модели
-4. RouterAI        — deepseek (резерв, условно-бесплатный)
-5. OpenRouter      — платный (только если всё остальное упало)
-```
-
-### Авто-скип проблемных моделей
-
-Если модель упала 3 раза подряд с timeout — она автоматически исключается из следующих пингов, пока не ответит успешно. Счётчик хранится в глобальной памяти (не сбрасывается между запросами).
+| Оригинал | Эта версия |
+|----------|-----------|
+| Docker-first | **Запуск на сервере** — systemd, PM2, или напрямую |
+| Нет оркестратора | **Оркестратор**: ping-all, рейтинг, health check |
+| Нет RouterAI | **RouterAI** как встроенный провайдер |
+| Cloudflare по умолчанию | **Отключён** (регион-блок) |
+| Ping-all в KV store | **В SQLite** — переживает перезагрузку |
+| Нет рейтинга | **Рейтинг A/B/C/D** по скорости и надёжности |
+| Донат через Stripe/Patreon | **ЮMoney** для РФ, оригинал для остальных |
+| Английский язык | **Полный русский интерфейс**, инструкции на русском |
 
 ---
 
-## Health Check и рейтинг моделей
-
-Каждый `ping-all` записывает в `usageHistory`:
-- название модели и провайдера
-- статус (`ok` / `error`)
-- latency в миллисекундах
-- текст ошибки (если была)
-
-**Реальное использование тоже записывается** — когда ты через 9Router отправляешь запрос к модели, `saveRequestUsage()` сохраняет токены, статус, cost в ту же таблицу. Статистика собирается и с пингов, и с реальной работы.
-
-Рейтинг модели считается по формуле:
-
-```
-reliability = successRate × 0.6
-speed       = max(0, 100 - (latency - 200) / 30) × 0.4
-overall     = reliability + speed
-
-Tier A: 90+  — быстрые и стабильные
-Tier B: 75+  — надёжные, но медленнее
-Tier C: 50+  — работают, но с ограничениями
-Tier D: <50  — проблемные (частые ошибки, таймауты)
-```
-
-Пример вывода:
-
-```
-Tier  MODEL                     RATE  LATENCY   SCORE
-A     north-mini-code-free      100%  564ms     95
-A     minimax-m2.5:cloud        100%  708ms     94
-A     gemma4:31b-cloud          100%  789ms     92
-B     deepseek-v4-flash-free    100%  1577ms    82
-C     qwen2.5-coder:7b          100%  8737ms    60
-D     gemma2:9b                 0%    ---       20
-```
-
-Параметр `?period=7d` / `30d` / `all` фильтрует данные по дате записи.
-
----
-
-## Установка на сервер (без Docker)
+## 🚀 Быстрый старт
 
 ### Linux (одной командой)
 
@@ -106,39 +27,76 @@ D     gemma2:9b                 0%    ---       20
 curl -fsSL https://raw.githubusercontent.com/mdn77/9router-russian/master/quick-start.sh | sudo bash
 ```
 
-Скрипт сам установит Node.js, склонирует репозиторий, соберёт проект, создаст systemd unit с автозапуском.
+Скрипт: установит Node.js → склонирует → соберёт → создаст systemd → запустит.
 
-### Windows
+### Windows (одной командой)
 
-```bash
+```bat
 git clone https://github.com/mdn77/9router-russian.git
 cd 9router-russian
 quick-start.bat
 ```
 
-Скрипт установит зависимости, соберёт проект, запустит сервер и добавит его в автозагрузку Windows.
+Скрипт: установит зависимости → соберёт → запустит → добавит в автозагрузку.
 
-### Вручную
+### Docker (для продакшена, не для Windows)
 
 ```bash
-git clone https://github.com/mdn77/9router-russian.git
-cd 9router-russian
+docker build -t 9router-russian .
+docker run -d \
+  --name 9router \
+  -p 20128:20128 \
+  -v /var/lib/9router:/app/data \
+  -e DATA_DIR=/app/data \
+  -e JWT_SECRET=$(openssl rand -hex 32) \
+  -e INITIAL_PASSWORD=admin \
+  -e PORT=20128 \
+  9router-russian
+```
+
+> ⚠️ **На Windows Docker не запускайте** — крашит компьютер из-за WSL2 memory leak. Используйте `quick-start.bat`.
+
+---
+
+## 📦 Установка пошагово
+
+### Linux (вручную)
+
+```bash
+# 1. Установить Node.js 22+
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo bash -
+sudo apt-get install -y nodejs
+
+# 2. Клонировать
+git clone https://github.com/mdn77/9router-russian.git /opt/9router
+cd /opt/9router
+
+# 3. Установить и собрать
 npm install
 npm run build
 
-# Production
-export NODE_ENV=production
-export PORT=20128
-export HOSTNAME=0.0.0.0
-export DATA_DIR=/var/lib/9router
-export JWT_SECRET=$(openssl rand -hex 32)
-export INITIAL_PASSWORD=admin
+# 4. Настроить
+cat > .env <<EOF
+NODE_ENV=production
+PORT=20128
+HOSTNAME=0.0.0.0
+DATA_DIR=/var/lib/9router
+JWT_SECRET=$(openssl rand -hex 32)
+INITIAL_PASSWORD=admin
+EOF
+
+# 5. Запустить
 npm run start
 ```
 
-### systemd unit (Linux)
+Дашборд: http://localhost:20128  
+API: http://localhost:20128/v1  
+Пароль: admin
 
-```ini
+### systemd (автозапуск)
+
+```bash
+sudo tee /etc/systemd/system/9router.service > /dev/null <<'UNIT'
 [Unit]
 Description=9Router — FREE AI Router (Russian Edition)
 After=network-online.target
@@ -158,35 +116,151 @@ MemoryMax=2G
 
 [Install]
 WantedBy=multi-user.target
-```
+UNIT
 
-```bash
 sudo systemctl daemon-reload
 sudo systemctl enable 9router
 sudo systemctl start 9router
+sudo journalctl -u 9router -f  # смотреть логи
+```
+
+### PM2 (альтернатива systemd)
+
+```bash
+npm install -g pm2
+pm2 start npm --name 9router -- start
+pm2 save
+pm2 startup
+```
+
+### Windows (вручную)
+
+```bat
+git clone https://github.com/mdn77/9router-russian.git C:\9router
+cd C:\9router
+npm install
+npm run build
+
+REM Запуск:
+npm run start
+
+REM Автозагрузка:
+copy start-server.bat "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\"
 ```
 
 ---
 
-## Бесплатные провайдеры (из коробки)
+## 🆓 Бесплатные провайдеры
+
+Все модели в таблице — **бесплатные**, работают без подписки.
 
 | Провайдер | Модели | Как подключить |
 |-----------|--------|----------------|
 | **OpenCode Free** | north-mini-code, deepseek-v4-flash-free, nemotron-3-ultra | Просто включить — без ключа |
-| **Ollama Local** | qwen2.5vl, qwen2.5-coder, gemma4 | Установить Ollama, запустить модели |
-| **Ollama Cloud** | minimax-m3, nemotron-3-super, gemma4:31b, gpt-oss:120b, minimax-m2.5 | Работают через локальный Ollama-proxy |
-| **LM Studio** | gemma-4-e4b, llama-3.2 | Запустить LM Studio, включить сервер |
+| **Ollama Local** | qwen2.5vl:7b, qwen2.5-coder:7b, gemma4 | Установить [Ollama](https://ollama.com) |
+| **Ollama Cloud** | minimax-m3, nemotron-3-super, gemma4:31b, gpt-oss:120b, minimax-m2.5 | Работают через локальный Ollama |
+| **LM Studio** | gemma-4-e4b, llama-3.2 | Запустить [LM Studio](https://lmstudio.ai) |
 | **RouterAI** | deepseek/deepseek-v4-flash | Добавить API ключ в настройках |
-| **Kiro AI** (OAuth) | Claude Sonnet 4.5, GLM-5, MiniMax, DeepSeek 3.2 | Connect → AWS Builder ID / Google / GitHub |
-| **Vertex AI** (GCP) | Gemini 3.1 Pro, Gemini 3 Flash | Загрузить Service Account JSON |
+| **Kiro AI** | Claude Sonnet 4.5, GLM-5, MiniMax, DeepSeek 3.2 | OAuth через AWS Builder ID / Google / GitHub |
+| **Vertex AI** | Gemini 3.1 Pro, Gemini 3 Flash | Загрузить Service Account из GCP ($300 кредит) |
 
 ---
 
-## Поддержать проект
+## 🎛️ Оркестратор
 
-Если форк пригодился — можно сказать спасибо.
+Автоматический пинг, выбор и переключение моделей.
 
-Способы для РФ: T-Bank, ЮMoney, USDT (TRC20), Boosty.
+### Команды
 
-Реквизиты в описании последнего релиза:
-https://github.com/mdn77/9router-russian/releases
+| Метод | Endpoint | Описание |
+|-------|----------|----------|
+| **POST** | `/api/orchestrator/ping-all` | Пинг всех провайдеров. Запись latency, статуса, ошибок в SQLite |
+| **GET** | `/api/orchestrator` | Health Check: статусы моделей ✅❌, конфигурация роутера |
+| **GET** | `/api/orchestrator/stats?period=7d` | Накопительная статистика: рейтинг моделей (A/B/C/D) |
+| **GET** | `/api/orchestrator/discover` | Auto-discovery локальных моделей Ollama |
+
+### Free-first priority chain
+
+При пинге и выборе моделей приоритет:
+
+```
+1. OpenCode Free       — без ключа, стабильно
+2. Ollama (local+cloud) — локальные и облачные
+3. LM Studio           — локальные
+4. RouterAI            — резерв (deepseek)
+5. OpenRouter          — платный (только если всё упало)
+```
+
+### Авто-скип проблемных моделей
+
+Если модель упала 3 раза подряд с timeout — автоматически исключается из пингов, пока не ответит успешно.
+
+---
+
+## 📊 Рейтинг моделей
+
+Каждый ping-all записывает в `usageHistory` latency и статус.  
+Реальное использование тоже записывается — через `saveRequestUsage()`.
+
+**Формула рейтинга:**
+
+```
+reliability = successRate × 0.6
+speed       = max(0, 100 - (latency - 200) / 30) × 0.4
+overall     = reliability + speed
+
+Tier A: 90+  — быстрые и стабильные
+Tier B: 75+  — надёжные
+Tier C: 50+  — работают с ограничениями
+Tier D: <50  — проблемные
+```
+
+**Пример вывода:**
+```
+Tier  MODEL                     RATE  LATENCY   SCORE
+A     north-mini-code-free      100%  564ms     95
+A     minimax-m2.5:cloud        100%  708ms     94
+B     deepseek-v4-flash-free    100%  1577ms    82
+C     qwen2.5-coder:7b          100%  8737ms    60
+D     gemma2:9b                 0%    ---       20
+```
+
+Параметр `?period=7d` / `30d` / `all` фильтрует по дате.
+
+---
+
+## 🛠️ Ответы на вопросы
+
+**Q: Docker крашит компьютер**  
+A: На Windows не используйте Docker для этого проекта — WSL2 жрёт всю память. Используйте `quick-start.bat`.
+
+**Q: Какие модели бесплатные?**  
+A: Все в таблице выше. OpenCode Free, Ollama (local + cloud), LM Studio — вообще без ключей. RouterAI требует бесплатный ключ.
+
+**Q: Как добавить Kiro AI?**  
+A: Dashboard → Providers → Connect Kiro → выберите AWS Builder ID / Google / GitHub OAuth.
+
+**Q: Статистика не обновляется**  
+A: Запустите `POST /api/orchestrator/ping-all` через дашборд или curl.
+
+**Q: OpenRouter модели не работают**  
+A: OpenRouter требует пополнения баланса даже для `:free` моделей. Отключите в настройках, если не пользуетесь.
+
+**Q: Не вижу Health Check в дашборде**  
+A: Health Check заполняется после первого ping-all. Нажмите кнопку "Прозвонить всё" на странице Orchestrator.
+
+---
+
+## 📜 История изменений
+
+См. [CHANGELOG.md](CHANGELOG.md) (на английском) и коммиты в репозитории.
+
+---
+
+## ❤️ Поддержать проект
+
+Если хотите сказать спасибо:
+
+**РФ:** ЮMoney — кнопка Donate в правом верхнем углу дашборда (появляется, если нет доступа к 9router.com)
+
+**За границей:** Patreon / GitHub — кнопка Donate в дашборде
