@@ -13,11 +13,18 @@ function generateBillingHeader(payload) {
   return `x-anthropic-billing-header: cc_version=${CLAUDE_VERSION}.${buildHash}; cc_entrypoint=${CC_ENTRYPOINT}; cch=${cch};`;
 }
 
+// Derive a deterministic UUID-v4-shaped string from a seed (stable per account)
+function deriveUuid(seed) {
+  const h = createHash("sha256").update(seed).digest("hex");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-${((parseInt(h[16], 16) & 0x3) | 0x8).toString(16)}${h.slice(17, 20)}-${h.slice(20, 32)}`;
+}
+
 // Generate fake user ID in Claude Code 2.1.92+ JSON format:
 // {"device_id":"<64hex>","account_uuid":"<uuid>","session_id":"<uuid>"}
-function generateFakeUserID(sessionId) {
-  const deviceId = randomBytes(32).toString("hex");
-  const accountUuid = randomUUID();
+// device_id/account_uuid derive from apiKey (stable per account), session_id per-conversation
+function generateFakeUserID(sessionId, apiKey) {
+  const deviceId = apiKey ? createHash("sha256").update(`device:${apiKey}`).digest("hex") : randomBytes(32).toString("hex");
+  const accountUuid = apiKey ? deriveUuid(`account:${apiKey}`) : randomUUID();
   const sessionUuid = sessionId || randomUUID();
   return `{"device_id":"${deviceId}","account_uuid":"${accountUuid}","session_id":"${sessionUuid}"}`;
 }
@@ -35,13 +42,19 @@ export function cloakClaudeTools(body) {
   const tools = body.tools;
   if (!tools || tools.length === 0) return { body, toolNameMap: null };
 
+  const suffix = (name) => `${name}${CLAUDE_TOOL_SUFFIX}`;
   const toolNameMap = new Map();
+  const clientToolNames = new Set();
   const clientDeclarations = [];
 
-  // All client tools get renamed with suffix
+  // All client tools get renamed with suffix.
+  // Built-in server tools (web_search_20250305, etc.) carry a `type` and require
+  // an exact reserved `name` — never suffix those or Claude rejects the request.
   for (const tool of tools) {
-    const suffixed = `${tool.name}${CLAUDE_TOOL_SUFFIX}`;
+    if (tool.type) { clientDeclarations.push(tool); continue; }
+    const suffixed = suffix(tool.name);
     toolNameMap.set(suffixed, tool.name);
+    clientToolNames.add(tool.name);
     clientDeclarations.push({ ...tool, name: suffixed });
   }
 
@@ -51,17 +64,27 @@ export function cloakClaudeTools(body) {
   // Rename tool_use in message history (all client tools get suffix)
   const renamedMessages = body.messages?.map(msg => {
     if (!Array.isArray(msg.content)) return msg;
-    const renamedContent = msg.content.map(block => {
-      if (block.type === "tool_use") {
-        return { ...block, name: `${block.name}${CLAUDE_TOOL_SUFFIX}` };
-      }
-      return block;
-    });
+    const renamedContent = msg.content.map(block =>
+      block.type === "tool_use" ? { ...block, name: suffix(block.name) } : block
+    );
     return { ...msg, content: renamedContent };
   });
 
+  const cloakedBody = { ...body, tools: allTools, messages: renamedMessages || body.messages };
+
+  // A forced tool_choice ({ type: "tool", name }) must point at the suffixed
+  // tool name, otherwise Claude rejects it: "Tool '<name>' not found in provided tools".
+  // Only rewrite when the choice targets one of the client tools we actually
+  // renamed — never a decoy/built-in name (those are sent unsuffixed).
+  if (
+    body.tool_choice?.type === "tool" &&
+    clientToolNames.has(body.tool_choice.name)
+  ) {
+    cloakedBody.tool_choice = { ...body.tool_choice, name: suffix(body.tool_choice.name) };
+  }
+
   return {
-    body: { ...body, tools: allTools, messages: renamedMessages || body.messages },
+    body: cloakedBody,
     toolNameMap: toolNameMap.size > 0 ? toolNameMap : null
   };
 }
@@ -135,7 +158,7 @@ export function applyCloaking(body, apiKey, sessionId) {
   // Inject fake user ID into metadata (session_id must match X-Claude-Code-Session-Id)
   const existingUserId = result.metadata?.user_id;
   if (!existingUserId) {
-    result.metadata = { ...result.metadata, user_id: generateFakeUserID(sessionId) };
+    result.metadata = { ...result.metadata, user_id: generateFakeUserID(sessionId, apiKey) };
   }
 
   return result;

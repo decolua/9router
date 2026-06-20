@@ -1,14 +1,14 @@
 import { PROVIDERS } from "../config/providers.js";
-import { buildClineHeaders } from "../../src/shared/utils/clineAuth.js";
+import { OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE } from "../providers/shared.js";
 
 const OPENAI_COMPATIBLE_PREFIX = "openai-compatible-";
 const OPENAI_COMPATIBLE_DEFAULTS = {
-  baseUrl: "https://api.openai.com/v1",
+  baseUrl: OPENAI_COMPAT_BASE,
 };
 
 const ANTHROPIC_COMPATIBLE_PREFIX = "anthropic-compatible-";
 const ANTHROPIC_COMPATIBLE_DEFAULTS = {
-  baseUrl: "https://api.anthropic.com/v1",
+  baseUrl: ANTHROPIC_COMPAT_BASE,
 };
 
 function isOpenAICompatible(provider) {
@@ -22,27 +22,6 @@ function isAnthropicCompatible(provider) {
 function getOpenAICompatibleType(provider) {
   if (!isOpenAICompatible(provider)) return "chat";
   return provider.includes("responses") ? "responses" : "chat";
-}
-
-function buildOpenAICompatibleUrl(baseUrl, apiType) {
-  const normalized = baseUrl.replace(/\/$/, "");
-  const path = apiType === "responses" ? "/responses" : "/chat/completions";
-  return `${normalized}${path}`;
-}
-
-function buildAnthropicCompatibleUrl(baseUrl) {
-  const normalized = baseUrl.replace(/\/$/, "");
-  return `${normalized}/messages`;
-}
-
-function buildQwenBaseUrl(resourceUrl, fallbackBaseUrl) {
-  const fallback = (fallbackBaseUrl || "").replace(/\/chat\/completions$/, "");
-  const raw = typeof resourceUrl === "string" ? resourceUrl.trim() : "";
-  if (!raw) return fallback;
-  if (raw.startsWith("http://") || raw.startsWith("https://")) {
-    return raw.replace(/\/$/, "");
-  }
-  return `https://${raw.replace(/\/$/, "")}/v1`;
 }
 
 // Detect request format from body structure
@@ -125,8 +104,8 @@ export function detectFormat(body) {
   return "openai";
 }
 
-// Get provider config
-export function getProviderConfig(provider) {
+// Get provider config (internal — no external runtime consumer)
+function getProviderConfig(provider) {
   if (isOpenAICompatible(provider)) {
     const apiType = getOpenAICompatibleType(provider);
     return {
@@ -145,180 +124,6 @@ export function getProviderConfig(provider) {
   return PROVIDERS[provider] || PROVIDERS.openai;
 }
 
-// Get number of fallback URLs for provider (for retry logic)
-export function getProviderFallbackCount(provider) {
-  const config = getProviderConfig(provider);
-  return config.baseUrls?.length || 1;
-}
-
-// Build provider URL
-export function buildProviderUrl(provider, model, stream = true, options = {}) {
-  if (isOpenAICompatible(provider)) {
-    const apiType = getOpenAICompatibleType(provider);
-    const baseUrl = options?.baseUrl || OPENAI_COMPATIBLE_DEFAULTS.baseUrl;
-    return buildOpenAICompatibleUrl(baseUrl, apiType);
-  }
-  if (isAnthropicCompatible(provider)) {
-    const baseUrl = options?.baseUrl || ANTHROPIC_COMPATIBLE_DEFAULTS.baseUrl;
-    return buildAnthropicCompatibleUrl(baseUrl);
-  }
-  const config = getProviderConfig(provider);
-
-  switch (provider) {
-    case "claude":
-      return `${config.baseUrl}?beta=true`;
-
-    case "gemini": {
-      const action = stream ? "streamGenerateContent?alt=sse" : "generateContent";
-      return `${config.baseUrl}/${model}:${action}`;
-    }
-
-    case "gemini-cli": {
-      const action = stream ? "streamGenerateContent?alt=sse" : "generateContent";
-      return `${config.baseUrl}:${action}`;
-    }
-
-    case "antigravity": {
-      // Use baseUrlIndex from options or default to 0
-      const urlIndex = options?.baseUrlIndex || 0;
-      const baseUrl = config.baseUrls[urlIndex] || config.baseUrls[0];
-      const path = stream ? "/v1internal:streamGenerateContent?alt=sse" : "/v1internal:generateContent";
-      return `${baseUrl}${path}`;
-    }
-
-    case "codex":
-      return config.baseUrl;
-
-    case "qwen": {
-      const baseUrl = buildQwenBaseUrl(options?.qwenResourceUrl, config.baseUrl);
-      return `${baseUrl}/chat/completions`;
-    }
-
-    case "github":
-      return config.baseUrl;
-
-    case "glm":
-    case "kimi":
-    case "minimax":
-      // Claude-compatible providers
-      return `${config.baseUrl}?beta=true`;
-
-    default:
-      return config.baseUrl;
-  }
-}
-
-// Build provider headers
-export function buildProviderHeaders(provider, credentials, stream = true, body = null) {
-  const config = getProviderConfig(provider);
-  const headers = {
-    "Content-Type": "application/json",
-    ...config.headers
-  };
-
-  // Add auth header
-  // Specific override for Anthropic Compatible
-  if (isAnthropicCompatible(provider)) {
-    if (credentials.apiKey) {
-      headers["x-api-key"] = credentials.apiKey;
-      // Do NOT send Authorization header when apiKey is present for Anthropic Compatible
-      // as it causes issues with some providers (e.g. opencode.ai)
-    } else if (credentials.accessToken) {
-      headers["Authorization"] = `Bearer ${credentials.accessToken}`;
-    }
-    // Add default Anthropic version if not present (some proxies require it)
-    if (!headers["anthropic-version"]) {
-      headers["anthropic-version"] = "2023-06-01";
-    }
-  } else {
-    switch (provider) {
-      case "gemini":
-        if (credentials.apiKey) {
-          headers["x-goog-api-key"] = credentials.apiKey;
-        } else if (credentials.accessToken) {
-          headers["Authorization"] = `Bearer ${credentials.accessToken}`;
-        }
-        break;
-  
-      case "antigravity":
-      case "gemini-cli":
-        // Antigravity and Gemini CLI use OAuth access token
-        headers["Authorization"] = `Bearer ${credentials.accessToken}`;
-        break;
-  
-      case "claude":
-        // Claude uses x-api-key header for API key, or Authorization for OAuth
-        if (credentials.apiKey) {
-          headers["x-api-key"] = credentials.apiKey;
-        } else if (credentials.accessToken) {
-          headers["Authorization"] = `Bearer ${credentials.accessToken}`;
-        }
-        break;
-  
-      case "github": {
-        // GitHub Copilot requires special headers to mimic VSCode
-        // Prioritize copilotToken from providerSpecificData, fallback to accessToken
-        const githubToken = credentials.copilotToken || credentials.accessToken;
-        // Add headers in exact same order as test endpoint
-        headers["Authorization"] = `Bearer ${githubToken}`;
-        headers["Content-Type"] = "application/json";
-        headers["copilot-integration-id"] = "vscode-chat";
-        headers["editor-version"] = "vscode/1.107.1";
-        headers["editor-plugin-version"] = "copilot-chat/0.26.7";
-        headers["user-agent"] = "GitHubCopilotChat/0.26.7";
-        headers["openai-intent"] = "conversation-panel";
-        headers["x-github-api-version"] = "2025-04-01";
-        // Generate a UUID for x-request-id (Cloudflare Workers compatible)
-        headers["x-request-id"] = crypto.randomUUID ? crypto.randomUUID() : 
-          'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-            const r = Math.random() * 16 | 0;
-            const v = c == 'x' ? r : (r & 0x3 | 0x8);
-            return v.toString(16);
-          });
-        headers["x-vscode-user-agent-library-version"] = "electron-fetch";
-        headers["X-Initiator"] = "user";
-        headers["Accept"] = "application/json";
-        break;
-      }
-  
-      case "codex":
-      case "qwen":
-      case "openai":
-      case "openrouter":
-        headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
-        break;
-
-      case "cline":
-        Object.assign(headers, buildClineHeaders(credentials.apiKey || credentials.accessToken));
-        break;
-  
-      case "glm":
-      case "kimi":
-      case "minimax":
-        // Claude-compatible API providers use x-api-key
-        headers["x-api-key"] = credentials.apiKey;
-        break;
-
-      case "vertex":
-      case "vertex-partner":
-        // Vertex uses async token minting — headers are set by VertexExecutor._buildHeadersAsync()
-        // Do NOT set Authorization here; it would leak the raw SA JSON as Bearer token
-        break;
-  
-      default:
-        headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
-        break;
-    }
-  }
-
-  // Stream accept header
-  if (stream) {
-    headers["Accept"] = "text/event-stream";
-  }
-
-  return headers;
-}
-
 // Get target format for provider
 export function getTargetFormat(provider) {
   if (isOpenAICompatible(provider)) {
@@ -329,6 +134,16 @@ export function getTargetFormat(provider) {
   }
   const config = getProviderConfig(provider);
   return config.format || "openai";
+}
+
+// Resolve which transport to use for a provider given the client sourceFormat.
+// Multi-endpoint providers (transport.transports[]) pick the entry matching sourceFormat
+// to avoid lossy translation; falls back to the default transport when no match.
+export function resolveTransport(provider, sourceFormat) {
+  const config = PROVIDERS[provider];
+  const transports = config?.transports;
+  if (!Array.isArray(transports) || !transports.length) return null;
+  return transports.find(t => t.format === sourceFormat) || null;
 }
 
 // Check if last message is from user

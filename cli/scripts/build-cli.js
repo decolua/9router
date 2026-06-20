@@ -17,7 +17,6 @@ const EXCLUDE_PATTERNS = [
   "@img",           // Sharp image processing (not needed with unoptimized images)
   "sharp",          // Sharp core lib (not needed with unoptimized images)
   "detect-libc",    // Sharp dependency
-  "logs",           // Runtime logs
   ".env",           // Environment files
   ".env.local",
   ".env.*.local",
@@ -153,6 +152,15 @@ if (standaloneApp !== standaloneRootToUse && fs.existsSync(standaloneNodeModules
   copyRecursive(standaloneNodeModules, path.join(cliAppDir, "node_modules"));
 }
 console.log("✅ Copied standalone build\n");
+
+// Step 3a: Copy custom server (injects real socket IP, strips spoofable XFF).
+const customServerSrc = path.join(appDir, "custom-server.js");
+if (fs.existsSync(customServerSrc)) {
+  fs.copyFileSync(customServerSrc, path.join(cliAppDir, "custom-server.js"));
+  console.log("✅ Copied custom-server.js\n");
+} else {
+  console.warn("⚠️  custom-server.js not found — server will run without real-IP injection\n");
+}
 
 // Step 3b: Ensure sql.js (pure JS fallback) bundled in app/cli/app/node_modules.
 // Strip better-sqlite3 (native) — it lives in ~/.9router/runtime to avoid

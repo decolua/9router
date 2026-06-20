@@ -20,14 +20,17 @@ function isAuthExpiredMessage(usage) {
  * @param {boolean} force - Skip needsRefresh check and always attempt refresh
  * @returns Promise<{ connection, refreshed: boolean }>
  */
-async function refreshAndUpdateCredentials(connection, force = false, proxyOptions = null) {
+export async function refreshAndUpdateCredentials(connection, force = false, proxyOptions = null) {
   const executor = getExecutor(connection.provider);
 
   // Build credentials object from connection
   const credentials = {
     accessToken: connection.accessToken,
     refreshToken: connection.refreshToken,
+    idToken: connection.idToken,
     expiresAt: connection.expiresAt || connection.tokenExpiresAt,
+    lastRefreshAt: connection.lastRefreshAt,
+    connectionId: connection.id,
     providerSpecificData: connection.providerSpecificData,
     // For GitHub
     copilotToken: connection.providerSpecificData?.copilotToken,
@@ -68,19 +71,32 @@ async function refreshAndUpdateCredentials(connection, force = false, proxyOptio
     updateData.refreshToken = refreshResult.refreshToken;
   }
 
+  if (refreshResult.idToken) {
+    updateData.idToken = refreshResult.idToken;
+  }
+
+  if (refreshResult.lastRefreshAt) {
+    updateData.lastRefreshAt = refreshResult.lastRefreshAt;
+  }
+
   // Update token expiry
   if (refreshResult.expiresIn) {
     updateData.expiresAt = new Date(Date.now() + refreshResult.expiresIn * 1000).toISOString();
+    updateData.expiresIn = refreshResult.expiresIn;
   } else if (refreshResult.expiresAt) {
     updateData.expiresAt = refreshResult.expiresAt;
   }
 
   // Handle provider-specific data (copilotToken for GitHub, etc.)
-  if (refreshResult.copilotToken || refreshResult.copilotTokenExpiresAt) {
+  const providerSpecificUpdates = {
+    ...(refreshResult.providerSpecificData || {}),
+    ...(refreshResult.copilotToken ? { copilotToken: refreshResult.copilotToken } : {}),
+    ...(refreshResult.copilotTokenExpiresAt ? { copilotTokenExpiresAt: refreshResult.copilotTokenExpiresAt } : {}),
+  };
+  if (Object.keys(providerSpecificUpdates).length > 0) {
     updateData.providerSpecificData = {
-      ...connection.providerSpecificData,
-      copilotToken: refreshResult.copilotToken,
-      copilotTokenExpiresAt: refreshResult.copilotTokenExpiresAt,
+      ...(connection.providerSpecificData || {}),
+      ...providerSpecificUpdates,
     };
   }
 
@@ -91,6 +107,7 @@ async function refreshAndUpdateCredentials(connection, force = false, proxyOptio
   const updatedConnection = {
     ...connection,
     ...updateData,
+    providerSpecificData: updateData.providerSpecificData || connection.providerSpecificData,
   };
 
   return {
@@ -114,11 +131,14 @@ export async function GET(request, { params }) {
       return Response.json({ error: "Connection not found" }, { status: 404 });
     }
 
-    // Allow OAuth connections, plus whitelisted apikey providers (glm/minimax/...)
+    // Allow OAuth connections, plus whitelisted apikey providers (glm/minimax/kiro/...)
+    // Kiro's headless api-key flow persists authType "api_key" (underscore) while
+    // generic apikey providers persist "apikey" — accept both spellings here.
     const isOAuth = connection.authType === "oauth";
+    const isApikeyAuth =
+      connection.authType === "apikey" || connection.authType === "api_key";
     const isApikeyEligible =
-      connection.authType === "apikey" &&
-      USAGE_APIKEY_PROVIDERS.includes(connection.provider);
+      isApikeyAuth && USAGE_APIKEY_PROVIDERS.includes(connection.provider);
 
     if (!isOAuth && !isApikeyEligible) {
       return Response.json({ message: "Usage not available for this connection" });
