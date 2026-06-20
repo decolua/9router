@@ -1029,6 +1029,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > groq → headers (ap
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > hackclub → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > haiper → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -2230,6 +2249,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > udio → headers (ap
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > uncloseai → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > upstage → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -2778,6 +2816,13 @@ exports[`GOLDEN buildUrl (default executor providers) > groq → url (stream + n
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > hackclub → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://ai.hackclub.com/proxy/v1/chat/completions",
+  "stream": "https://ai.hackclub.com/proxy/v1/chat/completions",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > haiper → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://api.haiper.ai/v1",
@@ -3202,6 +3247,13 @@ exports[`GOLDEN buildUrl (default executor providers) > udio → url (stream + n
 {
   "nonStream": "https://www.udio.com/api/generate-proxy",
   "stream": "https://www.udio.com/api/generate-proxy",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > uncloseai → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://hermes.ai.unturf.com/v1/chat/completions",
+  "stream": "https://hermes.ai.unturf.com/v1/chat/completions",
 }
 `;
 
