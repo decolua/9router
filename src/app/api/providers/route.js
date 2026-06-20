@@ -125,12 +125,6 @@ export async function POST(request) {
     // Compatible/embedding nodes allow exactly one connection each. These guards were
     // dropped accidentally during the bun:sqlite refactor (v0.4.28); restored to honor
     // the contract locked in by tests/unit/compatible-provider-connections.test.js (#925).
-    if (isOpenAICompatibleProvider(provider) || isAnthropicCompatibleProvider(provider) || isCustomEmbeddingProvider(provider)) {
-      const existingConnections = await getProviderConnections({ provider });
-      if (existingConnections.length > 0) {
-        return NextResponse.json({ error: "Only one connection is allowed for each compatible provider node" }, { status: 400 });
-      }
-    }
     if (isOpenAICompatibleProvider(provider)) {
       const node = await getProviderNodeById(provider);
       if (!node) {

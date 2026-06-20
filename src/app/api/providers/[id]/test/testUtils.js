@@ -2,13 +2,15 @@ import { getProviderConnectionById, updateProviderConnection } from "@/lib/local
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { testProxyUrl } from "@/lib/network/proxyTest";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
-import { PROVIDER_ENDPOINTS } from "@/shared/constants/config";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
-import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
+import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
+import {
+  refreshProviderCredentials,
+  shouldRefreshCredentials,
+} from "open-sse/services/oauthCredentialManager.js";
 import {
   GEMINI_CONFIG,
   ANTIGRAVITY_CONFIG,
-  CODEX_CONFIG,
   KIRO_CONFIG,
   QWEN_CONFIG,
   CLAUDE_CONFIG,
@@ -130,7 +132,7 @@ const OAUTH_TEST_CONFIG = {
     authHeader: "Authorization",
     authPrefix: "Bearer ",
   },
-  codebuddy: { tokenExists: true },
+  "codebuddy-cn": { tokenExists: true },
 };
 
 async function probeClineAccessToken(accessToken) {
@@ -168,18 +170,7 @@ async function refreshOAuthToken(connection) {
     }
 
     if (provider === "codex") {
-      const response = await fetch(CODEX_CONFIG.tokenUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          grant_type: "refresh_token",
-          client_id: CODEX_CONFIG.clientId,
-          refresh_token: refreshToken,
-        }),
-      });
-      if (!response.ok) return null;
-      const data = await response.json();
-      return { accessToken: data.access_token, expiresIn: data.expires_in, refreshToken: data.refresh_token || refreshToken };
+      return await refreshProviderCredentials(provider, connection, console);
     }
 
     if (provider === "claude") {
@@ -446,10 +437,25 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
     try {
       modelsBase = modelsBase.replace(/\/$/, "");
       if (modelsBase.endsWith("/messages")) modelsBase = modelsBase.slice(0, -9);
-      const res = await fetchWithConnectionProxy(`${modelsBase}/models`, {
-        headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "Authorization": `Bearer ${connection.apiKey}` },
+      const messagesUrl = `${modelsBase}/v1/messages`;
+      const model = connection.defaultModel || "claude-3-haiku-20240307";
+      const res = await fetchWithConnectionProxy(messagesUrl, {
+        method: "POST",
+        headers: {
+          "x-api-key": connection.apiKey,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+          "Authorization": `Bearer ${connection.apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: 1,
+          messages: [{ role: "user", content: "test" }],
+        }),
       }, effectiveProxy);
-      return { valid: res.ok, error: res.ok ? null : "Invalid API key or base URL" };
+      // 400/529 still confirms key accepted; only 401/403 = bad key
+      const valid = res.status !== 401 && res.status !== 403;
+      return { valid, error: valid ? null : "Invalid API key or base URL" };
     } catch (err) {
       return { valid: false, error: err.message };
     }
@@ -564,7 +570,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
       }
       case "volcengine-ark":
       case "byteplus": {
-        const res = await fetchWithConnectionProxy(PROVIDER_ENDPOINTS[connection.provider], {
+        const res = await fetchWithConnectionProxy(PROVIDERS[connection.provider]?.baseUrl, {
           method: "POST",
           headers: { "Authorization": `Bearer ${connection.apiKey}`, "content-type": "application/json" },
           body: JSON.stringify({ model: getDefaultModel(connection.provider), max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
@@ -593,7 +599,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "perplexity": {
-        const res = await fetchWithConnectionProxy("https://api.perplexity.ai/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
+        const res = await fetchWithConnectionProxy("https://api.perplexity.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "together": {
@@ -752,14 +758,25 @@ export async function testSingleConnection(id) {
   };
 
   if (result.refreshed && result.newTokens) {
-    updateData.accessToken = result.newTokens.accessToken;
+    if (result.newTokens.accessToken) updateData.accessToken = result.newTokens.accessToken;
     if (result.newTokens.refreshToken) updateData.refreshToken = result.newTokens.refreshToken;
+    if (result.newTokens.idToken) updateData.idToken = result.newTokens.idToken;
+    if (result.newTokens.lastRefreshAt) updateData.lastRefreshAt = result.newTokens.lastRefreshAt;
+    if (result.newTokens.expiresIn) updateData.expiresIn = result.newTokens.expiresIn;
     if (result.newTokens.expiresIn) {
       updateData.expiresAt = new Date(Date.now() + result.newTokens.expiresIn * 1000).toISOString();
+    } else if (result.newTokens.expiresAt) {
+      updateData.expiresAt = result.newTokens.expiresAt;
+    }
+    if (result.newTokens.providerSpecificData) {
+      updateData.providerSpecificData = {
+        ...(connection.providerSpecificData || {}),
+        ...result.newTokens.providerSpecificData,
+      };
     }
   }
 
   await updateProviderConnection(id, updateData);
 
-  return { valid: result.valid, error: result.error, latencyMs, testedAt: new Date().toISOString() };
+  return { valid: result.valid, error: result.error, refreshed: !!result.refreshed, latencyMs, testedAt: new Date().toISOString() };
 }

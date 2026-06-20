@@ -1,0 +1,226 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`GOLDEN response stream: CommandCode → OpenAI > text + reasoning + tool + finish-step usage 1`] = `
+[
+  {
+    "choices": [
+      {
+        "delta": {
+          "content": "Hello",
+          "role": "assistant",
+        },
+        "finish_reason": null,
+        "index": 0,
+      },
+    ],
+    "created": 0,
+    "id": "chatcmpl-<TS>",
+    "model": "commandcode",
+    "object": "chat.completion.chunk",
+  },
+  {
+    "choices": [
+      {
+        "delta": {
+          "reasoning_content": "thinking",
+        },
+        "finish_reason": null,
+        "index": 0,
+      },
+    ],
+    "created": 0,
+    "id": "chatcmpl-<TS>",
+    "model": "commandcode",
+    "object": "chat.completion.chunk",
+  },
+  {
+    "choices": [
+      {
+        "delta": {
+          "tool_calls": [
+            {
+              "function": {
+                "arguments": "",
+                "name": "get_weather",
+              },
+              "id": "t1",
+              "index": 0,
+              "type": "function",
+            },
+          ],
+        },
+        "finish_reason": null,
+        "index": 0,
+      },
+    ],
+    "created": 0,
+    "id": "chatcmpl-<TS>",
+    "model": "commandcode",
+    "object": "chat.completion.chunk",
+  },
+  {
+    "choices": [
+      {
+        "delta": {
+          "tool_calls": [
+            {
+              "function": {
+                "arguments": "{"city":"NYC"}",
+              },
+              "index": 0,
+            },
+          ],
+        },
+        "finish_reason": null,
+        "index": 0,
+      },
+    ],
+    "created": 0,
+    "id": "chatcmpl-<TS>",
+    "model": "commandcode",
+    "object": "chat.completion.chunk",
+  },
+  {
+    "choices": [
+      {
+        "delta": {},
+        "finish_reason": "tool_calls",
+        "index": 0,
+      },
+    ],
+    "created": 0,
+    "id": "chatcmpl-<TS>",
+    "model": "commandcode",
+    "object": "chat.completion.chunk",
+    "usage": {
+      "completion_tokens": 5,
+      "prompt_tokens": 10,
+      "total_tokens": 15,
+    },
+  },
+]
+`;
+
+exports[`GOLDEN response stream: Kiro → OpenAI (finish after tool) > toolUse then stop — lock current finish_reason behavior 1`] = `
+[
+  {
+    "choices": [
+      {
+        "delta": {
+          "content": "Hi",
+          "role": "assistant",
+        },
+        "finish_reason": null,
+        "index": 0,
+      },
+    ],
+    "created": 0,
+    "id": "chatcmpl-<TS>",
+    "model": "kiro",
+    "object": "chat.completion.chunk",
+  },
+  {
+    "choices": [
+      {
+        "delta": {
+          "tool_calls": [
+            {
+              "function": {
+                "arguments": "{"q":"x"}",
+                "name": "search",
+              },
+              "id": "tu_1",
+              "index": 0,
+              "type": "function",
+            },
+          ],
+        },
+        "finish_reason": null,
+        "index": 0,
+      },
+    ],
+    "created": 0,
+    "id": "chatcmpl-<TS>",
+    "model": "kiro",
+    "object": "chat.completion.chunk",
+  },
+  {
+    "choices": [
+      {
+        "delta": {},
+        "finish_reason": "tool_calls",
+        "index": 0,
+      },
+    ],
+    "created": 0,
+    "id": "chatcmpl-<TS>",
+    "model": "kiro",
+    "object": "chat.completion.chunk",
+    "usage": {
+      "completion_tokens": 3,
+      "prompt_tokens": 7,
+      "total_tokens": 10,
+    },
+  },
+]
+`;
+
+exports[`GOLDEN response stream: Ollama → OpenAI (finish after tool) > tool_calls then done_reason=stop — lock current finish_reason 1`] = `
+[
+  {
+    "choices": [
+      {
+        "delta": {
+          "tool_calls": [
+            {
+              "function": {
+                "arguments": "{"q":"x"}",
+                "name": "search",
+              },
+              "id": "call_0_<TS>",
+              "index": 0,
+              "type": "function",
+            },
+          ],
+        },
+        "finish_reason": null,
+        "index": 0,
+      },
+    ],
+    "created": 0,
+    "id": "chatcmpl-<TS>",
+    "model": "qwen3",
+    "object": "chat.completion.chunk",
+  },
+  {
+    "choices": [
+      {
+        "delta": {},
+        "finish_reason": "tool_calls",
+        "index": 0,
+      },
+    ],
+    "created": 0,
+    "id": "chatcmpl-<TS>",
+    "model": "qwen3",
+    "object": "chat.completion.chunk",
+    "usage": {
+      "completion_tokens": 2,
+      "prompt_tokens": 5,
+      "total_tokens": 7,
+    },
+  },
+]
+`;
+
+exports[`GOLDEN usage math: Claude prompt = input + cache (lock) > prompt_tokens sums input + cache_read + cache_creation 1`] = `
+{
+  "completion_tokens": 5,
+  "prompt_tokens": 15,
+  "prompt_tokens_details": {
+    "cache_creation_tokens": 2,
+    "cached_tokens": 3,
+  },
+  "total_tokens": 20,
+}
+`;

@@ -15,6 +15,7 @@ import {
   WATCHDOG_INTERVAL_MS, NETWORK_CHECK_INTERVAL_MS, VIRTUAL_IFACE_REGEX,
 } from "@/lib/tunnel";
 import { getMitmStatus, startMitm, loadEncryptedPassword, initDbHooks, restoreToolDNS, removeAllDNSEntriesSync } from "@/mitm/manager";
+import { startClaudeAutoPing } from "@/shared/services/claudeAutoPing";
 import { syncToJson as syncMitmAliasCache } from "@/lib/mitmAliasCache";
 import { startTokenRefreshWorker } from "@/sse/services/tokenRefreshWorker";
 
@@ -91,6 +92,7 @@ export async function initializeApp() {
     startNetworkMonitor();
     startTokenRefreshWorker();
     autoStartMitm();
+    startClaudeAutoPing();
   } catch (error) {
     logger.error({ err: error }, "[InitApp] initialization error");
   }
@@ -162,7 +164,7 @@ async function safeRestartTunnel(reason) {
     logger.info("[Tunnel] restart success");
   } catch (err) {
     if (!/cloudflared killed|tunnel cancelled/.test(err.message)) {
-      logger.error({ err }, "[Tunnel] restart failed");
+      console.log("[Tunnel] restart failed:", err.message);
     }
   }
 }
@@ -198,7 +200,7 @@ async function safeRestartTailscale(reason) {
   }
   if (!await checkInternet()) return;
 
-  logger.info(`[Tailscale] safeRestart (${reason}) — daemon not running${force ? " [force]" : ""}`);
+  console.log(`[Tailscale] safeRestart (${reason}) — daemon not running${force ? " [force]" : ""}`);
   try {
     await enableTailscale();
     svc.lastRestartAt = Date.now();

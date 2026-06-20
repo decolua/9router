@@ -1,22 +1,19 @@
 // Some thinking-mode providers (DeepSeek, Kimi, MiniMax, ...) require reasoning_content
 // to be echoed back on assistant messages. Clients in OpenAI format don't send it,
 // so we inject a non-empty placeholder to satisfy upstream validation.
+import { PROVIDERS } from "../config/providers.js";
 
 const PLACEHOLDER = " ";
 
-// Provider-level rules: keyed by executor.provider
-const PROVIDER_RULES = {
-  deepseek: { scope: "all" },
-  minimax: { scope: "all" },
-  "minimax-cn": { scope: "all" }
-};
+// Provider-level rules derive from registry transport.reasoningInject (single source)
+const providerRuleFor = (provider) => PROVIDERS[provider]?.reasoningInject;
 
 // Model-level rules: matched by predicate against model id
 // Note: model matching is case-insensitive for DeepSeek to support custom providers
 // that may send mixed-case ids (e.g. "DeepSeek-V4-Pro").
 const MODEL_RULES = [
-  { match: m => m?.toLowerCase?.().startsWith?.("kimi-"), scope: "toolCalls" },
-  { match: m => m?.toLowerCase?.().startsWith?.("deepseek-"), scope: "all" }
+  { match: m => /^kimi-/i.test(m || ""), scope: "toolCalls" },
+  { match: m => /deepseek/i.test(m || ""), scope: "all" }
 ];
 
 const DEEPSEEK_V4_PRO = "deepseek-v4-pro";
@@ -91,7 +88,7 @@ function applyGrok43ReasoningAlias({ provider, model, body }) {
 }
 
 export function injectReasoningContent({ provider, model, body }) {
-  const providerRule = PROVIDER_RULES[provider];
+  const providerRule = providerRuleFor(provider);
   const modelRule = MODEL_RULES.find(r => r.match(model));
   const rule = providerRule || modelRule;
   let nextBody = applyDeepSeekV4ProAlias({ provider, model, body });
