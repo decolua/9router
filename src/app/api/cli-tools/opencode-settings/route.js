@@ -6,6 +6,7 @@ import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
+import { buildOpenCodeModelConfig, mergeOpenCodeModelConfig } from "./converter.js";
 
 const execAsync = promisify(exec);
 
@@ -125,10 +126,12 @@ export async function POST(request) {
     // Ensure models map exists
     existingProvider.models = existingProvider.models || {};
 
-    // Add or update entries for all requested models
+    // Add or update entries for all requested models (converter + merge)
     for (const m of modelsArray) {
       if (!m || typeof m !== "string") continue;
-      existingProvider.models[m] = { name: m, modalities: { input: ["text", "image"], output: ["text"] } };
+      const generated = buildOpenCodeModelConfig(null, m);
+      const existing = existingProvider.models[m] || {};
+      existingProvider.models[m] = mergeOpenCodeModelConfig(generated, existing);
     }
 
     // Save merged provider back
