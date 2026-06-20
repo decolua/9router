@@ -1,6 +1,6 @@
 {
-  "name": "@diepxuan/9router",
-  "version": "0.4.71",
+  "name": "9router",
+  "version": "0.5.6",
   "description": "9Router CLI - Start and manage 9Router server",
   "bin": {
     "9router": "./cli.js"
@@ -18,7 +18,8 @@
     "build": "node scripts/build-cli.js",
     "pack:cli": "npm run build && npm pack --pack-destination ../..",
     "publish:cli": "npm run build && npm publish",
-    "postinstall": "node hooks/postinstall.js"
+    "postinstall": "node hooks/postinstall.js",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "enquirer": "^2.4.1",
@@ -43,8 +44,5 @@
   "devDependencies": {
     "esbuild": "^0.25.12",
     "nodemon": "^3.1.14"
-  },
-  "publishConfig": {
-    "registry": "https://npm.pkg.github.com/"
   }
 }

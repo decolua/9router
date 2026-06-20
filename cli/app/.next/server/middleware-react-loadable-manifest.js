@@ -1,1 +1,0 @@
-self.__REACT_LOADABLE_MANIFEST='{"app/(dashboard)/dashboard/translator/page.js -> @monaco-editor/react":{"id":28202,"files":["static/chunks/8202.1ffc6ce531e066ce.js"]}}';
