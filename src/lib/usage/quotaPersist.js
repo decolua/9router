@@ -14,13 +14,18 @@ import {
 export async function persistQuotaSnapshot(connection, usage) {
   if (!usage) return connection;
   const quotaInfos = parseQuotaData(connection.provider, usage);
+  // Only overwrite quotaInfos when at least one bucket has a real limit.
+  // Claude's auth-error path returns { message } and parseQuotaData synthesizes
+  // a length-1 {name:"error", total:0} bucket from it; persisting that would
+  // clobber the last-known-good snapshot. quotaMessage is still updated below.
+  const hasRealBuckets = quotaInfos.some((q) => Number(q?.total) > 0);
   try {
     const update = {
       quotaUpdatedAt: new Date().toISOString(),
       quotaPlan: usage?.plan ?? null,
       quotaMessage: usage?.message ?? null,
     };
-    if (quotaInfos.length > 0) {
+    if (hasRealBuckets) {
       update.quotaInfos = quotaInfos;
     }
     await updateProviderConnection(connection.id, update);

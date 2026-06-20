@@ -84,6 +84,19 @@ describe("quotaPersist helpers (F-1 regression coverage)", () => {
     expect(update.quotaInfos).toBeUndefined(); // not overwritten
     expect(update.quotaMessage).toBe("Auth expired");
   });
+  it("persistQuotaSnapshot does not overwrite snapshot on claude auth-error (N.1)", async () => {
+    // Claude's {message}-only response makes parseQuotaData synthesize a
+    // length-1 {name:"error", total:0} bucket. Pre-fix the length>0 guard
+    // let it through and clobbered the last good quotaInfos.
+    const conn = { id: "c-claude", provider: "claude" };
+    await persistQuotaSnapshot(conn, { message: "auth failed" });
+    expect(updateProviderConnection).toHaveBeenCalledTimes(1);
+    const update = updateProviderConnection.mock.calls[0][1];
+    expect(update).not.toHaveProperty("quotaInfos"); // snapshot preserved
+    expect(update.quotaMessage).toBe("auth failed");
+    expect(update.quotaPlan).toBeNull();
+    expect(typeof update.quotaUpdatedAt).toBe("string");
+  });
 
   it("applyQuotaLockIfNeeded applies lock when fully depleted with future reset", async () => {
     const future = new Date(Date.now() + 3600_000).toISOString();
