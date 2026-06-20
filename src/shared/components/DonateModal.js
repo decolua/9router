@@ -5,6 +5,15 @@ import { createPortal } from "react-dom";
 import PropTypes from "prop-types";
 import { GITHUB_CONFIG } from "@/shared/constants/config";
 
+const RU_CHANNEL = {
+  id: "yoomoney",
+  label: "ЮMoney",
+  description: "Карта, СБП, телефон — любая сумма",
+  icon: "account_balance",
+  color: "#FFCC00",
+  url: "https://yoomoney.ru/fundraise/1IH1PNNMFKP.260620",
+};
+
 export default function DonateModal({ isOpen, onClose }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -37,10 +46,10 @@ export default function DonateModal({ isOpen, onClose }) {
 
   if (!isOpen || typeof document === "undefined") return null;
 
-  const isRussianUser = !loading && error;
-  const isInternationalUser = !loading && data;
-
-  const RU_URL = "https://yoomoney.ru/fundraise/1IH1PNNMFKP.260620";
+  const loaded = !loading && (data || error);
+  const channels = data?.channels || [];
+  const showRu = loaded;
+  const totalChannels = channels.length + 1; // + RU
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -71,46 +80,69 @@ export default function DonateModal({ isOpen, onClose }) {
             </div>
           )}
 
-          {isInternationalUser && data && (
+          {showRu && (
             <>
-              {data.message && (
+              {(data?.message) && (
                 <p className="text-text-muted text-sm mb-6 text-center">{data.message}</p>
               )}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {(data.channels || []).map((ch, i) => (
+
+              {/* Original channels + RU channel combined */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                {channels.map((ch, i) => (
                   <DonateChannelCard key={ch.id || i} channel={ch} />
                 ))}
+                {/* ЮMoney — всегда 4-й */}
+                <div className="flex flex-col items-center p-4 rounded-xl border border-black/10 dark:border-white/10 bg-surface/50 hover:border-pink-500/40 transition-colors">
+                  <div
+                    className="w-12 h-12 rounded-full flex items-center justify-center mb-3"
+                    style={{ backgroundColor: `${RU_CHANNEL.color}20`, color: RU_CHANNEL.color }}
+                  >
+                    <span className="material-symbols-outlined text-[26px]">{RU_CHANNEL.icon}</span>
+                  </div>
+                  <div className="font-semibold text-text-main mb-1">{RU_CHANNEL.label}</div>
+                  <div className="text-xs text-text-muted mb-3 text-center">{RU_CHANNEL.description}</div>
+                  <div className="w-full rounded-lg overflow-hidden border border-black/10 dark:border-white/10 bg-white mb-2">
+                    <iframe
+                      src="https://yoomoney.ru/quickpay/fundraise/widget?billNumber=1IH1PNNMFKP.260620&"
+                      width="100%"
+                      height="240"
+                      frameBorder="0"
+                      allowTransparency="true"
+                      scrolling="no"
+                      title="ЮMoney QR"
+                    />
+                  </div>
+                  <a
+                    href={RU_CHANNEL.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium text-white hover:opacity-90 transition-opacity"
+                    style={{ backgroundColor: RU_CHANNEL.color }}
+                  >
+                    Открыть
+                    <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+                  </a>
+                </div>
               </div>
-            </>
-          )}
 
-          {isRussianUser && (
-            <div className="flex flex-col items-center gap-4 py-2">
-              <p className="text-text-muted text-sm text-center">
-                Если форк пригодился — можно сказать спасибо ☕
-              </p>
-              <div className="w-full max-w-[340px] rounded-xl overflow-hidden border border-black/10 dark:border-white/10 bg-white">
-                <iframe
-                  src="https://yoomoney.ru/quickpay/fundraise/widget?billNumber=1IH1PNNMFKP.260620&"
-                  width="100%"
-                  height="420"
-                  frameBorder="0"
-                  allowTransparency="true"
-                  scrolling="no"
-                  title="ЮMoney Donate"
-                />
-              </div>
-              <a
-                href={RU_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white"
-                style={{ backgroundColor: "#FFCC00" }}
-              >
-                <span className="material-symbols-outlined text-[20px]">account_balance</span>
-                Открыть в браузере
-              </a>
-            </div>
+              {error && !data && (
+                <div className="flex flex-col items-center gap-3 py-4">
+                  <p className="text-text-muted text-sm text-center">
+                    Если форк пригодился — можно сказать спасибо ☕
+                  </p>
+                  <a
+                    href={RU_CHANNEL.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white"
+                    style={{ backgroundColor: RU_CHANNEL.color }}
+                  >
+                    <span className="material-symbols-outlined text-[20px]">{RU_CHANNEL.icon}</span>
+                    Открыть ЮMoney
+                  </a>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
