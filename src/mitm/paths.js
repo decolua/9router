@@ -19,7 +19,6 @@ function getDataDir() {
     return configured;
   } catch (e) {
     if (e?.code === "EACCES" || e?.code === "EPERM") {
-      console.warn(`[DATA_DIR] '${configured}' not writable → fallback ~/.${APP_NAME}`);
       return defaultDir();
     }
     throw e;
