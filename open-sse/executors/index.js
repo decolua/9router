@@ -22,6 +22,7 @@ import { TheOldLlmExecutor } from "./theoldllm.js";
 import { PhindExecutor } from "./phind.js";
 import { HuggingChatExecutor } from "./huggingchat.js";
 import { InnerAiExecutor } from "./inner-ai.js";
+import { TraeExecutor } from "./trae.js";
 import { DefaultExecutor } from "./default.js";
 
 const executors = {
@@ -51,6 +52,7 @@ const executors = {
   phind: new PhindExecutor(),
   huggingchat: new HuggingChatExecutor(),
   "inner-ai": new InnerAiExecutor(),
+  trae: new TraeExecutor(),
 };
 
 const defaultCache = new Map();
@@ -91,3 +93,4 @@ export { TheOldLlmExecutor } from "./theoldllm.js";
 export { PhindExecutor } from "./phind.js";
 export { HuggingChatExecutor } from "./huggingchat.js";
 export { InnerAiExecutor } from "./inner-ai.js";
+export { TraeExecutor } from "./trae.js";
