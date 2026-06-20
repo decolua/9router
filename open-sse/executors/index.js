@@ -19,6 +19,8 @@ import { XiaomiTokenplanExecutor } from "./xiaomi-tokenplan.js";
 import { MimoFreeExecutor } from "./mimo-free.js";
 import { CodeBuddyExecutor } from "./codebuddy.js";
 import { TheOldLlmExecutor } from "./theoldllm.js";
+import { PhindExecutor } from "./phind.js";
+import { HuggingChatExecutor } from "./huggingchat.js";
 import { DefaultExecutor } from "./default.js";
 
 const executors = {
@@ -45,7 +47,8 @@ const executors = {
   "mimo-free": new MimoFreeExecutor(),
   mmf: new MimoFreeExecutor(), // Alias for mimo-free
   codebuddy: new CodeBuddyExecutor(),
-  theoldllm: new TheOldLlmExecutor(),
+  phind: new PhindExecutor(),
+  huggingchat: new HuggingChatExecutor(),
 };
 
 const defaultCache = new Map();
@@ -83,3 +86,5 @@ export { XiaomiTokenplanExecutor } from "./xiaomi-tokenplan.js";
 export { MimoFreeExecutor } from "./mimo-free.js";
 export { CodeBuddyExecutor } from "./codebuddy.js";
 export { TheOldLlmExecutor } from "./theoldllm.js";
+export { PhindExecutor } from "./phind.js";
+export { HuggingChatExecutor } from "./huggingchat.js";
