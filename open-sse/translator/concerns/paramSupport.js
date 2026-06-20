@@ -8,6 +8,8 @@ const STRIP_RULES = [
   { match: /claude-opus-4/i, drop: ["temperature"] },
   // GitHub Copilot gpt-5.4: temperature unsupported.
   { provider: "github", match: /gpt-5\.4/i, drop: ["temperature"] },
+  // OpenCode Go Kimi K2.7 Code rejects explicit temperature values.
+  { provider: "opencode-go", match: /^kimi-k2\.7-code$/i, drop: ["temperature"] },
   // GitHub Copilot Claude (except opus/sonnet 4.6): thinking + reasoning_effort rejected. #713
   { provider: "github", match: (m) => /claude/i.test(m) && !/claude.*(opus|sonnet).*4\.6/i.test(m), drop: ["thinking", "reasoning_effort"] },
 ];

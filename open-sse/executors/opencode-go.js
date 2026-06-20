@@ -2,6 +2,7 @@ import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { ANTHROPIC_API_VERSION } from "../providers/shared.js";
+import { stripUnsupportedParams } from "../translator/concerns/paramSupport.js";
 
 // Models that use /zen/go/v1/messages (Anthropic/Claude format + x-api-key auth)
 const MESSAGES_FORMAT_MODELS = new Set([
@@ -44,6 +45,7 @@ export class OpenCodeGoExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body) {
+    stripUnsupportedParams(this.provider, model, body);
     return injectReasoningContent({ provider: this.provider, model, body });
   }
 }

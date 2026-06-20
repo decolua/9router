@@ -69,3 +69,30 @@ describe("OpenCode Go endpoint routing", () => {
     }
   });
 });
+
+describe("OpenCode Go request parameters", () => {
+  it("strips temperature for Kimi K2.7 Code because Moonshot only accepts its default", () => {
+    const executor = new OpenCodeGoExecutor();
+
+    const body = executor.transformRequest("kimi-k2.7-code", {
+      messages: [{ role: "user", content: "hello" }],
+      max_tokens: 8,
+      temperature: 0.7,
+    });
+
+    expect(body.temperature).toBeUndefined();
+    expect(body.max_tokens).toBe(8);
+  });
+
+  it("preserves temperature for other OpenCode Go chat models", () => {
+    const executor = new OpenCodeGoExecutor();
+
+    const body = executor.transformRequest("glm-5.2", {
+      messages: [{ role: "user", content: "hello" }],
+      max_tokens: 8,
+      temperature: 0.7,
+    });
+
+    expect(body.temperature).toBe(0.7);
+  });
+});
