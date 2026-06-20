@@ -26,7 +26,7 @@ export function deriveModerationsUrl(baseUrl) {
 export async function handleModerationsCore({ body, modelInfo, credentials, log, onRequestSuccess }) {
   const { provider, model } = modelInfo;
   const cfg = PROVIDERS[provider];
-  const baseUrl = cfg?.transport?.baseUrl;
+  const baseUrl = cfg?.baseUrl;
   if (!baseUrl) {
     return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Provider '${provider}' has no base URL for moderation`);
   }

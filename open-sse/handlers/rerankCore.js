@@ -1,17 +1,18 @@
 import { createErrorResult, parseUpstreamError } from "../utils/error.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { getExecutor } from "../executors/index.js";
-import { PROVIDERS } from "../config/providers.js";
+import { PROVIDERS, PROVIDER_MEDIA } from "../providers/index.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
-// Derive a provider's /rerank endpoint. Rerank-capable providers are either chat
-// providers (transport.baseUrl ending in /chat/completions) or embedding-only
-// providers (embeddingConfig.baseUrl ending in /embeddings). Returns null when no
-// rerank endpoint can be derived.
-export function deriveRerankUrl(cfg) {
-  const chat = cfg?.transport?.baseUrl;
+// Derive a provider's /rerank endpoint from two sources:
+//   - chat providers: PROVIDERS[id].baseUrl ending in /chat/completions
+//   - embedding-only providers: PROVIDER_MEDIA[id].embeddingConfig.baseUrl ending in /embeddings
+//     (these have transport:null, so they are absent from PROVIDERS)
+// Returns null when no rerank endpoint can be derived.
+export function deriveRerankUrl(transportCfg, mediaCfg) {
+  const chat = transportCfg?.baseUrl;
   if (chat && /\/chat\/completions$/.test(chat)) return chat.replace(/\/chat\/completions$/, "/rerank");
-  const emb = cfg?.embeddingConfig?.baseUrl;
+  const emb = mediaCfg?.embeddingConfig?.baseUrl;
   if (emb && /\/embeddings$/.test(emb)) return emb.replace(/\/embeddings$/, "/rerank");
   return null;
 }
@@ -25,8 +26,7 @@ export function deriveRerankUrl(cfg) {
  */
 export async function handleRerankCore({ body, modelInfo, credentials, log, onRequestSuccess }) {
   const { provider, model } = modelInfo;
-  const cfg = PROVIDERS[provider];
-  const url = deriveRerankUrl(cfg);
+  const url = deriveRerankUrl(PROVIDERS[provider], PROVIDER_MEDIA[provider]);
   if (!url) {
     return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Provider '${provider}' does not expose a derivable /rerank endpoint`);
   }
