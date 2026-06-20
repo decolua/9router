@@ -5,16 +5,6 @@ import { createPortal } from "react-dom";
 import PropTypes from "prop-types";
 import { GITHUB_CONFIG } from "@/shared/constants/config";
 
-const RU_CHANNEL = {
-  id: "yoomoney",
-  label: "ЮMoney",
-  description: "Карта, СБП, телефон — любая сумма",
-  icon: "account_balance",
-  color: "#FFCC00",
-  url: "https://yoomoney.ru/fundraise/1IH1PNNMFKP.260620",
-  qr: "https://yoomoney.ru/fundraise/1IH1PNNMFKP.260620",
-};
-
 export default function DonateModal({ isOpen, onClose }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -47,11 +37,10 @@ export default function DonateModal({ isOpen, onClose }) {
 
   if (!isOpen || typeof document === "undefined") return null;
 
-  // Combine original channels + RU channel
-  const channels = [
-    ...(data?.channels || []),
-    RU_CHANNEL,
-  ];
+  const isRussianUser = !loading && error;
+  const isInternationalUser = !loading && data;
+
+  const RU_URL = "https://yoomoney.ru/fundraise/1IH1PNNMFKP.260620";
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -82,34 +71,44 @@ export default function DonateModal({ isOpen, onClose }) {
             </div>
           )}
 
-          {((!loading && data) || error) && (
+          {isInternationalUser && data && (
             <>
-              {(data?.message || !error) && (
-                <p className="text-text-muted text-sm mb-6 text-center">
-                  {data?.message || "Если форк пригодился — можно сказать спасибо ☕"}
-                </p>
+              {data.message && (
+                <p className="text-text-muted text-sm mb-6 text-center">{data.message}</p>
               )}
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {channels.map((ch, i) => (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {(data.channels || []).map((ch, i) => (
                   <DonateChannelCard key={ch.id || i} channel={ch} />
                 ))}
               </div>
             </>
           )}
 
-          {!loading && error && (
-            <div className="text-center py-4">
-              <p className="text-text-muted text-sm mb-4">Если форк пригодился — можно сказать спасибо ☕</p>
+          {isRussianUser && (
+            <div className="flex flex-col items-center gap-4 py-2">
+              <p className="text-text-muted text-sm text-center">
+                Если форк пригодился — можно сказать спасибо ☕
+              </p>
+              <div className="w-full max-w-[340px] rounded-xl overflow-hidden border border-black/10 dark:border-white/10 bg-white">
+                <iframe
+                  src="https://yoomoney.ru/quickpay/fundraise/widget?billNumber=1IH1PNNMFKP.260620&"
+                  width="100%"
+                  height="420"
+                  frameBorder="0"
+                  allowTransparency="true"
+                  scrolling="no"
+                  title="ЮMoney Donate"
+                />
+              </div>
               <a
-                href={RU_CHANNEL.url}
+                href={RU_URL}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white"
-                style={{ backgroundColor: RU_CHANNEL.color }}
+                style={{ backgroundColor: "#FFCC00" }}
               >
-                <span className="material-symbols-outlined text-[20px]">{RU_CHANNEL.icon}</span>
-                ЮMoney — любая сумма
+                <span className="material-symbols-outlined text-[20px]">account_balance</span>
+                Открыть в браузере
               </a>
             </div>
           )}
@@ -121,9 +120,14 @@ export default function DonateModal({ isOpen, onClose }) {
 }
 
 function DonateChannelCard({ channel }) {
-  const { label, description, icon, color, url, qr } = channel;
-  const content = (
-    <>
+  const { label, description, icon, color, url } = channel;
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex flex-col items-center p-4 rounded-xl border border-black/10 dark:border-white/10 bg-surface/50 hover:border-pink-500/40 transition-colors hover:no-underline"
+    >
       <div
         className="w-12 h-12 rounded-full flex items-center justify-center mb-3"
         style={{ backgroundColor: `${color}20`, color }}
@@ -134,37 +138,14 @@ function DonateChannelCard({ channel }) {
       {description && (
         <div className="text-xs text-text-muted mb-3 text-center">{description}</div>
       )}
-      {qr && channel.id === "yoomoney" && (
-        <iframe
-          src="https://yoomoney.ru/quickpay/fundraise/widget?billNumber=1IH1PNNMFKP.260620&"
-          width="100%"
-          height="260"
-          frameBorder="0"
-          allowTransparency="true"
-          scrolling="no"
-          title="ЮMoney QR"
-          className="rounded-lg"
-        />
-      )}
-    </>
-  );
-
-  return (
-    <div className="flex flex-col items-center p-4 rounded-xl border border-black/10 dark:border-white/10 bg-surface/50 hover:border-pink-500/40 transition-colors">
-      {content}
-      {url && (
-        <a
-          href={url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-3 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium text-white hover:opacity-90 transition-opacity"
-          style={{ backgroundColor: color }}
-        >
-          {channel.id === "yoomoney" ? "Оплатить" : "Open"}
-          <span className="material-symbols-outlined text-[16px]">open_in_new</span>
-        </a>
-      )}
-    </div>
+      <div
+        className="mt-auto inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium text-white hover:opacity-90 transition-opacity"
+        style={{ backgroundColor: color }}
+      >
+        Open
+        <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+      </div>
+    </a>
   );
 }
 
