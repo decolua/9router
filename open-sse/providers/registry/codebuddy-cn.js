@@ -12,6 +12,8 @@ export default {
     },
   },
   category: "oauth",
+  authModes: ["oauth", "apikey"],
+  hasOAuth: true,
   transport: {
     baseUrl: "https://copilot.tencent.com/v2/chat/completions",
     forceStream: true,
