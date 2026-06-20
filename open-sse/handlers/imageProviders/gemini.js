@@ -1,7 +1,8 @@
 // Google Gemini adapter (Nano Banana models)
 import { nowSec } from "./_base.js";
+import { PROVIDER_MEDIA } from "../../providers/index.js";
 
-const BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
+const BASE_URL = PROVIDER_MEDIA["gemini"]?.imageConfig?.baseUrl;
 
 export default {
   buildUrl: (model, creds) => {

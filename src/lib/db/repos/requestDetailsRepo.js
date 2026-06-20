@@ -16,8 +16,8 @@ async function getObservabilityConfig() {
     const { getSettings } = await import("./settingsRepo.js");
     const settings = await getSettings();
     const envEnabled = process.env.OBSERVABILITY_ENABLED !== "false";
-    const enabled = typeof settings.enableObservability === "boolean"
-      ? settings.enableObservability
+    const enabled = typeof settings.enableObservability2 === "boolean"
+      ? settings.enableObservability2
       : envEnabled;
     cachedConfig = {
       enabled,

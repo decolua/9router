@@ -3,9 +3,9 @@ import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, INTERNAL_REQUEST_HEADER, AG_DEFAULT_TOOLS, AG_TOOL_SUFFIX } from "../config/appConstants.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
-import { deriveSessionId } from "../utils/sessionManager.js";
+import { resolveSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
-import { cleanJSONSchemaForAntigravity } from "../translator/helpers/geminiHelper.js";
+import { cleanJSONSchemaForAntigravity } from "../translator/formats/gemini.js";
 
 // Sanitize function name: Gemini requires [a-zA-Z_][a-zA-Z0-9_.:\-]{0,63}
 function sanitizeFunctionName(name) {
@@ -17,6 +17,9 @@ function sanitizeFunctionName(name) {
 
 const MAX_RETRY_AFTER_MS = 10000;
 const MAX_ANTIGRAVITY_OUTPUT_TOKENS = 16384;
+
+// Fields Google generateContent rejects (e.g. Claude adaptive output_config) — stripped from antigravity request envelope
+const ANTIGRAVITY_REQUEST_BLACKLIST = ["output_config"];
 
 export class AntigravityExecutor extends BaseExecutor {
   constructor() {
@@ -30,13 +33,16 @@ export class AntigravityExecutor extends BaseExecutor {
     return `${baseUrl}/v1internal:${action}`;
   }
 
+  // sessionId comes from transformRequest output; base.execute runs transformRequest before
+  // buildHeaders, so we read it from instance state cached there (fallback: explicit arg).
   buildHeaders(credentials, stream = true, sessionId = null) {
+    const sid = sessionId || this._lastSessionId;
     return {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${credentials.accessToken}`,
       "User-Agent": this.config.headers?.["User-Agent"] || ANTIGRAVITY_HEADERS["User-Agent"],
       [INTERNAL_REQUEST_HEADER.name]: INTERNAL_REQUEST_HEADER.value,
-      ...(sessionId && { "X-Machine-Session-Id": sessionId }),
+      ...(sid && { "X-Machine-Session-Id": sid }),
       "Accept": stream ? "text/event-stream" : "application/json"
     };
   }
@@ -80,7 +86,9 @@ export class AntigravityExecutor extends BaseExecutor {
       tools = allDeclarations.length > 0 ? [{ functionDeclarations: allDeclarations }] : [];
     }
 
+    // Strip tools/toolConfig (handled separately) and blacklisted fields that Google rejects
     const { tools: _originalTools, toolConfig: _originalToolConfig, ...requestWithoutTools } = body.request || {};
+    for (const key of ANTIGRAVITY_REQUEST_BLACKLIST) delete requestWithoutTools[key];
     const generationConfig = { ...(requestWithoutTools.generationConfig || {}) };
     if (generationConfig.maxOutputTokens > MAX_ANTIGRAVITY_OUTPUT_TOKENS) {
       generationConfig.maxOutputTokens = MAX_ANTIGRAVITY_OUTPUT_TOKENS;
@@ -91,10 +99,12 @@ export class AntigravityExecutor extends BaseExecutor {
       generationConfig,
       ...(contents && { contents }),
       ...(tools && { tools }),
-      sessionId: body.request?.sessionId || deriveSessionId(credentials?.email || credentials?.connectionId),
+      sessionId: body.request?.sessionId || resolveSessionId({ headers: credentials?.rawHeaders, body, connectionId: credentials?.email || credentials?.connectionId, scope: "antigravity" }),
       safetySettings: undefined,
       ...(tools?.length > 0 && { toolConfig: { functionCallingConfig: { mode: "VALIDATED" } } })
     };
+
+    this._lastSessionId = transformedRequest.sessionId; // cached for buildHeaders (base.execute order)
 
     return {
       ...body,
@@ -196,98 +206,23 @@ export class AntigravityExecutor extends BaseExecutor {
     return totalMs > 0 ? totalMs : null;
   }
 
-  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
-    const fallbackCount = this.getFallbackCount();
-    let lastError = null;
-    let lastStatus = 0;
-    const MAX_AUTO_RETRIES = 3;
-    const MAX_RETRY_AFTER_RETRIES = 3;
-    const retryAttemptsByUrl = {}; // Track retry attempts per URL
-    const retryAfterAttemptsByUrl = {}; // Track Retry-After retries per URL
-
-    for (let urlIndex = 0; urlIndex < fallbackCount; urlIndex++) {
-      const url = this.buildUrl(model, stream, urlIndex);
-      const transformedBody = this.transformRequest(model, body, stream, credentials);
-      const sessionId = transformedBody.request?.sessionId;
-      const headers = this.buildHeaders(credentials, stream, sessionId);
-
-      // Initialize retry counters for this URL
-      if (!retryAttemptsByUrl[urlIndex]) {
-        retryAttemptsByUrl[urlIndex] = 0;
-      }
-      if (!retryAfterAttemptsByUrl[urlIndex]) {
-        retryAfterAttemptsByUrl[urlIndex] = 0;
-      }
-
+  // Hook called by BaseExecutor.tryRetry: derive delay from Retry-After (header → body),
+  // cap at MAX_RETRY_AFTER_MS, else exponential backoff for 429. Return false to veto (fallback URL).
+  async computeRetryDelay(response, attempt) {
+    let retryMs = this.parseRetryHeaders(response.headers);
+    if (!retryMs) {
       try {
-        const response = await proxyAwareFetch(url, {
-          method: "POST",
-          headers,
-          body: JSON.stringify(transformedBody),
-          signal
-        }, proxyOptions);
-
-        if (response.status === HTTP_STATUS.RATE_LIMITED || response.status === HTTP_STATUS.SERVICE_UNAVAILABLE) {
-          // Try to get retry time from headers first
-          let retryMs = this.parseRetryHeaders(response.headers);
-
-          // If no retry time in headers, try to parse from error message body
-          if (!retryMs) {
-            try {
-              const errorBody = await response.clone().text();
-              const errorJson = JSON.parse(errorBody);
-              const errorMessage = errorJson?.error?.message || errorJson?.message || "";
-              retryMs = this.parseRetryFromErrorMessage(errorMessage);
-            } catch (e) {
-              // Ignore parse errors, will fall back to exponential backoff
-            }
-          }
-
-          if (retryMs && retryMs <= MAX_RETRY_AFTER_MS && retryAfterAttemptsByUrl[urlIndex] < MAX_RETRY_AFTER_RETRIES) {
-            retryAfterAttemptsByUrl[urlIndex]++;
-            log?.debug?.("RETRY", `${response.status} with Retry-After: ${Math.ceil(retryMs / 1000)}s, waiting... (${retryAfterAttemptsByUrl[urlIndex]}/${MAX_RETRY_AFTER_RETRIES})`);
-            await new Promise(resolve => setTimeout(resolve, retryMs));
-            urlIndex--;
-            continue;
-          }
-
-          // Auto retry only for 429 when retryMs is 0 or undefined
-          if (response.status === HTTP_STATUS.RATE_LIMITED && (!retryMs || retryMs === 0) && retryAttemptsByUrl[urlIndex] < MAX_AUTO_RETRIES) {
-            retryAttemptsByUrl[urlIndex]++;
-            // Exponential backoff: 2s, 4s, 8s...
-            const backoffMs = Math.min(1000 * (2 ** retryAttemptsByUrl[urlIndex]), MAX_RETRY_AFTER_MS);
-            log?.debug?.("RETRY", `429 auto retry ${retryAttemptsByUrl[urlIndex]}/${MAX_AUTO_RETRIES} after ${backoffMs / 1000}s`);
-            await new Promise(resolve => setTimeout(resolve, backoffMs));
-            urlIndex--;
-            continue;
-          }
-
-          log?.debug?.("RETRY", `${response.status}, Retry-After ${retryMs ? `too long (${Math.ceil(retryMs / 1000)}s)` : 'missing'}, trying fallback`);
-          lastStatus = response.status;
-
-          if (urlIndex + 1 < fallbackCount) {
-            continue;
-          }
-        }
-
-        if (this.shouldRetry(response.status, urlIndex)) {
-          log?.debug?.("RETRY", `${response.status} on ${url}, trying fallback ${urlIndex + 1}`);
-          lastStatus = response.status;
-          continue;
-        }
-
-        return { response, url, headers, transformedBody };
-      } catch (error) {
-        lastError = error;
-        if (urlIndex + 1 < fallbackCount) {
-          log?.debug?.("RETRY", `Error on ${url}, trying fallback ${urlIndex + 1}`);
-          continue;
-        }
-        throw error;
+        const errorJson = JSON.parse(await response.clone().text());
+        retryMs = this.parseRetryFromErrorMessage(errorJson?.error?.message || errorJson?.message || "");
+      } catch {
+        // ignore parse errors → fall through to backoff
       }
     }
-
-    throw lastError || new Error(`All ${fallbackCount} URLs failed with status ${lastStatus}`);
+    if (retryMs) return retryMs <= MAX_RETRY_AFTER_MS ? retryMs : false;
+    if (response.status === HTTP_STATUS.RATE_LIMITED) {
+      return Math.min(1000 * (2 ** attempt), MAX_RETRY_AFTER_MS); // exponential backoff
+    }
+    return false;
   }
 
   /**
