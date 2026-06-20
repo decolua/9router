@@ -11,8 +11,7 @@ export default {
     notice: {
       signupUrl: "https://kiro.dev",
     },
-    deprecated: true,
-    deprecationNotice: "RISK_NOTICE",
+    deprecated: false,
   },
   category: "free",
   transport: {

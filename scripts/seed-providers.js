@@ -69,9 +69,9 @@ const env = loadEnv();
 const providers = [
   { provider: 'routerai',  name: 'RouterAI',  key: env.PROVIDER_ROUTERAI_KEY,  key2: env.PROVIDER_ROUTERAI_KEY2 },
   { provider: 'opencode',  name: 'OpenCode',  key: env.PROVIDER_OPENCODE_KEY },
-  { provider: 'cloudflare',name: 'Cloudflare',key: env.PROVIDER_CLOUDFLARE_KEY, key2: env.PROVIDER_CLOUDFLARE_KEY2 },
+  { provider: 'cloudflare-ai',name: 'Cloudflare',key: env.PROVIDER_CLOUDFLARE_KEY, key2: env.PROVIDER_CLOUDFLARE_KEY2 },
   { provider: '9router',   name: '9Router',   key: env.PROVIDER_9ROUTER_KEY },
-  { provider: 'vercel',    name: 'Vercel',    key: env.PROVIDER_VERCEL_KEY },
+  { provider: 'vercel-ai-gateway',name: 'Vercel',key: env.PROVIDER_VERCEL_KEY },
 ].filter(p => p.key);
 
 if (providers.length === 0) {

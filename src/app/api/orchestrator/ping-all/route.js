@@ -9,7 +9,6 @@
 import { NextResponse } from 'next/server';
 import { getProviderConnections } from '@/lib/localDb';
 import { getAdapter } from '@/lib/db/driver.js';
-import { makeKv } from '@/lib/db/helpers/kvStore.js';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120; // 2 min max
@@ -17,13 +16,12 @@ export const maxDuration = 120; // 2 min max
 // Known provider base endpoints (defaults when connection data has no endpoint)
 const PROVIDER_ENDPOINTS = {
   routerai: 'https://routerai.ru/api/v1',
-  opencode: 'https://api.open-code.dev/v1',
+  opencode: 'https://opencode.ai/zen/v1',
   cloudflare: 'https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1',
-  '9router': `http://localhost:${process.env.PORT || 20128}`, // self — uses local API
-  vercel: 'https://api.vercel.ai/v1',
-  ollama: 'http://localhost:11434',
-  'cloudflare-ai': 'https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1',
+  '9router': `http://localhost:${process.env.PORT || 20128}/api/v1`,
+  ollama: 'https://api.ollama.com',
   'ollama-local': 'http://localhost:11434',
+  openrouter: 'https://openrouter.ai/api/v1',
 };
 
 /**
@@ -42,7 +40,7 @@ function normalizeProvider(name) {
   const lower = name.toLowerCase();
   
   // Exact matches first
-  const knownProviders = ['routerai', 'opencode', 'cloudflare', '9router', 'vercel', 'ollama'];
+  const knownProviders = ['routerai', 'opencode', 'openrouter', 'cloudflare', '9router', 'vercel', 'ollama'];
   for (const p of knownProviders) {
     if (lower === p || lower.startsWith(p + '-') || lower.startsWith(p + '_')) return p;
   }
@@ -60,64 +58,100 @@ function normalizeProvider(name) {
 
 // Provider-specific endpoint patterns for OpenAI-compatible APIs
 const PROVIDER_API_PATTERNS = {
-  openai: 'https://api.openai.com/v1',
-  anthropic: 'https://api.anthropic.com/v1',
-  google: 'https://generativelanguage.googleapis.com/v1beta',
-  deepseek: 'https://api.deepseek.com',
-  mistral: 'https://api.mistral.ai/v1',
-  groq: 'https://api.groq.com/openai/v1',
   openrouter: 'https://openrouter.ai/api/v1',
-  together: 'https://api.together.xyz/v1',
-  fireworks: 'https://api.fireworks.ai/inference/v1',
-  'perplexity': 'https://api.perplexity.ai',
+  groq: 'https://api.groq.com/openai/v1',
+  google: 'https://generativelanguage.googleapis.com/v1beta',
 };
 
-// Free models to test per provider
+// Free models to test per provider — ТОЛЬКО БЕСПЛАТНЫЕ
 const TEST_MODELS = {
   routerai: [
     'deepseek/deepseek-v4-flash',
-    'google/gemma-4-27b-it',
-    'qwen/qwen3-30b-a3b',
-    'mistralai/mistral-small-latest',
   ],
   opencode: [
-    'deepseek/deepseek-chat',
-    'google/gemini-2.5-flash-preview',
+    'north-mini-code-free',
+    'deepseek-v4-flash-free',
+    'nemotron-3-ultra-free',
   ],
   cloudflare: [
-    'meta-llama/llama-3.3-70b-instruct',
+    '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+    '@cf/meta/llama-3.1-8b-instruct-fp8-fast',
+    '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',
+    '@cf/qwen/qwen2.5-coder-32b-instruct',
   ],
   '9router': [
-    'deepseek/deepseek-v4-flash',
+    'routerai/deepseek/deepseek-v4-flash',
   ],
-  vercel: [
-    'openai/gpt-4o-mini',
+  'lm-studio': [
+    'gemma-4-12b-coder-fable5-composer2.5-v1:2',
+    'google/gemma-4-e4b',
+    'llama-3.2-3b-instruct',
   ],
-  ollama: [], // will be discovered dynamically
+  ollama: [], // will be discovered dynamically (local + cloud)
+  kiro: [
+    'claude-sonnet-4.5',
+    'glm-5',
+    'MiniMax-M2.5',
+  ],
+  vertex: [
+    'gemini-3.1-pro-preview',
+    'gemini-3-flash-preview',
+  ],
+  openrouter: [],
 };
 
-// Default test models for providers without specific test model list
+// Default test models for free-only providers
 const DEFAULT_TEST_MODELS = {
-  openai: ['gpt-4o-mini', 'gpt-3.5-turbo'],
-  anthropic: ['claude-3-haiku-20240307', 'claude-3-5-haiku-latest'],
-  google: ['gemini-2.0-flash', 'gemini-2.5-flash-preview'],
-  deepseek: ['deepseek-chat', 'deepseek/deepseek-chat'],
-  mistral: ['mistral-small-latest', 'open-mistral-nemo'],
+  openai: ['gpt-4o-mini-free'],
+  openrouter: ['openai/gpt-4o-mini', 'deepseek/deepseek-chat', 'meta-llama/llama-3.3-70b-instruct'],
   groq: ['llama-3.3-70b-versatile', 'mixtral-8x7b-32768'],
+  google: ['gemini-2.0-flash', 'gemini-2.5-flash-preview'],
 };
 
 const TEST_PROMPT = 'Ответь одним словом: работаю';
 
+// Free providers priority chain (free first, paid fallback last)
+const FREE_PRIORITY_CHAIN = ['opencode', 'ollama', 'openai', 'routerai'];
+
+// Persistent failure tracking — survives module reloads via global
+if (!global._pingFailureCount) global._pingFailureCount = new Map();
+const failureCount = global._pingFailureCount;
+
+function shouldSkipModel(modelId) {
+  const failCount = failureCount.get(modelId) || 0;
+  return failCount >= 3; // skip after 3 consecutive failures
+}
+
+function recordFailure(modelId, isTimeout) {
+  if (isTimeout) {
+    failureCount.set(modelId, (failureCount.get(modelId) || 0) + 1);
+  } else {
+    failureCount.set(modelId, 0); // non-timeout error resets counter
+  }
+}
+
+function recordSuccess(modelId) {
+  failureCount.set(modelId, 0); // success resets
+}
+
 async function discoverOllamaModels() {
+  const all = [];
   try {
     const baseUrl = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
     const res = await fetch(`${baseUrl}/api/tags`, { signal: AbortSignal.timeout(5000) });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return (data.models || []).map(m => m.name);
-  } catch {
-    return [];
+    if (res.ok) {
+      const data = await res.json();
+      for (const m of (data.models || [])) all.push({ name: m.name, source: 'local' });
+    }
+  } catch { /* ignore */ }
+  const CLOUD = [
+    'minimax-m3:cloud', 'nemotron-3-super:cloud', 'gemma4:31b-cloud',
+    'gpt-oss:120b:cloud', 'minimax-m2.5:cloud',
+  ];
+  for (const m of CLOUD) {
+    if (!all.find(x => x.name === m)) all.push({ name: m, source: 'cloud' });
   }
+  return all;
 }
 
 async function pingProvider(provider, apiKey, endpoint, model) {
@@ -178,9 +212,12 @@ async function pingProvider(provider, apiKey, endpoint, model) {
     }
 
     result.status = 'ok';
+    recordSuccess(model);
   } catch (err) {
     result.latencyMs = Date.now() - start;
     result.error = err.message || 'Unknown error';
+    const isTimeout = err.name === 'TimeoutError' || err.message?.includes('timed out') || err.message?.includes('aborted');
+    recordFailure(model, isTimeout);
   }
 
   return result;
@@ -189,43 +226,24 @@ async function pingProvider(provider, apiKey, endpoint, model) {
 async function recordTestInUsage(db, results) {
   try {
     const now = new Date().toISOString();
-    const today = now.split('T')[0];
-
-    // Check if db has a prepare method (BetterSQLite3) or not
-    if (typeof db.prepare !== 'function') {
-      // Try db.exec or db.run directly
-      console.warn('[ping-all] db.prepare not a function, trying alternate recording method');
-      for (const r of results) {
-        if (r.connectionId && r.status === 'ok') {
-          try {
-            if (typeof db.run === 'function') {
-              await db.run(
-                `INSERT INTO usageHistory (connectionId, model, date, requests, inputTokens, outputTokens, cost, createdAt, updatedAt)
-                 VALUES (?, ?, ?, 1, 10, 10, 0, ?, ?)
-                 ON CONFLICT(connectionId, model, date)
-                 DO UPDATE SET requests = requests + 1, updatedAt = ?`,
-                [r.connectionId, r.model, today, now, now, now]
-              );
-            }
-          } catch { /* ignore */ }
-        }
-      }
-      return;
-    }
-
-    // Insert into usageHistory for each successful test
-    const insert = db.prepare(`
-      INSERT INTO usageHistory (connectionId, model, date, requests, inputTokens, outputTokens, cost, createdAt, updatedAt)
-      VALUES (?, ?, ?, 1, 10, 10, 0, ?, ?)
-      ON CONFLICT(connectionId, model, date)
-      DO UPDATE SET requests = requests + 1, updatedAt = ?
-    `);
+    const insert = typeof db.prepare === 'function'
+      ? db.prepare(`INSERT INTO usageHistory(provider, model, connectionId, status, cost, promptTokens, completionTokens, meta, timestamp)
+                     VALUES(?, ?, ?, ?, 0, 0, 0, ?, ?)`)
+      : null;
 
     for (const r of results) {
-      if (r.connectionId && r.status === 'ok') {
+      if (!r.connectionId) continue;
+      const meta = JSON.stringify({ latencyMs: r.latencyMs, error: r.error || null });
+      if (insert) {
+        try { insert.run(r.provider || 'unknown', r.model, r.connectionId, r.status, meta, now); } catch { /* ignore */ }
+      } else if (typeof db.run === 'function') {
         try {
-          insert.run(r.connectionId, r.model, today, now, now, now);
-        } catch { /* ignore individual insert errors */ }
+          await db.run(
+            `INSERT INTO usageHistory(provider, model, connectionId, status, cost, promptTokens, completionTokens, meta, timestamp)
+             VALUES(?, ?, ?, ?, 0, 0, 0, ?, ?)`,
+            [r.provider || 'unknown', r.model, r.connectionId, r.status, meta, now]
+          );
+        } catch { /* ignore */ }
       }
     }
   } catch (err) {
@@ -247,9 +265,8 @@ export async function POST() {
     for (const conn of connections) {
       if (!conn.isActive) continue;
 
-      const providerData = typeof conn.data === 'string' ? JSON.parse(conn.data) : conn.data;
-      const apiKey = providerData?.apiKey || '';
-      const endpoint = providerData?.endpoint || '';
+      const apiKey = conn.apiKey || '';
+      const endpoint = conn.endpoint || conn.providerSpecificData?.baseUrl || conn.baseUrl || '';
 
       // Нормализуем provider name (openai-compatible-chat-xxx → openai, cloudflare-ai → cloudflare, etc.)
       const normalizedProvider = normalizeProvider(conn.provider);
@@ -259,8 +276,26 @@ export async function POST() {
 
       // Get models: specific test models for known providers, or default models
       let models = TEST_MODELS[conn.provider] || TEST_MODELS[normalizedProvider];
+      // Match custom nodes by connection name
       if (!models || models.length === 0) {
-        models = DEFAULT_TEST_MODELS[normalizedProvider] || [];
+        const nameKey = (conn.name || '').toLowerCase().replace(/[\s_-]+/g, '-');
+        models = TEST_MODELS[nameKey];
+      }
+      if (!models || models.length === 0) {
+        // Skip default models for custom OpenAI-compatible nodes — у каждого свои модели
+        const isCustomNode = conn.provider && (
+          conn.provider.startsWith('openai-compatible') ||
+          conn.provider.startsWith('anthropic-compatible') ||
+          conn.provider.startsWith('custom-embedding')
+        );
+        if (!isCustomNode) {
+          models = DEFAULT_TEST_MODELS[normalizedProvider] || [];
+        }
+      }
+
+      // Skip connections with no test models
+      if (!models || models.length === 0) {
+        continue;
       }
 
       // For providers with no configured endpoint at all, skip them
@@ -271,7 +306,7 @@ export async function POST() {
           provider: conn.provider,
           connectionId: conn.id,
           connectionName: conn.name,
-          model: models[0] || 'unknown',
+          model: models?.[0] || 'unknown',
           status: 'error',
           latencyMs: 0,
           response: '',
@@ -292,15 +327,29 @@ export async function POST() {
       }
     }
 
-    // Add Ollama tests
-    for (const model of ollamaModels) {
+    // Add Ollama tests (skip models with 3+ consecutive failures)
+    for (const m of ollamaModels) {
+      if (shouldSkipModel(m.name)) {
+        console.log(`[ping-all] ⏭ Skipping ${m.name} (${failureCount.get(m.name)} consecutive failures)`);
+        results.push({
+          provider: 'ollama',
+          connectionId: 'ollama-' + m.source,
+          connectionName: m.source === 'cloud' ? 'Ollama Cloud' : 'Ollama Local',
+          model: m.name,
+          status: 'error',
+          latencyMs: 0,
+          response: '',
+          error: `Skipped after ${failureCount.get(m.name)} consecutive failures`,
+        });
+        continue;
+      }
       tests.push({
         provider: 'ollama',
-        connectionId: 'ollama-local',
-        connectionName: 'Ollama (локальный)',
+        connectionId: 'ollama-' + m.source,
+        connectionName: m.source === 'cloud' ? 'Ollama Cloud' : 'Ollama Local',
         apiKey: '',
         endpoint: '',
-        model,
+        model: m.name,
       });
     }
 
@@ -342,29 +391,29 @@ export async function POST() {
 
     console.log(`[ping-all] Done: ${ok.length}/${results.length} OK, avg ${avgLatency}ms`);
 
-    // Persist results so they survive page navigation
+    // Persist results in SQLite so they survive restarts
     try {
-      const orchestratorKv = makeKv('orchestrator');
-      await orchestratorKv.set('lastPingResults', {
-        timestamp: new Date().toISOString(),
+      const db = await getAdapter();
+      const now = new Date().toISOString();
+      const data = JSON.stringify({
+        timestamp: now,
         summary: {
-          total: results.length,
-          ok: ok.length,
-          failed: failed.length,
-          avgLatencyMs: avgLatency,
+          total: results.length, ok: ok.length, failed: failed.length, avgLatencyMs: avgLatency,
         },
         results: results.map(r => ({
-          provider: r.provider,
-          connectionName: r.connectionName,
-          model: r.model,
-          status: r.status,
-          latencyMs: r.latencyMs,
-          response: r.response,
-          error: r.error,
+          provider: r.provider, connectionName: r.connectionName, model: r.model,
+          status: r.status, latencyMs: r.latencyMs, response: r.response, error: r.error,
+        })),
+        workingModels: ok.map(r => ({
+          provider: r.provider, connectionId: r.connectionId, model: r.model, latencyMs: r.latencyMs,
         })),
       });
+
+      if (typeof db.run === 'function') {
+        db.run("INSERT OR REPLACE INTO kv(scope, key, value) VALUES('orchestrator', 'pingLastResults', ?)", [data]);
+      }
     } catch (err) {
-      console.warn('[ping-all] Failed to persist results:', err.message);
+      console.warn('[ping-all] SQLite persist skipped:', err.message);
     }
 
     return NextResponse.json({
@@ -385,13 +434,18 @@ export async function POST() {
         response: r.response,
         error: r.error,
       })),
-      // Return working models for auto-config
+      // Return working models for auto-config, ordered by free-first priority
       workingModels: ok.map(r => ({
         provider: r.provider,
         connectionId: r.connectionId,
         model: r.model,
         latencyMs: r.latencyMs,
-      })),
+        tier: FREE_PRIORITY_CHAIN.indexOf(r.provider) >= 0 ? 'free' : 'paid',
+      })).sort((a, b) => {
+        const aIdx = FREE_PRIORITY_CHAIN.indexOf(a.provider);
+        const bIdx = FREE_PRIORITY_CHAIN.indexOf(b.provider);
+        return (aIdx === -1 ? 999 : aIdx) - (bIdx === -1 ? 999 : bIdx);
+      }),
     });
   } catch (error) {
     console.error('[ping-all] Error:', error);

@@ -11,7 +11,7 @@ import { NextResponse } from 'next/server';
 import { supervisor } from '@/orchestrator/supervisor.js';
 import { modelRouter } from '@/orchestrator/modelRouter.js';
 import { updateSettings, getSettings } from '@/lib/localDb.js';
-import { makeKv } from '@/lib/db/helpers/kvStore.js';
+import { getAdapter } from '@/lib/db/driver.js';
 
 /**
  * POST /api/orchestrator
@@ -90,15 +90,35 @@ export async function GET() {
       // не фатально — используем дефолты
     }
 
-    const modelStats = modelRouter.getStats();
     const modelConfig = modelRouter.getConfig();
 
-    // Load last ping results from persistent store
+    // Load last ping results from SQLite
     let lastPingResults = null;
     try {
-      const orchestratorKv = makeKv('orchestrator');
-      lastPingResults = await orchestratorKv.get('lastPingResults');
+      const db = await getAdapter();
+      if (typeof db.get === 'function') {
+        const row = db.get("SELECT value FROM kv WHERE scope=? AND key=?", ['orchestrator', 'pingLastResults']);
+        if (row) lastPingResults = JSON.parse(row.value);
+      }
     } catch { /* not fatal */ }
+
+    // Feed ping results into modelRouter health status for dashboard Health Check
+    if (lastPingResults?.workingModels) {
+      for (const m of lastPingResults.workingModels) {
+        modelRouter.markModelAvailable(m.model);
+      }
+      for (const r of lastPingResults.results || []) {
+        if (r.status !== 'ok') {
+          modelRouter.markModelUnavailable(r.model, r.error);
+        }
+      }
+    }
+
+    // Get stats AFTER feeding ping results
+    const modelStats = modelRouter.getStats();
+
+    // Map modelStatus → modelHealth for dashboard compatibility
+    const modelHealth = modelStats.modelStatus || {};
 
     return NextResponse.json({
       status: 'enabled',
@@ -123,7 +143,7 @@ export async function GET() {
       },
       modelRouter: {
         config: modelConfig,
-        stats: modelStats
+        stats: { ...modelStats, modelHealth },
       },
       workflows: allWorkflows.map(w => ({
         id: w.id,
