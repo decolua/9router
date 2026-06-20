@@ -1,53 +1,56 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useRef } from "react";
 import { createPortal } from "react-dom";
 import PropTypes from "prop-types";
-import { GITHUB_CONFIG } from "@/shared/constants/config";
+
+const OTHER_CHANNELS = [
+  {
+    id: "boosty",
+    label: "Boosty",
+    description: "Подписка или разовый донат",
+    icon: "favorite",
+    color: "#F56B2F",
+    url: "https://boosty.to/9router-russian",
+  },
+  {
+    id: "tbank",
+    label: "T-Bank",
+    description: "СБП по номеру телефона",
+    icon: "credit_card",
+    color: "#FFDD2D",
+    url: "https://github.com/mdn77/9router-russian/releases",
+  },
+  {
+    id: "usdt",
+    label: "USDT TRC20",
+    description: "Крипта, без границ",
+    icon: "currency_bitcoin",
+    color: "#26A17B",
+    url: "https://github.com/mdn77/9router-russian/releases",
+  },
+];
 
 export default function DonateModal({ isOpen, onClose }) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
   const modalRef = useRef(null);
 
-  useEffect(() => {
-    if (!isOpen || data) return;
-    setLoading(true);
-    setError("");
-    fetch(GITHUB_CONFIG.donateUrl, { cache: "no-store" })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((json) => setData(json))
-      .catch((err) => setError(err.message || "Failed to load"))
-      .finally(() => setLoading(false));
-  }, [isOpen, data]);
-
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (modalRef.current && !modalRef.current.contains(e.target)) onClose();
-    };
-    if (isOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [isOpen, onClose]);
+  const handleClickOutside = (e) => {
+    if (modalRef.current && !modalRef.current.contains(e.target)) onClose();
+  };
 
   if (!isOpen || typeof document === "undefined") return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onMouseDown={handleClickOutside}>
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
       <div
         ref={modalRef}
-        className="relative w-full bg-surface border border-black/10 dark:border-white/10 rounded-xl shadow-2xl animate-in fade-in zoom-in-95 duration-200 max-w-3xl flex flex-col max-h-[85vh]"
+        className="relative w-full bg-surface border border-black/10 dark:border-white/10 rounded-xl shadow-2xl animate-in fade-in zoom-in-95 duration-200 max-w-xl flex flex-col max-h-[90vh]"
       >
         <div className="flex items-center justify-between p-3 border-b border-black/5 dark:border-white/5">
           <h2 className="text-lg font-semibold text-text-main flex items-center gap-2">
             <span className="material-symbols-outlined text-pink-500">volunteer_activism</span>
-            {data?.title || "Support 9Router"}
+            Поддержать проект
           </h2>
           <button
             onClick={onClose}
@@ -58,75 +61,48 @@ export default function DonateModal({ isOpen, onClose }) {
           </button>
         </div>
 
-        <div className="p-6 overflow-y-auto flex-1">
-          {loading && (
-            <div className="flex items-center justify-center py-10 text-text-muted">
-              <span className="material-symbols-outlined animate-spin mr-2">progress_activity</span>
-              Loading...
-            </div>
-          )}
-          {error && (
-            <div className="text-red-500 py-4">Failed to load donate info: {error}</div>
-          )}
-          {!loading && !error && data && (
-            <>
-              {data.message && (
-                <p className="text-text-muted text-sm mb-6 text-center">{data.message}</p>
-              )}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                {data.channels?.map((ch) => (
-                  <DonateChannelCard key={ch.id} channel={ch} />
-                ))}
-              </div>
-            </>
-          )}
+        <div className="p-4 overflow-y-auto flex-1 flex flex-col items-center gap-4">
+          <p className="text-text-muted text-sm text-center">
+            Если форк пригодился — можно сказать спасибо ☕
+          </p>
+
+          {/* ЮMoney — основной виджет */}
+          <div className="w-full max-w-[340px] rounded-xl overflow-hidden border border-black/10 dark:border-white/10 bg-white">
+            <iframe
+              src="https://yoomoney.ru/quickpay/fundraise/widget?billNumber=1IH1PNNMFKP.260620&"
+              width="100%"
+              height="420"
+              frameBorder="0"
+              allowTransparency="true"
+              scrolling="no"
+              title="ЮMoney Donate"
+            />
+          </div>
+
+          {/* Остальные способы */}
+          <div className="grid grid-cols-3 gap-3 w-full max-w-[340px]">
+            {OTHER_CHANNELS.map((ch) => (
+              <a
+                key={ch.id}
+                href={ch.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex flex-col items-center p-3 rounded-xl border border-black/10 dark:border-white/10 bg-surface/50 hover:border-pink-500/40 transition-colors hover:no-underline"
+              >
+                <div
+                  className="w-10 h-10 rounded-full flex items-center justify-center mb-2"
+                  style={{ backgroundColor: `${ch.color}20`, color: ch.color }}
+                >
+                  <span className="material-symbols-outlined text-[22px]">{ch.icon}</span>
+                </div>
+                <div className="text-xs font-semibold text-text-main">{ch.label}</div>
+              </a>
+            ))}
+          </div>
         </div>
       </div>
     </div>,
     document.body
-  );
-}
-
-function DonateChannelCard({ channel }) {
-  const { label, description, icon, color, url, qr } = channel;
-  const content = (
-    <>
-      <div
-        className="w-12 h-12 rounded-full flex items-center justify-center mb-3"
-        style={{ backgroundColor: `${color}20`, color }}
-      >
-        <span className="material-symbols-outlined text-[26px]">{icon}</span>
-      </div>
-      <div className="font-semibold text-text-main mb-1">{label}</div>
-      {description && (
-        <div className="text-xs text-text-muted mb-3 text-center">{description}</div>
-      )}
-      {qr && (
-        <img
-          src={qr}
-          alt={`${label} QR`}
-          className="w-full max-w-[180px] aspect-square object-contain rounded-lg bg-white p-1"
-        />
-      )}
-    </>
-  );
-
-  return (
-    <div className="flex flex-col items-center p-4 rounded-xl border border-black/10 dark:border-white/10 bg-surface/50 hover:border-pink-500/40 transition-colors">
-      {content}
-      {url && (
-        <a
-          href={url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-3 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium text-white hover:opacity-90 transition-opacity"
-          style={{ backgroundColor: color }}
-        >
-          Open
-          <span className="material-symbols-outlined text-[16px]">open_in_new</span>
-        </a>
-      )}
-    </div>
   );
 }
 
