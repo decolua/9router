@@ -11,6 +11,7 @@ import {
   refreshIflowToken,
   refreshGitHubToken,
   refreshCopilotToken,
+  refreshCodebuddyToken,
   classifyOAuthRefreshError,
 } from "./tokenRefresh/providers.js";
 
@@ -25,6 +26,7 @@ export {
   refreshIflowToken,
   refreshGitHubToken,
   refreshCopilotToken,
+  refreshCodebuddyToken,
   classifyOAuthRefreshError,
 };
 
@@ -127,6 +129,7 @@ const REFRESH_HANDLERS = {
   github: (c, log) => refreshGitHubToken(c.refreshToken, log),
   kiro: (c, log) => refreshKiroToken(c.refreshToken, c.providerSpecificData, log),
   xai: (c, log) => refreshXaiToken(c.refreshToken, log),
+  "codebuddy-cn": (c, log) => refreshCodebuddyToken(c.refreshToken, log),
   vertex: vertexRefreshHandler,
   "vertex-partner": vertexRefreshHandler
 };

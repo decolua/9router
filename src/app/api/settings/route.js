@@ -11,6 +11,9 @@ const SETTINGS_RESPONSE_HEADERS = {
   "Cache-Control": "no-store"
 };
 
+// Secrets must never be mass-assigned from request body (CWE-915)
+const PROTECTED_SETTING_KEYS = ["password", "mitmSudoEncrypted"];
+
 export async function GET() {
   try {
     const settings = await getSettings();
@@ -35,6 +38,9 @@ export async function GET() {
 export async function PATCH(request) {
   try {
     const body = await request.json();
+
+    // Strip protected secrets before any internal handling sets them
+    for (const key of PROTECTED_SETTING_KEYS) delete body[key];
 
     // If updating password, hash it
     if (body.newPassword) {

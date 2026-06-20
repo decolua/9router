@@ -251,8 +251,13 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       apiKey,
       ccFilterNaming: !!chatSettings.ccFilterNaming,
       rtkEnabled: !!chatSettings.rtkEnabled,
+      headroomEnabled: !!chatSettings.headroomEnabled,
+      headroomUrl: chatSettings.headroomUrl || "http://localhost:8787",
+      headroomCompressUserMessages: !!chatSettings.headroomCompressUserMessages,
       cavemanEnabled: !!chatSettings.cavemanEnabled,
       cavemanLevel: chatSettings.cavemanLevel || "full",
+      ponytailEnabled: !!chatSettings.ponytailEnabled,
+      ponytailLevel: chatSettings.ponytailLevel || "full",
       providerThinking,
       // Detect source format by endpoint + body
       sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,

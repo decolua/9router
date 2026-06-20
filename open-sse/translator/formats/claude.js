@@ -4,6 +4,7 @@ import { ROLE, CLAUDE_BLOCK } from "../schema/index.js";
 import { adjustMaxTokens } from "./maxTokens.js";
 import { applyCloaking } from "../../utils/claudeCloaking.js";
 import { resolveSessionId } from "../../utils/sessionManager.js";
+import { isValidClaudeSignature } from "../../utils/claudeSignature.js";
 import { PROVIDERS } from "../../providers/index.js";
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 import { DEFAULT_MAX_TOKENS } from "../../config/runtimeConfig.js";
@@ -213,14 +214,26 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
           let hasToolUse = false;
           let hasThinking = false;
 
-          // Always replace signature for all thinking blocks
+          // Claude native: preserve valid signatures, drop invalid blocks.
+          // anthropic-compatible: replace with default (safe fallback for lenient upstreams).
+          const isClaudeNative = provider === "claude";
+          const kept = [];
           for (const block of msg.content) {
-            if (block.type === CLAUDE_BLOCK.THINKING || block.type === CLAUDE_BLOCK.REDACTED_THINKING) {
-              block.signature = DEFAULT_THINKING_CLAUDE_SIGNATURE;
+            const isThinking = block.type === CLAUDE_BLOCK.THINKING || block.type === CLAUDE_BLOCK.REDACTED_THINKING;
+            if (isThinking) {
               hasThinking = true;
+              if (isClaudeNative) {
+                if (isValidClaudeSignature(block.signature)) kept.push(block);
+              } else {
+                block.signature = DEFAULT_THINKING_CLAUDE_SIGNATURE;
+                kept.push(block);
+              }
+              continue;
             }
             if (block.type === CLAUDE_BLOCK.TOOL_USE) hasToolUse = true;
+            kept.push(block);
           }
+          msg.content = kept;
 
           // Add thinking block if thinking enabled + has tool_use but no thinking
           if (thinkingEnabled && !hasThinking && hasToolUse) {
