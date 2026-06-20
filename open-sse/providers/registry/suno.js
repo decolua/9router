@@ -13,6 +13,7 @@ export default {
     website: "https://suno.com",
   },
   category: "apikey",
+  hidden: true,
   transport: {
     baseUrl: "https://studio-api.suno.ai/api/generate/v2/",
     auth: {
