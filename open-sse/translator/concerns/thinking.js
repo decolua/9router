@@ -51,3 +51,35 @@ export function budgetToEffort(budget) {
   if (budget <= 16384) return "medium";
   return "high";
 }
+
+// Clamp a thinking budget to respect model metadata constraints.
+//
+// Considers:
+//   - thinkingRange.min/max — explicit bounds from model capabilities
+//   - maxOutput — reserves space for the actual response (budget ≤ 80% of maxOutput)
+//
+// @param {number} budget - raw budget_tokens
+// @param {object} caps - full capabilities object from getCapabilitiesForModel
+// @returns {number} clamped budget
+export function clampThinkingBudget(budget, caps) {
+  if (!Number.isFinite(budget) || budget <= 0) return budget;
+
+  let clamped = budget;
+
+  // Apply explicit thinking range bounds
+  const range = caps?.thinkingRange;
+  if (range) {
+    if (range.min != null && clamped < range.min) clamped = range.min;
+    if (range.max != null && clamped > range.max) clamped = range.max;
+  }
+
+  // Reserve output space: budget must not consume all of maxOutput.
+  // Leave at least 20% of maxOutput for the actual response.
+  const maxOutput = caps?.maxOutput;
+  if (maxOutput && maxOutput > 0) {
+    const maxBudget = Math.floor(maxOutput * 0.8);
+    if (clamped > maxBudget) clamped = maxBudget;
+  }
+
+  return clamped;
+}

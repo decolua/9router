@@ -52,6 +52,7 @@ source/*
 docs/*
 !docs/ARCHITECTURE.md
 !docs/opencode-setup-metadata.md
+!docs/runtime-reasoning.md
 test/*
 open-sse/test/*
 RM.vn.md

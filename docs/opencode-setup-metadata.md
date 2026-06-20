@@ -86,6 +86,60 @@ Variants use the OpenCode/AI SDK-compatible `reasoningEffort` key.  The
 runtime translator (Epic 3) maps these to provider-native formats at
 request time.  No variant globally forces high/max thinking by default.
 
+## Metadata Overrides (Epic 2)
+
+Users can override per-model metadata via the dashboard or API.  Overrides
+are stored in the `modelOverrides` KV scope in SQLite and take precedence
+over hardcoded capabilities.
+
+### Precedence chain (highest priority wins)
+
+1. **Manual override** — user-set via dashboard or `PUT /api/models/overrides`
+2. **Hardcoded capabilities** — source-of-truth in `open-sse/providers/capabilities.js`
+
+### Affected consumers
+
+- **`/v1/models`** — each model entry now includes a `metadata` field with
+  resolved capabilities (contextWindow, maxOutput, reasoning, tools, vision,
+  etc.).  Manual overrides are reflected.
+- **`POST /api/cli-tools/opencode-settings`** — setup route uses the resolver
+  to produce enriched model configs.  Re-running setup picks up overrides.
+- **`resolveModelMetadata(provider, model)`** — the central resolver function.
+  All consumers should use this for consistent precedence.
+
+### API
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/models/overrides?provider=<alias>` | List all overrides for a provider |
+| `PUT` | `/api/models/overrides` | Set/update an override (body: `{ provider, model, override }`) |
+| `DELETE` | `/api/models/overrides?provider=<alias>&model=<id>` | Delete override (reverts to defaults) |
+
+### Valid override fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `contextWindow` | `integer ≥ 0` | Total token context window |
+| `maxOutput` | `integer ≥ 0` | Max completion tokens |
+| `reasoning` | `boolean` | Model supports reasoning/chain-of-thought |
+| `tools` | `boolean` | Model supports tool/function calling |
+| `vision` | `boolean` | Model accepts image input |
+| `pdf` | `boolean` | Model accepts PDF input |
+| `audioInput` | `boolean` | Model accepts audio input |
+| `videoInput` | `boolean` | Model accepts video input |
+| `imageOutput` | `boolean` | Model can generate images |
+| `audioOutput` | `boolean` | Model can generate audio |
+| `search` | `boolean` | Model supports web search |
+| `thinkingFormat` | `string \| null` | Thinking format (e.g., "x-internal") |
+| `thinkingCanDisable` | `boolean` | User can disable thinking |
+| `thinkingRange` | `{ min?, max? } \| null` | Thinking token bounds |
+
+### Reset to defaults
+
+Deleting an override via `DELETE /api/models/overrides` or clicking
+"Reset to Default" in the dashboard reverts the model to its hardcoded
+capabilities.
+
 ## Unknown Models
 
 Models not found in the capability resolver receive safe defaults:
@@ -105,17 +159,30 @@ Setup does not crash for unknown models.
 cd tests && npx vitest run \
   unit/opencode-converter.test.js \
   unit/opencode-setup-characterization.test.js \
+  unit/model-metadata-resolver.test.js \
+  unit/v1-models-metadata.test.js \
+  unit/e2e-metadata-override-flow.test.js \
   --reporter=verbose
 ```
 
-All 21 tests pass (6 converter + 7 merge + 5 variants + 3 route characterization).
+All 41 tests pass (6 converter + 7 merge + 5 variants + 3 route characterization + 10 resolver + 5 API metadata + 5 e2e override flow).
 
-## Files Changed (Epic 1)
+## Files Changed (Epic 1 + Epic 2)
 
 | File | Change |
 |---|---|
 | `src/app/api/cli-tools/opencode-settings/converter.js` | New — `buildOpenCodeModelConfig`, `mergeOpenCodeModelConfig`, `buildOpenCodeReasoningVariants` |
 | `src/app/api/cli-tools/opencode-settings/route.js` | Wired converter + merge into POST handler |
-| `tests/unit/opencode-converter.test.js` | New — 18 tests (converter + merge + variants) |
-| `tests/unit/opencode-setup-characterization.test.js` | New — 3 route-level characterization tests |
+| `src/lib/db/repos/modelOverridesRepo.js` | New — KV-based CRUD for model metadata overrides |
+| `src/sse/services/modelMetadataResolver.js` | New — resolver with override > hardcoded precedence |
+| `src/app/api/models/overrides/route.js` | New — API route for GET/PUT/DELETE overrides |
+| `src/app/api/v1/models/route.js` | Added `metadata` field to each model entry |
+| `src/app/(dashboard)/dashboard/providers/[id]/ModelMetadataEditor.js` | New — dashboard UI for editing overrides |
+| `src/app/(dashboard)/dashboard/providers/[id]/page.js` | Integrated `ModelMetadataEditor` |
+| `src/shared/utils/modelOverridesApi.js` | New — fetch helpers for override API |
+| `tests/unit/opencode-converter.test.js` | 18 tests (converter + merge + variants) |
+| `tests/unit/opencode-setup-characterization.test.js` | 3 route-level characterization tests |
+| `tests/unit/model-metadata-resolver.test.js` | 10 resolver tests |
+| `tests/unit/v1-models-metadata.test.js` | 5 API metadata tests |
+| `tests/unit/e2e-metadata-override-flow.test.js` | 5 e2e override flow tests |
 | `docs/opencode-setup-metadata.md` | This file |

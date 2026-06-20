@@ -19,6 +19,7 @@ import AddApiKeyModal from "./AddApiKeyModal";
 import EditCompatibleNodeModal from "./EditCompatibleNodeModal";
 import AddCustomModelModal from "./AddCustomModelModal";
 import BulkImportCodexModal from "./BulkImportCodexModal";
+import ModelMetadataEditor from "./ModelMetadataEditor";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
 
@@ -1500,6 +1501,19 @@ export default function ProviderDetailPage() {
         )}
         {renderModelsSection()}
       </Card>
+
+      {/* Model Metadata Editor */}
+      <ModelMetadataEditor
+        providerAlias={providerStorageAlias}
+        models={[
+          ...models,
+          ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
+          ...Object.entries(modelAliases)
+            .filter(([, fm]) => fm.startsWith(`${providerStorageAlias}/`))
+            .map(([, fm]) => ({ id: fm.slice(`${providerStorageAlias}/`.length) }))
+            .filter((m) => !models.some((x) => x.id === m.id) && !kiloFreeModels.some((x) => x.id === m.id)),
+        ]}
+      />
 
       {bulkActionModal}
 

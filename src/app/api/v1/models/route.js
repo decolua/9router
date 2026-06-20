@@ -9,7 +9,8 @@ import { getProviderConnections, getCombos, getCustomModels, getModelAliases } f
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
-import { capabilitiesFromServiceKind } from "open-sse/providers/capabilities.js";
+import { capabilitiesFromServiceKind, getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { getModelOverrides } from "@/lib/db/repos/modelOverridesRepo.js";
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
@@ -358,6 +359,12 @@ export async function buildModelsList(kindFilter) {
 
       const mergedModelIds = Array.from(new Set([...modelIds, ...customModelIds, ...aliasModelIds]));
 
+      // Pre-fetch manual overrides for this provider (single DB call per provider)
+      let providerOverrides = {};
+      try {
+        providerOverrides = await getModelOverrides(outputAlias);
+      } catch { /* DB unavailable — proceed without overrides */ }
+
       for (const modelId of mergedModelIds) {
         // Resolve kind: prefer static/custom metadata, otherwise infer from ID heuristics
         const customKind = customModelKindById.get(modelId);
@@ -374,6 +381,25 @@ export async function buildModelsList(kindFilter) {
         };
         const caps = capabilitiesFromServiceKind(customKind);
         if (caps) model.capabilities = caps;
+
+        // Enrich with resolved metadata (manual override > hardcoded fallback)
+        try {
+          const base = getCapabilitiesForModel(outputAlias, modelId);
+          const overrideKey = `${outputAlias}|${modelId}`;
+          const override = providerOverrides[overrideKey];
+          const resolved = override ? { ...base, ...override } : base;
+          model.metadata = {
+            contextWindow: resolved.contextWindow,
+            maxOutput: resolved.maxOutput,
+            reasoning: resolved.reasoning,
+            tools: resolved.tools,
+            vision: resolved.vision,
+            thinkingFormat: resolved.thinkingFormat,
+            thinkingCanDisable: resolved.thinkingCanDisable,
+            thinkingRange: resolved.thinkingRange,
+          };
+        } catch { /* resolver error — skip metadata */ }
+
         models.push(model);
       }
 
