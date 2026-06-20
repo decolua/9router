@@ -152,27 +152,28 @@ import p149 from "./stepfun.js";
 import p150 from "./synthetic.js";
 import p151 from "./tavily.js";
 import p152 from "./tencent.js";
-import p153 from "./together.js";
-import p154 from "./topaz.js";
-import p155 from "./tortoise.js";
-import p156 from "./udio.js";
-import p157 from "./uncloseai.js";
-import p158 from "./upstage.js";
-import p159 from "./v0-vercel.js";
-import p160 from "./venice.js";
-import p161 from "./vercel-ai-gateway.js";
-import p162 from "./vertex-partner.js";
-import p163 from "./vertex.js";
-import p164 from "./volcengine-ark.js";
-import p165 from "./voyage-ai.js";
-import p166 from "./wafer.js";
-import p167 from "./wandb.js";
-import p168 from "./xai.js";
-import p169 from "./xiaomi-mimo.js";
-import p170 from "./xiaomi-tokenplan.js";
-import p171 from "./yi.js";
-import p172 from "./youcom.js";
-import p173 from "./zenmux.js";
+import p153 from "./theoldllm.js";
+import p154 from "./together.js";
+import p155 from "./topaz.js";
+import p156 from "./tortoise.js";
+import p157 from "./udio.js";
+import p158 from "./uncloseai.js";
+import p159 from "./upstage.js";
+import p160 from "./v0-vercel.js";
+import p161 from "./venice.js";
+import p162 from "./vercel-ai-gateway.js";
+import p163 from "./vertex-partner.js";
+import p164 from "./vertex.js";
+import p165 from "./volcengine-ark.js";
+import p166 from "./voyage-ai.js";
+import p167 from "./wafer.js";
+import p168 from "./wandb.js";
+import p169 from "./xai.js";
+import p170 from "./xiaomi-mimo.js";
+import p171 from "./xiaomi-tokenplan.js";
+import p172 from "./yi.js";
+import p173 from "./youcom.js";
+import p174 from "./zenmux.js";
 
 export default [
   p0,
@@ -349,4 +350,5 @@ export default [
   p171,
   p172,
   p173,
+  p174,
 ];
