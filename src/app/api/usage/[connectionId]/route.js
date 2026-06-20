@@ -68,11 +68,11 @@ export async function GET(request, { params }) {
       }
     }
 
-    // Persist quota snapshot
-    connection = await persistQuotaSnapshot(connection, usage?.quotas);
+    // Persist quota snapshot (helper normalizes usage → quotaInfos array)
+    connection = await persistQuotaSnapshot(connection, usage);
 
     // Apply account-level lock if depleted
-    connection = await applyQuotaLockIfNeeded(connection);
+    connection = await applyQuotaLockIfNeeded(connection, usage);
 
     return Response.json({ ...usage, unavailableUntil: getUnavailableUntil(connection) });
   } catch (error) {
