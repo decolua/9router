@@ -11,8 +11,8 @@ import { buildOpenCodeModelConfig, buildOpenCodeReasoningVariants, mergeOpenCode
 describe("buildOpenCodeModelConfig (9r-ocmr.e1.02)", () => {
   // ── Known reasoning + vision model ──────────────────────────────
 
-  it("returns correct limits and flags for claude-opus-4.6", () => {
-    const config = buildOpenCodeModelConfig(null, "claude-opus-4.6");
+  it("returns correct limits and flags for claude-opus-4.6", async () => {
+    const config = await buildOpenCodeModelConfig(null, "claude-opus-4.6");
 
     expect(config.name).toBe("claude-opus-4.6");
     expect(config.limit.context).toBeGreaterThan(0);
@@ -32,8 +32,8 @@ describe("buildOpenCodeModelConfig (9r-ocmr.e1.02)", () => {
 
   // ── Unknown model falls back safely (REQ-002 / VAL-002) ────────
 
-  it("falls back to defaults for unknown model without crashing", () => {
-    const config = buildOpenCodeModelConfig(null, "unknown-model-xyz");
+  it("falls back to defaults for unknown model without crashing", async () => {
+    const config = await buildOpenCodeModelConfig(null, "unknown-model-xyz");
 
     expect(config.name).toBe("unknown-model-xyz");
     // Default contextWindow: 200_000, maxOutput: 64_000
@@ -51,8 +51,8 @@ describe("buildOpenCodeModelConfig (9r-ocmr.e1.02)", () => {
 
   // ── Non-reasoning model with smaller context (gpt-3.5) ─────────
 
-  it("returns reasoning:false and smaller limits for gpt-3.5-turbo", () => {
-    const config = buildOpenCodeModelConfig(null, "gpt-3.5-turbo");
+  it("returns reasoning:false and smaller limits for gpt-3.5-turbo", async () => {
+    const config = await buildOpenCodeModelConfig(null, "gpt-3.5-turbo");
 
     expect(config.reasoning).toBe(false);
     expect(config.limit.context).toBe(16_385);
@@ -61,8 +61,8 @@ describe("buildOpenCodeModelConfig (9r-ocmr.e1.02)", () => {
 
   // ── Image output model with tools disabled (gpt-image-1) ───────
 
-  it("maps imageOutput and tools:false for gpt-image-1", () => {
-    const config = buildOpenCodeModelConfig(null, "gpt-image-1");
+  it("maps imageOutput and tools:false for gpt-image-1", async () => {
+    const config = await buildOpenCodeModelConfig(null, "gpt-image-1");
 
     expect(config.modalities.output).toContain("image");
     expect(config.tool_call).toBe(false);
@@ -72,8 +72,8 @@ describe("buildOpenCodeModelConfig (9r-ocmr.e1.02)", () => {
 
   // ── Vendor prefix stripping (anthropic/claude-opus-4.6) ────────
 
-  it("strips vendor prefix when resolving capabilities", () => {
-    const config = buildOpenCodeModelConfig(null, "anthropic/claude-opus-4.6");
+  it("strips vendor prefix when resolving capabilities", async () => {
+    const config = await buildOpenCodeModelConfig(null, "anthropic/claude-opus-4.6");
 
     expect(config.name).toBe("anthropic/claude-opus-4.6");
     expect(config.limit.context).toBe(1_000_000);
@@ -82,8 +82,8 @@ describe("buildOpenCodeModelConfig (9r-ocmr.e1.02)", () => {
 
   // ── No credentials or unsafe options (security) ────────────────
 
-  it("does not include credentials, headers, or arbitrary options", () => {
-    const config = buildOpenCodeModelConfig(null, "claude-opus-4.6");
+  it("does not include credentials, headers, or arbitrary options", async () => {
+    const config = await buildOpenCodeModelConfig(null, "claude-opus-4.6");
 
     const keys = Object.keys(config).sort();
     expect(keys).toEqual(
@@ -115,8 +115,8 @@ describe("buildOpenCodeReasoningVariants (9r-ocmr.e1.04)", () => {
     expect(buildOpenCodeReasoningVariants(caps)).toBeUndefined();
   });
 
-  it("does not globally force high/max in any variant", () => {
-    const config = buildOpenCodeModelConfig(null, "claude-opus-4.6");
+  it("does not globally force high/max in any variant", async () => {
+    const config = await buildOpenCodeModelConfig(null, "claude-opus-4.6");
     expect(config.variants).toBeDefined();
     // Each variant has exactly one key: reasoningEffort
     for (const [level, variant] of Object.entries(config.variants)) {
@@ -125,13 +125,13 @@ describe("buildOpenCodeReasoningVariants (9r-ocmr.e1.04)", () => {
     }
   });
 
-  it("non-reasoning model has no variants key", () => {
-    const config = buildOpenCodeModelConfig(null, "gpt-3.5-turbo");
+  it("non-reasoning model has no variants key", async () => {
+    const config = await buildOpenCodeModelConfig(null, "gpt-3.5-turbo");
     expect(config).not.toHaveProperty("variants");
   });
 
-  it("reasoning flag is present in setup output for reasoning model", () => {
-    const config = buildOpenCodeModelConfig(null, "claude-opus-4.6");
+  it("reasoning flag is present in setup output for reasoning model", async () => {
+    const config = await buildOpenCodeModelConfig(null, "claude-opus-4.6");
     expect(config.reasoning).toBe(true);
   });
 });

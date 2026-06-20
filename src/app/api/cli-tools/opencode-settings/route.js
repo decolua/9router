@@ -129,7 +129,7 @@ export async function POST(request) {
     // Add or update entries for all requested models (converter + merge)
     for (const m of modelsArray) {
       if (!m || typeof m !== "string") continue;
-      const generated = buildOpenCodeModelConfig(null, m);
+      const generated = await buildOpenCodeModelConfig(null, m);
       const existing = existingProvider.models[m] || {};
       existingProvider.models[m] = mergeOpenCodeModelConfig(generated, existing);
     }

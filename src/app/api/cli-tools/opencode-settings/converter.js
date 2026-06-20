@@ -12,7 +12,7 @@
  * headers, or unsafe options.
  */
 
-import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { resolveModelMetadata } from "@/sse/services/modelMetadataResolver.js";
 
 /**
  * Build reasoning variants for an OpenCode model entry.
@@ -54,8 +54,8 @@ export function buildOpenCodeReasoningVariants(caps) {
  *   variants?: Record<string, { reasoningEffort: string }>,
  * }}
  */
-export function buildOpenCodeModelConfig(provider, modelId) {
-  const caps = getCapabilitiesForModel(provider, modelId);
+export async function buildOpenCodeModelConfig(provider, modelId) {
+  const caps = await resolveModelMetadata(provider, modelId);
 
   // ── Input modalities ──────────────────────────────────────────
   const input = ["text"];
