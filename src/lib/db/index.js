@@ -32,6 +32,10 @@ export {
   getApiKeys, getApiKeyById, createApiKey, updateApiKey, deleteApiKey,
   validateApiKey, resolveApiKeyRecord,
 } from "./repos/apiKeysRepo.js";
+// Files (OpenAI Files API storage)
+export {
+  createFile, getFile, listFiles, deleteFile, getFileContent,
+} from "./repos/filesRepo.js";
 
 // MCP gateway: upstream instances, gateway API keys, per-key grants
 export {

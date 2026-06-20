@@ -31,5 +31,7 @@ export {
   appendRequestLog, getRecentLogs,
   saveRequestDetail, getRequestDetails, getRequestDetailById,
   getPricing, getPricingForModel, updatePricing, resetPricing, resetAllPricing,
+  // Files (OpenAI Files API storage)
+  createFile, getFile, listFiles, deleteFile, getFileContent,
   exportDb, importDb,
 } from "@/lib/db/index.js";

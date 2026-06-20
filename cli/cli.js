@@ -493,6 +493,14 @@ const serverPath = fs.existsSync(customServerPath)
   ? customServerPath
   : path.join(standaloneDir, "server.js");
 
+// `9router service <install|uninstall|start|stop|restart|status>` — cross-platform
+// service management. Intercepts before the server-start flow; the module requires
+// custom-server.js (the IP-hardening wrapper) and exits itself.
+if (args[0] === "service") {
+  const { runServiceCommand } = require("./src/cli/service");
+  runServiceCommand(args.slice(1), { standaloneDir, customServerPath, port, host });
+  process.exit(0);
+}
 if (!fs.existsSync(serverPath)) {
   console.error("Error: Standalone build not found.");
   console.error("Please run 'npm run build:cli' first.");

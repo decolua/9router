@@ -1,5 +1,5 @@
 // Latest schema version — bumped when a migration is added in ./migrations/
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -153,6 +153,19 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_rd_model ON requestDetails(model)",
       "CREATE INDEX IF NOT EXISTS idx_rd_conn ON requestDetails(connectionId)",
     ],
+  },
+  files: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      bytes: "INTEGER NOT NULL",
+      createdAt: "INTEGER NOT NULL",
+      filename: "TEXT",
+      purpose: "TEXT",
+      status: "TEXT NOT NULL DEFAULT 'processed'",
+      contentType: "TEXT",
+      content: "BLOB NOT NULL",
+    },
+    indexes: ["CREATE INDEX IF NOT EXISTS idx_files_purpose ON files(purpose)"],
   },
 };
 

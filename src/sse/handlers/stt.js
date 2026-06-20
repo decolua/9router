@@ -18,7 +18,7 @@ const CREDENTIALED_PROVIDERS = new Set(
     .map(([id]) => id)
 );
 
-export async function handleStt(request) {
+export async function handleStt(request, opts = {}) {
   let formData;
   try {
     formData = await request.formData();
@@ -27,7 +27,7 @@ export async function handleStt(request) {
   }
 
   const modelStr = formData.get("model");
-  log.request("POST", `/v1/audio/transcriptions | ${modelStr}`);
+  log.request("POST", `/v1/audio/${opts.kind === "translation" ? "translations" : "transcriptions"} | ${modelStr}`);
 
   const settings = await getSettings();
   if (settings.requireApiKey) {
@@ -43,12 +43,12 @@ export async function handleStt(request) {
   return runWithModelFallback(
     modelStr,
     settings.modelFallbacks,
-    (m) => handleSingleModelStt(m, formData),
+    (m) => handleSingleModelStt(m, formData, opts.kind),
     log
   );
 }
 
-async function handleSingleModelStt(modelStr, formData) {
+async function handleSingleModelStt(modelStr, formData, kind = "transcription") {
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
 
@@ -57,7 +57,7 @@ async function handleSingleModelStt(modelStr, formData) {
 
   // noAuth providers
   if (!CREDENTIALED_PROVIDERS.has(provider)) {
-    const result = await handleSttCore({ provider, model, formData, sttConfig: AI_PROVIDERS[provider]?.sttConfig });
+    const result = await handleSttCore({ provider, model, formData, sttConfig: AI_PROVIDERS[provider]?.sttConfig, kind });
     if (result.success) return result.response;
     return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "STT failed");
   }
@@ -82,7 +82,7 @@ async function handleSingleModelStt(modelStr, formData) {
 
     log.info("AUTH", `\x1b[32mUsing ${provider} account: ${credentials.connectionName}\x1b[0m`);
 
-    const result = await handleSttCore({ provider, model, formData, credentials, sttConfig: AI_PROVIDERS[provider]?.sttConfig });
+    const result = await handleSttCore({ provider, model, formData, credentials, sttConfig: AI_PROVIDERS[provider]?.sttConfig, kind });
 
     if (result.success) return result.response;
 

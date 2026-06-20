@@ -136,8 +136,10 @@ async function transcribeHuggingFace(cfg, file, model, token) {
   return jsonResponse({ text: data.text || "" });
 }
 
-// Default: OpenAI/Groq/Whisper-compatible multipart
-async function transcribeOpenAICompatible(cfg, file, model, token, formData) {
+// Default: OpenAI/Groq/Whisper-compatible multipart.
+// kind: "transcription" (default) → POST cfg.baseUrl; "translation" → swap the
+// /audio/transcriptions suffix to /audio/translations (OpenAI sibling endpoint).
+async function transcribeOpenAICompatible(cfg, file, model, token, formData, kind = "transcription") {
   const fd = new FormData();
   fd.append("file", file, file.name || "audio.wav");
   fd.append("model", model);
@@ -145,7 +147,17 @@ async function transcribeOpenAICompatible(cfg, file, model, token, formData) {
     const v = formData.get(k);
     if (v !== null && v !== undefined && v !== "") fd.append(k, v);
   }
-  const res = await fetch(cfg.baseUrl, { method: "POST", headers: buildAuthHeaders(cfg, token), body: fd });
+  let url = cfg.baseUrl;
+  if (kind === "translation") {
+    const swapped = cfg.baseUrl.replace(/\/transcriptions(\/)?$/i, "/translations$1");
+    // No /transcriptions suffix → translation endpoint is unknown; refuse rather
+    // than silently POSTing to the transcription URL.
+    if (swapped === cfg.baseUrl) {
+      return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Provider STT endpoint has no translation analog: ${cfg.baseUrl}`);
+    }
+    url = swapped;
+  }
+  const res = await fetch(url, { method: "POST", headers: buildAuthHeaders(cfg, token), body: fd });
   if (!res.ok) return upstreamError(res);
   const ct = res.headers.get("content-type") || "application/json";
   const txt = await res.text();
@@ -166,12 +178,20 @@ function jsonResponse(obj) {
  * STT core handler — dispatch by sttConfig.format.
  * @returns {Promise<{success, response, status?, error?}>}
  */
-export async function handleSttCore({ provider, model, formData, credentials, sttConfig }) {
+export async function handleSttCore({ provider, model, formData, credentials, sttConfig, kind = "transcription" }) {
   const file = formData.get("file");
   if (!file) return createErrorResult(HTTP_STATUS.BAD_REQUEST, "Missing required field: file");
 
   const cfg = sttConfig;
   if (!cfg) return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Provider '${provider}' does not support STT`);
+
+  // /audio/translations is an OpenAI sibling endpoint with no analog for
+  // provider-specific STT formats (deepgram/assemblyai/etc.) — refuse rather
+  // than silently transcribing.
+  const SPECIALIZED_STT = new Set(["deepgram", "assemblyai", "nvidia-asr", "huggingface-asr", "gemini-stt"]);
+  if (kind === "translation" && SPECIALIZED_STT.has(cfg.format)) {
+    return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Provider '${provider}' (${cfg.format}) does not support translation`);
+  }
 
   const token = cfg.authType === "none" ? null : (credentials?.apiKey || credentials?.accessToken);
   if (cfg.authType !== "none" && !token) {
@@ -185,7 +205,7 @@ export async function handleSttCore({ provider, model, formData, credentials, st
       case "nvidia-asr":      return await transcribeNvidia(cfg, file, model, token);
       case "huggingface-asr": return await transcribeHuggingFace(cfg, file, model, token);
       case "gemini-stt":      return await transcribeGemini(cfg, file, model, token, formData);
-      default:                return await transcribeOpenAICompatible(cfg, file, model, token, formData);
+      default:                return await transcribeOpenAICompatible(cfg, file, model, token, formData, kind);
     }
   } catch (err) {
     return createErrorResult(HTTP_STATUS.BAD_GATEWAY, err.message || "STT request failed");
