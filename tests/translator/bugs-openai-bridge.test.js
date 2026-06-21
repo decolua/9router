@@ -10,8 +10,8 @@ const T = (src, tgt, body, provider = null) =>
 
 describe("bug: Claude → OpenAI bridge data loss", () => {
   // claude-to-openai.js:133-141 — image source.type==="url" only handles base64
-  // KNOWN BUG: it.fails passes while app drops the url; flips to failing once fixed.
-  it.fails("image with source.type=url is preserved (NOT dropped)", () => {
+  // FIXED in PA-02: URL image sources are now preserved.
+  it("image with source.type=url is preserved (NOT dropped)", () => {
     const out = T(FORMATS.CLAUDE, FORMATS.OPENAI, {
       messages: [{ role: "user", content: [
         { type: "text", text: "look" },

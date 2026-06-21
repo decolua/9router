@@ -26,6 +26,19 @@ export function openaiToClaudeRequest(model, body, stream) {
     result.temperature = body.temperature;
   }
 
+  if (body.top_p !== undefined) {
+    result.top_p = body.top_p;
+  }
+
+  if (body.stop !== undefined) {
+    result.stop_sequences = Array.isArray(body.stop) ? body.stop : [body.stop];
+  }
+
+  const userId = body.user ?? body.metadata?.user_id;
+  if (userId !== undefined && userId !== null && userId !== "") {
+    result.metadata = { user_id: String(userId) };
+  }
+
   // Messages
   result.messages = [];
   const systemParts = [];
@@ -172,6 +185,13 @@ Respond ONLY with the JSON object, no other text.`);
   // Tool choice
   if (body.tool_choice) {
     result.tool_choice = convertOpenAIToolChoice(body.tool_choice);
+  }
+
+  if (body.parallel_tool_calls === false && body.tools?.length) {
+    result.tool_choice = {
+      ...(result.tool_choice || { type: "auto" }),
+      disable_parallel_tool_use: true
+    };
   }
 
   // Thinking is normalized centrally by applyThinking (thinkingUnified.js) after translation.

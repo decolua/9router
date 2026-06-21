@@ -28,6 +28,18 @@ export function claudeToOpenAIRequest(model, body, stream) {
     result.temperature = body.temperature;
   }
 
+  if (body.top_p !== undefined) {
+    result.top_p = body.top_p;
+  }
+
+  if (Array.isArray(body.stop_sequences) && body.stop_sequences.length > 0) {
+    result.stop = body.stop_sequences;
+  }
+
+  if (body.metadata?.user_id !== undefined && body.metadata.user_id !== null && body.metadata.user_id !== "") {
+    result.user = String(body.metadata.user_id);
+  }
+
   // System message
   if (body.system) {
     const systemContent = Array.isArray(body.system)
@@ -140,16 +152,17 @@ function convertClaudeMessage(msg) {
           parts.push({ type: OPENAI_BLOCK.TEXT, text: block.text });
           break;
 
-        case CLAUDE_BLOCK.IMAGE:
-          if (block.source?.type === "base64") {
-            parts.push({
-              type: OPENAI_BLOCK.IMAGE_URL,
-              image_url: {
-                url: encodeDataUri(block.source.media_type, block.source.data)
-              }
-            });
-          }
+        case CLAUDE_BLOCK.IMAGE: {
+          const part = convertClaudeMediaBlockToOpenAIPart(block);
+          if (part) parts.push(part);
           break;
+        }
+
+        case CLAUDE_BLOCK.DOCUMENT: {
+          const part = convertClaudeDocumentBlockToOpenAIPart(block);
+          if (part) parts.push(part);
+          break;
+        }
 
         case CLAUDE_BLOCK.TOOL_USE:
           toolCalls.push({
@@ -167,14 +180,28 @@ function convertClaudeMessage(msg) {
           if (typeof block.content === "string") {
             resultContent = block.content;
           } else if (Array.isArray(block.content)) {
-            resultContent = block.content
+            const textParts = block.content
               .filter(c => c.type === CLAUDE_BLOCK.TEXT)
-              .map(c => c.text)
-              .join("\n") || JSON.stringify(block.content);
+              .map(c => c.text);
+            resultContent = textParts.join("\n") || JSON.stringify(block.content);
+
+            for (const item of block.content) {
+              if (item.type === CLAUDE_BLOCK.IMAGE) {
+                const part = convertClaudeMediaBlockToOpenAIPart(item);
+                if (part) parts.push(part);
+              } else if (item.type === CLAUDE_BLOCK.DOCUMENT) {
+                const part = convertClaudeDocumentBlockToOpenAIPart(item);
+                if (part) parts.push(part);
+              }
+            }
           } else if (block.content) {
             resultContent = JSON.stringify(block.content);
           }
-          
+
+          if (block.is_error) {
+            resultContent = `[tool_error] ${resultContent}`;
+          }
+
           toolResults.push({
             role: ROLE.TOOL,
             tool_call_id: block.tool_use_id,
@@ -217,6 +244,39 @@ function convertClaudeMessage(msg) {
   }
 
   return null;
+}
+
+
+function convertClaudeMediaBlockToOpenAIPart(block) {
+  if (block.source?.type === "base64") {
+    return {
+      type: OPENAI_BLOCK.IMAGE_URL,
+      image_url: {
+        url: encodeDataUri(block.source.media_type, block.source.data)
+      }
+    };
+  }
+
+  if (block.source?.type === "url" && block.source.url) {
+    return {
+      type: OPENAI_BLOCK.IMAGE_URL,
+      image_url: { url: block.source.url }
+    };
+  }
+
+  return null;
+}
+
+function convertClaudeDocumentBlockToOpenAIPart(block) {
+  if (block.source?.type !== "base64" || !block.source.data) return null;
+
+  return {
+    type: OPENAI_BLOCK.FILE,
+    file: {
+      file_data: encodeDataUri(block.source.media_type || "application/pdf", block.source.data),
+      filename: block.source.filename || block.filename || block.name || "document.pdf"
+    }
+  };
 }
 
 // Convert tool choice

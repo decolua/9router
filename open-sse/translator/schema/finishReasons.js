@@ -14,6 +14,7 @@ export const CLAUDE_STOP = {
   MAX_TOKENS: "max_tokens",
   TOOL_USE: "tool_use",
   STOP_SEQUENCE: "stop_sequence",
+  REFUSAL: "refusal",
 };
 
 // Gemini finishReason values.
