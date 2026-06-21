@@ -88,6 +88,16 @@ function getInputTokens(tokens) {
   return prompt < cache ? cache : prompt;
 }
 
+function getCacheReadTokens(tokens) {
+  return tokens?.cache_read_input_tokens || tokens?.cached_tokens || 0;
+}
+
+function getCacheHitPercent(tokens) {
+  const prompt = tokens?.prompt_tokens || tokens?.input_tokens || 0;
+  const cache = tokens?.cache_read_input_tokens || tokens?.cached_tokens || 0;
+  return prompt > 0 ? (cache / prompt * 100) : 0;
+}
+
 export default function RequestDetailsTab() {
   const [details, setDetails] = useState([]);
   const [pagination, setPagination] = useState({
@@ -246,6 +256,8 @@ export default function RequestDetailsTab() {
                 <th className="text-left p-4 text-sm font-semibold text-text-main">Provider</th>
                 <th className="text-right p-4 text-sm font-semibold text-text-main">Input Tokens</th>
                 <th className="text-right p-4 text-sm font-semibold text-text-main">Output Tokens</th>
+                <th className="text-right p-4 text-sm font-semibold text-text-main">Cached Tokens</th>
+                <th className="text-right p-4 text-sm font-semibold text-text-main">Cache Hit %</th>
                 <th className="text-left p-4 text-sm font-semibold text-text-main">Latency</th>
                 <th className="text-center p-4 text-sm font-semibold text-text-main">Action</th>
               </tr>
@@ -253,7 +265,7 @@ export default function RequestDetailsTab() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="7" className="p-8 text-center text-text-muted">
+                  <td colSpan="9" className="p-8 text-center text-text-muted">
                     <div className="flex items-center justify-center gap-2">
                       <span className="material-symbols-outlined animate-spin text-[20px]">progress_activity</span>
                       Loading...
@@ -262,7 +274,7 @@ export default function RequestDetailsTab() {
                 </tr>
               ) : details.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="p-8 text-center text-text-muted">
+                  <td colSpan="9" className="p-8 text-center text-text-muted">
                     No request details found
                   </td>
                 </tr>
@@ -288,6 +300,12 @@ export default function RequestDetailsTab() {
                     </td>
                     <td className="p-4 text-sm text-text-main text-right font-mono">
                       {detail.tokens?.completion_tokens?.toLocaleString() || 0}
+                    </td>
+                    <td className="p-4 text-sm text-text-main text-right font-mono">
+                      {getCacheReadTokens(detail.tokens).toLocaleString()}
+                    </td>
+                    <td className="p-4 text-sm text-text-main text-right font-mono">
+                      {getCacheHitPercent(detail.tokens).toFixed(1)}%
                     </td>
                     <td className="p-4 text-sm text-text-muted">
                       <div className="flex flex-col gap-0.5">
@@ -374,6 +392,18 @@ export default function RequestDetailsTab() {
                 <span className="text-text-muted">Output Tokens:</span>{" "}
                 <span className="text-text-main font-mono">
                   {selectedDetail.tokens?.completion_tokens?.toLocaleString() || 0}
+                </span>
+              </div>
+              <div>
+                <span className="text-text-muted">Cached Tokens:</span>{" "}
+                <span className="text-text-main font-mono">
+                  {getCacheReadTokens(selectedDetail.tokens).toLocaleString()}
+                </span>
+              </div>
+              <div>
+                <span className="text-text-muted">Cache Hit %:</span>{" "}
+                <span className="text-text-main font-mono">
+                  {getCacheHitPercent(selectedDetail.tokens).toFixed(1)}%
                 </span>
               </div>
             </div>

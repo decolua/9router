@@ -33,10 +33,11 @@ function getLocalDateKey(timestamp) {
 }
 
 function addToCounter(target, key, values) {
-  if (!target[key]) target[key] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0 };
+  if (!target[key]) target[key] = { requests: 0, promptTokens: 0, completionTokens: 0, cacheReadTokens: 0, cost: 0 };
   target[key].requests += values.requests || 1;
   target[key].promptTokens += values.promptTokens || 0;
   target[key].completionTokens += values.completionTokens || 0;
+  target[key].cacheReadTokens += values.cacheReadTokens || 0;
   target[key].cost += values.cost || 0;
   if (values.meta) Object.assign(target[key], values.meta);
 }
@@ -44,12 +45,14 @@ function addToCounter(target, key, values) {
 function aggregateEntryToDay(day, entry) {
   const promptTokens = entry.tokens?.prompt_tokens || entry.tokens?.input_tokens || 0;
   const completionTokens = entry.tokens?.completion_tokens || entry.tokens?.output_tokens || 0;
+  const cacheReadTokens = entry.tokens?.cache_read_input_tokens || entry.tokens?.cached_tokens || 0;
   const cost = entry.cost || 0;
-  const vals = { promptTokens, completionTokens, cost };
+  const vals = { promptTokens, completionTokens, cacheReadTokens, cost };
 
   day.requests = (day.requests || 0) + 1;
   day.promptTokens = (day.promptTokens || 0) + promptTokens;
   day.completionTokens = (day.completionTokens || 0) + completionTokens;
+  day.cacheReadTokens = (day.cacheReadTokens || 0) + cacheReadTokens;
   day.cost = (day.cost || 0) + cost;
 
   day.byProvider ||= {};
@@ -366,7 +369,8 @@ export async function getUsageStats(period = "all") {
 
   const stats = {
     totalRequests: 0,
-    totalPromptTokens: 0, totalCompletionTokens: 0, totalCost: 0,
+    totalPromptTokens: 0, totalCompletionTokens: 0, totalCacheReadTokens: 0, totalCost: 0,
+    cacheHitRatio: 0,
     byProvider: {}, byModel: {}, byAccount: {}, byApiKey: {}, byEndpoint: {},
     last10Minutes: [],
     pending: pendingRequests,
@@ -427,13 +431,15 @@ export async function getUsageStats(period = "all") {
       const day = parseJson(dr.data, {});
       stats.totalPromptTokens += day.promptTokens || 0;
       stats.totalCompletionTokens += day.completionTokens || 0;
+      stats.totalCacheReadTokens += day.cacheReadTokens || 0;
       stats.totalCost += day.cost || 0;
 
       for (const [prov, p] of Object.entries(day.byProvider || {})) {
-        if (!stats.byProvider[prov]) stats.byProvider[prov] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0 };
+        if (!stats.byProvider[prov]) stats.byProvider[prov] = { requests: 0, promptTokens: 0, completionTokens: 0, cacheReadTokens: 0, cost: 0 };
         stats.byProvider[prov].requests += p.requests || 0;
         stats.byProvider[prov].promptTokens += p.promptTokens || 0;
         stats.byProvider[prov].completionTokens += p.completionTokens || 0;
+        stats.byProvider[prov].cacheReadTokens += p.cacheReadTokens || 0;
         stats.byProvider[prov].cost += p.cost || 0;
       }
 
@@ -443,11 +449,12 @@ export async function getUsageStats(period = "all") {
         const statsKey = provider ? `${rawModel} (${provider})` : rawModel;
         const providerDisplayName = providerNodeNameMap[provider] || provider;
         if (!stats.byModel[statsKey]) {
-          stats.byModel[statsKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0, rawModel, provider: providerDisplayName, lastUsed: dateKey };
+          stats.byModel[statsKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cacheReadTokens: 0, cost: 0, rawModel, provider: providerDisplayName, lastUsed: dateKey };
         }
         stats.byModel[statsKey].requests += m.requests || 0;
         stats.byModel[statsKey].promptTokens += m.promptTokens || 0;
         stats.byModel[statsKey].completionTokens += m.completionTokens || 0;
+        stats.byModel[statsKey].cacheReadTokens += m.cacheReadTokens || 0;
         stats.byModel[statsKey].cost += m.cost || 0;
         if (dateKey > (stats.byModel[statsKey].lastUsed || "")) stats.byModel[statsKey].lastUsed = dateKey;
       }
@@ -459,11 +466,12 @@ export async function getUsageStats(period = "all") {
         const providerDisplayName = providerNodeNameMap[provider] || provider;
         const accountKey = `${rawModel} (${provider} - ${accountName})`;
         if (!stats.byAccount[accountKey]) {
-          stats.byAccount[accountKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0, rawModel, provider: providerDisplayName, connectionId: connId, accountName, lastUsed: dateKey };
+          stats.byAccount[accountKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cacheReadTokens: 0, cost: 0, rawModel, provider: providerDisplayName, connectionId: connId, accountName, lastUsed: dateKey };
         }
         stats.byAccount[accountKey].requests += a.requests || 0;
         stats.byAccount[accountKey].promptTokens += a.promptTokens || 0;
         stats.byAccount[accountKey].completionTokens += a.completionTokens || 0;
+        stats.byAccount[accountKey].cacheReadTokens += a.cacheReadTokens || 0;
         stats.byAccount[accountKey].cost += a.cost || 0;
         if (dateKey > (stats.byAccount[accountKey].lastUsed || "")) stats.byAccount[accountKey].lastUsed = dateKey;
       }
@@ -477,11 +485,12 @@ export async function getUsageStats(period = "all") {
         const keyName = keyInfo?.name || (apiKeyVal ? apiKeyVal.slice(0, 8) + "..." : "Local (No API Key)");
         const apiKeyKey = apiKeyVal || "local-no-key";
         if (!stats.byApiKey[akKey]) {
-          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0, rawModel, provider: providerDisplayName, apiKey: apiKeyVal, keyName, apiKeyKey, lastUsed: dateKey };
+          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cacheReadTokens: 0, cost: 0, rawModel, provider: providerDisplayName, apiKey: apiKeyVal, keyName, apiKeyKey, lastUsed: dateKey };
         }
         stats.byApiKey[akKey].requests += ak.requests || 0;
         stats.byApiKey[akKey].promptTokens += ak.promptTokens || 0;
         stats.byApiKey[akKey].completionTokens += ak.completionTokens || 0;
+        stats.byApiKey[akKey].cacheReadTokens += ak.cacheReadTokens || 0;
         stats.byApiKey[akKey].cost += ak.cost || 0;
         if (dateKey > (stats.byApiKey[akKey].lastUsed || "")) stats.byApiKey[akKey].lastUsed = dateKey;
       }
@@ -492,11 +501,12 @@ export async function getUsageStats(period = "all") {
         const provider = ep.provider || "";
         const providerDisplayName = providerNodeNameMap[provider] || provider;
         if (!stats.byEndpoint[epKey]) {
-          stats.byEndpoint[epKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0, endpoint, rawModel, provider: providerDisplayName, lastUsed: dateKey };
+          stats.byEndpoint[epKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cacheReadTokens: 0, cost: 0, endpoint, rawModel, provider: providerDisplayName, lastUsed: dateKey };
         }
         stats.byEndpoint[epKey].requests += ep.requests || 0;
         stats.byEndpoint[epKey].promptTokens += ep.promptTokens || 0;
         stats.byEndpoint[epKey].completionTokens += ep.completionTokens || 0;
+        stats.byEndpoint[epKey].cacheReadTokens += ep.cacheReadTokens || 0;
         stats.byEndpoint[epKey].cost += ep.cost || 0;
         if (dateKey > (stats.byEndpoint[epKey].lastUsed || "")) stats.byEndpoint[epKey].lastUsed = dateKey;
       }
@@ -547,26 +557,30 @@ export async function getUsageStats(period = "all") {
       const tokens = parseJson(r.tokens, {}) || {};
       const promptTokens = tokens.prompt_tokens || 0;
       const completionTokens = tokens.completion_tokens || 0;
+      const cacheReadTokens = tokens.cache_read_input_tokens || tokens.cached_tokens || 0;
       const entryCost = r.cost || 0;
       const providerDisplayName = providerNodeNameMap[r.provider] || r.provider;
 
       stats.totalPromptTokens += promptTokens;
       stats.totalCompletionTokens += completionTokens;
+      stats.totalCacheReadTokens += cacheReadTokens;
       stats.totalCost += entryCost;
 
-      if (!stats.byProvider[r.provider]) stats.byProvider[r.provider] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0 };
+      if (!stats.byProvider[r.provider]) stats.byProvider[r.provider] = { requests: 0, promptTokens: 0, completionTokens: 0, cacheReadTokens: 0, cost: 0 };
       stats.byProvider[r.provider].requests++;
       stats.byProvider[r.provider].promptTokens += promptTokens;
       stats.byProvider[r.provider].completionTokens += completionTokens;
+      stats.byProvider[r.provider].cacheReadTokens += cacheReadTokens;
       stats.byProvider[r.provider].cost += entryCost;
 
       const modelKey = r.provider ? `${r.model} (${r.provider})` : r.model;
       if (!stats.byModel[modelKey]) {
-        stats.byModel[modelKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, lastUsed: r.timestamp };
+        stats.byModel[modelKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cacheReadTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, lastUsed: r.timestamp };
       }
       stats.byModel[modelKey].requests++;
       stats.byModel[modelKey].promptTokens += promptTokens;
       stats.byModel[modelKey].completionTokens += completionTokens;
+      stats.byModel[modelKey].cacheReadTokens += cacheReadTokens;
       stats.byModel[modelKey].cost += entryCost;
       if (new Date(r.timestamp) > new Date(stats.byModel[modelKey].lastUsed)) stats.byModel[modelKey].lastUsed = r.timestamp;
 
@@ -574,11 +588,12 @@ export async function getUsageStats(period = "all") {
         const accountName = connectionMap[r.connectionId] || `Account ${r.connectionId.slice(0, 8)}...`;
         const accountKey = `${r.model} (${r.provider} - ${accountName})`;
         if (!stats.byAccount[accountKey]) {
-          stats.byAccount[accountKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, connectionId: r.connectionId, accountName, lastUsed: r.timestamp };
+          stats.byAccount[accountKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cacheReadTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, connectionId: r.connectionId, accountName, lastUsed: r.timestamp };
         }
         stats.byAccount[accountKey].requests++;
         stats.byAccount[accountKey].promptTokens += promptTokens;
         stats.byAccount[accountKey].completionTokens += completionTokens;
+        stats.byAccount[accountKey].cacheReadTokens += cacheReadTokens;
         stats.byAccount[accountKey].cost += entryCost;
         if (new Date(r.timestamp) > new Date(stats.byAccount[accountKey].lastUsed)) stats.byAccount[accountKey].lastUsed = r.timestamp;
       }
@@ -588,38 +603,42 @@ export async function getUsageStats(period = "all") {
         const keyName = keyInfo?.name || r.apiKey.slice(0, 8) + "...";
         const akKey = `${r.apiKey}|${r.model}|${r.provider || "unknown"}`;
         if (!stats.byApiKey[akKey]) {
-          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKey: r.apiKey, keyName, apiKeyKey: r.apiKey, lastUsed: r.timestamp };
+          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cacheReadTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKey: r.apiKey, keyName, apiKeyKey: r.apiKey, lastUsed: r.timestamp };
         }
         const ake = stats.byApiKey[akKey];
-        ake.requests++; ake.promptTokens += promptTokens; ake.completionTokens += completionTokens; ake.cost += entryCost;
+        ake.requests++; ake.promptTokens += promptTokens; ake.completionTokens += completionTokens; ake.cacheReadTokens += cacheReadTokens; ake.cost += entryCost;
         if (new Date(r.timestamp) > new Date(ake.lastUsed)) ake.lastUsed = r.timestamp;
       } else {
         if (!stats.byApiKey["local-no-key"]) {
-          stats.byApiKey["local-no-key"] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKey: null, keyName: "Local (No API Key)", apiKeyKey: "local-no-key", lastUsed: r.timestamp };
+          stats.byApiKey["local-no-key"] = { requests: 0, promptTokens: 0, completionTokens: 0, cacheReadTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKey: null, keyName: "Local (No API Key)", apiKeyKey: "local-no-key", lastUsed: r.timestamp };
         }
         const ake = stats.byApiKey["local-no-key"];
-        ake.requests++; ake.promptTokens += promptTokens; ake.completionTokens += completionTokens; ake.cost += entryCost;
+        ake.requests++; ake.promptTokens += promptTokens; ake.completionTokens += completionTokens; ake.cacheReadTokens += cacheReadTokens; ake.cost += entryCost;
         if (new Date(r.timestamp) > new Date(ake.lastUsed)) ake.lastUsed = r.timestamp;
       }
 
       const endpoint = r.endpoint || "Unknown";
       const epKey = `${endpoint}|${r.model}|${r.provider || "unknown"}`;
       if (!stats.byEndpoint[epKey]) {
-        stats.byEndpoint[epKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0, endpoint, rawModel: r.model, provider: providerDisplayName, lastUsed: r.timestamp };
+        stats.byEndpoint[epKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cacheReadTokens: 0, cost: 0, endpoint, rawModel: r.model, provider: providerDisplayName, lastUsed: r.timestamp };
       }
       const epe = stats.byEndpoint[epKey];
-      epe.requests++; epe.promptTokens += promptTokens; epe.completionTokens += completionTokens; epe.cost += entryCost;
+      epe.requests++; epe.promptTokens += promptTokens; epe.completionTokens += completionTokens; epe.cacheReadTokens += cacheReadTokens; epe.cost += entryCost;
       if (new Date(r.timestamp) > new Date(epe.lastUsed)) epe.lastUsed = r.timestamp;
     }
   }
 
   stats.totalRequests = Object.values(stats.byProvider).reduce((sum, p) => sum + (p.requests || 0), 0);
+  stats.cacheHitRatio = stats.totalPromptTokens > 0 ? stats.totalCacheReadTokens / stats.totalPromptTokens : 0;
   return stats;
 }
 
-export async function getChartData(period = "7d") {
+export async function getChartData(period = "7d", filterBy = "all") {
   const db = await getAdapter();
   const now = Date.now();
+  const isGrouped = filterBy !== "all";
+  const filterColMap = { model: "model", account: "connectionId", apiKey: "apiKey", endpoint: "endpoint" };
+  const filterCol = filterColMap[filterBy];
 
   if (period === "today") {
     const bucketCount = 24;
@@ -629,22 +648,51 @@ export async function getChartData(period = "7d") {
     const startTime = startOfDay.getTime();
     const endTime = startTime + bucketCount * bucketMs;
     const labelFn = (ts) => new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
-    const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0 }));
 
+    const selectCols = isGrouped ? `timestamp, promptTokens, completionTokens, cost, tokens, ${filterCol}` : "timestamp, promptTokens, completionTokens, cost, tokens";
     const rows = db.all(
-      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?`,
+      `SELECT ${selectCols} FROM usageHistory WHERE timestamp >= ?`,
       [new Date(startTime).toISOString()]
     );
+
+    if (!isGrouped) {
+      const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cachedTokens: 0, promptTokens: 0, cacheHitRatio: 0, cost: 0 }));
+      for (const r of rows) {
+        const t = new Date(r.timestamp).getTime();
+        if (t < startTime || t >= endTime) continue;
+        const idx = Math.floor((t - startTime) / bucketMs);
+        if (idx >= 0 && idx < bucketCount) {
+          buckets[idx].tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
+          buckets[idx].promptTokens += (r.promptTokens || 0);
+          const parsedTokens = parseJson(r.tokens, {}) || {};
+          buckets[idx].cachedTokens += parsedTokens.cache_read_input_tokens || parsedTokens.cached_tokens || 0;
+          buckets[idx].cost += r.cost || 0;
+        }
+      }
+      for (const b of buckets) b.cacheHitRatio = b.promptTokens > 0 ? b.cachedTokens / b.promptTokens : 0;
+      return buckets;
+    }
+
+    // Grouped mode
+    const groups = {};
     for (const r of rows) {
       const t = new Date(r.timestamp).getTime();
       if (t < startTime || t >= endTime) continue;
       const idx = Math.floor((t - startTime) / bucketMs);
-      if (idx >= 0 && idx < bucketCount) {
-        buckets[idx].tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
-        buckets[idx].cost += r.cost || 0;
-      }
+      if (idx < 0 || idx >= bucketCount) continue;
+      const gk = r[filterCol] || "unknown";
+      if (!groups[gk]) groups[gk] = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cachedTokens: 0, promptTokens: 0, cacheHitRatio: 0, cost: 0 }));
+      const g = groups[gk][idx];
+      g.tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
+      g.promptTokens += (r.promptTokens || 0);
+      const parsedTokens = parseJson(r.tokens, {}) || {};
+      g.cachedTokens += parsedTokens.cache_read_input_tokens || parsedTokens.cached_tokens || 0;
+      g.cost += r.cost || 0;
     }
-    return buckets;
+    for (const group of Object.values(groups)) {
+      for (const b of group) b.cacheHitRatio = b.promptTokens > 0 ? b.cachedTokens / b.promptTokens : 0;
+    }
+    return { grouped: true, filterBy, groups };
   }
 
   if (period === "24h") {
@@ -652,44 +700,114 @@ export async function getChartData(period = "7d") {
     const bucketMs = 3600000;
     const labelFn = (ts) => new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
     const startTime = now - bucketCount * bucketMs;
-    const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0 }));
 
+    const selectCols = isGrouped ? `timestamp, promptTokens, completionTokens, cost, tokens, ${filterCol}` : "timestamp, promptTokens, completionTokens, cost, tokens";
     const rows = db.all(
-      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?`,
+      `SELECT ${selectCols} FROM usageHistory WHERE timestamp >= ?`,
       [new Date(startTime).toISOString()]
     );
+
+    if (!isGrouped) {
+      const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cachedTokens: 0, promptTokens: 0, cacheHitRatio: 0, cost: 0 }));
+      for (const r of rows) {
+        const t = new Date(r.timestamp).getTime();
+        if (t < startTime || t > now) continue;
+        const idx = Math.min(Math.floor((t - startTime) / bucketMs), bucketCount - 1);
+        buckets[idx].tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
+        buckets[idx].promptTokens += (r.promptTokens || 0);
+        const parsedTokens = parseJson(r.tokens, {}) || {};
+        buckets[idx].cachedTokens += parsedTokens.cache_read_input_tokens || parsedTokens.cached_tokens || 0;
+        buckets[idx].cost += r.cost || 0;
+      }
+      for (const b of buckets) b.cacheHitRatio = b.promptTokens > 0 ? b.cachedTokens / b.promptTokens : 0;
+      return buckets;
+    }
+
+    // Grouped mode
+    const groups = {};
     for (const r of rows) {
       const t = new Date(r.timestamp).getTime();
       if (t < startTime || t > now) continue;
       const idx = Math.min(Math.floor((t - startTime) / bucketMs), bucketCount - 1);
-      buckets[idx].tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
-      buckets[idx].cost += r.cost || 0;
+      const gk = r[filterCol] || "unknown";
+      if (!groups[gk]) groups[gk] = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cachedTokens: 0, promptTokens: 0, cacheHitRatio: 0, cost: 0 }));
+      const g = groups[gk][idx];
+      g.tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
+      g.promptTokens += (r.promptTokens || 0);
+      const parsedTokens = parseJson(r.tokens, {}) || {};
+      g.cachedTokens += parsedTokens.cache_read_input_tokens || parsedTokens.cached_tokens || 0;
+      g.cost += r.cost || 0;
     }
-    return buckets;
+    for (const group of Object.values(groups)) {
+      for (const b of group) b.cacheHitRatio = b.promptTokens > 0 ? b.cachedTokens / b.promptTokens : 0;
+    }
+    return { grouped: true, filterBy, groups };
   }
 
+  // 7d / 30d / 60d
   const bucketCount = period === "7d" ? 7 : period === "30d" ? 30 : 60;
   const today = new Date();
   const labelFn = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
-  // Build map of dateKey → day data
-  const dayRows = loadDaysInRange(db, bucketCount);
-  const dayMap = {};
-  for (const r of dayRows) dayMap[r.dateKey] = parseJson(r.data, {});
+  if (!isGrouped) {
+    const dayRows = loadDaysInRange(db, bucketCount);
+    const dayMap = {};
+    for (const r of dayRows) dayMap[r.dateKey] = parseJson(r.data, {});
 
-  return Array.from({ length: bucketCount }, (_, i) => {
-    const d = new Date(today);
-    d.setDate(d.getDate() - (bucketCount - 1 - i));
-    const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    const dayData = dayMap[dateKey];
-    return {
-      label: labelFn(d),
-      tokens: dayData ? (dayData.promptTokens || 0) + (dayData.completionTokens || 0) : 0,
-      cost: dayData ? (dayData.cost || 0) : 0,
-    };
-  });
+    return Array.from({ length: bucketCount }, (_, i) => {
+      const d = new Date(today);
+      d.setDate(d.getDate() - (bucketCount - 1 - i));
+      const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const dayData = dayMap[dateKey];
+      const promptTokens = dayData ? (dayData.promptTokens || 0) : 0;
+      const cachedTokens = dayData ? (dayData.cacheReadTokens || 0) : 0;
+      return {
+        label: labelFn(d),
+        tokens: dayData ? (dayData.promptTokens || 0) + (dayData.completionTokens || 0) : 0,
+        cachedTokens,
+        promptTokens,
+        cacheHitRatio: promptTokens > 0 ? cachedTokens / promptTokens : 0,
+        cost: dayData ? (dayData.cost || 0) : 0,
+      };
+    });
+  }
+
+  // Grouped mode for 7d/30d/60d: query usageHistory directly
+  const startTime2 = new Date(today);
+  startTime2.setDate(today.getDate() - (bucketCount - 1));
+  startTime2.setHours(0, 0, 0, 0);
+  const bucketMs2 = 86400000;
+
+  const selectCols2 = `timestamp, promptTokens, completionTokens, cost, tokens, ${filterCol}`;
+  const rows2 = db.all(
+    `SELECT ${selectCols2} FROM usageHistory WHERE timestamp >= ?`,
+    [startTime2.toISOString()]
+  );
+
+  const groups2 = {};
+  for (const r of rows2) {
+    const t = new Date(r.timestamp).getTime();
+    if (t < startTime2.getTime()) continue;
+    const idx = Math.min(Math.floor((t - startTime2.getTime()) / bucketMs2), bucketCount - 1);
+    if (idx < 0) continue;
+    const gk = r[filterCol] || "unknown";
+    if (!groups2[gk]) groups2[gk] = Array.from({ length: bucketCount }, (_, i) => {
+      const d = new Date(today);
+      d.setDate(d.getDate() - (bucketCount - 1 - i));
+      return { label: labelFn(d), tokens: 0, cachedTokens: 0, promptTokens: 0, cacheHitRatio: 0, cost: 0 };
+    });
+    const g = groups2[gk][idx];
+    g.tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
+    g.promptTokens += (r.promptTokens || 0);
+    const parsedTokens = parseJson(r.tokens, {}) || {};
+    g.cachedTokens += parsedTokens.cache_read_input_tokens || parsedTokens.cached_tokens || 0;
+    g.cost += r.cost || 0;
+  }
+  for (const group of Object.values(groups2)) {
+    for (const b of group) b.cacheHitRatio = b.promptTokens > 0 ? b.cachedTokens / b.promptTokens : 0;
+  }
+  return { grouped: true, filterBy, groups: groups2 };
 }
-
 function formatLogDate(date = new Date()) {
   const pad = (n) => String(n).padStart(2, "0");
   return `${pad(date.getDate())}-${pad(date.getMonth() + 1)}-${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
