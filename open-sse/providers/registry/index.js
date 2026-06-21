@@ -178,7 +178,8 @@ import p175 from "./xiaomi-mimo.js";
 import p176 from "./xiaomi-tokenplan.js";
 import p177 from "./yi.js";
 import p178 from "./youcom.js";
-import p179 from "./zenmux.js";
+import p179 from "./zai.js";
+import p180 from "./zenmux.js";
 
 export default [
   p0,
@@ -361,4 +362,5 @@ export default [
   p177,
   p178,
   p179,
+  p180,
 ];

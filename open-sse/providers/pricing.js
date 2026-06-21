@@ -90,10 +90,13 @@ export const MODEL_PRICING = {
   "deepseek-v4-pro":              { input: 0.435, output: 0.87,  cached: 0.003625, reasoning: 0.87,  cache_creation: 0.435 },
 
   // === GLM ===
+  "glm-4.5-air":                  { input: 0.15,  output: 0.60,  cached: 0.075, reasoning: 0.90,   cache_creation: 0.15  },
   "glm-4.6":                      { input: 0.50,  output: 2.00,  cached: 0.25,  reasoning: 3.00,   cache_creation: 0.50  },
   "glm-4.6v":                     { input: 0.75,  output: 3.00,  cached: 0.375, reasoning: 4.50,   cache_creation: 0.75  },
   "glm-4.7":                      { input: 0.75,  output: 3.00,  cached: 0.375, reasoning: 4.50,   cache_creation: 0.75  },
   "glm-5":                        { input: 1.00,  output: 4.00,  cached: 0.50,  reasoning: 6.00,   cache_creation: 1.00  },
+  "glm-5-turbo":                  { input: 1.00,  output: 4.00,  cached: 0.50,  reasoning: 6.00,   cache_creation: 1.00  },
+  "glm-5.2":                      { input: 1.00,  output: 4.00,  cached: 0.50,  reasoning: 6.00,   cache_creation: 1.00  },
 
   // === MiniMax ===
   "MiniMax-M3":                   { input: 0.30,  output: 1.20,  cached: 0.06,  reasoning: 1.80,   cache_creation: 0.30  },
@@ -125,6 +128,12 @@ export const PROVIDER_PRICING = {
   // GitHub Copilot (gh) — gpt-5.3-codex has different rate than canonical
   gh: {
     "gpt-5.3-codex": { input: 1.75, output: 14.00, cached: 0.175, reasoning: 14.00, cache_creation: 1.75 },
+  },
+  // Z.ai ZCode free tier — $0 for all models served via the free endpoint
+  zai: {
+    "glm-5-turbo": { input: 0, output: 0, cached: 0, reasoning: 0, cache_creation: 0 },
+    "glm-5.2":     { input: 0, output: 0, cached: 0, reasoning: 0, cache_creation: 0 },
+    "glm-4.5-air": { input: 0, output: 0, cached: 0, reasoning: 0, cache_creation: 0 },
   },
 };
 
