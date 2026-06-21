@@ -11,7 +11,9 @@
     "build:bun": "bun --bun next build --webpack",
     "start:bun": "PORT=20128 bun ./.next/standalone/server.js",
     "cli:pack": "npm --prefix cli run pack:cli",
-    "cli:publish": "npm --prefix cli run publish:cli"
+    "cli:publish": "npm --prefix cli run publish:cli",
+    "lint:all": "eslint .",
+    "lint:fatal": "node scripts/lint-fatal-diff.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

@@ -19,11 +19,12 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
       - run: npm ci
-      - run: npx next lint
+      - run: npm run lint:all
         continue-on-error: true
+      - run: npm run lint:fatal
       - run: npm run build
         env:
           NEXT_TRACING_ROOT_MODE: workspace
