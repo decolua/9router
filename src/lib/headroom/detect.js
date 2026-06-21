@@ -29,6 +29,9 @@ const EXTENDED_PATH = [...EXTRA_BINS, process.env.PATH || ""].filter(Boolean).jo
 const PYTHON_CANDIDATES = ["python3.13", "python3.12", "python3.11", "python3.10", "python3", "python"];
 const MIN_VERSION = [3, 10];
 const HEADROOM_HEALTH_TIMEOUT_MS = 1500;
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"]);
+
+export const DEFAULT_HEADROOM_URL = process.env.HEADROOM_URL || "http://localhost:8787";
 
 // Detect whether the headroom CLI is installed and where its binary lives.
 export function findHeadroomBinary() {
@@ -79,11 +82,21 @@ export async function probeProxyRunning(url) {
   }
 }
 
+export function isLoopbackHeadroomUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return LOOPBACK_HOSTS.has(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
 // Aggregate status for the dashboard: installed, running, python interpreter.
 export async function getHeadroomStatus(url) {
   const path = findHeadroomBinary();
   const python = findPython310();
   const installed = Boolean(path);
-  const running = installed ? await probeProxyRunning(url) : false;
-  return { installed, path, running, python };
+  const running = await probeProxyRunning(url);
+  const localUrl = isLoopbackHeadroomUrl(url);
+  return { installed, path, running, python, localUrl, canStart: installed && localUrl };
 }
