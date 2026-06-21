@@ -1,8 +1,10 @@
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
+import { resolveKiroModel } from "../config/kiroConstants.js";
 import { v4 as uuidv4 } from "uuid";
 import { refreshKiroToken } from "../services/tokenRefresh.js";
 import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
+import { getCapabilitiesForModel } from "../providers/capabilities.js";
 
 /**
  * KiroExecutor - Executor for Kiro AI (AWS CodeWhisperer)
@@ -101,6 +103,8 @@ export class KiroExecutor extends BaseExecutor {
     let chunkIndex = 0;
     const responseId = `chatcmpl-${Date.now()}`;
     const created = Math.floor(Date.now() / 1000);
+    const capabilityModel = resolveKiroModel(model).upstream;
+    const contextWindow = getCapabilitiesForModel("kiro", capabilityModel).contextWindow || 200000;
     const state = {
       endDetected: false,
       finishEmitted: false,
@@ -357,9 +361,8 @@ export class KiroExecutor extends BaseExecutor {
                 : 0;
 
               // Estimate input tokens from contextUsagePercentage
-              // Kiro models typically have 200k context window
               const estimatedInputTokens = state.contextUsagePercentage > 0
-                ? Math.floor(state.contextUsagePercentage * 200000 / 100)
+                ? Math.floor(state.contextUsagePercentage * contextWindow / 100)
                 : 0;
 
               state.usage = {
