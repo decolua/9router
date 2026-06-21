@@ -54,6 +54,9 @@ class StdioEntry {
     this.pending = new Map(); // id -> {resolve, reject, timer}
     this.events = new EventEmitter();
     this.initializing = null;
+    this.initialized = false;
+    this.initPromise = null;
+    this.initInfo = null;
   }
 
   isAlive() {
@@ -90,6 +93,9 @@ class StdioEntry {
     this.proc = proc;
     this.buffer = "";
     this.pending.clear();
+    this.initialized = false;
+    this.initPromise = null;
+    this.initInfo = null;
 
     const ready = new Promise((resolve, reject) => {
       const onError = (e) => reject(new Error(`${command} spawn error: ${e.message}`));
@@ -169,6 +175,42 @@ class StdioEntry {
       }
     });
   }
+
+  async ensureInitialized() {
+    if (this.initialized) return this.initInfo;
+    if (this.initPromise) return this.initPromise;
+
+    this.initPromise = (async () => {
+      try {
+        const init = await this.request("initialize", {
+          protocolVersion: STDIO_PROTOCOL_VERSION,
+          capabilities: {},
+          clientInfo: { name: "9router-gateway", version: "1" },
+        }, { timeoutMs: STDIO_INIT_TIMEOUT_MS });
+        if (init.error) {
+          throw new Error(`initialize failed: ${init.error.message || JSON.stringify(init.error)}`);
+        }
+        // notifications/initialized — best-effort, fire-and-forget.
+        try {
+          this.proc.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized", params: {} })}\n`);
+        } catch { /* ignore */ }
+        this.initInfo = {
+          protocolVersion: init.result?.protocolVersion || STDIO_PROTOCOL_VERSION,
+          serverInfo: init.result?.serverInfo || null,
+        };
+        this.initialized = true;
+        return this.initInfo;
+      } catch (e) {
+        this.initialized = false;
+        this.initPromise = null;
+        this.initInfo = null;
+        getStore().delete(this.instance.id);
+        throw e;
+      }
+    })();
+
+    return this.initPromise;
+  }
 }
 
 function getEntry(instance) {
@@ -184,32 +226,7 @@ function getEntry(instance) {
 export async function listTools(instance) {
   const entry = getEntry(instance);
   await entry.ensure();
-  // Initialize lazily on first listTools. Many stdio MCPs are strict about
-  // the order; do it here so callTool() doesn't have to repeat.
-  if (!instance.__mcpInit) {
-    try {
-      const init = await entry.request("initialize", {
-        protocolVersion: STDIO_PROTOCOL_VERSION,
-        capabilities: {},
-        clientInfo: { name: "9router-gateway", version: "1" },
-      }, { timeoutMs: STDIO_INIT_TIMEOUT_MS });
-      if (init.error) {
-        throw new Error(`initialize failed: ${init.error.message || JSON.stringify(init.error)}`);
-      }
-      // notifications/initialized — best-effort, fire-and-forget.
-      try {
-        entry.proc.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized", params: {} })}\n`);
-      } catch { /* ignore */ }
-      instance.__mcpInit = {
-        protocolVersion: init.result?.protocolVersion || STDIO_PROTOCOL_VERSION,
-        serverInfo: init.result?.serverInfo || null,
-      };
-    } catch (e) {
-      // Reset store entry so the next call respawns.
-      getStore().delete(instance.id);
-      throw e;
-    }
-  }
+  await entry.ensureInitialized();
   const resp = await entry.request("tools/list", {});
   if (resp.error) {
     throw new Error(`tools/list failed: ${resp.error.message || JSON.stringify(resp.error)}`);
@@ -220,10 +237,7 @@ export async function listTools(instance) {
 export async function callTool(instance, name, args) {
   const entry = getEntry(instance);
   await entry.ensure();
-  if (!instance.__mcpInit) {
-    // Force init via listTools path (it has the same dance).
-    await listTools(instance);
-  }
+  await entry.ensureInitialized();
   const resp = await entry.request("tools/call", { name, arguments: args || {} });
   if (resp.error) {
     const e = new Error(resp.error.message || `tools/call failed`);
@@ -233,3 +247,5 @@ export async function callTool(instance, name, args) {
   }
   return resp.result;
 }
+
+export const __test__ = { StdioEntry, getStore, getEntry };
