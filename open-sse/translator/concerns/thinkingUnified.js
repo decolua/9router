@@ -4,7 +4,7 @@
 
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 import { PROVIDERS } from "../../providers/index.js";
-import { LEVEL_TO_BUDGET, budgetToLevel, effortToBudget } from "./thinking.js";
+import { LEVEL_TO_BUDGET, budgetToLevel, effortToBudget, clampThinkingBudget } from "./thinking.js";
 
 // Map a target wire-format to its native thinking format (when capability has none).
 const FORMAT_TO_NATIVE = {
@@ -60,8 +60,8 @@ export function extractThinking(body) {
     }
   }
 
-  // OpenAI chat / Responses shape
-  const effort = body.reasoning_effort ?? (typeof body.reasoning === "object" ? body.reasoning?.effort : null);
+  // OpenAI chat / Responses shape (camelCase alias takes precedence over snake_case)
+  const effort = body.reasoningEffort ?? body.reasoning_effort ?? (typeof body.reasoning === "object" ? body.reasoning?.effort : null);
   if (typeof effort === "string" && effort) {
     const e = effort.toLowerCase();
     if (e === "none" || e === "off") return { mode: "none" };
@@ -106,17 +106,14 @@ function resolveFormat(targetFormat, model, provider) {
 }
 
 // Convert unified config to a budget number (for budget-based formats).
-function toBudget(cfg, range) {
+// Uses clampThinkingBudget to respect thinkingRange and maxOutput reserves.
+function toBudget(cfg, caps) {
   let budget;
   if (cfg.mode === "budget") budget = cfg.budget;
   else if (cfg.mode === "level") budget = effortToBudget(cfg.level);
   else if (cfg.mode === "auto") return -1;
   if (!Number.isFinite(budget)) return undefined;
-  if (range) {
-    if (range.min != null && budget < range.min) budget = range.min;
-    if (range.max != null && budget > range.max) budget = range.max;
-  }
-  return budget;
+  return clampThinkingBudget(budget, caps);
 }
 
 // Convert unified config to a discrete level string.
@@ -174,7 +171,7 @@ function applyFormat(fmt, body, cfg, caps) {
     }
     case "claude-budget": {
       if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
-      const budget = toBudget(eff, caps.thinkingRange);
+      const budget = toBudget(eff, caps);
       body.thinking = budget === -1 ? { type: "enabled" } : { type: "enabled", budget_tokens: budget || 8192 };
       break;
     }
@@ -185,7 +182,7 @@ function applyFormat(fmt, body, cfg, caps) {
     }
     case "gemini-budget": {
       if (none && canDisable) { setGeminiThinking(body, { thinkingBudget: 0, includeThoughts: false }); break; }
-      const budget = toBudget(eff, caps.thinkingRange);
+      const budget = toBudget(eff, caps);
       setGeminiThinking(body, { thinkingBudget: budget ?? -1, includeThoughts: true });
       break;
     }
@@ -198,7 +195,7 @@ function applyFormat(fmt, body, cfg, caps) {
     case "qwen": {
       if (none && canDisable) { body.enable_thinking = false; break; }
       body.enable_thinking = true;
-      const budget = toBudget(eff, caps.thinkingRange);
+      const budget = toBudget(eff, caps);
       if (Number.isFinite(budget) && budget > 0) body.thinking_budget = budget;
       break;
     }
@@ -223,7 +220,7 @@ function applyFormat(fmt, body, cfg, caps) {
     }
     case "hunyuan": {
       if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
-      const budget = toBudget(eff, caps.thinkingRange);
+      const budget = toBudget(eff, caps);
       body.thinking = budget === -1 ? { type: "enabled" } : { type: "enabled", budget_tokens: budget || 8192 };
       break;
     }
