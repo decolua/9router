@@ -26,6 +26,9 @@ const CODEX_HOSTED_TOOL_TYPES = new Set([
   "tool_search"
 ]);
 
+// Responses-native freeform tools carry a name plus format payload and must pass through intact.
+const CODEX_PASSTHROUGH_TOOL_TYPES = new Set(["custom"]);
+
 // Allowlist of fields accepted by Codex Responses API — anything else is stripped
 const RESPONSES_API_ALLOWLIST = new Set([
   "model", "input", "instructions", "tools", "tool_choice", "stream", "store",
@@ -72,6 +75,7 @@ function normalizeCodexTools(body) {
       return true;
     }
     if (type !== "function") {
+      if (CODEX_PASSTHROUGH_TOOL_TYPES.has(type)) return true;
       if (!type || tool.function || typeof tool.name === "string") return false;
       return CODEX_HOSTED_TOOL_TYPES.has(type);
     }

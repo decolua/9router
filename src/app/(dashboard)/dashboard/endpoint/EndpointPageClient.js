@@ -336,10 +336,11 @@ export default function APIPageClient({ machineId }) {
     patchSetting({ headroomEnabled: value, headroomUrl: nextUrl });
   };
 
-  const handleHeadroomUrlBlur = () => {
+  const handleHeadroomUrlBlur = async () => {
     const next = headroomUrl.trim() || "http://localhost:8787";
     setHeadroomUrl(next);
-    patchSetting({ headroomUrl: next });
+    await patchSetting({ headroomUrl: next });
+    refreshHeadroomStatus();
   };
 
   const handleHeadroomCompressUserMessages = (value) => {
@@ -845,6 +846,19 @@ export default function APIPageClient({ machineId }) {
   }
 
   const currentEndpoint = baseUrl;
+  const headroomRunning = !!headroomStatus.running;
+  const headroomLocalUrl = headroomStatus.localUrl !== false;
+  const headroomCanStart = !!headroomStatus.canStart;
+  const headroomManaged = headroomLocalUrl && !!headroomStatus.managedPid;
+  const headroomStatusLabel = headroomStatus.loading
+    ? "Checking…"
+    : headroomRunning
+      ? "Running"
+      : headroomLocalUrl && !headroomStatus.installed
+        ? "Not installed"
+        : headroomLocalUrl
+          ? "Proxy off"
+          : "Unreachable";
 
   return (
     <div className="flex flex-col gap-8">
@@ -1250,21 +1264,15 @@ export default function APIPageClient({ machineId }) {
                   (Headroom)
                 </a>
               </p>
-              <span className={`text-xs px-2 py-0.5 rounded ${headroomStatus.installed && headroomStatus.running ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>
-                {headroomStatus.loading
-                  ? "Checking…"
-                  : !headroomStatus.installed
-                    ? "Not installed"
-                    : !headroomStatus.running
-                      ? "Proxy off"
-                      : "Running"}
+              <span className={`text-xs px-2 py-0.5 rounded ${headroomRunning ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>
+                {headroomStatusLabel}
               </span>
               <button
                 type="button"
                 onClick={() => setShowHeadroomInstallModal(true)}
                 className="text-xs text-primary underline hover:opacity-80"
               >
-                  {headroomStatus.installed && headroomStatus.running ? "Manage" : "Setup"}
+                  {headroomRunning ? "Manage" : "Setup"}
               </button>
             </div>
             <p className="text-sm text-text-muted mt-1">
@@ -1272,8 +1280,8 @@ export default function APIPageClient({ machineId }) {
             </p>
           </div>
           <Toggle
-            checked={headroomEnabled && headroomStatus.installed && headroomStatus.running}
-            disabled={!headroomStatus.installed || !headroomStatus.running}
+            checked={headroomEnabled && headroomRunning}
+            disabled={!headroomRunning}
             onChange={() => handleHeadroomEnabled(!headroomEnabled)}
           />
         </div>
@@ -1591,34 +1599,43 @@ export default function APIPageClient({ machineId }) {
       {/* Headroom Install Guide Modal */}
       <Modal
         isOpen={showHeadroomInstallModal}
-        title={headroomStatus.installed ? "Headroom" : "Install Headroom"}
+        title={headroomRunning ? "Headroom" : "Setup Headroom"}
         onClose={() => setShowHeadroomInstallModal(false)}
       >
         <div className="flex flex-col gap-4">
           <div className="flex items-center justify-between text-sm">
             <span>Status</span>
-            <span className={headroomStatus.installed && headroomStatus.running ? "text-success" : "text-warning"}>
-              {headroomStatus.loading
-                ? "Checking…"
-                : !headroomStatus.installed
-                  ? "Not installed"
-                  : !headroomStatus.running
-                    ? "Proxy off"
-                    : "Running"}
+            <span className={headroomRunning ? "text-success" : "text-warning"}>
+              {headroomStatusLabel}
             </span>
           </div>
-          {headroomStatus.installed ? (
-            headroomStatus.running ? (
-              <Button onClick={handleHeadroomStop} variant="ghost" fullWidth disabled={headroomActionLoading}>
-                {headroomActionLoading ? "Stopping…" : "Stop Headroom"}
-              </Button>
-            ) : (
-              <Button onClick={handleHeadroomStart} fullWidth disabled={headroomActionLoading}>
-                {headroomActionLoading ? "Starting…" : "Start Headroom"}
-              </Button>
-            )
+          <div className="flex flex-col gap-1">
+            <p className="text-sm font-medium">Proxy URL</p>
+            <Input
+              value={headroomUrl}
+              onChange={(e) => setHeadroomUrl(e.target.value)}
+              onBlur={handleHeadroomUrlBlur}
+              placeholder="http://localhost:8787"
+              className="font-mono text-sm"
+            />
+            <p className="text-xs text-text-muted">
+              Use a local proxy for Start/Stop, or an external Docker sidecar like http://headroom:8787.
+            </p>
+          </div>
+          {headroomManaged ? (
+            <Button onClick={handleHeadroomStop} variant="ghost" fullWidth disabled={headroomActionLoading}>
+              {headroomActionLoading ? "Stopping…" : "Stop Headroom"}
+            </Button>
+          ) : headroomRunning ? (
+            <p className="text-sm text-success">Headroom proxy is reachable. You can enable the token saver.</p>
+          ) : headroomCanStart ? (
+            <Button onClick={handleHeadroomStart} fullWidth disabled={headroomActionLoading}>
+              {headroomActionLoading ? "Starting…" : "Start Headroom"}
+            </Button>
+          ) : !headroomLocalUrl ? (
+            <p className="text-sm text-warning">Start Headroom separately at the configured URL, then recheck.</p>
           ) : !headroomStatus.python ? (
-            <p className="text-sm text-warning">Python ≥ 3.10 required. Install Python first.</p>
+            <p className="text-sm text-warning">Python ≥ 3.10 required for local managed mode. Install Python first, or use an external proxy URL.</p>
           ) : (
             <div className="flex flex-col gap-1">
               <p className="text-sm font-medium">Install then click Start:</p>
