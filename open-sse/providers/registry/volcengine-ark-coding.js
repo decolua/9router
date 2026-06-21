@@ -1,13 +1,13 @@
 export default {
-  id: "volcengine-ark",
-  priority: 270,
-  alias: "volcengine-ark",
+  id: "volcengine-ark-coding",
+  priority: 275,
+  alias: "volcengine-ark-coding",
   aliases: [
-    "ark",
+    "ark-coding",
   ],
-  uiAlias: "ark",
+  uiAlias: "ark-coding",
   display: {
-    name: "Volcengine Ark",
+    name: "Volcengine Ark Coding",
     icon: "cloud",
     color: "#1677FF",
     textIcon: "ARK",

@@ -88,11 +88,12 @@ import p85 from "./vercel-ai-gateway.js";
 import p86 from "./vertex.js";
 import p87 from "./vertex-partner.js";
 import p88 from "./volcengine-ark.js";
-import p89 from "./voyage-ai.js";
-import p90 from "./xai.js";
-import p91 from "./xiaomi-mimo.js";
-import p92 from "./xiaomi-tokenplan.js";
-import p93 from "./youcom.js";
+import p89 from "./volcengine-ark-coding.js";
+import p90 from "./voyage-ai.js";
+import p91 from "./xai.js";
+import p92 from "./xiaomi-mimo.js";
+import p93 from "./xiaomi-tokenplan.js";
+import p94 from "./youcom.js";
 
 export default [
   p0,
@@ -188,5 +189,6 @@ export default [
   p90,
   p91,
   p92,
-  p93
+  p93,
+  p94
 ];

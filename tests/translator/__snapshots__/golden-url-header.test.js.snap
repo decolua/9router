@@ -904,6 +904,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > volcengine-ark → h
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > volcengine-ark-coding → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > xai → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -1216,6 +1235,13 @@ exports[`GOLDEN buildUrl (default executor providers) > vercel-ai-gateway → ur
 `;
 
 exports[`GOLDEN buildUrl (default executor providers) > volcengine-ark → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions",
+  "stream": "https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > volcengine-ark-coding → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions",
   "stream": "https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions",

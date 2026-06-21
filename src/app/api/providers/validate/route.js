@@ -333,6 +333,7 @@ export async function POST(request) {
           break;
         }
         case "volcengine-ark":
+        case "volcengine-ark-coding":
         case "byteplus": {
           const res = await fetch(PROVIDERS[provider]?.baseUrl, {
             method: "POST",
