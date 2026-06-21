@@ -37,6 +37,12 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
             function: { name: part.functionCall.name, arguments: JSON.stringify(part.functionCall.args || {}) }
           });
         }
+        // Handle inline image data (from image generation models)
+        const inlineData = part.inlineData || part.inline_data;
+        if (inlineData?.data) {
+          const mimeType = inlineData.mimeType || inlineData.mime_type || "image/png";
+          textContent += `\n![image](data:${mimeType};base64,${inlineData.data})\n`;
+        }
       }
     }
 
