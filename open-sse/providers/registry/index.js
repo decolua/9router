@@ -36,7 +36,7 @@ import p33 from "./gemini-cli.js";
 import p34 from "./github.js";
 import p35 from "./gitlab.js";
 import p36 from "./glm.js";
-import p37 from "./glm-cn.js";
+import p37 from "./bigmodel.js";
 import p38 from "./google-pse.js";
 import p39 from "./google-tts.js";
 import p40 from "./grok-web.js";

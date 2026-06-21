@@ -8,7 +8,7 @@ import { U } from "./shared.js";
 // GLM quota endpoints (region-aware) — url from registry transport.usage
 const GLM_QUOTA_URLS = {
   international: U("glm").url,
-  china: U("glm-cn").url,
+  china: U("bigmodel").url,
 };
 
 // Vercel AI Gateway credits endpoint
@@ -74,7 +74,7 @@ export async function getGlmUsage(apiKey, provider, proxyOptions = null) {
     return { message: "GLM API key not available." };
   }
 
-  const region = provider === "glm-cn" ? "china" : "international";
+  const region = provider === "bigmodel" ? "china" : "international";
   const quotaUrl = GLM_QUOTA_URLS[region];
 
   try {

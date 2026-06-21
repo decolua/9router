@@ -8,7 +8,7 @@ export default {
   uiAlias: "hyp",
   display: {
     name: "Hyperbolic",
-    icon: "bolt",
+    icon: "https://www.hyperbolic.ai/favicon.ico",
     color: "#00D4FF",
     textIcon: "HY",
     website: "https://hyperbolic.xyz",

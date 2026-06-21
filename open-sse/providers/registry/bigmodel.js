@@ -1,12 +1,12 @@
 export default {
-  id: "glm-cn",
+  id: "bigmodel",
   priority: 130,
-  alias: "glm-cn",
+  alias: "bigmodel",
   display: {
-    name: "GLM (China)",
-    icon: "code",
+    name: "BigModel",
+    icon: "https://bigmodel.cn/img/icons/apple-touch-icon-152x152.png",
     color: "#DC2626",
-    textIcon: "GC",
+    textIcon: "BM",
     website: "https://open.bigmodel.cn",
     notice: {
       apiKeyUrl: "https://open.bigmodel.cn/usercenter/apikeys",

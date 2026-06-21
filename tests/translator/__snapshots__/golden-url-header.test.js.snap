@@ -85,6 +85,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > assemblyai → heade
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > bigmodel → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > blackbox → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -229,26 +248,26 @@ exports[`GOLDEN buildHeaders (default executor providers) > cline → headers (a
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.4.80",
+    "User-Agent": "9Router/0.5.8",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.4.80",
-    "X-CORE-VERSION": "0.4.80",
+    "X-CLIENT-VERSION": "0.5.8",
+    "X-CORE-VERSION": "0.5.8",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "darwin",
-    "X-PLATFORM-VERSION": "v22.22.0",
+    "X-PLATFORM-VERSION": "v24.16.0",
     "X-Title": "Cline",
   },
   "nonStream": {
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.4.80",
+    "User-Agent": "9Router/0.5.8",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.4.80",
-    "X-CORE-VERSION": "0.4.80",
+    "X-CLIENT-VERSION": "0.5.8",
+    "X-CORE-VERSION": "0.5.8",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "darwin",
-    "X-PLATFORM-VERSION": "v22.22.0",
+    "X-PLATFORM-VERSION": "v24.16.0",
     "X-Title": "Cline",
   },
   "oauth": {
@@ -256,13 +275,13 @@ exports[`GOLDEN buildHeaders (default executor providers) > cline → headers (a
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.4.80",
+    "User-Agent": "9Router/0.5.8",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.4.80",
-    "X-CORE-VERSION": "0.4.80",
+    "X-CLIENT-VERSION": "0.5.8",
+    "X-CORE-VERSION": "0.5.8",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "darwin",
-    "X-PLATFORM-VERSION": "v22.22.0",
+    "X-PLATFORM-VERSION": "v24.16.0",
     "X-Title": "Cline",
   },
 }
@@ -459,25 +478,6 @@ exports[`GOLDEN buildHeaders (default executor providers) > glm → headers (api
     "Anthropic-Version": "2023-06-01",
     "Content-Type": "application/json",
     "x-api-key": "<CRED>",
-  },
-}
-`;
-
-exports[`GOLDEN buildHeaders (default executor providers) > glm-cn → headers (apiKey / oauth) 1`] = `
-{
-  "apiKey": {
-    "Accept": "text/event-stream",
-    "Authorization": "Bearer <TOK>",
-    "Content-Type": "application/json",
-  },
-  "nonStream": {
-    "Authorization": "Bearer <TOK>",
-    "Content-Type": "application/json",
-  },
-  "oauth": {
-    "Accept": "text/event-stream",
-    "Authorization": "Bearer <TOK>",
-    "Content-Type": "application/json",
   },
 }
 `;
@@ -970,6 +970,13 @@ exports[`GOLDEN buildUrl (default executor providers) > assemblyai → url (stre
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > bigmodel → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions",
+  "stream": "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > blackbox → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://api.blackbox.ai/chat/completions",
@@ -1072,13 +1079,6 @@ exports[`GOLDEN buildUrl (default executor providers) > glm → url (stream + no
 {
   "nonStream": "https://api.z.ai/api/anthropic/v1/messages?beta=true",
   "stream": "https://api.z.ai/api/anthropic/v1/messages?beta=true",
-}
-`;
-
-exports[`GOLDEN buildUrl (default executor providers) > glm-cn → url (stream + non-stream) 1`] = `
-{
-  "nonStream": "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions",
-  "stream": "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions",
 }
 `;
 

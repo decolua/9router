@@ -4,7 +4,7 @@ export default {
   alias: "cerebras",
   display: {
     name: "Cerebras",
-    icon: "memory",
+    icon: "https://cloud.cerebras.ai/images/logo/cb-fav-144.png",
     color: "#FF4F00",
     textIcon: "CB",
     website: "https://www.cerebras.ai",
