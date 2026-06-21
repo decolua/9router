@@ -39,10 +39,11 @@ export async function handleFetch(request) {
 
   log.request("POST", `${reqUrl.pathname} | ${providerInput}`);
 
-  // Log API key (masked)
+  // Log API key presence only. Even prefix/last4 values can become
+  // sensitive when logs are copied into bug reports or support tickets.
   const apiKey = extractApiKey(request);
   if (apiKey) {
-    log.debug("AUTH", `API Key: ${log.maskKey(apiKey)}`);
+    log.debug("AUTH", "API key provided");
   } else {
     log.debug("AUTH", "No API key provided (local mode)");
   }
