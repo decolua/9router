@@ -81,19 +81,26 @@ export function fixToolUseOrdering(messages) {
   return merged;
 }
 
-// Models that reject thinking.type "adaptive" (only Sonnet/Opus support it)
+// Models that reject thinking.type "adaptive" + output_config.effort (Opus 4.5+/Sonnet 4.6+ only)
 const ADAPTIVE_THINKING_UNSUPPORTED = /haiku/i;
 
 // Normalize a native Claude passthrough body to match Anthropic Messages API spec.
 // Newer Cowork/Claude Code clients emit beta-only shapes that OAuth endpoints reject:
 // 1. thinking.type "adaptive" → unsupported on Haiku
-// 2. role "system" messages (mid-conversation-system beta) → only top-level system is allowed
+// 2. output_config.effort → unsupported on Haiku
+// 3. role "system" messages (mid-conversation-system beta) → only top-level system is allowed
 export function normalizeClaudePassthrough(body, model = "") {
   if (!body || typeof body !== "object") return body;
 
   // 1. Downgrade adaptive thinking for models that don't support it
   if (body.thinking?.type === "adaptive" && ADAPTIVE_THINKING_UNSUPPORTED.test(model)) {
     body.thinking = { type: "enabled", budget_tokens: 10000 };
+  }
+
+  // 2. Strip effort param for models that don't support it (keep other output_config fields)
+  if (ADAPTIVE_THINKING_UNSUPPORTED.test(model) && body.output_config?.effort != null) {
+    delete body.output_config.effort;
+    if (Object.keys(body.output_config).length === 0) delete body.output_config;
   }
 
   // 2. Hoist mid-conversation system messages into the top-level system field
