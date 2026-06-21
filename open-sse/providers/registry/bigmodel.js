@@ -4,7 +4,7 @@ export default {
   alias: "bigmodel",
   display: {
     name: "BigModel",
-    icon: "https://bigmodel.cn/img/icons/apple-touch-icon-152x152.png",
+    icon: "/providers/bigmodel.png",
     color: "#DC2626",
     textIcon: "BM",
     website: "https://open.bigmodel.cn",

@@ -4,7 +4,7 @@ export default {
   alias: "siliconflow",
   display: {
     name: "SiliconFlow",
-    icon: "https://framerusercontent.com/images/zeLtigS2vdf9RnjlY87AvwUBckM.png",
+    icon: "/providers/siliconflow.png",
     color: "#5B6EF5",
     textIcon: "SF",
     website: "https://cloud.siliconflow.com",

@@ -4,7 +4,7 @@ export default {
   alias: "fireworks",
   display: {
     name: "Fireworks AI",
-    icon: "https://fireworks.ai/favicon.ico",
+    icon: "/providers/fireworks.png",
     color: "#7B2EF2",
     textIcon: "FW",
     website: "https://fireworks.ai",

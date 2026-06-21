@@ -8,7 +8,7 @@ export default {
   uiAlias: "ch",
   display: {
     name: "Chutes AI",
-    icon: "https://chutes.ai/favicon.png",
+    icon: "/providers/chutes.png",
     color: "#ffffffff",
     textIcon: "CH",
     website: "https://chutes.ai",
