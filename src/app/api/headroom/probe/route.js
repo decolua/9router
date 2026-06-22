@@ -2,7 +2,7 @@
 // whether an external headroom server is already running on the machine and
 // to validate custom URLs the user enters.
 import { NextResponse } from "next/server";
-import { validateProbeUrl } from "@/lib/headroom/probeGuard";
+import { validateUrl } from "@/shared/utils/ssrfGuard";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +49,8 @@ export async function GET(request) {
     const custom = searchParams.get("url");
 
     if (custom) {
-      const validation = validateProbeUrl(custom);
+      // SSRF guard: allow loopback only, block cloud metadata, private IPs & external hosts
+      const validation = validateUrl(custom, { loopbackOnly: true });
       if (!validation.ok) {
         return NextResponse.json({ ok: false, error: validation.error }, { status: 400 });
       }
