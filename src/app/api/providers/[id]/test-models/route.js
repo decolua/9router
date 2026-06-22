@@ -32,7 +32,25 @@ export async function POST(request, { params }) {
         const modelsRes = await fetch(`${baseUrl}/api/providers/${id}/models`);
         if (modelsRes.ok) {
           const data = await modelsRes.json();
-          models = (data.models || []).map((m) => ({ id: m.id || m.name, name: m.name || m.id }));
+          // The /models endpoint returns { models: [...] } where each item is the
+          // full OpenAI-style object (with id, name, capabilities, etc.). Use
+          // the upstream `id` directly so the ping path can resend it verbatim
+          // to the upstream gateway — stripping to m.id only loses the
+          // vendor prefix (e.g. "zm/" in "zm/glm-5.2-free") and breaks pings
+          // for prefixed model namespaces.
+          const list = Array.isArray(data?.models) ? data.models : [];
+          if (list.length > 0) {
+            models = list.map((m) => ({
+              id: m.id || m.name,
+              name: m.name || m.display_name || m.displayName || m.id,
+            }));
+          } else if (Array.isArray(data?.data)) {
+            // Some compatible providers forward the raw OpenAI /v1/models shape.
+            models = data.data.map((m) => ({
+              id: m.id || m.name,
+              name: m.name || m.display_name || m.displayName || m.id,
+            }));
+          }
         }
       } catch { /* fallback to empty */ }
     }
