@@ -695,8 +695,28 @@ function formatLogDate(date = new Date()) {
   return `${pad(date.getDate())}-${pad(date.getMonth() + 1)}-${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
-// No-op: request log is now derived from usageHistory table on read.
-export async function appendRequestLog() {}
+function hasUsageTokens(tokens) {
+  if (!tokens || typeof tokens !== "object") return false;
+  const promptTokens = tokens.prompt_tokens ?? tokens.input_tokens ?? 0;
+  const completionTokens = tokens.completion_tokens ?? tokens.output_tokens ?? 0;
+  return promptTokens > 0 || completionTokens > 0;
+}
+
+// Request log is derived from usageHistory. Only token-bearing events are stored
+// here so Recent Requests stays clean and keeps filtering 0/0 rows.
+export async function appendRequestLog(entry = {}) {
+  if (!hasUsageTokens(entry.tokens)) return;
+  await saveRequestUsage({
+    provider: entry.provider || "unknown",
+    model: entry.model || "unknown",
+    connectionId: entry.connectionId || undefined,
+    apiKey: entry.apiKey || undefined,
+    endpoint: entry.endpoint || null,
+    tokens: entry.tokens,
+    timestamp: entry.timestamp || new Date().toISOString(),
+    status: entry.status || "ok",
+  });
+}
 
 export async function getRecentLogs(limit = 200) {
   try {
