@@ -52,6 +52,7 @@ source/*
 docs/*
 !docs/ARCHITECTURE.md
 !docs/service-windows.md
+!docs/BRAND.md
 test/*
 open-sse/test/*
 RM.vn.md
