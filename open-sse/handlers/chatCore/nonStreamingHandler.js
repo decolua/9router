@@ -9,6 +9,202 @@ import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, sav
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 
+const DIAGNOSTIC_SNIPPET_MAX = 200;
+const SSE_FALLBACK_SAMPLE_LINES = 24;
+const SENSITIVE_DIAGNOSTIC_KEYS = new Set([
+  "authorization",
+  "cookie",
+  "set-cookie",
+  "x-api-key",
+  "api-key",
+  "access-token",
+  "refresh-token",
+  "token",
+  "secret",
+  "password",
+  "prompt",
+  "input",
+  "content",
+  "text",
+  "message",
+  "messages",
+]);
+const SENSITIVE_DIAGNOSTIC_KEY_SEGMENTS = new Set(["token", "key", "secret", "password"]);
+const QUOTED_SENSITIVE_DIAGNOSTIC_PAIR_RE = /("(?:authorization|cookie|set(?:[-_ ]|)cookie|x(?:[-_ ]|)api(?:[-_ ]|)key|api(?:[-_ ]|)key|access(?:[-_ ]|)token|refresh(?:[-_ ]|)token|token|secret|password|prompt|input|content|text|messages?)")(\s*:\s*)"((?:\\.|[^"\\])*)(?:"|(?=[,}\]]|$))/gi;
+
+function stripUtf8Bom(text) {
+  return typeof text === "string" && text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text;
+}
+
+function canonicalizeDiagnosticKey(key) {
+  return String(key || "")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1-$2")
+    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+    .toLowerCase()
+    .replace(/[\s_]+/g, "-")
+    .replace(/-+/g, "-");
+}
+
+function isSensitiveDiagnosticKey(key) {
+  if (SENSITIVE_DIAGNOSTIC_KEYS.has(key)) return true;
+  return key.split("-").some((segment) => SENSITIVE_DIAGNOSTIC_KEY_SEGMENTS.has(segment));
+}
+
+function consumeJsonString(text, quoteStart) {
+  let i = quoteStart + 1;
+  while (i < text.length) {
+    const char = text[i];
+    if (char === "\\") {
+      i += 2;
+      continue;
+    }
+    if (char === '"') return { end: i + 1, closed: true };
+    i += 1;
+  }
+  return { end: text.length, closed: false };
+}
+
+function consumeBracketedJsonValue(text, start) {
+  const stack = [text[start]];
+  let i = start + 1;
+
+  while (i < text.length) {
+    const char = text[i];
+    if (char === '"') {
+      const str = consumeJsonString(text, i);
+      i = str.end;
+      continue;
+    }
+    if (char === "{" || char === "[") stack.push(char);
+    else if (char === "}" || char === "]") {
+      const open = stack[stack.length - 1];
+      if ((open === "{" && char === "}") || (open === "[" && char === "]")) {
+        stack.pop();
+        if (stack.length === 0) return i + 1;
+      }
+    }
+    i += 1;
+  }
+
+  return text.length;
+}
+
+function consumeJsonScalar(text, start) {
+  let i = start;
+  while (i < text.length && !/[\],}]/.test(text[i])) i += 1;
+  return i;
+}
+
+function consumeSensitiveJsonValue(text, start) {
+  const first = text[start];
+  if (!first) return { end: start, replacement: '[REDACTED]' };
+  if (first === '"') {
+    const str = consumeJsonString(text, start);
+    return { end: str.end, replacement: '"[REDACTED]"' };
+  }
+  if (first === "{" || first === "[") {
+    return { end: consumeBracketedJsonValue(text, start), replacement: '[REDACTED]' };
+  }
+  return { end: consumeJsonScalar(text, start), replacement: '[REDACTED]' };
+}
+
+function redactQuotedSensitiveDiagnosticFields(text) {
+  return text.replace(QUOTED_SENSITIVE_DIAGNOSTIC_PAIR_RE, (_, quotedKey, separator) => `${quotedKey}${separator}"[REDACTED]"`);
+}
+
+function redactJsonLikeDiagnosticFields(text) {
+  let redacted = "";
+  let lastIndex = 0;
+  let i = 0;
+
+  while (i < text.length) {
+    if (text[i] !== '"') {
+      i += 1;
+      continue;
+    }
+
+    const key = consumeJsonString(text, i);
+    if (!key.closed) break;
+
+    let cursor = key.end;
+    while (cursor < text.length && /\s/.test(text[cursor])) cursor += 1;
+    if (cursor >= text.length || text[cursor] !== ":") {
+      i = key.end;
+      continue;
+    }
+
+    const canonicalKey = canonicalizeDiagnosticKey(text.slice(i + 1, key.end - 1));
+    cursor += 1;
+    while (cursor < text.length && /\s/.test(text[cursor])) cursor += 1;
+
+    if (!isSensitiveDiagnosticKey(canonicalKey)) {
+      i = cursor;
+      continue;
+    }
+
+    const value = consumeSensitiveJsonValue(text, cursor);
+    redacted += text.slice(lastIndex, cursor) + value.replacement;
+    lastIndex = value.end;
+    i = value.end;
+  }
+
+  return redactQuotedSensitiveDiagnosticFields(redacted + text.slice(lastIndex));
+}
+
+function looksLikeChatCompletionsSSE(rawText) {
+  const lines = String(rawText || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, SSE_FALLBACK_SAMPLE_LINES);
+
+  if (lines.length === 0) return false;
+
+  const allowedPrefixes = ["data:", "event:", "id:", "retry:", ":"];
+  if (lines.some((line) => !allowedPrefixes.some((prefix) => line.startsWith(prefix)))) return false;
+
+  const dataLines = lines.filter((line) => line.startsWith("data:"));
+  if (dataLines.length === 0) return false;
+
+  return dataLines.some((line) => {
+    const payload = line.slice(5).trim();
+    if (!payload || payload === "[DONE]") return false;
+
+    try {
+      const parsed = JSON.parse(payload);
+      const choice = parsed?.choices?.[0];
+      return !!choice && typeof choice === "object" && (
+        Object.prototype.hasOwnProperty.call(choice, "delta") ||
+        Object.prototype.hasOwnProperty.call(choice, "message") ||
+        Object.prototype.hasOwnProperty.call(choice, "finish_reason")
+      );
+    } catch {
+      return false;
+    }
+  });
+}
+
+function buildSafeDiagnosticSnippet(rawText) {
+  const normalized = String(rawText || "")
+    .replace(/\r/g, "")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const source = normalized || String(rawText || "");
+  const redactedSource = redactJsonLikeDiagnosticFields(source)
+    .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi, "$1 [REDACTED]")
+    .replace(/((?:^|[\s,{])(?:authorization|cookie|set-cookie|x-api-key|api[-_ ]?key|access[-_ ]?token|refresh[-_ ]?token|token|secret|password)\s*[:=]\s*)([^\s,;}\]]+)/gi, "$1[REDACTED]")
+    .replace(/((?:^|[\s,{])(?:prompt|input|content|text|message)\s*[:=]\s*)([^,;}\]]+)/gi, "$1[REDACTED]");
+
+  const snippet = redactedSource.slice(0, DIAGNOSTIC_SNIPPET_MAX);
+  const trailingNote = source.length > DIAGNOSTIC_SNIPPET_MAX
+    ? ` …[+${source.length - DIAGNOSTIC_SNIPPET_MAX} chars truncated]`
+    : "";
+
+  return { snippet, trailingNote };
+}
+
 /**
  * Translate non-streaming response body from provider format → OpenAI format.
  */
@@ -151,12 +347,45 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     }
     responseBody = parsed;
   } else {
+    // Read raw body text first so we can:
+    // (a) parse as JSON (primary path), or
+    // (b) try SSE fallback when provider returns SSE with wrong/missing content-type
+    //     (e.g. some Anthropic-compatible providers send `text/event-stream`-shaped
+    //     bodies under a plain `text/plain` or empty content-type), or
+    // (c) emit a safe truncated diagnostic snippet on total parse failure.
+    // We log only the first 200 chars of the RESPONSE body — never request prompts,
+    // bearer tokens, or API keys.
+    let rawText;
     try {
-      responseBody = await providerResponse.json();
-    } catch (err) {
+      rawText = stripUtf8Bom(await providerResponse.text());
+    } catch (textErr) {
       appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
-      console.error(`[ChatCore] Failed to parse JSON from ${provider}:`, err.message);
+      console.error(`[ChatCore] Failed to read response body from ${provider}:`, textErr.message);
       return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid JSON response from ${provider}`);
+    }
+
+    try {
+      responseBody = JSON.parse(rawText);
+    } catch {
+      // Primary JSON parse failed.
+      // Try SSE fallback only when the body clearly looks like Chat Completions SSE
+      // even though the content-type is wrong or missing.
+      const sseFallback = looksLikeChatCompletionsSSE(rawText)
+        ? parseSSEToOpenAIResponse(rawText, model)
+        : null;
+      if (sseFallback) {
+        console.warn(
+          `[ChatCore] ${provider}: content-type "${contentType || "(none)"}" is not JSON; body parsed as SSE (fallback)`
+        );
+        responseBody = sseFallback;
+      } else {
+        const { snippet, trailingNote } = buildSafeDiagnosticSnippet(rawText);
+        console.error(
+          `[ChatCore] Failed to parse response from ${provider} | content-type: "${contentType || "(none)"}" | body[0:${Math.min(String(rawText || "").length, DIAGNOSTIC_SNIPPET_MAX)}]: ${snippet}${trailingNote}`
+        );
+        appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid JSON response from ${provider}`);
+      }
     }
   }
 
