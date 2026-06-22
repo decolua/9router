@@ -19,16 +19,28 @@ export default {
     baseUrl: "https://api.kimi.com/coding/v1/messages",
     format: "claude",
     urlSuffix: "?beta=true",
-    headers: {
-      "Anthropic-Version": "2023-06-01",
-      "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14",
-    },
+    headers: { ...CLAUDE_API_HEADERS },
     auth: {
       combined: true,
       header: "x-api-key",
       scheme: "raw",
     },
   },
+  // Multi-endpoint: pick the transport matching client sourceFormat to skip translation.
+  transports: [
+    {
+      format: "openai",
+      baseUrl: "https://api.kimi.com/coding/v1/chat/completions",
+      auth: { combined: true, header: "Authorization", scheme: "bearer" },
+    },
+    {
+      format: "claude",
+      baseUrl: "https://api.kimi.com/coding/v1/messages",
+      urlSuffix: "?beta=true",
+      headers: { ...CLAUDE_API_HEADERS },
+      auth: { combined: true, header: "x-api-key", scheme: "raw" },
+    },
+  ],
   models: [
     { id: "kimi-k2.6", name: "Kimi K2.6" },
     { id: "kimi-k2.5", name: "Kimi K2.5" },

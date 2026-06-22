@@ -4,22 +4,16 @@ import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { ANTHROPIC_API_VERSION } from "../providers/shared.js";
 
 // Models that use /zen/go/v1/messages (Anthropic/Claude format + x-api-key auth)
-const CLAUDE_FORMAT_MODELS = new Set(["minimax-m2.5", "minimax-m2.7"]);
+const MESSAGES_FORMAT_MODELS = new Set([
+  "minimax-m3",
+  "minimax-m2.7",
+  "minimax-m2.5",
+  "qwen3.7-max",
+  "qwen3.7-plus",
+  "qwen3.6-plus",
+]);
 
 const BASE = "https://opencode.ai/zen/go/v1";
-
-// Valid reasoning effort levels (appended as model name suffix by clients)
-const EFFORT_LEVELS = ['none', 'low', 'medium', 'high', 'xhigh'];
-
-function stripEffortSuffix(name) {
-  if (!name) return { clean: name, effort: null };
-  for (const level of EFFORT_LEVELS) {
-    if (name.endsWith(`-${level}`)) {
-      return { clean: name.slice(0, -(level.length + 1)), effort: level };
-    }
-  }
-  return { clean: name, effort: null };
-}
 
 export class OpenCodeGoExecutor extends BaseExecutor {
   constructor() {
@@ -28,9 +22,8 @@ export class OpenCodeGoExecutor extends BaseExecutor {
 
   // buildUrl runs before buildHeaders in BaseExecutor.execute, cache model here
   buildUrl(model) {
-    const { clean } = stripEffortSuffix(model);
-    this._lastModel = clean;
-    return CLAUDE_FORMAT_MODELS.has(clean)
+    this._lastModel = model;
+    return MESSAGES_FORMAT_MODELS.has(model)
       ? `${BASE}/messages`
       : `${BASE}/chat/completions`;
   }
@@ -39,7 +32,7 @@ export class OpenCodeGoExecutor extends BaseExecutor {
     const key = credentials?.apiKey || credentials?.accessToken;
     const headers = { "Content-Type": "application/json" };
 
-    if (CLAUDE_FORMAT_MODELS.has(this._lastModel)) {
+    if (MESSAGES_FORMAT_MODELS.has(this._lastModel)) {
       headers["x-api-key"] = key;
       headers["anthropic-version"] = ANTHROPIC_API_VERSION;
     } else {
@@ -51,20 +44,6 @@ export class OpenCodeGoExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body) {
-    // Extract reasoning effort from model name suffix
-    const { clean: cleanBodyModel, effort: bodyEffort } = stripEffortSuffix(body.model);
-    const { effort: paramEffort } = stripEffortSuffix(model);
-    const modelEffort = bodyEffort || paramEffort;
-
-    if (bodyEffort && body.model) {
-      body.model = cleanBodyModel;
-    }
-
-    // Pass reasoning_effort in body for upstream (OpenAI-compatible format)
-    if (!body.reasoning_effort && modelEffort) {
-      body.reasoning_effort = modelEffort;
-    }
-
-    return injectReasoningContent({ provider: this.provider, model: body.model || model, body });
+    return injectReasoningContent({ provider: this.provider, model, body });
   }
 }

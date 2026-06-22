@@ -136,6 +136,16 @@ export function getTargetFormat(provider) {
   return config.format || "openai";
 }
 
+// Resolve which transport to use for a provider given the client sourceFormat.
+// Multi-endpoint providers (transport.transports[]) pick the entry matching sourceFormat
+// to avoid lossy translation; falls back to the default transport when no match.
+export function resolveTransport(provider, sourceFormat) {
+  const config = PROVIDERS[provider];
+  const transports = config?.transports;
+  if (!Array.isArray(transports) || !transports.length) return null;
+  return transports.find(t => t.format === sourceFormat) || null;
+}
+
 // Check if last message is from user
 export function isLastMessageFromUser(body) {
   const messages = body.messages || body.contents;

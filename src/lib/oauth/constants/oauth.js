@@ -67,6 +67,17 @@ export const GITHUB_CONFIG = { ...PROVIDER_OAUTH["github"] };
 // Kiro OAuth Configuration (multi-method: AWS Builder ID / IDC / Social / Import Token)
 export const KIRO_CONFIG = { ...PROVIDER_OAUTH["kiro"] };
 
+// AWS region allowlist pattern — prevents SSRF via region injection into upstream URLs (GHSA-6mwv-4mrm-5p3m)
+export const AWS_REGION_PATTERN = /^[a-z]{2}-[a-z]+-\d{1,2}$/;
+
+// Reject any region that is not a valid AWS region before interpolating it into a URL
+export function assertValidAwsRegion(region) {
+  if (typeof region !== "string" || !AWS_REGION_PATTERN.test(region)) {
+    throw new Error("Invalid region");
+  }
+  return region;
+}
+
 // Cursor OAuth Configuration (Import Token from Cursor IDE)
 // tokenStoragePaths: user-reference only, not stored in registry
 export const CURSOR_CONFIG = {
@@ -95,7 +106,7 @@ export const CLINE_CONFIG = { ...PROVIDER_OAUTH["cline"] };
 export const GITLAB_CONFIG = { ...PROVIDER_OAUTH["gitlab"] };
 
 // CodeBuddy (Tencent) OAuth Configuration (Browser OAuth Polling Flow)
-export const CODEBUDDY_CONFIG = { ...PROVIDER_OAUTH["codebuddy"] };
+export const CODEBUDDY_CONFIG = { ...PROVIDER_OAUTH["codebuddy-cn"] };
 
 // OAuth timeout (5 minutes)
 export const OAUTH_TIMEOUT = 300000;
@@ -117,5 +128,5 @@ export const PROVIDERS = {
   KILOCODE: "kilocode",
   CLINE: "cline",
   GITLAB: "gitlab",
-  CODEBUDDY: "codebuddy",
+  CODEBUDDY: "codebuddy-cn",
 };

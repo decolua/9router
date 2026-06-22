@@ -4,6 +4,7 @@ import { ROLE, CLAUDE_BLOCK } from "../schema/index.js";
 import { adjustMaxTokens } from "./maxTokens.js";
 import { applyCloaking } from "../../utils/claudeCloaking.js";
 import { resolveSessionId } from "../../utils/sessionManager.js";
+import { isValidClaudeSignature } from "../../utils/claudeSignature.js";
 import { PROVIDERS } from "../../providers/index.js";
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 import { DEFAULT_MAX_TOKENS } from "../../config/runtimeConfig.js";
@@ -80,19 +81,26 @@ export function fixToolUseOrdering(messages) {
   return merged;
 }
 
-// Models that reject thinking.type "adaptive" (only Sonnet/Opus support it)
+// Models that reject thinking.type "adaptive" + output_config.effort (Opus 4.5+/Sonnet 4.6+ only)
 const ADAPTIVE_THINKING_UNSUPPORTED = /haiku/i;
 
 // Normalize a native Claude passthrough body to match Anthropic Messages API spec.
 // Newer Cowork/Claude Code clients emit beta-only shapes that OAuth endpoints reject:
 // 1. thinking.type "adaptive" → unsupported on Haiku
-// 2. role "system" messages (mid-conversation-system beta) → only top-level system is allowed
+// 2. output_config.effort → unsupported on Haiku
+// 3. role "system" messages (mid-conversation-system beta) → only top-level system is allowed
 export function normalizeClaudePassthrough(body, model = "") {
   if (!body || typeof body !== "object") return body;
 
   // 1. Downgrade adaptive thinking for models that don't support it
   if (body.thinking?.type === "adaptive" && ADAPTIVE_THINKING_UNSUPPORTED.test(model)) {
     body.thinking = { type: "enabled", budget_tokens: 10000 };
+  }
+
+  // 2. Strip effort param for models that don't support it (keep other output_config fields)
+  if (ADAPTIVE_THINKING_UNSUPPORTED.test(model) && body.output_config?.effort != null) {
+    delete body.output_config.effort;
+    if (Object.keys(body.output_config).length === 0) delete body.output_config;
   }
 
   // 2. Hoist mid-conversation system messages into the top-level system field
@@ -213,14 +221,26 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
           let hasToolUse = false;
           let hasThinking = false;
 
-          // Always replace signature for all thinking blocks
+          // Claude native: preserve valid signatures, drop invalid blocks.
+          // anthropic-compatible: replace with default (safe fallback for lenient upstreams).
+          const isClaudeNative = provider === "claude";
+          const kept = [];
           for (const block of msg.content) {
-            if (block.type === CLAUDE_BLOCK.THINKING || block.type === CLAUDE_BLOCK.REDACTED_THINKING) {
-              block.signature = DEFAULT_THINKING_CLAUDE_SIGNATURE;
+            const isThinking = block.type === CLAUDE_BLOCK.THINKING || block.type === CLAUDE_BLOCK.REDACTED_THINKING;
+            if (isThinking) {
               hasThinking = true;
+              if (isClaudeNative) {
+                if (isValidClaudeSignature(block.signature)) kept.push(block);
+              } else {
+                block.signature = DEFAULT_THINKING_CLAUDE_SIGNATURE;
+                kept.push(block);
+              }
+              continue;
             }
             if (block.type === CLAUDE_BLOCK.TOOL_USE) hasToolUse = true;
+            kept.push(block);
           }
+          msg.content = kept;
 
           // Add thinking block if thinking enabled + has tool_use but no thinking
           if (thinkingEnabled && !hasThinking && hasToolUse) {
@@ -237,9 +257,22 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
 
   // 3. Tools: filter built-in tools for non-Anthropic providers, then handle cache_control
   if (body.tools && Array.isArray(body.tools)) {
-    // Strip built-in tools (e.g. web_search_20250305) for providers that don't support them
+    // Strip built-in tools (e.g. web_search_20250305) and normalize to Anthropic-native shape
+    // (drop `type` field, fold `function.{name,description,parameters}`) for non-Anthropic providers
     if (provider !== "claude") {
-      body.tools = body.tools.filter(tool => !tool.type || tool.type === "function");
+      body.tools = body.tools
+        .filter(tool => !tool.type || tool.type === "function")
+        .map(tool => {
+          if (tool.function) {
+            return {
+              name: tool.function.name,
+              description: tool.function.description,
+              input_schema: tool.function.parameters,
+            };
+          }
+          const { type, ...rest } = tool;
+          return rest;
+        });
     }
 
     body.tools = body.tools.map((tool, i) => {

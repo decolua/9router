@@ -19,10 +19,7 @@ export default {
     baseUrl: "https://api.minimax.io/anthropic/v1/messages",
     format: "claude",
     urlSuffix: "?beta=true",
-    headers: {
-      "Anthropic-Version": "2023-06-01",
-      "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14",
-    },
+    headers: { ...CLAUDE_API_HEADERS },
     quirks: {
       dropOutputConfig: true,
     },
@@ -41,6 +38,21 @@ export default {
       ],
     },
   },
+  // Multi-endpoint: pick the transport matching client sourceFormat to skip translation.
+  transports: [
+    {
+      format: "openai",
+      baseUrl: "https://api.minimax.io/v1/chat/completions",
+      auth: { combined: true, header: "Authorization", scheme: "bearer" },
+    },
+    {
+      format: "claude",
+      baseUrl: "https://api.minimax.io/anthropic/v1/messages",
+      urlSuffix: "?beta=true",
+      headers: { ...CLAUDE_API_HEADERS },
+      auth: { combined: true, header: "x-api-key", scheme: "raw" },
+    },
+  ],
   models: [
     { id: "MiniMax-M3", name: "MiniMax M3", targetFormat: "claude" },
     { id: "MiniMax-M2.7", name: "MiniMax M2.7" },
