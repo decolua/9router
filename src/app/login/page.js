@@ -17,6 +17,12 @@ export default function LoginPage() {
   const [oidcLoginLabel, setOidcLoginLabel] = useState("Sign in with OIDC");
   const [signupMode, setSignupMode] = useState("invite");
   const [ready, setReady] = useState(false);
+  const [mfaToken, setMfaToken] = useState("");
+  const [mfaCode, setMfaCode] = useState("");
+  const [showMfa, setShowMfa] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotMessage, setForgotMessage] = useState("");
   const router = useRouter();
 
   useEffect(() => {
@@ -64,6 +70,13 @@ export default function LoginPage() {
       });
 
       if (res.ok) {
+        const data = await res.json();
+        if (data.mfaRequired && data.mfaToken) {
+          setMfaToken(data.mfaToken);
+          setShowMfa(true);
+          setError("");
+          return;
+        }
         router.push("/dashboard");
         router.refresh();
       } else {
@@ -74,6 +87,51 @@ export default function LoginPage() {
       }
     } catch {
       setError("An error occurred. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleMfaVerify = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/auth/login/mfa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mfaToken, code: mfaCode }),
+      });
+      if (res.ok) {
+        router.push("/dashboard");
+        router.refresh();
+      } else {
+        const data = await res.json();
+        setError(data.error || "Invalid code");
+      }
+    } catch {
+      setError("An error occurred. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setForgotMessage("");
+    setError("");
+    try {
+      const res = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: forgotEmail || email }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Request failed");
+      setForgotMessage(data.message || "If an account exists, check your email for a reset link.");
+    } catch (err) {
+      setError(err.message);
     } finally {
       setLoading(false);
     }
@@ -121,7 +179,7 @@ export default function LoginPage() {
 
             {oidcAvailable && passwordAvailable && <div className="h-px bg-border/60" />}
 
-            {passwordAvailable && (
+            {passwordAvailable && !showMfa && (
               <form onSubmit={handleLogin} className="flex flex-col gap-4">
                 <div className="flex flex-col gap-2">
                   <label className="text-sm font-medium">Email</label>
@@ -157,12 +215,58 @@ export default function LoginPage() {
                   {retryAfter > 0 ? `Wait ${retryAfter}s` : "Sign in"}
                 </Button>
 
+                <button
+                  type="button"
+                  className="text-xs text-primary hover:underline"
+                  onClick={() => { setShowForgot((v) => !v); setForgotEmail(email); }}
+                >
+                  Forgot password?
+                </button>
+
+                {showForgot && (
+                  <div className="border border-border rounded p-3 flex flex-col gap-2">
+                    <Input
+                      type="email"
+                      placeholder="Account email"
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                      required
+                    />
+                    <Button type="button" variant="secondary" size="sm" loading={loading} onClick={handleForgotPassword}>
+                      Send reset link
+                    </Button>
+                    {forgotMessage && <p className="text-xs text-text-muted">{forgotMessage}</p>}
+                  </div>
+                )}
+
                 {showSignupLink && (
                   <p className="text-xs text-center text-text-muted">
                     Need an account? <Link href="/signup" className="text-primary hover:underline">Create one</Link>
                   </p>
                 )}
 
+              </form>
+            )}
+
+            {passwordAvailable && showMfa && (
+              <form onSubmit={handleMfaVerify} className="flex flex-col gap-4">
+                <p className="text-sm text-text-muted">Enter the 6-digit code from your authenticator app.</p>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="123456"
+                  value={mfaCode}
+                  onChange={(e) => setMfaCode(e.target.value)}
+                  required
+                  autoFocus
+                />
+                {error && <p className="text-xs text-red-500">{error}</p>}
+                <Button type="submit" variant="primary" className="w-full" loading={loading}>
+                  Verify
+                </Button>
+                <button type="button" className="text-xs text-text-muted hover:underline" onClick={() => { setShowMfa(false); setMfaToken(""); setMfaCode(""); }}>
+                  Back to sign in
+                </button>
               </form>
             )}
           </div>

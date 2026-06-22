@@ -1,0 +1,2 @@
+# Daily ebRouter PostgreSQL backup (02:00) with 30-day retention via backup.sh
+0 2 * * * cd /path/to/deploy/client && ./backup.sh >> /var/log/ebrouter-backup.log 2>&1

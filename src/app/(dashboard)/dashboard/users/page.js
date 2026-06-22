@@ -54,6 +54,47 @@ export default function UsersAdminPage() {
     }
   }
 
+  async function setRole(id, role) {
+    setBusyId(id);
+    try {
+      const res = await fetch("/api/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, role }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to update role");
+      await loadUsers();
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function issuePasswordReset(id, email) {
+    if (!confirm(`Issue a password reset link for ${email}?`)) return;
+    setBusyId(id);
+    try {
+      const res = await fetch("/api/users", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to issue reset link");
+      if (data.resetUrl) {
+        prompt(data.message || "Share this reset URL securely:", data.resetUrl);
+      } else {
+        alert(data.message || "Reset link issued.");
+      }
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function setStatus(id, status) {
     const label = status === "disabled" ? "disable" : "enable";
     if (!confirm(`${label.charAt(0).toUpperCase()}${label.slice(1)} this user?`)) return;
@@ -144,11 +185,25 @@ export default function UsersAdminPage() {
                   <div className="min-w-0">
                     <p className="font-medium truncate">{u.name || u.email}</p>
                     <p className="text-xs text-text-muted truncate">
-                      {u.email} · {u.role}
+                      {u.email} · {u.role}{u.mfaEnabled ? " · MFA" : ""}
                     </p>
                     <div className="mt-1">{statusBadge(u.status)}</div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                    {!isAdmin && (
+                      <select
+                        className="text-xs border border-border rounded px-2 py-1 bg-bg"
+                        value={u.role}
+                        disabled={isBusy}
+                        onChange={(e) => setRole(u.id, e.target.value)}
+                      >
+                        <option value="member">member</option>
+                        <option value="admin">admin</option>
+                      </select>
+                    )}
+                    <Button variant="secondary" size="sm" disabled={isBusy} onClick={() => issuePasswordReset(u.id, u.email)}>
+                      Reset password
+                    </Button>
                     {u.status === "active" && !isAdmin && (
                       <Button variant="secondary" size="sm" disabled={isBusy} onClick={() => setStatus(u.id, "disabled")}>
                         Disable

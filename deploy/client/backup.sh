@@ -43,3 +43,7 @@ EOF
 echo "Done."
 echo "  SQL backup : $SQL_FILE"
 echo "  Also secure: $ROOT/.env"
+
+# Prune backups older than 30 days (enterprise retention policy)
+find "$OUT_DIR" -type f \( -name 'ebrouter-*.sql' -o -name 'env-reference-*.txt' \) -mtime +30 -delete 2>/dev/null || true
+echo "Pruned backups older than 30 days in $OUT_DIR"

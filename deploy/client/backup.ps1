@@ -61,3 +61,9 @@ To restore: ./restore.ps1 -SqlFile "$sqlFile"
 Write-Host "Done."
 Write-Host "  SQL backup : $sqlFile"
 Write-Host "  Also secure: $(Join-Path $PSScriptRoot '.env')"
+
+$cutoff = (Get-Date).AddDays(-30)
+Get-ChildItem -Path $backupRoot -File | Where-Object {
+  $_.Name -match '^(ebrouter-|env-reference-)' -and $_.LastWriteTime -lt $cutoff
+} | Remove-Item -Force
+Write-Host "Pruned backups older than 30 days in $backupRoot"

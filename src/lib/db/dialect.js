@@ -1,9 +1,9 @@
 // SQL dialect helpers — SQLite (default) vs PostgreSQL (DATABASE_URL).
 
 const CAMEL_TABLES = [
-  "_meta", "settings", "users", "userSettings", "userInvites",
+  "_meta", "settings", "users", "userSettings", "userInvites", "passwordResetTokens",
   "providerConnections", "providerNodes", "proxyPools",
-  "apiKeys", "combos", "kv", "usageHistory", "usageDaily", "requestDetails",
+  "apiKeys", "combos", "kv", "usageHistory", "usageDaily", "requestDetails", "auditLogs",
 ];
 
 const CAMEL_COLUMNS = [
@@ -13,6 +13,7 @@ const CAMEL_COLUMNS = [
   "expiresAt", "tokenType", "projectId", "apiKey", "lastTested", "lastError",
   "lastErrorAt", "rateLimitedUntil", "expiresIn", "errorCode", "consecutiveUseCount",
   "passwordHash", "oidcSub", "userId", "tokenHash", "createdBy", "usedAt",
+  "mfaEnabled", "mfaSecret", "actorUserId", "actorEmail", "targetType", "targetId",
 ];
 
 function quotePgIdent(name) {

@@ -29,6 +29,7 @@ function rowToUser(row) {
     role: row.role || "member",
     oidcSub: pickRowField(row, "oidcSub") || null,
     status: row.status || "active",
+    mfaEnabled: !!(pickRowField(row, "mfaEnabled") === 1 || pickRowField(row, "mfaEnabled") === true),
     createdAt: pickRowField(row, "createdAt"),
     updatedAt: pickRowField(row, "updatedAt"),
   };
@@ -40,8 +41,17 @@ function withPasswordHash(row) {
 
 export async function getUsers() {
   const db = await getAdapter();
-  const rows = await qAll(db, `SELECT id, email, name, role, oidcSub, status, createdAt, updatedAt FROM users ORDER BY createdAt ASC`);
-  return rows.map(rowToUser);
+  try {
+    const rows = await qAll(db, `SELECT id, email, name, role, oidcSub, status, mfaEnabled, createdAt, updatedAt FROM users ORDER BY createdAt ASC`);
+    return rows.map(rowToUser);
+  } catch (err) {
+    const msg = String(err?.message || err);
+    if (/mfaEnabled/i.test(msg) && /does not exist|no such column/i.test(msg)) {
+      const rows = await qAll(db, `SELECT id, email, name, role, oidcSub, status, createdAt, updatedAt FROM users ORDER BY createdAt ASC`);
+      return rows.map(rowToUser);
+    }
+    throw err;
+  }
 }
 
 export async function getUserById(id) {
@@ -252,6 +262,49 @@ export async function deleteUser(id) {
     });
   }
   return true;
+}
+
+export async function getUserMfaState(userId) {
+  try {
+    const db = await getAdapter();
+    const row = await qGet(db, `SELECT mfaEnabled, mfaSecret FROM users WHERE id = ?`, [userId]);
+    if (!row) return null;
+    return {
+      mfaEnabled: !!(pickRowField(row, "mfaEnabled") === 1 || pickRowField(row, "mfaEnabled") === true),
+      mfaSecret: pickRowField(row, "mfaSecret") || null,
+    };
+  } catch (err) {
+    const msg = String(err?.message || err);
+    if (/mfaEnabled|mfaSecret/i.test(msg) && /does not exist|no such column/i.test(msg)) {
+      return { mfaEnabled: false, mfaSecret: null };
+    }
+    throw err;
+  }
+}
+
+export async function setUserMfaSecret(userId, secret) {
+  const db = await getAdapter();
+  await qRun(db, `UPDATE users SET mfaSecret = ?, updatedAt = ? WHERE id = ?`, [secret, new Date().toISOString(), userId]);
+}
+
+export async function setUserMfaEnabled(userId, enabled) {
+  const db = await getAdapter();
+  await qRun(db, `UPDATE users SET mfaEnabled = ?, updatedAt = ? WHERE id = ?`, [enabled ? 1 : 0, new Date().toISOString(), userId]);
+}
+
+export async function setUserRole(id, role) {
+  if (!["admin", "member"].includes(role)) throw new Error("Role must be admin or member");
+  const db = await getAdapter();
+  const target = await getUserById(id);
+  if (!target) throw new Error("User not found");
+
+  if (target.role === "admin" && role !== "admin") {
+    const admins = await qGet(db, `SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND status = 'active'`);
+    if ((admins?.n ?? 0) <= 1) throw new Error("Cannot demote the last admin user");
+  }
+
+  await qRun(db, `UPDATE users SET role = ?, updatedAt = ? WHERE id = ?`, [role, new Date().toISOString(), id]);
+  return await getUserById(id);
 }
 
 function purgeUserDataSync(db, userId) {

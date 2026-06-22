@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Card, Button, Toggle, Input } from "@/shared/components";
+import { MfaQrCode } from "@/shared/components/MfaQrCode";
 import { useTheme } from "@/shared/hooks/useTheme";
 import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
@@ -13,6 +14,11 @@ export default function ProfilePage() {
   const [passwords, setPasswords] = useState({ current: "", new: "", confirm: "" });
   const [passStatus, setPassStatus] = useState({ type: "", message: "" });
   const [passLoading, setPassLoading] = useState(false);
+  const [mfaEnabled, setMfaEnabled] = useState(false);
+  const [mfaSetup, setMfaSetup] = useState(null);
+  const [mfaCode, setMfaCode] = useState("");
+  const [mfaStatus, setMfaStatus] = useState({ type: "", message: "" });
+  const [mfaLoading, setMfaLoading] = useState(false);
   const [dbLoading, setDbLoading] = useState(false);
   const [dbStatus, setDbStatus] = useState({ type: "", message: "" });
   const [oidcForm, setOidcForm] = useState({
@@ -44,6 +50,7 @@ export default function ProfilePage() {
       .then((res) => res.json())
       .then((data) => {
         setSettings(data);
+        setMfaEnabled(data?.mfaEnabled === true);
         setOidcForm({
           authMode: data?.authMode || "password",
           oidcIssuerUrl: data?.oidcIssuerUrl || "",
@@ -201,6 +208,72 @@ export default function ProfilePage() {
       setPassStatus({ type: "error", message: "An error occurred" });
     } finally {
       setPassLoading(false);
+    }
+  };
+
+  const startMfaSetup = async () => {
+    setMfaLoading(true);
+    setMfaStatus({ type: "", message: "" });
+    try {
+      const res = await fetch("/api/auth/mfa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "setup" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to start MFA setup");
+      setMfaSetup(data);
+    } catch (err) {
+      setMfaStatus({ type: "error", message: err.message });
+    } finally {
+      setMfaLoading(false);
+    }
+  };
+
+  const confirmMfaSetup = async () => {
+    setMfaLoading(true);
+    setMfaStatus({ type: "", message: "" });
+    try {
+      const res = await fetch("/api/auth/mfa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "confirm", code: mfaCode }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Invalid code");
+      setMfaEnabled(true);
+      setMfaSetup(null);
+      setMfaCode("");
+      setMfaStatus({ type: "success", message: "Two-factor authentication enabled." });
+    } catch (err) {
+      setMfaStatus({ type: "error", message: err.message });
+    } finally {
+      setMfaLoading(false);
+    }
+  };
+
+  const disableMfa = async () => {
+    if (!mfaCode) {
+      setMfaStatus({ type: "error", message: "Enter your current MFA code to disable." });
+      return;
+    }
+    setMfaLoading(true);
+    try {
+      const res = await fetch("/api/auth/mfa", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: mfaCode }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to disable MFA");
+      setMfaEnabled(false);
+      setMfaCode("");
+      setMfaSetup(null);
+      setMfaStatus({ type: "success", message: "Two-factor authentication disabled." });
+    } catch (err) {
+      setMfaStatus({ type: "error", message: err.message });
+    } finally {
+      setMfaLoading(false);
     }
   };
 
@@ -615,6 +688,64 @@ export default function ProfilePage() {
                 disabled={loading}
               />
             </div>
+            {settings.requireLogin === true && settings.hasPassword && (
+              <div className="flex flex-col gap-3 pt-4 border-t border-border/50">
+                <div>
+                  <p className="font-medium text-sm sm:text-base">Two-factor authentication (TOTP)</p>
+                  <p className="text-xs sm:text-sm text-text-muted">
+                    Add an authenticator app for an extra sign-in step.
+                  </p>
+                </div>
+                {!mfaEnabled && !mfaSetup && (
+                  <Button type="button" variant="secondary" loading={mfaLoading} onClick={startMfaSetup}>
+                    Enable MFA
+                  </Button>
+                )}
+                {mfaSetup && (
+                  <div className="text-xs flex flex-col gap-3 p-3 bg-sidebar rounded">
+                    <p className="text-sm text-text-main">
+                      Scan the QR code with Google Authenticator, Authy, 1Password, or another TOTP app.
+                    </p>
+                    <div className="flex justify-center">
+                      <MfaQrCode uri={mfaSetup.otpauthUri} />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <p className="text-text-muted">Or enter this key manually:</p>
+                      <code className="break-all text-[11px] bg-bg px-2 py-1 rounded border border-border">
+                        {mfaSetup.secret}
+                      </code>
+                    </div>
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="6-digit code from app"
+                      value={mfaCode}
+                      onChange={(e) => setMfaCode(e.target.value)}
+                    />
+                    <Button type="button" variant="primary" loading={mfaLoading} onClick={confirmMfaSetup}>
+                      Confirm MFA
+                    </Button>
+                  </div>
+                )}
+                {mfaEnabled && (
+                  <div className="flex flex-col gap-2">
+                    <p className="text-xs text-green-600 dark:text-green-400">MFA is enabled on your account.</p>
+                    <Input
+                      type="text"
+                      placeholder="Current MFA code to disable"
+                      value={mfaCode}
+                      onChange={(e) => setMfaCode(e.target.value)}
+                    />
+                    <Button type="button" variant="secondary" loading={mfaLoading} onClick={disableMfa}>
+                      Disable MFA
+                    </Button>
+                  </div>
+                )}
+                {mfaStatus.message && (
+                  <p className={`text-xs ${mfaStatus.type === "error" ? "text-red-500" : "text-green-500"}`}>{mfaStatus.message}</p>
+                )}
+              </div>
+            )}
             {settings.requireLogin === true && (
               <form onSubmit={handlePasswordChange} className="flex flex-col gap-4 pt-4 border-t border-border/50">
                 {settings.hasPassword && (

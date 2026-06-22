@@ -54,14 +54,21 @@ export default function Sidebar({ onClose }) {
   const INSTALL_CMD = UPDATER_CONFIG.installCmdLatest;
 
   useEffect(() => {
-    fetch("/api/settings")
+    fetch("/api/settings", { cache: "no-store" })
       .then(res => res.json())
-      .then(data => { if (data.enableTranslator) setEnableTranslator(true); })
+      .then(data => {
+        if (data.enableTranslator) setEnableTranslator(true);
+        if (data.currentUser?.role === "admin") setIsAdmin(true);
+      })
       .catch(() => {});
 
-    fetch("/api/auth/status")
+    fetch("/api/auth/status", { cache: "no-store" })
       .then(res => res.json())
-      .then(data => { setIsAdmin(data?.currentUser?.role === "admin"); })
+      .then(data => {
+        if (data?.isAdmin === true || data?.currentUser?.role === "admin") {
+          setIsAdmin(true);
+        }
+      })
       .catch(() => {});
   }, []);
 

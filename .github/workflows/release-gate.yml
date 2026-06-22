@@ -15,6 +15,7 @@ permissions:
   contents: read
   packages: read
   security-events: write
+  actions: read
 
 jobs:
   gate:
@@ -59,6 +60,36 @@ jobs:
         uses: semgrep/semgrep-action@v1
         with:
           config: p/default p/javascript p/nodejs p/secrets
+
+      - name: SAST (CodeQL)
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          config-file: ./.github/codeql/codeql-config.yml
+      - uses: github/codeql-action/autobuild@v3
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: release-gate
+
+      - name: SCA (OWASP Dependency-Check)
+        uses: dependency-check/Dependency-Check_Action@main
+        with:
+          project: ebrouter
+          path: .
+          format: JSON
+          args: --failOnCVSS 9 --enableExperimental
+
+      - name: DAST (OWASP ZAP)
+        if: vars.STAGING_URL != ''
+        uses: zaproxy/action-baseline@v0.14.0
+        with:
+          target: ${{ vars.STAGING_URL }}
+          cmd_options: "-a -j"
+          allow_issue_writing: false
+
+      - name: DAST skipped notice
+        if: vars.STAGING_URL == ''
+        run: echo "::warning::STAGING_URL not set — ZAP DAST skipped. Set repository variable STAGING_URL for release DAST gate."
 
       - name: Generate SBOM (CycloneDX)
         run: |

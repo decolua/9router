@@ -111,3 +111,44 @@ jobs:
       - uses: actions/dependency-review-action@v4
         with:
           fail-on-severity: high
+
+  owasp-dependency-check:
+    name: SCA (OWASP Dependency-Check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install --ignore-scripts
+      - name: OWASP Dependency-Check
+        uses: dependency-check/Dependency-Check_Action@main
+        with:
+          project: ebrouter
+          path: .
+          format: JSON
+          args: >
+            --failOnCVSS 9
+            --enableExperimental
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owasp-dependency-check-report
+          path: reports
+          retention-days: 90
+
+  oss-license-register:
+    name: OSS License Register
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Generate and validate license register
+        run: node scripts/generate-license-register.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: oss-license-register
+          path: docs/security/oss-license-register.generated.json
+          retention-days: 90

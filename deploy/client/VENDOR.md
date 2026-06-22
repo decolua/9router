@@ -73,7 +73,7 @@ cd deploy\client
 3. If the GHCR package is **private**, give the client a read-only token and login steps (see GHCR-PUBLISH.md).
 4. Run install on client site or let their IT run `install.ps1`.
 5. Record the generated `.env` secrets in their password vault (client-owned).
-6. Schedule backup (`backup.ps1` / Task Scheduler / cron).
+6. Schedule backup (`backup.ps1` / Task Scheduler / cron) — scripts retain **30 days**; see `schedule-backup.example.cron`.
 
 ---
 

@@ -8,7 +8,10 @@ import { latestVersion } from "./migrations/index.js";
 import { encryptSecretsPostgres } from "./migrations/002-encrypt-secrets.js";
 import { multiUserPostgres } from "./migrations/003-multi-user.js";
 import { repairPostgresUserSchema } from "./migrations/004-fix-pg-user-columns.js";
+import { auditLogPostgres } from "./migrations/005-audit-log.js";
+import { securityExtensionsPostgres } from "./migrations/006-security-extensions.js";
 import { stringifyJson } from "./helpers/jsonCol.js";
+import { mapColumnDef } from "./schema.js";
 import { isMasterKeyConfigured, getKeyFingerprint } from "../crypto/masterKey.js";
 
 const MIGRATED_MARKER = path.join(DB_DIR, ".migrated-from-json");
@@ -80,16 +83,24 @@ async function syncSchemaFromTables(adapter) {
     const existingLower = new Set(existing.map((r) => r.name.toLowerCase()));
     for (const [colName, colDef] of Object.entries(def.columns)) {
       if (!existingNames.has(colName) && !existingLower.has(colName.toLowerCase())) {
-        const safeDef = colDef
-          .replace(/PRIMARY KEY( AUTOINCREMENT)?/i, "")
-          .replace(/UNIQUE/i, "")
-          .trim();
+        const safeDef = mapColumnDef(
+          colDef
+            .replace(/PRIMARY KEY( AUTOINCREMENT)?/i, "")
+            .replace(/UNIQUE/i, "")
+            .trim(),
+          "postgres"
+        );
         try {
           await qExec(adapter, `ALTER TABLE "${tableName}" ADD COLUMN "${colName}" ${safeDef}`);
+          console.log(`[DB][sync] +column ${tableName}.${colName}`);
         } catch (e) {
           console.warn(`[DB][sync] add column ${tableName}.${colName} failed: ${e.message}`);
         }
       }
+    }
+    for (const idx of def.indexes || []) {
+      const pgIdx = idx.replace(/ ON (\w+)\(/g, (_, table) => ` ON "${table}"(`);
+      try { await qExec(adapter, pgIdx); } catch {}
     }
   }
 }
@@ -124,6 +135,18 @@ async function runVersionedMigrations(adapter) {
     await setMeta(adapter, "schemaVersion", 4);
     lastApplied = 4;
     console.log("[DB][migrate] applied #4 fix-pg-user-columns");
+  }
+  if (lastApplied < 5) {
+    await auditLogPostgres(adapter);
+    await setMeta(adapter, "schemaVersion", 5);
+    lastApplied = 5;
+    console.log("[DB][migrate] applied #5 audit-log");
+  }
+  if (lastApplied < 6) {
+    await securityExtensionsPostgres(adapter);
+    await setMeta(adapter, "schemaVersion", 6);
+    lastApplied = 6;
+    console.log("[DB][migrate] applied #6 security-extensions");
   }
   return { applied: lastApplied - current, from: current, to: lastApplied };
 }

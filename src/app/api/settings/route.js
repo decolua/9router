@@ -50,6 +50,7 @@ export const GET = withAuthUser(async (_request, _ctx, user) => {
       enableRequestLogs,
       enableTranslator,
       hasPassword: !!fullUser?.passwordHash,
+      mfaEnabled: !!fullUser?.mfaEnabled,
       currentUser: { id: user.id, email: user.email, name: user.name, role: user.role },
     }, { headers: SETTINGS_RESPONSE_HEADERS });
   } catch (error) {

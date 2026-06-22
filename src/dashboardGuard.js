@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { getSettings, validateApiKey, isApiKeyValid } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { verifyDashboardAuthToken, getDashboardAuthSession } from "@/lib/auth/dashboardSession";
-import { attachUserHeaders, getCliContextUser } from "@/lib/auth/requestContext";
+import { attachUserHeaders, getCliContextUser, getSessionUser } from "@/lib/auth/requestContext";
+import { checkApiRateLimit } from "@/lib/auth/apiRateLimiter.js";
+import { getClientIp } from "@/lib/auth/loginLimiter";
 
 const CLI_TOKEN_HEADER = "x-9r-cli-token";
 const CLI_TOKEN_SALT = "9r-cli-auth";
@@ -25,6 +27,9 @@ const PUBLIC_API_PATHS = [
   "/api/init",
   "/api/locale",
   "/api/auth/login",
+  "/api/auth/login/mfa",
+  "/api/auth/forgot-password",
+  "/api/auth/reset-password",
   "/api/auth/logout",
   "/api/auth/signup",
   "/api/auth/status",
@@ -129,14 +134,15 @@ async function forwardWithUser(request, user) {
 async function forwardAuthenticated(request) {
   const token = request.cookies.get("auth_token")?.value;
   if (token) {
-    const session = await getDashboardAuthSession(token);
-    if (session?.userId) {
-      const { getUserById } = await import("@/lib/db/repos/usersRepo.js");
-      const user = await getUserById(session.userId);
-      if (user?.status === "active") return forwardWithUser(request, user);
-    }
+    const user = await getSessionUser(token);
+    if (user?.status === "active") return forwardWithUser(request, user);
   }
   if (await hasValidCliToken(request)) {
+    const admin = await getCliContextUser();
+    if (admin) return forwardWithUser(request, admin);
+  }
+  const settings = await loadSettings();
+  if (settings?.requireLogin === false) {
     const admin = await getCliContextUser();
     if (admin) return forwardWithUser(request, admin);
   }
@@ -208,6 +214,15 @@ export async function proxy(request) {
   }
 
   if (isPublicLlmApi(pathname)) {
+    const ip = getClientIp(request);
+    const apiKey = extractApiKey(request);
+    const limit = checkApiRateLimit({ ip, apiKey: apiKey || undefined });
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { error: "Rate limit exceeded", scope: limit.scope },
+        { status: 429, headers: { "Retry-After": String(limit.retryAfter) } }
+      );
+    }
     if (await canAccessPublicLlmApi(request)) return NextResponse.next();
     return NextResponse.json({ error: "API key required for remote API access" }, { status: 401 });
   }
@@ -225,6 +240,7 @@ export async function proxy(request) {
   }
 
   if (pathname === "/signup") return NextResponse.next();
+  if (pathname === "/reset-password") return NextResponse.next();
 
   // Protect all dashboard routes
   if (pathname.startsWith("/dashboard")) {
@@ -258,12 +274,8 @@ export async function proxy(request) {
     const token = request.cookies.get("auth_token")?.value;
     if (token) {
       if (await verifyDashboardAuthToken(token)) {
-        const session = await getDashboardAuthSession(token);
-        if (session?.userId) {
-          const { getUserById } = await import("@/lib/db/repos/usersRepo.js");
-          const user = await getUserById(session.userId);
-          if (user?.status === "active") return forwardWithUser(request, user);
-        }
+        const user = await getSessionUser(token);
+        if (user?.status === "active") return forwardWithUser(request, user);
         return NextResponse.next();
       } else {
         return NextResponse.redirect(new URL("/login", request.url));

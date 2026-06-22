@@ -6,8 +6,9 @@ import { isOidcConfigured } from "@/lib/auth/oidc";
 import { checkLock, recordFail, recordSuccess, getClientIp } from "@/lib/auth/loginLimiter";
 import { getSettings } from "@/lib/localDb";
 import { auditFromRequest, AuditAction } from "@/lib/audit";
+import { isMfaRequired, createMfaChallengeToken } from "@/lib/auth/mfa";
 
-const RESET_HINT = "Contact your org admin to reset your password or request a new invite.";
+const RESET_HINT = "Use Forgot password below, or contact your org admin for a reset link.";
 
 function isTunnelRequest(request, settings) {
   const host = (request.headers.get("host") || "").split(":")[0].toLowerCase();
@@ -46,6 +47,11 @@ export async function POST(request) {
     const user = await verifyUserPassword(normalizedEmail, password);
     if (user) {
       recordSuccess(ip);
+      if (await isMfaRequired(user.id)) {
+        const mfaToken = await createMfaChallengeToken(user.id);
+        return NextResponse.json({ mfaRequired: true, mfaToken });
+      }
+
       const cookieStore = await cookies();
       await setDashboardAuthCookie(cookieStore, request, {
         userId: user.id,
@@ -80,7 +86,7 @@ export async function POST(request) {
       );
     }
     return NextResponse.json(
-      { error: `Invalid email or password. ${remainingBeforeLock} attempt(s) left before lockout.`, remainingBeforeLock },
+      { error: `Invalid email or password. ${remainingBeforeLock} attempt(s) left before lockout.`, remainingBeforeLock, resetHint: RESET_HINT },
       { status: 401 }
     );
   } catch (error) {

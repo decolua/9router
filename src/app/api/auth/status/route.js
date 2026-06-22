@@ -3,21 +3,23 @@ import { cookies } from "next/headers";
 import { getSettings, countUsers } from "@/lib/localDb";
 import { isOidcConfigured } from "@/lib/auth/oidc";
 import { getDashboardAuthSession } from "@/lib/auth/dashboardSession";
-import { getUserById, getUserByEmail } from "@/lib/db/repos/usersRepo.js";
+import { getUserByEmail } from "@/lib/db/repos/usersRepo.js";
+import { getSessionUser } from "@/lib/auth/requestContext.js";
+
+const STATUS_RESPONSE_HEADERS = {
+  "Cache-Control": "no-store",
+};
 
 export async function GET() {
   try {
     const settings = await getSettings();
     const cookieStore = await cookies();
-    const session = await getDashboardAuthSession(cookieStore.get("auth_token")?.value);
+    const token = cookieStore.get("auth_token")?.value;
+    const session = await getDashboardAuthSession(token);
+    const currentUser = await getSessionUser(token);
     const requireLogin = settings.requireLogin !== false;
     const authMode = settings.authMode || "password";
     const userCount = await countUsers();
-
-    let currentUser = null;
-    if (session?.userId) {
-      currentUser = await getUserById(session.userId);
-    }
 
     const oidcName = String(session?.oidcName || currentUser?.name || "").trim();
     const oidcEmail = String(session?.oidcEmail || currentUser?.email || "").trim();
@@ -44,10 +46,11 @@ export async function GET() {
       multiUserEnabled: settings.multiUserEnabled !== false,
       signupMode: settings.signupMode || "invite",
       userCount,
+      isAdmin: currentUser?.role === "admin",
       currentUser: currentUser
         ? { id: currentUser.id, email: currentUser.email, name: currentUser.name, role: currentUser.role }
         : null,
-    });
+    }, { headers: STATUS_RESPONSE_HEADERS });
   } catch {
     return NextResponse.json({
       requireLogin: true,
@@ -63,7 +66,8 @@ export async function GET() {
       multiUserEnabled: true,
       signupMode: "invite",
       userCount: 0,
+      isAdmin: false,
       currentUser: null,
-    });
+    }, { headers: STATUS_RESPONSE_HEADERS });
   }
 }

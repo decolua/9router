@@ -1,5 +1,5 @@
 // Latest schema version — bumped when a migration is added in ./migrations/
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -36,6 +36,8 @@ export const TABLES = {
       role: "TEXT NOT NULL DEFAULT 'member'",
       oidcSub: "TEXT UNIQUE",
       status: "TEXT NOT NULL DEFAULT 'active'",
+      mfaEnabled: "INTEGER DEFAULT 0",
+      mfaSecret: "TEXT",
       createdAt: "TEXT NOT NULL",
       updatedAt: "TEXT NOT NULL",
     },
@@ -202,6 +204,21 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_rd_conn ON requestDetails(connectionId)",
     ],
   },
+  passwordResetTokens: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      userId: "TEXT NOT NULL",
+      tokenHash: "TEXT UNIQUE NOT NULL",
+      expiresAt: "TEXT NOT NULL",
+      usedAt: "TEXT",
+      createdBy: "TEXT",
+      createdAt: "TEXT NOT NULL",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_prt_userId ON passwordResetTokens(userId)",
+      "CREATE INDEX IF NOT EXISTS idx_prt_expires ON passwordResetTokens(expiresAt)",
+    ],
+  },
   auditLogs: {
     columns: {
       id: "TEXT PRIMARY KEY",
@@ -223,7 +240,7 @@ export const TABLES = {
   },
 };
 
-function mapColumnDef(colDef, dialect) {
+export function mapColumnDef(colDef, dialect) {
   if (dialect !== "postgres") return colDef;
   return colDef
     .replace(/INTEGER PRIMARY KEY AUTOINCREMENT/i, "SERIAL PRIMARY KEY")
