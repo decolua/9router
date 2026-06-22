@@ -306,7 +306,10 @@ export function createResponsesApiTransformStream(logger = null) {
         }
 
         // Handle text content (may contain <think> tags)
-        if (delta.content) {
+        // ponytail: skip inline-tag parsing when reasoning_content field is also present
+        // in this chunk — otherwise the same thinking text is emitted twice (once via
+        // field, once via inline-tag parsing). Revert if targeting legacy clients.
+        if (delta.content && !delta.reasoning_content) {
           let content = delta.content;
 
           if (content.includes("<think>")) {

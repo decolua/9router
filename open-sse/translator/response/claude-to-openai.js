@@ -41,9 +41,12 @@ export function claudeToOpenAIResponse(chunk, state) {
       if (block?.type === CLAUDE_BLOCK.TEXT) {
         state.textBlockStarted = true;
       } else if (block?.type === CLAUDE_BLOCK.THINKING) {
+        // ponytail: drop inline  markers — reasoning_content field already carries
+        // thinking for OpenAI Chat Completions clients (pi, openai-completions SDK).
+        // Emitting BOTH makes pi render the same text twice (thinking pane + response).
+        // Re-enable if a legacy client needs inline markers and ignores reasoning_content.
         state.inThinkingBlock = true;
         state.currentBlockIndex = chunk.index;
-        results.push(createChunk(state, { content: "<think>" }));
       } else if (block?.type === CLAUDE_BLOCK.TOOL_USE) {
         const toolCallIndex = state.toolCallIndex++;
         // Restore original tool name from mapping (Claude OAuth)
@@ -94,7 +97,6 @@ export function claudeToOpenAIResponse(chunk, state) {
         break;
       }
       if (state.inThinkingBlock && chunk.index === state.currentBlockIndex) {
-        results.push(createChunk(state, { content: "</think>" }));
         state.inThinkingBlock = false;
       }
       state.textBlockStarted = false;

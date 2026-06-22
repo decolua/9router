@@ -70,7 +70,10 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
   }
 
   // Handle text content
-  if (delta.content) {
+  // ponytail: skip inline-tag parsing when reasoning field is also present in this
+  // chunk — otherwise the same thinking text is emitted twice (once via field, once
+  // via inline-tag parsing). Revert if targeting legacy clients.
+  if (delta.content && !reasoningText) {
     let content = delta.content;
 
     if (content.includes("<think>")) {
