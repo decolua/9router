@@ -13,7 +13,12 @@
     "cli:pack": "npm --prefix cli run pack:cli",
     "cli:publish": "npm --prefix cli run publish:cli",
     "lint:all": "eslint .",
-    "lint:fatal": "node scripts/lint-fatal-diff.mjs"
+    "lint:fatal": "node scripts/lint-fatal-diff.mjs",
+    "test": "vitest run --config tests/vitest.config.js tests/unit/ tests/translator/",
+    "test:unit": "vitest run --config tests/vitest.config.js tests/unit/",
+    "test:translator": "vitest run --config tests/vitest.config.js tests/translator/",
+    "test:baseline": "node tests/__baseline__/verify-no-regression.mjs tests/__baseline__/current.json",
+    "check": "npm run lint:fatal && npm run build && npm run test && npm run test:baseline"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
