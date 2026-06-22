@@ -31,8 +31,11 @@ async function dynamicImport(packageName) {
 function loadRuntimeHelper(helperName) {
   try {
     // Try to load from CLI hooks (if available)
+    // Use eval to hide dynamic require from webpack's static analyzer,
+    // preventing "Critical dependency" warning. Path resolved at runtime.
     const helperPath = `../../../cli/hooks/${helperName}.js`;
-    return require(helperPath);
+    const dynamicRequire = eval('require');
+    return dynamicRequire(helperPath);
   } catch {
     return null;
   }

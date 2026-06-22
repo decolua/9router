@@ -136,9 +136,26 @@ export function createSSEStream(options = {}) {
               const delta = parsed.choices?.[0]?.delta;
               const content = delta?.content;
               const reasoning = delta?.reasoning_content;
-              if (content && typeof content === "string") {
-                totalContentLength += content.length;
-                accumulatedContent += content;
+              let contentModified = false;
+              // ponytail: when upstream carries thinking via reasoning_content field AND
+              // also wraps the same text in inline  tags inside content, strip the
+              // markers from content — otherwise pi renders the same text twice
+              // (thinking pane from reasoning_content + response from content). Revert
+              // if a legacy client depends on inline tags in passthrough mode.
+              if (reasoning && typeof content === "string" &&
+                  (content.includes("think") || content.includes("think"))) {
+                const stripped = content
+                  .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
+                  .replace(/think[\s\S]*?think/g, "");
+                if (stripped !== content) {
+                  delta.content = stripped;
+                  contentModified = true;
+                }
+              }
+              const effectiveContent = delta?.content;
+              if (effectiveContent && typeof effectiveContent === "string") {
+                totalContentLength += effectiveContent.length;
+                accumulatedContent += effectiveContent;
               }
               if (reasoning && typeof reasoning === "string") {
                 totalContentLength += reasoning.length;
@@ -162,7 +179,7 @@ export function createSSEStream(options = {}) {
                 parsed.usage = filterUsageForFormat(buffered, FORMATS.OPENAI);
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 injectedUsage = true;
-              } else if (idFixed || fieldsInjected) {
+              } else if (idFixed || fieldsInjected || contentModified) {
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 injectedUsage = true;
               }
