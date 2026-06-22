@@ -1,9 +1,9 @@
 Dưới đây là bản dịch tiếng Việt của tài liệu Markdown, giữ nguyên toàn bộ cú pháp và cấu trúc kỹ thuật.
 
 <div align="center">
-  <img src="../images/9router.png?1" alt="Bảng điều khiển 9Router" width="800"/>
+  <img src="../images/9router.png?1" alt="Bảng điều khiển DurinDoor" width="800"/>
   
-  # 9Router - Free AI Router
+  # DurinDoor - Free AI Router
   
   **Không bao giờ ngừng code. Tự động định tuyến tới các mô hình AI MIỄN PHÍ & giá rẻ với cơ chế dự phòng thông minh.**
   
@@ -13,16 +13,16 @@ Dưới đây là bản dịch tiếng Việt của tài liệu Markdown, giữ 
     <img src="../public/providers/openclaw.png" alt="OpenClaw" width="80"/>
   </p>
   
-  [![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
-  [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
-  [![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/decolua/9router/blob/main/LICENSE)
+  [![npm](https://img.shields.io/npm/v/durindoor.svg)](https://www.npmjs.com/package/durindoor)
+  [![Downloads](https://img.shields.io/npm/dm/durindoor.svg)](https://www.npmjs.com/package/durindoor)
+  [![License](https://img.shields.io/npm/l/durindoor.svg)](https://github.com/decolua/9router/blob/main/LICENSE)
   
-  [🚀 Bắt đầu nhanh](#-quick-start) • [💡 Tính năng](#-key-features) • [📖 Cài đặt](#-setup-guide) • [🌐 Website](https://9router.com)
+  [🚀 Bắt đầu nhanh](#-quick-start) • [💡 Tính năng](#-key-features) • [📖 Cài đặt](#-setup-guide) • [🌐 Website](https://durindoor.com)
 </div>
 
 ---
 
-## 🤔 Tại sao chọn 9Router?
+## 🤔 Tại sao chọn DurinDoor?
 
 **Ngừng lãng phí tiền bạc và gặp phải giới hạn:**
 
@@ -31,7 +31,7 @@ Dưới đây là bản dịch tiếng Việt của tài liệu Markdown, giữ 
 - ❌ Các API đắt đỏ ($20-50/tháng cho mỗi nhà cung cấp)
 - ❌ Phải chuyển đổi thủ công giữa các nhà cung cấp
 
-**9Router giải quyết vấn đề này:**
+**DurinDoor giải quyết vấn đề này:**
 
 - ✅ **Tối đa hóa gói đăng ký** - Theo dõi hạn mức, sử dụng từng bit trước khi reset
 - ✅ **Tự động dự phòng** - Gói đăng ký → Giá rẻ → Miễn phí, thời gian chết bằng không
@@ -50,7 +50,7 @@ Dưới đây là bản dịch tiếng Việt của tài liệu Markdown, giữ 
        │ http://localhost:20128/v1
        ↓
 ┌────────────────────────────────────────┐
-│           9Router (Smart Router)        │
+│           DurinDoor (Smart Router)        │
 │  • Format translation (OpenAI ↔ Claude) │
 │  • Quota tracking                       │
 │  • Auto token refresh                   │
@@ -72,8 +72,8 @@ Result: Never stop coding, minimal cost
 **1. Cài đặt toàn cục:**
 
 ```bash
-npm install -g 9router
-9router
+npm install -g durindoor
+durindoor
 ```
 
 🎉 Bảng điều khiển mở tại `http://localhost:20128`
@@ -95,7 +95,7 @@ Cài đặt Claude Code/Codex/Gemini CLI/OpenClaw/Cursor/Cline:
 
 **Phương án khác: chạy từ nguồn (k lưu trữ này):**
 
-Gói kho lưu trữ này là riêng tư (`9router-app`), vì vậy việc thực thi nguồn/Docker là đường dẫn phát triển cục bộ dự kiến.
+Gói kho lưu trữ này là riêng tư (`durindoor-app`), vì vậy việc thực thi nguồn/Docker là đường dẫn phát triển cục bộ dự kiến.
 
 ```bash
 cp .env.example .env
@@ -120,12 +120,12 @@ URL mặc định:
 
 <div align="center">
   
-### 📺 Hướng dẫn thiết lập hoàn chỉnh - 9Router + Claude Code MIỄN PHÍ
+### 📺 Hướng dẫn thiết lập hoàn chỉnh - DurinDoor + Claude Code MIỄN PHÍ
   
-[![Thiết lập 9Router + Claude Code](https://img.youtube.com/vi/raEyZPg5xE0/maxresdefault.jpg)](https://www.youtube.com/watch?v=raEyZPg5xE0)
+[![Thiết lập DurinDoor + Claude Code](https://img.youtube.com/vi/raEyZPg5xE0/maxresdefault.jpg)](https://www.youtube.com/watch?v=raEyZPg5xE0)
 
 **🎬 Xem hướng dẫn từng đầy đủ:**
-- ✅ Cài đặt & thiết lập 9Router
+- ✅ Cài đặt & thiết lập DurinDoor
 - ✅ Cấu hình Claude Sonnet 4.5 MIỄN PHÍ
 - ✅ Tích hợp Claude Code
 - ✅ Thử nghiệm code trực tiếp
@@ -140,7 +140,7 @@ URL mặc định:
 
 ## 🛠️ Các công cụ CLI được hỗ trợ
 
-9Router hoạt động liền mạch với tất cả các công cụ code AI chính:
+DurinDoor hoạt động liền mạch với tất cả các công cụ code AI chính:
 
 <div align="center">
   <table>
@@ -391,7 +391,7 @@ Combo: "my-coding-stack"
 
 Dịch chuyển liền mạch giữa các định dạng:
 - **OpenAI** ↔ **Claude** ↔ **Gemini** ↔ **OpenAI Responses**
-- Công cụ CLI của bạn gửi định dạng OpenAI → 9Router dịch chuyển → Nhà cung cấp nhận định dạng gốc
+- Công cụ CLI của bạn gửi định dạng OpenAI → DurinDoor dịch chuyển → Nhà cung cấp nhận định dạng gốc
 - Hoạt động với mọi công cụ hỗ trợ endpoint OpenAI tùy chỉnh
 
 ### 👥 Hỗ trợ Đa tài khoản
@@ -445,13 +445,13 @@ Dịch chuyển liền mạch giữa các định dạng:
 > **💡AN TRỌNG - Hiểu về Chi phí trên Bảng điều khiển:**
 > 
 > "Chi phí" hiển thị trong Phân tích sử dụng là **chỉ để theo dõi và so sánh**. 
-> Bản thân 9Router **không bao giờ thu phí** bạn bất cứ thứ gì. Bạn chỉ trả tiền trực tiếp cho các nhà cung cấp (nếu sử dụng dịch vụ trả phí).
+> Bản thân DurinDoor **không bao giờ thu phí** bạn bất cứ thứ gì. Bạn chỉ trả tiền trực tiếp cho các nhà cung cấp (nếu sử dụng dịch vụ trả phí).
 > 
 > **Ví dụ:** Nếu bảng điều khiển của bạn hiển thị "tổng chi phí $290" trong khi sử dụng các mô hìnhFlow, điều này đại diện cho 
 > số tiền bạn sẽ phải trả nếu sử dụng API trả phí trực tiếp. Chi phí thực tế của bạn = **$0** (iFlow miễn phí không giới hạn).
 > 
 > Hãy coi nó như một "trình theo dõi tiết kiệm" cho thấy bạn đang tiết kiệm được bao nhiêu bằng cách sử dụng các mô hình miễn phí hoặc 
-> định tuyến qua 9Router!
+> định tuyến qua DurinDoor!
 
 ### 🌐 Triển khai ở bất cứ đâu
 
@@ -483,15 +483,15 @@ Dịch chuyển liền mạch giữa các định dạng:
 
 ---
 
-### 📊 Hiểu về Chi phí & Thanh toán của 9Router
+### 📊 Hiểu về Chi phí & Thanh toán của DurinDoor
 
-**Thực tế Thanh toán 9Router:**
+**Thực tế Thanh toán DurinDoor:**
 
-✅ **Phần mềm 9Router = MIỄN PHÍ mãi mãi** (mã nguồn mở, không bao giờ thu phí)  
+✅ **Phần mềm DurinDoor = MIỄN PHÍ mãi mãi** (mã nguồn mở, không bao giờ thu phí)  
 ✅ **"Chi phí" trên bảng điều khiển = Chỉ để Hiển thị/Theo dõi** (không phải hóa đơn thực tế)  
  **Bạn trả tiền trực tiếp cho nhà cung cấp** (gói đăng ký hoặc phí API)  
 ✅ **Nhà cung cấp MIỄN PHÍ vẫn MIỄN PHÍ** (iFlow, Kiro, Qwen = $0 không giới hạn)  
-❌ **9Router không bao giờ gửi hóa đơn** hoặc tính phí thẻ của bạn
+❌ **DurinDoor không bao giờ gửi hóa đơn** hoặc tính phí thẻ của bạn
 
 **Cách Hoạt động của Hiển thị Chi phí:**
 
@@ -512,7 +512,7 @@ Kiểm tra Thực tế:
 
 **Quy tắc Thanh toán:**
 - **Nhà cung cấp gói đăng ký** (Claude Code, Codex): Trả tiền trực tiếp cho họ qua website của họ
-- **Nhà cung cấp giá rẻ** (GLM, MiniMax): Trả tiền trực tiếp cho họ, 9Router chỉ định tuyến
+- **Nhà cung cấp giá rẻ** (GLM, MiniMax): Trả tiền trực tiếp cho họ, DurinDoor chỉ định tuyến
 - **Nhà cung cấp MIỄN PHÍ** (iFlow, Kiro, Qwen): Thực sự miễn phí mãi mãi, không có phí ẩn
 - **9**: Không bao giờ thu phí bất cứ thứ gì, ever
 
@@ -588,7 +588,7 @@ Truy cập qua: WhatsApp, Telegram, Slack, Discord, iMessage, Signal...
 <details>
 <summary><b>📊 Tại sao bảng điều khiển của tôi hiển thị chi phí cao?</b></summary>
 
-Bảng điều khiển theo dõi mức sử dụng token của bạn và hiển thị **chi phí ước tính** như thể bạn đang sử dụng API trả phí trực tiếp. Đâykhông phải là thanh toán thực tế** - đó là tài liệu tham khảo để cho thấy bạn đang tiết kiệm được bao nhiêu bằng cách sử dụng các mô hình miễn phí hoặc gói đăng ký hiện có thông qua 9Router.
+Bảng điều khiển theo dõi mức sử dụng token của bạn và hiển thị **chi phí ước tính** như thể bạn đang sử dụng API trả phí trực tiếp. Đâykhông phải là thanh toán thực tế** - đó là tài liệu tham khảo để cho thấy bạn đang tiết kiệm được bao nhiêu bằng cách sử dụng các mô hình miễn phí hoặc gói đăng ký hiện có thông qua DurinDoor.
 
 **Ví dụ:**
 - **Bảng điều khiển hiển thị:** "Tổng chi phí $290"
@@ -601,16 +601,16 @@ Màn hình chi phí là một "trình theo dõi tiết kiệm" để giúp bạn
 </details>
 
 <details>
-<summary><b>💳 Tôi có bị 9Router tính phí không?</b></summary>
+<summary><b>💳 Tôi có bị DurinDoor tính phí không?</b></summary>
 
-**Không.** 9Router là phần mềm miễn phí, mã nguồn mở chạy trên máy tính của chính bạn. Nó không bao giờ tính phí bạn bất cứ thứ gì.
+**Không.** DurinDoor là phần mềm miễn phí, mã nguồn mở chạy trên máy tính của chính bạn. Nó không bao giờ tính phí bạn bất cứ thứ gì.
 
 **Bạn chỉ trả tiền:**
 - ✅ **Nhà cung cấp gói đăng ký** (Claude Code $20/tháng, Codex $20-200/tháng) → Trả tiền trực tiếp cho họ trên website của họ
-- ✅ **Nhà cung cấp giá rẻ** (GLM, MiniMax) → Trả tiền trực tiếp cho họ, 9Router chỉ định tuyến yêu cầu của bạn
-- ❌ **Bản thân 9Router** → **Không bao giờ tính phí bất cứ thứ gì, ever**
+- ✅ **Nhà cung cấp giá rẻ** (GLM, MiniMax) → Trả tiền trực tiếp cho họ, DurinDoor chỉ định tuyến yêu cầu của bạn
+- ❌ **Bản thân DurinDoor** → **Không bao giờ tính phí bất cứ thứ gì, ever**
 
-9Router là một proxy/router cục bộ. Nó không cóẻ tín dụng của bạn, không thể gửi hóa đơn và không có hệ thống thanh toán. Đó là phần mềm hoàn toàn miễn phí.
+DurinDoor là một proxy/router cục bộ. Nó không cóẻ tín dụng của bạn, không thể gửi hóa đơn và không có hệ thống thanh toán. Đó là phần mềm hoàn toàn miễn phí.
 
 </details>
 
@@ -624,9 +624,9 @@ Màn hình chi phí là một "trình theo dõi tiết kiệm" để giúp bạn
 - **Kiro**: Các mô hình Claude miễn phí không giới hạn qua AWS Builder ID  
 - **Qwen**: Truy cập miễn phí không giới hạn vào các mô hình Qwen qua xác thực thiết bị
 
-9Router chỉ định tuyến yêu cầu của bạn đến họ - không có "cạm bẫy" hay thanh toán trong tương lai. Đó là các dịch vụ thực sự miễn phí, và 9Router giúp chúng dễ sử dụng với hỗ trợ dự phòng.
+DurinDoor chỉ định tuyến yêu cầu của bạn đến họ - không có "cạm bẫy" hay thanh toán trong tương lai. Đó là các dịch vụ thực sự miễn phí, và DurinDoor giúp chúng dễ sử dụng với hỗ trợ dự phòng.
 
-**Lưu ý:** số nhà cung cấp gói đăng ký (Antigravity, GitHub Copilot) có thể có các khoảng thời gian dùng thử miễn phí có thể trở thành trả phí sau này, nhưng điều này sẽ được các nhà cung cấp đó thông báo rõ ràng, không phải 9Router.
+**Lưu ý:** số nhà cung cấp gói đăng ký (Antigravity, GitHub Copilot) có thể có các khoảng thời gian dùng thử miễn phí có thể trở thành trả phí sau này, nhưng điều này sẽ được các nhà cung cấp đó thông báo rõ ràng, không phải DurinDoor.
 
 </details>
 
@@ -651,7 +651,7 @@ Màn hình chi phí là một "trình theo dõi tiết kiệm" để giúp bạn
 
 3. **Sử dụng nhà cung cấp gói đăng ký cuối cùng:**
    - Chỉ khi bạn đã có chúng
-   - 9Router giúp tối đa hóa giá trị của chúng thông qua theo dõi hạn mức
+   - DurinDoor giúp tối đa hóa giá trị của chúng thông qua theo dõi hạn mức
 
 **Kết quả:** Hầu hết người dùng có thể hoạt động ở mức $0/tháng chỉ sử dụng các tầng miễn phí!
 
@@ -660,20 +660,20 @@ Màn hình chi phí là một "trình theo dõi tiết kiệm" để giúp bạn
 <details>
 <summary><b>📈 Điều gì xảy ra nếu mức sử dụng của tôi đột ngột tăng vọt?</b></summary>
 
-Cơ chế dự phòng thông minh của 9Router ngăn chặn các khoản phí bất ngờ:
+Cơ chế dự phòng thông minh của DurinDoor ngăn chặn các khoản phí bất ngờ:
 
 **Kịch bản:** Bạn đang trong giai đoạn code nước rút và vượt qua các hạn mức
 
-**Không có 9Router:**
+**Không có DurinDoor:**
 - ❌ Chạm giới hạn tốc độ → Công việc dừng lại → Thất vọng
 - ❌ Hoặc: Vô tình tích lũy hóa đơn API khổng lồ
 
-**Có 9Router:**
+**Có DurinDoor:**
 - ✅ Gói đăng ký chạm giới hạn → Tự động dự phòng sang tầng giá rẻ
 - ✅ Tầng giá rẻ trở nên đắt đỏ → Tự động dự phòng sang tầng miễn phí
 - ✅ Không bao giờ ngừng code → Chi phí dự đoán được
 
-**Bạn nắm quyền kiểm soát:** Đặt giới hạn chi tiêu cho mỗi nhà cung cấp trong bảng điều khiển, và 9Router sẽ tuân thủ chúng.
+**Bạn nắm quyền kiểm soát:** Đặt giới hạn chi tiêu cho mỗi nhà cung cấp trong bảng điều khiển, và DurinDoor sẽ tuân thủ chúng.
 
 </details>
 
@@ -697,7 +697,7 @@ Các mô hình:
   cc/claude-haiku-4-5-20251001
 ```
 
-**Mẹo Chuyên nghiệp:** Sử dụng Opus cho các tác vụ phức tạp, Sonnet cho tốc độ. 9Router theo dõi hạn mức cho mỗi mô hình!
+**Mẹo Chuyên nghiệp:** Sử dụng Opus cho các tác vụ phức tạp, Sonnet cho tốc độ. DurinDoor theo dõi hạn mức cho mỗi mô hình!
 
 ### OpenAI Codex (Plus/Pro)
 
@@ -866,7 +866,7 @@ Chi phí: $0 mãi mãi!
 ```
 Settings → Models → Advanced:
   OpenAI API Base URL: http://localhost:20128/v1
-  OpenAI API Key: [từ bảng điều khiển 9router]
+  OpenAI API Key: [từ bảng điều khiển durindoor]
   Model: cc/claude-opus-4-6
 ``Hoặc sử dụng combo: `premium-coding`
 
@@ -877,7 +877,7 @@ Chỉnh sửa `~/.claude/config.json`:
 ```json
 {
   "anthropic_api_base": "http://localhost:20128/v1",
-  "anthropic_api_key": "your-9router-api-key"
+  "anthropic_api_key": "your-durindoor-api-key"
 }
 ```
 
@@ -885,7 +885,7 @@ Chỉnh sửa `~/.claude/config.json`:
 
 ```bash
 export OPENAI_BASE_URL="http://localhost:20128"
-export OPENAI_API_KEY="your-9router-api-key"
+export OPENAI_API_KEY="your-durindoor-api-key"
 
 codex "prompt của bạn"
 ```
@@ -905,15 +905,15 @@ Bảng điều khiển → CLI Tools → OpenClaw → Chọn Mô hình → Áp d
   "agents": {
     "defaults": {
       "model": {
-        "primary": "9router/if/glm-4.7"
+        "primary": "durindoor/if/glm-4.7"
       }
     }
   },
   "models": {
     "providers": {
-      "9router": {
-        "baseUrl": "://127.0.0.1:20128/v1",
-        "apiKey": "sk_9router",
+      "durindoor": {
+        "baseUrl": "http://127.0.0.1:20128/v1",
+        "apiKey": "sk_durindoor",
         "api": "openai-completions",
         "models": [
           {
@@ -927,7 +927,7 @@ Bảng điều khiển → CLI Tools → OpenClaw → Chọn Mô hình → Áp d
 }
 ```
 
-> **Lưu ý:** OpenClaw chỉ hoạt động với 9Router cục bộ. Sử dụng `127.0.0.1` thay vì `localhost` để tránh các vấn đề phân giải6.
+> **Lưu ý:** OpenClaw chỉ hoạt động với DurinDoor cục bộ. Sử dụng `127.0.0.1` thay vì `localhost` để tránh các vấn đề phân giải6.
 
 ### Cline / Continue / RooCode
 
@@ -955,12 +955,12 @@ npm run build
 # Cấu hình
 export JWT="your-secure-secret-change-this"
 export INITIAL_PASSWORD="your-password"
-export DATA_DIR="/var/lib/9router"
+export DATA_DIR="/var/lib/durindoor"
 export PORT="20128"
 export HOSTNAME="0.0.0.0"
 export NODE_ENV="production"
 export NEXT_PUBLIC_BASE_URL="http://localhost:20128"
-export NEXT_PUBLIC_CLOUD_URL="https://9router.com"
+export NEXT_PUBLIC_CLOUD_URL="https://durindoor.com"
 export API_KEY_SECRET="endpoint-proxy-api-key-secret"
 export MACHINE_ID_SALT="endpoint-proxy-salt"
 
@@ -969,7 +969,7 @@ npm run start
 
 # Hoặc sử dụng PM2
 npm install -g pm2
-pm2 start --name 9router -- start
+pm2 start --name durindoor -- start
 pm2 save
 pm2 startup
 ```
@@ -978,28 +978,28 @@ pm2 startup
 
 ```bash
 # Build image (từ gốc kho lưu trữ)
-docker build -t 9router .
+docker build -t durindoor .
 
 # Chạy container (lệnh được sử dụng trong thiết lập hiện tại)
 docker run -d \
-  --name 9router \
+  --name durindoor \
   -p 20128:20128 \
-  --env-file /root/dev/9router/.env \
-  -v 9router-data:/app/data \
-  -v 9router-usage:/root/.9router \
-  9router
+  --env-file /root/dev/durindoor/.env \
+  -v durindoor-data:/app/data \
+  -v durindoor-usage:/root/.durindoor \
+  durindoor
 ```
 
 Lệnh di động (nếu bạn đã ở gốc kho lưu trữ):
 
 ```bash
 docker run -d \
-  --name 9router \
+  --name durindoor \
   -p 20128:20128 \
   --env-file ./.env \
-  -v 9router-data:/app/data \
-  -v 9router-usage:/root/.9router \
-  9router
+  -v durindoor-data:/app/data \
+  -v durindoor-usage:/root/.durindoor \
+  durindoor
 ```
 
 Mặc định container:
@@ -1009,25 +1009,25 @@ Mặc định container:
 Các lệnh hữu ích:
 
 ```bash
-docker logs -f 9router
- restart 9router
-docker stop 9router && docker rm 9router
+docker logs -f durindoor
+ restart durindoor
+docker stop durindoor && docker rm durindoor
 ```
 
 ### Biến môi trường
 
 | Biến | Mặc định | Mô tả |
 |----------|---------|-------------|
-| `JWT_SECRET` | Tự động sinh (`~/.9router/jwt-secret`) | Bí mật ký JWT cho cookie xác thực bảng điều khiển (đặt để chia sẻ giữa nhiều instance) |
+| `JWT_SECRET` | Tự động sinh (`~/.durindoor/jwt-secret`) | Bí mật ký JWT cho cookie xác thực bảng điều khiển (đặt để chia sẻ giữa nhiều instance) |
 | `INITIAL_PASSWORD` | `123456` | Mật khẩu đăng nhập đầu tiên khi không có hash đã lưu tồn tại |
-| `DATA_DIR` | `~/.9router` |ị trí cơ sở dữ liệu ứng dụng chính (`db.json`) |
+| `DATA_DIR` | `~/.durindoor` |ị trí cơ sở dữ liệu ứng dụng chính (`db.json`) |
 | `PORT` | framework default | Cổng dịch vụ (`20128` trong các ví dụ) |
 | `HOSTNAME` | framework default | Bind host (Docker mặc định là `0.0.0.0`) |
 | `NODE_ENV` | runtime default | Đặt `production` để triển khai |
 | `BASE_URL` | `http://localhost:20128` | URL cơ sở nội bộ phía máy chủ được sử dụng bởi các tác vụ đồng bộ đám mây |
-| `CLOUD_URL` | `https://9router.com` | URL cơ sở endpoint đồng bộ đám mây phía máy chủ |
+| `CLOUD_URL` | `https://durindoor.com` | URL cơ sở endpoint đồng bộ đám mây phía máy chủ |
 | `NEXT_PUBLIC_BASE_URL` | `http://localhost:3000` | URL cơ sở tương thích ngược/công khai (ưu tiên `BASE_URL` cho runtime máy chủ) |
-| `NEXT_PUBLIC_CLOUD_URL` | `https://9router.com` | URL đám mây tương thích ngược/công khai (ưu tiên `CLOUD_URL` cho runtime máy chủ) |
+| `NEXT_PUBLIC_CLOUD_URL` | `https://durindoor.com` | URL đám mây tương thích ngược/công khai (ưu tiên `CLOUD_URL` cho runtime máy chủ) |
 | `API_KEY_SECRET` | `endpoint-proxy-api-key-secret` | B mật HMAC cho các API key được tạo |
 | `MACHINE_ID_SALT` | `endpoint-proxy-salt` | Salt cho việc băm ID máy ổn định |
 | `ENABLE_REQUEST_LOGS` | `false` | Bật log request/response dưới `logs/` |
@@ -1044,9 +1044,9 @@ Ghi chú:
 ### Tệp Runtime và Lưu trữ
 
 - Trạng thái ứng dụng chính: `${DATA_DIR}/db.json` (nhà cung cấp, combo, alias, key, cài đặt), được quản lý bởi `src/lib/localDb.js`.
-- Lịch sử sử dụng và log: `~/.9router/usage.json` và `~/.9router/log.txt`, được quản lý bởi `src/lib/usageDb.js`.
+- Lịch sử sử dụng và log: `~/.durindoor/usage.json` và `~/.durindoor/log.txt`, được quản lý bởi `src/lib/usageDb.js`.
 - request/translator tùy chọn: `<repo>/logs/...` khi `ENABLE_REQUEST_LOGS=true`.
-- Lưu trữ sử dụng hiện tại tuân theo logic đường dẫn `~/.9router` và độc lập với `DATA_DIR`.
+- Lưu trữ sử dụng hiện tại tuân theo logic đường dẫn `~/.durindoor` và độc lập với `DATA_DIR`.
 
 </details>
 
@@ -1108,7 +1108,7 @@ Ghi chú:
 - Thêm combo: `cc/claude-opus-4-6 → glm/glm-4.7 → if/kimi-k2-thinking`
 
 **Token OAuth hết hạn**
-- Tự động làm mới bởi 9Router
+- Tự động làm mới bởi DurinDoor
 - Nếu sự cố vẫn tiếp diễn: Bảng điều khiển → Nhà cung cấp → Kết nối lại
 
 **Chi phí cao**
@@ -1121,14 +1121,14 @@ Ghi chú:
 
 **Lỗi đồng bộ đám mây**
 - Xác minh `BASE_URL` trỏ đến phiên bản đang chạy của bạn (ví dụ: `http://localhost:20128`)
-- Xác minh `CLOUD_URL` trỏ đến endpoint đám mây dự kiến của bạn (ví dụ: `https://9router.com`)
+- Xác minh `CLOUD_URL` trỏ đến endpoint đám mây dự kiến của bạn (ví dụ: `https://durindoor.com`)
 - Giữ các giá trị `NEXT_PUBLIC_*` phù hợp với giá trị phía máy chủ khi có thể.
 
 **Endpoint đám mây `stream=false` trả về 500 (`Unexpected token 'd'...`)**
-- Triệu chứng thường xuất hiện trên endpoint đám mây công khai (`https://9router.com/v1`) cho các lệnh gọi không phát trực tiếp (non-streaming).
+- Triệu chứng thường xuất hiện trên endpoint đám mây công khai (`https://durindoor.com/v1`) cho các lệnh gọi không phát trực tiếp (non-streaming).
 - Nguyên nhân gốc rễ: upstream trả về payload SSE (`data: ...`) trong khi client mong đợi JSON.
 -ải pháp thay thế: sử dụng `stream=true` cho các lệnh gọi trực tiếp đến đám mây.
-- Runtime 9Router cục bộ bao gồm dự phòng SSE→JSON cho các lệnh gọi không phát trực tiếp khi upstream trả về `text/event-stream`.
+- Runtime DurinDoor cục bộ bao gồm dự phòng SSE→JSON cho các lệnh gọi không phát trực tiếp khi upstream trả về `text/event-stream`.
 
 **Đám mây báo đã kết nối, nhưng yêu cầu vẫn thất bại với `Invalid API key`**
 - Tạo một key mới từ bảng điều khiển cục bộ (`/api/keys`) và chạy đồng bộ đám mây (`Enable Cloud` sau đó `Sync Now`).
@@ -1199,7 +1199,7 @@ Authorization: Bearer your-api-key
 - `tester/security/test-docker-hardening.sh`
   - Build image Docker và xác thực các kiểm tra hardening (`/api/cloud/auth` auth guard, `REQUIRE_API_KEY`, hành vi cookie xác thực bảo).
 - `tester/security/test-cloud-openai-compatible.sh`
-  - Gửi một yêu cầu tương thích OpenAI trực tiếp đến endpoint đám mây (`https://9router.com/v1/chat/completions`) với mô hình/key được cung cấp.
+  - Gửi một yêu cầu tương thích OpenAI trực tiếp đến endpoint đám mây (`https://durindoor.com/v1/chat/completions`) với mô hình/key được cung cấp.
 - `tester/security/test-cloud-sync-and-call.sh`
   - Quy trình end-to-end: tạo key cục bộ -> bật/đồng bộ đám mây -> gọi endpoint đám mây với thử lại.
   - Bao gồm kiểm tra dự phòng với `stream=true` để phân biệt lỗi xác thực với các vấn đề phân tích phát trực tiếp.
@@ -1219,7 +1219,7 @@ Hành vi dự kiến từ việc xác thực gần đây:
 
 - cục bộ (`http://127.0.0.1:20128/v1/chat/completions`): hoạt động với `stream=false` và `stream=true`.
 - Runtime Docker (cùng đường dẫn API được expose bởi container): các kiểm tra hardening đạt, cloud auth guard hoạt động, chế độ API key nghiêm ngặt hoạt động khi được bật.
-- Endpoint đám mây công khai (`https://9router.com/v1/chat/completions`):
+- Endpoint đám mây công khai (`https://durindoor.com/v1/chat/completions`):
   - `stream=true`: dự kiến thành công (trả về các khối SSE).
   - `stream=false`: có thể thất bại với `500` + lỗi phân tích (`Unexpected token 'd'`) khi upstream trả về nội dung SSE cho đường dẫn client không phát trực tiếp.
 
@@ -1257,23 +1257,23 @@ Tài liệu tham khảo kiến trúc đầy đủ: [`docs/ARCHITECTURE.md`](../d
 
 ## 📧 Hỗ trợ
 
-- **Website**: [9router.com](https://9router.com)
-- **GitHub**: [github.com/decolua/9](https://github.com/decolua/9router)
+- **Website**: [durindoor.com](https://durindoor.com)
+- **GitHub**: [github.com/decolua/9router](https://github.com/decolua/9router)
 - **Issues**: [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
 
 ---
 
 ## 👥 Người đóng góp
 
-Cảm ơn tất cả những người đã đóng góp giúp 9Router tốt hơn!
+Cảm ơn tất cả những người đã đóng góp giúp DurinDoor tốt hơn!
 
-[![Contributors](https://contrib.rocks/image?repo=decolua/9router&max=100&columns=20&anon=1)](https://github.com/decolua/9router/graphs/contributors)
+[![Contributors](https://contrib.rocks/image?repo=decolua/durindoor&max=100&columns=20&anon=1)](https://github.com/decolua/9router/graphs/contributors)
 
 ---
 
 ## 📊 Star Chart
 
-[![ Chart](https://starchart.cc/decolua/9router.svg?variant=adaptive)](https://starchart.cc/decolua/9router)
+[![Star Chart](https://starchart.cc/decolua/durindoor.svg?variant=adaptive)](https://starchart.cc/decolua/durindoor)
 
 ### Cách Đóng góp
 
@@ -1289,7 +1289,7 @@ Xem [Pull Requests](https://github.com/decolua/9router/pulls) để biết hư�
 
 ## 🔀 Forks
 
-**[OmniRoute](https://github.com/diegosouzapw/OmniRoute)** — Một fork TypeScript đầy đủ tính năng của 9Router. Thêm 36+ nhà cung cấp, tự động dự phòng 4 tầng, API đa phương thức (hình ảnh, embedding, âm thanh, TTS), circuit breaker, bộ nhớ đệm ngữ nghĩa, đánh giá LLM và bảng điều khiển được tinh chỉnh. 368+ bài kiểm tra đơn vị. Có sẵn qua npm và.
+**[OmniRoute](https://github.com/diegosouzapw/OmniRoute)** — Một fork TypeScript đầy đủ tính năng của DurinDoor. Thêm 36+ nhà cung cấp, tự động dự phòng 4 tầng, API đa phương thức (hình ảnh, embedding, âm thanh, TTS), circuit breaker, bộ nhớ đệm ngữ nghĩa, đánh giá LLM và bảng điều khiển được tinh chỉnh. 368+ bài kiểm tra đơn vị. Có sẵn qua npm và.
 
 ---
 

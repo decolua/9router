@@ -1,7 +1,7 @@
 <div align="center">
-  <img src="../images/9router.png?1" alt="Панель управления 9Router" width="800"/>
+  <img src="../images/9router.png?1" alt="Панель управления DurinDoor" width="800"/>
   
-  # 9Router - Free AI Router
+  # DurinDoor - Free AI Router
   
   **Никогда не прекращайте кодить. Автоматическая маршрутизация к БЕСПЛАТНЫМ и дешёвым AI-моделям с умным механизмом резервирования.**
   
@@ -11,16 +11,16 @@
     <img src="../public/providers/openclaw.png" alt="OpenClaw" width="80"/>
   </p>
   
-  [![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
-  [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
-  [![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/decolua/9router/blob/main/LICENSE)
+  [![npm](https://img.shields.io/npm/v/durindoor.svg)](https://www.npmjs.com/package/durindoor)
+  [![Downloads](https://img.shields.io/npm/dm/durindoor.svg)](https://www.npmjs.com/package/durindoor)
+  [![License](https://img.shields.io/npm/l/durindoor.svg)](https://github.com/decolua/9router/blob/main/LICENSE)
   
-  [🚀 Быстрый старт](#-quick-start) • [💡 Возможности](#-key-features) • [📖 Установка](#-setup-guide) • [🌐 Сайт](https://9router.com)
+  [🚀 Быстрый старт](#-quick-start) • [💡 Возможности](#-key-features) • [📖 Установка](#-setup-guide) • [🌐 Сайт](https://durindoor.com)
 </div>
 
 ---
 
-## 🤔 Почему 9Router?
+## 🤔 Почему DurinDoor?
 
 **Перестаньте тратить деньги и упираться в лимиты:**
 
@@ -29,7 +29,7 @@
 - ❌ Дорогие API ($20-50/мес за каждого провайдера)
 - ❌ Приходится вручную переключаться между провайдерами
 
-**9Router решает это:**
+**DurinDoor решает это:**
 
 - ✅ **Максимум из подписки** — Отслеживает квоту, использует каждый бит до сброса
 - ✅ **Автоматическое резервирование** — Подписка → Дёшево → Бесплатно, нулевой простой
@@ -48,7 +48,7 @@
        │ http://localhost:20128/v1
        ↓
 ┌────────────────────────────────────────┐
-│           9Router (Smart Router)        │
+│           DurinDoor (Smart Router)        │
 │  • Format translation (OpenAI ↔ Claude) │
 │  • Quota tracking                       │
 │  • Auto token refresh                   │
@@ -70,8 +70,8 @@ Result: Never stop coding, minimal cost
 **1. Глобальная установка:**
 
 ```bash
-npm install -g 9router
-9router
+npm install -g durindoor
+durindoor
 ```
 
 🎉 Панель управления откроется на `http://localhost:20128`
@@ -93,7 +93,7 @@ npm install -g 9router
 
 **Альтернатива: запуск из исходников (этот репозиторий):**
 
-Пакет этого репозитория приватный (`9router-app`), поэтому запуск из исходников/Docker — это ожидаемый путь локальной разработки.
+Пакет этого репозитория приватный (`durindoor-app`), поэтому запуск из исходников/Docker — это ожидаемый путь локальной разработки.
 
 ```bash
 cp .env.example .env
@@ -118,12 +118,12 @@ URL по умолчанию:
 
 <div align="center">
   
-### 📺 Полное руководство по настройке - 9Router + Claude Code БЕСПЛАТНО
+### 📺 Полное руководство по настройке - DurinDoor + Claude Code БЕСПЛАТНО
   
-[![Настройка 9Router + Claude Code](https://img.youtube.com/vi/raEyZPg5xE0/maxresdefault.jpg)](https://www.youtube.com/watch?v=raEyZPg5xE0)
+[![Настройка DurinDoor + Claude Code](https://img.youtube.com/vi/raEyZPg5xE0/maxresdefault.jpg)](https://www.youtube.com/watch?v=raEyZPg5xE0)
 
 **🎬 Полное пошаговое руководство:**
-- ✅ Установка и настройка 9Router
+- ✅ Установка и настройка DurinDoor
 - ✅ Настройка Claude Sonnet 4.5 БЕСПЛАТНО
 - ✅ Интеграция с Claude Code
 - ✅ Тестирование кода вживую
@@ -138,7 +138,7 @@ URL по умолчанию:
 
 ## 🛠️ Поддерживаемые CLI-инструменты
 
-9Router бесшовно работает со всеми основными AI-инструментами для кодинга:
+DurinDoor бесшовно работает со всеми основными AI-инструментами для кодинга:
 
 <div align="center">
   <table>
@@ -389,7 +389,7 @@ Combo: "my-coding-stack"
 
 Бесшовная трансляция между форматами:
 - **OpenAI** ↔ **Claude** ↔ **Gemini** ↔ **OpenAI Responses**
-- Ваш CLI-инструмент отправляет формат OpenAI → 9Router транслирует → Провайдер получает родной формат
+- Ваш CLI-инструмент отправляет формат OpenAI → DurinDoor транслирует → Провайдер получает родной формат
 - Работает с любым инструментом, поддерживающим пользовательский эндпоинт OpenAI
 
 ### 👥 Поддержка нескольких аккаунтов
@@ -443,13 +443,13 @@ Combo: "my-coding-stack"
 > **💡 ВАЖНО - Понимание «Затрат» на панели управления:**
 > 
 > «Затраты», показанные в Аналитике использования, предназначены **только для отслеживания и сравнения**. 
-> Сам 9Router **никогда ничего не взимает** с вас. Вы платите напрямую провайдерам (если используете платные сервисы).
+> Сам DurinDoor **никогда ничего не взимает** с вас. Вы платите напрямую провайдерам (если используете платные сервисы).
 > 
 > **Пример:** Если на панели показано «общие затраты $290» при использовании моделей iFlow, это представляет 
 > сумму, которую вы заплатили бы при прямом использовании платного API. Ваши фактические затраты = **$0** (iFlow бесплатен без ограничений).
 > 
 > Считайте это «трекером экономии», показывающим, сколько вы экономите, используя бесплатные модели или 
-> маршрутизацию через 9Router!
+> маршрутизацию через DurinDoor!
 
 ### 🌐 Развёртывание где угодно
 
@@ -481,15 +481,15 @@ Combo: "my-coding-stack"
 
 ---
 
-### 📊 Понимание затрат и оплаты в 9Router
+### 📊 Понимание затрат и оплаты в DurinDoor
 
-**Реальность оплаты 9Router:**
+**Реальность оплаты DurinDoor:**
 
-✅ **Софт 9Router = БЕСПЛАТНО навсегда** (открытый код, никогда не взимает плату)  
+✅ **Софт DurinDoor = БЕСПЛАТНО навсегда** (открытый код, никогда не взимает плату)  
 ✅ **«Затраты» на панели = Только для отображения/отслеживания** (не реальный счёт)  
 ✅ **Вы платите напрямую провайдерам** (подписка или плата за API)  
 ✅ **БЕСПЛАТНЫЕ провайдеры остаются БЕСПЛАТНЫМИ** (iFlow, Kiro, Qwen = $0 без ограничений)  
-❌ **9Router никогда не выставляет счёт** и не списывает с вашей карты
+❌ **DurinDoor никогда не выставляет счёт** и не списывает с вашей карты
 
 **Как работает отображение затрат:**
 
@@ -510,9 +510,9 @@ Combo: "my-coding-stack"
 
 **Правила оплаты:**
 - **Провайдеры подписки** (Claude Code, Codex): Платите им напрямую через их сайт
-- **Дешёвые провайдеры** (GLM, MiniMax): Платите им напрямую, 9Router только маршрутизирует
+- **Дешёвые провайдеры** (GLM, MiniMax): Платите им напрямую, DurinDoor только маршрутизирует
 - **БЕСПЛАТНЫЕ провайдеры** (iFlow, Kiro, Qwen): Действительно бесплатны навсегда, без скрытых платежей
-- **9Router**: Никогда ничего не взимает, никогда
+- **DurinDoor**: Никогда ничего не взимает, никогда
 
 ---
 
@@ -587,7 +587,7 @@ Combo: "openclaw-free"
 <details>
 <summary><b>📊 Почему моя панель показывает высокие затраты?</b></summary>
 
-Панель отслеживает ваше использование токенов и показывает **оценочные затраты**, как если бы вы напрямую использовали платный API. Это **не реальная оплата** — это справка, показывающая, сколько вы экономите, используя бесплатные модели или существующие подписки через 9Router.
+Панель отслеживает ваше использование токенов и показывает **оценочные затраты**, как если бы вы напрямую использовали платный API. Это **не реальная оплата** — это справка, показывающая, сколько вы экономите, используя бесплатные модели или существующие подписки через DurinDoor.
 
 **Пример:**
 - **Панель показывает:** «Общие затраты $290»
@@ -600,16 +600,16 @@ Combo: "openclaw-free"
 </details>
 
 <details>
-<summary><b>💳 Взимает ли с меня плату 9Router?</b></summary>
+<summary><b>💳 Взимает ли с меня плату DurinDoor?</b></summary>
 
-**Нет.** 9Router — это бесплатное ПО с открытым кодом, работающее на вашем собственном компьютере. Оно никогда ничего с вас не взимает.
+**Нет.** DurinDoor — это бесплатное ПО с открытым кодом, работающее на вашем собственном компьютере. Оно никогда ничего с вас не взимает.
 
 **Вы платите только:**
 - ✅ **Провайдерам подписки** (Claude Code $20/мес, Codex $20-200/мес) → Платите им напрямую на их сайте
-- ✅ **Дешёвым провайдерам** (GLM, MiniMax) → Платите им напрямую, 9Router только маршрутизирует ваши запросы
-- ❌ **Самому 9Router** → **Никогда ничего не взимает, никогда**
+- ✅ **Дешёвым провайдерам** (GLM, MiniMax) → Платите им напрямую, DurinDoor только маршрутизирует ваши запросы
+- ❌ **Самому DurinDoor** → **Никогда ничего не взимает, никогда**
 
-9Router — это локальный прокси/роутер. У него нет вашей кредитной карты, он не может выставлять счета и не имеет платёжной системы. Это полностью бесплатное ПО.
+DurinDoor — это локальный прокси/роутер. У него нет вашей кредитной карты, он не может выставлять счета и не имеет платёжной системы. Это полностью бесплатное ПО.
 
 </details>
 
@@ -623,9 +623,9 @@ Combo: "openclaw-free"
 - **Kiro**: Бесплатные безлимитные модели Claude через AWS Builder ID  
 - **Qwen**: Бесплатный безлимитный доступ к моделям Qwen через аутентификацию устройства
 
-9Router только маршрутизирует ваши запросы к ним — никаких «ловушек» или будущих платежей. Это действительно бесплатные сервисы, а 9Router облегчает их использование с поддержкой резервирования.
+DurinDoor только маршрутизирует ваши запросы к ним — никаких «ловушек» или будущих платежей. Это действительно бесплатные сервисы, а DurinDoor облегчает их использование с поддержкой резервирования.
 
-**Примечание:** Некоторые провайдеры подписки (Antigravity, GitHub Copilot) могут иметь бесплатные пробные периоды, которые позже становятся платными, но об этом чётко уведомляют сами провайдеры, а не 9Router.
+**Примечание:** Некоторые провайдеры подписки (Antigravity, GitHub Copilot) могут иметь бесплатные пробные периоды, которые позже становятся платными, но об этом чётко уведомляют сами провайдеры, а не DurinDoor.
 
 </details>
 
@@ -650,7 +650,7 @@ Combo: "openclaw-free"
 
 3. **Используйте провайдеров подписки в последнюю очередь:**
    - Только если они у вас уже есть
-   - 9Router помогает максимизировать их ценность через отслеживание квоты
+   - DurinDoor помогает максимизировать их ценность через отслеживание квоты
 
 **Результат:** Большинство пользователей могут работать за $0/мес, используя только бесплатные уровни!
 
@@ -659,20 +659,20 @@ Combo: "openclaw-free"
 <details>
 <summary><b>📈 Что если моё использование внезапно вырастет?</b></summary>
 
-Умный механизм резервирования 9Router предотвращает неожиданные расходы:
+Умный механизм резервирования DurinDoor предотвращает неожиданные расходы:
 
 **Сценарий:** Вы в спринте кодинга и превышаете квоты
 
-**Без 9Router:**
+**Без DurinDoor:**
 - ❌ Упёрлись в rate limit → Работа остановилась → Разочарование
 - ❌ Или: Случайно накопили огромный счёт за API
 
-**С 9Router:**
+**С DurinDoor:**
 - ✅ Подписка упёрлась в лимит → Авторезервирование на дешёвый уровень
 - ✅ Дешёвый уровень становится дорогим → Авторезервирование на бесплатный уровень
 - ✅ Никогда не прекращаете кодить → Предсказуемая стоимость
 
-**Вы контролируете:** Установите лимиты расходов на каждого провайдера в панели, и 9Router будет их соблюдать.
+**Вы контролируете:** Установите лимиты расходов на каждого провайдера в панели, и DurinDoor будет их соблюдать.
 
 </details>
 
@@ -696,7 +696,7 @@ Combo: "openclaw-free"
   cc/claude-haiku-4-5-20251001
 ```
 
-**Профи-совет:** Используйте Opus для сложных задач, Sonnet для скорости. 9Router отслеживает квоту для каждой модели!
+**Профи-совет:** Используйте Opus для сложных задач, Sonnet для скорости. DurinDoor отслеживает квоту для каждой модели!
 
 ### OpenAI Codex (Plus/Pro)
 
@@ -865,7 +865,7 @@ Combo: "openclaw-free"
 ```
 Settings → Models → Advanced:
   OpenAI API Base URL: http://localhost:20128/v1
-  OpenAI API Key: [из панели управления 9router]
+  OpenAI API Key: [из панели управления durindoor]
   Model: cc/claude-opus-4-6
 ```
 
@@ -878,7 +878,7 @@ Settings → Models → Advanced:
 ```json
 {
   "anthropic_api_base": "http://localhost:20128/v1",
-  "anthropic_api_key": "your-9router-api-key"
+  "anthropic_api_key": "your-durindoor-api-key"
 }
 ```
 
@@ -886,7 +886,7 @@ Settings → Models → Advanced:
 
 ```bash
 export OPENAI_BASE_URL="http://localhost:20128"
-export OPENAI_API_KEY="your-9router-api-key"
+export OPENAI_API_KEY="your-durindoor-api-key"
 
 codex "ваш промпт"
 ```
@@ -906,15 +906,15 @@ codex "ваш промпт"
   "agents": {
     "defaults": {
       "model": {
-        "primary": "9router/if/glm-4.7"
+        "primary": "durindoor/if/glm-4.7"
       }
     }
   },
   "models": {
     "providers": {
-      "9router": {
+      "durindoor": {
         "baseUrl": "http://127.0.0.1:20128/v1",
-        "apiKey": "sk_9router",
+        "apiKey": "sk_durindoor",
         "api": "openai-completions",
         "models": [
           {
@@ -928,7 +928,7 @@ codex "ваш промпт"
 }
 ```
 
-> **Примечание:** OpenClaw работает только с локальным 9Router. Используйте `127.0.0.1` вместо `localhost`, чтобы избежать проблем с разрешением имён.
+> **Примечание:** OpenClaw работает только с локальным DurinDoor. Используйте `127.0.0.1` вместо `localhost`, чтобы избежать проблем с разрешением имён.
 
 ### Cline / Continue / RooCode
 
@@ -956,12 +956,12 @@ npm run build
 # Configure
 export JWT="your-secure-secret-change-this"
 export INITIAL_PASSWORD="your-password"
-export DATA_DIR="/var/lib/9router"
+export DATA_DIR="/var/lib/durindoor"
 export PORT="20128"
 export HOSTNAME="0.0.0.0"
 export NODE_ENV="production"
 export NEXT_PUBLIC_BASE_URL="http://localhost:20128"
-export NEXT_PUBLIC_CLOUD_URL="https://9router.com"
+export NEXT_PUBLIC_CLOUD_URL="https://durindoor.com"
 export API_KEY_SECRET="endpoint-proxy-api-key-secret"
 export MACHINE_ID_SALT="endpoint-proxy-salt"
 
@@ -970,7 +970,7 @@ npm run start
 
 # Or use PM2
 npm install -g pm2
-pm2 start --name 9router -- start
+pm2 start --name durindoor -- start
 pm2 save
 pm2 startup
 ```
@@ -979,28 +979,28 @@ pm2 startup
 
 ```bash
 # Build image (from repository root)
-docker build -t 9router .
+docker build -t durindoor .
 
 # Run container (command used in current setup)
 docker run -d \
-  --name 9router \
+  --name durindoor \
   -p 20128:20128 \
-  --env-file /root/dev/9router/.env \
-  -v 9router-data:/app/data \
-  -v 9router-usage:/root/.9router \
-  9router
+  --env-file /root/dev/durindoor/.env \
+  -v durindoor-data:/app/data \
+  -v durindoor-usage:/root/.durindoor \
+  durindoor
 ```
 
 Портативная команда (если вы уже в корне репозитория):
 
 ```bash
 docker run -d \
-  --name 9router \
+  --name durindoor \
   -p 20128:20128 \
   --env-file ./.env \
-  -v 9router-data:/app/data \
-  -v 9router-usage:/root/.9router \
-  9router
+  -v durindoor-data:/app/data \
+  -v durindoor-usage:/root/.durindoor \
+  durindoor
 ```
 
 Значения по умолчанию контейнера:
@@ -1010,25 +1010,25 @@ docker run -d \
 Полезные команды:
 
 ```bash
-docker logs -f 9router
-docker restart 9router
-docker stop 9router && docker rm 9router
+docker logs -f durindoor
+docker restart durindoor
+docker stop durindoor && docker rm durindoor
 ```
 
 ### Переменные окружения
 
 | Переменная | По умолчанию | Описание |
 |----------|---------|-------------|
-| `JWT_SECRET` | Автогенерация (`~/.9router/jwt-secret`) | Секрет подписи JWT для cookie аутентификации панели (задайте для общего доступа между инстансами) |
+| `JWT_SECRET` | Автогенерация (`~/.durindoor/jwt-secret`) | Секрет подписи JWT для cookie аутентификации панели (задайте для общего доступа между инстансами) |
 | `INITIAL_PASSWORD` | `123456` | Пароль первого входа при отсутствии сохранённого хеша |
-| `DATA_DIR` | `~/.9router` | Расположение основной БД приложения (`db.json`) |
+| `DATA_DIR` | `~/.durindoor` | Расположение основной БД приложения (`db.json`) |
 | `PORT` | framework default | Порт сервиса (`20128` в примерах) |
 | `HOSTNAME` | framework default | Bind host (Docker по умолчанию `0.0.0.0`) |
 | `NODE_ENV` | runtime default | Установите `production` для развёртывания |
 | `BASE_URL` | `http://localhost:20128` | Внутренний серверный базовый URL для задач облачной синхронизации |
-| `CLOUD_URL` | `https://9router.com` | Серверный базовый URL эндпоинта облачной синхронизации |
+| `CLOUD_URL` | `https://durindoor.com` | Серверный базовый URL эндпоинта облачной синхронизации |
 | `NEXT_PUBLIC_BASE_URL` | `http://localhost:3000` | Обратно совместимый/публичный базовый URL (приоритет `BASE_URL` для серверного рантайма) |
-| `NEXT_PUBLIC_CLOUD_URL` | `https://9router.com` | Обратно совместимый/публичный облачный URL (приоритет `CLOUD_URL` для серверного рантайма) |
+| `NEXT_PUBLIC_CLOUD_URL` | `https://durindoor.com` | Обратно совместимый/публичный облачный URL (приоритет `CLOUD_URL` для серверного рантайма) |
 | `API_KEY_SECRET` | `endpoint-proxy-api-key-secret` | HMAC-секрет для генерируемых API-ключей |
 | `MACHINE_ID_SALT` | `endpoint-proxy-salt` | Соль для стабильного хеширования ID машины |
 | `ENABLE_REQUEST_LOGS` | `false` | Включить лог запросов/ответов в `logs/` |
@@ -1045,9 +1045,9 @@ docker stop 9router && docker rm 9router
 ### Runtime-файлы и хранилище
 
 - Основное состояние приложения: `${DATA_DIR}/db.json` (провайдеры, комбо, alias, ключи, настройки), управляется `src/lib/localDb.js`.
-- История использования и логи: `~/.9router/usage.json` и `~/.9router/log.txt`, управляется `src/lib/usageDb.js`.
+- История использования и логи: `~/.durindoor/usage.json` и `~/.durindoor/log.txt`, управляется `src/lib/usageDb.js`.
 - Опциональные логи запросов/транслятора: `<repo>/logs/...` при `ENABLE_REQUEST_LOGS=true`.
-- Хранилище использования следует логике пути `~/.9router` и независимо от `DATA_DIR`.
+- Хранилище использования следует логике пути `~/.durindoor` и независимо от `DATA_DIR`.
 
 </details>
 
@@ -1109,7 +1109,7 @@ docker stop 9router && docker rm 9router
 - Добавьте комбо: `cc/claude-opus-4-6 → glm/glm-4.7 → if/kimi-k2-thinking`
 
 **OAuth-токен истёк**
-- Автообновление 9Router
+- Автообновление DurinDoor
 - Если проблема сохраняется: Панель управления → Провайдеры → Переподключить
 
 **Высокие затраты**
@@ -1122,14 +1122,14 @@ docker stop 9router && docker rm 9router
 
 **Ошибки облачной синхронизации**
 - Убедитесь, что `BASE_URL` указывает на ваш работающий инстанс (например, `http://localhost:20128`)
-- Убедитесь, что `CLOUD_URL` указывает на ожидаемый облачный эндпоинт (например, `https://9router.com`)
+- Убедитесь, что `CLOUD_URL` указывает на ожидаемый облачный эндпоинт (например, `https://durindoor.com`)
 - По возможности держите значения `NEXT_PUBLIC_*` согласованными с серверными значениями.
 
 **Облачный эндпоинт `stream=false` возвращает 500 (`Unexpected token 'd'...`)**
-- Симптом обычно появляется на публичном облачном эндпоинте (`https://9router.com/v1`) для непотоковых (non-streaming) вызовов.
+- Симптом обычно появляется на публичном облачном эндпоинте (`https://durindoor.com/v1`) для непотоковых (non-streaming) вызовов.
 - Корневая причина: upstream возвращает SSE-payload (`data: ...`), тогда как клиент ожидает JSON.
 - Обходное решение: используйте `stream=true` для прямых вызовов в облако.
-- Локальный рантайм 9Router включает резервирование SSE→JSON для непотоковых вызовов, когда upstream возвращает `text/event-stream`.
+- Локальный рантайм DurinDoor включает резервирование SSE→JSON для непотоковых вызовов, когда upstream возвращает `text/event-stream`.
 
 **Облако сообщает о подключении, но запрос всё равно падает с `Invalid API key`**
 - Создайте новый ключ в локальной панели (`/api/keys`) и запустите облачную синхронизацию (`Enable Cloud`, затем `Sync Now`).
@@ -1200,7 +1200,7 @@ Authorization: Bearer your-api-key
 - `tester/security/test-docker-hardening.sh`
   - Собирает Docker-образ и проверяет hardening-проверки (`/api/cloud/auth` auth guard, `REQUIRE_API_KEY`, безопасное поведение cookie аутентификации).
 - `tester/security/test-cloud-openai-compatible.sh`
-  - Отправляет OpenAI-совместимый запрос напрямую на облачный эндпоинт (`https://9router.com/v1/chat/completions`) с указанной моделью/ключом.
+  - Отправляет OpenAI-совместимый запрос напрямую на облачный эндпоинт (`https://durindoor.com/v1/chat/completions`) с указанной моделью/ключом.
 - `tester/security/test-cloud-sync-and-call.sh`
   - End-to-end процесс: создание локального ключа → включение/синхронизация облака → вызов облачного эндпоинта с повтором.
   - Включает резервную проверку с `stream=true`, чтобы отличить ошибки аутентификации от проблем разбора потока.
@@ -1220,7 +1220,7 @@ OPENAI_API_KEY="your-cloud-key" bash tester/security/test-cloud-openai-compatibl
 
 - Локально (`http://127.0.0.1:20128/v1/chat/completions`): работает с `stream=false` и `stream=true`.
 - Docker-рантайм (тот же API-путь, экспонируемый контейнером): hardening-проверки проходят, cloud auth guard работает, строгий режим API-ключа работает при включении.
-- Публичный облачный эндпоинт (`https://9router.com/v1/chat/completions`):
+- Публичный облачный эндпоинт (`https://durindoor.com/v1/chat/completions`):
   - `stream=true`: ожидается успех (возвращает SSE-чанки).
   - `stream=false`: может падать с `500` + ошибкой разбора (`Unexpected token 'd'`), когда upstream возвращает SSE-контент для непотокового клиентского пути.
 
@@ -1258,7 +1258,7 @@ OPENAI_API_KEY="your-cloud-key" bash tester/security/test-cloud-openai-compatibl
 
 ## 📧 Поддержка
 
-- **Сайт**: [9router.com](https://9router.com)
+- **Сайт**: [durindoor.com](https://durindoor.com)
 - **GitHub**: [github.com/decolua/9router](https://github.com/decolua/9router)
 - **Issues**: [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
 
@@ -1266,15 +1266,15 @@ OPENAI_API_KEY="your-cloud-key" bash tester/security/test-cloud-openai-compatibl
 
 ## 👥 Контрибьюторы
 
-Спасибо всем, кто помогает делать 9Router лучше!
+Спасибо всем, кто помогает делать DurinDoor лучше!
 
-[![Contributors](https://contrib.rocks/image?repo=decolua/9router&max=100&columns=20&anon=1)](https://github.com/decolua/9router/graphs/contributors)
+[![Contributors](https://contrib.rocks/image?repo=decolua/durindoor&max=100&columns=20&anon=1)](https://github.com/decolua/9router/graphs/contributors)
 
 ---
 
 ## 📊 Star Chart
 
-[![Star Chart](https://starchart.cc/decolua/9router.svg?variant=adaptive)](https://starchart.cc/decolua/9router)
+[![Star Chart](https://starchart.cc/decolua/durindoor.svg?variant=adaptive)](https://starchart.cc/decolua/durindoor)
 
 ### Как внести вклад
 
@@ -1290,7 +1290,7 @@ OPENAI_API_KEY="your-cloud-key" bash tester/security/test-cloud-openai-compatibl
 
 ## 🔀 Форки
 
-**[OmniRoute](https://github.com/diegosouzapw/OmniRoute)** — Полнофункциональный TypeScript-форк 9Router. Добавляет 36+ провайдеров, авторезервирование на 4 уровнях, мультимодальный API (изображения, embedding, аудио, TTS), circuit breaker, семантическое кеширование, оценку LLM и доработанную панель. 368+ юнит-тестов. Доступен через npm.
+**[OmniRoute](https://github.com/diegosouzapw/OmniRoute)** — Полнофункциональный TypeScript-форк DurinDoor. Добавляет 36+ провайдеров, авторезервирование на 4 уровнях, мультимодальный API (изображения, embedding, аудио, TTS), circuit breaker, семантическое кеширование, оценку LLM и доработанную панель. 368+ юнит-тестов. Доступен через npm.
 
 ---
 
