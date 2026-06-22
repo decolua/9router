@@ -230,7 +230,7 @@ model = "${selectedModel || "provider/model-id"}"
                     <p className="text-sm text-text-muted mt-1">Install via Cargo (recommended):</p>
                     <code className="block mt-2 p-2 bg-black/20 rounded text-xs font-mono">cargo install codewhale-cli --locked</code>
                     <code className="block mt-1 p-2 bg-black/20 rounded text-xs font-mono">cargo install codewhale-tui --locked</code>
-                    <p className="text-sm text-text-muted mt-2">Manual configuration is still available if 9router is deployed on a remote server.</p>
+                    <p className="text-sm text-text-muted mt-2">Manual configuration is still available if DurinDoor is deployed on a remote server.</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 pl-9">
