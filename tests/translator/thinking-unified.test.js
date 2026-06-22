@@ -67,6 +67,22 @@ describe("applyThinking per provider format", () => {
   it("gemini-3 → thinkingLevel", () => {
     const out = apply("gemini", "gemini-3-pro", { reasoning_effort: "medium" }, "gemini");
     expect(out.generationConfig.thinkingConfig.thinkingLevel).toBe("medium");
+
+    const outXHigh = apply("gemini", "gemini-3-pro", { reasoning_effort: "xhigh" }, "gemini");
+    expect(outXHigh.generationConfig.thinkingConfig.thinkingLevel).toBe("high");
+
+    const outMax = apply("gemini", "gemini-3-pro", { reasoning_effort: "max" }, "gemini");
+    expect(outMax.generationConfig.thinkingConfig.thinkingLevel).toBe("high");
+
+    const outAuto = apply("gemini", "gemini-3-pro", { reasoning_effort: "auto" }, "gemini");
+    expect(outAuto.generationConfig.thinkingConfig.thinkingLevel).toBe("high");
+  });
+  it("claude under antigravity provider → gemini-level thinkingLevel", () => {
+    const out = apply("antigravity", "claude-sonnet-4-6", { reasoning_effort: "medium" }, "antigravity");
+    expect(out.generationConfig.thinkingConfig.thinkingLevel).toBe("medium");
+
+    const outXHigh = apply("antigravity", "claude-sonnet-4-6", { reasoning_effort: "xhigh" }, "antigravity");
+    expect(outXHigh.generationConfig.thinkingConfig.thinkingLevel).toBe("high");
   });
   it("gemini-2.5 → thinkingBudget", () => {
     const out = apply("gemini", "gemini-2.5-flash", { reasoning_effort: "high" }, "gemini");

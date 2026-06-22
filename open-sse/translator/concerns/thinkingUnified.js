@@ -98,6 +98,12 @@ export const captureThinking = extractThinking;
 
 // Resolve thinking format: provider override > capability > derive(targetFormat).
 function resolveFormat(targetFormat, model, provider) {
+  if (provider === "antigravity" || targetFormat === "antigravity") {
+    const caps = getCapabilitiesForModel(provider, model);
+    if (caps.reasoning) {
+      return caps.thinkingFormat === "gemini-budget" ? "gemini-budget" : "gemini-level";
+    }
+  }
   const providerFmt = provider ? PROVIDERS[provider]?.thinkingFormat : null;
   if (providerFmt) return providerFmt;
   const caps = getCapabilitiesForModel(provider, model);
@@ -162,13 +168,15 @@ function applyFormat(fmt, body, cfg, caps) {
   switch (fmt) {
     case "openai": {
       if (none && canDisable) { body.reasoning_effort = "none"; break; }
-      const level = toLevel(eff);
+      let level = toLevel(eff);
+      if (level === "auto") level = "high";
       if (level) body.reasoning_effort = level === "xhigh" || level === "max" ? "high" : level;
       break;
     }
     case "claude-adaptive": {
       if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
-      const level = toLevel(eff);
+      let level = toLevel(eff);
+      if (level === "auto") level = "high";
       body.output_config = { effort: level === "xhigh" ? "high" : level };
       break;
     }
@@ -179,7 +187,13 @@ function applyFormat(fmt, body, cfg, caps) {
       break;
     }
     case "gemini-level": {
-      const level = none ? "minimal" : (toLevel(eff) || "high");
+      let level = none ? "minimal" : (toLevel(eff) || "high");
+      if (level === "xhigh" || level === "max" || level === "auto") {
+        level = "high";
+      }
+      if (!["minimal", "low", "medium", "high"].includes(level)) {
+        level = "high";
+      }
       setGeminiThinking(body, { thinkingLevel: level, includeThoughts: level !== "minimal" });
       break;
     }
@@ -212,7 +226,8 @@ function applyFormat(fmt, body, cfg, caps) {
     }
     case "kimi": {
       if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
-      const level = toLevel(eff);
+      let level = toLevel(eff);
+      if (level === "auto" || level === "xhigh") level = "high";
       if (level) body.reasoning_effort = level === "max" ? "high" : level;
       break;
     }
@@ -229,7 +244,8 @@ function applyFormat(fmt, body, cfg, caps) {
     }
     case "step": {
       if (none && canDisable) break;
-      const level = toLevel(eff);
+      let level = toLevel(eff);
+      if (level === "auto") level = "high";
       if (level) body.reasoning_effort = level === "xhigh" || level === "max" ? "high" : level;
       break;
     }
