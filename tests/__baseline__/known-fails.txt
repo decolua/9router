@@ -34,3 +34,6 @@ tests/translator/golden-url-header.test.js :: GOLDEN buildUrl (default executor 
 tests/translator/golden-url-header.test.js :: GOLDEN buildHeaders (default executor providers) cline → headers (apiKey / oauth)
 tests/translator/golden-url-header.test.js :: GOLDEN buildHeaders (default executor providers) codebuddy → headers (apiKey / oauth)
 tests/translator/golden-url-header.test.js :: GOLDEN buildHeaders (default executor providers) kimi-coding → headers (apiKey / oauth)
+tests/translator/golden-url-header.test.js :: GOLDEN buildUrl (default executor providers) zai → url (stream + non-stream)
+tests/translator/golden-url-header.test.js :: GOLDEN buildHeaders (default executor providers) zai → headers (apiKey / oauth)
+tests/unit/lint-fatal-diff.test.js :: lint-fatal-diff.mjs — integration exits 0 on clean diff (no fatal findings)
