@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
 import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
@@ -24,18 +24,31 @@ export default function HermesToolCard({
   tailscaleEnabled,
   tailscaleUrl,
 }) {
-  const [hermesStatus, setHermesStatus] = useState(initialStatus || null);
+  // Local fetch/mutation result only. Parent initialStatus flows through without sync effect.
+  const [fetchedHermesStatus, setFetchedHermesStatus] = useState(null);
   const [checking, setChecking] = useState(false);
   const [applying, setApplying] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [message, setMessage] = useState(null);
-  const [selectedApiKey, setSelectedApiKey] = useState("");
-  const [selectedModel, setSelectedModel] = useState("");
+  // Explicit user selections only — derived values computed at render time.
+  const [userSelectedApiKey, setUserSelectedApiKey] = useState("");
+  const [userSelectedModel, setUserSelectedModel] = useState("");
+  // True after user resets — suppresses stale status fallback until re-fetch completes.
+  const [modelResetByUser, setModelResetByUser] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [modelAliases, setModelAliases] = useState({});
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
-  const hasInitializedModel = useRef(false);
+
+  // Derived: local fetch/mutation result takes precedence over parent prop.
+  const hermesStatus = fetchedHermesStatus ?? initialStatus ?? null;
+
+  // Effective key: explicit user selection > first available key > empty.
+  const effectiveSelectedApiKey = userSelectedApiKey || apiKeys?.[0]?.key || "";
+
+  // Effective model: explicit user selection > status file value (unless user reset) > empty.
+  const statusModel = hermesStatus?.settings?.model?.default || "";
+  const effectiveModel = userSelectedModel || (!modelResetByUser ? statusModel : "") || "";
 
   const getConfigStatus = () => {
     if (!hermesStatus?.installed) return null;
@@ -47,54 +60,28 @@ export default function HermesToolCard({
 
   const configStatus = getConfigStatus();
 
-  useEffect(() => {
-    if (apiKeys?.length > 0 && !selectedApiKey) {
-      setSelectedApiKey(apiKeys[0].key);
-    }
-  }, [apiKeys, selectedApiKey]);
+  // showChecking: explicit check in progress OR initial auto-check still pending.
+  const showChecking = checking || (isExpanded && !hermesStatus);
 
-  useEffect(() => {
-    if (initialStatus) setHermesStatus(initialStatus);
-  }, [initialStatus]);
-
+  // Auto-check: inline fetch chain — no synchronous setState in effect body.
   useEffect(() => {
     if (isExpanded && !hermesStatus) {
-      checkStatus();
-      fetchModelAliases();
+      fetch(ENDPOINT)
+        .then(r => r.json())
+        .then(data => { setFetchedHermesStatus(data); })
+        .catch(err => { setFetchedHermesStatus({ installed: false, error: err.message }); });
     }
-    if (isExpanded) fetchModelAliases();
-  }, [isExpanded]);
+  }, [isExpanded, hermesStatus]);
 
-  const fetchModelAliases = async () => {
-    try {
-      const res = await fetch("/api/models/alias");
-      const data = await res.json();
-      if (res.ok) setModelAliases(data.aliases || {});
-    } catch (error) {
-      console.log("Error fetching model aliases:", error);
-    }
-  };
-
+  // Alias fetch: separate effect so status changes while expanded don't re-fire it.
   useEffect(() => {
-    if (hermesStatus?.installed && !hasInitializedModel.current) {
-      hasInitializedModel.current = true;
-      const cfg = hermesStatus.settings?.model;
-      if (cfg?.default) setSelectedModel(cfg.default);
+    if (isExpanded) {
+      fetch("/api/models/alias")
+        .then(r => r.json())
+        .then(data => { if (data) setModelAliases(data.aliases || {}); })
+        .catch(() => {});
     }
-  }, [hermesStatus]);
-
-  const checkStatus = async () => {
-    setChecking(true);
-    try {
-      const res = await fetch(ENDPOINT);
-      const data = await res.json();
-      setHermesStatus(data);
-    } catch (error) {
-      setHermesStatus({ installed: false, error: error.message });
-    } finally {
-      setChecking(false);
-    }
-  };
+  }, [isExpanded]);
 
   const normalizeLocalhost = (url) => url.replace("://localhost", "://127.0.0.1");
 
@@ -110,12 +97,24 @@ export default function HermesToolCard({
     return url.endsWith("/v1") ? url : `${url}/v1`;
   };
 
+  const checkStatus = async () => {
+    setChecking(true);
+    try {
+      const res = await fetch(ENDPOINT);
+      const data = await res.json();
+      setFetchedHermesStatus(data);
+    } catch (error) {
+      setFetchedHermesStatus({ installed: false, error: error.message });
+    } finally {
+      setChecking(false);
+    }
+  };
+
   const handleApply = async () => {
     setApplying(true);
     setMessage(null);
     try {
-      const keyToUse = selectedApiKey?.trim()
-        || (apiKeys?.length > 0 ? apiKeys[0].key : null)
+      const keyToUse = effectiveSelectedApiKey?.trim()
         || (!cloudEnabled ? "sk_9router" : null);
 
       const res = await fetch(ENDPOINT, {
@@ -124,7 +123,7 @@ export default function HermesToolCard({
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
           apiKey: keyToUse,
-          model: selectedModel,
+          model: effectiveModel,
         }),
       });
       const data = await res.json();
@@ -149,8 +148,10 @@ export default function HermesToolCard({
       const data = await res.json();
       if (res.ok) {
         setMessage({ type: "success", text: "Settings reset successfully!" });
-        setSelectedModel("");
-        checkStatus();
+        // Clear user overrides and suppress stale status fallback until re-fetch.
+        setUserSelectedModel("");
+        setModelResetByUser(true);
+        checkStatus().then(() => setModelResetByUser(false));
       } else {
         setMessage({ type: "error", text: data.error || "Failed to reset settings" });
       }
@@ -162,16 +163,17 @@ export default function HermesToolCard({
   };
 
   const handleModelSelect = (model) => {
-    setSelectedModel(model.value);
+    setUserSelectedModel(model.value);
+    setModelResetByUser(false);
     setModalOpen(false);
   };
 
   const getManualConfigs = () => {
-    const keyToUse = (selectedApiKey && selectedApiKey.trim())
-      ? selectedApiKey
+    const keyToUse = (effectiveSelectedApiKey && effectiveSelectedApiKey.trim())
+      ? effectiveSelectedApiKey
       : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
 
-    const yamlContent = `model:\n  default: "${selectedModel || "provider/model-id"}"\n  provider: "custom"\n  base_url: "${getEffectiveBaseUrl()}"\n`;
+    const yamlContent = `model:\n  default: "${effectiveModel || "provider/model-id"}"\n  provider: "custom"\n  base_url: "${getEffectiveBaseUrl()}"\n`;
     const envContent = `OPENAI_API_KEY=${keyToUse}\n`;
 
     return [
@@ -202,14 +204,14 @@ export default function HermesToolCard({
 
       {isExpanded && (
         <div className="mt-4 pt-4 border-t border-border flex flex-col gap-4">
-          {checking && (
+          {showChecking && (
             <div className="flex items-center gap-2 text-text-muted">
               <span className="material-symbols-outlined animate-spin">progress_activity</span>
               <span>Checking Hermes Agent...</span>
             </div>
           )}
 
-          {!checking && hermesStatus && !hermesStatus.installed && (
+          {!showChecking && hermesStatus && !hermesStatus.installed && (
             <div className="flex flex-col gap-4">
               <div className="flex flex-col gap-3 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
                 <div className="flex items-start gap-3">
@@ -229,7 +231,7 @@ export default function HermesToolCard({
             </div>
           )}
 
-          {!checking && hermesStatus?.installed && (
+          {!showChecking && hermesStatus?.installed && (
             <>
               <div className="flex flex-col gap-2">
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
@@ -259,15 +261,15 @@ export default function HermesToolCard({
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">API Key</span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
-                  <ApiKeySelect value={selectedApiKey} onChange={setSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
+                  <ApiKeySelect value={effectiveSelectedApiKey} onChange={setUserSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
                 </div>
 
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Default Model</span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
                   <div className="relative w-full min-w-0">
-                    <input type="text" value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} placeholder="provider/model-id" className="w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5" />
-                    {selectedModel && <button onClick={() => setSelectedModel("")} className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-red-500 rounded transition-colors" title="Clear"><span className="material-symbols-outlined text-[14px]">close</span></button>}
+                    <input type="text" value={effectiveModel} onChange={(e) => { setUserSelectedModel(e.target.value); setModelResetByUser(false); }} placeholder="provider/model-id" className="w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5" />
+                    {effectiveModel && <button onClick={() => { setUserSelectedModel(""); setModelResetByUser(true); }} className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-red-500 rounded transition-colors" title="Clear"><span className="material-symbols-outlined text-[14px]">close</span></button>}
                   </div>
                   <button onClick={() => setModalOpen(true)} disabled={!hasActiveProviders} className={`w-full sm:w-auto rounded border px-2 py-2 text-xs transition-colors sm:py-1.5 whitespace-nowrap sm:shrink-0 ${hasActiveProviders ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Select</button>
                 </div>
@@ -281,7 +283,7 @@ export default function HermesToolCard({
               )}
 
               <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                <Button variant="primary" size="sm" onClick={handleApply} disabled={!selectedModel} loading={applying} className="w-full sm:w-auto">
+                <Button variant="primary" size="sm" onClick={handleApply} disabled={!effectiveModel} loading={applying} className="w-full sm:w-auto">
                   <span className="material-symbols-outlined text-[14px] mr-1">save</span>Apply
                 </Button>
                 <Button variant="outline" size="sm" onClick={handleReset} disabled={!hermesStatus?.has9Router} loading={restoring} className="w-full sm:w-auto">
@@ -300,7 +302,7 @@ export default function HermesToolCard({
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
         onSelect={handleModelSelect}
-        selectedModel={selectedModel}
+        selectedModel={effectiveModel}
         activeProviders={activeProviders}
         modelAliases={modelAliases}
         title="Select Model for Hermes Agent"

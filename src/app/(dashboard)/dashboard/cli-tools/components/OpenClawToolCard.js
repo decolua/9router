@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
 import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
@@ -22,20 +22,50 @@ export default function OpenClawToolCard({
   tailscaleEnabled,
   tailscaleUrl,
 }) {
-  const [openclawStatus, setOpenclawStatus] = useState(initialStatus || null);
+  // Local fetch/mutation result only. Parent initialStatus flows through without sync effect.
+  const [fetchedOpenclawStatus, setFetchedOpenclawStatus] = useState(null);
   const [checkingOpenclaw, setCheckingOpenclaw] = useState(false);
   const [applying, setApplying] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [message, setMessage] = useState(null);
-  const [selectedApiKey, setSelectedApiKey] = useState("");
-  const [selectedModel, setSelectedModel] = useState("");
-  const [agentModels, setAgentModels] = useState({}); // { [agentId]: modelId }
-  const [agentModalFor, setAgentModalFor] = useState(null); // agentId opening modal
+  // Explicit user selections only — derived values computed at render time.
+  const [userSelectedApiKey, setUserSelectedApiKey] = useState("");
+  const [userSelectedModel, setUserSelectedModel] = useState("");
+  // Per-agent model overrides: only explicit user edits stored here.
+  // Reads back from status (agent.currentModel) at render time for unedited agents.
+  const [userAgentModels, setUserAgentModels] = useState({});
+  const [agentModalFor, setAgentModalFor] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [modelAliases, setModelAliases] = useState({});
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
-  const hasInitializedModel = useRef(false);
+  // Suppress stale status fallbacks after user resets, until re-fetch completes.
+  const [modelResetByUser, setModelResetByUser] = useState(false);
+  const [apiKeyResetByUser, setApiKeyResetByUser] = useState(false);
+
+  // Derived: local fetch/mutation result takes precedence over parent prop.
+  const openclawStatus = fetchedOpenclawStatus ?? initialStatus ?? null;
+
+  // Effective api key: explicit user selection > status file value (unless reset) > first available > empty.
+  const provider9router = openclawStatus?.settings?.models?.providers?.["9router"];
+  const statusApiKey = provider9router?.apiKey || "";
+  const statusApiKeyValid = !!(statusApiKey && apiKeys?.some(k => k.key === statusApiKey));
+  const effectiveSelectedApiKey =
+    userSelectedApiKey ||
+    (!apiKeyResetByUser && statusApiKeyValid ? statusApiKey : "") ||
+    apiKeys?.[0]?.key ||
+    "";
+
+  // Effective model: explicit user > status primary model (unless reset) > empty.
+  const rawStatusModel = openclawStatus?.settings?.agents?.defaults?.model?.primary || "";
+  const statusModel = rawStatusModel.replace("9router/", "");
+  const effectiveModel = userSelectedModel || (!modelResetByUser ? statusModel : "") || "";
+
+  // Effective per-agent models: user override > agent.currentModel from status > "".
+  const getEffectiveAgentModel = (agent) =>
+    Object.hasOwn(userAgentModels, agent.id)
+      ? userAgentModels[agent.id]
+      : (agent.currentModel || "");
 
   const getConfigStatus = () => {
     if (!openclawStatus?.installed) return null;
@@ -46,67 +76,28 @@ export default function OpenClawToolCard({
 
   const configStatus = getConfigStatus();
 
-  useEffect(() => {
-    if (apiKeys?.length > 0 && !selectedApiKey) {
-      setSelectedApiKey(apiKeys[0].key);
-    }
-  }, [apiKeys, selectedApiKey]);
+  // showChecking: explicit check in progress OR initial auto-check still pending.
+  const showChecking = checkingOpenclaw || (isExpanded && !openclawStatus);
 
-  useEffect(() => {
-    if (initialStatus) setOpenclawStatus(initialStatus);
-  }, [initialStatus]);
-
+  // Auto-check: inline fetch chain — no synchronous setState in effect body.
   useEffect(() => {
     if (isExpanded && !openclawStatus) {
-      checkOpenclawStatus();
-      fetchModelAliases();
+      fetch("/api/cli-tools/openclaw-settings")
+        .then(r => r.json())
+        .then(data => { setFetchedOpenclawStatus(data); })
+        .catch(err => { setFetchedOpenclawStatus({ installed: false, error: err.message }); });
     }
-    if (isExpanded) fetchModelAliases();
-  }, [isExpanded]);
+  }, [isExpanded, openclawStatus]);
 
-  const fetchModelAliases = async () => {
-    try {
-      const res = await fetch("/api/models/alias");
-      const data = await res.json();
-      if (res.ok) setModelAliases(data.aliases || {});
-    } catch (error) {
-      console.log("Error fetching model aliases:", error);
-    }
-  };
-
+  // Alias fetch: separate effect so status changes while expanded don't re-fire it.
   useEffect(() => {
-    if (openclawStatus?.installed && !hasInitializedModel.current) {
-      hasInitializedModel.current = true;
-      const provider = openclawStatus.settings?.models?.providers?.["9router"];
-      if (provider) {
-        const primaryModel = openclawStatus.settings?.agents?.defaults?.model?.primary;
-        if (primaryModel) setSelectedModel(primaryModel.replace("9router/", ""));
-        if (provider.apiKey && apiKeys?.some(k => k.key === provider.apiKey)) {
-          setSelectedApiKey(provider.apiKey);
-        }
-      }
-      // Init per-agent models from enriched agents list
-      const agentList = openclawStatus.agents || [];
-      const initAgentModels = {};
-      agentList.forEach((agent) => {
-        if (agent.currentModel) initAgentModels[agent.id] = agent.currentModel;
-      });
-      setAgentModels(initAgentModels);
+    if (isExpanded) {
+      fetch("/api/models/alias")
+        .then(r => r.json())
+        .then(data => { if (data) setModelAliases(data.aliases || {}); })
+        .catch(() => {});
     }
-  }, [openclawStatus, apiKeys]);
-
-  const checkOpenclawStatus = async () => {
-    setCheckingOpenclaw(true);
-    try {
-      const res = await fetch("/api/cli-tools/openclaw-settings");
-      const data = await res.json();
-      setOpenclawStatus(data);
-    } catch (error) {
-      setOpenclawStatus({ installed: false, error: error.message });
-    } finally {
-      setCheckingOpenclaw(false);
-    }
-  };
+  }, [isExpanded]);
 
   const normalizeLocalhost = (url) => url.replace("://localhost", "://127.0.0.1");
 
@@ -127,12 +118,35 @@ export default function OpenClawToolCard({
     return url.endsWith("/v1") ? url : `${url}/v1`;
   };
 
+  const checkOpenclawStatus = async () => {
+    setCheckingOpenclaw(true);
+    try {
+      const res = await fetch("/api/cli-tools/openclaw-settings");
+      const data = await res.json();
+      setFetchedOpenclawStatus(data);
+    } catch (error) {
+      setFetchedOpenclawStatus({ installed: false, error: error.message });
+    } finally {
+      setCheckingOpenclaw(false);
+    }
+  };
+
+  // Build the agentModels payload for Apply: merge status defaults with user overrides.
+  const buildAgentModelsPayload = () => {
+    const agentList = openclawStatus?.agents || [];
+    const result = {};
+    agentList.forEach((agent) => {
+      const m = getEffectiveAgentModel(agent);
+      if (m) result[agent.id] = m;
+    });
+    return result;
+  };
+
   const handleApplySettings = async () => {
     setApplying(true);
     setMessage(null);
     try {
-      const keyToUse = selectedApiKey?.trim()
-        || (apiKeys?.length > 0 ? apiKeys[0].key : null)
+      const keyToUse = effectiveSelectedApiKey?.trim()
         || (!cloudEnabled ? "sk_9router" : null);
 
       const res = await fetch("/api/cli-tools/openclaw-settings", {
@@ -141,8 +155,8 @@ export default function OpenClawToolCard({
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
           apiKey: keyToUse,
-          model: selectedModel,
-          agentModels,
+          model: effectiveModel,
+          agentModels: buildAgentModelsPayload(),
         }),
       });
       const data = await res.json();
@@ -167,9 +181,16 @@ export default function OpenClawToolCard({
       const data = await res.json();
       if (res.ok) {
         setMessage({ type: "success", text: "Settings reset successfully!" });
-        setSelectedModel("");
-        setSelectedApiKey("");
-        checkOpenclawStatus();
+        // Clear user overrides and suppress stale status fallbacks until re-fetch.
+        setUserSelectedModel("");
+        setModelResetByUser(true);
+        setUserSelectedApiKey("");
+        setApiKeyResetByUser(true);
+        setUserAgentModels({});
+        checkOpenclawStatus().then(() => {
+          setModelResetByUser(false);
+          setApiKeyResetByUser(false);
+        });
       } else {
         setMessage({ type: "error", text: data.error || "Failed to reset settings" });
       }
@@ -182,24 +203,25 @@ export default function OpenClawToolCard({
 
   const handleModelSelect = (model) => {
     if (agentModalFor) {
-      setAgentModels(prev => ({ ...prev, [agentModalFor]: model.value }));
+      setUserAgentModels(prev => ({ ...prev, [agentModalFor]: model.value }));
       setAgentModalFor(null);
     } else {
-      setSelectedModel(model.value);
+      setUserSelectedModel(model.value);
+      setModelResetByUser(false);
     }
     setModalOpen(false);
   };
 
   const getManualConfigs = () => {
-    const keyToUse = (selectedApiKey && selectedApiKey.trim())
-      ? selectedApiKey
+    const keyToUse = (effectiveSelectedApiKey && effectiveSelectedApiKey.trim())
+      ? effectiveSelectedApiKey
       : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
 
     const settingsContent = {
       agents: {
         defaults: {
           model: {
-            primary: `9router/${selectedModel || "provider/model-id"}`,
+            primary: `9router/${effectiveModel || "provider/model-id"}`,
           },
         },
       },
@@ -211,8 +233,8 @@ export default function OpenClawToolCard({
             api: "openai-completions",
             models: [
               {
-                id: selectedModel || "provider/model-id",
-                name: (selectedModel || "provider/model-id").split("/").pop(),
+                id: effectiveModel || "provider/model-id",
+                name: (effectiveModel || "provider/model-id").split("/").pop(),
               },
             ],
           },
@@ -250,14 +272,14 @@ export default function OpenClawToolCard({
 
       {isExpanded && (
         <div className="mt-4 pt-4 border-t border-border flex flex-col gap-4">
-          {checkingOpenclaw && (
+          {showChecking && (
             <div className="flex items-center gap-2 text-text-muted">
               <span className="material-symbols-outlined animate-spin">progress_activity</span>
               <span>Checking Open Claw CLI...</span>
             </div>
           )}
 
-          {!checkingOpenclaw && openclawStatus && !openclawStatus.installed && (
+          {!showChecking && openclawStatus && !openclawStatus.installed && (
             <div className="flex flex-col gap-4">
               <div className="flex flex-col gap-3 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
                 <div className="flex items-start gap-3">
@@ -277,7 +299,7 @@ export default function OpenClawToolCard({
             </div>
           )}
 
-          {!checkingOpenclaw && openclawStatus?.installed && (
+          {!showChecking && openclawStatus?.installed && (
             <>
               <div className="flex flex-col gap-2">
                 {/* Endpoint (selector) */}
@@ -310,7 +332,7 @@ export default function OpenClawToolCard({
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">API Key</span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
-                  <ApiKeySelect value={selectedApiKey} onChange={setSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
+                  <ApiKeySelect value={effectiveSelectedApiKey} onChange={setUserSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
                 </div>
 
                 {/* Default Model */}
@@ -318,8 +340,8 @@ export default function OpenClawToolCard({
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Default Model</span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
                   <div className="relative w-full min-w-0">
-                    <input type="text" value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} placeholder="provider/model-id" className="w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5" />
-                    {selectedModel && <button onClick={() => setSelectedModel("")} className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-red-500 rounded transition-colors" title="Clear"><span className="material-symbols-outlined text-[14px]">close</span></button>}
+                    <input type="text" value={effectiveModel} onChange={(e) => { setUserSelectedModel(e.target.value); setModelResetByUser(false); }} placeholder="provider/model-id" className="w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5" />
+                    {effectiveModel && <button onClick={() => { setUserSelectedModel(""); setModelResetByUser(true); }} className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-red-500 rounded transition-colors" title="Clear"><span className="material-symbols-outlined text-[14px]">close</span></button>}
                   </div>
                   <button onClick={() => { setAgentModalFor(null); setModalOpen(true); }} disabled={!hasActiveProviders} className={`w-full sm:w-auto rounded border px-2 py-2 text-xs transition-colors sm:py-1.5 whitespace-nowrap sm:shrink-0 ${hasActiveProviders ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Select</button>
                 </div>
@@ -332,12 +354,12 @@ export default function OpenClawToolCard({
                     <div className="relative w-full min-w-0">
                       <input
                         type="text"
-                        value={agentModels[agent.id] || ""}
-                        onChange={(e) => setAgentModels(prev => ({ ...prev, [agent.id]: e.target.value }))}
-                        placeholder={`default (${selectedModel || "provider/model-id"})`}
+                        value={getEffectiveAgentModel(agent)}
+                        onChange={(e) => setUserAgentModels(prev => ({ ...prev, [agent.id]: e.target.value }))}
+                        placeholder={`default (${effectiveModel || "provider/model-id"})`}
                         className="w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5"
                       />
-                      {agentModels[agent.id] && <button onClick={() => setAgentModels(prev => ({ ...prev, [agent.id]: "" }))} className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-red-500 rounded transition-colors" title="Clear"><span className="material-symbols-outlined text-[14px]">close</span></button>}
+                      {getEffectiveAgentModel(agent) && <button onClick={() => setUserAgentModels(prev => ({ ...prev, [agent.id]: "" }))} className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-red-500 rounded transition-colors" title="Clear"><span className="material-symbols-outlined text-[14px]">close</span></button>}
                     </div>
                     <button onClick={() => { setAgentModalFor(agent.id); setModalOpen(true); }} disabled={!hasActiveProviders} className={`w-full sm:w-auto rounded border px-2 py-2 text-xs transition-colors sm:py-1.5 whitespace-nowrap sm:shrink-0 ${hasActiveProviders ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Select</button>
                   </div>
@@ -352,7 +374,7 @@ export default function OpenClawToolCard({
               )}
 
               <div className="grid grid-cols-1 gap-2 sm:flex sm:items-center">
-                <Button variant="primary" size="sm" onClick={handleApplySettings} disabled={!selectedModel} loading={applying}>
+                <Button variant="primary" size="sm" onClick={handleApplySettings} disabled={!effectiveModel} loading={applying}>
                   <span className="material-symbols-outlined text-[14px] mr-1">save</span>Apply
                 </Button>
                 <Button variant="outline" size="sm" onClick={handleResetSettings} disabled={!openclawStatus?.has9Router} loading={restoring}>
@@ -371,7 +393,7 @@ export default function OpenClawToolCard({
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
         onSelect={handleModelSelect}
-        selectedModel={selectedModel}
+        selectedModel={effectiveModel}
         activeProviders={activeProviders}
         modelAliases={modelAliases}
         title="Select Model for Open Claw"
