@@ -30,10 +30,3 @@ tests/unit/combo-autoswitch.test.js :: reorderByCapabilities keeps order when no
 tests/unit/image-fetch-hardening.test.js :: fetchImageAsBase64 hardening accepts valid PNG from public host
 tests/unit/codex-image-fetch.test.js :: CodexExecutor image handling fetches 1MB remote image and inlines it as base64 data URI
 tests/unit/codex-image-fetch.test.js :: CodexExecutor image handling execute() prefetches images before sending to upstream
-tests/translator/golden-url-header.test.js :: GOLDEN buildUrl (default executor providers) codebuddy → url (stream + non-stream)
-tests/translator/golden-url-header.test.js :: GOLDEN buildHeaders (default executor providers) cline → headers (apiKey / oauth)
-tests/translator/golden-url-header.test.js :: GOLDEN buildHeaders (default executor providers) codebuddy → headers (apiKey / oauth)
-tests/translator/golden-url-header.test.js :: GOLDEN buildHeaders (default executor providers) kimi-coding → headers (apiKey / oauth)
-tests/translator/golden-url-header.test.js :: GOLDEN buildUrl (default executor providers) zai → url (stream + non-stream)
-tests/translator/golden-url-header.test.js :: GOLDEN buildHeaders (default executor providers) zai → headers (apiKey / oauth)
-tests/unit/lint-fatal-diff.test.js :: lint-fatal-diff.mjs — integration exits 0 on clean diff (no fatal findings)
