@@ -5,7 +5,7 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
-import { getSettings, getCombos } from "@/lib/localDb";
+import { getSettings, getCombos, getProviderConnections } from "@/lib/localDb";
 import { AI_PROVIDERS, resolveProviderId } from "@/shared/constants/providers.js";
 import { handleSearchCore } from "open-sse/handlers/search/index.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -135,15 +135,33 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey, 
     provider_options: body.provider_options
   };
 
-  // No-auth providers (e.g. searxng) bypass credential lookup
+  // No-auth providers (e.g. searxng) bypass credential lookup.
+  // We still check for a stored connection to pick up any user-configured
+  // providerSpecificData (e.g. a custom baseUrl saved via the UI).
   if (resolvedProvider.noAuth) {
     log.info("AUTH", `\x1b[32m${providerId} no-auth mode\x1b[0m`);
+    let noAuthBody = coreBody;
+    if (!coreBody.provider_options?.baseUrl) {
+      try {
+        const connections = await getProviderConnections({ provider: providerId, isActive: true });
+        const storedBaseUrl = connections[0]?.providerSpecificData?.baseUrl;
+        if (storedBaseUrl) {
+          log.info("SEARCH", `${providerId} using stored baseUrl override`);
+          noAuthBody = {
+            ...coreBody,
+            provider_options: { ...(coreBody.provider_options || {}), baseUrl: storedBaseUrl },
+          };
+        }
+      } catch {
+        // ignore — fall back to registry default
+      }
+    }
     const result = await handleSearchCore({
-      body: coreBody,
+      body: noAuthBody,
       provider: resolvedProvider,
       providerConfig,
       credentials: null,
-      log
+      log,
     });
     if (result.success) return result.response;
     return result.response;

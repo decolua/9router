@@ -19,6 +19,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
 
   const isAzure = provider === "azure";
   const isCloudflareAi = provider === "cloudflare-ai";
+  const isSearxng = provider === "searxng";
   const providerRegions = AI_PROVIDERS?.[provider]?.regions || null;
   const defaultRegion = AI_PROVIDERS?.[provider]?.defaultRegion || providerRegions?.[0]?.id || "";
 
@@ -29,6 +30,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     priority: 1,
     proxyPoolId: NONE_PROXY_POOL_VALUE,
     ollamaHostUrl: "",
+    searxngBaseUrl: "",
   });
   const [azureData, setAzureData] = useState({
     azureEndpoint: "",
@@ -48,6 +50,9 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const buildProviderSpecificData = () => {
     if (isOllamaLocal && formData.ollamaHostUrl.trim()) {
       return { baseUrl: formData.ollamaHostUrl.trim() };
+    }
+    if (isSearxng && formData.searxngBaseUrl.trim()) {
+      return { baseUrl: formData.searxngBaseUrl.trim() };
     }
     if (isAzure) {
       return {
@@ -85,9 +90,9 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
 
   const handleSubmit = async () => {
     if (!provider) return;
-    if (!isOllamaLocal && !formData.apiKey) return;
-    if (!isOllamaLocal) {
-      // Non-ollama providers require a name
+    if (!isOllamaLocal && !isSearxng && !formData.apiKey) return;
+    if (!isOllamaLocal && !isSearxng) {
+      // Non-ollama, non-searxng providers require a name
       if (!formData.name) return;
     }
     if (isCompatible && !formData.defaultModel.trim()) return;
@@ -113,7 +118,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
       }
 
       await onSave({
-        name: formData.name || (isOllamaLocal ? "Ollama Local" : ""),
+        name: formData.name || (isOllamaLocal ? "Ollama Local" : isSearxng ? "SearXNG" : ""),
         apiKey: formData.apiKey,
         defaultModel: isCompatible ? formData.defaultModel.trim() : undefined,
         priority: formData.priority,
@@ -194,7 +199,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
           label="Name"
           value={formData.name}
           onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-          placeholder={isOllamaLocal ? "Ollama Local" : "Production Key"}
+          placeholder={isOllamaLocal ? "Ollama Local" : isSearxng ? "SearXNG" : "Production Key"}
         />
         {isOllamaLocal && (
           <div className="flex gap-2">
@@ -212,7 +217,23 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
             </div>
           </div>
         )}
-        {!isOllamaLocal && (
+        {isSearxng && (
+          <div className="flex gap-2">
+            <Input
+              label="SearXNG Base URL"
+              value={formData.searxngBaseUrl}
+              onChange={(e) => setFormData({ ...formData, searxngBaseUrl: e.target.value })}
+              placeholder="http://localhost:8888"
+              className="flex-1"
+            />
+            <div className="pt-6">
+              <Button onClick={handleValidate} disabled={validating || saving} variant="secondary">
+                {validating ? "Checking..." : "Check"}
+              </Button>
+            </div>
+          </div>
+        )}
+        {!isOllamaLocal && !isSearxng && (
           <div className="flex gap-2">
             <Input
               label={credentialLabel}
@@ -266,6 +287,11 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         {isOllamaLocal && (
           <p className="text-xs text-text-muted">
             Leave blank to use <code>http://localhost:11434</code>. For remote Ollama, enter the full host URL (e.g. <code>http://192.168.1.10:11434</code>).
+          </p>
+        )}
+        {isSearxng && (
+          <p className="text-xs text-text-muted">
+            Leave blank to use <code>http://localhost:8888</code>. For a remote SearXNG instance enter the full base URL (e.g. <code>http://192.168.1.10:8080</code> or <code>https://search.example.com</code>). Private network URLs are allowed for self-hosted instances.
           </p>
         )}
         {validationResult && (
@@ -356,7 +382,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         </p>
 
         <div className="flex gap-2">
-          <Button onClick={handleSubmit} fullWidth disabled={saving || (!isOllamaLocal && (!formData.name || !formData.apiKey)) || (isCompatible && !formData.defaultModel.trim()) || (isAzure && (!azureData.azureEndpoint || !azureData.deployment || !azureData.organization)) || (isCloudflareAi && !cloudflareData.accountId)}>
+          <Button onClick={handleSubmit} fullWidth disabled={saving || (!isOllamaLocal && !isSearxng && (!formData.name || !formData.apiKey)) || (isCompatible && !formData.defaultModel.trim()) || (isAzure && (!azureData.azureEndpoint || !azureData.deployment || !azureData.organization)) || (isCloudflareAi && !cloudflareData.accountId)}>
             {saving ? "Saving..." : "Save"}
           </Button>
           <Button onClick={onClose} variant="ghost" fullWidth>

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getProviderNodeById } from "@/models";
+import { validateSearxngBaseUrl } from "open-sse/handlers/search/searxngUrlGuard.js";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { resolveOllamaLocalHost, resolveXiaomiTokenplanBaseUrl, PROVIDERS } from "open-sse/config/providers.js";
@@ -90,6 +91,19 @@ export async function POST(request) {
     const isNoAuth = AI_PROVIDERS[provider]?.noAuth === true;
     if (!provider || (!apiKey && provider !== "ollama-local" && !isNoAuth)) {
       return NextResponse.json({ error: "Provider and API key required" }, { status: 400 });
+    }
+
+    // SearXNG: validate the base URL if provided, then return valid immediately
+    // (no API key to probe — the URL itself is the only user-supplied parameter)
+    if (provider === "searxng") {
+      const rawBaseUrl = providerSpecificData?.baseUrl || "";
+      if (rawBaseUrl) {
+        const guard = validateSearxngBaseUrl(rawBaseUrl);
+        if (!guard.ok) {
+          return NextResponse.json({ valid: false, error: guard.error });
+        }
+      }
+      return NextResponse.json({ valid: true, error: null });
     }
 
     let isValid = false;

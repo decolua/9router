@@ -41,5 +41,16 @@ export function normalizeProviderSpecificData(provider, body = {}, providerSpeci
     if (baseUrl) next.baseUrl = baseUrl;
   }
 
+  if (provider === "searxng") {
+    const baseUrl = (
+      next.baseUrl ||
+      body.baseUrl ||
+      body.searxngBaseUrl ||
+      ""
+    ).trim();
+
+    if (baseUrl) next.baseUrl = baseUrl;
+  }
+
   return Object.keys(next).length > 0 ? next : null;
 }

@@ -9,6 +9,7 @@ import {
 import { APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { AI_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider } from "@/shared/constants/providers";
 import { normalizeProviderId, normalizeProviderSpecificData } from "@/lib/providerNormalization";
+import { validateSearxngBaseUrl } from "open-sse/handlers/search/searxngUrlGuard.js";
 
 export const dynamic = "force-dynamic";
 
@@ -102,6 +103,7 @@ export async function POST(request) {
 
     // Validation
     const isWebCookieProvider = !!WEB_COOKIE_PROVIDERS[provider];
+    const isNoAuthProvider = AI_PROVIDERS[provider]?.noAuth === true;
     const isValidProvider = APIKEY_PROVIDERS[provider] ||
       FREE_TIER_PROVIDERS[provider] ||
       isWebCookieProvider ||
@@ -112,8 +114,23 @@ export async function POST(request) {
     if (!provider || !isValidProvider) {
       return NextResponse.json({ error: "Invalid provider" }, { status: 400 });
     }
-    if (!apiKey && provider !== "ollama-local") {
+    if (!apiKey && provider !== "ollama-local" && !isNoAuthProvider) {
       return NextResponse.json({ error: `${isWebCookieProvider ? "Cookie value" : "API Key"} is required` }, { status: 400 });
+    }
+
+    // Validate SearXNG base URL if provided
+    if (provider === "searxng") {
+      const rawBaseUrl =
+        body.providerSpecificData?.baseUrl ||
+        body.baseUrl ||
+        body.searxngBaseUrl ||
+        "";
+      if (rawBaseUrl) {
+        const guard = validateSearxngBaseUrl(rawBaseUrl);
+        if (!guard.ok) {
+          return NextResponse.json({ error: `Invalid SearXNG base URL: ${guard.error}` }, { status: 400 });
+        }
+      }
     }
     const connectionName = name || displayName || AI_PROVIDERS[provider]?.name;
     if (!connectionName) {
