@@ -25,6 +25,40 @@ function buildEnvLines(env) {
   return Object.entries(env).map(([k, v]) => `Environment=${k}=${v}`).join("\n");
 }
 
+// ── Legacy 9router → durindoor migration ─────────────────────────────────
+// Called ONLY at the start of the `install` action. Idempotent (no-op when no
+// old artifacts exist) and non-fatal (errors from stop/disable/unload are
+// caught and logged; durindoor install always proceeds).
+//
+// Accepts injectable { execSync, existsSync, homeDir } for unit-testability;
+// production callers pass no argument (defaults to real impls).
+function migrateLegacyService({ execSync: _exec = execSync, existsSync: _exists = fs.existsSync, homeDir = os.homedir() } = {}) {
+  const systemdLegacy = path.join(homeDir, ".config", "systemd", "user", "9router.service");
+  const launchdLegacy1 = path.join(homeDir, "Library", "LaunchAgents", "com.9router.server.plist");
+  const launchdLegacy2 = path.join(homeDir, "Library", "LaunchAgents", "com.9router.autostart.plist");
+
+  const foundSystemd = _exists(systemdLegacy);
+  const foundLaunchd1 = _exists(launchdLegacy1);
+  const foundLaunchd2 = _exists(launchdLegacy2);
+
+  if (!foundSystemd && !foundLaunchd1 && !foundLaunchd2) return; // no-op
+
+  console.log("[durindoor] migrating legacy 9router service -> durindoor");
+
+  if (foundSystemd) {
+    try { _exec("systemctl --user stop 9router", { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }); }
+    catch (e) { console.log(`[durindoor] legacy stop 9router: ${e.message} (continuing)`); }
+    try { _exec("systemctl --user disable 9router", { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }); }
+    catch (e) { console.log(`[durindoor] legacy disable 9router: ${e.message} (continuing)`); }
+  }
+
+  for (const plist of [launchdLegacy1, launchdLegacy2]) {
+    if (!_exists(plist)) continue;
+    try { _exec(`launchctl unload ${plist}`, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }); }
+    catch (e) { console.log(`[durindoor] legacy unload ${plist}: ${e.message} (continuing)`); }
+  }
+}
+
 // ── Linux: systemd user unit ──────────────────────────────────────────────
 function systemdUnitPath() {
   return path.join(os.homedir(), ".config", "systemd", "user", `${SERVICE_NAME}.service`);
@@ -55,6 +89,7 @@ function systemd(action, ctx, nodeBin, env) {
   const text = systemdUnitText(nodeBin, ctx.customServerPath, ctx.standaloneDir, env);
 
   if (action === "install") {
+    migrateLegacyService();
     fs.mkdirSync(unitDir, { recursive: true });
     fs.writeFileSync(unitPath, text);
     sh("systemctl --user daemon-reload");
@@ -115,6 +150,7 @@ function launchd(action, ctx, nodeBin, env) {
   const plistPath = launchdPlistPath();
   const label = "com.durindoor.server";
   if (action === "install") {
+    migrateLegacyService();
     fs.mkdirSync(path.dirname(plistPath), { recursive: true });
     fs.writeFileSync(plistPath, launchdPlist(nodeBin, ctx.customServerPath, ctx.standaloneDir, env));
     sh(`launchctl load ${plistPath}`);
@@ -208,5 +244,4 @@ function runServiceCommand(subArgs, ctx) {
     process.exit(1);
   }
 }
-
-module.exports = { runServiceCommand, systemdUnitText, systemdUnitPath, launchdPlist, launchdPlistPath };
+module.exports = { runServiceCommand, systemdUnitText, systemdUnitPath, launchdPlist, launchdPlistPath, migrateLegacyService };
