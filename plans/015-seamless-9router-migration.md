@@ -52,11 +52,21 @@ configs) unless the back-compat read for that tool is in place.
 - Never auto-delete `~/.9router` (rollback safety); never auto-`npm rm -g 9router` (privilege).
 - Service uninstall from postinstall may lack privileges — detect + instruct, don't fail the install.
 - Tool-config back-compat reads must be exhaustive (one missed reader = "not configured" false-negative for an upgraded user). Test each ToolCard's reader against an OLD `9router` config fixture.
-- `9router` bin redirect must forward ALL args + exit codes, not just `start`.
+- `9router` bin: ✅ DONE (`a7da392`) — both `9router` + `durindoor` bins point directly at `./cli.js` (NO wrapper — args/exit codes forwarded inherently); cli.js `killAllAppProcesses` self-detection recognizes BOTH names on Windows + Unix.
 
 ## Validation
 - `npm run build`; `npx vitest run tests/unit/cli-service.test.js tests/unit/dataDir-migration.test.js`; add `tests/unit/legacy-migration.test.js` (fixtures: old data dir + old service unit present → migration copies data, preserves token, flags unit); `npm run test:baseline` (32==32).
 - Manual upgrade sim: pre-seed `~/.9router` + a `9router.service`, `npm i -g .`, run `9router start` (redirect works) + `durindoor service status` → data present, no dangling old unit.
 
+## Postinstall gating (CRITICAL — don't touch home state in dev/CI)
+The postinstall migration MUST be opt-in by context. `cli/hooks/postinstall.js` runs on EVERY `npm install` (global, local dev, CI). Gate the legacy migration so it only fires when there is actually something to migrate AND it's a real install:
+- ONLY run if `~/.9router` EXISTS (no legacy → silent no-op → CI/fresh installs unaffected).
+- AND only in a real install context: global (`npm_config_global=true`) or a user install — SKIP when cwd/`INIT_CWD` is inside a repo workspace or CI env vars (`CI`, `GITHUB_ACTIONS`) are set.
+- Non-fatal: wrap in try/catch, log, continue (same pattern as the existing `ensureSqliteRuntime` warm-up) — migration errors must NEVER fail the install.
+
 ## Status
-⏳ NOT STARTED — design complete; implementation is the next wave. Supersedes 4A's "drop 9router bin" + 4B's "manual service reinstall".
+🟡 IN PROGRESS:
+- ✅ `9router` bin alias restored (`a7da392`) — old command works again (reverses the 4A break).
+- ✅ Already back-compat: data-dir non-destructive copy (`4f8bf56`), env-var back-compat read (`d0f7459`), `CLI_TOKEN_SALT` preserved (`404b8f8`).
+- ⏳ NEXT: `migrateLegacy9router()` helper (data-dir copy trigger + old service-unit/autostart detect/migrate) + **gated postinstall trigger** + `service install` auto-migrate (detect old `9router.service`/launchd → stop/disable → install `durindoor` unit).
+- ⏳ DEFERRED (intact, NOT broken): tool-config key back-compat reads (`[providers.9router]`, `custom:9Router`, `model_providers.9router`) + `sk_9router` default-key accept — currently untouched so they still work; only needed if/when the writers are renamed.
