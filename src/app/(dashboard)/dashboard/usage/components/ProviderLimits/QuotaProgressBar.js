@@ -82,7 +82,7 @@ export default function QuotaProgressBar({
     <div className="space-y-2">
       {/* Label and percentage */}
       <div className="flex items-center justify-between text-sm">
-        <span className="font-semibold text-text-primary">
+        <span className="font-semibold text-text-main">
           {label}
         </span>
         <div className="flex items-center gap-1.5">
