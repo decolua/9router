@@ -1,20 +1,12 @@
 // Ported from OmniRoute open-sse/services/autoCombo/scoring.ts.
 // Auto-Combo 12-factor weighted scorer. Pure/deterministic — unit-testable.
-// NOTE: classifyTier (tierResolver) is not yet ported; the manifest-routing path
-// (when a hint is supplied) calls it inside try/catch and degrades to 0.5, so the
-// common no-manifest path is fully functional. combo.js integration is deferred.
+import { classifyTier } from "./tierResolver.js";
 
 // clamp to [0,1]; non-finite (NaN/bad telemetry) → 0 so one bad input can't
 // produce a NaN/over-1 score that sorts nondeterministically.
 function clamp01(x) {
   const n = Number(x);
   return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0;
-}
-
-// Stub: real tierResolver (classifyTier by provider+model) not ported. The
-// manifest-hint path calls this inside try/catch → throws → degrades to 0.5.
-function classifyTier(_provider, _model) {
-  throw new Error("tierResolver not ported — manifest routing degraded");
 }
 
 export const DEFAULT_WEIGHTS = {
@@ -70,33 +62,25 @@ export function calculateTierScore(tier, quotaResetIntervalSecs) {
 
 function calculateTierAffinity(candidate, hint) {
   if (!hint) return 0.5;
-  try {
-    const assignment = classifyTier(candidate.provider, candidate.model);
-    const tierOrder = ["free", "cheap", "premium"];
-    const providerTierIdx = tierOrder.indexOf(assignment.tier);
-    const minTierIdx = tierOrder.indexOf(hint.recommendedMinTier);
+  const assignment = classifyTier(candidate.provider, candidate.model);
+  const tierOrder = ["free", "cheap", "premium"];
+  const providerTierIdx = tierOrder.indexOf(assignment.tier);
+  const minTierIdx = tierOrder.indexOf(hint.recommendedMinTier);
 
-    if (providerTierIdx === minTierIdx) return 1.0;
-    if (Math.abs(providerTierIdx - minTierIdx) === 1) return 0.7;
-    return 0.3;
-  } catch {
-    return 0.5;
-  }
+  if (providerTierIdx === minTierIdx) return 1.0;
+  if (Math.abs(providerTierIdx - minTierIdx) === 1) return 0.7;
+  return 0.3;
 }
 
 function calculateSpecificityMatch(candidate, hint) {
   if (!hint) return 0.5;
-  try {
-    const assignment = classifyTier(candidate.provider, candidate.model);
-    const specificityScore = hint.specificity.score;
+  const assignment = classifyTier(candidate.provider, candidate.model);
+  const specificityScore = hint.specificity.score;
 
-    if (assignment.tier === "free") return specificityScore <= 15 ? 0.9 : 0.2;
-    if (assignment.tier === "cheap") return specificityScore > 15 && specificityScore <= 50 ? 0.9 : 0.4;
-    if (assignment.tier === "premium") return specificityScore > 50 ? 0.9 : 0.3;
-    return 0.5;
-  } catch {
-    return 0.5;
-  }
+  if (assignment.tier === "free") return specificityScore <= 15 ? 0.9 : 0.2;
+  if (assignment.tier === "cheap") return specificityScore > 15 && specificityScore <= 50 ? 0.9 : 0.4;
+  if (assignment.tier === "premium") return specificityScore > 50 ? 0.9 : 0.3;
+  return 0.5;
 }
 
 /**
