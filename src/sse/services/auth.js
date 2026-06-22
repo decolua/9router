@@ -226,7 +226,11 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
     lastError: reason,
     errorCode: status,
     lastErrorAt: new Date().toISOString(),
-    backoffLevel: newBackoffLevel ?? backoffLevel
+    backoffLevel: newBackoffLevel ?? backoffLevel,
+    // Reset sticky counter so the failing account isn't picked again before
+    // its lock expires — round-robin sorts by lastUsedAt, and a fresh
+    // lastUsedAt would otherwise keep this account at the front.
+    consecutiveUseCount: 0,
   });
 
   const lockKey = Object.keys(lockUpdate)[0];
