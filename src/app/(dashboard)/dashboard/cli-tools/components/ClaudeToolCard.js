@@ -26,20 +26,43 @@ export default function ClaudeToolCard({
   tailscaleEnabled,
   tailscaleUrl,
 }) {
-  const [claudeStatus, setClaudeStatus] = useState(initialStatus || null);
-  const [checkingClaude, setCheckingClaude] = useState(false);
+  // Local fetch/mutation override only. Parent's initialStatus flows through
+  // without a sync effect: claudeStatus = fetchedClaudeStatus ?? initialStatus ?? null.
+  // Parent prop updates (badge/config) are reflected automatically.
+  const [fetchedClaudeStatus, setFetchedClaudeStatus] = useState(null);
   const [applying, setApplying] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [message, setMessage] = useState(null);
   const [showInstallGuide, setShowInstallGuide] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [currentEditingAlias, setCurrentEditingAlias] = useState(null);
-  const [selectedApiKey, setSelectedApiKey] = useState("");
+  // Stores only explicit user selections or fetch-discovered file token.
+  // Falls back to initialStatus file token and apiKeys[0] at read time.
+  const [userSelectedApiKey, setUserSelectedApiKey] = useState("");
+  // True after user resets — suppresses stale initialStatus file token fallback.
+  const [apiKeyResetByUser, setApiKeyResetByUser] = useState(false);
   const [modelAliases, setModelAliases] = useState({});
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
   const [ccFilterNaming, setCcFilterNaming] = useState(false);
   const hasInitializedModels = useRef(false);
+
+  // Derived: local fetch/mutation result takes precedence over parent prop.
+  const claudeStatus = fetchedClaudeStatus ?? initialStatus ?? null;
+
+  // Token from initialStatus prop (stable). Used for read-time derivation only —
+  // never drives a setState call.
+  const initialFileToken = initialStatus?.settings?.env?.ANTHROPIC_AUTH_TOKEN;
+  const initialFileTokenValid = !!(initialFileToken && apiKeys?.some(k => k.key === initialFileToken));
+
+  // Effective key priority: explicit user/fetch selection > initialStatus file token
+  // (unless user has reset) > first available key > empty.
+  // Preserves original auto-select-apiKeys[0] behavior without setState-in-effect.
+  const effectiveSelectedApiKey =
+    userSelectedApiKey ||
+    (!apiKeyResetByUser && initialFileTokenValid ? initialFileToken : "") ||
+    apiKeys?.[0]?.key ||
+    "";
 
   const getConfigStatus = () => {
     if (!claudeStatus?.installed) return null;
@@ -51,55 +74,50 @@ export default function ClaudeToolCard({
 
   const configStatus = getConfigStatus();
 
-  useEffect(() => {
-    if (apiKeys?.length > 0 && !selectedApiKey) {
-      setSelectedApiKey(apiKeys[0].key);
-    }
-  }, [apiKeys, selectedApiKey]);
-
-  useEffect(() => {
-    if (initialStatus) setClaudeStatus(initialStatus);
-  }, [initialStatus]);
-
+  // Auto-check: inline fetch chain so no synchronous setState fires in the effect body.
+  // All setState calls are inside .then/.catch callbacks (async boundary).
   useEffect(() => {
     if (isExpanded && !claudeStatus) {
-      checkClaudeStatus();
-      fetchModelAliases();
+      fetch("/api/cli-tools/claude-settings")
+        .then(r => r.json())
+        .then(data => {
+          setFetchedClaudeStatus(data);
+          if (!hasInitializedModels.current && data?.installed) {
+            const tokenFromFile = data?.settings?.env?.ANTHROPIC_AUTH_TOKEN;
+            if (tokenFromFile && apiKeys?.some(k => k.key === tokenFromFile)) {
+              setUserSelectedApiKey(tokenFromFile);
+            }
+          }
+        })
+        .catch(err => setFetchedClaudeStatus({ installed: false, error: err.message }));
     }
-    if (isExpanded) fetchModelAliases();
+  }, [isExpanded, claudeStatus, apiKeys]);
+
+  // Alias fetch: separate effect so status changes while expanded don't re-fire it.
+  // Inline fetch chain — setState only inside .then callback.
+  useEffect(() => {
+    if (isExpanded) {
+      fetch("/api/models/alias")
+        .then(r => r.json())
+        .then(data => { if (data) setModelAliases(data.aliases || {}); })
+        .catch(() => {});
+    }
   }, [isExpanded]);
 
+  // Settings fetch: already a clean fetch chain.
   useEffect(() => {
     fetch("/api/settings").then(r => r.json()).then(data => {
       setCcFilterNaming(!!data.ccFilterNaming);
     }).catch(() => {});
   }, []);
 
-  const handleCcFilterNamingToggle = async (e) => {
-    const value = e.target.checked;
-    setCcFilterNaming(value);
-    await fetch("/api/settings", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ccFilterNaming: value }),
-    }).catch(() => {});
-  };
-
-  const fetchModelAliases = async () => {
-    try {
-      const res = await fetch("/api/models/alias");
-      const data = await res.json();
-      if (res.ok) setModelAliases(data.aliases || {});
-    } catch (error) {
-      console.log("Error fetching model aliases:", error);
-    }
-  };
-
+  // Sync model mappings from file once when claudeStatus becomes installed.
+  // onModelMappingChange is an external prop callback — not internal setState —
+  // so react-hooks/set-state-in-effect does not fire for it.
   useEffect(() => {
     if (claudeStatus?.installed && !hasInitializedModels.current) {
       hasInitializedModels.current = true;
       const env = claudeStatus.settings?.env || {};
-
       tool.defaultModels.forEach((model) => {
         if (model.envKey) {
           const value = env[model.envKey] || model.defaultValue || "";
@@ -109,25 +127,18 @@ export default function ClaudeToolCard({
           }
         }
       });
-      // Only set selectedApiKey if it exists in apiKeys list
-      const tokenFromFile = env.ANTHROPIC_AUTH_TOKEN;
-      if (tokenFromFile && apiKeys?.some(k => k.key === tokenFromFile)) {
-        setSelectedApiKey(tokenFromFile);
-      }
     }
-  }, [claudeStatus, apiKeys, tool.defaultModels, onModelMappingChange]);
+  }, [claudeStatus, tool.defaultModels, onModelMappingChange]);
 
-  const checkClaudeStatus = async () => {
-    setCheckingClaude(true);
-    try {
-      const res = await fetch("/api/cli-tools/claude-settings");
-      const data = await res.json();
-      setClaudeStatus(data);
-    } catch (error) {
-      setClaudeStatus({ installed: false, error: error.message });
-    } finally {
-      setCheckingClaude(false);
-    }
+
+  const handleCcFilterNamingToggle = async (e) => {
+    const value = e.target.checked;
+    setCcFilterNaming(value);
+    await fetch("/api/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ccFilterNaming: value }),
+    }).catch(() => {});
   };
 
   const getEffectiveBaseUrl = () => {
@@ -147,8 +158,7 @@ export default function ClaudeToolCard({
       const env = { ANTHROPIC_BASE_URL: getEffectiveBaseUrl() };
 
       // Get key from dropdown, fallback to first key or sk_9router for localhost
-      const keyToUse = selectedApiKey?.trim()
-        || (apiKeys?.length > 0 ? apiKeys[0].key : null)
+      const keyToUse = effectiveSelectedApiKey?.trim()
         || (!cloudEnabled ? "sk_9router" : null);
 
       if (keyToUse) {
@@ -167,7 +177,9 @@ export default function ClaudeToolCard({
       const data = await res.json();
       if (res.ok) {
         setMessage({ type: "success", text: "Settings applied successfully!" });
-        setClaudeStatus(prev => ({ ...prev, hasBackup: true, settings: { ...prev?.settings, env } }));
+        // Optimistic update using derived claudeStatus as base so initialStatus
+        // fields are preserved when fetchedClaudeStatus is still null.
+        setFetchedClaudeStatus({ ...claudeStatus, hasBackup: true, settings: { ...claudeStatus?.settings, env } });
       } else {
         setMessage({ type: "error", text: data.error || "Failed to apply settings" });
       }
@@ -187,7 +199,9 @@ export default function ClaudeToolCard({
       if (res.ok) {
         setMessage({ type: "success", text: "Settings reset successfully!" });
         tool.defaultModels.forEach((model) => onModelMappingChange(model.alias, model.defaultValue || ""));
-        setSelectedApiKey("");
+        // Mark reset so initialStatus file token is no longer used as fallback.
+        setApiKeyResetByUser(true);
+        setUserSelectedApiKey("");
       } else {
         setMessage({ type: "error", text: data.error || "Failed to reset settings" });
       }
@@ -209,8 +223,8 @@ export default function ClaudeToolCard({
 
   // Generate settings.json content for manual copy
   const getManualConfigs = () => {
-    const keyToUse = (selectedApiKey && selectedApiKey.trim())
-      ? selectedApiKey
+    const keyToUse = (effectiveSelectedApiKey && effectiveSelectedApiKey.trim())
+      ? effectiveSelectedApiKey
       : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
     const env = { ANTHROPIC_BASE_URL: getEffectiveBaseUrl(), ANTHROPIC_AUTH_TOKEN: keyToUse };
     tool.defaultModels.forEach((model) => {
@@ -248,14 +262,15 @@ export default function ClaudeToolCard({
 
       {isExpanded && (
         <div className="mt-4 pt-4 border-t border-border flex flex-col gap-4">
-          {checkingClaude && (
+          {/* Spinner while auto-check fetch is in flight (claudeStatus null) */}
+          {isExpanded && !claudeStatus && (
             <div className="flex items-center gap-2 text-text-muted">
               <span className="material-symbols-outlined animate-spin">progress_activity</span>
               <span>Checking Claude CLI...</span>
             </div>
           )}
 
-          {!checkingClaude && claudeStatus && !claudeStatus.installed && (
+          {claudeStatus && !claudeStatus.installed && (
             <div className="flex flex-col gap-4">
               <div className="flex flex-col gap-3 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
                 <div className="flex items-start gap-3">
@@ -291,7 +306,7 @@ export default function ClaudeToolCard({
             </div>
           )}
 
-          {!checkingClaude && claudeStatus?.installed && (
+          {claudeStatus?.installed && (
             <>
               <div className="flex flex-col gap-2">
                 {/* Endpoint (selector) */}
@@ -324,7 +339,7 @@ export default function ClaudeToolCard({
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">API Key</span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
-                  <ApiKeySelect value={selectedApiKey} onChange={setSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
+                  <ApiKeySelect value={effectiveSelectedApiKey} onChange={setUserSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
                 </div>
 
                 {/* Model Mappings */}
