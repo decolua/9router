@@ -26,18 +26,35 @@ export default function CodeWhaleToolCard({
   tailscaleEnabled,
   tailscaleUrl,
 }) {
-  const [codewhaleStatus, setCodewhaleStatus] = useState(initialStatus || null);
-  const [checking, setChecking] = useState(false);
+  // Local fetch result only. Parent initialStatus flows through without a sync effect.
+  const [fetchedCodewhaleStatus, setFetchedCodewhaleStatus] = useState(null);
   const [applying, setApplying] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [message, setMessage] = useState(null);
-  const [selectedApiKey, setSelectedApiKey] = useState("");
-  const [selectedModel, setSelectedModel] = useState("");
+  // Stores only explicit user selections. Falls back to apiKeys[0] at read time.
+  const [userSelectedApiKey, setUserSelectedApiKey] = useState("");
+  // Stores only explicit user edits or fetch-discovered value (set inside .then).
+  // Empty = "use fallback from status". modelResetByUser suppresses stale prop fallback after reset.
+  const [userSelectedModel, setUserSelectedModel] = useState("");
+  const [modelResetByUser, setModelResetByUser] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [modelAliases, setModelAliases] = useState({});
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
   const hasInitializedModel = useRef(false);
+
+  // Derived: local fetch/mutation result takes precedence over parent prop.
+  const codewhaleStatus = fetchedCodewhaleStatus ?? initialStatus ?? null;
+
+  // Derived API key: explicit user selection > first available key > empty.
+  const selectedApiKey = userSelectedApiKey || apiKeys?.[0]?.key || "";
+
+  // Derived model: explicit user edit/fetch > initialStatus file value (unless reset) > empty.
+  const initialFileModel = codewhaleStatus?.settings?.["providers.openai"]?.model || "";
+  const selectedModel =
+    userSelectedModel ||
+    (!modelResetByUser ? initialFileModel : "") ||
+    "";
 
   const getConfigStatus = () => {
     if (!codewhaleStatus?.installed) return null;
@@ -48,55 +65,6 @@ export default function CodeWhaleToolCard({
   };
 
   const configStatus = getConfigStatus();
-
-  useEffect(() => {
-    if (apiKeys?.length > 0 && !selectedApiKey) {
-      setSelectedApiKey(apiKeys[0].key);
-    }
-  }, [apiKeys, selectedApiKey]);
-
-  useEffect(() => {
-    if (initialStatus) setCodewhaleStatus(initialStatus);
-  }, [initialStatus]);
-
-  useEffect(() => {
-    if (isExpanded && !codewhaleStatus) {
-      checkStatus();
-      fetchModelAliases();
-    }
-    if (isExpanded) fetchModelAliases();
-  }, [isExpanded]);
-
-  const fetchModelAliases = async () => {
-    try {
-      const res = await fetch("/api/models/alias");
-      const data = await res.json();
-      if (res.ok) setModelAliases(data.aliases || {});
-    } catch (error) {
-      console.log("Error fetching model aliases:", error);
-    }
-  };
-
-  useEffect(() => {
-    if (codewhaleStatus?.installed && !hasInitializedModel.current) {
-      hasInitializedModel.current = true;
-      const openaiSection = codewhaleStatus.settings?.["providers.openai"];
-      if (openaiSection?.model) setSelectedModel(openaiSection.model);
-    }
-  }, [codewhaleStatus]);
-
-  const checkStatus = async () => {
-    setChecking(true);
-    try {
-      const res = await fetch(ENDPOINT);
-      const data = await res.json();
-      setCodewhaleStatus(data);
-    } catch (error) {
-      setCodewhaleStatus({ installed: false, error: error.message });
-    } finally {
-      setChecking(false);
-    }
-  };
 
   const normalizeLocalhost = (url) => url.replace("://localhost", "://127.0.0.1");
 
@@ -110,6 +78,43 @@ export default function CodeWhaleToolCard({
   const getEffectiveBaseUrl = () => {
     const url = customBaseUrl || getLocalBaseUrl();
     return url.endsWith("/v1") ? url : `${url}/v1`;
+  };
+
+  // Spinner derived from status — no checking state needed.
+  const checking = isExpanded && !codewhaleStatus;
+
+  // Auto-check on expand: inline fetch chain — all setState inside .then/.catch only.
+  useEffect(() => {
+    if (isExpanded && !codewhaleStatus) {
+      fetch(ENDPOINT)
+        .then(r => r.json())
+        .then(data => {
+          setFetchedCodewhaleStatus(data);
+          if (!hasInitializedModel.current && data?.installed) {
+            hasInitializedModel.current = true;
+            const openaiSection = data.settings?.["providers.openai"];
+            if (openaiSection?.model) setUserSelectedModel(openaiSection.model);
+          }
+        })
+        .catch(err => setFetchedCodewhaleStatus({ installed: false, error: err.message }));
+    }
+  }, [isExpanded, codewhaleStatus]);
+
+  // Alias fetch: separate effect — setState only inside .then callback.
+  useEffect(() => {
+    if (isExpanded) {
+      fetch("/api/models/alias")
+        .then(r => r.json())
+        .then(data => { if (data) setModelAliases(data.aliases || {}); })
+        .catch(() => {});
+    }
+  }, [isExpanded]);
+
+  const checkStatus = () => {
+    fetch(ENDPOINT)
+      .then(r => r.json())
+      .then(data => setFetchedCodewhaleStatus(data))
+      .catch(err => setFetchedCodewhaleStatus({ installed: false, error: err.message }));
   };
 
   const handleApply = async () => {
@@ -151,7 +156,8 @@ export default function CodeWhaleToolCard({
       const data = await res.json();
       if (res.ok) {
         setMessage({ type: "success", text: "Settings reset successfully!" });
-        setSelectedModel("");
+        setModelResetByUser(true);
+        setUserSelectedModel("");
         checkStatus();
       } else {
         setMessage({ type: "error", text: data.error || "Failed to reset settings" });
@@ -164,7 +170,7 @@ export default function CodeWhaleToolCard({
   };
 
   const handleModelSelect = (model) => {
-    setSelectedModel(model.value);
+    setUserSelectedModel(model.value);
     setModalOpen(false);
   };
 
@@ -284,15 +290,15 @@ model = "${selectedModel || "provider/model-id"}"
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">API Key</span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
-                  <ApiKeySelect value={selectedApiKey} onChange={setSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
+                  <ApiKeySelect value={selectedApiKey} onChange={setUserSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
                 </div>
 
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Default Model</span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
                   <div className="relative w-full min-w-0">
-                    <input type="text" value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} placeholder="provider/model-id" className="w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5" />
-                    {selectedModel && <button onClick={() => setSelectedModel("")} className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-red-500 rounded transition-colors" title="Clear"><span className="material-symbols-outlined text-[14px]">close</span></button>}
+                    <input type="text" value={selectedModel} onChange={(e) => setUserSelectedModel(e.target.value)} placeholder="provider/model-id" className="w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5" />
+                    {selectedModel && <button onClick={() => setUserSelectedModel("")} className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-red-500 rounded transition-colors" title="Clear"><span className="material-symbols-outlined text-[14px]">close</span></button>}
                   </div>
                   <button onClick={() => setModalOpen(true)} disabled={!hasActiveProviders} className={`w-full sm:w-auto rounded border px-2 py-2 text-xs transition-colors sm:py-1.5 whitespace-nowrap sm:shrink-0 ${hasActiveProviders ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Select</button>
                 </div>

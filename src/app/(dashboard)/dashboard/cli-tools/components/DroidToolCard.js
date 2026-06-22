@@ -24,13 +24,17 @@ export default function DroidToolCard({
   tailscaleEnabled,
   tailscaleUrl,
 }) {
-  const [droidStatus, setDroidStatus] = useState(initialStatus || null);
-  const [checkingDroid, setCheckingDroid] = useState(false);
+  // Local fetch result only. Parent initialStatus flows through without a sync effect.
+  const [fetchedDroidStatus, setFetchedDroidStatus] = useState(null);
   const [applying, setApplying] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [message, setMessage] = useState(null);
-  const [selectedApiKey, setSelectedApiKey] = useState("");
+  // Stores only explicit user selections. Falls back to apiKeys[0] at read time.
+  const [userSelectedApiKey, setUserSelectedApiKey] = useState("");
+  // modelList: explicit user edits or fetch-discovered value (set inside .then).
+  // modelListResetByUser suppresses stale prop fallback after reset.
   const [modelList, setModelList] = useState([]);
+  const [modelListResetByUser, setModelListResetByUser] = useState(false);
   const [modelInput, setModelInput] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [modelAliases, setModelAliases] = useState({});
@@ -38,6 +42,30 @@ export default function DroidToolCard({
   const [showInstallGuide, setShowInstallGuide] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
   const hasInitializedModel = useRef(false);
+
+  // Derived: local fetch/mutation result takes precedence over parent prop.
+  const droidStatus = fetchedDroidStatus ?? initialStatus ?? null;
+
+  // Derived API key: explicit user selection > first available key > empty.
+  const selectedApiKey = userSelectedApiKey || apiKeys?.[0]?.key || "";
+
+  // Derived model list: explicit user edits > initialStatus config value (unless reset) > [].
+  // Computed once at render time — no setState needed.
+  const initialFileModels = !modelListResetByUser && modelList.length === 0 && droidStatus?.installed
+    ? (() => {
+        const models = (droidStatus.settings?.customModels || [])
+          .filter(m => m.id?.startsWith("custom:9Router"))
+          .sort((a, b) => (a.index || 0) - (b.index || 0))
+          .map(m => m.model);
+        if (models.length > 0) return models;
+        const legacy = droidStatus.settings?.customModels?.find(m => m.id === "custom:9Router-0");
+        return legacy?.model ? [legacy.model] : [];
+      })()
+    : null;
+  // Use initialFileModels as display list only when user hasn't edited yet.
+  const effectiveModelList = modelList.length > 0 || modelListResetByUser
+    ? modelList
+    : (initialFileModels || []);
 
   const getConfigStatus = () => {
     if (!droidStatus?.installed) return null;
@@ -49,67 +77,6 @@ export default function DroidToolCard({
 
   const configStatus = getConfigStatus();
 
-  useEffect(() => {
-    if (apiKeys?.length > 0 && !selectedApiKey) {
-      setSelectedApiKey(apiKeys[0].key);
-    }
-  }, [apiKeys, selectedApiKey]);
-
-  useEffect(() => {
-    if (initialStatus) setDroidStatus(initialStatus);
-  }, [initialStatus]);
-
-  useEffect(() => {
-    if (isExpanded && !droidStatus) {
-      checkDroidStatus();
-      fetchModelAliases();
-    }
-    if (isExpanded) fetchModelAliases();
-  }, [isExpanded]);
-
-  const fetchModelAliases = async () => {
-    try {
-      const res = await fetch("/api/models/alias");
-      const data = await res.json();
-      if (res.ok) setModelAliases(data.aliases || {});
-    } catch (error) {
-      console.log("Error fetching model aliases:", error);
-    }
-  };
-
-  // Pre-fill model list from existing config (supports multi-model)
-  useEffect(() => {
-    if (droidStatus?.installed && !hasInitializedModel.current) {
-      hasInitializedModel.current = true;
-      const existingModels = (droidStatus.settings?.customModels || [])
-        .filter(m => m.id?.startsWith("custom:9Router"))
-        .sort((a, b) => (a.index || 0) - (b.index || 0))
-        .map(m => m.model);
-      if (existingModels.length > 0) {
-        setModelList(existingModels);
-      } else {
-        // Legacy: single model stored as custom:9Router-0
-        const legacy = droidStatus.settings?.customModels?.find(m => m.id === "custom:9Router-0");
-        if (legacy?.model) {
-          setModelList([legacy.model]);
-        }
-      }
-    }
-  }, [droidStatus]);
-
-  const checkDroidStatus = async () => {
-    setCheckingDroid(true);
-    try {
-      const res = await fetch("/api/cli-tools/droid-settings");
-      const data = await res.json();
-      setDroidStatus(data);
-    } catch (error) {
-      setDroidStatus({ installed: false, error: error.message });
-    } finally {
-      setCheckingDroid(false);
-    }
-  };
-
   const getEffectiveBaseUrl = () => {
     const url = customBaseUrl || baseUrl;
     return url.endsWith("/v1") ? url : `${url}/v1`;
@@ -120,18 +87,68 @@ export default function DroidToolCard({
     return url.endsWith("/v1") ? url : `${url}/v1`;
   };
 
+  // Spinner derived from status — no checkingDroid state needed.
+  const checkingDroid = isExpanded && !droidStatus;
+
+  // Auto-check on expand: inline fetch chain — all setState inside .then/.catch only.
+  useEffect(() => {
+    if (isExpanded && !droidStatus) {
+      fetch("/api/cli-tools/droid-settings")
+        .then(r => r.json())
+        .then(data => {
+          setFetchedDroidStatus(data);
+          if (!hasInitializedModel.current && data?.installed) {
+            hasInitializedModel.current = true;
+            const models = (data.settings?.customModels || [])
+              .filter(m => m.id?.startsWith("custom:9Router"))
+              .sort((a, b) => (a.index || 0) - (b.index || 0))
+              .map(m => m.model);
+            if (models.length > 0) {
+              setModelList(models);
+            } else {
+              const legacy = data.settings?.customModels?.find(m => m.id === "custom:9Router-0");
+              if (legacy?.model) setModelList([legacy.model]);
+            }
+          }
+        })
+        .catch(err => setFetchedDroidStatus({ installed: false, error: err.message }));
+    }
+  }, [isExpanded, droidStatus]);
+
+  // Alias fetch: separate effect — setState only inside .then callback.
+  useEffect(() => {
+    if (isExpanded) {
+      fetch("/api/models/alias")
+        .then(r => r.json())
+        .then(data => { if (data) setModelAliases(data.aliases || {}); })
+        .catch(() => {});
+    }
+  }, [isExpanded]);
+
+  const refetchStatus = () => {
+    fetch("/api/cli-tools/droid-settings")
+      .then(r => r.json())
+      .then(data => setFetchedDroidStatus(data))
+      .catch(err => setFetchedDroidStatus({ installed: false, error: err.message }));
+  };
+
   const addModel = () => {
     const val = modelInput.trim();
-    if (!val || modelList.includes(val)) return;
-    setModelList((prev) => [...prev, val]);
+    if (!val || effectiveModelList.includes(val)) return;
+    setModelListResetByUser(true);
+    setModelList([...effectiveModelList, val]);
     setModelInput("");
   };
 
-  const removeModel = (id) => setModelList((prev) => prev.filter((m) => m !== id));
+  const removeModel = (id) => {
+    setModelListResetByUser(true);
+    setModelList(effectiveModelList.filter((m) => m !== id));
+  };
 
   const handleModelSelect = (model) => {
-    if (!model.value || modelList.includes(model.value)) return;
-    setModelList((prev) => [...prev, model.value]);
+    if (!model.value || effectiveModelList.includes(model.value)) return;
+    setModelListResetByUser(true);
+    setModelList([...effectiveModelList, model.value]);
     setModalOpen(false);
   };
 
@@ -149,14 +166,14 @@ export default function DroidToolCard({
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
           apiKey: keyToUse,
-          models: modelList,
-          activeModel: modelList[0] || "",
+          models: effectiveModelList,
+          activeModel: effectiveModelList[0] || "",
         }),
       });
       const data = await res.json();
       if (res.ok) {
         setMessage({ type: "success", text: "Settings applied successfully!" });
-        checkDroidStatus();
+        refetchStatus();
       } else {
         setMessage({ type: "error", text: data.error || "Failed to apply settings" });
       }
@@ -175,8 +192,9 @@ export default function DroidToolCard({
       const data = await res.json();
       if (res.ok) {
         setMessage({ type: "success", text: "Settings reset successfully!" });
+        setModelListResetByUser(true);
         setModelList([]);
-        checkDroidStatus();
+        refetchStatus();
       } else {
         setMessage({ type: "error", text: data.error || "Failed to reset settings" });
       }
@@ -193,7 +211,7 @@ export default function DroidToolCard({
       : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
 
     const settingsContent = {
-      customModels: modelList.map((m, i) => ({
+      customModels: effectiveModelList.map((m, i) => ({
         model: m,
         id: `custom:9Router-${i}`,
         index: i,
@@ -318,20 +336,20 @@ export default function DroidToolCard({
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">API Key</span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
-                  <ApiKeySelect value={selectedApiKey} onChange={setSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
+                  <ApiKeySelect value={selectedApiKey} onChange={setUserSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
                 </div>
 
                 {/* Models */}
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">
-                    Models {modelList.length > 0 && <span className="text-primary">({modelList.length})</span>}
+                    Models {effectiveModelList.length > 0 && <span className="text-primary">({effectiveModelList.length})</span>}
                   </span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
                   <div className="flex-1 flex flex-col gap-1">
                     {/* Model list */}
-                    {modelList.length > 0 && (
+                    {effectiveModelList.length > 0 && (
                       <div className="flex flex-col gap-0.5 mb-1">
-                        {modelList.map((id) => (
+                        {effectiveModelList.map((id) => (
                           <div key={id} className="flex items-center gap-1.5 px-2 py-1 bg-bg-secondary rounded border border-border">
                             <span className="flex-1 text-xs font-mono truncate">{id}</span>
                             <button onClick={() => removeModel(id)} className="text-text-muted hover:text-red-500 transition-colors shrink-0" title="Remove">
@@ -374,7 +392,7 @@ export default function DroidToolCard({
               )}
 
               <div className="grid grid-cols-1 gap-2 sm:flex sm:items-center">
-                <Button variant="primary" size="sm" onClick={handleApplySettings} disabled={modelList.length === 0} loading={applying}>
+                <Button variant="primary" size="sm" onClick={handleApplySettings} disabled={effectiveModelList.length === 0} loading={applying}>
                   <span className="material-symbols-outlined text-[14px] mr-1">save</span>Apply
                 </Button>
                 <Button variant="outline" size="sm" onClick={handleResetSettings} disabled={!droidStatus?.has9Router} loading={restoring}>

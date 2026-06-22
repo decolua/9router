@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
 import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
@@ -8,48 +8,36 @@ import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 
 export default function ClineToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled, initialStatus, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl }) {
-  const [status, setStatus] = useState(initialStatus || null);
-  const [checking, setChecking] = useState(false);
+  // Local fetch result only. Parent initialStatus flows through without a sync effect.
+  // status = fetchedStatus ?? initialStatus ?? null — derived at read time.
+  const [fetchedStatus, setFetchedStatus] = useState(null);
   const [applying, setApplying] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [message, setMessage] = useState(null);
   const [showInstallGuide, setShowInstallGuide] = useState(false);
-  const [selectedApiKey, setSelectedApiKey] = useState("");
-  const [selectedModel, setSelectedModel] = useState("");
+  // Stores only explicit user selections. Falls back to apiKeys[0] at read time.
+  const [userSelectedApiKey, setUserSelectedApiKey] = useState("");
+  // Stores only explicit user edits or fetch-discovered value (set inside .then).
+  // Empty = "use fallback from status". modelResetByUser suppresses stale prop fallback after reset.
+  const [userSelectedModel, setUserSelectedModel] = useState("");
+  const [modelResetByUser, setModelResetByUser] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [modelAliases, setModelAliases] = useState({});
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
+  const hasInitializedModel = useRef(false);
 
-  useEffect(() => {
-    if (apiKeys?.length > 0 && !selectedApiKey) setSelectedApiKey(apiKeys[0].key);
-  }, [apiKeys, selectedApiKey]);
+  // Derived: local fetch/mutation result takes precedence over parent prop.
+  const status = fetchedStatus ?? initialStatus ?? null;
 
-  useEffect(() => {
-    if (initialStatus) setStatus(initialStatus);
-  }, [initialStatus]);
+  // Derived API key: explicit user selection > first available key > empty.
+  const selectedApiKey = userSelectedApiKey || apiKeys?.[0]?.key || "";
 
-  useEffect(() => {
-    if (isExpanded && !status) {
-      checkStatus();
-      fetchModelAliases();
-    }
-    if (isExpanded) fetchModelAliases();
-  }, [isExpanded]);
-
-  useEffect(() => {
-    if (status?.settings?.openAiModelId) setSelectedModel(status.settings.openAiModelId);
-  }, [status]);
-
-  const fetchModelAliases = async () => {
-    try {
-      const res = await fetch("/api/models/alias");
-      const data = await res.json();
-      if (res.ok) setModelAliases(data.aliases || {});
-    } catch (error) {
-      console.log("Error fetching model aliases:", error);
-    }
-  };
+  // Derived model: explicit user edit/fetch > initialStatus file value (unless reset) > empty.
+  const selectedModel =
+    userSelectedModel ||
+    (!modelResetByUser ? (status?.settings?.openAiModelId || "") : "") ||
+    "";
 
   const getConfigStatus = () => {
     if (!status?.installed) return null;
@@ -67,17 +55,40 @@ export default function ClineToolCard({ tool, isExpanded, onToggle, baseUrl, api
 
   const getDisplayUrl = () => customBaseUrl || `${baseUrl}/v1`;
 
-  const checkStatus = async () => {
-    setChecking(true);
-    try {
-      const res = await fetch("/api/cli-tools/cline-settings");
-      const data = await res.json();
-      setStatus(data);
-    } catch (error) {
-      setStatus({ installed: false, error: error.message });
-    } finally {
-      setChecking(false);
+  // Auto-check on expand: inline fetch chain — all setState inside .then/.catch only.
+  useEffect(() => {
+    if (isExpanded && !status) {
+      fetch("/api/cli-tools/cline-settings")
+        .then(r => r.json())
+        .then(data => {
+          setFetchedStatus(data);
+          if (!hasInitializedModel.current && data?.settings?.openAiModelId) {
+            hasInitializedModel.current = true;
+            setUserSelectedModel(data.settings.openAiModelId);
+          }
+        })
+        .catch(err => setFetchedStatus({ installed: false, error: err.message }));
     }
+  }, [isExpanded, status]);
+
+  // Alias fetch: separate effect — setState only inside .then callback.
+  useEffect(() => {
+    if (isExpanded) {
+      fetch("/api/models/alias")
+        .then(r => r.json())
+        .then(data => { if (data) setModelAliases(data.aliases || {}); })
+        .catch(() => {});
+    }
+  }, [isExpanded]);
+
+  // Spinner shown when expanded and no status yet — no checking state needed.
+  const checking = isExpanded && !status;
+
+  const refetchStatus = () => {
+    fetch("/api/cli-tools/cline-settings")
+      .then(r => r.json())
+      .then(data => setFetchedStatus(data))
+      .catch(err => setFetchedStatus({ installed: false, error: err.message }));
   };
 
   const handleApply = async () => {
@@ -96,7 +107,7 @@ export default function ClineToolCard({ tool, isExpanded, onToggle, baseUrl, api
       const data = await res.json();
       if (res.ok) {
         setMessage({ type: "success", text: "Settings applied successfully!" });
-        checkStatus();
+        refetchStatus();
       } else {
         setMessage({ type: "error", text: data.error || "Failed to apply settings" });
       }
@@ -115,8 +126,9 @@ export default function ClineToolCard({ tool, isExpanded, onToggle, baseUrl, api
       const data = await res.json();
       if (res.ok) {
         setMessage({ type: "success", text: "Settings reset successfully!" });
-        setSelectedModel("");
-        checkStatus();
+        setModelResetByUser(true);
+        setUserSelectedModel("");
+        refetchStatus();
       } else {
         setMessage({ type: "error", text: data.error || "Failed to reset settings" });
       }
@@ -243,15 +255,15 @@ export default function ClineToolCard({ tool, isExpanded, onToggle, baseUrl, api
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">API Key</span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
-                  <ApiKeySelect value={selectedApiKey} onChange={setSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
+                  <ApiKeySelect value={selectedApiKey} onChange={setUserSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
                 </div>
 
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Model</span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
                   <div className="relative w-full min-w-0">
-                    <input type="text" value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} placeholder="provider/model-id" className="w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5" />
-                    {selectedModel && <button onClick={() => setSelectedModel("")} className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-red-500 rounded transition-colors" title="Clear"><span className="material-symbols-outlined text-[14px]">close</span></button>}
+                    <input type="text" value={selectedModel} onChange={(e) => setUserSelectedModel(e.target.value)} placeholder="provider/model-id" className="w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5" />
+                    {selectedModel && <button onClick={() => setUserSelectedModel("")} className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-red-500 rounded transition-colors" title="Clear"><span className="material-symbols-outlined text-[14px]">close</span></button>}
                   </div>
                   <button onClick={() => setModalOpen(true)} disabled={!activeProviders?.length} className={`w-full sm:w-auto rounded border px-2 py-2 text-xs transition-colors sm:py-1.5 whitespace-nowrap sm:shrink-0 ${activeProviders?.length ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Select Model</button>
                 </div>
@@ -283,7 +295,7 @@ export default function ClineToolCard({ tool, isExpanded, onToggle, baseUrl, api
       <ModelSelectModal
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
-        onSelect={(model) => { setSelectedModel(model.value); setModalOpen(false); }}
+        onSelect={(model) => { setUserSelectedModel(model.value); setModalOpen(false); }}
         selectedModel={selectedModel}
         activeProviders={activeProviders}
         modelAliases={modelAliases}

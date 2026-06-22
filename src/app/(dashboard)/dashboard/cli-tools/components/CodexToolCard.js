@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
 import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
@@ -8,60 +8,42 @@ import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 
 export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled, initialStatus, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl }) {
-  const [codexStatus, setCodexStatus] = useState(initialStatus || null);
-  const [checkingCodex, setCheckingCodex] = useState(false);
+  // Local fetch result only. Parent initialStatus flows through without a sync effect.
+  const [fetchedCodexStatus, setFetchedCodexStatus] = useState(null);
   const [applying, setApplying] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [message, setMessage] = useState(null);
   const [showInstallGuide, setShowInstallGuide] = useState(false);
-  const [selectedApiKey, setSelectedApiKey] = useState("");
-  const [selectedModel, setSelectedModel] = useState("");
-  const [subagentModel, setSubagentModel] = useState("");
+  // Stores only explicit user selections. Falls back to apiKeys[0] at read time.
+  const [userSelectedApiKey, setUserSelectedApiKey] = useState("");
+  // Stores only explicit user edits or fetch-discovered value (set inside .then).
+  // Empty = "use fallback from status". *ResetByUser suppresses stale prop fallback after reset.
+  const [userSelectedModel, setUserSelectedModel] = useState("");
+  const [modelResetByUser, setModelResetByUser] = useState(false);
+  const [userSubagentModel, setUserSubagentModel] = useState("");
+  const [subagentResetByUser, setSubagentResetByUser] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [subagentModalOpen, setSubagentModalOpen] = useState(false);
   const [modelAliases, setModelAliases] = useState({});
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
+  const hasInitializedModels = useRef(false);
 
-  useEffect(() => {
-    if (apiKeys?.length > 0 && !selectedApiKey) {
-      setSelectedApiKey(apiKeys[0].key);
-    }
-  }, [apiKeys, selectedApiKey]);
+  // Derived: local fetch/mutation result takes precedence over parent prop.
+  const codexStatus = fetchedCodexStatus ?? initialStatus ?? null;
 
-  useEffect(() => {
-    if (initialStatus) setCodexStatus(initialStatus);
-  }, [initialStatus]);
+  // Derived API key: explicit user selection > first available key > empty.
+  const selectedApiKey = userSelectedApiKey || apiKeys?.[0]?.key || "";
 
-  useEffect(() => {
-    if (isExpanded && !codexStatus) {
-      checkCodexStatus();
-      fetchModelAliases();
-    }
-    if (isExpanded) fetchModelAliases();
-  }, [isExpanded]);
-
-  const fetchModelAliases = async () => {
-    try {
-      const res = await fetch("/api/models/alias");
-      const data = await res.json();
-      if (res.ok) setModelAliases(data.aliases || {});
-    } catch (error) {
-      console.log("Error fetching model aliases:", error);
-    }
-  };
-
-  // Parse model and subagent settings from config content
-  useEffect(() => {
-    if (codexStatus?.config) {
-      const modelMatch = codexStatus.config.match(/^model\s*=\s*"([^"]+)"/m);
-      if (modelMatch) setSelectedModel(modelMatch[1]);
-
-      // Parse subagent settings
-      const subagentModelMatch = codexStatus.config.match(/\[agents\.subagent\]\s*\n\s*model\s*=\s*"([^"]+)"/m);
-      if (subagentModelMatch) setSubagentModel(subagentModelMatch[1]);
-    }
-  }, [codexStatus]);
+  // Derived models: explicit user edit/fetch > initialStatus config value (unless reset) > empty.
+  const initialFileModel = codexStatus?.config
+    ? (codexStatus.config.match(/^model\s*=\s*"([^"]+)"/m)?.[1] || "")
+    : "";
+  const initialFileSubagent = codexStatus?.config
+    ? (codexStatus.config.match(/\[agents\.subagent\]\s*\n\s*model\s*=\s*"([^"]+)"/m)?.[1] || "")
+    : "";
+  const selectedModel = userSelectedModel || (!modelResetByUser ? initialFileModel : "") || "";
+  const subagentModel = userSubagentModel || (!subagentResetByUser ? initialFileSubagent : "") || "";
 
   const getConfigStatus = () => {
     if (!codexStatus?.installed) return null;
@@ -81,17 +63,43 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
 
   const getDisplayUrl = () => customBaseUrl || `${baseUrl}/v1`;
 
-  const checkCodexStatus = async () => {
-    setCheckingCodex(true);
-    try {
-      const res = await fetch("/api/cli-tools/codex-settings");
-      const data = await res.json();
-      setCodexStatus(data);
-    } catch (error) {
-      setCodexStatus({ installed: false, error: error.message });
-    } finally {
-      setCheckingCodex(false);
+  // Spinner derived from status — no checkingCodex state needed.
+  const checkingCodex = isExpanded && !codexStatus;
+
+  // Auto-check on expand: inline fetch chain — all setState inside .then/.catch only.
+  useEffect(() => {
+    if (isExpanded && !codexStatus) {
+      fetch("/api/cli-tools/codex-settings")
+        .then(r => r.json())
+        .then(data => {
+          setFetchedCodexStatus(data);
+          if (!hasInitializedModels.current && data?.config) {
+            hasInitializedModels.current = true;
+            const modelMatch = data.config.match(/^model\s*=\s*"([^"]+)"/m);
+            if (modelMatch) setUserSelectedModel(modelMatch[1]);
+            const subagentModelMatch = data.config.match(/\[agents\.subagent\]\s*\n\s*model\s*=\s*"([^"]+)"/m);
+            if (subagentModelMatch) setUserSubagentModel(subagentModelMatch[1]);
+          }
+        })
+        .catch(err => setFetchedCodexStatus({ installed: false, error: err.message }));
     }
+  }, [isExpanded, codexStatus]);
+
+  // Alias fetch: separate effect — setState only inside .then callback.
+  useEffect(() => {
+    if (isExpanded) {
+      fetch("/api/models/alias")
+        .then(r => r.json())
+        .then(data => { if (data) setModelAliases(data.aliases || {}); })
+        .catch(() => {});
+    }
+  }, [isExpanded]);
+
+  const checkCodexStatus = () => {
+    fetch("/api/cli-tools/codex-settings")
+      .then(r => r.json())
+      .then(data => setFetchedCodexStatus(data))
+      .catch(err => setFetchedCodexStatus({ installed: false, error: err.message }));
   };
 
   const handleApplySettings = async () => {
@@ -135,8 +143,10 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
       const data = await res.json();
       if (res.ok) {
         setMessage({ type: "success", text: "Settings reset successfully!" });
-        setSelectedModel("");
-        setSubagentModel("");
+        setModelResetByUser(true);
+        setSubagentResetByUser(true);
+        setUserSelectedModel("");
+        setUserSubagentModel("");
         checkCodexStatus();
       } else {
         setMessage({ type: "error", text: data.error || "Failed to reset settings" });
@@ -149,10 +159,10 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
   };
 
   const handleModelSelect = (model) => {
-    setSelectedModel(model.value);
+    setUserSelectedModel(model.value);
     // Auto-set subagent model if not set
-    if (!subagentModel) {
-      setSubagentModel(model.value);
+    if (!userSubagentModel) {
+      setUserSubagentModel(model.value);
     }
     setModalOpen(false);
   };
@@ -302,7 +312,7 @@ model = "${effectiveSubagentModel}"
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">API Key</span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
-                  <ApiKeySelect value={selectedApiKey} onChange={setSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
+                  <ApiKeySelect value={selectedApiKey} onChange={setUserSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
                 </div>
 
                 {/* Model */}
@@ -310,8 +320,8 @@ model = "${effectiveSubagentModel}"
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Model</span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
                   <div className="relative w-full min-w-0">
-                    <input type="text" value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} placeholder="provider/model-id" className="w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5" />
-                    {selectedModel && <button onClick={() => setSelectedModel("")} className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-red-500 rounded transition-colors" title="Clear"><span className="material-symbols-outlined text-[14px]">close</span></button>}
+                    <input type="text" value={selectedModel} onChange={(e) => setUserSelectedModel(e.target.value)} placeholder="provider/model-id" className="w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5" />
+                    {selectedModel && <button onClick={() => setUserSelectedModel("")} className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-red-500 rounded transition-colors" title="Clear"><span className="material-symbols-outlined text-[14px]">close</span></button>}
                   </div>
                   <button onClick={() => setModalOpen(true)} disabled={!activeProviders?.length} className={`w-full sm:w-auto rounded border px-2 py-2 text-xs transition-colors sm:py-1.5 whitespace-nowrap sm:shrink-0 ${activeProviders?.length ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Select Model</button>
                 </div>
@@ -324,13 +334,13 @@ model = "${effectiveSubagentModel}"
                     <input
                       type="text"
                       value={subagentModel}
-                      onChange={(e) => setSubagentModel(e.target.value)}
+                      onChange={(e) => setUserSubagentModel(e.target.value)}
                       placeholder={selectedModel || "provider/model-id (defaults to main model)"}
                       className="w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5"
                     />
                     {subagentModel && (
                       <button
-                        onClick={() => setSubagentModel("")}
+                        onClick={() => setUserSubagentModel("")}
                         className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-red-500 rounded transition-colors"
                         title="Clear (will use main model)"
                       >
@@ -384,7 +394,7 @@ model = "${effectiveSubagentModel}"
       <ModelSelectModal
         isOpen={subagentModalOpen}
         onClose={() => setSubagentModalOpen(false)}
-        onSelect={(model) => { setSubagentModel(model.value); setSubagentModalOpen(false); }}
+        onSelect={(model) => { setUserSubagentModel(model.value); setSubagentModalOpen(false); }}
         selectedModel={subagentModel}
         activeProviders={activeProviders}
         modelAliases={modelAliases}
