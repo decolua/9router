@@ -1,16 +1,16 @@
-// 9router service — cross-platform service management (install/uninstall/start/
+// DurinDoor service — cross-platform service management (install/uninstall/start/
 // stop/restart/status). Generated units launch the standalone custom-server.js
 // (the IP-hardening wrapper), never bare server.js.
 //
-// Linux: systemd user unit (~/.config/systemd/user/9router.service), no root.
-// macOS: launchd plist (~/Library/LaunchAgents/com.9router.server.plist).
+// Linux: systemd user unit (~/.config/systemd/user/durindoor.service), no root.
+// macOS: launchd plist (~/Library/LaunchAgents/com.durindoor.server.plist).
 // Windows: node-windows Service (requires `node-windows` — see windowsService()).
 const { execSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
 
-const SERVICE_NAME = "9router";
+const SERVICE_NAME = "durindoor";
 const VALID_ACTIONS = ["install", "uninstall", "start", "stop", "restart", "status"];
 
 function sh(cmd) {
@@ -33,7 +33,7 @@ function systemdUnitPath() {
 function systemdUnitText(nodeBin, customServerPath, standaloneDir, env) {
   return [
     "[Unit]",
-    `Description=9Router Server`,
+    `Description=DurinDoor Server`,
     "After=network.target",
     "",
     "[Service]",
@@ -83,7 +83,7 @@ function systemd(action, ctx, nodeBin, env) {
 
 // ── macOS: launchd plist ──────────────────────────────────────────────────
 function launchdPlistPath() {
-  return path.join(os.homedir(), "Library", "LaunchAgents", "com.9router.server.plist");
+  return path.join(os.homedir(), "Library", "LaunchAgents", "com.durindoor.server.plist");
 }
 
 function launchdPlist(nodeBin, customServerPath, standaloneDir, env) {
@@ -95,7 +95,7 @@ function launchdPlist(nodeBin, customServerPath, standaloneDir, env) {
     `<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">`,
     `<plist version="1.0">`,
     `<dict>`,
-    `  <key>Label</key><string>com.9router.server</string>`,
+    `  <key>Label</key><string>com.durindoor.server</string>`,
     `  <key>WorkingDirectory</key><string>${standaloneDir}</string>`,
     `  <key>ProgramArguments</key>`,
     `  <array>`,
@@ -113,7 +113,7 @@ function launchdPlist(nodeBin, customServerPath, standaloneDir, env) {
 
 function launchd(action, ctx, nodeBin, env) {
   const plistPath = launchdPlistPath();
-  const label = "com.9router.server";
+  const label = "com.durindoor.server";
   if (action === "install") {
     fs.mkdirSync(path.dirname(plistPath), { recursive: true });
     fs.writeFileSync(plistPath, launchdPlist(nodeBin, ctx.customServerPath, ctx.standaloneDir, env));
@@ -148,7 +148,7 @@ function launchd(action, ctx, nodeBin, env) {
 // status work via sc.exe / net only once the service has been installed
 // out-of-band with node-windows.
 function windowsService(action, ctx, nodeBin, env) {
-  const svcName = "9Router";
+  const svcName = "DurinDoor";
   if (action === "status") {
     const out = trySh(`sc query ${svcName}`);
     console.log(out || `${SERVICE_NAME}: not-installed`);
@@ -169,8 +169,8 @@ function windowsService(action, ctx, nodeBin, env) {
   console.error(`Windows service '${action}' requires manual setup — node-windows is not bundled.`);
   console.error("Options:");
   console.error("  1. node-windows: npm i -g node-windows, then use its Service API (see docs/service-windows.md).");
-  console.error("  2. sc.exe: sc create 9Router binPath= \"node path\\to\\custom-server.js\" (see docs/service-windows.md).");
-  console.error("  3. Docker/CI: run 9router in a container or as a scheduled task instead.");
+  console.error("  2. sc.exe: sc create DurinDoor binPath= \"node path\\to\\custom-server.js\" (see docs/service-windows.md).");
+  console.error("  3. Docker/CI: run durindoor in a container or as a scheduled task instead.");
   console.error("Full guide: https://github.com/bloodf/9router/blob/main/docs/service-windows.md");
   process.exit(2);
 }
@@ -180,7 +180,7 @@ function runServiceCommand(subArgs, ctx) {
   const action = subArgs[0] || "status";
   if (!VALID_ACTIONS.includes(action)) {
     console.error(`Unknown service action: ${action}`);
-    console.error(`Usage: 9router service <${VALID_ACTIONS.join("|")}>`);
+    console.error(`Usage: durindoor service <${VALID_ACTIONS.join("|")}>`);
     process.exit(2);
   }
   // Service units MUST launch custom-server.js (IP-hardening wrapper), not the

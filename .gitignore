@@ -53,6 +53,7 @@ docs/*
 !docs/ARCHITECTURE.md
 !docs/service-windows.md
 !docs/BRAND.md
+!docs/MIGRATION.md
 test/*
 open-sse/test/*
 RM.vn.md

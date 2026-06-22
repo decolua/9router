@@ -15,7 +15,7 @@ const DEFAULT_CONFIG = {
 
 const CLI_TOKEN_HEADER = "x-9r-cli-token";
 const CLI_TOKEN_SALT = "9r-cli-auth";
-const APP_NAME = "9router";
+const APP_NAME = "durindoor";
 
 const MACHINE_ID_FILE = path.join(getDataDir(), "machine-id");
 const AUTH_DIR = path.join(getDataDir(), "auth");

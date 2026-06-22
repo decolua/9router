@@ -22,6 +22,11 @@
 
 ---
 
+> **⚠️ Upgrading from 9router?** The OS service identity has changed — you must
+> uninstall the old service before installing the new one. CLI sessions are preserved.
+> See the **[Migration Guide](./docs/MIGRATION.md)** for the full upgrade steps.
+
+
 ## 🤔 Why DurinDoor?
 
 **Stop wasting money, tokens and hitting limits:**
