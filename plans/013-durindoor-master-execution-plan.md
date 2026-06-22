@@ -273,8 +273,9 @@ Routine clean commits and pushes to `origin/dev` are PRE-AUTHORIZED — do not s
 
 ## Reference files
 
-- Plan index: `plans/README.md` (status column STALE — trust git log + this file)
+- Plan index: `plans/README.md` (reconciled 2026-06-22; git log + this file are source of truth)
 - Plans 001–010: `plans/00X-*.md` (executor-ready: scope / steps / STOP / validation)
 - Roadmap 011: `plans/011-upstream-sync-pr-adoption-typescript-roadmap.md`
 - Rebrand 012: `plans/012-durindoor-rebrand-lotr-inspired-theme.md` + `plans/012-brand-inventory.md`
+- **Feature backlog — SPIKE (NOT scheduled, gated on source discovery):** `plans/014-kimi-quota-tracker.md` — Kimi (Kimi Code / coding-plan) quota tracker. 🔬 Blocked: web research found NO documented authenticated endpoint for Kimi *coding-plan* quota (Moonshot `/v1/users/me/balance` is the wrong product). Phase-0 source discovery (browser-network/CLI trace of the console + CLI `/usage`) is REQUIRED before any adapter (`open-sse/services/usage/kimi.js` → existing `ProviderLimits` UI). Do NOT implement until the spike resolves auth + response shape.
 - Orchestrator skill: `skills/goal-loop-orchestrator/SKILL.md`
