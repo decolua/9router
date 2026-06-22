@@ -17,4 +17,5 @@ export default {
   ],
   serviceKinds: ["image"],
   imageConfig: { baseUrl: "http://localhost:8188" },
+  hidden: true,
 };

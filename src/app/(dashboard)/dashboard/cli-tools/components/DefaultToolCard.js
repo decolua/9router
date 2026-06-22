@@ -144,7 +144,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
   };
 
   const renderGuideSteps = () => {
-    if (!tool.guideSteps) return <p className="text-text-muted text-sm">Coming soon...</p>;
+    if (!tool.guideSteps) return <p className="text-text-muted text-sm">Setup guide for {tool.name} is not yet available. Use your 9Router base URL and API key from Settings to configure this tool manually.</p>;
 
     return (
       <div className="flex flex-col gap-4">

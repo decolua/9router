@@ -166,9 +166,12 @@ function windowsService(action, ctx, nodeBin, env) {
     return;
   }
   // install / uninstall
-  console.error(`Windows service ${action} is not implemented: requires the node-windows dependency.`);
-  console.error("Add node-windows (npm i node-windows) and use its Service API to manage the '9Router' service.");
-  console.error("Once installed, start/stop/restart/status work via this command.");
+  console.error(`Windows service '${action}' requires manual setup — node-windows is not bundled.`);
+  console.error("Options:");
+  console.error("  1. node-windows: npm i -g node-windows, then use its Service API (see docs/service-windows.md).");
+  console.error("  2. sc.exe: sc create 9Router binPath= \"node path\\to\\custom-server.js\" (see docs/service-windows.md).");
+  console.error("  3. Docker/CI: run 9router in a container or as a scheduled task instead.");
+  console.error("Full guide: https://github.com/bloodf/9router/blob/main/docs/service-windows.md");
   process.exit(2);
 }
 
