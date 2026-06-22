@@ -1,8 +1,8 @@
 import { spawn, execSync } from "child_process";
 import path from "path";
 import fs from "fs";
-import os from "os";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
+import { getDataDir } from "@/lib/dataDir.js";
 
 const KILL_TIMEOUT_MS = 5000;
 const PROCESS_WAIT_MS = 1500;
@@ -10,19 +10,12 @@ const PROCESS_WAIT_MS = 1500;
 // Kill MITM server by PID file (MITM may run as admin/sudo)
 function killMitmByPidFile() {
   try {
-    const mitmPidFile = path.join(
-      process.platform === "win32"
-        ? path.join(process.env.APPDATA || "", "9router")
-        : path.join(os.homedir(), ".9router"),
-      "mitm",
-      ".mitm.pid"
-    );
+    const mitmPidFile = path.join(getDataDir(), "mitm", ".mitm.pid");
     if (!fs.existsSync(mitmPidFile)) return;
     const pid = parseInt(fs.readFileSync(mitmPidFile, "utf8").trim(), 10);
     if (!pid) return;
 
     if (process.platform === "win32") {
-      // taskkill first (works if same user); fallback to PowerShell Stop-Process which can kill admin process if our token allows
       try { execSync(`taskkill /F /T /PID ${pid}`, { stdio: "ignore", windowsHide: true, timeout: 3000 }); } catch {
         try { execSync(`powershell -NonInteractive -WindowStyle Hidden -Command "Stop-Process -Id ${pid} -Force"`, { stdio: "ignore", windowsHide: true, timeout: 3000 }); } catch { /* best effort */ }
       }
@@ -95,14 +88,7 @@ function collectAppPids() {
   return pids;
 }
 
-// Copy updater.js into DATA_DIR so npm -g can overwrite node_modules safely
-function getDataDir() {
-  if (process.env.DATA_DIR) return process.env.DATA_DIR;
-  if (process.platform === "win32") {
-    return path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "9router");
-  }
-  return path.join(os.homedir(), ".9router");
-}
+
 
 function resolveBundledUpdaterPath() {
   if (process.env.UPDATER_SCRIPT_PATH && fs.existsSync(process.env.UPDATER_SCRIPT_PATH)) {
