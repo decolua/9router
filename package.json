@@ -1,7 +1,7 @@
 {
-  "name": "9router-app",
+  "name": "durindoor-app",
   "version": "0.5.4",
-  "description": "9Router web dashboard",
+  "description": "DurinDoor web dashboard",
   "private": true,
   "scripts": {
     "dev": "next dev --webpack --port 20127",

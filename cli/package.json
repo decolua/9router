@@ -1,9 +1,9 @@
 {
-  "name": "9router",
+  "name": "durindoor",
   "version": "0.5.4",
-  "description": "9Router CLI - Start and manage 9Router server",
+  "description": "DurinDoor CLI - Start and manage DurinDoor server",
   "bin": {
-    "9router": "./cli.js"
+    "durindoor": "./cli.js"
   },
   "files": [
     "cli.js",
@@ -34,7 +34,7 @@
     "node": ">=18.0.0"
   },
   "keywords": [
-    "9router",
+    "durindoor",
     "cli",
     "proxy",
     "ai",
