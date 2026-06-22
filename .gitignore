@@ -76,6 +76,8 @@ gitbook/README.md
 # AI tools
 .claude/
 .codewhale/
+.pi/
+.atl/
 
 # Refactor backup reference (do not bundle/lint)
 open-sse.old/
