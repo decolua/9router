@@ -5,6 +5,8 @@ import {
   updateProviderConnection,
   deleteProviderConnection,
 } from "@/models";
+import { isAnthropicCompatibleProvider, isOpenAICompatibleProvider } from "@/shared/constants/providers";
+import { normalizeDefaultModel } from "@/lib/providerNormalization";
 
 function normalizeProxyConfig(body = {}) {
   const hasAnyProxyField =
@@ -119,8 +121,17 @@ export async function PUT(request, { params }) {
     const updateData = {};
     if (name !== undefined) updateData.name = name;
     if (priority !== undefined) updateData.priority = priority;
+    if (defaultModel !== undefined) {
+      // Auto-prefix with the connection's namespace for compatible providers,
+      // matching the create-time behavior in /api/providers POST.
+      if (isOpenAICompatibleProvider(existing.provider) || isAnthropicCompatibleProvider(existing.provider)) {
+        const psdPrefix = (updateData.providerSpecificData?.prefix) ?? existing.providerSpecificData?.prefix;
+        updateData.defaultModel = normalizeDefaultModel(psdPrefix, defaultModel);
+      } else {
+        updateData.defaultModel = defaultModel;
+      }
+    }
     if (globalPriority !== undefined) updateData.globalPriority = globalPriority;
-    if (defaultModel !== undefined) updateData.defaultModel = defaultModel;
     if (isActive !== undefined) updateData.isActive = isActive;
     if (apiKey && existing.authType === "apikey") updateData.apiKey = apiKey;
     if (testStatus !== undefined) updateData.testStatus = testStatus;
