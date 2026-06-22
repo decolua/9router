@@ -13,10 +13,10 @@ deterministic payload errors (context-length / too-many-tokens).
 
 ## Directory map
 
-- `config/` — ALL constants/config (no hardcode elsewhere). `providers.js`/`registry/` (provider defs), `providerModels.js` (alias→models matrix), `runtimeConfig.js` (timeouts, token limits), `*Constants.js`.
+- `config/` — ALL constants/config (no hardcode elsewhere). `providers.js` (provider exports), `providerModels.js` (alias→models matrix), `runtimeConfig.js` (timeouts, token limits), `*Constants.js`.
 - `translator/` — format conversion. `request/<from>-to-<to>.js`, `response/<from>-to-<to>.js`, `schema/` (enums: ROLE, CLAUDE_BLOCK…), `concerns/` (shared logic), `formats/` (per-format). See `tests/translator/AGENTS.md`.
 - `executors/` — per-provider upstream call. `base.js` (BaseExecutor), one file per special provider, `index.js` map.
-- `providers/` — registry build + `capabilities.js` + `pricing.js`. Entry: `index.js` (PROVIDERS).
+- `providers/` — `registry/` (provider defs), `capabilities.js`, `pricing.js`. Entry: `index.js` (PROVIDERS).
 - `handlers/` — per-modality cores (chat/image/embedding/tts/stt/search) + sub-provider folders.
 - `services/` — `tokenRefresh/`, `usage/`, `combo.js`, `accountFallback.js`, `modelFallback.js` (per-model primary→ordered fallback chain, strategy-aware), `model.js`.
 - `utils/` — streamHandler, error, sessionManager, claudeCloaking.
@@ -37,4 +37,4 @@ deterministic payload errors (context-length / too-many-tokens).
 
 - OpenAI bridge is lossy (thinking, non-base64 images, tool ids, is_error) — prefer a direct route for fragile pairs.
 - `registry/index.js` is an auto-generated static import list; regenerate it (don't hand-edit) after adding a `registry/{id}.js`. REGISTRY_TEMPLATE is excluded by design.
-- Per-model fallback (`runWithModelFallback` in `services/modelFallback.js`) wraps ONLY the direct single-model dispatch at each handler's entry (`handleChat`, `handleFetch`, `handleSearch`, `handleImageGeneration`, `handleTts`, `handleStt`, `handleEmbeddings`). Combos call the handler's `handleSingleModel*` directly and bypass per-model fallback by design — combos already have their own fallback semantics. The wrapper skips the chain on 2xx (streaming-safe) and stops on deterministic payload errors (`isDeterministicPayloadError`: context-length / too-many-tokens) from any fallback in the chain. Strategy: "ordered" (try in configured order), "random" (shuffle per resolve), "roundrobin" (rotate starting index). When all fallbacks fail, the LAST fallback's response is returned (not the stale primary error). Combos bypass this entirely.
+- Per-model fallback (`runWithModelFallback` in `services/modelFallback.js`) wraps ONLY the direct single-model dispatch at each handler's entry (`handleChatCore`, `handleFetchCore`, `handleSearchCore`, `handleImageGenerationCore`, `handleTtsCore`, `handleSttCore`, `handleEmbeddingsCore`). Combos call the handler's `handleSingleModel*` directly and bypass per-model fallback by design — combos already have their own fallback semantics. The wrapper skips the chain on 2xx (streaming-safe) and stops on deterministic payload errors (`isDeterministicPayloadError`: context-length / too-many-tokens) from any fallback in the chain. Strategy: "ordered" (try in configured order), "random" (shuffle per resolve), "roundrobin" (rotate starting index). When all fallbacks fail, the LAST fallback's response is returned (not the stale primary error). Combos bypass this entirely.
