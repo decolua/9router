@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getGatewayKeys, createGatewayKey } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
+import { isLocalRequest } from "@/dashboardGuard";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,14 @@ export async function GET() {
 
 export async function POST(request) {
   try {
+    // Key creation reveals the raw key. Restrict to local requests (SSRF-style
+    // protection — remote callers must not be able to create and reveal keys).
+    if (!isLocalRequest(request)) {
+      return NextResponse.json(
+        { error: "Key creation is only available from local requests." },
+        { status: 403 }
+      );
+    }
     const body = await request.json().catch(() => ({}));
     const machineId = await getConsistentMachineId();
     const row = await createGatewayKey(body.name || null, machineId);
