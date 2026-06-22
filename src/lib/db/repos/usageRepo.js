@@ -8,6 +8,20 @@ const RING_CAP = 50;
 const CONN_CACHE_TTL_MS = 30 * 1000;
 const PERIOD_MS = { "24h": 86400000, "7d": 604800000, "30d": 2592000000, "60d": 5184000000 };
 
+// Cap usageHistory row count to bound DB / WASM heap growth (#1245).
+// usageDaily already holds rolled-up aggregates, so trimming oldest raw rows
+// only loses sub-day precision for periods older than the retained window.
+const DEFAULT_USAGE_HISTORY_MAX_ROWS = 10000;
+const USAGE_HISTORY_MAX_ROWS = (() => {
+  const v = parseInt(process.env.USAGE_HISTORY_MAX_ROWS || "", 10);
+  if (Number.isFinite(v) && v >= 100) return v;
+  return DEFAULT_USAGE_HISTORY_MAX_ROWS;
+})();
+// Prune check is cheap (COUNT + conditional DELETE) but we throttle it so the
+// transaction stays small under high request rates.
+const PRUNE_CHECK_EVERY = 50;
+let writesSincePrune = 0;
+
 // In-memory state shared across Next.js modules
 if (!global._pendingRequests) global._pendingRequests = { byModel: {}, byAccount: {} };
 if (!global._lastErrorProvider) global._lastErrorProvider = { provider: "", ts: 0 };
@@ -277,6 +291,22 @@ export async function saveRequestUsage(entry) {
       const cur = db.get(`SELECT value FROM _meta WHERE key = 'totalRequestsLifetime'`);
       const next = (cur ? parseInt(cur.value, 10) : 0) + 1;
       db.run(`INSERT INTO _meta(key, value) VALUES('totalRequestsLifetime', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [String(next)]);
+
+      // Prune oldest usageHistory rows above the configured cap (#1245).
+      // Throttled to every PRUNE_CHECK_EVERY writes — daily aggregates in
+      // usageDaily retain the long-term stats.
+      writesSincePrune++;
+      if (writesSincePrune >= PRUNE_CHECK_EVERY) {
+        writesSincePrune = 0;
+        const cnt = db.get(`SELECT COUNT(*) as c FROM usageHistory`);
+        const total = cnt ? cnt.c : 0;
+        if (total > USAGE_HISTORY_MAX_ROWS) {
+          db.run(
+            `DELETE FROM usageHistory WHERE id IN (SELECT id FROM usageHistory ORDER BY id ASC LIMIT ?)`,
+            [total - USAGE_HISTORY_MAX_ROWS]
+          );
+        }
+      }
     });
 
     pushToRing(entry);
