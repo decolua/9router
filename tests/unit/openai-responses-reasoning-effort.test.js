@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { convertResponsesApiFormat } from "../../open-sse/translator/helpers/responsesApiHelper.js";
+import { convertResponsesApiFormat } from "../../open-sse/translator/formats/responsesApi.js";
 import {
   openaiResponsesToOpenAIRequest,
   openaiToOpenAIResponsesRequest,
