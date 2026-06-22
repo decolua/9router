@@ -49,8 +49,14 @@ Legend: ✅ DONE (validated passing) · 🟡 LANDED (in dev by ancestry/file-exi
 
 **Working tree:** the 16-file "drift" was **Prettier line-reflow** (spaces→tabs + arg/block wrapping), NOT pure whitespace — `diff -w` still showed +1372/−434, and `prettier --check` REJECTS it (stray editor formatting, not canonical). STASHED as `phase0-stray-drift-backup` (recoverable); tree restored to HEAD. Do NOT re-commit it.
 
-### DECISIONS REQUIRED FROM USER (blocks Phase 4 completion)
-Rebrand has product decisions the WBS cannot make: (a) new **npm package name** (rename vs dual-publish vs alias)? (b) new **CLI command** (`durindoor`/`ddoor`/`dd`)? (c) new **domain** (`durindoor.com`)? (d) **data dir** migration (`.9router` → `.durindoor`, or keep)? (e) **Docker image** name? Provide answers before Phase 4.6 or it becomes a STOP.
+### REBRAND DECISIONS — RESOLVED (user, 2026-06-22)
+Direction = **hard rename to `durindoor`** (clean cutover, back-compat only where data-loss is at stake):
+- **npm package**: rename to `durindoor` (DROP `9router`) — no alias package; migration docs must warn existing `9router` importers.
+- **CLI command**: `durindoor` (full name).
+- **Domain**: DEFER (none yet) — do NOT block the code rebrand on domain registration; revisit when ready.
+- **Data dir**: `~/.durindoor` new default + **read `~/.9router` back-compat** (auto-detect + migrate/read) — zero data loss.
+- **Docker image**: rename to `durindoor`.
+Implication for Phase 4: rename npm/bin/Docker/env-vars/data-dir to `durindoor`; keep a `.9router` data-dir read-path for back-compat; NO `9router` npm alias; domain work deferred.
 
 ### SCHEDULE RISK (read before committing to "days")
 Codebase is **928 JS files / ~120K LOC** (src + open-sse). Strict TypeScript with **no `any`/no `unknown`** across 120K LOC is the dominant cost of the whole roadmap — realistically a long horizon of wave-batched per-module conversion, not days. The autonomous loop will run it, but Phase 5 should be expected to dwarf Phases 0–4 combined. Plan accordingly; do not let "never stop until 100%" pressure rush the no-`any` boundary design.
@@ -162,7 +168,7 @@ Per `012` theme + `012-brand-inventory.md` (~1,500 refs, 200+ files, 5 languages
 3. Landing/login metadata + favicon/logo (original SVG → `icon-192/512`).
 4. Theme tokens (`globals.css`) + shared primitives.
 5. Dashboard shell/sidebar, then page batches coordinated with Phase 2 UI-01.
-6. Compatibility aliases (`9router` → `durindoor`): npm package/bin, Docker images, `.9router` data dir, `9router.com` domain, env vars — with deprecation warnings + migration docs.
+6. **Hard rename + migration/break-notice** (per RESOLVED decisions — NO npm `9router` alias): npm package/bin → `durindoor`; Docker image → `durindoor`; env vars → `DURINDOOR_*` (read `9ROUTER_*` back-compat); data dir → `~/.durindoor` with **auto-detect + read `~/.9router` back-compat** (zero data loss). MUST ship explicit migration so existing users are NOT silently broken: `9router`→`durindoor` upgrade guide, README deprecation banner, and (if feasible) a stub `9router` CLI/command that prints a redirect notice. Domain deferred.
 7. Final stale-name sweep + visual QA.
 8. GitBook (100 files, 5 languages) — post-launch batch.
 
