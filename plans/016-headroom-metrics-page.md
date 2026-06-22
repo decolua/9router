@@ -22,22 +22,19 @@ EXTERNAL Headroom proxy on `http://127.0.0.1:8787`. The data must live in the ro
 ➡ **Conclusion:** this is foundational work, not a page over existing data. Slice order below
 is mandatory: the folding must land before instrumentation, which must land before the page.
 
-## Slice 0 — DECISION (prerequisite, blocking)
-Decide the folding strategy (document the choice here before Slice 1):
-- **(A) Embed router-native compression** — replace `compressWithHeadroom`'s external-proxy
-  call with an in-process compressor (port/rewrite the Headroom algorithm to run inside the
-  router). Cleanest "folded" end-state; removes the external dependency entirely.
-- **(B) Dual-mode behind a flag** — keep `compressWithHeadroom` able to call an external proxy
-  OR run router-native, toggled by setting (transitional; lets users keep an external proxy).
-Recommend **(A)** unless external-proxy compatibility is a stated requirement.
+## Slice 0 — DECISION: RESOLVED (user, 2026-06-22)
+**Detection-priority hybrid** — user intent: "detect an existing Headroom installation on the machine and use it FIRST; user can point to an IP:port; else use the app's own headroom." Source resolution priority for compression:
+1. **custom IP:port** — user-configured Headroom URL → use it.
+2. **auto-detected local install** — external Headroom detected on the machine (via `/api/headroom/probe` probing `localhost:8787` etc.) → use it.
+3. **router-native fallback** — else run the router's OWN in-process compression.
+Keep `/api/headroom/probe` as the detection mechanism for (1)+(2). The stats/health response MUST include a `source` field (`custom | detected | native`) so the page shows which backend is active.
 
-## Slice 1 — router-native compression (the actual fold)
-Implement the chosen Slice-0 strategy in `open-sse/rtk/headroom.js` + the `compressWithHeadroom`
-call site (`chatCore.js:260`):
-- Router-native compressor that returns the same `{ tokens_before, tokens_after, tokens_saved,
-  model, ... }` shape (so `formatHeadroomLog` + downstream stay compatible).
-- Preserve the "fail open" property (compression errors never break a request).
-- If dual-mode (B), gate on the setting; default to router-native.
+## Slice 1 — source resolution + router-native fallback (the fold)
+Implement the Slice-0 priority in `open-sse/rtk/headroom.js` + `compressWithHeadroom` (`chatCore.js:260`):
+- **Source resolver:** custom URL (setting) → auto-detected external (probe, cached) → router-native.
+- **Router-native compressor** returning the same `{ tokens_before, tokens_after, tokens_saved, model, source, ... }` shape (add `source`; keep `formatHeadroomLog` + downstream compatible).
+- **PREREQUISITE / RISK (verify first):** the router-native fallback needs the Headroom **compression algorithm**. Determine its source — is it in-repo, a dependency, or portable from the external-proxy logic? **If the algorithm is NOT available, native fallback cannot be built without a spec** → flag it and either obtain the algorithm or scope native-fallback out (custom/detected only, no fallback). Do not fabricate a compressor.
+- Preserve "fail open" (compression errors never break a request); cache the detection result (don't probe every request).
 
 ## Slice 2 — instrumentation + read-only stats endpoint (the data source)
 At the `headroomStats` call site, **aggregate** into an in-process store (reset on restart is
@@ -47,16 +44,14 @@ acceptable for v1; persist later if needed):
   `compression_savings_usd`, `savings_percent`, `last_activity_at`.
 - Cost: compute `without_headroom_usd` / `with_headroom_usd` / `total_saved_usd` from
   `open-sse/providers/pricing.js` × token deltas (if pricing data exists; else render `—`).
-Add a **read-only, server-side** endpoint (e.g. `GET /api/headroom/stats` returning
-`{ health, summary, savings }`) — keep all counter access server-side; the browser never reads
-counters directly. Add `GET /api/headroom/health` (`status`, `version`, `uptime_seconds`).
+Add a **read-only, server-side** endpoint (`GET /api/headroom/stats` → `{ health, summary, savings, source }`) — all counter access server-side; the browser never reads counters directly. Add `GET /api/headroom/health` → `{ status, version, uptime_seconds, source }`. **`source` (`custom | detected | native`) is TOP-LEVEL on both responses (the single canonical home) — which backend produced that response.** It is NOT duplicated inside the `health` sub-object.
 **Report which target-shape fields map to real counters vs are placeholders (`—`).**
 
 ## Slice 3 — page (replace/extend the EXISTING page — NOT a duplicate)
 Target the **existing** `/dashboard/system/compress/headroom` page: replace its external-probe
 UI with the metrics/health view wired to `/api/headroom/stats` + `/health`. Mirror an existing
 dashboard page's layout primitives (no new design system). Per the user spec:
-1. **Status row** — health badge (healthy vs fetch-error), `v{version}`, optional "Open UI" link.
+1. **Status row** — health badge (healthy vs fetch-error), `v{version}`, **"Using: {source}"** (custom / detected / native backend), optional "Open UI" link.
 2. **Error state** — "Headroom unavailable — could not read router stats" panel on fetch failure.
 3. **Four metric cards** — API requests (+primary_model hint), Tokens saved (+avg-compression%),
    Estimated savings USD (+savings%), Mode (compression strategy). `Intl.NumberFormat`, USD,
@@ -67,19 +62,14 @@ dashboard page's layout primitives (no new design system). Per the user spec:
   it only if dual-mode Slice-0-B is chosen).
 
 ## Target data contract (adapt field names to the router's reality — every field OPTIONAL)
-Health: `service`, `status("healthy"|"unhealthy")`, `ready`, `version`, `timestamp`, `uptime_seconds`.
-Stats: `summary.{mode, api_requests, primary_model, compression{requests_compressed,
-avg_compression_pct, total_tokens_removed}, cost{without_headroom_usd, with_headroom_usd,
-total_saved_usd, savings_pct}}`, `savings.{total_tokens, per_project{requests, tokens_saved,
-compression_savings_usd, savings_percent, last_activity_at}}`. Page must degrade gracefully on
-partial/missing data. **Never fabricate numbers** — compute or render `—`.
+Health: `service`, `status("healthy"|"unhealthy")`, `ready`, `version`, `timestamp`, `uptime_seconds` (no `source` here).
+Stats: `summary.{mode, api_requests, primary_model, compression{requests_compressed, avg_compression_pct, total_tokens_removed}, cost{without_headroom_usd, with_headroom_usd, total_saved_usd, savings_pct}}`, `savings.{total_tokens, per_project{requests, tokens_saved, compression_savings_usd, savings_percent, last_activity_at}}`, **top-level `source("custom"|"detected"|"native")` (canonical — returned by both `/stats` and `/health`)**. Page must degrade gracefully on partial/missing data. **Never fabricate numbers** — compute or render `—`.
 
 ## STOP / risks
 - Do NOT build the page before Slice 1+2 (it would still report an external proxy).
 - Cost fields depend on `pricing.js` coverage — if a model's price is unknown, render `—`, don't guess.
 - In-process counters reset on restart (v1); flag if persistence is required.
-- Removing the external-probe path is breaking for any user still running a standalone Headroom
-  proxy — only remove if Slice-0 = (A) embed; for (B) dual-mode, keep it.
+- The external-probe path (`/api/headroom/probe`) is **KEPT** — it is the detection mechanism for custom + detected sources (per the hybrid decision). Do NOT remove it. The page must handle all three `source` values (custom / detected / native).
 
 ## Roadmap slot
 This IS the "headroom compression part of the plan" — discovery shows it is **not already made**
