@@ -15,78 +15,61 @@ export default function AntigravityToolCard({
   cloudEnabled,
   initialStatus,
 }) {
-  const [status, setStatus] = useState(initialStatus || null);
+  // fetchedStatus: result of explicit fetchStatus(). Derived: fetchedStatus ?? initialStatus ?? null.
+  // initialStatus prop changes flow through automatically — no sync effect needed.
+  const [fetchedStatus, setFetchedStatus] = useState(null);
   const [loading, setLoading] = useState(false);
   const [startingStep, setStartingStep] = useState(null); // "cert" | "server" | "dns" | null
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [sudoPassword, setSudoPassword] = useState("");
-  const [selectedApiKey, setSelectedApiKey] = useState("");
+  // userSelectedApiKey: explicit user pick only. Falls back to apiKeys[0] at render time.
+  const [userSelectedApiKey, setUserSelectedApiKey] = useState("");
   const [message, setMessage] = useState(null);
   const [modelMappings, setModelMappings] = useState({});
   const [modalOpen, setModalOpen] = useState(false);
   const [currentEditingAlias, setCurrentEditingAlias] = useState(null);
   const [modelAliases, setModelAliases] = useState({});
 
-  useEffect(() => {
-    if (apiKeys?.length > 0 && !selectedApiKey) {
-      setSelectedApiKey(apiKeys[0].key);
-    }
-  }, [apiKeys, selectedApiKey]);
+  // Derived status.
+  const status = fetchedStatus ?? initialStatus ?? null;
 
-  useEffect(() => {
-    if (initialStatus) setStatus(initialStatus);
-  }, [initialStatus]);
+  // Derived API key: explicit user pick > first available key > empty.
+  const selectedApiKey = userSelectedApiKey || apiKeys?.[0]?.key || "";
 
-  useEffect(() => {
-    if (isExpanded && !status) {
-      fetchStatus();
-      loadSavedMappings();
-      fetchModelAliases();
-    }
-    if (isExpanded) {
-      loadSavedMappings();
-      fetchModelAliases();
-    }
-  }, [isExpanded]);
-
-  const loadSavedMappings = async () => {
-    try {
-      const res = await fetch("/api/cli-tools/antigravity-mitm/alias?tool=antigravity");
-      if (res.ok) {
-        const data = await res.json();
-        const aliases = data.aliases || {};
-
-        if (Object.keys(aliases).length > 0) {
-          setModelMappings(aliases);
-        }
-      }
-    } catch (error) {
-      console.log("Error loading saved mappings:", error);
-    }
-  };
-
-  const fetchModelAliases = async () => {
-    try {
-      const res = await fetch("/api/models/alias");
-      const data = await res.json();
-      if (res.ok) setModelAliases(data.aliases || {});
-    } catch (error) {
-      console.log("Error fetching model aliases:", error);
-    }
-  };
-
+  // Hoist fetch helpers before the effect that calls them (avoids forward-ref violation).
   const fetchStatus = async () => {
     try {
       const res = await fetch("/api/cli-tools/antigravity-mitm");
       if (res.ok) {
         const data = await res.json();
-        setStatus(data);
+        setFetchedStatus(data);
       }
     } catch (error) {
       console.log("Error fetching status:", error);
-      setStatus({ running: false });
+      setFetchedStatus({ running: false });
     }
   };
+
+  // On expand: fetch status if not yet known, always refresh mappings+aliases.
+  // All helpers inlined as fetch chains so exhaustive-deps is satisfied without
+  // function identity churn, and no setState fires synchronously in the effect body.
+  useEffect(() => {
+    if (!isExpanded) return;
+    if (!status) {
+      fetch("/api/cli-tools/antigravity-mitm")
+        .then((r) => r.ok ? r.json() : null)
+        .then((data) => { if (data) setFetchedStatus(data); })
+        .catch(() => { setFetchedStatus({ running: false }); });
+    }
+    fetch("/api/cli-tools/antigravity-mitm/alias?tool=antigravity")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data?.aliases && Object.keys(data.aliases).length > 0) setModelMappings(data.aliases); })
+      .catch(() => {});
+    fetch("/api/models/alias")
+      .then((r) => r.json())
+      .then((data) => { if (data) setModelAliases(data.aliases || {}); })
+      .catch(() => {});
+  }, [isExpanded, status]);
 
   // MITM elevation is decided by the server OS, not by this browser's OS.
   const serverIsWindows = status?.isWin === true;
@@ -329,7 +312,7 @@ export default function AntigravityToolCard({
                 {apiKeys.length > 0 ? (
                   <select
                     value={selectedApiKey}
-                    onChange={(e) => setSelectedApiKey(e.target.value)}
+                    onChange={(e) => setUserSelectedApiKey(e.target.value)}
                     className="w-full min-w-0 px-2 py-2 bg-surface rounded text-xs border border-border focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5"
                   >
                     {apiKeys.map((key) => <option key={key.id} value={key.key}>{key.key}</option>)}

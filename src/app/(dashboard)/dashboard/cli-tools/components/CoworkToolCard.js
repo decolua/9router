@@ -31,18 +31,22 @@ export default function CoworkToolCard({
   tailscaleUrl,
   initialStatus,
 }) {
-  const [status, setStatus] = useState(initialStatus || null);
+  // fetchedStatus: result of checkStatus(). Derived: fetchedStatus ?? initialStatus ?? null.
+  // initialStatus prop changes flow through automatically — no sync effect needed.
+  const [fetchedStatus, setFetchedStatus] = useState(null);
   const [checking, setChecking] = useState(false);
   const [applying, setApplying] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [message, setMessage] = useState(null);
-  const [selectedApiKey, setSelectedApiKey] = useState("");
-  const [selectedModels, setSelectedModels] = useState([]);
+  // userSelectedApiKey: explicit user pick only. Falls back to apiKeys[0] at render time.
+  const [userSelectedApiKey, setUserSelectedApiKey] = useState("");
+  // User-override state for fields pre-filled from status. null = not yet overridden.
+  const [userSelectedModels, setUserSelectedModels] = useState(null);
+  const [userCustomBaseUrl, setUserCustomBaseUrl] = useState(null);
+  const [userPlugins, setUserPlugins] = useState(null);
+  const [userLocalPlugins, setUserLocalPlugins] = useState(null);
+  const [userCustomPlugins, setUserCustomPlugins] = useState(null);
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
-  const [customBaseUrl, setCustomBaseUrl] = useState("");
-  const [plugins, setPlugins] = useState([]);
-  const [localPlugins, setLocalPlugins] = useState([]);
-  const [customPlugins, setCustomPlugins] = useState([]);
   const [modelAliases, setModelAliases] = useState({});
   const [comboModalOpen, setComboModalOpen] = useState(false);
   const [modelSelectOpen, setModelSelectOpen] = useState(false);
@@ -50,20 +54,44 @@ export default function CoworkToolCard({
   const [addMcpOpen, setAddMcpOpen] = useState(false);
   const [addMcpForm, setAddMcpForm] = useState({ name: "", url: "" });
 
+  // Derived status.
+  const status = fetchedStatus ?? initialStatus ?? null;
+
+  // Derived values: user override > status-derived fallback.
+  const selectedApiKey = userSelectedApiKey || apiKeys?.[0]?.key || "";
+  const selectedModels = userSelectedModels ?? (status?.cowork?.models?.length ? status.cowork.models : []);
+  const customBaseUrl = userCustomBaseUrl ?? (status?.cowork?.baseUrl ? stripV1(status.cowork.baseUrl) : "");
+  const plugins = userPlugins ?? (
+    Array.isArray(status?.cowork?.plugins) && status.cowork.plugins.length > 0
+      ? status.cowork.plugins
+      : (Array.isArray(status?.defaultPlugins) ? status.defaultPlugins : [])
+  );
+  const localPlugins = userLocalPlugins ?? (Array.isArray(status?.cowork?.localPlugins) ? status.cowork.localPlugins : []);
+  const customPlugins = userCustomPlugins ?? (
+    Array.isArray(status?.cowork?.customPlugins) && status.cowork.customPlugins.length > 0
+      ? status.cowork.customPlugins
+      : []
+  );
+
+  // Helper setters that materialize the override from the current derived value.
+  const setSelectedModels = (v) => setUserSelectedModels(typeof v === "function" ? v(selectedModels) : v);
+  const setCustomBaseUrl = (v) => setUserCustomBaseUrl(v);
+  const setPlugins = (v) => setUserPlugins(typeof v === "function" ? v(plugins) : v);
+  const setLocalPlugins = (v) => setUserLocalPlugins(typeof v === "function" ? v(localPlugins) : v);
+  const setCustomPlugins = (v) => setUserCustomPlugins(typeof v === "function" ? v(customPlugins) : v);
+
+  // Auto-check on expand when no status yet. No setChecking — status=null drives the spinner.
+  // All setState calls inside .then/.catch (async boundary).
   useEffect(() => {
-    if (apiKeys?.length > 0 && !selectedApiKey) {
-      setSelectedApiKey(apiKeys[0].key);
+    if (isExpanded && !status) {
+      fetch(ENDPOINT)
+        .then((r) => r.json())
+        .then((data) => { setFetchedStatus(data); })
+        .catch((err) => { setFetchedStatus({ installed: false, error: err.message }); });
     }
-  }, [apiKeys, selectedApiKey]);
+  }, [isExpanded, status]);
 
-  useEffect(() => {
-    if (initialStatus) setStatus(initialStatus);
-  }, [initialStatus]);
-
-  useEffect(() => {
-    if (isExpanded && !status) checkStatus();
-  }, [isExpanded]);
-
+  // Alias fetch: separate effect so status changes don't re-fire it.
   useEffect(() => {
     if (!isExpanded) return;
     fetch("/api/models/alias")
@@ -74,35 +102,14 @@ export default function CoworkToolCard({
       .catch(() => {});
   }, [isExpanded]);
 
-  useEffect(() => {
-    if (status?.cowork?.models?.length) {
-      setSelectedModels(status.cowork.models);
-    }
-    if (status?.cowork?.baseUrl && !customBaseUrl) {
-      setCustomBaseUrl(stripV1(status.cowork.baseUrl));
-    }
-    // Initialize plugins: from current config, fallback to defaultPlugins
-    if (Array.isArray(status?.cowork?.plugins) && status.cowork.plugins.length > 0) {
-      setPlugins(status.cowork.plugins);
-    } else if (plugins.length === 0 && Array.isArray(status?.defaultPlugins)) {
-      setPlugins(status.defaultPlugins);
-    }
-    if (Array.isArray(status?.cowork?.localPlugins)) {
-      setLocalPlugins(status.cowork.localPlugins);
-    }
-    if (Array.isArray(status?.cowork?.customPlugins) && status.cowork.customPlugins.length > 0) {
-      setCustomPlugins(status.cowork.customPlugins);
-    }
-  }, [status]);
-
   const checkStatus = async () => {
     setChecking(true);
     try {
       const res = await fetch(ENDPOINT);
       const data = await res.json();
-      setStatus(data);
+      setFetchedStatus(data);
     } catch (error) {
-      setStatus({ installed: false, error: error.message });
+      setFetchedStatus({ installed: false, error: error.message });
     } finally {
       setChecking(false);
     }
@@ -118,6 +125,8 @@ export default function CoworkToolCard({
   };
 
   const configStatus = getConfigStatus();
+  // Spinner: explicit check (Apply/Reset) OR auto-expand before first status arrives.
+  const showChecking = checking || (isExpanded && !status);
 
   const handleApply = async () => {
     setMessage(null);
@@ -201,10 +210,10 @@ export default function CoworkToolCard({
       const data = await res.json();
       if (res.ok) {
         setMessage({ type: "success", text: "Settings reset successfully" });
-        setSelectedModels([]);
-        setPlugins(status?.defaultPlugins || []);
-        setLocalPlugins([]);
-        setCustomPlugins([]);
+        setUserSelectedModels([]);
+        setUserPlugins(status?.defaultPlugins || []);
+        setUserLocalPlugins([]);
+        setUserCustomPlugins([]);
         checkStatus();
       } else {
         setMessage({ type: "error", text: data.error || "Failed to reset" });
@@ -266,14 +275,14 @@ export default function CoworkToolCard({
 
       {isExpanded && (
         <div className="mt-4 pt-4 border-t border-border flex flex-col gap-4">
-          {checking && (
+          {showChecking && (
             <div className="flex items-center gap-2 text-text-muted">
               <span className="material-symbols-outlined animate-spin">progress_activity</span>
               <span>Checking Claude Cowork...</span>
             </div>
           )}
 
-          {!checking && status && !status.installed && (
+          {!showChecking && status && !status.installed && (
             <div className="flex flex-col gap-3 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
               <div className="flex items-start gap-3">
                 <span className="material-symbols-outlined text-yellow-500">warning</span>
@@ -291,7 +300,7 @@ export default function CoworkToolCard({
             </div>
           )}
 
-          {!checking && status?.installed && (
+          {!showChecking && status?.installed && (
             <>
               <div className="flex flex-col gap-2">
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
@@ -322,7 +331,7 @@ export default function CoworkToolCard({
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">API Key</span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
-                  <ApiKeySelect value={selectedApiKey} onChange={setSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
+                  <ApiKeySelect value={selectedApiKey} onChange={setUserSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
                 </div>
 
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">

@@ -8,60 +8,61 @@ import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 
 export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled, initialStatus, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl }) {
-  const [status, setStatus] = useState(initialStatus || null);
-  const [checking, setChecking] = useState(false);
+  // fetchedStatus: result of explicit status check. Derived: fetchedStatus ?? initialStatus ?? null.
+  // initialStatus prop changes flow through automatically — no sync effect needed.
+  const [fetchedStatus, setFetchedStatus] = useState(null);
   const [applying, setApplying] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [message, setMessage] = useState(null);
-  const [selectedApiKey, setSelectedApiKey] = useState("");
+  // userSelectedApiKey: explicit user selection only. Falls back to apiKeys[0] at render time.
+  const [userSelectedApiKey, setUserSelectedApiKey] = useState("");
   const [customBaseUrl, setCustomBaseUrl] = useState("");
   const [modelAliases, setModelAliases] = useState({});
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
-  const [selectedModels, setSelectedModels] = useState([]);
+  // userSelectedModels: null = not yet overridden by user; falls back to status-derived prefill.
+  const [userSelectedModels, setUserSelectedModels] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const selectedModelsRef = useRef([]);
 
+  // Derived status: fetch result takes precedence over parent prop.
+  const status = fetchedStatus ?? initialStatus ?? null;
+
+  // Derived API key: explicit user pick > first available key > empty.
+  const selectedApiKey = userSelectedApiKey || apiKeys?.[0]?.key || "";
+
+  // Derived selected models: user override > prefill from status config > empty list.
+  const prefillModels = (() => {
+    const config = status?.config;
+    if (!Array.isArray(config)) return [];
+    const entry = config.find((e) => e.name === "9Router");
+    return entry?.models?.length > 0 ? entry.models.map((m) => m.id) : [];
+  })();
+  const selectedModels = userSelectedModels ?? prefillModels;
+
+  // Keep ref in sync for modal onClose callback. Must be in effect, not render body.
   useEffect(() => {
     selectedModelsRef.current = selectedModels;
   }, [selectedModels]);
 
-  useEffect(() => {
-    if (apiKeys?.length > 0 && !selectedApiKey) {
-      setSelectedApiKey(apiKeys[0].key);
-    }
-  }, [apiKeys, selectedApiKey]);
-
-  useEffect(() => {
-    if (initialStatus) setStatus(initialStatus);
-  }, [initialStatus]);
-
+  // Auto-check on expand when no status yet. No setChecking here — use !status for spinner.
+  // All setState calls inside .then/.catch (async boundary).
   useEffect(() => {
     if (isExpanded && !status) {
-      checkStatus();
-      fetchModelAliases();
+      fetch("/api/cli-tools/copilot-settings")
+        .then((r) => r.json())
+        .then((data) => { setFetchedStatus(data); })
+        .catch((err) => { setFetchedStatus({ error: err.message }); });
     }
-    if (isExpanded) fetchModelAliases();
-  }, [isExpanded]);
+  }, [isExpanded, status]);
 
-  // Pre-fill from existing config
+  // Alias fetch: separate effect so status changes don't re-fire it.
   useEffect(() => {
-    if (status?.config && Array.isArray(status.config) && selectedModels.length === 0) {
-      const entry = status.config.find((e) => e.name === "9Router");
-      if (entry?.models?.length > 0) {
-        setSelectedModels(entry.models.map((m) => m.id));
-      }
-    }
-  }, [status]);
-
-  const fetchModelAliases = async () => {
-    try {
-      const res = await fetch("/api/models/alias");
-      const data = await res.json();
-      if (res.ok) setModelAliases(data.aliases || {});
-    } catch (error) {
-      console.log("Error fetching model aliases:", error);
-    }
-  };
+    if (!isExpanded) return;
+    fetch("/api/models/alias")
+      .then((r) => r.json())
+      .then((data) => { if (data) setModelAliases(data.aliases || {}); })
+      .catch(() => {});
+  }, [isExpanded]);
 
   const saveModels = async (models) => {
     try {
@@ -94,20 +95,7 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
 
   const getDisplayUrl = () => customBaseUrl || `${baseUrl}/v1`;
 
-  const removeModel = (id) => setSelectedModels((prev) => prev.filter((m) => m !== id));
-
-  const checkStatus = async () => {
-    setChecking(true);
-    try {
-      const res = await fetch("/api/cli-tools/copilot-settings");
-      const data = await res.json();
-      setStatus(data);
-    } catch (error) {
-      setStatus({ error: error.message });
-    } finally {
-      setChecking(false);
-    }
-  };
+  const removeModel = (id) => setUserSelectedModels((prev) => (prev ?? prefillModels).filter((m) => m !== id));
 
   const handleApply = async () => {
     setApplying(true);
@@ -125,7 +113,10 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
       const data = await res.json();
       if (res.ok) {
         setMessage({ type: "success", text: data.message || "Settings applied! Reload VS Code." });
-        checkStatus();
+        fetch("/api/cli-tools/copilot-settings")
+          .then((r) => r.json())
+          .then((d) => setFetchedStatus(d))
+          .catch(() => {});
       } else {
         setMessage({ type: "error", text: data.error || "Failed to apply settings" });
       }
@@ -144,8 +135,11 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
       const data = await res.json();
       if (res.ok) {
         setMessage({ type: "success", text: "Settings reset successfully!" });
-        setSelectedModels([]);
-        checkStatus();
+        setUserSelectedModels([]);
+        fetch("/api/cli-tools/copilot-settings")
+          .then((r) => r.json())
+          .then((d) => setFetchedStatus(d))
+          .catch(() => {});
       } else {
         setMessage({ type: "error", text: data.error || "Failed to reset settings" });
       }
@@ -201,14 +195,14 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
 
       {isExpanded && (
         <div className="mt-4 pt-4 border-t border-border flex flex-col gap-4">
-          {checking && (
+          {isExpanded && !status && (
             <div className="flex items-center gap-2 text-text-muted">
               <span className="material-symbols-outlined animate-spin">progress_activity</span>
               <span>Checking Copilot config...</span>
             </div>
           )}
 
-          {!checking && (
+          {(!isExpanded || status) && (
             <>
               <div className="flex items-start gap-3 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
                 <span className="material-symbols-outlined text-blue-500 text-lg">info</span>
@@ -238,7 +232,7 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">API Key</span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
-                  <ApiKeySelect value={selectedApiKey} onChange={setSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
+                  <ApiKeySelect value={selectedApiKey} onChange={setUserSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
                 </div>
 
                 {/* Models */}
@@ -298,11 +292,11 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
         }}
         onSelect={(model) => {
           if (!selectedModels.includes(model.value)) {
-            setSelectedModels([...selectedModels, model.value]);
+            setUserSelectedModels([...(userSelectedModels ?? prefillModels), model.value]);
           }
         }}
         onDeselect={(model) => {
-          setSelectedModels(selectedModels.filter(m => m !== model.value));
+          setUserSelectedModels((userSelectedModels ?? prefillModels).filter(m => m !== model.value));
         }}
         selectedModel={null}
         activeProviders={activeProviders}

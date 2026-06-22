@@ -8,44 +8,45 @@ import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 
 export default function KiloToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled, initialStatus, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl }) {
-  const [status, setStatus] = useState(initialStatus || null);
-  const [checking, setChecking] = useState(false);
+  // fetchedStatus: fetch result. Derived: fetchedStatus ?? initialStatus ?? null.
+  // initialStatus prop changes flow through automatically — no sync effect needed.
+  const [fetchedStatus, setFetchedStatus] = useState(null);
   const [applying, setApplying] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [message, setMessage] = useState(null);
   const [showInstallGuide, setShowInstallGuide] = useState(false);
-  const [selectedApiKey, setSelectedApiKey] = useState("");
+  // userSelectedApiKey: explicit user pick only. Falls back to apiKeys[0] at render time.
+  const [userSelectedApiKey, setUserSelectedApiKey] = useState("");
   const [selectedModel, setSelectedModel] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [modelAliases, setModelAliases] = useState({});
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
 
-  useEffect(() => {
-    if (apiKeys?.length > 0 && !selectedApiKey) setSelectedApiKey(apiKeys[0].key);
-  }, [apiKeys, selectedApiKey]);
+  // Derived status.
+  const status = fetchedStatus ?? initialStatus ?? null;
 
-  useEffect(() => {
-    if (initialStatus) setStatus(initialStatus);
-  }, [initialStatus]);
+  // Derived API key: explicit user pick > first available key > empty.
+  const selectedApiKey = userSelectedApiKey || apiKeys?.[0]?.key || "";
 
+  // Auto-check on expand when no status yet; always refresh aliases.
+  // Both fetch chains inlined so no setState fires synchronously in the effect body.
   useEffect(() => {
-    if (isExpanded && !status) {
-      checkStatus();
-      fetchModelAliases();
+    if (!isExpanded) return;
+    if (!status) {
+      fetch("/api/cli-tools/kilo-settings")
+        .then((r) => r.json())
+        .then((data) => { setFetchedStatus(data); })
+        .catch((err) => { setFetchedStatus({ installed: false, error: err.message }); });
     }
-    if (isExpanded) fetchModelAliases();
-  }, [isExpanded]);
+    fetch("/api/models/alias")
+      .then((r) => r.json())
+      .then((data) => { if (data) setModelAliases(data.aliases || {}); })
+      .catch(() => {});
+  }, [isExpanded, status]);
 
-  const fetchModelAliases = async () => {
-    try {
-      const res = await fetch("/api/models/alias");
-      const data = await res.json();
-      if (res.ok) setModelAliases(data.aliases || {});
-    } catch (error) {
-      console.log("Error fetching model aliases:", error);
-    }
-  };
+  // Spinner: auto-expand before first status arrives.
+  const showChecking = isExpanded && !status;
 
   const getConfigStatus = () => {
     if (!status?.installed) return null;
@@ -60,19 +61,6 @@ export default function KiloToolCard({ tool, isExpanded, onToggle, baseUrl, apiK
   };
 
   const getDisplayUrl = () => customBaseUrl || `${baseUrl}/v1`;
-
-  const checkStatus = async () => {
-    setChecking(true);
-    try {
-      const res = await fetch("/api/cli-tools/kilo-settings");
-      const data = await res.json();
-      setStatus(data);
-    } catch (error) {
-      setStatus({ installed: false, error: error.message });
-    } finally {
-      setChecking(false);
-    }
-  };
 
   const handleApply = async () => {
     setApplying(true);
@@ -90,7 +78,10 @@ export default function KiloToolCard({ tool, isExpanded, onToggle, baseUrl, apiK
       const data = await res.json();
       if (res.ok) {
         setMessage({ type: "success", text: "Settings applied successfully!" });
-        checkStatus();
+        fetch("/api/cli-tools/kilo-settings")
+          .then((r) => r.json())
+          .then((d) => setFetchedStatus(d))
+          .catch(() => {});
       } else {
         setMessage({ type: "error", text: data.error || "Failed to apply settings" });
       }
@@ -110,7 +101,10 @@ export default function KiloToolCard({ tool, isExpanded, onToggle, baseUrl, apiK
       if (res.ok) {
         setMessage({ type: "success", text: "Settings reset successfully!" });
         setSelectedModel("");
-        checkStatus();
+        fetch("/api/cli-tools/kilo-settings")
+          .then((r) => r.json())
+          .then((d) => setFetchedStatus(d))
+          .catch(() => {});
       } else {
         setMessage({ type: "error", text: data.error || "Failed to reset settings" });
       }
@@ -160,14 +154,14 @@ export default function KiloToolCard({ tool, isExpanded, onToggle, baseUrl, apiK
 
       {isExpanded && (
         <div className="mt-4 pt-4 border-t border-border flex flex-col gap-4">
-          {checking && (
+          {showChecking && (
             <div className="flex items-center gap-2 text-text-muted">
               <span className="material-symbols-outlined animate-spin">progress_activity</span>
               <span>Checking Kilo Code...</span>
             </div>
           )}
 
-          {!checking && status && !status.installed && (
+          {!showChecking && status && !status.installed && (
             <div className="flex flex-col gap-4">
               <div className="flex flex-col gap-3 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
                 <div className="flex items-start gap-3">
@@ -197,7 +191,7 @@ export default function KiloToolCard({ tool, isExpanded, onToggle, baseUrl, apiK
             </div>
           )}
 
-          {!checking && status?.installed && (
+          {!showChecking && status?.installed && (
             <>
               <div className="flex flex-col gap-2">
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
@@ -217,7 +211,7 @@ export default function KiloToolCard({ tool, isExpanded, onToggle, baseUrl, apiK
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">API Key</span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
-                  <ApiKeySelect value={selectedApiKey} onChange={setSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
+                  <ApiKeySelect value={selectedApiKey} onChange={setUserSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
                 </div>
 
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
