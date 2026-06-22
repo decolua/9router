@@ -42,6 +42,7 @@ const DEFAULT_SETTINGS = {
   cavemanLevel: "full",
   ponytailEnabled: false,
   ponytailLevel: "full",
+  chinaFilterEnabled: false,
 };
 
 async function readRaw() {

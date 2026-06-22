@@ -45,6 +45,7 @@ export default function APIPageClient({ machineId }) {
   const [cavemanLevel, setCavemanLevel] = useState("full");
   const [ponytailEnabled, setPonytailEnabled] = useState(false);
   const [ponytailLevel, setPonytailLevel] = useState("full");
+  const [chinaFilterEnabled, setChinaFilterEnabled] = useState(false);
   const [locale, setLocale] = useState("en");
 
   // Cloudflare Tunnel state
@@ -250,6 +251,7 @@ export default function APIPageClient({ machineId }) {
         setCavemanLevel(data.cavemanLevel || "full");
         setPonytailEnabled(!!data.ponytailEnabled);
         setPonytailLevel(data.ponytailLevel || "full");
+        setChinaFilterEnabled(!!data.chinaFilterEnabled);
       }
       if (statusRes.ok) {
         const data = await statusRes.json();
@@ -397,6 +399,11 @@ export default function APIPageClient({ machineId }) {
   const handlePonytailLevel = (level) => {
     setPonytailLevel(level);
     patchSetting({ ponytailLevel: level });
+  };
+
+  const handleChinaFilterEnabled = (value) => {
+    setChinaFilterEnabled(value);
+    patchSetting({ chinaFilterEnabled: value });
   };
 
   const fetchData = async () => {
@@ -1378,6 +1385,26 @@ export default function APIPageClient({ machineId }) {
               onChange={() => handlePonytailEnabled(!ponytailEnabled)}
             />
           </div>
+        </div>
+
+        {/* China Filter */}
+        <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">
+              <span className="text-red">China Filter</span>
+              {" "}
+              (No Chinese Output)
+            </p>
+            <p className="text-xs text-primary">
+              {chinaFilterEnabled
+                ? "Active — all Chinese content will be translated to match your language"
+                : "Inactive — Chinese content will pass through untranslated"}
+            </p>
+          </div>
+          <Toggle
+            checked={chinaFilterEnabled}
+            onChange={() => handleChinaFilterEnabled(!chinaFilterEnabled)}
+          />
         </div>
       </Card>
 
