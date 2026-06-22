@@ -1,3 +1,5 @@
+> ⏭ **SKIPPED — user decision (2026-06-22).** Web research found no officially-documented authenticated endpoint for Kimi *coding-plan* quota. Per the user's directive ("if there is no Kimi tracker available documented we skip it"), this feature is **skipped** — do NOT reopen or implement unless Kimi later publishes a coding-plan quota API. This file is retained as a research record only.
+
 # 014 — Kimi (Kimi Code / coding-plan) Quota Tracker
 
 ## Goal
