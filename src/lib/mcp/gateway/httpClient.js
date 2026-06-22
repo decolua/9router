@@ -9,16 +9,35 @@
 // McpAuthError so the aggregator can surface 401/403 distinctly from
 // generic network failure.
 //
-// Session handling: the server's `mcp-session-id` from `initialize` is
-// cached on the instance row (NOT stored — sessions are short-lived) and
-// re-sent on subsequent calls. If the server omits it, the client falls
-// back to sending each call as a standalone request (no session). Some
-// authless remote MCPs are stateless, this is the safe default.
+// MCP-02: Session handling now uses instance/session-safe state (global store
+// keyed by instance.id) instead of shared `instance.__mcpInit`. Includes
+// bounded transient retry with jitter/backoff for network blips. Sessions
+// remain short-lived and are NOT persisted.
 
 import { ensureFreshToken, oauthMetaFromTokens } from "./oauthRefresh.js";
+import { retryWithBackoff } from "./retry.js";
 
 const TIMEOUT_MS = 30_000; // longer than probeMcp's 8s — real tool calls may be slow
 const DEFAULT_PROTOCOL_VERSION = "2025-06-18";
+const HTTP_SESSION_KEY = "__9routerGatewayHttpSessions";
+
+// Global session store: Map<instanceId, { sessionId, protocolVersion, serverInfo, initPromise }>
+function getSessionStore() {
+  if (!globalThis[HTTP_SESSION_KEY]) globalThis[HTTP_SESSION_KEY] = new Map();
+  return globalThis[HTTP_SESSION_KEY];
+}
+
+function getSessionEntry(instance) {
+  const store = getSessionStore();
+  if (!store.has(instance.id)) {
+    store.set(instance.id, { sessionId: null, protocolVersion: null, serverInfo: null, initPromise: null });
+  }
+  return store.get(instance.id);
+}
+
+function clearSessionEntry(instance) {
+  getSessionStore().delete(instance.id);
+}
 
 export class McpAuthError extends Error {
   constructor(message, { status, slug, body } = {}) {
@@ -80,13 +99,15 @@ function buildHeaders(instance) {
 /**
  * Perform an MCP JSON-RPC POST against an upstream and return the first
  * matching response frame. Throws McpAuthError on 401/403.
+ * MCP-02: Adds transient retry with backoff for network failures.
  *
  * @param {object} instance    row from mcpInstances (parsed)
  * @param {object} jsonRpc     {jsonrpc, id, method, params}
- * @param {object} [opts]      { sessionId?: string, timeoutMs?: number }
+ * @param {object} [opts]      { sessionId?: string, timeoutMs?: number, skipRetry?: boolean }
  * @returns {Promise<{ result?: any, error?: any, sessionId?: string }>}
  */
 export async function mcpRequest(instance, jsonRpc, opts = {}) {
+  const doRequest = async () => {
   if (!instance?.url) {
     throw new Error(`instance ${instance?.slug || "?"} has no url`);
   }
@@ -127,7 +148,9 @@ export async function mcpRequest(instance, jsonRpc, opts = {}) {
     }
     if (!res.ok) {
       const body = await res.text().catch(() => "");
-      throw new Error(`upstream ${res.status} for ${instance.slug}: ${body?.slice(0, 200)}`);
+      const err = new Error(`upstream ${res.status} for ${instance.slug}: ${body?.slice(0, 200)}`);
+      err.status = res.status;
+      throw err;
     }
 
     const text = await res.text();
@@ -150,38 +173,87 @@ export async function mcpRequest(instance, jsonRpc, opts = {}) {
   } finally {
     clearTimeout(timer);
   }
+  }; // end doRequest
+
+  // Apply transient retry unless explicitly disabled (e.g., for notifications).
+  if (opts.skipRetry) {
+    return await doRequest();
+  }
+  return await retryWithBackoff(doRequest, {
+    maxAttempts: 3,
+    baseDelayMs: 100,
+    onRetry: (err, attempt, delayMs) => {
+      console.log(`[mcp-http:${instance.slug}] transient retry ${attempt + 1} after ${delayMs}ms: ${err.message}`);
+    },
+  });
 }
 
 /**
  * Ensure the upstream has been initialized. Returns { protocolVersion, serverInfo, sessionId }.
- * Caches the session id in-memory on the instance object (caller passes same instance).
+ * MCP-02: Uses instance/session-safe state (global store) instead of shared instance.__mcpInit.
+ * Single-flight: concurrent calls share the same initPromise.
  */
 export async function ensureInitialized(instance, opts = {}) {
-  if (instance.__mcpInit) return instance.__mcpInit;
-  const initParams = {
-    protocolVersion: opts.protocolVersion || DEFAULT_PROTOCOL_VERSION,
-    capabilities: {},
-    clientInfo: { name: "9router-gateway", version: "1" },
-  };
-  const resp = await mcpRequest(instance, {
-    jsonrpc: "2.0", id: 0, method: "initialize", params: initParams,
-  });
-  if (resp.error) {
-    throw new Error(`initialize failed for ${instance.slug}: ${resp.error.message || JSON.stringify(resp.error)}`);
+  const entry = getSessionEntry(instance);
+  
+  // If already initialized and session still valid, return cached info.
+  if (entry.sessionId && entry.protocolVersion && entry.serverInfo) {
+    return {
+      protocolVersion: entry.protocolVersion,
+      serverInfo: entry.serverInfo,
+      sessionId: entry.sessionId,
+    };
   }
-  // Spec requires a notifications/initialized frame before any other call.
-  // Some servers are lenient and accept tools/list directly. Try best-effort.
-  await mcpRequest(instance, {
-    jsonrpc: "2.0", method: "notifications/initialized", params: {},
-  }, { sessionId: resp.sessionId, timeoutMs: 5000 }).catch(() => {});
+  
+  // Single-flight: if initialization is in progress, return the same promise.
+  if (entry.initPromise) {
+    return entry.initPromise;
+  }
 
-  const info = {
-    protocolVersion: resp.result?.protocolVersion || initParams.protocolVersion,
-    serverInfo: resp.result?.serverInfo || null,
-    sessionId: resp.sessionId,
-  };
-  instance.__mcpInit = info;
-  return info;
+  // Start new initialization.
+  entry.initPromise = (async () => {
+    try {
+      const initParams = {
+        protocolVersion: opts.protocolVersion || DEFAULT_PROTOCOL_VERSION,
+        capabilities: {},
+        clientInfo: { name: "9router-gateway", version: "1" },
+      };
+      const resp = await mcpRequest(instance, {
+        jsonrpc: "2.0", id: 0, method: "initialize", params: initParams,
+      });
+      
+      if (resp.error) {
+        throw new Error(`initialize failed for ${instance.slug}: ${resp.error.message || JSON.stringify(resp.error)}`);
+      }
+      
+      // Spec requires a notifications/initialized frame before any other call.
+      // Some servers are lenient and accept tools/list directly. Try best-effort.
+      // Skip retry for notifications since they're fire-and-forget.
+      await mcpRequest(instance, {
+        jsonrpc: "2.0", method: "notifications/initialized", params: {},
+      }, { sessionId: resp.sessionId, timeoutMs: 5000, skipRetry: true }).catch(() => {});
+
+      const info = {
+        protocolVersion: resp.result?.protocolVersion || initParams.protocolVersion,
+        serverInfo: resp.result?.serverInfo || null,
+        sessionId: resp.sessionId,
+      };
+      
+      // Cache in session-safe store.
+      entry.sessionId = info.sessionId;
+      entry.protocolVersion = info.protocolVersion;
+      entry.serverInfo = info.serverInfo;
+      entry.initPromise = null; // Clear promise after successful init.
+      
+      return info;
+    } catch (e) {
+      // Clear entry on failure so next call retries.
+      clearSessionEntry(instance);
+      throw e;
+    }
+  })();
+
+  return entry.initPromise;
 }
 
 export async function listTools(instance, opts = {}) {
@@ -211,3 +283,10 @@ export async function callTool(instance, name, args, opts = {}) {
   }
   return resp.result;
 }
+
+export const __test__ = {
+  getSessionStore,
+  getSessionEntry,
+  clearSessionEntry,
+};
+

@@ -8,17 +8,23 @@
 // so arbitrary command+args are allowed — see plan §P0.4. This differs from
 // stdioSseBridge.js's preset-only RCE guard deliberately.
 //
+// MCP-02: Enhanced with bounded reconnect/single-flight protections, transient
+// retry for request failures, and spawn backoff to prevent tight error loops.
+//
 // Operations exposed: listTools, callTool. The child is auto-respawned on
 // exit and on spawn-failure; pending requests are rejected with a clear
 // error so the gateway can surface the failure to the harness.
 
 import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
+import { retryWithBackoff } from "./retry.js";
 
 const STDIO_KEY = "__9routerGatewayStdio";
 const STDIO_PROTOCOL_VERSION = "2025-06-18";
 const STDIO_TIMEOUT_MS = 60_000;
 const STDIO_INIT_TIMEOUT_MS = 10_000;
+const MAX_SPAWN_ATTEMPTS = 3;
+const SPAWN_BACKOFF_BASE_MS = 200;
 
 function getStore() {
   if (!globalThis[STDIO_KEY]) globalThis[STDIO_KEY] = new Map();
@@ -57,6 +63,8 @@ class StdioEntry {
     this.initialized = false;
     this.initPromise = null;
     this.initInfo = null;
+    this.lastSpawnError = null;
+    this.spawning = null; // Single-flight spawn protection
   }
 
   isAlive() {
@@ -65,8 +73,42 @@ class StdioEntry {
 
   async ensure() {
     if (this.isAlive()) return;
-    this.spawn();
-    await this.initializing;
+    
+    // Single-flight spawn: if another call is spawning, wait for it.
+    if (this.spawning) {
+      await this.spawning;
+      return;
+    }
+    
+    // Bounded spawn retry with backoff.
+    this.spawning = (async () => {
+      try {
+        await retryWithBackoff(
+          async () => {
+            this.spawn();
+            await this.initializing;
+          },
+          {
+            maxAttempts: MAX_SPAWN_ATTEMPTS,
+            baseDelayMs: SPAWN_BACKOFF_BASE_MS,
+            isTransient: (err) => {
+              // ENOENT (command not found) and EACCES (permission denied) are permanent.
+              const code = err.code || err.cause?.code || "";
+              if (code === "ENOENT" || code === "EACCES") return false;
+              // Other spawn failures (EMFILE, EAGAIN, etc.) are transient.
+              return true;
+            },
+            onRetry: (err, attempt, delayMs) => {
+              console.log(`[mcp-stdio:${this.instance.slug}] spawn retry ${attempt + 1} after ${delayMs}ms: ${err.message}`);
+            },
+          }
+        );
+      } finally {
+        this.spawning = null;
+      }
+    })();
+    
+    await this.spawning;
   }
 
   spawn() {
@@ -153,26 +195,40 @@ class StdioEntry {
     }
   }
 
-  request(method, params, { timeoutMs = STDIO_TIMEOUT_MS } = {}) {
-    return new Promise((resolve, reject) => {
-      if (!this.isAlive()) {
-        return reject(new Error(`upstream ${this.instance.slug} not running`));
-      }
-      const id = this.nextId++;
-      const timer = setTimeout(() => {
-        if (this.pending.has(id)) {
-          this.pending.delete(id);
-          reject(new Error(`upstream ${this.instance.slug} request ${method} timed out`));
+  request(method, params, { timeoutMs = STDIO_TIMEOUT_MS, skipRetry = false } = {}) {
+    const doRequest = async () => {
+      return new Promise((resolve, reject) => {
+        if (!this.isAlive()) {
+          return reject(new Error(`upstream ${this.instance.slug} not running`));
         }
-      }, timeoutMs);
-      this.pending.set(id, { resolve, reject, timer });
-      try {
-        this.proc.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params: params || {} })}\n`);
-      } catch (e) {
-        clearTimeout(timer);
-        this.pending.delete(id);
-        reject(new Error(`write to ${this.instance.slug} failed: ${e.message}`));
-      }
+        const id = this.nextId++;
+        const timer = setTimeout(() => {
+          if (this.pending.has(id)) {
+            this.pending.delete(id);
+            reject(new Error(`upstream ${this.instance.slug} request ${method} timed out`));
+          }
+        }, timeoutMs);
+        this.pending.set(id, { resolve, reject, timer });
+        try {
+          this.proc.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params: params || {} })}\n`);
+        } catch (e) {
+          clearTimeout(timer);
+          this.pending.delete(id);
+          reject(new Error(`write to ${this.instance.slug} failed: ${e.message}`));
+        }
+      });
+    };
+    
+    // Apply transient retry for most operations (not notifications).
+    if (skipRetry) {
+      return doRequest();
+    }
+    return retryWithBackoff(doRequest, {
+      maxAttempts: 2, // Conservative: stdio is local, less need for retry
+      baseDelayMs: 50,
+      onRetry: (err, attempt, delayMs) => {
+        console.log(`[mcp-stdio:${this.instance.slug}] request retry ${attempt + 1} after ${delayMs}ms: ${err.message}`);
+      },
     });
   }
 
@@ -225,27 +281,43 @@ function getEntry(instance) {
 
 export async function listTools(instance) {
   const entry = getEntry(instance);
-  await entry.ensure();
-  await entry.ensureInitialized();
-  const resp = await entry.request("tools/list", {});
-  if (resp.error) {
-    throw new Error(`tools/list failed: ${resp.error.message || JSON.stringify(resp.error)}`);
+  try {
+    await entry.ensure();
+    await entry.ensureInitialized();
+    const resp = await entry.request("tools/list", {});
+    if (resp.error) {
+      throw new Error(`tools/list failed: ${resp.error.message || JSON.stringify(resp.error)}`);
+    }
+    return resp.result?.tools || [];
+  } catch (e) {
+    // If the process died, clear the store entry so next call spawns fresh.
+    if (!entry.isAlive()) {
+      getStore().delete(instance.id);
+    }
+    throw e;
   }
-  return resp.result?.tools || [];
 }
 
 export async function callTool(instance, name, args) {
   const entry = getEntry(instance);
-  await entry.ensure();
-  await entry.ensureInitialized();
-  const resp = await entry.request("tools/call", { name, arguments: args || {} });
-  if (resp.error) {
-    const e = new Error(resp.error.message || `tools/call failed`);
-    e.code = resp.error.code;
-    e.data = resp.error.data;
+  try {
+    await entry.ensure();
+    await entry.ensureInitialized();
+    const resp = await entry.request("tools/call", { name, arguments: args || {} });
+    if (resp.error) {
+      const e = new Error(resp.error.message || `tools/call failed`);
+      e.code = resp.error.code;
+      e.data = resp.error.data;
+      throw e;
+    }
+    return resp.result;
+  } catch (e) {
+    // If the process died, clear the store entry so next call spawns fresh.
+    if (!entry.isAlive()) {
+      getStore().delete(instance.id);
+    }
     throw e;
   }
-  return resp.result;
 }
 
 export const __test__ = { StdioEntry, getStore, getEntry };
