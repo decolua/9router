@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   getProviderConnections,
   createProviderConnection,
+  deleteProviderConnectionsByProvider,
   getProviderNodeById,
   getProviderNodes,
   getProxyPoolById,
@@ -206,5 +207,21 @@ export async function POST(request) {
   } catch (error) {
     console.log("Error creating provider:", error);
     return NextResponse.json({ error: "Failed to create provider" }, { status: 500 });
+  }
+}
+
+// DELETE /api/providers?provider=<id> — bulk delete all connections for a provider
+export async function DELETE(request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const provider = (searchParams.get("provider") || "").trim();
+    if (!provider) {
+      return NextResponse.json({ error: "provider query param is required" }, { status: 400 });
+    }
+    const deleted = await deleteProviderConnectionsByProvider(provider);
+    return NextResponse.json({ success: true, deleted });
+  } catch (error) {
+    console.log("Error bulk-deleting providers:", error);
+    return NextResponse.json({ error: "Failed to delete connections" }, { status: 500 });
   }
 }

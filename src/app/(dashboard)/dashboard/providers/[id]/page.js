@@ -22,6 +22,7 @@ import AddCustomModelModal from "./AddCustomModelModal";
 import BulkImportCodexModal from "./BulkImportCodexModal";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
+const CONNECTIONS_PAGE_SIZE = 10;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -33,6 +34,7 @@ export default function ProviderDetailPage() {
   const providerId = params.id;
   const { getCaps } = useModelCaps();
   const [connections, setConnections] = useState([]);
+  const [connectionsPage, setConnectionsPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [providerNode, setProviderNode] = useState(null);
   const [proxyPools, setProxyPools] = useState([]);
@@ -646,6 +648,28 @@ export default function ProviderDetailPage() {
     });
   };
 
+  const handleDeleteAll = () => {
+    if (connections.length === 0) return;
+    const count = connections.length;
+    setConfirmState({
+      title: "Delete All Connections",
+      message: `Delete all ${count} connection${count === 1 ? "" : "s"} for this provider? This cannot be undone.`,
+      confirmText: "Delete All",
+      onConfirm: async () => {
+        setConfirmState(null);
+        try {
+          const res = await fetch(`/api/providers?provider=${encodeURIComponent(providerId)}`, { method: "DELETE" });
+          if (res.ok) {
+            setConnections([]);
+            setConnectionsPage(1);
+          }
+        } catch (error) {
+          console.log("Error deleting all connections:", error);
+        }
+      }
+    });
+  };
+
   const handleOAuthSuccess = () => {
     fetchConnections();
     setShowOAuthModal(false);
@@ -839,20 +863,31 @@ export default function ProviderDetailPage() {
 
   const isSelected = (connectionId) => selectedConnectionIds.includes(connectionId);
 
+  const totalPages = Math.max(1, Math.ceil(connections.length / CONNECTIONS_PAGE_SIZE));
+  const safePage = Math.min(Math.max(1, connectionsPage), totalPages);
+  const pagedConnections = connections.slice(
+    (safePage - 1) * CONNECTIONS_PAGE_SIZE,
+    safePage * CONNECTIONS_PAGE_SIZE
+  );
+  const pageStart = connections.length === 0 ? 0 : (safePage - 1) * CONNECTIONS_PAGE_SIZE + 1;
+  const pageEnd = Math.min(safePage * CONNECTIONS_PAGE_SIZE, connections.length);
+
   const connectionsList = (
     <div className="flex min-w-0 flex-col divide-y divide-black/[0.03] dark:divide-white/[0.03]">
-      {connections
-        .map((conn, index) => (
-          <div key={conn.id} className="flex min-w-0 items-stretch">
-            <div className="flex-1 min-w-0">
-              <ConnectionRow
-                connection={conn}
-                proxyPools={proxyPools}
-                isOAuth={isOAuth}
-                isFirst={index === 0}
-                isLast={index === connections.length - 1}
-                onMoveUp={() => handleSwapPriority(index, index - 1)}
-                onMoveDown={() => handleSwapPriority(index, index + 1)}
+      {pagedConnections
+        .map((conn, index) => {
+          const globalIndex = (safePage - 1) * CONNECTIONS_PAGE_SIZE + index;
+          return (
+            <div key={conn.id} className="flex min-w-0 items-stretch">
+              <div className="flex-1 min-w-0">
+                <ConnectionRow
+                  connection={conn}
+                  proxyPools={proxyPools}
+                  isOAuth={isOAuth}
+                  isFirst={globalIndex === 0}
+                  isLast={globalIndex === connections.length - 1}
+                  onMoveUp={() => handleSwapPriority(globalIndex, globalIndex - 1)}
+                  onMoveDown={() => handleSwapPriority(globalIndex, globalIndex + 1)}
                 onToggleActive={(isActive) => handleUpdateConnectionStatus(conn.id, isActive)}
                 autoPing={providerId === "claude" && conn.authType === "oauth" ? {
                   on: autoPing.connections[conn.id] === true,
@@ -885,9 +920,41 @@ export default function ProviderDetailPage() {
               />
             </div>
           </div>
-        ))}
+          );
+        })}
     </div>
   );
+
+  const connectionsPagination = totalPages > 1 ? (
+    <div className="mt-3 flex items-center justify-between text-xs text-text-muted">
+      <span>
+        Showing {pageStart}-{pageEnd} of {connections.length}
+      </span>
+      <div className="flex items-center gap-1">
+        <Button
+          size="sm"
+          variant="ghost"
+          icon="chevron_left"
+          disabled={safePage <= 1}
+          onClick={() => setConnectionsPage(safePage - 1)}
+        >
+          Prev
+        </Button>
+        <span className="px-2">
+          Page {safePage} / {totalPages}
+        </span>
+        <Button
+          size="sm"
+          variant="ghost"
+          iconRight="chevron_right"
+          disabled={safePage >= totalPages}
+          onClick={() => setConnectionsPage(safePage + 1)}
+        >
+          Next
+        </Button>
+      </div>
+    </div>
+  ) : null;
 
   const activePools = proxyPools.filter((p) => p.isActive === true);
 
@@ -1339,6 +1406,14 @@ export default function ProviderDetailPage() {
                       {oneByOneStopping ? "Stopping..." : "Stop"}
                     </Button>
                   )}
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    icon="delete_sweep"
+                    onClick={handleDeleteAll}
+                  >
+                    Delete All
+                  </Button>
                 </>
               )}
               {/* Thinking config */}
@@ -1447,6 +1522,7 @@ export default function ProviderDetailPage() {
                 </div>
               )}
               {connectionsList}
+              {connectionsPagination}
               {!isCompatible && (
                 <div className="mt-4 grid grid-cols-1 gap-2 sm:flex">
                   {providerId === "iflow" && (
