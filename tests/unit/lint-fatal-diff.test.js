@@ -423,21 +423,104 @@ describe("lint-fatal-diff.mjs — integration", () => {
 		}
 	});
 
-	it("exits 0 on clean diff (no fatal findings)", () => {
-		const { status, output } = runScript();
-		expect(status).toBe(0);
-		expect(output).toContain("PASS");
+	/**
+	 * Helper: build a minimal fixture git repo with a clean lintable JS change.
+	 * Returns { fixtureRoot } — caller must rmSync on cleanup.
+	 */
+	function buildCleanLintableFixture() {
+		const fixtureRoot = mkdtempSync("/tmp/ch01-clean-test.");
+		expectFixtureOutsideRepos(fixtureRoot);
+
+		const projectNodeModules = path.join(projectRoot, "node_modules");
+		symlinkSync(projectNodeModules, path.join(fixtureRoot, "node_modules"), "dir");
+
+		writeFileSync(
+			path.join(fixtureRoot, "eslint.config.mjs"),
+			`export default [
+	{
+		files: ["**/*.js"],
+		languageOptions: { ecmaVersion: 2022, sourceType: "module" },
+		rules: { "no-undef": "error" },
+	},
+];\n`,
+		);
+		mkdirSync(path.join(fixtureRoot, "src"), { recursive: true });
+		writeFileSync(path.join(fixtureRoot, "src/clean.js"), "const x = 1;\n");
+
+		expectCommandSuccess(fixtureRoot, "git", ["init"]);
+		expectCommandSuccess(fixtureRoot, "git", ["config", "user.email", "ch01-test@example.invalid"]);
+		expectCommandSuccess(fixtureRoot, "git", ["config", "user.name", "CH-01 Test"]);
+		expectCommandSuccess(fixtureRoot, "git", ["add", "eslint.config.mjs", "src/clean.js"]);
+		expectCommandSuccess(fixtureRoot, "git", ["commit", "-m", "base"]);
+
+		// Add a clean lintable line — no ESLint violations
+		writeFileSync(path.join(fixtureRoot, "src/clean.js"), "const x = 1;\nconst y = x + 1;\n");
+		expectCommandSuccess(fixtureRoot, "git", ["add", "src/clean.js"]);
+		expectCommandSuccess(fixtureRoot, "git", ["commit", "-m", "second"]);
+
+		// Unstaged clean change so HEAD~1 diff picks it up
+		writeFileSync(path.join(fixtureRoot, "src/clean.js"), "const x = 1;\nconst y = x + 1;\nconst z = y;\n");
+
+		return fixtureRoot;
+	}
+
+	it("exits 0 and emits PASS on clean lintable diff", () => {
+		let fixtureRoot;
+		try {
+			fixtureRoot = buildCleanLintableFixture();
+			const { status, output } = runScript(fixtureRoot);
+			expect(status).toBe(0);
+			expect(output).toContain("PASS");
+		} finally {
+			if (fixtureRoot) rmSync(fixtureRoot, { recursive: true, force: true });
+		}
 	});
 
-	it("reports merge-base in output", () => {
-		const { output } = runScript();
-		expect(output).toMatch(/merge-base = [a-f0-9]+/);
+	it("reports merge-base and file counts on lintable diff", () => {
+		let fixtureRoot;
+		try {
+			fixtureRoot = buildCleanLintableFixture();
+			const { output } = runScript(fixtureRoot);
+			expect(output).toMatch(/merge-base = [a-f0-9]+/);
+			expect(output).toMatch(/diff has \d+ file\(s\)/);
+			expect(output).toMatch(/\d+ in lint scope/);
+		} finally {
+			if (fixtureRoot) rmSync(fixtureRoot, { recursive: true, force: true });
+		}
 	});
 
-	it("reports file counts in output", () => {
-		const { output } = runScript();
-		expect(output).toMatch(/diff has \d+ file\(s\)/);
-		expect(output).toMatch(/\d+ in lint scope/);
+	it("exits 0 and reports no lintable files when only excluded files changed", () => {
+		let fixtureRoot;
+		try {
+			fixtureRoot = mkdtempSync("/tmp/ch01-nolint-test.");
+			expectFixtureOutsideRepos(fixtureRoot);
+
+			const projectNodeModules = path.join(projectRoot, "node_modules");
+			symlinkSync(projectNodeModules, path.join(fixtureRoot, "node_modules"), "dir");
+
+			// No eslint.config needed — no JS files will be linted
+			writeFileSync(path.join(fixtureRoot, "README.md"), "# hello\n");
+
+			expectCommandSuccess(fixtureRoot, "git", ["init"]);
+			expectCommandSuccess(fixtureRoot, "git", ["config", "user.email", "ch01-test@example.invalid"]);
+			expectCommandSuccess(fixtureRoot, "git", ["config", "user.name", "CH-01 Test"]);
+			expectCommandSuccess(fixtureRoot, "git", ["add", "README.md"]);
+			expectCommandSuccess(fixtureRoot, "git", ["commit", "-m", "base"]);
+
+			// Change only a .md file — excluded by extension
+			writeFileSync(path.join(fixtureRoot, "README.md"), "# hello\n\nworld\n");
+			expectCommandSuccess(fixtureRoot, "git", ["add", "README.md"]);
+			expectCommandSuccess(fixtureRoot, "git", ["commit", "-m", "second"]);
+
+			// Unstaged change so HEAD~1 diff has something
+			writeFileSync(path.join(fixtureRoot, "README.md"), "# hello\n\nworld\n\nextra\n");
+
+			const { status, output } = runScript(fixtureRoot);
+			expect(status).toBe(0);
+			expect(output).toContain("no lintable files changed");
+		} finally {
+			if (fixtureRoot) rmSync(fixtureRoot, { recursive: true, force: true });
+		}
 	});
 });
 
