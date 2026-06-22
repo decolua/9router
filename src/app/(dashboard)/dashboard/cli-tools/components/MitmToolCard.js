@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { Card, Button, Badge, Input, ModelSelectModal } from "@/shared/components";
 import { TOOL_HOSTS } from "@/shared/constants/mitmToolHosts";
 import Image from "next/image";
@@ -41,20 +41,19 @@ export default function MitmToolCard({
   const canRunWithoutPassword = isWin || hasCachedPassword || needsSudoPassword === false;
 
   useEffect(() => {
-    if (isExpanded) loadSavedMappings();
-  }, [isExpanded]);
+    if (!isExpanded) return;
+    (async () => {
+      try {
+        const res = await fetch(`/api/cli-tools/antigravity-mitm/alias?tool=${tool.id}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (Object.keys(data.aliases || {}).length > 0) setModelMappings(data.aliases);
+        }
+      } catch { /* ignore */ }
+    })();
+  }, [isExpanded, tool.id]);
 
-  const loadSavedMappings = async () => {
-    try {
-      const res = await fetch(`/api/cli-tools/antigravity-mitm/alias?tool=${tool.id}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (Object.keys(data.aliases || {}).length > 0) setModelMappings(data.aliases);
-      }
-    } catch { /* ignore */ }
-  };
-
-  const saveMappings = useCallback(async (mappings) => {
+  const saveMappings = async (mappings) => {
     try {
       await fetch("/api/cli-tools/antigravity-mitm/alias", {
         method: "PUT",
@@ -62,7 +61,7 @@ export default function MitmToolCard({
         body: JSON.stringify({ tool: tool.id, mappings }),
       });
     } catch { /* ignore */ }
-  }, [tool.id]);
+  };
 
   const handleMappingBlur = (alias, value) => {
     saveMappings({ ...modelMappings, [alias]: value });
