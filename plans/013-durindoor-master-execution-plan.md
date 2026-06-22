@@ -24,30 +24,30 @@ Legend: ✅ DONE (validated passing) · 🟡 LANDED (in dev by ancestry/file-exi
 
 | Work | Status | Evidence / note |
 |---|---|---|
-| 001 exclude `.worktrees/` | 🟡 LANDED | `a04c103` + `5d3a901`; `vitest.config.mjs`/`tests/vitest.config.js` carry exclude |
-| 002 SSRF headroom probe | 🟡 LANDED | `a04c103` + `66c36dc`; `src/lib/headroom/probeGuard.js` + test present |
-| 003 restrict MCP key reveal | 🟡 LANDED | `a04c103` + `ff5fc5f` |
-| 004 bound roundrobin cursor map | 🟡 LANDED | `a04c103` — `ROUNDROBIN_MAX_CURSORS`/`setRoundrobinCursor`/`resetRoundrobinCursors` live in `modelFallback.js` |
-| 005 stale `open-sse/AGENTS.md` | 🟡 LANDED | `a04c103` + `c00881d` |
-| 006 **reorder** connection filter | 🟡 LANDED | `a04c103` (`providers/page.js`) |
-| 006 **extraction** (connectionFilter module) | ⏳ OPEN | wave013 staged `src/lib/providers/connectionFilter.js` + test; function still inline in `page.js` (7 call sites), module not yet imported anywhere — extraction genuinely open & ready |
-| 007 localDb shim sync test | 🟡 LANDED | `a04c103`; `tests/unit/localdb-shim-sync.test.js` present |
-| 008 tests for new routes | 🟡 LANDED | `a04c103`; `reauth-route`/`usage-quota-lock`/`v1-models-codex-caps` present |
-| 009 CI workflow | 🟡 LANDED | `a04c103`/`5df5814`; `.github/workflows/ci.yml` present |
-| 010 refactor usage route | 🟡 LANDED | `a04c103`; route imports `authCheck.js`+`quotaPersist.js`, calls `checkUsageEligibility`/`applyQuotaLockIfNeeded` |
-| Translator parity (pa01) | 🟡 LANDED | `tests/translator/parity/` (5 files) in dev; pa01 translator files identical to dev |
-| Endpoint contracts (pa03) | 🟡 LANDED | `5df5814`; 3 `public-endpoints-*` tests present |
-| Resilience suite (st04) | 🟡 LANDED | `5df5814`; `stream-disconnect-controller` + `stream-stall-watchdog` tests present |
-| Lint-fatal gate (ch01) | 🟡 LANDED | `5df5814`; `scripts/lint-fatal-diff.mjs` + test present |
-| MCP-02 retry lifecycle | 🟡 LANDED | `5243021` |
+| 001 exclude `.worktrees/` | ✅ DONE | sweep ran clean; vitest excludes worktrees |
+| 002 SSRF headroom probe | ✅ DONE | `headroom-ssrf-guard.test.js` → 16 PASS |
+| 003 restrict MCP key reveal | 🟡 LANDED | `ff5fc5f`; no dedicated focused test run yet |
+| 004 bound roundrobin cursor map | ✅ DONE | `modelFallback.test.js` → 31 PASS |
+| 005 stale `open-sse/AGENTS.md` | 🟡 LANDED | doc only |
+| 006 **reorder** connection filter | 🟡 LANDED | `a04c103` reorder; no standalone test |
+| 006 **extraction** (connectionFilter module) | ⏳ OPEN | wave013 staged module+test; STILL inline in `page.js` (**13+ call sites**). **NOT zero-risk**: parity delta (`errorTime` `""` vs inline `null`) + 2-arg→3-arg signature change → real refactor (see advisor findings) |
+| 007 localDb shim sync test | ✅ DONE | `localdb-shim-sync.test.js` → 2 PASS |
+| 008 tests for new routes | ✅ DONE | `reauth-route`(4)+`usage-quota-lock`(10)+`v1-models-codex-caps`(2) PASS |
+| 009 CI workflow | 🟡 LANDED | `.github/workflows/ci.yml` present |
+| 010 refactor usage route | ✅ DONE | `usage-quota-lock.test.js` → 10 PASS covers it |
+| Translator parity (pa01) | ✅ DONE | `tests/translator/parity/` → 31 PASS |
+| Endpoint contracts (pa03) | ✅ DONE | 3 `public-endpoints-*` → 27 PASS |
+| Resilience suite (st04) | ✅ DONE | `stream-disconnect-controller`(15)+`stream-stall-watchdog`(7) PASS |
+| Lint-fatal gate (ch01) | 🟡 CONTRACT-BUG | script never emits `"PASS"`; 2 tests fail on output-string contract (pre-existing from `5df5814`) → Phase-2.4 fix |
+| MCP-02 retry lifecycle | 🟡 LANDED | `5243021`; no focused test run yet |
 | 011 upstream/TS/LoggerJS | 🗺 ROADMAP | Phases 0–6 of this plan |
 | 012 DurinDoor rebrand | 🗺 ROADMAP | Phase 0 inventory done (`983bf35`) |
 
 **Implication:** nearly all of old Phase 2 "production hardening" already LANDED. Real open work is far smaller: 006-extraction, the #1576 test, the scout v0.5.7/v0.6.0 items, CH-02 lint burn-down, dep hygiene, UI-01 — plus whatever the Phase-0 validation sweep surfaces from the 🟡 rows.
 
-**Worktree inventory (18 live):** ALL stale — confirmed integrated. `pa01`/`pa03`/`st04`/`ch01` (translator/endpoint/resilience/lint work all in dev), `issue1927…1956`, `mcp01-stdio-init`, `st03-stream-terminals`, `wave014-roundrobin-bound` (MISLABELED — touches cursor-auto-import, not `modelFallback.js`; plan 004 is already done; its content is whitespace pollution = the same file dev has as drift), `wave014-up1576-connection-test` (consumed by T1.2), `wave014-stub-disposition-scout` (report read), `.worktrees/omniroute-port`. KEEP only `wave013-filter-reorder` (T1.1). Remove the rest in Phase 0.
+**Worktree inventory (post-Phase-0.3):** 15 stale worktrees REMOVED (work integrated in dev); `wave014-roundrobin-bound` was mislabeled cursor pollution (discarded). LIVE = `wave013-filter-reorder` (T1.1) + `wave014-up1576-connection-test` (T1.2) only. `git worktree prune` done; stale `work/*` branches retained (harmless).
 
-**Working tree:** 16 modified + 2 untracked. The cursor-auto-import diff is **pure spaces→tabs formatter noise** (no logic). Treat the "drift" set (Hermes/MIMO/combo/nonStreamingHandler/cursor) as formatter-only until proven otherwise — RESTORE, don't checkpoint-pollute (see corrected Phase 0).
+**Working tree:** the 16-file "drift" was **Prettier line-reflow** (spaces→tabs + arg/block wrapping), NOT pure whitespace — `diff -w` still showed +1372/−434, and `prettier --check` REJECTS it (stray editor formatting, not canonical). STASHED as `phase0-stray-drift-backup` (recoverable); tree restored to HEAD. Do NOT re-commit it.
 
 ### DECISIONS REQUIRED FROM USER (blocks Phase 4 completion)
 Rebrand has product decisions the WBS cannot make: (a) new **npm package name** (rename vs dual-publish vs alias)? (b) new **CLI command** (`durindoor`/`ddoor`/`dd`)? (c) new **domain** (`durindoor.com`)? (d) **data dir** migration (`.9router` → `.durindoor`, or keep)? (e) **Docker image** name? Provide answers before Phase 4.6 or it becomes a STOP.
@@ -105,7 +105,7 @@ Phases 5 and 6 are HARD-GATED: no TypeScript until 1–4 stable; no LoggerJS unt
 
 ## Phase 0 — Baseline, cleanup, VALIDATION SWEEP (FIRST orchestration actions)
 
-0.1 **Drift triage — restore, don't pollute:** inspect each of the 16 modified files. `src/app/api/oauth/cursor/auto-import/route.js` confirmed pure spaces→tabs. RESTORE all formatter-only drift (`git checkout -- <file>`); if any file carries real intended changes, commit it as its OWN focused checkpoint — never mixed with slice work or plan docs.
+0.1 **Drift triage — restore, don't pollute:** the 16-file drift was **Prettier line-reflow** (spaces→tabs + arg/block wrapping), NOT pure whitespace — `diff -w` showed +1372/−434 and `prettier --check` REJECTS it. RESTORED (stashed as `phase0-stray-drift-backup`, recoverable); do NOT checkpoint-pollute. If any file later proves to hold real intended changes, recover from the stash and commit it as its own focused checkpoint.
 0.2 **Repo hygiene:** add `.pi/` + `.atl/` to `.gitignore`; commit `plans/013-*` + `plans/README.md` + `.gitignore` as `docs: add DurinDoor master execution plan + repo hygiene`.
 0.3 **Worktree cleanup — all 18 are stale (confirmed integrated):** remove `pa01`/`pa03`/`st04`/`ch01`, `issue1927…1956`, `mcp01-stdio-init`, `st03-stream-terminals`, `wave014-roundrobin-bound` (mislabeled cursor pollution), `wave014-stub-disposition-scout` (report read), `wave014-up1576-connection-test` (after T1.2 consumes it), `.worktrees/omniroute-port`. **KEEP only `wave013-filter-reorder` (T1.1).** `git worktree prune`.
 0.4 **VALIDATION SWEEP — confirm 🟡 rows still PASS (advisory: separate "landed" from "validated"):** run focused tests for every LANDED plan:
@@ -114,7 +114,7 @@ Phases 5 and 6 are HARD-GATED: no TypeScript until 1–4 stable; no LoggerJS unt
 0.5 **Re-baseline:** `npm run test:baseline`; refresh `tests/__baseline__/known-fails.txt`. Define "green" = no NEW regressions, NOT zero failures.
 0.6 ADVISOR GATE (Opus 4.8) before Phase 1.
 
-Acceptance: `git status --short` clean (only ignored `.pi/`, `.atl/`); `git worktree list` = main + `wave013` only; validation sweep results recorded; ADVISOR CLEARED.
+Acceptance: `git status --short` clean; `git worktree list` = main + active Phase-1 worktrees only (`wave013` consumed by T1.1; `wave014-up1576` consumed + removed by T1.2 — `71e067f`); validation sweep recorded (12 pass / 1 known lint-fatal contract-bug); ADVISOR CLEARED.
 
 ---
 
@@ -203,20 +203,23 @@ Run in WAVES, never one slice at a time. The objective is maximum concurrency: a
 - Shared-file contention (two slices both needing `package.json`, a barrel `index.js`, shared constants, or `oauth-constants`): serialize those specific slices across waves; keep everything else parallel.
 - Cross-family invariant is non-negotiable: a slice's Reviewer/QA/Security are always a different family from its implementer.
 
-### First wave (on "it works", after Phase 0 checkpoint)
+### First wave (on "it works", after Phase 0 + ADVISOR GATE)
 
-Integrate **1.1 connection-filter** immediately — already Review CLEAN + QA PASS, zero-risk direct integrate. Then fan out the maximal disjoint set (Scout confirms exact scopes, ADVISOR gates, dispatch in one batch):
+**ADVISOR GATE (Opus 4.8) = FLAGGED → resolved before dispatch:**
+- T1.1 is NOT "zero-risk direct integrate": extracted `connectionFilter.js` has a **parity delta** (`errorTime` `""` vs inline `null`) and a **2-arg→3-arg signature change** forcing 13+ call-site rewires in `providers/page.js`. Treat as a real refactor.
+- ~~`1.3 roundrobin-bound`~~ REMOVED (004 LANDED+validated). ~~`2.1 010 usage-route refactor`~~ REMOVED (010 LANDED+validated). Do NOT re-dispatch landed work.
+- `1.4-B ComfyUI` scoped to `hidden: true` only this phase; `experimentalProviders` flag does NOT exist → designed Phase-2 slice (config schema + persistence + UI gate).
 
-- 1.2 PR #1576 test-only — new `tests/unit/provider-connection-test.test.js`
-- 1.3 roundrobin-bound salvage — `open-sse/services/modelFallback.js` + test (or discard + relaunch)
-- 1.4-A AutoCombo tier resolver — `open-sse/services/autoCombo/scoring.js` + new `tierResolver.js` + test
-- 1.4-D Windows service docs
-- 1.4-E DefaultToolCard UX
-- 1.4-B ComfyUI hide/flag
-- 2.1 010 usage-route refactor — `src/lib/usage/authCheck.js` + `quotaPersist.js` + route (008 safety net already in dev)
-- 2.8 test-baseline triage — `tests/__baseline__/known-fails.txt`
+Dispatch the maximal disjoint set (Scout confirms exact scopes, ADVISOR gates, one `tasks[]` batch):
+- **1.1 connection-filter extraction** [MED] — `src/lib/providers/connectionFilter.js` (fix `errorTime` parity → `null`), `tests/lib/providers/connectionFilter.test.js`, rewire 13+ call sites in `src/app/(dashboard)/dashboard/providers/page.js`, **BUILD** to prove no runtime ReferenceError.
+- **1.2 PR #1576 test-only** [LOW, ready] — new `tests/unit/provider-connection-test.test.js` (from wave014-up1576; discard `EVIDENCE.md`/`IMPLEMENTATION_SUMMARY.md`/snapshot).
+- **1.3-A AutoCombo tier resolver** [LOW] — `open-sse/services/autoCombo/scoring.js` + new `tierResolver.js` + `tests/unit/autoCombo-tierResolver.test.js`.
+- **1.3-D Windows service docs/errors** [LOW] — improved msgs + new `docs/service-windows.md`.
+- **1.3-E DefaultToolCard helpful text** [LOW].
+- **1.3-B ComfyUI** [LOW] — `hidden: true` only this phase.
+- **2.8 test-baseline triage** [LOW] — run `npm run test:baseline` + `verify-no-regression`; let the tool classify fails as known vs new; update `tests/__baseline__/known-fails.txt` only per the tool's report.
 
-Add remaining Phase 2 slices (CH-02 lint, UI tokens, dep hygiene) as their scopes prove disjoint.
+Add Phase 2 slices (CH-02 lint burn-down incl. lint-fatal-diff contract fix, UI tokens, dep hygiene) as their scopes prove disjoint.
 
 ## Autonomous / never-stop semantics
 
