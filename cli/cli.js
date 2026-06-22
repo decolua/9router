@@ -78,9 +78,10 @@ function getDisplayHost() {
   return host === DEFAULT_HOST ? "localhost" : host;
 }
 const MAX_PORT_ATTEMPTS = 10;
-// Identifiers for killAllAppProcesses - only kill durindoor specifically
+// Identifiers for killAllAppProcesses - only kill durindoor/9router specifically
 const PROCESS_IDENTIFIERS = [
-  'durindoor'  // Only package name - avoid killing other apps
+  'durindoor',  // current package name
+  '9router'     // legacy package name - back-compat
 ];
 
 // Parse arguments
@@ -232,7 +233,7 @@ function killAllAppProcesses(appPort) {
           lines.forEach(line => {
             const cmd = line.toLowerCase();
             const isAppProcess =
-              (cmd.includes("node") && cmd.includes("durindoor") && (cmd.includes("cli.js") || cmd.includes("\\durindoor") || cmd.includes("/durindoor")))
+              (cmd.includes("node") && (cmd.includes("durindoor") || cmd.includes("9router")) && (cmd.includes("cli.js") || cmd.includes("\\durindoor") || cmd.includes("/durindoor") || cmd.includes("\\9router") || cmd.includes("/9router")))
               || cmd.includes("next-server");
             if (isAppProcess) {
               const match = line.match(/^"(\d+)"/);
@@ -256,7 +257,7 @@ function killAllAppProcesses(appPort) {
           lines.forEach(line => {
             const cmd = line.toLowerCase();
             const isAppProcess =
-              (cmd.includes("node") && cmd.includes("durindoor") && (cmd.includes("cli.js") || cmd.includes("/durindoor")))
+              (cmd.includes("node") && (cmd.includes("durindoor") || cmd.includes("9router")) && (cmd.includes("cli.js") || cmd.includes("/durindoor") || cmd.includes("/9router")))
               || cmd.includes("next-server");
             if (isAppProcess) {
               const parts = line.trim().split(/\s+/);

@@ -3,7 +3,8 @@
   "version": "0.5.4",
   "description": "DurinDoor CLI - Start and manage DurinDoor server",
   "bin": {
-    "durindoor": "./cli.js"
+    "durindoor": "./cli.js",
+    "9router": "./cli.js"
   },
   "files": [
     "cli.js",
