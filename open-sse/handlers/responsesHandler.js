@@ -20,9 +20,27 @@ import { SSE_HEADERS_CORS } from "../utils/sseConstants.js";
  * @param {function} options.onRequestSuccess - Callback when request succeeds
  * @param {function} options.onDisconnect - Callback when client disconnects
  * @param {string} options.connectionId - Connection ID for usage tracking
+ * @param {boolean} [options.headroomEnabled] - Whether Headroom context compression is enabled
+ * @param {string} [options.headroomUrl] - Base URL of the Headroom compression service
+ * @param {boolean} [options.rtkEnabled] - Whether RTK token saver is enabled
+ * @param {boolean} [options.cavemanEnabled] - Whether Caveman system-prompt injection is enabled
+ * @param {string} [options.cavemanLevel] - Caveman injection level
+ * @param {boolean} [options.ponytailEnabled] - Whether Ponytail tail-focus injection is enabled
+ * @param {string} [options.ponytailLevel] - Ponytail injection level
+ * @param {boolean} [options.ccFilterNaming] - Whether CC naming filter is active
+ * @param {string} [options.apiKey] - API key forwarded from the client request
+ * @param {string} [options.userAgent] - User-Agent header from the client request
+ * @param {object} [options.clientRawRequest] - Raw client request details for logging
+ * @param {object} [options.providerThinking] - Provider-level thinking/reasoning config
  * @returns {Promise<{success: boolean, response?: Response, status?: number, error?: string}>}
  */
-export async function handleResponsesCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, connectionId }) {
+export async function handleResponsesCore({
+  body, modelInfo, credentials, log,
+  onCredentialsRefreshed, onRequestSuccess, onDisconnect, connectionId,
+  headroomEnabled, headroomUrl,
+  rtkEnabled, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel,
+  ccFilterNaming, apiKey, userAgent, clientRawRequest, providerThinking,
+}) {
   // Convert Responses API format to Chat Completions format
   const convertedBody = convertResponsesApiFormat(body);
 
@@ -33,7 +51,9 @@ export async function handleResponsesCore({ body, modelInfo, credentials, log, o
     convertedBody.stream = false;
   }
 
-  // Call chat core handler — force sourceFormat so streaming path knows this is a Responses API client
+  // Call chat core handler — force sourceFormat so streaming path knows this is a Responses API client.
+  // Token-saver params (headroom, RTK, caveman, ponytail) must be forwarded from the caller so that
+  // compression settings apply on Worker/edge paths that use this handler directly (bug #1956 fix).
   const result = await handleChatCore({
     body: convertedBody,
     modelInfo,
@@ -43,7 +63,19 @@ export async function handleResponsesCore({ body, modelInfo, credentials, log, o
     onRequestSuccess,
     onDisconnect,
     connectionId,
-    sourceFormatOverride: "openai-responses"
+    headroomEnabled,
+    headroomUrl,
+    rtkEnabled,
+    cavemanEnabled,
+    cavemanLevel,
+    ponytailEnabled,
+    ponytailLevel,
+    ccFilterNaming,
+    apiKey,
+    userAgent,
+    clientRawRequest,
+    providerThinking,
+    sourceFormatOverride: "openai-responses",
   });
 
   if (!result.success || !result.response) {
