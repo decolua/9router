@@ -2480,6 +2480,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > yi → headers (apiK
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > zai → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > zenmux → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -3350,6 +3369,13 @@ exports[`GOLDEN buildUrl (default executor providers) > yi → url (stream + non
 {
   "nonStream": "https://api.lingyiwanwu.com/v1/chat/completions",
   "stream": "https://api.lingyiwanwu.com/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > zai → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://zcode.z.ai/api/v1/chat/completions",
+  "stream": "https://zcode.z.ai/api/v1/chat/completions",
 }
 `;
 
