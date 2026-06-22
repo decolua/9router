@@ -452,7 +452,6 @@ flowchart LR
 Specialized executors:
 
 - `antigravity`
-- `gemini-cli`
 - `github`
 - `kiro`
 - `codex`

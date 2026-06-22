@@ -2,7 +2,6 @@
   "aliasToId": {
     "cc": "claude",
     "cx": "codex",
-    "gc": "gemini-cli",
     "qw": "qwen",
     "if": "iflow",
     "ag": "antigravity",
@@ -114,7 +113,6 @@
     "deepseek": "deepseek",
     "fireworks": "fireworks",
     "gemini": "gemini",
-    "gemini-cli": "gc",
     "github": "gh",
     "gitlab": "gitlab",
     "glm": "glm",
@@ -180,7 +178,6 @@
     "elevenlabs-tts-models",
     "fal-ai",
     "fireworks",
-    "gc",
     "gemini",
     "gemini-tts-models",
     "gemini-tts-voices",

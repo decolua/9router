@@ -229,7 +229,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
 
     // Ensure real project ID is available for providers that need it (P0 fix: cold miss)
-    if ((provider === "antigravity" || provider === "gemini-cli") && !refreshedCredentials.projectId) {
+    if (provider === "antigravity" && !refreshedCredentials.projectId) {
       const pid = await getProjectIdForConnection(credentials.connectionId, refreshedCredentials.accessToken);
       if (pid) {
         refreshedCredentials.projectId = pid;

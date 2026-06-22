@@ -279,9 +279,9 @@ describe("buildEmbeddingsUrl", () => {
     expect(url).toBe("https://api.openai.com/v1/embeddings");
   });
 
-  it("unsupported provider (e.g. gemini-cli) → 400 error, no fetch called", async () => {
+  it("unsupported provider (e.g. comfyui) → 400 error, no fetch called", async () => {
     const result = await handleEmbeddingsCore(makeOptions({
-      modelInfo: { provider: "gemini-cli", model: "gemini-embedding" },
+      modelInfo: { provider: "comfyui", model: "gemini-embedding" },
       credentials: { apiKey: "token" },
     }));
 

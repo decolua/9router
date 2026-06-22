@@ -2,7 +2,7 @@
  * OAuth Configuration Constants — static data lives in registry, re-exported here for consumers.
  */
 import { platform, arch } from "os";
-import { ANTIGRAVITY_OAUTH_CLIENT, GOOGLE_OAUTH_CLIENT } from "open-sse/providers/shared.js";
+import { ANTIGRAVITY_OAUTH_CLIENT } from "open-sse/providers/shared.js";
 import { PROVIDER_OAUTH, PROVIDERS as REGISTRY_PROVIDERS } from "open-sse/providers/index.js";
 
 /**
@@ -23,10 +23,6 @@ export const CLAUDE_CONFIG = { ...PROVIDER_OAUTH["claude"] };
 
 // Codex (OpenAI) OAuth Configuration (Authorization Code Flow with PKCE)
 export const CODEX_CONFIG = { ...PROVIDER_OAUTH["codex"] };
-
-// Gemini (Google) OAuth Configuration (Standard OAuth2)
-// clientId/clientSecret from GOOGLE_OAUTH_CLIENT (shared.js) — not stored in registry
-export const GEMINI_CONFIG = { ...GOOGLE_OAUTH_CLIENT, ...PROVIDER_OAUTH["gemini-cli"] };
 
 // Qwen OAuth Configuration (Device Code Flow with PKCE)
 export const QWEN_CONFIG = { ...PROVIDER_OAUTH["qwen"] };
@@ -115,7 +111,6 @@ export const OAUTH_TIMEOUT = 300000;
 export const PROVIDERS = {
   CLAUDE: "claude",
   CODEX: "codex",
-  GEMINI: "gemini-cli",
   QWEN: "qwen",
   QODER: "qoder",
   IFLOW: "iflow",

@@ -60,7 +60,7 @@ export const ANTIGRAVITY_OAUTH_CLIENT = {
   clientSecret: "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"
 };
 
-// Gemini (Google) OAuth client credentials (public CLI client — shared by gemini, gemini-cli, src/lib/oauth)
+// Gemini (Google) OAuth client credentials (public CLI client — shared by gemini, src/lib/oauth)
 export const GOOGLE_OAUTH_CLIENT = {
   clientId: "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com",
   clientSecret: "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"

@@ -22,18 +22,6 @@
     "tokenUrl": "https://api.anthropic.com/v1/oauth/token"
   },
   "gemini": {
-    "baseUrl": "https://generativelanguage.googleapis.com/v1beta/models",
-    "format": "gemini",
-    "clientId": "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com",
-    "clientSecret": "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"
-  },
-  "gemini-cli": {
-    "baseUrl": "https://cloudcode-pa.googleapis.com/v1internal",
-    "format": "gemini-cli",
-    "clientId": "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com",
-    "clientSecret": "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"
-  },
-  "codex": {
     "baseUrl": "https://chatgpt.com/backend-api/codex/responses",
     "format": "openai-responses",
     "headers": {

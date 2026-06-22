@@ -39,7 +39,7 @@ function buildFileBody(fmt, mime, b64) {
       ] }],
     } };
   }
-  if (fmt === "gemini" || fmt === "gemini-cli" || fmt === "antigravity") {
+  if (fmt === "gemini" || fmt === "antigravity") {
     const gem = {
       contents: [{ role: "user", parts: [
         { text: ask },
