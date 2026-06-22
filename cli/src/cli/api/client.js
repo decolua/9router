@@ -390,6 +390,57 @@ async function resetCliToolSettings(tool) {
 }
 
 // ============================================================================
+// HERMES PROFILES API (Issue #1952)
+// ============================================================================
+
+/**
+ * List all Hermes profiles.
+ * Triggers auto-migration from single-profile if needed.
+ * @returns {Promise<Object>} { success, data: { profiles, activeProfileId, activeProfile } }
+ */
+async function getHermesProfiles() {
+  return makeRequest("GET", "/api/cli-tools/hermes-profiles");
+}
+
+/**
+ * Create a new Hermes profile.
+ * @param {{ name: string, baseUrl: string, model: string, apiKey?: string }} data
+ * @returns {Promise<Object>} { success, data: { profile } }
+ */
+async function createHermesProfile(data) {
+  return makeRequest("POST", "/api/cli-tools/hermes-profiles", data);
+}
+
+/**
+ * Update an existing Hermes profile.
+ * @param {string} id - Profile ID
+ * @param {{ name?: string, baseUrl?: string, model?: string, apiKey?: string }} data
+ * @returns {Promise<Object>} { success, data: { profile } }
+ */
+async function updateHermesProfile(id, data) {
+  return makeRequest("PUT", `/api/cli-tools/hermes-profiles/${id}`, data);
+}
+
+/**
+ * Delete a Hermes profile.
+ * @param {string} id - Profile ID
+ * @returns {Promise<Object>} { success, data: { success } }
+ */
+async function deleteHermesProfile(id) {
+  return makeRequest("DELETE", `/api/cli-tools/hermes-profiles/${id}`);
+}
+
+/**
+ * Activate a Hermes profile — sets it as active in DB and writes settings to
+ * ~/.hermes/config.yaml + ~/.hermes/.env.
+ * @param {string} id - Profile ID
+ * @returns {Promise<Object>} { success, data: { profile } }
+ */
+async function activateHermesProfile(id) {
+  return makeRequest("POST", `/api/cli-tools/hermes-profiles/${id}/activate`);
+}
+
+// ============================================================================
 // SETTINGS API
 // ============================================================================
 
@@ -532,6 +583,13 @@ module.exports = {
   getCliToolSettings,
   applyCliToolSettings,
   resetCliToolSettings,
+
+  // Hermes Profiles (Issue #1952)
+  getHermesProfiles,
+  createHermesProfile,
+  updateHermesProfile,
+  deleteHermesProfile,
+  activateHermesProfile,
 
   // Settings
   getSettings,
