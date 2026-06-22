@@ -16,6 +16,8 @@ import { handleComboChat, handleFusionChat } from "open-sse/services/combo.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
+import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { estimateInputTokens } from "open-sse/utils/usageTracking.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
@@ -194,6 +196,17 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     log.info("ROUTING", `${modelStr} → ${provider}/${model}`);
   } else {
     log.info("ROUTING", `Provider: ${provider}, Model: ${model}`);
+  }
+
+  // Pre-check context length against model capacity
+  const estimatedTokens = estimateInputTokens(body);
+  const caps = getCapabilitiesForModel(provider, model);
+  const contextWindow = caps?.contextWindow || 0;
+  if (estimatedTokens > 0 && contextWindow > 0 && estimatedTokens > contextWindow) {
+    log.warn("CONTEXT", `Prompt ~${estimatedTokens}t exceeds ${provider}/${model} (${contextWindow}t)`);
+    return errorResponse(HTTP_STATUS.BAD_REQUEST,
+      `[${provider}/${model}] context too small. Prompt ~${estimatedTokens}t, model limit ${contextWindow}t. ` +
+      `Use a combo name or specify a model with >=${estimatedTokens}t context window.`);
   }
 
   // Extract userAgent from request

@@ -1,5 +1,5 @@
 export const LOCALES = ["en", "vi", "zh-CN", "zh-TW", "ja", "pt-BR", "pt-PT", "ko", "es", "de", "fr", "he", "ar", "ru", "pl", "cs", "nl", "tr", "uk", "tl", "id", "th", "hi", "bn", "ur", "ro", "sv", "it", "el", "hu", "fi", "da", "no"];
-export const DEFAULT_LOCALE = "en";
+export const DEFAULT_LOCALE = "ru";
 export const LOCALE_COOKIE = "locale";
 
 export const LOCALE_NAMES = {
