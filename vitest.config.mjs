@@ -25,6 +25,10 @@ export default defineConfig({
       "**/.next/**",
       "**/.worktrees/**",
       "**/.claude/**",
+      "**/.pi/**",
+      "**/.omc/**",
+      "**/.serena/**",
+      "**/.atl/**",
       "**/dist/**",
     ],
     // Allow many it.concurrent cases (real provider smoke runs ~50 providers in parallel)
