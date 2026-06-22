@@ -214,6 +214,51 @@ export function getComboModelsFromData(modelStr, combosData) {
   return null;
 }
 
+const LOCAL_COMBO_TERMINAL_ERROR_PATTERNS = [
+  "no active credentials for provider",
+  "no credentials for provider",
+  "invalid model format",
+  "openai compatible node not found",
+  "anthropic compatible node not found",
+  "custom embedding node not found",
+  "provider node not found",
+  "connection not found",
+  "proxy pool not found",
+];
+
+function normalizeComboErrorText(errorText) {
+  if (typeof errorText === "string") return errorText;
+  try { return JSON.stringify(errorText); } catch { return String(errorText ?? ""); }
+}
+
+function isLocalComboTerminalError(errorText) {
+  const text = normalizeComboErrorText(errorText).toLowerCase();
+  return LOCAL_COMBO_TERMINAL_ERROR_PATTERNS.some((pattern) => text.includes(pattern));
+}
+
+async function readComboError(result) {
+  let errorText = result.statusText || "";
+  let retryAfter = null;
+
+  try {
+    const errorBody = await result.clone().json();
+    errorText = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorText;
+    retryAfter = errorBody?.retryAfter || errorBody?.error?.retryAfter || null;
+  } catch {
+    try {
+      const rawText = await result.clone().text();
+      if (rawText) errorText = rawText;
+    } catch {
+      // Ignore body read errors
+    }
+  }
+
+  return {
+    errorText: normalizeComboErrorText(errorText),
+    retryAfter,
+  };
+}
+
 /**
  * Handle combo chat with fallback
  * @param {Object} options
@@ -260,14 +305,13 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       }
 
       // Extract error info from response
-      let errorText = result.statusText || "";
-      let retryAfter = null;
-      try {
-        const errorBody = await result.clone().json();
-        errorText = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorText;
-        retryAfter = errorBody?.retryAfter || null;
-      } catch {
-        // Ignore JSON parse errors
+      const { errorText, retryAfter } = await readComboError(result);
+
+      // Preserve local routing/configuration errors — retrying a different combo
+      // member would hide the real fix (invalid model, missing credentials, etc.).
+      if (isLocalComboTerminalError(errorText)) {
+        log.warn("COMBO", `Model ${modelStr} failed (local terminal error)`, { status: result.status });
+        return result;
       }
 
       // Track earliest retryAfter across all combo models
@@ -275,12 +319,6 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         earliestRetryAfter = retryAfter;
       }
 
-      // Normalize error text to string (Worker-safe)
-      if (typeof errorText !== "string") {
-        try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
-      }
-
-      // Check if should fallback to next model
       const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
 
       if (!shouldFallback) {
