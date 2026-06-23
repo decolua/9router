@@ -40,6 +40,7 @@ export default function ProfilePage() {
   const [adminKeyPlaintext, setAdminKeyPlaintext] = useState("");
   const [adminKeyLoading, setAdminKeyLoading] = useState(false);
   const [adminKeyMessage, setAdminKeyMessage] = useState({ type: "", message: "" });
+  const [adminKeyConfirmOpen, setAdminKeyConfirmOpen] = useState(false);
   const [dbLoading, setDbLoading] = useState(false);
   const [dbStatus, setDbStatus] = useState({ type: "", message: "" });
   const [dbAuth, setDbAuth] = useState({ open: false, mode: "", password: "" });
@@ -203,13 +204,13 @@ export default function ProfilePage() {
     }
   };
 
-  const loadAdminKeyStatus = async () => {
+  const loadAdminKeyStatus = async ({ preserveMessage = false } = {}) => {
     try {
       const res = await fetch("/api/settings/admin-key", { cache: "no-store" });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setAdminKeyStatus(data);
-        setAdminKeyMessage({ type: "", message: "" });
+        if (!preserveMessage) setAdminKeyMessage({ type: "", message: "" });
         return;
       }
       setAdminKeyMessage({
@@ -257,6 +258,7 @@ export default function ProfilePage() {
   };
 
   const rotateAdminKey = async () => {
+    setAdminKeyConfirmOpen(false);
     setAdminKeyLoading(true);
     setAdminKeyPlaintext("");
     setAdminKeyMessage({ type: "", message: "" });
@@ -264,18 +266,22 @@ export default function ProfilePage() {
     try {
       const res = await fetch("/api/settings/admin-key", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         cache: "no-store",
+        body: JSON.stringify({
+          expectedUpdatedAt: adminKeyStatus.updatedAt || "",
+        }),
       });
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
+        if (res.status === 409) {
+          await loadAdminKeyStatus({ preserveMessage: true });
+        }
         setAdminKeyMessage({
           type: "error",
           message: data.error || "Failed to generate admin API key",
         });
-        if (res.status === 409) {
-          await loadAdminKeyStatus();
-        }
         return;
       }
 
@@ -290,6 +296,14 @@ export default function ProfilePage() {
     } finally {
       setAdminKeyLoading(false);
     }
+  };
+
+  const handleAdminKeyAction = () => {
+    if (adminKeyStatus.configured) {
+      setAdminKeyConfirmOpen(true);
+      return;
+    }
+    rotateAdminKey();
   };
 
   const copyAdminKey = async () => {
@@ -849,7 +863,7 @@ export default function ProfilePage() {
             </div>
             <Button
               icon={adminKeyStatus.configured ? "sync" : "key"}
-              onClick={rotateAdminKey}
+              onClick={handleAdminKeyAction}
               loading={adminKeyLoading}
               className="w-full sm:w-auto"
             >
@@ -887,7 +901,11 @@ export default function ProfilePage() {
             )}
 
             {adminKeyMessage.message && (
-              <p className={`mt-3 text-xs sm:text-sm ${adminKeyMessage.type === "error" ? "text-red-500" : "text-green-600 dark:text-green-400"}`}>
+              <p
+                role="status"
+                aria-live="polite"
+                className={`mt-3 text-xs sm:text-sm ${adminKeyMessage.type === "error" ? "text-red-500" : "text-green-600 dark:text-green-400"}`}
+              >
                 {adminKeyMessage.message}
               </p>
             )}
@@ -1278,6 +1296,17 @@ export default function ProfilePage() {
           setLangOpen(false);
           setLocale(next);
         }}
+      />
+      <ConfirmModal
+        isOpen={adminKeyConfirmOpen}
+        onClose={() => setAdminKeyConfirmOpen(false)}
+        onConfirm={rotateAdminKey}
+        title="Regenerate Admin API Key"
+        message="This replaces the current admin API key immediately. Existing integrations using the old key will stop working. Continue?"
+        confirmText="Regenerate"
+        cancelText="Cancel"
+        variant="danger"
+        loading={adminKeyLoading}
       />
       <ConfirmModal
         isOpen={shutdownOpen}

@@ -4,15 +4,65 @@ import {
   getAdminApiKeyStatus,
 } from "@/lib/auth/adminApiKey";
 import { AdminApiKeyRotationConflictError } from "@/lib/localDb";
+import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
+import { getConsistentMachineId } from "@/shared/utils/machineId";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+const CLI_TOKEN_HEADER = "x-9r-cli-token";
+const CLI_TOKEN_SALT = "9r-cli-auth";
 const RESPONSE_HEADERS = {
   "Cache-Control": "no-store",
 };
 
-export async function GET() {
+let cachedCliToken = null;
+
+async function getCliToken() {
+  if (!cachedCliToken) cachedCliToken = await getConsistentMachineId(CLI_TOKEN_SALT);
+  return cachedCliToken;
+}
+
+async function isAuthorized(request) {
+  const cookieToken = request.cookies.get("auth_token")?.value;
+  if (await verifyDashboardAuthToken(cookieToken)) return true;
+
+  const cliToken = request.headers.get(CLI_TOKEN_HEADER);
+  if (!cliToken) return false;
+  return cliToken === await getCliToken();
+}
+
+function unauthorizedResponse() {
+  return NextResponse.json({ error: "Unauthorized" }, {
+    status: 401,
+    headers: RESPONSE_HEADERS,
+  });
+}
+
+async function parseRotateRequest(request) {
+  if (!request.headers.get("content-type")?.includes("application/json")) {
+    return { expectedUpdatedAt: undefined };
+  }
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    throw new Error("INVALID_JSON");
+  }
+  const expectedUpdatedAt = body?.expectedUpdatedAt;
+
+  if (expectedUpdatedAt === undefined) return { expectedUpdatedAt: undefined };
+  if (typeof expectedUpdatedAt !== "string") {
+    throw new Error("INVALID_EXPECTED_UPDATED_AT");
+  }
+
+  return { expectedUpdatedAt };
+}
+
+export async function GET(request) {
+  if (!(await isAuthorized(request))) return unauthorizedResponse();
+
   try {
     const status = await getAdminApiKeyStatus();
     return NextResponse.json(status, { headers: RESPONSE_HEADERS });
@@ -25,14 +75,31 @@ export async function GET() {
   }
 }
 
-export async function POST() {
+export async function POST(request) {
+  if (!(await isAuthorized(request))) return unauthorizedResponse();
+
   try {
-    const result = await createOrRotateAdminApiKey();
+    const { expectedUpdatedAt } = await parseRotateRequest(request);
+    const result = await createOrRotateAdminApiKey(new Date(), { expectedUpdatedAt });
     return NextResponse.json(result, {
       status: 201,
       headers: RESPONSE_HEADERS,
     });
   } catch (error) {
+    if (error instanceof Error && error.message === "INVALID_JSON") {
+      return NextResponse.json(
+        { error: "Request body must be valid JSON" },
+        { status: 400, headers: RESPONSE_HEADERS }
+      );
+    }
+
+    if (error instanceof Error && error.message === "INVALID_EXPECTED_UPDATED_AT") {
+      return NextResponse.json(
+        { error: "expectedUpdatedAt must be a string" },
+        { status: 400, headers: RESPONSE_HEADERS }
+      );
+    }
+
     if (error instanceof AdminApiKeyRotationConflictError) {
       return NextResponse.json(
         { error: "Admin API key changed. Reload status and try again." },
