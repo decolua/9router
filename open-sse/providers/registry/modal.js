@@ -1,4 +1,4 @@
-export default {
+const modal = {
   "id": "modal",
   "priority": 70,
   "alias": "modal",
@@ -25,3 +25,4 @@ export default {
     }
   ]
 };
+export default modal;

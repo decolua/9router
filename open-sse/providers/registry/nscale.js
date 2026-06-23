@@ -1,4 +1,4 @@
-export default {
+const nscale = {
   "id": "nscale",
   "priority": 70,
   "alias": "nscale",
@@ -45,3 +45,4 @@ export default {
     }
   ]
 };
+export default nscale;

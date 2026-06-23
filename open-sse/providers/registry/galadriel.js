@@ -1,4 +1,4 @@
-export default {
+const galadriel = {
   "id": "galadriel",
   "priority": 70,
   "alias": "galadriel",
@@ -25,3 +25,4 @@ export default {
     }
   ]
 };
+export default galadriel;

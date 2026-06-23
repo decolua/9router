@@ -1,4 +1,4 @@
-export default {
+const databricks = {
   "id": "databricks",
   "priority": 70,
   "alias": "databricks",
@@ -37,3 +37,4 @@ export default {
     }
   ]
 };
+export default databricks;

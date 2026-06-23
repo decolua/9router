@@ -6,7 +6,7 @@
  * Constraints: system message required; stream:true required.
  * Models: gpt-5.5, gpt-5.4, claude-sonnet-4.6, gemini-3.1-pro, etc.
  */
-export default {
+const codebuddy = {
   id: "codebuddy",
   priority: 90,
   category: "apikey",
@@ -58,3 +58,4 @@ export default {
     { id: "gemini-3.1-pro", name: "Gemini 3.1 Pro", contextWindow: 1000000 },
   ],
 };
+export default codebuddy;

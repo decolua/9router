@@ -1,4 +1,4 @@
-export default {
+const glhf = {
   "id": "glhf",
   "priority": 70,
   "alias": "glhf",
@@ -25,3 +25,4 @@ export default {
     }
   ]
 };
+export default glhf;

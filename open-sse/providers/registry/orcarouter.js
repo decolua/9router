@@ -1,4 +1,4 @@
-export default {
+const orcarouter = {
   "id": "orcarouter",
   "priority": 70,
   "alias": "orcarouter",
@@ -84,3 +84,4 @@ export default {
     }
   ]
 };
+export default orcarouter;

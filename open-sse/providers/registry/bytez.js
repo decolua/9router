@@ -1,4 +1,4 @@
-export default {
+const bytez = {
   "id": "bytez",
   "priority": 70,
   "alias": "bytez",
@@ -33,3 +33,4 @@ export default {
     }
   ]
 };
+export default bytez;

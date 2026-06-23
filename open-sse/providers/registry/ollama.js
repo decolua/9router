@@ -1,4 +1,4 @@
-export default {
+const ollama = {
   id: "ollama",
   priority: 30,
   hasFree: true,
@@ -33,3 +33,4 @@ export default {
     usage: true,
   },
 };
+export default ollama;

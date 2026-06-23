@@ -1,4 +1,4 @@
-export default {
+const hyperbolic = {
   id: "hyperbolic",
   priority: 160,
   alias: "hyperbolic",
@@ -33,3 +33,4 @@ export default {
     { id: "NousResearch/Hermes-3-Llama-3.1-70B", name: "Hermes 3 70B" },
   ],
 };
+export default hyperbolic;

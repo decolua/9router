@@ -1,4 +1,4 @@
-export default {
+const longcat = {
   "id": "longcat",
   "priority": 70,
   "alias": "lc",
@@ -37,3 +37,4 @@ export default {
     }
   ]
 };
+export default longcat;

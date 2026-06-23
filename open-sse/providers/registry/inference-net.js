@@ -1,4 +1,4 @@
-export default {
+const inferenceNet = {
   "id": "inference-net",
   "priority": 70,
   "alias": "inet",
@@ -33,3 +33,4 @@ export default {
     }
   ]
 };
+export default inferenceNet;

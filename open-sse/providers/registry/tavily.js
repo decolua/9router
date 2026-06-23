@@ -1,4 +1,4 @@
-export default {
+const tavily = {
   id: "tavily",
   alias: "tavily",
   display: {
@@ -48,3 +48,4 @@ export default {
     timeoutMs: 15000
   }
 };
+export default tavily;

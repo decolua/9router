@@ -1,4 +1,4 @@
-export default {
+const scaleway = {
   "id": "scaleway",
   "priority": 70,
   "alias": "scw",
@@ -45,3 +45,4 @@ export default {
     }
   ]
 };
+export default scaleway;

@@ -4,7 +4,7 @@ import { PROVIDER_MEDIA } from "../../providers/index.js";
 
 const BASE_URL = PROVIDER_MEDIA["sdwebui"]?.imageConfig?.baseUrl;
 
-export default {
+const sdwebui = {
   noAuth: true,
   buildUrl: () => BASE_URL,
   buildHeaders: () => ({ "Content-Type": "application/json" }),
@@ -18,3 +18,4 @@ export default {
     return { created: nowSec(), data: images };
   },
 };
+export default sdwebui;

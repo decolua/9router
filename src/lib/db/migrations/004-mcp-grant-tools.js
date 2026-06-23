@@ -1,7 +1,7 @@
 // Add a nullable per-grant tool allowlist. When set (JSON array of bare tool
 // names), the gateway filters that instance's tools down to the list for
 // that key. NULL = all tools visible (default).
-export default {
+const m004McpGrantTools = {
   version: 4,
   name: "mcp grant tool allowlist",
   up(db) {
@@ -17,3 +17,4 @@ export default {
     }
   },
 };
+export default m004McpGrantTools;

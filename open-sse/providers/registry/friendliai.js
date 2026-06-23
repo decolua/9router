@@ -1,4 +1,4 @@
-export default {
+const friendliai = {
   "id": "friendliai",
   "priority": 70,
   "alias": "friendli",
@@ -29,3 +29,4 @@ export default {
     }
   ]
 };
+export default friendliai;

@@ -1,4 +1,4 @@
-export default {
+const aimlapi = {
   "id": "aimlapi",
   "priority": 70,
   "alias": "aiml",
@@ -46,3 +46,4 @@ export default {
     }
   ]
 };
+export default aimlapi;

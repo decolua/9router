@@ -1,4 +1,4 @@
-export default {
+const apiAirforce = {
   "id": "api-airforce",
   "priority": 70,
   "alias": "af",
@@ -63,3 +63,4 @@ export default {
     }
   ]
 };
+export default apiAirforce;

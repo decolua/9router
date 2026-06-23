@@ -1,4 +1,4 @@
-export default {
+const perplexity = {
   id: "perplexity",
   priority: 180,
   alias: "perplexity",
@@ -33,3 +33,4 @@ export default {
     pricingUrl: "https://docs.perplexity.ai/guides/pricing",
   },
 };
+export default perplexity;

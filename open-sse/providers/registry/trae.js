@@ -4,7 +4,7 @@
 // initial JWT via solo.trae.ai authorize) is a trae-specific oauth route not
 // co-located in the registry — chat works once credentials (accessToken=JWT +
 // providerSpecificData identity fields) exist; the login flow is a follow-up.
-export default {
+const trae = {
   id: "trae",
   priority: 70,
   alias: "tr",
@@ -32,3 +32,4 @@ export default {
     { id: "gpt-5.2", name: "GPT 5.2" },
   ],
 };
+export default trae;

@@ -1,4 +1,4 @@
-export default {
+const groq = {
   id: "groq",
   priority: 60,
   hasFree: true,
@@ -35,3 +35,4 @@ export default {
     format: "openai",
   },
 };
+export default groq;

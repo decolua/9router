@@ -1,4 +1,4 @@
-export default {
+const baidu = {
   "id": "baidu",
   "priority": 70,
   "alias": "baidu",
@@ -25,3 +25,4 @@ export default {
     }
   ]
 };
+export default baidu;

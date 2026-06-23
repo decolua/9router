@@ -1,6 +1,6 @@
 import { normalizeApiKeyUsageId, normalizeUsageDailySummary } from "../helpers/apiKeyUsageId.js";
 
-export default {
+const m002NormalizeUsageApiKeys = {
   version: 2,
   name: "normalize usage api keys",
   up(db) {
@@ -24,3 +24,4 @@ export default {
     }
   },
 };
+export default m002NormalizeUsageApiKeys;

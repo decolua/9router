@@ -1,4 +1,4 @@
-export default {
+const deepgram = {
   id: "deepgram",
   priority: 20,
   alias: "deepgram",
@@ -31,3 +31,4 @@ export default {
   serviceKinds: ["stt"],
   sttConfig: { baseUrl: "https://api.deepgram.com/v1/listen", authType: "apikey", authHeader: "token", format: "deepgram" },
 };
+export default deepgram;

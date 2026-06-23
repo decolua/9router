@@ -1,7 +1,7 @@
 // OmniRoute theoldllm provider — free no-auth web provider. Uses the
 // TheOldLlmExecutor (registered in open-sse/executors/index.js) which generates
 // the X-Request-Token server-side and proxies theoldllm.vercel.app.
-export default {
+const theoldllm = {
   id: "theoldllm",
   priority: 70,
   alias: "theoldllm",
@@ -24,3 +24,4 @@ export default {
     { id: "claude-3.5-sonnet", name: "Claude 3.5 Sonnet (via TheOldLLM)" },
   ],
 };
+export default theoldllm;

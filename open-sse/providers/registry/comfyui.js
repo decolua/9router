@@ -1,4 +1,4 @@
-export default {
+const comfyui = {
   id: "comfyui",
   priority: 120,
   alias: "comfyui",
@@ -19,3 +19,4 @@ export default {
   imageConfig: { baseUrl: "http://localhost:8188" },
   hidden: true,
 };
+export default comfyui;

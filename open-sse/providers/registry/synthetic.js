@@ -1,4 +1,4 @@
-export default {
+const synthetic = {
   "id": "synthetic",
   "priority": 70,
   "alias": "synthetic",
@@ -46,3 +46,4 @@ export default {
     }
   ]
 };
+export default synthetic;

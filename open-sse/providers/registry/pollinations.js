@@ -3,7 +3,7 @@
 // top of plain OpenAI-compatible forwarding; both are dropped here (apikey/bearer
 // only — the fork's combined auth always sets the Authorization header, so an
 // explicit Pollinations bearer token is required).
-export default {
+const pollinations = {
   id: "pollinations",
   priority: 70,
   alias: "pol",
@@ -62,3 +62,4 @@ export default {
     { id: "qwen-safety", name: "Qwen Safety (Pollinations)" },
   ],
 };
+export default pollinations;

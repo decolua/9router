@@ -1,4 +1,4 @@
-export default {
+const sparkdesk = {
   "id": "sparkdesk",
   "priority": 70,
   "alias": "sparkdesk",
@@ -25,3 +25,4 @@ export default {
     }
   ]
 };
+export default sparkdesk;

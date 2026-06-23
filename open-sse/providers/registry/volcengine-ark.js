@@ -1,4 +1,4 @@
-export default {
+const volcengineArk = {
   id: "volcengine-ark",
   priority: 270,
   alias: "volcengine-ark",
@@ -33,3 +33,4 @@ export default {
     { id: "Kimi-K2.6", name: "Kimi-K2.6" },
   ],
 };
+export default volcengineArk;

@@ -1,4 +1,4 @@
-export default {
+const kie = {
   "id": "kie",
   "priority": 70,
   "alias": "kie",
@@ -57,3 +57,4 @@ export default {
     }
   ]
 };
+export default kie;

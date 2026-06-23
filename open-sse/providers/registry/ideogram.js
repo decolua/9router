@@ -1,4 +1,4 @@
-export default {
+const ideogram = {
   "id": "ideogram",
   "priority": 70,
   "alias": "ideo",
@@ -29,3 +29,4 @@ export default {
     }
   ]
 };
+export default ideogram;

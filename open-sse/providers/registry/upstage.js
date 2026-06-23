@@ -1,4 +1,4 @@
-export default {
+const upstage = {
   "id": "upstage",
   "priority": 70,
   "alias": "upstage",
@@ -29,3 +29,4 @@ export default {
     }
   ]
 };
+export default upstage;

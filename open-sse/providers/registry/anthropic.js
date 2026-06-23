@@ -1,6 +1,6 @@
 import { CLAUDE_API_HEADERS } from "../shared.js";
 
-export default {
+const anthropic = {
   id: "anthropic",
   priority: 30,
   alias: "anthropic",
@@ -30,3 +30,4 @@ export default {
   ],
   serviceKinds: ["llm","imageToText"],
 };
+export default anthropic;

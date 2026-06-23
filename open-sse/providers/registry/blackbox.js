@@ -1,4 +1,4 @@
-export default {
+const blackbox = {
   id: "blackbox",
   priority: 50,
   alias: "blackbox",
@@ -41,3 +41,4 @@ export default {
     { id: "qwen3-vl-plus", name: "Qwen3 VL Plus" },
   ],
 };
+export default blackbox;

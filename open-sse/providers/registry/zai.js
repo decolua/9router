@@ -1,7 +1,7 @@
 // Z.ai ZCode — OpenAI-compatible free-tier endpoint (distinct from the Anthropic-format GLM provider).
 // Base URL: https://zcode.z.ai — no custom executor needed (DefaultExecutor handles OpenAI-compatible).
 // Alias "zai" is intentionally different from "glm" and "glm-cn" to avoid routing collision.
-export default {
+const zai = {
   id: "zai",
   alias: "zai",
   display: {
@@ -27,3 +27,4 @@ export default {
     { id: "glm-4.5-air", name: "GLM 4.5 Air (Free)" },
   ],
 };
+export default zai;

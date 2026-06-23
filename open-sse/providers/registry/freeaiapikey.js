@@ -1,4 +1,4 @@
-export default {
+const freeaiapikey = {
   "id": "freeaiapikey",
   "priority": 70,
   "alias": "faik",
@@ -54,3 +54,4 @@ export default {
     }
   ]
 };
+export default freeaiapikey;

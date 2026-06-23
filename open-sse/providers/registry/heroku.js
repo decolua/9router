@@ -1,4 +1,4 @@
-export default {
+const heroku = {
   "id": "heroku",
   "priority": 70,
   "alias": "heroku",
@@ -69,3 +69,4 @@ export default {
     }
   ]
 };
+export default heroku;

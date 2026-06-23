@@ -1,4 +1,4 @@
-export default {
+const zenmux = {
   "id": "zenmux",
   "priority": 70,
   "alias": "zm",
@@ -93,3 +93,4 @@ export default {
     }
   ]
 };
+export default zenmux;

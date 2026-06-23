@@ -181,7 +181,7 @@ import p178 from "./youcom.js";
 import p179 from "./zai.js";
 import p180 from "./zenmux.js";
 
-export default [
+const index = [
   p0,
   p1,
   p2,
@@ -364,3 +364,4 @@ export default [
   p179,
   p180,
 ];
+export default index;

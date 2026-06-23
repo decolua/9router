@@ -1,4 +1,4 @@
-export default {
+const moonshot = {
   "id": "moonshot",
   "priority": 70,
   "alias": "moonshot",
@@ -53,3 +53,4 @@ export default {
     }
   ]
 };
+export default moonshot;

@@ -1,4 +1,4 @@
-export default {
+const doubao = {
   "id": "doubao",
   "priority": 70,
   "alias": "doubao",
@@ -25,3 +25,4 @@ export default {
     }
   ]
 };
+export default doubao;

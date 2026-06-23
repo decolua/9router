@@ -4,7 +4,7 @@
 // combined so the dispatch layer still treats the apiKey as the credential
 // (the executor short-circuits the standard Authorization path).
 
-export default {
+const innerAi = {
   id: "inner-ai",
   priority: 60,
   alias: "in-ai",
@@ -64,3 +64,4 @@ export default {
     { id: "mistral-large-2411", name: "Mistral Large (via Inner.ai)" },
   ],
 };
+export default innerAi;

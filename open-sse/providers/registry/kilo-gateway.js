@@ -1,4 +1,4 @@
-export default {
+const kiloGateway = {
   "id": "kilo-gateway",
   "priority": 70,
   "alias": "kg",
@@ -46,3 +46,4 @@ export default {
     }
   ]
 };
+export default kiloGateway;

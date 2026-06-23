@@ -1,4 +1,4 @@
-export default {
+const nanogpt = {
   "id": "nanogpt",
   "priority": 70,
   "alias": "nanogpt",
@@ -33,3 +33,4 @@ export default {
     }
   ]
 };
+export default nanogpt;

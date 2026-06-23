@@ -1,4 +1,4 @@
-export default {
+const nousResearch = {
   "id": "nous-research",
   "priority": 70,
   "alias": "nous",
@@ -29,3 +29,4 @@ export default {
     }
   ]
 };
+export default nousResearch;

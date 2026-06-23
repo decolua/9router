@@ -1,4 +1,4 @@
-export default {
+const cerebras = {
   id: "cerebras",
   priority: 60,
   alias: "cerebras",
@@ -29,3 +29,4 @@ export default {
     { id: "qwen-3-32b", name: "Qwen3 32B" },
   ],
 };
+export default cerebras;

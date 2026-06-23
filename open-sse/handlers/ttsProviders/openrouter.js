@@ -3,7 +3,7 @@ import { PROVIDER_MEDIA } from "../../providers/index.js";
 
 const TTS_CFG = PROVIDER_MEDIA["openrouter"]?.ttsConfig || {};
 
-export default {
+const openrouter = {
   async synthesize(text, model, credentials) {
     if (!credentials?.apiKey) throw new Error("No OpenRouter API key configured");
 
@@ -71,3 +71,4 @@ export default {
     return { base64: chunks.join(""), format: "wav" };
   },
 };
+export default openrouter;

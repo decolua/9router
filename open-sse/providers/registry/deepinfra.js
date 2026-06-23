@@ -1,4 +1,4 @@
-export default {
+const deepinfra = {
   "id": "deepinfra",
   "priority": 70,
   "alias": "deepinfra",
@@ -109,3 +109,4 @@ export default {
     }
   ]
 };
+export default deepinfra;

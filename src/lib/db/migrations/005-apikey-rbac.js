@@ -1,6 +1,6 @@
 // Add per-key RBAC fields: role, model/provider allowlists, monthly token + USD caps.
 // Empty/null allowlist = no restriction. role defaults to 'user'. updatedAt for change tracking.
-export default {
+const m005ApikeyRbac = {
   version: 5,
   name: "apikey rbac",
   up(db) {
@@ -22,3 +22,4 @@ export default {
     }
   },
 };
+export default m005ApikeyRbac;

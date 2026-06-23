@@ -1,5 +1,5 @@
 // OmniRoute claude-format provider (Alibaba Bailian coding-plan, Anthropic-compatible).
-export default {
+const bailianCodingPlan = {
   id: "bailian-coding-plan",
   priority: 70,
   alias: "bcp",
@@ -36,3 +36,4 @@ export default {
     { id: "MiniMax-M2.5", name: "MiniMax M2.5" },
   ],
 };
+export default bailianCodingPlan;

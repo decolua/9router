@@ -1,4 +1,4 @@
-export default {
+const deepseek = {
   id: "deepseek",
   priority: 110,
   alias: "deepseek",
@@ -33,3 +33,4 @@ export default {
     { id: "deepseek-reasoner", name: "DeepSeek V3.2 Reasoner" },
   ],
 };
+export default deepseek;

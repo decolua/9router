@@ -1,4 +1,4 @@
-export default {
+const gigachat = {
   "id": "gigachat",
   "priority": 70,
   "alias": "gigachat",
@@ -33,3 +33,4 @@ export default {
     }
   ]
 };
+export default gigachat;

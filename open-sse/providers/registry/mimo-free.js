@@ -1,4 +1,4 @@
-export default {
+const mimoFree = {
   id: "mimo-free",
   priority: 50,
   hasFree: true,
@@ -22,3 +22,4 @@ export default {
   modelsFetcher: { url: "https://models.dev/api.json", type: "mimo-free" },
   passthroughModels: true,
 };
+export default mimoFree;

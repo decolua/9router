@@ -1,4 +1,4 @@
-export default {
+const cartesia = {
   id: "cartesia",
   alias: "cartesia",
   display: {
@@ -34,3 +34,4 @@ export default {
   },
   hidden: true
 };
+export default cartesia;

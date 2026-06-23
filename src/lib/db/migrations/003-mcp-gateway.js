@@ -10,7 +10,7 @@
 //
 //   JSON-shaped columns (args/env/headers/oauthTokens) are stored as TEXT and
 //   parsed by the repos.
-export default {
+const m003McpGateway = {
   version: 3,
   name: "mcp gateway",
   up(db) {
@@ -57,3 +57,4 @@ export default {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_mcp_grant_key ON mcpKeyGrants(keyId)`);
   },
 };
+export default m003McpGateway;

@@ -1,4 +1,4 @@
-export default {
+const coqui = {
   id: "coqui",
   alias: "coqui",
   display: {
@@ -28,3 +28,4 @@ export default {
   },
   hidden: true
 };
+export default coqui;

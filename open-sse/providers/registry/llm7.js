@@ -1,4 +1,4 @@
-export default {
+const llm7 = {
   "id": "llm7",
   "priority": 70,
   "alias": "llm7",
@@ -37,3 +37,4 @@ export default {
     }
   ]
 };
+export default llm7;

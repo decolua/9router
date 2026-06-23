@@ -1,7 +1,7 @@
 // OmniRoute suno provider — music generation (studio-api.suno.ai). Default
 // executor passthrough with session-cookie auth; clients send the Suno-shaped
 // generation body.
-export default {
+const suno = {
   id: "suno",
   priority: 70,
   alias: "suno",
@@ -28,3 +28,4 @@ export default {
     { id: "chirp-v4", name: "Chirp V4" },
   ],
 };
+export default suno;

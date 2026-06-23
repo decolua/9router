@@ -1,4 +1,4 @@
-export default {
+const monsterapi = {
   "id": "monsterapi",
   "priority": 70,
   "alias": "monster",
@@ -25,3 +25,4 @@ export default {
     }
   ]
 };
+export default monsterapi;

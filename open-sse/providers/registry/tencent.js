@@ -1,4 +1,4 @@
-export default {
+const tencent = {
   "id": "tencent",
   "priority": 70,
   "alias": "tencent",
@@ -25,3 +25,4 @@ export default {
     }
   ]
 };
+export default tencent;

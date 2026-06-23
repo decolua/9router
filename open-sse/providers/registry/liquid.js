@@ -1,4 +1,4 @@
-export default {
+const liquid = {
   "id": "liquid",
   "priority": 70,
   "alias": "liquid",
@@ -25,3 +25,4 @@ export default {
     }
   ]
 };
+export default liquid;

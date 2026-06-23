@@ -1,4 +1,4 @@
-export default {
+const yi = {
   "id": "yi",
   "priority": 70,
   "alias": "yi",
@@ -25,3 +25,4 @@ export default {
     }
   ]
 };
+export default yi;

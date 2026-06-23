@@ -1,4 +1,4 @@
-export default {
+const opencodeGo = {
   id: "opencode-go",
   priority: 210,
   alias: "opencode-go",
@@ -39,3 +39,4 @@ export default {
     { id: "qwen3.6-plus", name: "Qwen 3.6 Plus", targetFormat: "claude" },
   ],
 };
+export default opencodeGo;

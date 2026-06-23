@@ -1,4 +1,4 @@
-export default {
+const nebius = {
   id: "nebius",
   priority: 70,
   alias: "nebius",
@@ -25,3 +25,4 @@ export default {
   serviceKinds: ["llm", "embedding"],
   embeddingConfig: { baseUrl: "https://api.tokenfactory.nebius.com/v1/embeddings" },
 };
+export default nebius;

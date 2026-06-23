@@ -1,4 +1,4 @@
-export default {
+const llamagate = {
   "id": "llamagate",
   "priority": 70,
   "alias": "llamagate",
@@ -33,3 +33,4 @@ export default {
     }
   ]
 };
+export default llamagate;

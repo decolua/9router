@@ -1,4 +1,4 @@
-export default {
+const metaLlama = {
   "id": "meta-llama",
   "priority": 70,
   "alias": "meta",
@@ -33,3 +33,4 @@ export default {
     }
   ]
 };
+export default metaLlama;

@@ -1,4 +1,4 @@
-export default {
+const huggingface = {
   id: "huggingface",
   priority: 70,
   hasFree: true,
@@ -32,3 +32,4 @@ export default {
   serviceKinds: ["image", "stt"],
   imageConfig: { baseUrl: "https://api-inference.huggingface.co/models" },
 };
+export default huggingface;

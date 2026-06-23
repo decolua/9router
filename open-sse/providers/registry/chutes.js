@@ -1,4 +1,4 @@
-export default {
+const chutes = {
   id: "chutes",
   priority: 70,
   alias: "chutes",
@@ -22,3 +22,4 @@ export default {
     validateUrl: "https://llm.chutes.ai/v1/models",
   },
 };
+export default chutes;

@@ -1,4 +1,4 @@
-export default {
+const alicodeIntl = {
   id: "alicode-intl",
   priority: 10,
   alias: "alicode-intl",
@@ -27,3 +27,4 @@ export default {
     { id: "glm-4.7", name: "GLM 4.7" },
   ],
 };
+export default alicodeIntl;

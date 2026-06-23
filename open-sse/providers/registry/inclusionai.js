@@ -1,4 +1,4 @@
-export default {
+const inclusionai = {
   "id": "inclusionai",
   "priority": 70,
   "alias": "inclusionai",
@@ -25,3 +25,4 @@ export default {
     }
   ]
 };
+export default inclusionai;

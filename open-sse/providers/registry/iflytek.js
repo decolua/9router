@@ -1,4 +1,4 @@
-export default {
+const iflytek = {
   "id": "iflytek",
   "priority": 70,
   "alias": "iflytek",
@@ -25,3 +25,4 @@ export default {
     }
   ]
 };
+export default iflytek;

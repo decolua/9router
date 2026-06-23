@@ -1,4 +1,4 @@
-export default {
+const ovhcloud = {
   "id": "ovhcloud",
   "priority": 70,
   "alias": "ovh",
@@ -33,3 +33,4 @@ export default {
     }
   ]
 };
+export default ovhcloud;

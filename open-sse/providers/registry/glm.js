@@ -1,6 +1,6 @@
 import { CLAUDE_API_HEADERS } from "../shared.js";
 
-export default {
+const glm = {
   id: "glm",
   priority: 140,
   alias: "glm",
@@ -44,3 +44,4 @@ export default {
     usageApikey: true,
   },
 };
+export default glm;

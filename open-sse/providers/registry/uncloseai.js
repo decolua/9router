@@ -1,6 +1,6 @@
 // OmniRoute uncloseai provider — free OpenAI-compatible endpoint (auth optional).
 // Ported as default-executor noAuth (authType "optional" = works without a key).
-export default {
+const uncloseai = {
   id: "uncloseai",
   priority: 70,
   alias: "unc",
@@ -23,3 +23,4 @@ export default {
     { id: "gemma4:31b", name: "Gemma 4 31B (Free)" },
   ],
 };
+export default uncloseai;

@@ -1,4 +1,4 @@
-export default {
+const v0Vercel = {
   "id": "v0-vercel",
   "priority": 70,
   "alias": "v0",
@@ -33,3 +33,4 @@ export default {
     }
   ]
 };
+export default v0Vercel;

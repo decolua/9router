@@ -1,4 +1,4 @@
-export default {
+const haiper = {
   "id": "haiper",
   "priority": 70,
   "alias": "hp",
@@ -29,3 +29,4 @@ export default {
     }
   ]
 };
+export default haiper;

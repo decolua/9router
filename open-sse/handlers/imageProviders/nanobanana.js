@@ -6,7 +6,7 @@ const IMG_CFG = PROVIDER_MEDIA["nanobanana"]?.imageConfig || {};
 const SUBMIT_URL = IMG_CFG.baseUrl;
 const POLL_BASE = IMG_CFG.pollUrl;
 
-export default {
+const nanobanana = {
   async: true,
   buildUrl: () => SUBMIT_URL,
   buildHeaders: (creds) => {
@@ -58,3 +58,4 @@ export default {
     return { created: nowSec(), data: [] };
   },
 };
+export default nanobanana;

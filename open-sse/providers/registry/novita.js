@@ -1,4 +1,4 @@
-export default {
+const novita = {
   "id": "novita",
   "priority": 70,
   "alias": "novita",
@@ -25,3 +25,4 @@ export default {
     }
   ]
 };
+export default novita;

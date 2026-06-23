@@ -1,4 +1,4 @@
-export default {
+const alibaba = {
   "id": "alibaba",
   "priority": 70,
   "alias": "ali",
@@ -70,3 +70,4 @@ export default {
     }
   ]
 };
+export default alibaba;

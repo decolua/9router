@@ -1,4 +1,4 @@
-export default {
+const siliconflow = {
   id: "siliconflow",
   priority: 250,
   alias: "siliconflow",
@@ -37,3 +37,4 @@ export default {
     { id: "inclusionAI/Ling-flash-2.0", name: "Ling Flash 2.0" },
   ],
 };
+export default siliconflow;

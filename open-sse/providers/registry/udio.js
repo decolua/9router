@@ -1,4 +1,4 @@
-export default {
+const udio = {
   "id": "udio",
   "priority": 70,
   "alias": "udio",
@@ -25,3 +25,4 @@ export default {
     }
   ]
 };
+export default udio;

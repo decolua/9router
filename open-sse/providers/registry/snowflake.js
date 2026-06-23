@@ -1,4 +1,4 @@
-export default {
+const snowflake = {
   "id": "snowflake",
   "priority": 70,
   "alias": "snowflake",
@@ -37,3 +37,4 @@ export default {
     }
   ]
 };
+export default snowflake;

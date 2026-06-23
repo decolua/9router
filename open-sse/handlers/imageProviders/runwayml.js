@@ -4,7 +4,7 @@ import { PROVIDER_MEDIA } from "../../providers/index.js";
 
 const BASE_URL = PROVIDER_MEDIA["runwayml"]?.imageConfig?.baseUrl;
 
-export default {
+const runwayml = {
   async: true,
   buildUrl: (model) => {
     // Image models (gen4_image*) → text_to_image; video models → image_to_video
@@ -46,3 +46,4 @@ export default {
     return { created: nowSec(), data: outputs.map((url) => ({ url })) };
   },
 };
+export default runwayml;

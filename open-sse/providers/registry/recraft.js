@@ -1,4 +1,4 @@
-export default {
+const recraft = {
   id: "recraft",
   priority: 70,
   alias: "recraft",
@@ -22,3 +22,4 @@ export default {
   serviceKinds: ["image"],
   imageConfig: { baseUrl: "https://external.api.recraft.ai/v1/images/generations" },
 };
+export default recraft;

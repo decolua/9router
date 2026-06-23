@@ -1,4 +1,4 @@
-export default {
+const gitlawb = {
   "id": "gitlawb",
   "priority": 70,
   "alias": "glb",
@@ -51,3 +51,4 @@ export default {
     }
   ]
 };
+export default gitlawb;

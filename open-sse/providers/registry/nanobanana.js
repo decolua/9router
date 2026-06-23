@@ -1,4 +1,4 @@
-export default {
+const nanobanana = {
   id: "nanobanana",
   priority: 80,
   hasFree: true,
@@ -33,3 +33,4 @@ export default {
     pollUrl: "https://api.nanobananaapi.ai/api/v1/nanobanana/record-info",
   },
 };
+export default nanobanana;

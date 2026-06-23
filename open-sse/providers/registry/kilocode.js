@@ -1,4 +1,4 @@
-export default {
+const kilocode = {
   id: "kilocode",
   priority: 70,
   alias: "kc",
@@ -42,3 +42,4 @@ export default {
     pollUrlBase: "https://api.kilo.ai/api/device-auth/codes",
   },
 };
+export default kilocode;

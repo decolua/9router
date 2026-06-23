@@ -4,7 +4,7 @@ import { PROVIDER_MEDIA } from "../../providers/index.js";
 
 const BASE_URL = PROVIDER_MEDIA["huggingface"]?.imageConfig?.baseUrl;
 
-export default {
+const huggingface = {
   buildUrl: (model) => `${BASE_URL}/${model}`,
   buildHeaders: (creds) => {
     const headers = { "Content-Type": "application/json" };
@@ -21,3 +21,4 @@ export default {
   },
   normalize: (responseBody) => responseBody,
 };
+export default huggingface;

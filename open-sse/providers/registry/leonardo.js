@@ -1,4 +1,4 @@
-export default {
+const leonardo = {
   "id": "leonardo",
   "priority": 70,
   "alias": "leo",
@@ -29,3 +29,4 @@ export default {
     }
   ]
 };
+export default leonardo;

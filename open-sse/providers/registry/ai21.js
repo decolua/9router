@@ -1,4 +1,4 @@
-export default {
+const ai21 = {
   id: "ai21",
   priority: 70,
   alias: "ai21",
@@ -23,3 +23,4 @@ export default {
     { id: "jamba-mini-2", name: "Jamba Mini 2" },
   ],
 };
+export default ai21;

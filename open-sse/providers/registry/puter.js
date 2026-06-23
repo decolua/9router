@@ -1,7 +1,7 @@
 // OmniRoute puter provider — ported as default-executor (the OmniRoute PuterExecutor
 // is plain OpenAI-compatible: fixed URL, bearer auth, no body transform).
 // 500+ models via a single OpenAI-compatible REST gateway; passthrough enabled.
-export default {
+const puter = {
   id: "puter",
   priority: 70,
   alias: "pu",
@@ -63,3 +63,4 @@ export default {
     { id: "perplexity/sonar", name: "Perplexity Sonar (Puter)" },
   ],
 };
+export default puter;

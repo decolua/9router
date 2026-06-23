@@ -1,4 +1,4 @@
-export default {
+const gitlab = {
   id: "gitlab",
   hidden: true,
   priority: 100,
@@ -30,3 +30,4 @@ export default {
     codeChallengeMethod: "S256",
   },
 };
+export default gitlab;

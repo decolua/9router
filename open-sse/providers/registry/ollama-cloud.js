@@ -1,4 +1,4 @@
-export default {
+const ollamaCloud = {
   "id": "ollama-cloud",
   "priority": 70,
   "alias": "ollamacloud",
@@ -62,3 +62,4 @@ export default {
     }
   ]
 };
+export default ollamaCloud;

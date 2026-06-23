@@ -1,4 +1,4 @@
-export default {
+const sambanova = {
   "id": "sambanova",
   "priority": 70,
   "alias": "samba",
@@ -41,3 +41,4 @@ export default {
     }
   ]
 };
+export default sambanova;

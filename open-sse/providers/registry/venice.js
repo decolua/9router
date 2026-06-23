@@ -1,4 +1,4 @@
-export default {
+const venice = {
   "id": "venice",
   "priority": 70,
   "alias": "venice",
@@ -25,3 +25,4 @@ export default {
     }
   ]
 };
+export default venice;

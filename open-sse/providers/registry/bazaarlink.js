@@ -1,4 +1,4 @@
-export default {
+const bazaarlink = {
   "id": "bazaarlink",
   "priority": 70,
   "alias": "bzl",
@@ -155,3 +155,4 @@ export default {
     }
   ]
 };
+export default bazaarlink;

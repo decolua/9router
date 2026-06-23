@@ -1,4 +1,4 @@
-export default {
+const wandb = {
   "id": "wandb",
   "priority": 70,
   "alias": "wandb",
@@ -33,3 +33,4 @@ export default {
     }
   ]
 };
+export default wandb;

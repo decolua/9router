@@ -1,4 +1,4 @@
-export default {
+const mmf = {
   id: "mmf",
   hidden: true,
   priority: 200,
@@ -17,3 +17,4 @@ export default {
     { id: "mimo-auto", name: "MiMo Auto" },
   ],
 };
+export default mmf;

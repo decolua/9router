@@ -1,4 +1,4 @@
-export default {
+const blackForestLabs = {
   id: "black-forest-labs",
   priority: 50,
   alias: "black-forest-labs",
@@ -30,3 +30,4 @@ export default {
   serviceKinds: ["image"],
   imageConfig: { baseUrl: "https://api.bfl.ai/v1" },
 };
+export default blackForestLabs;

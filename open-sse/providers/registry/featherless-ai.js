@@ -1,4 +1,4 @@
-export default {
+const featherlessAi = {
   "id": "featherless-ai",
   "priority": 70,
   "alias": "featherless",
@@ -29,3 +29,4 @@ export default {
     }
   ]
 };
+export default featherlessAi;

@@ -1,4 +1,4 @@
-export default {
+const morph = {
   "id": "morph",
   "priority": 70,
   "alias": "morph",
@@ -29,3 +29,4 @@ export default {
     }
   ]
 };
+export default morph;

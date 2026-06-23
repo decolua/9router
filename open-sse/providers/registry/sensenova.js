@@ -1,4 +1,4 @@
-export default {
+const sensenova = {
   "id": "sensenova",
   "priority": 70,
   "alias": "sensenova",
@@ -25,3 +25,4 @@ export default {
     }
   ]
 };
+export default sensenova;

@@ -1,4 +1,4 @@
-export default {
+const kluster = {
   "id": "kluster",
   "priority": 70,
   "alias": "kluster",
@@ -25,3 +25,4 @@ export default {
     }
   ]
 };
+export default kluster;

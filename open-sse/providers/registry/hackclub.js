@@ -1,6 +1,6 @@
 // OmniRoute hackclub provider — free OpenAI-compatible proxy (auth optional).
 // Ported as default-executor noAuth (authType "optional" = works without a key).
-export default {
+const hackclub = {
   id: "hackclub",
   priority: 70,
   alias: "hc",
@@ -24,3 +24,4 @@ export default {
     { id: "deepseek-ai/deepseek-coder-33b", name: "DeepSeek Coder 33B" },
   ],
 };
+export default hackclub;

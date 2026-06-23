@@ -1,4 +1,4 @@
-export default {
+const predibase = {
   "id": "predibase",
   "priority": 70,
   "alias": "predibase",
@@ -25,3 +25,4 @@ export default {
     }
   ]
 };
+export default predibase;

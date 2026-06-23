@@ -1,4 +1,4 @@
-export default {
+const reka = {
   "id": "reka",
   "priority": 70,
   "alias": "reka",
@@ -29,3 +29,4 @@ export default {
     }
   ]
 };
+export default reka;

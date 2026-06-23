@@ -1,6 +1,6 @@
 // OpenAI Files API storage — uploaded blobs (vision/file inputs).
 // Idempotent: CREATE TABLE IF NOT EXISTS.
-export default {
+const m006Files = {
   version: 6,
   name: "files",
   up(db) {
@@ -23,3 +23,4 @@ export default {
     }
   },
 };
+export default m006Files;

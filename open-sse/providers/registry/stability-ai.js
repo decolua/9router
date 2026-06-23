@@ -1,4 +1,4 @@
-export default {
+const stabilityAi = {
   id: "stability-ai",
   priority: 60,
   alias: "stability-ai",
@@ -29,3 +29,4 @@ export default {
   serviceKinds: ["image"],
   imageConfig: { baseUrl: "https://api.stability.ai/v2beta/stable-image/generate" },
 };
+export default stabilityAi;

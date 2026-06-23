@@ -1,4 +1,4 @@
-export default {
+const opencode = {
   id: "opencode",
   priority: 40,
   hasFree: true,
@@ -23,3 +23,4 @@ export default {
   modelsFetcher: { url: "https://opencode.ai/zen/v1/models", type: "opencode-free" },
   passthroughModels: true,
 };
+export default opencode;

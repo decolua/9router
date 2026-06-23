@@ -1,4 +1,4 @@
-export default {
+const maritalk = {
   "id": "maritalk",
   "priority": 70,
   "alias": "maritalk",
@@ -31,3 +31,4 @@ export default {
     }
   ]
 };
+export default maritalk;

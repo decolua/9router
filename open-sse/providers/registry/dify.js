@@ -1,4 +1,4 @@
-export default {
+const dify = {
   "id": "dify",
   "priority": 70,
   "alias": "dify",
@@ -25,3 +25,4 @@ export default {
     }
   ]
 };
+export default dify;

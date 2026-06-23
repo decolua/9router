@@ -1,5 +1,5 @@
 // OmniRoute claude-format provider (Wafer, Anthropic-compatible, bearer auth).
-export default {
+const wafer = {
   id: "wafer",
   priority: 70,
   alias: "wafer",
@@ -34,3 +34,4 @@ export default {
     { id: "GLM-5.1", name: "GLM 5.1" },
   ],
 };
+export default wafer;

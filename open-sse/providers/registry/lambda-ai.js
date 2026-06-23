@@ -1,4 +1,4 @@
-export default {
+const lambdaAi = {
   "id": "lambda-ai",
   "priority": 70,
   "alias": "lambda",
@@ -33,3 +33,4 @@ export default {
     }
   ]
 };
+export default lambdaAi;

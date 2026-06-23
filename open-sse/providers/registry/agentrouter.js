@@ -1,6 +1,6 @@
 // OmniRoute claude-format provider (format: "claude", default executor, apikey).
 // Anthropic-compatible router — uses Claude CLI headers + x-api-key auth.
-export default {
+const agentrouter = {
   id: "agentrouter",
   priority: 70,
   alias: "agentrouter",
@@ -43,3 +43,4 @@ export default {
     { id: "deepseek-v3.2", name: "DeepSeek V3.2" },
   ],
 };
+export default agentrouter;

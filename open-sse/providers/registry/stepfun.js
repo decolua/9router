@@ -1,4 +1,4 @@
-export default {
+const stepfun = {
   "id": "stepfun",
   "priority": 70,
   "alias": "stepfun",
@@ -25,3 +25,4 @@ export default {
     }
   ]
 };
+export default stepfun;

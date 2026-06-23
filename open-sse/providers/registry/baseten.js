@@ -1,4 +1,4 @@
-export default {
+const baseten = {
   "id": "baseten",
   "priority": 70,
   "alias": "baseten",
@@ -45,3 +45,4 @@ export default {
     }
   ]
 };
+export default baseten;

@@ -1,4 +1,4 @@
-export default {
+const topaz = {
   id: "topaz",
   alias: "topaz",
   display: {
@@ -17,3 +17,4 @@ export default {
     "image"
   ]
 };
+export default topaz;

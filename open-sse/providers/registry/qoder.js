@@ -1,4 +1,4 @@
-export default {
+const qoder = {
   id: "qoder",
   priority: 30,
   alias: "qd",
@@ -52,3 +52,4 @@ export default {
     usage: true,
   },
 };
+export default qoder;

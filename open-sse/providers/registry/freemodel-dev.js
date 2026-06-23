@@ -1,4 +1,4 @@
-export default {
+const freemodelDev = {
   "id": "freemodel-dev",
   "priority": 70,
   "alias": "fmd",
@@ -39,3 +39,4 @@ export default {
     }
   ]
 };
+export default freemodelDev;

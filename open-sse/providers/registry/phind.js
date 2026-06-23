@@ -4,7 +4,7 @@
 // needs an explicit auth.combined header since the credential is a raw cookie
 // (not a Bearer token), so transport.auth is configured with combined:true
 // and the header name "Cookie".
-export default {
+const phind = {
   id: "phind",
   priority: 70,
   alias: "ph",
@@ -32,3 +32,4 @@ export default {
     { id: "claude-3.5-sonnet", name: "Claude 3.5 Sonnet (via Phind)" },
   ],
 };
+export default phind;

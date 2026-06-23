@@ -1,4 +1,4 @@
-export default {
+const nlpcloud = {
   "id": "nlpcloud",
   "priority": 70,
   "alias": "nlpc",
@@ -25,3 +25,4 @@ export default {
     }
   ]
 };
+export default nlpcloud;

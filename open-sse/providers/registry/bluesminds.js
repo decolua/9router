@@ -1,4 +1,4 @@
-export default {
+const bluesminds = {
   "id": "bluesminds",
   "priority": 70,
   "alias": "bm",
@@ -113,3 +113,4 @@ export default {
     }
   ]
 };
+export default bluesminds;

@@ -1,4 +1,4 @@
-export default {
+const crof = {
   "id": "crof",
   "priority": 70,
   "alias": "crof",
@@ -112,3 +112,4 @@ export default {
     }
   ]
 };
+export default crof;

@@ -1,7 +1,7 @@
 // OmniRoute huggingchat provider — ported to fork conventions.
 // Source authType: "apikey" + authHeader: "cookie" + custom executor "huggingchat".
 // Distinct alias: "hc" belongs to hackclub; huggingchat is addressed by its own id.
-export default {
+const huggingchat = {
   id: "huggingchat",
   priority: 100,
   alias: "huggingchat",
@@ -26,3 +26,4 @@ export default {
     { id: "deepseek-ai/DeepSeek-R1", name: "DeepSeek R1" },
   ],
 };
+export default huggingchat;

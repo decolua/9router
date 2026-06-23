@@ -1,4 +1,4 @@
-export default {
+const xiaomiMimo = {
   id: "xiaomi-mimo",
   priority: 290,
   alias: "xiaomi-mimo",
@@ -28,3 +28,4 @@ export default {
     { id: "mimo-v2-flash", name: "MiMo V2 Flash" },
   ],
 };
+export default xiaomiMimo;

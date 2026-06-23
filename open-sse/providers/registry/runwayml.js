@@ -1,4 +1,4 @@
-export default {
+const runwayml = {
   id: "runwayml",
   priority: 80,
   alias: "runwayml",
@@ -28,3 +28,4 @@ export default {
   serviceKinds: ["image"],
   imageConfig: { baseUrl: "https://api.dev.runwayml.com/v1" },
 };
+export default runwayml;

@@ -4,7 +4,7 @@ import { PROVIDER_MEDIA } from "../../providers/index.js";
 
 const BASE_URL = PROVIDER_MEDIA["fal-ai"]?.imageConfig?.baseUrl;
 
-export default {
+const falAi = {
   async: true,
   buildUrl: (model) => `${BASE_URL}/${model}`,
   buildHeaders: (creds) => {
@@ -40,3 +40,4 @@ export default {
     return { created: nowSec(), data: images.map((img) => ({ url: img.url || img })) };
   },
 };
+export default falAi;

@@ -137,7 +137,7 @@ function normalizeCloudflareResponse(responseBody) {
   };
 }
 
-export default {
+const cloudflareAi = {
   buildUrl: (model, creds) => {
     const accountId = creds?.providerSpecificData?.accountId;
     if (!accountId) throw new Error("cloudflare-ai requires accountId in providerSpecificData");
@@ -177,3 +177,4 @@ export default {
 
   normalize: normalizeCloudflareResponse,
 };
+export default cloudflareAi;

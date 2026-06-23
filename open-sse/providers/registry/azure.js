@@ -1,4 +1,4 @@
-export default {
+const azure = {
   id: "azure",
   priority: 40,
   alias: "azure",
@@ -19,3 +19,4 @@ export default {
     headers: {},
   },
 };
+export default azure;

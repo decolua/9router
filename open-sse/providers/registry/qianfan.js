@@ -1,4 +1,4 @@
-export default {
+const qianfan = {
   "id": "qianfan",
   "priority": 70,
   "alias": "qianfan",
@@ -34,3 +34,4 @@ export default {
     }
   ]
 };
+export default qianfan;

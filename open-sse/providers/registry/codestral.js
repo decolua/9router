@@ -1,4 +1,4 @@
-export default {
+const codestral = {
   "id": "codestral",
   "priority": 70,
   "alias": "codestral",
@@ -29,3 +29,4 @@ export default {
     }
   ]
 };
+export default codestral;

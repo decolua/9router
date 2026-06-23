@@ -1,4 +1,4 @@
-export default {
+const localDevice = {
   id: "local-device",
   alias: "local-device",
   display: {
@@ -22,3 +22,4 @@ export default {
     models: []
   }
 };
+export default localDevice;

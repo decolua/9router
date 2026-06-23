@@ -1,4 +1,4 @@
-export default {
+const iflow = {
   id: "iflow",
   hidden: true,
   priority: 110,
@@ -50,3 +50,4 @@ export default {
     refreshLeadMs: 86400000,
   },
 };
+export default iflow;

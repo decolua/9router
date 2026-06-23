@@ -1,6 +1,6 @@
 import { CLAUDE_API_HEADERS, KIMI_CODING_BASE_URL } from "../shared.js";
 
-export default {
+const kimi = {
   id: "kimi",
   priority: 170,
   alias: "kimi",
@@ -42,3 +42,4 @@ export default {
     pricingUrl: "https://platform.moonshot.ai/docs/pricing/chat",
   },
 };
+export default kimi;

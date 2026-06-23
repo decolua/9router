@@ -13,7 +13,7 @@
 
 // import { CLAUDE_API_HEADERS, GOOGLE_OAUTH_CLIENT, OPENAI_COMPAT_BASE } from "./shared.js";
 
-export default {
+const REGISTRY_TEMPLATE = {
   // ── identity ────────────────────────────────────────────────────────────
   id: "example",                 // REQUIRED. kebab-case, unique.
   alias: "ex",                   // short key for PROVIDER_MODELS (defaults to id if omitted).
@@ -96,3 +96,4 @@ export default {
   // thinkingConfig: { options: ["auto", "none", "low", "high"], defaultMode: "auto" },
   // passthroughModels: true,
 };
+export default REGISTRY_TEMPLATE;
