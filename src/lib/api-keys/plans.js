@@ -1,9 +1,19 @@
 const ALLOWED_PLAN_MONTHS = new Set([1, 3, 6, 12]);
+const PLAN_ERROR = "Plan must be one of 1, 3, 6, 12 months";
 
 export function normalizePlanMonths(value) {
-  const plan = Number(value);
+  if (typeof value !== "number" && typeof value !== "string") {
+    throw new Error(PLAN_ERROR);
+  }
+
+  const normalizedValue = typeof value === "string" ? value.trim() : value;
+  if (normalizedValue === "") {
+    throw new Error(PLAN_ERROR);
+  }
+
+  const plan = Number(normalizedValue);
   if (!Number.isInteger(plan) || !ALLOWED_PLAN_MONTHS.has(plan)) {
-    throw new Error("Plan must be one of 1, 3, 6, 12 months");
+    throw new Error(PLAN_ERROR);
   }
   return plan;
 }

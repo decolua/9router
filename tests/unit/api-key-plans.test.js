@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   addPlanMonths,
+  calculateExpiresAt,
   getRenewalBaseDate,
   isExpiredAt,
   normalizePlanMonths,
@@ -14,6 +15,10 @@ describe("API key plan helpers", () => {
     expect(normalizePlanMonths(12)).toBe(12);
     expect(() => normalizePlanMonths(2)).toThrow("Plan must be one of 1, 3, 6, 12 months");
     expect(() => normalizePlanMonths("bad")).toThrow("Plan must be one of 1, 3, 6, 12 months");
+    expect(() => normalizePlanMonths(true)).toThrow("Plan must be one of 1, 3, 6, 12 months");
+    expect(() => normalizePlanMonths([3])).toThrow("Plan must be one of 1, 3, 6, 12 months");
+    expect(() => normalizePlanMonths({})).toThrow("Plan must be one of 1, 3, 6, 12 months");
+    expect(() => normalizePlanMonths("")).toThrow("Plan must be one of 1, 3, 6, 12 months");
   });
 
   it("adds plan months using UTC calendar dates", () => {
@@ -45,5 +50,12 @@ describe("API key plan helpers", () => {
     expect(isExpiredAt("2026-06-22T23:59:59.000Z", now)).toBe(true);
     expect(isExpiredAt("2026-06-23T00:00:00.000Z", now)).toBe(true);
     expect(isExpiredAt("2026-06-23T00:00:01.000Z", now)).toBe(false);
+  });
+
+  it("calculates expiration ISO strings from a base date", () => {
+    const start = new Date("2026-06-18T14:52:33.301Z");
+    const expiresAt = calculateExpiresAt("6", start);
+    expect(expiresAt).toBe("2026-12-18T14:52:33.301Z");
+    expect(typeof expiresAt).toBe("string");
   });
 });
