@@ -179,7 +179,7 @@ export default function McpGatewayServersPage() {
         {loading ? (
           <p className="text-sm text-text-muted">Loading…</p>
         ) : instances.length === 0 ? (
-          <p className="text-sm text-text-muted">No instances yet. Click "New instance" to add one.</p>
+          <p className="text-sm text-text-muted">No instances yet. Click &quot;New instance&quot; to add one.</p>
         ) : (
           <div className="space-y-2">
             {instances.map((i) => {

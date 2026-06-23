@@ -257,7 +257,7 @@ export default function McpGatewayPage() {
         {loading ? (
           <p className="text-sm text-text-muted">Loading…</p>
         ) : instances.length === 0 ? (
-          <p className="text-sm text-text-muted">No instances yet. Click "New instance" to add one.</p>
+          <p className="text-sm text-text-muted">No instances yet. Click &quot;New instance&quot; to add one.</p>
         ) : (
           <div className="space-y-2">
             {instances.map((i) => {
@@ -316,7 +316,7 @@ export default function McpGatewayPage() {
       {/* Keys */}
       <Card title="Gateway Keys" subtitle="API keys that harnesses use to talk to the gateway">
         {keys.length === 0 ? (
-          <p className="text-sm text-text-muted">No gateway keys yet. Click "New key" to mint one.</p>
+          <p className="text-sm text-text-muted">No gateway keys yet. Click &quot;New key&quot; to mint one.</p>
         ) : (
           <div className="space-y-2">
             {keys.map((k) => (
