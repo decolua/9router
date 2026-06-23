@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import Card from "@/shared/components/Card";
 import Button from "@/shared/components/Button";
 import Drawer from "@/shared/components/Drawer";
@@ -117,49 +117,38 @@ export default function RequestDetailsTab() {
     endDate: ""
   });
 
-  const fetchProviders = useCallback(async () => {
-    try {
-      const res = await fetch("/api/usage/providers");
-      const data = await res.json();
-      setProviders(data.providers || []);
-
-      const cache = await fetchProviderNames();
-      setProviderNameCache(cache.providerNameCache);
-    } catch (error) {
-      console.error("Failed to fetch providers:", error);
-    }
+  useEffect(() => {
+    fetch("/api/usage/providers")
+      .then((r) => r.json())
+      .then((data) => {
+        setProviders(data.providers || []);
+        return fetchProviderNames();
+      })
+      .then((cache) => { setProviderNameCache(cache.providerNameCache); })
+      .catch((error) => { console.error("Failed to fetch providers:", error); });
   }, []);
 
-  const fetchDetails = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({
-        page: pagination.page.toString(),
-        pageSize: pagination.pageSize.toString()
+  useEffect(() => {
+    const params = new URLSearchParams({
+      page: pagination.page.toString(),
+      pageSize: pagination.pageSize.toString(),
+    });
+    if (filters.provider) params.append("provider", filters.provider);
+    if (filters.startDate) params.append("startDate", filters.startDate);
+    if (filters.endDate) params.append("endDate", filters.endDate);
+    Promise.resolve()
+      .then(() => { setLoading(true); return fetch(`/api/usage/request-details?${params}`); })
+      .then((r) => r.json())
+      .then((data) => {
+        setDetails(data.details || []);
+        setPagination((prev) => ({ ...prev, ...data.pagination }));
+        setLoading(false);
+      })
+      .catch((error) => {
+        console.error("Failed to fetch request details:", error);
+        setLoading(false);
       });
-      if (filters.provider) params.append("provider", filters.provider);
-      if (filters.startDate) params.append("startDate", filters.startDate);
-      if (filters.endDate) params.append("endDate", filters.endDate);
-
-      const res = await fetch(`/api/usage/request-details?${params}`);
-      const data = await res.json();
-
-      setDetails(data.details || []);
-      setPagination(prev => ({ ...prev, ...data.pagination }));
-    } catch (error) {
-      console.error("Failed to fetch request details:", error);
-    } finally {
-      setLoading(false);
-    }
   }, [pagination.page, pagination.pageSize, filters]);
-
-  useEffect(() => {
-    fetchProviders();
-  }, [fetchProviders]);
-
-  useEffect(() => {
-    fetchDetails();
-  }, [fetchDetails]);
 
   const handleViewDetail = (detail) => {
     setSelectedDetail(detail);

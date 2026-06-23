@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import {
   AreaChart,
@@ -24,29 +24,21 @@ const fmtCost = (n) => `$${(n || 0).toFixed(4)}`;
 const fmtPct = (n) => `${(n * 100).toFixed(1)}%`;
 
 export default function UsageChart({ period = "7d" }) {
-  const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // Keyed fetch state: derive loading from period mismatch, no setState in effect body.
+  const [chartState, setChartState] = useState({ period: null, data: [] });
   const [viewMode, setViewMode] = useState("tokens");
   const [filterBy, setFilterBy] = useState("all");
-
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/usage/chart?period=${period}`);
-      if (res.ok) {
-        const json = await res.json();
-        setData(json);
-      }
-    } catch (e) {
-      console.error("Failed to fetch chart data:", e);
-    } finally {
-      setLoading(false);
-    }
-  }, [period]);
+  const loading = chartState.period !== period;
+  const data = chartState.data;
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    const controller = new AbortController();
+    fetch(`/api/usage/chart?period=${period}`, { signal: controller.signal })
+      .then((r) => r.json())
+      .then((json) => { setChartState({ period, data: json }); })
+      .catch((e) => { if (e.name !== "AbortError") console.error("Failed to fetch chart data:", e); });
+    return () => controller.abort();
+  }, [period]);
 
   const hasData = data.some((d) => d.tokens > 0 || d.cost > 0 || d.cachedTokens > 0);
 

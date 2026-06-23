@@ -107,16 +107,26 @@ export default function UsageTable({
   renderSummaryCells,
   emptyMessage,
 }) {
-  const [expanded, setExpanded] = useState(new Set());
-
-  // Load expanded state from localStorage
-  useEffect(() => {
+  const [expanded, setExpanded] = useState(() => {
     try {
       const saved = localStorage.getItem(storageKey);
-      if (saved) setExpanded(new Set(JSON.parse(saved)));
+      if (saved) return new Set(JSON.parse(saved));
     } catch (e) {
       console.error(`Failed to load ${storageKey}:`, e);
     }
+    return new Set();
+  });
+
+  // Reload from localStorage when storageKey changes after mount
+  useEffect(() => {
+    Promise.resolve().then(() => {
+      try {
+        const saved = localStorage.getItem(storageKey);
+        setExpanded(saved ? new Set(JSON.parse(saved)) : new Set());
+      } catch (e) {
+        console.error(`Failed to load ${storageKey}:`, e);
+      }
+    });
   }, [storageKey]);
 
   // Save expanded state to localStorage
