@@ -1,18 +1,159 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import type { ComponentType, ChangeEvent, ReactNode } from "react";
 import {
-  Card,
-  Badge,
-  Button,
-  Input,
-  Select,
-  Toggle,
-  Modal,
+  Card as _Card,
+  Badge as _Badge,
+  Button as _Button,
+  Input as _Input,
+  Select as _Select,
+  Toggle as _Toggle,
+  Modal as _Modal,
   ConfirmModal,
 } from "@/shared/components";
 import { useNotificationStore } from "@/store/notificationStore";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import type { JsonValue } from "open-sse/types/executor.js";
+
+// ---------------------------------------------------------------------------
+// Typed shims — JS shared components lack TS declarations; cast once here
+// so every call site in this file gets proper optional-prop checking.
+// ---------------------------------------------------------------------------
+interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  children?: ReactNode;
+  variant?: string;
+  size?: string;
+  icon?: string;
+  iconRight?: string;
+  loading?: boolean | undefined;
+  fullWidth?: boolean;
+}
+interface BadgeProps {
+  children?: ReactNode;
+  variant?: string;
+  size?: string;
+  dot?: boolean;
+  icon?: string;
+  className?: string;
+}
+interface CardProps {
+  children?: ReactNode;
+  title?: string;
+  subtitle?: string;
+  icon?: string;
+  action?: ReactNode;
+  padding?: string;
+  hover?: boolean;
+  elev?: boolean;
+  className?: string;
+}
+interface InputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange'> {
+  label?: string;
+  placeholder?: string;
+  value?: string;
+  onChange?: (e: ChangeEvent<HTMLInputElement>) => void;
+  error?: string;
+  hint?: string;
+  icon?: string;
+  inputClassName?: string;
+}
+interface SelectProps extends Omit<React.SelectHTMLAttributes<HTMLSelectElement>, 'onChange'> {
+  label?: string;
+  options?: { value: string; label: string }[];
+  value?: string;
+  onChange?: (e: ChangeEvent<HTMLSelectElement>) => void;
+  placeholder?: string;
+  error?: string;
+  hint?: string;
+  selectClassName?: string;
+}
+interface ToggleProps {
+  checked?: boolean;
+  onChange?: (v: boolean) => void;
+  label?: string;
+  description?: string;
+  disabled?: boolean;
+  size?: string;
+  className?: string;
+}
+interface ModalProps {
+  isOpen?: boolean;
+  onClose?: () => void;
+  title?: string;
+  children?: ReactNode;
+  footer?: ReactNode;
+  size?: string;
+  closeOnOverlay?: boolean;
+  showTrafficLights?: boolean;
+  className?: string;
+}
+const Button = _Button as ComponentType<ButtonProps>;
+const Badge  = _Badge  as ComponentType<BadgeProps>;
+const Card   = _Card   as ComponentType<CardProps>;
+const Input  = _Input  as ComponentType<InputProps>;
+const Select = _Select as ComponentType<SelectProps>;
+const Toggle = _Toggle as ComponentType<ToggleProps>;
+const Modal  = _Modal  as ComponentType<ModalProps>;
+
+// ---------------------------------------------------------------------------
+// Page-local API response shapes (defined here — not yet in open-sse types)
+// ---------------------------------------------------------------------------
+
+interface McpInstance {
+  id: string;
+  slug: string;
+  title: string;
+  kind: string;
+  transport: string;
+  url: string;
+  command: string;
+  args: string[] | string;
+  env: Record<string, string> | string;
+  headers: Record<string, string> | string;
+  oauth: boolean;
+  enabled: boolean;
+}
+
+interface McpGatewayKey {
+  id: string;
+  name: string | null;
+  machineId?: string;
+  createdAt?: string;
+}
+
+interface TestResult {
+  loading?: boolean;
+  ok?: boolean;
+  error?: string;
+  toolCount?: number;
+  sample?: Array<{ name: string }>;
+}
+
+interface ConfirmTarget {
+  kind: "instance" | "key";
+  id: string;
+}
+
+// Shape of the form used in InstanceEditModal (serialised args/env/headers as strings)
+interface InstanceForm {
+  id?: string;
+  slug: string;
+  title: string;
+  kind: string;
+  transport: string;
+  url: string;
+  command: string;
+  args: string;
+  env: string;
+  headers: string;
+  oauth: boolean;
+  enabled: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
 
 const KIND_OPTIONS = [
   { value: "http", label: "HTTP" },
@@ -28,6 +169,10 @@ const TRANSPORT_OPTIONS = [
   { value: "sse", label: "sse" },
   { value: "stdio", label: "stdio" },
 ];
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 function emptyInstance() {
   return {
@@ -45,27 +190,31 @@ function emptyInstance() {
   };
 }
 
-function parseMaybeJson(s, fallback) {
+function parseMaybeJson(s: string, fallback: JsonValue) {
   if (!s || typeof s !== "string") return fallback;
-  try { return JSON.parse(s); } catch { return fallback; }
+  try { return JSON.parse(s) as JsonValue; } catch { return fallback; }
 }
 
-function stringifyMaybe(v) {
+function stringifyMaybe(v: JsonValue | string | null | undefined) {
   if (v == null) return "";
   if (typeof v === "string") return v;
   try { return JSON.stringify(v); } catch { return ""; }
 }
 
+// ---------------------------------------------------------------------------
+// Page component
+// ---------------------------------------------------------------------------
+
 export default function McpGatewayPage() {
-  const [instances, setInstances] = useState([]);
-  const [keys, setKeys] = useState([]);
+  const [instances, setInstances] = useState<McpInstance[]>([]);
+  const [keys, setKeys] = useState<McpGatewayKey[]>([]);
   const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState(null); // instance or 'new'
-  const [editingKey, setEditingKey] = useState(null); // key id or 'new'
-  const [createdKey, setCreatedKey] = useState(null);
-  const [confirmDelete, setConfirmDelete] = useState(null); // {kind:'instance'|'key', id}
-  const [testResults, setTestResults] = useState({}); // id -> {ok, error?, toolCount?, sample?}
-  const notify = useNotificationStore((s) => s.addNotification);
+  const [editing, setEditing] = useState<InstanceForm | null>(null);
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [createdKey, setCreatedKey] = useState<{ key: string } | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<ConfirmTarget | null>(null);
+  const [testResults, setTestResults] = useState<Record<string, TestResult>>({});
+  const notify = useNotificationStore((s: { addNotification: (n: { type: string; message: string }) => void }) => s.addNotification);
   const { copied, copy } = useCopyToClipboard(2000);
 
   const reload = useCallback(async () => {
@@ -75,18 +224,19 @@ export default function McpGatewayPage() {
         fetch("/api/mcp-gateway/instances"),
         fetch("/api/mcp-gateway/keys"),
       ]);
-      const instBody = instRes.ok ? await instRes.json().catch(() => ({})) : {};
-      const keyBody = keyRes.ok ? await keyRes.json().catch(() => ({})) : {};
+      const instBody = instRes.ok ? await instRes.json().catch(() => ({})) as { instances?: McpInstance[]; error?: string } : {} as { instances?: McpInstance[]; error?: string };
+      const keyBody = keyRes.ok ? await keyRes.json().catch(() => ({})) as { keys?: McpGatewayKey[]; error?: string } : {} as { keys?: McpGatewayKey[]; error?: string };
       if (!instRes.ok) {
-        notify({ type: "error", message: instBody.error || `Failed to load instances (${instRes.status})` });
+        notify({ type: "error", message: instBody.error ?? `Failed to load instances (${instRes.status})` });
       }
       if (!keyRes.ok) {
-        notify({ type: "error", message: keyBody.error || `Failed to load keys (${keyRes.status})` });
+        notify({ type: "error", message: keyBody.error ?? `Failed to load keys (${keyRes.status})` });
       }
-      setInstances(instBody.instances || []);
-      setKeys(keyBody.keys || []);
+      setInstances(instBody.instances ?? []);
+      setKeys(keyBody.keys ?? []);
     } catch (e) {
-      notify({ type: "error", message: e?.message || "Failed to load MCP Gateway data" });
+      const msg = e instanceof Error ? e.message : "Failed to load MCP Gateway data";
+      notify({ type: "error", message: msg });
       setInstances([]);
       setKeys([]);
     } finally {
@@ -94,10 +244,10 @@ export default function McpGatewayPage() {
     }
   }, [notify]);
 
-  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => { void reload(); }, [reload]);
 
   // ----- Instance CRUD -----
-  async function saveInstance(form) {
+  async function saveInstance(form: InstanceForm) {
     const payload = {
       ...form,
       args: parseMaybeJson(form.args, []),
@@ -113,9 +263,9 @@ export default function McpGatewayPage() {
         body: JSON.stringify(payload),
       }
     );
-    const body = await res.json().catch(() => ({}));
+    const body = await res.json().catch(() => ({})) as { error?: string };
     if (!res.ok) {
-      notify({ type: "error", message: body.error || `save failed (${res.status})` });
+      notify({ type: "error", message: body.error ?? `save failed (${res.status})` });
       return false;
     }
     notify({ type: "success", message: isNew ? "Instance created" : "Instance updated" });
@@ -124,23 +274,24 @@ export default function McpGatewayPage() {
     return true;
   }
 
-  async function deleteInstance(id) {
+  async function deleteInstance(id: string) {
     const res = await fetch(`/api/mcp-gateway/instances/${id}`, { method: "DELETE" });
     if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      notify({ type: "error", message: body.error || "delete failed" });
+      const body = await res.json().catch(() => ({})) as { error?: string };
+      notify({ type: "error", message: body.error ?? "delete failed" });
       return;
     }
     notify({ type: "success", message: "Instance deleted" });
     setConfirmDelete(null);
     await reload();
   }
-  async function connectInstance(id) {
+
+  async function connectInstance(id: string) {
     try {
       const authRes = await fetch(`/api/mcp-gateway/oauth/${id}/authorize`);
-      const authBody = await authRes.json().catch(() => ({}));
+      const authBody = await authRes.json().catch(() => ({})) as { url?: string; state?: string; error?: string };
       if (!authRes.ok || !authBody.url) {
-        notify({ type: "error", message: authBody.error || `authorize failed (${authRes.status})` });
+        notify({ type: "error", message: authBody.error ?? `authorize failed (${authRes.status})` });
         return;
       }
       const popup = window.open(authBody.url, "_blank", "noopener,noreferrer");
@@ -158,61 +309,62 @@ export default function McpGatewayPage() {
           return;
         }
         try {
-          const r = await fetch(`/api/mcp-gateway/oauth/${id}/status?state=${encodeURIComponent(state)}`);
-          const b = await r.json();
+          const r = await fetch(`/api/mcp-gateway/oauth/${id}/status?state=${encodeURIComponent(state ?? "")}`);
+          const b = await r.json() as { status?: string; error?: string };
           if (b.status === "complete") {
             notify({ type: "success", message: "Connected" });
             await reload();
             return;
           }
           if (b.status === "error") {
-            notify({ type: "error", message: b.error || "OAuth failed" });
+            notify({ type: "error", message: b.error ?? "OAuth failed" });
             await reload();
             return;
           }
         } catch { /* keep polling */ }
-        setTimeout(tick, pollMs);
+        setTimeout(() => { void tick(); }, pollMs);
       };
-      setTimeout(tick, pollMs);
+      setTimeout(() => { void tick(); }, pollMs);
     } catch (e) {
-      notify({ type: "error", message: e.message });
+      const msg = e instanceof Error ? e.message : "OAuth error";
+      notify({ type: "error", message: msg });
     }
   }
 
-
-  async function testInstance(id) {
+  async function testInstance(id: string) {
     setTestResults((m) => ({ ...m, [id]: { loading: true } }));
     try {
       const res = await fetch(`/api/mcp-gateway/instances/${id}/test`, { method: "POST" });
-      const body = await res.json();
+      const body = await res.json() as TestResult;
       setTestResults((m) => ({ ...m, [id]: body }));
     } catch (e) {
-      setTestResults((m) => ({ ...m, [id]: { ok: false, error: e.message } }));
+      const msg = e instanceof Error ? e.message : "test failed";
+      setTestResults((m) => ({ ...m, [id]: { ok: false, error: msg } }));
     }
   }
 
   // ----- Key CRUD -----
   async function createKey() {
-    const name = window.prompt("Gateway key name (optional):") || null;
+    const name = window.prompt("Gateway key name (optional):") ?? null;
     const res = await fetch("/api/mcp-gateway/keys", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
     });
-    const body = await res.json();
+    const body = await res.json() as { key?: { key: string }; error?: string };
     if (!res.ok) {
-      notify({ type: "error", message: body.error || "create failed" });
+      notify({ type: "error", message: body.error ?? "create failed" });
       return;
     }
-    setCreatedKey(body.key);
+    setCreatedKey(body.key ?? null);
     await reload();
   }
 
-  async function deleteKey(id) {
+  async function deleteKey(id: string) {
     const res = await fetch(`/api/mcp-gateway/keys/${id}`, { method: "DELETE" });
     if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      notify({ type: "error", message: body.error || "delete failed" });
+      const body = await res.json().catch(() => ({})) as { error?: string };
+      notify({ type: "error", message: body.error ?? "delete failed" });
       return;
     }
     notify({ type: "success", message: "Key deleted" });
@@ -221,15 +373,15 @@ export default function McpGatewayPage() {
     await reload();
   }
 
-  async function saveGrants(keyId, instanceIds) {
+  async function saveGrants(keyId: string, instanceIds: string[]) {
     const res = await fetch(`/api/mcp-gateway/keys/${keyId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ grants: instanceIds }),
     });
     if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      notify({ type: "error", message: body.error || "save failed" });
+      const body = await res.json().catch(() => ({})) as { error?: string };
+      notify({ type: "error", message: body.error ?? "save failed" });
       return;
     }
     notify({ type: "success", message: "Grants updated" });
@@ -247,7 +399,7 @@ export default function McpGatewayPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" icon="vpn_key" onClick={createKey}>New key</Button>
+          <Button variant="outline" icon="vpn_key" onClick={() => { void createKey(); }}>New key</Button>
           <Button icon="add" onClick={() => setEditing(emptyInstance())}>New instance</Button>
         </div>
       </div>
@@ -280,14 +432,18 @@ export default function McpGatewayPage() {
                       )}
                     </div>
                     <div className="text-xs text-text-muted mt-1 truncate">
-                      {i.transport === "stdio" ? `${i.command} ${(i.args || []).join(" ")}` : i.url}
+                      {i.transport === "stdio"
+                        ? `${i.command} ${(Array.isArray(i.args) ? i.args : []).join(" ")}`
+                        : i.url}
                     </div>
                     {test && !test.loading && (
                       <div className="mt-2 text-xs">
                         {test.ok ? (
                           <span className="text-green-600 dark:text-green-400">
                             {test.toolCount} tools
-                            {test.sample?.length ? ` — sample: ${test.sample.map((s) => s.name).join(", ")}` : ""}
+                            {test.sample?.length
+                              ? ` — sample: ${test.sample.map((s) => s.name).join(", ")}`
+                              : ""}
                           </span>
                         ) : (
                           <span className="text-red-600 dark:text-red-400">test failed: {test.error}</span>
@@ -296,13 +452,13 @@ export default function McpGatewayPage() {
                     )}
                   </div>
                   <div className="flex gap-1 shrink-0">
-                    <Button size="sm" variant="ghost" icon="play_arrow" onClick={() => testInstance(i.id)} loading={test?.loading}>Test</Button>
-                    {i.oauth && <Button size="sm" variant="ghost" icon="login" onClick={() => connectInstance(i.id)}>Connect</Button>}
+                    <Button size="sm" variant="ghost" icon="play_arrow" onClick={() => { void testInstance(i.id); }} loading={test?.loading}>Test</Button>
+                    {i.oauth && <Button size="sm" variant="ghost" icon="login" onClick={() => { void connectInstance(i.id); }}>Connect</Button>}
                     <Button size="sm" variant="ghost" icon="edit" onClick={() => setEditing({
                       ...i,
-                      args: stringifyMaybe(i.args),
-                      env: stringifyMaybe(i.env),
-                      headers: stringifyMaybe(i.headers),
+                      args: stringifyMaybe(typeof i.args !== "string" ? JSON.stringify(i.args) : i.args),
+                      env: stringifyMaybe(typeof i.env !== "string" ? JSON.stringify(i.env) : i.env),
+                      headers: stringifyMaybe(typeof i.headers !== "string" ? JSON.stringify(i.headers) : i.headers),
                     })}>Edit</Button>
                     <Button size="sm" variant="ghost" icon="delete" onClick={() => setConfirmDelete({ kind: "instance", id: i.id })} />
                   </div>
@@ -325,7 +481,7 @@ export default function McpGatewayPage() {
                 className="flex items-start gap-3 p-3 rounded-[10px] border border-border-subtle bg-surface-1"
               >
                 <div className="min-w-0 flex-1">
-                  <div className="font-medium text-text-main">{k.name || <span className="text-text-muted">unnamed</span>}</div>
+                  <div className="font-medium text-text-main">{k.name ?? <span className="text-text-muted">unnamed</span>}</div>
                   <div className="text-xs text-text-muted mt-1">
                     {k.machineId ? `machine ${k.machineId.slice(0, 8)}…` : ""} · created {k.createdAt?.slice(0, 10)}
                   </div>
@@ -381,7 +537,7 @@ export default function McpGatewayPage() {
         <ConfirmModal
           isOpen
           onClose={() => setConfirmDelete(null)}
-          onConfirm={() => deleteInstance(confirmDelete.id)}
+          onConfirm={() => { void deleteInstance(confirmDelete.id); }}
           title="Delete instance?"
           message="All grants to this instance will also be removed."
         />
@@ -390,7 +546,7 @@ export default function McpGatewayPage() {
         <ConfirmModal
           isOpen
           onClose={() => setConfirmDelete(null)}
-          onConfirm={() => deleteKey(confirmDelete.id)}
+          onConfirm={() => { void deleteKey(confirmDelete.id); }}
           title="Delete gateway key?"
           message="Any harness using this key will lose access immediately."
         />
@@ -399,15 +555,25 @@ export default function McpGatewayPage() {
   );
 }
 
-function InstanceEditModal({ initial, onClose, onSave }) {
-  const [form, setForm] = useState({
+// ---------------------------------------------------------------------------
+// Sub-components
+// ---------------------------------------------------------------------------
+
+interface InstanceEditModalProps {
+  initial: InstanceForm;
+  onClose: () => void;
+  onSave: (form: InstanceForm) => Promise<boolean>;
+}
+
+function InstanceEditModal({ initial, onClose, onSave }: InstanceEditModalProps) {
+  const [form, setForm] = useState<InstanceForm>({
     ...emptyInstance(),
     ...initial,
   });
   const isStdio = form.transport === "stdio" || ["npx", "python", "docker", "command"].includes(form.kind);
   const isHttpLike = form.transport === "http" || form.transport === "sse";
 
-  function patch(p) { setForm((f) => ({ ...f, ...p })); }
+  function patch(p: Partial<InstanceForm>) { setForm((f) => ({ ...f, ...p })); }
 
   return (
     <Modal
@@ -419,60 +585,67 @@ function InstanceEditModal({ initial, onClose, onSave }) {
       footer={
         <div className="flex gap-2 justify-end">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => onSave(form)} icon="save">Save</Button>
+          <Button onClick={() => { void onSave(form); }} icon="save">Save</Button>
         </div>
       }
     >
       <div className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
-          <Input label="Slug" required value={form.slug} onChange={(e) => patch({ slug: e.target.value.toLowerCase() })} placeholder="jira-acme" hint="lowercase, digits, dashes; 2-40 chars; no __" />
-          <Input label="Title" value={form.title} onChange={(e) => patch({ title: e.target.value })} placeholder="Jira (Acme)" />
+          <Input label="Slug" required value={form.slug} onChange={(e: React.ChangeEvent<HTMLInputElement>) => patch({ slug: e.target.value.toLowerCase() })} placeholder="jira-acme" hint="lowercase, digits, dashes; 2-40 chars; no __" />
+          <Input label="Title" value={form.title} onChange={(e: React.ChangeEvent<HTMLInputElement>) => patch({ title: e.target.value })} placeholder="Jira (Acme)" />
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <Select label="Kind" required value={form.kind} onChange={(e) => patch({ kind: e.target.value })} options={KIND_OPTIONS} />
-          <Select label="Transport" value={form.transport} onChange={(e) => patch({ transport: e.target.value })} options={TRANSPORT_OPTIONS} />
+          <Select label="Kind" required value={form.kind} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => patch({ kind: e.target.value })} options={KIND_OPTIONS} />
+          <Select label="Transport" value={form.transport} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => patch({ transport: e.target.value })} options={TRANSPORT_OPTIONS} />
         </div>
 
         {isHttpLike ? (
-          <Input label="URL" required value={form.url} onChange={(e) => patch({ url: e.target.value })} placeholder="https://mcp.example.com/mcp" />
+          <Input label="URL" required value={form.url} onChange={(e: React.ChangeEvent<HTMLInputElement>) => patch({ url: e.target.value })} placeholder="https://mcp.example.com/mcp" />
         ) : (
           <>
-            <Input label="Command" required value={form.command} onChange={(e) => patch({ command: e.target.value })} placeholder="npx" />
-            <Input label="Args (JSON array)" value={form.args} onChange={(e) => patch({ args: e.target.value })} hint='e.g. ["-y", "@browsermcp/mcp@latest"]' />
-            <Input label="Env (JSON object)" value={form.env} onChange={(e) => patch({ env: e.target.value })} hint='e.g. {"API_KEY":"..."}' />
+            <Input label="Command" required value={form.command} onChange={(e: React.ChangeEvent<HTMLInputElement>) => patch({ command: e.target.value })} placeholder="npx" />
+            <Input label="Args (JSON array)" value={form.args} onChange={(e: React.ChangeEvent<HTMLInputElement>) => patch({ args: e.target.value })} hint='e.g. ["-y", "@browsermcp/mcp@latest"]' />
+            <Input label="Env (JSON object)" value={form.env} onChange={(e: React.ChangeEvent<HTMLInputElement>) => patch({ env: e.target.value })} hint='e.g. {"API_KEY":"..."}' />
           </>
         )}
 
         {isHttpLike && (
-          <Input label="Headers (JSON object)" value={form.headers} onChange={(e) => patch({ headers: e.target.value })} hint='merged into every request; cannot override Content-Type/Accept/mcp-*' />
+          <Input label="Headers (JSON object)" value={form.headers} onChange={(e: React.ChangeEvent<HTMLInputElement>) => patch({ headers: e.target.value })} hint='merged into every request; cannot override Content-Type/Accept/mcp-*' />
         )}
 
         <div className="flex items-center gap-6 pt-1">
-          <Toggle checked={form.oauth} onChange={(v) => patch({ oauth: v })} label="Requires OAuth" description="Instance needs an Authorization token from a browser login" />
-          <Toggle checked={form.enabled} onChange={(v) => patch({ enabled: v })} label="Enabled" />
+          <Toggle checked={form.oauth} onChange={(v: boolean) => patch({ oauth: v })} label="Requires OAuth" description="Instance needs an Authorization token from a browser login" />
+          <Toggle checked={form.enabled} onChange={(v: boolean) => patch({ enabled: v })} label="Enabled" />
         </div>
       </div>
     </Modal>
   );
 }
 
-function GrantsModal({ keyId, allInstances, onClose, onSave }) {
-  const [grants, setGrants] = useState(new Set());
+interface GrantsModalProps {
+  keyId: string;
+  allInstances: McpInstance[];
+  onClose: () => void;
+  onSave: (keyId: string, instanceIds: string[]) => Promise<void>;
+}
+
+function GrantsModal({ keyId, allInstances, onClose, onSave }: GrantsModalProps) {
+  const [grants, setGrants] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
       try {
         const r = await fetch(`/api/mcp-gateway/keys/${keyId}`);
-        const body = await r.json();
-        setGrants(new Set(body.grants || []));
+        const body = await r.json() as { grants?: string[] };
+        setGrants(new Set(body.grants ?? []));
       } finally {
         setLoading(false);
       }
     })();
   }, [keyId]);
 
-  function toggle(id) {
+  function toggle(id: string) {
     setGrants((s) => {
       const next = new Set(s);
       if (next.has(id)) next.delete(id);
@@ -491,7 +664,7 @@ function GrantsModal({ keyId, allInstances, onClose, onSave }) {
       footer={
         <div className="flex gap-2 justify-end">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => { onSave(keyId, [...grants]); onClose(); }} icon="save" disabled={loading}>Save</Button>
+          <Button onClick={() => { void onSave(keyId, [...grants]); onClose(); }} icon="save" disabled={loading}>Save</Button>
         </div>
       }
     >
