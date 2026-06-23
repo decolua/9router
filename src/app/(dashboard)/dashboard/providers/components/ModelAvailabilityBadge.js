@@ -26,25 +26,24 @@ export default function ModelAvailabilityBadge() {
   const ref = useRef(null);
   const notify = useNotificationStore();
 
-  const fetchStatus = useCallback(async () => {
-    try {
-      const res = await fetch("/api/models/availability");
-      if (res.ok) {
-        const json = await res.json();
-        setData(json);
-      }
-    } catch {
-      // silent fail — will retry
-    } finally {
-      setLoading(false);
-    }
+  const loadStatus = useCallback(async () => {
+    const res = await fetch("/api/models/availability");
+    if (res.ok) return res.json();
+    return null;
   }, []);
 
+  const applyStatus = useCallback((json) => {
+    if (json) setData(json);
+    setLoading(false);
+  }, []);
+
+  const fetchStatus = useCallback(() => loadStatus().then(applyStatus).catch(() => setLoading(false)), [loadStatus, applyStatus]);
+
   useEffect(() => {
-    fetchStatus();
-    const interval = setInterval(fetchStatus, 30000);
+    loadStatus().then(applyStatus).catch(() => setLoading(false));
+    const interval = setInterval(() => loadStatus().then(applyStatus).catch(() => {}), 30000);
     return () => clearInterval(interval);
-  }, [fetchStatus]);
+  }, [loadStatus, applyStatus]);
 
   // Close popover on outside click
   useEffect(() => {

@@ -73,7 +73,7 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
     check();
     const t = modelLockUntil ? setInterval(check, 1000) : null;
     return () => { if (t) clearInterval(t); };
-  }, [modelLockUntil]);
+  }, [modelLockUntil, connection]);
 
   useEffect(() => {
     if (!showProxyDropdown) return;
@@ -317,26 +317,29 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
   const [providerStickyLimit, setProviderStickyLimit] = useState("1");
   const [confirmState, setConfirmState] = useState(null);
 
-  const fetch_ = useCallback(async () => {
-    try {
-      const [connRes, proxyRes, settingsRes] = await Promise.all([
-        fetch("/api/providers", { cache: "no-store" }),
-        fetch("/api/proxy-pools?isActive=true", { cache: "no-store" }),
-        fetch("/api/settings", { cache: "no-store" }),
-      ]);
-      const connData = await connRes.json();
-      const proxyData = await proxyRes.json();
-      const settingsData = settingsRes.ok ? await settingsRes.json() : {};
-      if (connRes.ok) setConnections((connData.connections || []).filter((c) => c.provider === providerId));
-      if (proxyRes.ok) setProxyPools(proxyData.proxyPools || []);
-      const override = (settingsData.providerStrategies || {})[providerId] || {};
-      setProviderStrategy(override.fallbackStrategy || null);
-      setProviderStickyLimit(override.stickyRoundRobinLimit != null ? String(override.stickyRoundRobinLimit) : "1");
-    } catch (e) { console.log("ConnectionsCard fetch error:", e); }
-    finally { setLoading(false); }
+  const load_ = useCallback(async () => {
+    const [connRes, proxyRes, settingsRes] = await Promise.all([
+      fetch("/api/providers", { cache: "no-store" }),
+      fetch("/api/proxy-pools?isActive=true", { cache: "no-store" }),
+      fetch("/api/settings", { cache: "no-store" }),
+    ]);
+    const connData = await connRes.json();
+    const proxyData = await proxyRes.json();
+    const settingsData = settingsRes.ok ? await settingsRes.json() : {};
+    return { connRes, proxyRes, connData, proxyData, settingsData };
+  }, []);
+
+  const apply_ = useCallback(({ connRes, proxyRes, connData, proxyData, settingsData }) => {
+    if (connRes.ok) setConnections((connData.connections || []).filter((c) => c.provider === providerId));
+    if (proxyRes.ok) setProxyPools(proxyData.proxyPools || []);
+    const override = (settingsData.providerStrategies || {})[providerId] || {};
+    setProviderStrategy(override.fallbackStrategy || null);
+    setProviderStickyLimit(override.stickyRoundRobinLimit != null ? String(override.stickyRoundRobinLimit) : "1");
   }, [providerId]);
 
-  useEffect(() => { fetch_(); }, [fetch_]);
+  const fetch_ = useCallback(() => load_().then(apply_).catch((e) => console.log("ConnectionsCard fetch error:", e)).finally(() => setLoading(false)), [load_, apply_]);
+
+  useEffect(() => { load_().then(apply_).catch((e) => console.log("ConnectionsCard fetch error:", e)).finally(() => setLoading(false)); }, [load_, apply_]);
 
   const saveStrategy = async (strategy, stickyLimit) => {
     try {
@@ -420,7 +423,7 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
       // 401 → refresh token dead; route to provider's OAuth start flow
       if (res.status === 401) {
         window.dispatchEvent(new CustomEvent("toast", { detail: { type: "error", message: "Refresh token expired — redirecting to re-login" } }));
-        window.location.href = `/api/oauth/${providerId}/start`;
+        window.location.assign(`/api/oauth/${providerId}/start`);
         return;
       }
       window.dispatchEvent(new CustomEvent("toast", { detail: { type: "error", message: body?.error || "Re-auth failed" } }));

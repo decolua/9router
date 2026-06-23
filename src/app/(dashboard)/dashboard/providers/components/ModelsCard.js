@@ -132,23 +132,27 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
   const providerAlias = providerAliasOverride || getProviderAlias(providerId);
   const effectiveType = kindFilter || "llm";
 
-  const fetchData = useCallback(async () => {
-    try {
-      const [aliasRes, connRes, customRes] = await Promise.all([
-        fetch("/api/models/alias"),
-        fetch("/api/providers", { cache: "no-store" }),
-        fetch("/api/models/custom", { cache: "no-store" }),
-      ]);
-      const aliasData = await aliasRes.json();
-      const connData = await connRes.json();
-      const customData = await customRes.json();
-      if (aliasRes.ok) setModelAliases(aliasData.aliases || {});
-      if (connRes.ok) setConnections((connData.connections || []).filter((c) => c.provider === providerId));
-      if (customRes.ok) setCustomModels(customData.models || []);
-    } catch (e) { console.log("ModelsCard fetch error:", e); }
+  const loadData = useCallback(async () => {
+    const [aliasRes, connRes, customRes] = await Promise.all([
+      fetch("/api/models/alias"),
+      fetch("/api/providers", { cache: "no-store" }),
+      fetch("/api/models/custom", { cache: "no-store" }),
+    ]);
+    const aliasData = await aliasRes.json();
+    const connData = await connRes.json();
+    const customData = await customRes.json();
+    return { aliasRes, connRes, customRes, aliasData, connData, customData };
+  }, []);
+
+  const applyData = useCallback(({ aliasRes, connRes, customRes, aliasData, connData, customData }) => {
+    if (aliasRes.ok) setModelAliases(aliasData.aliases || {});
+    if (connRes.ok) setConnections((connData.connections || []).filter((c) => c.provider === providerId));
+    if (customRes.ok) setCustomModels(customData.models || []);
   }, [providerId]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const fetchData = useCallback(() => loadData().then(applyData).catch((e) => console.log("ModelsCard fetch error:", e)), [loadData, applyData]);
+
+  useEffect(() => { loadData().then(applyData).catch((e) => console.log("ModelsCard fetch error:", e)); }, [loadData, applyData]);
 
   const handleSetAlias = async (modelId, alias) => {
     const fullModel = `${providerAlias}/${modelId}`;
