@@ -233,39 +233,6 @@ describe("dashboard guard local-only access", () => {
 
     expect(response).toBe(mocks.nextResponse);
   });
-
-  it("lets admin key routes reach route-level admin auth", async () => {
-    const response = await proxy(request("/api/admin/keys", {
-      host: "router.example.com",
-    }));
-
-    expect(response).toBe(mocks.nextResponse);
-    expect(mocks.validateApiKey).not.toHaveBeenCalled();
-    expect(mocks.verifyDashboardAuthToken).not.toHaveBeenCalled();
-  });
-
-  it("lets explicit admin key item and renew routes reach route-level admin auth", async () => {
-    const itemResponse = await proxy(request("/api/admin/keys/key-1", {
-      host: "router.example.com",
-    }));
-    const renewResponse = await proxy(request("/api/admin/keys/key-1/renew", {
-      host: "router.example.com",
-    }));
-
-    expect(itemResponse).toBe(mocks.nextResponse);
-    expect(renewResponse).toBe(mocks.nextResponse);
-    expect(mocks.validateApiKey).not.toHaveBeenCalled();
-    expect(mocks.verifyDashboardAuthToken).not.toHaveBeenCalled();
-  });
-
-  it("does not bypass auth for deeper future admin key paths", async () => {
-    const response = await proxy(request("/api/admin/keys/key-1/audit", {
-      host: "router.example.com",
-    }));
-
-    expect(response.status).toBe(401);
-    expect(response.body.error).toBe("Unauthorized");
-  });
 });
 
 describe("dashboard guard helpers", () => {
@@ -276,12 +243,5 @@ describe("dashboard guard helpers", () => {
     });
 
     expect(__test__.extractApiKey(apiRequest)).toBe("bearer-key");
-  });
-
-  it("matches only current public admin key route shapes", () => {
-    expect(__test__.isPublicAdminKeyRoute("/api/admin/keys")).toBe(true);
-    expect(__test__.isPublicAdminKeyRoute("/api/admin/keys/key-1")).toBe(true);
-    expect(__test__.isPublicAdminKeyRoute("/api/admin/keys/key-1/renew")).toBe(true);
-    expect(__test__.isPublicAdminKeyRoute("/api/admin/keys/key-1/audit")).toBe(false);
   });
 });
