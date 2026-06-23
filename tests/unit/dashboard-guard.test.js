@@ -233,6 +233,16 @@ describe("dashboard guard local-only access", () => {
 
     expect(response).toBe(mocks.nextResponse);
   });
+
+  it("lets admin key routes reach route-level admin auth", async () => {
+    const response = await proxy(request("/api/admin/keys", {
+      host: "router.example.com",
+    }));
+
+    expect(response).toBe(mocks.nextResponse);
+    expect(mocks.validateApiKey).not.toHaveBeenCalled();
+    expect(mocks.verifyDashboardAuthToken).not.toHaveBeenCalled();
+  });
 });
 
 describe("dashboard guard helpers", () => {
