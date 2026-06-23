@@ -38,7 +38,27 @@ export function createThinkTagSplitter() {
 
   function feed(text) {
     if (!text) return { reasoning: "", text: "" };
+    
+    // Concatenate with pending first
     const input = pending + text;
+    
+    // Strip control/configuration BLOCKS entirely (opening tag + content + closing tag)
+    // These are metadata directives, not reasoning content
+    let processed = input;
+    
+    // Strip full control blocks: <thinking_mode ...>CONTENT</thinking_mode>
+    // Match any opening variant followed by content and closing tag
+    processed = processed.replace(/<thinking_mode[^>]*>[\s\S]*?<\/thinking_mode>/g, '');
+    
+    // Strip orphaned control tags (opening without closing, or closing without opening)
+    processed = processed.replace(/<thinking_mode[^>]*>/g, '');
+    processed = processed.replace(/<\/thinking_mode>/g, '');
+    
+    // Strip max_thinking_length blocks and tags
+    processed = processed.replace(/<max_thinking_length[^>]*>[\s\S]*?<\/max_thinking_length>/g, '');
+    processed = processed.replace(/<max_thinking_length[^>]*>/g, '');
+    processed = processed.replace(/<\/max_thinking_length>/g, '');
+    
     let i = 0;
     let reasoning = "";
     let cleaned = "";
