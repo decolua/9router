@@ -29,7 +29,6 @@ const PUBLIC_API_PATHS = [
   "/api/auth/oidc",
   "/api/version",
   "/api/settings/require-login",
-  "/api/admin/keys",
 ];
 
 // Public top-level prefixes (LLM API endpoints with their own API key auth).
@@ -117,6 +116,13 @@ function isPublicLlmApi(pathname) {
   return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
+function isPublicAdminKeyRoute(pathname) {
+  if (pathname === "/api/admin/keys") return true;
+
+  const match = pathname.match(/^\/api\/admin\/keys\/([^/]+)(?:\/(renew))?$/);
+  return Boolean(match);
+}
+
 function extractApiKey(request) {
   const authHeader = request.headers.get("Authorization");
   if (authHeader?.startsWith("Bearer ")) return authHeader.slice(7);
@@ -165,12 +171,14 @@ async function isAuthenticated(request) {
 
 function isPublicApi(pathname) {
   if (isPublicLlmApi(pathname)) return true;
+  if (isPublicAdminKeyRoute(pathname)) return true;
   return PUBLIC_API_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
 export const __test__ = {
   isLocalRequest,
   isPublicLlmApi,
+  isPublicAdminKeyRoute,
   extractApiKey,
   canAccessPublicLlmApi,
   canAccessLocalOnlyRoute,

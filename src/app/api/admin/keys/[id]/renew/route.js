@@ -5,10 +5,18 @@ import { normalizePlanMonths } from "../../../../../../lib/api-keys/plans.js";
 
 const RENEW_ERROR = "Valid planMonths is required";
 
-export async function POST(request, { params }) {
-  if (!(await requireAdminApiKey(request))) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+async function authorize(request) {
+  try {
+    if (await requireAdminApiKey(request)) return null;
+  } catch {
+    // Fail closed if the admin key check throws or rejects.
   }
+  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+}
+
+export async function POST(request, { params }) {
+  const unauthorized = await authorize(request);
+  if (unauthorized) return unauthorized;
 
   try {
     const { id } = await params;

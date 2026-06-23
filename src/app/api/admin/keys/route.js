@@ -7,15 +7,21 @@ import { getConsistentMachineId } from "@/shared/utils/machineId";
 export const dynamic = "force-dynamic";
 
 const CREATE_ERROR = "Name and valid planMonths are required";
+const MAX_NAME_LENGTH = 120;
 
 async function authorize(request) {
-  if (await requireAdminApiKey(request)) return null;
+  try {
+    if (await requireAdminApiKey(request)) return null;
+  } catch {
+    // Fail closed if the admin key check throws or rejects.
+  }
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 }
 
 function parseCreateBody(body) {
-  const name = String(body?.name || "").trim();
-  if (!name) throw new Error(CREATE_ERROR);
+  if (typeof body?.name !== "string") throw new Error(CREATE_ERROR);
+  const name = body.name.trim();
+  if (!name || name.length > MAX_NAME_LENGTH) throw new Error(CREATE_ERROR);
   return { name, planMonths: normalizePlanMonths(body?.planMonths) };
 }
 

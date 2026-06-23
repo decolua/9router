@@ -4,9 +4,15 @@ import { deleteApiKey, getApiKeyById, updateApiKey } from "@/lib/localDb";
 import { normalizePlanMonths } from "../../../../../lib/api-keys/plans.js";
 
 const ALLOWED_PATCH_FIELDS = new Set(["name", "isActive", "planMonths"]);
+const PATCH_NAME_ERROR = "Name is required";
+const PATCH_NAME_LENGTH_ERROR = "Name must be 120 characters or fewer";
 
 async function authorize(request) {
-  if (await requireAdminApiKey(request)) return null;
+  try {
+    if (await requireAdminApiKey(request)) return null;
+  } catch {
+    // Fail closed if the admin key check throws or rejects.
+  }
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 }
 
@@ -21,8 +27,10 @@ function buildPatch(body) {
   }
 
   if (Object.prototype.hasOwnProperty.call(source, "name")) {
-    const name = String(source.name || "").trim();
-    if (!name) throw new Error("Name is required");
+    if (typeof source.name !== "string") throw new Error(PATCH_NAME_ERROR);
+    const name = source.name.trim();
+    if (!name) throw new Error(PATCH_NAME_ERROR);
+    if (name.length > 120) throw new Error(PATCH_NAME_LENGTH_ERROR);
     patch.name = name;
   }
 
@@ -45,7 +53,8 @@ function isPatchValidationError(error) {
   if (error instanceof SyntaxError) return true;
   const message = error?.message || "";
   return (
-    message === "Name is required" ||
+    message === PATCH_NAME_ERROR ||
+    message === PATCH_NAME_LENGTH_ERROR ||
     message.startsWith("Unsupported field:") ||
     message.startsWith("Plan must be one of") ||
     message.startsWith("isActive must be")
