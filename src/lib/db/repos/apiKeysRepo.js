@@ -91,6 +91,18 @@ function getRowVersion(row) {
   return row.updatedAt || row.createdAt || "";
 }
 
+function buildMonotonicUpdatedAt(baseNow, rowVersion) {
+  const candidate = toNow(baseNow);
+  const previous = rowVersion ? new Date(rowVersion) : null;
+  if (!previous || Number.isNaN(previous.getTime())) {
+    return candidate.toISOString();
+  }
+  if (candidate.getTime() > previous.getTime()) {
+    return candidate.toISOString();
+  }
+  return new Date(previous.getTime() + 1).toISOString();
+}
+
 function updateApiKeyRecord(db, next, expectedVersion) {
   return db.run(
     `UPDATE apiKeys
@@ -128,7 +140,7 @@ async function expireApiKeys(db, now = new Date()) {
            updatedAt = ?
      WHERE expiresAt IS NOT NULL
        AND expiresAt <= ?
-       AND isActive != 0`,
+       AND isActive = 1`,
     [timestamp, timestamp]
   );
 }
@@ -244,7 +256,7 @@ export async function renewApiKey(id, planMonths, now = new Date()) {
       if (!row) return;
 
       const current = rowToKey(row);
-      const updatedAt = renewalNow.toISOString();
+      const updatedAt = buildMonotonicUpdatedAt(renewalNow, getRowVersion(row));
       const expiresAt = calculateExpiresAt(
         normalizedPlanMonths,
         getRenewalBaseDate(current.expiresAt, renewalNow)

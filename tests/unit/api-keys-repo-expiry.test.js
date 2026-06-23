@@ -40,7 +40,7 @@ function makeDb() {
         const [updatedAt, now] = params;
         let changes = 0;
         for (const row of rows) {
-          if (row.expiresAt && row.expiresAt <= now && row.isActive !== 0 && row.isActive !== false) {
+          if (row.expiresAt && row.expiresAt <= now && row.isActive === 1) {
             row.isActive = 0;
             row.deactivatedReason = "expired";
             row.updatedAt = updatedAt;
@@ -73,7 +73,7 @@ function makeDb() {
         if ((row.updatedAt || row.createdAt) !== expectedVersion) return { changes: 0 };
         if (forceRenewConflictOnce && row.id === "active") {
           forceRenewConflictOnce = false;
-          row.updatedAt = "2026-06-19T00:00:00.000Z";
+          row.updatedAt = "2026-06-23T00:00:00.000Z";
           row.expiresAt = "2026-08-18T14:52:33.301Z";
           return { changes: 0 };
         }
@@ -295,7 +295,7 @@ describe("apiKeysRepo expiration", () => {
       expiresAt: "2026-09-18T14:52:33.301Z",
       isActive: true,
       deactivatedReason: null,
-      updatedAt: "2026-06-23T00:00:00.000Z",
+      updatedAt: "2026-06-23T00:00:00.001Z",
     });
   });
 });
