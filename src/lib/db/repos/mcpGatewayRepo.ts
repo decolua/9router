@@ -1,0 +1,140 @@
+import { v4 as uuidv4 } from "uuid";
+import { getAdapter } from "../driver.js";
+import { generateApiKeyWithMachine } from "@/shared/utils/apiKey";
+
+export type GatewayKey = {
+  id: string;
+  name: string | null;
+  key: string;
+  machineId: string;
+  isActive: boolean;
+  createdAt: string;
+};
+
+export type GatewayGrant = {
+  instanceId: string;
+  toolAllowlist: string[] | null;
+};
+
+function rowToKey(row: Record<string, unknown> | undefined): GatewayKey | null {
+  if (!row) return null;
+  return {
+    id: row["id"] as string,
+    name: (row["name"] as string) ?? null,
+    key: row["key"] as string,
+    machineId: row["machineId"] as string,
+    isActive: row["isActive"] === 1 || row["isActive"] === true,
+    createdAt: row["createdAt"] as string,
+  };
+}
+
+export async function getGatewayKeys() {
+  const db = await getAdapter();
+  const rows = db.all(`SELECT * FROM mcpGatewayKeys ORDER BY createdAt ASC`) as Record<string, unknown>[];
+  return rows.map(rowToKey);
+}
+
+export async function getGatewayKeyById(id: string) {
+  const db = await getAdapter();
+  const row = db.get(`SELECT * FROM mcpGatewayKeys WHERE id = ?`, [id]) as Record<string, unknown> | undefined;
+  return rowToKey(row);
+}
+
+export async function createGatewayKey(name: string | null, machineId: string) {
+  if (!machineId) throw new Error("machineId is required");
+  const db = await getAdapter();
+  const { key } = generateApiKeyWithMachine(machineId);
+  const row: GatewayKey = {
+    id: uuidv4(),
+    name: name ?? null,
+    key,
+    machineId,
+    isActive: true,
+    createdAt: new Date().toISOString(),
+  };
+  db.run(
+    `INSERT INTO mcpGatewayKeys(id, name, key, machineId, isActive, createdAt) VALUES(?, ?, ?, ?, ?, ?)`,
+    [row.id, row.name, row.key, row.machineId, 1, row.createdAt]
+  );
+  return row;
+}
+
+export async function deleteGatewayKey(id: string) {
+  const db = await getAdapter();
+  db.run(`DELETE FROM mcpKeyGrants WHERE keyId = ?`, [id]);
+  const res = db.run(`DELETE FROM mcpGatewayKeys WHERE id = ?`, [id]) as { changes?: number } | undefined;
+  return (res?.changes ?? 0) > 0;
+}
+
+/**
+ * Resolve a raw gateway key string (from Authorization: Bearer or x-api-key) to its
+ * persisted row. Returns null on miss or inactive.
+ */
+export async function validateGatewayKey(rawKey: unknown) {
+  if (!rawKey || typeof rawKey !== "string") return null;
+  const db = await getAdapter();
+  const row = db.get(`SELECT * FROM mcpGatewayKeys WHERE key = ?`, [rawKey]) as Record<string, unknown> | undefined;
+  if (!row) return null;
+  if (!(row["isActive"] === 1 || row["isActive"] === true)) return null;
+  return rowToKey(row);
+}
+
+/**
+ * Plain grant reader: returns one entry per granted instance id.
+ */
+export async function getGrantsForKey(keyId: string): Promise<string[]> {
+  const db = await getAdapter();
+  const rows = db.all(`SELECT instanceId FROM mcpKeyGrants WHERE keyId = ?`, [keyId]) as Record<string, unknown>[];
+  return rows.map((r) => r["instanceId"] as string);
+}
+
+/**
+ * Richer grant reader: returns one entry per granted instance, including
+ * the per-grant tool allowlist (parsed JSON array of bare tool names, or
+ * null = all tools visible).
+ */
+export async function getGrantsForKeyDetailed(keyId: string): Promise<GatewayGrant[]> {
+  const db = await getAdapter();
+  const rows = db.all(
+    `SELECT instanceId, toolAllowlist FROM mcpKeyGrants WHERE keyId = ?`,
+    [keyId]
+  ) as Record<string, unknown>[];
+  return rows.map((r) => {
+    let toolAllowlist: string[] | null = null;
+    const raw = r["toolAllowlist"];
+    if (raw != null && raw !== "") {
+      try {
+        const parsed: unknown = JSON.parse(raw as string);
+        if (Array.isArray(parsed)) toolAllowlist = parsed.map(String);
+      } catch { /* leave null */ }
+    }
+    return { instanceId: r["instanceId"] as string, toolAllowlist };
+  });
+}
+
+/**
+ * Replace the grant set for a key (idempotent; not additive). Pass [] to
+ * revoke all grants. `toolAllowlists` is an optional parallel array of
+ * allowlists indexed by the same position as `instanceIds`. An entry
+ * of `null` (or `undefined`) clears the per-grant allowlist.
+ */
+export async function setGrants(
+  keyId: string,
+  instanceIds: string[],
+  toolAllowlists?: (string[] | null | undefined)[]
+) {
+  const db = await getAdapter();
+  db.transaction(() => {
+    db.run(`DELETE FROM mcpKeyGrants WHERE keyId = ?`, [keyId]);
+    if (Array.isArray(instanceIds) && instanceIds.length > 0) {
+      instanceIds.forEach((id, i) => {
+        const allow = toolAllowlists?.[i];
+        const allowJson = (Array.isArray(allow) && allow.length > 0) ? JSON.stringify(allow.map(String)) : null;
+        db.run(
+          `INSERT OR IGNORE INTO mcpKeyGrants(keyId, instanceId, toolAllowlist) VALUES(?, ?, ?)`,
+          [keyId, id, allowJson]
+        );
+      });
+    }
+  });
+}

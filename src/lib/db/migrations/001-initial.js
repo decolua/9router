@@ -1,15 +1,2 @@
-// Initial schema bootstrap. For fresh DB this creates all tables/indexes.
-// For existing DB at version 0 (legacy unstamped), it's idempotent (IF NOT EXISTS).
-import { TABLES, buildCreateTableSql } from "../schema.js";
-
-const m001Initial = {
-  version: 1,
-  name: "initial",
-  up(db) {
-    for (const [name, def] of Object.entries(TABLES)) {
-      db.exec(buildCreateTableSql(name, def));
-      for (const idx of def.indexes || []) db.exec(idx);
-    }
-  },
-};
-export default m001Initial;
+// Shim: re-exports from the TypeScript implementation.
+export { default } from "./001-initial.ts";
