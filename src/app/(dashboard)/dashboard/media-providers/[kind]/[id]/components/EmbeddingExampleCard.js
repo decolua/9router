@@ -6,6 +6,7 @@ import { getProviderAlias, isCustomEmbeddingProvider } from "@/shared/constants/
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { Row } from "./exampleShared";
+const nowAsync = () => new Promise((resolve) => setTimeout(() => resolve(Date.now()), 0));
 
 const DEFAULT_RESPONSE_EXAMPLE = `{
   "object": "list",
@@ -37,7 +38,7 @@ export function EmbeddingExampleCard({ providerId, customAlias }) {
   const { copied: copiedRes, copy: copyRes } = useCopyToClipboard();
 
   useEffect(() => {
-    setLocalEndpoint(window.location.origin);
+    const t = setTimeout(() => setLocalEndpoint(window.location.origin), 0);
     fetch("/api/keys")
       .then((r) => r.json())
       .then((d) => { setApiKey((d.keys || []).find((k) => k.isActive !== false)?.key || ""); })
@@ -46,6 +47,7 @@ export function EmbeddingExampleCard({ providerId, customAlias }) {
       .then((r) => r.json())
       .then((d) => { if (d.publicUrl) setTunnelEndpoint(d.publicUrl); })
       .catch(() => {});
+    return () => clearTimeout(t);
   }, []);
 
   const endpoint = useTunnel ? tunnelEndpoint : localEndpoint;
@@ -69,7 +71,7 @@ export function EmbeddingExampleCard({ providerId, customAlias }) {
     setRunning(true);
     setError("");
     setResult(null);
-    const start = Date.now();
+    const start = await nowAsync();
     try {
       const headers = { "Content-Type": "application/json" };
       if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
@@ -78,7 +80,7 @@ export function EmbeddingExampleCard({ providerId, customAlias }) {
         headers,
         body: JSON.stringify(buildBody()),
       });
-      const latencyMs = Date.now() - start;
+      const latencyMs = (await nowAsync()) - start;
       const data = await res.json();
       if (!res.ok) { setError(data?.error?.message || data?.error || `HTTP ${res.status}`); return; }
       setResult({ data, latencyMs });

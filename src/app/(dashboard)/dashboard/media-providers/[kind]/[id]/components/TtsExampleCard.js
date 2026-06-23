@@ -9,6 +9,7 @@ import { TTS_PROVIDER_CONFIG } from "@/shared/constants/ttsProviders";
 import { getTtsVoicesForModel } from "open-sse/config/ttsModels.js";
 import { GOOGLE_TTS_LANGUAGES } from "open-sse/config/googleTtsLanguages.js";
 import { Row } from "./exampleShared";
+const nowAsync = () => new Promise((resolve) => setTimeout(() => resolve(Date.now()), 0));
 
 const DEFAULT_TTS_RESPONSE_EXAMPLE = `// Audio will appear here after running.
 // Example JSON response (response_format=json):
@@ -20,6 +21,7 @@ const DEFAULT_TTS_RESPONSE_EXAMPLE = `// Audio will appear here after running.
 export function TtsExampleCard({ providerId }) {
   const providerAlias = getProviderAlias(providerId);
   const config = TTS_PROVIDER_CONFIG[providerId] || TTS_PROVIDER_CONFIG["edge-tts"];
+  const { hasBrowseButton, hasModelSelector, modelKey, voiceKey, voiceSource, voicesPerModel } = config;
 
   // Voice state
   const [selectedVoice, setSelectedVoice]     = useState(config.defaultVoiceId || "");
@@ -63,7 +65,37 @@ export function TtsExampleCard({ providerId }) {
   const [languageHint, setLanguageHint]     = useState("");
 
   useEffect(() => {
-    setLocalEndpoint(window.location.origin);
+    const t = setTimeout(() => {
+      setLocalEndpoint(window.location.origin);
+      // Pre-select default voice based on provider config
+      if (voiceSource === "hardcoded") {
+        const defaultModel = hasModelSelector && modelKey
+          ? (getModelsByProviderId(modelKey)?.[0]?.id || "")
+          : "";
+        // Use per-model voices if available, else flat list
+        const voices = (voicesPerModel && defaultModel)
+          ? (getTtsVoicesForModel(providerId, defaultModel) || [])
+          : getModelsByProviderId(voiceKey || providerId).filter((m) => getModelKind(m) === "tts");
+        if (voices.length) {
+          if (hasBrowseButton) {
+            // Google TTS: pre-select "en" (English) as default, show as single voice chip
+            const defaultVoice = voices.find((v) => v.id === "en") || voices[0];
+            setSelectedLang(defaultVoice.id);
+            setSelectedVoice(defaultVoice.id);
+            setSelectedVoiceName(defaultVoice.name);
+            setCountryVoices([{ id: defaultVoice.id, name: defaultVoice.name }]);
+          } else {
+            // OpenAI/OpenRouter: set voice chips directly (no language picker)
+            setCountryVoices(voices);
+            setSelectedVoice(voices[0].id);
+            setSelectedVoiceName(voices[0].name || voices[0].id);
+          }
+        }
+      }
+      // api-language (edge-tts, local-device, elevenlabs): NO default load, wait for user to pick language
+      // config (nvidia, hyperbolic, deepgram, huggingface, cartesia, playht, coqui, tortoise, inworld, qwen):
+      // use ttsConfig.models for model selector; voice is empty by default (backend uses provider default)
+    }, 0);
     fetch("/api/keys")
       .then((r) => r.json())
       .then((d) => { setApiKey((d.keys || []).find((k) => k.isActive !== false)?.key || ""); })
@@ -72,47 +104,10 @@ export function TtsExampleCard({ providerId }) {
       .then((r) => r.json())
       .then((d) => { if (d.publicUrl) setTunnelEndpoint(d.publicUrl); })
       .catch(() => {});
+    return () => clearTimeout(t);
+  }, [providerId, hasBrowseButton, hasModelSelector, modelKey, voiceKey, voiceSource, voicesPerModel]);
 
-    // Pre-select default voice based on provider config
-    if (config.voiceSource === "hardcoded") {
-      const defaultModel = config.hasModelSelector && config.modelKey
-        ? (getModelsByProviderId(config.modelKey)?.[0]?.id || "")
-        : "";
-      // Use per-model voices if available, else flat list
-      const voices = (config.voicesPerModel && defaultModel)
-        ? (getTtsVoicesForModel(providerId, defaultModel) || [])
-        : getModelsByProviderId(config.voiceKey || providerId).filter((m) => getModelKind(m) === "tts");
-      if (voices.length) {
-        if (config.hasBrowseButton) {
-          // Google TTS: pre-select "en" (English) as default, show as single voice chip
-          const defaultVoice = voices.find((v) => v.id === "en") || voices[0];
-          setSelectedLang(defaultVoice.id);
-          setSelectedVoice(defaultVoice.id);
-          setSelectedVoiceName(defaultVoice.name);
-          setCountryVoices([{ id: defaultVoice.id, name: defaultVoice.name }]);
-        } else {
-          // OpenAI/OpenRouter: set voice chips directly (no language picker)
-          setCountryVoices(voices);
-          setSelectedVoice(voices[0].id);
-          setSelectedVoiceName(voices[0].name || voices[0].id);
-        }
-      }
-    }
-    // api-language (edge-tts, local-device, elevenlabs): NO default load, wait for user to pick language
-    // config (nvidia, hyperbolic, deepgram, huggingface, cartesia, playht, coqui, tortoise, inworld, qwen):
-    // use ttsConfig.models for model selector; voice is empty by default (backend uses provider default)
-  }, [providerId]);
-
-  // Update voices when model changes (voicesPerModel providers)
-  useEffect(() => {
-    if (!config.voicesPerModel || !selectedModel) return;
-    const voices = getTtsVoicesForModel(providerId, selectedModel) || [];
-    setCountryVoices(voices);
-    if (voices.length) {
-      setSelectedVoice(voices[0].id);
-      setSelectedVoiceName(voices[0].name || voices[0].id);
-    }
-  }, [selectedModel]);
+  // voicesPerModel model-change handled in <select onChange> below
 
   // Open modal — load language list
   const openModal = async () => {
@@ -198,7 +193,7 @@ export function TtsExampleCard({ providerId }) {
     setError("");
     setAudioUrl("");
     setJsonResponse(null);
-    const start = Date.now();
+    const start = await nowAsync();
     try {
       const headers = { "Content-Type": "application/json" };
       if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
@@ -208,7 +203,7 @@ export function TtsExampleCard({ providerId }) {
         headers,
         body: JSON.stringify({ ...ttsBody, input: input.trim() }),
       });
-      setLatency(Date.now() - start);
+      setLatency((await nowAsync()) - start);
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         setError(d?.error?.message || d?.error || `HTTP ${res.status}`);
@@ -268,7 +263,18 @@ export function TtsExampleCard({ providerId }) {
             <Row label="Model">
               <select
                 value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value)}
+                onChange={(e) => {
+                  const newModel = e.target.value;
+                  setSelectedModel(newModel);
+                  if (voicesPerModel && newModel) {
+                    const voices = getTtsVoicesForModel(providerId, newModel) || [];
+                    setCountryVoices(voices);
+                    if (voices.length) {
+                      setSelectedVoice(voices[0].id);
+                      setSelectedVoiceName(voices[0].name || voices[0].id);
+                    }
+                  }
+                }}
                 className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
               >
                 {(() => {

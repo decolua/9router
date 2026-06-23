@@ -7,6 +7,7 @@ import { getModelKind } from "@/shared/constants/models";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { Row } from "./exampleShared";
+const nowAsync = () => new Promise((resolve) => setTimeout(() => resolve(Date.now()), 0));
 
 export function SttExampleCard({ providerId }) {
   const providerAlias = getProviderAlias(providerId);
@@ -35,7 +36,7 @@ export function SttExampleCard({ providerId }) {
   const { copied: copiedRes, copy: copyRes } = useCopyToClipboard();
 
   useEffect(() => {
-    setLocalEndpoint(window.location.origin);
+    const t = setTimeout(() => setLocalEndpoint(window.location.origin), 0);
     fetch("/api/keys")
       .then((r) => r.json())
       .then((d) => { setApiKey((d.keys || []).find((k) => k.isActive !== false)?.key || ""); })
@@ -57,6 +58,7 @@ export function SttExampleCard({ providerId }) {
     window.addEventListener("focus", loadCustom);
     window.addEventListener("customModelChanged", loadCustom);
     return () => {
+      clearTimeout(t);
       window.removeEventListener("focus", loadCustom);
       window.removeEventListener("customModelChanged", loadCustom);
     };
@@ -75,7 +77,7 @@ export function SttExampleCard({ providerId }) {
     setRunning(true);
     setError("");
     setResult(null);
-    const start = Date.now();
+    const start = await nowAsync();
     try {
       const fd = new FormData();
       fd.append("file", audioFile);
@@ -88,7 +90,7 @@ export function SttExampleCard({ providerId }) {
       const headers = {};
       if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
       const res = await fetch("/api/v1/audio/transcriptions", { method: "POST", headers, body: fd });
-      setLatency(Date.now() - start);
+      setLatency((await nowAsync()) - start);
       const ct = res.headers.get("content-type") || "";
       const data = ct.includes("application/json") ? await res.json() : await res.text();
       if (!res.ok) {

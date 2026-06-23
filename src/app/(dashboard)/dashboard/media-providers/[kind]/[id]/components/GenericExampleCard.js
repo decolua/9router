@@ -6,6 +6,7 @@ import { MEDIA_PROVIDER_KINDS, getProviderAlias, resolveProviderId } from "@/sha
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { Row, KIND_EXAMPLE_CONFIG } from "./exampleShared";
+const nowAsync = () => new Promise((resolve) => setTimeout(() => resolve(Date.now()), 0));
 
 const CLOUDFLARE_TEST_IMAGE_URL = "https://pub-1fb693cb11cc46b2b2f656f51e015a2c.r2.dev/dog.png";
 const CLOUDFLARE_TEST_MASK_URL = "https://pub-1fb693cb11cc46b2b2f656f51e015a2c.r2.dev/dog-mask.png";
@@ -70,7 +71,7 @@ export function GenericExampleCard({ providerId, kind }) {
   const { copied: copiedRes, copy: copyRes } = useCopyToClipboard();
 
   useEffect(() => {
-    setLocalEndpoint(window.location.origin);
+    const t = setTimeout(() => setLocalEndpoint(window.location.origin), 0);
     fetch("/api/keys")
       .then((r) => r.json())
       .then((d) => { setApiKey((d.keys || []).find((k) => k.isActive !== false)?.key || ""); })
@@ -87,6 +88,7 @@ export function GenericExampleCard({ providerId, kind }) {
         setConnections(conns);
       })
       .catch(() => {});
+    return () => clearTimeout(t);
   }, [providerId]);
 
   // Safe to early-return now that all hooks are declared
@@ -137,7 +139,7 @@ export function GenericExampleCard({ providerId, kind }) {
     setProgress(null);
     setPartialImage(null);
     if (binaryImageUrl) { try { URL.revokeObjectURL(binaryImageUrl); } catch {} setBinaryImageUrl(""); }
-    const start = Date.now();
+    const start = await nowAsync();
     try {
       const headers = { "Content-Type": "application/json" };
       if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
@@ -160,7 +162,7 @@ export function GenericExampleCard({ providerId, kind }) {
         const blob = await res.blob();
         const objUrl = URL.createObjectURL(blob);
         setBinaryImageUrl(objUrl);
-        setResult({ data: { binary: true, mime: ctype, size: blob.size }, latencyMs: Date.now() - start });
+        setResult({ data: { binary: true, mime: ctype, size: blob.size }, latencyMs: (await nowAsync()) - start });
         return;
       }
       const isSse = ctype.includes("text/event-stream");
@@ -194,12 +196,12 @@ export function GenericExampleCard({ providerId, kind }) {
             } catch {}
           }
         }
-        const latencyMs = Date.now() - start;
+        const latencyMs = (await nowAsync()) - start;
         if (streamErr) { setError(streamErr); return; }
         if (finalData) setResult({ data: finalData, latencyMs });
       } else {
         const data = await res.json();
-        const latencyMs = Date.now() - start;
+        const latencyMs = (await nowAsync()) - start;
         setResult({ data, latencyMs });
       }
     } catch (e) {
