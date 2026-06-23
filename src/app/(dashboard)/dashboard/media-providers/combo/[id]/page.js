@@ -16,6 +16,7 @@ function parseModelEntry(entry) {
 }
 
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
+const nowAsync = () => new Promise((resolve) => setTimeout(() => resolve(Date.now()), 0));
 
 const KIND_LABELS = {
   webSearch: "Web Search",
@@ -175,14 +176,14 @@ export default function ComboDetailPage() {
     setTestError("");
     if (testResult?.audioUrl) { try { URL.revokeObjectURL(testResult.audioUrl); } catch {} }
     if (testResult?.imageUrl?.startsWith("blob:")) { try { URL.revokeObjectURL(testResult.imageUrl); } catch {} }
-    const start = Date.now();
+    const start = await nowAsync();
     try {
       const path = EXAMPLE_PATHS[combo.kind];
       const body = EXAMPLE_BODIES[combo.kind](combo.name);
       const headers = { "Content-Type": "application/json" };
       if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
       const res = await fetch(`/api${path}`, { method: "POST", headers, body: JSON.stringify(body) });
-      const latencyMs = Date.now() - start;
+      const latencyMs = (await nowAsync()) - start;
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         setTestError(d?.error?.message || d?.error || `HTTP ${res.status}`);
