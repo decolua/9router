@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const rows = [];
+let forceRenewConflictOnce = false;
 
 const mocks = vi.hoisted(() => ({
   getAdapter: vi.fn(),
@@ -12,28 +13,6 @@ vi.mock("../../src/lib/db/driver.js", () => ({
 
 vi.mock("uuid", () => ({
   v4: () => "mocked-uuid",
-}));
-
-vi.mock("@/lib/api-keys/plans.js", () => ({
-  normalizePlanMonths(value) {
-    const plan = Number(value);
-    if (![1, 3, 6, 12].includes(plan)) throw new Error("Plan must be one of 1, 3, 6, 12 months");
-    return plan;
-  },
-  isExpiredAt(expiresAt, now = new Date()) {
-    if (!expiresAt) return false;
-    return new Date(expiresAt).getTime() <= now.getTime();
-  },
-  getRenewalBaseDate(expiresAt, now = new Date()) {
-    if (!expiresAt) return now;
-    const expiry = new Date(expiresAt);
-    return expiry.getTime() > now.getTime() ? expiry : now;
-  },
-  calculateExpiresAt(planMonths, baseDate = new Date()) {
-    const date = new Date(baseDate);
-    date.setUTCMonth(date.getUTCMonth() + Number(planMonths));
-    return date.toISOString();
-  },
 }));
 
 function matchesWhere(row, whereSql, params) {
@@ -57,7 +36,7 @@ function makeDb() {
       return null;
     },
     run(sql, params = []) {
-      if (sql.startsWith("UPDATE apiKeys\n       SET isActive = 0")) {
+      if (sql.includes("SET isActive = 0") && sql.includes("expiresAt <= ?")) {
         const [updatedAt, now] = params;
         let changes = 0;
         for (const row of rows) {
@@ -88,8 +67,16 @@ function makeDb() {
       }
 
       if (sql.startsWith("UPDATE apiKeys")) {
+        const expectedVersion = params[9];
         const row = rows.find((item) => item.id === params[8]);
         if (!row) return { changes: 0 };
+        if ((row.updatedAt || row.createdAt) !== expectedVersion) return { changes: 0 };
+        if (forceRenewConflictOnce && row.id === "active") {
+          forceRenewConflictOnce = false;
+          row.updatedAt = "2026-06-19T00:00:00.000Z";
+          row.expiresAt = "2026-08-18T14:52:33.301Z";
+          return { changes: 0 };
+        }
         row.key = params[0];
         row.name = params[1];
         row.machineId = params[2];
@@ -114,6 +101,7 @@ const repo = await import("../../src/lib/db/repos/apiKeysRepo.js");
 describe("apiKeysRepo expiration", () => {
   beforeEach(() => {
     rows.length = 0;
+    forceRenewConflictOnce = false;
     mocks.getAdapter.mockResolvedValue(makeDb());
   });
 
@@ -190,6 +178,48 @@ describe("apiKeysRepo expiration", () => {
     });
   });
 
+  it("validateApiKey only expires the requested key on the hot path", async () => {
+    rows.push({
+      id: "expired-one",
+      key: "sk-expired-one",
+      name: "Expired One",
+      machineId: "machine",
+      isActive: 1,
+      planMonths: 1,
+      expiresAt: "2026-06-01T00:00:00.000Z",
+      deactivatedReason: null,
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z",
+    });
+    rows.push({
+      id: "expired-two",
+      key: "sk-expired-two",
+      name: "Expired Two",
+      machineId: "machine",
+      isActive: 1,
+      planMonths: 1,
+      expiresAt: "2026-06-02T00:00:00.000Z",
+      deactivatedReason: null,
+      createdAt: "2026-05-02T00:00:00.000Z",
+      updatedAt: "2026-05-02T00:00:00.000Z",
+    });
+
+    await expect(
+      repo.validateApiKey("sk-expired-one", { now: new Date("2026-06-23T00:00:00.000Z") })
+    ).resolves.toBe(false);
+
+    expect(rows[0]).toMatchObject({
+      isActive: 0,
+      deactivatedReason: "expired",
+      updatedAt: "2026-06-23T00:00:00.000Z",
+    });
+    expect(rows[1]).toMatchObject({
+      isActive: 1,
+      deactivatedReason: null,
+      updatedAt: "2026-05-02T00:00:00.000Z",
+    });
+  });
+
   it("does not let expired keys be reactivated through update", async () => {
     rows.push({
       id: "expired",
@@ -213,6 +243,58 @@ describe("apiKeysRepo expiration", () => {
     expect(updated).toMatchObject({
       isActive: false,
       deactivatedReason: "expired",
+      updatedAt: "2026-06-23T00:00:00.000Z",
+    });
+  });
+
+  it("accepts boolean-like isActive values from existing callers", async () => {
+    rows.push({
+      id: "active",
+      key: "sk-active",
+      name: "Active User",
+      machineId: "machine",
+      isActive: 0,
+      planMonths: 1,
+      expiresAt: "2026-07-18T14:52:33.301Z",
+      deactivatedReason: "manual",
+      createdAt: "2026-06-18T14:52:33.301Z",
+      updatedAt: "2026-06-18T14:52:33.301Z",
+    });
+
+    const updated = await repo.updateApiKey(
+      "active",
+      { isActive: "1" },
+      { now: new Date("2026-06-23T00:00:00.000Z") }
+    );
+
+    expect(updated).toMatchObject({
+      isActive: true,
+      deactivatedReason: null,
+      updatedAt: "2026-06-23T00:00:00.000Z",
+    });
+  });
+
+  it("retries renewal when a concurrent update wins the first write", async () => {
+    rows.push({
+      id: "active",
+      key: "sk-active",
+      name: "Active User",
+      machineId: "machine",
+      isActive: 1,
+      planMonths: 1,
+      expiresAt: "2026-07-18T14:52:33.301Z",
+      deactivatedReason: null,
+      createdAt: "2026-06-18T14:52:33.301Z",
+      updatedAt: "2026-06-18T14:52:33.301Z",
+    });
+    forceRenewConflictOnce = true;
+
+    const renewed = await repo.renewApiKey("active", 1, new Date("2026-06-23T00:00:00.000Z"));
+
+    expect(renewed).toMatchObject({
+      expiresAt: "2026-09-18T14:52:33.301Z",
+      isActive: true,
+      deactivatedReason: null,
       updatedAt: "2026-06-23T00:00:00.000Z",
     });
   });

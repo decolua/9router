@@ -84,7 +84,10 @@ export const TABLES = {
       createdAt: "TEXT NOT NULL",
       updatedAt: "TEXT",
     },
-    indexes: ["CREATE INDEX IF NOT EXISTS idx_ak_key ON apiKeys(key)"],
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_ak_key ON apiKeys(key)",
+      "CREATE INDEX IF NOT EXISTS idx_ak_active_expires ON apiKeys(isActive, expiresAt)",
+    ],
   },
   combos: {
     columns: {

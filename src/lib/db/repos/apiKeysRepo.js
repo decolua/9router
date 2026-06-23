@@ -5,7 +5,7 @@ import {
   getRenewalBaseDate,
   isExpiredAt,
   normalizePlanMonths,
-} from "@/lib/api-keys/plans.js";
+} from "../../api-keys/plans.js";
 
 function rowToKey(row) {
   if (!row) return null;
@@ -14,7 +14,7 @@ function rowToKey(row) {
     key: row.key,
     name: row.name,
     machineId: row.machineId,
-    isActive: row.isActive === 1 || row.isActive === true,
+    isActive: normalizeBooleanFlag(row.isActive),
     planMonths: row.planMonths === null || row.planMonths === undefined ? null : Number(row.planMonths),
     expiresAt: row.expiresAt || null,
     deactivatedReason: row.deactivatedReason || null,
@@ -30,6 +30,30 @@ function toNow(optionsNow = new Date()) {
 function normalizePlanValue(planMonths) {
   if (planMonths === undefined || planMonths === null) return null;
   return normalizePlanMonths(planMonths);
+}
+
+function normalizeBooleanFlag(value) {
+  if (value === undefined || value === null) return false;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") {
+    if (value === 1) return true;
+    if (value === 0) return false;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true" || normalized === "1") return true;
+    if (normalized === "false" || normalized === "0" || normalized === "") return false;
+  }
+  throw new Error("isActive must be a boolean-like value");
+}
+
+function normalizeMutableBooleanFlag(value, fieldName) {
+  if (value === undefined) return undefined;
+  try {
+    return normalizeBooleanFlag(value);
+  } catch {
+    throw new Error(`${fieldName} must be true, false, 1, 0, "true", or "false"`);
+  }
 }
 
 function normalizeUpdateData(current, data, now) {
@@ -48,7 +72,7 @@ function normalizeUpdateData(current, data, now) {
   }
 
   if (Object.prototype.hasOwnProperty.call(data, "isActive")) {
-    next.isActive = data.isActive === true;
+    next.isActive = normalizeMutableBooleanFlag(data.isActive, "isActive");
   }
 
   if (next.isActive && isExpiredAt(next.expiresAt, now)) {
@@ -63,6 +87,38 @@ function normalizeUpdateData(current, data, now) {
   return next;
 }
 
+function getRowVersion(row) {
+  return row.updatedAt || row.createdAt || "";
+}
+
+function updateApiKeyRecord(db, next, expectedVersion) {
+  return db.run(
+    `UPDATE apiKeys
+       SET key = ?,
+           name = ?,
+           machineId = ?,
+           isActive = ?,
+           planMonths = ?,
+           expiresAt = ?,
+           deactivatedReason = ?,
+           updatedAt = ?
+     WHERE id = ?
+       AND COALESCE(updatedAt, createdAt) = ?`,
+    [
+      next.key,
+      next.name,
+      next.machineId,
+      next.isActive ? 1 : 0,
+      next.planMonths,
+      next.expiresAt,
+      next.deactivatedReason,
+      next.updatedAt,
+      next.id,
+      expectedVersion,
+    ]
+  );
+}
+
 async function expireApiKeys(db, now = new Date()) {
   const timestamp = toNow(now).toISOString();
   db.run(
@@ -75,6 +131,31 @@ async function expireApiKeys(db, now = new Date()) {
        AND isActive != 0`,
     [timestamp, timestamp]
   );
+}
+
+function expireApiKeyRow(db, row, now = new Date()) {
+  const current = rowToKey(row);
+  if (!current || !current.isActive || !isExpiredAt(current.expiresAt, now)) return current;
+
+  const timestamp = toNow(now).toISOString();
+  const update = updateApiKeyRecord(db, {
+    ...current,
+    isActive: false,
+    deactivatedReason: "expired",
+    updatedAt: timestamp,
+  }, getRowVersion(row));
+
+  if ((update?.changes ?? 0) > 0) {
+    return {
+      ...current,
+      isActive: false,
+      deactivatedReason: "expired",
+      updatedAt: timestamp,
+    };
+  }
+
+  const refreshed = db.get(`SELECT * FROM apiKeys WHERE id = ?`, [current.id]);
+  return rowToKey(refreshed);
 }
 
 export async function getApiKeys(options = {}) {
@@ -138,82 +219,58 @@ export async function updateApiKey(id, data, options = {}) {
     if (!row) return;
     const merged = normalizeUpdateData(rowToKey(row), data, now);
     merged.updatedAt = now.toISOString();
-    db.run(
-      `UPDATE apiKeys
-         SET key = ?,
-             name = ?,
-             machineId = ?,
-             isActive = ?,
-             planMonths = ?,
-             expiresAt = ?,
-             deactivatedReason = ?,
-             updatedAt = ?
-       WHERE id = ?`,
-      [
-        merged.key,
-        merged.name,
-        merged.machineId,
-        merged.isActive ? 1 : 0,
-        merged.planMonths,
-        merged.expiresAt,
-        merged.deactivatedReason,
-        merged.updatedAt,
-        id,
-      ]
-    );
-    result = merged;
+    const update = updateApiKeyRecord(db, { ...merged, id }, getRowVersion(row));
+    if ((update?.changes ?? 0) > 0) {
+      result = merged;
+      return;
+    }
+    const refreshed = db.get(`SELECT * FROM apiKeys WHERE id = ?`, [id]);
+    result = rowToKey(refreshed);
   });
   return result;
 }
 
 export async function renewApiKey(id, planMonths, now = new Date()) {
   const db = await getAdapter();
-  let result = null;
   const renewalNow = toNow(now);
-  db.transaction(() => {
-    const row = db.get(`SELECT * FROM apiKeys WHERE id = ?`, [id]);
-    if (!row) return;
+  const normalizedPlanMonths = normalizePlanMonths(planMonths);
 
-    const current = rowToKey(row);
-    const normalizedPlanMonths = normalizePlanMonths(planMonths);
-    const baseDate = getRenewalBaseDate(current.expiresAt, renewalNow);
-    const updatedAt = renewalNow.toISOString();
-    const expiresAt = calculateExpiresAt(normalizedPlanMonths, baseDate);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    let result = null;
+    let conflict = false;
 
-    db.run(
-      `UPDATE apiKeys
-         SET key = ?,
-             name = ?,
-             machineId = ?,
-             isActive = ?,
-             planMonths = ?,
-             expiresAt = ?,
-             deactivatedReason = ?,
-             updatedAt = ?
-       WHERE id = ?`,
-      [
-        current.key,
-        current.name,
-        current.machineId,
-        1,
+    db.transaction(() => {
+      const row = db.get(`SELECT * FROM apiKeys WHERE id = ?`, [id]);
+      if (!row) return;
+
+      const current = rowToKey(row);
+      const updatedAt = renewalNow.toISOString();
+      const expiresAt = calculateExpiresAt(
         normalizedPlanMonths,
+        getRenewalBaseDate(current.expiresAt, renewalNow)
+      );
+      const next = {
+        ...current,
+        isActive: true,
+        planMonths: normalizedPlanMonths,
         expiresAt,
-        null,
+        deactivatedReason: null,
         updatedAt,
-        id,
-      ]
-    );
+      };
+      const update = updateApiKeyRecord(db, next, getRowVersion(row));
 
-    result = {
-      ...current,
-      isActive: true,
-      planMonths: normalizedPlanMonths,
-      expiresAt,
-      deactivatedReason: null,
-      updatedAt,
-    };
-  });
-  return result;
+      if ((update?.changes ?? 0) > 0) {
+        result = next;
+      } else {
+        conflict = true;
+      }
+    });
+
+    if (result) return result;
+    if (!conflict) return null;
+  }
+
+  throw new Error("Failed to renew API key due to concurrent updates");
 }
 
 export async function deleteApiKey(id) {
@@ -225,9 +282,9 @@ export async function deleteApiKey(id) {
 export async function validateApiKey(key, options = {}) {
   const db = await getAdapter();
   const now = toNow(options.now);
-  await expireApiKeys(db, now);
   const row = db.get(`SELECT * FROM apiKeys WHERE key = ?`, [key]);
   if (!row) return false;
-  const apiKey = rowToKey(row);
+  const apiKey = expireApiKeyRow(db, row, now);
+  if (!apiKey) return false;
   return apiKey.isActive === true && !isExpiredAt(apiKey.expiresAt, now);
 }

@@ -17,5 +17,6 @@ export default {
     addColumn(db, "apiKeys", "deactivatedReason", "TEXT");
     addColumn(db, "apiKeys", "updatedAt", "TEXT");
     db.run(`UPDATE apiKeys SET updatedAt = createdAt WHERE updatedAt IS NULL`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_ak_active_expires ON apiKeys(isActive, expiresAt)`);
   },
 };
