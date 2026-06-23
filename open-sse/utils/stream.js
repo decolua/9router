@@ -298,6 +298,16 @@ export function createSSEStream(options = {}) {
         if (parsed.choices?.[0]?.delta?.content) {
           const _rawContent = parsed.choices[0].delta.content;
           const _split = thinkSplitter.feed(_rawContent);
+          
+          // Strip tags from parsed object before sending to translator
+          if (_split.text !== _rawContent) {
+            if (_split.text) {
+              parsed.choices[0].delta.content = _split.text;
+            } else {
+              delete parsed.choices[0].delta.content;
+            }
+          }
+          
           if (_split.text) {
             totalContentLength += _split.text.length;
             accumulatedContent += _split.text;

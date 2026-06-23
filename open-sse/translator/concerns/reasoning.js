@@ -30,8 +30,11 @@ export function extractReasoningText(delta) {
 export function createThinkTagSplitter() {
   let pending = "";
   let inThinking = false;
-  const OPEN = "<" + "think" + ">";
-  const CLOSE = "<" + "/" + "think" + ">";
+  let openTagType = null; // track which tag was opened: 'think' or 'thinking'
+  const OPEN_THINK = "<" + "think" + ">";
+  const CLOSE_THINK = "<" + "/" + "think" + ">";
+  const OPEN_THINKING = "<" + "thinking" + ">";
+  const CLOSE_THINKING = "<" + "/" + "thinking" + ">";
 
   function feed(text) {
     if (!text) return { reasoning: "", text: "" };
@@ -41,32 +44,76 @@ export function createThinkTagSplitter() {
     let cleaned = "";
 
     while (i < input.length) {
-      const tag = inThinking ? CLOSE : OPEN;
-      const idx = input.indexOf(tag, i);
-      // Only a real match if the tag fully fits in the remaining buffer
-      // (indexOf can return a hit position when only the prefix overlaps).
-      if (idx === -1 || idx + tag.length > input.length) break;
-      const segment = input.slice(i, idx);
-      if (inThinking) reasoning += segment;
-      else cleaned += segment;
-      i = idx + tag.length;
-      inThinking = !inThinking;
+      if (!inThinking) {
+        // Look for either opening tag
+        const idxThink = input.indexOf(OPEN_THINK, i);
+        const idxThinking = input.indexOf(OPEN_THINKING, i);
+        let idx = -1;
+        let tag = null;
+        let tagType = null;
+
+        // Find whichever comes first
+        if (idxThink !== -1 && (idxThinking === -1 || idxThink < idxThinking)) {
+          idx = idxThink;
+          tag = OPEN_THINK;
+          tagType = 'think';
+        } else if (idxThinking !== -1) {
+          idx = idxThinking;
+          tag = OPEN_THINKING;
+          tagType = 'thinking';
+        }
+
+        if (idx === -1 || idx + tag.length > input.length) break;
+        const segment = input.slice(i, idx);
+        cleaned += segment;
+        i = idx + tag.length;
+        inThinking = true;
+        openTagType = tagType;
+      } else {
+        // Look for matching closing tag
+        const tag = openTagType === 'think' ? CLOSE_THINK : CLOSE_THINKING;
+        const idx = input.indexOf(tag, i);
+        if (idx === -1 || idx + tag.length > input.length) break;
+        const segment = input.slice(i, idx);
+        reasoning += segment;
+        i = idx + tag.length;
+        inThinking = false;
+        openTagType = null;
+      }
     }
 
     const tail = input.slice(i);
     // Only buffer suffix if an unclosed '<' in tail could begin a partial tag.
-    const wantTag = inThinking ? CLOSE : OPEN;
     const lastAngle = tail.lastIndexOf("<");
     let safeLen = tail.length;
     if (lastAngle !== -1) {
       const afterAngle = tail.slice(lastAngle);
-      // afterAngle is a candidate partial if it's a non-empty prefix of wantTag
-      // (strictly shorter than wantTag, so the tag isn't complete yet).
-      if (
-        afterAngle.length > 0 &&
-        afterAngle.length < wantTag.length &&
-        wantTag.startsWith(afterAngle)
-      ) {
+      // Check if afterAngle could be a partial of any expected tag
+      let isPartialMatch = false;
+      if (inThinking) {
+        // Look for partial close tag matching the opened tag type
+        const wantTag = openTagType === 'think' ? CLOSE_THINK : CLOSE_THINKING;
+        if (
+          afterAngle.length > 0 &&
+          afterAngle.length < wantTag.length &&
+          wantTag.startsWith(afterAngle)
+        ) {
+          isPartialMatch = true;
+        }
+      } else {
+        // Look for partial open tag (either think or thinking)
+        if (
+          (afterAngle.length > 0 &&
+           afterAngle.length < OPEN_THINK.length &&
+           OPEN_THINK.startsWith(afterAngle)) ||
+          (afterAngle.length > 0 &&
+           afterAngle.length < OPEN_THINKING.length &&
+           OPEN_THINKING.startsWith(afterAngle))
+        ) {
+          isPartialMatch = true;
+        }
+      }
+      if (isPartialMatch) {
         safeLen = lastAngle;
       }
     }
@@ -85,6 +132,7 @@ export function createThinkTagSplitter() {
     reset: () => {
       pending = "";
       inThinking = false;
+      openTagType = null;
     },
   };
 }
