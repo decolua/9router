@@ -1,1 +1,1 @@
-export { GET, OPTIONS } from "./models/route";
+export { GET, OPTIONS } from "./route.ts";
