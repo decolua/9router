@@ -2,6 +2,8 @@ import crypto from "node:crypto";
 import { getSettings, updateSettings } from "@/lib/localDb";
 
 const ADMIN_KEY_PREFIX = "9r-admin-";
+const ADMIN_KEY_HASH_PATTERN = /^sha256:[a-f0-9]{64}$/;
+let rotationQueue = Promise.resolve();
 
 function hashAdminKey(key) {
   return `sha256:${crypto.createHash("sha256").update(String(key)).digest("hex")}`;
@@ -19,8 +21,10 @@ function generateAdminApiKey() {
 }
 
 export function extractAdminApiKey(request) {
-  const authHeader = request.headers.get("Authorization");
-  if (authHeader?.startsWith("Bearer ")) return authHeader.slice(7).trim();
+  const authHeader = request.headers.get("Authorization")?.trim();
+  const bearerMatch = authHeader?.match(/^Bearer\s+(.+)$/i);
+  const bearerKey = bearerMatch?.[1]?.trim();
+  if (bearerKey) return bearerKey;
   return request.headers.get("x-admin-api-key")?.trim() || "";
 }
 
@@ -28,7 +32,7 @@ export async function verifyAdminApiKey(key) {
   if (!key) return false;
   const settings = (await getSettings()) || {};
   const storedHash = settings.adminApiKeyHash;
-  if (!storedHash) return false;
+  if (!ADMIN_KEY_HASH_PATTERN.test(storedHash || "")) return false;
   return timingSafeEqualString(hashAdminKey(key), storedHash);
 }
 
@@ -46,7 +50,7 @@ export async function getAdminApiKeyStatus() {
   };
 }
 
-export async function createOrRotateAdminApiKey(now = new Date()) {
+async function rotateAdminApiKey(now = new Date()) {
   const settings = (await getSettings()) || {};
   const timestamp = now.toISOString();
   const key = generateAdminApiKey();
@@ -64,4 +68,10 @@ export async function createOrRotateAdminApiKey(now = new Date()) {
       updatedAt: updates.adminApiKeyUpdatedAt,
     },
   };
+}
+
+export async function createOrRotateAdminApiKey(now = new Date()) {
+  const rotation = rotationQueue.then(() => rotateAdminApiKey(now));
+  rotationQueue = rotation.catch(() => {});
+  return await rotation;
 }
