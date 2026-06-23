@@ -57,16 +57,16 @@ export async function PUT(
     if (name !== undefined) updateData.name = name;
     if (role !== undefined) updateData.role = role;
     if (allowedModels !== undefined) {
-      if (!Array.isArray(allowedModels) || !allowedModels.every((v): v is string => typeof v === "string")) {
+      if (!Array.isArray(allowedModels)) {
         return NextResponse.json({ error: "allowedModels must be an array" }, { status: 400 });
       }
-      updateData.allowedModels = allowedModels;
+      updateData.allowedModels = allowedModels as string[];
     }
     if (allowedProviders !== undefined) {
-      if (!Array.isArray(allowedProviders) || !allowedProviders.every((v): v is string => typeof v === "string")) {
+      if (!Array.isArray(allowedProviders)) {
         return NextResponse.json({ error: "allowedProviders must be an array" }, { status: 400 });
       }
-      updateData.allowedProviders = allowedProviders;
+      updateData.allowedProviders = allowedProviders as string[];
     }
     if (monthlyTokenLimit !== undefined) updateData.monthlyTokenLimit = monthlyTokenLimit;
     if (monthlyBudgetUsd !== undefined) updateData.monthlyBudgetUsd = monthlyBudgetUsd;
