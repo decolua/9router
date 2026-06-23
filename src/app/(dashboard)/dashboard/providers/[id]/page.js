@@ -391,9 +391,7 @@ export default function ProviderDetailPage() {
   };
 
   useEffect(() => {
-    fetchConnections();
-    fetchAliases();
-    fetchDisabledModels();
+    Promise.resolve().then(() => { fetchConnections(); fetchAliases(); fetchDisabledModels(); });
   }, [fetchConnections, fetchAliases, fetchDisabledModels]);
 
   // Fetch suggested models from provider's public API (if configured)
@@ -725,7 +723,7 @@ export default function ProviderDetailPage() {
   };
 
   useEffect(() => {
-    setSelectedConnectionIds((prev) => prev.filter((id) => connections.some((conn) => conn.id === id)));
+    Promise.resolve().then(() => setSelectedConnectionIds((prev) => prev.filter((id) => connections.some((conn) => conn.id === id))));
   }, [connections]);
 
   const selectedProxySummary = (() => {
@@ -1568,6 +1566,7 @@ export default function ProviderDetailPage() {
       />
       {isCompatible && (
         <EditCompatibleNodeModal
+          key={`${providerNode?.id || "none"}-${showEditNodeModal ? "open" : "closed"}`}
           isOpen={showEditNodeModal}
           node={providerNode}
           onSave={handleUpdateNode}
@@ -1577,6 +1576,7 @@ export default function ProviderDetailPage() {
       )}
       {!isCompatible && (
         <AddCustomModelModal
+          key={showAddCustomModel ? "open" : "closed"}
           isOpen={showAddCustomModel}
           providerAlias={providerStorageAlias}
           providerDisplayAlias={providerDisplayAlias}

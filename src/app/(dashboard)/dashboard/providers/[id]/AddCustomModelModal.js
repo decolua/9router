@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import PropTypes from "prop-types";
 import { Button, Modal } from "@/shared/components";
 
@@ -9,11 +9,6 @@ export default function AddCustomModelModal({ isOpen, providerAlias, providerDis
   const [testStatus, setTestStatus] = useState(null); // null | "testing" | "ok" | "error"
   const [testError, setTestError] = useState("");
   const [saving, setSaving] = useState(false);
-
-  // Reset state when modal opens
-  useEffect(() => {
-    if (isOpen) { setModelId(""); setTestStatus(null); setTestError(""); }
-  }, [isOpen]);
 
   // Strip provider's own alias prefix (e.g. "cc/model" -> "model" for cc provider)
   const stripAlias = (id) => {
