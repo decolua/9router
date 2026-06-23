@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { formatResetTime, getRemainingPercentage } from "./utils";
 
 const PAGE_SIZE = 10;
@@ -90,7 +90,9 @@ export default function QuotaTable({
   sortMode = "default",
   showSortLabel = false,
 }) {
-  const [page, setPage] = useState(1);
+  // Keyed page state: reset to 1 when sortMode or quotas identity changes,
+  // clamp to totalPages when list shrinks — all without effects.
+  const [pageState, setPageState] = useState({ page: 1, sortMode, quotas });
 
   const normalizedQuotas = useMemo(
     () => quotas.map((quota, index) => ({
@@ -106,15 +108,9 @@ export default function QuotaTable({
     [normalizedQuotas, sortMode],
   );
 
+  const staleKey = pageState.sortMode !== sortMode || pageState.quotas !== quotas;
   const totalPages = Math.max(1, Math.ceil(sortedQuotas.length / PAGE_SIZE));
-
-  useEffect(() => {
-    setPage(1);
-  }, [sortMode, quotas]);
-
-  useEffect(() => {
-    setPage((currentPage) => Math.min(currentPage, totalPages));
-  }, [totalPages]);
+  const page = staleKey ? 1 : Math.min(pageState.page, totalPages);
 
   if (!quotas || quotas.length === 0) {
     return null;
@@ -237,7 +233,7 @@ export default function QuotaTable({
           <div className="mt-1.5 flex items-center justify-end gap-1">
             <button
               type="button"
-              onClick={() => setPage((currentPage) => Math.max(1, currentPage - 1))}
+              onClick={() => setPageState({ page: Math.max(1, page - 1), sortMode, quotas })}
               disabled={page === 1}
               className="flex h-6 items-center rounded-md border border-border px-2 text-[10px] text-text-main transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
             >
@@ -245,7 +241,7 @@ export default function QuotaTable({
             </button>
             <button
               type="button"
-              onClick={() => setPage((currentPage) => Math.min(totalPages, currentPage + 1))}
+              onClick={() => setPageState({ page: Math.min(totalPages, page + 1), sortMode, quotas })}
               disabled={page === totalPages}
               className="flex h-6 items-center rounded-md border border-border px-2 text-[10px] text-text-main transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
             >
