@@ -2,11 +2,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getSettings: vi.fn(),
+  rotateAdminApiKeySettings: vi.fn(),
   updateSettings: vi.fn(),
 }));
 
 vi.mock("@/lib/localDb", () => ({
   getSettings: mocks.getSettings,
+  rotateAdminApiKeySettings: mocks.rotateAdminApiKeySettings,
   updateSettings: mocks.updateSettings,
 }));
 
@@ -20,6 +22,30 @@ const {
 
 function request(headers = {}) {
   return { headers: new Headers(headers) };
+}
+
+function mockRotation({ settingsBox = { value: {} }, trackUpdate = false } = {}) {
+  mocks.rotateAdminApiKeySettings.mockImplementation(async ({ now, generateKey, hashKey }) => {
+    const key = generateKey();
+    const timestamp = now.toISOString();
+    const updates = {
+      adminApiKeyHash: hashKey(key),
+      adminApiKeyCreatedAt: settingsBox.value.adminApiKeyCreatedAt || timestamp,
+      adminApiKeyUpdatedAt: timestamp,
+    };
+    settingsBox.value = { ...settingsBox.value, ...updates };
+    if (trackUpdate) mocks.updateSettings(updates);
+    return {
+      key,
+      status: {
+        configured: true,
+        createdAt: updates.adminApiKeyCreatedAt,
+        updatedAt: updates.adminApiKeyUpdatedAt,
+      },
+    };
+  });
+  mocks.getSettings.mockImplementation(async () => settingsBox.value);
+  return settingsBox;
 }
 
 describe("admin API key auth", () => {
@@ -55,7 +81,7 @@ describe("admin API key auth", () => {
   });
 
   it("creates one plaintext key and stores only hash metadata", async () => {
-    mocks.updateSettings.mockImplementation(async (updates) => updates);
+    mockRotation({ trackUpdate: true });
 
     const result = await createOrRotateAdminApiKey(new Date("2026-06-23T00:00:00.000Z"));
 
@@ -68,15 +94,15 @@ describe("admin API key auth", () => {
     }));
     expect(mocks.updateSettings.mock.calls[0][0].adminApiKeyHash).not.toContain(result.key);
     expect(result.status).not.toHaveProperty("adminApiKeyHash");
+    expect(mocks.rotateAdminApiKeySettings).toHaveBeenCalledWith(expect.objectContaining({
+      now: new Date("2026-06-23T00:00:00.000Z"),
+      generateKey: expect.any(Function),
+      hashKey: expect.any(Function),
+    }));
   });
 
   it("verifies the generated key against stored hash", async () => {
-    let savedSettings = {};
-    mocks.updateSettings.mockImplementation(async (updates) => {
-      savedSettings = { ...savedSettings, ...updates };
-      return savedSettings;
-    });
-    mocks.getSettings.mockImplementation(async () => savedSettings);
+    mockRotation();
 
     const result = await createOrRotateAdminApiKey(new Date("2026-06-23T00:00:00.000Z"));
 
@@ -98,12 +124,7 @@ describe("admin API key auth", () => {
   });
 
   it("requires admin api key from requests", async () => {
-    let savedSettings = {};
-    mocks.updateSettings.mockImplementation(async (updates) => {
-      savedSettings = { ...savedSettings, ...updates };
-      return savedSettings;
-    });
-    mocks.getSettings.mockImplementation(async () => savedSettings);
+    mockRotation();
 
     const result = await createOrRotateAdminApiKey(new Date("2026-06-23T00:00:00.000Z"));
 
@@ -111,32 +132,11 @@ describe("admin API key auth", () => {
     await expect(requireAdminApiKey(request({ authorization: "Bearer wrong" }))).resolves.toBe(false);
   });
 
-  it("serializes concurrent rotations", async () => {
-    let savedSettings = {};
-    let firstUpdateStarted;
-    let releaseFirstUpdate;
-    const firstUpdateStartedPromise = new Promise((resolve) => {
-      firstUpdateStarted = resolve;
-    });
-    const releaseFirstUpdatePromise = new Promise((resolve) => {
-      releaseFirstUpdate = resolve;
-    });
-
-    mocks.getSettings.mockImplementation(async () => ({ ...savedSettings }));
-    mocks.updateSettings.mockImplementation(async (updates) => {
-      if (mocks.updateSettings.mock.calls.length === 1) {
-        firstUpdateStarted();
-        await releaseFirstUpdatePromise;
-      }
-      savedSettings = { ...savedSettings, ...updates };
-      return savedSettings;
-    });
+  it("uses settings repo rotation helper for concurrent rotation safety", async () => {
+    mockRotation();
 
     const first = createOrRotateAdminApiKey(new Date("2026-06-23T00:00:00.000Z"));
-    await firstUpdateStartedPromise;
     const second = createOrRotateAdminApiKey(new Date("2026-06-24T00:00:00.000Z"));
-
-    releaseFirstUpdate();
     const [firstResult, secondResult] = await Promise.all([first, second]);
 
     expect(firstResult.status).toEqual({
@@ -149,10 +149,24 @@ describe("admin API key auth", () => {
       createdAt: "2026-06-23T00:00:00.000Z",
       updatedAt: "2026-06-24T00:00:00.000Z",
     });
-    expect(mocks.updateSettings).toHaveBeenCalledTimes(2);
+    expect(mocks.rotateAdminApiKeySettings).toHaveBeenCalledTimes(2);
   });
 
   it("returns safe status only", async () => {
+    mocks.getSettings.mockResolvedValue({
+      adminApiKeyHash: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      adminApiKeyCreatedAt: "2026-06-23T00:00:00.000Z",
+      adminApiKeyUpdatedAt: "2026-06-24T00:00:00.000Z",
+    });
+
+    await expect(getAdminApiKeyStatus()).resolves.toEqual({
+      configured: true,
+      createdAt: "2026-06-23T00:00:00.000Z",
+      updatedAt: "2026-06-24T00:00:00.000Z",
+    });
+  });
+
+  it("reports unconfigured status for malformed stored hashes", async () => {
     mocks.getSettings.mockResolvedValue({
       adminApiKeyHash: "sha256:secret",
       adminApiKeyCreatedAt: "2026-06-23T00:00:00.000Z",
@@ -160,7 +174,7 @@ describe("admin API key auth", () => {
     });
 
     await expect(getAdminApiKeyStatus()).resolves.toEqual({
-      configured: true,
+      configured: false,
       createdAt: "2026-06-23T00:00:00.000Z",
       updatedAt: "2026-06-24T00:00:00.000Z",
     });
