@@ -21,6 +21,10 @@ import {
   isOpenAIResponsesTerminalEvent,
   formatIncompleteOpenAIResponsesStreamFailure,
 } from "./responsesStreamHelpers.js";
+import {
+  extractReasoningText,
+  createThinkTagSplitter,
+} from "../translator/concerns/reasoning.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
 import {
@@ -83,12 +87,6 @@ export function createSSEStream(options = {}) {
       ? { ...initState(sourceFormat), provider, toolNameMap, model }
       : null;
 
-  // Inline-tag parser state (persists across chunks for split-tag streams).
-  // `inThinking` toggles when `<think>` / `</think>` cross chunk boundaries;
-  // `thinkAccum` buffers the reasoning text until the close tag is seen so it
-  // can be emitted as a single `reasoning_content` value.
-  let inThinking = false;
-  let thinkAccum = "";
   let totalContentLength = 0;
   let accumulatedContent = "";
   let accumulatedThinking = "";
@@ -96,6 +94,7 @@ export function createSSEStream(options = {}) {
   let sseLineCount = 0;
   let sseEmittedCount = 0;
   const eventTypeCounts = {};
+  const thinkSplitter = createThinkTagSplitter();
 
   // Track Responses API event framing for same-format passthrough (codex)
   let currentOpenAIResponsesEvent = null;
@@ -177,63 +176,25 @@ export function createSSEStream(options = {}) {
               }
 
               const delta = parsed.choices?.[0]?.delta;
-              const content = delta?.content;
-              const reasoning = delta?.reasoning_content;
-              let contentModified = false;
-
-              // ponytail: custom OpenAI-compatible providers (GLM/Qwen/DeepSeek/etc.)
-              // often wrap thinking text in inline `<think>...</think>` tags inside
-              // the streamed `content` field. Pi renders raw content as text and
-              // honors `reasoning_content` for extended thinking display — so we
-              // extract inline reasoning into `reasoning_content` and strip tags from
-              // `content`. Stateful across chunks so split-tag streams work too.
-              // Revert if a passthrough target depends on inline tags.
-              if (
-                typeof content === "string" &&
-                (inThinking || /<think>|<\/think>/.test(content))
-              ) {
-                let parsedText = "";
-                let remaining = content;
-                while (remaining.length > 0) {
-                  if (inThinking) {
-                    const closeIdx = remaining.indexOf("</think>");
-                    if (closeIdx === -1) {
-                      thinkAccum += remaining;
-                      remaining = "";
-                    } else {
-                      thinkAccum += remaining.slice(0, closeIdx);
-                      remaining = remaining.slice(closeIdx + "</think>".length);
-                      inThinking = false;
-                      if (thinkAccum) {
-                        delta.reasoning_content =
-                          (delta.reasoning_content || "") + thinkAccum;
-                        thinkAccum = "";
-                        contentModified = true;
-                      }
-                    }
-                  } else {
-                    const openIdx = remaining.indexOf("<think>");
-                    if (openIdx === -1) {
-                      parsedText += remaining;
-                      remaining = "";
-                    } else {
-                      parsedText += remaining.slice(0, openIdx);
-                      remaining = remaining.slice(openIdx + "<think>".length);
-                      inThinking = true;
-                      thinkAccum = "";
-                    }
-                  }
+              let content = delta?.content;
+              const reasoning = extractReasoningText(delta);
+              if (content && typeof content === "string") {
+                // Strip inline think tags; route tag-content to reasoning accumulator
+                const split = thinkSplitter.feed(content);
+                content = split.text || null;
+                if (split.reasoning) {
+                  accumulatedThinking += split.reasoning;
+                  totalContentLength += split.reasoning.length;
                 }
-                if (parsedText !== content) {
-                  delta.content = parsedText;
-                  contentModified = true;
+                if (content) {
+                  totalContentLength += content.length;
+                  accumulatedContent += content;
+                  parsed.choices[0].delta.content = content;
+                  fieldsInjected = true;
+                } else if (parsed.choices[0].delta.content !== undefined) {
+                  delete parsed.choices[0].delta.content;
+                  fieldsInjected = true;
                 }
-              }
-
-              const effectiveContent = delta?.content;
-              if (effectiveContent && typeof effectiveContent === "string") {
-                totalContentLength += effectiveContent.length;
-                accumulatedContent += effectiveContent;
               }
               if (reasoning && typeof reasoning === "string") {
                 totalContentLength += reasoning.length;
@@ -261,7 +222,7 @@ export function createSSEStream(options = {}) {
                 parsed.usage = filterUsageForFormat(buffered, FORMATS.OPENAI);
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 injectedUsage = true;
-              } else if (idFixed || fieldsInjected || contentModified) {
+              } else if (idFixed || fieldsInjected) {
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 injectedUsage = true;
               }
@@ -333,16 +294,27 @@ export function createSSEStream(options = {}) {
           accumulatedThinking += parsed.delta.thinking;
         }
 
-        // OpenAI format - content
+        // OpenAI format - content (route inline think tags to reasoning accumulator)
         if (parsed.choices?.[0]?.delta?.content) {
-          totalContentLength += parsed.choices[0].delta.content.length;
-          accumulatedContent += parsed.choices[0].delta.content;
+          const _rawContent = parsed.choices[0].delta.content;
+          const _split = thinkSplitter.feed(_rawContent);
+          if (_split.text) {
+            totalContentLength += _split.text.length;
+            accumulatedContent += _split.text;
+          }
+          if (_split.reasoning) {
+            totalContentLength += _split.reasoning.length;
+            accumulatedThinking += _split.reasoning;
+          }
         }
-        // OpenAI format - reasoning
-        if (parsed.choices?.[0]?.delta?.reasoning_content) {
-          totalContentLength +=
-            parsed.choices[0].delta.reasoning_content.length;
-          accumulatedThinking += parsed.choices[0].delta.reasoning_content;
+        // OpenAI format - reasoning (matches openai-responses.js vendor shapes: reasoning_content / reasoning / reasoning_details[])
+        const _openaiDelta = parsed.choices?.[0]?.delta;
+        if (_openaiDelta) {
+          const _reasoning = extractReasoningText(_openaiDelta);
+          if (_reasoning) {
+            totalContentLength += _reasoning.length;
+            accumulatedThinking += _reasoning;
+          }
         }
 
         // Gemini format
