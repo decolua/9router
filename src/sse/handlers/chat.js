@@ -344,6 +344,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       rtkEnabled: !!chatSettings.rtkEnabled,
       headroomEnabled: !!chatSettings.headroomEnabled,
       headroomUrl: chatSettings.headroomUrl || "http://localhost:8787",
+      headroomSource: chatSettings.headroomSource || "custom",
       cavemanEnabled: !!chatSettings.cavemanEnabled,
       cavemanLevel: chatSettings.cavemanLevel || "full",
       ponytailEnabled: !!chatSettings.ponytailEnabled,

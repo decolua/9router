@@ -3,6 +3,7 @@ import { getSettings, updateSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { resetComboRotation } from "open-sse/services/combo.js";
 import bcrypt from "bcryptjs";
+import { wasDetected } from "@/lib/headroom/probeCache";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -74,6 +75,12 @@ export async function PATCH(request) {
       if (!body.oidcClientSecret || !String(body.oidcClientSecret).trim()) {
         delete body.oidcClientSecret;
       }
+    }
+
+    // Auto-classify headroomSource when headroomUrl is patched (without page change)
+    if (Object.prototype.hasOwnProperty.call(body, "headroomUrl") &&
+        !Object.prototype.hasOwnProperty.call(body, "headroomSource")) {
+      body.headroomSource = wasDetected(body.headroomUrl) ? "detected" : "custom";
     }
 
     const settings = await updateSettings(body);

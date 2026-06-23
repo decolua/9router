@@ -1,6 +1,6 @@
 const DEFAULT_TIMEOUT_MS = 3000;
 
-export async function compressWithHeadroom(body, { enabled, url, model, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+export async function compressWithHeadroom(body, { enabled, url, model, source = "custom", timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   if (!enabled || !url || !body) return null;
 
   const key = Array.isArray(body.messages) ? "messages"
@@ -23,7 +23,7 @@ export async function compressWithHeadroom(body, { enabled, url, model, timeoutM
     if (!Array.isArray(data?.messages)) return null;
 
     body[key] = data.messages;
-    return data;
+    return { ...data, model, source };
   } catch {
     return null;
   }

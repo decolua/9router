@@ -3,42 +3,10 @@
 // to validate custom URLs the user enters.
 import { NextResponse } from "next/server";
 import { validateUrl } from "@/shared/utils/ssrfGuard";
+import { markDetected } from "@/lib/headroom/probeCache";
+import { probeUrl, CANDIDATE_URLS } from "@/lib/headroom/probe";
 
 export const dynamic = "force-dynamic";
-
-const CANDIDATE_URLS = [
-  "http://localhost:8787",
-  "http://127.0.0.1:8787",
-];
-
-const PROBE_TIMEOUT_MS = 1500;
-
-async function probeUrl(url) {
-  const endpoint = `${String(url).replace(/\/$/, "")}/v1/compress`;
-  const probeBody = {
-    messages: [{ role: "user", content: "ping" }],
-    model: "probe",
-  };
-  try {
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(probeBody),
-      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
-    });
-    if (!res.ok) return { ok: false, status: res.status };
-    const data = await res.json().catch(() => null);
-    // A real headroom server returns { messages: [...] } with token stats
-    const looksLikeHeadroom = data && (
-      Array.isArray(data.messages) ||
-      typeof data.tokens_saved === "number" ||
-      typeof data.tokens_before === "number"
-    );
-    return { ok: !!looksLikeHeadroom, status: res.status, data };
-  } catch (e) {
-    return { ok: false, error: e?.message || "unreachable" };
-  }
-}
 
 // GET /api/headroom/probe?url=<custom-url>
 //   No url param → probe default candidates and return first reachable
@@ -62,6 +30,7 @@ export async function GET(request) {
     for (const candidate of CANDIDATE_URLS) {
       const result = await probeUrl(candidate);
       if (result.ok) {
+        markDetected(candidate);
         return NextResponse.json({
           url: candidate,
           ok: true,

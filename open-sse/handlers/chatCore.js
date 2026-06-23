@@ -50,6 +50,7 @@ import { injectCaveman } from "../rtk/caveman.js";
 import { injectPonytail } from "../rtk/ponytail.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
 import { compressWithHeadroom, formatHeadroomLog } from "../rtk/headroom.js";
+import { recordHeadroomStats } from "../rtk/headroomStats.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
@@ -77,6 +78,7 @@ export async function handleChatCore({
 	rtkEnabled,
 	headroomEnabled,
 	headroomUrl,
+	headroomSource = "custom",
 	cavemanEnabled,
 	cavemanLevel,
 	ponytailEnabled,
@@ -262,9 +264,11 @@ export async function handleChatCore({
 		enabled: headroomEnabled,
 		url: headroomUrl,
 		model: upstreamModel,
+		source: headroomSource,
 	});
 	const headroomLine = formatHeadroomLog(headroomStats);
 	if (headroomLine) console.log(headroomLine);
+	if (headroomStats) recordHeadroomStats(headroomStats, { connectionId });
 
 	// Caveman: inject terse-style system prompt
 	if (cavemanEnabled && cavemanLevel) {

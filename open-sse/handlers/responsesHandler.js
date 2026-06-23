@@ -22,6 +22,7 @@ import { SSE_HEADERS_CORS } from "../utils/sseConstants.js";
  * @param {string} options.connectionId - Connection ID for usage tracking
  * @param {boolean} [options.headroomEnabled] - Whether Headroom context compression is enabled
  * @param {string} [options.headroomUrl] - Base URL of the Headroom compression service
+ * @param {string} [options.headroomSource] - Source classification: 'custom'|'detected'|'native'
  * @param {boolean} [options.rtkEnabled] - Whether RTK token saver is enabled
  * @param {boolean} [options.cavemanEnabled] - Whether Caveman system-prompt injection is enabled
  * @param {string} [options.cavemanLevel] - Caveman injection level
@@ -37,7 +38,7 @@ import { SSE_HEADERS_CORS } from "../utils/sseConstants.js";
 export async function handleResponsesCore({
   body, modelInfo, credentials, log,
   onCredentialsRefreshed, onRequestSuccess, onDisconnect, connectionId,
-  headroomEnabled, headroomUrl,
+  headroomEnabled, headroomUrl, headroomSource = "custom",
   rtkEnabled, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel,
   ccFilterNaming, apiKey, userAgent, clientRawRequest, providerThinking,
 }) {
@@ -65,6 +66,7 @@ export async function handleResponsesCore({
     connectionId,
     headroomEnabled,
     headroomUrl,
+    headroomSource,
     rtkEnabled,
     cavemanEnabled,
     cavemanLevel,

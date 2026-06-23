@@ -37,6 +37,7 @@ const DEFAULT_SETTINGS = {
   rtkEnabled: true,
   headroomEnabled: false,
   headroomUrl: "http://localhost:8787",
+  headroomSource: "custom",
   cavemanEnabled: false,
   cavemanLevel: "full",
   ponytailEnabled: false,
