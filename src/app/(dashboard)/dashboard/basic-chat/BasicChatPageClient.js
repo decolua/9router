@@ -197,7 +197,6 @@ export default function BasicChatPageClient() {
   const [isSending, setIsSending] = useState(false);
   const [streamingMessageId, setStreamingMessageId] = useState("");
   const [streamingText, setStreamingText] = useState("");
-  const [isHydrated, setIsHydrated] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const fileInputRef = useRef(null);
@@ -205,10 +204,6 @@ export default function BasicChatPageClient() {
   const initializedRef = useRef(false);
   const modelMenuRef = useRef(null);
   const historyMenuRef = useRef(null);
-
-  useEffect(() => {
-    setIsHydrated(true);
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -364,7 +359,6 @@ export default function BasicChatPageClient() {
   const canSend = !isSending && !!activeModel && (draft.trim().length > 0 || attachments.length > 0);
 
   useEffect(() => {
-    if (!isHydrated) return;
     try {
       globalThis.localStorage.setItem(STORAGE_KEYS.sessions, JSON.stringify(sessions));
       globalThis.localStorage.setItem(STORAGE_KEYS.activeSessionId, activeSessionId);
@@ -373,10 +367,10 @@ export default function BasicChatPageClient() {
     } catch {
       // Ignore storage errors.
     }
-  }, [isHydrated, sessions, activeSessionId, activeProviderId, draft]);
+  }, [sessions, activeSessionId, activeProviderId, draft]);
 
   useEffect(() => {
-    if (!isHydrated || loadingData || initializedRef.current) return;
+    if (loadingData || initializedRef.current) return;
     if (providerGroups.length === 0) return;
 
     const savedProvider = providerGroups.find((group) => group.providerId === activeProviderId) || providerGroups[0];
@@ -389,10 +383,13 @@ export default function BasicChatPageClient() {
       const sessionModel = session?.modelId && modelIndex.has(session.modelId)
         ? modelIndex.get(session.modelId)
         : savedModel;
-      initializedRef.current = true;
-      setActiveSessionId(session.id);
-      setActiveProviderId(sessionModel?.providerId || savedProvider.providerId);
-      setActiveModelId(sessionModel?.id || savedModel.id);
+      Promise.resolve().then(() => {
+        if (initializedRef.current) return;
+        initializedRef.current = true;
+        setActiveSessionId(session.id);
+        setActiveProviderId(sessionModel?.providerId || savedProvider.providerId);
+        setActiveModelId(sessionModel?.id || savedModel.id);
+      });
       return;
     }
 
@@ -408,12 +405,15 @@ export default function BasicChatPageClient() {
       messages: [],
     };
 
-    initializedRef.current = true;
-    setSessions([session]);
-    setActiveSessionId(session.id);
-    setActiveProviderId(savedProvider.providerId);
-    setActiveModelId(savedModel.id);
-  }, [isHydrated, loadingData, providerGroups, modelIndex, sessions, activeSessionId, activeProviderId, activeModelId]);
+    Promise.resolve().then(() => {
+      if (initializedRef.current) return;
+      initializedRef.current = true;
+      setSessions([session]);
+      setActiveSessionId(session.id);
+      setActiveProviderId(savedProvider.providerId);
+      setActiveModelId(savedModel.id);
+    });
+  }, [loadingData, providerGroups, modelIndex, sessions, activeSessionId, activeProviderId, activeModelId]);
 
   const updateSession = (sessionId, updater) => {
     setSessions((prev) => prev.map((session) => (session.id === sessionId ? updater(cloneSession(session)) : session)));
