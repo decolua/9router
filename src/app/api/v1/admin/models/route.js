@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { buildModelsList } from "@/app/api/v1/models/route.js";
+import { buildModelsList } from "@/app/api/v1/models/buildModelsList.js";
 import { requireKey } from "../_auth.js";
 
 export const dynamic = "force-dynamic";
