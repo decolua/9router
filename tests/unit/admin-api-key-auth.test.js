@@ -85,7 +85,8 @@ describe("admin API key auth", () => {
 
     const result = await createOrRotateAdminApiKey(new Date("2026-06-23T00:00:00.000Z"));
 
-    expect(result.key.startsWith("9r-admin-")).toBe(true);
+    expect(result.key).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(result.key.startsWith("9r-admin-")).toBe(false);
     expect(result.status.configured).toBe(true);
     expect(mocks.updateSettings).toHaveBeenCalledWith(expect.objectContaining({
       adminApiKeyHash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
@@ -136,7 +137,7 @@ describe("admin API key auth", () => {
   it("defaults rotations to the current settings version", async () => {
     mocks.getSettings.mockResolvedValue({ adminApiKeyUpdatedAt: "2026-06-22T00:00:00.000Z" });
     mocks.rotateAdminApiKeySettings.mockResolvedValue({
-      key: "9r-admin-key",
+      key: "admin-key",
       status: {
         configured: true,
         createdAt: "2026-06-22T00:00:00.000Z",
@@ -145,7 +146,7 @@ describe("admin API key auth", () => {
     });
 
     await expect(createOrRotateAdminApiKey(new Date("2026-06-23T00:00:00.000Z"))).resolves.toMatchObject({
-      key: "9r-admin-key",
+      key: "admin-key",
     });
     expect(mocks.rotateAdminApiKeySettings).toHaveBeenCalledWith(expect.objectContaining({
       expectedUpdatedAt: "2026-06-22T00:00:00.000Z",

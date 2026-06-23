@@ -12,7 +12,7 @@ vi.mock("../../src/lib/db/driver.js", () => ({
 const { rotateAdminApiKeySettings } = await import("../../src/lib/db/repos/settingsRepo.js");
 
 function hashFor(key) {
-  return `sha256:${key === "9r-admin-first" ? "1".repeat(64) : "2".repeat(64)}`;
+  return `sha256:${key === "admin-first" ? "1".repeat(64) : "2".repeat(64)}`;
 }
 
 function createDb(initial = {}) {
@@ -62,17 +62,17 @@ describe("settings repo admin api key rotation", () => {
       now: new Date("2026-06-23T00:00:00.000Z"),
       generateKey: () => {
         expect(db.isInTransaction()).toBe(true);
-        return "9r-admin-plaintext";
+        return "admin-plaintext";
       },
       hashKey: (key) => {
         expect(db.isInTransaction()).toBe(true);
-        expect(key).toBe("9r-admin-plaintext");
+        expect(key).toBe("admin-plaintext");
         return "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
       },
     });
 
     expect(result).toEqual({
-      key: "9r-admin-plaintext",
+      key: "admin-plaintext",
       status: {
         configured: true,
         createdAt: "2026-06-22T00:00:00.000Z",
@@ -84,7 +84,7 @@ describe("settings repo admin api key rotation", () => {
       adminApiKeyCreatedAt: "2026-06-22T00:00:00.000Z",
       adminApiKeyUpdatedAt: "2026-06-23T00:00:00.000Z",
     });
-    expect(JSON.stringify(db.readData())).not.toContain("9r-admin-plaintext");
+    expect(JSON.stringify(db.readData())).not.toContain("admin-plaintext");
     expect(db.events).toEqual(["begin", "commit"]);
   });
 
@@ -92,8 +92,8 @@ describe("settings repo admin api key rotation", () => {
     const db = createDb({});
     mocks.getAdapter.mockResolvedValue(db);
     const generateKey = vi.fn()
-      .mockReturnValueOnce("9r-admin-first")
-      .mockReturnValueOnce("9r-admin-second");
+      .mockReturnValueOnce("admin-first")
+      .mockReturnValueOnce("admin-second");
 
     const [first, second] = await Promise.allSettled([
       rotateAdminApiKeySettings({
@@ -123,6 +123,6 @@ describe("settings repo admin api key rotation", () => {
       expectedUpdatedAt: "",
     });
     expect(db.readData().adminApiKeyHash).toBe(hashFor(fulfilled[0].value.key));
-    expect(JSON.stringify(rejected[0].reason)).not.toContain("9r-admin-");
+    expect(JSON.stringify(rejected[0].reason)).not.toContain("admin-");
   });
 });

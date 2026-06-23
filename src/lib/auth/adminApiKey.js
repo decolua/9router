@@ -1,7 +1,6 @@
 import crypto from "node:crypto";
 import { getSettings, rotateAdminApiKeySettings } from "@/lib/localDb";
 
-const ADMIN_KEY_PREFIX = "9r-admin-";
 const ADMIN_KEY_HASH_PATTERN = /^sha256:[a-f0-9]{64}$/;
 
 function hashAdminKey(key) {
@@ -16,7 +15,7 @@ function timingSafeEqualString(a, b) {
 }
 
 function generateAdminApiKey() {
-  return `${ADMIN_KEY_PREFIX}${crypto.randomBytes(24).toString("base64url")}`;
+  return crypto.randomBytes(32).toString("base64url");
 }
 
 export function extractAdminApiKey(request) {

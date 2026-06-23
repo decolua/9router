@@ -264,7 +264,8 @@ describe("admin API key auth", () => {
 
     const result = await createOrRotateAdminApiKey(new Date("2026-06-23T00:00:00.000Z"));
 
-    expect(result.key.startsWith("9r-admin-")).toBe(true);
+    expect(result.key).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(result.key.startsWith("9r-admin-")).toBe(false);
     expect(result.status.configured).toBe(true);
     expect(mocks.updateSettings).toHaveBeenCalledWith(expect.objectContaining({
       adminApiKeyHash: expect.stringMatching(/^sha256:/),
@@ -322,8 +323,6 @@ Create `src/lib/auth/adminApiKey.js`:
 import crypto from "node:crypto";
 import { getSettings, updateSettings } from "@/lib/localDb";
 
-const ADMIN_KEY_PREFIX = "9r-admin-";
-
 function hashAdminKey(key) {
   return `sha256:${crypto.createHash("sha256").update(String(key)).digest("hex")}`;
 }
@@ -336,7 +335,7 @@ function timingSafeEqualString(a, b) {
 }
 
 function generateAdminApiKey() {
-  return `${ADMIN_KEY_PREFIX}${crypto.randomBytes(24).toString("base64url")}`;
+  return crypto.randomBytes(32).toString("base64url");
 }
 
 export function extractAdminApiKey(request) {

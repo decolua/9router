@@ -78,7 +78,7 @@ describe("settings admin-key route", () => {
       updatedAt: "2026-06-23T00:00:00.000Z",
     });
     mocks.createOrRotateAdminApiKey.mockResolvedValue({
-      key: "9r-admin-new",
+      key: "admin-new",
       status: {
         configured: true,
         createdAt: "2026-06-22T00:00:00.000Z",
@@ -120,7 +120,7 @@ describe("settings admin-key route", () => {
 
     expect(response.status).toBe(201);
     expect(payload).toEqual({
-      key: "9r-admin-new",
+      key: "admin-new",
       status: {
         configured: true,
         createdAt: "2026-06-22T00:00:00.000Z",
