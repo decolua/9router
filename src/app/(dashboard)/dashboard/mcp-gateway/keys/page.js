@@ -26,8 +26,8 @@ export default function McpGatewayKeysPage() {
   const notify = useNotificationStore((s) => s.addNotification);
   const { copied, copy } = useCopyToClipboard(2000);
 
-  const reload = useCallback(async () => {
-    setLoading(true);
+  const reload = useCallback(async (skipLoadingStart = false) => {
+    if (!skipLoadingStart) setLoading(true);
     try {
       const [keyRes, instRes] = await Promise.all([
         fetch("/api/mcp-gateway/keys"),
@@ -46,7 +46,7 @@ export default function McpGatewayKeysPage() {
     }
   }, [notify]);
 
-  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => { Promise.resolve().then(() => reload(true)); }, [reload]);
 
   async function handleCreateKey() {
     if (!newKeyName.trim()) return;

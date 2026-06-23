@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { Card, Badge } from "@/shared/components";
 
 export default function AcpAgentsPage() {
@@ -10,7 +10,7 @@ export default function AcpAgentsPage() {
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = async () => {
     try {
       const res = await fetch("/api/acp/agents");
       if (!res.ok) throw new Error("Failed to load agents");
@@ -24,11 +24,25 @@ export default function AcpAgentsPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  };
 
   useEffect(() => {
-    load();
-  }, [load]);
+    fetch("/api/acp/agents")
+      .then(res => {
+        if (!res.ok) throw new Error("Failed to load agents");
+        return res.json();
+      })
+      .then(data => {
+        setAgents(data.agents || []);
+        setSummary(data.summary || null);
+        setError(null);
+      })
+      .catch(e => setError(e.message))
+      .finally(() => {
+        setLoading(false);
+        setRefreshing(false);
+      });
+  }, []);
 
   const refresh = async () => {
     setRefreshing(true);

@@ -30,26 +30,28 @@ export default function CavemanCompressPage() {
     ? CAVEMAN_LEVELS
     : CAVEMAN_LEVELS.filter((lvl) => !lvl.wenyan);
 
-  // Reset wenyan level to "ultra" when leaving a Chinese locale
-  useEffect(() => {
-    const current = CAVEMAN_LEVELS.find((lvl) => lvl.id === level);
-    if (current?.wenyan && !isWenyanLocale) {
-      setLevel("ultra");
-      patch({ cavemanLevel: "ultra" });
-    }
-  }, [isWenyanLocale, level]);
-
-  const patch = async (patch) => {
+  const patch = async (update) => {
     try {
       await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
+        body: JSON.stringify(update),
       });
     } catch (e) {
       console.log("Error updating caveman settings:", e);
     }
   };
+
+  // Reset wenyan level to "ultra" when leaving a Chinese locale
+  useEffect(() => {
+    const current = CAVEMAN_LEVELS.find((lvl) => lvl.id === level);
+    if (current?.wenyan && !isWenyanLocale) {
+      Promise.resolve().then(() => {
+        setLevel("ultra");
+        patch({ cavemanLevel: "ultra" });
+      });
+    }
+  }, [isWenyanLocale, level]);
 
   const handleToggle = (value) => {
     setEnabled(value);

@@ -230,7 +230,7 @@ export default function HeadroomCompressPage() {
 
   // Auto-probe on mount to surface already-running servers
   useEffect(() => {
-    if (!loading) probe();
+    if (!loading) Promise.resolve().then(() => probe());
   }, [loading, probe]);
 
   const handleToggle = (value) => {

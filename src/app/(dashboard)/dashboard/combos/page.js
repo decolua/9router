@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -24,40 +24,38 @@ export default function CombosPage() {
   const { copied, copy } = useCopyToClipboard();
 
   useEffect(() => {
-    fetchData();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    Promise.resolve().then(async () => {
+      try {
+        const [combosRes, providersRes, settingsRes, modelsRes] = await Promise.all([
+          fetch("/api/combos"),
+          fetch("/api/providers"),
+          fetch("/api/settings"),
+          fetch("/api/models"),
+        ]);
+        const combosData = await combosRes.json();
+        const providersData = await providersRes.json();
+        const settingsData = settingsRes.ok ? await settingsRes.json() : {};
 
-  const fetchData = async () => {
-    try {
-      const [combosRes, providersRes, settingsRes, modelsRes] = await Promise.all([
-        fetch("/api/combos"),
-        fetch("/api/providers"),
-        fetch("/api/settings"),
-        fetch("/api/models"),
-      ]);
-      const combosData = await combosRes.json();
-      const providersData = await providersRes.json();
-      const settingsData = settingsRes.ok ? await settingsRes.json() : {};
-      
-      // Only LLM combos here - webSearch/webFetch combos belong to media-providers/web
-      if (combosRes.ok) setCombos((combosData.combos || []).filter(c => !c.kind || c.kind === "llm"));
-      if (providersRes.ok) {
-        setActiveProviders(providersData.connections || []);
+        // Only LLM combos here - webSearch/webFetch combos belong to media-providers/web
+        if (combosRes.ok) setCombos((combosData.combos || []).filter(c => !c.kind || c.kind === "llm"));
+        if (providersRes.ok) {
+          setActiveProviders(providersData.connections || []);
+        }
+        if (modelsRes.ok) {
+          const md = await modelsRes.json();
+          // Build fullModel -> caps map for badge lookup
+          const map = {};
+          for (const m of md.models || []) if (m.caps) map[m.fullModel] = m.caps;
+          setModelCaps(map);
+        }
+        setComboStrategies(settingsData.comboStrategies || {});
+      } catch (error) {
+        console.log("Error fetching data:", error);
+      } finally {
+        setLoading(false);
       }
-      if (modelsRes.ok) {
-        const md = await modelsRes.json();
-        // Build fullModel -> caps map for badge lookup
-        const map = {};
-        for (const m of md.models || []) if (m.caps) map[m.fullModel] = m.caps;
-        setModelCaps(map);
-      }
-      setComboStrategies(settingsData.comboStrategies || {});
-    } catch (error) {
-      console.log("Error fetching data:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    });
+  }, []);
 
   const handleCreate = async (data) => {
     try {
@@ -479,19 +477,12 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
     }
   };
 
-  const fetchModalData = async () => {
-    try {
-      const aliasesRes = await fetch("/api/models/alias");
-      if (!aliasesRes.ok) return;
-      const aliasesData = await aliasesRes.json();
-      setModelAliases(aliasesData.aliases || {});
-    } catch (error) {
-      console.error("Error fetching modal data:", error);
-    }
-  };
-
   useEffect(() => {
-    if (isOpen) fetchModalData();
+    if (!isOpen) return;
+    fetch("/api/models/alias")
+      .then(res => { if (!res.ok) throw new Error("not ok"); return res.json(); })
+      .then(data => setModelAliases(data.aliases || {}))
+      .catch(() => {});
   }, [isOpen]);
 
   const validateName = (value) => {

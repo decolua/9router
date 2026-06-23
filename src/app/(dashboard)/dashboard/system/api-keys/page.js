@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useSyncExternalStore } from "react";
 import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import SecurityWarning from "@/app/(dashboard)/dashboard/endpoint/components/SecurityWarning";
@@ -13,36 +13,34 @@ export default function ApiKeysPage() {
   const [createdKey, setCreatedKey] = useState(null);
   const [requireApiKey, setRequireApiKey] = useState(false);
   const [confirmState, setConfirmState] = useState(null);
-  const [isRemoteHost, setIsRemoteHost] = useState(false);
+  const isRemoteHost = useSyncExternalStore(
+    () => () => {},
+    () => !["localhost", "127.0.0.1", "::1"].includes(window.location.hostname),
+    () => false
+  );
   const [loading, setLoading] = useState(true);
   const { copied, copy } = useCopyToClipboard();
 
   useEffect(() => {
-    if (typeof window !== "undefined")
-      setIsRemoteHost(!["localhost", "127.0.0.1", "::1"].includes(window.location.hostname));
+    Promise.resolve().then(async () => {
+      try {
+        const [keysRes, settingsRes] = await Promise.all([fetch("/api/keys"), fetch("/api/settings")]);
+        if (keysRes.ok) {
+          const keysData = await keysRes.json();
+          setKeys(keysData.keys || []);
+        }
+        if (settingsRes.ok) {
+          const data = await settingsRes.json();
+          setRequireApiKey(data.requireApiKey || false);
+        }
+      } catch (e) {
+        console.log("Error loading API keys page:", e);
+      } finally {
+        setLoading(false);
+      }
+    });
   }, []);
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
-    try {
-      const [keysRes, settingsRes] = await Promise.all([fetch("/api/keys"), fetch("/api/settings")]);
-      if (keysRes.ok) {
-        const keysData = await keysRes.json();
-        setKeys(keysData.keys || []);
-      }
-      if (settingsRes.ok) {
-        const data = await settingsRes.json();
-        setRequireApiKey(data.requireApiKey || false);
-      }
-    } catch (e) {
-      console.log("Error loading API keys page:", e);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleRequireApiKey = async (value) => {
     try {

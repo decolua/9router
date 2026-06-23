@@ -18,37 +18,37 @@ export default function ModelFallbacksPage() {
   const [confirmState, setConfirmState] = useState(null);
   const [error, setError] = useState("");
 
-  useEffect(() => { fetchData(); }, []);
-
-  const fetchData = async () => {
-    try {
-      const [fbRes, providersRes] = await Promise.all([
-        fetch("/api/model-fallbacks"),
-        fetch("/api/providers"),
-      ]);
-      const fbData = fbRes.ok ? await fbRes.json() : { modelFallbacks: {} };
-      const providersData = providersRes.ok ? await providersRes.json() : { connections: [] };
-      const map = fbData.modelFallbacks || {};
-      const list = Object.entries(map).map(([primary, v]) => {
-        const fallbacks = Array.isArray(v.fallbacks)
-          ? v.fallbacks
-          : (v.fallback ? [v.fallback] : []);
-        const rawStrategy = v.strategy || v.mode || "ordered";
-        return {
-          primary,
-          fallbacks,
-          strategy: rawStrategy === "random" || rawStrategy === "roundrobin" ? rawStrategy : "ordered",
-          enabled: v.enabled !== false,
-        };
-      });
-      setRows(list);
-      setActiveProviders(providersData.connections || []);
-    } catch (e) {
-      console.log("Error fetching model fallbacks:", e);
-    } finally {
-      setLoading(false);
-    }
-  };
+  useEffect(() => {
+    Promise.resolve().then(async () => {
+      try {
+        const [fbRes, providersRes] = await Promise.all([
+          fetch("/api/model-fallbacks"),
+          fetch("/api/providers"),
+        ]);
+        const fbData = fbRes.ok ? await fbRes.json() : { modelFallbacks: {} };
+        const providersData = providersRes.ok ? await providersRes.json() : { connections: [] };
+        const map = fbData.modelFallbacks || {};
+        const list = Object.entries(map).map(([primary, v]) => {
+          const fallbacks = Array.isArray(v.fallbacks)
+            ? v.fallbacks
+            : (v.fallback ? [v.fallback] : []);
+          const rawStrategy = v.strategy || v.mode || "ordered";
+          return {
+            primary,
+            fallbacks,
+            strategy: rawStrategy === "random" || rawStrategy === "roundrobin" ? rawStrategy : "ordered",
+            enabled: v.enabled !== false,
+          };
+        });
+        setRows(list);
+        setActiveProviders(providersData.connections || []);
+      } catch (e) {
+        console.log("Error fetching model fallbacks:", e);
+      } finally {
+        setLoading(false);
+      }
+    });
+  }, []);
 
   const persistAll = async (nextRows) => {
     const map = {};
@@ -348,7 +348,7 @@ function EditorModal({ editor, error, onChange, onPickPrimary, onAddFallback, on
               </button>
             </div>
             {editor.fallbacks.length === 0 ? (
-              <p className="text-xs text-text-muted">No fallbacks yet — click "+ Add" to pick models.</p>
+              <p className="text-xs text-text-muted">No fallbacks yet — click &quot;+ Add&quot; to pick models.</p>
             ) : (
               <ol className="flex flex-col gap-1">
                 {editor.fallbacks.map((fb, j) => (

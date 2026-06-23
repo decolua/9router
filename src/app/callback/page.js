@@ -71,15 +71,17 @@ function CallbackContent() {
     }
 
     if (!(code || error)) {
-      setTimeout(() => setStatus("manual"), 0);
+      Promise.resolve().then(() => setStatus("manual"));
       return;
     }
 
-    setStatus("success");
-    setTimeout(() => {
-      window.close();
-      setTimeout(() => setStatus("done"), 500);
-    }, 1500);
+    Promise.resolve().then(() => {
+      setStatus("success");
+      setTimeout(() => {
+        window.close();
+        setTimeout(() => setStatus("done"), 500);
+      }, 1500);
+    });
   }, [searchParams]);
 
   return (

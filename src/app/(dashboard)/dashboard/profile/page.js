@@ -61,7 +61,7 @@ export default function ProfilePage() {
   const [proxyTestLoading, setProxyTestLoading] = useState(false);
 
   useEffect(() => {
-    setLocale(getLocaleFromCookie());
+    Promise.resolve().then(() => setLocale(getLocaleFromCookie()));
   }, [langOpen]);
 
   useEffect(() => {
@@ -93,7 +93,9 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      setOidcRedirectUri(`${window.location.origin}/api/auth/oidc/callback`);
+      Promise.resolve().then(() =>
+        setOidcRedirectUri(`${window.location.origin}/api/auth/oidc/callback`)
+      );
     }
   }, []);
 
