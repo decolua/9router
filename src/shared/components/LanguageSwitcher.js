@@ -71,7 +71,7 @@ export default function LanguageSwitcher({ className = "", isOpen: controlledOpe
   };
 
   useEffect(() => {
-    setLocale(getLocaleFromCookie());
+    Promise.resolve().then(() => setLocale(getLocaleFromCookie()));
   }, []);
 
   // Close modal when clicking outside

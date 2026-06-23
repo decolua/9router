@@ -62,7 +62,7 @@ export default function ModelSelectModal({
   };
 
   useEffect(() => {
-    if (isOpen) fetchCombos();
+    if (isOpen) Promise.resolve().then(() => fetchCombos());
   }, [isOpen]);
 
   const fetchProviderNodes = async () => {
@@ -78,7 +78,7 @@ export default function ModelSelectModal({
   };
 
   useEffect(() => {
-    if (isOpen) fetchProviderNodes();
+    if (isOpen) Promise.resolve().then(() => fetchProviderNodes());
   }, [isOpen]);
 
   const fetchCustomModels = async () => {
@@ -94,7 +94,7 @@ export default function ModelSelectModal({
   };
 
   useEffect(() => {
-    if (isOpen) fetchCustomModels();
+    if (isOpen) Promise.resolve().then(() => fetchCustomModels());
   }, [isOpen]);
 
   const fetchDisabledModels = async () => {
@@ -110,7 +110,7 @@ export default function ModelSelectModal({
   };
 
   useEffect(() => {
-    if (isOpen) fetchDisabledModels();
+    if (isOpen) Promise.resolve().then(() => fetchDisabledModels());
   }, [isOpen]);
 
   const allProviders = useMemo(() => ({ ...OAUTH_PROVIDERS, ...FREE_PROVIDERS, ...FREE_TIER_PROVIDERS, ...APIKEY_PROVIDERS }), []);

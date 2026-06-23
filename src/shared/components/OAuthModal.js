@@ -31,10 +31,12 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   // Detect if running on localhost (client-side only)
   useEffect(() => {
     if (typeof window !== "undefined") {
-      setIsLocalhost(
-        window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
-      );
-      setPlaceholderUrl(`${window.location.origin}/callback?code=...`);
+      Promise.resolve().then(() => {
+        setIsLocalhost(
+          window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+        );
+        setPlaceholderUrl(`${window.location.origin}/callback?code=...`);
+      });
     }
   }, []);
 
