@@ -96,6 +96,7 @@ describe("admin API key auth", () => {
     expect(result.status).not.toHaveProperty("adminApiKeyHash");
     expect(mocks.rotateAdminApiKeySettings).toHaveBeenCalledWith(expect.objectContaining({
       now: new Date("2026-06-23T00:00:00.000Z"),
+      expectedUpdatedAt: "",
       generateKey: expect.any(Function),
       hashKey: expect.any(Function),
     }));
@@ -132,24 +133,23 @@ describe("admin API key auth", () => {
     await expect(requireAdminApiKey(request({ authorization: "Bearer wrong" }))).resolves.toBe(false);
   });
 
-  it("uses settings repo rotation helper for concurrent rotation safety", async () => {
-    mockRotation();
-
-    const first = createOrRotateAdminApiKey(new Date("2026-06-23T00:00:00.000Z"));
-    const second = createOrRotateAdminApiKey(new Date("2026-06-24T00:00:00.000Z"));
-    const [firstResult, secondResult] = await Promise.all([first, second]);
-
-    expect(firstResult.status).toEqual({
-      configured: true,
-      createdAt: "2026-06-23T00:00:00.000Z",
-      updatedAt: "2026-06-23T00:00:00.000Z",
+  it("defaults rotations to the current settings version", async () => {
+    mocks.getSettings.mockResolvedValue({ adminApiKeyUpdatedAt: "2026-06-22T00:00:00.000Z" });
+    mocks.rotateAdminApiKeySettings.mockResolvedValue({
+      key: "9r-admin-key",
+      status: {
+        configured: true,
+        createdAt: "2026-06-22T00:00:00.000Z",
+        updatedAt: "2026-06-23T00:00:00.000Z",
+      },
     });
-    expect(secondResult.status).toEqual({
-      configured: true,
-      createdAt: "2026-06-23T00:00:00.000Z",
-      updatedAt: "2026-06-24T00:00:00.000Z",
+
+    await expect(createOrRotateAdminApiKey(new Date("2026-06-23T00:00:00.000Z"))).resolves.toMatchObject({
+      key: "9r-admin-key",
     });
-    expect(mocks.rotateAdminApiKeySettings).toHaveBeenCalledTimes(2);
+    expect(mocks.rotateAdminApiKeySettings).toHaveBeenCalledWith(expect.objectContaining({
+      expectedUpdatedAt: "2026-06-22T00:00:00.000Z",
+    }));
   });
 
   it("returns safe status only", async () => {

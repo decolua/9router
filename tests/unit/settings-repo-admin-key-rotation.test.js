@@ -11,6 +11,10 @@ vi.mock("@/lib/db/driver.js", () => ({
 
 const { rotateAdminApiKeySettings } = await import("../../src/lib/db/repos/settingsRepo.js");
 
+function hashFor(key) {
+  return `sha256:${key === "9r-admin-first" ? "1".repeat(64) : "2".repeat(64)}`;
+}
+
 function createDb(initial = {}) {
   let data = initial;
   let inTransaction = false;
@@ -84,41 +88,41 @@ describe("settings repo admin api key rotation", () => {
     expect(db.events).toEqual(["begin", "commit"]);
   });
 
-  it("processes concurrent rotations through the transaction helper", async () => {
+  it("rejects stale expected versions before generating plaintext keys", async () => {
     const db = createDb({});
     mocks.getAdapter.mockResolvedValue(db);
-    const keys = ["9r-admin-first", "9r-admin-second"];
+    const generateKey = vi.fn()
+      .mockReturnValueOnce("9r-admin-first")
+      .mockReturnValueOnce("9r-admin-second");
 
-    const [first, second] = await Promise.all([
+    const [first, second] = await Promise.allSettled([
       rotateAdminApiKeySettings({
         now: new Date("2026-06-23T00:00:00.000Z"),
-        generateKey: () => keys.shift(),
-        hashKey: (key) => `sha256:${key === "9r-admin-first" ? "1".repeat(64) : "2".repeat(64)}`,
+        expectedUpdatedAt: "",
+        generateKey,
+        hashKey: hashFor,
       }),
       rotateAdminApiKeySettings({
         now: new Date("2026-06-24T00:00:00.000Z"),
-        generateKey: () => keys.shift(),
-        hashKey: (key) => `sha256:${key === "9r-admin-first" ? "1".repeat(64) : "2".repeat(64)}`,
+        expectedUpdatedAt: "",
+        generateKey,
+        hashKey: hashFor,
       }),
     ]);
 
-    expect(first.status).toEqual({
-      configured: true,
-      createdAt: "2026-06-23T00:00:00.000Z",
-      updatedAt: "2026-06-23T00:00:00.000Z",
+    const fulfilled = [first, second].filter((result) => result.status === "fulfilled");
+    const rejected = [first, second].filter((result) => result.status === "rejected");
+
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(generateKey).toHaveBeenCalledTimes(1);
+    expect(rejected[0].reason).toMatchObject({
+      name: "AdminApiKeyRotationConflictError",
+      code: "ADMIN_API_KEY_ROTATION_CONFLICT",
+      currentUpdatedAt: "2026-06-23T00:00:00.000Z",
+      expectedUpdatedAt: "",
     });
-    expect(second.status).toEqual({
-      configured: true,
-      createdAt: "2026-06-23T00:00:00.000Z",
-      updatedAt: "2026-06-24T00:00:00.000Z",
-    });
-    expect(db.readData()).toMatchObject({
-      adminApiKeyHash: `sha256:${"2".repeat(64)}`,
-      adminApiKeyCreatedAt: "2026-06-23T00:00:00.000Z",
-      adminApiKeyUpdatedAt: "2026-06-24T00:00:00.000Z",
-    });
-    expect(JSON.stringify(db.readData())).not.toContain(first.key);
-    expect(JSON.stringify(db.readData())).not.toContain(second.key);
-    expect(db.events).toEqual(["begin", "commit", "begin", "commit"]);
+    expect(db.readData().adminApiKeyHash).toBe(hashFor(fulfilled[0].value.key));
+    expect(JSON.stringify(rejected[0].reason)).not.toContain("9r-admin-");
   });
 });

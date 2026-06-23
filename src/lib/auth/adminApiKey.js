@@ -49,9 +49,16 @@ export async function getAdminApiKeyStatus() {
   };
 }
 
-export async function createOrRotateAdminApiKey(now = new Date()) {
+export async function createOrRotateAdminApiKey(now = new Date(), { expectedUpdatedAt } = {}) {
+  let rotationExpectedUpdatedAt = expectedUpdatedAt;
+  if (rotationExpectedUpdatedAt === undefined) {
+    const settings = (await getSettings()) || {};
+    rotationExpectedUpdatedAt = settings.adminApiKeyUpdatedAt || "";
+  }
+
   return await rotateAdminApiKeySettings({
     now,
+    expectedUpdatedAt: rotationExpectedUpdatedAt,
     generateKey: generateAdminApiKey,
     hashKey: hashAdminKey,
   });

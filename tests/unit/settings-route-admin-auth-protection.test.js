@@ -106,4 +106,21 @@ describe("settings route admin auth protection", () => {
     expect(body).not.toHaveProperty("adminApiKeyCreatedAt");
     expect(body).not.toHaveProperty("adminApiKeyUpdatedAt");
   });
+
+  it("does not persist password helper fields when password is not updated", async () => {
+    mocks.updateSettings.mockImplementation(async (updates) => updates);
+
+    const response = await PATCH(patchRequest({
+      theme: "light",
+      currentPassword: "old-password",
+      newPassword: "",
+    }));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(mocks.updateSettings).toHaveBeenCalledWith({ theme: "light" });
+    expect(body).toEqual(expect.objectContaining({ theme: "light" }));
+    expect(body).not.toHaveProperty("currentPassword");
+    expect(body).not.toHaveProperty("newPassword");
+  });
 });

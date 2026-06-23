@@ -5,6 +5,7 @@ import { stringifyJson, parseJson } from "./helpers/jsonCol.js";
 // Settings
 export {
   getSettings, updateSettings, rotateAdminApiKeySettings,
+  AdminApiKeyRotationConflictError,
   isCloudEnabled, getCloudUrl, exportSettings,
 } from "./repos/settingsRepo.js";
 

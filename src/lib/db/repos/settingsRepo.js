@@ -90,13 +90,25 @@ export async function updateSettings(updates) {
   return mergeWithDefaults(next);
 }
 
-export async function rotateAdminApiKeySettings({ now = new Date(), generateKey, hashKey }) {
+export class AdminApiKeyRotationConflictError extends Error {
+  constructor({ expectedUpdatedAt, currentUpdatedAt }) {
+    super("Admin API key was modified by another rotation");
+    this.name = "AdminApiKeyRotationConflictError";
+    this.code = "ADMIN_API_KEY_ROTATION_CONFLICT";
+    this.expectedUpdatedAt = expectedUpdatedAt;
+    this.currentUpdatedAt = currentUpdatedAt;
+  }
+}
+
+export async function rotateAdminApiKeySettings({ now = new Date(), expectedUpdatedAt, generateKey, hashKey }) {
   if (typeof generateKey !== "function" || typeof hashKey !== "function") {
     throw new Error("Admin API key rotation requires key generation and hashing functions");
   }
 
   const db = await getAdapter();
   let result;
+  const hasExpectedVersion = expectedUpdatedAt !== undefined;
+  const normalizedExpectedUpdatedAt = expectedUpdatedAt || "";
 
   // Native SQLite adapters serialize writers across processes here. The sql.js
   // fallback is process-local, so multi-process deployments should use a native
@@ -104,6 +116,14 @@ export async function rotateAdminApiKeySettings({ now = new Date(), generateKey,
   db.transaction(() => {
     const row = db.get(`SELECT data FROM settings WHERE id = 1`);
     const current = row ? parseJson(row.data, {}) : {};
+    const currentUpdatedAt = current.adminApiKeyUpdatedAt || "";
+    if (hasExpectedVersion && normalizedExpectedUpdatedAt !== currentUpdatedAt) {
+      throw new AdminApiKeyRotationConflictError({
+        expectedUpdatedAt: normalizedExpectedUpdatedAt,
+        currentUpdatedAt,
+      });
+    }
+
     const timestamp = now.toISOString();
     const key = generateKey();
     const updates = {
