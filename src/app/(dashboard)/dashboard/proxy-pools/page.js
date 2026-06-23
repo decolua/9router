@@ -80,9 +80,13 @@ export default function ProxyPoolsPage() {
     }
   }, []);
 
+  // Initial load: inline fetch chain so setState calls only fire inside .then callbacks.
   useEffect(() => {
-    fetchProxyPools();
-  }, [fetchProxyPools]);
+    fetch("/api/proxy-pools?includeUsage=true", { cache: "no-store" })
+      .then((r) => r.json().then((data) => { if (r.ok) setProxyPools(data.proxyPools || []); }))
+      .catch((error) => { console.log("Error fetching proxy pools:", error); })
+      .finally(() => { setLoading(false); });
+  }, []);
 
   const resetForm = () => {
     setEditingProxyPool(null);
@@ -208,13 +212,19 @@ export default function ProxyPoolsPage() {
     }
   };
 
-  const allSelected = proxyPools.length > 0 && selectedIds.length === proxyPools.length;
+  // Derived: selectedIds filtered to only IDs still present in proxyPools.
+  // Replaces the cleanup effect — no setState-in-effect needed.
+  const activeSelectedIds = useMemo(
+    () => selectedIds.filter((id) => proxyPools.some((p) => p.id === id)),
+    [selectedIds, proxyPools],
+  );
+  const allSelected = proxyPools.length > 0 && activeSelectedIds.length === proxyPools.length;
   const toggleSelect = (id) => setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
   const toggleSelectAll = () => setSelectedIds(allSelected ? [] : proxyPools.map((p) => p.id));
   const clearSelection = () => setSelectedIds([]);
 
   const bulkSetActive = async (isActive) => {
-    const targets = selectedIds.length > 0 ? selectedIds : proxyPools.map((p) => p.id);
+    const targets = activeSelectedIds.length > 0 ? activeSelectedIds : proxyPools.map((p) => p.id);
     if (targets.length === 0) return;
     setBulkBusy(true);
     try {
@@ -237,16 +247,16 @@ export default function ProxyPoolsPage() {
   };
 
   const bulkDelete = async () => {
-    if (selectedIds.length === 0) return;
+    if (activeSelectedIds.length === 0) return;
     setConfirmState({
       title: "Delete Proxy Pools",
-      message: `Delete ${selectedIds.length} proxy pool(s)?`,
+      message: `Delete ${activeSelectedIds.length} proxy pool(s)?`,
       onConfirm: async () => {
         setConfirmState(null);
         setBulkBusy(true);
         try {
           let ok = 0; let blocked = 0; let failed = 0;
-          for (const id of selectedIds) {
+          for (const id of activeSelectedIds) {
             try {
               const res = await fetch(`/api/proxy-pools/${id}`, { method: "DELETE" });
               if (res.ok) ok += 1;
@@ -265,8 +275,8 @@ export default function ProxyPoolsPage() {
   };
 
   const handleHealthCheck = async () => {
-    const targets = selectedIds.length > 0
-      ? proxyPools.filter((p) => selectedIds.includes(p.id))
+    const targets = activeSelectedIds.length > 0
+      ? proxyPools.filter((p) => activeSelectedIds.includes(p.id))
       : proxyPools;
     if (targets.length === 0) return;
     setHealthChecking(true);
@@ -327,10 +337,6 @@ export default function ProxyPoolsPage() {
     }
   };
 
-  // Cleanup selectedIds when pools change
-  useEffect(() => {
-    setSelectedIds((prev) => prev.filter((id) => proxyPools.some((p) => p.id === id)));
-  }, [proxyPools]);
 
   const openBatchImportModal = () => {
     setBatchImportText("");
@@ -653,11 +659,11 @@ export default function ProxyPoolsPage() {
           <Badge variant="success">Active: {activeCount}</Badge>
         </div>
 
-        {(selectedIds.length > 0 || healthChecking) && (
+        {(activeSelectedIds.length > 0 || healthChecking) && (
           <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
             <span className="material-symbols-outlined text-[18px] text-primary">checklist</span>
             <span className="text-xs font-medium text-primary">
-              {selectedIds.length > 0 ? `${selectedIds.length} selected` : "All pools"}
+              {activeSelectedIds.length > 0 ? `${activeSelectedIds.length} selected` : "All pools"}
             </span>
             <div className="ml-auto flex flex-wrap items-center gap-2">
               <Button
@@ -668,7 +674,7 @@ export default function ProxyPoolsPage() {
               >
                 {healthChecking ? `Checking ${healthProgress.current}/${healthProgress.total}` : "Health Check"}
               </Button>
-              {selectedIds.length > 0 && (
+              {activeSelectedIds.length > 0 && (
                 <>
                   <Button size="sm" variant="secondary" icon="toggle_on" onClick={() => bulkSetActive(true)} disabled={bulkBusy || healthChecking}>
                     Activate
@@ -895,7 +901,7 @@ export default function ProxyPoolsPage() {
             value={cloudflareForm.apiToken}
             onChange={(e) => setCloudflareForm((prev) => ({ ...prev, apiToken: e.target.value }))}
             placeholder="your-cloudflare-api-token"
-            hint={<>Requires "Workers Scripts: Edit" permission. <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Get token →</a></>}
+            hint={<>Requires &quot;Workers Scripts: Edit&quot; permission. <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Get token →</a></>}
             type="password"
           />
           <Input
