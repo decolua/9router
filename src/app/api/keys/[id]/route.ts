@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import type { JsonValue } from "open-sse/types/executor.js";
 import { deleteApiKey, getApiKeyById, updateApiKey } from "@/lib/localDb";
 
 // GET /api/keys/[id] - Get single key
@@ -31,8 +32,8 @@ export async function PUT(
       isActive?: boolean;
       name?: string;
       role?: string;
-      allowedModels?: unknown;
-      allowedProviders?: unknown;
+      allowedModels?: JsonValue;
+      allowedProviders?: JsonValue;
       monthlyTokenLimit?: number;
       monthlyBudgetUsd?: number;
     };
@@ -56,16 +57,16 @@ export async function PUT(
     if (name !== undefined) updateData.name = name;
     if (role !== undefined) updateData.role = role;
     if (allowedModels !== undefined) {
-      if (!Array.isArray(allowedModels)) {
+      if (!Array.isArray(allowedModels) || !allowedModels.every((v): v is string => typeof v === "string")) {
         return NextResponse.json({ error: "allowedModels must be an array" }, { status: 400 });
       }
-      updateData.allowedModels = allowedModels as string[];
+      updateData.allowedModels = allowedModels;
     }
     if (allowedProviders !== undefined) {
-      if (!Array.isArray(allowedProviders)) {
+      if (!Array.isArray(allowedProviders) || !allowedProviders.every((v): v is string => typeof v === "string")) {
         return NextResponse.json({ error: "allowedProviders must be an array" }, { status: 400 });
       }
-      updateData.allowedProviders = allowedProviders as string[];
+      updateData.allowedProviders = allowedProviders;
     }
     if (monthlyTokenLimit !== undefined) updateData.monthlyTokenLimit = monthlyTokenLimit;
     if (monthlyBudgetUsd !== undefined) updateData.monthlyBudgetUsd = monthlyBudgetUsd;
