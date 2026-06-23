@@ -770,7 +770,7 @@ export default function APIPageClient({ machineId }) {
       const data = await res.json();
 
       if (res.ok) {
-        setCreatedKey(data.key?.key || data.key);
+        setCreatedKey(data.apiKey?.key || data.key?.key || data.key);
         await fetchData();
         setNewKeyName("");
         setNewKeyPlanMonths(1);
