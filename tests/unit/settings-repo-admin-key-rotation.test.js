@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({
   getAdapter: vi.fn(),
 }));
 
-vi.mock("@/lib/db/driver.js", () => ({
+vi.mock("../../src/lib/db/driver.js", () => ({
   getAdapter: mocks.getAdapter,
 }));
 
