@@ -21,7 +21,7 @@ import type { JsonRpcResponse } from "./mcp.js";
  * //   const body = await response.json();  // unknown
  * //   if (isRecord(body) && isRecord(body.error)) { ... }
  */
-function isRecord(x: unknown): x is Record<string, unknown> {
+export function isRecord(x: unknown): x is Record<string, unknown> {
   return typeof x === "object" && x !== null && !Array.isArray(x);
 }
 
