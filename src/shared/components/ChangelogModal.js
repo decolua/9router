@@ -16,16 +16,20 @@ export default function ChangelogModal({ isOpen, onClose }) {
 
   useEffect(() => {
     if (!isOpen || html) return;
-    setLoading(true);
-    setError("");
-    fetch(GITHUB_CONFIG.changelogUrl)
+    Promise.resolve()
+      .then(() => { setLoading(true); setError(""); return fetch(GITHUB_CONFIG.changelogUrl); })
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.text();
       })
-      .then((md) => setHtml(marked.parse(md)))
-      .catch((err) => setError(err.message || "Failed to load"))
-      .finally(() => setLoading(false));
+      .then((md) => {
+        setHtml(marked.parse(md));
+        setLoading(false);
+      })
+      .catch((err) => {
+        setError(err.message || "Failed to load");
+        setLoading(false);
+      });
   }, [isOpen, html]);
 
   useEffect(() => {

@@ -22,18 +22,20 @@ export default function AddCustomEmbeddingModal({ isOpen, onClose, onCreated, on
 
   useEffect(() => {
     if (!isOpen) return;
-    setValidationResult(null);
-    setCheckKey("");
-    setCheckModelId("");
-    if (isEdit) {
-      setFormData({
-        name: node.name || "",
-        prefix: node.prefix || "",
-        baseUrl: node.baseUrl || DEFAULT_BASE_URL,
-      });
-    } else {
-      setFormData({ name: "", prefix: "", baseUrl: DEFAULT_BASE_URL });
-    }
+    Promise.resolve().then(() => {
+      setValidationResult(null);
+      setCheckKey("");
+      setCheckModelId("");
+      if (isEdit) {
+        setFormData({
+          name: node.name || "",
+          prefix: node.prefix || "",
+          baseUrl: node.baseUrl || DEFAULT_BASE_URL,
+        });
+      } else {
+        setFormData({ name: "", prefix: "", baseUrl: DEFAULT_BASE_URL });
+      }
+    });
   }, [isOpen, isEdit, node]);
 
   const handleSubmit = async () => {

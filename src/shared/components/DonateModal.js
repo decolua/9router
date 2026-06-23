@@ -13,16 +13,20 @@ export default function DonateModal({ isOpen, onClose }) {
 
   useEffect(() => {
     if (!isOpen || data) return;
-    setLoading(true);
-    setError("");
-    fetch(GITHUB_CONFIG.donateUrl, { cache: "no-store" })
+    Promise.resolve()
+      .then(() => { setLoading(true); setError(""); return fetch(GITHUB_CONFIG.donateUrl, { cache: "no-store" }); })
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
       })
-      .then((json) => setData(json))
-      .catch((err) => setError(err.message || "Failed to load"))
-      .finally(() => setLoading(false));
+      .then((json) => {
+        setData(json);
+        setLoading(false);
+      })
+      .catch((err) => {
+        setError(err.message || "Failed to load");
+        setLoading(false);
+      });
   }, [isOpen, data]);
 
   useEffect(() => {

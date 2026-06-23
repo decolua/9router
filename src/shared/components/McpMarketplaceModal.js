@@ -18,18 +18,20 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
   const [toolSelection, setToolSelection] = useState({});
 
   useEffect(() => {
-    if (!isOpen) return;
-    if (servers.length > 0) return;
-    setLoading(true);
-    fetch(REGISTRY_ENDPOINT)
+    if (!isOpen || servers.length > 0) return;
+    Promise.resolve()
+      .then(() => { setLoading(true); return fetch(REGISTRY_ENDPOINT); })
       .then((r) => r.json())
       .then((d) => {
         if (d.error) setError(d.error);
         else setServers(d.servers || []);
+        setLoading(false);
       })
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, [isOpen]);
+      .catch((e) => {
+        setError(e.message);
+        setLoading(false);
+      });
+  }, [isOpen, servers.length]);
 
   const addedSet = useMemo(() => new Set(addedNames), [addedNames]);
 
