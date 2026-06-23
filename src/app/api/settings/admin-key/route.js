@@ -41,7 +41,7 @@ function unauthorizedResponse() {
 
 async function parseRotateRequest(request) {
   if (!request.headers.get("content-type")?.includes("application/json")) {
-    return { expectedUpdatedAt: undefined };
+    throw new Error("MISSING_JSON_BODY");
   }
 
   let body;
@@ -52,7 +52,9 @@ async function parseRotateRequest(request) {
   }
   const expectedUpdatedAt = body?.expectedUpdatedAt;
 
-  if (expectedUpdatedAt === undefined) return { expectedUpdatedAt: undefined };
+  if (expectedUpdatedAt === undefined) {
+    throw new Error("MISSING_EXPECTED_UPDATED_AT");
+  }
   if (typeof expectedUpdatedAt !== "string") {
     throw new Error("INVALID_EXPECTED_UPDATED_AT");
   }
@@ -86,6 +88,13 @@ export async function POST(request) {
       headers: RESPONSE_HEADERS,
     });
   } catch (error) {
+    if (error instanceof Error && error.message === "MISSING_JSON_BODY") {
+      return NextResponse.json(
+        { error: "Request body must be JSON" },
+        { status: 400, headers: RESPONSE_HEADERS }
+      );
+    }
+
     if (error instanceof Error && error.message === "INVALID_JSON") {
       return NextResponse.json(
         { error: "Request body must be valid JSON" },
@@ -93,7 +102,10 @@ export async function POST(request) {
       );
     }
 
-    if (error instanceof Error && error.message === "INVALID_EXPECTED_UPDATED_AT") {
+    if (
+      error instanceof Error &&
+      (error.message === "INVALID_EXPECTED_UPDATED_AT" || error.message === "MISSING_EXPECTED_UPDATED_AT")
+    ) {
       return NextResponse.json(
         { error: "expectedUpdatedAt must be a string" },
         { status: 400, headers: RESPONSE_HEADERS }

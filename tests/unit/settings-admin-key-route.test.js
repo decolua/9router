@@ -182,6 +182,31 @@ describe("settings admin-key route", () => {
     expect(mocks.createOrRotateAdminApiKey).not.toHaveBeenCalled();
   });
 
+  it("requires json body and expectedUpdatedAt for rotation", async () => {
+    mocks.verifyDashboardAuthToken.mockResolvedValue(true);
+
+    const missingJson = await POST(makeRequest({
+      method: "POST",
+      authToken: "jwt-token",
+    }));
+    const missingExpected = await POST(makeRequest({
+      method: "POST",
+      authToken: "jwt-token",
+      headers: { "Content-Type": "application/json" },
+      body: {},
+    }));
+
+    expect(missingJson.status).toBe(400);
+    expect(await missingJson.json()).toEqual({
+      error: "Request body must be JSON",
+    });
+    expect(missingExpected.status).toBe(400);
+    expect(await missingExpected.json()).toEqual({
+      error: "expectedUpdatedAt must be a string",
+    });
+    expect(mocks.createOrRotateAdminApiKey).not.toHaveBeenCalled();
+  });
+
   it("rejects malformed json bodies", async () => {
     mocks.verifyDashboardAuthToken.mockResolvedValue(true);
     const request = makeRequest({
