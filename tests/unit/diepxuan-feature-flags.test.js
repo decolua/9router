@@ -92,6 +92,50 @@ describe("DiepXuan usage override", () => {
 });
 
 describe("DiepXuan combo fail tracker hook", () => {
+  it("beforeComboModelAttempt skips and logs a model after repeated failures", async () => {
+    const {
+      beforeComboModelAttempt,
+      recordComboModelOutcome,
+    } = await import("../../open-sse/diepxuan/comboHooks.js");
+    const { resetComboFailTracker } = await import("../../open-sse/diepxuan/comboFailTracker.js");
+
+    const comboName = `before-combo-${Date.now()}`;
+    const model = "provider/model";
+    const log = { debug: vi.fn() };
+
+    resetComboFailTracker(comboName);
+    expect(beforeComboModelAttempt({ modelStr: model, comboName, log })).toEqual({ skip: false });
+
+    recordComboModelOutcome(model, comboName, false);
+    recordComboModelOutcome(model, comboName, false);
+    recordComboModelOutcome(model, comboName, false);
+
+    expect(beforeComboModelAttempt({ modelStr: model, comboName, log })).toEqual({ skip: true });
+    expect(log.debug).toHaveBeenCalledWith("COMBO", `Skipping ${model} (fail count exceeded)`);
+  });
+
+  it("afterComboModelAttempt records failures and success resets the skip state", async () => {
+    const {
+      afterComboModelAttempt,
+      beforeComboModelAttempt,
+    } = await import("../../open-sse/diepxuan/comboHooks.js");
+    const { resetComboFailTracker } = await import("../../open-sse/diepxuan/comboFailTracker.js");
+
+    const comboName = `after-combo-${Date.now()}`;
+    const model = "provider/model";
+
+    resetComboFailTracker(comboName);
+    afterComboModelAttempt({ modelStr: model, comboName, ok: false });
+    afterComboModelAttempt({ modelStr: model, comboName, ok: false });
+    expect(beforeComboModelAttempt({ modelStr: model, comboName })).toEqual({ skip: false });
+
+    afterComboModelAttempt({ modelStr: model, comboName, ok: false });
+    expect(beforeComboModelAttempt({ modelStr: model, comboName })).toEqual({ skip: true });
+
+    afterComboModelAttempt({ modelStr: model, comboName, ok: true });
+    expect(beforeComboModelAttempt({ modelStr: model, comboName })).toEqual({ skip: false });
+  });
+
   it("skips a combo model after repeated failures and resets on success", async () => {
     const {
       recordComboModelOutcome,
