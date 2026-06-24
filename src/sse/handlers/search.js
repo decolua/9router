@@ -13,7 +13,7 @@ import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { handleComboChat } from "open-sse/services/combo.js";
-import { getFallbackWebCombo } from "@/diepxuan/sse/webComboFallback.js";
+import { handleDiepXuanWebComboFallback } from "@/diepxuan/sse/webComboFallback.js";
 
 /**
  * Handle web search request for the SSE/Next.js server.
@@ -67,28 +67,19 @@ export async function handleSearch(request) {
   const combos = await getCombos();
   const providerId = providerInput && typeof providerInput === "string" ? resolveProviderId(providerInput) : null;
   const resolvedProvider = providerId ? AI_PROVIDERS[providerId] : null;
-  const firstCombo = getFallbackWebCombo(providerInput, combos, "webSearch", !!resolvedProvider);
-
-  if (firstCombo) {
-    const comboStrategies = settings.comboStrategies || {};
-    const comboStrategy = comboStrategies[firstCombo.name]?.fallbackStrategy || settings.comboStrategy || "fallback";
-    const comboStickyLimit = settings.comboStickyRoundRobinLimit;
-    if (!providerInput) {
-      log.info("SEARCH", `No provider/model specified, using firstCombo "${firstCombo.name}"`);
-    } else if (firstCombo.name !== providerInput) {
-      log.warn("SEARCH", `Unknown provider "${providerInput}", using firstCombo "${firstCombo.name}"`);
-    }
-    log.info("SEARCH", `Combo "${firstCombo.name}" with ${firstCombo.models.length} providers (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
-    return handleComboChat({
-      body,
-      models: firstCombo.models,
-      handleSingleModel: (b, m) => handleSingleProviderSearch(b, m, request, apiKey, settings),
-      log,
-      comboName: firstCombo.name,
-      comboStrategy,
-      comboStickyLimit
-    });
-  }
+  const customComboResponse = await handleDiepXuanWebComboFallback({
+    body,
+    providerInput,
+    combos,
+    kind: "webSearch",
+    resolvedProvider,
+    settings,
+    handleComboChat,
+    handleSingleModel: (b, m) => handleSingleProviderSearch(b, m, request, apiKey, settings),
+    log,
+    logScope: "SEARCH",
+  });
+  if (customComboResponse) return customComboResponse;
 
   if (!providerInput || typeof providerInput !== "string") {
     log.warn("SEARCH", "No provider/model specified and no webSearch combo available");

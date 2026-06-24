@@ -29,3 +29,41 @@ export function getFallbackWebCombo(providerInput, combosData, kind, isKnownProv
 
   return null;
 }
+
+export async function handleDiepXuanWebComboFallback({
+  body,
+  providerInput,
+  combos,
+  kind,
+  resolvedProvider,
+  settings,
+  handleComboChat,
+  handleSingleModel,
+  log,
+  logScope,
+}) {
+  const firstCombo = getFallbackWebCombo(providerInput, combos, kind, !!resolvedProvider);
+  if (!firstCombo) return null;
+
+  const comboStrategies = settings.comboStrategies || {};
+  const comboStrategy = comboStrategies[firstCombo.name]?.fallbackStrategy || settings.comboStrategy || "fallback";
+  const comboStickyLimit = settings.comboStickyRoundRobinLimit;
+
+  if (!providerInput) {
+    log.info(logScope, `No provider/model specified, using firstCombo "${firstCombo.name}"`);
+  } else if (firstCombo.name !== providerInput) {
+    log.warn(logScope, `Unknown provider "${providerInput}", using firstCombo "${firstCombo.name}"`);
+  }
+
+  log.info(logScope, `Combo "${firstCombo.name}" with ${firstCombo.models.length} providers (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
+
+  return handleComboChat({
+    body,
+    models: firstCombo.models,
+    handleSingleModel,
+    log,
+    comboName: firstCombo.name,
+    comboStrategy,
+    comboStickyLimit,
+  });
+}

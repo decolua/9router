@@ -319,19 +319,26 @@ Search:
 Fetch:
 - Logic tương tự cho web fetch combo.
 
-Các helper quan trọng:
+Base handler chỉ nên giữ hook mỏng sang extension layer:
 
 ```js
-getCombos()
+handleDiepXuanWebComboFallback()
+```
+
+Logic chi tiết nằm trong `src/diepxuan/sse/webComboFallback.js`:
+
+```js
 getFallbackWebCombo()
 getFirstWebCombo()
+firstCombo
 handleComboChat()
 ```
 
 ### Checklist sau merge upstream
 
 ```bash
-grep -n "firstCombo\|No provider/model specified\|Unknown provider\|getFallbackWebCombo" src/sse/handlers/search.js src/sse/handlers/fetch.js src/diepxuan/sse/webComboFallback.js
+grep -n "handleDiepXuanWebComboFallback\|No provider/model specified\|Unknown provider" src/sse/handlers/search.js src/sse/handlers/fetch.js
+grep -n "firstCombo\|getFallbackWebCombo\|getFirstWebCombo" src/diepxuan/sse/webComboFallback.js
 node --check src/sse/handlers/search.js
 node --check src/sse/handlers/fetch.js
 node --check src/diepxuan/sse/webComboFallback.js

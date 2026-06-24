@@ -138,19 +138,19 @@
       ],
       "requiredPatterns": [
         { "file": "src/sse/handlers/search.js", "pattern": "getCombos" },
-        { "file": "src/sse/handlers/search.js", "pattern": "getFallbackWebCombo" },
-        { "file": "src/sse/handlers/search.js", "pattern": "firstCombo" },
+        { "file": "src/sse/handlers/search.js", "pattern": "handleDiepXuanWebComboFallback" },
         { "file": "src/sse/handlers/search.js", "pattern": "No provider/model specified" },
         { "file": "src/sse/handlers/search.js", "pattern": "Unknown provider" },
         { "file": "src/sse/handlers/search.js", "pattern": "handleComboChat" },
         { "file": "src/sse/handlers/fetch.js", "pattern": "getCombos" },
-        { "file": "src/sse/handlers/fetch.js", "pattern": "getFallbackWebCombo" },
-        { "file": "src/sse/handlers/fetch.js", "pattern": "firstCombo" },
+        { "file": "src/sse/handlers/fetch.js", "pattern": "handleDiepXuanWebComboFallback" },
         { "file": "src/sse/handlers/fetch.js", "pattern": "No provider/model specified" },
         { "file": "src/sse/handlers/fetch.js", "pattern": "Unknown provider" },
         { "file": "src/sse/handlers/fetch.js", "pattern": "handleComboChat" },
         { "file": "src/diepxuan/sse/webComboFallback.js", "pattern": "getFirstWebCombo" },
-        { "file": "src/diepxuan/sse/webComboFallback.js", "pattern": "getFallbackWebCombo" }
+        { "file": "src/diepxuan/sse/webComboFallback.js", "pattern": "getFallbackWebCombo" },
+        { "file": "src/diepxuan/sse/webComboFallback.js", "pattern": "handleDiepXuanWebComboFallback" },
+        { "file": "src/diepxuan/sse/webComboFallback.js", "pattern": "firstCombo" }
       ],
       "syntaxCheck": [
         "src/sse/handlers/search.js",
