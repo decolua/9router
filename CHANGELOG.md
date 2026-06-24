@@ -1,3 +1,37 @@
+# v0.5.8 (2026-06-21)
+
+## Features
+- **Antigravity**: native image generation support (image models tagged kind:image, hiển thị trong media-providers UI)
+- **CodeBuddy CN**: API key auth + credit quota tracker
+- **CodeBuddy CN**: short model prefix alias "cbcn"
+
+## Fixes
+- **MiniMax-M3**: enable vision capability
+- **Headroom**: support Docker sidecar proxy
+- **Antigravity**: image executor fixes
+- **mimo-free**: Chrome User-Agent rotation to bypass anti-abuse gate
+- **cloudflare-ai**: flatten content-part arrays to string to avoid oneOf 400 (#1926)
+- **Translator**: normalize tools to Anthropic-native shape for non-Anthropic providers
+- **CLI**: handle Next.js 16 nested standalone output path (#1940)
+- **Codex**: preserve custom tools during request normalization
+- **next.config**: add new route for responses endpoint to API
+
+# v0.5.6 (2026-06-20)
+
+## Features
+- **Ponytail**: minimalist code generation feature
+- **Headroom**: proxy lifecycle management + dashboard UI (one-click start/stop, install detection, status probing, token saver, claude↔openai shape conversion)
+- **CodeBuddy CN**: new OAuth provider (copilot.tencent.com) — 15-model catalog, /v2 inference, forced streaming, OpenAI-style reasoning
+- **OpenCode-Go**: align models with official endpoints; route Qwen 3.7 MiniMax via /v1/messages, GLM/Kimi/DeepSeek/MiMo via /chat/completions
+
+## Fixes
+- **Anthropic-compatible validation**: use POST /v1/messages (GET /models not spec, false "invalid" for valid keys)
+- **CLI tools**: tolerate JSONC configs in all 8 settings routes (opencode, openclaw, kilo, droid, cowork, copilot, claude, cline)
+- **Gemini/Antigravity**: preserve 'pattern' in tool schema translation (glob/grep)
+- **Combo/Fusion**: flatten Anthropic-style tool messages in panel calls (prevent 503)
+- **Models**: store provider custom models by provider scope
+- **Perplexity**: use /v1/models endpoint for key validation
+
 # v0.5.4 (2026-06-18)
 
 ## Fixes

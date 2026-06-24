@@ -18,6 +18,7 @@ export default {
     deprecationNotice: "RISK_NOTICE",
   },
   category: "oauth",
+  serviceKinds: ["llm", "image"],
   transport: {
     baseUrls: [
       "https://daily-cloudcode-pa.googleapis.com",
@@ -53,6 +54,8 @@ export default {
     { id: "claude-opus-4-6-thinking", name: "Claude Opus 4.6 (Thinking)" },
     { id: "gpt-oss-120b-medium", name: "GPT-OSS 120B (Medium)" },
     { id: "gemini-3-flash", name: "Gemini 3 Flash", thinking: false },
+    // Image generation models
+    { id: "gemini-3.1-flash-image", name: "Gemini 3.1 Flash (Image)", kind: "image", imageGen: true, capabilities: ["textToImage"] },
   ],
   oauth: {
     authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",

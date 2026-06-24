@@ -8,13 +8,13 @@ export class XiaomiTokenplanExecutor extends DefaultExecutor {
     super("xiaomi-tokenplan");
   }
 
-  // Token Plan keys are region-specific — always OpenAI-compatible /chat/completions
+  // Token Plan keys are region-specific. Route per sourceFormat-matched transport:
+  // claude → Anthropic /anthropic/v1/messages, openai → /chat/completions.
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
     const baseUrl = resolveXiaomiTokenplanBaseUrl(credentials);
-    // Claude-native aliases route to the Anthropic-compatible messages endpoint
-    // if (getModelTargetFormat(this.provider, model) === FORMATS.CLAUDE) {
-    //   return `${baseUrl.replace(/\/v1\/?$/, "/anthropic/v1")}/messages`;
-    // }
+    if (credentials?.runtimeTransport?.format === "claude") {
+      return `${baseUrl.replace(/\/v1\/?$/, "")}/anthropic/v1/messages`;
+    }
     return `${baseUrl}/chat/completions`;
   }
 }

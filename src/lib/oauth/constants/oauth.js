@@ -106,7 +106,7 @@ export const CLINE_CONFIG = { ...PROVIDER_OAUTH["cline"] };
 export const GITLAB_CONFIG = { ...PROVIDER_OAUTH["gitlab"] };
 
 // CodeBuddy (Tencent) OAuth Configuration (Browser OAuth Polling Flow)
-export const CODEBUDDY_CONFIG = { ...PROVIDER_OAUTH["codebuddy"] };
+export const CODEBUDDY_CONFIG = { ...PROVIDER_OAUTH["codebuddy-cn"] };
 
 // OAuth timeout (5 minutes)
 export const OAUTH_TIMEOUT = 300000;
@@ -128,5 +128,5 @@ export const PROVIDERS = {
   KILOCODE: "kilocode",
   CLINE: "cline",
   GITLAB: "gitlab",
-  CODEBUDDY: "codebuddy",
+  CODEBUDDY: "codebuddy-cn",
 };
