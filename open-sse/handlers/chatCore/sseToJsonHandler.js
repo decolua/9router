@@ -1,4 +1,5 @@
 import { convertResponsesStreamToJson } from "../../transformer/streamToJsonConverter.js";
+import { reportMalformed200 } from "../../utils/diagnostics.js";
 import { createErrorResult } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { FORMATS } from "../../translator/formats.js";
@@ -40,8 +41,9 @@ function pickAssistantMessageForChatCompletion(output) {
  */
 export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
   const chunks = [];
+  const rawText = String(rawSSE || "");
 
-  for (const line of String(rawSSE || "").split("\n")) {
+  for (const line of rawText.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed.startsWith("data:")) continue;
     const payload = trimmed.slice(5).trim();
@@ -49,7 +51,7 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
     try { chunks.push(JSON.parse(payload)); } catch { /* ignore malformed lines */ }
   }
 
-  if (chunks.length === 0) return null;
+  if (chunks.length === 0) return { parsed: null, empty: true, recvBytes: rawText.length };
 
   const first = chunks[0];
   const contentParts = [];
@@ -95,7 +97,8 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
     choices: [{ index: 0, message, finish_reason: finishReason }]
   };
   if (usage) result.usage = usage;
-  return result;
+  const empty = contentParts.length === 0 && reasoningParts.length === 0 && toolCallMap.size === 0;
+  return { parsed: result, empty, recvBytes: rawText.length };
 }
 
 /**
@@ -120,6 +123,22 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
   if (isCodexResponsesApi) {
     try {
       const jsonResponse = await convertResponsesStreamToJson(providerResponse.body);
+      if (jsonResponse?.empty) {
+        const totalLatency = Date.now() - requestStartTime;
+        reportMalformed200({
+          mode: "sse2json", provider, model, connectionId, reason: jsonResponse.status === "failed" ? "no_terminal" : "empty_stream",
+          recvBytes: -1, recvLines: -1, emitted: 0, events: {}, ttftMs: totalLatency, elapsedMs: totalLatency,
+        });
+        saveRequestDetail(buildRequestDetail({
+          ...ctx,
+          latency: { ttft: totalLatency, total: totalLatency },
+          tokens: { prompt_tokens: 0, completion_tokens: 0 },
+          response: { error: "empty Responses API stream", thinking: null, finish_reason: jsonResponse.status || "failed" },
+          status: "malformed"
+        }, { endpoint: clientRawRequest?.endpoint || null })).catch(() => {});
+        appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `[${provider}/${model}] returned an empty response (stream closed without usable Responses output)`);
+      }
       if (onRequestSuccess) await onRequestSuccess();
 
       const usage = jsonResponse.usage || {};
@@ -137,9 +156,10 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
         status: "success"
       }, { endpoint: clientRawRequest?.endpoint || null })).catch(() => {});
 
-      // Client is Responses API → return as-is
+      // Client is Responses API → return as-is (strip internal `empty` flag)
       if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
-        return { success: true, response: new Response(JSON.stringify(jsonResponse), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
+        const { empty: _omit, ...clientResponse } = jsonResponse;
+        return { success: true, response: new Response(JSON.stringify(clientResponse), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
       }
 
       // Build client-format response
@@ -193,8 +213,25 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
   // Standard Chat Completions SSE path
   try {
     const sseText = await providerResponse.text();
-    const parsed = parseSSEToOpenAIResponse(sseText, model);
-    if (!parsed) return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
+    const parsedResult = parseSSEToOpenAIResponse(sseText, model);
+    if (!parsedResult?.parsed || parsedResult.empty) {
+      const totalLatency = Date.now() - requestStartTime;
+      reportMalformed200({
+        mode: "sse2json", provider, model, connectionId, reason: parsedResult?.empty ? "empty_stream" : "parse_fail",
+        recvBytes: parsedResult?.recvBytes ?? sseText.length, recvLines: sseText.split("\n").length, emitted: 0,
+        events: {}, ttftMs: totalLatency, elapsedMs: totalLatency,
+      });
+      saveRequestDetail(buildRequestDetail({
+        ...ctx,
+        latency: { ttft: totalLatency, total: totalLatency },
+        tokens: { prompt_tokens: 0, completion_tokens: 0 },
+        response: { error: "empty Chat Completions stream", thinking: null, finish_reason: "failed" },
+        status: "malformed"
+      }, { endpoint: clientRawRequest?.endpoint || null })).catch(() => {});
+      appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `[${provider}/${model}] returned an empty response (stream had no usable chat output)`);
+    }
+    const parsed = parsedResult.parsed;
 
     if (onRequestSuccess) await onRequestSuccess();
 

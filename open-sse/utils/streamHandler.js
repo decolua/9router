@@ -20,6 +20,7 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
   const startTime = Date.now();
   let disconnected = false;
   let abortTimeout = null;
+  let abortReason = null;
 
   const logStream = (status) => {
     const duration = Date.now() - startTime;
@@ -30,6 +31,8 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
   return {
     signal: abortController.signal,
     startTime,
+    // Last known termination cause: "stall" | "abort" | "client_closed" | "error" | null
+    getAbortReason: () => abortReason,
 
     isConnected: () => !disconnected,
 
@@ -37,6 +40,7 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
     handleDisconnect: (reason = "client_closed") => {
       if (disconnected) return;
       disconnected = true;
+      if (!abortReason) abortReason = "client_closed";
 
       logStream(`disconnect: ${reason}`);
       dbg("CTRL", `${provider}/${model} | disconnect=${reason} | dur=${Date.now() - startTime}ms`);
@@ -63,7 +67,7 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
     },
 
     // Call on error
-    handleError: (error) => {
+    handleError: (error, reason) => {
       if (disconnected) return;
       disconnected = true;
 
@@ -73,15 +77,20 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
       }
 
       if (error.name === "AbortError") {
+        if (!abortReason) abortReason = reason || "abort";
         logStream("aborted");
         return;
       }
 
+      if (!abortReason) abortReason = reason || "error";
       logStream(`error: ${error.message}`);
       onError?.(error);
     },
 
-    abort: () => abortController.abort()
+    abort: (reason) => {
+      if (!abortReason) abortReason = reason || "abort";
+      abortController.abort();
+    }
   };
 }
 
@@ -104,7 +113,7 @@ export function createDisconnectAwareStream(transformStream, streamController, o
     if (terminalEmitted || !onAbortTerminal) return;
     terminalEmitted = true;
     try {
-      const bytes = onAbortTerminal();
+      const bytes = onAbortTerminal(streamController?.getAbortReason?.());
       if (bytes) controller.enqueue(bytes);
     } catch { /* best-effort terminal */ }
   };
@@ -202,8 +211,8 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
     stallTimer = setTimeout(() => {
       stallTimer = null;
       dbg(tag, `STALL TIMEOUT ${stallTimeoutMs}ms | chunks=${chunkCount} | bytes=${totalBytes} | sinceLast=${Date.now() - lastChunkAt}ms`);
-      streamController.handleError?.(new Error("stream stall timeout"));
-      streamController.abort?.();
+      streamController.handleError?.(new Error("stream stall timeout"), "stall");
+      streamController.abort?.("stall");
     }, stallTimeoutMs);
   };
 
@@ -213,11 +222,12 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
   const wrappedController = {
     signal: streamController.signal,
     startTime: streamController.startTime,
+    getAbortReason: streamController.getAbortReason,
     isConnected: () => streamController.isConnected(),
     handleComplete: () => { dbg(tag, `complete | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); streamController.handleComplete(); },
     handleError: (e) => { dbg(tag, `error: ${e?.message} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); streamController.handleError(e); },
     handleDisconnect: (r) => { dbg(tag, `disconnect: ${r} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); streamController.handleDisconnect(r); },
-    abort: () => { clearStall(); streamController.abort(); }
+    abort: (reason) => { clearStall(); streamController.abort(reason); }
   };
 
   armStall();

@@ -4,9 +4,60 @@ import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
+import { reportMalformed200, synthOpenAIErrorChunk, synthResponsesFailure } from "./diagnostics.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
 import { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER } from "./sseConstants.js";
+
+// Responses-API event names that carry actual client output (content/tool args).
+// Used to decide whether a passthrough stream "produced output" for empty-detection.
+const RESPONSES_OUTPUT_EVENTS = new Set([
+  "response.output_text.delta",
+  "response.output_text.done",
+  "response.output_item.done",
+  "response.function_call_arguments.delta",
+  "response.function_call_arguments.done",
+]);
+
+function hasUsableResponsesItem(item) {
+  if (!item || typeof item !== "object") return false;
+  if (item.type && item.type !== "message") return true;
+  if (!Array.isArray(item.content)) return false;
+  return item.content.some((part) => {
+    if (typeof part?.text === "string" && part.text.length > 0) return true;
+    if (part?.type === "output_text" && typeof part.text === "string" && part.text.length > 0) return true;
+    return false;
+  });
+}
+
+function hasUsableResponsesOutput(output) {
+  return Array.isArray(output) && output.some(hasUsableResponsesItem);
+}
+
+function markResponsesOutput(eventName, parsed) {
+  if (eventName === "response.output_text.delta") {
+    return typeof parsed?.delta === "string" && parsed.delta.length > 0;
+  }
+  if (eventName === "response.output_text.done") {
+    return typeof parsed?.text === "string" && parsed.text.length > 0;
+  }
+  if (eventName === "response.output_item.done") {
+    return hasUsableResponsesItem(parsed?.item);
+  }
+  if (eventName === "response.function_call_arguments.delta") {
+    return typeof parsed?.delta === "string" && parsed.delta.length > 0;
+  }
+  if (eventName === "response.function_call_arguments.done") {
+    return typeof parsed?.arguments === "string"
+      ? parsed.arguments.length > 0
+      : Boolean(parsed?.arguments || parsed?.name || parsed?.call_id || parsed?.item);
+  }
+  if (eventName === "response.completed") {
+    return hasUsableResponsesOutput(parsed?.response?.output);
+  }
+  return RESPONSES_OUTPUT_EVENTS.has(eventName);
+}
+
 
 export { COLORS, formatSSE };
 export { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER };
@@ -48,7 +99,8 @@ export function createSSEStream(options = {}) {
     connectionId = null,
     body = null,
     onStreamComplete = null,
-    apiKey = null
+    apiKey = null,
+    getAbortReason = null
   } = options;
 
   let buffer = "";
@@ -62,20 +114,43 @@ export function createSSEStream(options = {}) {
   let totalContentLength = 0;
   let accumulatedContent = "";
   let accumulatedThinking = "";
+  let totalDecodedLen = 0;     // raw upstream bytes (decoded length) for diagnostics
+  let sawToolCalls = false;    // tool-call deltas emitted (content can be 0 for tool-only responses)
+  let sawResponsesContent = false; // Responses passthrough carried actual output
   let ttftAt = null;
   let sseLineCount = 0;
   let sseEmittedCount = 0;
   const eventTypeCounts = {};
+  const requestStart = Date.now();
+
+  // Did this stream produce any output the client can use (text/reasoning/tool/Responses output)?
+  // Used in flush() to detect the empty/malformed HTTP-200 case.
+  const producedOutput = () => totalContentLength > 0 || sawToolCalls || sawResponsesContent;
+
+  // Emit one structured [MALFORMED-200] line + return the client-shaped error SSE text.
+  const emitEmptyDiagnostics = (reasonOverride) => {
+    const reason = reasonOverride || getAbortReason?.() || "empty";
+    reportMalformed200({
+      mode: "stream", provider, model, connectionId, reason,
+      recvBytes: totalDecodedLen, recvLines: sseLineCount, emitted: sseEmittedCount,
+      events: eventTypeCounts,
+      ttftMs: ttftAt ? ttftAt - requestStart : -1,
+      elapsedMs: Date.now() - requestStart,
+    });
+    return reason;
+  };
 
   // Track Responses API event framing for same-format passthrough (codex)
   let currentOpenAIResponsesEvent = null;
   let openAIResponsesTerminalSeen = false;
   let openAIResponsesDoneSent = false;
+  let emptyDiagnosticEmitted = false;
 
   return new TransformStream({
     transform(chunk, controller) {
       if (!ttftAt) ttftAt = Date.now();
       const text = decoder.decode(chunk, { stream: true });
+      totalDecodedLen += text.length;
       buffer += text;
       reqLogger?.appendProviderChunk?.(text);
 
@@ -84,16 +159,18 @@ export function createSSEStream(options = {}) {
 
       for (const line of lines) {
         const trimmed = line.trim();
-        if (isDebugEnabled && trimmed) {
+        if (trimmed) {
           sseLineCount++;
           if (trimmed.startsWith("event:")) {
             const evt = trimmed.slice(6).trim();
             eventTypeCounts[evt] = (eventTypeCounts[evt] || 0) + 1;
           }
+          if (isDebugEnabled) { /* counters are intentionally always-on for diagnostics */ }
         }
 
-        // Capture Responses API event name to preserve framing in same-format passthrough
-        if (mode === STREAM_MODE.TRANSLATE && targetFormat === FORMATS.OPENAI_RESPONSES && trimmed.startsWith("event:")) {
+        // Capture Responses API event name so we can preserve framing and detect
+        // whether a Responses client actually received usable output.
+        if (sourceFormat === FORMATS.OPENAI_RESPONSES && trimmed.startsWith("event:")) {
           currentOpenAIResponsesEvent = trimmed.slice(6).trim();
         }
 
@@ -143,6 +220,15 @@ export function createSSEStream(options = {}) {
               if (reasoning && typeof reasoning === "string") {
                 totalContentLength += reasoning.length;
                 accumulatedThinking += reasoning;
+              }
+              if (delta?.tool_calls) sawToolCalls = true;
+
+              if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
+                const eventName = getOpenAIResponsesEventName(currentOpenAIResponsesEvent, parsed);
+                if (markResponsesOutput(eventName, parsed)) {
+                  sawResponsesContent = true;
+                }
+                currentOpenAIResponsesEvent = null;
               }
 
               const extracted = extractUsage(parsed);
@@ -198,6 +284,10 @@ export function createSSEStream(options = {}) {
         if (isOpenAIResponsesStream && isOpenAIResponsesTerminalEvent(openAIResponsesEventName, parsed)) {
           openAIResponsesTerminalSeen = true;
         }
+        // Detect real output for any Responses client (sourceFormat), not only same-format passthrough.
+        if (sourceFormat === FORMATS.OPENAI_RESPONSES && markResponsesOutput(openAIResponsesEventName, parsed)) {
+          sawResponsesContent = true;
+        }
 
         // For Ollama: done=true is the final chunk with finish_reason/usage, must translate
         // For other formats: done=true is the [DONE] sentinel, skip
@@ -239,6 +329,11 @@ export function createSSEStream(options = {}) {
           totalContentLength += parsed.choices[0].delta.reasoning_content.length;
           accumulatedThinking += parsed.choices[0].delta.reasoning_content;
         }
+        // OpenAI format - tool calls (content can be 0 for tool-only responses)
+        if (parsed.choices?.[0]?.delta?.tool_calls) sawToolCalls = true;
+        // Claude format - tool_use blocks
+        if (parsed.type === "content_block_start" && parsed.content_block?.type === "tool_use") sawToolCalls = true;
+        if (parsed.delta?.partial_json) sawToolCalls = true;
         
         // Gemini format
         if (parsed.candidates?.[0]?.content?.parts) {
@@ -320,6 +415,17 @@ export function createSSEStream(options = {}) {
         if (remaining) buffer += remaining;
 
         if (mode === STREAM_MODE.PASSTHROUGH) {
+          // Mark a final buffered Responses line (upstream closed without trailing newline)
+          // so flush doesn't wrongly append a synthetic response.failed after valid output.
+          if (sourceFormat === FORMATS.OPENAI_RESPONSES && buffer.trim().startsWith("data:")) {
+            try {
+              const parsed = JSON.parse(buffer.trim().slice(5).trim());
+              const eventName = getOpenAIResponsesEventName(currentOpenAIResponsesEvent, parsed);
+              if (markResponsesOutput(eventName, parsed)) sawResponsesContent = true;
+            } catch { /* leave buffer handling intact */ }
+            currentOpenAIResponsesEvent = null;
+          }
+
           if (buffer) {
             let output = buffer;
             if (buffer.startsWith("data:") && !buffer.startsWith("data: ")) {
@@ -339,6 +445,19 @@ export function createSSEStream(options = {}) {
             appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
           }
           
+          // Empty passthrough streams are valid HTTP but malformed for OpenAI clients.
+          // Surface one client-shaped error chunk before [DONE] so callers get a useful cause.
+          if (!emptyDiagnosticEmitted && !producedOutput()) {
+            emptyDiagnosticEmitted = true;
+            const reason = emitEmptyDiagnostics();
+            const emptyOutput = sourceFormat === FORMATS.OPENAI_RESPONSES
+              ? synthResponsesFailure(reason)
+              : synthOpenAIErrorChunk({ provider, model, reason });
+            reqLogger?.appendConvertedChunk?.(emptyOutput);
+            controller.enqueue(sharedEncoder.encode(emptyOutput));
+            sseEmittedCount++;
+          }
+
           // IMPORTANT: In passthrough mode we still must terminate the SSE stream.
           // Some clients (e.g. OpenClaw) expect the OpenAI-style sentinel:
           //   data: [DONE]\n\n
@@ -397,9 +516,22 @@ export function createSSEStream(options = {}) {
           }
         }
 
-        // Synthesize response.failed if a Responses passthrough stream never reached a terminal event
+        // Empty/aborted stream: no content, tool calls, or Responses output was produced.
+        // Emit one client-shaped error (chat chunk or Responses response.failed) before [DONE].
+        const wantsResponses = sourceFormat === FORMATS.OPENAI_RESPONSES;
         const keepsOpenAIResponsesFormat = targetFormat === FORMATS.OPENAI_RESPONSES && sourceFormat === FORMATS.OPENAI_RESPONSES;
-        if (keepsOpenAIResponsesFormat && !openAIResponsesTerminalSeen) {
+        if (!emptyDiagnosticEmitted && !producedOutput()) {
+          emptyDiagnosticEmitted = true;
+          const reason = emitEmptyDiagnostics(openAIResponsesTerminalSeen ? "empty" : "no_terminal");
+          const emptyOutput = wantsResponses
+            ? synthResponsesFailure(reason)
+            : synthOpenAIErrorChunk({ provider, model, reason });
+          reqLogger?.appendConvertedChunk?.(emptyOutput);
+          controller.enqueue(sharedEncoder.encode(emptyOutput));
+          sseEmittedCount++;
+          openAIResponsesTerminalSeen = true;
+        } else if (keepsOpenAIResponsesFormat && !openAIResponsesTerminalSeen) {
+          // Content was delivered but the stream closed without response.completed — close it cleanly.
           const failedOutput = formatIncompleteOpenAIResponsesStreamFailure();
           reqLogger?.appendConvertedChunk?.(failedOutput);
           controller.enqueue(sharedEncoder.encode(failedOutput));
@@ -435,7 +567,7 @@ export function createSSEStream(options = {}) {
   });
 }
 
-export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null) {
+export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, streamController = null) {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
     targetFormat,
@@ -447,19 +579,22 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
     connectionId,
     body,
     onStreamComplete,
-    apiKey
+    apiKey,
+    getAbortReason: streamController?.getAbortReason,
   });
 }
 
-export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null) {
+export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, streamController = null, sourceFormat = null) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
+    sourceFormat,
     provider,
     reqLogger,
     model,
     connectionId,
     body,
     onStreamComplete,
-    apiKey
+    apiKey,
+    getAbortReason: streamController?.getAbortReason,
   });
 }

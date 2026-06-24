@@ -7,6 +7,9 @@ import { handleChatCore } from "./chatCore.js";
 import { convertResponsesApiFormat } from "../translator/formats/responsesApi.js";
 import { createResponsesApiTransformStream } from "../transformer/responsesTransformer.js";
 import { convertResponsesStreamToJson } from "../transformer/streamToJsonConverter.js";
+import { reportMalformed200 } from "../utils/diagnostics.js";
+import { createErrorResult } from "../utils/error.js";
+import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { SSE_HEADERS_CORS } from "../utils/sseConstants.js";
 
 /**
@@ -58,9 +61,20 @@ export async function handleResponsesCore({ body, modelInfo, credentials, log, o
     try {
       const jsonResponse = await convertResponsesStreamToJson(response.body);
 
+      // Empty/aborted Responses stream → surface a real error instead of a 200 with output:[].
+      if (jsonResponse?.empty) {
+        reportMalformed200({
+          mode: "sse2json", provider: modelInfo?.provider, model: modelInfo?.model, connectionId,
+          reason: jsonResponse.status === "failed" ? "no_terminal" : "empty_stream",
+          recvBytes: -1, recvLines: -1, emitted: 0, events: {}, ttftMs: -1, elapsedMs: -1,
+        });
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `[${modelInfo?.provider}/${modelInfo?.model}] returned an empty Responses API stream`);
+      }
+
+      const { empty: _omit, ...clientResponse } = jsonResponse;
       return {
         success: true,
-        response: new Response(JSON.stringify(jsonResponse), {
+        response: new Response(JSON.stringify(clientResponse), {
           status: 200,
           headers: {
             "Content-Type": "application/json",

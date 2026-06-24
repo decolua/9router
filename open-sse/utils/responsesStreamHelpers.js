@@ -24,13 +24,19 @@ export function isOpenAIResponsesTerminalEvent(eventName, chunk) {
 
 const sharedEncoder = new TextEncoder();
 
-// Encoded response.failed + [DONE] payload for aborted/stalled Responses passthrough streams
-export function buildAbortedResponsesTerminalBytes() {
-  return sharedEncoder.encode(`${formatIncompleteOpenAIResponsesStreamFailure()}data: [DONE]\n\n`);
+// Encoded response.failed + [DONE] payload for aborted/stalled Responses passthrough streams.
+// Optional `reason` is folded into the error message for actionable diagnostics.
+export function buildAbortedResponsesTerminalBytes(reason) {
+  return sharedEncoder.encode(`${formatIncompleteOpenAIResponsesStreamFailure(reason)}data: [DONE]\n\n`);
 }
 
-// Synthesize a response.failed event for streams that close without a terminal event
-export function formatIncompleteOpenAIResponsesStreamFailure() {
+// Synthesize a response.failed event for streams that close without a terminal event.
+// Optional `reason` overrides the default message when a specific cause is known
+// (e.g. "stream stalled", "upstream stream carried no content").
+export function formatIncompleteOpenAIResponsesStreamFailure(reason) {
+  const message = reason
+    ? `stream closed before response.completed (${reason})`
+    : "stream closed before response.completed";
   return formatSSE({
     event: "response.failed",
     data: {
@@ -41,9 +47,9 @@ export function formatIncompleteOpenAIResponsesStreamFailure() {
         error: {
           type: "stream_error",
           code: "stream_disconnected",
-          message: "stream closed before response.completed"
-        }
-      }
-    }
+          message,
+        },
+      },
+    },
   }, FORMATS.OPENAI_RESPONSES);
 }

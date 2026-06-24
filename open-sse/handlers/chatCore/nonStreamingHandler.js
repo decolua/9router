@@ -5,9 +5,41 @@ import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTrackin
 import { createErrorResult } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
+import { reportMalformed200 } from "../../utils/diagnostics.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
+
+// Decide whether a translated non-streaming body is empty/malformed for the client.
+// Returns a reason string ("empty_choices" | "no_terminal") or null when valid.
+// Reasoning-only responses (content="" + reasoning_content) are intentionally allowed.
+function detectMalformedNonStream(resp) {
+  if (!resp || typeof resp !== "object") return "empty_choices";
+  // Responses API shape
+  if (resp.object === "response") {
+    const hasOutput = Array.isArray(resp.output) && resp.output.some((it) => {
+      if (it?.type === "message") {
+        return Array.isArray(it.content) && it.content.some((c) => typeof c?.text === "string" && c.text.length > 0);
+      }
+      return it && it.type; // function_call / other structural items count as output
+    });
+    if (!hasOutput) return "empty_choices";
+    if (resp.status && !["completed", "done"].includes(resp.status)) return "no_terminal";
+    return null;
+  }
+  // Chat Completions shape
+  const choices = resp.choices;
+  if (!Array.isArray(choices) || choices.length === 0) return "empty_choices";
+  const anyChoiceHasOutput = choices.some((choice) => {
+    const msg = choice?.message;
+    if (typeof msg?.content === "string" && msg.content.length > 0) return true;
+    if (Array.isArray(msg?.tool_calls) && msg.tool_calls.length > 0) return true;
+    if (typeof msg?.reasoning_content === "string" && msg.reasoning_content.length > 0) return true;
+    return false;
+  });
+  if (!anyChoiceHasOutput) return "empty_choices";
+  return null;
+}
 
 /**
  * Translate non-streaming response body from provider format → OpenAI format.
@@ -150,12 +182,29 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
 
   if (contentType.includes("text/event-stream")) {
     const sseText = await providerResponse.text();
-    const parsed = parseSSEToOpenAIResponse(sseText, model);
-    if (!parsed) {
+    const parsedResult = parseSSEToOpenAIResponse(sseText, model);
+    if (!parsedResult?.parsed || parsedResult.empty) {
+      const totalLatency = Date.now() - requestStartTime;
+      const reason = parsedResult?.empty ? "empty_stream" : "parse_fail";
+      reportMalformed200({
+        mode: "sse2json", provider, model, connectionId, reason,
+        recvBytes: parsedResult?.recvBytes ?? sseText.length, recvLines: sseText.split("\n").length,
+        emitted: 0, events: {}, ttftMs: totalLatency, elapsedMs: totalLatency,
+      });
       appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
-      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
+      saveRequestDetail(buildRequestDetail({
+        provider, model, connectionId,
+        latency: { ttft: totalLatency, total: totalLatency },
+        tokens: { prompt_tokens: 0, completion_tokens: 0 },
+        request: extractRequestConfig(body, stream),
+        providerRequest: finalBody || translatedBody || null,
+        providerResponse: sseText.slice(0, 2000),
+        response: { error: `${reason}: empty SSE response`, thinking: null, finish_reason: "failed" },
+        status: "malformed"
+      }, { endpoint: clientRawRequest?.endpoint || null })).catch(() => {});
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `[${provider}/${model}] returned an empty SSE response`);
     }
-    responseBody = parsed;
+    responseBody = parsedResult.parsed;
   } else {
     try {
       responseBody = await providerResponse.json();
@@ -216,6 +265,31 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   }
 
   reqLogger.logConvertedResponse(translatedResponse);
+
+  // Validate the translated body actually carries client-usable output.
+  // A 200 with no choices/output is the "empty or malformed response" the client reports.
+  const malformedReason = detectMalformedNonStream(translatedResponse);
+  if (malformedReason) {
+    const totalLatency = Date.now() - requestStartTime;
+    const rawBytes = (() => { try { return JSON.stringify(responseBody || {}).length; } catch { return -1; } })();
+    reportMalformed200({
+      mode: "nonstream", provider, model, connectionId, reason: malformedReason,
+      recvBytes: rawBytes, recvLines: -1, emitted: -1, events: {},
+      ttftMs: totalLatency, elapsedMs: totalLatency,
+    });
+    appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+    saveRequestDetail(buildRequestDetail({
+      provider, model, connectionId,
+      latency: { ttft: totalLatency, total: totalLatency },
+      tokens: usage || { prompt_tokens: 0, completion_tokens: 0 },
+      request: extractRequestConfig(body, stream),
+      providerRequest: finalBody || translatedBody || null,
+      providerResponse: responseBody || null,
+      response: { error: `${malformedReason}: no usable output`, thinking: null, finish_reason: "failed" },
+      status: "malformed"
+    }, { endpoint: clientRawRequest?.endpoint || null })).catch(() => {});
+    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `[${provider}/${model}] returned an empty response (no usable choices/output)`);
+  }
 
   const totalLatency = Date.now() - requestStartTime;
   saveRequestDetail(buildRequestDetail({
