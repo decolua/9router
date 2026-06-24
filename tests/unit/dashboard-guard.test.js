@@ -38,7 +38,7 @@ const { proxy, __test__ } = await import("../../src/dashboardGuard.js");
 function request(pathname, headers = {}) {
   const normalizedHeaders = new Headers(headers);
   return {
-    nextUrl: { pathname },
+    nextUrl: { pathname, searchParams: new URL(`http://localhost${pathname}`).searchParams },
     headers: normalizedHeaders,
     cookies: { get: vi.fn(() => undefined) },
     url: `http://localhost${pathname}`,
@@ -163,6 +163,29 @@ describe("dashboard guard public LLM API access", () => {
     expect(response).toBe(mocks.nextResponse);
     expect(mocks.validateApiKey).toHaveBeenCalledWith("sk-valid");
   });
+
+  it("allows remote beta public LLM API with valid Google API key header", async () => {
+    mocks.validateApiKey.mockResolvedValue(true);
+
+    const response = await proxy(request("/v1beta/models", {
+      host: "router.example.com",
+      "x-goog-api-key": "sk-valid",
+    }));
+
+    expect(response).toBe(mocks.nextResponse);
+    expect(mocks.validateApiKey).toHaveBeenCalledWith("sk-valid");
+  });
+
+  it("allows remote beta public LLM API with valid Google key query parameter", async () => {
+    mocks.validateApiKey.mockResolvedValue(true);
+
+    const response = await proxy(request("/v1beta/models?key=sk-valid", {
+      host: "router.example.com",
+    }));
+
+    expect(response).toBe(mocks.nextResponse);
+    expect(mocks.validateApiKey).toHaveBeenCalledWith("sk-valid");
+  });
 });
 
 describe("dashboard guard local-only access", () => {
@@ -243,5 +266,14 @@ describe("dashboard guard helpers", () => {
     });
 
     expect(__test__.extractApiKey(apiRequest)).toBe("bearer-key");
+  });
+
+  it("extracts Google API keys after x-api-key", () => {
+    const apiRequest = request("/v1beta/models?key=query-key", {
+      "x-api-key": "header-key",
+      "x-goog-api-key": "google-key",
+    });
+
+    expect(__test__.extractApiKey(apiRequest)).toBe("header-key");
   });
 });
