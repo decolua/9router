@@ -1,21 +1,138 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Card, Button, CardSkeleton, ModelSelectModal, ConfirmModal } from "@/shared/components";
+import type { ComponentType, ReactNode, ButtonHTMLAttributes } from "react";
+import {
+  Card as _Card,
+  Button as _Button,
+  CardSkeleton,
+  ModelSelectModal as _ModelSelectModal,
+  ConfirmModal as _ConfirmModal,
+} from "@/shared/components";
+import type { JsonValue } from "open-sse/types/executor.js";
 
-const STRATEGY_OPTIONS = [
-  { id: "ordered", label: "Ordered", desc: "Try fallbacks top-to-bottom" },
-  { id: "random", label: "Random", desc: "Shuffle order each request" },
+// ---------------------------------------------------------------------------
+// Typed shims — JS shared components lack TS declarations
+// ---------------------------------------------------------------------------
+interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  children?: ReactNode;
+  variant?: string;
+  size?: string;
+  icon?: string;
+  iconRight?: string;
+  loading?: boolean;
+  fullWidth?: boolean;
+}
+interface CardProps {
+  children?: ReactNode;
+  title?: string;
+  subtitle?: string;
+  icon?: string;
+  action?: ReactNode;
+  padding?: string;
+  hover?: boolean;
+  elev?: boolean;
+  className?: string;
+}
+interface ConfirmModalProps {
+  isOpen?: boolean;
+  onClose?: () => void;
+  onConfirm?: (() => void | Promise<void>) | undefined;
+  title?: string;
+  message?: string | undefined;
+  confirmText?: string;
+  cancelText?: string;
+  variant?: string;
+  loading?: boolean;
+}
+interface ModelPickItem {
+  value: string;
+  name?: string;
+  [key: string]: JsonValue | undefined;
+}
+interface Connection {
+  id?: string;
+  name?: string;
+  [key: string]: JsonValue | undefined;
+}
+interface ModelSelectModalProps {
+  isOpen?: boolean;
+  onClose?: () => void;
+  onSelect?: (model: ModelPickItem) => void;
+  activeProviders?: Connection[];
+  title?: string;
+  closeOnSelect?: boolean;
+}
+
+const Button           = _Button           as ComponentType<ButtonProps>;
+const Card             = _Card             as ComponentType<CardProps>;
+const ConfirmModal     = _ConfirmModal     as ComponentType<ConfirmModalProps>;
+const ModelSelectModal = _ModelSelectModal as ComponentType<ModelSelectModalProps>;
+
+// ---------------------------------------------------------------------------
+// JsonValue helpers
+// ---------------------------------------------------------------------------
+async function asJson(res: Response): Promise<JsonValue> {
+  return res.json() as Promise<JsonValue>;
+}
+function strOf(v: JsonValue | undefined): string | undefined {
+  return typeof v === "string" ? v : undefined;
+}
+function recOf(v: JsonValue): Record<string, JsonValue> {
+  return v !== null && typeof v === "object" && !Array.isArray(v)
+    ? (v as Record<string, JsonValue>)
+    : {};
+}
+function arrOf(v: JsonValue): JsonValue[] {
+  return Array.isArray(v) ? v : [];
+}
+
+// ---------------------------------------------------------------------------
+// Domain types
+// ---------------------------------------------------------------------------
+type FallbackStrategy = "ordered" | "random" | "roundrobin";
+
+interface FallbackRow {
+  primary: string;
+  fallbacks: string[];
+  strategy: FallbackStrategy;
+  enabled: boolean;
+}
+
+interface EditorState {
+  action: "create" | "edit";
+  primary: string;
+  fallbacks: string[];
+  strategy: FallbackStrategy;
+  enabled: boolean;
+  originalPrimary: string;
+}
+
+interface ConfirmStateItem {
+  title: string;
+  message: string;
+  onConfirm: () => void | Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+const STRATEGY_OPTIONS: Array<{ id: FallbackStrategy; label: string; desc: string }> = [
+  { id: "ordered",    label: "Ordered",    desc: "Try fallbacks top-to-bottom" },
+  { id: "random",     label: "Random",     desc: "Shuffle order each request" },
   { id: "roundrobin", label: "Round-robin", desc: "Rotate starting fallback each request" },
 ];
 
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
 export default function ModelFallbacksPage() {
-  const [rows, setRows] = useState([]);
+  const [rows, setRows] = useState<FallbackRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeProviders, setActiveProviders] = useState([]);
-  const [editor, setEditor] = useState(null);
-  const [picker, setPicker] = useState(null);
-  const [confirmState, setConfirmState] = useState(null);
+  const [activeProviders, setActiveProviders] = useState<Connection[]>([]);
+  const [editor, setEditor] = useState<EditorState | null>(null);
+  const [picker, setPicker] = useState<"primary" | "fallback" | null>(null);
+  const [confirmState, setConfirmState] = useState<ConfirmStateItem | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -25,23 +142,30 @@ export default function ModelFallbacksPage() {
           fetch("/api/model-fallbacks"),
           fetch("/api/providers"),
         ]);
-        const fbData = fbRes.ok ? await fbRes.json() : { modelFallbacks: {} };
-        const providersData = providersRes.ok ? await providersRes.json() : { connections: [] };
-        const map = fbData.modelFallbacks || {};
-        const list = Object.entries(map).map(([primary, v]) => {
-          const fallbacks = Array.isArray(v.fallbacks)
-            ? v.fallbacks
-            : (v.fallback ? [v.fallback] : []);
-          const rawStrategy = v.strategy || v.mode || "ordered";
+        const fbRaw = fbRes.ok ? recOf(await asJson(fbRes)) : {};
+        const provRaw = providersRes.ok ? recOf(await asJson(providersRes)) : {};
+        const map = fbRaw["modelFallbacks"];
+        const mapRec = map && typeof map === "object" && !Array.isArray(map)
+          ? (map as Record<string, JsonValue>)
+          : {};
+        const list: FallbackRow[] = Object.entries(mapRec).map(([primary, v]) => {
+          const rv = recOf(v as JsonValue);
+          const fallbacksArr = arrOf(rv["fallbacks"] ?? []);
+          const fallbacks = fallbacksArr.length > 0
+            ? fallbacksArr.map((f) => strOf(f as JsonValue) ?? "").filter(Boolean)
+            : (strOf(rv["fallback"]) ? [strOf(rv["fallback"]) as string] : []);
+          const rawStrategy = strOf(rv["strategy"]) ?? strOf(rv["mode"]) ?? "ordered";
+          const strategy: FallbackStrategy =
+            rawStrategy === "random" || rawStrategy === "roundrobin" ? rawStrategy : "ordered";
           return {
             primary,
             fallbacks,
-            strategy: rawStrategy === "random" || rawStrategy === "roundrobin" ? rawStrategy : "ordered",
-            enabled: v.enabled !== false,
+            strategy,
+            enabled: rv["enabled"] !== false,
           };
         });
         setRows(list);
-        setActiveProviders(providersData.connections || []);
+        setActiveProviders(arrOf(provRaw["connections"] ?? []) as Connection[]);
       } catch (e) {
         console.log("Error fetching model fallbacks:", e);
       } finally {
@@ -50,14 +174,14 @@ export default function ModelFallbacksPage() {
     });
   }, []);
 
-  const persistAll = async (nextRows) => {
-    const map = {};
+  const persistAll = async (nextRows: FallbackRow[]) => {
+    const map: Record<string, JsonValue> = {};
     for (const r of nextRows) {
       if (!r.primary || !Array.isArray(r.fallbacks) || r.fallbacks.length === 0) continue;
       map[r.primary] = {
         fallbacks: r.fallbacks,
-        strategy: r.strategy || "ordered",
-        mode: r.strategy || "ordered", // back-compat for old engine/client code reading `mode`
+        strategy: r.strategy ?? "ordered",
+        mode: r.strategy ?? "ordered", // back-compat for old engine/client code reading `mode`
         enabled: r.enabled !== false,
         updatedAt: new Date().toISOString(),
       };
@@ -74,44 +198,33 @@ export default function ModelFallbacksPage() {
     }
   };
 
-  const modelStrFromPick = (model) =>
-    typeof model === "string" ? model : (model?.value || model?.name || "");
-
-  const handlePick = (model) => {
-    const modelStr = modelStrFromPick(model);
+  const handlePick = (model: ModelPickItem) => {
+    const modelStr = typeof model === "string" ? model : (model?.value ?? model?.name ?? "");
     if (!modelStr || !picker || !editor) return;
 
     if (picker === "primary") {
       const dupe = rows.some((r) => r.primary === modelStr && r.primary !== editor.originalPrimary);
-      if (dupe) {
-        setError(`A fallback for "${modelStr}" already exists.`);
-        return;
-      }
+      if (dupe) { setError(`A fallback for "${modelStr}" already exists.`); return; }
       setEditor({ ...editor, primary: modelStr });
       setError("");
       setPicker(null);
       return;
     }
 
-    if (modelStr === editor.primary) {
-      setError("Fallback model must differ from primary.");
-      return;
-    }
-    if (editor.fallbacks.includes(modelStr)) {
-      setError(`"${modelStr}" already in fallback list.`);
-      return;
-    }
+    if (modelStr === editor.primary) { setError("Fallback model must differ from primary."); return; }
+    if (editor.fallbacks.includes(modelStr)) { setError(`"${modelStr}" already in fallback list.`); return; }
     setEditor({ ...editor, fallbacks: [...editor.fallbacks, modelStr] });
     setError("");
   };
 
   const handleSaveEditor = () => {
+    if (!editor) return;
     if (!editor.primary) { setError("Pick a primary model."); return; }
     if (editor.fallbacks.length === 0) { setError("Add at least one fallback model."); return; }
-    const newRow = {
+    const newRow: FallbackRow = {
       primary: editor.primary,
       fallbacks: editor.fallbacks,
-      strategy: editor.strategy || "ordered",
+      strategy: editor.strategy ?? "ordered",
       enabled: editor.enabled !== false,
     };
     if (editor.action === "create") {
@@ -125,23 +238,25 @@ export default function ModelFallbacksPage() {
 
   const handleCancelEditor = () => { setEditor(null); setError(""); };
 
-  const moveFallback = (idx, dir) => {
+  const moveFallback = (idx: number, dir: number) => {
+    if (!editor) return;
     const newIdx = idx + dir;
     if (newIdx < 0 || newIdx >= editor.fallbacks.length) return;
     const next = [...editor.fallbacks];
-    [next[idx], next[newIdx]] = [next[newIdx], next[idx]];
+    [next[idx], next[newIdx]] = [next[newIdx] as string, next[idx] as string];
     setEditor({ ...editor, fallbacks: next });
   };
 
-  const removeFallback = (idx) => {
+  const removeFallback = (idx: number) => {
+    if (!editor) return;
     setEditor({ ...editor, fallbacks: editor.fallbacks.filter((_, i) => i !== idx) });
   };
 
-  const toggleRowEnabled = (primary) => {
+  const toggleRowEnabled = (primary: string) => {
     persistAll(rows.map((r) => (r.primary === primary ? { ...r, enabled: !r.enabled } : r)));
   };
 
-  const removeRow = (primary) => {
+  const removeRow = (primary: string) => {
     setConfirmState({
       title: "Remove fallback entry?",
       message: `Remove "${primary}" and all its fallbacks?`,
@@ -158,13 +273,13 @@ export default function ModelFallbacksPage() {
     setPicker("primary");
   };
 
-  const openEdit = (r) => {
+  const openEdit = (r: FallbackRow) => {
     setError("");
     setEditor({
       action: "edit",
       primary: r.primary,
       fallbacks: [...r.fallbacks],
-      strategy: r.strategy || "ordered",
+      strategy: r.strategy ?? "ordered",
       enabled: r.enabled,
       originalPrimary: r.primary,
     });
@@ -206,7 +321,7 @@ export default function ModelFallbacksPage() {
                   <div className="text-[11px] uppercase tracking-wider text-text-muted">Primary</div>
                   <div className="text-sm font-medium text-text-main truncate">{r.primary}</div>
                 </div>
-                <span className="text-xs px-2 py-1 rounded bg-primary/10 text-primary">{r.strategy || "ordered"}</span>
+                <span className="text-xs px-2 py-1 rounded bg-primary/10 text-primary">{r.strategy ?? "ordered"}</span>
                 <button
                   onClick={() => toggleRowEnabled(r.primary)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
@@ -290,7 +405,23 @@ export default function ModelFallbacksPage() {
   );
 }
 
-function EditorModal({ editor, error, onChange, onPickPrimary, onAddFallback, onMoveFallback, onRemoveFallback, onSave, onCancel, strategyOptions }) {
+// ---------------------------------------------------------------------------
+// EditorModal
+// ---------------------------------------------------------------------------
+interface EditorModalProps {
+  editor: EditorState;
+  error: string;
+  onChange: (patch: Partial<EditorState>) => void;
+  onPickPrimary: () => void;
+  onAddFallback: () => void;
+  onMoveFallback: (idx: number, dir: number) => void;
+  onRemoveFallback: (idx: number) => void;
+  onSave: () => void;
+  onCancel: () => void;
+  strategyOptions: Array<{ id: FallbackStrategy; label: string; desc: string }>;
+}
+
+function EditorModal({ editor, error, onChange, onPickPrimary, onAddFallback, onMoveFallback, onRemoveFallback, onSave, onCancel, strategyOptions }: EditorModalProps) {
   const isEdit = editor.action === "edit";
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">

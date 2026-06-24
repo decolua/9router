@@ -1,63 +1,255 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import type { ComponentType, ChangeEvent, ReactNode, ButtonHTMLAttributes, InputHTMLAttributes, SelectHTMLAttributes } from "react";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
+import type { DragEndEvent } from "@dnd-kit/core";
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifiers";
-import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, Select } from "@/shared/components";
+import {
+  Card as _Card,
+  Button as _Button,
+  Modal as _Modal,
+  Input as _Input,
+  CardSkeleton,
+  ModelSelectModal as _ModelSelectModal,
+  ConfirmModal as _ConfirmModal,
+  CapacityBadges as _CapacityBadges,
+  Select as _Select,
+} from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import type { JsonValue } from "open-sse/types/executor.js";
 
+// ---------------------------------------------------------------------------
+// Typed shims — JS shared components lack TS declarations
+// ---------------------------------------------------------------------------
+interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  children?: ReactNode;
+  variant?: string;
+  size?: string;
+  icon?: string;
+  iconRight?: string;
+  loading?: boolean;
+  fullWidth?: boolean;
+}
+interface CardProps {
+  children?: ReactNode;
+  title?: string;
+  subtitle?: string;
+  icon?: string;
+  action?: ReactNode;
+  padding?: string;
+  hover?: boolean;
+  elev?: boolean;
+  className?: string;
+}
+interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "onChange"> {
+  label?: string;
+  placeholder?: string;
+  value?: string;
+  onChange?: (e: ChangeEvent<HTMLInputElement>) => void;
+  error?: string;
+  hint?: ReactNode;
+  icon?: string;
+  inputClassName?: string;
+  type?: string;
+}
+interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, "onChange"> {
+  options?: Array<{ value: string; label: string }>;
+  value?: string;
+  onChange?: (e: ChangeEvent<HTMLSelectElement>) => void;
+  label?: string;
+  selectClassName?: string;
+}
+interface ModalProps {
+  isOpen?: boolean;
+  onClose?: () => void;
+  title?: string;
+  children?: ReactNode;
+  footer?: ReactNode;
+  size?: string;
+  closeOnOverlay?: boolean;
+  showTrafficLights?: boolean;
+  className?: string;
+}
+interface ConfirmModalProps {
+  isOpen?: boolean;
+  onClose?: () => void;
+  onConfirm?: (() => void | Promise<void>) | undefined;
+  title?: string;
+  message?: string | undefined;
+  confirmText?: string;
+  cancelText?: string;
+  variant?: string;
+  loading?: boolean;
+}
+interface ModelSelectModalProps {
+  isOpen?: boolean;
+  onClose?: () => void;
+  onSelect?: (model: ModelPickItem) => void;
+  onDeselect?: (model: ModelPickItem) => void;
+  activeProviders?: Connection[];
+  modelAliases?: Record<string, string>;
+  title?: string;
+  kindFilter?: string | null;
+  addedModelValues?: string[];
+  closeOnSelect?: boolean;
+}
+interface CapacityBadgesProps {
+  caps?: Record<string, boolean> | null;
+  className?: string;
+}
+
+const Button             = _Button       as ComponentType<ButtonProps>;
+const Card               = _Card         as ComponentType<CardProps>;
+const Input              = _Input        as ComponentType<InputProps>;
+const Select             = _Select       as ComponentType<SelectProps>;
+const Modal              = _Modal        as ComponentType<ModalProps>;
+const ConfirmModal       = _ConfirmModal as ComponentType<ConfirmModalProps>;
+const ModelSelectModal   = _ModelSelectModal as ComponentType<ModelSelectModalProps>;
+const CapacityBadges     = _CapacityBadges as ComponentType<CapacityBadgesProps>;
+
+// ---------------------------------------------------------------------------
+// JsonValue helpers
+// ---------------------------------------------------------------------------
+async function asJson(res: Response): Promise<JsonValue> {
+  return res.json() as Promise<JsonValue>;
+}
+function strOf(v: JsonValue | undefined): string | undefined {
+  return typeof v === "string" ? v : undefined;
+}
+function recOf(v: JsonValue): Record<string, JsonValue> {
+  return v !== null && typeof v === "object" && !Array.isArray(v)
+    ? (v as Record<string, JsonValue>)
+    : {};
+}
+function arrOf(v: JsonValue): JsonValue[] {
+  return Array.isArray(v) ? v : [];
+}
+
+// ---------------------------------------------------------------------------
+// Domain types
+// ---------------------------------------------------------------------------
+interface Combo {
+  id: string;
+  name: string;
+  models: string[];
+  kind?: string;
+}
+
+interface Connection {
+  id?: string;
+  name?: string;
+  [key: string]: JsonValue | undefined;
+}
+
+interface ModelPickItem {
+  value: string;
+  name?: string;
+  [key: string]: JsonValue | undefined;
+}
+
+interface ComboStrategy {
+  fallbackStrategy?: string;
+  judgeModel?: string;
+}
+
+interface ConfirmStateItem {
+  title: string;
+  message: string;
+  onConfirm: () => void | Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
 // Validate combo name: only a-z, A-Z, 0-9, -, _
+// ---------------------------------------------------------------------------
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
 
+// ---------------------------------------------------------------------------
+// Main page
+// ---------------------------------------------------------------------------
 export default function CombosPage() {
-  const [combos, setCombos] = useState([]);
+  const [combos, setCombos] = useState<Combo[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [editingCombo, setEditingCombo] = useState(null);
-  const [activeProviders, setActiveProviders] = useState([]);
-  const [comboStrategies, setComboStrategies] = useState({});
-  const [modelCaps, setModelCaps] = useState({});
-  const [confirmState, setConfirmState] = useState(null);
+  const [editingCombo, setEditingCombo] = useState<Combo | null>(null);
+  const [activeProviders, setActiveProviders] = useState<Connection[]>([]);
+  const [comboStrategies, setComboStrategies] = useState<Record<string, ComboStrategy>>({});
+  const [modelCaps, setModelCaps] = useState<Record<string, Record<string, boolean>>>({});
+  const [confirmState, setConfirmState] = useState<ConfirmStateItem | null>(null);
   const { copied, copy } = useCopyToClipboard();
 
-  useEffect(() => {
-    Promise.resolve().then(async () => {
-      try {
-        const [combosRes, providersRes, settingsRes, modelsRes] = await Promise.all([
-          fetch("/api/combos"),
-          fetch("/api/providers"),
-          fetch("/api/settings"),
-          fetch("/api/models"),
-        ]);
-        const combosData = await combosRes.json();
-        const providersData = await providersRes.json();
-        const settingsData = settingsRes.ok ? await settingsRes.json() : {};
+  const fetchData = async () => {
+    try {
+      const [combosRes, providersRes, settingsRes, modelsRes] = await Promise.all([
+        fetch("/api/combos"),
+        fetch("/api/providers"),
+        fetch("/api/settings"),
+        fetch("/api/models"),
+      ]);
+      const combosRaw = recOf(await asJson(combosRes));
+      const providersRaw = recOf(await asJson(providersRes));
+      const settingsRaw = settingsRes.ok ? recOf(await asJson(settingsRes)) : {};
 
-        // Only LLM combos here - webSearch/webFetch combos belong to media-providers/web
-        if (combosRes.ok) setCombos((combosData.combos || []).filter(c => !c.kind || c.kind === "llm"));
-        if (providersRes.ok) {
-          setActiveProviders(providersData.connections || []);
-        }
-        if (modelsRes.ok) {
-          const md = await modelsRes.json();
-          // Build fullModel -> caps map for badge lookup
-          const map = {};
-          for (const m of md.models || []) if (m.caps) map[m.fullModel] = m.caps;
-          setModelCaps(map);
-        }
-        setComboStrategies(settingsData.comboStrategies || {});
-      } catch (error) {
-        console.log("Error fetching data:", error);
-      } finally {
-        setLoading(false);
+      // Only LLM combos here - webSearch/webFetch combos belong to media-providers/web
+      if (combosRes.ok) {
+        const combosArr = arrOf(combosRaw["combos"] ?? []).flatMap((c) => {
+          if (c === null || typeof c !== "object" || Array.isArray(c)) return [];
+          const r = c as Record<string, JsonValue>;
+          const kind = strOf(r["kind"]);
+          if (kind && kind !== "llm") return [];
+          const id = strOf(r["id"]) ?? "";
+          const name = strOf(r["name"]) ?? "";
+          const models = arrOf(r["models"] ?? []).map((m) => strOf(m as JsonValue) ?? "").filter(Boolean);
+          return [{ id, name, models, kind: kind ?? undefined }] as Combo[];
+        });
+        setCombos(combosArr);
       }
-    });
-  }, []);
+      if (providersRes.ok) {
+        const conns = arrOf(providersRaw["connections"] ?? []).map((c) => c as Connection);
+        setActiveProviders(conns);
+      }
+      if (modelsRes.ok) {
+        const md = recOf(await asJson(modelsRes));
+        const map: Record<string, Record<string, boolean>> = {};
+        for (const m of arrOf(md["models"] ?? [])) {
+          if (m === null || typeof m !== "object" || Array.isArray(m)) continue;
+          const r = m as Record<string, JsonValue>;
+          const fullModel = strOf(r["fullModel"]);
+          if (fullModel && r["caps"] && typeof r["caps"] === "object" && !Array.isArray(r["caps"])) {
+            map[fullModel] = r["caps"] as Record<string, boolean>;
+          }
+        }
+        setModelCaps(map);
+      }
+      const rawStrategies = settingsRaw["comboStrategies"];
+      if (rawStrategies && typeof rawStrategies === "object" && !Array.isArray(rawStrategies)) {
+        const strategies: Record<string, ComboStrategy> = {};
+        for (const [k, v] of Object.entries(rawStrategies as Record<string, JsonValue>)) {
+          const sv = recOf(v);
+          const fs = strOf(sv["fallbackStrategy"]);
+          const jm = strOf(sv["judgeModel"]);
+          const entry: ComboStrategy = {};
+          if (fs !== undefined) entry.fallbackStrategy = fs;
+          if (jm !== undefined) entry.judgeModel = jm;
+          strategies[k] = entry;
+        }
+        setComboStrategies(strategies);
+      }
+    } catch (error) {
+      console.log("Error fetching data:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const handleCreate = async (data) => {
+  useEffect(() => {
+    Promise.resolve().then(async () => { await fetchData(); });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleCreate = async (data: { name: string; models: string[] }) => {
     try {
       const res = await fetch("/api/combos", {
         method: "POST",
@@ -68,15 +260,15 @@ export default function CombosPage() {
         await fetchData();
         setShowCreateModal(false);
       } else {
-        const err = await res.json();
-        alert(err.error || "Failed to create combo");
+        const err = recOf(await asJson(res));
+        alert(strOf(err["error"]) ?? "Failed to create combo");
       }
     } catch (error) {
       console.log("Error creating combo:", error);
     }
   };
 
-  const handleUpdate = async (id, data) => {
+  const handleUpdate = async (id: string, data: { name: string; models: string[] }) => {
     try {
       const res = await fetch(`/api/combos/${id}`, {
         method: "PUT",
@@ -87,15 +279,15 @@ export default function CombosPage() {
         await fetchData();
         setEditingCombo(null);
       } else {
-        const err = await res.json();
-        alert(err.error || "Failed to update combo");
+        const err = recOf(await asJson(res));
+        alert(strOf(err["error"]) ?? "Failed to update combo");
       }
     } catch (error) {
       console.log("Error updating combo:", error);
     }
   };
 
-  const handleDelete = async (id) => {
+  const handleDelete = async (id: string) => {
     setConfirmState({
       title: "Delete Combo",
       message: "Delete this combo?",
@@ -104,21 +296,21 @@ export default function CombosPage() {
         try {
           const res = await fetch(`/api/combos/${id}`, { method: "DELETE" });
           if (res.ok) {
-            setCombos(combos.filter(c => c.id !== id));
+            setCombos(combos.filter((c) => c.id !== id));
           }
         } catch (error) {
           console.log("Error deleting combo:", error);
         }
-      }
+      },
     });
   };
 
   // Merge a per-combo strategy patch into settings.comboStrategies. Passing an empty
   // patch (strategy back to default "fallback") drops the entry entirely.
-  const handleSetComboStrategy = async (comboName, patch) => {
+  const handleSetComboStrategy = async (comboName: string, patch: Partial<ComboStrategy>) => {
     try {
       const updated = { ...comboStrategies };
-      const next = { ...(updated[comboName] || {}), ...patch };
+      const next = { ...(updated[comboName] ?? {}), ...patch };
       // Prune to keep settings clean: default fallback with no extras = no entry.
       if (!next.fallbackStrategy || next.fallbackStrategy === "fallback") {
         delete updated[comboName];
@@ -193,7 +385,7 @@ export default function CombosPage() {
               onCopy={copy}
               onEdit={() => setEditingCombo(combo)}
               onDelete={() => handleDelete(combo.id)}
-              strategy={comboStrategies[combo.name] || {}}
+              strategy={comboStrategies[combo.name] ?? {}}
               onSetStrategy={(patch) => handleSetComboStrategy(combo.name, patch)}
             />
           ))}
@@ -211,11 +403,11 @@ export default function CombosPage() {
 
       {/* Edit Modal - Use key to force remount and reset state */}
       <ComboFormModal
-        key={editingCombo?.id || "new"}
+        key={editingCombo?.id ?? "new"}
         isOpen={!!editingCombo}
-        combo={editingCombo}
+        {...(editingCombo ? { combo: editingCombo } : {})}
         onClose={() => setEditingCombo(null)}
-        onSave={(data) => handleUpdate(editingCombo.id, data)}
+        onSave={(data) => { if (editingCombo) handleUpdate(editingCombo.id, data); }}
         activeProviders={activeProviders}
       />
 
@@ -224,7 +416,7 @@ export default function CombosPage() {
         isOpen={!!confirmState}
         onClose={() => setConfirmState(null)}
         onConfirm={confirmState?.onConfirm}
-        title={confirmState?.title || "Confirm"}
+        title={confirmState?.title ?? "Confirm"}
         message={confirmState?.message}
         variant="danger"
       />
@@ -232,16 +424,34 @@ export default function CombosPage() {
   );
 }
 
-const STRATEGY_OPTIONS = [
+// ---------------------------------------------------------------------------
+// Strategy options
+// ---------------------------------------------------------------------------
+const STRATEGY_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "fallback", label: "Fallback — try in order" },
   { value: "round-robin", label: "Round Robin — rotate" },
   { value: "fusion", label: "Fusion — panel + judge" },
 ];
 
-function ComboCard({ combo, modelCaps = {}, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy }) {
+// ---------------------------------------------------------------------------
+// ComboCard
+// ---------------------------------------------------------------------------
+interface ComboCardProps {
+  combo: Combo;
+  modelCaps?: Record<string, Record<string, boolean>>;
+  activeProviders?: Connection[];
+  copied: string | null;
+  onCopy: (text: string, id: string) => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  strategy?: ComboStrategy;
+  onSetStrategy: (patch: Partial<ComboStrategy>) => void;
+}
+
+function ComboCard({ combo, modelCaps = {}, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy }: ComboCardProps) {
   const [showJudgeSelect, setShowJudgeSelect] = useState(false);
-  const current = strategy.fallbackStrategy || "fallback";
-  const judge = strategy.judgeModel || "";
+  const current = strategy.fallbackStrategy ?? "fallback";
+  const judge = strategy.judgeModel ?? "";
   const isFusion = current === "fusion";
 
   return (
@@ -260,7 +470,7 @@ function ComboCard({ combo, modelCaps = {}, activeProviders = [], copied, onCopy
                 combo.models.slice(0, 3).map((model, index) => (
                   <code key={index} className="inline-flex items-center gap-1 rounded bg-black/5 px-1.5 py-0.5 font-mono text-xs text-text-muted dark:bg-white/5">
                     <span>{model}</span>
-                    <CapacityBadges caps={modelCaps[model]} />
+                    <CapacityBadges caps={modelCaps[model] ?? null} />
                   </code>
                 ))
               )}
@@ -278,7 +488,7 @@ function ComboCard({ combo, modelCaps = {}, activeProviders = [], copied, onCopy
                   title="Pick the model that fuses panel answers"
                 >
                   <span className="material-symbols-outlined text-[13px]">gavel</span>
-                  <span className="truncate">{judge || `Auto — ${combo.models[0] || "first model"}`}</span>
+                  <span className="truncate">{judge || `Auto — ${combo.models[0] ?? "first model"}`}</span>
                 </button>
                 {judge && (
                   <button
@@ -341,7 +551,7 @@ function ComboCard({ combo, modelCaps = {}, activeProviders = [], copied, onCopy
       <ModelSelectModal
         isOpen={showJudgeSelect}
         onClose={() => setShowJudgeSelect(false)}
-        onSelect={(m) => { onSetStrategy({ judgeModel: m?.value || "" }); setShowJudgeSelect(false); }}
+        onSelect={(m) => { onSetStrategy({ judgeModel: m?.value ?? "" }); setShowJudgeSelect(false); }}
         activeProviders={activeProviders}
         title="Select Judge Model"
         addedModelValues={judge ? [judge] : []}
@@ -351,9 +561,24 @@ function ComboCard({ combo, modelCaps = {}, activeProviders = [], copied, onCopy
   );
 }
 
-function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
+// ---------------------------------------------------------------------------
+// ModelItem (sortable drag-and-drop row)
+// ---------------------------------------------------------------------------
+interface ModelItemProps {
+  id: string;
+  index: number;
+  model: string;
+  isFirst: boolean;
+  isLast: boolean;
+  onEdit: (newVal: string) => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  onRemove: () => void;
+}
+
+function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }: ModelItemProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({ id });
-  const style = {
+  const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     // no transition — prevents the CSS settle animation fighting React's re-render on drop
     opacity: isDragging ? 0.4 : 1,
@@ -368,7 +593,7 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
     setEditing(false);
   };
 
-  const handleKeyDown = (e) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") commit();
     if (e.key === "Escape") { setDraft(model); setEditing(false); }
   };
@@ -449,14 +674,26 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
   );
 }
 
-function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindFilter = null }) {
+// ---------------------------------------------------------------------------
+// ComboFormModal
+// ---------------------------------------------------------------------------
+interface ComboFormModalProps {
+  isOpen: boolean;
+  combo?: Combo;
+  onClose: () => void;
+  onSave: (data: { name: string; models: string[] }) => void | Promise<void>;
+  activeProviders: Connection[];
+  kindFilter?: string | null;
+}
+
+function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindFilter = null }: ComboFormModalProps) {
   // Initialize state with combo values - key prop on parent handles reset on remount
-  const [name, setName] = useState(combo?.name || "");
-  const [models, setModels] = useState(combo?.models || []);
+  const [name, setName] = useState(combo?.name ?? "");
+  const [models, setModels] = useState<string[]>(combo?.models ?? []);
   const [showModelSelect, setShowModelSelect] = useState(false);
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
-  const [modelAliases, setModelAliases] = useState({});
+  const [modelAliases, setModelAliases] = useState<Record<string, string>>({});
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -466,7 +703,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   // Use stable index-based IDs so duplicates and similar names are handled correctly
   const modelItems = models.map((model, i) => ({ uid: `item-${i}`, model }));
 
-  const handleDragEnd = (event) => {
+  const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (over && active.id !== over.id) {
       const oldIndex = modelItems.findIndex((m) => m.uid === active.id);
@@ -480,12 +717,12 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   useEffect(() => {
     if (!isOpen) return;
     fetch("/api/models/alias")
-      .then(res => { if (!res.ok) throw new Error("not ok"); return res.json(); })
-      .then(data => setModelAliases(data.aliases || {}))
+      .then((res) => { if (!res.ok) throw new Error("not ok"); return res.json(); })
+      .then((data: Record<string, JsonValue>) => setModelAliases((data["aliases"] as Record<string, string>) ?? {}))
       .catch(() => {});
   }, [isOpen]);
 
-  const validateName = (value) => {
+  const validateName = (value: string) => {
     if (!value.trim()) {
       setNameError("Name is required");
       return false;
@@ -498,38 +735,37 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
     return true;
   };
 
-  const handleNameChange = (e) => {
+  const handleNameChange = (e: ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setName(value);
     if (value) validateName(value);
     else setNameError("");
   };
 
-  const handleAddModel = (model) => {
+  const handleAddModel = (model: ModelPickItem) => {
     if (!models.includes(model.value)) {
       setModels([...models, model.value]);
     }
   };
 
-  const handleDeselectModel = (model) => {
+  const handleDeselectModel = (model: ModelPickItem) => {
     setModels(models.filter((m) => m !== model.value));
   };
 
-  const handleRemoveModel = (index) => {
+  const handleRemoveModel = (index: number) => {
     setModels(models.filter((_, i) => i !== index));
   };
 
-  const handleMoveUp = (index) => {
+  const handleMoveUp = (index: number) => {
     if (index === 0) return;
     const newModels = [...models];
-    [newModels[index - 1], newModels[index]] = [newModels[index], newModels[index - 1]];
-    setModels(newModels);
+    [newModels[index - 1], newModels[index]] = [newModels[index] as string, newModels[index - 1] as string];
   };
 
-  const handleMoveDown = (index) => {
+  const handleMoveDown = (index: number) => {
     if (index === models.length - 1) return;
     const newModels = [...models];
-    [newModels[index], newModels[index + 1]] = [newModels[index + 1], newModels[index]];
+    [newModels[index], newModels[index + 1]] = [newModels[index + 1] as string, newModels[index] as string];
     setModels(newModels);
   };
 
@@ -643,3 +879,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
     </>
   );
 }
+
+// Suppress unused import warnings for tree-shaken symbols referenced in types only
+void isOpenAICompatibleProvider;
+void isAnthropicCompatibleProvider;

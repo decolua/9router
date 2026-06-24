@@ -1,67 +1,210 @@
 "use client";
 
-import { useParams, notFound, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { notFound, useRouter } from "next/navigation";
+import { use, useEffect, useState } from "react";
+import type { ComponentType, ChangeEvent, ReactNode, ButtonHTMLAttributes, InputHTMLAttributes } from "react";
 import Link from "next/link";
-import { Card, Button, Input, Toggle, ModelSelectModal } from "@/shared/components";
+import {
+  Card as _Card,
+  Button as _Button,
+  Input as _Input,
+  Toggle as _Toggle,
+  ModelSelectModal as _ModelSelectModal,
+} from "@/shared/components";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import { AI_PROVIDERS, MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
+import type { JsonValue } from "open-sse/types/executor.js";
+
+// ---------------------------------------------------------------------------
+// Typed shims — JS shared components lack TS declarations
+// ---------------------------------------------------------------------------
+interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  children?: ReactNode;
+  variant?: string;
+  size?: string;
+  icon?: string;
+  iconRight?: string;
+  loading?: boolean;
+  fullWidth?: boolean;
+}
+interface CardProps {
+  children?: ReactNode;
+  title?: string;
+  subtitle?: string;
+  icon?: string;
+  action?: ReactNode;
+  padding?: string;
+  hover?: boolean;
+  elev?: boolean;
+  className?: string;
+}
+interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "onChange"> {
+  label?: string;
+  placeholder?: string;
+  value?: string;
+  onChange?: (e: ChangeEvent<HTMLInputElement>) => void;
+  error?: string;
+  hint?: ReactNode;
+  icon?: string;
+  inputClassName?: string;
+  type?: string;
+}
+interface ToggleProps {
+  checked?: boolean;
+  onChange?: (enabled: boolean) => void | Promise<void>;
+  label?: string;
+  description?: string;
+  disabled?: boolean;
+  size?: string;
+  className?: string;
+  title?: string;
+}
+interface ModelPickItem {
+  value: string;
+  name?: string;
+  [key: string]: JsonValue | undefined;
+}
+interface ModelSelectModalProps {
+  isOpen?: boolean;
+  onClose?: () => void;
+  onSelect?: (model: ModelPickItem) => void;
+  onDeselect?: (model: ModelPickItem) => void;
+  activeProviders?: Connection[];
+  modelAliases?: Record<string, string>;
+  title?: string;
+  kindFilter?: string | null;
+  addedModelValues?: string[];
+  closeOnSelect?: boolean;
+}
+
+const Button           = _Button           as ComponentType<ButtonProps>;
+const Card             = _Card             as ComponentType<CardProps>;
+const Input            = _Input            as ComponentType<InputProps>;
+const Toggle           = _Toggle           as ComponentType<ToggleProps>;
+const ModelSelectModal = _ModelSelectModal as ComponentType<ModelSelectModalProps>;
+
+// ---------------------------------------------------------------------------
+// JsonValue helpers
+// ---------------------------------------------------------------------------
+async function asJson(res: Response): Promise<JsonValue> {
+  return res.json() as Promise<JsonValue>;
+}
+function strOf(v: JsonValue | undefined): string | undefined {
+  return typeof v === "string" ? v : undefined;
+}
+function recOf(v: JsonValue): Record<string, JsonValue> {
+  return v !== null && typeof v === "object" && !Array.isArray(v)
+    ? (v as Record<string, JsonValue>)
+    : {};
+}
+function arrOf(v: JsonValue): JsonValue[] {
+  return Array.isArray(v) ? v : [];
+}
+
+// ---------------------------------------------------------------------------
+// Domain types
+// ---------------------------------------------------------------------------
+interface Combo {
+  id: string;
+  name: string;
+  kind: string;
+  models: string[];
+}
+
+interface Connection {
+  id?: string;
+  name?: string;
+  [key: string]: JsonValue | undefined;
+}
+
+interface TestResult {
+  json?: string;
+  imageUrl?: string;
+  audioUrl?: string;
+  latencyMs?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 // Parse "providerId/model" or just "providerId" → { providerId, model }
-function parseModelEntry(entry) {
-  if (typeof entry !== "string") return { providerId: "", model: "" };
+function parseModelEntry(entry: string): { providerId: string; model: string } {
   const idx = entry.indexOf("/");
   if (idx < 0) return { providerId: entry, model: "" };
   return { providerId: entry.slice(0, idx), model: entry.slice(idx + 1) };
 }
 
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
-const nowAsync = () => new Promise((resolve) => setTimeout(() => resolve(Date.now()), 0));
 
-const KIND_LABELS = {
+function nowAsync(): Promise<number> {
+  const { promise, resolve } = Promise.withResolvers<number>();
+  setTimeout(() => resolve(Date.now()), 0);
+  return promise;
+}
+
+const KIND_LABELS: Record<string, string> = {
   webSearch: "Web Search",
   webFetch: "Web Fetch",
   image: "Text to Image",
   tts: "Text To Speech",
 };
 
-const EXAMPLE_PATHS = {
+const EXAMPLE_PATHS: Record<string, string> = {
   webSearch: "/v1/search",
   webFetch: "/v1/web/fetch",
   image: "/v1/images/generations",
   tts: "/v1/audio/speech",
 };
 
-const EXAMPLE_BODIES = {
+const EXAMPLE_BODIES: Record<string, (name: string) => Record<string, JsonValue>> = {
   webSearch: (n) => ({ model: n, query: "What is the latest news about AI?", search_type: "web", max_results: 5 }),
-  webFetch: (n) => ({ model: n, url: "https://example.com", format: "markdown" }),
-  image: (n) => ({ model: n, prompt: "A cute cat playing piano", n: 1, size: "1024x1024" }),
-  tts: (n) => ({ model: n, input: "Hello, this is a test.", voice: "alloy" }),
+  webFetch:  (n) => ({ model: n, url: "https://example.com", format: "markdown" }),
+  image:     (n) => ({ model: n, prompt: "A cute cat playing piano", n: 1, size: "1024x1024" }),
+  tts:       (n) => ({ model: n, input: "Hello, this is a test.", voice: "alloy" }),
 };
 
 // Map combo.kind → listing route to go back to
-function getListingHref(kind) {
+function getListingHref(kind: string): string {
   if (kind === "webSearch" || kind === "webFetch") return "/dashboard/media-providers/web";
   return `/dashboard/media-providers/${kind}`;
 }
 
-export default function ComboDetailPage() {
-  const { id } = useParams();
+// Mask large b64_json strings to keep JSON view readable
+function maskB64(obj: JsonValue): JsonValue {
+  if (!obj || typeof obj !== "object") return obj;
+  if (Array.isArray(obj)) return obj.map(maskB64);
+  const out: Record<string, JsonValue> = {};
+  for (const [k, v] of Object.entries(obj as Record<string, JsonValue>)) {
+    out[k] = k === "b64_json" && typeof v === "string" && v.length > 100
+      ? `<${v.length} chars base64>`
+      : maskB64(v);
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
+interface PageProps { params: Promise<{ id: string }> }
+
+export default function ComboDetailPage({ params }: PageProps) {
+  const { id } = use(params);
   const router = useRouter();
-  const [combo, setCombo] = useState(null);
+  const [combo, setCombo] = useState<Combo | null>(null);
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
   const [nameError, setNameError] = useState("");
-  const [providers, setProviders] = useState([]);
+  const [providers, setProviders] = useState<string[]>([]);
   const [roundRobin, setRoundRobin] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
-  const [logs, setLogs] = useState([]);
+  const [logs, setLogs] = useState<string[]>([]);
   const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState(null);
+  const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [testError, setTestError] = useState("");
   const [apiKey, setApiKey] = useState("");
-  const [connections, setConnections] = useState([]);
-  const [modelAliases, setModelAliases] = useState({});
+  const [connections, setConnections] = useState<Connection[]>([]);
+  const [modelAliases, setModelAliases] = useState<Record<string, string>>({});
 
   const fetchAll = async () => {
     try {
@@ -73,21 +216,53 @@ export default function ComboDetailPage() {
         fetch("/api/providers", { cache: "no-store" }),
         fetch("/api/models/alias", { cache: "no-store" }),
       ]);
-      if (aliasesRes.ok) setModelAliases((await aliasesRes.json()).aliases || {});
-      if (keysRes.ok) {
-        const k = await keysRes.json();
-        setApiKey((k.keys || []).find((x) => x.isActive !== false)?.key || "");
+      if (aliasesRes.ok) {
+        const ar = recOf(await asJson(aliasesRes));
+        const aliases = ar["aliases"];
+        setModelAliases(aliases && typeof aliases === "object" && !Array.isArray(aliases)
+          ? (aliases as Record<string, string>)
+          : {});
       }
-      if (connsRes.ok) setConnections((await connsRes.json()).connections || []);
+      if (keysRes.ok) {
+        const kr = recOf(await asJson(keysRes));
+        const key = arrOf(kr["keys"] ?? []).find((x) => {
+          if (x === null || typeof x !== "object" || Array.isArray(x)) return false;
+          return (x as Record<string, JsonValue>)["isActive"] !== false;
+        });
+        setApiKey(key && typeof key === "object" && !Array.isArray(key)
+          ? (strOf((key as Record<string, JsonValue>)["key"]) ?? "")
+          : "");
+      }
+      if (connsRes.ok) {
+        const cr = recOf(await asJson(connsRes));
+        setConnections(arrOf(cr["connections"] ?? []) as Connection[]);
+      }
       if (!comboRes.ok) { setCombo(null); setLoading(false); return; }
-      const c = await comboRes.json();
-      setCombo(c);
-      setName(c.name);
-      setProviders(c.models || []);
-      const s = settingsRes.ok ? await settingsRes.json() : {};
-      setRoundRobin(s.comboStrategies?.[c.name]?.fallbackStrategy === "round-robin");
-      const allLogs = logsRes.ok ? await logsRes.json() : [];
-      setLogs(allLogs.filter((l) => typeof l === "string" && l.includes(c.name)).slice(0, 50));
+      const c = recOf(await asJson(comboRes));
+      const built: Combo = {
+        id:     strOf(c["id"])   ?? "",
+        name:   strOf(c["name"]) ?? "",
+        kind:   strOf(c["kind"]) ?? "",
+        models: arrOf(c["models"] ?? []).map((m) => strOf(m as JsonValue) ?? "").filter(Boolean),
+      };
+      setCombo(built);
+      setName(built.name);
+      setProviders(built.models);
+      const s = settingsRes.ok ? recOf(await asJson(settingsRes)) : {};
+      const strategies = s["comboStrategies"];
+      const stratRec = strategies && typeof strategies === "object" && !Array.isArray(strategies)
+        ? (strategies as Record<string, JsonValue>)
+        : {};
+      const comboStrat = stratRec[built.name];
+      const comboStratRec = comboStrat && typeof comboStrat === "object" && !Array.isArray(comboStrat)
+        ? (comboStrat as Record<string, JsonValue>)
+        : {};
+      setRoundRobin(strOf(comboStratRec["fallbackStrategy"]) === "round-robin");
+      const allLogsRaw = logsRes.ok ? await asJson(logsRes) : [];
+      const allLogs = Array.isArray(allLogsRaw)
+        ? allLogsRaw.filter((l): l is string => typeof l === "string" && l.includes(built.name)).slice(0, 50)
+        : [];
+      setLogs(allLogs);
     } catch { /* noop */ }
     setLoading(false);
   };
@@ -95,66 +270,75 @@ export default function ComboDetailPage() {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { fetchAll(); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const validateName = (v) => {
+  const validateName = (v: string) => {
     if (!v.trim()) { setNameError("Name is required"); return false; }
     if (!VALID_NAME_REGEX.test(v)) { setNameError("Only letters, numbers, -, _ and ."); return false; }
     setNameError("");
     return true;
   };
 
-  const saveCombo = async (patch) => {
+  const saveCombo = async (patch: Record<string, JsonValue>): Promise<boolean> => {
     const res = await fetch(`/api/combos/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
     });
-    if (!res.ok) { const err = await res.json(); alert(err.error || "Failed to save"); return false; }
+    if (!res.ok) {
+      const err = recOf(await asJson(res));
+      alert(strOf(err["error"]) ?? "Failed to save");
+      return false;
+    }
     return true;
   };
 
   const handleSaveName = async () => {
+    if (!combo) return;
     if (!validateName(name)) return;
     if (name === combo.name) return;
     const ok = await saveCombo({ name });
     if (ok) await fetchAll();
   };
 
-  const handleAddModel = async (model) => {
-    const value = model?.value || model;
+  const handleAddModel = async (model: ModelPickItem) => {
+    const value = model?.value ?? "";
     if (!value || providers.includes(value)) return;
     const next = [...providers, value];
     setProviders(next);
     await saveCombo({ models: next });
   };
 
-  const handleDeselectModel = async (model) => {
-    const value = model?.value || model;
+  const handleDeselectModel = async (model: ModelPickItem) => {
+    const value = model?.value ?? "";
     if (!value || !providers.includes(value)) return;
     const next = providers.filter((p) => p !== value);
     setProviders(next);
     await saveCombo({ models: next });
   };
 
-  const handleRemoveProvider = async (idx) => {
+  const handleRemoveProvider = async (idx: number) => {
     const next = providers.filter((_, i) => i !== idx);
     setProviders(next);
     await saveCombo({ models: next });
   };
 
-  const handleMove = async (idx, dir) => {
+  const handleMove = async (idx: number, dir: number) => {
     const next = [...providers];
     const swap = idx + dir;
     if (swap < 0 || swap >= next.length) return;
-    [next[idx], next[swap]] = [next[swap], next[idx]];
+    [next[idx], next[swap]] = [next[swap] as string, next[idx] as string];
     setProviders(next);
     await saveCombo({ models: next });
   };
 
-  const handleToggleRoundRobin = async (enabled) => {
+  const handleToggleRoundRobin = async (enabled: boolean) => {
+    if (!combo) return;
     setRoundRobin(enabled);
     const settingsRes = await fetch("/api/settings", { cache: "no-store" });
-    const s = settingsRes.ok ? await settingsRes.json() : {};
-    const updated = { ...(s.comboStrategies || {}) };
+    const s = settingsRes.ok ? recOf(await asJson(settingsRes)) : {};
+    const existing = s["comboStrategies"];
+    const updated: Record<string, JsonValue> = existing && typeof existing === "object" && !Array.isArray(existing)
+      ? { ...(existing as Record<string, JsonValue>) }
+      : {};
     if (enabled) updated[combo.name] = { fallbackStrategy: "round-robin" };
     else delete updated[combo.name];
     await fetch("/api/settings", {
@@ -165,12 +349,14 @@ export default function ComboDetailPage() {
   };
 
   const handleDelete = async () => {
+    if (!combo) return;
     if (!confirm(`Delete combo "${combo.name}"?`)) return;
     const res = await fetch(`/api/combos/${id}`, { method: "DELETE" });
     if (res.ok) router.push(getListingHref(combo.kind));
   };
 
   const handleTest = async () => {
+    if (!combo) return;
     setTesting(true);
     setTestResult(null);
     setTestError("");
@@ -179,18 +365,20 @@ export default function ComboDetailPage() {
     const start = await nowAsync();
     try {
       const path = EXAMPLE_PATHS[combo.kind];
-      const body = EXAMPLE_BODIES[combo.kind](combo.name);
-      const headers = { "Content-Type": "application/json" };
+      const bodyFn = EXAMPLE_BODIES[combo.kind];
+      const body = bodyFn ? bodyFn(combo.name) : {};
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
       const res = await fetch(`/api${path}`, { method: "POST", headers, body: JSON.stringify(body) });
       const latencyMs = (await nowAsync()) - start;
       if (!res.ok) {
-        const d = await res.json().catch(() => ({}));
-        setTestError(d?.error?.message || d?.error || `HTTP ${res.status}`);
+        const d = recOf(await asJson(res).catch(() => ({})));
+        const msg = strOf(d["error"]) ?? `HTTP ${res.status}`;
+        setTestError(msg);
         setTestResult({ json: JSON.stringify(d, null, 2), latencyMs });
         return;
       }
-      const ctype = res.headers.get("content-type") || "";
+      const ctype = res.headers.get("content-type") ?? "";
       // Binary image
       if (ctype.startsWith("image/")) {
         const blob = await res.blob();
@@ -204,37 +392,30 @@ export default function ComboDetailPage() {
         return;
       }
       // JSON — could be image (data[0].b64_json/url) or generic
-      const data = await res.json();
-      const first = data?.data?.[0];
-      const imageUrl = first?.b64_json
-        ? `data:image/png;base64,${first.b64_json}`
-        : (first?.url || "");
-      setTestResult({ json: JSON.stringify(maskB64(data), null, 2), imageUrl, latencyMs });
+      const data = recOf(await asJson(res));
+      const dataArr = arrOf(data["data"] ?? []);
+      const first = dataArr[0];
+      const firstRec = first && typeof first === "object" && !Array.isArray(first)
+        ? (first as Record<string, JsonValue>)
+        : {};
+      const b64 = strOf(firstRec["b64_json"]);
+      const imgUrl = b64
+        ? `data:image/png;base64,${b64}`
+        : (strOf(firstRec["url"]) ?? "");
+      setTestResult({ json: JSON.stringify(maskB64(data), null, 2), imageUrl: imgUrl, latencyMs });
     } catch (e) {
-      setTestError(e.message || "Network error");
+      setTestError(e instanceof Error ? e.message : "Network error");
     }
     setTesting(false);
   };
 
-  // Mask large b64_json strings to keep JSON view readable
-  function maskB64(obj) {
-    if (!obj || typeof obj !== "object") return obj;
-    if (Array.isArray(obj)) return obj.map(maskB64);
-    const out = {};
-    for (const [k, v] of Object.entries(obj)) {
-      out[k] = (k === "b64_json" && typeof v === "string" && v.length > 100)
-        ? `<${v.length} chars base64>`
-        : maskB64(v);
-    }
-    return out;
-  }
-
   if (loading) return <div className="text-text-muted text-sm">Loading...</div>;
   if (!combo) return notFound();
 
-  const kindLabel = KIND_LABELS[combo.kind] || MEDIA_PROVIDER_KINDS.find((k) => k.id === combo.kind)?.label || "Combo";
+  const kindLabel = KIND_LABELS[combo.kind] ?? MEDIA_PROVIDER_KINDS.find((k: { id: string; label: string }) => k.id === combo.kind)?.label ?? "Combo";
   const examplePath = EXAMPLE_PATHS[combo.kind];
-  const exampleBody = combo.kind && EXAMPLE_BODIES[combo.kind] ? EXAMPLE_BODIES[combo.kind](combo.name) : null;
+  const exampleBodyFn = EXAMPLE_BODIES[combo.kind];
+  const exampleBody = exampleBodyFn ? exampleBodyFn(combo.name) : null;
   const curlExample = examplePath
     ? `curl -X POST http://localhost:20128${examplePath} \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer ${apiKey || "YOUR_KEY"}" \\\n  -d '${JSON.stringify(exampleBody)}'`
     : "";
@@ -266,7 +447,13 @@ export default function ComboDetailPage() {
         <h2 className="text-lg font-semibold mb-3">Settings</h2>
         <div className="flex flex-col gap-4">
           <div>
-            <Input label="Combo Name" value={name} onChange={(e) => { setName(e.target.value); validateName(e.target.value); }} onBlur={handleSaveName} error={nameError} />
+            <Input
+              label="Combo Name"
+              value={name}
+              onChange={(e) => { setName(e.target.value); validateName(e.target.value); }}
+              onBlur={handleSaveName}
+              error={nameError}
+            />
             <p className="text-[10px] text-text-muted mt-0.5">Only letters, numbers, -, _ and .</p>
           </div>
           <div className="flex items-center justify-between">
@@ -296,30 +483,44 @@ export default function ComboDetailPage() {
           <div className="flex flex-col gap-2">
             {providers.map((entry, idx) => {
               const { providerId, model } = parseModelEntry(entry);
-              const p = AI_PROVIDERS[providerId];
+              const p = (AI_PROVIDERS as Record<string, { name?: string; textIcon?: string; color?: string } | undefined>)[providerId];
               return (
                 <div key={`${entry}-${idx}`} className="flex items-center gap-3 p-2 rounded-lg bg-black/[0.02] dark:bg-white/[0.02]">
                   <span className="text-xs text-text-muted w-5 text-center">{idx + 1}</span>
                   <ProviderIcon
                     src={`/providers/${providerId}.png`}
-                    alt={p?.name || providerId}
+                    alt={p?.name ?? providerId}
                     size={24}
                     className="object-contain rounded shrink-0"
-                    fallbackText={p?.textIcon || providerId.slice(0, 2).toUpperCase()}
+                    fallbackText={p?.textIcon ?? providerId.slice(0, 2).toUpperCase()}
                     fallbackColor={p?.color}
                   />
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium truncate">{p?.name || providerId}</div>
+                    <div className="text-sm font-medium truncate">{p?.name ?? providerId}</div>
                     {model && <code className="text-[10px] text-text-muted font-mono truncate block">{model}</code>}
                   </div>
                   <div className="flex items-center gap-0.5">
-                    <button onClick={() => handleMove(idx, -1)} disabled={idx === 0} className={`p-1 rounded ${idx === 0 ? "text-text-muted/20" : "text-text-muted hover:text-primary hover:bg-black/5"}`} title="Move up">
+                    <button
+                      onClick={() => handleMove(idx, -1)}
+                      disabled={idx === 0}
+                      className={`p-1 rounded ${idx === 0 ? "text-text-muted/20" : "text-text-muted hover:text-primary hover:bg-black/5"}`}
+                      title="Move up"
+                    >
                       <span className="material-symbols-outlined text-[16px]">arrow_upward</span>
                     </button>
-                    <button onClick={() => handleMove(idx, 1)} disabled={idx === providers.length - 1} className={`p-1 rounded ${idx === providers.length - 1 ? "text-text-muted/20" : "text-text-muted hover:text-primary hover:bg-black/5"}`} title="Move down">
+                    <button
+                      onClick={() => handleMove(idx, 1)}
+                      disabled={idx === providers.length - 1}
+                      className={`p-1 rounded ${idx === providers.length - 1 ? "text-text-muted/20" : "text-text-muted hover:text-primary hover:bg-black/5"}`}
+                      title="Move down"
+                    >
                       <span className="material-symbols-outlined text-[16px]">arrow_downward</span>
                     </button>
-                    <button onClick={() => handleRemoveProvider(idx)} className="p-1 rounded text-text-muted hover:text-red-500 hover:bg-red-500/10" title="Remove">
+                    <button
+                      onClick={() => handleRemoveProvider(idx)}
+                      className="p-1 rounded text-text-muted hover:text-red-500 hover:bg-red-500/10"
+                      title="Remove"
+                    >
                       <span className="material-symbols-outlined text-[16px]">close</span>
                     </button>
                   </div>
