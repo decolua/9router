@@ -4,7 +4,7 @@
 
 import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { unavailableResponse } from "../utils/error.js";
-import { shouldSkipModelInCombo, recordComboModelResult } from "../diepxuan/comboFailTracker.js";
+import { recordComboModelOutcome, shouldSkipComboModel } from "../diepxuan/comboHooks.js";
 
 /**
  * Track rotation state per combo (for round-robin strategy)
@@ -118,7 +118,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
     const modelStr = rotatedModels[i];
 
     // Skip models that fail frequently (tracked in diepxuan/comboFailTracker)
-    if (shouldSkipModelInCombo(modelStr, comboName)) {
+    if (shouldSkipComboModel(modelStr, comboName)) {
       log.debug("COMBO", `Skipping ${modelStr} (fail count exceeded)`);
       continue;
     }
@@ -127,7 +127,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
 
     try {
       const result = await handleSingleModel(body, modelStr);
-      recordComboModelResult(modelStr, comboName, result.ok);
+      recordComboModelOutcome(modelStr, comboName, result.ok);
       
       // Success (2xx) - return response
       if (result.ok) {
@@ -178,7 +178,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       lastError = error.message || String(error);
       if (!lastStatus) lastStatus = 500;
       log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
-      recordComboModelResult(modelStr, comboName, false);
+      recordComboModelOutcome(modelStr, comboName, false);
     }
   }
 

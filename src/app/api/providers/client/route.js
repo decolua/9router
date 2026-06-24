@@ -1,11 +1,8 @@
 import { NextResponse } from "next/server";
 import { getProviderConnections } from "@/lib/localDb";
 import { backfillCodexEmails } from "@/lib/oauth/providers";
-import { USAGE_APIKEY_PROVIDERS as BASE_USAGE_APIKEY_PROVIDERS, USAGE_SUPPORTED_PROVIDERS as BASE_USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
-import { DIEPXUAN_USAGE_APIKEY_PROVIDERS, DIEPXUAN_USAGE_SUPPORTED_PROVIDERS } from "@/diepxuan/shared/constants/providers";
-
-const USAGE_SUPPORTED_PROVIDERS = [...BASE_USAGE_SUPPORTED_PROVIDERS, ...DIEPXUAN_USAGE_SUPPORTED_PROVIDERS];
-const USAGE_APIKEY_PROVIDERS = [...BASE_USAGE_APIKEY_PROVIDERS, ...DIEPXUAN_USAGE_APIKEY_PROVIDERS];
+import { USAGE_APIKEY_PROVIDERS, USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
+import { isDiepXuanUsageEligible } from "@/diepxuan/usage/providers";
 
 const SAFE_FIELDS = [
   "id", "provider", "authType", "name", "email", "displayName",
@@ -47,8 +44,10 @@ function sanitize(c) {
 }
 
 function isUsageEligible(connection) {
-  return USAGE_SUPPORTED_PROVIDERS.includes(connection.provider) && (
-    connection.authType === "oauth" || USAGE_APIKEY_PROVIDERS.includes(connection.provider)
+  return isDiepXuanUsageEligible(
+    connection,
+    USAGE_SUPPORTED_PROVIDERS,
+    USAGE_APIKEY_PROVIDERS,
   );
 }
 

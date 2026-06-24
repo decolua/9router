@@ -1,0 +1,315 @@
+{
+  "schemaVersion": 1,
+  "description": "Machine-readable guardrails for DiepXuan fork custom features that must survive upstream master rebases.",
+  "rebaseBaseline": {
+    "fork": "diepxuan/9router",
+    "upstream": "decolua/9router",
+    "forkBranch": "main",
+    "upstreamBranch": "master",
+    "checkCommand": "node scripts/diepxuan/check-custom-features.mjs"
+  },
+  "features": [
+    {
+      "id": "alicode-provider",
+      "description": "Alibaba Cloud Coding Plan provider registration and model/test support.",
+      "requiredFiles": [
+        "src/shared/constants/providers.js",
+        "src/shared/constants/config.js",
+        "src/diepxuan/shared/constants/providers.js",
+        "src/diepxuan/shared/constants/config.js",
+        "src/app/api/providers/validate/route.js",
+        "src/app/api/providers/[id]/test/testUtils.js",
+        "src/app/api/providers/[id]/models/route.js",
+        "open-sse/services/usage.js",
+        "open-sse/config/providers.js",
+        "open-sse/config/providerModels.js",
+        "open-sse/diepxuan/services/usage.js",
+        "open-sse/diepxuan/services/usageHooks.js",
+        "public/providers/alicode.png",
+        "public/providers/alicode-intl.png"
+      ],
+      "requiredPatterns": [
+        { "file": "src/shared/constants/providers.js", "pattern": "extendApiKeyProviders" },
+        { "file": "src/shared/constants/config.js", "pattern": "extendProviderEndpoints" },
+        { "file": "src/diepxuan/shared/constants/providers.js", "pattern": "DIEPXUAN_APIKEY_PROVIDERS" },
+        { "file": "src/diepxuan/shared/constants/providers.js", "pattern": "alicode" },
+        { "file": "src/diepxuan/shared/constants/providers.js", "pattern": "alicode-intl" },
+        { "file": "src/diepxuan/shared/constants/config.js", "pattern": "https://coding\\.dashscope\\.aliyuncs\\.com/v1/chat/completions" },
+        { "file": "src/diepxuan/shared/constants/config.js", "pattern": "https://coding-intl\\.dashscope\\.aliyuncs\\.com/v1/chat/completions" },
+        { "file": "src/app/api/providers/[id]/test/testUtils.js", "pattern": "case \\\"alicode\\\"|case \\\"alicode-intl\\\"" },
+        { "file": "src/app/api/providers/[id]/models/route.js", "pattern": "alicode" },
+        { "file": "open-sse/services/usage.js", "pattern": "getDiepXuanUsageForProvider" },
+        { "file": "open-sse/diepxuan/services/usageHooks.js", "pattern": "getDiepXuanUsageForProvider" },
+        { "file": "open-sse/config/providers.js", "pattern": "alicode" },
+        { "file": "open-sse/config/providerModels.js", "pattern": "qwen3\\.5-plus" }
+      ],
+      "syntaxCheck": [
+        "src/shared/constants/providers.js",
+        "src/shared/constants/config.js",
+        "src/diepxuan/shared/constants/providers.js",
+        "src/diepxuan/shared/constants/config.js",
+        "src/app/api/providers/validate/route.js",
+        "src/app/api/providers/[id]/test/testUtils.js",
+        "src/app/api/providers/[id]/models/route.js",
+        "open-sse/services/usage.js",
+        "open-sse/diepxuan/services/usageHooks.js",
+        "open-sse/diepxuan/services/usage.js"
+      ]
+    },
+    {
+      "id": "combo-fail-tracker",
+      "description": "Combo fallback skips models after repeated failures through a DiepXuan hook layer.",
+      "requiredFiles": [
+        "open-sse/services/combo.js",
+        "open-sse/diepxuan/comboHooks.js",
+        "open-sse/diepxuan/comboFailTracker.js"
+      ],
+      "requiredPatterns": [
+        { "file": "open-sse/services/combo.js", "pattern": "shouldSkipComboModel" },
+        { "file": "open-sse/services/combo.js", "pattern": "recordComboModelOutcome" },
+        { "file": "open-sse/diepxuan/comboHooks.js", "pattern": "shouldSkipComboModel" },
+        { "file": "open-sse/diepxuan/comboHooks.js", "pattern": "recordComboModelOutcome" },
+        { "file": "open-sse/diepxuan/comboFailTracker.js", "pattern": "MAX_FAILS" }
+      ],
+      "syntaxCheck": [
+        "open-sse/services/combo.js",
+        "open-sse/diepxuan/comboHooks.js",
+        "open-sse/diepxuan/comboFailTracker.js"
+      ]
+    },
+    {
+      "id": "manual-quota",
+      "description": "Local manual quota counter for providers without quota APIs, currently AliCode.",
+      "requiredFiles": [
+        "src/diepxuan/lib/db/repos/manualQuotaRepo.js",
+        "src/diepxuan/usage/index.js",
+        "src/diepxuan/usage/providers.js",
+        "src/app/api/usage/[connectionId]/route.js",
+        "src/diepxuan/app/dashboard/usage/components/ProviderLimits/utils.js",
+        "src/diepxuan/app/dashboard/usage/components/ProviderLimits/ProviderLimitCard.js",
+        "src/diepxuan/app/dashboard/usage/components/ProviderLimits/index.js",
+        "src/app/api/providers/client/route.js"
+      ],
+      "requiredPatterns": [
+        { "file": "src/diepxuan/lib/db/repos/manualQuotaRepo.js", "pattern": "ALICODE_PLANS" },
+        { "file": "src/diepxuan/lib/db/repos/manualQuotaRepo.js", "pattern": "MANUAL_QUOTA_HANDLERS" },
+        { "file": "src/diepxuan/lib/db/repos/manualQuotaRepo.js", "pattern": "alicode" },
+        { "file": "src/diepxuan/lib/db/repos/manualQuotaRepo.js", "pattern": "alicode-intl" },
+        { "file": "src/diepxuan/usage/index.js", "pattern": "getUsageOverride" },
+        { "file": "src/diepxuan/usage/providers.js", "pattern": "extendUsageSupportedProviders" },
+        { "file": "src/diepxuan/usage/providers.js", "pattern": "isDiepXuanUsageEligible" },
+        { "file": "src/app/api/usage/[connectionId]/route.js", "pattern": "getUsageOverride" },
+        { "file": "src/app/api/providers/client/route.js", "pattern": "isDiepXuanUsageEligible" },
+        { "file": "src/diepxuan/app/dashboard/usage/components/ProviderLimits/index.js", "pattern": "extendUsageSupportedProviders" }
+      ],
+      "syntaxCheck": [
+        "src/diepxuan/lib/db/repos/manualQuotaRepo.js",
+        "src/diepxuan/usage/index.js",
+        "src/diepxuan/usage/providers.js",
+        "src/app/api/usage/[connectionId]/route.js",
+        "src/app/api/providers/client/route.js",
+        "src/diepxuan/app/dashboard/usage/components/ProviderLimits/index.js"
+      ]
+    },
+    {
+      "id": "alicode-hide-reset",
+      "description": "Hide reset countdown for AliCode 5h and weekly quota windows while keeping monthly reset visible.",
+      "requiredFiles": [
+        "src/diepxuan/lib/db/repos/manualQuotaRepo.js",
+        "src/diepxuan/app/dashboard/usage/components/ProviderLimits/utils.js"
+      ],
+      "requiredPatterns": [
+        { "file": "src/diepxuan/lib/db/repos/manualQuotaRepo.js", "pattern": "hideReset" },
+        { "file": "src/diepxuan/lib/db/repos/manualQuotaRepo.js", "pattern": "resetCountdown" },
+        { "file": "src/diepxuan/lib/db/repos/manualQuotaRepo.js", "pattern": "wKey === \\\"5h\\\" \\|\\| wKey === \\\"weekly\\\"" },
+        { "file": "src/diepxuan/app/dashboard/usage/components/ProviderLimits/utils.js", "pattern": "hideReset" }
+      ],
+      "syntaxCheck": [
+        "src/diepxuan/lib/db/repos/manualQuotaRepo.js"
+      ]
+    },
+    {
+      "id": "web-tool-combo-fallback",
+      "description": "Web search/fetch fallback behavior for missing or unknown provider/model inputs.",
+      "requiredFiles": [
+        "src/sse/handlers/search.js",
+        "src/sse/handlers/fetch.js",
+        "src/diepxuan/sse/webComboFallback.js"
+      ],
+      "requiredPatterns": [
+        { "file": "src/sse/handlers/search.js", "pattern": "getCombos" },
+        { "file": "src/sse/handlers/search.js", "pattern": "getFallbackWebCombo" },
+        { "file": "src/sse/handlers/search.js", "pattern": "firstCombo" },
+        { "file": "src/sse/handlers/search.js", "pattern": "No provider/model specified" },
+        { "file": "src/sse/handlers/search.js", "pattern": "Unknown provider" },
+        { "file": "src/sse/handlers/search.js", "pattern": "handleComboChat" },
+        { "file": "src/sse/handlers/fetch.js", "pattern": "getCombos" },
+        { "file": "src/sse/handlers/fetch.js", "pattern": "getFallbackWebCombo" },
+        { "file": "src/sse/handlers/fetch.js", "pattern": "firstCombo" },
+        { "file": "src/sse/handlers/fetch.js", "pattern": "No provider/model specified" },
+        { "file": "src/sse/handlers/fetch.js", "pattern": "Unknown provider" },
+        { "file": "src/sse/handlers/fetch.js", "pattern": "handleComboChat" },
+        { "file": "src/diepxuan/sse/webComboFallback.js", "pattern": "getFirstWebCombo" },
+        { "file": "src/diepxuan/sse/webComboFallback.js", "pattern": "getFallbackWebCombo" }
+      ],
+      "syntaxCheck": [
+        "src/sse/handlers/search.js",
+        "src/sse/handlers/fetch.js",
+        "src/diepxuan/sse/webComboFallback.js"
+      ]
+    },
+    {
+      "id": "combo-curl-dynamic-base-url",
+      "description": "Combo detail curl snippet uses current runtime origin instead of a hard-coded host.",
+      "requiredFiles": [
+        "src/app/(dashboard)/dashboard/media-providers/combo/[id]/page.js",
+        "next.config.mjs"
+      ],
+      "requiredPatterns": [
+        { "file": "src/app/(dashboard)/dashboard/media-providers/combo/[id]/page.js", "pattern": "baseUrl|window\\.location|headers" }
+      ],
+      "syntaxCheck": [
+        "src/app/(dashboard)/dashboard/media-providers/combo/[id]/page.js",
+        "next.config.mjs"
+      ]
+    },
+    {
+      "id": "cli-global-package",
+      "description": "CLI/global install custom packaging keeps dashboard app artifacts available for the @diepxuan/9router package.",
+      "requiredFiles": [
+        "cli/package.json",
+        "cli/cli.js",
+        "cli/hooks/postinstall.js",
+        ".npmignore",
+        "next.config.mjs"
+      ],
+      "requiredDirectories": [
+        "cli/src/cli"
+      ],
+      "requiredPatterns": [
+        { "file": "cli/package.json", "pattern": "9router" },
+        { "file": "cli/cli.js", "pattern": "9Router|9router" },
+        { "file": "cli/hooks/postinstall.js", "pattern": "postinstall|install" },
+        { "file": ".npmignore", "pattern": "next\\.config\\.mjs" }
+      ],
+      "syntaxCheck": [
+        "cli/cli.js",
+        "cli/hooks/postinstall.js",
+        "cli/src/cli/api/client.js",
+        "cli/src/cli/menus/providers.js",
+        "cli/src/cli/menus/settings.js",
+        "cli/src/cli/terminalUI.js"
+      ]
+    },
+    {
+      "id": "antigravity-mitm-flow",
+      "description": "Dashboard/API MITM support for Antigravity custom flow.",
+      "requiredFiles": [
+        "src/app/api/cli-tools/antigravity-mitm/route.js",
+        "src/app/api/cli-tools/antigravity-mitm/alias/route.js",
+        "src/app/(dashboard)/dashboard/cli-tools/components/MitmServerCard.js",
+        "src/mitm/manager.js",
+        "src/mitm/handlers/base.js",
+        "src/mitm/handlers/antigravity.js"
+      ],
+      "requiredPatterns": [
+        { "file": "src/app/api/cli-tools/antigravity-mitm/route.js", "pattern": "antigravity|MITM|mitm" },
+        { "file": "src/app/api/cli-tools/antigravity-mitm/alias/route.js", "pattern": "alias|antigravity|mitm" },
+        { "file": "src/app/(dashboard)/dashboard/cli-tools/components/MitmServerCard.js", "pattern": "MITM|mitm|Antigravity" },
+        { "file": "src/mitm/manager.js", "pattern": "MITM|mitm" }
+      ],
+      "syntaxCheck": [
+        "src/app/api/cli-tools/antigravity-mitm/route.js",
+        "src/app/api/cli-tools/antigravity-mitm/alias/route.js",
+        "src/mitm/manager.js",
+        "src/mitm/handlers/base.js",
+        "src/mitm/handlers/antigravity.js"
+      ]
+    },
+    {
+      "id": "build-and-deploy-workflow",
+      "description": "Fork-only GitHub Actions workflow that patches, builds, versions, and publishes the CLI package as @diepxuan/9router to GitHub Packages.",
+      "requiredFiles": [
+        ".github/workflows/build-and-deploy.yml",
+        "Dockerfile",
+        "captain-definition",
+        "scripts/sync.sh",
+        ".npmignore",
+        "next.config.mjs"
+      ],
+      "requiredPatterns": [
+        { "file": ".github/workflows/build-and-deploy.yml", "pattern": "branches: \\[main\\]" },
+        { "file": ".github/workflows/build-and-deploy.yml", "pattern": "contents: write" },
+        { "file": ".github/workflows/build-and-deploy.yml", "pattern": "packages: write" },
+        { "file": ".github/workflows/build-and-deploy.yml", "pattern": "registry-url: \\\"https://npm\\.pkg\\.github\\.com\\\"" },
+        { "file": ".github/workflows/build-and-deploy.yml", "pattern": "npm pkg set name=\\\"@diepxuan/9router\\\"" },
+        { "file": ".github/workflows/build-and-deploy.yml", "pattern": "npm pkg set publishConfig\\.registry=\\\"https://npm\\.pkg\\.github\\.com/\\\"" },
+        { "file": ".github/workflows/build-and-deploy.yml", "pattern": "npm pkg delete scripts\\.prepublishOnly" },
+        { "file": ".github/workflows/build-and-deploy.yml", "pattern": "npm run build" },
+        { "file": ".github/workflows/build-and-deploy.yml", "pattern": "npm version patch --no-git-tag-version" },
+        { "file": ".github/workflows/build-and-deploy.yml", "pattern": "npm version prerelease --preid=patch" },
+        { "file": ".github/workflows/build-and-deploy.yml", "pattern": "npm publish" },
+        { "file": ".github/workflows/build-and-deploy.yml", "pattern": "NODE_AUTH_TOKEN: \\${\\{ secrets\\.GITHUB_TOKEN \\}\\}" },
+        { "file": "scripts/sync.sh", "pattern": "rsync -avP --delete 9router:~/.9router/ /var/lib/9router/" }
+      ]
+    },
+    {
+      "id": "workspace-governance-files",
+      "description": "Agent/workspace governance files carried by this fork.",
+      "requiredFiles": [
+        "AGENTS.md",
+        "AGENT_WORKSPACE.md",
+        "BOOTSTRAP.md",
+        "SOUL.md",
+        "IDENTITY.md",
+        "TOOLS.md",
+        "USER.md",
+        "HEARTBEAT.md",
+        "docs/CUSTOM-FEATURES-MERGE-CHECKLIST.md"
+      ],
+      "requiredPatterns": [
+        { "file": "AGENTS.md", "pattern": "Boot Sequence|Git" },
+        { "file": "SOUL.md", "pattern": "9Router Agent" },
+        { "file": "IDENTITY.md", "pattern": "diepxuan/9router" },
+        { "file": "docs/CUSTOM-FEATURES-MERGE-CHECKLIST.md", "pattern": "Custom Features Merge Checklist" }
+      ]
+    },
+    {
+      "id": "diepxuan-feature-flags",
+      "description": "Runtime feature flags DIEPXUAN_ENABLED/DIEPXUAN_SAFE_MODE gate the entire DiepXuan extension layer.",
+      "requiredFiles": [
+        "src/diepxuan/shared/config/flags.js",
+        "src/diepxuan/usage/index.js",
+        "src/diepxuan/usage/providers.js",
+        "src/diepxuan/sse/webComboFallback.js",
+        "open-sse/diepxuan/comboHooks.js",
+        "open-sse/diepxuan/services/usageHooks.js",
+        "tests/unit/diepxuan-feature-flags.test.js"
+      ],
+      "requiredPatterns": [
+        { "file": "src/diepxuan/shared/config/flags.js", "pattern": "DIEPXUAN_ENABLED" },
+        { "file": "src/diepxuan/shared/config/flags.js", "pattern": "DIEPXUAN_SAFE_MODE" },
+        { "file": "src/diepxuan/shared/config/flags.js", "pattern": "isDiepXuanEnabled" },
+        { "file": "src/diepxuan/shared/config/flags.js", "pattern": "parseBool\\(process\\.env\\.DIEPXUAN_ENABLED, true\\)" },
+        { "file": "src/diepxuan/shared/config/flags.js", "pattern": "isDiepXuanSafeMode" },
+        { "file": "src/diepxuan/usage/index.js", "pattern": "isDiepXuanEnabled" },
+        { "file": "src/diepxuan/usage/providers.js", "pattern": "isDiepXuanEnabled" },
+        { "file": "src/diepxuan/sse/webComboFallback.js", "pattern": "isDiepXuanEnabled" },
+        { "file": "open-sse/diepxuan/comboHooks.js", "pattern": "isDiepXuanEnabled" },
+        { "file": "open-sse/diepxuan/services/usageHooks.js", "pattern": "isDiepXuanEnabled" },
+        { "file": "tests/unit/diepxuan-feature-flags.test.js", "pattern": "enables DiepXuan hooks by default" },
+        { "file": "tests/unit/diepxuan-feature-flags.test.js", "pattern": "returns manual quota for providers handled by DiepXuan" },
+        { "file": "tests/unit/diepxuan-feature-flags.test.js", "pattern": "skips a combo model after repeated failures" }
+      ],
+      "syntaxCheck": [
+        "src/diepxuan/shared/config/flags.js",
+        "src/diepxuan/usage/index.js",
+        "src/diepxuan/usage/providers.js",
+        "src/diepxuan/sse/webComboFallback.js",
+        "open-sse/diepxuan/comboHooks.js",
+        "open-sse/diepxuan/services/usageHooks.js",
+        "tests/unit/diepxuan-feature-flags.test.js"
+      ]
+    }
+  ]
+}

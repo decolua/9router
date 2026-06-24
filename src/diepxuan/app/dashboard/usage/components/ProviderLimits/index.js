@@ -8,9 +8,9 @@ import { parseQuotaData, calculatePercentage } from "./utils";
 import Card from "@/shared/components/Card";
 import { EditConnectionModal } from "@/shared/components";
 import { USAGE_SUPPORTED_PROVIDERS as BASE_USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
-import { DIEPXUAN_USAGE_SUPPORTED_PROVIDERS } from "@/diepxuan/shared/constants/providers";
+import { extendUsageSupportedProviders } from "@/diepxuan/usage/providers";
 
-const USAGE_SUPPORTED_PROVIDERS = [...BASE_USAGE_SUPPORTED_PROVIDERS, ...DIEPXUAN_USAGE_SUPPORTED_PROVIDERS];
+const USAGE_SUPPORTED_PROVIDERS = extendUsageSupportedProviders(BASE_USAGE_SUPPORTED_PROVIDERS);
 
 function getConnectionLabel(connection) {
   const isEmail = (value) =>

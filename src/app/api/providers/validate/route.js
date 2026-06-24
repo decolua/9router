@@ -4,11 +4,8 @@ import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbe
 import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { resolveOllamaLocalHost, resolveXiaomiTokenplanBaseUrl, PROVIDERS } from "open-sse/config/providers.js";
 import { openaiToCommandCode } from "open-sse/translator/request/openai-to-commandcode.js";
-import { PROVIDER_ENDPOINTS as BASE_PROVIDER_ENDPOINTS } from "@/shared/constants/config";
+import { PROVIDER_ENDPOINTS } from "@/shared/constants/config";
 import { normalizeProviderId } from "@/lib/providerNormalization";
-import { DIEPXUAN_PROVIDER_ENDPOINTS } from "@/diepxuan/shared/constants/config.js";
-
-const PROVIDER_ENDPOINTS = { ...BASE_PROVIDER_ENDPOINTS, ...DIEPXUAN_PROVIDER_ENDPOINTS };
 
 // Probe a webSearch/webFetch provider using its searchConfig/fetchConfig.
 // Returns true if API key is accepted (status !== 401 && !== 403).

@@ -6,6 +6,19 @@ Mục tiêu:
 - Dùng làm danh sách đối chiếu sau mỗi lần merge/rebase với upstream.
 - Tránh mất tính năng custom khi resolve conflict.
 - Có checklist kiểm tra nhanh trước khi push/PR.
+- Có manifest và script tự động để kiểm tra các patch fork còn hoạt động.
+
+Công cụ kiểm tra tự động:
+- Manifest máy đọc được: `docs/custom-features.manifest.json`
+- Script kiểm tra: `scripts/diepxuan/check-custom-features.mjs`
+- Lệnh chuẩn sau mỗi lần merge/rebase upstream:
+
+```bash
+node scripts/diepxuan/check-custom-features.mjs
+npm run build
+```
+
+Nếu script báo `FAIL`, không push/PR cho tới khi đã phân tích và sửa nguyên nhân. Nếu cần cập nhật feature mới hoặc đổi vị trí file custom, cập nhật cả tài liệu này và `docs/custom-features.manifest.json`.
 
 Repository:
 - Fork: `diepxuan/9router`
@@ -32,42 +45,73 @@ Provider IDs:
 
 ### File cần tồn tại/được giữ
 
-- `src/shared/constants/providers.js`
-- `src/shared/constants/config.js`
+- `src/shared/constants/providers.js` — base hook `extendApiKeyProviders(...)`
+- `src/shared/constants/config.js` — base hook `extendProviderEndpoints(...)`
+- `src/diepxuan/shared/constants/providers.js` — định nghĩa provider AliCode của fork
+- `src/diepxuan/shared/constants/config.js` — định nghĩa endpoint AliCode của fork
 - `src/app/api/providers/validate/route.js`
 - `src/app/api/providers/[id]/test/testUtils.js`
 - `src/app/api/providers/[id]/models/route.js`
-- `open-sse/services/usage.js`
-- `cli/app/public/providers/alicode.png`
-- `cli/app/public/providers/alicode-intl.png`
+- `open-sse/services/usage.js` — base hook `getDiepXuanUsageForProvider(...)`
+- `open-sse/diepxuan/services/usage.js` — AliCode usage implementation
+- `open-sse/diepxuan/services/usageHooks.js` — Open SSE usage hook registry
+- `public/providers/alicode.png`
+- `public/providers/alicode-intl.png`
 
 ### Điểm đối chiếu code
 
-Trong `src/shared/constants/providers.js` phải có provider:
+Trong `src/shared/constants/providers.js` phải chỉ còn hook mỏng:
 
 ```js
+extendApiKeyProviders(BASE_APIKEY_PROVIDERS)
+```
+
+Trong `src/shared/constants/config.js` phải chỉ còn hook mỏng:
+
+```js
+extendProviderEndpoints(BASE_PROVIDER_ENDPOINTS)
+```
+
+Trong `src/diepxuan/shared/constants/providers.js` phải có provider:
+
+```js
+DIEPXUAN_APIKEY_PROVIDERS
 alicode
 "alicode-intl"
 ```
 
-Trong `src/shared/constants/config.js` phải có endpoint chat completions:
+Trong `src/diepxuan/shared/constants/config.js` phải có endpoint chat completions:
 
 ```js
 alicode: "https://coding.dashscope.aliyuncs.com/v1/chat/completions"
 "alicode-intl": "https://coding-intl.dashscope.aliyuncs.com/v1/chat/completions"
 ```
 
+Trong `open-sse/services/usage.js` base không được gọi trực tiếp `getAlicodeUsage(...)`; phải gọi hook:
+
+```js
+getDiepXuanUsageForProvider(connection, proxyOptions)
+```
+
+Trong `open-sse/diepxuan/services/usageHooks.js` phải route `alicode` / `alicode-intl` sang `getAlicodeUsage(...)`.
+
 Trong provider validate/test phải xử lý `alicode` và `alicode-intl` như OpenAI-compatible provider.
 
 ### Checklist sau merge upstream
 
 ```bash
-grep -R "alicode" -n src/shared/constants src/app/api/providers open-sse/services cli/app/public/providers | head -80
+grep -R "extendApiKeyProviders\|extendProviderEndpoints" -n src/shared/constants | head -40
+grep -R "alicode" -n src/diepxuan/shared/constants src/app/api/providers open-sse/services open-sse/diepxuan public/providers | head -80
 node --check src/shared/constants/providers.js
 node --check src/shared/constants/config.js
+node --check src/diepxuan/shared/constants/providers.js
+node --check src/diepxuan/shared/constants/config.js
 node --check src/app/api/providers/validate/route.js
 node --check src/app/api/providers/[id]/test/testUtils.js
 node --check src/app/api/providers/[id]/models/route.js
+node --check open-sse/services/usage.js
+node --check open-sse/diepxuan/services/usage.js
+node --check open-sse/diepxuan/services/usageHooks.js
 ```
 
 ### Smoke test khuyến nghị
@@ -94,10 +138,14 @@ Provider đang dùng manual quota:
 
 ### File cần tồn tại/được giữ
 
-- `src/lib/db/repos/manualQuotaRepo.js`
-- `src/app/api/usage/[connectionId]/route.js`
-- `src/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js`
-- `src/app/(dashboard)/dashboard/usage/components/ProviderLimits/ProviderLimitCard.js`
+- `src/diepxuan/lib/db/repos/manualQuotaRepo.js` — implementation local counter
+- `src/diepxuan/usage/index.js` — server-side usage override hook
+- `src/diepxuan/usage/providers.js` — client-safe usage provider eligibility hook
+- `src/app/api/usage/[connectionId]/route.js` — base route hook `getUsageOverride(...)`
+- `src/app/api/providers/client/route.js` — base route hook `isDiepXuanUsageEligible(...)`
+- `src/diepxuan/app/dashboard/usage/components/ProviderLimits/index.js` — dashboard hook `extendUsageSupportedProviders(...)`
+- `src/diepxuan/app/dashboard/usage/components/ProviderLimits/utils.js`
+- `src/diepxuan/app/dashboard/usage/components/ProviderLimits/ProviderLimitCard.js`
 
 ### Logic quan trọng
 
@@ -120,13 +168,28 @@ const MANUAL_QUOTA_HANDLERS = {
 };
 ```
 
-`src/app/api/usage/[connectionId]/route.js` phải ưu tiên manual quota trước OAuth/API quota flow:
+`src/diepxuan/usage/index.js` và `src/diepxuan/usage/providers.js` phải là registry/hook trung tâm cho usage custom:
 
 ```js
-if (hasManualQuota(connection.provider)) {
-  const manualQuota = await getManualQuota(connection.provider, connectionId, connection);
-  return Response.json(manualQuota);
+extendUsageSupportedProviders()
+extendUsageApiKeyProviders()
+isDiepXuanUsageEligible()
+getUsageOverride()
+```
+
+`src/app/api/usage/[connectionId]/route.js` phải ưu tiên hook custom trước OAuth/API quota flow:
+
+```js
+const usageOverride = await getUsageOverride(connection, connectionId);
+if (usageOverride) {
+  return Response.json(usageOverride);
 }
+```
+
+`src/app/api/providers/client/route.js` không merge trực tiếp `DIEPXUAN_USAGE_*`; phải gọi hook:
+
+```js
+isDiepXuanUsageEligible(connection, USAGE_SUPPORTED_PROVIDERS, USAGE_APIKEY_PROVIDERS)
 ```
 
 ### Plan quota hiện tại
@@ -166,10 +229,13 @@ Manual quota là local counter:
 Sau merge upstream cần kiểm tra:
 
 ```bash
-grep -R "manualQuota" -n src/lib src/app | head -80
-grep -R "hasManualQuota\|getManualQuota" -n src/app/api/usage src/lib/db/repos
-node --check src/lib/db/repos/manualQuotaRepo.js
+grep -R "manualQuota" -n src/diepxuan src/app | head -80
+grep -R "getUsageOverride\|extendUsageSupportedProviders\|isDiepXuanUsageEligible" -n src/diepxuan/usage src/app/api/usage src/app/api/providers/client src/diepxuan/app/dashboard/usage/components/ProviderLimits
+node --check src/diepxuan/lib/db/repos/manualQuotaRepo.js
+node --check src/diepxuan/usage/index.js
+node --check src/diepxuan/usage/providers.js
 node --check src/app/api/usage/[connectionId]/route.js
+node --check src/app/api/providers/client/route.js
 ```
 
 ### Smoke test khuyến nghị
@@ -240,6 +306,7 @@ Nếu request search/fetch không truyền provider/model hoặc truyền provid
 Files:
 - `src/sse/handlers/search.js`
 - `src/sse/handlers/fetch.js`
+- `src/diepxuan/sse/webComboFallback.js`
 
 ### Logic cần giữ
 
@@ -256,16 +323,18 @@ Các helper quan trọng:
 
 ```js
 getCombos()
-getComboModelsFromData()
+getFallbackWebCombo()
+getFirstWebCombo()
 handleComboChat()
 ```
 
 ### Checklist sau merge upstream
 
 ```bash
-grep -n "firstCombo\|No provider/model specified\|Unknown provider" src/sse/handlers/search.js src/sse/handlers/fetch.js
+grep -n "firstCombo\|No provider/model specified\|Unknown provider\|getFallbackWebCombo" src/sse/handlers/search.js src/sse/handlers/fetch.js src/diepxuan/sse/webComboFallback.js
 node --check src/sse/handlers/search.js
 node --check src/sse/handlers/fetch.js
+node --check src/diepxuan/sse/webComboFallback.js
 ```
 
 ### Smoke test khuyến nghị
@@ -294,7 +363,39 @@ Kết quả mong đợi:
 
 ---
 
-## 5. Dynamic baseUrl trong combo curl snippet
+## 5. Combo fail tracker qua DiepXuan hook
+
+### Mục đích
+
+Combo fallback có thể bỏ qua model đã lỗi liên tiếp để giảm latency và tránh lặp lại provider/model đang hỏng. Base `open-sse/services/combo.js` chỉ giữ hook mỏng; state và logic custom nằm trong `open-sse/diepxuan/**`.
+
+### File cần tồn tại/được giữ
+
+- `open-sse/services/combo.js` — base hook `shouldSkipComboModel(...)` / `recordComboModelOutcome(...)`
+- `open-sse/diepxuan/comboHooks.js` — hook registry mỏng
+- `open-sse/diepxuan/comboFailTracker.js` — fail counter implementation
+
+### Điểm đối chiếu code
+
+```js
+shouldSkipComboModel(modelStr, comboName)
+recordComboModelOutcome(modelStr, comboName, success)
+```
+
+`open-sse/diepxuan/comboFailTracker.js` phải giữ threshold `MAX_FAILS` và reset window `RESET_AFTER_MS`.
+
+### Checklist sau merge upstream
+
+```bash
+grep -R "shouldSkipComboModel\|recordComboModelOutcome" -n open-sse/services/combo.js open-sse/diepxuan
+node --check open-sse/services/combo.js
+node --check open-sse/diepxuan/comboHooks.js
+node --check open-sse/diepxuan/comboFailTracker.js
+```
+
+---
+
+## 6. Dynamic baseUrl trong combo curl snippet
 
 ### Mục đích
 
@@ -416,7 +517,30 @@ node --check src/mitm/handlers/base.js
 
 ### Mục đích
 
-Fork có workflow build/deploy riêng để build app và cập nhật package/artifact theo branch fork.
+Fork có workflow build/deploy riêng để build CLI package, đổi package identity sang scope nội bộ và publish lên GitHub Packages của fork.
+
+Workflow chính:
+- File: `.github/workflows/build-and-deploy.yml`
+- Trigger: push lên `main` và `workflow_dispatch`
+- Quyền GitHub Actions cần giữ:
+  - `contents: write`
+  - `packages: write`
+- Registry publish: `https://npm.pkg.github.com`
+- Package publish: `@diepxuan/9router`
+- Auth publish: `${{ secrets.GITHUB_TOKEN }}` qua `NODE_AUTH_TOKEN`
+
+Các bước custom trong workflow cần giữ:
+1. Checkout với `fetch-depth: 0` và `ref: ${{ github.head_ref || github.ref_name }}`.
+2. Setup Node.js với `registry-url: "https://npm.pkg.github.com"`.
+3. Trong thư mục `cli`, patch package trước build:
+   - `npm pkg set name="@diepxuan/9router"`
+   - `npm pkg set publishConfig.registry="https://npm.pkg.github.com/"`
+   - `npm pkg delete scripts.prepublishOnly || true`
+4. Chạy `npm run build` trong `cli`.
+5. Bump version không tạo git tag:
+   - `npm version patch --no-git-tag-version`
+   - `npm version prerelease --preid=patch.$TIMESTAMP --no-git-tag-version`
+6. Publish bằng `npm publish`.
 
 Files:
 - `.github/workflows/build-and-deploy.yml`
@@ -426,19 +550,39 @@ Files:
 - `.npmignore`
 - `next.config.mjs`
 
+`scripts/sync.sh` hiện sync dữ liệu runtime từ host `9router` về `/var/lib/9router/`:
+
+```bash
+rsync -avP --delete 9router:~/.9router/ /var/lib/9router/
+```
+
 ### Checklist sau merge upstream
 
 ```bash
+node scripts/diepxuan/check-custom-features.mjs
 test -f .github/workflows/build-and-deploy.yml && echo "workflow OK"
+grep -n "@diepxuan/9router\|npm.pkg.github.com\|npm publish\|prepublishOnly\|NODE_AUTH_TOKEN" .github/workflows/build-and-deploy.yml
 test -f Dockerfile && echo "Dockerfile OK"
 test -f captain-definition && echo "captain-definition OK"
 test -f scripts/sync.sh && echo "sync.sh OK"
+grep -n "rsync -avP --delete 9router:~/.9router/ /var/lib/9router/" scripts/sync.sh
 npm run build
 ```
+
+### Dấu hiệu workflow bị merge hỏng
+
+- Package name không còn là `@diepxuan/9router` trước khi publish.
+- Registry không còn là `https://npm.pkg.github.com/`.
+- Workflow không xóa `scripts.prepublishOnly`, làm publish bị chặn bởi script upstream.
+- Version bump tạo git tag hoặc sửa git history ngoài ý muốn.
+- `npm publish` chạy ở root thay vì trong `cli`.
+- Thiếu `NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}`.
+- Workflow trigger/push nhầm upstream hoặc branch không phải fork `main`.
 
 ### Lưu ý
 
 - Không tự ý push/trigger deploy production nếu Sếp chưa duyệt.
+- Workflow này chạy khi push lên `main`; mọi PR cần review kỹ trước merge vì merge có thể kích hoạt publish package.
 
 ### Domain separation rule
 
@@ -489,37 +633,33 @@ Chạy từ root repo:
 git status --short --branch
 git log --oneline --decorate --max-count=10
 
-# 2. Kiểm tra custom keywords còn tồn tại
-grep -R "alicode\|alicode-intl\|manualQuota\|hasManualQuota\|getManualQuota" -n src open-sse cli | head -120
+# 2. Chạy bộ kiểm tra custom feature tự động
+node scripts/diepxuan/check-custom-features.mjs
+
+# 3. Kiểm tra nhanh custom keywords còn tồn tại
+grep -R "alicode\|alicode-intl\|manualQuota\|getUsageOverride\|isDiepXuanUsageEligible" -n src open-sse cli docs .github scripts | head -120
 grep -R "firstCombo\|No provider/model specified\|Unknown provider" -n src/sse/handlers/search.js src/sse/handlers/fetch.js
 
-# 3. Syntax check file custom chính
-node --check src/lib/db/repos/manualQuotaRepo.js
+# 4. Syntax check file custom chính
+node --check src/diepxuan/lib/db/repos/manualQuotaRepo.js
 node --check src/app/api/usage/[connectionId]/route.js
 node --check src/sse/handlers/search.js
 node --check src/sse/handlers/fetch.js
-node --check src/shared/constants/providers.js
-node --check src/shared/constants/config.js
-node --check src/app/api/providers/validate/route.js
-node --check src/app/api/providers/[id]/test/testUtils.js
-node --check src/app/api/providers/[id]/models/route.js
+node --check scripts/diepxuan/check-custom-features.mjs
 
-# 4. Build production
+# 5. Build production
 npm run build
 
-# 5. Kiểm tra working tree không có artifact ngoài ý muốn
+# 6. Kiểm tra working tree không có artifact ngoài ý muốn
 git status --short --branch
 ```
 
 Kết quả tối thiểu phải đạt:
+- `node scripts/diepxuan/check-custom-features.mjs` pass, không có `FAIL`.
 - `node --check` pass hết.
 - `npm run build` pass.
 - Các keyword custom còn tồn tại.
-- Không có conflict marker:
-
-```bash
-grep -R "<<<<<<<\|=======\|>>>>>>>" -n src open-sse cli docs --exclude-dir=node_modules --exclude-dir=.next
-```
+- Không có conflict marker. Script tự kiểm tra conflict marker theo đầu dòng `<<<<<<<`, `=======`, `>>>>>>>` để tránh false positive với comment separator hoặc command grep trong tài liệu.
 
 ---
 
@@ -552,14 +692,66 @@ Smoke test theo feature:
 
 ## 12. Các dấu hiệu merge hỏng cần xử lý ngay
 
-- `alicode` mất khỏi `src/shared/constants/providers.js` hoặc `config.js`.
-- `/api/usage/[connectionId]` không còn gọi `hasManualQuota()` trước OAuth/API usage flow.
+- `src/shared/constants/providers.js` mất hook `extendApiKeyProviders(...)` hoặc `src/shared/constants/config.js` mất hook `extendProviderEndpoints(...)`.
+- `/api/usage/[connectionId]` không còn gọi `getUsageOverride()` trước OAuth/API usage flow.
 - `manualQuotaRepo.js` mất registry `alicode` / `alicode-intl`.
 - `search.js` / `fetch.js` mất fallback `firstCombo`.
 - `npm run build` fail tại route usage/search/fetch/provider.
 - Có conflict marker trong `src`, `open-sse`, `cli`, `docs`.
 - `cli/app/.next` hoặc `cli/app/node_modules` bị xóa ngoài ý muốn khi vẫn còn cần CLI packaging.
 - Workflow GitHub Actions trỏ nhầm hoặc push nhầm upstream.
+
+---
+
+## 12. Runtime feature flag cho DiepXuan extension layer
+
+### Mục đích
+
+Toàn bộ hook DiepXuan (Alibaba manual quota, open-sse AliCode usage, combo fail tracker, web fallback, ...) phải đi qua 2 flag runtime để dễ dàng tắt/bật khi debug, smoke test hoặc rebase upstream.
+
+Files:
+- `src/diepxuan/shared/config/flags.js`
+- `src/diepxuan/usage/index.js`
+- `src/diepxuan/usage/providers.js`
+- `src/diepxuan/sse/webComboFallback.js`
+- `open-sse/diepxuan/comboHooks.js`
+- `open-sse/diepxuan/services/usageHooks.js`
+
+### Flag
+
+- `DIEPXUAN_ENABLED` (mặc định `true`)
+  - `false`: tất cả hook DiepXuan trả về giá trị “no-op” (`null`/`false`), giữ nguyên hành vi upstream.
+- `DIEPXUAN_SAFE_MODE` (mặc định `false`)
+  - `true`: dành cho các hook ghi/đo lường, tắt ghi DB và override usage; chỉ giữ phần đọc an toàn.
+  - Hiện dùng cho `isDiepXuanUsageHookSafe()` nếu sau này mở rộng.
+
+### Helper quan trọng
+
+```js
+isDiepXuanEnabled()
+isDiepXuanSafeMode()
+```
+
+### Checklist sau merge upstream
+
+```bash
+grep -n "isDiepXuanEnabled\|DIEPXUAN_ENABLED" src/diepxuan/shared/config/flags.js src/diepxuan/usage src/diepxuan/sse open-sse/diepxuan
+node --check src/diepxuan/shared/config/flags.js
+node --check src/diepxuan/usage/index.js
+node --check src/diepxuan/usage/providers.js
+node --check src/diepxuan/sse/webComboFallback.js
+node --check open-sse/diepxuan/comboHooks.js
+node --check open-sse/diepxuan/services/usageHooks.js
+```
+
+### Smoke test
+
+1. Bật mặc định (`DIEPXUAN_ENABLED=true`):
+   - request search/fetch không provider → fallback combo.
+   - request usage cho AliCode → trả manual quota.
+2. Tắt bằng `DIEPXUAN_ENABLED=false`:
+   - request search/fetch → trả lỗi thiếu provider/model như upstream.
+   - request usage cho AliCode → fallback upstream API.
 
 ---
 

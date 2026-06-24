@@ -1,5 +1,7 @@
 // Provider definitions
 
+import { extendApiKeyProviders } from "@/diepxuan/shared/constants/providers.js";
+
 const RISK_NOTICE = "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.";
 
 // Free Providers (kiro first, iflow last)
@@ -67,14 +69,12 @@ export const OAUTH_PROVIDERS = {
   // opencode: { id: "opencode", alias: "oc", name: "OpenCode", icon: "terminal", color: "#E87040", textIcon: "OC" },
 };
 
-export const APIKEY_PROVIDERS = {
+const BASE_APIKEY_PROVIDERS = {
   glm: { id: "glm", alias: "glm", name: "GLM Coding", icon: "code", color: "#2563EB", textIcon: "GL", website: "https://open.bigmodel.cn", notice: { apiKeyUrl: "https://open.bigmodel.cn/usercenter/apikeys" } },
   "glm-cn": { id: "glm-cn", alias: "glm-cn", name: "GLM (China)", icon: "code", color: "#DC2626", textIcon: "GC", website: "https://open.bigmodel.cn", notice: { apiKeyUrl: "https://open.bigmodel.cn/usercenter/apikeys" } },
   kimi: { id: "kimi", alias: "kimi", name: "Kimi", icon: "psychology", color: "#1E3A8A", textIcon: "KM", website: "https://kimi.moonshot.cn", notice: { apiKeyUrl: "https://platform.moonshot.ai/console/api-keys" }, serviceKinds: ["llm", "webSearch"], searchViaChat: { defaultModel: "kimi-k2.5", pricingUrl: "https://platform.moonshot.ai/docs/pricing/chat" } },
   minimax: { id: "minimax", alias: "minimax", name: "Minimax Coding", icon: "memory", color: "#7C3AED", textIcon: "MM", website: "https://www.minimaxi.com", notice: { apiKeyUrl: "https://platform.minimaxi.com/user-center/basic-information/interface-key" }, serviceKinds: ["llm", "image", "imageToText", "webSearch", "tts"], searchViaChat: { defaultModel: "MiniMax-M2.7", pricingUrl: "https://www.minimaxi.com/document/price" }, ttsConfig: { baseUrl: "https://api.minimax.io/v1/t2a_v2", authType: "apikey", authHeader: "bearer", format: "minimax-tts", models: MINIMAX_TTS_MODELS } },
   "minimax-cn": { id: "minimax-cn", alias: "minimax-cn", name: "Minimax (China)", icon: "memory", color: "#DC2626", textIcon: "MC", website: "https://www.minimaxi.com", notice: { apiKeyUrl: "https://platform.minimaxi.com/user-center/basic-information/interface-key" }, serviceKinds: ["llm", "tts"], ttsConfig: { baseUrl: "https://api.minimaxi.com/v1/t2a_v2", authType: "apikey", authHeader: "bearer", format: "minimax-tts", models: MINIMAX_TTS_MODELS } },
-  alicode: { id: "alicode", alias: "alicode", name: "Alibaba", icon: "cloud", color: "#FF6A00", textIcon: "ALi", website: "https://bailian.console.aliyun.com", notice: { apiKeyUrl: "https://bailian.console.aliyun.com/?apiKey=1" } },
-  "alicode-intl": { id: "alicode-intl", alias: "alicode-intl", name: "Alibaba Intl", icon: "cloud", color: "#FF6A00", textIcon: "ALi", website: "https://modelstudio.console.alibabacloud.com", notice: { apiKeyUrl: "https://modelstudio.console.alibabacloud.com/?apiKey=1" } },
   "xiaomi-mimo": { id: "xiaomi-mimo", alias: "mimo", name: "Xiaomi MiMo", icon: "smart_toy", color: "#FF6900", textIcon: "XM", website: "https://xiaomimimo.com", notice: { apiKeyUrl: "https://xiaomimimo.com" } },
   "xiaomi-tokenplan": { id: "xiaomi-tokenplan", alias: "xmtp", name: "Xiaomi MiMo (Token Plan)", icon: "smart_toy", color: "#FF6700", textIcon: "XT", website: "https://mimo.xiaomi.com", notice: { text: "Xiaomi MiMo Token Plan subscription (API key starts with tp-). Token Plan keys are cluster-specific — select the region matching your subscription.", apiKeyUrl: "https://mimo.xiaomi.com" }, hasProviderSpecificData: true, regions: [{ id: "sgp", label: "Singapore", baseUrl: "https://token-plan-sgp.xiaomimimo.com/v1" }, { id: "cn", label: "China", baseUrl: "https://token-plan-cn.xiaomimimo.com/v1" }, { id: "ams", label: "Europe", baseUrl: "https://token-plan-ams.xiaomimimo.com/v1" }], defaultRegion: "sgp" },
   "volcengine-ark": { id: "volcengine-ark", alias: "ark", name: "Volcengine Ark", icon: "cloud", color: "#1677FF", textIcon: "ARK", website: "https://ark.cn-beijing.volces.com", notice: { apiKeyUrl: "https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey" } },
@@ -168,6 +168,8 @@ export const APIKEY_PROVIDERS = {
   "jina-ai": { id: "jina-ai", alias: "jina", name: "Jina AI", icon: "blur_on", color: "#2563EB", textIcon: "JA", website: "https://jina.ai", notice: { text: "10M free tokens on signup (non-commercial), no credit card required.", apiKeyUrl: "https://jina.ai/?sui=apikey" }, serviceKinds: ["embedding"], embeddingConfig: { baseUrl: "https://api.jina.ai/v1/embeddings", authType: "apikey", authHeader: "bearer", models: [{ id: "jina-embeddings-v3", name: "Jina Embeddings v3", dimensions: 1024 }, { id: "jina-embeddings-v2-base-en", name: "Jina Embeddings v2 Base EN", dimensions: 768 }, { id: "jina-embeddings-v2-base-code", name: "Jina Embeddings v2 Base Code", dimensions: 768 }] } },
   "jina-reader": { id: "jina-reader", alias: "jina", name: "Jina Reader", icon: "menu_book", color: "#000000", textIcon: "JR", website: "https://jina.ai/reader", notice: { apiKeyUrl: "https://jina.ai/?sui=apikey" }, serviceKinds: ["webFetch"], fetchConfig: { baseUrl: "https://r.jina.ai", method: "GET", authType: "apikey", authHeader: "bearer", costPerQuery: 0, freeMonthlyQuota: 1000000, formats: ["markdown", "text", "html"], maxCharacters: 200000, timeoutMs: 30000 } },
 };
+
+export const APIKEY_PROVIDERS = extendApiKeyProviders(BASE_APIKEY_PROVIDERS);
 
 // Web Cookie Providers (use browser session cookie instead of API key)
 export const WEB_COOKIE_PROVIDERS = {
