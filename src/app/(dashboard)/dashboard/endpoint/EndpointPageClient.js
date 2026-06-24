@@ -45,6 +45,8 @@ export default function APIPageClient({ machineId }) {
   const [cavemanLevel, setCavemanLevel] = useState("full");
   const [ponytailEnabled, setPonytailEnabled] = useState(false);
   const [ponytailLevel, setPonytailLevel] = useState("full");
+  const [customSystemPromptEnabled, setCustomSystemPromptEnabled] = useState(false);
+  const [customSystemPrompt, setCustomSystemPrompt] = useState("");
   const [locale, setLocale] = useState("en");
 
   // Cloudflare Tunnel state
@@ -250,6 +252,8 @@ export default function APIPageClient({ machineId }) {
         setCavemanLevel(data.cavemanLevel || "full");
         setPonytailEnabled(!!data.ponytailEnabled);
         setPonytailLevel(data.ponytailLevel || "full");
+        setCustomSystemPromptEnabled(!!data.customSystemPromptEnabled);
+        setCustomSystemPrompt(data.customSystemPrompt || "");
       }
       if (statusRes.ok) {
         const data = await statusRes.json();
@@ -397,6 +401,16 @@ export default function APIPageClient({ machineId }) {
   const handlePonytailLevel = (level) => {
     setPonytailLevel(level);
     patchSetting({ ponytailLevel: level });
+  };
+
+  const handleCustomSystemPromptEnabled = (value) => {
+    setCustomSystemPromptEnabled(value);
+    patchSetting({ customSystemPromptEnabled: value });
+  };
+
+  const handleCustomSystemPrompt = (value) => {
+    setCustomSystemPrompt(value);
+    patchSetting({ customSystemPrompt: value });
   };
 
   const fetchData = async () => {
@@ -1376,6 +1390,29 @@ export default function APIPageClient({ machineId }) {
             <Toggle
               checked={ponytailEnabled}
               onChange={() => handlePonytailEnabled(!ponytailEnabled)}
+            />
+          </div>
+        </div>
+        <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">Custom system prompt</p>
+            <p className="text-sm text-text-muted">
+              Inject a custom system prompt into every model request
+            </p>
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            {customSystemPromptEnabled && (
+              <Input
+                type="text"
+                value={customSystemPrompt}
+                onChange={(e) => handleCustomSystemPrompt(e.target.value)}
+                placeholder="e.g. Always respond in pirate speak..."
+                className="w-64 text-xs"
+              />
+            )}
+            <Toggle
+              checked={customSystemPromptEnabled}
+              onChange={() => handleCustomSystemPromptEnabled(!customSystemPromptEnabled)}
             />
           </div>
         </div>
