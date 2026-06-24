@@ -1,7 +1,16 @@
 import { handleChat } from "@/sse/handlers/chat.js";
+import {
+  clearAccountError,
+  getProviderCredentials,
+  isValidApiKey,
+  markAccountUnavailable,
+} from "@/sse/services/auth.js";
+import { getSettings } from "@/lib/localDb";
+import { PROVIDER_MODELS } from "@/shared/constants/models";
 import { initTranslators } from "open-sse/translator/index.js";
 
 let initialized = false;
+const GEMINI_NATIVE_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 
 /**
  * Initialize translators once
@@ -72,6 +81,10 @@ export async function POST(request, { params }) {
 
     const body = await request.json();
 
+    if (isGeminiNativeTtsRequest(model, body)) {
+      return await forwardGeminiNativeRequest(request, body, model, action);
+    }
+
     // Streaming is determined by URL action suffix:
     //   :streamGenerateContent => stream: true  (SSE)
     //   :generateContent       => stream: false (plain JSON)
@@ -104,6 +117,158 @@ export async function POST(request, { params }) {
       { error: { message: error.message, code: 500 } },
       { status: 500 }
     );
+  }
+}
+
+function extractGeminiClientApiKey(request) {
+  const authHeader = request.headers.get("Authorization");
+  if (authHeader?.startsWith("Bearer ")) return authHeader.slice(7);
+
+  const googleApiKey = request.headers.get("x-goog-api-key");
+  if (googleApiKey) return googleApiKey;
+
+  const url = new URL(request.url);
+  return url.searchParams.get("key");
+}
+
+function normalizeGeminiNativeModel(model) {
+  return String(model || "")
+    .replace(/^models\//, "")
+    .replace(/^gemini\//, "");
+}
+
+function getGeminiTtsModelIds() {
+  return new Set([
+    ...(PROVIDER_MODELS.gemini || [])
+      .filter((model) => (model.kind || model.type) === "tts")
+      .map((model) => model.id),
+    ...(PROVIDER_MODELS["gemini-tts-models"] || []).map((model) => model.id),
+  ]);
+}
+
+function hasAudioResponseModality(body) {
+  const modalities = body?.generationConfig?.responseModalities;
+  return Array.isArray(modalities)
+    && modalities.some((modality) => String(modality).toUpperCase() === "AUDIO");
+}
+
+function isGeminiNativeTtsRequest(model, body) {
+  const rawModel = String(model || "");
+  if (rawModel.includes("/") && !rawModel.startsWith("gemini/") && !rawModel.startsWith("models/")) {
+    return false;
+  }
+
+  const modelId = normalizeGeminiNativeModel(model);
+  return hasAudioResponseModality(body) || getGeminiTtsModelIds().has(modelId);
+}
+
+function buildGeminiNativeUrl(requestUrl, model, action) {
+  const sourceUrl = new URL(requestUrl);
+  const upstreamUrl = new URL(`${GEMINI_NATIVE_BASE_URL}/${normalizeGeminiNativeModel(model)}${action}`);
+
+  for (const [key, value] of sourceUrl.searchParams.entries()) {
+    if (key === "key") continue;
+    upstreamUrl.searchParams.append(key, value);
+  }
+
+  return upstreamUrl.toString();
+}
+
+async function validateGeminiNativeClientKey(request) {
+  const settings = await getSettings();
+  if (!settings.requireApiKey) return null;
+
+  const apiKey = extractGeminiClientApiKey(request);
+  if (!apiKey) {
+    return Response.json({ error: { message: "Missing API key" } }, { status: 401 });
+  }
+
+  const valid = await isValidApiKey(apiKey);
+  if (!valid) {
+    return Response.json({ error: { message: "Invalid API key" } }, { status: 401 });
+  }
+
+  return null;
+}
+
+function buildGeminiNativeAuthHeaders(credentials) {
+  if (credentials?.apiKey) return { "x-goog-api-key": credentials.apiKey };
+  if (credentials?.accessToken) return { Authorization: `Bearer ${credentials.accessToken}` };
+  return null;
+}
+
+function corsHeadersFrom(response) {
+  const headers = new Headers(response.headers);
+  headers.set("Access-Control-Allow-Origin", "*");
+  return headers;
+}
+
+async function forwardGeminiNativeRequest(request, body, model, action) {
+  const authError = await validateGeminiNativeClientKey(request);
+  if (authError) return authError;
+
+  const modelId = normalizeGeminiNativeModel(model);
+  const excludeConnectionIds = new Set();
+  const bodyText = JSON.stringify(body);
+  let lastError = null;
+  let lastStatus = null;
+
+  while (true) {
+    const credentials = await getProviderCredentials("gemini", excludeConnectionIds, modelId);
+    if (!credentials || credentials.allRateLimited) {
+      return Response.json(
+        { error: { message: lastError || credentials?.lastError || "No active credentials for provider: gemini" } },
+        { status: lastStatus || Number(credentials?.lastErrorCode) || 503 }
+      );
+    }
+
+    const authHeaders = buildGeminiNativeAuthHeaders(credentials);
+    if (!authHeaders) {
+      return Response.json(
+        { error: { message: "No Gemini API key configured" } },
+        { status: 404 }
+      );
+    }
+
+    const upstreamResponse = await fetch(buildGeminiNativeUrl(request.url, modelId, action), {
+      method: "POST",
+      headers: {
+        "Content-Type": request.headers.get("Content-Type") || "application/json",
+        ...authHeaders,
+      },
+      body: bodyText,
+    });
+
+    if (upstreamResponse.ok) {
+      await clearAccountError(credentials.connectionId, credentials, modelId);
+      return new Response(upstreamResponse.body, {
+        status: upstreamResponse.status,
+        statusText: upstreamResponse.statusText,
+        headers: corsHeadersFrom(upstreamResponse),
+      });
+    }
+
+    const errorText = await upstreamResponse.text();
+    const { shouldFallback } = await markAccountUnavailable(
+      credentials.connectionId,
+      upstreamResponse.status,
+      errorText,
+      "gemini",
+      modelId
+    );
+
+    if (shouldFallback) {
+      excludeConnectionIds.add(credentials.connectionId);
+      lastError = errorText;
+      lastStatus = upstreamResponse.status;
+      continue;
+    }
+
+    return new Response(errorText, {
+      status: upstreamResponse.status,
+      statusText: upstreamResponse.statusText,
+      headers: corsHeadersFrom(upstreamResponse),
+    });
   }
 }
 
