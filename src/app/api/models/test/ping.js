@@ -135,7 +135,9 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
     headers,
     body: JSON.stringify({
       model,
-      max_tokens: 1,
+      // Claude-on-Copilot returns empty choices at max_tokens:1 (budget is spent
+      // before a content token emits), so a 1-token probe yields a false negative.
+      max_tokens: 16,
       stream: false,
       messages: [{ role: "user", content: "hi" }],
     }),
