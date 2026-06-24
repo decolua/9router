@@ -65,10 +65,12 @@
         "open-sse/diepxuan/comboFailTracker.js"
       ],
       "requiredPatterns": [
-        { "file": "open-sse/services/combo.js", "pattern": "shouldSkipComboModel" },
-        { "file": "open-sse/services/combo.js", "pattern": "recordComboModelOutcome" },
+        { "file": "open-sse/services/combo.js", "pattern": "beforeComboModelAttempt" },
+        { "file": "open-sse/services/combo.js", "pattern": "afterComboModelAttempt" },
         { "file": "open-sse/diepxuan/comboHooks.js", "pattern": "shouldSkipComboModel" },
         { "file": "open-sse/diepxuan/comboHooks.js", "pattern": "recordComboModelOutcome" },
+        { "file": "open-sse/diepxuan/comboHooks.js", "pattern": "beforeComboModelAttempt" },
+        { "file": "open-sse/diepxuan/comboHooks.js", "pattern": "afterComboModelAttempt" },
         { "file": "open-sse/diepxuan/comboFailTracker.js", "pattern": "MAX_FAILS" }
       ],
       "syntaxCheck": [

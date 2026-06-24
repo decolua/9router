@@ -378,11 +378,20 @@ Combo fallback có thể bỏ qua model đã lỗi liên tiếp để giảm lat
 
 ### File cần tồn tại/được giữ
 
-- `open-sse/services/combo.js` — base hook `shouldSkipComboModel(...)` / `recordComboModelOutcome(...)`
-- `open-sse/diepxuan/comboHooks.js` — hook registry mỏng
+- `open-sse/services/combo.js` — base chỉ gọi hook cấp cao `beforeComboModelAttempt(...)` / `afterComboModelAttempt(...)`
+- `open-sse/diepxuan/comboHooks.js` — hook registry mỏng, giữ compatibility helpers `shouldSkipComboModel(...)` / `recordComboModelOutcome(...)`
 - `open-sse/diepxuan/comboFailTracker.js` — fail counter implementation
 
 ### Điểm đối chiếu code
+
+Base `open-sse/services/combo.js` chỉ nên thấy hook cấp cao:
+
+```js
+beforeComboModelAttempt({ modelStr, comboName, log })
+afterComboModelAttempt({ modelStr, comboName, ok })
+```
+
+Logic chi tiết trong `open-sse/diepxuan/comboHooks.js` vẫn giữ:
 
 ```js
 shouldSkipComboModel(modelStr, comboName)
@@ -394,7 +403,8 @@ recordComboModelOutcome(modelStr, comboName, success)
 ### Checklist sau merge upstream
 
 ```bash
-grep -R "shouldSkipComboModel\|recordComboModelOutcome" -n open-sse/services/combo.js open-sse/diepxuan
+grep -R "beforeComboModelAttempt\|afterComboModelAttempt" -n open-sse/services/combo.js open-sse/diepxuan/comboHooks.js
+grep -R "shouldSkipComboModel\|recordComboModelOutcome" -n open-sse/diepxuan
 node --check open-sse/services/combo.js
 node --check open-sse/diepxuan/comboHooks.js
 node --check open-sse/diepxuan/comboFailTracker.js
