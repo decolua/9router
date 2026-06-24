@@ -13,6 +13,7 @@
     "checkJs": false,
     "jsx": "react-jsx",
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "isolatedModules": true,
     "esModuleInterop": true,
     "resolveJsonModule": true,
