@@ -5,6 +5,56 @@ import { refreshKiroToken } from "../services/tokenRefresh.js";
 import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
 
 /**
+ * Strip control tags and system prompt artifacts from content.
+ * These are internal directives that should never reach the client.
+ */
+function stripSystemPromptArtifacts(content) {
+  if (!content || typeof content !== 'string') return content;
+  
+  let cleaned = content;
+  
+  // Strip thinking_mode control tags (including partial tags)
+  cleaned = cleaned.replace(/<thinking_mode[^>]*>[\s\S]*?<\/thinking_mode>/g, '');
+  cleaned = cleaned.replace(/<thinking_mode[^>]*>/g, '');
+  cleaned = cleaned.replace(/<\/thinking_mode>/g, '');
+  cleaned = cleaned.replace(/enabled<\/thinking_mode>/g, ''); // Handle partial: "enabled</thinking_mode>"
+  
+  // Strip max_thinking_length tags (including partial tags)
+  cleaned = cleaned.replace(/<max_thinking_length[^>]*>[\s\S]*?<\/max_thinking_length>/g, '');
+  cleaned = cleaned.replace(/<max_thinking_length[^>]*>/g, '');
+  cleaned = cleaned.replace(/<\/max_thinking_length>/g, '');
+  cleaned = cleaned.replace(/\d+<\/max_thinking_length>/g, ''); // Handle partial: "16000</thinking_mode>"
+  
+  // Strip the entire CHUNKED WRITE PROTOCOL block - match from header to end
+  // This pattern matches:
+  // - "# CRITICAL: CHUNKED WRITE PROTOCOL" header
+  // - Everything until double newline followed by non-formatting character
+  cleaned = cleaned.replace(/# CRITICAL:\s*CHUNKED WRITE PROTOCOL[\s\S]*?(?=\n\n(?![#\-*\s])|$)/gi, '');
+  
+  // Fallback: strip individual CHUNKED WRITE section headers
+  cleaned = cleaned.replace(/##\s*ABSOLUTE LIMITS[\s\S]*?(?=\n##|\n\n(?![#\-*\s])|$)/gi, '');
+  cleaned = cleaned.replace(/##\s*MANDATORY CHUNKED WRITE STRATEGY[\s\S]*?(?=\n##|\n\n(?![#\-*\s])|$)/gi, '');
+  cleaned = cleaned.replace(/##\s*EXAMPLES OF CORRECT BEHAVIOR[\s\S]*?(?=\n##|\n\n(?![#\-*\s])|$)/gi, '');
+  cleaned = cleaned.replace(/##\s*WHY THIS MATTERS[\s\S]*?(?=\n##|\n\n(?![#\-*\s])|$)/gi, '');
+  
+  // Strip lines containing CHUNKED WRITE keywords
+  cleaned = cleaned.replace(/.*CHUNKED WRITE.*\n?/gi, '');
+  cleaned = cleaned.replace(/.*ABSOLUTE LIMITS.*\n?/gi, '');
+  cleaned = cleaned.replace(/.*MANDATORY.*STRATEGY.*\n?/gi, '');
+  cleaned = cleaned.replace(/.*MAXIMUM.*LINES.*operation.*\n?/gi, '');
+  cleaned = cleaned.replace(/.*RECOMMENDED.*LINES.*\n?/gi, '');
+  
+  // Strip context timestamp lines
+  cleaned = cleaned.replace(/\[Context: Current time is [^\]]+\]\s*\n?/g, '');
+  
+  // Clean up excessive newlines left after stripping
+  cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+  cleaned = cleaned.trim();
+  
+  return cleaned;
+}
+
+/**
  * KiroExecutor - Executor for Kiro AI (AWS CodeWhisperer)
  * Uses AWS CodeWhisperer streaming API with AWS EventStream binary format
  */
@@ -147,14 +197,8 @@ export class KiroExecutor extends BaseExecutor {
           if (eventType === "assistantResponseEvent" && event.payload?.content) {
             let content = event.payload.content;
             
-            // Strip control tags that were injected into system prompt
-            // These should never reach the client
-            content = content.replace(/<thinking_mode[^>]*>[\s\S]*?<\/thinking_mode>/g, '');
-            content = content.replace(/<thinking_mode[^>]*>/g, '');
-            content = content.replace(/<\/thinking_mode>/g, '');
-            content = content.replace(/<max_thinking_length[^>]*>[\s\S]*?<\/max_thinking_length>/g, '');
-            content = content.replace(/<max_thinking_length[^>]*>/g, '');
-            content = content.replace(/<\/max_thinking_length>/g, '');
+            // Strip control tags and system prompt artifacts
+            content = stripSystemPromptArtifacts(content);
             
             // Skip empty chunks after stripping
             if (!content || !content.trim()) continue;
@@ -189,13 +233,8 @@ export class KiroExecutor extends BaseExecutor {
               ? reasoning
               : (reasoning.text || reasoning.content || "");
             
-            // Strip control tags from reasoning content
-            reasoningText = reasoningText.replace(/<thinking_mode[^>]*>[\s\S]*?<\/thinking_mode>/g, '');
-            reasoningText = reasoningText.replace(/<thinking_mode[^>]*>/g, '');
-            reasoningText = reasoningText.replace(/<\/thinking_mode>/g, '');
-            reasoningText = reasoningText.replace(/<max_thinking_length[^>]*>[\s\S]*?<\/max_thinking_length>/g, '');
-            reasoningText = reasoningText.replace(/<max_thinking_length[^>]*>/g, '');
-            reasoningText = reasoningText.replace(/<\/max_thinking_length>/g, '');
+            // Strip control tags and system prompt artifacts from reasoning content
+            reasoningText = stripSystemPromptArtifacts(reasoningText);
             
             if (reasoningText && reasoningText.trim()) {
               state.hasReasoningContent = true;
