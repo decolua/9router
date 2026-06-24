@@ -84,6 +84,25 @@ export function fixToolUseOrdering(messages) {
 // Models that reject thinking.type "adaptive" + output_config.effort (Opus 4.5+/Sonnet 4.6+ only)
 const ADAPTIVE_THINKING_UNSUPPORTED = /haiku/i;
 
+function handlesThinkingBlocks(provider) {
+  return provider === "claude" || provider?.startsWith("anthropic-compatible") || provider === "deepseek";
+}
+
+function buildThinkingPlaceholder(provider) {
+  const block = {
+    type: CLAUDE_BLOCK.THINKING,
+    thinking: ".",
+  };
+
+  // DeepSeek's Anthropic-compatible endpoint requires a thinking block in
+  // thinking mode, but it does not need Anthropic's signed-thinking fallback.
+  if (provider !== "deepseek") {
+    block.signature = DEFAULT_THINKING_CLAUDE_SIGNATURE;
+  }
+
+  return block;
+}
+
 // Normalize a native Claude passthrough body to match Anthropic Messages API spec.
 // Newer Cowork/Claude Code clients emit beta-only shapes that OAuth endpoints reject:
 // 1. thinking.type "adaptive" → unsupported on Haiku
@@ -216,23 +235,31 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
           lastAssistantProcessed = true;
         }
 
-        // Handle thinking blocks for Anthropic endpoint only
-        if (provider === "claude" || provider?.startsWith("anthropic-compatible")) {
+        // Handle thinking blocks for Anthropic-compatible endpoints.
+        if (handlesThinkingBlocks(provider)) {
           let hasToolUse = false;
-          let hasThinking = false;
+          let hasKeptThinking = false;
 
           // Claude native: preserve valid signatures, drop invalid blocks.
           // anthropic-compatible: replace with default (safe fallback for lenient upstreams).
+          // DeepSeek: keep existing thinking as-is; add an unsigned placeholder only if missing.
           const isClaudeNative = provider === "claude";
+          const isDeepSeek = provider === "deepseek";
           const kept = [];
           for (const block of msg.content) {
             const isThinking = block.type === CLAUDE_BLOCK.THINKING || block.type === CLAUDE_BLOCK.REDACTED_THINKING;
             if (isThinking) {
-              hasThinking = true;
               if (isClaudeNative) {
-                if (isValidClaudeSignature(block.signature)) kept.push(block);
+                if (isValidClaudeSignature(block.signature)) {
+                  hasKeptThinking = true;
+                  kept.push(block);
+                }
+              } else if (isDeepSeek) {
+                hasKeptThinking = true;
+                kept.push(block);
               } else {
                 block.signature = DEFAULT_THINKING_CLAUDE_SIGNATURE;
+                hasKeptThinking = true;
                 kept.push(block);
               }
               continue;
@@ -243,12 +270,8 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
           msg.content = kept;
 
           // Add thinking block if thinking enabled + has tool_use but no thinking
-          if (thinkingEnabled && !hasThinking && hasToolUse) {
-            msg.content.unshift({
-              type: CLAUDE_BLOCK.THINKING,
-              thinking: ".",
-              signature: DEFAULT_THINKING_CLAUDE_SIGNATURE
-            });
+          if (thinkingEnabled && !hasKeptThinking && hasToolUse) {
+            msg.content.unshift(buildThinkingPlaceholder(provider));
           }
         }
       }
@@ -299,4 +322,3 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
 
   return body;
 }
-
