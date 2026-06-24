@@ -47,6 +47,11 @@ export default function ConsoleLogClient() {
           const next = [...prev, msg.line];
           return next.length > CONSOLE_LOG_CONFIG.maxLines ? next.slice(-CONSOLE_LOG_CONFIG.maxLines) : next;
         });
+      } else if (msg.type === "lines") {
+        setLogs((prev) => {
+          const next = [...prev, ...msg.lines];
+          return next.length > CONSOLE_LOG_CONFIG.maxLines ? next.slice(-CONSOLE_LOG_CONFIG.maxLines) : next;
+        });
       } else if (msg.type === "clear") {
         setLogs([]);
       }

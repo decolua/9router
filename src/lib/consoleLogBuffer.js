@@ -21,6 +21,26 @@ if (!state.emitter) {
   state.emitter.setMaxListeners(50);
 }
 
+if (!state.pendingLines) state.pendingLines = [];
+if (!state.flushTimer) state.flushTimer = null;
+
+const FLUSH_INTERVAL_MS = 100;
+const MAX_BATCH_LINES = 50;
+
+function flushPendingLines() {
+  state.flushTimer = null;
+  if (!state.pendingLines.length) return;
+
+  const lines = state.pendingLines.splice(0, state.pendingLines.length);
+  state.emitter.emit("lines", lines);
+}
+
+function scheduleFlush() {
+  if (state.flushTimer) return;
+  state.flushTimer = setTimeout(flushPendingLines, FLUSH_INTERVAL_MS);
+  state.flushTimer?.unref?.();
+}
+
 function toLogLine(level, args) {
   return args.map(formatArg).join(" ");
 }
@@ -48,7 +68,16 @@ function appendLine(line) {
   if (state.logs.length > maxLines) {
     state.logs = state.logs.slice(-maxLines);
   }
-  state.emitter.emit("line", line);
+  state.pendingLines.push(line);
+  if (state.pendingLines.length >= MAX_BATCH_LINES) {
+    if (state.flushTimer) {
+      clearTimeout(state.flushTimer);
+      state.flushTimer = null;
+    }
+    flushPendingLines();
+  } else {
+    scheduleFlush();
+  }
 }
 
 export function initConsoleLogCapture() {

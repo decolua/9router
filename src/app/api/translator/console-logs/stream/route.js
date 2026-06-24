@@ -7,13 +7,14 @@ initConsoleLogCapture();
 export async function GET(request) {
   const encoder = new TextEncoder();
   const emitter = getConsoleEmitter();
-  const state = { closed: false, send: null, sendClear: null, keepalive: null };
+  const state = { closed: false, send: null, sendLines: null, sendClear: null, keepalive: null };
 
   // Idempotent: safe to call from request.signal abort, cancel(), or enqueue failure.
   const cleanup = () => {
     if (state.closed) return;
     state.closed = true;
     if (state.send) emitter.off("line", state.send);
+    if (state.sendLines) emitter.off("lines", state.sendLines);
     if (state.sendClear) emitter.off("clear", state.sendClear);
     if (state.keepalive) clearInterval(state.keepalive);
   };
@@ -40,6 +41,15 @@ export async function GET(request) {
         }
       };
 
+      state.sendLines = (lines) => {
+        if (state.closed || !Array.isArray(lines) || lines.length === 0) return;
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "lines", lines })}\n\n`));
+        } catch {
+          cleanup();
+        }
+      };
+
       // Notify client when cleared
       state.sendClear = () => {
         if (state.closed) return;
@@ -51,6 +61,7 @@ export async function GET(request) {
       };
 
       emitter.on("line", state.send);
+      emitter.on("lines", state.sendLines);
       emitter.on("clear", state.sendClear);
 
       // Keepalive ping every 25s
