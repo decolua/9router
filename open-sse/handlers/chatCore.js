@@ -21,6 +21,7 @@ import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.j
 import { dedupeTools } from "../utils/toolDeduper.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { injectPonytail } from "../rtk/ponytail.js";
+import { injectCustomSystemPrompt } from "../rtk/customSystemPrompt.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
 import { compressWithHeadroom, formatHeadroomLog } from "../rtk/headroom.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
@@ -34,7 +35,7 @@ import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
  * @param {object} options.credentials - Provider credentials
  * @param {string} options.sourceFormatOverride - Override detected source format (e.g. "openai-responses")
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, sourceFormatOverride, providerThinking }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, customSystemPromptEnabled, customSystemPrompt, sourceFormatOverride, providerThinking }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
 
@@ -176,6 +177,12 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (ponytailEnabled && ponytailLevel) {
     injectPonytail(translatedBody, finalFormat, ponytailLevel);
     log?.debug?.("PONYTAIL", `${ponytailLevel} | ${finalFormat}`);
+  }
+
+  // Custom system prompt: inject user-defined system prompt
+  if (customSystemPromptEnabled && customSystemPrompt) {
+    injectCustomSystemPrompt(translatedBody, finalFormat, customSystemPrompt);
+    log?.debug?.("CUSTOMSP", `${finalFormat}`);
   }
 
   const executor = getExecutor(provider);
