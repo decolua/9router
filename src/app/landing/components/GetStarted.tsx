@@ -2,9 +2,12 @@
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
 export default function GetStarted() {
-  const { copied, copy } = useCopyToClipboard();
+  const { copied, copy } = useCopyToClipboard() as {
+    copied: string | null;
+    copy: (text: string, id?: string) => void;
+  };
 
-  const handleCopy = (text) => {
+  const handleCopy = (text: string) => {
     copy(text, "landing");
   };
 
@@ -18,7 +21,7 @@ export default function GetStarted() {
             <p className="text-gray-400 text-lg mb-8">
               Install 9Router, configure your providers via web dashboard, and start routing AI requests.
             </p>
-            
+
             <div className="flex flex-col gap-6">
               <div className="flex gap-4">
                 <div className="flex-none w-8 h-8 rounded-full bg-[#f97815]/20 text-[#f97815] flex items-center justify-center font-bold">1</div>
@@ -27,7 +30,7 @@ export default function GetStarted() {
                   <p className="text-sm text-gray-500 mt-1">Run npx command to start the server instantly</p>
                 </div>
               </div>
-              
+
               <div className="flex gap-4">
                 <div className="flex-none w-8 h-8 rounded-full bg-[#f97815]/20 text-[#f97815] flex items-center justify-center font-bold">2</div>
                 <div>
@@ -35,7 +38,7 @@ export default function GetStarted() {
                   <p className="text-sm text-gray-500 mt-1">Configure providers and API keys via web interface</p>
                 </div>
               </div>
-              
+
               <div className="flex gap-4">
                 <div className="flex-none w-8 h-8 rounded-full bg-[#f97815]/20 text-[#f97815] flex items-center justify-center font-bold">3</div>
                 <div>
@@ -56,10 +59,10 @@ export default function GetStarted() {
                 <div className="w-3 h-3 rounded-full bg-green-500"></div>
                 <div className="ml-2 text-xs text-gray-500 font-mono">terminal</div>
               </div>
-              
+
               {/* Terminal content */}
               <div className="p-6 font-mono text-sm leading-relaxed overflow-x-auto">
-                <div 
+                <div
                   className="flex items-center gap-2 mb-4 group cursor-pointer"
                   onClick={() => handleCopy("npx 9router")}
                 >
@@ -69,18 +72,18 @@ export default function GetStarted() {
                     {copied === "landing" ? "✓ Copied" : "Copy"}
                   </span>
                 </div>
-                
+
                 <div className="text-gray-400 mb-6">
                   <span className="text-[#f97815]">&gt;</span> Starting 9Router...<br/>
                   <span className="text-[#f97815]">&gt;</span> Server running on <span className="text-blue-400">http://localhost:20128</span><br/>
                   <span className="text-[#f97815]">&gt;</span> Dashboard: <span className="text-blue-400">http://localhost:20128/dashboard</span><br/>
                   <span className="text-green-400">&gt;</span> Ready to route! ✓
                 </div>
-                
+
                 <div className="text-xs text-gray-500 mb-2 border-t border-gray-700 pt-4">
                   📝 Configure providers in dashboard or use environment variables
                 </div>
-                
+
                 <div className="text-gray-400 text-xs">
                   <span className="text-purple-400">Data Location:</span><br/>
                   <span className="text-gray-500">  macOS/Linux:</span> ~/.9router/db/data.sqlite<br/>
@@ -94,4 +97,3 @@ export default function GetStarted() {
     </section>
   );
 }
-
