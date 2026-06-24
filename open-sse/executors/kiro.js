@@ -145,7 +145,20 @@ export class KiroExecutor extends BaseExecutor {
 
           // Handle assistantResponseEvent
           if (eventType === "assistantResponseEvent" && event.payload?.content) {
-            const content = event.payload.content;
+            let content = event.payload.content;
+            
+            // Strip control tags that were injected into system prompt
+            // These should never reach the client
+            content = content.replace(/<thinking_mode[^>]*>[\s\S]*?<\/thinking_mode>/g, '');
+            content = content.replace(/<thinking_mode[^>]*>/g, '');
+            content = content.replace(/<\/thinking_mode>/g, '');
+            content = content.replace(/<max_thinking_length[^>]*>[\s\S]*?<\/max_thinking_length>/g, '');
+            content = content.replace(/<max_thinking_length[^>]*>/g, '');
+            content = content.replace(/<\/max_thinking_length>/g, '');
+            
+            // Skip empty chunks after stripping
+            if (!content || !content.trim()) continue;
+            
             state.totalContentLength += content.length;
 
             const chunk = {
@@ -172,10 +185,19 @@ export class KiroExecutor extends BaseExecutor {
           // it back to Claude thinking blocks / Anthropic reasoning, etc.
           if (eventType === "reasoningContentEvent") {
             const reasoning = event.payload?.reasoningContentEvent || event.payload || {};
-            const reasoningText = (typeof reasoning === "string")
+            let reasoningText = (typeof reasoning === "string")
               ? reasoning
               : (reasoning.text || reasoning.content || "");
-            if (reasoningText) {
+            
+            // Strip control tags from reasoning content
+            reasoningText = reasoningText.replace(/<thinking_mode[^>]*>[\s\S]*?<\/thinking_mode>/g, '');
+            reasoningText = reasoningText.replace(/<thinking_mode[^>]*>/g, '');
+            reasoningText = reasoningText.replace(/<\/thinking_mode>/g, '');
+            reasoningText = reasoningText.replace(/<max_thinking_length[^>]*>[\s\S]*?<\/max_thinking_length>/g, '');
+            reasoningText = reasoningText.replace(/<max_thinking_length[^>]*>/g, '');
+            reasoningText = reasoningText.replace(/<\/max_thinking_length>/g, '');
+            
+            if (reasoningText && reasoningText.trim()) {
               state.hasReasoningContent = true;
               state.totalContentLength += reasoningText.length;
 
