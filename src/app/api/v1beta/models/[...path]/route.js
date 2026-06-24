@@ -199,6 +199,11 @@ function buildGeminiNativeAuthHeaders(credentials) {
 
 function corsHeadersFrom(response) {
   const headers = new Headers(response.headers);
+  // Node fetch may expose a decoded body while preserving upstream compression
+  // headers. Forwarding those headers makes clients decompress plain bytes again.
+  headers.delete("content-encoding");
+  headers.delete("content-length");
+  headers.delete("transfer-encoding");
   headers.set("Access-Control-Allow-Origin", "*");
   return headers;
 }

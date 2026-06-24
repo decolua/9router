@@ -126,6 +126,27 @@ describe("Gemini native v1beta endpoint", () => {
     expect(global.fetch.mock.calls[0][1].headers["x-goog-api-key"]).not.toBe("client-router-key");
   });
 
+  it("does not forward stale compression headers from native upstream responses", async () => {
+    global.fetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Encoding": "gzip",
+          "Content-Length": "123",
+        },
+      })
+    );
+
+    const response = await POST(makeGeminiRequest("gemini-3.1-flash-tts-preview:generateContent", audioBody()), {
+      params: Promise.resolve({ path: ["gemini-3.1-flash-tts-preview:generateContent"] }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-encoding")).toBeNull();
+    expect(response.headers.get("content-length")).toBeNull();
+  });
+
   it("keeps non-audio Gemini requests on the existing chat conversion path", async () => {
     const body = {
       contents: [{ parts: [{ text: "hello" }] }],
