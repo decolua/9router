@@ -43,6 +43,11 @@
         { "file": "open-sse/config/providers.js", "pattern": "alicode" },
         { "file": "open-sse/config/providerModels.js", "pattern": "qwen3\\.5-plus" }
       ],
+      "invariants": [
+        { "file": "src/shared/constants/providers.js", "pattern": "APIKEY_PROVIDERS\\s*=\\s*extendApiKeyProviders\\(" },
+        { "file": "src/shared/constants/config.js", "pattern": "PROVIDER_ENDPOINTS\\s*=\\s*extendProviderEndpoints\\(" },
+        { "file": "open-sse/services/usage.js", "pattern": "getDiepXuanUsageForProvider\\(" }
+      ],
       "syntaxCheck": [
         "src/shared/constants/providers.js",
         "src/shared/constants/config.js",
@@ -72,6 +77,10 @@
         { "file": "open-sse/diepxuan/comboHooks.js", "pattern": "beforeComboModelAttempt" },
         { "file": "open-sse/diepxuan/comboHooks.js", "pattern": "afterComboModelAttempt" },
         { "file": "open-sse/diepxuan/comboFailTracker.js", "pattern": "MAX_FAILS" }
+      ],
+      "invariants": [
+        { "file": "open-sse/services/combo.js", "pattern": "beforeComboModelAttempt\\(\\{\\s*modelStr,\\s*comboName,\\s*log\\s*\\}\\)" },
+        { "file": "open-sse/services/combo.js", "pattern": "afterComboModelAttempt\\(\\{\\s*modelStr,\\s*comboName,\\s*ok:" }
       ],
       "syntaxCheck": [
         "open-sse/services/combo.js",
@@ -104,6 +113,10 @@
         { "file": "src/app/api/usage/[connectionId]/route.js", "pattern": "handleUsageOverrideResponse" },
         { "file": "src/app/api/providers/client/route.js", "pattern": "isDiepXuanUsageEligible" },
         { "file": "src/diepxuan/app/dashboard/usage/components/ProviderLimits/index.js", "pattern": "extendUsageSupportedProviders" }
+      ],
+      "invariants": [
+        { "file": "src/app/api/usage/[connectionId]/route.js", "pattern": "handleUsageOverrideResponse\\(connection,\\s*connectionId\\)" },
+        { "file": "src/app/api/providers/client/route.js", "pattern": "isDiepXuanUsageEligible\\s*\\(\\s*connection,\\s*USAGE_SUPPORTED_PROVIDERS,\\s*USAGE_APIKEY_PROVIDERS\\s*,?\\s*\\)" }
       ],
       "syntaxCheck": [
         "src/diepxuan/lib/db/repos/manualQuotaRepo.js",
@@ -154,6 +167,10 @@
         { "file": "src/diepxuan/sse/webComboFallback.js", "pattern": "getFallbackWebCombo" },
         { "file": "src/diepxuan/sse/webComboFallback.js", "pattern": "handleDiepXuanWebComboFallback" },
         { "file": "src/diepxuan/sse/webComboFallback.js", "pattern": "firstCombo" }
+      ],
+      "invariants": [
+        { "file": "src/sse/handlers/search.js", "pattern": "handleDiepXuanWebComboFallback\\(\\{" },
+        { "file": "src/sse/handlers/fetch.js", "pattern": "handleDiepXuanWebComboFallback\\(\\{" }
       ],
       "syntaxCheck": [
         "src/sse/handlers/search.js",
@@ -303,6 +320,12 @@
         { "file": "tests/unit/diepxuan-feature-flags.test.js", "pattern": "enables DiepXuan hooks by default" },
         { "file": "tests/unit/diepxuan-feature-flags.test.js", "pattern": "returns manual quota for providers handled by DiepXuan" },
         { "file": "tests/unit/diepxuan-feature-flags.test.js", "pattern": "skips a combo model after repeated failures" }
+      ],
+      "invariants": [
+        { "file": "src/diepxuan/usage/index.js", "pattern": "if \\(!isDiepXuanEnabled\\(\\)\\) return null" },
+        { "file": "src/diepxuan/usage/providers.js", "pattern": "if \\(!isDiepXuanEnabled\\(\\)\\)" },
+        { "file": "src/diepxuan/sse/webComboFallback.js", "pattern": "if \\(!isDiepXuanEnabled\\(\\)\\) return null" },
+        { "file": "open-sse/diepxuan/comboHooks.js", "pattern": "if \\(!isDiepXuanEnabled\\(\\)\\)" }
       ],
       "syntaxCheck": [
         "src/diepxuan/shared/config/flags.js",

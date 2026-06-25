@@ -708,10 +708,12 @@ Smoke test theo feature:
 
 ## 12. Các dấu hiệu merge hỏng cần xử lý ngay
 
+`docs/custom-features.manifest.json` có nhóm `invariants` để checker fail nhanh khi rebase làm mất hook nền trong base files. Các invariant này phải được giữ đồng bộ với contract hook mỏng hiện tại.
+
 - `src/shared/constants/providers.js` mất hook `extendApiKeyProviders(...)` hoặc `src/shared/constants/config.js` mất hook `extendProviderEndpoints(...)`.
-- `/api/usage/[connectionId]` không còn gọi `getUsageOverride()` trước OAuth/API usage flow.
+- `/api/usage/[connectionId]` không còn gọi `handleUsageOverrideResponse()` trước OAuth/API usage flow.
 - `manualQuotaRepo.js` mất registry `alicode` / `alicode-intl`.
-- `search.js` / `fetch.js` mất fallback `firstCombo`.
+- `search.js` / `fetch.js` mất hook `handleDiepXuanWebComboFallback()` trước fallback lỗi thiếu/không rõ provider.
 - `npm run build` fail tại route usage/search/fetch/provider.
 - Có conflict marker trong `src`, `open-sse`, `cli`, `docs`.
 - `cli/app/.next` hoặc `cli/app/node_modules` bị xóa ngoài ý muốn khi vẫn còn cần CLI packaging.

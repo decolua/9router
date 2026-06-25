@@ -157,6 +157,10 @@ for (const feature of manifest.features || []) {
     checkPattern(pattern, scope, "WARN");
   }
 
+  for (const invariant of feature.invariants || []) {
+    checkPattern(invariant, `${scope}:invariant`, invariant.severity || "FAIL");
+  }
+
   for (const file of feature.syntaxCheck || []) {
     if (checkFile(file, scope)) {
       runCommand("node", ["--check", file], scope);
