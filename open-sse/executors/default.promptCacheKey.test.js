@@ -5,7 +5,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DefaultExecutor, injectPromptCacheKey } from "./default.js";
+import { DefaultExecutor, injectPromptCacheKey, normalizePromptCacheKey } from "./default.js";
 
 const PROVIDER = "openai-compatible-responses-custom";
 
@@ -26,13 +26,14 @@ test("no-op when flag is false", () => {
   assert.equal(body.prompt_cache_key, undefined);
 });
 
-test("injects from _clientSessionId when flag enabled", () => {
+test("injects a provider-safe hash from _clientSessionId when flag enabled", () => {
   const body = { model: "model-a", messages: [] };
   injectPromptCacheKey(PROVIDER, body, {
     _clientSessionId: "claude:abc-123",
     providerSpecificData: { enablePromptCacheKey: true },
   });
-  assert.equal(body.prompt_cache_key, "claude:abc-123");
+  assert.equal(body.prompt_cache_key, normalizePromptCacheKey(PROVIDER, "claude:abc-123"));
+  assert.match(body.prompt_cache_key, /^cc_[a-f0-9]{32}$/);
 });
 
 test("does not overwrite an existing prompt_cache_key", () => {
@@ -50,10 +51,9 @@ test("falls back to resolveSessionId (connectionId) when no captured session", (
     connectionId: "conn-xyz",
     providerSpecificData: { enablePromptCacheKey: true },
   });
-  // resolveSessionId derives a stable id from connectionId; just assert a
-  // non-empty string was set (exact value is an internal hash).
-  assert.equal(typeof body.prompt_cache_key, "string");
-  assert.ok(body.prompt_cache_key.length > 0);
+  // resolveSessionId derives a stable id from connectionId; assert only the
+  // provider-safe key shape because the raw id is intentionally hidden.
+  assert.match(body.prompt_cache_key, /^cc_[a-f0-9]{32}$/);
 });
 
 test("stable across two calls with the same connection (cache stability)", () => {
@@ -75,7 +75,7 @@ test("prefers client session id over connection fallback", () => {
     connectionId: "conn-zzz",
     providerSpecificData: { enablePromptCacheKey: true },
   });
-  assert.equal(body.prompt_cache_key, "claude:session-1");
+  assert.equal(body.prompt_cache_key, normalizePromptCacheKey(PROVIDER, "claude:session-1"));
 });
 
 test("guards non-object body", () => {
@@ -90,14 +90,14 @@ test("guards non-object body", () => {
 
 // ---------- DefaultExecutor.transformRequest (integration) ----------
 
-test("transformRequest injects prompt_cache_key for opted-in provider", () => {
+test("transformRequest injects provider-safe prompt_cache_key for opted-in provider", () => {
   const ex = new DefaultExecutor(PROVIDER);
   const body = { model: "model-a", messages: [{ role: "user", content: "hi" }] };
   const out = ex.transformRequest("model-a", body, true, {
     _clientSessionId: "claude:conv-9",
     providerSpecificData: { enablePromptCacheKey: true },
   });
-  assert.equal(out.prompt_cache_key, "claude:conv-9");
+  assert.equal(out.prompt_cache_key, normalizePromptCacheKey(PROVIDER, "claude:conv-9"));
 });
 
 test("transformRequest does NOT inject when flag missing", () => {
