@@ -10,11 +10,11 @@ import { fetchImageAsBase64 } from "../translator/concerns/image.js";
 import { getModelUpstreamId } from "../config/providerModels.js";
 import { DEFAULT_RETRY_CONFIG, resolveRetryEntry } from "../config/runtimeConfig.js";
 import { dbg } from "../utils/debugLog.js";
+import { createErrorResult } from "../utils/error.js";
+import { detectRetryableResponsesStreamFailure, hasOpenAIResponsesStreamOutput } from "../utils/responsesStreamHelpers.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 
-// SSE error patterns inside 200-OK body that should trigger retry as if 503
-const CODEX_SSE_OVERLOADED_PATTERNS = ["server_is_overloaded", "service_unavailable_error"];
-const CODEX_SSE_PEEK_BYTES = 4096;
+const CODEX_SSE_PEEK_BYTES = 64 * 1024;
 
 // Server-generated item id prefixes that Codex /responses cannot resolve when store=false
 const SERVER_ID_PATTERN = /^(rs|fc|resp|msg)_/;
@@ -190,14 +190,14 @@ export class CodexExecutor extends BaseExecutor {
       await this.prefetchImages(args.body);
     }
 
-    // Retry loop for SSE-level overloaded errors (200 OK body contains event: error)
+    // Retry loop for SSE-level retryable semantic failures (200 OK body contains event: error/response.failed)
     // Reuses 503 retry config — same semantic: upstream temporarily unavailable
     const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...this.config.retry };
     const { attempts, delayMs } = resolveRetryEntry(retryConfig[503]);
     let attempt = 0;
     while (true) {
       const result = await super.execute(args);
-      const peek = await this._peekSseOverloaded(result.response);
+      const peek = await this._peekRetryableResponsesFailure(result.response);
       if (!peek.matched) {
         // Replace body with re-assembled stream (prefix bytes already read + rest)
         if (peek.replacementBody) {
@@ -210,47 +210,51 @@ export class CodexExecutor extends BaseExecutor {
         return result;
       }
       if (attempt >= attempts) {
-        args.log?.warn?.("RETRY", `CODEX | SSE overloaded "${peek.matched}" — retries exhausted (${attempt}/${attempts})`);
-        // Out of retries → return with replacement body so client gets the error
-        if (peek.replacementBody) {
-          result.response = new Response(peek.replacementBody, {
-            status: result.response.status,
-            statusText: result.response.statusText,
-            headers: result.response.headers,
-          });
-        }
-        return result;
+        args.log?.warn?.("RETRY", `CODEX | SSE retryable failure "${peek.matched}" — retries exhausted (${attempt}/${attempts})`);
+        try { await result.response.body?.cancel?.(); } catch { /* noop */ }
+        return {
+          ...result,
+          ...createErrorResult(peek.status || 503, peek.message || `Retryable SSE failure: ${peek.matched}`),
+        };
       }
       attempt++;
-      args.log?.debug?.("RETRY", `CODEX | SSE "${peek.matched}" retry ${attempt}/${attempts} after ${delayMs / 1000}s`);
-      dbg("CODEX", `SSE overloaded "${peek.matched}" → retry ${attempt}/${attempts} in ${delayMs}ms`);
+      args.log?.debug?.("RETRY", `CODEX | SSE retryable failure "${peek.matched}" retry ${attempt}/${attempts} after ${delayMs / 1000}s`);
+      dbg("CODEX", `SSE retryable failure "${peek.matched}" → retry ${attempt}/${attempts} in ${delayMs}ms`);
       try { await result.response.body?.cancel?.(); } catch { /* noop */ }
       await new Promise(r => setTimeout(r, delayMs));
     }
   }
 
-  // Peek first N bytes of SSE body to detect upstream "overloaded" errors.
-  // Returns { matched: string|null, replacementBody: ReadableStream|null }.
+  // Probe the pre-output SSE prefix to detect upstream retryable semantic failures.
+  // Returns { matched: string|null, status?: number, message?: string, replacementBody: ReadableStream|null }.
   // Caller MUST use replacementBody (original body has been read).
-  async _peekSseOverloaded(response) {
+  async _peekRetryableResponsesFailure(response) {
     if (!response || !response.ok || !response.body) return { matched: null, replacementBody: null };
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     const chunks = [];
     let text = "";
-    let matched = null;
+    let failure = null;
     try {
       while (text.length < CODEX_SSE_PEEK_BYTES) {
         const { done, value } = await reader.read();
         if (done) break;
         chunks.push(value);
         text += decoder.decode(value, { stream: true });
-        const hit = CODEX_SSE_OVERLOADED_PATTERNS.find(p => text.includes(p));
-        if (hit) { matched = hit; break; }
+        failure = detectRetryableResponsesStreamFailure(text);
+        if (failure) break;
+        if (hasOpenAIResponsesStreamOutput(text)) break;
       }
     } catch (e) {
       dbg("CODEX", `peek read error: ${e.message}`);
     }
+
+    if (failure) {
+      try { await reader.cancel(); } catch { /* noop */ }
+      reader.releaseLock();
+      return { matched: failure.matched, status: failure.status, message: failure.message, replacementBody: null };
+    }
+
     reader.releaseLock();
 
     // Re-assemble stream: prefix chunks + remaining upstream body
@@ -272,7 +276,7 @@ export class CodexExecutor extends BaseExecutor {
         try { upstreamReader?.cancel(reason); } catch { /* noop */ }
       },
     });
-    return { matched, replacementBody };
+    return { matched: null, replacementBody };
   }
 
   // Parse Codex usage_limit_reached to extract precise resetsAtMs; fallback to default otherwise
