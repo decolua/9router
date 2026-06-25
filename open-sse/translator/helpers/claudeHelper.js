@@ -3,6 +3,7 @@ import { DEFAULT_THINKING_CLAUDE_SIGNATURE } from "../../config/defaultThinkingS
 import { adjustMaxTokens } from "./maxTokensHelper.js";
 import { applyCloaking } from "../../utils/claudeCloaking.js";
 import { deriveSessionId } from "../../utils/sessionManager.js";
+import { isValidClaudeSignature } from "../../utils/claudeSignature.js";
 
 // Check if message has valid non-empty content
 export function hasValidContent(msg) {
@@ -200,14 +201,25 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
           let hasToolUse = false;
           let hasThinking = false;
 
-          // Always replace signature for all thinking blocks
+          // Claude native: preserve valid signatures, drop invalid blocks.
+          // anthropic-compatible: replace with default (safe fallback for lenient upstreams).
+          const isClaudeNative = provider === "claude";
+          const kept = [];
           for (const block of msg.content) {
-            if (block.type === "thinking" || block.type === "redacted_thinking") {
-              block.signature = DEFAULT_THINKING_CLAUDE_SIGNATURE;
+            const isThinking = block.type === "thinking" || block.type === "redacted_thinking";
               hasThinking = true;
+              if (isClaudeNative) {
+                if (isValidClaudeSignature(block.signature)) kept.push(block);
+              } else {
+                block.signature = DEFAULT_THINKING_CLAUDE_SIGNATURE;
+                kept.push(block);
+              }
+              continue;
             }
             if (block.type === "tool_use") hasToolUse = true;
+            kept.push(block);
           }
+          msg.content = kept;
 
           // Add thinking block if thinking enabled + has tool_use but no thinking
           if (thinkingEnabled && !hasThinking && hasToolUse) {
