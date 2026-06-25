@@ -8,6 +8,8 @@ import {
 } from "../utils/cursorProtobuf.js";
 import { buildCursorHeaders } from "../utils/cursorChecksum.js";
 import { estimateUsage } from "../utils/usageTracking.js";
+import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
+import { chatChunkSse } from "../utils/sse.js";
 import { FORMATS } from "../translator/formats.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import zlib from "zlib";
@@ -40,6 +42,19 @@ const CURSOR_STREAM_DEBUG = process.env.CURSOR_STREAM_DEBUG === "1";
 const debugLog = (...args) => {
   if (CURSOR_STREAM_DEBUG) console.log(...args);
 };
+
+function isComposerModel(model) {
+  const modelId = String(model || "").split("/").pop();
+  return /^composer(?:-|$)/i.test(modelId);
+}
+
+function visibleComposerContentFromThinking(thinking) {
+  if (!thinking) return "";
+  const endTag = "</think>";
+  const endIdx = thinking.lastIndexOf(endTag);
+  if (endIdx < 0) return "";
+  return thinking.slice(endIdx + endTag.length).trimStart();
+}
 
 function decompressPayload(payload, flags) {
   // Check if payload is JSON error (starts with {"error")
@@ -85,6 +100,32 @@ function decompressPayload(payload, flags) {
   return payload;
 }
 
+// Read one cursor protobuf frame: header + bounds + decompress. Returns status + payload + new offset.
+function readCursorFrame(buffer, offset, frameNum, tag) {
+  if (offset + 5 > buffer.length) {
+    debugLog(`[CURSOR BUFFER${tag}] Reached end, offset=${offset}, remaining=${buffer.length - offset}`);
+    return { status: "done" };
+  }
+
+  const flags = buffer[offset];
+  const length = buffer.readUInt32BE(offset + 1);
+  debugLog(`[CURSOR BUFFER${tag}] Frame ${frameNum + 1}: flags=0x${flags.toString(16).padStart(2, "0")}, length=${length}`);
+
+  if (offset + 5 + length > buffer.length) {
+    debugLog(`[CURSOR BUFFER${tag}] Incomplete frame, offset=${offset}, length=${length}, buffer.length=${buffer.length}`);
+    return { status: "done" };
+  }
+
+  let payload = buffer.slice(offset + 5, offset + 5 + length);
+  const newOffset = offset + 5 + length;
+  payload = decompressPayload(payload, flags);
+  if (!payload) {
+    debugLog(`[CURSOR BUFFER${tag}] Frame ${frameNum + 1}: decompression failed, skipping`);
+    return { status: "skip", offset: newOffset };
+  }
+  return { status: "ok", payload, offset: newOffset };
+}
+
 function createErrorResponse(jsonError) {
   const errorMsg = jsonError?.error?.details?.[0]?.debug?.details?.title
     || jsonError?.error?.details?.[0]?.debug?.details?.detail
@@ -128,7 +169,7 @@ export class CursorExecutor extends BaseExecutor {
 
   transformRequest(model, body, stream, credentials) {
     // Messages are already translated by chatCore (claude→openai→cursor)
-    // Do NOT call buildCursorRequest again — double-translation drops tool_results
+    // Do NOT call openaiToCursorRequest again — double-translation drops tool_results
     const messages = body.messages || [];
     const tools = body.tools || [];
     const reasoningEffort = body.reasoning_effort || null;
@@ -264,6 +305,7 @@ export class CursorExecutor extends BaseExecutor {
 
     let offset = 0;
     let totalContent = "";
+    let totalThinking = "";
     const toolCalls = [];
     const toolCallsMap = new Map(); // Track streaming tool calls by ID
     const finalizedIds = new Set();
@@ -272,36 +314,12 @@ export class CursorExecutor extends BaseExecutor {
     debugLog(`[CURSOR BUFFER] Total length: ${buffer.length} bytes`);
 
     while (offset < buffer.length) {
-      if (offset + 5 > buffer.length) {
-        debugLog(
-          `[CURSOR BUFFER] Reached end, offset=${offset}, remaining=${buffer.length - offset}`
-        );
-        break;
-      }
-
-      const flags = buffer[offset];
-      const length = buffer.readUInt32BE(offset + 1);
-
-      debugLog(
-        `[CURSOR BUFFER] Frame ${frameCount + 1}: flags=0x${flags.toString(16).padStart(2, "0")}, length=${length}`
-      );
-
-      if (offset + 5 + length > buffer.length) {
-        debugLog(
-          `[CURSOR BUFFER] Incomplete frame, offset=${offset}, length=${length}, buffer.length=${buffer.length}`
-        );
-        break;
-      }
-
-      let payload = buffer.slice(offset + 5, offset + 5 + length);
-      offset += 5 + length;
+      const frame = readCursorFrame(buffer, offset, frameCount, "");
+      if (frame.status === "done") break;
+      offset = frame.offset;
       frameCount++;
-
-      payload = decompressPayload(payload, flags);
-      if (!payload) {
-        debugLog(`[CURSOR BUFFER] Frame ${frameCount}: decompression failed, skipping`);
-        continue;
-      }
+      if (frame.status === "skip") continue;
+      const payload = frame.payload;
 
       // Check for JSON error frames (byte guard: skip toString on non-JSON frames)
       if (payload.length > 0 && payload[0] === 0x7b) {
@@ -373,7 +391,13 @@ export class CursorExecutor extends BaseExecutor {
       }
 
       if (result.text) totalContent += result.text;
+      if (result.thinking) totalThinking += result.thinking;
     }
+
+    const visibleComposerContent = isComposerModel(model)
+      ? visibleComposerContentFromThinking(totalThinking)
+      : "";
+    const finalContent = totalContent || visibleComposerContent;
 
     debugLog(
       `[CURSOR BUFFER] Parsed ${frameCount} frames, toolCallsMap size: ${toolCallsMap.size}, finalized toolCalls: ${toolCalls.length}`
@@ -400,14 +424,14 @@ export class CursorExecutor extends BaseExecutor {
 
     const message = {
       role: "assistant",
-      content: totalContent || null
+      content: finalContent || null
     };
 
     if (toolCalls.length > 0) {
       message.tool_calls = toolCalls;
     }
 
-    const usage = estimateUsage(body, totalContent.length, FORMATS.OPENAI);
+    const usage = estimateUsage(body, finalContent.length, FORMATS.OPENAI);
 
     const completion = {
       id: responseId,
@@ -435,6 +459,8 @@ export class CursorExecutor extends BaseExecutor {
     const chunks = [];
     let offset = 0;
     let totalContent = "";
+    let totalThinking = "";
+    let emittedComposerThinkingContentLength = 0;
     const toolCalls = [];
     const toolCallsMap = new Map(); // Track streaming tool calls by ID
     const finalizedIds = new Set();
@@ -444,36 +470,12 @@ export class CursorExecutor extends BaseExecutor {
     debugLog(`[CURSOR BUFFER SSE] Total length: ${buffer.length} bytes`);
 
     while (offset < buffer.length) {
-      if (offset + 5 > buffer.length) {
-        debugLog(
-          `[CURSOR BUFFER SSE] Reached end, offset=${offset}, remaining=${buffer.length - offset}`
-        );
-        break;
-      }
-
-      const flags = buffer[offset];
-      const length = buffer.readUInt32BE(offset + 1);
-
-      debugLog(
-        `[CURSOR BUFFER SSE] Frame ${frameCount + 1}: flags=0x${flags.toString(16).padStart(2, "0")}, length=${length}`
-      );
-
-      if (offset + 5 + length > buffer.length) {
-        debugLog(
-          `[CURSOR BUFFER SSE] Incomplete frame, offset=${offset}, length=${length}, buffer.length=${buffer.length}`
-        );
-        break;
-      }
-
-      let payload = buffer.slice(offset + 5, offset + 5 + length);
-      offset += 5 + length;
+      const frame = readCursorFrame(buffer, offset, frameCount, " SSE");
+      if (frame.status === "done") break;
+      offset = frame.offset;
       frameCount++;
-
-      payload = decompressPayload(payload, flags);
-      if (!payload) {
-        debugLog(`[CURSOR BUFFER SSE] Frame ${frameCount}: decompression failed, skipping`);
-        continue;
-      }
+      if (frame.status === "skip") continue;
+      const payload = frame.payload;
 
       // Check for JSON error frames (byte-guard: only decode if starts with '{')
       if (payload[0] === 0x7b) {
@@ -520,21 +522,7 @@ export class CursorExecutor extends BaseExecutor {
         const tc = result.toolCall;
 
         if (chunks.length === 0) {
-          chunks.push(
-            `data: ${JSON.stringify({
-              id: responseId,
-              object: "chat.completion.chunk",
-              created,
-              model,
-              choices: [
-                {
-                  index: 0,
-                  delta: { role: "assistant", content: "" },
-                  finish_reason: null
-                }
-              ]
-            })}\n\n`
-          );
+          chunks.push(chatChunkSse({ id: responseId, created, model, delta: { role: "assistant", content: "" } }));
         }
 
         if (toolCallsMap.has(tc.id)) {
@@ -547,33 +535,22 @@ export class CursorExecutor extends BaseExecutor {
           // Stream the delta arguments
           if (tc.function.arguments) {
             emittedToolCallIds.add(tc.id);
-            chunks.push(
-              `data: ${JSON.stringify({
-                id: responseId,
-                object: "chat.completion.chunk",
-                created,
-                model,
-                choices: [
+            chunks.push(chatChunkSse({
+              id: responseId, created, model,
+              delta: {
+                tool_calls: [
                   {
-                    index: 0,
-                    delta: {
-                      tool_calls: [
-                        {
-                          index: existing.index,
-                          id: tc.id,
-                          type: "function",
-                          function: {
-                            name: tc.function.name,
-                            arguments: tc.function.arguments
-                          }
-                        }
-                      ]
-                    },
-                    finish_reason: null
+                    index: existing.index,
+                    id: tc.id,
+                    type: "function",
+                    function: {
+                      name: tc.function.name,
+                      arguments: tc.function.arguments
+                    }
                   }
                 ]
-              })}\n\n`
-            );
+              }
+            }));
           }
         } else {
           // New tool call - assign index and add to map
@@ -584,56 +561,51 @@ export class CursorExecutor extends BaseExecutor {
 
           // Stream initial tool call with name
           emittedToolCallIds.add(tc.id);
-          chunks.push(
-            `data: ${JSON.stringify({
-              id: responseId,
-              object: "chat.completion.chunk",
-              created,
-              model,
-              choices: [
+          chunks.push(chatChunkSse({
+            id: responseId, created, model,
+            delta: {
+              tool_calls: [
                 {
-                  index: 0,
-                  delta: {
-                    tool_calls: [
-                      {
-                        index: toolCallIndex,
-                        id: tc.id,
-                        type: "function",
-                        function: {
-                          name: tc.function.name,
-                          arguments: tc.function.arguments
-                        }
-                      }
-                    ]
-                  },
-                  finish_reason: null
+                  index: toolCallIndex,
+                  id: tc.id,
+                  type: "function",
+                  function: {
+                    name: tc.function.name,
+                    arguments: tc.function.arguments
+                  }
                 }
               ]
-            })}\n\n`
-          );
+            }
+          }));
         }
       }
 
       if (result.text) {
         totalContent += result.text;
-        chunks.push(
-          `data: ${JSON.stringify({
-            id: responseId,
-            object: "chat.completion.chunk",
-            created,
-            model,
-            choices: [
-              {
-                index: 0,
-                delta:
-                  chunks.length === 0 && toolCalls.length === 0
-                    ? { role: "assistant", content: result.text }
-                    : { content: result.text },
-                finish_reason: null
-              }
-            ]
-          })}\n\n`
-        );
+        chunks.push(chatChunkSse({
+          id: responseId, created, model,
+          delta:
+            chunks.length === 0 && toolCalls.length === 0
+              ? { role: "assistant", content: result.text }
+              : { content: result.text }
+        }));
+      }
+
+      if (isComposerModel(model) && result.thinking) {
+        totalThinking += result.thinking;
+        const visibleContent = visibleComposerContentFromThinking(totalThinking);
+        if (visibleContent.length > emittedComposerThinkingContentLength) {
+          const deltaContent = visibleContent.slice(emittedComposerThinkingContentLength);
+          emittedComposerThinkingContentLength = visibleContent.length;
+          totalContent += deltaContent;
+          chunks.push(chatChunkSse({
+            id: responseId, created, model,
+            delta:
+              chunks.length === 0 && toolCalls.length === 0
+                ? { role: "assistant", content: deltaContent }
+                : { content: deltaContent }
+          }));
+        }
       }
     }
 
@@ -658,53 +630,28 @@ export class CursorExecutor extends BaseExecutor {
 
         // Emit SSE chunk for the finalized tool call if not already emitted
         if (!emittedToolCallIds.has(tc.id)) {
-          chunks.push(
-            `data: ${JSON.stringify({
-              id: responseId,
-              object: "chat.completion.chunk",
-              created,
-              model,
-              choices: [
+          chunks.push(chatChunkSse({
+            id: responseId, created, model,
+            delta: {
+              tool_calls: [
                 {
-                  index: 0,
-                  delta: {
-                    tool_calls: [
-                      {
-                        index: toolCallIndex,
-                        id: tc.id,
-                        type: "function",
-                        function: {
-                          name: tc.function.name,
-                          arguments: tc.function.arguments
-                        }
-                      }
-                    ]
-                  },
-                  finish_reason: null
+                  index: toolCallIndex,
+                  id: tc.id,
+                  type: "function",
+                  function: {
+                    name: tc.function.name,
+                    arguments: tc.function.arguments
+                  }
                 }
               ]
-            })}\n\n`
-          );
+            }
+          }));
         }
       }
     }
 
     if (chunks.length === 0 && toolCalls.length === 0) {
-      chunks.push(
-        `data: ${JSON.stringify({
-          id: responseId,
-          object: "chat.completion.chunk",
-          created,
-          model,
-          choices: [
-            {
-              index: 0,
-              delta: { role: "assistant", content: "" },
-              finish_reason: null
-            }
-          ]
-        })}\n\n`
-      );
+      chunks.push(chatChunkSse({ id: responseId, created, model, delta: { role: "assistant", content: "" } }));
     }
 
     const usage = estimateUsage(body, totalContent.length, FORMATS.OPENAI);
@@ -725,15 +672,11 @@ export class CursorExecutor extends BaseExecutor {
         usage
       })}\n\n`
     );
-    chunks.push("data: [DONE]\n\n");
+    chunks.push(SSE_DONE);
 
     return new Response(chunks.join(""), {
       status: 200,
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        "Connection": "keep-alive"
-      }
+      headers: { ...SSE_HEADERS }
     });
   }
 

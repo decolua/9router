@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { enableTunnel } from "@/lib/tunnel/tunnelManager";
+import { enableTunnel } from "@/lib/tunnel";
 
 const DNS_WARMUP_DELAY_MS = 8000;
 

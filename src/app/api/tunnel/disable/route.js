@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { disableTunnel } from "@/lib/tunnel/tunnelManager";
+import { disableTunnel } from "@/lib/tunnel";
 
 export async function POST() {
   try {

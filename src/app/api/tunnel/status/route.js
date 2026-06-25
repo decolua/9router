@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { getTunnelStatus, getTailscaleStatus } from "@/lib/tunnel/tunnelManager";
-import { getDownloadStatus } from "@/lib/tunnel/cloudflared";
+import { getTunnelStatus, getTailscaleStatus, getDownloadStatus } from "@/lib/tunnel";
 
 export async function GET() {
   try {

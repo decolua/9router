@@ -25,74 +25,9 @@ function processSSEMessage(msg, state) {
   if (eventType === "response.created") {
     state.responseId = parsed.response?.id || state.responseId;
     state.created = parsed.response?.created_at || state.created;
-  } else if (eventType === "response.output_item.added") {
-    const item = parsed.item || { type: "message", content: [], role: "assistant" };
-    const idx = state.items.push(item) - 1;
-    if (item.id) {
-      state.itemIndex.set(item.id, idx);
-    }
-  } else if (eventType === "response.output_text.delta") {
-    const itemId = parsed.item_id;
-    const text = parsed.delta?.text || "";
-    if (text && itemId) {
-      const idx = state.itemIndex.get(itemId);
-      if (idx !== undefined) {
-        const item = state.items[idx];
-        if (item && item.type === "message") {
-          const contentPart = item.content?.find(c => c.type === "output_text");
-          if (contentPart) {
-            contentPart.text = (contentPart.text || "") + text;
-          } else {
-            item.content = item.content || [];
-            item.content.push({ type: "output_text", text: text });
-          }
-        }
-      }
-    }
-  } else if (eventType === "response.reasoning_summary_text.delta") {
-    const itemId = parsed.item_id;
-    const text = parsed.delta?.text || "";
-    if (text && itemId) {
-      const idx = state.itemIndex.get(itemId);
-      if (idx !== undefined) {
-        const item = state.items[idx];
-        if (item && item.type === "reasoning") {
-          const summaryPart = item.summary?.find(s => s.type === "summary_text");
-          if (summaryPart) {
-            summaryPart.text = (summaryPart.text || "") + text;
-          } else {
-            item.summary = item.summary || [];
-            item.summary.push({ type: "summary_text", text: text });
-          }
-        }
-      }
-    }
   } else if (eventType === "response.output_item.done") {
-    const itemId = parsed.item_id;
-    if (itemId) {
-      const idx = state.itemIndex.get(itemId);
-      if (idx !== undefined) {
-        const existing = state.items[idx];
-        const doneItem = parsed.item || existing;
-        if (doneItem && existing) {
-          // Only merge accumulated content into the matching type
-          if (existing.type === "reasoning" && existing.summary?.length > 0) {
-            if (!doneItem.summary || doneItem.summary.length === 0) {
-              doneItem.summary = existing.summary;
-            }
-          } else if (existing.type === "message" && existing.content?.length > 0) {
-            const hasParsedText = doneItem.content?.some(c => c.type === "output_text" && c.text);
-            if (!hasParsedText) {
-              doneItem.content = existing.content;
-            }
-          }
-          state.items[idx] = doneItem;
-        } else if (doneItem) {
-          state.items[idx] = doneItem;
-        }
-      }
-    }
-  } else if (eventType === "response.completed") {
+    const itemId = parsed.item?.id ?? `item_${parsed.output_index ?? 0}`; state.items.set(itemId, parsed.item);
+  } else if (eventType === "response.completed" || eventType === "response.done") {
     state.status = "completed";
     if (parsed.response?.usage) {
       state.usage.input_tokens = parsed.response.usage.input_tokens || 0;
@@ -125,8 +60,7 @@ export async function convertResponsesStreamToJson(stream) {
     created: Math.floor(Date.now() / 1000),
     status: "in_progress",
     usage: { ...EMPTY_RESPONSE },
-    items: [],
-    itemIndex: new Map()
+    items: new Map()
   };
 
   try {
@@ -151,8 +85,9 @@ export async function convertResponsesStreamToJson(stream) {
     reader.releaseLock();
   }
 
-  // Build output array directly from accumulated items (preserves emission order)
-  const output = state.items;
+  // Build output array from accumulated items (ordered by index)
+  const output = [];
+  output.push(...state.items.values());
 
   return {
     id: state.responseId || `resp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -163,3 +98,4 @@ export async function convertResponsesStreamToJson(stream) {
     usage: state.usage
   };
 }
+

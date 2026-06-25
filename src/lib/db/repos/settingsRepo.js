@@ -1,8 +1,8 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
-import { normalizeAccountRoutingMode } from "../../../shared/utils/accountRouting.js";
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
+const DEFAULT_HEADROOM_URL = process.env.HEADROOM_URL || "http://localhost:8787";
 
 const DEFAULT_SETTINGS = {
   cloudEnabled: false,
@@ -11,7 +11,6 @@ const DEFAULT_SETTINGS = {
   tunnelProvider: "cloudflare",
   tailscaleEnabled: false,
   tailscaleUrl: "",
-  fallbackStrategy: "default",
   stickyRoundRobinLimit: 3,
   providerStrategies: {},
   comboStrategy: "fallback",
@@ -36,11 +35,13 @@ const DEFAULT_SETTINGS = {
   mitmRouterBaseUrl: DEFAULT_MITM_ROUTER_BASE,
   dnsToolEnabled: {},
   rtkEnabled: true,
+  headroomEnabled: false,
+  headroomUrl: DEFAULT_HEADROOM_URL,
+  headroomCompressUserMessages: false,
   cavemanEnabled: false,
   cavemanLevel: "full",
-  toonEnabled: false,
-  quotaAutoToggleEnabled: true,
-  quotaRefreshIntervalMs: null,
+  ponytailEnabled: false,
+  ponytailLevel: "full",
 };
 
 async function readRaw() {
@@ -64,23 +65,6 @@ function mergeWithDefaults(raw) {
         merged[key] = defVal;
       }
     }
-  }
-  merged.fallbackStrategy = normalizeAccountRoutingMode(merged.fallbackStrategy);
-  if (merged.providerStrategies && typeof merged.providerStrategies === "object") {
-    merged.providerStrategies = Object.fromEntries(
-      Object.entries(merged.providerStrategies).map(([providerId, override]) => {
-        if (!override || typeof override !== "object") return [providerId, override];
-        return [
-          providerId,
-          {
-            ...override,
-            ...(override.fallbackStrategy
-              ? { fallbackStrategy: normalizeAccountRoutingMode(override.fallbackStrategy) }
-              : {}),
-          },
-        ];
-      }),
-    );
   }
   return merged;
 }

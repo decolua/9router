@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { disableTailscale } from "@/lib/tunnel/tunnelManager";
+import { disableTailscale } from "@/lib/tunnel";
 
 export async function POST() {
   try {

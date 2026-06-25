@@ -5,10 +5,9 @@ import { GEMINI_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken, updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
-import { guardedFetch, toUrlGuardResponse, UrlGuardError } from "@/lib/security/urlGuard";
+import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
-const PROVIDER_URL_GUARD = { protocols: ["http:", "https:"], timeoutMs: 10000 };
 
 const parseOpenAIStyleModels = (data) => {
   if (Array.isArray(data)) return data;
@@ -67,36 +66,6 @@ const createOpenAIModelsConfig = (url) => ({
   authPrefix: "Bearer ",
   parseResponse: parseOpenAIStyleModels
 });
-
-const createFallbackOpenAIModelsResolver = (urls) => async (connection) => {
-  const token = connection.apiKey || connection.accessToken;
-  if (!token) return { error: "No valid token found", status: 401 };
-
-  let lastStatus = 500;
-  let lastError = "";
-  for (const url of urls) {
-    try {
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
-        },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        return { models: parseOpenAIStyleModels(data) };
-      }
-      lastStatus = response.status;
-      lastError = await response.text();
-    } catch (error) {
-      lastError = error.message;
-    }
-  }
-
-  console.log("Error fetching Kimi models:", lastError);
-  return { error: `Failed to fetch models: ${lastStatus}`, status: lastStatus };
-};
 
 const resolveQwenModelsUrl = (connection) => {
   const fallback = "https://portal.qwen.ai/v1/models";
@@ -221,17 +190,6 @@ const PROVIDER_MODELS_CONFIG = {
     }
   },
   openai: createOpenAIModelsConfig("https://api.openai.com/v1/models"),
-  kimi: {
-    customResolver: createFallbackOpenAIModelsResolver([
-      "https://api.kimi.com/coding/v1/models",
-    ])
-  },
-  "kimi-api": {
-    customResolver: createFallbackOpenAIModelsResolver([
-      "https://api.moonshot.ai/v1/models",
-      "https://api.moonshot.cn/v1/models",
-    ])
-  },
   openrouter: createOpenAIModelsConfig("https://openrouter.ai/api/v1/models"),
   anthropic: {
     url: "https://api.anthropic.com/v1/models",
@@ -268,13 +226,13 @@ const PROVIDER_MODELS_CONFIG = {
   groq: createOpenAIModelsConfig("https://api.groq.com/openai/v1/models"),
   xai: createOpenAIModelsConfig("https://api.x.ai/v1/models"),
   mistral: createOpenAIModelsConfig("https://api.mistral.ai/v1/models"),
-  perplexity: createOpenAIModelsConfig("https://api.perplexity.ai/models"),
+  perplexity: createOpenAIModelsConfig("https://api.perplexity.ai/v1/models"),
   together: createOpenAIModelsConfig("https://api.together.xyz/v1/models"),
   fireworks: createOpenAIModelsConfig("https://api.fireworks.ai/inference/v1/models"),
   cerebras: createOpenAIModelsConfig("https://api.cerebras.ai/v1/models"),
   cohere: createOpenAIModelsConfig("https://api.cohere.ai/v1/models"),
   nebius: createOpenAIModelsConfig("https://api.studio.nebius.ai/v1/models"),
-  siliconflow: createOpenAIModelsConfig("https://api.siliconflow.cn/v1/models"),
+  siliconflow: createOpenAIModelsConfig("https://api.siliconflow.com/v1/models"),
   hyperbolic: createOpenAIModelsConfig("https://api.hyperbolic.xyz/v1/models"),
   ollama: createOpenAIModelsConfig("https://ollama.com/api/tags"),
   // ollama-local: url resolved dynamically below via providerSpecificData.baseUrl
@@ -328,6 +286,41 @@ const PROVIDER_MODELS_CONFIG = {
       }
       return { models: [], warning };
     }
+  },
+  qoder: {
+    customResolver: async (connection) => {
+      const credentials = {
+        accessToken: connection.accessToken,
+        refreshToken: connection.refreshToken,
+        email: connection.email,
+        displayName: connection.displayName,
+        providerSpecificData: connection.providerSpecificData || {},
+      };
+      let warning;
+      try {
+        const result = await resolveQoderModels(credentials, { forceRefresh: true });
+        if (result?.models?.length) {
+          return {
+            models: result.models.map((m) => ({
+              // Use the canonical "qoder/<key>" id so the dashboard
+              // surfaces the same identifier the chat router expects.
+              id: `qoder/${m.id}`,
+              name: m.name,
+              contextLength: m.contextLength,
+              isVL: m.isVL,
+              isReasoning: m.isReasoning,
+              maxOutputTokens: m.maxOutputTokens,
+              description: m.description,
+            })),
+          };
+        }
+        warning = "Qoder returned no models; falling back to static catalog.";
+      } catch (error) {
+        warning = `Failed to fetch Qoder models: ${error.message}`;
+        console.log("Failed to fetch Qoder models dynamically, falling back to static:", error.message);
+      }
+      return { models: [], warning };
+    },
   },
   "gemini-cli": {
     customResolver: buildOAuthResolver({
@@ -386,13 +379,13 @@ export async function GET(request, { params }) {
         return NextResponse.json({ error: "No base URL configured for OpenAI compatible provider" }, { status: 400 });
       }
       const url = `${baseUrl.replace(/\/$/, "")}/models`;
-      const response = await guardedFetch(url, {
+      const response = await fetch(url, {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${connection.apiKey}`,
         },
-      }, PROVIDER_URL_GUARD);
+      });
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -425,7 +418,7 @@ export async function GET(request, { params }) {
       }
 
       const url = `${baseUrl}/models`;
-      const response = await guardedFetch(url, {
+      const response = await fetch(url, {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
@@ -433,7 +426,7 @@ export async function GET(request, { params }) {
           "anthropic-version": "2023-06-01",
           "Authorization": `Bearer ${connection.apiKey}`
         },
-      }, PROVIDER_URL_GUARD);
+      });
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -507,9 +500,7 @@ export async function GET(request, { params }) {
       fetchOptions.body = JSON.stringify(config.body);
     }
 
-    const response = connection.provider === "qwen"
-      ? await guardedFetch(url, fetchOptions, PROVIDER_URL_GUARD)
-      : await fetch(url, fetchOptions);
+    const response = await fetch(url, fetchOptions);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -529,9 +520,6 @@ export async function GET(request, { params }) {
       models
     });
   } catch (error) {
-    if (error instanceof UrlGuardError) {
-      return NextResponse.json(toUrlGuardResponse(error), { status: 400 });
-    }
     console.log("Error fetching provider models:", error);
     return NextResponse.json({ error: "Failed to fetch models" }, { status: 500 });
   }

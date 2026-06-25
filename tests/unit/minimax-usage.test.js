@@ -113,4 +113,127 @@ describe("MiniMax usage", () => {
     expect(usage.quotas["Music 2.6 (5h)"].used).toBe(5);
     expect(usage.quotas["Image 01 (5h)"].used).toBe(2);
   });
+
+  it("includes M-series percent-only buckets that have no count totals", async () => {
+    proxyAwareFetch.mockResolvedValueOnce(
+      usageResponse([
+        {
+          model_name: "general",
+          current_interval_remaining_percent: 70,
+          current_weekly_remaining_percent: 64,
+        },
+      ])
+    );
+
+    const usage = await getUsageForProvider({
+      provider: "minimax",
+      apiKey: "test-key",
+    });
+
+    expect(usage.message).toBeUndefined();
+    expect(usage.quotas["M-series (5h)"]).toMatchObject({
+      used: 30,
+      total: 100,
+      remaining: 70,
+      remainingPercentage: 70,
+    });
+    expect(usage.quotas["M-series (7d)"]).toMatchObject({
+      used: 36,
+      total: 100,
+      remaining: 64,
+      remainingPercentage: 64,
+    });
+  });
+
+  it("normalizes M-series percent-only buckets on the coding_plan (countMeansRemaining) endpoint too", async () => {
+    proxyAwareFetch.mockResolvedValueOnce(
+      usageResponse([
+        {
+          model_name: "general",
+          current_interval_remaining_percent: 80,
+          current_weekly_remaining_percent: 95,
+        },
+      ])
+    );
+
+    const usage = await getUsageForProvider({
+      provider: "minimax-cn",
+      apiKey: "test-key",
+    });
+
+    expect(usage.message).toBeUndefined();
+    expect(usage.quotas["M-series (5h)"]).toMatchObject({
+      used: 20,
+      total: 100,
+      remaining: 80,
+      remainingPercentage: 80,
+    });
+    expect(usage.quotas["M-series (7d)"]).toMatchObject({
+      used: 5,
+      total: 100,
+      remaining: 95,
+      remainingPercentage: 95,
+    });
+  });
+
+  it("renders the M3-era MiniMax-M* wildcard as a friendly series label", async () => {
+    proxyAwareFetch.mockResolvedValueOnce(
+      usageResponse([
+        {
+          modelName: "MiniMax-M*",
+          currentIntervalTotalCount: 4000,
+          currentIntervalUsageCount: 3200,
+          currentWeeklyTotalCount: 24000,
+          currentWeeklyUsageCount: 18000,
+          remainsTime: 1000,
+          weeklyRemainsTime: 2000,
+        },
+      ])
+    );
+
+    const usage = await getUsageForProvider({
+      provider: "minimax-cn",
+      apiKey: "test-key",
+    });
+
+    expect(usage.message).toBeUndefined();
+    expect(Object.keys(usage.quotas)).toEqual([
+      "M-series (5h)",
+      "M-series (7d)",
+    ]);
+    expect(usage.quotas["M-series (5h)"]).toMatchObject({
+      used: 800,
+      total: 4000,
+      remaining: 3200,
+    });
+    expect(usage.quotas["M-series (7d)"]).toMatchObject({
+      used: 6000,
+      total: 24000,
+      remaining: 18000,
+    });
+  });
+
+  it("prefers the upstream-provided remaining percent when counts are also present", async () => {
+    proxyAwareFetch.mockResolvedValueOnce(
+      usageResponse([
+        {
+          model_name: "general",
+          current_interval_total_count: 4000,
+          current_interval_usage_count: 100,
+          current_interval_remaining_percent: 84,
+          current_weekly_total_count: 24000,
+          current_weekly_usage_count: 500,
+          current_weekly_remaining_percent: 42,
+        },
+      ])
+    );
+
+    const usage = await getUsageForProvider({
+      provider: "minimax",
+      apiKey: "test-key",
+    });
+
+    expect(usage.quotas["M-series (5h)"].remainingPercentage).toBe(84);
+    expect(usage.quotas["M-series (7d)"].remainingPercentage).toBe(42);
+  });
 });

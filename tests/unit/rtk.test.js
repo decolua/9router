@@ -96,9 +96,9 @@ describe("RTK filters", () => {
     const input = makeFindOutput();
     const out = find(input);
     expect(out).toContain("55 files in 3 dirs:");
-    expect(out).toContain("./src/a/ (30):");
-    expect(out).toContain("./src/b/ (20):");
-    expect(out).toContain("./ (5):");
+    expect(out).toContain("./src/a/  (30)");
+    expect(out).toContain("./src/b/  (20)");
+    expect(out).toContain("./  (5)");
     expect(out.length).toBeLessThan(input.length);
   });
 

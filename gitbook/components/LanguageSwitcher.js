@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, usePathname } from "next/navigation";
 import { Globe, X } from "lucide-react";
@@ -15,12 +15,11 @@ function extractLangFromPath(pathname) {
 
 export default function LanguageSwitcher({ currentLang }) {
   const [open, setOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
   const current = getLanguage(currentLang);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setMounted(true);
   }, []);
 
@@ -91,7 +90,7 @@ export default function LanguageSwitcher({ currentLang }) {
         <span className="sm:hidden">{current.flag}</span>
       </button>
 
-      {mounted && open && createPortal(modal, document.body)}
+      {open && createPortal(modal, document.body)}
     </>
   );
 }

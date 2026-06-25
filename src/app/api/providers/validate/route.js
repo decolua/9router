@@ -3,13 +3,8 @@ import { getProviderNodeById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { resolveOllamaLocalHost, resolveXiaomiTokenplanBaseUrl, PROVIDERS } from "open-sse/config/providers.js";
-import { openaiToCommandCode } from "open-sse/translator/request/openai-to-commandcode.js";
-import { PROVIDER_ENDPOINTS } from "@/shared/constants/config";
+import { openaiToCommandCodeRequest } from "open-sse/translator/request/openai-to-commandcode.js";
 import { normalizeProviderId } from "@/lib/providerNormalization";
-import { guardedFetch, validatePublicUrl } from "@/lib/security/urlGuard";
-
-const USER_PROVIDER_URL_GUARD = { protocols: ["http:", "https:"], timeoutMs: 10000 };
-const KIMI_CODE_AGENT_ERROR = "Kimi Code key is required.";
 
 // Probe a webSearch/webFetch provider using its searchConfig/fetchConfig.
 // Returns true if API key is accepted (status !== 401 && !== 403).
@@ -79,35 +74,10 @@ async function probeMediaProvider(provider, apiKey) {
   const res = await fetch(cfg.baseUrl, {
     method,
     headers,
-    body: method === "GET" ? undefined : JSON.stringify({ input: "ping", text: "ping", prompt: "ping", model: cfg.models?.[0]?.id || "test" }),
+    body: method === "GET" ? undefined : JSON.stringify({ input: "ping", text: "ping", prompt: "ping", model: getDefaultModel(provider) || "test" }),
     signal: AbortSignal.timeout(8000),
   });
   return res.status !== 401 && res.status !== 403;
-}
-
-async function validateOpenAIChatEndpoints(apiKey, endpoints, model) {
-  for (const endpoint of endpoints.filter(Boolean)) {
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        max_tokens: 1,
-        messages: [{ role: "user", content: "test" }],
-      }),
-    });
-    if (res.status !== 401 && res.status !== 403) return true;
-  }
-  return false;
-}
-
-async function validateKimiCodeEndpoint(apiKey) {
-  return apiKey?.trim?.()
-    ? { valid: true, error: null, deferred: true }
-    : { valid: false, error: KIMI_CODE_AGENT_ERROR };
 }
 
 // POST /api/providers/validate - Validate API key with provider
@@ -133,9 +103,9 @@ export async function POST(request) {
           return NextResponse.json({ error: "OpenAI Compatible node not found" }, { status: 404 });
         }
         const modelsUrl = `${node.baseUrl?.replace(/\/$/, "")}/models`;
-        const res = await guardedFetch(modelsUrl, {
+        const res = await fetch(modelsUrl, {
           headers: { "Authorization": `Bearer ${apiKey}` },
-        }, USER_PROVIDER_URL_GUARD);
+        });
         isValid = res.ok;
         return NextResponse.json({
           valid: isValid,
@@ -150,9 +120,9 @@ export async function POST(request) {
           return NextResponse.json({ error: "Custom Embedding node not found" }, { status: 404 });
         }
         const baseUrl = node.baseUrl?.replace(/\/$/, "");
-        const modelsRes = await guardedFetch(`${baseUrl}/models`, {
+        const modelsRes = await fetch(`${baseUrl}/models`, {
           headers: { "Authorization": `Bearer ${apiKey}` },
-        }, USER_PROVIDER_URL_GUARD);
+        });
         if (modelsRes.ok) {
           return NextResponse.json({ valid: true });
         }
@@ -161,11 +131,11 @@ export async function POST(request) {
           return NextResponse.json({ valid: false, error: "Invalid API key" });
         }
         // Fallback: probe /embeddings with a common test model — many providers lack /models
-        const embedRes = await guardedFetch(`${baseUrl}/embeddings`, {
+        const embedRes = await fetch(`${baseUrl}/embeddings`, {
           method: "POST",
           headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
           body: JSON.stringify({ model: "test", input: "ping" }),
-        }, USER_PROVIDER_URL_GUARD);
+        });
         // 401/403 = bad key; anything else (including 400 "model not found") means key works
         isValid = embedRes.status !== 401 && embedRes.status !== 403;
         return NextResponse.json({
@@ -185,17 +155,26 @@ export async function POST(request) {
           normalizedBase = normalizedBase.slice(0, -9); // remove /messages
         }
 
-        const modelsUrl = `${normalizedBase}/models`;
+        const messagesUrl = `${normalizedBase}/v1/messages`;
+        const model = node.defaultModel || "claude-3-haiku-20240307";
 
-        const res = await guardedFetch(modelsUrl, {
+        const res = await fetch(messagesUrl, {
+          method: "POST",
           headers: {
             "x-api-key": apiKey,
             "anthropic-version": "2023-06-01",
-            "Authorization": `Bearer ${apiKey}`
+            "content-type": "application/json",
+            "Authorization": `Bearer ${apiKey}`,
           },
-        }, USER_PROVIDER_URL_GUARD);
+          body: JSON.stringify({
+            model,
+            max_tokens: 1,
+            messages: [{ role: "user", content: "test" }],
+          }),
+        });
 
-        isValid = res.ok;
+        // 400/529 still confirms key accepted; only 401/403 = bad key
+        isValid = res.status !== 401 && res.status !== 403;
         return NextResponse.json({
           valid: isValid,
           error: isValid ? null : "Invalid API key",
@@ -231,10 +210,6 @@ export async function POST(request) {
         const deployment = providerSpecificData?.deployment || "gpt-4";
         const apiVersion = providerSpecificData?.apiVersion || "2024-10-01-preview";
         const organization = providerSpecificData?.organization;
-        if (!endpoint) {
-          return NextResponse.json({ valid: false, error: "Missing Azure endpoint" });
-        }
-        await validatePublicUrl(endpoint, { protocols: ["https:"] });
 
         const url = `${endpoint}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`;
         const headers = {
@@ -243,14 +218,14 @@ export async function POST(request) {
         };
         if (organization) headers["OpenAI-Organization"] = organization;
 
-        const azureRes = await guardedFetch(url, {
+        const azureRes = await fetch(url, {
           method: "POST",
           headers,
           body: JSON.stringify({
             messages: [{ role: "user", content: "test" }],
             max_tokens: 1,
           }),
-        }, { protocols: ["https:"], timeoutMs: 10000 });
+        });
         isValid = azureRes.status !== 401 && azureRes.status !== 403;
         return NextResponse.json({
           valid: isValid,
@@ -323,7 +298,6 @@ export async function POST(request) {
         case "glm":
         case "glm-cn":
         case "kimi":
-        case "kimi-api":
         case "minimax":
         case "minimax-cn":
         case "alicode-intl":
@@ -331,48 +305,36 @@ export async function POST(request) {
         case "agentrouter": {
           // Use baseUrl from PROVIDERS (DRY); separate openai-format vs claude-format flow
           const cfg = PROVIDERS[provider];
-          const isOpenAiFormat = provider === "glm-cn" || provider === "alicode" || provider === "alicode-intl" || provider === "kimi" || provider === "kimi-api";
+          const isOpenAiFormat = provider === "glm-cn" || provider === "alicode" || provider === "alicode-intl";
 
           if (isOpenAiFormat) {
             const testModel = getDefaultModel(provider);
-            const endpoints = provider === "kimi" || provider === "kimi-api"
-              ? (cfg.baseUrls || [cfg.baseUrl])
-              : [cfg.baseUrl];
-            if (provider === "kimi") {
-              const result = await validateKimiCodeEndpoint(apiKey);
-              isValid = result.valid;
-              error = result.error;
-            } else {
-              isValid = await validateOpenAIChatEndpoints(apiKey, endpoints, testModel);
-            }
+            const res = await fetch(cfg.baseUrl, {
+              method: "POST",
+              headers: { "Authorization": `Bearer ${apiKey}`, "content-type": "application/json" },
+              body: JSON.stringify({ model: testModel, max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
+            });
+            isValid = res.status !== 401 && res.status !== 403;
           } else {
             const testModel = getDefaultModel(provider) || "claude-sonnet-4-20250514";
-            const authHeaders = { "x-api-key": apiKey };
-            const endpoints = [cfg.baseUrl];
-            isValid = false;
-            for (const endpoint of endpoints) {
-              const res = await fetch(endpoint, {
-                method: "POST",
-                headers: {
-                  ...authHeaders,
-                  "anthropic-version": "2023-06-01",
-                  "content-type": "application/json",
-                  ...(cfg.headers || {}),
-                },
-                body: JSON.stringify({ model: testModel, max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
-              });
-              // 400 = model resolution error but auth passed (e.g. agentrouter "no available channel")
-              if (res.status !== 401 && res.status !== 403) {
-                isValid = true;
-                break;
-              }
-            }
+            const res = await fetch(cfg.baseUrl, {
+              method: "POST",
+              headers: {
+                "x-api-key": apiKey,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+                ...(cfg.headers || {}),
+              },
+              body: JSON.stringify({ model: testModel, max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
+            });
+            // 400 = model resolution error but auth passed (e.g. agentrouter "no available channel")
+            isValid = res.status !== 401 && res.status !== 403;
           }
           break;
         }
         case "volcengine-ark":
         case "byteplus": {
-          const res = await fetch(PROVIDER_ENDPOINTS[provider], {
+          const res = await fetch(PROVIDERS[provider]?.baseUrl, {
             method: "POST",
             headers: {
               "Authorization": `Bearer ${apiKey}`,
@@ -409,26 +371,12 @@ export async function POST(request) {
         case "xiaomi-tokenplan":
         case "nvidia": {
           const endpoints = {
-            deepseek: "https://api.deepseek.com/models",
-            groq: "https://api.groq.com/openai/v1/models",
-            xai: "https://api.x.ai/v1/models",
-            mistral: "https://api.mistral.ai/v1/models",
-            perplexity: "https://api.perplexity.ai/models",
-            together: "https://api.together.xyz/v1/models",
-            fireworks: "https://api.fireworks.ai/inference/v1/models",
-            cerebras: "https://api.cerebras.ai/v1/models",
-            cohere: "https://api.cohere.ai/v1/models",
-            nebius: "https://api.studio.nebius.ai/v1/models",
-            siliconflow: "https://api.siliconflow.cn/v1/models",
-            hyperbolic: "https://api.hyperbolic.xyz/v1/models",
-            ollama: "https://ollama.com/api/tags",
+            ...Object.fromEntries(
+              Object.entries(PROVIDERS).filter(([, t]) => t.validateUrl).map(([id, t]) => [id, t.validateUrl])
+            ),
+            // dynamic URLs (depend on providerSpecificData) — kept inline
             "ollama-local": `${resolveOllamaLocalHost({ providerSpecificData })}/api/tags`,
-            assemblyai: "https://api.assemblyai.com/v1/account",
-            nanobanana: "https://api.nanobananaapi.ai/v1/models",
-            chutes: "https://llm.chutes.ai/v1/models",
-            nvidia: "https://integrate.api.nvidia.com/v1/models",
-            "xiaomi-mimo": "https://api.xiaomimimo.com/v1/models",
-            "xiaomi-tokenplan": `${resolveXiaomiTokenplanBaseUrl({ providerSpecificData })}/models`
+            "xiaomi-tokenplan": `${resolveXiaomiTokenplanBaseUrl({ providerSpecificData })}/models`,
           };
           const headers = {};
           if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
@@ -460,7 +408,7 @@ export async function POST(request) {
         case "commandcode": {
           const cfg = PROVIDERS.commandcode;
           const model = getDefaultModel("commandcode");
-          const payload = openaiToCommandCode(model, {
+          const payload = openaiToCommandCodeRequest(model, {
             messages: [{ role: "user", content: "ping" }],
             max_tokens: 1,
             stream: false,

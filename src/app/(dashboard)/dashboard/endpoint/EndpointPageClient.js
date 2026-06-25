@@ -4,307 +4,53 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
 import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
-
-const TUNNEL_BENEFITS = [
-  { icon: "public", title: "Access Anywhere", desc: "Use your API from any network" },
-  { icon: "group", title: "Share Endpoint", desc: "Share URL with team members" },
-  { icon: "code", title: "Use in Cursor/Cline", desc: "Connect AI tools remotely" },
-  { icon: "lock", title: "Encrypted", desc: "End-to-end TLS via Cloudflare" },
-];
-
-const TUNNEL_PING_INTERVAL_MS = 2000;
-const TUNNEL_PING_MAX_MS = 300000;
-const STATUS_POLL_FAST_MS = 5000;
-const STATUS_POLL_SLOW_MS = 30000;
-const REACHABLE_MISS_THRESHOLD = 5;
-const CLIENT_PING_FAST_MS = 10000;
-const CLIENT_PING_SLOW_MS = 60000;
-const CLIENT_PING_TIMEOUT_MS = 5000;
-
-// Browser-side health probe: bypasses backend DNS issues (1.1.1.1 vs OS resolver).
-// Uses no-cors → opaque response means TLS+DNS reach succeeded, which is enough.
-async function clientPingUrl(url) {
-  if (!url) return false;
-  try {
-    await fetch(`${url}/api/health`, {
-      mode: "no-cors",
-      cache: "no-store",
-      signal: AbortSignal.timeout(CLIENT_PING_TIMEOUT_MS),
-    });
-    return true;
-  } catch { return false; }
-}
-
-const CAVEMAN_MODES = [
-  { id: "normal", label: "Normal", desc: "Terse English output" },
-  { id: "wenyan", label: "Wenyan", desc: "Classical concise Chinese" },
-];
-
-const CAVEMAN_INTENSITIES = [
-  { id: "lite", label: "Lite", desc: "Drop filler, keep grammar" },
-  { id: "full", label: "Full", desc: "Drop articles, fragments OK" },
-  { id: "ultra", label: "Ultra", desc: "Telegraphic, max compression" },
-];
-
-const CAVEMAN_INTENSITY_IDS = new Set(CAVEMAN_INTENSITIES.map((item) => item.id));
-
-function getCavemanSelection(level) {
-  const raw = typeof level === "string" ? level : "full";
-  if (raw.startsWith("wenyan-")) {
-    const intensity = raw.slice("wenyan-".length);
-    return {
-      mode: "wenyan",
-      intensity: CAVEMAN_INTENSITY_IDS.has(intensity) ? intensity : "full",
-    };
-  }
-  return {
-    mode: "normal",
-    intensity: CAVEMAN_INTENSITY_IDS.has(raw) ? raw : "full",
-  };
-}
-
-function toCavemanLevel({ mode, intensity }) {
-  const safeIntensity = CAVEMAN_INTENSITY_IDS.has(intensity) ? intensity : "full";
-  return mode === "wenyan" ? `wenyan-${safeIntensity}` : safeIntensity;
-}
-
-const API_KEY_LIMIT_MODES = [
-  { id: "unlimited", label: "Unlimited" },
-  { id: "daily", label: "Daily" },
-  { id: "weekly", label: "Weekly" },
-  { id: "daily_weekly", label: "Daily + Weekly" },
-  { id: "hard", label: "Hard cap" },
-];
-
-const DUAL_LIMIT_MODE = "daily_weekly";
-
-function toDateTimeLocal(value) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return "";
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-  return local.toISOString().slice(0, 16);
-}
-
-function fromDateTimeLocal(value) {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
-}
-
-function formatCompactDateTime(value) {
-  if (!value) return "Permanent";
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return "Invalid";
-  return date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-}
-
-function formatKeyReset(value) {
-  if (!value) return "No reset";
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return "No reset";
-  const diffMs = date.getTime() - Date.now();
-  if (diffMs <= 0) return "Reset due";
-  const minutes = Math.ceil(diffMs / 60000);
-  if (minutes < 60) return `resets in ${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  const rem = minutes % 60;
-  if (hours < 24) return `resets in ${hours}h ${rem}m`;
-  const days = Math.floor(hours / 24);
-  return `resets in ${days}d ${hours % 24}h`;
-}
-
-function keyStatusMeta(status) {
-  if (status === "exhausted") return { label: "Exhausted", className: "text-red-600 dark:text-red-400 bg-red-500/10" };
-  if (status === "expired") return { label: "Expired", className: "text-red-600 dark:text-red-400 bg-red-500/10" };
-  if (status === "paused") return { label: "Paused", className: "text-orange-600 dark:text-orange-400 bg-orange-500/10" };
-  return { label: "Active", className: "text-emerald-600 dark:text-emerald-400 bg-emerald-500/10" };
-}
-
-function formatTokens(value) {
-  const n = Number(value || 0);
-  return Number.isFinite(n) ? n.toLocaleString() : "0";
-}
-
-function getUsagePeriod(usage = {}, period) {
-  return usage.periods?.[period] || { used: 0, requests: 0, resetAt: null };
-}
-
-function clampPercentage(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return 0;
-  return Math.max(0, Math.min(100, Math.round(n)));
-}
-
-function usageProgress(key, usage = {}) {
-  const limit = usage.limit ?? key.tokenLimit ?? null;
-  const used = usage.used ?? 0;
-  const remaining = limit ? Math.max(0, limit - used) : null;
-  const remainingPercentage = limit
-    ? clampPercentage(usage.remainingPercentage ?? ((remaining / limit) * 100))
-    : null;
-  return {
-    limit,
-    used,
-    remaining,
-    remainingPercentage,
-  };
-}
-
-function getLimitProgress(key, usage, period) {
-  const limit = usage.limits?.[period]?.limit ?? (
-    key.limitMode === DUAL_LIMIT_MODE
-      ? (period === "daily" ? key.dailyTokenLimit : key.weeklyTokenLimit)
-      : key.limitMode === period
-        ? key.tokenLimit
-        : null
-  );
-  const periodUsage = usage.limits?.[period] || getUsagePeriod(usage, period);
-  const used = periodUsage.used ?? 0;
-  const remaining = limit ? Math.max(0, limit - used) : null;
-  const remainingPercentage = limit
-    ? clampPercentage(periodUsage.remainingPercentage ?? ((remaining / limit) * 100))
-    : null;
-  return {
-    limit,
-    used,
-    remaining,
-    resetAt: periodUsage.resetAt,
-    remainingPercentage,
-  };
-}
-
-function barTone(remainingPercentage, exhausted = false) {
-  const remaining = clampPercentage(remainingPercentage);
-  if (exhausted || remaining <= 20) return "bg-red-500";
-  if (remaining < 60) return "bg-yellow-500";
-  return "bg-green-500";
-}
-
-function UsageStatBox({ label, value, hint, tone = "default" }) {
-  const toneClass = tone === "warning"
-    ? "border-orange-500/20 bg-orange-500/5"
-    : tone === "danger"
-      ? "border-red-500/20 bg-red-500/5"
-      : "border-border-subtle bg-bg";
-  return (
-    <div className={`rounded-[10px] border px-3 py-2 ${toneClass}`}>
-      <p className="text-[11px] font-medium uppercase text-text-muted">{label}</p>
-      <p className="mt-1 text-sm font-semibold text-text-main">{value}</p>
-      {hint && <p className="mt-0.5 text-[11px] text-text-muted truncate">{hint}</p>}
-    </div>
-  );
-}
-
-function getLimitModeLabel(mode) {
-  return API_KEY_LIMIT_MODES.find((item) => item.id === mode)?.label || "Unlimited";
-}
-
-function ApiKeyUsageBar({ apiKey, className = "" }) {
-  const usage = apiKey.usage || {};
-  const active = usageProgress(apiKey, usage);
-  const remainingPercentage = active.limit ? active.remainingPercentage : 0;
-  const tone = active.limit ? barTone(remainingPercentage, apiKey.status === "exhausted") : "bg-primary";
-  const resetText = apiKey.limitMode === "daily" || apiKey.limitMode === "weekly"
-    ? formatKeyReset(usage.resetAt)
-    : "no reset";
-  const isDual = apiKey.limitMode === DUAL_LIMIT_MODE;
-  const dailyLimit = getLimitProgress(apiKey, usage, "daily");
-  const weeklyLimit = getLimitProgress(apiKey, usage, "weekly");
-  const renderLine = (label, item) => {
-    const percentage = item.limit ? item.remainingPercentage : 0;
-    const lineTone = item.limit ? barTone(percentage, apiKey.status === "exhausted") : "bg-primary";
-    return (
-      <div className="mt-2">
-        <div className="mb-1 flex items-center justify-between text-[11px] text-text-muted">
-          <span>{label}</span>
-          <span>{item.limit ? `${formatTokens(item.remaining)} / ${formatTokens(item.limit)} left` : "unlimited"}</span>
-        </div>
-        <div className="h-2 overflow-hidden rounded-full bg-black/5 dark:bg-white/10">
-          <div className={`h-full ${lineTone}`} style={{ width: `${percentage}%` }} />
-        </div>
-        <div className="mt-1 flex justify-between text-[11px] text-text-muted">
-          <span>{item.limit ? `${percentage}% remaining` : "unlimited"}</span>
-          <span>{formatKeyReset(item.resetAt)}</span>
-        </div>
-      </div>
-    );
-  };
-
-  return (
-    <div className={`w-full min-w-0 rounded-[10px] border border-border-subtle bg-surface px-3 py-2 ${className}`}>
-      <div className="mb-1 flex min-w-0 items-start justify-between gap-3 text-[11px] text-text-muted sm:items-center">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="truncate font-medium text-text-main">{apiKey.name}</span>
-          <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-primary">
-            {getLimitModeLabel(apiKey.limitMode)}
-          </span>
-        </div>
-        {!isDual && (
-          <span className="shrink-0 text-right">
-            {active.limit ? `${formatTokens(active.remaining)} / ${formatTokens(active.limit)} left` : "unlimited"}
-          </span>
-        )}
-      </div>
-      {isDual ? (
-        <>
-          {renderLine("Daily limit", dailyLimit)}
-          {renderLine("Weekly limit", weeklyLimit)}
-        </>
-      ) : (
-        <>
-          <div className="h-2 overflow-hidden rounded-full bg-black/5 dark:bg-white/10">
-            <div className={`h-full ${tone}`} style={{ width: `${remainingPercentage}%` }} />
-          </div>
-          <div className="mt-1 flex items-center justify-between text-[11px] text-text-muted">
-            <span>{active.limit ? `${remainingPercentage}% remaining` : "unlimited"}</span>
-            <span>{resetText}</span>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
+import { getCurrentLocale, onLocaleChange } from "@/i18n/runtime";
+import {
+  WENYAN_LOCALES,
+  TUNNEL_BENEFITS,
+  TUNNEL_PING_INTERVAL_MS,
+  TUNNEL_PING_MAX_MS,
+  STATUS_POLL_FAST_MS,
+  REACHABLE_MISS_THRESHOLD,
+  CLIENT_PING_FAST_MS,
+  CAVEMAN_LEVELS,
+  PONYTAIL_LEVELS,
+} from "./endpointConstants";
+import { clientPingUrl, clientPingAny } from "./endpointPing";
+import EndpointRow from "./components/EndpointRow";
+import StatusAlert from "./components/StatusAlert";
+import Tooltip from "./components/Tooltip";
+import SecurityWarning from "./components/SecurityWarning";
 export default function APIPageClient({ machineId }) {
-  const isMountedRef = useRef(true);
-  useEffect(() => {
-    isMountedRef.current = true;
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, []);
-
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showKeyManager, setShowKeyManager] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
-  const [newKeyLimitMode, setNewKeyLimitMode] = useState("unlimited");
-  const [newKeyTokenLimit, setNewKeyTokenLimit] = useState("");
-  const [newKeyDailyTokenLimit, setNewKeyDailyTokenLimit] = useState("");
-  const [newKeyWeeklyTokenLimit, setNewKeyWeeklyTokenLimit] = useState("");
-  const [newKeyExpiresInHours, setNewKeyExpiresInHours] = useState("");
   const [createdKey, setCreatedKey] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
-  const [settingsKeyId, setSettingsKeyId] = useState(null);
-  const [keyEdits, setKeyEdits] = useState({});
-  const [savingKeyId, setSavingKeyId] = useState(null);
 
   const [requireApiKey, setRequireApiKey] = useState(false);
   const [requireLogin, setRequireLogin] = useState(true);
   const [hasPassword, setHasPassword] = useState(true);
   const [tunnelDashboardAccess, setTunnelDashboardAccess] = useState(false);
   const [rtkEnabled, setRtkEnabledState] = useState(true);
+  const [headroomEnabled, setHeadroomEnabled] = useState(false);
+  const [headroomUrl, setHeadroomUrl] = useState("http://localhost:8787");
+  const [headroomCompressUserMessages, setHeadroomCompressUserMessages] = useState(false);
+  const [headroomStatus, setHeadroomStatus] = useState({ installed: false, running: false, python: null, loading: true });
+  const [showHeadroomInstallModal, setShowHeadroomInstallModal] = useState(false);
+  const [headroomActionLoading, setHeadroomActionLoading] = useState(false);
+  const [headroomActionError, setHeadroomActionError] = useState("");
   const [cavemanEnabled, setCavemanEnabled] = useState(false);
   const [cavemanLevel, setCavemanLevel] = useState("full");
-  const [toonEnabled, setToonEnabled] = useState(false);
+  const [ponytailEnabled, setPonytailEnabled] = useState(false);
+  const [ponytailLevel, setPonytailLevel] = useState("full");
+  const [locale, setLocale] = useState("en");
 
   // Cloudflare Tunnel state
   const [tunnelChecking, setTunnelChecking] = useState(true);
   const [tunnelEnabled, setTunnelEnabled] = useState(false);
   const [tunnelReachable, setTunnelReachable] = useState(false);
-  const [tunnelCanClientPing, setTunnelCanClientPing] = useState(false);
   const [tunnelUrl, setTunnelUrl] = useState("");
   const [tunnelPublicUrl, setTunnelPublicUrl] = useState("");
   const [tunnelLoading, setTunnelLoading] = useState(false);
@@ -316,7 +62,6 @@ export default function APIPageClient({ machineId }) {
   // Tailscale state
   const [tsEnabled, setTsEnabled] = useState(false);
   const [tsReachable, setTsReachable] = useState(false);
-  const [tsCanClientPing, setTsCanClientPing] = useState(false);
   const [tsUrl, setTsUrl] = useState("");
   const [tsLoading, setTsLoading] = useState(false);
   const [tsProgress, setTsProgress] = useState("");
@@ -349,7 +94,40 @@ export default function APIPageClient({ machineId }) {
   // API key visibility toggle state
   const [visibleKeys, setVisibleKeys] = useState(new Set());
 
+  // Client-side local/remote detection (UI hint only, not a security gate)
+  const [isRemoteHost, setIsRemoteHost] = useState(false);
+  useEffect(() => {
+    if (typeof window !== "undefined")
+      setIsRemoteHost(!["localhost", "127.0.0.1", "::1"].includes(window.location.hostname));
+  }, []);
+
+  // Track app UI locale to gate wenyan caveman levels
+  useEffect(() => {
+    setLocale(getCurrentLocale());
+    return onLocaleChange(() => setLocale(getCurrentLocale()));
+  }, []);
+
+  const isWenyanLocale = WENYAN_LOCALES.includes(locale);
+  const visibleCavemanLevels = isWenyanLocale
+    ? CAVEMAN_LEVELS
+    : CAVEMAN_LEVELS.filter((lvl) => !lvl.wenyan);
+
+  // Reset wenyan level to "ultra" when leaving a Chinese locale
+  useEffect(() => {
+    const current = CAVEMAN_LEVELS.find((lvl) => lvl.id === cavemanLevel);
+    if (current?.wenyan && !isWenyanLocale) {
+      setCavemanLevel("ultra");
+      patchSetting({ cavemanLevel: "ultra" });
+    }
+  }, [isWenyanLocale, cavemanLevel]);
+
   const { copied, copy } = useCopyToClipboard();
+
+  // Security gate: block remote exposure while dashboard uses default password or login is off.
+  const isLoginUnsafe = !requireLogin || !hasPassword;
+  const unsafeReason = !requireLogin
+    ? "Enable \"Require login\" and set a custom password before activating the tunnel."
+    : "Change the default dashboard password before activating the tunnel.";
 
   // Auto-scroll install log
   useEffect(() => {
@@ -361,21 +139,20 @@ export default function APIPageClient({ machineId }) {
     loadSettings();
   }, []);
 
-  // Adaptive status poll: slow when healthy, fast when degraded; pause when tab hidden.
+  // Status poll: only while degraded (not yet reachable). Stop once healthy to avoid spam.
+  // Visibility re-check: refresh once when tab becomes visible.
   useEffect(() => {
     const anyEnabled = tunnelEnabled || tsEnabled;
     if (!anyEnabled) return;
     const tunnelHealthy = !tunnelEnabled || tunnelReachable;
     const tsHealthy = !tsEnabled || tsReachable;
     const allHealthy = tunnelHealthy && tsHealthy;
-    const delay = allHealthy ? STATUS_POLL_SLOW_MS : STATUS_POLL_FAST_MS;
-    let timer = null;
-    const tick = () => { if (!document.hidden) syncTunnelStatus(); };
-    timer = setInterval(tick, delay);
     const onVisible = () => { if (!document.hidden) syncTunnelStatus(); };
     document.addEventListener("visibilitychange", onVisible);
+    if (allHealthy) return () => document.removeEventListener("visibilitychange", onVisible);
+    const timer = setInterval(() => { if (!document.hidden) syncTunnelStatus(); }, STATUS_POLL_FAST_MS);
     return () => {
-      if (timer) clearInterval(timer);
+      clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [tunnelEnabled, tsEnabled, tunnelReachable, tsReachable]);
@@ -386,37 +163,37 @@ export default function APIPageClient({ machineId }) {
   useEffect(() => {
     const probeBoth = async () => {
       if (document.hidden) return;
-      if (tunnelEnabled && tunnelUrl && tunnelCanClientPing) {
-        const ok = await clientPingUrl(tunnelUrl);
+      if (tunnelEnabled && (tunnelUrl || tunnelPublicUrl)) {
+        const ok = await clientPingAny(tunnelPublicUrl, tunnelUrl);
         tunnelClientReachableRef.current = ok;
         if (ok) { tunnelMissRef.current = 0; setTunnelReachable(true); if (!tunnelEverReachableRef.current) { tunnelEverReachableRef.current = true; setTunnelEverReachable(true); } }
+        else { tunnelMissRef.current += 1; if (tunnelMissRef.current >= REACHABLE_MISS_THRESHOLD) setTunnelReachable(false); }
       } else {
         tunnelClientReachableRef.current = false;
       }
-      if (tsEnabled && tsUrl && tsCanClientPing) {
+      if (tsEnabled && tsUrl) {
         const ok = await clientPingUrl(tsUrl);
         tsClientReachableRef.current = ok;
         if (ok) { tsMissRef.current = 0; setTsReachable(true); if (!tsEverReachableRef.current) { tsEverReachableRef.current = true; setTsEverReachable(true); } }
+        else { tsMissRef.current += 1; if (tsMissRef.current >= REACHABLE_MISS_THRESHOLD) setTsReachable(false); }
       } else {
         tsClientReachableRef.current = false;
       }
     };
-    const anyEnabled = (tunnelEnabled && tunnelUrl && tunnelCanClientPing) || (tsEnabled && tsUrl && tsCanClientPing);
+    const anyEnabled = (tunnelEnabled && (tunnelUrl || tunnelPublicUrl)) || (tsEnabled && tsUrl);
     if (!anyEnabled) return;
     probeBoth();
     const tunnelHealthy = !tunnelEnabled || tunnelReachable;
     const tsHealthy = !tsEnabled || tsReachable;
-    const allHealthy = tunnelHealthy && tsHealthy;
-    const delay = allHealthy ? CLIENT_PING_SLOW_MS : CLIENT_PING_FAST_MS;
-    const id = setInterval(probeBoth, delay);
+    if (tunnelHealthy && tsHealthy) return;
+    const id = setInterval(probeBoth, CLIENT_PING_FAST_MS);
     return () => clearInterval(id);
-  }, [tunnelEnabled, tunnelUrl, tunnelCanClientPing, tsEnabled, tsUrl, tsCanClientPing, tunnelReachable, tsReachable]);
+  }, [tunnelEnabled, tunnelUrl, tunnelPublicUrl, tsEnabled, tsUrl, tunnelReachable, tsReachable]);
 
-  // Effective reachable = serverReachable OR clientReachable (1 of 2 is enough).
-  // Miss-debounce: only flip to false after N consecutive misses on BOTH sides.
-  const updateReachable = useCallback((serverReachable, clientRef, missRef, setter, everRef, everSetter) => {
-    if (!isMountedRef.current) return;
-    const reachable = serverReachable || clientRef.current;
+  // Client-side reachable only (server no longer probes; watchdog handles backend health).
+  // Miss-debounce: only flip to false after N consecutive misses.
+  const updateReachable = useCallback((_unused, clientRef, missRef, setter, everRef, everSetter) => {
+    const reachable = clientRef.current;
     if (reachable) {
       missRef.current = 0;
       setter(true);
@@ -434,37 +211,30 @@ export default function APIPageClient({ machineId }) {
   const syncTunnelStatus = async () => {
     try {
       const statusRes = await fetch("/api/tunnel/status", { cache: "no-store" });
-      if (!isMountedRef.current) return;
       if (!statusRes.ok) return;
       const data = await statusRes.json();
-      if (!isMountedRef.current) return;
       const tEnabled = data.tunnel?.settingsEnabled ?? data.tunnel?.enabled ?? false;
       const tUrl = data.tunnel?.tunnelUrl || "";
-      const tCanClientPing = !!(data.tunnel?.running || data.tunnel?.enabled || data.tunnel?.reachable);
       setTunnelUrl(tUrl);
       setTunnelPublicUrl(data.tunnel?.publicUrl || "");
       setTunnelEnabled(tEnabled);
-      setTunnelCanClientPing(tCanClientPing);
-      updateReachable(!!data.tunnel?.reachable, tunnelClientReachableRef, tunnelMissRef, setTunnelReachable, tunnelEverReachableRef, setTunnelEverReachable);
+      updateReachable(null, tunnelClientReachableRef, tunnelMissRef, setTunnelReachable, tunnelEverReachableRef, setTunnelEverReachable);
 
       const tsEn = data.tailscale?.settingsEnabled ?? data.tailscale?.enabled ?? false;
       const tsUrlVal = data.tailscale?.tunnelUrl || "";
-      const tsCanClientPingValue = !!(data.tailscale?.running || data.tailscale?.enabled || data.tailscale?.reachable);
       setTsUrl(tsUrlVal);
       setTsEnabled(tsEn);
-      setTsCanClientPing(tsCanClientPingValue);
-      updateReachable(!!data.tailscale?.reachable, tsClientReachableRef, tsMissRef, setTsReachable, tsEverReachableRef, setTsEverReachable);
+      updateReachable(null, tsClientReachableRef, tsMissRef, setTsReachable, tsEverReachableRef, setTsEverReachable);
     } catch { /* ignore poll errors */ }
   };
 
   const loadSettings = async () => {
-    if (isMountedRef.current) setTunnelChecking(true);
+    setTunnelChecking(true);
     try {
       const [settingsRes, statusRes] = await Promise.all([
         fetch("/api/settings"),
         fetch("/api/tunnel/status", { cache: "no-store" })
       ]);
-      if (!isMountedRef.current) return;
       if (settingsRes.ok) {
         const data = await settingsRes.json();
         setRequireApiKey(data.requireApiKey || false);
@@ -472,33 +242,34 @@ export default function APIPageClient({ machineId }) {
         setHasPassword(data.hasPassword || false);
         setTunnelDashboardAccess(data.tunnelDashboardAccess || false);
         setRtkEnabledState(data.rtkEnabled !== false);
+        setHeadroomEnabled(!!data.headroomEnabled);
+        setHeadroomUrl(data.headroomUrl || "http://localhost:8787");
+        setHeadroomCompressUserMessages(!!data.headroomCompressUserMessages);
+        refreshHeadroomStatus();
         setCavemanEnabled(!!data.cavemanEnabled);
         setCavemanLevel(data.cavemanLevel || "full");
-        setToonEnabled(!!data.toonEnabled);
+        setPonytailEnabled(!!data.ponytailEnabled);
+        setPonytailLevel(data.ponytailLevel || "full");
       }
       if (statusRes.ok) {
         const data = await statusRes.json();
         const tEnabled = data.tunnel?.settingsEnabled ?? data.tunnel?.enabled ?? false;
         const tUrl = data.tunnel?.tunnelUrl || "";
-        const tCanClientPing = !!(data.tunnel?.running || data.tunnel?.enabled || data.tunnel?.reachable);
         setTunnelUrl(tUrl);
         setTunnelPublicUrl(data.tunnel?.publicUrl || "");
         setTunnelEnabled(tEnabled);
-        setTunnelCanClientPing(tCanClientPing);
-        updateReachable(!!data.tunnel?.reachable, tunnelClientReachableRef, tunnelMissRef, setTunnelReachable, tunnelEverReachableRef, setTunnelEverReachable);
+        updateReachable(null, tunnelClientReachableRef, tunnelMissRef, setTunnelReachable, tunnelEverReachableRef, setTunnelEverReachable);
 
         const tsEn = data.tailscale?.settingsEnabled ?? data.tailscale?.enabled ?? false;
         const tsUrlVal = data.tailscale?.tunnelUrl || "";
-        const tsCanClientPingValue = !!(data.tailscale?.running || data.tailscale?.enabled || data.tailscale?.reachable);
         setTsUrl(tsUrlVal);
         setTsEnabled(tsEn);
-        setTsCanClientPing(tsCanClientPingValue);
-        updateReachable(!!data.tailscale?.reachable, tsClientReachableRef, tsMissRef, setTsReachable, tsEverReachableRef, setTsEverReachable);
+        updateReachable(null, tsClientReachableRef, tsMissRef, setTsReachable, tsEverReachableRef, setTsEverReachable);
       }
     } catch (error) {
       console.log("Error loading settings:", error);
     } finally {
-      if (isMountedRef.current) setTunnelChecking(false);
+      setTunnelChecking(false);
     }
   };
 
@@ -558,71 +329,116 @@ export default function APIPageClient({ machineId }) {
     patchSetting({ cavemanEnabled: value });
   };
 
+  const handleHeadroomEnabled = (value) => {
+    const nextUrl = headroomUrl.trim() || "http://localhost:8787";
+    setHeadroomUrl(nextUrl);
+    setHeadroomEnabled(value);
+    patchSetting({ headroomEnabled: value, headroomUrl: nextUrl });
+  };
+
+  const handleHeadroomUrlBlur = async () => {
+    const next = headroomUrl.trim() || "http://localhost:8787";
+    setHeadroomUrl(next);
+    await patchSetting({ headroomUrl: next });
+    refreshHeadroomStatus();
+  };
+
+  const handleHeadroomCompressUserMessages = (value) => {
+    setHeadroomCompressUserMessages(value);
+    patchSetting({ headroomCompressUserMessages: value });
+  };
+
+  const refreshHeadroomStatus = useCallback(async () => {
+    setHeadroomStatus((s) => ({ ...s, loading: true }));
+    try {
+      const res = await fetch("/api/headroom/status", { headers: { "Cache-Control": "no-store" } });
+      const data = await res.json();
+      setHeadroomStatus({ ...data, loading: false });
+    } catch {
+      setHeadroomStatus({ installed: false, running: false, python: null, loading: false });
+    }
+  }, []);
+
+  const handleHeadroomStart = useCallback(async () => {
+    setHeadroomActionError("");
+    setHeadroomActionLoading(true);
+    try {
+      const res = await fetch("/api/headroom/start", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to start proxy");
+      await refreshHeadroomStatus();
+    } catch (e) {
+      setHeadroomActionError(e.message);
+    } finally {
+      setHeadroomActionLoading(false);
+    }
+  }, [refreshHeadroomStatus]);
+
+  const handleHeadroomStop = useCallback(async () => {
+    setHeadroomActionLoading(true);
+    try {
+      await fetch("/api/headroom/stop", { method: "POST" });
+      await refreshHeadroomStatus();
+    } finally {
+      setHeadroomActionLoading(false);
+    }
+  }, [refreshHeadroomStatus]);
+
   const handleCavemanLevel = (level) => {
     setCavemanLevel(level);
     patchSetting({ cavemanLevel: level });
   };
 
-  const handleToonEnabled = (value) => {
-    setToonEnabled(value);
-    patchSetting({ toonEnabled: value });
+  const handlePonytailEnabled = (value) => {
+    setPonytailEnabled(value);
+    patchSetting({ ponytailEnabled: value });
   };
 
-  const handleCavemanMode = (mode) => {
-    const current = getCavemanSelection(cavemanLevel);
-    handleCavemanLevel(toCavemanLevel({ ...current, mode }));
-  };
-
-  const handleCavemanIntensity = (intensity) => {
-    const current = getCavemanSelection(cavemanLevel);
-    handleCavemanLevel(toCavemanLevel({ ...current, intensity }));
+  const handlePonytailLevel = (level) => {
+    setPonytailLevel(level);
+    patchSetting({ ponytailLevel: level });
   };
 
   const fetchData = async () => {
     try {
       const keysRes = await fetch("/api/keys");
       const keysData = await keysRes.json();
-      if (keysRes.ok && isMountedRef.current) {
+      if (keysRes.ok) {
         setKeys(keysData.keys || []);
       }
     } catch (error) {
       console.log("Error fetching data:", error);
     } finally {
-      if (isMountedRef.current) setLoading(false);
+      setLoading(false);
     }
   };
 
-  // ─── Cloudflare Tunnel handlers
-  // Ping tunnel health until reachable, also check backend status to detect process die
-  const pingTunnelHealth = async (url) => {
-    if (isMountedRef.current) {
-      setTunnelLoading(true);
-      setTunnelProgress("Waiting for tunnel ready...");
-    }
-    const healthUrl = `${url}/api/health`;
+  // u2500u2500u2500 Cloudflare Tunnel handlers
+  // Ping tunnel health until reachable. Race multiple URLs (shortlink + direct) — 1 OK is enough.
+  const pingTunnelHealth = async (...urls) => {
+    setTunnelLoading(true);
+    setTunnelProgress("Waiting for tunnel ready...");
+    const targets = urls.filter(Boolean).map((u) => `${u}/api/health`);
     const start = Date.now();
     while (Date.now() - start < TUNNEL_PING_MAX_MS) {
       await new Promise((r) => setTimeout(r, TUNNEL_PING_INTERVAL_MS));
-      if (!isMountedRef.current) return false;
-      try {
-        const ping = await fetch(healthUrl, { mode: "no-cors", cache: "no-store" });
-        if (!isMountedRef.current) return false;
-        if (ping.ok || ping.type === "opaque") {
-          setTunnelEnabled(true);
-          setTunnelCanClientPing(true);
-          setTunnelLoading(false);
-          setTunnelProgress("");
-          return true;
-        }
-      } catch { /* not ready yet */ }
+      const ok = await Promise.any(targets.map(async (h) => {
+        const p = await fetch(h, { mode: "cors", cache: "no-store" });
+        if (p.ok) return true;
+        throw new Error("not ready");
+      })).catch(() => false);
+      if (ok) {
+        setTunnelEnabled(true);
+        setTunnelLoading(false);
+        setTunnelProgress("");
+        return true;
+      }
       // Every 5 pings (~10s), check if backend process still alive
       if ((Date.now() - start) % 10000 < TUNNEL_PING_INTERVAL_MS) {
         try {
           const statusRes = await fetch("/api/tunnel/status");
-          if (!isMountedRef.current) return false;
           if (statusRes.ok) {
             const status = await statusRes.json();
-            if (!isMountedRef.current) return false;
             if (!status.tunnel?.enabled) {
               setTunnelStatus({ type: "error", message: "Tunnel process stopped unexpectedly." });
               setTunnelLoading(false);
@@ -633,11 +449,9 @@ export default function APIPageClient({ machineId }) {
         } catch { /* ignore */ }
       }
     }
-    if (isMountedRef.current) {
-      setTunnelStatus({ type: "error", message: "Tunnel created but not reachable. Please try again." });
-      setTunnelLoading(false);
-      setTunnelProgress("");
-    }
+    setTunnelStatus({ type: "error", message: "Tunnel created but not reachable. Please try again." });
+    setTunnelLoading(false);
+    setTunnelProgress("");
     return false;
   };
 
@@ -653,10 +467,8 @@ export default function APIPageClient({ machineId }) {
       while (polling) {
         try {
           const r = await fetch("/api/tunnel/status");
-          if (!isMountedRef.current) return;
           if (r.ok) {
             const s = await r.json();
-            if (!isMountedRef.current) return;
             if (s.download?.downloading) {
               setTunnelProgress(`Downloading cloudflared... ${s.download.progress}%`);
             } else if (polling) {
@@ -672,9 +484,7 @@ export default function APIPageClient({ machineId }) {
     try {
       const res = await fetch("/api/tunnel/enable", { method: "POST" });
       polling = false;
-      if (!isMountedRef.current) return;
       const data = await res.json();
-      if (!isMountedRef.current) return;
       if (!res.ok) {
         setTunnelStatus({ type: "error", message: data.error || "Failed to enable tunnel" });
         return;
@@ -688,15 +498,13 @@ export default function APIPageClient({ machineId }) {
 
       setTunnelUrl(url);
       setTunnelPublicUrl(data.publicUrl || "");
-      await pingTunnelHealth(url);
+      await pingTunnelHealth(data.publicUrl, url);
     } catch (error) {
-      if (isMountedRef.current) setTunnelStatus({ type: "error", message: error.message });
+      setTunnelStatus({ type: "error", message: error.message });
     } finally {
       polling = false;
-      if (isMountedRef.current) {
-        setTunnelLoading(false);
-        setTunnelProgress("");
-      }
+      setTunnelLoading(false);
+      setTunnelProgress("");
     }
   };
 
@@ -705,12 +513,9 @@ export default function APIPageClient({ machineId }) {
     setTunnelStatus(null);
     try {
       const res = await fetch("/api/tunnel/disable", { method: "POST" });
-      if (!isMountedRef.current) return;
       const data = await res.json();
-      if (!isMountedRef.current) return;
       if (res.ok) {
         setTunnelEnabled(false);
-        setTunnelCanClientPing(false);
         setTunnelUrl("");
         setShowDisableTunnelModal(false);
         setTunnelStatus({ type: "success", message: "Tunnel disabled" });
@@ -718,44 +523,37 @@ export default function APIPageClient({ machineId }) {
         setTunnelStatus({ type: "error", message: data.error || "Failed to disable tunnel" });
       }
     } catch (error) {
-      if (isMountedRef.current) setTunnelStatus({ type: "error", message: error.message });
+      setTunnelStatus({ type: "error", message: error.message });
     } finally {
-      if (isMountedRef.current) {
-        setTunnelLoading(false);
-      }
+      setTunnelLoading(false);
     }
   };
 
-  // ─── Tailscale handlers
+  // u2500u2500u2500 Tailscale handlers
   const checkTailscaleInstalled = async () => {
-    if (isMountedRef.current) setTsInstalled(null);
+    setTsInstalled(null);
     try {
       const res = await fetch("/api/tunnel/tailscale-check");
-      if (!isMountedRef.current) return { installed: false };
       if (res.ok) {
         const data = await res.json();
-        if (!isMountedRef.current) return { installed: false };
         setTsInstalled(data.installed);
         return data;
       }
     } catch { /* ignore */ }
-    if (isMountedRef.current) setTsInstalled(false);
+    setTsInstalled(false);
     return { installed: false };
   };
 
   const handleInstallTailscale = async () => {
-    if (isMountedRef.current) {
-      setTsInstalling(true);
-      setTsStatus(null);
-      setTsInstallLog([]);
-    }
+    setTsInstalling(true);
+    setTsStatus(null);
+    setTsInstallLog([]);
     try {
       const res = await fetch("/api/tunnel/tailscale-install", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sudoPassword: tsSudoPassword }),
       });
-      if (!isMountedRef.current) return;
       setTsSudoPassword("");
 
       const reader = res.body.getReader();
@@ -764,7 +562,6 @@ export default function APIPageClient({ machineId }) {
 
       while (true) {
         const { done, value } = await reader.read();
-        if (!isMountedRef.current) return;
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
         const parts = buffer.split("\n\n");
@@ -780,7 +577,6 @@ export default function APIPageClient({ machineId }) {
             }
           }
           if (!data) continue;
-          if (!isMountedRef.current) return;
           if (event === "progress") {
             setTsInstallLog((prev) => [...prev.slice(-50), data.message]);
           } else if (event === "done") {
@@ -795,23 +591,21 @@ export default function APIPageClient({ machineId }) {
         }
       }
     } catch (e) {
-      if (isMountedRef.current) setTsStatus({ type: "error", message: e.message });
+      setTsStatus({ type: "error", message: e.message });
     } finally {
-      if (isMountedRef.current) setTsInstalling(false);
+      setTsInstalling(false);
     }
   };
 
   // Ping Tailscale health until reachable
   const pingTsHealth = async (url) => {
-    if (isMountedRef.current) setTsProgress("Waiting for Tailscale ready...");
+    setTsProgress("Waiting for Tailscale ready...");
     const healthUrl = `${url}/api/health`;
     const start = Date.now();
     while (Date.now() - start < TUNNEL_PING_MAX_MS) {
       await new Promise((r) => setTimeout(r, TUNNEL_PING_INTERVAL_MS));
-      if (!isMountedRef.current) return false;
       try {
         const ping = await fetch(healthUrl, { mode: "no-cors", cache: "no-store" });
-        if (!isMountedRef.current) return false;
         if (ping.ok || ping.type === "opaque") return true;
       } catch { /* not ready yet */ }
     }
@@ -831,25 +625,19 @@ export default function APIPageClient({ machineId }) {
   };
 
   const handleConnectTailscale = async () => {
-    if (isMountedRef.current) {
-      setShowTsModal(false);
-      setTsConnecting(true);
-      setTsLoading(true);
-      setTsStatus(null);
-      setTsProgress("Connecting...");
-      clearUserAuth();
-    }
+    setShowTsModal(false);
+    setTsConnecting(true);
+    setTsLoading(true);
+    setTsStatus(null);
+    setTsProgress("Connecting...");
+    clearUserAuth();
     try {
       const res = await fetch("/api/tunnel/tailscale-enable", { method: "POST" });
-      if (!isMountedRef.current) return;
       const data = await res.json();
-      if (!isMountedRef.current) return;
 
       if (res.ok && data.success) {
         setTsUrl(data.tunnelUrl || "");
-        setTsCanClientPing(true);
         const reachable = await pingTsHealth(data.tunnelUrl);
-        if (!isMountedRef.current) return;
         setTsEnabled(true);
         setTsStatus(reachable ? null : { type: "warning", message: "Connected but not reachable yet." });
         return;
@@ -860,25 +648,18 @@ export default function APIPageClient({ machineId }) {
         setTsProgress("Login required — click \"Open Login Page\" to continue");
         for (let i = 0; i < 40; i++) {
           await new Promise((r) => setTimeout(r, 3000));
-          if (!isMountedRef.current) return;
           try {
             const r2 = await fetch("/api/tunnel/tailscale-check");
-            if (!isMountedRef.current) return;
             if (r2.ok) {
               const check = await r2.json();
-              if (!isMountedRef.current) return;
               if (check.loggedIn) {
                 clearUserAuth();
                 setTsProgress("Starting funnel...");
                 const res2 = await fetch("/api/tunnel/tailscale-enable", { method: "POST" });
-                if (!isMountedRef.current) return;
                 const data2 = await res2.json();
-                if (!isMountedRef.current) return;
                 if (res2.ok && data2.success) {
                   setTsUrl(data2.tunnelUrl || "");
-                  setTsCanClientPing(true);
                   const ok2 = await pingTsHealth(data2.tunnelUrl);
-                  if (!isMountedRef.current) return;
                   setTsEnabled(true);
                   setTsStatus(ok2 ? null : { type: "warning", message: "Connected but not reachable yet." });
                 } else if (data2.funnelNotEnabled && data2.enableUrl) {
@@ -891,10 +672,8 @@ export default function APIPageClient({ machineId }) {
             }
           } catch { /* retry */ }
         }
-        if (isMountedRef.current) {
-          clearUserAuth();
-          setTsStatus({ type: "error", message: "Login timed out. Please try again." });
-        }
+        clearUserAuth();
+        setTsStatus({ type: "error", message: "Login timed out. Please try again." });
         return;
       }
 
@@ -905,36 +684,27 @@ export default function APIPageClient({ machineId }) {
 
       setTsStatus({ type: "error", message: data.error || "Failed to connect" });
     } catch (error) {
-      if (isMountedRef.current) setTsStatus({ type: "error", message: error.message });
+      setTsStatus({ type: "error", message: error.message });
     } finally {
-      if (isMountedRef.current) {
-        setTsLoading(false);
-        setTsConnecting(false);
-        setTsProgress("");
-        clearUserAuth();
-      }
+      setTsLoading(false);
+      setTsConnecting(false);
+      setTsProgress("");
+      clearUserAuth();
     }
   };
 
   const pollFunnelEnable = async (enableUrl) => {
-    if (isMountedRef.current) {
-      requestUserAuth(enableUrl, "Open Funnel Settings");
-      setTsProgress("Click \"Open Funnel Settings\" to enable Funnel...");
-    }
+    requestUserAuth(enableUrl, "Open Funnel Settings");
+    setTsProgress("Click \"Open Funnel Settings\" to enable Funnel...");
     for (let i = 0; i < 40; i++) {
       await new Promise((r) => setTimeout(r, 3000));
-      if (!isMountedRef.current) return;
       try {
         const res = await fetch("/api/tunnel/tailscale-enable", { method: "POST" });
-        if (!isMountedRef.current) return;
         const data = await res.json();
-        if (!isMountedRef.current) return;
         if (res.ok && data.success) {
           clearUserAuth();
           setTsUrl(data.tunnelUrl || "");
-          setTsCanClientPing(true);
           const ok3 = await pingTsHealth(data.tunnelUrl);
-          if (!isMountedRef.current) return;
           setTsEnabled(true);
           setTsStatus(ok3 ? null : { type: "warning", message: "Connected but not reachable yet." });
           return;
@@ -947,10 +717,8 @@ export default function APIPageClient({ machineId }) {
         }
       } catch { /* retry */ }
     }
-    if (isMountedRef.current) {
-      clearUserAuth();
-      setTsStatus({ type: "error", message: "Timed out waiting for Funnel to be enabled." });
-    }
+    clearUserAuth();
+    setTsStatus({ type: "error", message: "Timed out waiting for Funnel to be enabled." });
   };
 
   const handleDisableTailscale = async () => {
@@ -958,12 +726,9 @@ export default function APIPageClient({ machineId }) {
     setTsStatus(null);
     try {
       const res = await fetch("/api/tunnel/tailscale-disable", { method: "POST" });
-      if (!isMountedRef.current) return;
       const data = await res.json();
-      if (!isMountedRef.current) return;
       if (res.ok) {
         setTsEnabled(false);
-        setTsCanClientPing(false);
         setTsUrl("");
         setShowDisableTsModal(false);
         setTsStatus({ type: "success", message: "Tailscale disabled" });
@@ -971,11 +736,9 @@ export default function APIPageClient({ machineId }) {
         setTsStatus({ type: "error", message: data.error || "Failed to disable Tailscale" });
       }
     } catch (e) {
-      if (isMountedRef.current) setTsStatus({ type: "error", message: e.message });
+      setTsStatus({ type: "error", message: e.message });
     } finally {
-      if (isMountedRef.current) {
-        setTsLoading(false);
-      }
+      setTsLoading(false);
     }
   };
 
@@ -997,29 +760,14 @@ export default function APIPageClient({ machineId }) {
       const res = await fetch("/api/keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: newKeyName,
-          limitMode: newKeyLimitMode,
-          tokenLimit: newKeyLimitMode === "unlimited" || newKeyLimitMode === DUAL_LIMIT_MODE ? null : Number(newKeyTokenLimit),
-          dailyTokenLimit: newKeyLimitMode === DUAL_LIMIT_MODE ? Number(newKeyDailyTokenLimit) : null,
-          weeklyTokenLimit: newKeyLimitMode === DUAL_LIMIT_MODE ? Number(newKeyWeeklyTokenLimit) : null,
-          expiresInMs: newKeyExpiresInHours ? Number(newKeyExpiresInHours) * 60 * 60 * 1000 : null,
-        }),
+        body: JSON.stringify({ name: newKeyName }),
       });
-      if (!isMountedRef.current) return;
       const data = await res.json();
-      if (!isMountedRef.current) return;
 
       if (res.ok) {
         setCreatedKey(data.key);
         await fetchData();
-        if (!isMountedRef.current) return;
         setNewKeyName("");
-        setNewKeyLimitMode("unlimited");
-        setNewKeyTokenLimit("");
-        setNewKeyDailyTokenLimit("");
-        setNewKeyWeeklyTokenLimit("");
-        setNewKeyExpiresInHours("");
         setShowAddModal(false);
       }
     } catch (error) {
@@ -1032,10 +780,9 @@ export default function APIPageClient({ machineId }) {
       title: "Delete API Key",
       message: "Delete this API key?",
       onConfirm: async () => {
-        if (isMountedRef.current) setConfirmState(null);
+        setConfirmState(null);
         try {
           const res = await fetch(`/api/keys/${id}`, { method: "DELETE" });
-          if (!isMountedRef.current) return;
           if (res.ok) {
             setKeys(keys.filter((k) => k.id !== id));
             setVisibleKeys(prev => {
@@ -1058,95 +805,17 @@ export default function APIPageClient({ machineId }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isActive }),
       });
-      if (!isMountedRef.current) return;
       if (res.ok) {
-        const data = await res.json();
-        if (!isMountedRef.current) return;
-        setKeys(prev => prev.map(k => k.id === id ? (data.key || { ...k, isActive }) : k));
+        setKeys(prev => prev.map(k => k.id === id ? { ...k, isActive } : k));
       }
     } catch (error) {
       console.log("Error toggling key:", error);
     }
   };
 
-  const getKeyEdit = (key) => ({
-    limitMode: key.limitMode || "unlimited",
-    tokenLimit: key.tokenLimit || "",
-    dailyTokenLimit: key.dailyTokenLimit || "",
-    weeklyTokenLimit: key.weeklyTokenLimit || "",
-    expiresAt: toDateTimeLocal(key.expiresAt),
-    autoDeleteExpired: key.autoDeleteExpired !== false,
-    ...(keyEdits[key.id] || {}),
-  });
-
-  const updateKeyEdit = (keyId, patch) => {
-    setKeyEdits((prev) => ({
-      ...prev,
-      [keyId]: { ...(prev[keyId] || {}), ...patch },
-    }));
-  };
-
-  const saveKeyConfig = async (key) => {
-    const edit = getKeyEdit(key);
-    setSavingKeyId(key.id);
-    try {
-      const body = {
-        limitMode: edit.limitMode || "unlimited",
-        tokenLimit: edit.limitMode === "unlimited" || edit.limitMode === DUAL_LIMIT_MODE ? null : Number(edit.tokenLimit),
-        dailyTokenLimit: edit.limitMode === DUAL_LIMIT_MODE ? Number(edit.dailyTokenLimit) : null,
-        weeklyTokenLimit: edit.limitMode === DUAL_LIMIT_MODE ? Number(edit.weeklyTokenLimit) : null,
-        expiresAt: fromDateTimeLocal(edit.expiresAt),
-        autoDeleteExpired: edit.autoDeleteExpired !== false,
-      };
-      const res = await fetch(`/api/keys/${key.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!isMountedRef.current) return;
-      const data = await res.json();
-      if (!isMountedRef.current) return;
-      if (res.ok) {
-        setKeys((prev) => prev.map((k) => k.id === key.id ? data.key : k));
-        setKeyEdits((prev) => {
-          const next = { ...prev };
-          delete next[key.id];
-          return next;
-        });
-        setSettingsKeyId(null);
-      }
-    } catch (error) {
-      console.log("Error saving key config:", error);
-    } finally {
-      if (isMountedRef.current) setSavingKeyId(null);
-    }
-  };
-
-  const resetKeyUsage = async (key, period) => {
-    const label = period === "all" ? "all-time" : period;
-    setConfirmState({
-      title: "Reset Token Usage",
-      message: `Reset ${label} token usage for "${key.name}"?`,
-      onConfirm: async () => {
-        if (isMountedRef.current) setConfirmState(null);
-        try {
-          const res = await fetch(`/api/keys/${key.id}/usage?period=${period}`, { method: "DELETE" });
-          if (!isMountedRef.current) return;
-          if (res.ok) {
-            const data = await res.json();
-            if (!isMountedRef.current) return;
-            setKeys((prev) => prev.map((k) => (k.id === key.id ? data.key : k)));
-          }
-        } catch (error) {
-          console.log("Error resetting key usage:", error);
-        }
-      },
-    });
-  };
-
   const maskKey = (fullKey) => {
-    if (!fullKey) return "";
-    return fullKey.length > 8 ? fullKey.slice(0, 8) + "..." : fullKey;
+    if (!fullKey || fullKey.length <= 10) return fullKey || "";
+    return fullKey.slice(0, 6) + "•".repeat(fullKey.length - 10) + fullKey.slice(-4);
   };
 
   const toggleKeyVisibility = (keyId) => {
@@ -1177,14 +846,19 @@ export default function APIPageClient({ machineId }) {
   }
 
   const currentEndpoint = baseUrl;
-  const settingsKey = settingsKeyId ? keys.find((key) => key.id === settingsKeyId) : null;
-  const limitedKeys = keys.filter((key) => key.limitMode !== "unlimited");
-  const previewKeys = keys.slice(0, 5);
-  const hiddenPreviewKeyCount = Math.max(0, keys.length - previewKeys.length);
-  const needsCreateTokenLimit = newKeyLimitMode !== "unlimited" && newKeyLimitMode !== DUAL_LIMIT_MODE && !newKeyTokenLimit;
-  const needsCreateDualLimits = newKeyLimitMode === DUAL_LIMIT_MODE && (!newKeyDailyTokenLimit || !newKeyWeeklyTokenLimit);
-  const cavemanSelection = getCavemanSelection(cavemanLevel);
-  const cavemanIntensityIndex = Math.max(0, CAVEMAN_INTENSITIES.findIndex((item) => item.id === cavemanSelection.intensity));
+  const headroomRunning = !!headroomStatus.running;
+  const headroomLocalUrl = headroomStatus.localUrl !== false;
+  const headroomCanStart = !!headroomStatus.canStart;
+  const headroomManaged = headroomLocalUrl && !!headroomStatus.managedPid;
+  const headroomStatusLabel = headroomStatus.loading
+    ? "Checking…"
+    : headroomRunning
+      ? "Running"
+      : headroomLocalUrl && !headroomStatus.installed
+        ? "Not installed"
+        : headroomLocalUrl
+          ? "Proxy off"
+          : "Unreachable";
 
   return (
     <div className="flex flex-col gap-8">
@@ -1282,6 +956,10 @@ export default function APIPageClient({ machineId }) {
                 size="sm"
                 icon="cloud_upload"
                 onClick={() => {
+                  if (isLoginUnsafe) {
+                    setTunnelStatus({ type: "error", message: `Security required: ${unsafeReason}` });
+                    return;
+                  }
                   if (!requireApiKey) {
                     setTunnelStatus({ type: "error", message: "Security required: Enable \"Require API key\" before activating the tunnel." });
                     return;
@@ -1364,7 +1042,13 @@ export default function APIPageClient({ machineId }) {
               <Button
                 size="sm"
                 icon="vpn_lock"
-                onClick={handleOpenTsModal}
+                onClick={() => {
+                  if (isLoginUnsafe) {
+                    setTsStatus({ type: "error", message: `Security required: ${unsafeReason}` });
+                    return;
+                  }
+                  handleOpenTsModal();
+                }}
                 className="bg-linear-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white!"
               >
                 Enable
@@ -1372,6 +1056,16 @@ export default function APIPageClient({ machineId }) {
             )}
           </div>
         </div>
+
+        {/* Pre-enable security gate banner */}
+        {isLoginUnsafe && !tunnelEnabled && !tsEnabled && (
+          <div className="mt-4">
+            <SecurityWarning
+              message={unsafeReason}
+              action={{ label: "Open settings", href: "/dashboard/profile" }}
+            />
+          </div>
+        )}
 
         {/* Security warnings when tunnel or tailscale is active */}
         {(tunnelEnabled || tsEnabled) && (
@@ -1413,6 +1107,119 @@ export default function APIPageClient({ machineId }) {
         )}
       </Card>
 
+      {/* API Keys */}
+      <Card id="require-api-key">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <span className="material-symbols-outlined text-primary">vpn_key</span>
+            API Keys
+          </h2>
+          <Button icon="add" onClick={() => setShowAddModal(true)}>
+            Create Key
+          </Button>
+        </div>
+
+        <div className="flex items-center justify-between pb-4 mb-4 border-b border-border">
+          <div>
+            <p className="font-medium">Require API key</p>
+            <p className="text-sm text-text-muted">
+              Requests without a valid key will be rejected
+            </p>
+          </div>
+          <Toggle
+            checked={requireApiKey}
+            onChange={() => handleRequireApiKey(!requireApiKey)}
+          />
+        </div>
+
+        {isRemoteHost && !requireApiKey && (
+          <div className="mb-4 -mt-2">
+            <SecurityWarning message="Endpoint is exposed without an API key." />
+          </div>
+        )}
+
+        {keys.length === 0 ? (
+          <div className="text-center py-12">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 text-primary mb-4">
+              <span className="material-symbols-outlined text-[32px]">vpn_key</span>
+            </div>
+            <p className="text-text-main font-medium mb-1">No API keys yet</p>
+            <p className="text-sm text-text-muted mb-4">Create your first API key to get started</p>
+            <Button icon="add" onClick={() => setShowAddModal(true)}>
+              Create Key
+            </Button>
+          </div>
+        ) : (
+          <div className="flex flex-col">
+            {keys.map((key) => (
+              <div
+                key={key.id}
+                className={`group flex items-center justify-between py-3 border-b border-black/[0.03] dark:border-white/[0.03] last:border-b-0 ${key.isActive === false ? "opacity-60" : ""}`}
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium">{key.name}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <code className="text-xs text-text-muted font-mono">
+                      {visibleKeys.has(key.id) ? key.key : maskKey(key.key)}
+                    </code>
+                    <button
+                      onClick={() => toggleKeyVisibility(key.id)}
+                      className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                      title={visibleKeys.has(key.id) ? "Hide key" : "Show key"}
+                    >
+                      <span className="material-symbols-outlined text-[14px]">
+                        {visibleKeys.has(key.id) ? "visibility_off" : "visibility"}
+                      </span>
+                    </button>
+                    <button
+                      onClick={() => copy(key.key, key.id)}
+                      className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">
+                        {copied === key.id ? "check" : "content_copy"}
+                      </span>
+                    </button>
+                  </div>
+                  <p className="text-xs text-text-muted mt-1">
+                    Created {new Date(key.createdAt).toLocaleDateString()}
+                  </p>
+                  {key.isActive === false && (
+                    <p className="text-xs text-orange-500 mt-1">Paused</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Toggle
+                    size="sm"
+                    checked={key.isActive ?? true}
+                    onChange={(checked) => {
+                      if (key.isActive && !checked) {
+                        setConfirmState({
+                          title: "Pause API Key",
+                          message: `Pause API key "${key.name}"?\n\nThis key will stop working immediately but can be resumed later.`,
+                          onConfirm: async () => {
+                            setConfirmState(null);
+                            handleToggleKey(key.id, checked);
+                          }
+                        });
+                      } else {
+                        handleToggleKey(key.id, checked);
+                      }
+                    }}
+                    title={key.isActive ? "Pause key" : "Resume key"}
+                  />
+                  <button
+                    onClick={() => handleDeleteKey(key.id)}
+                    className="p-2 hover:bg-red-500/10 rounded text-red-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">delete</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
       {/* Token Saver (RTK + Caveman) */}
       <Card id="rtk">
         <div className="flex items-center justify-between mb-2">
@@ -1443,6 +1250,41 @@ export default function APIPageClient({ machineId }) {
             onChange={() => handleRtkEnabled(!rtkEnabled)}
           />
         </div>
+        <div className="flex items-center justify-between py-4 border-b border-border gap-4 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-3 flex-wrap">
+              <p className="font-medium">
+                Compress context{" "}
+                <a
+                  href="https://github.com/chopratejas/headroom"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs font-normal text-primary underline hover:opacity-80"
+                >
+                  (Headroom)
+                </a>
+              </p>
+              <span className={`text-xs px-2 py-0.5 rounded ${headroomRunning ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>
+                {headroomStatusLabel}
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowHeadroomInstallModal(true)}
+                className="text-xs text-primary underline hover:opacity-80"
+              >
+                  {headroomRunning ? "Manage" : "Setup"}
+              </button>
+            </div>
+            <p className="text-sm text-text-muted mt-1">
+              Compress prompts via /v1/compress before routing to the model
+            </p>
+          </div>
+          <Toggle
+            checked={headroomEnabled && headroomRunning}
+            disabled={!headroomRunning}
+            onChange={() => handleHeadroomEnabled(!headroomEnabled)}
+          />
+        </div>
         <div className="flex items-center justify-between pt-4 gap-4 flex-wrap">
           <div className="min-w-0 flex-1">
             <p className="font-medium">
@@ -1462,50 +1304,26 @@ export default function APIPageClient({ machineId }) {
           </div>
           <div className="flex items-center gap-3 shrink-0">
             {cavemanEnabled && (
-              <div className="flex items-center justify-end gap-3 flex-wrap">
-                <div className="flex items-center gap-1 rounded-[10px] border border-border bg-bg p-1">
-                  {CAVEMAN_MODES.map((mode) => (
+              <div className="flex flex-col items-end gap-1">
+                <div className="flex items-center gap-1.5">
+                  {visibleCavemanLevels.map((lvl) => (
                     <button
-                      key={mode.id}
-                      type="button"
-                      onClick={() => handleCavemanMode(mode.id)}
-                      className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                        cavemanSelection.mode === mode.id
-                          ? "bg-primary text-white"
-                          : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+                      key={lvl.id}
+                      onClick={() => handleCavemanLevel(lvl.id)}
+                      className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
+                        cavemanLevel === lvl.id
+                          ? "bg-primary text-white border-primary"
+                          : "bg-transparent border-border text-text-muted hover:bg-surface-2"
                       }`}
-                      title={mode.desc}
+                      title={lvl.desc}
                     >
-                      {mode.label}
+                      {lvl.label}
                     </button>
                   ))}
                 </div>
-                <div className="min-w-[190px] rounded-[10px] border border-border bg-bg px-3 py-2">
-                  <input
-                    type="range"
-                    min="0"
-                    max={CAVEMAN_INTENSITIES.length - 1}
-                    step="1"
-                    value={cavemanIntensityIndex}
-                    onChange={(event) => {
-                      const next = CAVEMAN_INTENSITIES[Number(event.target.value)] || CAVEMAN_INTENSITIES[1];
-                      handleCavemanIntensity(next.id);
-                    }}
-                    className="block w-full accent-primary"
-                    aria-label="Caveman intensity"
-                  />
-                  <div className="mt-1 grid grid-cols-3 gap-1 text-center text-[11px] font-medium text-text-muted">
-                    {CAVEMAN_INTENSITIES.map((item) => (
-                      <span
-                        key={item.id}
-                        className={cavemanSelection.intensity === item.id ? "text-primary" : ""}
-                        title={item.desc}
-                      >
-                        {item.label}
-                      </span>
-                    ))}
-                  </div>
-                </div>
+                <p className="text-xs text-primary">
+                  {CAVEMAN_LEVELS.find((lvl) => lvl.id === cavemanLevel)?.desc}
+                </p>
               </div>
             )}
             <Toggle
@@ -1514,304 +1332,54 @@ export default function APIPageClient({ machineId }) {
             />
           </div>
         </div>
-        <div className="flex items-center justify-between pt-4 pb-2 gap-4 flex-wrap">
+        <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
           <div className="min-w-0 flex-1">
             <p className="font-medium">
-              Compress JSON tool output{" "}
+              Lazy senior dev{" "}
               <a
-                href="https://toonformat.dev"
+                href="https://github.com/DietrichGebert/ponytail"
                 target="_blank"
                 rel="noreferrer"
                 className="text-xs font-normal text-primary underline hover:opacity-80"
               >
-                (TOON)
+                (Ponytail)
               </a>
             </p>
             <p className="text-sm text-text-muted">
-              JSON tool_results → compact tabular notation (~20-50% fewer tokens)
+              Bias the model toward minimal code: YAGNI, reuse stdlib, deletion over addition
             </p>
           </div>
-          <Toggle
-            checked={toonEnabled}
-            onChange={() => handleToonEnabled(!toonEnabled)}
-          />
-        </div>
-      </Card>
-
-      {/* API Keys */}
-      <Card id="require-api-key">
-        <div className="flex items-center justify-between gap-3 mb-4">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary">vpn_key</span>
-            API Keys
-          </h2>
-          <button
-            type="button"
-            onClick={() => setShowKeyManager(true)}
-            className="flex size-9 items-center justify-center rounded-[10px] border border-border text-text-muted hover:bg-surface-2 hover:text-primary transition-colors"
-            title="Open API key manager"
-          >
-            <span className="material-symbols-outlined text-[20px]">settings</span>
-          </button>
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-3 mb-4">
-          <UsageStatBox label="Keys" value={keys.length} hint={`${keys.filter((key) => key.isActive !== false).length} active`} />
-          <UsageStatBox label="Limited" value={limitedKeys.length} hint="daily / weekly / dual / hard" />
-          <UsageStatBox
-            label="Token usage"
-            value={formatTokens(keys.reduce((sum, key) => sum + (key.usage?.periods?.allTime?.used || key.usage?.totalUsed || 0), 0))}
-            hint="all API keys"
-          />
-        </div>
-
-        {previewKeys.length > 0 && (
-          <div className="mb-4 rounded-[10px] border border-border-subtle bg-bg p-3">
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium text-text-main">API key quota usage</p>
-                <p className="text-xs text-text-muted">
-                  {hiddenPreviewKeyCount > 0 ? `Showing 5 keys, 4 visible. ${hiddenPreviewKeyCount} more in manager.` : "API keys with quota bars"}
+          <div className="flex items-center gap-3 shrink-0">
+            {ponytailEnabled && (
+              <div className="flex flex-col items-end gap-1">
+                <div className="flex items-center gap-1.5">
+                  {PONYTAIL_LEVELS.map((lvl) => (
+                    <button
+                      key={lvl.id}
+                      onClick={() => handlePonytailLevel(lvl.id)}
+                      className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
+                        ponytailLevel === lvl.id
+                          ? "bg-primary text-white border-primary"
+                          : "bg-transparent border-border text-text-muted hover:bg-surface-2"
+                      }`}
+                      title={lvl.desc}
+                    >
+                      {lvl.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-primary">
+                  {PONYTAIL_LEVELS.find((lvl) => lvl.id === ponytailLevel)?.desc}
                 </p>
               </div>
-              {hiddenPreviewKeyCount > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setShowKeyManager(true)}
-                  className="text-xs font-medium text-primary hover:underline"
-                >
-                  Manage all
-                </button>
-              )}
-            </div>
-            <div className="grid max-h-[316px] gap-2 overflow-y-auto pr-1">
-              {previewKeys.map((key) => (
-                <ApiKeyUsageBar key={key.id} apiKey={key} />
-              ))}
-            </div>
+            )}
+            <Toggle
+              checked={ponytailEnabled}
+              onChange={() => handlePonytailEnabled(!ponytailEnabled)}
+            />
           </div>
-        )}
-
-        <div className="flex items-center justify-between rounded-[10px] border border-border-subtle bg-bg px-4 py-3">
-          <div>
-            <p className="font-medium">Require API key</p>
-            <p className="text-sm text-text-muted">Requests without a valid key will be rejected</p>
-          </div>
-          <Toggle checked={requireApiKey} onChange={() => handleRequireApiKey(!requireApiKey)} />
         </div>
       </Card>
-
-      <Modal
-        isOpen={showKeyManager}
-        title="API Key Manager"
-        size="full"
-        onClose={() => {
-          setShowKeyManager(false);
-          setSettingsKeyId(null);
-        }}
-      >
-        <div className="flex flex-col gap-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-text-main">{keys.length} keys</p>
-              <p className="text-xs text-text-muted">Use the cog on each key to edit limits, expiry, or reset usage.</p>
-            </div>
-            <Button icon="add" onClick={() => setShowAddModal(true)}>Create Key</Button>
-          </div>
-
-          {keys.length === 0 ? (
-            <div className="text-center py-12 rounded-[10px] border border-border-subtle bg-bg">
-              <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-primary/10 text-primary mb-4">
-                <span className="material-symbols-outlined text-[30px]">vpn_key</span>
-              </div>
-              <p className="text-text-main font-medium mb-1">No API keys yet</p>
-              <p className="text-sm text-text-muted mb-4">Create your first API key to get started</p>
-              <Button icon="add" onClick={() => setShowAddModal(true)}>Create Key</Button>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {keys.map((key) => {
-                const usage = key.usage || {};
-                const status = keyStatusMeta(key.status || (key.isActive === false ? "paused" : "active"));
-                const daily = getUsagePeriod(usage, "daily");
-                const weekly = getUsagePeriod(usage, "weekly");
-                const allTime = getUsagePeriod(usage, "allTime");
-
-                return (
-                  <div
-                    key={key.id}
-                    className={`group rounded-[10px] border border-border-subtle bg-bg p-3 ${key.isActive === false ? "opacity-60" : ""}`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-medium truncate">{key.name}</p>
-                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${status.className}`}>{status.label}</span>
-                          <span className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-surface-2 text-text-muted">
-                            {key.limitMode || "unlimited"}
-                          </span>
-                        </div>
-                        <div className="mt-1 flex items-center gap-2 min-w-0">
-                          <code className="text-xs text-text-muted font-mono truncate">
-                            {visibleKeys.has(key.id) ? key.key : maskKey(key.key)}
-                          </code>
-                          <button
-                            onClick={() => toggleKeyVisibility(key.id)}
-                            className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-colors"
-                            title={visibleKeys.has(key.id) ? "Hide key" : "Show key"}
-                          >
-                            <span className="material-symbols-outlined text-[14px]">
-                              {visibleKeys.has(key.id) ? "visibility_off" : "visibility"}
-                            </span>
-                          </button>
-                          <button
-                            onClick={() => copy(key.key, key.id)}
-                            className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-colors"
-                            title="Copy key"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">
-                              {copied === key.id ? "check" : "content_copy"}
-                            </span>
-                          </button>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <Toggle
-                          size="sm"
-                          checked={key.isActive ?? true}
-                          onChange={(checked) => {
-                            if (key.isActive && !checked) {
-                              setConfirmState({
-                                title: "Pause API Key",
-                                message: `Pause API key "${key.name}"?\n\nThis key will stop working immediately but can be resumed later.`,
-                                onConfirm: async () => {
-                                  setConfirmState(null);
-                                  handleToggleKey(key.id, checked);
-                                },
-                              });
-                            } else {
-                              handleToggleKey(key.id, checked);
-                            }
-                          }}
-                          title={key.isActive ? "Pause key" : "Resume key"}
-                        />
-                        <button
-                          onClick={() => setSettingsKeyId(key.id)}
-                          className="p-2 rounded-[10px] border border-border text-text-muted hover:bg-surface-2 hover:text-primary transition-colors"
-                          title="Key settings"
-                        >
-                          <span className="material-symbols-outlined text-[18px]">settings</span>
-                        </button>
-                        <button
-                          onClick={() => handleDeleteKey(key.id)}
-                          className="p-2 rounded-[10px] text-red-500 hover:bg-red-500/10 transition-colors"
-                          title="Delete key"
-                        >
-                          <span className="material-symbols-outlined text-[18px]">delete</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                      <UsageStatBox label="All time" value={formatTokens(allTime.used || usage.totalUsed)} hint={`${allTime.requests || usage.totalRequests || 0} req`} />
-                      <UsageStatBox label="Daily" value={formatTokens(daily.used)} hint={formatKeyReset(daily.resetAt)} tone={key.limitMode === "daily" || key.limitMode === DUAL_LIMIT_MODE ? "warning" : "default"} />
-                      <UsageStatBox label="Weekly" value={formatTokens(weekly.used)} hint={formatKeyReset(weekly.resetAt)} tone={key.limitMode === "weekly" || key.limitMode === DUAL_LIMIT_MODE ? "warning" : "default"} />
-                    </div>
-
-                    <div className="mt-3 space-y-2">
-                      <ApiKeyUsageBar apiKey={key} />
-                      <p className="text-[11px] text-text-muted">
-                        Expires {formatCompactDateTime(key.expiresAt)}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </Modal>
-
-      <Modal
-        isOpen={!!settingsKey}
-        title={settingsKey ? `Key Settings: ${settingsKey.name}` : "Key Settings"}
-        onClose={() => setSettingsKeyId(null)}
-      >
-        {settingsKey && (() => {
-          const edit = getKeyEdit(settingsKey);
-          const isDual = edit.limitMode === DUAL_LIMIT_MODE;
-          const saveDisabled = savingKeyId === settingsKey.id
-            || (isDual && (!edit.dailyTokenLimit || !edit.weeklyTokenLimit))
-            || (!["unlimited", DUAL_LIMIT_MODE].includes(edit.limitMode) && !edit.tokenLimit);
-          return (
-            <div className="flex flex-col gap-4">
-              <label className="text-sm text-text-muted">
-                <span className="block mb-1 font-medium text-text-primary">Mode</span>
-                <select
-                  value={edit.limitMode}
-                  onChange={(e) => updateKeyEdit(settingsKey.id, { limitMode: e.target.value })}
-                  className="h-10 w-full rounded-[10px] border border-border bg-surface px-3 text-sm text-text-primary"
-                >
-                  {API_KEY_LIMIT_MODES.map((mode) => (
-                    <option key={mode.id} value={mode.id}>{mode.label}</option>
-                  ))}
-                </select>
-              </label>
-              <Input
-                label="Token limit"
-                type="number"
-                min="1"
-                value={edit.tokenLimit}
-                disabled={edit.limitMode === "unlimited" || isDual}
-                onChange={(e) => updateKeyEdit(settingsKey.id, { tokenLimit: e.target.value })}
-              />
-              {isDual && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <Input
-                    label="Daily token limit"
-                    type="number"
-                    min="1"
-                    value={edit.dailyTokenLimit}
-                    onChange={(e) => updateKeyEdit(settingsKey.id, { dailyTokenLimit: e.target.value })}
-                  />
-                  <Input
-                    label="Weekly token limit"
-                    type="number"
-                    min="1"
-                    value={edit.weeklyTokenLimit}
-                    onChange={(e) => updateKeyEdit(settingsKey.id, { weeklyTokenLimit: e.target.value })}
-                  />
-                </div>
-              )}
-              <Input
-                label="Expires"
-                type="datetime-local"
-                value={edit.expiresAt}
-                onChange={(e) => updateKeyEdit(settingsKey.id, { expiresAt: e.target.value })}
-              />
-              <div className="flex items-center justify-between rounded-[10px] border border-border-subtle bg-bg px-3 py-2">
-                <span className="text-sm font-medium text-text-main">Auto-delete expired</span>
-                <Toggle
-                  size="sm"
-                  checked={edit.autoDeleteExpired !== false}
-                  onChange={(checked) => updateKeyEdit(settingsKey.id, { autoDeleteExpired: checked })}
-                />
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                <Button variant="outline" size="sm" onClick={() => resetKeyUsage(settingsKey, "daily")}>Reset Daily</Button>
-                <Button variant="outline" size="sm" onClick={() => resetKeyUsage(settingsKey, "weekly")}>Reset Weekly</Button>
-                <Button variant="danger" size="sm" onClick={() => resetKeyUsage(settingsKey, "all")}>Reset All</Button>
-              </div>
-              <Button
-                onClick={() => saveKeyConfig(settingsKey)}
-                disabled={saveDisabled}
-              >
-                {savingKeyId === settingsKey.id ? "Saving..." : "Save Settings"}
-              </Button>
-            </div>
-          );
-        })()}
-      </Modal>
 
       {/* Add Key Modal */}
       <Modal
@@ -1820,11 +1388,6 @@ export default function APIPageClient({ machineId }) {
         onClose={() => {
           setShowAddModal(false);
           setNewKeyName("");
-          setNewKeyLimitMode("unlimited");
-          setNewKeyTokenLimit("");
-          setNewKeyDailyTokenLimit("");
-          setNewKeyWeeklyTokenLimit("");
-          setNewKeyExpiresInHours("");
         }}
       >
         <div className="flex flex-col gap-4">
@@ -1834,86 +1397,14 @@ export default function APIPageClient({ machineId }) {
             onChange={(e) => setNewKeyName(e.target.value)}
             placeholder="Production Key"
           />
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label className="text-sm text-text-muted">
-              <span className="block mb-1 font-medium text-text-primary">Token mode</span>
-              <select
-                value={newKeyLimitMode}
-                onChange={(e) => setNewKeyLimitMode(e.target.value)}
-                className="h-10 w-full rounded border border-border bg-surface px-3 text-sm text-text-primary"
-              >
-                {API_KEY_LIMIT_MODES.map((mode) => (
-                  <option key={mode.id} value={mode.id}>{mode.label}</option>
-                ))}
-              </select>
-            </label>
-            <label className="text-sm text-text-muted">
-              <span className="block mb-1 font-medium text-text-primary">Token limit</span>
-              <input
-                type="number"
-                min="1"
-                value={newKeyTokenLimit}
-                disabled={newKeyLimitMode === "unlimited" || newKeyLimitMode === DUAL_LIMIT_MODE}
-                onChange={(e) => setNewKeyTokenLimit(e.target.value)}
-                placeholder="100000"
-                className="h-10 w-full rounded border border-border bg-surface px-3 text-sm text-text-primary disabled:opacity-50"
-              />
-            </label>
-          </div>
-          {newKeyLimitMode === DUAL_LIMIT_MODE && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <label className="text-sm text-text-muted">
-                <span className="block mb-1 font-medium text-text-primary">Daily token limit</span>
-                <input
-                  type="number"
-                  min="1"
-                  value={newKeyDailyTokenLimit}
-                  onChange={(e) => setNewKeyDailyTokenLimit(e.target.value)}
-                  placeholder="5000000"
-                  className="h-10 w-full rounded border border-border bg-surface px-3 text-sm text-text-primary"
-                />
-              </label>
-              <label className="text-sm text-text-muted">
-                <span className="block mb-1 font-medium text-text-primary">Weekly token limit</span>
-                <input
-                  type="number"
-                  min="1"
-                  value={newKeyWeeklyTokenLimit}
-                  onChange={(e) => setNewKeyWeeklyTokenLimit(e.target.value)}
-                  placeholder="20000000"
-                  className="h-10 w-full rounded border border-border bg-surface px-3 text-sm text-text-primary"
-                />
-              </label>
-            </div>
-          )}
-          <label className="text-sm text-text-muted">
-            <span className="block mb-1 font-medium text-text-primary">Expire after hours</span>
-            <input
-              type="number"
-              min="1"
-              value={newKeyExpiresInHours}
-              onChange={(e) => setNewKeyExpiresInHours(e.target.value)}
-              placeholder="Blank = permanent"
-              className="h-10 w-full rounded border border-border bg-surface px-3 text-sm text-text-primary"
-            />
-          </label>
           <div className="flex gap-2">
-            <Button
-              onClick={handleCreateKey}
-              fullWidth
-              disabled={!newKeyName.trim() || needsCreateTokenLimit || needsCreateDualLimits}
-            >
+            <Button onClick={handleCreateKey} fullWidth disabled={!newKeyName.trim()}>
               Create
             </Button>
             <Button
               onClick={() => {
                 setShowAddModal(false);
                 setNewKeyName("");
-                setNewKeyLimitMode("unlimited");
-                setNewKeyTokenLimit("");
-                setNewKeyDailyTokenLimit("");
-                setNewKeyWeeklyTokenLimit("");
-                setNewKeyExpiresInHours("");
               }}
               variant="ghost"
               fullWidth
@@ -2105,6 +1596,67 @@ export default function APIPageClient({ machineId }) {
         </div>
       </Modal>
 
+      {/* Headroom Install Guide Modal */}
+      <Modal
+        isOpen={showHeadroomInstallModal}
+        title={headroomRunning ? "Headroom" : "Setup Headroom"}
+        onClose={() => setShowHeadroomInstallModal(false)}
+      >
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between text-sm">
+            <span>Status</span>
+            <span className={headroomRunning ? "text-success" : "text-warning"}>
+              {headroomStatusLabel}
+            </span>
+          </div>
+          <div className="flex flex-col gap-1">
+            <p className="text-sm font-medium">Proxy URL</p>
+            <Input
+              value={headroomUrl}
+              onChange={(e) => setHeadroomUrl(e.target.value)}
+              onBlur={handleHeadroomUrlBlur}
+              placeholder="http://localhost:8787"
+              className="font-mono text-sm"
+            />
+            <p className="text-xs text-text-muted">
+              Use a local proxy for Start/Stop, or an external Docker sidecar like http://headroom:8787.
+            </p>
+          </div>
+          {headroomManaged ? (
+            <Button onClick={handleHeadroomStop} variant="ghost" fullWidth disabled={headroomActionLoading}>
+              {headroomActionLoading ? "Stopping…" : "Stop Headroom"}
+            </Button>
+          ) : headroomRunning ? (
+            <p className="text-sm text-success">Headroom proxy is reachable. You can enable the token saver.</p>
+          ) : headroomCanStart ? (
+            <Button onClick={handleHeadroomStart} fullWidth disabled={headroomActionLoading}>
+              {headroomActionLoading ? "Starting…" : "Start Headroom"}
+            </Button>
+          ) : !headroomLocalUrl ? (
+            <p className="text-sm text-warning">Start Headroom separately at the configured URL, then recheck.</p>
+          ) : !headroomStatus.python ? (
+            <p className="text-sm text-warning">Python ≥ 3.10 required for local managed mode. Install Python first, or use an external proxy URL.</p>
+          ) : (
+            <div className="flex flex-col gap-1">
+              <p className="text-sm font-medium">Install then click Start:</p>
+              <div className="flex items-center gap-2">
+                <pre className="flex-1 rounded bg-black/5 dark:bg-white/5 p-2 text-xs font-mono overflow-x-auto">{`pip install "headroom-ai[proxy]"`}</pre>
+                <Button size="sm" variant="ghost" onClick={() => copy(`pip install "headroom-ai[proxy]"`)}>
+                  {copied ? "Copied" : "Copy"}
+                </Button>
+              </div>
+            </div>
+          )}
+          {headroomActionError && (
+            <p className="text-sm text-warning">{headroomActionError}</p>
+          )}
+          <div className="flex gap-2">
+            <Button onClick={() => refreshHeadroomStatus()} variant="ghost" fullWidth>Recheck</Button>
+            <Button onClick={() => setShowHeadroomInstallModal(false)} fullWidth>Done</Button>
+          </div>
+        </div>
+      </Modal>
+
       {/* Confirm Modal */}
       <ConfirmModal
         isOpen={!!confirmState}
@@ -2118,81 +1670,6 @@ export default function APIPageClient({ machineId }) {
   );
 }
 
-/** Reusable endpoint row component */
-function EndpointRow({ label, url, copyId, copied, onCopy, badge, actions }) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className={`text-xs font-mono px-1.5 py-0.5 rounded shrink-0 min-w-[88px] text-center ${
-          (badge === "CF" || badge === "TS") ? "bg-primary/10 text-primary" : "bg-surface-2 text-text-muted"
-        }`}>{label}</span>
-      <Input value={url} readOnly className="flex-1 font-mono text-sm" />
-      <button
-        onClick={() => onCopy(url, copyId)}
-        className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-colors shrink-0"
-      >
-        <span className="material-symbols-outlined text-[18px]">{copied === copyId ? "check" : "content_copy"}</span>
-      </button>
-      {actions}
-    </div>
-  );
-}
-
-/** Reusable status alert */
-function StatusAlert({ status, className = "" }) {
-  // Render URLs in message as clickable links
-  const renderMessage = (msg) => {
-    const parts = msg.split(/(https?:\/\/[^\s]+)/g);
-    return parts.map((part, i) =>
-      /^https?:\/\//.test(part)
-        ? <a key={i} href={part} target="_blank" rel="noreferrer" className="underline font-medium">{part}</a>
-        : part
-    );
-  };
-
-  return (
-    <div className={`p-2 rounded text-sm ${className} ${status.type === "success" ? "bg-green-500/10 text-green-600 dark:text-green-400" :
-        status.type === "warning" ? "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400" :
-        status.type === "info" ? "bg-blue-500/10 text-blue-600 dark:text-blue-400" :
-          "bg-red-500/10 text-red-600 dark:text-red-400"
-      }`}>
-      {renderMessage(status.message)}
-    </div>
-  );
-}
-
-/** Inline tooltip, Claude Code CLI style */
-function Tooltip({ text }) {
-  return (
-    <span className="relative group inline-flex items-center">
-      <span className="material-symbols-outlined text-[14px] text-text-muted cursor-help">help</span>
-      <span className="pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 z-50 w-64 rounded bg-gray-900 dark:bg-gray-800 text-white text-xs px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
-        {text}
-      </span>
-    </span>
-  );
-}
-
-/** Security warning banner with optional action link */
-function SecurityWarning({ message, action }) {
-  return (
-    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400">
-      <span className="material-symbols-outlined text-[16px] shrink-0 mt-0.5">warning</span>
-      <p className="text-xs flex-1">{message}</p>
-      {action && (
-        <a
-          href={action.href}
-          className="text-xs font-medium underline shrink-0 hover:opacity-80"
-          onClick={action.href.startsWith("#") ? (e) => {
-            e.preventDefault();
-            document.getElementById(action.href.slice(1))?.scrollIntoView({ behavior: "smooth" });
-          } : undefined}
-        >
-          {action.label}
-        </a>
-      )}
-    </div>
-  );
-}
 
 APIPageClient.propTypes = {
   machineId: PropTypes.string.isRequired,

@@ -1,5 +1,4 @@
-﻿import { corsOptionsResponse, getCorsHeaders } from "@/lib/cors.js";
-import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
+import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS, getModelKind } from "@/shared/constants/models";
 import {
   AI_PROVIDERS,
   getProviderAlias,
@@ -9,7 +8,8 @@ import {
 import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
-import { guardedFetch } from "@/lib/security/urlGuard";
+import { resolveQoderModels } from "open-sse/services/qoderModels.js";
+import { capabilitiesFromServiceKind } from "open-sse/providers/capabilities.js";
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
@@ -22,6 +22,19 @@ const LIVE_MODEL_RESOLVERS = {
       providerSpecificData: conn.providerSpecificData || {}
     }, { log: console });
     return result?.models?.length ? { models: result.models } : null;
+  },
+  qoder: async (conn) => {
+    const result = await resolveQoderModels({
+      accessToken: conn.accessToken,
+      refreshToken: conn.refreshToken,
+      email: conn.email,
+      displayName: conn.displayName,
+      providerSpecificData: conn.providerSpecificData || {}
+    });
+    if (!result?.models?.length) return null;
+    return {
+      models: result.models.map((m) => ({ id: m.id, name: m.name })),
+    };
   }
 };
 
@@ -47,8 +60,9 @@ const MODEL_TYPE_TO_KIND = {
 };
 
 function modelKind(model) {
-  if (!model?.type) return LLM_KIND;
-  return MODEL_TYPE_TO_KIND[model.type] || LLM_KIND;
+  const k = model?.kind || model?.type;
+  if (!k) return LLM_KIND;
+  return MODEL_TYPE_TO_KIND[k] || LLM_KIND;
 }
 
 // For dynamic/unknown model IDs (compatible providers, alias map, custom models)
@@ -93,14 +107,11 @@ async function fetchCompatibleModelIds(connection) {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
-    const response = await guardedFetch(url, {
+    const response = await fetch(url, {
       method: "GET",
       headers,
       cache: "no-store",
       signal: controller.signal,
-    }, {
-      protocols: ["http:", "https:"],
-      timeoutMs: 5000,
     });
     clearTimeout(timeoutId);
 
@@ -188,11 +199,8 @@ export async function buildModelsList(kindFilter) {
   }
 
   const models = [];
-  const comboModels = [];
 
-  // Keep combos after concrete provider models. Many clients auto-select
-  // the first /v1/models entry; exposing a combo first makes that combo the
-  // implicit default.
+  // Combos first (filtered by kind). Web combos expose `kind` so AI knows search vs fetch.
   for (const combo of combos) {
     if (!comboMatchesKinds(combo, kindFilter)) continue;
     const entry = {
@@ -203,7 +211,7 @@ export async function buildModelsList(kindFilter) {
     if (combo.kind === "webSearch" || combo.kind === "webFetch") {
       entry.kind = combo.kind;
     }
-    comboModels.push(entry);
+    models.push(entry);
   }
 
   if (connections.length === 0) {
@@ -307,13 +315,22 @@ export async function buildModelsList(kindFilter) {
         })
         .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
 
+      const customModelKindById = new Map();
       const customModelIds = customModels
         .filter((m) => {
-          if (!m?.id || (m.type && m.type !== "llm")) return false;
+          if (!m?.id) return false;
+          const kind = getModelKind(m) || LLM_KIND;
+          // imageToText custom models are vision-capable chat models: expose them
+          // both in the default LLM list and in /v1/models/image-to-text.
+          if (!kindFilter.includes(kind) && !(kind === "imageToText" && kindFilter.includes(LLM_KIND))) return false;
           const alias = m.providerAlias;
           return alias === staticAlias || alias === outputAlias || alias === providerId;
         })
-        .map((m) => String(m.id).trim())
+        .map((m) => {
+          const modelId = String(m.id).trim();
+          if (modelId) customModelKindById.set(modelId, getModelKind(m) || LLM_KIND);
+          return modelId;
+        })
         .filter((modelId) => modelId !== "");
 
       const aliasModelIds = Object.values(modelAliases || {})
@@ -342,41 +359,26 @@ export async function buildModelsList(kindFilter) {
       const mergedModelIds = Array.from(new Set([...modelIds, ...customModelIds, ...aliasModelIds]));
 
       for (const modelId of mergedModelIds) {
-        // Resolve kind: prefer static metadata, otherwise infer from ID heuristics
-        const kind = staticModelKindById.get(modelId) || inferKindFromUnknownModelId(modelId);
-        if (!kindFilter.includes(kind)) continue;
+        // Resolve kind: prefer static/custom metadata, otherwise infer from ID heuristics
+        const customKind = customModelKindById.get(modelId);
+        const kind = staticModelKindById.get(modelId) || customKind || inferKindFromUnknownModelId(modelId);
+        // imageToText custom models stay in the LLM list (vision-capable chat models)
+        const allowAsLlm = kind === "imageToText" && kindFilter.includes(LLM_KIND);
+        if (!kindFilter.includes(kind) && !allowAsLlm) continue;
         if (isDisabled(outputAlias, modelId) || isDisabled(staticAlias, modelId)) continue;
 
-        models.push({
+        const model = {
           id: `${outputAlias}/${modelId}`,
           object: "model",
           owned_by: outputAlias,
-        });
-      }
-
-      // Merge sub-config models (TTS / embedding) that live on AI_PROVIDERS, not PROVIDER_MODELS
-      const providerInfo = AI_PROVIDERS[providerId];
-      const subConfigModels = [];
-      if (kindFilter.includes("tts") && Array.isArray(providerInfo?.ttsConfig?.models)) {
-        for (const m of providerInfo.ttsConfig.models) {
-          if (m?.id) subConfigModels.push(m.id);
-        }
-      }
-      if (kindFilter.includes("embedding") && Array.isArray(providerInfo?.embeddingConfig?.models)) {
-        for (const m of providerInfo.embeddingConfig.models) {
-          if (m?.id) subConfigModels.push(m.id);
-        }
-      }
-      for (const subId of subConfigModels) {
-        if (isDisabled(outputAlias, subId) || isDisabled(staticAlias, subId)) continue;
-        models.push({
-          id: `${outputAlias}/${subId}`,
-          object: "model",
-          owned_by: outputAlias,
-        });
+        };
+        const caps = capabilitiesFromServiceKind(customKind);
+        if (caps) model.capabilities = caps;
+        models.push(model);
       }
 
       // Web search/fetch — provider IS the model, expose as {alias}/search and/or {alias}/fetch with explicit kind
+      const providerInfo = AI_PROVIDERS[providerId];
       if (kindFilter.includes("webSearch") && providerInfo?.searchConfig) {
         models.push({
           id: `${outputAlias}/search`,
@@ -398,7 +400,7 @@ export async function buildModelsList(kindFilter) {
 
   const dedupedModels = [];
   const seenModelIds = new Set();
-  for (const model of [...models, ...comboModels]) {
+  for (const model of models) {
     if (!model?.id || seenModelIds.has(model.id)) continue;
     seenModelIds.add(model.id);
     dedupedModels.push(model);
@@ -410,18 +412,26 @@ export async function buildModelsList(kindFilter) {
 /**
  * Handle CORS preflight
  */
-export async function OPTIONS(request) {
-  return corsOptionsResponse(request);
+export async function OPTIONS() {
+  return new Response(null, {
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, OPTIONS",
+      "Access-Control-Allow-Headers": "*",
+    },
+  });
 }
 
 /**
  * GET /v1/models - OpenAI compatible models list (LLM/chat models only by default).
  * For other capabilities use /v1/models/{kind} (image, tts, stt, embedding, image-to-text, web).
  */
-export async function GET(request) {
+export async function GET() {
   try {
     const data = await buildModelsList([LLM_KIND]);
-    return Response.json({ object: "list", data }, { headers: getCorsHeaders(request) });
+    return Response.json({ object: "list", data }, {
+      headers: { "Access-Control-Allow-Origin": "*" },
+    });
   } catch (error) {
     console.log("Error fetching models:", error);
     return Response.json(

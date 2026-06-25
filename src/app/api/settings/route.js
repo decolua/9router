@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { getSettings, updateSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { resetComboRotation } from "open-sse/services/combo.js";
-import { isKnownAccountRoutingMode, normalizeAccountRoutingMode } from "@/shared/utils/accountRouting";
 import bcrypt from "bcryptjs";
 
 export const dynamic = "force-dynamic";
@@ -11,24 +10,9 @@ export const revalidate = 0;
 const SETTINGS_RESPONSE_HEADERS = {
   "Cache-Control": "no-store"
 };
-const ALLOWED_CAVEMAN_LEVELS = new Set(["lite", "full", "ultra", "wenyan-lite", "wenyan-full", "wenyan-ultra"]);
 
-function normalizeProviderStrategies(providerStrategies) {
-  const normalized = {};
-  for (const [providerId, override] of Object.entries(providerStrategies)) {
-    if (override == null) {
-      normalized[providerId] = override;
-      continue;
-    }
-    normalized[providerId] = {
-      ...override,
-      ...(override.fallbackStrategy
-        ? { fallbackStrategy: normalizeAccountRoutingMode(override.fallbackStrategy) }
-        : {}),
-    };
-  }
-  return normalized;
-}
+// Secrets must never be mass-assigned from request body (CWE-915)
+const PROTECTED_SETTING_KEYS = ["password", "mitmSudoEncrypted"];
 
 export async function GET() {
   try {
@@ -55,39 +39,8 @@ export async function PATCH(request) {
   try {
     const body = await request.json();
 
-    if (Object.prototype.hasOwnProperty.call(body, "cavemanLevel") && !ALLOWED_CAVEMAN_LEVELS.has(body.cavemanLevel)) {
-      return NextResponse.json({ error: "Invalid cavemanLevel" }, { status: 400 });
-    }
-
-    if (
-      Object.prototype.hasOwnProperty.call(body, "fallbackStrategy") &&
-      !isKnownAccountRoutingMode(body.fallbackStrategy)
-    ) {
-      return NextResponse.json({ error: "Invalid fallbackStrategy" }, { status: 400 });
-    }
-    if (Object.prototype.hasOwnProperty.call(body, "fallbackStrategy")) {
-      body.fallbackStrategy = normalizeAccountRoutingMode(body.fallbackStrategy);
-    }
-
-    if (Object.prototype.hasOwnProperty.call(body, "providerStrategies")) {
-      if (!body.providerStrategies || typeof body.providerStrategies !== "object" || Array.isArray(body.providerStrategies)) {
-        return NextResponse.json({ error: "Invalid providerStrategies" }, { status: 400 });
-      }
-      for (const override of Object.values(body.providerStrategies)) {
-        if (override == null) continue;
-        if (typeof override !== "object" || Array.isArray(override)) {
-          return NextResponse.json({ error: "Invalid providerStrategies" }, { status: 400 });
-        }
-        if (
-          Object.prototype.hasOwnProperty.call(override, "fallbackStrategy") &&
-          override.fallbackStrategy &&
-          !isKnownAccountRoutingMode(override.fallbackStrategy)
-        ) {
-          return NextResponse.json({ error: "Invalid provider fallbackStrategy" }, { status: 400 });
-        }
-      }
-      body.providerStrategies = normalizeProviderStrategies(body.providerStrategies);
-    }
+    // Strip protected secrets before any internal handling sets them
+    for (const key of PROTECTED_SETTING_KEYS) delete body[key];
 
     // If updating password, hash it
     if (body.newPassword) {

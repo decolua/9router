@@ -5,6 +5,7 @@
 
 // Ensure outbound fetch respects HTTP(S)_PROXY/ALL_PROXY in Node runtime
 import "open-sse/index.js";
+import crypto from "crypto";
 
 import { generatePKCE, generateState } from "./utils/pkce";
 import {
@@ -17,6 +18,7 @@ import {
   ANTIGRAVITY_CONFIG,
   GITHUB_CONFIG,
   KIRO_CONFIG,
+  assertValidAwsRegion,
   CURSOR_CONFIG,
   KIMI_CODING_CONFIG,
   KILOCODE_CONFIG,
@@ -25,44 +27,35 @@ import {
   CODEBUDDY_CONFIG,
   getOAuthClientMetadata,
 } from "./constants/oauth";
+import { XAI_CONFIG, XAI_PKCE_VERIFIER_BYTES } from "./constants/xai";
+import {
+  validateXaiOAuthEndpoint,
+  decodeXaiIdTokenEmail,
+  extractEmailFromAccessToken,
+  extractCodexAccountInfo,
+  fetchKiroProfileArn,
+} from "./providerHelpers";
 
-const BASE64_BLOCK_SIZE = 4;
+export { extractCodexAccountInfo, fetchKiroProfileArn };
 
-/**
- * Decode JWT access token and extract a stable account identifier for display/upsert.
- * @param {string} accessToken
- * @returns {string|undefined}
- */
-function decodeJwtPayload(jwt) {
+// Inlined from services/xai.js to keep web route bundle free of `open` (CLI-only) package
+let cachedXaiDiscovery = null;
+
+async function discoverXaiEndpoints() {
+  if (cachedXaiDiscovery) return cachedXaiDiscovery;
   try {
-    if (!jwt || typeof jwt !== "string") return null;
-    const parts = jwt.split(".");
-    if (parts.length !== 3) return null;
-    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const missingPadding = (BASE64_BLOCK_SIZE - (base64.length % BASE64_BLOCK_SIZE)) % BASE64_BLOCK_SIZE;
-    const padded = base64 + "=".repeat(missingPadding);
-    return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
-  } catch {
-    return null;
-  }
-}
-
-function extractEmailFromAccessToken(accessToken) {
-  const payload = decodeJwtPayload(accessToken);
-  if (!payload) return undefined;
-  return payload.email || payload.preferred_username || payload.sub || undefined;
-}
-
-// Extract codex account info from id_token
-export function extractCodexAccountInfo(idToken) {
-  const payload = decodeJwtPayload(idToken);
-  if (!payload) return {};
-  const chatgpt = payload["https://api.openai.com/auth"] || {};
-  return {
-    email: payload.email,
-    chatgptAccountId: chatgpt.chatgpt_account_id,
-    chatgptPlanType: chatgpt.chatgpt_plan_type,
-  };
+    const res = await fetch(XAI_CONFIG.discoveryUrl, { headers: { Accept: "application/json" } });
+    if (res.ok) {
+      const data = await res.json();
+      cachedXaiDiscovery = {
+        authorizeUrl: validateXaiOAuthEndpoint(data.authorization_endpoint, "authorization_endpoint"),
+        tokenUrl: validateXaiOAuthEndpoint(data.token_endpoint, "token_endpoint"),
+      };
+      return cachedXaiDiscovery;
+    }
+  } catch { /* fall through to static fallback */ }
+  cachedXaiDiscovery = { authorizeUrl: XAI_CONFIG.authorizeUrl, tokenUrl: XAI_CONFIG.tokenUrl };
+  return cachedXaiDiscovery;
 }
 
 // Provider configurations
@@ -127,8 +120,8 @@ const PROVIDERS = {
   codex: {
     config: CODEX_CONFIG,
     flowType: "authorization_code_pkce",
-    fixedPort: 1455,
-    callbackPath: "/auth/callback",
+    fixedPort: CODEX_CONFIG.fixedPort,
+    callbackPath: CODEX_CONFIG.callbackPath,
     buildAuthUrl: (config, redirectUri, state, codeChallenge) => {
       const params = {
         response_type: "code",
@@ -173,14 +166,88 @@ const PROVIDERS = {
       const mapped = {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token,
+        idToken: tokens.id_token,
         expiresIn: tokens.expires_in,
+        lastRefreshAt: new Date().toISOString(),
       };
-      if (info.email) mapped.email = info.email;
+      const email = info.email || extractEmailFromAccessToken(tokens.access_token);
+      if (email) mapped.email = email;
       if (info.chatgptAccountId || info.chatgptPlanType) {
         mapped.providerSpecificData = {
           chatgptAccountId: info.chatgptAccountId,
           chatgptPlanType: info.chatgptPlanType,
         };
+      }
+      return mapped;
+    },
+  },
+
+  xai: {
+    config: XAI_CONFIG,
+    flowType: "authorization_code_pkce",
+    fixedPort: XAI_CONFIG.loopbackPort,
+    callbackPath: XAI_CONFIG.callbackPath,
+    pkceVerifierBytes: XAI_PKCE_VERIFIER_BYTES,
+    prepareConfig: async (config) => {
+      const endpoints = await discoverXaiEndpoints();
+      return {
+        ...config,
+        authorizeUrl: endpoints.authorizeUrl,
+        tokenUrl: endpoints.tokenUrl,
+      };
+    },
+    buildAuthUrl: (config, redirectUri, state, codeChallenge) => {
+      // Mirror CLIProxyAPI BuildAuthorizeURL: includes nonce, plan, referrer
+      const nonce = crypto.randomBytes(16).toString("hex");
+      const params = {
+        response_type: "code",
+        client_id: config.clientId,
+        redirect_uri: redirectUri,
+        scope: config.scope,
+        code_challenge: codeChallenge,
+        code_challenge_method: config.codeChallengeMethod,
+        state,
+        nonce,
+        plan: "generic",
+        referrer: "cli-proxy-api",
+      };
+      const qs = Object.entries(params)
+        .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+        .join("&");
+      return `${config.authorizeUrl}?${qs}`;
+    },
+    exchangeToken: async (config, code, redirectUri, codeVerifier) => {
+      const response = await fetch(config.tokenUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+        body: new URLSearchParams({
+          grant_type: "authorization_code",
+          client_id: config.clientId,
+          code,
+          redirect_uri: redirectUri,
+          code_verifier: codeVerifier,
+        }),
+      });
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`xAI token exchange failed: ${error}`);
+      }
+      return await response.json();
+    },
+    mapTokens: (tokens) => {
+      const mapped = {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresIn: tokens.expires_in,
+        scope: tokens.scope,
+      };
+      const email = decodeXaiIdTokenEmail(tokens.id_token);
+      if (email) mapped.email = email;
+      if (tokens.id_token) {
+        mapped.providerSpecificData = { idToken: tokens.id_token };
       }
       return mapped;
     },
@@ -477,80 +544,101 @@ const PROVIDERS = {
 
   qoder: {
     config: QODER_CONFIG,
-    flowType: "authorization_code",
-    buildAuthUrl: (config, redirectUri, state) => {
-      const params = new URLSearchParams({
-        client_id: config.clientId,
-        response_type: "code",
-        redirect_uri: redirectUri,
-        state: state,
-      });
-      return `${config.authorizeUrl}?${params.toString()}`;
+    flowType: "device_code",
+    // Qoder uses a custom device flow: PKCE + nonce + machine_id are generated
+    // locally, the user lands on qoder.com/device/selectAccounts in the
+    // browser, and we poll openapi.qoder.sh until a `dt-...` token appears.
+    requestDeviceCode: async (config) => {
+      const { QoderService } = await import("@/lib/oauth/services/qoder");
+      const flow = new QoderService().initiateDeviceFlow();
+      // Match the device_code shape the rest of the OAuthModal expects
+      // (device_code, user_code, verification_uri[_complete], interval).
+      // The poll endpoint identifies us by nonce+verifier, not by a
+      // server-issued device_code, so we plumb our own values through:
+      //   device_code   = nonce  (modal forwards as deviceCode on poll)
+      //   codeVerifier  = our PKCE verifier (route forwards as codeVerifier)
+      return {
+        device_code: flow.nonce,
+        user_code: flow.nonce.slice(0, 8).toUpperCase(),
+        verification_uri: config.loginUrl,
+        verification_uri_complete: flow.verificationUriComplete,
+        expires_in: 300,
+        interval: 2,
+        codeVerifier: flow.codeVerifier,
+        _qoderNonce: flow.nonce,
+        _qoderMachineId: flow.machineId,
+      };
     },
-    exchangeToken: async (config, code, redirectUri) => {
-      const basicAuth = Buffer.from(`${config.clientId}:${config.clientSecret}`).toString("base64");
-
-      const response = await fetch(config.tokenUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          Accept: "application/json",
-          Authorization: `Basic ${basicAuth}`,
+    pollToken: async (config, deviceCode, codeVerifier, extraData) => {
+      const { QoderService } = await import("@/lib/oauth/services/qoder");
+      const svc = new QoderService();
+      const nonce = deviceCode || extraData?._qoderNonce;
+      const verifier = codeVerifier || extraData?._qoderVerifier;
+      if (!nonce || !verifier) {
+        return {
+          ok: false,
+          data: { error: "invalid_request", error_description: "Missing nonce/verifier" },
+        };
+      }
+      let result;
+      try {
+        result = await svc.pollDeviceToken({ nonce, codeVerifier: verifier });
+      } catch (err) {
+        return {
+          ok: false,
+          data: { error: "poll_failed", error_description: err.message },
+        };
+      }
+      if (result.status === "pending") {
+        return { ok: false, data: { error: "authorization_pending" } };
+      }
+      // Best-effort profile lookup so we have a name/email to display.
+      const userInfo = await svc.fetchUserInfo(result.accessToken);
+      // expireTime is a Unix-ms timestamp from QoderService.parseExpiry,
+      // which already falls back to "now + 30 days" when the upstream
+      // omits expiry. Floor to a sane minimum (1 day) so a stale or
+      // skewed upstream timestamp doesn't truncate the stored token below
+      // something useful.
+      const minSeconds = 24 * 60 * 60;
+      const remainingSeconds = Math.floor((result.expireTime - Date.now()) / 1000);
+      const expiresIn = Math.max(minSeconds, remainingSeconds);
+      return {
+        ok: true,
+        data: {
+          access_token: result.accessToken,
+          refresh_token: result.refreshToken,
+          expires_in: expiresIn,
+          _qoderUserId: result.userId,
+          _qoderMachineId: extraData?._qoderMachineId || "",
+          _qoderName: userInfo.name,
+          _qoderEmail: userInfo.email,
+          _qoderOrganizationId: userInfo.organizationId,
         },
-        body: new URLSearchParams({
-          grant_type: "authorization_code",
-          code: code,
-          redirect_uri: redirectUri,
-          client_id: config.clientId,
-          client_secret: config.clientSecret,
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.text();
-        throw new Error(`Token exchange failed: ${error}`);
-      }
-
-      return await response.json();
+      };
     },
-    postExchange: async (tokens) => {
-      // Fetch user info (MUST succeed to get API key)
-      const userInfoRes = await fetch(
-        `${QODER_CONFIG.userInfoUrl}?accessToken=${encodeURIComponent(tokens.access_token)}`,
-        { headers: { Accept: "application/json" } }
-      );
-
-      if (!userInfoRes.ok) {
-        const errorText = await userInfoRes.text();
-        throw new Error(`Failed to fetch user info: ${errorText}`);
-      }
-
-      const result = await userInfoRes.json();
-      if (!result.success) {
-        throw new Error(`User info request failed: ${result.message || "Unknown error"}`);
-      }
-
-      const userInfo = result.data || {};
-
-      if (!userInfo.apiKey || userInfo.apiKey.trim() === "") {
-        throw new Error("Empty API key returned from Qoder");
-      }
-
-      const email = userInfo.email?.trim() || userInfo.phone?.trim();
-      if (!email) {
-        throw new Error("Missing account email/phone in user info");
-      }
-
-      return { userInfo };
+    mapTokens: (tokens) => {
+      const rawEmail = (tokens._qoderEmail || "").trim();
+      const displayName = (tokens._qoderName || "").trim() || null;
+      const userId = tokens._qoderUserId || "";
+      // Dedup in createProviderConnection requires a non-empty email. When
+      // fetchUserInfo silently fails (returns ""), fall back to a stable
+      // synthetic identifier derived from userId so re-logins update the
+      // existing row instead of accumulating "Account N" duplicates.
+      const email = rawEmail || (userId ? `qoder-user-${userId}` : null);
+      return {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token || null,
+        expiresIn: tokens.expires_in,
+        email,
+        displayName,
+        providerSpecificData: {
+          authMethod: "device",
+          userId,
+          machineId: tokens._qoderMachineId || "",
+          organizationId: tokens._qoderOrganizationId || "",
+        },
+      };
     },
-    mapTokens: (tokens, extra) => ({
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      expiresIn: tokens.expires_in,
-      apiKey: extra?.userInfo?.apiKey,
-      email: extra?.userInfo?.email || extra?.userInfo?.phone,
-      displayName: extra?.userInfo?.nickname || extra?.userInfo?.name,
-    }),
   },
 
   qwen: {
@@ -705,6 +793,7 @@ const PROVIDERS = {
     requestDeviceCode: async (config, codeChallenge, options = {}) => {
       const trimmedRegion = typeof options.region === "string" ? options.region.trim() : "";
       const region = trimmedRegion || "us-east-1";
+      assertValidAwsRegion(region);
       const trimmedStartUrl = typeof options.startUrl === "string" ? options.startUrl.trim() : "";
       const startUrl = trimmedStartUrl || config.startUrl;
       const authMethod = options.authMethod === "idc" ? "idc" : "builder-id";
@@ -773,6 +862,7 @@ const PROVIDERS = {
     },
     pollToken: async (config, deviceCode, codeVerifier, extraData) => {
       const region = extraData?._region || "us-east-1";
+      assertValidAwsRegion(region);
       const tokenUrl = `https://oidc.${region}.amazonaws.com/token`;
       const response = await fetch(tokenUrl, {
         method: "POST",
@@ -1090,7 +1180,7 @@ const PROVIDERS = {
   // 1. POST stateUrl → get { state, authUrl }
   // 2. Open authUrl in browser
   // 3. Poll tokenUrl with state until success (code 0) or timeout
-  codebuddy: {
+  "codebuddy-cn": {
     config: CODEBUDDY_CONFIG,
     flowType: "device_code",
     requestDeviceCode: async (config) => {
@@ -1122,23 +1212,25 @@ const PROVIDERS = {
       };
     },
     pollToken: async (config, deviceCode) => {
-      const response = await fetch(config.tokenUrl, {
-        method: "POST",
+      // CodeBuddy polls the token endpoint via GET with the state as a query
+      // param (not POST/body) — matches the official CLI's /v2/plugin/auth/token?state=...
+      const response = await fetch(`${config.tokenUrl}?state=${encodeURIComponent(deviceCode)}`, {
+        method: "GET",
         headers: {
-          "Content-Type": "application/json",
           Accept: "application/json",
           "User-Agent": config.userAgent,
           "X-Requested-With": "XMLHttpRequest",
           "X-Domain": "copilot.tencent.com",
           "X-No-Authorization": "true",
           "X-No-User-Id": "true",
+          "X-No-Enterprise-Id": "true",
+          "X-No-Department-Info": "true",
           "X-Product": "SaaS",
         },
-        body: JSON.stringify({ state: deviceCode }),
       });
       if (!response.ok) return { ok: false, data: { error: "request_failed" } };
       const data = await response.json();
-      // code 11217 = pending, code 0 = success
+      // code 11217 = pending (RetryFetchToken), code 0 = success
       if (data.code === 0 && data.data?.accessToken) {
         return {
           ok: true,
@@ -1146,6 +1238,7 @@ const PROVIDERS = {
             access_token: data.data.accessToken,
             refresh_token: data.data.refreshToken || "",
             token_type: data.data.tokenType || "Bearer",
+            expires_in: data.data.expiresIn,
           },
         };
       }
@@ -1155,7 +1248,7 @@ const PROVIDERS = {
     mapTokens: (tokens) => ({
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
-      expiresIn: 86400,
+      expiresIn: tokens.expires_in || 86400,
       providerSpecificData: {},
     }),
   },
@@ -1183,18 +1276,21 @@ export function getProviderNames() {
  * Generate auth data for a provider
  * @param {object} [meta] - Provider-specific metadata (e.g. gitlab clientId/baseUrl)
  */
-export function generateAuthData(providerName, redirectUri, meta) {
+export async function generateAuthData(providerName, redirectUri, meta) {
   const provider = getProvider(providerName);
-  const { codeVerifier, codeChallenge, state } = generatePKCE();
+  const config = provider.prepareConfig
+    ? await provider.prepareConfig(provider.config, meta || {})
+    : provider.config;
+  const { codeVerifier, codeChallenge, state } = generatePKCE(provider.pkceVerifierBytes);
 
   let authUrl;
   if (provider.flowType === "device_code") {
     // Device code flow doesn't have auth URL upfront
     authUrl = null;
   } else if (provider.flowType === "authorization_code_pkce") {
-    authUrl = provider.buildAuthUrl(provider.config, redirectUri, state, codeChallenge, meta || {});
+    authUrl = provider.buildAuthUrl(config, redirectUri, state, codeChallenge, meta || {});
   } else {
-    authUrl = provider.buildAuthUrl(provider.config, redirectUri, state, undefined, meta || {});
+    authUrl = provider.buildAuthUrl(config, redirectUri, state, undefined, meta || {});
   }
 
   return {
@@ -1215,8 +1311,11 @@ export function generateAuthData(providerName, redirectUri, meta) {
  */
 export async function exchangeTokens(providerName, code, redirectUri, codeVerifier, state, meta) {
   const provider = getProvider(providerName);
+  const config = provider.prepareConfig
+    ? await provider.prepareConfig(provider.config, meta || {})
+    : provider.config;
 
-  const tokens = await provider.exchangeToken(provider.config, code, redirectUri, codeVerifier, state, meta || {});
+  const tokens = await provider.exchangeToken(config, code, redirectUri, codeVerifier, state, meta || {});
 
   let extra = null;
   if (provider.postExchange) {
@@ -1260,7 +1359,13 @@ export async function pollForToken(providerName, deviceCode, codeVerifier, extra
       if (provider.postExchange) {
         extra = await provider.postExchange(result.data);
       }
-      return { success: true, tokens: provider.mapTokens(result.data, extra) };
+      const tokens = provider.mapTokens(result.data, extra);
+      // Kiro IDC/Builder-ID tokens lack profileArn; resolve it to avoid 403
+      if (providerName === "kiro" && !tokens.providerSpecificData?.profileArn) {
+        const profileArn = await fetchKiroProfileArn(tokens.accessToken);
+        if (profileArn) tokens.providerSpecificData.profileArn = profileArn;
+      }
+      return { success: true, tokens };
     } else {
       // Check if it's still pending authorization
       if (result.data.error === 'authorization_pending' || result.data.error === 'slow_down') {

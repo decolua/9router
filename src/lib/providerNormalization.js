@@ -1,5 +1,14 @@
 import { AI_PROVIDERS } from "../shared/constants/providers.js";
 
+/**
+ * Detect xAI Grok models by id pattern (grok-*, Grok_*, etc).
+ * @param {string} modelId
+ * @returns {boolean}
+ */
+export function isXaiModel(modelId) {
+  return typeof modelId === "string" && /^grok[-_]/i.test(modelId.trim());
+}
+
 export function normalizeProviderId(provider) {
   if (typeof provider !== "string") return provider;
 

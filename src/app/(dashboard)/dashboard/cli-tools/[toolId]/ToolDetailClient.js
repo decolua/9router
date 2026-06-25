@@ -144,6 +144,19 @@ export default function ToolDetailClient({ toolId, machineId }) {
     }
   };
 
+  // Guard removed/unknown tools (e.g. disabled Cowork) to avoid crash on direct URL.
+  if (!tool) {
+    return (
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-1 sm:px-0">
+        <Link href="/dashboard/cli-tools" className="inline-flex items-center gap-1 text-sm text-text-muted hover:text-primary w-fit">
+          <span className="material-symbols-outlined text-[18px]">arrow_back</span>
+          Back to CLI Tools
+        </Link>
+        <p className="text-sm text-text-muted">Tool not found or disabled.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-1 sm:px-0">
       <Link href="/dashboard/cli-tools" className="inline-flex items-center gap-1 text-sm text-text-muted hover:text-primary w-fit">
