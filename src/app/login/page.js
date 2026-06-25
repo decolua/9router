@@ -72,8 +72,7 @@ export default function LoginPage() {
       });
 
       if (res.ok) {
-        router.push("/dashboard");
-        router.refresh();
+        window.location.assign("/dashboard");
       } else {
         const data = await res.json();
         setError(data.error || "Invalid password");
