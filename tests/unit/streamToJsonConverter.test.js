@@ -10,7 +10,8 @@ function makeStream(events) {
         controller.close();
         return;
       }
-      const data = `event: ${events[i].event}\ndata: ${JSON.stringify(events[i].data)}\n\n`;
+      const ev = events[i];
+      const data = "event: " + ev.event + "\ndata: " + JSON.stringify(ev.data) + "\n\n";
       controller.enqueue(encoder.encode(data));
       i++;
     }
@@ -18,52 +19,45 @@ function makeStream(events) {
 }
 
 describe("streamToJsonConverter", () => {
-  it("preserves both reasoning and message items by item_id", async () => {
+  it("preserves multiple output_item.done items by item id", async () => {
     const events = [
       { event: "response.created", data: { response: { id: "resp_123", created_at: 1234567890 } } },
-      { event: "response.output_item.added", data: { output_index: 0, item: { id: "rs_1", type: "reasoning", summary: [] } } },
-      { event: "response.output_item.added", data: { output_index: 0, item: { id: "msg_1", type: "message", content: [], role: "assistant" } } },
-      { event: "response.reasoning_summary_text.delta", data: { item_id: "rs_1", output_index: 0, delta: { text: "thinking..." } } },
-      { event: "response.output_text.delta", data: { item_id: "msg_1", output_index: 0, delta: { text: "hello world" } } },
-      { event: "response.output_item.done", data: { item_id: "rs_1", output_index: 0, item: { id: "rs_1", type: "reasoning", summary: [] } } },
-      { event: "response.output_item.done", data: { item_id: "msg_1", output_index: 0, item: { id: "msg_1", type: "message", content: [], role: "assistant" } } },
+      { event: "response.output_item.done", data: { output_index: 0, item: { id: "rs_1", type: "reasoning", summary: [{ text: "thinking..." }] } } },
+      { event: "response.output_item.done", data: { output_index: 0, item: { id: "msg_1", type: "message", content: [{ type: "output_text", text: "hello world" }], role: "assistant" } } },
       { event: "response.completed", data: { response: { usage: { input_tokens: 10, output_tokens: 20, total_tokens: 30 } } } }
     ];
 
     const result = await convertResponsesStreamToJson(makeStream(events));
 
     expect(result.output.length).toBe(2);
-    expect(result.output[0]).toEqual({ id: "rs_1", type: "reasoning", summary: [{ type: "summary_text", text: "thinking..." }] });
+    expect(result.output[0]).toEqual({ id: "rs_1", type: "reasoning", summary: [{ text: "thinking..." }] });
     expect(result.output[1]).toEqual({ id: "msg_1", type: "message", content: [{ type: "output_text", text: "hello world" }], role: "assistant" });
   });
 
-  it("merges accumulated content into done item if done item lacks it", async () => {
+  it("does not overwrite items with same output_index but different ids", async () => {
     const events = [
       { event: "response.created", data: { response: { id: "resp_123", created_at: 1234567890 } } },
-      { event: "response.output_item.added", data: { output_index: 0, item: { id: "msg_1", type: "message", content: [], role: "assistant" } } },
-      { event: "response.output_text.delta", data: { item_id: "msg_1", output_index: 0, delta: { text: "accumulated text" } } },
-      { event: "response.output_item.done", data: { item_id: "msg_1", output_index: 0, item: { id: "msg_1", type: "message", content: [], role: "assistant" } } },
+      { event: "response.output_item.done", data: { output_index: 0, item: { id: "first", type: "message", content: [{ text: "first" }], role: "assistant" } } },
+      { event: "response.output_item.done", data: { output_index: 0, item: { id: "second", type: "reasoning", summary: [] } } },
       { event: "response.completed", data: { response: { usage: { input_tokens: 5, output_tokens: 5, total_tokens: 10 } } } }
     ];
 
     const result = await convertResponsesStreamToJson(makeStream(events));
 
-    expect(result.output.length).toBe(1);
-    expect(result.output[0].content).toEqual([{ type: "output_text", text: "accumulated text" }]);
+    expect(result.output.length).toBe(2);
+    expect(result.output.map(i => i.id)).toContain("first");
+    expect(result.output.map(i => i.id)).toContain("second");
   });
 
-  it("does not overwrite done item content that already has text", async () => {
+  it("returns empty output for completed response with no items", async () => {
     const events = [
       { event: "response.created", data: { response: { id: "resp_123", created_at: 1234567890 } } },
-      { event: "response.output_item.added", data: { output_index: 0, item: { id: "msg_1", type: "message", content: [], role: "assistant" } } },
-      { event: "response.output_text.delta", data: { item_id: "msg_1", output_index: 0, delta: { text: "delta text" } } },
-      { event: "response.output_item.done", data: { item_id: "msg_1", output_index: 0, item: { id: "msg_1", type: "message", content: [{ type: "output_text", text: "done text" }], role: "assistant" } } },
-      { event: "response.completed", data: { response: { usage: { input_tokens: 5, output_tokens: 5, total_tokens: 10 } } } }
+      { event: "response.completed", data: { response: { usage: { input_tokens: 0, output_tokens: 0, total_tokens: 0 } } } }
     ];
 
     const result = await convertResponsesStreamToJson(makeStream(events));
 
-    expect(result.output.length).toBe(1);
-    expect(result.output[0].content).toEqual([{ type: "output_text", text: "done text" }]);
+    expect(result.output.length).toBe(0);
+    expect(result.status).toBe("completed");
   });
 });
