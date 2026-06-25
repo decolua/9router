@@ -1,5 +1,9 @@
 import { claudeToOpenAIRequest } from "../translator/request/claude-to-openai.js";
 import { openaiToClaudeRequest } from "../translator/request/openai-to-claude.js";
+import {
+  openaiResponsesToOpenAIRequest,
+  openaiToOpenAIResponsesRequest,
+} from "../translator/request/openai-responses.js";
 
 const DEFAULT_TIMEOUT_MS = 3000;
 
@@ -36,6 +40,25 @@ export async function compressWithHeadroom(body, { enabled, url, model, format, 
       const claudeBody = openaiToClaudeRequest(model, { ...oai, messages: data.messages }, false);
       if (Array.isArray(claudeBody?.messages)) body.messages = claudeBody.messages;
       if (claudeBody?.system !== undefined) body.system = claudeBody.system;
+      return data;
+    }
+
+    // OpenAI Responses shape (Codex): body.input holds Responses items, NOT OpenAI
+    // messages. Translate input -> OpenAI -> compress -> translate back to input so
+    // body.input keeps the Responses contract (the proxy only understands OpenAI). (#1998)
+    if (format === "openai-responses") {
+      const oai = openaiResponsesToOpenAIRequest(model, body, false);
+      if (!Array.isArray(oai?.messages)) return null;
+      const data = await callCompress(url, oai.messages, model, timeoutMs, compressUserMessages);
+      if (!data) return null;
+      // input: undefined so the translator rebuilds input from the compressed
+      // messages instead of returning the original input unchanged.
+      const responsesBody = openaiToOpenAIResponsesRequest(
+        model,
+        { ...oai, input: undefined, messages: data.messages },
+        false
+      );
+      if (Array.isArray(responsesBody?.input)) body.input = responsesBody.input;
       return data;
     }
 
