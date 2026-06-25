@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS, PROVIDER_OAUTH } from "../config/providers.js";
 import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE } from "../providers/shared.js";
@@ -16,6 +17,12 @@ import { getOpenAICompatibleType } from "../services/provider.js";
 // the same mechanism the Codex executor uses. We do NOT enable it by default:
 // some strict openai-compatible gateways reject unknown fields. A custom
 // provider opts in via providerSpecificData.enablePromptCacheKey === true.
+export function normalizePromptCacheKey(provider, sessionId) {
+  if (!sessionId) return "";
+  const scoped = `${provider || "openai-compatible"}:${sessionId}`;
+  return `cc_${crypto.createHash("sha256").update(scoped).digest("hex").slice(0, 32)}`;
+}
+
 export function injectPromptCacheKey(provider, body, credentials) {
   if (!body || typeof body !== "object") return body;
   if (credentials?.providerSpecificData?.enablePromptCacheKey !== true) return body;
@@ -24,7 +31,8 @@ export function injectPromptCacheKey(provider, body, credentials) {
   // translateRequest() already captured a conversation-stable id into
   // credentials._clientSessionId; fall back to resolving one here so this
   // also works on the same-format fast path (openai→openai) where capture
-  // may not have run.
+  // may not have run. The upstream key is a short provider-scoped hash rather
+  // than a raw client/session identifier, keeping it stable but provider-safe.
   const sessionId = credentials?._clientSessionId || resolveSessionId({
     headers: credentials?.rawHeaders,
     body,
@@ -33,7 +41,8 @@ export function injectPromptCacheKey(provider, body, credentials) {
     scope: provider,
   });
 
-  if (sessionId) body.prompt_cache_key = sessionId;
+  const promptCacheKey = normalizePromptCacheKey(provider, sessionId);
+  if (promptCacheKey) body.prompt_cache_key = promptCacheKey;
   return body;
 }
 
