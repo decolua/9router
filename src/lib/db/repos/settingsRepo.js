@@ -42,6 +42,10 @@ const DEFAULT_SETTINGS = {
   cavemanLevel: "full",
   ponytailEnabled: false,
   ponytailLevel: "full",
+  telegramNotificationsEnabled: false,
+  telegramBotToken: "",
+  telegramChatId: "",
+  webNotificationsEnabled: false,
 };
 
 async function readRaw() {

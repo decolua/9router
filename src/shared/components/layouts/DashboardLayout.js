@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { useNotificationStore } from "@/store/notificationStore";
 import Sidebar from "../Sidebar";
@@ -36,6 +36,55 @@ export default function DashboardLayout({ children }) {
   const pathname = usePathname();
   const notifications = useNotificationStore((state) => state.notifications);
   const removeNotification = useNotificationStore((state) => state.removeNotification);
+  const addToast = useNotificationStore((state) => state.addNotification);
+
+  useEffect(() => {
+    let es;
+    const initNotifications = async () => {
+      try {
+        const res = await fetch("/api/settings");
+        if (!res.ok) return;
+        const settings = await res.json();
+        if (settings.webNotificationsEnabled) {
+          es = new EventSource("/api/notifications/stream");
+          es.onmessage = (event) => {
+            try {
+              const data = JSON.parse(event.data);
+              // 1. Show Toast on dashboard
+              addToast({
+                type: "error",
+                title: data.title || "Model Alert",
+                message: `[${data.metadata?.provider}/${data.metadata?.model}] ${data.message}`,
+                duration: 8000
+              });
+
+              // 2. Trigger native OS notification
+              if (
+                typeof window !== "undefined" &&
+                "Notification" in window &&
+                Notification.permission === "granted"
+              ) {
+                new Notification(data.title || "9Router Alert", {
+                  body: `[${data.metadata?.provider}/${data.metadata?.model}] ${data.message}`,
+                  tag: data.id
+                });
+              }
+            } catch (err) {
+              console.error("Failed to parse notification:", err);
+            }
+          };
+        }
+      } catch (err) {
+        console.error("Failed to initialize notification stream:", err);
+      }
+    };
+
+    initNotifications();
+
+    return () => {
+      if (es) es.close();
+    };
+  }, [addToast]);
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-bg">

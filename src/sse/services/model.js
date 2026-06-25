@@ -32,11 +32,16 @@ export async function resolveModelAlias(alias) {
   return resolveModelAliasFromMap(alias, aliases);
 }
 
-/**
- * Get full model info (parse or resolve)
- */
 export async function getModelInfo(modelStr) {
+  let preferredConnectionId = null;
+  if (modelStr && modelStr.includes("@")) {
+    const parts = modelStr.split("@");
+    modelStr = parts[0];
+    preferredConnectionId = parts[1];
+  }
+
   const parsed = parseModel(modelStr);
+  let res;
 
   if (!parsed.isAlias) {
     // Provider-node prefixes are user-defined. They must not override built-in
@@ -45,37 +50,41 @@ export async function getModelInfo(modelStr) {
       const openaiNodes = await getProviderNodes({ type: "openai-compatible" });
       const matchedOpenAI = openaiNodes.find((node) => node.prefix === parsed.providerAlias);
       if (matchedOpenAI) {
-        return { provider: matchedOpenAI.id, model: parsed.model };
-      }
-
-      const anthropicNodes = await getProviderNodes({ type: "anthropic-compatible" });
-      const matchedAnthropic = anthropicNodes.find((node) => node.prefix === parsed.providerAlias);
-      if (matchedAnthropic) {
-        return { provider: matchedAnthropic.id, model: parsed.model };
-      }
-
-      const embeddingNodes = await getProviderNodes({ type: "custom-embedding" });
-      const matchedEmbedding = embeddingNodes.find((node) => node.prefix === parsed.providerAlias);
-      if (matchedEmbedding) {
-        return { provider: matchedEmbedding.id, model: parsed.model };
+        res = { provider: matchedOpenAI.id, model: parsed.model };
+      } else {
+        const anthropicNodes = await getProviderNodes({ type: "anthropic-compatible" });
+        const matchedAnthropic = anthropicNodes.find((node) => node.prefix === parsed.providerAlias);
+        if (matchedAnthropic) {
+          res = { provider: matchedAnthropic.id, model: parsed.model };
+        } else {
+          const embeddingNodes = await getProviderNodes({ type: "custom-embedding" });
+          const matchedEmbedding = embeddingNodes.find((node) => node.prefix === parsed.providerAlias);
+          if (matchedEmbedding) {
+            res = { provider: matchedEmbedding.id, model: parsed.model };
+          }
+        }
       }
     }
-    return {
-      provider: parsed.provider,
-      model: parsed.model
-    };
+    if (!res) {
+      res = {
+        provider: parsed.provider,
+        model: parsed.model
+      };
+    }
+  } else {
+    // Check if this is a combo name before resolving as alias
+    // This prevents combo names from being incorrectly routed to providers
+    const combo = await getComboByName(parsed.model);
+    if (combo) {
+      // Return null provider to signal this should be handled as combo
+      // The caller (handleChat) will detect this and handle it as combo
+      res = { provider: null, model: parsed.model };
+    } else {
+      res = await getModelInfoCore(modelStr, getModelAliases);
+    }
   }
 
-  // Check if this is a combo name before resolving as alias
-  // This prevents combo names from being incorrectly routed to providers
-  const combo = await getComboByName(parsed.model);
-  if (combo) {
-    // Return null provider to signal this should be handled as combo
-    // The caller (handleChat) will detect this and handle it as combo
-    return { provider: null, model: parsed.model };
-  }
-
-  return getModelInfoCore(modelStr, getModelAliases);
+  return { ...res, preferredConnectionId };
 }
 
 /**

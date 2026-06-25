@@ -303,6 +303,28 @@ export default function ModelSelectModal({
           return true;
         }));
 
+        // Expand models with connection-specific options if there are multiple accounts
+        const providerConns = activeProviders.filter(
+          (c) => c.provider === providerId && c.isActive !== false
+        );
+        if (providerConns.length > 1) {
+          const expandedModels = [];
+          for (const m of allModels) {
+            expandedModels.push(m);
+            for (const conn of providerConns) {
+              const connLabel = conn.displayName || conn.name || conn.email || conn.id.slice(0, 8);
+              expandedModels.push({
+                ...m,
+                id: `${m.id}@${conn.id}`,
+                name: `${m.name} (${connLabel})`,
+                value: `${m.value}@${conn.id}`,
+                isPinned: true,
+              });
+            }
+          }
+          allModels = expandedModels;
+        }
+
         // Provider-as-model fallback: providers that support the kind but have no hardcoded models
         // can still be picked (value = providerAlias). Skips embedding (always needs model).
         if (allModels.length === 0 && kindFilter && ALLOW_PROVIDER_FALLBACK_KINDS.has(kindFilter)) {
@@ -515,6 +537,12 @@ export default function ModelSelectModal({
                         <>
                           <span className="material-symbols-outlined text-[11px]">edit</span>
                           {model.name}
+                        </>
+                      ) : model.isPinned ? (
+                        <>
+                          <span className="material-symbols-outlined text-[12px] opacity-80">link</span>
+                          {model.name}
+                          <CapacityBadges caps={getCaps(model.value)} />
                         </>
                       ) : model.isCustom ? (
                         <>

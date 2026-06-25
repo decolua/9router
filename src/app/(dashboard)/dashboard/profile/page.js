@@ -60,6 +60,17 @@ export default function ProfilePage() {
   const [proxyLoading, setProxyLoading] = useState(false);
   const [proxyTestLoading, setProxyTestLoading] = useState(false);
 
+  const [notifyForm, setNotifyForm] = useState({
+    telegramNotificationsEnabled: false,
+    telegramBotToken: "",
+    telegramChatId: "",
+    webNotificationsEnabled: false
+  });
+  const [notifyLoading, setNotifyLoading] = useState(false);
+  const [notifyStatus, setNotifyStatus] = useState({ type: "", message: "" });
+  const [notifyTestLoading, setNotifyTestLoading] = useState(false);
+  const [notifyExpanded, setNotifyExpanded] = useState(false);
+
   useEffect(() => {
     setLocale(getLocaleFromCookie());
   }, [langOpen]);
@@ -82,6 +93,12 @@ export default function ProfilePage() {
           outboundProxyEnabled: data?.outboundProxyEnabled === true,
           outboundProxyUrl: data?.outboundProxyUrl || "",
           outboundNoProxy: data?.outboundNoProxy || "",
+        });
+        setNotifyForm({
+          telegramNotificationsEnabled: data?.telegramNotificationsEnabled === true,
+          telegramBotToken: data?.telegramBotToken || "",
+          telegramChatId: data?.telegramChatId || "",
+          webNotificationsEnabled: data?.webNotificationsEnabled === true,
         });
         setLoading(false);
       })
@@ -191,6 +208,114 @@ export default function ProfilePage() {
       setProxyStatus({ type: "error", message: "An error occurred" });
     } finally {
       setProxyLoading(false);
+    }
+  };
+
+  const updateNotifyEnabled = async (field, enabled) => {
+    setNotifyLoading(true);
+    setNotifyStatus({ type: "", message: "" });
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [field]: enabled }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSettings((prev) => ({ ...prev, ...data }));
+        setNotifyForm((prev) => ({ ...prev, [field]: data[field] === true }));
+        setNotifyStatus({
+          type: "success",
+          message: enabled ? `${field === "webNotificationsEnabled" ? "Web" : "Telegram"} notifications enabled` : `${field === "webNotificationsEnabled" ? "Web" : "Telegram"} notifications disabled`
+        });
+      } else {
+        setNotifyStatus({ type: "error", message: data.error || "Failed to update notification settings" });
+      }
+    } catch (err) {
+      setNotifyStatus({ type: "error", message: "An error occurred" });
+    } finally {
+      setNotifyLoading(false);
+    }
+  };
+
+  const saveNotifySettings = async (e) => {
+    e.preventDefault();
+    setNotifyLoading(true);
+    setNotifyStatus({ type: "", message: "" });
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          telegramBotToken: notifyForm.telegramBotToken,
+          telegramChatId: notifyForm.telegramChatId,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSettings((prev) => ({ ...prev, ...data }));
+        setNotifyForm((prev) => ({
+          ...prev,
+          telegramBotToken: data.telegramBotToken || "",
+          telegramChatId: data.telegramChatId || "",
+        }));
+        setNotifyStatus({ type: "success", message: "Telegram settings saved" });
+      } else {
+        setNotifyStatus({ type: "error", message: data.error || "Failed to save settings" });
+      }
+    } catch (err) {
+      setNotifyStatus({ type: "error", message: "An error occurred" });
+    } finally {
+      setNotifyLoading(false);
+    }
+  };
+
+  const testTelegramNotification = async () => {
+    const token = notifyForm.telegramBotToken.trim();
+    const chatId = notifyForm.telegramChatId.trim();
+    if (!token || !chatId) {
+      setNotifyStatus({ type: "error", message: "Bot Token and Chat ID are required to test." });
+      return;
+    }
+    setNotifyTestLoading(true);
+    setNotifyStatus({ type: "", message: "" });
+    try {
+      const res = await fetch("/api/settings/notifications-test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ telegramBotToken: token, telegramChatId: chatId }),
+      });
+      const data = await res.json();
+      if (res.ok && data?.ok) {
+        setNotifyStatus({ type: "success", message: "Test Telegram notification sent!" });
+      } else {
+        setNotifyStatus({ type: "error", message: data?.error || "Failed to send test Telegram notification" });
+      }
+    } catch (err) {
+      setNotifyStatus({ type: "error", message: "An error occurred" });
+    } finally {
+      setNotifyTestLoading(false);
+    }
+  };
+
+  const requestWebNotificationPermission = async () => {
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      setNotifyStatus({ type: "error", message: "Web notifications are not supported in this browser." });
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    if (permission === "granted") {
+      setNotifyStatus({ type: "success", message: "Web notification permission granted! Test notification sent." });
+      try {
+        new Notification("9Router Alert Test", {
+          body: "Web push notifications are working correctly!",
+          icon: "/favicon.ico"
+        });
+      } catch (err) {
+        console.error("Failed to show test notification:", err);
+      }
+    } else {
+      setNotifyStatus({ type: "error", message: `Permission ${permission}. Please enable in browser settings.` });
     }
   };
 
@@ -1102,6 +1227,135 @@ export default function ProfilePage() {
               disabled={loading}
             />
           </div>
+        </Card>
+
+        {/* Notifications */}
+        <Card>
+          <button
+            type="button"
+            onClick={() => setNotifyExpanded((v) => !v)}
+            className="w-full flex items-center gap-3 text-left"
+          >
+            <div className="p-2 rounded-lg bg-orange-500/10 text-orange-500 shrink-0">
+              <span className="material-symbols-outlined text-[20px]">notifications</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-base sm:text-lg font-semibold">Notification Alerts</h3>
+              <p className="text-xs text-text-muted">
+                Get notified on Telegram or via browser push alerts when model calls fail.
+              </p>
+            </div>
+            <span className="material-symbols-outlined text-text-muted shrink-0">
+              {notifyExpanded ? "expand_less" : "expand_more"}
+            </span>
+          </button>
+
+          {notifyExpanded && (
+            <div className="flex flex-col gap-4 mt-4 pt-4 border-t border-border/50">
+              {/* Web Notification Toggle */}
+              <div className="flex items-start sm:items-center justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm sm:text-base">Browser Push Notifications</p>
+                  <p className="text-xs sm:text-sm text-text-muted">
+                    Show native OS desktop notifications when calls fail while the dashboard is open.
+                  </p>
+                </div>
+                <Toggle
+                  checked={notifyForm.webNotificationsEnabled === true}
+                  onChange={() => updateNotifyEnabled("webNotificationsEnabled", !notifyForm.webNotificationsEnabled)}
+                  disabled={loading || notifyLoading}
+                />
+              </div>
+
+              {notifyForm.webNotificationsEnabled && (
+                <div className="pl-4 border-l border-border/50 flex flex-col gap-2">
+                  <p className="text-xs text-text-muted">
+                    Ensure browser notification permissions are granted.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={requestWebNotificationPermission}
+                    className="self-start text-xs py-1 px-3"
+                  >
+                    Request/Test Web Permission
+                  </Button>
+                </div>
+              )}
+
+              {/* Telegram Notification Toggle */}
+              <div className="flex items-start sm:items-center justify-between gap-4 pt-4 border-t border-border/50">
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm sm:text-base">Telegram Alerts</p>
+                  <p className="text-xs sm:text-sm text-text-muted">
+                    Send failure/rate limit alerts directly to a Telegram chat.
+                  </p>
+                </div>
+                <Toggle
+                  checked={notifyForm.telegramNotificationsEnabled === true}
+                  onChange={() => updateNotifyEnabled("telegramNotificationsEnabled", !notifyForm.telegramNotificationsEnabled)}
+                  disabled={loading || notifyLoading}
+                />
+              </div>
+
+              {notifyForm.telegramNotificationsEnabled && (
+                <form onSubmit={saveNotifySettings} className="pl-4 border-l border-border/50 flex flex-col gap-4">
+                  <div className="flex flex-col gap-2">
+                    <label className="font-medium text-sm">Bot Token</label>
+                    <Input
+                      placeholder="e.g., 123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"
+                      value={notifyForm.telegramBotToken}
+                      onChange={(e) => setNotifyForm((prev) => ({ ...prev, telegramBotToken: e.target.value }))}
+                      disabled={loading || notifyLoading}
+                      required
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <label className="font-medium text-sm">Chat ID</label>
+                    <Input
+                      placeholder="e.g., -100123456789 or 987654321"
+                      value={notifyForm.telegramChatId}
+                      onChange={(e) => setNotifyForm((prev) => ({ ...prev, telegramChatId: e.target.value }))}
+                      disabled={loading || notifyLoading}
+                      required
+                    />
+                    <p className="text-xs text-text-muted">
+                      Use a bot like <code className="bg-sidebar px-1 rounded">@userinfobot</code> to find your Chat ID.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-border/50">
+                    <Button
+                      type="submit"
+                      variant="primary"
+                      loading={notifyLoading}
+                      disabled={loading || notifyLoading}
+                      className="w-full sm:w-auto"
+                    >
+                      Save Telegram settings
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      loading={notifyTestLoading}
+                      disabled={loading || notifyLoading || notifyTestLoading}
+                      onClick={testTelegramNotification}
+                      className="w-full sm:w-auto"
+                    >
+                      Send Test Message
+                    </Button>
+                  </div>
+                </form>
+              )}
+
+              {notifyStatus.message && (
+                <p className={`text-xs sm:text-sm ${notifyStatus.type === "error" ? "text-red-500" : "text-green-500"} pt-2 border-t border-border/50`}>
+                  {notifyStatus.message}
+                </p>
+              )}
+            </div>
+          )}
         </Card>
 
         {/* Account actions */}

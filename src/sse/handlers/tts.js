@@ -68,7 +68,7 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language) {
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
 
-  const { provider, model } = modelInfo;
+  const { provider, model, preferredConnectionId } = modelInfo;
   log.info("ROUTING", `Provider: ${provider}, Voice: ${model}`);
 
   // noAuth providers — no credential needed
@@ -84,7 +84,7 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language) {
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId });
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {

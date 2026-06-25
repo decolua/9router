@@ -201,7 +201,18 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
  * @returns {{ shouldFallback: boolean, cooldownMs: number }}
  */
 export async function markAccountUnavailable(connectionId, status, errorText, provider = null, model = null, resetsAtMs = null) {
-  if (!connectionId || connectionId === "noauth") return { shouldFallback: false, cooldownMs: 0 };
+  if (!connectionId || connectionId === "noauth") {
+    const reason = typeof errorText === "string" ? errorText.slice(0, 150) : "Provider error";
+    const { sendNotification } = await import("./notifier.js");
+    sendNotification("Model Call Issue", reason, {
+      provider,
+      model,
+      connectionName: "Public",
+      status: status || "error"
+    }).catch(() => {});
+
+    return { shouldFallback: false, cooldownMs: 0 };
+  }
   const connections = await getProviderConnections({ provider });
   const conn = connections.find(c => c.id === connectionId);
   const backoffLevel = conn?.backoffLevel || 0;
@@ -236,6 +247,15 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   if (provider && status && reason) {
     console.error(`❌ ${provider} [${status}]: ${reason}`);
   }
+
+  // Trigger notification for credentialed account failures
+  const { sendNotification } = await import("./notifier.js");
+  sendNotification("Model Call Issue", reason, {
+    provider,
+    model,
+    connectionName: connName,
+    status
+  }).catch(() => {});
 
   return { shouldFallback: true, cooldownMs };
 }

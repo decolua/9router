@@ -42,7 +42,7 @@ export async function handleStt(request) {
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
 
-  const { provider, model } = modelInfo;
+  const { provider, model, preferredConnectionId } = modelInfo;
   log.info("ROUTING", `Provider: ${provider}, Model: ${model}`);
 
   // noAuth providers
@@ -58,7 +58,7 @@ export async function handleStt(request) {
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId });
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {

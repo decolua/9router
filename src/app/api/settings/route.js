@@ -17,8 +17,10 @@ const PROTECTED_SETTING_KEYS = ["password", "mitmSudoEncrypted"];
 export async function GET() {
   try {
     const settings = await getSettings();
-    const { password, oidcClientSecret, ...safeSettings } = settings;
+    const { password, oidcClientSecret, telegramBotToken, ...safeSettings } = settings;
     safeSettings.oidcConfigured = !!(safeSettings.oidcIssuerUrl && safeSettings.oidcClientId && oidcClientSecret);
+    safeSettings.telegramBotTokenConfigured = !!telegramBotToken;
+    safeSettings.telegramBotToken = telegramBotToken ? "••••••••" : "";
     
     const enableRequestLogs = process.env.ENABLE_REQUEST_LOGS === "true";
     const enableTranslator = process.env.ENABLE_TRANSLATOR === "true";
@@ -41,6 +43,13 @@ export async function PATCH(request) {
 
     // Strip protected secrets before any internal handling sets them
     for (const key of PROTECTED_SETTING_KEYS) delete body[key];
+
+    // Preserve telegramBotToken if it wasn't changed (passed as masked placeholder)
+    if (Object.prototype.hasOwnProperty.call(body, "telegramBotToken")) {
+      if (body.telegramBotToken === "••••••••" || !String(body.telegramBotToken).trim()) {
+        delete body.telegramBotToken;
+      }
+    }
 
     // If updating password, hash it
     if (body.newPassword) {
@@ -96,8 +105,10 @@ export async function PATCH(request) {
       resetComboRotation();
     }
 
-    const { password, oidcClientSecret, ...safeSettings } = settings;
+    const { password, oidcClientSecret, telegramBotToken, ...safeSettings } = settings;
     safeSettings.oidcConfigured = !!(safeSettings.oidcIssuerUrl && safeSettings.oidcClientId && oidcClientSecret);
+    safeSettings.telegramBotTokenConfigured = !!telegramBotToken;
+    safeSettings.telegramBotToken = telegramBotToken ? "••••••••" : "";
     return NextResponse.json(safeSettings, { headers: SETTINGS_RESPONSE_HEADERS });
   } catch (error) {
     console.log("Error updating settings:", error);
