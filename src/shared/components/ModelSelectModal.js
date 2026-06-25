@@ -249,9 +249,37 @@ export default function ModelSelectModal({
             value: `${nodePrefix}/${fullModel.replace(`${providerId}/`, "")}`,
           }));
 
-        // Always show compatible providers that are connected, even with no aliases.
-        // When no aliases exist, show a placeholder so users know it's available.
-        const modelsToShow = nodeModels.length > 0 ? nodeModels : [{
+        // Custom models registered via /api/models/custom
+        const customRegisteredModels = customModels
+          .filter((m) => m.providerAlias === providerId)
+          .map((m) => ({
+            id: m.id,
+            name: m.name || m.id,
+            value: `${nodePrefix}/${m.id}`,
+            isCustom: true,
+          }));
+
+        // Merge and deduplicate models by value
+        const seen = new Set();
+        const combined = [];
+
+        customRegisteredModels.forEach((m) => {
+          if (!seen.has(m.value)) {
+            seen.add(m.value);
+            combined.push(m);
+          }
+        });
+
+        nodeModels.forEach((m) => {
+          if (!seen.has(m.value)) {
+            seen.add(m.value);
+            combined.push(m);
+          }
+        });
+
+        // Always show compatible providers that are connected, even with no aliases or custom models.
+        // When none exist, show a placeholder so users know it's available.
+        const modelsToShow = combined.length > 0 ? combined : [{
           id: `__placeholder__${providerId}`,
           name: `${nodePrefix}/model-id`,
           value: `${nodePrefix}/model-id`,
@@ -264,7 +292,7 @@ export default function ModelSelectModal({
           color: providerInfo.color,
           models: modelsToShow,
           isCustom: true,
-          hasModels: nodeModels.length > 0,
+          hasModels: combined.length > 0,
         };
       } else {
         const hardcodedModels = getModelsByProviderId(providerId);
