@@ -241,13 +241,33 @@ export default function ModelSelectModal({
 
         // Aliases are stored using the raw providerId as key (e.g. "openai-compatible-chat-<uuid>/glm-4.7"),
         // so we must filter by providerId, not by the display prefix.
-        const nodeModels = Object.entries(modelAliases)
+        const aliasNodeModels = Object.entries(modelAliases)
           .filter(([, fullModel]) => fullModel.startsWith(`${providerId}/`))
           .map(([aliasName, fullModel]) => ({
             id: fullModel.replace(`${providerId}/`, ""),
             name: aliasName,
             value: `${nodePrefix}/${fullModel.replace(`${providerId}/`, "")}`,
           }));
+
+        // Models added via the provider's "Available Models" UI are stored in customModels
+        // (keyed by providerAlias === providerId), NOT in modelAliases. Read them here too,
+        // otherwise user-added models on custom providers never appear in the combo builder
+        // and only a "<prefix>/model-id" placeholder shows up.
+        const customNodeModels = customModels
+          .filter((m) => m.providerAlias === providerId && (!getModelKind(m) || getModelKind(m) === "llm"))
+          .map((m) => ({
+            id: m.id,
+            name: m.name || m.id,
+            value: `${nodePrefix}/${m.id}`,
+            isCustom: true,
+          }));
+
+        // Merge alias-based and customModels-based entries, de-duplicating by value.
+        const seenNodeValues = new Set(customNodeModels.map((m) => m.value));
+        const nodeModels = [
+          ...customNodeModels,
+          ...aliasNodeModels.filter((m) => !seenNodeValues.has(m.value)),
+        ];
 
         // Always show compatible providers that are connected, even with no aliases.
         // When no aliases exist, show a placeholder so users know it's available.
