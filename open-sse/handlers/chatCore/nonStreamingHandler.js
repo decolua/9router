@@ -8,12 +8,22 @@ import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
+import { openAIResponsesBodyToClaude, openAIResponsesBodyToOpenAI } from "../../translator/response/openai-responses-nonstream.js";
 
 /**
  * Translate non-streaming response body from provider format → OpenAI format.
  */
 export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat) {
   if (targetFormat === sourceFormat || targetFormat === FORMATS.OPENAI) return responseBody;
+
+  // OpenAI Responses API JSON body → requested client format.
+  // Streaming goes through translateResponse(); non-streaming needs an explicit
+  // body-level conversion so clients always receive the shape they requested,
+  // including a usage object (some clients validate `usage.input_tokens`).
+  if (targetFormat === FORMATS.OPENAI_RESPONSES) {
+    if (sourceFormat === FORMATS.CLAUDE) return openAIResponsesBodyToClaude(responseBody);
+    if (sourceFormat === FORMATS.OPENAI) return openAIResponsesBodyToOpenAI(responseBody);
+  }
 
   // Gemini / Antigravity
   if (targetFormat === FORMATS.GEMINI || targetFormat === FORMATS.ANTIGRAVITY || targetFormat === FORMATS.GEMINI_CLI || targetFormat === FORMATS.VERTEX) {
