@@ -8,7 +8,7 @@ import { createProviderConnection } from "@/models";
  */
 export async function POST(request) {
   try {
-    const { refreshToken } = await request.json();
+    const { refreshToken, email: requestEmail } = await request.json();
 
     if (!refreshToken || typeof refreshToken !== "string") {
       return NextResponse.json(
@@ -22,8 +22,9 @@ export async function POST(request) {
     // Validate and refresh token
     const tokenData = await kiroService.validateImportToken(refreshToken.trim());
 
-    // Extract email from JWT if available
-    const email = kiroService.extractEmailFromJWT(tokenData.accessToken);
+    // Extract email from JWT if available; requestEmail overrides if provided
+    const jwtEmail = kiroService.extractEmailFromJWT(tokenData.accessToken);
+    const email = requestEmail || jwtEmail || null;
 
     // Save to database
     const connection = await createProviderConnection({
@@ -33,6 +34,7 @@ export async function POST(request) {
       refreshToken: tokenData.refreshToken,
       expiresAt: new Date(Date.now() + tokenData.expiresIn * 1000).toISOString(),
       email: email || null,
+      name: requestEmail || undefined,
       providerSpecificData: {
         profileArn: tokenData.profileArn,
         authMethod: "imported",
