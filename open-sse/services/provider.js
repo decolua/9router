@@ -19,8 +19,10 @@ function isAnthropicCompatible(provider) {
   return typeof provider === "string" && provider.startsWith(ANTHROPIC_COMPATIBLE_PREFIX);
 }
 
-function getOpenAICompatibleType(provider) {
+export function getOpenAICompatibleType(provider, credentials = null) {
   if (!isOpenAICompatible(provider)) return "chat";
+  const apiType = credentials?.providerSpecificData?.apiType;
+  if (apiType === "responses" || apiType === "chat") return apiType;
   return provider.includes("responses") ? "responses" : "chat";
 }
 
@@ -130,7 +132,7 @@ function getProviderConfig(provider) {
 // node is actually an OpenAI-shape gateway.
 export function getTargetFormat(provider, credentials = null) {
   if (isOpenAICompatible(provider)) {
-    return getOpenAICompatibleType(provider) === "responses" ? "openai-responses" : "openai";
+    return getOpenAICompatibleType(provider, credentials) === "responses" ? "openai-responses" : "openai";
   }
   if (isAnthropicCompatible(provider)) {
     if (credentials?.providerSpecificData?.useChatCompletions === true) {
