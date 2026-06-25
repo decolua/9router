@@ -6,6 +6,7 @@
 import { create } from "zustand";
 
 let idCounter = 0;
+const timeouts = new Map();
 
 export const useNotificationStore = create((set, get) => ({
   notifications: [],
@@ -22,21 +23,45 @@ export const useNotificationStore = create((set, get) => ({
       createdAt: Date.now(),
     };
 
-    set((s) => ({ notifications: [...s.notifications, entry] }));
+    set((s) => {
+      let next = [...s.notifications, entry];
+      if (next.length > 50) {
+        const evicted = next.slice(0, next.length - 50);
+        next = next.slice(-50);
+        for (const ev of evicted) {
+          if (timeouts.has(ev.id)) {
+            clearTimeout(timeouts.get(ev.id));
+            timeouts.delete(ev.id);
+          }
+        }
+      }
+      return { notifications: next };
+    });
 
     // Auto-dismiss
     if (entry.duration > 0) {
-      setTimeout(() => get().removeNotification(id), entry.duration);
+      const handle = setTimeout(() => get().removeNotification(id), entry.duration);
+      timeouts.set(id, handle);
     }
 
     return id;
   },
 
   removeNotification: (id) => {
+    if (timeouts.has(id)) {
+      clearTimeout(timeouts.get(id));
+      timeouts.delete(id);
+    }
     set((s) => ({ notifications: s.notifications.filter((n) => n.id !== id) }));
   },
 
-  clearAll: () => set({ notifications: [] }),
+  clearAll: () => {
+    for (const handle of timeouts.values()) {
+      clearTimeout(handle);
+    }
+    timeouts.clear();
+    set({ notifications: [] });
+  },
 
   success: (message, title) => get().addNotification({ type: "success", message, title }),
   error: (message, title) => get().addNotification({ type: "error", message, title, duration: 8000 }),

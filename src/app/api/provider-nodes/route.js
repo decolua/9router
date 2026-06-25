@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createProviderNode, getProviderNodes } from "@/models";
 import { OPENAI_COMPATIBLE_PREFIX, ANTHROPIC_COMPATIBLE_PREFIX, CUSTOM_EMBEDDING_PREFIX } from "@/shared/constants/providers";
 import { generateId } from "@/shared/utils";
+import { validatePublicUrl, toUrlGuardResponse, UrlGuardError } from "@/lib/security/urlGuard";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,12 @@ const ANTHROPIC_COMPATIBLE_DEFAULTS = {
 const CUSTOM_EMBEDDING_DEFAULTS = {
   baseUrl: "https://api.openai.com/v1",
 };
+
+const PROVIDER_NODE_URL_GUARD = { protocols: ["http:", "https:"] };
+
+async function assertProviderNodeBaseUrl(baseUrl) {
+  await validatePublicUrl(baseUrl, PROVIDER_NODE_URL_GUARD);
+}
 
 // GET /api/provider-nodes - List all provider nodes
 export async function GET() {
@@ -50,12 +57,15 @@ export async function POST(request) {
         return NextResponse.json({ error: "Invalid OpenAI compatible API type" }, { status: 400 });
       }
 
+      const sanitizedBaseUrl = (baseUrl || OPENAI_COMPATIBLE_DEFAULTS.baseUrl).trim();
+      await assertProviderNodeBaseUrl(sanitizedBaseUrl);
+
       const node = await createProviderNode({
         id: `${OPENAI_COMPATIBLE_PREFIX}${apiType}-${generateId()}`,
         type: "openai-compatible",
         prefix: prefix.trim(),
         apiType,
-        baseUrl: (baseUrl || OPENAI_COMPATIBLE_DEFAULTS.baseUrl).trim(),
+        baseUrl: sanitizedBaseUrl,
         name: name.trim(),
       });
       return NextResponse.json({ node }, { status: 201 });
@@ -67,6 +77,7 @@ export async function POST(request) {
       if (sanitizedBaseUrl.endsWith("/embeddings")) {
         sanitizedBaseUrl = sanitizedBaseUrl.slice(0, -"/embeddings".length);
       }
+      await assertProviderNodeBaseUrl(sanitizedBaseUrl);
 
       const node = await createProviderNode({
         id: `${CUSTOM_EMBEDDING_PREFIX}${generateId()}`,
@@ -85,6 +96,7 @@ export async function POST(request) {
       if (sanitizedBaseUrl.endsWith("/messages")) {
         sanitizedBaseUrl = sanitizedBaseUrl.slice(0, -9); // remove /messages
       }
+      await assertProviderNodeBaseUrl(sanitizedBaseUrl);
 
       const node = await createProviderNode({
         id: `${ANTHROPIC_COMPATIBLE_PREFIX}${generateId()}`,
@@ -98,6 +110,9 @@ export async function POST(request) {
 
     return NextResponse.json({ error: "Invalid provider node type" }, { status: 400 });
   } catch (error) {
+    if (error instanceof UrlGuardError) {
+      return NextResponse.json(toUrlGuardResponse(error), { status: 400 });
+    }
     console.log("Error creating provider node:", error);
     return NextResponse.json({ error: "Failed to create provider node" }, { status: 500 });
   }

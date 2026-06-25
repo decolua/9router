@@ -91,8 +91,7 @@ export default function ComboDetailPage() {
     setLoading(false);
   };
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { fetchAll(); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { fetchAll(); }, [id]);
 
   const validateName = (v) => {
     if (!v.trim()) { setNameError("Name is required"); return false; }

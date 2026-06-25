@@ -1,4 +1,4 @@
-import { register } from "../index.js";
+import { register } from "../registry.js";
 import { FORMATS } from "../formats.js";
 import { ROLE, OPENAI_BLOCK, OPENAI_FINISH } from "../schema/index.js";
 import { buildChunk } from "../concerns/chunk.js";

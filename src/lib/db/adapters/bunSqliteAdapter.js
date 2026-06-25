@@ -25,15 +25,20 @@ export async function createBunSqliteAdapter(filePath) {
   }, CHECKPOINT_INTERVAL_MS);
   if (typeof checkpointTimer.unref === "function") checkpointTimer.unref();
 
+  let closed = false;
   function gracefulClose() {
+    if (closed) return;
+    closed = true;
     try { db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch {}
     try { stmtCache.clear(); } catch {}
     try { db.close(); } catch {}
   }
   const onShutdown = () => gracefulClose();
+  const onSigint = () => { onShutdown(); process.exit(0); };
+  const onSigterm = () => { onShutdown(); process.exit(0); };
   process.once("beforeExit", onShutdown);
-  process.once("SIGINT", () => { onShutdown(); process.exit(0); });
-  process.once("SIGTERM", () => { onShutdown(); process.exit(0); });
+  process.once("SIGINT", onSigint);
+  process.once("SIGTERM", onSigterm);
 
   return {
     driver: "bun:sqlite",
@@ -55,6 +60,9 @@ export async function createBunSqliteAdapter(filePath) {
     },
     checkpoint() { try { db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch {} },
     close() {
+      process.off("beforeExit", onShutdown);
+      process.off("SIGINT", onSigint);
+      process.off("SIGTERM", onSigterm);
       clearInterval(checkpointTimer);
       gracefulClose();
     },

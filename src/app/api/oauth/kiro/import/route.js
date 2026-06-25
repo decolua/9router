@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { KiroService } from "@/lib/oauth/services/kiro";
 import { createProviderConnection } from "@/models";
 
@@ -50,7 +50,7 @@ export async function POST(request) {
       },
     });
   } catch (error) {
-    console.log("Kiro import token error:", error);
+    console.log("Kiro import token error:", error?.message || error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

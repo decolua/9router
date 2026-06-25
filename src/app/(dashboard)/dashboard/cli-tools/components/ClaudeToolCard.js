@@ -110,7 +110,7 @@ export default function ClaudeToolCard({
         }
       });
       // Only set selectedApiKey if it exists in apiKeys list
-      const tokenFromFile = env.ANTHROPIC_AUTH_TOKEN;
+      const tokenFromFile = env.ANTHROPIC_AUTH_TOKEN || env.ANTHROPIC_API_KEY;
       if (tokenFromFile && apiKeys?.some(k => k.key === tokenFromFile)) {
         setSelectedApiKey(tokenFromFile);
       }
@@ -153,6 +153,7 @@ export default function ClaudeToolCard({
 
       if (keyToUse) {
         env.ANTHROPIC_AUTH_TOKEN = keyToUse;
+        env.ANTHROPIC_API_KEY = keyToUse;
       }
 
       tool.defaultModels.forEach((model) => {
@@ -212,7 +213,7 @@ export default function ClaudeToolCard({
     const keyToUse = (selectedApiKey && selectedApiKey.trim())
       ? selectedApiKey
       : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
-    const env = { ANTHROPIC_BASE_URL: getEffectiveBaseUrl(), ANTHROPIC_AUTH_TOKEN: keyToUse };
+    const env = { ANTHROPIC_BASE_URL: getEffectiveBaseUrl(), ANTHROPIC_AUTH_TOKEN: keyToUse, ANTHROPIC_API_KEY: keyToUse };
     tool.defaultModels.forEach((model) => {
       const targetModel = modelMappings[model.alias];
       if (targetModel && model.envKey) env[model.envKey] = targetModel;

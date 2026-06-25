@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { readFile, readdir } from "fs/promises";
 import { homedir } from "os";
 import { join } from "path";
@@ -76,7 +76,7 @@ export async function GET() {
       source: foundFile,
     });
   } catch (error) {
-    console.log("Kiro auto-import error:", error);
+    console.log("Kiro auto-import error:", error?.message || error);
     return NextResponse.json(
       { found: false, error: error.message },
       { status: 500 }

@@ -26,7 +26,7 @@ function processSSEMessage(msg, state) {
     state.responseId = parsed.response?.id || state.responseId;
     state.created = parsed.response?.created_at || state.created;
   } else if (eventType === "response.output_item.done") {
-    state.items.set(parsed.output_index ?? 0, parsed.item);
+    const itemId = parsed.item?.id ?? `item_${parsed.output_index ?? 0}`; state.items.set(itemId, parsed.item);
   } else if (eventType === "response.completed" || eventType === "response.done") {
     state.status = "completed";
     if (parsed.response?.usage) {
@@ -87,10 +87,7 @@ export async function convertResponsesStreamToJson(stream) {
 
   // Build output array from accumulated items (ordered by index)
   const output = [];
-  const maxIndex = state.items.size > 0 ? Math.max(...state.items.keys()) : -1;
-  for (let i = 0; i <= maxIndex; i++) {
-    output.push(state.items.get(i) || { type: "message", content: [], role: "assistant" });
-  }
+  output.push(...state.items.values());
 
   return {
     id: state.responseId || `resp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -101,3 +98,4 @@ export async function convertResponsesStreamToJson(stream) {
     usage: state.usage
   };
 }
+

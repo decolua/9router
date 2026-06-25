@@ -28,16 +28,18 @@ export function injectSystemPrompt(body, format, prompt) {
 
 // OpenAI-shaped: messages[] (chat) or input[] (responses) or instructions (responses string)
 function injectMessagesSystem(body, prompt) {
-  // OpenAI Responses API: top-level string field
-  if (typeof body.instructions === "string") {
+  // OpenAI Responses API: detect by input array OR existing instructions string
+  const isResponses = Array.isArray(body.input) && !Array.isArray(body.messages);
+  if (isResponses || typeof body.instructions === "string") {
+    if (typeof body.instructions !== "string") {
+      body.instructions = "";
+    }
     body.instructions = body.instructions
       ? `${body.instructions}${SEP}${prompt}`
       : prompt;
     return;
   }
-
   const arr = Array.isArray(body.messages) ? body.messages
-    : Array.isArray(body.input) ? body.input
     : null;
   if (!arr) return;
 
@@ -96,3 +98,4 @@ function injectGeminiSystem(body, prompt) {
   }
   target[key] = { parts: [{ text: prompt }] };
 }
+

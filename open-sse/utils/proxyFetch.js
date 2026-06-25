@@ -149,6 +149,45 @@ function shouldBypassMitmDns(url) {
   } catch { return false; }
 }
 
+function getHeaderValue(headers, name) {
+  if (!headers) return "";
+  if (typeof headers.get === "function") return headers.get(name) || "";
+  const wanted = name.toLowerCase();
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === wanted) return String(value || "");
+  }
+  return "";
+}
+
+function shouldUseAnthropicScraper(targetUrl, options) {
+  try {
+    const parsed = new URL(targetUrl);
+    if (parsed.hostname !== "api.anthropic.com") return false;
+    const accept = getHeaderValue(options.headers, "accept").toLowerCase();
+    return !accept.includes("text/event-stream");
+  } catch {
+    return false;
+  }
+}
+
+async function fetchViaAnthropicScraper(targetUrl, options) {
+  const { gotScraping } = await import("got-scraping");
+  const result = await gotScraping({
+    url: targetUrl,
+    method: options.method || "GET",
+    headers: options.headers,
+    body: options.body,
+    throwHttpErrors: false,
+    responseType: "buffer",
+  });
+
+  return new Response(result.rawBody ?? result.body ?? "", {
+    status: result.statusCode || result.status || 200,
+    statusText: result.statusMessage || result.statusText || "",
+    headers: result.headers || {},
+  });
+}
+
 function shouldBypassByNoProxy(targetUrl, noProxyValue) {
   const noProxy = normalizeString(noProxyValue);
   if (!noProxy) return false;
@@ -309,6 +348,14 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   const connectionProxyUrl = resolveConnectionProxyUrl(targetUrl, proxyOptions);
   const envProxyUrl = connectionProxyUrl ? null : normalizeProxyUrl(getEnvProxyUrl(targetUrl));
   const proxyUrl = connectionProxyUrl || envProxyUrl;
+
+  if (!proxyUrl && shouldUseAnthropicScraper(targetUrl, options)) {
+    try {
+      return await fetchViaAnthropicScraper(targetUrl, options);
+    } catch {
+      return originalFetch(url, options);
+    }
+  }
 
   // MITM DNS bypass: for known MITM-intercepted hosts, resolve real IP to avoid DNS spoof
   if (shouldBypassMitmDns(targetUrl)) {

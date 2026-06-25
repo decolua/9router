@@ -1,4 +1,4 @@
-import { getAdapter } from "../driver.js";
+﻿import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 
 const DEFAULT_MAX_RECORDS = 200;

@@ -300,14 +300,15 @@ export function createResponsesApiTransformStream(logger = null) {
         }
 
         // Handle reasoning_content (OpenAI native format)
-        if (delta.reasoning_content) {
+        const reasoningContent = delta.reasoning_content || delta.reasoning || delta.thinking;
+        if (reasoningContent) {
           startReasoning(controller, idx);
-          emitReasoningDelta(controller, delta.reasoning_content);
+          emitReasoningDelta(controller, reasoningContent);
         }
 
-        // Handle text content (may contain <think> tags)
-        if (delta.content) {
-          let content = delta.content;
+                // Handle text content (may contain  <think> tags)
+        if (delta.content || delta.message?.content) {
+          let content = delta.content ?? delta.message?.content;
 
           if (content.includes("<think>")) {
             state.inThinking = true;

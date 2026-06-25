@@ -2,7 +2,7 @@
  * OpenAI to Kiro Request Translator
  * Converts OpenAI Chat Completions format to Kiro/AWS CodeWhisperer format
  */
-import { register } from "../index.js";
+import { register } from "../registry.js";
 import { FORMATS } from "../formats.js";
 import { v4 as uuidv4 } from "uuid";
 import { resolveSessionId } from "../../utils/sessionManager.js";

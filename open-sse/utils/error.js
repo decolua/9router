@@ -105,6 +105,19 @@ export function createErrorResult(statusCode, message, resetsAtMs) {
   };
 }
 
+const LOCAL_PROXY_FAILURE_PATTERNS = [
+  "invalid sse response for non-streaming request",
+  "invalid json response from",
+  "failed to convert streaming response to json",
+  "failed to translate request",
+];
+
+export function isLocalProxyFailure(statusCode, message) {
+  if (Number(statusCode) !== 502) return false;
+  const text = String(message || "").toLowerCase();
+  return LOCAL_PROXY_FAILURE_PATTERNS.some((pattern) => text.includes(pattern));
+}
+
 /**
  * Create unavailable response when all accounts are rate limited
  * @param {number} statusCode - Original error status code

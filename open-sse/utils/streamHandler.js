@@ -1,4 +1,4 @@
-// Stream handler with disconnect detection - shared for all providers
+﻿// Stream handler with disconnect detection - shared for all providers
 import { STREAM_STALL_TIMEOUT_MS } from "../config/runtimeConfig.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 

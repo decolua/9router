@@ -69,25 +69,31 @@ function writeJsonFile(sessionPath, filename, data) {
   }
 }
 
-// Mask sensitive data in headers (DISABLED - keep full token for testing)
-function maskSensitiveHeaders(headers) {
+function normalizeHeaders(headers) {
   if (!headers) return {};
+  if (typeof headers.entries === "function") return Object.fromEntries(headers.entries());
   return { ...headers };
-  
-  // Old masking code (disabled):
-  // const masked = { ...headers };
-  // const sensitiveKeys = ["authorization", "x-api-key", "cookie", "token"];
-  // 
-  // for (const key of Object.keys(masked)) {
-  //   const lowerKey = key.toLowerCase();
-  //   if (sensitiveKeys.some(sk => lowerKey.includes(sk))) {
-  //     const value = masked[key];
-  //     if (value && value.length > 20) {
-  //       masked[key] = value.slice(0, 10) + "..." + value.slice(-5);
-  //     }
-  //   }
-  // }
-  // return masked;
+}
+
+function maskSensitiveValue(value) {
+  if (value === undefined || value === null) return value;
+  const text = String(value);
+  if (text.length <= 12) return "[redacted]";
+  return `${text.slice(0, 6)}...[redacted]...${text.slice(-4)}`;
+}
+
+// Mask sensitive data in headers before writing request debug logs.
+export function maskSensitiveHeaders(headers) {
+  const masked = normalizeHeaders(headers);
+  const sensitiveKeys = ["authorization", "api-key", "apikey", "cookie", "token", "secret", "password", "x-goog-api-key"];
+
+  for (const key of Object.keys(masked)) {
+    const lowerKey = key.toLowerCase();
+    if (sensitiveKeys.some(sk => lowerKey.includes(sk))) {
+      masked[key] = maskSensitiveValue(masked[key]);
+    }
+  }
+  return masked;
 }
 
 // No-op logger when logging is disabled
@@ -170,7 +176,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
         timestamp: new Date().toISOString(),
         status,
         statusText,
-        headers: headers ? (typeof headers.entries === "function" ? Object.fromEntries(headers.entries()) : headers) : {},
+        headers: maskSensitiveHeaders(headers),
         body
       });
     },

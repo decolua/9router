@@ -4,8 +4,19 @@ import { RAW_CAP, MIN_COMPRESS_SIZE } from "./constants.js";
 import { autoDetectFilter } from "./autodetect.js";
 import { safeApply } from "./applyFilter.js";
 
+let rtkEnabled = false;
+
+export function setRtkEnabled(enabled) {
+  rtkEnabled = enabled === true;
+}
+
+export function isRtkEnabled() {
+  return rtkEnabled;
+}
+
 // Compress tool_result content in-place. Returns stats or null if disabled/failed.
 export function compressMessages(body, enabled) {
+  if (enabled === undefined) enabled = rtkEnabled;
   if (!enabled) return null;
   if (!body) return null;
 

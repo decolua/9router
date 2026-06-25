@@ -13,12 +13,19 @@ import { tree } from "./filters/tree.js";
 import { smartTruncate } from "./filters/smartTruncate.js";
 import { readNumbered, READ_NUMBERED_LINE_RE } from "./filters/readNumbered.js";
 import { searchList, SEARCH_LIST_HEADER_RE } from "./filters/searchList.js";
+import { goTestDiagnostics, mypyDiagnostics, pytestDiagnostics, typeScriptDiagnostics, vitestDiagnostics } from "./filters/testDiagnostics.js";
 
 const RE_GIT_DIFF = /^diff --git /m;
 const RE_GIT_DIFF_HUNK = /^@@ /m;
 const RE_GIT_STATUS = /^On branch |^nothing to commit|^Changes (not |to be )|^Untracked files:/m;
 const RE_PORCELAIN = /^[ MADRCU?!][ MADRCU?!] \S/m;
 const RE_BUILD_OUTPUT = /^(npm (warn|error|ERR!)|yarn (warn|error)|\s*Compiling\s+\S+|\s*Downloading\s+\S+|added \d+ package|\[ERROR\]|BUILD (SUCCESS|FAILED)|\s*Finished\s+|Successfully (installed|built)|ERROR:)/im;
+const RE_PYTEST = /=== test session starts|=== FAILURES ===|short test summary info|\d+\s+(failed|passed|skipped).*\sin\s[\d.]+s/i;
+const RE_TSC = /^.+?\(\d+,\d+\):\s+(error|warning)\s+TS\d+:/m;
+const RE_MYPY = /^.+?:\d+(?::\d+)?:\s+(error|warning|note):/m;
+const RE_VITEST_JSON = /"numTotalTests"|"testResults"/;
+const RE_VITEST_TEXT = /Test Files\s+.*\bpassed|\bTests\s+.*\bpassed/i;
+const RE_GO_TEST_JSON = /^\{"Time":.*"Action":/m;
 const RE_TREE_GLYPH = /[├└]──|│  /;
 const RE_LS_ROW = /^[-dlbcps][rwx-]{9}/m;
 const RE_LS_TOTAL = /^total \d+$/m;
@@ -29,6 +36,12 @@ export function autoDetectFilter(text) {
 
   if (RE_GIT_DIFF.test(head) || RE_GIT_DIFF_HUNK.test(head)) return gitDiff;
   if (RE_GIT_STATUS.test(head)) return gitStatus;
+
+  if (RE_TSC.test(head)) return typeScriptDiagnostics;
+  if (RE_MYPY.test(head)) return mypyDiagnostics;
+  if (RE_PYTEST.test(head)) return pytestDiagnostics;
+  if (RE_VITEST_JSON.test(head) || RE_VITEST_TEXT.test(head)) return vitestDiagnostics;
+  if (RE_GO_TEST_JSON.test(head)) return goTestDiagnostics;
 
   // Build output BEFORE porcelain check: prevents cargo "Compiling" misdetection as git-status
   if (RE_BUILD_OUTPUT.test(head)) return buildOutput;

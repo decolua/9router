@@ -1,4 +1,4 @@
-import { register } from "../index.js";
+import { register } from "../registry.js";
 import { FORMATS } from "../formats.js";
 import { parseDataUri } from "../concerns/image.js";
 import { safeParseJSON } from "../concerns/json.js";

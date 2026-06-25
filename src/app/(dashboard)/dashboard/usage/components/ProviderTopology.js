@@ -79,6 +79,7 @@ ProviderNode.propTypes = {
 
 // Center 9Router node
 function RouterNode({ data }) {
+  const [imgError, setImgError] = useState(false);
   return (
     <div className="flex items-center justify-center px-5 py-3 rounded-xl border-2 border-primary bg-primary/5 shadow-md min-w-[130px]">
       <Handle type="source" position={Position.Top} id="top" className="!bg-transparent !border-0 !w-0 !h-0" />
@@ -86,7 +87,13 @@ function RouterNode({ data }) {
       <Handle type="source" position={Position.Left} id="left" className="!bg-transparent !border-0 !w-0 !h-0" />
       <Handle type="source" position={Position.Right} id="right" className="!bg-transparent !border-0 !w-0 !h-0" />
 
-      <img src="/favicon.svg" alt="9Router" className="w-6 h-6 mr-2" />
+      {!imgError ? (
+        <img src="/favicon.svg" alt="9Router" className="w-6 h-6 mr-2" onError={() => setImgError(true)} />
+      ) : (
+        <span className="mr-2 flex size-6 items-center justify-center rounded-md bg-primary/15 text-[10px] font-bold text-primary">
+          9R
+        </span>
+      )}
       <span className="text-sm font-bold text-primary">9Router</span>
       {data.activeCount > 0 && (
         <span className="ml-2 px-1.5 py-0.5 rounded-full bg-primary text-white text-xs font-bold">

@@ -1,8 +1,10 @@
 "use server";
 
 import { NextResponse } from "next/server";
+import { guardedFetch, UrlGuardError } from "@/lib/security/urlGuard";
 
 const TIMEOUT_MS = 8000;
+const MCP_URL_GUARD = { protocols: ["https:"], timeoutMs: TIMEOUT_MS };
 
 // Probe MCP server: initialize + tools/list. No auth header — works for authless servers.
 // OAuth servers return 401, signal client to skip tool listing.
@@ -16,7 +18,7 @@ async function probeMcp(url) {
   const timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
   try {
     // Step 1: initialize
-    const initRes = await fetch(url, {
+    const initRes = await guardedFetch(url, {
       method: "POST",
       headers,
       body: JSON.stringify({
@@ -24,7 +26,7 @@ async function probeMcp(url) {
         params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "9router", version: "1" } },
       }),
       signal: ac.signal,
-    });
+    }, MCP_URL_GUARD);
     if (initRes.status === 401 || initRes.status === 403) {
       return { requiresAuth: true, tools: [] };
     }
@@ -38,20 +40,20 @@ async function probeMcp(url) {
     if (sessionId) listHeaders["mcp-session-id"] = sessionId;
 
     // Step 2: notifications/initialized (required by spec before tools/list)
-    await fetch(url, {
+    await guardedFetch(url, {
       method: "POST",
       headers: listHeaders,
       body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized", params: {} }),
       signal: ac.signal,
-    }).catch(() => {});
+    }, MCP_URL_GUARD).catch(() => {});
 
     // Step 3: tools/list
-    const listRes = await fetch(url, {
+    const listRes = await guardedFetch(url, {
       method: "POST",
       headers: listHeaders,
       body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }),
       signal: ac.signal,
-    });
+    }, MCP_URL_GUARD);
     if (listRes.status === 401 || listRes.status === 403) {
       return { requiresAuth: true, tools: [] };
     }
@@ -75,6 +77,7 @@ async function probeMcp(url) {
       tools: tools.map((t) => ({ name: t.name, description: t.description || "" })),
     };
   } catch (e) {
+    if (e instanceof UrlGuardError) return { error: e.message, tools: [] };
     return { error: e.name === "AbortError" ? "timeout" : e.message, tools: [] };
   } finally {
     clearTimeout(timer);

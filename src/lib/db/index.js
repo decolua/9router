@@ -29,7 +29,8 @@ export {
 
 // API keys
 export {
-  getApiKeys, getApiKeyById, createApiKey, updateApiKey, deleteApiKey, validateApiKey,
+  getApiKeys, getApiKeyById, createApiKey, updateApiKey, deleteApiKey,
+  validateApiKey, checkApiKeyAccess, getApiKeyUsageSummary, resetApiKeyUsage, cleanupExpiredApiKeys,
 } from "./repos/apiKeysRepo.js";
 
 // Combos
@@ -77,8 +78,40 @@ export async function exportDb() {
     providerConnections: db.all(`SELECT * FROM providerConnections`).map((r) => ({ ...parseJson(r.data, {}), id: r.id, provider: r.provider, authType: r.authType, name: r.name, email: r.email, priority: r.priority, isActive: r.isActive === 1, createdAt: r.createdAt, updatedAt: r.updatedAt })),
     providerNodes: db.all(`SELECT * FROM providerNodes`).map((r) => ({ ...parseJson(r.data, {}), id: r.id, type: r.type, name: r.name, createdAt: r.createdAt, updatedAt: r.updatedAt })),
     proxyPools: db.all(`SELECT * FROM proxyPools`).map((r) => ({ ...parseJson(r.data, {}), id: r.id, isActive: r.isActive === 1, testStatus: r.testStatus, createdAt: r.createdAt, updatedAt: r.updatedAt })),
-    apiKeys: db.all(`SELECT * FROM apiKeys`).map((r) => ({ id: r.id, key: r.key, name: r.name, machineId: r.machineId, isActive: r.isActive === 1, createdAt: r.createdAt })),
+    apiKeys: db.all(`SELECT * FROM apiKeys`).map((r) => ({
+      id: r.id,
+      key: r.key,
+      name: r.name,
+      machineId: r.machineId,
+      isActive: r.isActive === 1,
+      limitMode: r.limitMode || "unlimited",
+      tokenLimit: r.tokenLimit || null,
+      dailyTokenLimit: r.dailyTokenLimit || null,
+      weeklyTokenLimit: r.weeklyTokenLimit || null,
+      expiresAt: r.expiresAt || null,
+      autoDeleteExpired: r.autoDeleteExpired !== 0,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt || r.createdAt,
+    })),
     combos: db.all(`SELECT * FROM combos`).map((r) => ({ id: r.id, name: r.name, kind: r.kind, models: parseJson(r.models, []), createdAt: r.createdAt, updatedAt: r.updatedAt })),
+    usageHistory: db.all(`SELECT timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta FROM usageHistory ORDER BY id ASC`).map((r) => ({
+      timestamp: r.timestamp,
+      provider: r.provider,
+      model: r.model,
+      connectionId: r.connectionId,
+      apiKey: r.apiKey,
+      endpoint: r.endpoint,
+      promptTokens: r.promptTokens || 0,
+      completionTokens: r.completionTokens || 0,
+      cost: r.cost || 0,
+      status: r.status || "ok",
+      tokens: parseJson(r.tokens, {}),
+      meta: parseJson(r.meta, {}),
+    })),
+    usageDaily: db.all(`SELECT dateKey, data FROM usageDaily ORDER BY dateKey ASC`).map((r) => ({
+      dateKey: r.dateKey,
+      data: parseJson(r.data, {}),
+    })),
     modelAliases: {},
     customModels: [],
     mitmAlias: {},
@@ -108,6 +141,8 @@ export async function importDb(payload) {
     db.run(`DELETE FROM apiKeys`);
     db.run(`DELETE FROM combos`);
     db.run(`DELETE FROM kv WHERE scope IN ('modelAliases', 'customModels', 'mitmAlias', 'pricing')`);
+    if (Array.isArray(payload.usageHistory)) db.run(`DELETE FROM usageHistory`);
+    if (Array.isArray(payload.usageDaily)) db.run(`DELETE FROM usageDaily`);
 
     // Settings
     if (payload.settings) {
@@ -137,8 +172,20 @@ export async function importDb(payload) {
     }
     for (const k of payload.apiKeys || []) {
       db.run(
-        `INSERT OR REPLACE INTO apiKeys(id, key, name, machineId, isActive, createdAt) VALUES(?, ?, ?, ?, ?, ?)`,
-        [k.id, k.key, k.name || null, k.machineId || null, k.isActive === false ? 0 : 1, k.createdAt || new Date().toISOString()]
+        `INSERT OR REPLACE INTO apiKeys(id, key, name, machineId, isActive, limitMode, tokenLimit, dailyTokenLimit, weeklyTokenLimit, expiresAt, autoDeleteExpired, createdAt, updatedAt)
+         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          k.id, k.key, k.name || null, k.machineId || null,
+          k.isActive === false ? 0 : 1,
+          k.limitMode || "unlimited",
+          k.tokenLimit || null,
+          k.dailyTokenLimit || null,
+          k.weeklyTokenLimit || null,
+          k.expiresAt || null,
+          k.autoDeleteExpired === false ? 0 : 1,
+          k.createdAt || new Date().toISOString(),
+          k.updatedAt || k.createdAt || new Date().toISOString(),
+        ]
       );
     }
     for (const c of payload.combos || []) {
@@ -146,6 +193,38 @@ export async function importDb(payload) {
         `INSERT OR REPLACE INTO combos(id, name, kind, models, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
         [c.id, c.name, c.kind || null, stringifyJson(c.models || []), c.createdAt || new Date().toISOString(), c.updatedAt || new Date().toISOString()]
       );
+    }
+    for (const u of payload.usageHistory || []) {
+      const tokens = u.tokens && typeof u.tokens === "object"
+        ? u.tokens
+        : {
+          prompt_tokens: u.promptTokens || 0,
+          completion_tokens: u.completionTokens || 0,
+        };
+      const promptTokens = u.promptTokens ?? tokens.prompt_tokens ?? tokens.input_tokens ?? 0;
+      const completionTokens = u.completionTokens ?? tokens.completion_tokens ?? tokens.output_tokens ?? 0;
+      db.run(
+        `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta)
+         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          u.timestamp || new Date().toISOString(),
+          u.provider || null,
+          u.model || null,
+          u.connectionId || null,
+          u.apiKey || null,
+          u.endpoint || null,
+          promptTokens,
+          completionTokens,
+          u.cost || 0,
+          u.status || "ok",
+          stringifyJson(tokens),
+          stringifyJson(u.meta || {}),
+        ]
+      );
+    }
+    for (const d of payload.usageDaily || []) {
+      if (!d.dateKey) continue;
+      db.run(`INSERT OR REPLACE INTO usageDaily(dateKey, data) VALUES(?, ?)`, [d.dateKey, stringifyJson(d.data || {})]);
     }
     for (const [a, m] of Object.entries(payload.modelAliases || {})) {
       db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('modelAliases', ?, ?)`, [a, stringifyJson(m)]);

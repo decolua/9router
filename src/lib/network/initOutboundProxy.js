@@ -1,4 +1,3 @@
-import { getSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 
 let initialized = false;
@@ -7,6 +6,7 @@ export async function ensureOutboundProxyInitialized() {
   if (initialized) return true;
 
   try {
+    const { getSettings } = await import("@/lib/localDb");
     const settings = await getSettings();
     applyOutboundProxyEnv(settings);
     initialized = true;
@@ -17,9 +17,11 @@ export async function ensureOutboundProxyInitialized() {
   return initialized;
 }
 
-// Defer init so HTTP server accepts connections first
-setImmediate(() => {
-  ensureOutboundProxyInitialized().catch(console.log);
-});
+// Runtime only. During next build this would open/migrate the user's live DB.
+if (process.env.NEXT_PHASE !== "phase-production-build") {
+  setImmediate(() => {
+    ensureOutboundProxyInitialized().catch(console.log);
+  });
+}
 
 export default ensureOutboundProxyInitialized;

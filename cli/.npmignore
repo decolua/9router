@@ -1,9 +1,9 @@
 # Ignore everything except what's in package.json "files"
 *
 !cli.js
+!src/
 !hooks/
 !app/
 !package.json
 !README.md
 !LICENSE
-

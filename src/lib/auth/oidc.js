@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { getSettings } from "@/lib/localDb";
+import { guardedFetch, validatePublicUrl } from "@/lib/security/urlGuard";
 
 export const OIDC_COOKIE_NAMES = {
   state: "oidc_state",
@@ -10,6 +11,7 @@ export const OIDC_COOKIE_NAMES = {
 
 const DEFAULT_SCOPES = "openid profile email";
 const DEFAULT_LOGIN_LABEL = "Sign in with OIDC";
+const OIDC_URL_GUARD = { protocols: ["https:"], timeoutMs: 10000 };
 
 function trimTrailingSlashes(value) {
   return (value || "").trim().replace(/\/+$/, "");
@@ -64,7 +66,7 @@ export async function getOidcRuntimeConfig() {
 
 export async function fetchOidcDiscovery(issuerUrl) {
   const discoveryUrl = `${trimTrailingSlashes(issuerUrl)}/.well-known/openid-configuration`;
-  const res = await fetch(discoveryUrl, { cache: "no-store" });
+  const res = await guardedFetch(discoveryUrl, { cache: "no-store" }, OIDC_URL_GUARD);
   if (!res.ok) {
     throw new Error(`Failed to load OIDC discovery document from ${discoveryUrl}`);
   }
@@ -126,11 +128,11 @@ export async function exchangeOidcCode({
     body.set("client_secret", clientSecret);
   }
 
-  const res = await fetch(tokenEndpoint, {
+  const res = await guardedFetch(tokenEndpoint, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
-  });
+  }, OIDC_URL_GUARD);
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -164,11 +166,11 @@ export async function probeOidcClientSecret({
     code_verifier: "__oidc_test_invalid_verifier__",
   });
 
-  const res = await fetch(tokenEndpoint, {
+  const res = await guardedFetch(tokenEndpoint, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
-  });
+  }, OIDC_URL_GUARD);
 
   const data = await res.json().catch(() => ({}));
   const error = (data?.error || "").toLowerCase();
@@ -216,6 +218,7 @@ export async function verifyOidcIdToken({
   jwksUri,
   nonce,
 }) {
+  await validatePublicUrl(jwksUri, OIDC_URL_GUARD);
   const jwks = createRemoteJWKSet(new URL(jwksUri));
   const { payload } = await jwtVerify(idToken, jwks, {
     issuer,

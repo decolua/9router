@@ -8,6 +8,43 @@ const VERCEL_API = "https://api.vercel.com";
 const RELAY_FUNCTION_CODE = `
 export const config = { runtime: "edge" };
 
+function normalizeHost(hostname) {
+  return String(hostname || "").replace(/^\\[|\\]$/g, "").replace(/\\.$/, "").toLowerCase();
+}
+
+function isPrivateHost(hostname) {
+  const host = normalizeHost(hostname);
+  if (!host || host === "localhost" || host.endsWith(".localhost") || host === "metadata.google.internal") return true;
+
+  const v4 = host.split(".").map((p) => /^\\d+$/.test(p) ? Number(p) : -1);
+  if (v4.length === 4 && v4.every((n) => n >= 0 && n <= 255)) {
+    if (v4[0] === 0 || v4[0] === 10 || v4[0] === 127) return true;
+    if (v4[0] === 100 && v4[1] >= 64 && v4[1] <= 127) return true;
+    if (v4[0] === 169 && v4[1] === 254) return true;
+    if (v4[0] === 172 && v4[1] >= 16 && v4[1] <= 31) return true;
+    if (v4[0] === 192 && v4[1] === 168) return true;
+    if (v4[0] === 192 && v4[1] === 0 && (v4[2] === 0 || v4[2] === 2)) return true;
+    if (v4[0] === 198 && (v4[1] === 18 || v4[1] === 19 || (v4[1] === 51 && v4[2] === 100))) return true;
+    if (v4[0] === 203 && v4[1] === 0 && v4[2] === 113) return true;
+    if (v4[0] >= 224) return true;
+  }
+
+  if (host.includes(":")) {
+    if (host === "::" || host === "::1") return true;
+    if (host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe8") || host.startsWith("fe9") || host.startsWith("fea") || host.startsWith("feb") || host.startsWith("ff")) return true;
+    if (host.startsWith("2001:db8") || host.startsWith("2002:")) return true;
+  }
+
+  return false;
+}
+
+function assertRelayTarget(url) {
+  const parsed = new URL(url);
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") throw new Error("Bad scheme");
+  if (isPrivateHost(parsed.hostname)) throw new Error("Private targets are blocked");
+  return parsed;
+}
+
 export default async function handler(req) {
   const target = req.headers.get("x-relay-target");
   const relayPath = req.headers.get("x-relay-path") || "/";
@@ -18,7 +55,15 @@ export default async function handler(req) {
     });
   }
 
-  const targetUrl = target.replace(/\\/$/, "") + relayPath;
+  let targetUrl;
+  try {
+    targetUrl = assertRelayTarget(target.replace(/\\/$/, "") + relayPath).toString();
+  } catch {
+    return new Response(JSON.stringify({ error: "Blocked relay target" }), {
+      status: 400,
+      headers: { "content-type": "application/json" },
+    });
+  }
 
   const headers = new Headers(req.headers);
   headers.delete("x-relay-target");
@@ -30,7 +75,20 @@ export default async function handler(req) {
     headers,
     body: req.method !== "GET" && req.method !== "HEAD" ? req.body : undefined,
     duplex: "half",
+    redirect: "manual",
   });
+
+  const location = response.headers.get("location");
+  if ([301, 302, 303, 307, 308].includes(response.status) && location) {
+    try {
+      assertRelayTarget(new URL(location, targetUrl).toString());
+    } catch {
+      return new Response(JSON.stringify({ error: "Blocked relay redirect" }), {
+        status: 502,
+        headers: { "content-type": "application/json" },
+      });
+    }
+  }
 
   return new Response(response.body, {
     status: response.status,

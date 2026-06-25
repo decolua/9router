@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useCallback, useMemo, Fragment } from "react";
 import PropTypes from "prop-types";
@@ -35,13 +35,13 @@ function ValueCells({ item, viewMode, isSummary = false }) {
   if (viewMode === "tokens") {
     return (
       <>
-        <td className="px-6 py-3 text-right text-text-muted">
+        <td className="px-3 sm:px-6 py-3 text-right text-text-muted">
           {isSummary && item.promptTokens === undefined ? "—" : fmt(item.promptTokens)}
         </td>
-        <td className="px-6 py-3 text-right text-text-muted">
+        <td className="px-3 sm:px-6 py-3 text-right text-text-muted">
           {isSummary && item.completionTokens === undefined ? "—" : fmt(item.completionTokens)}
         </td>
-        <td className="px-6 py-3 text-right font-medium">
+        <td className="px-3 sm:px-6 py-3 text-right font-medium">
           {fmt(item.totalTokens)}
         </td>
       </>
@@ -49,13 +49,13 @@ function ValueCells({ item, viewMode, isSummary = false }) {
   }
   return (
     <>
-      <td className="px-6 py-3 text-right text-text-muted">
+      <td className="px-3 sm:px-6 py-3 text-right text-text-muted">
         {isSummary && item.inputCost === undefined ? "—" : fmtCost(item.inputCost)}
       </td>
-      <td className="px-6 py-3 text-right text-text-muted">
+      <td className="px-3 sm:px-6 py-3 text-right text-text-muted">
         {isSummary && item.outputCost === undefined ? "—" : fmtCost(item.outputCost)}
       </td>
-      <td className="px-6 py-3 text-right font-medium text-warning">
+      <td className="px-3 sm:px-6 py-3 text-right font-medium text-warning">
         {fmtCost(item.totalCost || item.cost)}
       </td>
     </>
@@ -168,7 +168,7 @@ export default function UsageTable({
               {valueColumns.map((col) => (
                 <th
                   key={col.field}
-                  className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
+                  className="px-3 sm:px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
                   onClick={() => onToggleSort(tableType, col.field)}
                 >
                   {col.label}{" "}

@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 import { deleteProviderConnectionsByProvider, deleteProviderNode, getProviderConnections, getProviderNodeById, updateProviderConnection, updateProviderNode } from "@/models";
+import { validatePublicUrl, toUrlGuardResponse, UrlGuardError } from "@/lib/security/urlGuard";
+
+const PROVIDER_NODE_URL_GUARD = { protocols: ["http:", "https:"] };
 
 // PUT /api/provider-nodes/[id] - Update provider node
 export async function PUT(request, { params }) {
@@ -48,6 +51,8 @@ export async function PUT(request, { params }) {
       }
     }
 
+    await validatePublicUrl(sanitizedBaseUrl, PROVIDER_NODE_URL_GUARD);
+
     const updates = {
       name: name.trim(),
       prefix: prefix.trim(),
@@ -75,6 +80,9 @@ export async function PUT(request, { params }) {
 
     return NextResponse.json({ node: updated });
   } catch (error) {
+    if (error instanceof UrlGuardError) {
+      return NextResponse.json(toUrlGuardResponse(error), { status: 400 });
+    }
     console.log("Error updating provider node:", error);
     return NextResponse.json({ error: "Failed to update provider node" }, { status: 500 });
   }

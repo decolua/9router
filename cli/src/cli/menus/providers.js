@@ -107,6 +107,16 @@ const PROVIDER_MODELS = {
     { id: "glm-4.6v" },
   ],
   kimi: [
+    { id: "kimi-for-coding" },
+    { id: "kimi-k2.6" },
+    { id: "kimi-k2.5" },
+    { id: "kimi-k2.5-thinking" },
+    { id: "kimi-latest" },
+  ],
+  "kimi-api": [
+    { id: "kimi-k2.6" },
+    { id: "kimi-k2.5" },
+    { id: "kimi-k2.5-thinking" },
     { id: "kimi-latest" },
   ],
   minimax: [
@@ -130,7 +140,8 @@ const APIKEY_PROVIDERS = {
   openrouter: { id: "openrouter", name: "OpenRouter" },
   glm: { id: "glm", name: "GLM Coding" },
   minimax: { id: "minimax", name: "Minimax Coding" },
-  kimi: { id: "kimi", name: "Kimi Coding" },
+  kimi: { id: "kimi", name: "Kimi Code" },
+  "kimi-api": { id: "kimi-api", name: "Kimi API" },
   openai: { id: "openai", name: "OpenAI" },
   anthropic: { id: "anthropic", name: "Anthropic" },
   gemini: { id: "gemini", name: "Gemini" },

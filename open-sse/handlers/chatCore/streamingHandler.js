@@ -85,7 +85,7 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
       ttft: ttftAt ? ttftAt - requestStartTime : Date.now() - requestStartTime,
       total: Date.now() - requestStartTime
     };
-    const safeContent = contentObj?.content || "[Empty streaming response]";
+    const safeContent = contentObj?.content || contentObj?.thinking || "[Empty streaming response]";
     const safeThinking = contentObj?.thinking || null;
 
     saveRequestDetail(buildRequestDetail({

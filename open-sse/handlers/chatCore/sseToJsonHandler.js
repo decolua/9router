@@ -34,6 +34,23 @@ function pickAssistantMessageForChatCompletion(output) {
   return { msgItem: last, textContent: textFromResponsesMessageItem(last) };
 }
 
+function pickReasoningFromResponse(output) {
+  if (!Array.isArray(output)) return null;
+  const reasoningItems = output.filter((item) => item?.type === "reasoning");
+  if (reasoningItems.length === 0) return null;
+  const texts = [];
+  for (const item of reasoningItems) {
+    if (item.summary && Array.isArray(item.summary)) {
+      for (const summary of item.summary) {
+        if (typeof summary.text === "string" && summary.text.length > 0) {
+          texts.push(summary.text);
+        }
+      }
+    }
+  }
+  return texts.length > 0 ? texts.join("\n") : null;
+}
+
 /**
  * Parse OpenAI-style SSE text into a single chat completion JSON.
  * Used when provider forces streaming but client wants non-streaming.
@@ -62,7 +79,10 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
     const choice = chunk?.choices?.[0];
     const delta = choice?.delta || {};
     if (typeof delta.content === "string" && delta.content.length > 0) contentParts.push(delta.content);
-    if (typeof delta.reasoning_content === "string" && delta.reasoning_content.length > 0) reasoningParts.push(delta.reasoning_content);
+    // Fallback for non-standard providers that nest content under delta.message.content
+    if (typeof delta.message?.content === "string" && delta.message.content.length > 0) contentParts.push(delta.message.content);
+    const reasoningText = delta.reasoning_content || delta.reasoning || delta.thinking;
+    if (typeof reasoningText === "string" && reasoningText.length > 0) reasoningParts.push(reasoningText);
     if (choice?.finish_reason) finishReason = choice.finish_reason;
     if (chunk?.usage && typeof chunk.usage === "object") usage = chunk.usage;
 
@@ -127,13 +147,14 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
       saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint });
 
       const { msgItem, textContent } = pickAssistantMessageForChatCompletion(jsonResponse.output);
+      const reasoningContent = pickReasoningFromResponse(jsonResponse.output);
       const totalLatency = Date.now() - requestStartTime;
 
       saveRequestDetail(buildRequestDetail({
         ...ctx,
         latency: { ttft: totalLatency, total: totalLatency },
         tokens: { prompt_tokens: usage.input_tokens || 0, completion_tokens: usage.output_tokens || 0 },
-        response: { content: textContent, thinking: null, finish_reason: jsonResponse.status || "unknown" },
+        response: { content: textContent, thinking: reasoningContent, finish_reason: jsonResponse.status || "unknown" },
         status: "success"
       }, { endpoint: clientRawRequest?.endpoint || null })).catch(() => {});
 
@@ -219,7 +240,8 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
     // When content is empty (e.g. thinking models that used all tokens for reasoning),
     // reasoning_content is the only useful output and must be preserved.
     // Previously this was unconditional, which broke Qwen3.5, Claude extended thinking, etc.
-    if (parsed?.choices) {
+    const clientCannotHandleReasoning = clientRawRequest?.headers?.["x-strip-reasoning"] === "true" || sourceFormat === "firecrawl";
+    if (parsed?.choices && clientCannotHandleReasoning) {
       for (const choice of parsed.choices) {
         if (choice?.message?.reasoning_content && choice.message.content) {
           delete choice.message.reasoning_content;

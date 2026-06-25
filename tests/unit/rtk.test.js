@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { compressMessages, setRtkEnabled, isRtkEnabled, formatRtkLog } from "../../open-sse/rtk/index.js";
+import { tryToon } from "../../open-sse/rtk/toon.js";
 import { gitDiff } from "../../open-sse/rtk/filters/gitDiff.js";
 import { gitStatus } from "../../open-sse/rtk/filters/gitStatus.js";
 import { grep } from "../../open-sse/rtk/filters/grep.js";

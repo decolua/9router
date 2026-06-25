@@ -47,6 +47,8 @@ next-env.d.ts
 .bin/*
 data/
 logs/*
+output/
+.playwright-cli/
 source/*
 .cursor/*
 docs/*

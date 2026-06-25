@@ -174,6 +174,16 @@ export async function POST(request) {
       };
     }
 
+    if (isOpenAICompatibleProvider(provider) || isAnthropicCompatibleProvider(provider)) {
+      const existingConnections = await getProviderConnections({ provider });
+      if (existingConnections.length > 0) {
+        return NextResponse.json(
+          { error: "Only one connection is allowed for a compatible provider node" },
+          { status: 400 }
+        );
+      }
+    }
+
     const mergedProviderSpecificData = {
       ...(providerSpecificData || {}),
       connectionProxyEnabled: proxyConfig.connectionProxyEnabled,

@@ -1,11 +1,9 @@
-import { handleChat } from "@/sse/handlers/chat.js";
+﻿import { handleChat } from "@/sse/handlers/chat.js";
 import { initTranslators } from "open-sse/translator/index.js";
+import { corsOptionsResponse, getCorsHeaders } from "@/lib/cors.js";
 
 let initialized = false;
 
-/**
- * Initialize translators once
- */
 async function ensureInitialized() {
   if (!initialized) {
     await initTranslators();
@@ -13,24 +11,20 @@ async function ensureInitialized() {
   }
 }
 
-/**
- * Handle CORS preflight
- */
-export async function OPTIONS() {
-  return new Response(null, {
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "*"
-    }
-  });
+export async function OPTIONS(request) {
+  return corsOptionsResponse(request);
 }
 
 /**
- * POST /v1/messages - Claude format (auto convert via handleChat)
+ * POST /v1/messages - Anthropic Messages API format
+ * Reuses the same handleChat pipeline, format auto-detected by translator
  */
 export async function POST(request) {
   await ensureInitialized();
-  return await handleChat(request);
+  const response = await handleChat(request);
+  const corsHeaders = getCorsHeaders(request);
+  if (response.headers && corsHeaders["Access-Control-Allow-Origin"]) {
+    response.headers.set("Access-Control-Allow-Origin", corsHeaders["Access-Control-Allow-Origin"]);
+  }
+  return response;
 }
-

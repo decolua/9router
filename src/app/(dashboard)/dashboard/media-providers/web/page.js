@@ -159,7 +159,6 @@ export default function WebProvidersPage() {
     } catch { /* noop */ }
   };
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { fetchAll(); }, []);
 
   const searchProviders = getProvidersByKind("webSearch");

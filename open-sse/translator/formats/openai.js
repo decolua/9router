@@ -4,6 +4,14 @@ import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK, VALID_OPENAI_CONTENT_TYPES, VALID_OPE
 // Re-export valid-type lists (moved to schema/blocks.js) to keep existing importers working.
 export { VALID_OPENAI_CONTENT_TYPES, VALID_OPENAI_MESSAGE_TYPES };
 
+function normalizeOpenAIContent(content) {
+  if (!content.length) return [{ type: "text", text: "" }];
+  if (content.every((block) => block.type === "text")) {
+    return content.map((block) => block.text || "").join("\n");
+  }
+  return content;
+}
+
 // Filter messages to OpenAI standard format
 // Remove: thinking, redacted_thinking, signature, and other non-OpenAI blocks
 export function filterToOpenAIFormat(body) {
@@ -50,7 +58,7 @@ export function filterToOpenAIFormat(body) {
         filteredContent.push({ type: OPENAI_BLOCK.TEXT, text: "" });
       }
       
-      return { ...msg, content: filteredContent };
+      return { ...msg, content: normalizeOpenAIContent(filteredContent) };
     }
     
     return msg;
@@ -64,6 +72,7 @@ export function filterToOpenAIFormat(body) {
     if (msg.role === ROLE.ASSISTANT && msg.tool_calls) return true;
     
     if (typeof msg.content === "string") return msg.content.trim() !== "";
+    if (typeof msg.content !== "object") return true;
     if (Array.isArray(msg.content)) {
       return msg.content.some(b => 
         (b.type === OPENAI_BLOCK.TEXT && b.text?.trim()) ||

@@ -1,8 +1,19 @@
 import { ensureDirs, DATA_FILE } from "./paths.js";
 
 // Use global to survive Next.js dev hot-reload (module state resets on reload)
-if (!global._dbAdapter) global._dbAdapter = { instance: null, initPromise: null, logged: false };
+if (!global._dbAdapter) global._dbAdapter = { instance: null, initPromise: null, logged: false, dataFile: null };
 const state = global._dbAdapter;
+
+function resetAdapterIfDataFileChanged() {
+  if (state.dataFile === DATA_FILE) return;
+  if (state.instance?.close) {
+    try { state.instance.close(); } catch {}
+  }
+  state.instance = null;
+  state.initPromise = null;
+  state.logged = false;
+  state.dataFile = DATA_FILE;
+}
 
 async function tryBunSqlite() {
   // Bun runtime only — built-in, no install needed
@@ -74,12 +85,24 @@ async function initAdapter() {
 }
 
 export async function getAdapter() {
+  resetAdapterIfDataFileChanged();
   if (state.instance) return state.instance;
   if (!state.initPromise) state.initPromise = initAdapter().then((a) => { state.instance = a; return a; });
   return state.initPromise;
 }
 
 export function getAdapterSync() {
+  resetAdapterIfDataFileChanged();
   if (!state.instance) throw new Error("[DB] adapter not initialized — await getAdapter() first");
   return state.instance;
+}
+
+export function resetDbAdapterForTests() {
+  if (state.instance?.close) {
+    try { state.instance.close(); } catch {}
+  }
+  state.instance = null;
+  state.initPromise = null;
+  state.logged = false;
+  state.dataFile = null;
 }

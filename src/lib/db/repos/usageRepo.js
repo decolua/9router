@@ -1,4 +1,5 @@
-import { EventEmitter } from "events";
+﻿import { EventEmitter } from "events";
+import { createHash } from "crypto";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMeta, setMeta } from "../helpers/metaStore.js";
@@ -26,6 +27,15 @@ const recentRing = global._recentRing;
 const connCache = global._connectionMapCache;
 
 export const statsEmitter = global._statsEmitter;
+
+function hashApiKey(apiKey) {
+  if (!apiKey || apiKey === "local-no-key") return apiKey;
+  try {
+    return createHash("sha256").update(apiKey).digest("hex").slice(0, 16);
+  } catch {
+    return apiKey.slice(0, 8) + "...";
+  }
+}
 
 function getLocalDateKey(timestamp) {
   const d = timestamp ? new Date(timestamp) : new Date();

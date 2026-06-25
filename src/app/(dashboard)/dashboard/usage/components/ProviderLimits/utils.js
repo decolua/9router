@@ -253,9 +253,9 @@ export function formatResetTime(date) {
  * @returns {string} Color name: "green" | "yellow" | "red"
  */
 export function getStatusColor(percentage) {
-  if (percentage > 70) return "green";
-  if (percentage >= 30) return "yellow";
-  return "red"; // 0-29% including 0% (out of quota) - show red
+  if (percentage >= 60) return "green";
+  if (percentage > 20) return "yellow";
+  return "red";
 }
 
 /**
@@ -264,9 +264,9 @@ export function getStatusColor(percentage) {
  * @returns {string} Emoji: "🟢" | "🟡" | "🔴"
  */
 export function getStatusEmoji(percentage) {
-  if (percentage > 70) return "🟢";
-  if (percentage >= 30) return "🟡";
-  return "🔴"; // 0-29% including 0% (out of quota) - show red
+  if (percentage >= 60) return "🟢";
+  if (percentage > 20) return "🟡";
+  return "🔴";
 }
 
 /**
@@ -281,6 +281,118 @@ export function calculatePercentage(used, total) {
   if (used >= total) return 0;
 
   return Math.round(((total - used) / total) * 100);
+}
+
+function clampPercentage(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(0, Math.min(100, Math.round(n)));
+}
+
+function quotaRemainingPercentage(quota) {
+  if (!quota || !quota.total || quota.total <= 0) return null;
+  if (quota.remainingPercentage !== undefined) {
+    return clampPercentage(quota.remainingPercentage);
+  }
+  return clampPercentage(calculatePercentage(quota.used, quota.total));
+}
+
+function isSessionQuotaRow(quota) {
+  const label = String(
+    quota?.name ?? quota?.label ?? quota?.window ?? quota?.type ?? "",
+  ).toLowerCase();
+  if (!label) return false;
+  if (label.includes("weekly") || label.includes("daily")) return false;
+  return (
+    label.includes("session") ||
+    label.includes("5h") ||
+    label.includes("5-hour") ||
+    label.includes("five_hour")
+  );
+}
+
+function selectQuotaRowsForServiceAverage(quotas) {
+  if (!Array.isArray(quotas) || quotas.length === 0) return [];
+  const sessionRows = quotas.filter(isSessionQuotaRow);
+  if (sessionRows.length > 0) return sessionRows;
+  return quotas;
+}
+
+export function buildProviderQuotaAverages(
+  connections = [],
+  quotaData = {},
+  options = {},
+) {
+  const groups = new Map();
+  const loadingById = options.loadingById || {};
+  const completedById = options.completedById || null;
+  const hasCompletionTracking =
+    completedById && typeof completedById === "object";
+
+  for (const conn of connections) {
+    if (!conn?.provider) continue;
+    const group = groups.get(conn.provider) || {
+      provider: conn.provider,
+      accountCount: 0,
+      activeCount: 0,
+      measuredAccounts: 0,
+      pendingCount: 0,
+      exhaustedCount: 0,
+      lowCount: 0,
+      totalRemaining: 0,
+      averageRemaining: null,
+      isLoading: false,
+    };
+
+    group.accountCount += 1;
+    if (conn.isActive !== false) group.activeCount += 1;
+
+    const isPending =
+      loadingById[conn.id] === true ||
+      (hasCompletionTracking && completedById[conn.id] !== true);
+
+    if (isPending) {
+      group.pendingCount += 1;
+      group.isLoading = true;
+      groups.set(conn.provider, group);
+      continue;
+    }
+
+    const quotas = selectQuotaRowsForServiceAverage(quotaData[conn.id]?.quotas || []);
+    const percentages = quotas
+      .map(quotaRemainingPercentage)
+      .filter((percentage) => percentage !== null);
+
+    if (percentages.length > 0) {
+      const accountAverage = Math.round(
+        percentages.reduce((sum, percentage) => sum + percentage, 0) / percentages.length,
+      );
+      group.measuredAccounts += 1;
+      group.totalRemaining += accountAverage;
+      if (accountAverage <= 0) group.exhaustedCount += 1;
+      else if (accountAverage < 60) group.lowCount += 1;
+    } else if (conn.quotaAutoDisabled) {
+      group.exhaustedCount += 1;
+    }
+
+    groups.set(conn.provider, group);
+  }
+
+  return Array.from(groups.values())
+    .map((group) => ({
+      ...group,
+      averageRemaining: group.isLoading
+        ? null
+        : group.measuredAccounts > 0
+        ? Math.round(group.totalRemaining / group.measuredAccounts)
+        : null,
+    }))
+    .sort((a, b) => {
+      const aAvg = a.averageRemaining ?? Number.POSITIVE_INFINITY;
+      const bAvg = b.averageRemaining ?? Number.POSITIVE_INFINITY;
+      if (aAvg !== bAvg) return aAvg - bAvg;
+      return a.provider.localeCompare(b.provider);
+    });
 }
 
 /**

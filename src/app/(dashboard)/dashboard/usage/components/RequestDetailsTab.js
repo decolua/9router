@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useCallback } from "react";
 import Card from "@/shared/components/Card";
@@ -237,7 +237,7 @@ export default function RequestDetailsTab() {
       </Card>
 
       <Card padding="none">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto -mx-1 px-1">
           <table className="w-full min-w-[880px]">
             <thead>
               <tr className="border-b border-black/5 dark:border-white/5">

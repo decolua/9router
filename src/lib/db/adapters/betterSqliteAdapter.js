@@ -26,7 +26,10 @@ export function createBetterSqliteAdapter(filePath) {
   }, CHECKPOINT_INTERVAL_MS);
   if (typeof checkpointTimer.unref === "function") checkpointTimer.unref();
 
+  let closed = false;
   function gracefulClose() {
+    if (closed) return;
+    closed = true;
     try { db.pragma("wal_checkpoint(TRUNCATE)"); } catch {}
     try { stmtCache.clear(); } catch {}
     try { db.close(); } catch {}
@@ -34,9 +37,11 @@ export function createBetterSqliteAdapter(filePath) {
 
   // Ensure WAL is flushed and -wal/-shm files removed on shutdown
   const onShutdown = () => gracefulClose();
+  const onSigint = () => { onShutdown(); process.exit(0); };
+  const onSigterm = () => { onShutdown(); process.exit(0); };
   process.once("beforeExit", onShutdown);
-  process.once("SIGINT", () => { onShutdown(); process.exit(0); });
-  process.once("SIGTERM", () => { onShutdown(); process.exit(0); });
+  process.once("SIGINT", onSigint);
+  process.once("SIGTERM", onSigterm);
 
   return {
     driver: "better-sqlite3",
@@ -47,6 +52,9 @@ export function createBetterSqliteAdapter(filePath) {
     transaction(fn) { return db.transaction(fn)(); },
     checkpoint() { try { db.pragma("wal_checkpoint(TRUNCATE)"); } catch {} },
     close() {
+      process.off("beforeExit", onShutdown);
+      process.off("SIGINT", onSigint);
+      process.off("SIGTERM", onSigterm);
       clearInterval(checkpointTimer);
       gracefulClose();
     },

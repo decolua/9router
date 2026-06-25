@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { createProviderConnection } from "@/models";
 
 /**
@@ -131,7 +131,7 @@ export async function POST(request) {
       },
     });
   } catch (error) {
-    console.error("iFlow cookie auth error:", error);
+    console.error("iFlow cookie auth error:", error?.message || error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

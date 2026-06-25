@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useSyncExternalStore } from "react";
 import PropTypes from "prop-types";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -38,6 +38,45 @@ const systemItems = [
   { href: "/dashboard/skills", label: "Skills", icon: "extension" },
 ];
 
+const ELEVATION_STORAGE_KEY = "systemElevationStatus";
+const ELEVATION_STORAGE_EVENT = "systemElevationStatusChange";
+
+function normalizeElevationStatus(status) {
+  return status === "elevated" ? "elevated" : status === "user" ? "user" : null;
+}
+
+function getStoredElevationStatus() {
+  if (typeof window === "undefined") return "user";
+  try {
+    return normalizeElevationStatus(window.sessionStorage.getItem(ELEVATION_STORAGE_KEY)) || "user";
+  } catch {
+    return "user";
+  }
+}
+
+function storeElevationStatus(status) {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(ELEVATION_STORAGE_KEY, status);
+    notifyElevationStatusChanged();
+  } catch {}
+}
+
+function notifyElevationStatusChanged() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(ELEVATION_STORAGE_EVENT));
+}
+
+function subscribeElevationStatus(callback) {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener("storage", callback);
+  window.addEventListener(ELEVATION_STORAGE_EVENT, callback);
+  return () => {
+    window.removeEventListener("storage", callback);
+    window.removeEventListener(ELEVATION_STORAGE_EVENT, callback);
+  };
+}
+
 export default function Sidebar({ onClose }) {
   const pathname = usePathname();
   const [mediaOpen, setMediaOpen] = useState(false);
@@ -48,6 +87,11 @@ export default function Sidebar({ onClose }) {
   const [isUpdating, setIsUpdating] = useState(false);
   const [shutdownCountdown, setShutdownCountdown] = useState(0);
   const [enableTranslator, setEnableTranslator] = useState(false);
+  const elevationStatus = useSyncExternalStore(
+    subscribeElevationStatus,
+    getStoredElevationStatus,
+    () => "user",
+  );
   const { copied, copy } = useCopyToClipboard(2000);
 
   const INSTALL_CMD = UPDATER_CONFIG.installCmdLatest;
@@ -57,6 +101,27 @@ export default function Sidebar({ onClose }) {
       .then(res => res.json())
       .then(data => { if (data.enableTranslator) setEnableTranslator(true); })
       .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(notifyElevationStatusChanged, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/system/elevation", { cache: "no-store" })
+      .then(res => res.json())
+      .then(data => {
+        if (cancelled) return;
+        const nextStatus = normalizeElevationStatus(data.status);
+        if (!nextStatus) return;
+        storeElevationStatus(nextStatus);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Lazy check for new npm version on mount
@@ -122,11 +187,24 @@ export default function Sidebar({ onClose }) {
             <div className="flex items-center justify-center size-9 rounded-[10px] bg-gradient-to-br from-brand-500 to-brand-700 shadow-[var(--shadow-warm)]">
               <span className="material-symbols-outlined text-white text-[20px]">hub</span>
             </div>
-            <div className="flex flex-col">
+            <div className="flex flex-col min-w-0">
               <h1 className="text-lg font-semibold tracking-tight text-text-main">
                 {APP_CONFIG.name}
               </h1>
-              <span className="text-xs text-text-muted">v{APP_CONFIG.version}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-text-muted">v{APP_CONFIG.version}</span>
+                <span
+                  suppressHydrationWarning
+                  className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                    elevationStatus === "elevated"
+                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                      : "bg-surface-2 text-text-muted"
+                  }`}
+                  title={elevationStatus === "elevated" ? "Running elevated" : "Running as user"}
+                >
+                  {elevationStatus}
+                </span>
+              </div>
             </div>
           </Link>
           {updateInfo && (

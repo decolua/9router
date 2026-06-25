@@ -1,4 +1,4 @@
-@import "tailwindcss";
+﻿@import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -42,11 +42,13 @@
   /* Text */
   --color-text: #0a0a0a;
   --color-text-main: #0a0a0a;
+  --color-text-primary: var(--color-text-main);
   --color-text-muted: #6B7280;
   --color-text-subtle: #9CA3AF;
 
   /* Status */
   --color-danger: #cf222e;
+  --color-error: var(--color-danger);
   --color-success: #10B981;
   --color-warning: #F59E0B;
   --color-info: #3B82F6;
@@ -97,10 +99,12 @@
 
   --color-text: #ededed;
   --color-text-main: #ededed;
+  --color-text-primary: var(--color-text-main);
   --color-text-muted: #9ca3af;
   --color-text-subtle: #6b7280;
 
   --color-danger: #ef4444;
+  --color-error: var(--color-danger);
   --color-success: #22c55e;
   --color-warning: #fbbf24;
   --color-info: #60a5fa;
@@ -153,18 +157,25 @@ select {
   /* Semantic */
   --color-bg: var(--color-bg);
   --color-bg-alt: var(--color-bg-alt);
+  --color-bg-subtle: var(--color-bg-alt);
+  --color-bg-hover: var(--color-surface-2);
+  --color-bg-secondary: var(--color-bg-alt);
+  --color-background: var(--color-bg);
   --color-surface: var(--color-surface);
   --color-surface-2: var(--color-surface-2);
   --color-surface-3: var(--color-surface-3);
+  --color-surface-secondary: var(--color-surface-2);
   --color-sidebar: var(--color-sidebar);
   --color-border: var(--color-border);
   --color-border-subtle: var(--color-border-subtle);
   --color-text: var(--color-text);
   --color-text-main: var(--color-text-main);
+  --color-text-primary: var(--color-text-primary);
   --color-text-muted: var(--color-text-muted);
   --color-text-subtle: var(--color-text-subtle);
   --color-accent: var(--color-brand-500);
   --color-danger: var(--color-danger);
+  --color-error: var(--color-error);
   --color-success: var(--color-success);
   --color-warning: var(--color-warning);
   --color-info: var(--color-info);

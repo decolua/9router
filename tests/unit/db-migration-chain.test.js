@@ -78,6 +78,13 @@ describe("Schema migrations", () => {
     const keys = db.all(`SELECT * FROM apiKeys`);
     expect(keys).toHaveLength(1);
     expect(keys[0].key).toBe("abc");
+    expect(keys[0].limitMode).toBe("unlimited");
+    expect(keys[0].tokenLimit).toBeNull();
+    expect(keys[0].dailyTokenLimit).toBeNull();
+    expect(keys[0].weeklyTokenLimit).toBeNull();
+    expect(keys[0].expiresAt).toBeNull();
+    expect(keys[0].autoDeleteExpired).toBe(1);
+    expect(keys[0].updatedAt).toBe(keys[0].createdAt);
 
     const aliases = db.all(`SELECT * FROM kv WHERE scope='modelAliases'`);
     expect(aliases).toHaveLength(1);

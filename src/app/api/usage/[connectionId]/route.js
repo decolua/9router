@@ -6,6 +6,7 @@ import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
+import { syncConnectionQuotaState } from "@/lib/quota/autoDisable";
 
 // Detect auth-expired messages returned by usage providers instead of throwing
 const AUTH_EXPIRED_PATTERNS = ["expired", "authentication", "unauthorized", "401", "re-authorize"];
@@ -13,6 +14,24 @@ function isAuthExpiredMessage(usage) {
   if (!usage?.message) return false;
   const msg = usage.message.toLowerCase();
   return AUTH_EXPIRED_PATTERNS.some((p) => msg.includes(p));
+}
+
+function isTransientUsageFetchError(error) {
+  const message = String(error?.message || "").toLowerCase();
+  return [
+    "fetch failed",
+    "enotfound",
+    "eai_again",
+    "etimedout",
+    "econnreset",
+    "econnrefused",
+    "network",
+  ].some((pattern) => message.includes(pattern));
+}
+
+function safeUsageErrorMessage(error) {
+  const message = String(error?.message || "fetch failed");
+  return message.replace(/bearer\s+[^\s]+/gi, "Bearer [redacted]");
 }
 
 /**
@@ -182,10 +201,17 @@ export async function GET(request, { params }) {
       }
     }
 
+    connection = await syncConnectionQuotaState(connection, usage);
+
     return Response.json(usage);
   } catch (error) {
     const provider = connection?.provider ?? "unknown";
     console.warn(`[Usage] ${provider}: ${error.message}`);
+    if (connection && isTransientUsageFetchError(error)) {
+      return Response.json({
+        message: `${provider} connected. Usage temporarily unavailable: ${safeUsageErrorMessage(error)}`,
+      });
+    }
     return Response.json({ error: error.message }, { status: 500 });
   }
 }

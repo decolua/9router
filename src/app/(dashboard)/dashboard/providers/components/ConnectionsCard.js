@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/connectionStatus";
 import PropTypes from "prop-types";
 import { Card, Badge, Button, Modal, Select, Toggle, EditConnectionModal, ConfirmModal } from "@/shared/components";
+import { ACCOUNT_ROUTING_MODE_OPTIONS, normalizeAccountRoutingMode } from "@/shared/utils/accountRouting";
 
 // ── CooldownTimer ──────────────────────────────────────────────
 function CooldownTimer({ until }) {
@@ -303,7 +304,6 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedConnection, setSelectedConnection] = useState(null);
   const [providerStrategy, setProviderStrategy] = useState(null);
-  const [providerStickyLimit, setProviderStickyLimit] = useState("1");
   const [confirmState, setConfirmState] = useState(null);
 
   const fetch_ = useCallback(async () => {
@@ -319,22 +319,20 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
       if (connRes.ok) setConnections((connData.connections || []).filter((c) => c.provider === providerId));
       if (proxyRes.ok) setProxyPools(proxyData.proxyPools || []);
       const override = (settingsData.providerStrategies || {})[providerId] || {};
-      setProviderStrategy(override.fallbackStrategy || null);
-      setProviderStickyLimit(override.stickyRoundRobinLimit != null ? String(override.stickyRoundRobinLimit) : "1");
+      setProviderStrategy(override.fallbackStrategy ? normalizeAccountRoutingMode(override.fallbackStrategy) : null);
     } catch (e) { console.log("ConnectionsCard fetch error:", e); }
     finally { setLoading(false); }
   }, [providerId]);
 
   useEffect(() => { fetch_(); }, [fetch_]);
 
-  const saveStrategy = async (strategy, stickyLimit) => {
+  const saveStrategy = async (strategy) => {
     try {
       const res = await fetch("/api/settings", { cache: "no-store" });
       const data = res.ok ? await res.json() : {};
       const current = data.providerStrategies || {};
       const override = {};
       if (strategy) override.fallbackStrategy = strategy;
-      if (strategy === "round-robin" && stickyLimit !== "") override.stickyRoundRobinLimit = Number(stickyLimit) || 3;
       const updated = { ...current };
       if (Object.keys(override).length === 0) delete updated[providerId];
       else updated[providerId] = override;
@@ -404,26 +402,21 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
           <h2 className="text-lg font-semibold">Connections</h2>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-text-muted font-medium">Round Robin</span>
-            <Toggle
-              checked={providerStrategy === "round-robin"}
-              onChange={(enabled) => {
-                const strategy = enabled ? "round-robin" : null;
+            <span className="text-xs text-text-muted font-medium">Route</span>
+            <select
+              value={providerStrategy || "global"}
+              onChange={(event) => {
+                const strategy = event.target.value === "global" ? null : event.target.value;
                 setProviderStrategy(strategy);
-                if (enabled && !providerStickyLimit) setProviderStickyLimit("1");
-                saveStrategy(strategy, enabled ? (providerStickyLimit || "1") : providerStickyLimit);
+                saveStrategy(strategy);
               }}
-            />
-            {providerStrategy === "round-robin" && (
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-xs text-text-muted">Sticky:</span>
-                <input
-                  type="number" min={1} value={providerStickyLimit}
-                  onChange={(e) => { setProviderStickyLimit(e.target.value); saveStrategy("round-robin", e.target.value); }}
-                  className="w-16 px-2 py-1 text-xs border border-border rounded-md bg-background focus:outline-none focus:border-primary"
-                />
-              </div>
-            )}
+              className="h-8 rounded-lg border border-border bg-background px-2 text-xs text-text-primary focus:outline-none focus:border-primary"
+            >
+              <option value="global">Global</option>
+              {ACCOUNT_ROUTING_MODE_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>{option.label}</option>
+              ))}
+            </select>
           </div>
         </div>
 

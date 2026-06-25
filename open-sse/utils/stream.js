@@ -134,8 +134,8 @@ export function createSSEStream(options = {}) {
               }
 
               const delta = parsed.choices?.[0]?.delta;
-              const content = delta?.content;
-              const reasoning = delta?.reasoning_content;
+              const content = delta?.content ?? delta?.message?.content;
+              const reasoning = delta?.reasoning_content || delta?.reasoning || delta?.thinking;
               if (content && typeof content === "string") {
                 totalContentLength += content.length;
                 accumulatedContent += content;
@@ -230,14 +230,16 @@ export function createSSEStream(options = {}) {
         }
         
         // OpenAI format - content
-        if (parsed.choices?.[0]?.delta?.content) {
-          totalContentLength += parsed.choices[0].delta.content.length;
-          accumulatedContent += parsed.choices[0].delta.content;
+        const openaiContent = parsed.choices?.[0]?.delta?.content ?? parsed.choices?.[0]?.delta?.message?.content;
+        if (openaiContent) {
+          totalContentLength += openaiContent.length;
+          accumulatedContent += openaiContent;
         }
-        // OpenAI format - reasoning
-        if (parsed.choices?.[0]?.delta?.reasoning_content) {
-          totalContentLength += parsed.choices[0].delta.reasoning_content.length;
-          accumulatedThinking += parsed.choices[0].delta.reasoning_content;
+        // OpenAI format - reasoning (normalize reasoning/thinking/reasoning_content)
+        const openaiReasoning = parsed.choices?.[0]?.delta?.reasoning_content || parsed.choices?.[0]?.delta?.reasoning || parsed.choices?.[0]?.delta?.thinking;
+        if (openaiReasoning) {
+          totalContentLength += openaiReasoning.length;
+          accumulatedThinking += openaiReasoning;
         }
         
         // Gemini format

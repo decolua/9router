@@ -4,16 +4,18 @@ import { FORMATS } from "../translator/formats.js";
 export function parseSSELine(line, format = null) {
   if (!line) return null;
 
-  // NDJSON format (Ollama): raw JSON lines without "data:" prefix
-  if (format === FORMATS.OLLAMA) {
-    const trimmed = line.trim();
-    if (trimmed.startsWith("{")) {
-      try {
-        return JSON.parse(trimmed);
-      } catch (error) {
-        return null;
-      }
+  const trimmed = line.trim();
+
+  // NDJSON format: raw JSON lines without "data:" prefix
+  if (trimmed.startsWith("{")) {
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      return null;
     }
+  }
+
+  if (format === FORMATS.OLLAMA) {
     return null;
   }
 
@@ -39,7 +41,10 @@ export function hasValuableContent(chunk, format) {
   if (format === FORMATS.OPENAI && chunk.choices?.[0]?.delta) {
     const delta = chunk.choices[0].delta;
     return delta.content && delta.content !== "" ||
+           delta.message?.content && delta.message.content !== "" ||
            delta.reasoning_content && delta.reasoning_content !== "" ||
+           delta.reasoning && delta.reasoning !== "" ||
+           delta.thinking && delta.thinking !== "" ||
            delta.tool_calls && delta.tool_calls.length > 0 ||
            chunk.choices[0].finish_reason ||
            delta.role;

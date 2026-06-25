@@ -153,7 +153,6 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
                 <div key={s.url} className="rounded border border-transparent hover:border-border">
                   <div className="flex items-start gap-2 px-2 py-2 hover:bg-black/5 dark:hover:bg-white/5">
                     {s.iconUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
                       <img src={s.iconUrl} alt="" className="size-7 rounded shrink-0 object-contain" onError={(e) => { e.target.style.display = "none"; }} />
                     ) : (
                       <div className="size-7 rounded bg-surface shrink-0" />

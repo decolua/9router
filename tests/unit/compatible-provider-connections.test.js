@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { resetDbAdapterForTests } from "../../src/lib/db/driver.js";
 
 const originalDataDir = process.env.DATA_DIR;
 
@@ -33,6 +34,7 @@ async function setupTestContext(nodeData) {
     POST,
     getProviderConnections,
     cleanup() {
+      resetDbAdapterForTests();
       fs.rmSync(tempDir, { recursive: true, force: true });
     },
   };

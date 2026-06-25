@@ -6,6 +6,7 @@ import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
+import { normalizeClaudeBaseUrl } from "@/shared/utils/claudeSettings";
 
 const execAsync = promisify(exec);
 
@@ -110,11 +111,9 @@ export async function POST(request) {
       }
     }
 
-    // Normalize ANTHROPIC_BASE_URL to ensure /v1 suffix
+    // Claude Code appends /v1/messages itself; storing /v1 causes /v1/v1/messages.
     if (env.ANTHROPIC_BASE_URL) {
-      env.ANTHROPIC_BASE_URL = env.ANTHROPIC_BASE_URL.endsWith("/v1") 
-        ? env.ANTHROPIC_BASE_URL 
-        : `${env.ANTHROPIC_BASE_URL}/v1`;
+      env.ANTHROPIC_BASE_URL = normalizeClaudeBaseUrl(env.ANTHROPIC_BASE_URL);
     }
 
     // Merge new env with existing settings
@@ -147,6 +146,7 @@ export async function POST(request) {
 const RESET_ENV_KEYS = [
   "ANTHROPIC_BASE_URL",
   "ANTHROPIC_AUTH_TOKEN",
+  "ANTHROPIC_API_KEY",
   "ANTHROPIC_DEFAULT_OPUS_MODEL",
   "ANTHROPIC_DEFAULT_SONNET_MODEL",
   "ANTHROPIC_DEFAULT_HAIKU_MODEL",

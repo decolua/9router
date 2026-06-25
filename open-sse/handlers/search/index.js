@@ -10,6 +10,7 @@
 import { buildSearchRequest } from "./callers.js";
 import { normalizeSearchResponse } from "./normalizers.js";
 import { handleChatSearch } from "./chatSearch.js";
+import { guardedFetch, UrlGuardError } from "../../../src/lib/security/urlGuard.js";
 
 const GLOBAL_TIMEOUT_MS = 15000;
 const NON_RETRIABLE = new Set([400, 401, 403, 404]);
@@ -100,7 +101,11 @@ async function tryDedicatedProvider({ provider, providerConfig, body, credential
   log?.info?.("SEARCH", `${provider.id} | "${params.query.slice(0, 80)}" | type=${params.searchType}`);
 
   try {
-    const resp = await fetch(url, { ...init, headers: sanitizeHeaders(init.headers), signal: controller.signal });
+    const resp = await guardedFetch(url, { ...init, headers: sanitizeHeaders(init.headers), signal: controller.signal }, {
+      protocols: ["http:", "https:"],
+      timeoutMs: timeout,
+      allowPrivate: provider.id === "searxng" && !params.providerOptions?.baseUrl && !params.providerSpecificData?.baseUrl,
+    });
     clearTimeout(timer);
     if (!resp.ok) {
       const errText = await resp.text().catch(() => "");
@@ -126,6 +131,9 @@ async function tryDedicatedProvider({ provider, providerConfig, body, credential
     };
   } catch (err) {
     clearTimeout(timer);
+    if (err instanceof UrlGuardError) {
+      return { success: false, status: 400, error: err.message };
+    }
     const isTimeout = err.name === "AbortError";
     const status = isTimeout ? 504 : 502;
     log?.error?.("SEARCH", `${provider.id} ${isTimeout ? "timeout" : "error"}: ${err.message}`);

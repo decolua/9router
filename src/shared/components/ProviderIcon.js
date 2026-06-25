@@ -3,6 +3,11 @@
 import { useState } from "react";
 import PropTypes from "prop-types";
 
+const CUSTOM_PROVIDER_ICON_RE = /^\/providers\/.+-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.png$/i;
+const PROVIDER_ICON_OVERRIDES = {
+  "/providers/kimi-api.png": "/providers/kimi.png",
+};
+
 export default function ProviderIcon({
   src,
   alt,
@@ -12,8 +17,10 @@ export default function ProviderIcon({
   fallbackColor,
 }) {
   const [errored, setErrored] = useState(false);
+  const iconSrc = PROVIDER_ICON_OVERRIDES[src] || src;
+  const useFallback = !iconSrc || errored || CUSTOM_PROVIDER_ICON_RE.test(iconSrc);
 
-  if (!src || errored) {
+  if (useFallback) {
     return (
       <span
         className={`inline-flex items-center justify-center font-bold rounded-lg ${className}`.trim()}
@@ -31,7 +38,7 @@ export default function ProviderIcon({
 
   return (
     <img
-      src={src}
+      src={iconSrc}
       alt={alt}
       width={size}
       height={size}

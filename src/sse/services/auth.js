@@ -1,12 +1,138 @@
-import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings } from "@/lib/localDb";
+import { getProviderConnections, validateApiKey, checkApiKeyAccess, updateProviderConnection, getSettings } from "@/lib/localDb";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
+import { normalizeAccountRoutingMode } from "@/shared/utils/accountRouting.js";
+import { restoreExpiredAutoDisabledConnections } from "@/lib/quota/autoDisable.js";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
 let selectionMutex = Promise.resolve();
+let lastSelectionTimeMs = 0;
+
+function clampPercentage(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(0, Math.min(100, Math.round(n)));
+}
+
+function quotaRemainingPercentage(quota) {
+  if (!quota || !quota.total || quota.total <= 0) return null;
+  if (quota.remainingPercentage !== undefined && quota.remainingPercentage !== null) {
+    return clampPercentage(quota.remainingPercentage);
+  }
+  const used = Number(quota.used || 0);
+  const total = Number(quota.total || 0);
+  if (!Number.isFinite(used) || !Number.isFinite(total) || total <= 0) return null;
+  return clampPercentage(((total - used) / total) * 100);
+}
+
+function isSessionQuotaRow(quota) {
+  const label = String(
+    quota?.name ?? quota?.label ?? quota?.window ?? quota?.type ?? "",
+  ).toLowerCase();
+  if (!label) return false;
+  if (label.includes("weekly") || label.includes("daily")) return false;
+  return (
+    label.includes("session") ||
+    label.includes("5h") ||
+    label.includes("5-hour") ||
+    label.includes("five_hour")
+  );
+}
+
+function getSessionQuotaScore(connection) {
+  const quotas = Array.isArray(connection?.lastQuotaSnapshot?.quotas)
+    ? connection.lastQuotaSnapshot.quotas
+    : [];
+  const sessionRows = quotas.filter(isSessionQuotaRow);
+  if (sessionRows.length === 0) return null;
+
+  const percentages = sessionRows
+    .map(quotaRemainingPercentage)
+    .filter((percentage) => percentage !== null);
+  if (percentages.length === 0) return null;
+
+  return Math.round(
+    percentages.reduce((sum, percentage) => sum + percentage, 0) / percentages.length,
+  );
+}
+
+function getQuotaRoutingScore(connection) {
+  const sessionScore = getSessionQuotaScore(connection);
+  if (sessionScore !== null) return sessionScore;
+
+  const quotas = Array.isArray(connection?.lastQuotaSnapshot?.quotas)
+    ? connection.lastQuotaSnapshot.quotas
+    : [];
+  if (quotas.length === 0) return null;
+
+  const sessionRows = quotas.filter(isSessionQuotaRow);
+  const rows = sessionRows.length > 0 ? sessionRows : quotas;
+  const percentages = rows
+    .map(quotaRemainingPercentage)
+    .filter((percentage) => percentage !== null);
+  if (percentages.length === 0) return null;
+
+  return Math.round(
+    percentages.reduce((sum, percentage) => sum + percentage, 0) / percentages.length,
+  );
+}
+
+async function markSelectedConnection(connection, consecutiveUseCount = 1) {
+  let selectedAtMs = Date.now();
+  if (selectedAtMs <= lastSelectionTimeMs) selectedAtMs = lastSelectionTimeMs + 1;
+  lastSelectionTimeMs = selectedAtMs;
+  await updateProviderConnection(connection.id, {
+    lastUsedAt: new Date(selectedAtMs).toISOString(),
+    consecutiveUseCount,
+  });
+}
+
+function sortByPriorityThenOldest(a, b) {
+  const priorityDiff = (a.priority || 999) - (b.priority || 999);
+  if (priorityDiff !== 0) return priorityDiff;
+  if (!a.lastUsedAt && !b.lastUsedAt) return 0;
+  if (!a.lastUsedAt) return -1;
+  if (!b.lastUsedAt) return 1;
+  return new Date(a.lastUsedAt) - new Date(b.lastUsedAt);
+}
+
+function sortByOldestThenPriority(a, b) {
+  if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
+  if (!a.lastUsedAt) return -1;
+  if (!b.lastUsedAt) return 1;
+  const lastUsedDiff = new Date(a.lastUsedAt) - new Date(b.lastUsedAt);
+  if (lastUsedDiff !== 0) return lastUsedDiff;
+  return (a.priority || 999) - (b.priority || 999);
+}
+
+function pickDefaultConnection(availableConnections) {
+  return [...availableConnections].sort(sortByOldestThenPriority)[0] || null;
+}
+
+function pickQuotaConnection(availableConnections, direction) {
+  const scored = availableConnections
+    .map((candidate) => ({
+      candidate,
+      score: getQuotaRoutingScore(candidate),
+    }))
+    .filter((entry) => entry.score !== null)
+    .sort((a, b) => {
+      if (a.score !== b.score) {
+        return direction === "lowest" ? a.score - b.score : b.score - a.score;
+      }
+      return sortByPriorityThenOldest(a.candidate, b.candidate);
+    });
+
+  return scored[0]?.candidate || pickDefaultConnection(availableConnections);
+}
+
+function pickRandomConnection(availableConnections) {
+  if (availableConnections.length === 0) return null;
+  return availableConnections[Math.floor(Math.random() * availableConnections.length)] || availableConnections[0];
+}
 
 /**
  * Get provider credentials from localDb
@@ -31,6 +157,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
 
     // Resolve alias to provider ID (e.g., "kc" -> "kilocode")
     const providerId = resolveProviderId(provider);
+    await restoreExpiredAutoDisabledConnections(providerId);
 
     // Inject a virtual connection for no-auth free providers (with optional proxy pool from settings)
     if (FREE_PROVIDERS[providerId]?.noAuth) {
@@ -100,7 +227,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     const settings = await getSettings();
     // Per-provider strategy overrides global setting
     const providerOverride = (settings.providerStrategies || {})[providerId] || {};
-    const strategy = providerOverride.fallbackStrategy || settings.fallbackStrategy || "fill-first";
+    const strategy = normalizeAccountRoutingMode(providerOverride.fallbackStrategy || settings.fallbackStrategy);
 
     let connection;
     // Pin to preferred connection if specified and available
@@ -110,50 +237,20 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         log.info("AUTH", `${provider} | pinned to ${connection.id?.slice(0, 8)} (${connection.name || connection.email || "unnamed"})`);
       }
     }
-    if (connection) {
-      // skip strategy
-    } else if (strategy === "round-robin") {
-      const stickyLimit = providerOverride.stickyRoundRobinLimit || settings.stickyRoundRobinLimit || 3;
-
-      // Sort by lastUsed (most recent first) to find current candidate
-      const byRecency = [...availableConnections].sort((a, b) => {
-        if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
-        if (!a.lastUsedAt) return 1;
-        if (!b.lastUsedAt) return -1;
-        return new Date(b.lastUsedAt) - new Date(a.lastUsedAt);
-      });
-
-      const current = byRecency[0];
-      const currentCount = current?.consecutiveUseCount || 0;
-
-      if (current && current.lastUsedAt && currentCount < stickyLimit) {
-        // Stay with current account
-        connection = current;
-        // Update lastUsedAt and increment count (await to ensure persistence)
-        await updateProviderConnection(connection.id, {
-          lastUsedAt: new Date().toISOString(),
-          consecutiveUseCount: (connection.consecutiveUseCount || 0) + 1
-        });
+    if (!connection) {
+      if (strategy === "highest") {
+        connection = pickQuotaConnection(availableConnections, "highest");
+      } else if (strategy === "lowest") {
+        connection = pickQuotaConnection(availableConnections, "lowest");
+      } else if (strategy === "random") {
+        connection = pickRandomConnection(availableConnections);
       } else {
-        // Pick the least recently used (excluding current if possible)
-        const sortedByOldest = [...availableConnections].sort((a, b) => {
-          if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
-          if (!a.lastUsedAt) return -1;
-          if (!b.lastUsedAt) return 1;
-          return new Date(a.lastUsedAt) - new Date(b.lastUsedAt);
-        });
-
-        connection = sortedByOldest[0];
-
-        // Update lastUsedAt and reset count to 1 (await to ensure persistence)
-        await updateProviderConnection(connection.id, {
-          lastUsedAt: new Date().toISOString(),
-          consecutiveUseCount: 1
-        });
+        connection = pickDefaultConnection(availableConnections);
       }
-    } else {
-      // Default: fill-first (already sorted by priority in getProviderConnections)
-      connection = availableConnections[0];
+    }
+
+    if (connection) {
+      await markSelectedConnection(connection, (connection.consecutiveUseCount || 0) + 1);
     }
 
     const resolvedProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
@@ -219,9 +316,30 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
 
   const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
   const lockUpdate = buildModelLockUpdate(model, cooldownMs);
+  const lowerReason = reason.toLowerCase();
+  const quotaExhausted =
+    status === 402 ||
+    lowerReason.includes("quota") ||
+    lowerReason.includes("usage limit") ||
+    lowerReason.includes("insufficient credit") ||
+    lowerReason.includes("billing hard limit");
+  const quotaUntil = resetsAtMs && resetsAtMs > Date.now()
+    ? new Date(resetsAtMs).toISOString()
+    : new Date(Date.now() + cooldownMs).toISOString();
+  const settings = await getSettings();
+  const quotaAutoToggleEnabled = settings.quotaAutoToggleEnabled !== false;
 
   await updateProviderConnection(connectionId, {
     ...lockUpdate,
+    ...(quotaExhausted && quotaAutoToggleEnabled
+      ? {
+          isActive: false,
+          quotaAutoDisabled: true,
+          quotaAutoDisabledAt: new Date().toISOString(),
+          quotaAutoDisabledUntil: quotaUntil,
+          quotaAutoDisabledReason: reason,
+        }
+      : {}),
     testStatus: "unavailable",
     lastError: reason,
     errorCode: status,
@@ -309,4 +427,8 @@ export function extractApiKey(request) {
 export async function isValidApiKey(apiKey) {
   if (!apiKey) return false;
   return await validateApiKey(apiKey);
+}
+
+export async function getApiKeyAccess(apiKey) {
+  return await checkApiKeyAccess(apiKey);
 }
