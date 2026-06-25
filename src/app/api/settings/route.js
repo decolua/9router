@@ -46,7 +46,7 @@ export async function PATCH(request) {
 
     // Preserve telegramBotToken if it wasn't changed (passed as masked placeholder)
     if (Object.prototype.hasOwnProperty.call(body, "telegramBotToken")) {
-      if (body.telegramBotToken === "••••••••" || !String(body.telegramBotToken).trim()) {
+      if (body.telegramBotToken === "••••••••") {
         delete body.telegramBotToken;
       }
     }

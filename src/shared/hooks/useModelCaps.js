@@ -31,6 +31,9 @@ export function useModelCaps() {
   // Resolve caps from a "provider/model" string or a bare model id.
   const getCaps = (key) => {
     if (!key) return null;
+    if (key.includes("@")) {
+      key = key.split("@")[0];
+    }
     if (byFull[key]) return byFull[key];
     const bare = key.includes("/") ? key.slice(key.indexOf("/") + 1) : key;
     if (byId[bare]) return byId[bare];

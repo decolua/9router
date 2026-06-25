@@ -36,12 +36,17 @@ export async function sendNotification(title, message, metadata = {}) {
     settings.telegramBotToken &&
     settings.telegramChatId
   ) {
-    const tgText = `⚠️ *${title}*\n\n` +
-      `• *Provider:* \`${metadata.provider || "unknown"}\`\n` +
-      `• *Model:* \`${metadata.model || "unknown"}\`\n` +
-      `• *Account:* \`${metadata.connectionName || "Public"}\`\n` +
-      `• *Status:* \`${metadata.status || "error"}\`\n` +
-      `• *Details:* ${message}`;
+    const escapeHTML = (str) => {
+      if (typeof str !== "string") return "";
+      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    };
+
+    const tgText = `⚠️ <b>${escapeHTML(title)}</b>\n\n` +
+      `• <b>Provider:</b> <code>${escapeHTML(metadata.provider || "unknown")}</code>\n` +
+      `• <b>Model:</b> <code>${escapeHTML(metadata.model || "unknown")}</code>\n` +
+      `• <b>Account:</b> <code>${escapeHTML(metadata.connectionName || "Public")}</code>\n` +
+      `• <b>Status:</b> <code>${escapeHTML(metadata.status || "error")}</code>\n` +
+      `• <b>Details:</b> ${escapeHTML(message)}`;
 
     try {
       const url = `https://api.telegram.org/bot${settings.telegramBotToken}/sendMessage`;
@@ -51,7 +56,7 @@ export async function sendNotification(title, message, metadata = {}) {
         body: JSON.stringify({
           chat_id: settings.telegramChatId,
           text: tgText,
-          parse_mode: "Markdown",
+          parse_mode: "HTML",
         }),
       });
 
