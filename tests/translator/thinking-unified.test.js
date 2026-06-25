@@ -113,6 +113,10 @@ describe("applyThinking per provider format", () => {
     const out = apply("openai", "gpt-5(low)", { reasoning_effort: "high" }, "openai");
     expect(out.reasoning_effort).toBe("low");
   });
+  it("openai keeps xhigh for reasoning models", () => {
+    const out = apply("openai", "gpt-5.3-codex", { reasoning_effort: "xhigh" }, "codex");
+    expect(out.reasoning_effort).toBe("xhigh");
+  });
 });
 
 describe("extractReasoningText (response shapes)", () => {
