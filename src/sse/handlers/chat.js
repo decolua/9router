@@ -22,6 +22,24 @@ import { updateProviderCredentials, checkAndRefreshToken } from "../services/tok
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 
 /**
+ * Strip reasoning_content from assistant messages in conversation history.
+ * Some providers (e.g. Mistral) reject requests containing reasoning_content
+ * in assistant messages with "extra_forbidden" validation errors.
+ * This field is only meaningful in streaming responses, not in request bodies.
+ */
+function stripReasoningFromMessages(body) {
+  if (!body.messages || !Array.isArray(body.messages)) return body;
+  let modified = false;
+  for (const msg of body.messages) {
+    if (msg && msg.role === "assistant" && msg.reasoning_content !== undefined) {
+      delete msg.reasoning_content;
+      modified = true;
+    }
+  }
+  return modified ? { ...body, messages: [...body.messages] } : body;
+}
+
+
  * Handle chat completion request
  * Supports: OpenAI, Claude, Gemini, OpenAI Responses API formats
  * Format detection and translation handled by translator
@@ -45,6 +63,9 @@ export async function handleChat(request, clientRawRequest = null) {
     };
   }
   cacheClaudeHeaders(clientRawRequest.headers);
+
+  // Strip reasoning_content from conversation history (providers like Mistral reject it)
+  body = stripReasoningFromMessages(body);
 
   // Log request endpoint and model
   const url = new URL(request.url);
