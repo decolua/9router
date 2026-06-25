@@ -125,7 +125,10 @@ export function createSSEStream(options = {}) {
 
   // Did this stream produce any output the client can use (text/reasoning/tool/Responses output)?
   // Used in flush() to detect the empty/malformed HTTP-200 case.
-  const producedOutput = () => totalContentLength > 0 || sawToolCalls || sawResponsesContent;
+  // `sseEmittedCount > 0` guards translators whose parsed shape isn't covered by the
+  // accumulators above (e.g. openai-responses → claude); if we emitted valuable chunks,
+  // the stream is not empty regardless of accumulator state.
+  const producedOutput = () => totalContentLength > 0 || sawToolCalls || sawResponsesContent || sseEmittedCount > 0;
 
   // Emit one structured [MALFORMED-200] line + return the client-shaped error SSE text.
   const emitEmptyDiagnostics = (reasonOverride) => {
@@ -206,9 +209,14 @@ export function createSSEStream(options = {}) {
                 }
               }
 
-              if (!hasValuableContent(parsed, FORMATS.OPENAI)) {
+              // Filter by the client-facing format, not a hard-coded OpenAI shape.
+              // Passthrough preserves the provider's native format, which may be Claude
+              // (e.g. GLM) — checking OpenAI here would drop every Claude chunk and
+              // starve the client (the GLM empty-stream bug).
+              if (!hasValuableContent(parsed, sourceFormat)) {
                 continue;
               }
+              sseEmittedCount++;
 
               const delta = parsed.choices?.[0]?.delta;
               const content = delta?.content;

@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 
+import { readFile } from "node:fs/promises";
+
 import { synthOpenAIErrorChunk, synthResponsesFailure } from "../open-sse/utils/diagnostics.js";
 import { convertResponsesStreamToJson } from "../open-sse/transformer/streamToJsonConverter.js";
 
@@ -33,5 +35,32 @@ const okResponses = await convertResponsesStreamToJson(streamFromText([
 assert.equal(okResponses.status, "completed");
 assert.equal(okResponses.empty, false);
 assert.equal(okResponses.output[0].content[0].text, "hi");
+
+// Regression guards for the two empty-stream false-positives fixed in stream.js.
+// Full behavioral import pulls the translator graph (needs 'undici'); assert the
+// guards directly from source instead so this check stays self-contained.
+const streamSrc = await readFile(new URL("../open-sse/utils/stream.js", import.meta.url), "utf8");
+
+// Bug 1: passthrough must filter by the client-facing sourceFormat, not a hard-coded
+// OpenAI shape (which dropped every Claude chunk and starved GLM clients).
+assert.match(
+  streamSrc,
+  /hasValuableContent\(parsed, sourceFormat\)/,
+  "passthrough must call hasValuableContent with sourceFormat (not hard-coded OPENAI)",
+);
+assert.doesNotMatch(
+  streamSrc,
+  /hasValuableContent\(parsed, FORMATS\.OPENAI\)/,
+  "passthrough must not hard-code FORMATS.OPENAI in the valuable-content filter",
+);
+
+// Bug 2: producedOutput() must treat emitted valuable chunks as output, so translators
+// whose parsed shape isn't accumulator-tracked (e.g. openai-responses → claude) do not
+// raise a false MALFORMED-200 after a successful stream.
+assert.match(
+  streamSrc,
+  /producedOutput = \(\) => totalContentLength > 0 \|\| sawToolCalls \|\| sawResponsesContent \|\| sseEmittedCount > 0/,
+  "producedOutput() must include sseEmittedCount > 0",
+);
 
 console.log("selfcheck-empty-stream: ok");
