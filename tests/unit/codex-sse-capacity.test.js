@@ -120,4 +120,50 @@ describe("CodexExecutor SSE capacity detection", () => {
       },
     });
   });
+
+  it("does not retry after client-visible Responses output has started", async () => {
+    const executor = new CodexExecutor();
+    executor.config = { ...executor.config, retry: { 503: { attempts: 3, delayMs: 0 } } };
+
+    const text = [
+      "event: response.output_text.delta",
+      `data: ${JSON.stringify({
+        type: "response.output_text.delta",
+        delta: "partial output",
+      })}`,
+      "",
+      "event: response.failed",
+      `data: ${JSON.stringify({
+        type: "response.failed",
+        response: {
+          status: "failed",
+          error: {
+            code: "model_at_capacity",
+            message: "Selected model is at capacity. Please try a different model.",
+          },
+        },
+      })}`,
+      "",
+    ].join("\n");
+
+    const executeSpy = vi.spyOn(BaseExecutor.prototype, "execute").mockResolvedValue({
+      response: responseSse(text),
+      url: "https://provider.invalid/responses",
+      headers: {},
+      transformedBody: {},
+    });
+
+    const result = await executor.execute({
+      model: "gpt-5.5",
+      body: {},
+      stream: true,
+      credentials: { apiKey: "k" },
+      signal: new AbortController().signal,
+      log: {},
+    });
+
+    expect(executeSpy).toHaveBeenCalledTimes(1);
+    expect(result.response.status).toBe(200);
+    expect(await result.response.text()).toContain("model_at_capacity");
+  });
 });

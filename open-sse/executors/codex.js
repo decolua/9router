@@ -241,9 +241,9 @@ export class CodexExecutor extends BaseExecutor {
         if (done) break;
         chunks.push(value);
         text += decoder.decode(value, { stream: true });
+        if (hasOpenAIResponsesStreamOutput(text)) break;
         failure = detectRetryableResponsesStreamFailure(text);
         if (failure) break;
-        if (hasOpenAIResponsesStreamOutput(text)) break;
       }
     } catch (e) {
       dbg("CODEX", `peek read error: ${e.message}`);

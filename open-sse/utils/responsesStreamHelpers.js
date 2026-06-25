@@ -155,6 +155,38 @@ function classifyRetryableResponsesFailure(parsedFrame) {
   return null;
 }
 
+function classifyOpenAIResponsesFailure(parsedFrame) {
+  if (!parsedFrame || typeof parsedFrame !== "object") return null;
+
+  const eventName = parsedFrame.eventName || parsedFrame.data?.type || parsedFrame.data?.response?.type || null;
+  const data = parsedFrame.data ?? parsedFrame.rawData ?? null;
+  if (!data) return null;
+
+  const isTerminalFailure =
+    eventName === "error" ||
+    eventName === "response.failed" ||
+    data?.type === "error" ||
+    data?.type === "response.failed" ||
+    data?.response?.status === "failed" ||
+    data?.status === "failed";
+
+  if (!isTerminalFailure) return null;
+
+  const payload = extractResponsesFailurePayload(data);
+  const retryable = classifyRetryableResponsesFailure(parsedFrame);
+  return {
+    status: retryable?.status || 502,
+    matched: retryable?.matched || null,
+    code: typeof payload?.code === "string" ? payload.code : null,
+    type: typeof payload?.type === "string" ? payload.type : null,
+    message: typeof payload?.message === "string"
+      ? payload.message
+      : (typeof data?.response?.error?.message === "string"
+        ? data.response.error.message
+        : (typeof data?.message === "string" ? data.message : null)),
+  };
+}
+
 /**
  * Detect retryable semantic failures in OpenAI Responses SSE text.
  * Returns null for successful streams or non-retryable terminal failures.
@@ -166,6 +198,25 @@ export function detectRetryableResponsesStreamFailure(text) {
     const parsedFrame = parseSSEFrame(frame);
     if (!parsedFrame) continue;
     const classified = classifyRetryableResponsesFailure(parsedFrame);
+    if (classified) return classified;
+  }
+
+  return null;
+}
+
+/**
+ * Detect any terminal OpenAI Responses failure in SSE text.
+ * Unlike detectRetryableResponsesStreamFailure(), this is used after streaming
+ * has started, where fallback is no longer safe but accounting still must
+ * record the stream as failed.
+ */
+export function detectOpenAIResponsesStreamFailure(text) {
+  if (typeof text !== "string" || !text.trim()) return null;
+
+  for (const frame of text.split(/\n\n+/)) {
+    const parsedFrame = parseSSEFrame(frame);
+    if (!parsedFrame) continue;
+    const classified = classifyOpenAIResponsesFailure(parsedFrame);
     if (classified) return classified;
   }
 

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { detectRetryableResponsesStreamFailure } from "../../open-sse/utils/responsesStreamHelpers.js";
+import {
+  detectOpenAIResponsesStreamFailure,
+  detectRetryableResponsesStreamFailure,
+} from "../../open-sse/utils/responsesStreamHelpers.js";
 
 describe("Responses SSE semantic failure detection", () => {
   it("detects retryable capacity failures carried inside a 200 Responses stream", () => {
@@ -54,5 +57,34 @@ describe("Responses SSE semantic failure detection", () => {
     ].join("\n");
 
     expect(detectRetryableResponsesStreamFailure(text)).toBeNull();
+  });
+
+  it("detects late Responses failures even after client-visible output", () => {
+    const text = [
+      "event: response.output_text.delta",
+      `data: ${JSON.stringify({
+        type: "response.output_text.delta",
+        delta: "partial output",
+      })}`,
+      "",
+      "event: response.failed",
+      `data: ${JSON.stringify({
+        type: "response.failed",
+        response: {
+          status: "failed",
+          error: {
+            code: "model_at_capacity",
+            message: "Selected model is at capacity. Please try a different model.",
+          },
+        },
+      })}`,
+      "",
+    ].join("\n");
+
+    expect(detectOpenAIResponsesStreamFailure(text)).toMatchObject({
+      code: "model_at_capacity",
+      message: "Selected model is at capacity. Please try a different model.",
+      status: 503,
+    });
   });
 });

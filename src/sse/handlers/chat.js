@@ -271,6 +271,11 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       },
       onRequestSuccess: async () => {
         await clearAccountError(credentials.connectionId, credentials, model);
+      },
+      onRequestFailure: async (outcome) => {
+        const status = outcome?.errorStatus || HTTP_STATUS.BAD_GATEWAY;
+        const message = outcome?.message || "Streaming request failed";
+        await markAccountUnavailable(credentials.connectionId, status, message, provider, model);
       }
     });
 

@@ -3,7 +3,12 @@ import { FORMATS } from "../translator/formats.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
-import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
+import {
+  detectOpenAIResponsesStreamFailure,
+  getOpenAIResponsesEventName,
+  isOpenAIResponsesTerminalEvent,
+  formatIncompleteOpenAIResponsesStreamFailure,
+} from "./responsesStreamHelpers.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
 import { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER } from "./sseConstants.js";
@@ -71,6 +76,7 @@ export function createSSEStream(options = {}) {
   let currentOpenAIResponsesEvent = null;
   let openAIResponsesTerminalSeen = false;
   let openAIResponsesDoneSent = false;
+  let terminalOutcome = { status: "success" };
 
   return new TransformStream({
     transform(chunk, controller) {
@@ -105,6 +111,16 @@ export function createSSEStream(options = {}) {
           if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
             try {
               const parsed = JSON.parse(trimmed.slice(5).trim());
+              const failure = detectOpenAIResponsesStreamFailure(`${trimmed}\n\n`);
+              if (failure) {
+                terminalOutcome = {
+                  status: "failure",
+                  errorStatus: failure.status || 502,
+                  code: failure.code || failure.matched || null,
+                  type: failure.type || null,
+                  message: failure.message || null,
+                };
+              }
 
               const idFixed = fixInvalidId(parsed);
 
@@ -261,6 +277,16 @@ export function createSSEStream(options = {}) {
 
         // Responses same-format passthrough: re-emit with original event framing
         if (keepsOpenAIResponsesFormat && openAIResponsesEventName) {
+          const failure = detectOpenAIResponsesStreamFailure(`${trimmed}\n\n`);
+          if (failure) {
+            terminalOutcome = {
+              status: "failure",
+              errorStatus: failure.status || 502,
+              code: failure.code || failure.matched || null,
+              type: failure.type || null,
+              message: failure.message || null,
+            };
+          }
           const output = formatSSE({ event: openAIResponsesEventName, data: parsed }, sourceFormat);
           reqLogger?.appendConvertedChunk?.(output);
           controller.enqueue(sharedEncoder.encode(output));
@@ -333,10 +359,16 @@ export function createSSEStream(options = {}) {
             usage = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
           }
 
-          if (hasValidUsage(usage)) {
+          if (hasValidUsage(usage) && terminalOutcome.status === "success") {
             logUsage(provider, usage, model, connectionId, apiKey);
           } else {
-            appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
+            appendRequestLog({
+              model,
+              provider,
+              connectionId,
+              tokens: null,
+              status: terminalOutcome.status === "success" ? "200 OK" : `FAILED ${terminalOutcome.errorStatus || 502}`,
+            }).catch(() => { });
           }
           
           // IMPORTANT: In passthrough mode we still must terminate the SSE stream.
@@ -351,7 +383,7 @@ export function createSSEStream(options = {}) {
             onStreamComplete({
               content: accumulatedContent,
               thinking: accumulatedThinking
-            }, usage, ttftAt);
+            }, usage, ttftAt, terminalOutcome);
           }
           return;
         }
@@ -416,17 +448,23 @@ export function createSSEStream(options = {}) {
           state.usage = estimateUsage(body, totalContentLength, sourceFormat);
         }
 
-        if (hasValidUsage(state?.usage)) {
+        if (hasValidUsage(state?.usage) && terminalOutcome.status === "success") {
           logUsage(state.provider || targetFormat, state.usage, model, connectionId, apiKey);
         } else {
-          appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
+          appendRequestLog({
+            model,
+            provider,
+            connectionId,
+            tokens: null,
+            status: terminalOutcome.status === "success" ? "200 OK" : `FAILED ${terminalOutcome.errorStatus || 502}`,
+          }).catch(() => { });
         }
         
         if (onStreamComplete) {
           onStreamComplete({
             content: accumulatedContent,
             thinking: accumulatedThinking
-          }, state?.usage, ttftAt);
+          }, state?.usage, ttftAt, terminalOutcome);
         }
       } catch (error) {
         console.log("Error in flush:", error);

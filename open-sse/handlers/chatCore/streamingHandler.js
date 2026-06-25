@@ -43,9 +43,7 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
 /**
  * Handle streaming response — pipe provider SSE through transform stream to client.
  */
-export function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, streamController, onStreamComplete }) {
-  if (onRequestSuccess) onRequestSuccess();
-
+export function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, streamController, onStreamComplete, streamDetailId }) {
   const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey });
 
   // Responses passthrough: synthesize response.failed + [DONE] if the stream aborts/stalls before a terminal event
@@ -54,7 +52,7 @@ export function handleStreamingResponse({ providerResponse, provider, model, sou
   const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
   const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs);
 
-  const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+  streamDetailId = streamDetailId || `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
   saveRequestDetail(buildRequestDetail({
     provider, model, connectionId,
     latency: { ttft: 0, total: Date.now() - requestStartTime },
@@ -77,16 +75,43 @@ export function handleStreamingResponse({ providerResponse, provider, model, sou
 /**
  * Build onStreamComplete callback for streaming usage tracking.
  */
-export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest }) {
-  const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest, onRequestSuccess, onRequestFailure, streamDetailId }) {
+  streamDetailId = streamDetailId || `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 
-  const onStreamComplete = (contentObj, usage, ttftAt) => {
+  const onStreamComplete = (contentObj, usage, ttftAt, outcome = { status: "success" }) => {
     const latency = {
       ttft: ttftAt ? ttftAt - requestStartTime : Date.now() - requestStartTime,
       total: Date.now() - requestStartTime
     };
     const safeContent = contentObj?.content || "[Empty streaming response]";
     const safeThinking = contentObj?.thinking || null;
+
+    if (outcome?.status === "failure") {
+      saveRequestDetail(buildRequestDetail({
+        provider, model, connectionId,
+        latency,
+        tokens: usage || { prompt_tokens: 0, completion_tokens: 0 },
+        request: extractRequestConfig(body, stream),
+        providerRequest: finalBody || translatedBody || null,
+        providerResponse: safeContent,
+        response: {
+          content: safeContent,
+          thinking: safeThinking,
+          error: outcome.message || "[Streaming failure]",
+          status: outcome.errorStatus || 502,
+          type: "streaming"
+        },
+        status: "error"
+      }, { id: streamDetailId })).catch(err => {
+        console.error("[RequestDetail] Failed to update streaming failure:", err.message);
+      });
+      if (typeof onRequestFailure === "function") {
+        Promise.resolve(onRequestFailure(outcome)).catch(err => {
+          console.error("[RequestDetail] onRequestFailure failed:", err.message);
+        });
+      }
+      return outcome;
+    }
 
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId,
@@ -102,6 +127,13 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
     });
 
     saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, label: "STREAM USAGE" });
+
+    if (typeof onRequestSuccess === "function") {
+      Promise.resolve(onRequestSuccess()).catch(err => {
+        console.error("[RequestDetail] onRequestSuccess failed:", err.message);
+      });
+    }
+    return outcome;
   };
 
   return { onStreamComplete, streamDetailId };
