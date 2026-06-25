@@ -98,9 +98,10 @@
         { "file": "src/diepxuan/lib/db/repos/manualQuotaRepo.js", "pattern": "alicode" },
         { "file": "src/diepxuan/lib/db/repos/manualQuotaRepo.js", "pattern": "alicode-intl" },
         { "file": "src/diepxuan/usage/index.js", "pattern": "getUsageOverride" },
+        { "file": "src/diepxuan/usage/index.js", "pattern": "handleUsageOverrideResponse" },
         { "file": "src/diepxuan/usage/providers.js", "pattern": "extendUsageSupportedProviders" },
         { "file": "src/diepxuan/usage/providers.js", "pattern": "isDiepXuanUsageEligible" },
-        { "file": "src/app/api/usage/[connectionId]/route.js", "pattern": "getUsageOverride" },
+        { "file": "src/app/api/usage/[connectionId]/route.js", "pattern": "handleUsageOverrideResponse" },
         { "file": "src/app/api/providers/client/route.js", "pattern": "isDiepXuanUsageEligible" },
         { "file": "src/diepxuan/app/dashboard/usage/components/ProviderLimits/index.js", "pattern": "extendUsageSupportedProviders" }
       ],

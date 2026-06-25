@@ -47,6 +47,45 @@ describe("DiepXuan feature flags", () => {
 });
 
 describe("DiepXuan usage override", () => {
+  it("handleUsageOverrideResponse returns a JSON response for manual quota providers", async () => {
+    const quota = { provider: "alicode", plan: "lite", quotas: [] };
+    const getManualQuota = vi.fn(async () => quota);
+
+    vi.doMock("@/diepxuan/lib/db/repos/manualQuotaRepo.js", () => ({
+      hasManualQuota: vi.fn((provider) => provider === "alicode"),
+      getManualQuota,
+    }));
+
+    const { handleUsageOverrideResponse } = await import("@/diepxuan/usage/index.js");
+    const response = await handleUsageOverrideResponse(
+      { provider: "alicode", id: "conn-1" },
+      "conn-1",
+    );
+
+    expect(response).toBeInstanceOf(Response);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(quota);
+  });
+
+  it("handleUsageOverrideResponse returns null when DiepXuan is disabled", async () => {
+    process.env.DIEPXUAN_ENABLED = "0";
+    const getManualQuota = vi.fn(async () => ({ provider: "alicode" }));
+
+    vi.doMock("@/diepxuan/lib/db/repos/manualQuotaRepo.js", () => ({
+      hasManualQuota: vi.fn(() => true),
+      getManualQuota,
+    }));
+
+    const { handleUsageOverrideResponse } = await import("@/diepxuan/usage/index.js");
+    const response = await handleUsageOverrideResponse(
+      { provider: "alicode", id: "conn-1" },
+      "conn-1",
+    );
+
+    expect(response).toBeNull();
+    expect(getManualQuota).not.toHaveBeenCalled();
+  });
+
   it("returns manual quota for providers handled by DiepXuan", async () => {
     const quota = { provider: "alicode", plan: "lite", quotas: [] };
     const getManualQuota = vi.fn(async () => quota);

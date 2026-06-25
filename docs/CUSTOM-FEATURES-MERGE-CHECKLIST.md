@@ -175,15 +175,14 @@ extendUsageSupportedProviders()
 extendUsageApiKeyProviders()
 isDiepXuanUsageEligible()
 getUsageOverride()
+handleUsageOverrideResponse()
 ```
 
-`src/app/api/usage/[connectionId]/route.js` phải ưu tiên hook custom trước OAuth/API quota flow:
+`src/app/api/usage/[connectionId]/route.js` phải ưu tiên hook custom trước OAuth/API quota flow, nhưng base route chỉ giữ hook Response mỏng:
 
 ```js
-const usageOverride = await getUsageOverride(connection, connectionId);
-if (usageOverride) {
-  return Response.json(usageOverride);
-}
+const customUsageResponse = await handleUsageOverrideResponse(connection, connectionId);
+if (customUsageResponse) return customUsageResponse;
 ```
 
 `src/app/api/providers/client/route.js` không merge trực tiếp `DIEPXUAN_USAGE_*`; phải gọi hook:
@@ -230,7 +229,7 @@ Sau merge upstream cần kiểm tra:
 
 ```bash
 grep -R "manualQuota" -n src/diepxuan src/app | head -80
-grep -R "getUsageOverride\|extendUsageSupportedProviders\|isDiepXuanUsageEligible" -n src/diepxuan/usage src/app/api/usage src/app/api/providers/client src/diepxuan/app/dashboard/usage/components/ProviderLimits
+grep -R "getUsageOverride\|handleUsageOverrideResponse\|extendUsageSupportedProviders\|isDiepXuanUsageEligible" -n src/diepxuan/usage src/app/api/usage src/app/api/providers/client src/diepxuan/app/dashboard/usage/components/ProviderLimits
 node --check src/diepxuan/lib/db/repos/manualQuotaRepo.js
 node --check src/diepxuan/usage/index.js
 node --check src/diepxuan/usage/providers.js

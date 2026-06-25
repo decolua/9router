@@ -6,7 +6,7 @@ import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
-import { getUsageOverride } from "@/diepxuan/usage";
+import { handleUsageOverrideResponse } from "@/diepxuan/usage";
 
 // Detect auth-expired messages returned by usage providers instead of throwing
 const AUTH_EXPIRED_PATTERNS = ["expired", "authentication", "unauthorized", "401", "re-authorize"];
@@ -115,11 +115,8 @@ export async function GET(request, { params }) {
       return Response.json({ error: "Connection not found" }, { status: 404 });
     }
 
-    // DiepXuan usage override first: providers with local counter always use it (alicode, etc.)
-    const usageOverride = await getUsageOverride(connection, connectionId);
-    if (usageOverride) {
-      return Response.json(usageOverride);
-    }
+    const customUsageResponse = await handleUsageOverrideResponse(connection, connectionId);
+    if (customUsageResponse) return customUsageResponse;
 
     // Allow OAuth connections, plus whitelisted apikey providers (glm/minimax/...)
     const isOAuth = connection.authType === "oauth";
