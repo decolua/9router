@@ -81,4 +81,35 @@ describe("provider custom model rows", () => {
       },
     ]);
   });
+
+  it("filters compatible provider models by storage alias but returns display prefix", () => {
+    const rows = getProviderCustomModelRows({
+      customModels: [
+        { providerAlias: "openai-compatible-chat-node-1", id: "glm-4.7", type: "llm", name: "GLM 4.7" },
+        { providerAlias: "other-compatible-node", id: "glm-4.7", type: "llm", name: "Wrong Provider" },
+      ],
+      modelAliases: {
+        "legacy-qwen": "openai-compatible-chat-node-1/qwen3-coder",
+      },
+      providerAlias: "openai-compatible-chat-node-1",
+      displayAlias: "corp-ai",
+    });
+
+    expect(rows).toEqual([
+      {
+        id: "glm-4.7",
+        name: "GLM 4.7",
+        fullModel: "corp-ai/glm-4.7",
+        source: "custom",
+        type: "llm",
+      },
+      {
+        id: "qwen3-coder",
+        alias: "legacy-qwen",
+        fullModel: "corp-ai/qwen3-coder",
+        source: "legacyAlias",
+        type: "llm",
+      },
+    ]);
+  });
 });
