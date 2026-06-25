@@ -653,7 +653,10 @@ git log --oneline --decorate --max-count=10
 node scripts/diepxuan/check-custom-features.mjs
 
 # 3. Kiểm tra nhanh custom keywords còn tồn tại
-grep -R "alicode\|alicode-intl\|manualQuota\|getUsageOverride\|isDiepXuanUsageEligible" -n src open-sse cli docs .github scripts | head -120
+grep -R "alicode\|alicode-intl\|manualQuota\|getUsageOverride\|isDiepXuanUsageEligible" -n src open-sse docs .github scripts | head -120
+grep -R "EnhancedConsoleLog\|ProviderLimits\|QuotaProgressBar\|QuotaTable" -n src/app src/diepxuan/app | head -120
+grep -R "resetComboFailTracker\|combo fallback immediately tries next model" -n src open-sse tests | head -120
+grep -R "DonateModal\|volunteer_activism\|Donate" -n src/shared/components/Header.js src/shared/components/DonateModal.js || true
 grep -R "firstCombo\|No provider/model specified\|Unknown provider" -n src/sse/handlers/search.js src/sse/handlers/fetch.js
 
 # 4. Syntax check file custom chính
@@ -661,6 +664,10 @@ node --check src/diepxuan/lib/db/repos/manualQuotaRepo.js
 node --check src/app/api/usage/[connectionId]/route.js
 node --check src/sse/handlers/search.js
 node --check src/sse/handlers/fetch.js
+node --check src/app/(dashboard)/dashboard/console-log/page.js
+node --check src/diepxuan/app/api/console-logs-structured/route.js
+node --check src/app/(dashboard)/dashboard/quota/page.js
+node --check tests/unit/combo-immediate-fallback-node.test.mjs
 node --check scripts/diepxuan/check-custom-features.mjs
 
 # 5. Build production
@@ -675,7 +682,13 @@ Kết quả tối thiểu phải đạt:
 - `node --check` pass hết.
 - `npm run build` pass.
 - Các keyword custom còn tồn tại.
+- Header không còn `DonateModal`, `volunteer_activism`, `Donate`.
 - Không có conflict marker. Script tự kiểm tra conflict marker theo đầu dòng `<<<<<<<`, `=======`, `>>>>>>>` để tránh false positive với comment separator hoặc command grep trong tài liệu.
+
+Quy tắc docs khi rebase:
+- Không chỉnh sửa lan man các file docs upstream/fork khác.
+- Chỉ dùng `docs/CUSTOM-FEATURES-MERGE-CHECKLIST.md` làm tài liệu kiểm tra fork docs/custom feature sau rebase.
+- Nếu cần thêm guardrail cho custom feature, cập nhật `docs/custom-features.manifest.json`, `scripts/diepxuan/check-custom-features.mjs` và chính checklist này; không chạm các docs khác trừ khi Sếp yêu cầu riêng.
 
 ---
 
@@ -700,9 +713,13 @@ Port chuẩn local của workspace là `20128`. Nếu runtime override port, tha
 Smoke test theo feature:
 - AliCode provider: thêm connection, validate key, gọi chat completion.
 - Manual quota: gọi `/api/usage/<connectionId>` cho AliCode connection.
+- Enhanced quota dashboard: mở `/dashboard/quota`, kiểm tra ProviderLimits custom render đủ quota windows.
+- Enhanced console log: mở `/dashboard/console-log`, kiểm tra `EnhancedConsoleLog` và structured log API hoạt động.
 - Search/fetch fallback: gọi `/api/v1/search` và `/api/v1/web/fetch` khi có combo phù hợp.
+- Combo fallback tracker: đổi settings liên quan combo và kiểm tra `resetComboFailTracker()` còn được gọi.
 - Combo curl snippet: mở combo detail page, kiểm tra origin trong command.
-- CLI package: `cd cli && npm pack --dry-run`.
+- Fork branding header: kiểm tra Header giống upstream nhất có thể nhưng không còn Donate UI/modal.
+- CLI package: hiện xem là phần master fork, không coi là custom feature mới; chỉ kiểm tra khi thay đổi CLI/package.
 
 ---
 
@@ -713,10 +730,16 @@ Smoke test theo feature:
 - `src/shared/constants/providers.js` mất hook `extendApiKeyProviders(...)` hoặc `src/shared/constants/config.js` mất hook `extendProviderEndpoints(...)`.
 - `/api/usage/[connectionId]` không còn gọi `handleUsageOverrideResponse()` trước OAuth/API usage flow.
 - `manualQuotaRepo.js` mất registry `alicode` / `alicode-intl`.
+- `/dashboard/quota` không còn import `@/diepxuan/app/dashboard/usage/components/ProviderLimits`.
+- `ProviderLimits` custom thiếu `QuotaProgressBar`, `QuotaTable`, `ProviderLimitCard`, hoặc `extendUsageSupportedProviders(...)`.
+- `/dashboard/console-log` không còn import/render `EnhancedConsoleLog`.
+- `src/diepxuan/app/api/console-logs-structured/route.js` hoặc `EnhancedConsoleLog.jsx` bị mất.
+- `settings/route.js` mất `resetComboFailTracker()` khi settings đổi.
+- `tests/unit/combo-immediate-fallback-node.test.mjs` bị mất hoặc không còn gọi `handleComboChat`.
 - `search.js` / `fetch.js` mất hook `handleDiepXuanWebComboFallback()` trước fallback lỗi thiếu/không rõ provider.
-- `npm run build` fail tại route usage/search/fetch/provider.
+- `src/shared/components/DonateModal.js` xuất hiện trở lại, hoặc `Header.js` có lại `DonateModal`, `volunteer_activism`, `Donate`.
+- `npm run build` fail tại route usage/search/fetch/provider/quota/console-log.
 - Có conflict marker trong `src`, `open-sse`, `cli`, `docs`.
-- `cli/app/.next` hoặc `cli/app/node_modules` bị xóa ngoài ý muốn khi vẫn còn cần CLI packaging.
 - Workflow GitHub Actions trỏ nhầm hoặc push nhầm upstream.
 
 ---

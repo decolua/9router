@@ -1,5 +1,5 @@
 import { recordComboModelResult, shouldSkipModelInCombo } from "./comboFailTracker.js";
-import { isDiepXuanEnabled } from "@/diepxuan/shared/config/flags.js";
+import { isDiepXuanEnabled } from "../../src/diepxuan/shared/config/flags.js";
 
 export function shouldSkipComboModel(modelStr, comboName) {
   if (!isDiepXuanEnabled()) return false;

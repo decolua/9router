@@ -36,6 +36,16 @@ function checkDirectory(relativePath, scope) {
   return true;
 }
 
+function checkForbiddenFile(relativePath, scope) {
+  const fullPath = path.join(repoRoot, relativePath);
+  if (existsSync(fullPath)) {
+    record("FAIL", scope, `forbidden file exists: ${relativePath}`);
+    return false;
+  }
+  record("PASS", scope, `forbidden file absent: ${relativePath}`);
+  return true;
+}
+
 function checkPattern(entry, scope, severity = "FAIL") {
   if (!checkFile(entry.file, scope)) return false;
   const content = readText(entry.file);
@@ -45,6 +55,18 @@ function checkPattern(entry, scope, severity = "FAIL") {
     return false;
   }
   record("PASS", scope, `pattern found in ${entry.file}: ${entry.pattern}`);
+  return true;
+}
+
+function checkForbiddenPattern(entry, scope, severity = "FAIL") {
+  if (!checkFile(entry.file, scope)) return false;
+  const content = readText(entry.file);
+  const regexp = new RegExp(entry.pattern, "m");
+  if (regexp.test(content)) {
+    record(severity, scope, `forbidden pattern found in ${entry.file}: ${entry.pattern}`);
+    return false;
+  }
+  record("PASS", scope, `forbidden pattern absent in ${entry.file}: ${entry.pattern}`);
   return true;
 }
 
@@ -149,12 +171,20 @@ for (const feature of manifest.features || []) {
     checkDirectory(directory, scope);
   }
 
+  for (const file of feature.forbiddenFiles || []) {
+    checkForbiddenFile(file, scope);
+  }
+
   for (const pattern of feature.requiredPatterns || []) {
     checkPattern(pattern, scope, "FAIL");
   }
 
   for (const pattern of feature.warningPatterns || []) {
     checkPattern(pattern, scope, "WARN");
+  }
+
+  for (const pattern of feature.forbiddenPatterns || []) {
+    checkForbiddenPattern(pattern, scope, pattern.severity || "FAIL");
   }
 
   for (const invariant of feature.invariants || []) {

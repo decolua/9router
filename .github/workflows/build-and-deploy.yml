@@ -24,6 +24,13 @@ jobs:
         with:
           registry-url: "https://npm.pkg.github.com"
 
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Next.js app
+        run: |
+          npm run build
+
       - name: Build CLI with custom app
         working-directory: cli
         run: |

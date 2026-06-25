@@ -67,7 +67,9 @@
       "requiredFiles": [
         "open-sse/services/combo.js",
         "open-sse/diepxuan/comboHooks.js",
-        "open-sse/diepxuan/comboFailTracker.js"
+        "open-sse/diepxuan/comboFailTracker.js",
+        "src/app/api/settings/route.js",
+        "tests/unit/combo-immediate-fallback-node.test.mjs"
       ],
       "requiredPatterns": [
         { "file": "open-sse/services/combo.js", "pattern": "beforeComboModelAttempt" },
@@ -76,16 +78,22 @@
         { "file": "open-sse/diepxuan/comboHooks.js", "pattern": "recordComboModelOutcome" },
         { "file": "open-sse/diepxuan/comboHooks.js", "pattern": "beforeComboModelAttempt" },
         { "file": "open-sse/diepxuan/comboHooks.js", "pattern": "afterComboModelAttempt" },
-        { "file": "open-sse/diepxuan/comboFailTracker.js", "pattern": "MAX_FAILS" }
+        { "file": "open-sse/diepxuan/comboFailTracker.js", "pattern": "MAX_FAILS" },
+        { "file": "src/app/api/settings/route.js", "pattern": "resetComboFailTracker" },
+        { "file": "tests/unit/combo-immediate-fallback-node.test.mjs", "pattern": "combo fallback immediately tries next model" }
       ],
       "invariants": [
         { "file": "open-sse/services/combo.js", "pattern": "beforeComboModelAttempt\\(\\{\\s*modelStr,\\s*comboName,\\s*log\\s*\\}\\)" },
-        { "file": "open-sse/services/combo.js", "pattern": "afterComboModelAttempt\\(\\{\\s*modelStr,\\s*comboName,\\s*ok:" }
+        { "file": "open-sse/services/combo.js", "pattern": "afterComboModelAttempt\\(\\{\\s*modelStr,\\s*comboName,\\s*ok:" },
+        { "file": "src/app/api/settings/route.js", "pattern": "resetComboFailTracker\\(\\)" },
+        { "file": "tests/unit/combo-immediate-fallback-node.test.mjs", "pattern": "handleComboChat" }
       ],
       "syntaxCheck": [
         "open-sse/services/combo.js",
         "open-sse/diepxuan/comboHooks.js",
-        "open-sse/diepxuan/comboFailTracker.js"
+        "open-sse/diepxuan/comboFailTracker.js",
+        "src/app/api/settings/route.js",
+        "tests/unit/combo-immediate-fallback-node.test.mjs"
       ]
     },
     {
@@ -142,6 +150,59 @@
       ],
       "syntaxCheck": [
         "src/diepxuan/lib/db/repos/manualQuotaRepo.js"
+      ]
+    },
+    {
+      "id": "enhanced-quota-dashboard",
+      "description": "DiepXuan quota dashboard replaces the upstream quota page with ProviderLimits components that render detailed quota windows.",
+      "requiredFiles": [
+        "src/app/(dashboard)/dashboard/quota/page.js",
+        "src/diepxuan/app/dashboard/usage/components/ProviderLimits/index.js",
+        "src/diepxuan/app/dashboard/usage/components/ProviderLimits/ProviderLimitCard.js",
+        "src/diepxuan/app/dashboard/usage/components/ProviderLimits/QuotaProgressBar.js",
+        "src/diepxuan/app/dashboard/usage/components/ProviderLimits/QuotaTable.js",
+        "src/diepxuan/app/dashboard/usage/components/ProviderLimits/utils.js"
+      ],
+      "requiredPatterns": [
+        { "file": "src/app/(dashboard)/dashboard/quota/page.js", "pattern": "@/diepxuan/app/dashboard/usage/components/ProviderLimits" },
+        { "file": "src/diepxuan/app/dashboard/usage/components/ProviderLimits/index.js", "pattern": "ProviderLimits" },
+        { "file": "src/diepxuan/app/dashboard/usage/components/ProviderLimits/index.js", "pattern": "QuotaTable" },
+        { "file": "src/diepxuan/app/dashboard/usage/components/ProviderLimits/ProviderLimitCard.js", "pattern": "QuotaProgressBar" },
+        { "file": "src/diepxuan/app/dashboard/usage/components/ProviderLimits/QuotaTable.js", "pattern": "QuotaTable" },
+        { "file": "src/diepxuan/app/dashboard/usage/components/ProviderLimits/utils.js", "pattern": "parseQuotaData|calculatePercentage" }
+      ],
+      "invariants": [
+        { "file": "src/app/(dashboard)/dashboard/quota/page.js", "pattern": "<ProviderLimits\\s*/>" }
+      ],
+      "syntaxCheck": [
+        "src/app/(dashboard)/dashboard/quota/page.js",
+        "src/diepxuan/app/dashboard/usage/components/ProviderLimits/index.js",
+        "src/diepxuan/app/dashboard/usage/components/ProviderLimits/ProviderLimitCard.js",
+        "src/diepxuan/app/dashboard/usage/components/ProviderLimits/QuotaProgressBar.js",
+        "src/diepxuan/app/dashboard/usage/components/ProviderLimits/QuotaTable.js",
+        "src/diepxuan/app/dashboard/usage/components/ProviderLimits/utils.js"
+      ]
+    },
+    {
+      "id": "enhanced-console-log",
+      "description": "DiepXuan console log dashboard renders the enhanced request/log inspector instead of the upstream console log client.",
+      "requiredFiles": [
+        "src/app/(dashboard)/dashboard/console-log/page.js",
+        "src/diepxuan/app/dashboard/console-log/index.js",
+        "src/diepxuan/app/dashboard/console-log/EnhancedConsoleLog.jsx"
+      ],
+      "requiredPatterns": [
+        { "file": "src/app/(dashboard)/dashboard/console-log/page.js", "pattern": "@/diepxuan/app/dashboard/console-log" },
+        { "file": "src/app/(dashboard)/dashboard/console-log/page.js", "pattern": "<EnhancedConsoleLog\\s*/>" },
+        { "file": "src/diepxuan/app/dashboard/console-log/index.js", "pattern": "EnhancedConsoleLog" },
+        { "file": "src/diepxuan/app/dashboard/console-log/EnhancedConsoleLog.jsx", "pattern": "function EnhancedConsoleLog|export default function EnhancedConsoleLog" }
+      ],
+      "invariants": [
+        { "file": "src/app/(dashboard)/dashboard/console-log/page.js", "pattern": "<EnhancedConsoleLog\\s*/>" }
+      ],
+      "syntaxCheck": [
+        "src/app/(dashboard)/dashboard/console-log/page.js",
+        "src/diepxuan/app/dashboard/console-log/index.js"
       ]
     },
     {
@@ -262,6 +323,7 @@
         { "file": ".github/workflows/build-and-deploy.yml", "pattern": "contents: write" },
         { "file": ".github/workflows/build-and-deploy.yml", "pattern": "packages: write" },
         { "file": ".github/workflows/build-and-deploy.yml", "pattern": "registry-url: \\\"https://npm\\.pkg\\.github\\.com\\\"" },
+        { "file": ".github/workflows/build-and-deploy.yml", "pattern": "npm install" },
         { "file": ".github/workflows/build-and-deploy.yml", "pattern": "npm pkg set name=\\\"@diepxuan/9router\\\"" },
         { "file": ".github/workflows/build-and-deploy.yml", "pattern": "npm pkg set publishConfig\\.registry=\\\"https://npm\\.pkg\\.github\\.com/\\\"" },
         { "file": ".github/workflows/build-and-deploy.yml", "pattern": "npm pkg delete scripts\\.prepublishOnly" },
@@ -271,6 +333,19 @@
         { "file": ".github/workflows/build-and-deploy.yml", "pattern": "npm publish" },
         { "file": ".github/workflows/build-and-deploy.yml", "pattern": "NODE_AUTH_TOKEN: \\${\\{ secrets\\.GITHUB_TOKEN \\}\\}" },
         { "file": "scripts/sync.sh", "pattern": "rsync -avP --delete 9router:~/.9router/ /var/lib/9router/" }
+      ]
+    },
+    {
+      "id": "fork-branding-header",
+      "description": "Fork branding keeps upstream Header structure while removing Donate UI/modal.",
+      "forbiddenFiles": [
+        "src/shared/components/DonateModal.js"
+      ],
+      "forbiddenPatterns": [
+        { "file": "src/shared/components/Header.js", "pattern": "DonateModal|volunteer_activism|Donate" }
+      ],
+      "syntaxCheck": [
+        "src/shared/components/Header.js"
       ]
     },
     {
