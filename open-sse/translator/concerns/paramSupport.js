@@ -57,6 +57,11 @@ const MIN_RULES = [
 
 // Test a rule's match (regex or predicate) against the model id.
 // Rules without `match` apply whenever the provider matches (or is unset).
+// IMPORTANT: this falls through to `true` when neither `match` nor `provider`
+// is present. Today every STRIP_RULES / MIN_RULES entry sets at least one, so
+// the fallthrough is safe — but a future rule that sets neither would silently
+// fire on every model. Add an explicit `match` (or a `provider` guard) on any
+// new rule.
 function matches(rule, model) {
   if (typeof rule.match === "function") return rule.match(model);
   if (rule.match instanceof RegExp) return rule.match.test(model);
