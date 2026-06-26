@@ -1,177 +1,92 @@
-// Unit tests for KiroService external_idp (Microsoft Entra ID) methods.
-//
-// Run from 9router/tests:
-//   npx vitest run kiro-external-idp.test.js
-//
-// Coverage:
-//  - buildExternalIdpAuthUrl produces a well-formed authorize URL with PKCE params
-//  - exchangeExternalIdpCode posts form-encoded body and parses the response
-//  - refreshExternalIdpToken posts refresh_token grant
-//  - startLoopbackCapture rejects on cancel
-//
-// fetch is mocked so these tests do not touch the network.
-
 import { describe, it, expect, vi, afterEach } from "vitest";
+import {
+  buildExternalIdpAuthorizeUrl,
+  buildKiroHostedSsoUrl,
+  discoverExternalIdpEndpoints,
+  validateExternalIdpEndpoint,
+} from "@/lib/oauth/services/kiroHostedSso";
 import { KiroService } from "@/lib/oauth/services/kiro";
 
-describe("KiroService.buildExternalIdpAuthUrl", () => {
-  it("includes PKCE + state + scopes", () => {
-    const kiro = new KiroService();
-    const url = kiro.buildExternalIdpAuthUrl({
-      issuerUrl: "https://login.microsoftonline.com/common/v2.0",
-      clientId: "00000003-0000-0000-c000-000000000000",
+describe("Kiro hosted SSO", () => {
+  it("builds the Kiro hosted sign-in URL used by the IDE", () => {
+    const url = buildKiroHostedSsoUrl({
       codeChallenge: "challenge-xyz",
       state: "state-abc",
     });
     const parsed = new URL(url);
-    expect(parsed.origin + parsed.pathname).toBe(
-      "https://login.microsoftonline.com/common/v2.0/oauth2/v2.0/authorize"
-    );
-    expect(parsed.searchParams.get("client_id")).toBe("00000003-0000-0000-c000-000000000000");
-    expect(parsed.searchParams.get("response_type")).toBe("code");
+
+    expect(parsed.origin + parsed.pathname).toBe("https://app.kiro.dev/signin");
     expect(parsed.searchParams.get("code_challenge")).toBe("challenge-xyz");
     expect(parsed.searchParams.get("code_challenge_method")).toBe("S256");
     expect(parsed.searchParams.get("state")).toBe("state-abc");
+    expect(parsed.searchParams.get("redirect_uri")).toBe("http://localhost:3128");
+    expect(parsed.searchParams.get("redirect_from")).toBe("KiroIDE");
+  });
+
+  it("builds the enterprise IdP leg authorize URL from portal descriptor", () => {
+    const url = buildExternalIdpAuthorizeUrl({
+      authorizationEndpoint: "https://login.microsoftonline.com/t/oauth2/v2.0/authorize",
+      clientId: "azure-client",
+      redirectUri: "http://localhost:3128/oauth/callback",
+      scopes: "openid profile offline_access api://x/codewhisperer:conversations",
+      codeChallenge: "leg2-challenge",
+      state: "leg2-state",
+      loginHint: "user@example.com",
+    });
+    const parsed = new URL(url);
+
+    expect(parsed.origin + parsed.pathname).toBe(
+      "https://login.microsoftonline.com/t/oauth2/v2.0/authorize"
+    );
+    expect(parsed.searchParams.get("client_id")).toBe("azure-client");
+    expect(parsed.searchParams.get("response_type")).toBe("code");
     expect(parsed.searchParams.get("redirect_uri")).toBe("http://localhost:3128/oauth/callback");
-    expect(parsed.searchParams.get("scope")).toMatch(/openid/);
-    expect(parsed.searchParams.get("response_mode")).toBe("query");
+    expect(parsed.searchParams.get("code_challenge_method")).toBe("S256");
+    expect(parsed.searchParams.get("state")).toBe("leg2-state");
+    expect(parsed.searchParams.get("login_hint")).toBe("user@example.com");
   });
 
-  it("rejects when required fields missing", () => {
-    const kiro = new KiroService();
-    expect(() =>
-      kiro.buildExternalIdpAuthUrl({ issuerUrl: "x", clientId: "y" })
-    ).toThrow(/codeChallenge.*state/);
+  it("allow-lists Microsoft Entra hosts and rejects lookalikes", () => {
+    expect(() => validateExternalIdpEndpoint("https://login.microsoftonline.com/t/v2.0")).not.toThrow();
+    expect(() => validateExternalIdpEndpoint("https://login.microsoftonline.us/t/v2.0")).not.toThrow();
+    expect(() => validateExternalIdpEndpoint("http://login.microsoftonline.com/t/v2.0")).toThrow(/https/);
+    expect(() => validateExternalIdpEndpoint("https://evil-microsoftonline.com/t/v2.0")).toThrow(/not allow-listed/);
+    expect(() => validateExternalIdpEndpoint("https://login.microsoftonline.com.evil.co/t/v2.0")).toThrow(/not allow-listed/);
   });
 
-  it("accepts fully-formed authEndpoint", () => {
-    const kiro = new KiroService();
-    const url = kiro.buildExternalIdpAuthUrl({
-      issuerUrl: "https://login.microsoftonline.com/tenant/v2.0",
-      authEndpoint: "https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize",
-      clientId: "abc",
-      codeChallenge: "cc",
-      state: "ss",
-    });
-    expect(url).toMatch(
-      /^https:\/\/login\.microsoftonline\.com\/tenant\/oauth2\/v2\.0\/authorize\?/
-    );
-  });
-});
-
-describe("KiroService.exchangeExternalIdpCode", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it("posts form-encoded body and parses response", async () => {
-    const kiro = new KiroService();
-    let capturedUrl = null;
-    let capturedInit = null;
+  it("discovers and validates external IdP OIDC endpoints", async () => {
     vi.stubGlobal("fetch", async (url, init) => {
-      capturedUrl = url;
-      capturedInit = init;
-      return new Response(
-        JSON.stringify({
-          access_token: "at",
-          refresh_token: "rt",
-          expires_in: 3600,
-          id_token: "header.payload.sig",
-          scope: "openid profile",
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
-      );
+      expect(url).toBe("https://login.microsoftonline.com/t/v2.0/.well-known/openid-configuration");
+      expect(init.redirect).toBe("manual");
+      return new Response(JSON.stringify({
+        authorization_endpoint: "https://login.microsoftonline.com/t/oauth2/v2.0/authorize",
+        token_endpoint: "https://login.microsoftonline.com/t/oauth2/v2.0/token",
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
     });
 
-    const result = await kiro.exchangeExternalIdpCode({
-      issuerUrl: "https://login.microsoftonline.com/tenant/v2.0",
-      clientId: "abc",
-      code: "auth-code",
-      codeVerifier: "verifier",
-    });
-
-    expect(result.accessToken).toBe("at");
-    expect(result.refreshToken).toBe("rt");
-    expect(result.expiresIn).toBe(3600);
-    expect(result.idToken).toBe("header.payload.sig");
-
-    expect(capturedUrl).toBe("https://login.microsoftonline.com/tenant/v2.0/oauth2/v2.0/token");
-    expect(capturedInit.headers["Content-Type"]).toMatch(/application\/x-www-form-urlencoded/);
-    const body = new URLSearchParams(capturedInit.body);
-    expect(body.get("client_id")).toBe("abc");
-    expect(body.get("grant_type")).toBe("authorization_code");
-    expect(body.get("code")).toBe("auth-code");
-    expect(body.get("code_verifier")).toBe("verifier");
-    expect(body.get("redirect_uri")).toBe("http://localhost:3128/oauth/callback");
+    const endpoints = await discoverExternalIdpEndpoints("https://login.microsoftonline.com/t/v2.0");
+    expect(endpoints.authorizationEndpoint).toMatch(/authorize$/);
+    expect(endpoints.tokenEndpoint).toMatch(/token$/);
   });
 
-  it("throws when access_token missing in response", async () => {
+  it("tags ListAvailableProfiles requests for external IdP tokens", async () => {
+    vi.stubGlobal("fetch", async (url, init) => {
+      expect(url).toBe("https://codewhisperer.us-east-1.amazonaws.com");
+      expect(init.headers.tokentype).toBe("EXTERNAL_IDP");
+      expect(init.headers.Authorization).toBe("Bearer access-token");
+      return new Response(JSON.stringify({
+        profiles: [{ arn: "arn:aws:codewhisperer:us-east-1:123456789012:profile/EXTERNAL" }],
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+
     const kiro = new KiroService();
-    vi.stubGlobal("fetch", async () =>
-      new Response(JSON.stringify({ expires_in: 3600 }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      })
-    );
-    await expect(
-      kiro.exchangeExternalIdpCode({
-        issuerUrl: "https://login.microsoftonline.com/t/v2.0",
-        clientId: "x",
-        code: "c",
-        codeVerifier: "v",
-      })
-    ).rejects.toThrow(/missing access_token/);
+    const profileArn = await kiro.listAvailableProfiles("access-token", "us-east-1", {
+      authMethod: "external_idp",
+    });
+    expect(profileArn).toBe("arn:aws:codewhisperer:us-east-1:123456789012:profile/EXTERNAL");
   });
 });
 
-describe("KiroService.refreshExternalIdpToken", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it("posts refresh_token grant and returns new tokens", async () => {
-    const kiro = new KiroService();
-    let capturedInit = null;
-    vi.stubGlobal("fetch", async (_url, init) => {
-      capturedInit = init;
-      return new Response(
-        JSON.stringify({ access_token: "new-at", refresh_token: "new-rt", expires_in: 3600 }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
-      );
-    });
-
-    const result = await kiro.refreshExternalIdpToken("old-rt", {
-      issuerUrl: "https://login.microsoftonline.com/tenant/v2.0",
-      clientId: "abc",
-      profileArn: "arn:aws:codewhisperer:us-east-1:000000000000:profile/test",
-    });
-
-    expect(result.accessToken).toBe("new-at");
-    expect(result.refreshToken).toBe("new-rt");
-    expect(result.profileArn).toBe("arn:aws:codewhisperer:us-east-1:000000000000:profile/test");
-    const body = new URLSearchParams(capturedInit.body);
-    expect(body.get("grant_type")).toBe("refresh_token");
-    expect(body.get("refresh_token")).toBe("old-rt");
-  });
-
-  it("throws when issuerUrl/clientId missing", async () => {
-    const kiro = new KiroService();
-    await expect(kiro.refreshExternalIdpToken("rt", {})).rejects.toThrow(
-      /requires issuerUrl and clientId/
-    );
-  });
-});
-
-describe("KiroService.startLoopbackCapture", () => {
-  it("rejects when cancelled", async () => {
-    const kiro = new KiroService();
-    const { promise, cancel } = kiro.startLoopbackCapture({
-      port: 0,
-      host: "127.0.0.1",
-      expectedState: "expected",
-      timeoutMs: 5000,
-    });
-    setTimeout(cancel, 50);
-    await expect(promise).rejects.toThrow(/cancelled/);
-  });
+afterEach(() => {
+  vi.restoreAllMocks();
 });

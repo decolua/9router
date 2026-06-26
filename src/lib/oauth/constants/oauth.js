@@ -67,25 +67,25 @@ export const GITHUB_CONFIG = { ...PROVIDER_OAUTH["github"] };
 // Kiro OAuth Configuration (multi-method: AWS Builder ID / IDC / Social / Import Token)
 export const KIRO_CONFIG = { ...PROVIDER_OAUTH["kiro"] };
 
-// Kiro external_idp (Microsoft Entra ID / Azure AD) — defaults are intentionally
-// empty. The UI prompts the user for issuer_url, client_id, and scopes because
-// these values are tenant-specific and per-Kiro-IDE-rotation. The form pre-fills
-// sensible defaults from kiro-login-helper.py and Kiro IDE's hosted sign-in
-// descriptor so the user only edits when their tenant differs.
+// Kiro hosted SSO (same browser sign-in as the Kiro IDE). The portal at
+// app.kiro.dev federates Google/GitHub and enterprise IdPs (Microsoft Entra ID)
+// behind one PKCE flow. Enterprise tenants are discovered by the portal and sent
+// through a second IdP OIDC leg captured by the same localhost loopback listener.
 export const KIRO_EXTERNAL_IDP_DEFAULTS = {
-  // Token host for Microsoft Entra (multi-tenant common).
-  tokenHost: "https://login.microsoftonline.com",
-  // Default scopes per Kiro IDE: openid + profile + email + offline_access for
-  // refresh tokens + CodeWhisperer API.
-  scopes: "openid profile email offline_access",
-  // Loopback redirect URI per Kiro IDE's kiro-login-helper.py:55-68.
-  redirectUri: "http://localhost:3128/oauth/callback",
-  // Loopback port to bind during OAuth flow.
+  signInBaseUrl: "https://app.kiro.dev/signin",
+  redirectFrom: "KiroIDE",
+  callbackHost: "localhost",
   loopbackPort: 3128,
-  // Loopback bind host. localhost only — never expose 0.0.0.0.
   loopbackHost: "127.0.0.1",
-  // Maximum time to wait for the Microsoft redirect before giving up.
-  loopbackTimeoutMs: 5 * 60 * 1000, // 5 minutes
+  oauthCallbackPath: "/oauth/callback",
+  portalCallbackPath: "/signin/callback",
+  loopbackTimeoutMs: 10 * 60 * 1000,
+  maxCallbackUrlLength: 4096,
+  allowedIssuerSuffixes: [
+    ".microsoftonline.com",
+    ".microsoftonline.us",
+    ".microsoftonline.cn",
+  ],
 };
 
 // AWS region allowlist pattern — prevents SSRF via region injection into upstream URLs (GHSA-6mwv-4mrm-5p3m)

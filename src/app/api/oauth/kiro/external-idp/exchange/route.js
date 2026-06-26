@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { exchangeKiroHostedSsoCapture } from "@/lib/oauth/services/kiroHostedSso";
 import { KiroService } from "@/lib/oauth/services/kiro";
 import { createProviderConnection } from "@/models";
 import { getActiveCapture, dropActiveCapture } from "../captureStore";
@@ -6,126 +7,110 @@ import { getActiveCapture, dropActiveCapture } from "../captureStore";
 /**
  * POST /api/oauth/kiro/external-idp/exchange
  *
- * Completes the external IdP (Microsoft Entra ID) OAuth flow.
+ * Polls a Kiro hosted-portal sign-in session and, once the browser flow
+ * completes, exchanges the captured code for tokens and persists the
+ * connection. Mirrors Kiro-Go's /auth/kiro-sso/poll route.
  *
  * Body:
- *   - issuerUrl:    tenant issuer URL (echoed from authorize)
- *   - clientId:     Azure App client id (echoed from authorize)
- *   - scopes:       space-separated scope string (echoed from authorize)
- *   - state:        state from authorize, used to look up the captured code
- *   - code:         (optional) authorization code; if absent, the route
- *                   awaits the loopback capture registered during authorize
- *   - codeVerifier: PKCE verifier (kept client-side; never sent in authorize)
- *   - region:       CodeWhisperer region (defaults to "us-east-1")
+ *   - sessionId: id returned by POST /authorize
  *
  * Returns:
- *   - success, connection { id, provider, email }
- *
- * On failure returns a generic 500 message and logs the upstream error
- * server-side to avoid leaking IdP details to the client.
+ *   - { completed: false }                     while the user is still signing in
+ *   - { completed: true, connection }          once the account is created
+ *   - { error }                                on terminal failure
  */
 export async function POST(request) {
   try {
     const body = await request.json().catch(() => ({}));
-    const {
-      issuerUrl,
-      clientId,
-      scopes,
-      state,
-      code: providedCode,
-      codeVerifier,
-      region = "us-east-1",
-    } = body || {};
+    const sessionId = body?.sessionId;
+    if (!sessionId) {
+      return NextResponse.json({ error: "sessionId is required" }, { status: 400 });
+    }
 
-    if (!issuerUrl || !clientId || !codeVerifier || !state) {
+    const stored = getActiveCapture(sessionId);
+    if (!stored) {
       return NextResponse.json(
-        { error: "issuerUrl, clientId, codeVerifier, and state are required" },
+        { error: "No pending sign-in for this session. Restart the sign-in." },
+        { status: 410 }
+      );
+    }
+
+    // Race the capture against a short tick so the request never blocks the event
+    // loop. "tick" => still waiting on the browser; resolved => captured; an Error
+    // => the flow failed/cancelled/timed out.
+    const tick = new Promise((resolve) => setTimeout(() => resolve("tick"), 250));
+    const outcome = await Promise.race([
+      stored.session.promise.then((capture) => ({ capture })).catch((err) => err),
+      tick,
+    ]);
+
+    if (outcome === "tick") {
+      return NextResponse.json({ success: true, completed: false, status: "pending" });
+    }
+    if (outcome instanceof Error) {
+      dropActiveCapture(sessionId);
+      return NextResponse.json(
+        { success: false, error: outcome.message || "Kiro sign-in failed" },
         { status: 400 }
       );
     }
 
-    const kiroService = new KiroService();
+    // Captured — exchange the code for tokens off the loopback result.
+    dropActiveCapture(sessionId);
+    const region = stored.region || "us-east-1";
+    const result = await exchangeKiroHostedSsoCapture(outcome.capture, { region });
 
-    // Resolve the authorization code either from the request body (manual paste
-    // path) or from the in-flight loopback capture (auto path).
-    let code = providedCode;
-    if (!code) {
-      const capture = getActiveCapture(state);
-      if (!capture) {
-        return NextResponse.json(
-          { error: "No pending OAuth flow for this state. Restart the sign-in." },
-          { status: 410 }
-        );
-      }
+    // Resolve a CodeWhisperer profile ARN. For external_idp tokens this requires
+    // the EXTERNAL_IDP token type, which the runtime executor adds on data-plane
+    // calls; the initial resolution is best-effort and refresh resolves it later.
+    let profileArn = result.profileArn || null;
+    if (!profileArn) {
       try {
-        const captured = await capture.promise;
-        code = captured.code;
+        const kiro = new KiroService();
+        profileArn = await kiro.listAvailableProfiles(result.accessToken, region, {
+          authMethod: result.authMethod,
+        });
       } catch (err) {
-        dropActiveCapture(state);
-        return NextResponse.json(
-          { error: err.message || "OAuth capture failed" },
-          { status: 400 }
-        );
+        console.error("Kiro hosted SSO profile resolution failed:", err.message);
       }
     }
 
-    // Exchange the code for tokens.
-    const tokens = await kiroService.exchangeExternalIdpCode({
-      issuerUrl,
-      clientId,
-      code,
-      codeVerifier,
-      scopes,
-    });
-
-    // Resolve a CodeWhisperer profile ARN — the access token must be sent
-    // with `tokentype: EXTERNAL_IDP` (handled by open-sse/executors/kiro.js).
-    let profileArn = null;
-    try {
-      profileArn = await kiroService.listAvailableProfiles(tokens.accessToken, region);
-    } catch (err) {
-      console.error("Kiro external-idp profile resolution failed:", err.message);
-      // Continue without profileArn — store still succeeds, refresh on next
-      // request will attempt again.
-    }
-
-    const email = tokens.idToken ? kiroService.extractEmailFromJWT(tokens.idToken) : null;
-    const expiresAt = new Date(Date.now() + (tokens.expiresIn || 3600) * 1000).toISOString();
-
+    const expiresAt = new Date(Date.now() + (result.expiresIn || 3600) * 1000).toISOString();
     const connection = await createProviderConnection({
       provider: "kiro",
       authType: "oauth",
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken || null,
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken || null,
       expiresAt,
-      email: email || null,
+      email: result.email || null,
       providerSpecificData: {
         profileArn,
         region,
-        authMethod: "external_idp",
-        provider: "External IdP",
-        idp: "microsoft-entra-id",
-        issuerUrl,
-        clientId,
-        scopes: scopes || null,
+        authMethod: result.authMethod,
+        provider: result.provider,
+        idp: result.idp,
+        ...(result.issuerUrl ? { issuerUrl: result.issuerUrl } : {}),
+        ...(result.tokenEndpoint ? { tokenEndpoint: result.tokenEndpoint } : {}),
+        ...(result.clientId ? { clientId: result.clientId } : {}),
+        ...(result.scopes ? { scopes: result.scopes } : {}),
       },
       testStatus: profileArn ? "active" : "untested",
     });
 
-    dropActiveCapture(state);
-
     return NextResponse.json({
       success: true,
+      completed: true,
       connection: {
         id: connection.id,
         provider: connection.provider,
         email: connection.email,
+        authMethod: result.authMethod,
       },
     });
   } catch (error) {
-    console.error("Kiro external-idp exchange error:", error.message);
+    console.error("Kiro hosted SSO exchange error:", error.message);
     return NextResponse.json(
-      { error: "External IdP sign-in failed. Check server logs for details." },
+      { error: "Kiro sign-in failed. Check server logs for details." },
       { status: 500 }
     );
   }

@@ -295,8 +295,16 @@ async function resolveKiroProfileArnPatch(providerSpecificData, accessToken, ref
   if (providerSpecificData?.profileArn) return {};
   let profileArn = refreshedArn?.trim?.() || null;
   if (!profileArn) {
-    const { fetchKiroProfileArn } = await import("../../../src/lib/oauth/providers.js");
-    profileArn = await fetchKiroProfileArn(accessToken);
+    if (providerSpecificData?.authMethod === "external_idp" || providerSpecificData?.authMethod === "api_key") {
+      const { KiroService } = await import("../../../src/lib/oauth/services/kiro.js");
+      const kiro = new KiroService();
+      profileArn = await kiro.listAvailableProfiles(accessToken, providerSpecificData?.region || "us-east-1", {
+        authMethod: providerSpecificData.authMethod,
+      });
+    } else {
+      const { fetchKiroProfileArn } = await import("../../../src/lib/oauth/providers.js");
+      profileArn = await fetchKiroProfileArn(accessToken);
+    }
   }
   return profileArn ? { providerSpecificData: { profileArn } } : {};
 }
@@ -308,6 +316,66 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
   const clientId = providerSpecificData?.clientId;
   const clientSecret = providerSpecificData?.clientSecret;
   const region = providerSpecificData?.region;
+
+  if (authMethod === "external_idp") {
+    const tokenEndpoint = providerSpecificData?.tokenEndpoint;
+    if (!clientId || !tokenEndpoint) {
+      log?.error?.("TOKEN_REFRESH", "Kiro external_idp refresh missing clientId or tokenEndpoint");
+      return null;
+    }
+
+    // Re-validate the stored token endpoint against the Microsoft Entra allow-list
+    // on every refresh. A tampered providerSpecificData.tokenEndpoint would
+    // otherwise exfiltrate the refresh_token + client_id to an attacker host (SSRF).
+    try {
+      const { validateExternalIdpEndpoint } = await import("../../../src/lib/oauth/services/kiroHostedSso.js");
+      validateExternalIdpEndpoint(tokenEndpoint);
+    } catch (err) {
+      log?.error?.("TOKEN_REFRESH", `Kiro external_idp refresh rejected token endpoint: ${err.message}`);
+      return null;
+    }
+
+    const form = new URLSearchParams({
+      client_id: clientId,
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+    });
+    if (providerSpecificData?.scopes) {
+      form.set("scope", providerSpecificData.scopes);
+    }
+
+    const response = await proxyAwareFetch(tokenEndpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+      },
+      body: form.toString(),
+    }, proxyOptions);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      log?.error?.("TOKEN_REFRESH", "Failed to refresh Kiro external_idp token", {
+        status: response.status,
+        error: errorText,
+      });
+      return null;
+    }
+
+    const tokens = await response.json();
+    log?.info?.("TOKEN_REFRESH", "Successfully refreshed Kiro external_idp token", {
+      hasNewAccessToken: !!tokens.access_token,
+      hasNewRefreshToken: !!tokens.refresh_token,
+      expiresIn: tokens.expires_in,
+    });
+
+    return {
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token || refreshToken,
+      expiresIn: tokens.expires_in || 3600,
+      ...(await resolveKiroProfileArnPatch(providerSpecificData, tokens.access_token, tokens.profileArn)),
+    };
+  }
 
   if (clientId && clientSecret) {
     const isIDC = authMethod === "idc";

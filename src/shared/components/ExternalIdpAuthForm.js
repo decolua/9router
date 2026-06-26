@@ -3,316 +3,343 @@
 import { useEffect, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import { Modal, Button, Input } from "@/shared/components";
-import { KIRO_EXTERNAL_IDP_DEFAULTS } from "@/lib/oauth/constants/oauth";
+import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
 /**
- * External IdP (Microsoft Entra ID / Azure AD) auth form for Kiro.
+ * Kiro hosted SSO form (External IdP / Microsoft Entra ID).
  *
- * Flow:
- *  1. User enters issuerUrl, clientId, scopes (pre-filled with sensible defaults).
- *  2. Click "Sign in with Microsoft" → client generates PKCE → POST /authorize.
- *  3. /authorize spawns the loopback capture server and returns the authUrl.
- *  4. window.open(authUrl) launches the user's browser at Microsoft.
- *  5. UI polls /authorize?state=... every 1.5s until the loopback captures
- *     the redirect. The user sees a "Waiting for Microsoft…" status.
- *  6. On capture, POST /exchange with the code + verifier. On success the
- *     modal closes and `onSuccess(connection)` runs.
+ * Two-leg flow:
+ *   1. Portal descriptor → discover Microsoft endpoints → open Microsoft sign-in
+ *   2. Microsoft callback (with code) → exchange for tokens → save connection
  *
- * Fallback: if `portInUse` is returned by /authorize (Kiro IDE already
- * bound localhost:3128), the user can paste the full redirect URL into the
- * form and submit. The exchange route accepts the URL or the raw code.
+ * The loopback listener on `localhost:3128` captures redirects automatically when
+ * the browser can reach the 9router host. When it cannot (VPS deployment, blocked
+ * port, remote browser), the user pastes the callback URL here. The paste path
+ * uses the sessionId in the request body as the CSRF anchor instead of the URL
+ * state, so Microsoft/Kiro-issued state values still match the session.
  */
-
-// Browser-safe PKCE helpers — use Web Crypto because Node crypto is not
-// available in client components.
-async function generateClientCodeVerifier(bytes = 32) {
-  const arr = new Uint8Array(bytes);
-  crypto.getRandomValues(arr);
-  return base64UrlEncode(arr);
-}
-
-async function generateClientCodeChallenge(verifier) {
-  const data = new TextEncoder().encode(verifier);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return base64UrlEncode(new Uint8Array(digest));
-}
-
-function base64UrlEncode(bytes) {
-  let str = "";
-  for (const b of bytes) str += String.fromCharCode(b);
-  return btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-function extractCodeFromUrl(rawUrl) {
-  try {
-    const u = new URL(rawUrl.trim());
-    const code = u.searchParams.get("code");
-    const state = u.searchParams.get("state");
-    return { code, state };
-  } catch {
-    return null;
-  }
-}
-
 export default function ExternalIdpAuthForm({ isOpen, onSuccess, onClose }) {
-  const [step, setStep] = useState("input"); // input | authorizing | waiting | exchanging | error | success
-  const [issuerUrl, setIssuerUrl] = useState("https://login.microsoftonline.com/common/v2.0");
-  const [clientId, setClientId] = useState("");
-  const [scopes, setScopes] = useState(KIRO_EXTERNAL_IDP_DEFAULTS.scopes);
+  const [step, setStep] = useState("input"); // input | waiting | success | error
   const [region, setRegion] = useState("us-east-1");
-  const [manualUrl, setManualUrl] = useState("");
+  const [signInUrl, setSignInUrl] = useState("");
+  const [sessionId, setSessionId] = useState("");
+  const [manualCallbackUrl, setManualCallbackUrl] = useState("");
   const [error, setError] = useState(null);
-  const [portInUse, setPortInUse] = useState(false);
-  const [stateRef, setStateRef] = useState(null);
-  const [verifierRef, setVerifierRef] = useState(null);
+  const [isStarting, setIsStarting] = useState(false);
+  const [isSubmittingCallback, setIsSubmittingCallback] = useState(false);
   const pollRef = useRef(null);
+  const activeSessionRef = useRef("");
+  const { copied, copy } = useCopyToClipboard();
 
   useEffect(() => {
     if (!isOpen) {
-      // Reset state when modal closes/reopens so we don't leak a pending flow.
-      setStep("input");
-      setError(null);
-      setPortInUse(false);
-      setStateRef(null);
-      setVerifierRef(null);
-      setManualUrl("");
-      if (pollRef.current) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
-      }
+      resetState();
     }
+    return () => {
+      if (!isOpen) cancelActiveSession();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
-  async function handleSignIn() {
+  function resetState() {
+    if (pollRef.current) {
+      clearTimeout(pollRef.current);
+      pollRef.current = null;
+    }
+    setStep("input");
+    setSignInUrl("");
+    setSessionId("");
+    setManualCallbackUrl("");
     setError(null);
-    setStep("authorizing");
-    try {
-      const codeVerifier = await generateClientCodeVerifier();
-      setVerifierRef(codeVerifier);
-      const codeChallenge = await generateClientCodeChallenge(codeVerifier);
+    setIsStarting(false);
+    setIsSubmittingCallback(false);
+    activeSessionRef.current = "";
+  }
 
+  async function cancelActiveSession() {
+    const id = activeSessionRef.current;
+    if (!id) return;
+    activeSessionRef.current = "";
+    try {
+      await fetch("/api/oauth/kiro/external-idp/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: id }),
+      });
+    } catch {
+      // Best-effort cleanup only.
+    }
+  }
+
+  async function startSignIn() {
+    setIsStarting(true);
+    setError(null);
+    try {
       const res = await fetch("/api/oauth/kiro/external-idp/authorize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          issuerUrl,
-          clientId,
-          scopes,
-          codeVerifier,
-          region,
-        }),
+        body: JSON.stringify({ region: region || "us-east-1" }),
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || `Authorize failed (${res.status})`);
-      }
-      setStateRef(data.state);
-      setPortInUse(Boolean(data.portInUse));
-
-      // Open Microsoft login in a new tab. The user authenticates and is
-      // redirected to localhost:3128/oauth/callback where our loopback server
-      // captures the code.
-      const popup = window.open(data.authUrl, "_blank", "noopener,noreferrer");
-      if (!popup) {
-        setError(
-          "Popup blocked. Allow popups for 9router, then click Sign in again. " +
-          "Alternatively paste the redirect URL below."
-        );
-        setStep("input");
-        return;
+        throw new Error(data.error || `Failed to start sign-in (${res.status})`);
       }
 
-      if (data.portInUse) {
-        // Port 3128 is taken (likely by Kiro IDE). The redirect won't auto-
-        // capture, so the user must paste the URL manually.
-        setError(
-          "Loopback port 3128 is already in use (probably by Kiro IDE). " +
-          "Complete sign-in in your browser, then paste the redirect URL below."
-        );
-        setStep("input");
-        return;
-      }
-
+      setSessionId(data.sessionId);
+      setSignInUrl(data.signInUrl);
+      activeSessionRef.current = data.sessionId;
       setStep("waiting");
-      pollRef.current = setInterval(() => pollCapture(data.state), 1500);
+
+      window.open(data.signInUrl, "_blank");
+      poll(data.sessionId, data.interval || 2);
     } catch (err) {
-      setError(err.message || "Failed to start sign-in");
-      setStep("input");
+      setError(err.message || "Failed to start Kiro sign-in");
+      setStep("error");
+    } finally {
+      setIsStarting(false);
     }
   }
 
-  async function pollCapture(state) {
-    try {
-      const res = await fetch(`/api/oauth/kiro/external-idp/authorize?state=${encodeURIComponent(state)}`);
-      const data = await res.json();
-      if (data.status === "captured") {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
-        await runExchange({ code: data.code, state: data.state });
-      } else if (data.status === "expired" || data.status === "error") {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
-        setError(
-          (data && data.error) ||
-          "Sign-in window expired or failed. Click Sign in with Microsoft to try again."
-        );
-        setStep("input");
+  function poll(id, intervalSeconds) {
+    pollRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch("/api/oauth/kiro/external-idp/exchange", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId: id }),
+        });
+        const data = await res.json();
+        if (data.completed) {
+          activeSessionRef.current = "";
+          setStep("success");
+          onSuccess?.(data.connection);
+          return;
+        }
+        if (res.ok && data.success && !data.completed) {
+          poll(id, intervalSeconds);
+          return;
+        }
+        throw new Error(data.error || "Kiro sign-in failed");
+      } catch (err) {
+        await cancelActiveSession();
+        setError(err.message || "Kiro sign-in failed");
+        setStep("error");
       }
-      // "pending" → keep polling
-    } catch (err) {
-      // Network blip; let the next tick handle it.
-    }
+    }, Math.max(1, intervalSeconds) * 1000);
   }
 
-  async function handleManualSubmit() {
+  async function submitManualCallback() {
+    if (!sessionId || !manualCallbackUrl.trim()) return;
     setError(null);
-    const parsed = extractCodeFromUrl(manualUrl);
-    if (!parsed || !parsed.code) {
-      setError("Paste the full redirect URL (starting with http://localhost:3128/oauth/callback?code=…)");
-      return;
-    }
-    if (!stateRef || !verifierRef) {
-      setError("Restart sign-in: state or verifier missing. Click Sign in with Microsoft again.");
-      return;
-    }
-    if (parsed.state && parsed.state !== stateRef) {
-      setError("State in the redirect URL doesn't match this session. Restart sign-in.");
-      return;
-    }
-    await runExchange({ code: parsed.code, state: stateRef });
-  }
-
-  async function runExchange({ code, state }) {
-    setStep("exchanging");
+    setIsSubmittingCallback(true);
     try {
-      const res = await fetch("/api/oauth/kiro/external-idp/exchange", {
+      const res = await fetch("/api/oauth/kiro/external-idp/callback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          issuerUrl,
-          clientId,
-          scopes,
-          code,
-          state,
-          codeVerifier: verifierRef,
-          region,
+          sessionId,
+          callbackUrl: manualCallbackUrl.trim(),
         }),
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || `Exchange failed (${res.status})`);
+        throw new Error(data.error || `Callback submit failed (${res.status})`);
       }
-      setStep("success");
-      onSuccess?.(data.connection);
+
+      if (data.nextUrl) {
+        setSignInUrl(data.nextUrl);
+        window.open(data.nextUrl, "_blank");
+        setManualCallbackUrl("");
+        setError("Continue in the Microsoft sign-in tab. Paste the next callback URL here when it returns.");
+        return;
+      }
+      if (data.status === "captured") {
+        setManualCallbackUrl("");
+        setError("Callback captured. Finishing connection…");
+        return;
+      }
+      if (data.status === "ignored") {
+        setError("That callback URL did not match this sign-in session. Paste the latest URL from the sign-in tab.");
+        return;
+      }
     } catch (err) {
-      setError(err.message || "Token exchange failed");
-      setStep("input");
+      setError(err.message || "Failed to submit callback URL");
+    } finally {
+      setIsSubmittingCallback(false);
     }
   }
 
+  async function handleClose() {
+    await cancelActiveSession();
+    onClose?.();
+  }
+
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="External IdP — Microsoft Entra ID">
-      <div className="space-y-4">
+    <Modal isOpen={isOpen} onClose={handleClose} title="Connect Kiro External IdP" size="lg">
+      <div className="flex flex-col gap-5">
         {step === "input" && (
           <>
-            <p className="text-sm text-gray-400">
-              Sign in to Kiro using a Microsoft Entra ID (Azure AD) account that your
-              organization has registered. Paste the values your IT admin provided.
-            </p>
-
-            <div>
-              <label className="block text-xs text-gray-400 mb-1">Issuer URL</label>
-              <Input
-                value={issuerUrl}
-                onChange={(e) => setIssuerUrl(e.target.value)}
-                placeholder="https://login.microsoftonline.com/{tenant}/v2.0"
-              />
+            <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+              <div className="flex gap-2">
+                <span className="material-symbols-outlined text-blue-600 dark:text-blue-400">info</span>
+                <div className="flex-1 text-sm text-blue-800 dark:text-blue-200">
+                  <p className="font-medium mb-1">Sign in through Kiro&apos;s hosted portal</p>
+                  <p>
+                    Opens Kiro at <span className="font-mono">app.kiro.dev/signin</span>. Use your Microsoft Entra ID
+                    (Azure AD) account there. The callback will return to 9router automatically.
+                  </p>
+                </div>
+              </div>
             </div>
 
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Client ID</label>
-              <Input
-                value={clientId}
-                onChange={(e) => setClientId(e.target.value)}
-                placeholder="Azure App Registration client id"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs text-gray-400 mb-1">Scopes</label>
-              <Input
-                value={scopes}
-                onChange={(e) => setScopes(e.target.value)}
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs text-gray-400 mb-1">CodeWhisperer region</label>
+              <label className="block text-sm font-medium mb-2">AWS Region</label>
               <Input
                 value={region}
                 onChange={(e) => setRegion(e.target.value)}
+                placeholder="us-east-1"
+                className="font-mono text-sm"
               />
+              <p className="text-xs text-text-muted mt-1">
+                Defaults to us-east-1. Azure tenant accounts can auto-resolve their profile region later.
+              </p>
             </div>
 
-            {portInUse && (
-              <div>
-                <label className="block text-xs text-gray-400 mb-1">
-                  Redirect URL (paste after signing in)
-                </label>
-                <Input
-                  value={manualUrl}
-                  onChange={(e) => setManualUrl(e.target.value)}
-                  placeholder="http://localhost:3128/oauth/callback?code=…&state=…"
-                />
-                <Button onClick={handleManualSubmit} className="mt-2" disabled={!manualUrl}>
-                  Submit redirect URL
-                </Button>
+            {error && (
+              <div className="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200 dark:border-red-800">
+                <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
               </div>
             )}
 
-            {error && <p className="text-sm text-red-400">{error}</p>}
-
-            <div className="flex justify-end gap-2 pt-2">
-              <Button variant="ghost" onClick={onClose}>Cancel</Button>
-              <Button
-                onClick={handleSignIn}
-                disabled={!issuerUrl || !clientId}
-              >
-                Sign in with Microsoft
+            <div className="flex gap-2">
+              <Button onClick={startSignIn} fullWidth disabled={isStarting || !region.trim()}>
+                {isStarting ? "Starting..." : "Open Kiro sign-in"}
+              </Button>
+              <Button onClick={handleClose} variant="ghost" fullWidth>
+                Cancel
               </Button>
             </div>
           </>
         )}
 
-        {(step === "authorizing" || step === "waiting") && (
-          <div className="py-8 text-center">
-            <div className="animate-spin h-6 w-6 mx-auto border-2 border-blue-400 border-t-transparent rounded-full" />
-            <p className="mt-3 text-sm text-gray-300">
-              {step === "authorizing"
-                ? "Preparing sign-in…"
-                : "Waiting for Microsoft to redirect back to 9router…"}
-            </p>
-            <p className="mt-1 text-xs text-gray-500">
-              Complete the sign-in in the browser window that just opened.
-            </p>
-          </div>
-        )}
+        {step === "waiting" && (
+          <>
+            {/* Top status pill */}
+            <div className="flex items-center justify-center gap-3 py-4 px-5 rounded-xl border border-border bg-surface-2">
+              <span className="material-symbols-outlined text-2xl text-primary animate-spin">progress_activity</span>
+              <p className="text-sm text-text-main">Waiting for Kiro sign-in callback…</p>
+            </div>
 
-        {step === "exchanging" && (
-          <div className="py-8 text-center">
-            <div className="animate-spin h-6 w-6 mx-auto border-2 border-blue-400 border-t-transparent rounded-full" />
-            <p className="mt-3 text-sm text-gray-300">Exchanging code for tokens…</p>
-          </div>
+            {/* Divider */}
+            <div className="flex items-center gap-3 select-none" aria-hidden="true">
+              <div className="flex-1 h-px bg-border" />
+              <span className="text-xs font-medium tracking-wider text-text-muted uppercase">
+                Or paste callback URL manually
+              </span>
+              <div className="flex-1 h-px bg-border" />
+            </div>
+
+            {/* Step 1 */}
+            <div>
+              <p className="text-sm font-medium mb-2">
+                <span className="text-text-muted">Step 1:</span> Open this URL in your browser
+              </p>
+              <div className="flex gap-2">
+                <Input value={signInUrl} readOnly className="flex-1 font-mono text-xs" />
+                <Button
+                  variant="secondary"
+                  size="md"
+                  icon={copied === "sign_in_url" ? "check" : "content_copy"}
+                  onClick={() => copy(signInUrl, "sign_in_url")}
+                  className="shrink-0"
+                >
+                  Copy
+                </Button>
+              </div>
+            </div>
+
+            {/* Step 2 */}
+            <div>
+              <p className="text-sm font-medium mb-2">
+                <span className="text-text-muted">Step 2:</span> Paste the callback URL here
+              </p>
+              <p className="text-xs text-text-muted mb-2">
+                After sign-in, copy the full URL from your browser&apos;s address bar.
+              </p>
+              <Input
+                value={manualCallbackUrl}
+                onChange={(e) => setManualCallbackUrl(e.target.value)}
+                placeholder="http://localhost:3128/?code=... or http://localhost:3128/oauth/callback?code=..."
+                maxLength={4096}
+                className="font-mono text-xs"
+                inputClassName="font-mono text-xs"
+              />
+            </div>
+
+            {error && (
+              <div className={`p-3 rounded-lg border ${
+                error.includes("Continue in the Microsoft sign-in tab")
+                  ? "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800"
+                  : error.includes("captured")
+                    ? "bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800"
+                    : "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800"
+              }`}>
+                <p className={`text-sm ${
+                  error.includes("captured")
+                    ? "text-blue-700 dark:text-blue-300"
+                    : "text-amber-700 dark:text-amber-300"
+                }`}>{error}</p>
+              </div>
+            )}
+
+            {sessionId && (
+              <p className="text-xs text-text-muted text-center">Session: {sessionId.slice(0, 12)}…</p>
+            )}
+
+            {/* Footer actions */}
+            <div className="flex gap-2 pt-2">
+              <Button
+                onClick={submitManualCallback}
+                fullWidth
+                disabled={!manualCallbackUrl.trim() || isSubmittingCallback}
+                loading={isSubmittingCallback}
+              >
+                Connect
+              </Button>
+              <Button onClick={handleClose} variant="ghost" fullWidth>
+                Cancel
+              </Button>
+            </div>
+          </>
         )}
 
         {step === "success" && (
-          <div className="py-6 text-center">
-            <p className="text-sm text-green-400">Signed in successfully.</p>
+          <div className="text-center py-6">
+            <div className="size-16 mx-auto mb-4 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+              <span className="material-symbols-outlined text-3xl text-green-600">check_circle</span>
+            </div>
+            <h3 className="text-lg font-semibold mb-2">Connected Successfully!</h3>
+            <p className="text-sm text-text-muted mb-4">Your Kiro SSO account has been connected.</p>
+            <Button onClick={onClose} fullWidth>Done</Button>
           </div>
         )}
 
-        {error && step !== "input" && (
-          <p className="text-sm text-red-400 text-center">{error}</p>
+        {step === "error" && (
+          <div className="text-center py-6">
+            <div className="size-16 mx-auto mb-4 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+              <span className="material-symbols-outlined text-3xl text-red-600">error</span>
+            </div>
+            <h3 className="text-lg font-semibold mb-2">Connection Failed</h3>
+            <p className="text-sm text-red-600 dark:text-red-400 mb-4">{error}</p>
+            <div className="flex gap-2">
+              <Button onClick={() => setStep("input")} variant="secondary" fullWidth>
+                Try Again
+              </Button>
+              <Button onClick={handleClose} variant="ghost" fullWidth>
+                Cancel
+              </Button>
+            </div>
+          </div>
         )}
       </div>
     </Modal>
@@ -322,5 +349,5 @@ export default function ExternalIdpAuthForm({ isOpen, onSuccess, onClose }) {
 ExternalIdpAuthForm.propTypes = {
   isOpen: PropTypes.bool.isRequired,
   onSuccess: PropTypes.func,
-  onClose: PropTypes.func,
+  onClose: PropTypes.func.isRequired,
 };

@@ -34,6 +34,10 @@ export const KIRO_DEFAULT_PROFILE_ARN = KIRO_DEFAULT_PROFILE_ARNS["builder-id"];
 
 /** Resolve the shared default profileArn for a given auth method. */
 export function resolveDefaultProfileArn(authMethod) {
+  // external_idp (enterprise Azure tenant) accounts own a tenant-specific
+  // profile that must be resolved per-account; never fall back to a shared
+  // public profileArn (CodeWhisperer 403s a profile the token doesn't own).
+  if (authMethod === "external_idp" || authMethod === "api_key") return "";
   const social = authMethod === "google" || authMethod === "github";
   return social ? KIRO_DEFAULT_PROFILE_ARNS.social : KIRO_DEFAULT_PROFILE_ARNS["builder-id"];
 }

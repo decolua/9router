@@ -43,7 +43,6 @@ export default function ProviderDetailPage() {
   const [showBulkImportCodex, setShowBulkImportCodex] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showEditNodeModal, setShowEditNodeModal] = useState(false);
-  const [showBulkProxyModal, setShowBulkProxyModal] = useState(false);
   const [selectedConnection, setSelectedConnection] = useState(null);
   const [modelAliases, setModelAliases] = useState({});
   const [customModels, setCustomModels] = useState([]);
@@ -52,9 +51,6 @@ export default function ProviderDetailPage() {
   const [modelsTestError, setModelsTestError] = useState("");
   const [testingModelIds, setTestingModelIds] = useState(() => new Set());
   const [showAddCustomModel, setShowAddCustomModel] = useState(false);
-  const [selectedConnectionIds, setSelectedConnectionIds] = useState([]);
-  const [bulkProxyPoolId, setBulkProxyPoolId] = useState("__none__");
-  const [bulkUpdatingProxy, setBulkUpdatingProxy] = useState(false);
   const [providerStrategy, setProviderStrategy] = useState(null);
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
   const [thinkingMode, setThinkingMode] = useState("auto");
@@ -646,32 +642,6 @@ export default function ProviderDetailPage() {
     });
   };
 
-  const handleBulkDelete = () => {
-    const count = selectedConnectionIds.length;
-    if (count === 0) return;
-    setConfirmState({
-      title: `Delete ${count} Connection${count > 1 ? "s" : ""}`,
-      message: `Delete ${count} connection${count > 1 ? "s" : ""}? This cannot be undone.`,
-      onConfirm: async () => {
-        setConfirmState(null);
-        let failed = 0;
-        const idsToDelete = [...selectedConnectionIds];
-        for (const id of idsToDelete) {
-          try {
-            const res = await fetch(`/api/providers/${id}`, { method: "DELETE" });
-            if (!res.ok) failed += 1;
-          } catch (error) {
-            console.log("Error deleting connection:", error);
-            failed += 1;
-          }
-        }
-        setConnections(prev => prev.filter(c => !idsToDelete.includes(c.id)));
-        setSelectedConnectionIds([]);
-        if (failed > 0) alert(`Deleted ${idsToDelete.length - failed} connection(s), ${failed} failed.`);
-      }
-    });
-  };
-
   const handleOAuthSuccess = () => {
     fetchConnections();
     setShowOAuthModal(false);
@@ -767,117 +737,11 @@ export default function ProviderDetailPage() {
     }
   };
 
-  const selectedConnections = connections.filter((conn) => selectedConnectionIds.includes(conn.id));
-  const allSelected = connections.length > 0 && selectedConnectionIds.length === connections.length;
-
-  const toggleSelectConnection = (connectionId) => {
-    setSelectedConnectionIds((prev) => (
-      prev.includes(connectionId)
-        ? prev.filter((id) => id !== connectionId)
-        : [...prev, connectionId]
-    ));
-  };
-
-  const toggleSelectAllConnections = () => {
-    if (allSelected) {
-      setSelectedConnectionIds([]);
-      return;
-    }
-    setSelectedConnectionIds(connections.map((conn) => conn.id));
-  };
-
-  const clearSelection = () => {
-    setSelectedConnectionIds([]);
-    setBulkProxyPoolId("__none__");
-  };
-
-  useEffect(() => {
-    setSelectedConnectionIds((prev) => prev.filter((id) => connections.some((conn) => conn.id === id)));
-  }, [connections]);
-
-  const selectedProxySummary = (() => {
-    if (selectedConnections.length === 0) return "";
-    const poolIds = new Set(selectedConnections.map((conn) => conn.providerSpecificData?.proxyPoolId || "__none__"));
-    if (poolIds.size === 1) {
-      const onlyId = [...poolIds][0];
-      if (onlyId === "__none__") return "All selected currently unbound";
-      const pool = proxyPools.find((p) => p.id === onlyId);
-      return `All selected currently bound to ${pool?.name || onlyId}`;
-    }
-    return "Selected connections have mixed proxy bindings";
-  })();
-
-  const openBulkProxyModal = () => {
-    if (selectedConnections.length === 0) return;
-    const uniquePoolIds = [...new Set(selectedConnections.map((conn) => conn.providerSpecificData?.proxyPoolId || "__none__"))];
-    setBulkProxyPoolId(uniquePoolIds.length === 1 ? uniquePoolIds[0] : "__none__");
-    setShowBulkProxyModal(true);
-  };
-
-  const closeBulkProxyModal = () => {
-    if (bulkUpdatingProxy) return;
-    setShowBulkProxyModal(false);
-  };
-
-  const applyProxyAssignments = async (assignments) => {
-    setBulkUpdatingProxy(true);
-    try {
-      let failed = 0;
-      for (const { connectionId, proxyPoolId } of assignments) {
-        try {
-          const res = await fetch(`/api/providers/${connectionId}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ proxyPoolId }),
-          });
-          if (!res.ok) failed += 1;
-        } catch (e) {
-          console.log("Error applying proxy for", connectionId, e);
-          failed += 1;
-        }
-      }
-      if (failed > 0) alert(`Updated with ${failed} failed request(s).`);
-      await fetchConnections();
-      setShowBulkProxyModal(false);
-    } finally {
-      setBulkUpdatingProxy(false);
-    }
-  };
-
-  const handleApplySinglePool = (proxyPoolId) => {
-    const targets = connections.map((c) => ({ connectionId: c.id, proxyPoolId }));
-    return applyProxyAssignments(targets);
-  };
-
-  const handleApplyOneToOne = () => {
-    const activePools = proxyPools.filter((p) => p.isActive === true);
-    if (activePools.length === 0) {
-      alert("No active proxy pools available.");
-      return;
-    }
-    const targets = connections.map((c, i) => ({
-      connectionId: c.id,
-      proxyPoolId: activePools[i % activePools.length].id,
-    }));
-    return applyProxyAssignments(targets);
-  };
-
-
-  const isSelected = (connectionId) => selectedConnectionIds.includes(connectionId);
-
   const connectionsList = (
     <div className="flex min-w-0 flex-col divide-y divide-black/[0.03] dark:divide-white/[0.03]">
       {connections
         .map((conn, index) => (
           <div key={conn.id} className="flex min-w-0 items-stretch">
-            <div className="flex shrink-0 items-center pl-1 sm:pl-2">
-              <input
-                type="checkbox"
-                checked={isSelected(conn.id)}
-                onChange={() => toggleSelectConnection(conn.id)}
-                className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-              />
-            </div>
             <div className="flex-1 min-w-0">
               <ConnectionRow
                 connection={conn}
@@ -921,57 +785,6 @@ export default function ProviderDetailPage() {
           </div>
         ))}
     </div>
-  );
-
-  const activePools = proxyPools.filter((p) => p.isActive === true);
-
-  const bulkActionModal = (
-    <Modal
-      isOpen={showBulkProxyModal}
-      onClose={closeBulkProxyModal}
-      title={`Apply Proxy (${connections.length} connections)`}
-    >
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-col">
-          <button
-            onClick={handleApplyOneToOne}
-            disabled={bulkUpdatingProxy || activePools.length === 0}
-            className="flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <span className="material-symbols-outlined text-text-muted text-[18px]">sync_alt</span>
-            <span className="text-sm text-text-main">One-to-one (rotate)</span>
-          </button>
-          <button
-            onClick={() => handleApplySinglePool(null)}
-            disabled={bulkUpdatingProxy}
-            className="flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <span className="material-symbols-outlined text-text-muted text-[18px]">link_off</span>
-            <span className="text-sm text-text-main">None (unbind all)</span>
-          </button>
-          {proxyPools.map((pool) => (
-            <button
-              key={pool.id}
-              onClick={() => handleApplySinglePool(pool.id)}
-              disabled={bulkUpdatingProxy || pool.isActive !== true}
-              className="flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <span className="material-symbols-outlined text-text-muted text-[18px]">lan</span>
-              <span className="truncate text-sm text-text-main">{pool.name}</span>
-              {pool.isActive !== true && (
-                <span className="text-[10px] text-text-muted">(inactive)</span>
-              )}
-            </button>
-          ))}
-        </div>
-
-        {bulkUpdatingProxy && <p className="text-xs text-text-muted">Applying...</p>}
-
-        <Button onClick={closeBulkProxyModal} variant="ghost" fullWidth disabled={bulkUpdatingProxy}>
-          Cancel
-        </Button>
-      </div>
-    </Modal>
   );
 
   const handleTestModel = async (modelId) => {
@@ -1341,28 +1154,8 @@ export default function ProviderDetailPage() {
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-lg font-semibold">Connections</h2>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-              {connections.length > 0 && proxyPools.length > 0 && (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  icon="lan"
-                  onClick={() => setShowBulkProxyModal(true)}
-                >
-                  Apply Proxy
-                </Button>
-              )}
               {connections.length > 0 && (
                 <>
-                  {selectedConnectionIds.length > 0 && (
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      icon="delete"
-                      onClick={handleBulkDelete}
-                    >
-                      Delete Selected ({selectedConnectionIds.length})
-                    </Button>
-                  )}
                   <Button
                     size="sm"
                     variant="secondary"
@@ -1490,19 +1283,6 @@ export default function ProviderDetailPage() {
                   </div>
                 </div>
               )}
-              {connections.length > 0 && (
-                <div className="mb-3 flex items-center gap-2 border-b border-black/[0.03] pb-2 dark:border-white/[0.03]">
-                  <label className="flex cursor-pointer items-center gap-1.5 text-xs text-text-muted hover:text-primary">
-                    <input
-                      type="checkbox"
-                      checked={allSelected}
-                      onChange={toggleSelectAllConnections}
-                      className="h-3.5 w-3.5 rounded border-gray-300 text-primary focus:ring-primary"
-                    />
-                    Select All
-                  </label>
-                </div>
-              )}
               {connectionsList}
               {!isCompatible && (
                 <div className="mt-4 grid grid-cols-1 gap-2 sm:flex">
@@ -1600,8 +1380,6 @@ export default function ProviderDetailPage() {
         )}
         {renderModelsSection()}
       </Card>
-
-      {bulkActionModal}
 
       {/* Modals */}
       {providerId === "kiro" ? (

@@ -525,9 +525,14 @@ export class KiroService {
    * Accepts both `arn` and `profileArn` response field names (the API-key
    * JSON-1.0 surface returns `arn`).
    */
-  async listAvailableProfiles(accessToken, region = "us-east-1") {
+  async listAvailableProfiles(accessToken, region = "us-east-1", options = {}) {
     assertValidAwsRegion(region);
     const endpoint = `https://codewhisperer.${region}.amazonaws.com`;
+    const tokenTypeHeaders = options.authMethod === "external_idp"
+      ? { tokentype: "EXTERNAL_IDP" }
+      : options.authMethod === "api_key"
+        ? { tokentype: "API_KEY" }
+        : {};
 
     const response = await fetch(endpoint, {
       method: "POST",
@@ -536,6 +541,7 @@ export class KiroService {
         "x-amz-target": "AmazonCodeWhispererService.ListAvailableProfiles",
         "Authorization": `Bearer ${accessToken}`,
         "Accept": "application/json",
+        ...tokenTypeHeaders,
       },
       body: JSON.stringify({ maxResults: 10 }),
     });
@@ -566,7 +572,7 @@ export class KiroService {
 
     let profileArn = null;
     try {
-      profileArn = await this.listAvailableProfiles(trimmed, region);
+      profileArn = await this.listAvailableProfiles(trimmed, region, { authMethod: "api_key" });
     } catch (error) {
       throw new Error(`API key validation failed: ${error.message}`);
     }
