@@ -166,7 +166,14 @@ async function fetchKiroCatalogRaw(credentials, signal) {
 
   const headers = {
     ...buildKiroFingerprintHeaders(credentials),
-    "Authorization": `Bearer ${credentials?.accessToken || ""}`
+    "Authorization": `Bearer ${credentials?.accessToken || ""}`,
+    // External IdP tokens (Microsoft Entra ID / Azure AD via SSO) need a
+    // `tokentype: EXTERNAL_IDP` header on every CodeWhisperer call —
+    // including ListAvailableModels — or upstream returns 403
+    // "The bearer token included in the request is invalid".
+    ...(credentials?.providerSpecificData?.authMethod === "external_idp"
+      ? { tokentype: "EXTERNAL_IDP" }
+      : {}),
   };
 
   const controller = new AbortController();
