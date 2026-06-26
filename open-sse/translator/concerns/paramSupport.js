@@ -15,7 +15,10 @@ const STRIP_RULES = [
 ];
 
 // Test a rule's match (regex or predicate) against the model id.
+// A rule without a `match` (e.g. a provider-wide rule like flattenContent)
+// applies to every model of that provider.
 function matches(rule, model) {
+  if (!rule.match) return true;
   return typeof rule.match === "function" ? rule.match(model) : rule.match.test(model);
 }
 
@@ -25,7 +28,7 @@ export function stripUnsupportedParams(provider, model, body) {
   for (const rule of STRIP_RULES) {
     if (rule.provider && rule.provider !== provider) continue;
     if (!matches(rule, model)) continue;
-    for (const key of rule.drop) {
+    for (const key of rule.drop || []) {
       if (body[key] !== undefined) delete body[key];
     }
     // CF Workers AI oneOf root schema only accepts content as plain string (#1926)
