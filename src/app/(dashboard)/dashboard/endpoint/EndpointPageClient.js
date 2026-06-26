@@ -17,12 +17,17 @@ import EndpointRow from "./components/EndpointRow";
 import StatusAlert from "./components/StatusAlert";
 import Tooltip from "./components/Tooltip";
 import SecurityWarning from "./components/SecurityWarning";
+
+const PLAN_OPTIONS = [1, 3, 6, 12];
+
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
+  const [newKeyPlanMonths, setNewKeyPlanMonths] = useState(1);
   const [createdKey, setCreatedKey] = useState(null);
+  const [renewState, setRenewState] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
 
   const [requireApiKey, setRequireApiKey] = useState(false);
@@ -614,18 +619,36 @@ export default function APIPageClient({ machineId }) {
       const res = await fetch("/api/keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newKeyName }),
+        body: JSON.stringify({ name: newKeyName, planMonths: newKeyPlanMonths }),
       });
       const data = await res.json();
 
       if (res.ok) {
-        setCreatedKey(data.key);
+        setCreatedKey(data.apiKey?.key || data.key?.key || data.key);
         await fetchData();
         setNewKeyName("");
+        setNewKeyPlanMonths(1);
         setShowAddModal(false);
       }
     } catch (error) {
       console.log("Error creating key:", error);
+    }
+  };
+
+  const handleRenewKey = async () => {
+    if (!renewState?.id) return;
+    try {
+      const res = await fetch(`/api/keys/${renewState.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ planMonths: renewState.planMonths }),
+      });
+      if (res.ok) {
+        await fetchData();
+        setRenewState(null);
+      }
+    } catch (error) {
+      console.log("Error renewing key:", error);
     }
   };
 
@@ -660,7 +683,8 @@ export default function APIPageClient({ machineId }) {
         body: JSON.stringify({ isActive }),
       });
       if (res.ok) {
-        setKeys(prev => prev.map(k => k.id === id ? { ...k, isActive } : k));
+        const data = await res.json();
+        setKeys(prev => prev.map(k => k.id === id ? { ...k, ...(data.key || { isActive }) } : k));
       }
     } catch (error) {
       console.log("Error toggling key:", error);
@@ -670,6 +694,15 @@ export default function APIPageClient({ machineId }) {
   const maskKey = (fullKey) => {
     if (!fullKey || fullKey.length <= 10) return fullKey || "";
     return fullKey.slice(0, 6) + "•".repeat(fullKey.length - 10) + fullKey.slice(-4);
+  };
+
+  const formatPlan = (planMonths) => planMonths ? `${planMonths} month${planMonths > 1 ? "s" : ""}` : "No plan";
+
+  const getKeyStatus = (key) => {
+    if (key.deactivatedReason === "expired") return { label: "Expired", className: "text-red-500" };
+    if (key.isActive === false) return { label: "Paused", className: "text-orange-500" };
+    if (key.expiresAt && new Date(key.expiresAt).getTime() <= Date.now()) return { label: "Expired", className: "text-red-500" };
+    return { label: "Active", className: "text-green-600" };
   };
 
   const toggleKeyVisibility = (keyId) => {
@@ -992,71 +1025,84 @@ export default function APIPageClient({ machineId }) {
           </div>
         ) : (
           <div className="flex flex-col">
-            {keys.map((key) => (
-              <div
-                key={key.id}
-                className={`group flex items-center justify-between py-3 border-b border-black/[0.03] dark:border-white/[0.03] last:border-b-0 ${key.isActive === false ? "opacity-60" : ""}`}
-              >
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">{key.name}</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <code className="text-xs text-text-muted font-mono">
-                      {visibleKeys.has(key.id) ? key.key : maskKey(key.key)}
-                    </code>
+            {keys.map((key) => {
+              const status = getKeyStatus(key);
+
+              return (
+                <div
+                  key={key.id}
+                  className={`group flex items-center justify-between py-3 border-b border-black/[0.03] dark:border-white/[0.03] last:border-b-0 ${key.isActive === false ? "opacity-60" : ""}`}
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">{key.name}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <code className="text-xs text-text-muted font-mono">
+                        {visibleKeys.has(key.id) ? key.key : maskKey(key.key)}
+                      </code>
+                      <button
+                        onClick={() => toggleKeyVisibility(key.id)}
+                        className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                        title={visibleKeys.has(key.id) ? "Hide key" : "Show key"}
+                      >
+                        <span className="material-symbols-outlined text-[14px]">
+                          {visibleKeys.has(key.id) ? "visibility_off" : "visibility"}
+                        </span>
+                      </button>
+                      <button
+                        onClick={() => copy(key.key, key.id)}
+                        className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">
+                          {copied === key.id ? "check" : "content_copy"}
+                        </span>
+                      </button>
+                    </div>
+                    <p className="text-xs text-text-muted mt-1">
+                      Created {new Date(key.createdAt).toLocaleDateString()}
+                    </p>
+                    <div className="mt-1 flex flex-wrap gap-2 text-xs text-text-muted">
+                      <span>{formatPlan(key.planMonths)}</span>
+                      {key.expiresAt && <span>Expires {new Date(key.expiresAt).toLocaleDateString()}</span>}
+                      <span className={status.className}>{status.label}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Toggle
+                      size="sm"
+                      checked={key.isActive ?? true}
+                      onChange={(checked) => {
+                        if (key.isActive && !checked) {
+                          setConfirmState({
+                            title: "Pause API Key",
+                            message: `Pause API key "${key.name}"?\n\nThis key will stop working immediately but can be resumed later.`,
+                            onConfirm: async () => {
+                              setConfirmState(null);
+                              handleToggleKey(key.id, checked);
+                            }
+                          });
+                        } else {
+                          handleToggleKey(key.id, checked);
+                        }
+                      }}
+                      title={key.isActive ? "Pause key" : "Resume key"}
+                    />
                     <button
-                      onClick={() => toggleKeyVisibility(key.id)}
-                      className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
-                      title={visibleKeys.has(key.id) ? "Hide key" : "Show key"}
+                      onClick={() => setRenewState({ id: key.id, name: key.name, planMonths: key.planMonths || 1 })}
+                      className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                      title="Renew key"
                     >
-                      <span className="material-symbols-outlined text-[14px]">
-                        {visibleKeys.has(key.id) ? "visibility_off" : "visibility"}
-                      </span>
+                      <span className="material-symbols-outlined text-[18px]">event_repeat</span>
                     </button>
                     <button
-                      onClick={() => copy(key.key, key.id)}
-                      className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                      onClick={() => handleDeleteKey(key.id)}
+                      className="p-2 hover:bg-red-500/10 rounded text-red-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
                     >
-                      <span className="material-symbols-outlined text-[14px]">
-                        {copied === key.id ? "check" : "content_copy"}
-                      </span>
+                      <span className="material-symbols-outlined text-[18px]">delete</span>
                     </button>
                   </div>
-                  <p className="text-xs text-text-muted mt-1">
-                    Created {new Date(key.createdAt).toLocaleDateString()}
-                  </p>
-                  {key.isActive === false && (
-                    <p className="text-xs text-orange-500 mt-1">Paused</p>
-                  )}
                 </div>
-                <div className="flex items-center gap-2">
-                  <Toggle
-                    size="sm"
-                    checked={key.isActive ?? true}
-                    onChange={(checked) => {
-                      if (key.isActive && !checked) {
-                        setConfirmState({
-                          title: "Pause API Key",
-                          message: `Pause API key "${key.name}"?\n\nThis key will stop working immediately but can be resumed later.`,
-                          onConfirm: async () => {
-                            setConfirmState(null);
-                            handleToggleKey(key.id, checked);
-                          }
-                        });
-                      } else {
-                        handleToggleKey(key.id, checked);
-                      }
-                    }}
-                    title={key.isActive ? "Pause key" : "Resume key"}
-                  />
-                  <button
-                    onClick={() => handleDeleteKey(key.id)}
-                    className="p-2 hover:bg-red-500/10 rounded text-red-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">delete</span>
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </Card>
@@ -1068,6 +1114,7 @@ export default function APIPageClient({ machineId }) {
         onClose={() => {
           setShowAddModal(false);
           setNewKeyName("");
+          setNewKeyPlanMonths(1);
         }}
       >
         <div className="flex flex-col gap-4">
@@ -1077,6 +1124,18 @@ export default function APIPageClient({ machineId }) {
             onChange={(e) => setNewKeyName(e.target.value)}
             placeholder="Production Key"
           />
+          <div>
+            <label className="mb-2 block text-sm font-medium">Plan</label>
+            <select
+              className="w-full rounded-lg border border-border bg-background px-3 py-2"
+              value={newKeyPlanMonths}
+              onChange={(e) => setNewKeyPlanMonths(Number(e.target.value))}
+            >
+              {PLAN_OPTIONS.map((months) => (
+                <option key={months} value={months}>{formatPlan(months)}</option>
+              ))}
+            </select>
+          </div>
           <div className="flex gap-2">
             <Button onClick={handleCreateKey} fullWidth disabled={!newKeyName.trim()}>
               Create
@@ -1085,6 +1144,7 @@ export default function APIPageClient({ machineId }) {
               onClick={() => {
                 setShowAddModal(false);
                 setNewKeyName("");
+                setNewKeyPlanMonths(1);
               }}
               variant="ghost"
               fullWidth
@@ -1128,6 +1188,30 @@ export default function APIPageClient({ machineId }) {
             Done
           </Button>
         </div>
+      </Modal>
+
+      {/* Renew Key Modal */}
+      <Modal isOpen={!!renewState} onClose={() => setRenewState(null)} title="Renew API Key">
+        {renewState && (
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-text-muted">
+              Renew {renewState.name}
+            </p>
+            <select
+              className="w-full rounded-lg border border-border bg-background px-3 py-2"
+              value={renewState.planMonths}
+              onChange={(e) => setRenewState((prev) => ({ ...prev, planMonths: Number(e.target.value) }))}
+            >
+              {PLAN_OPTIONS.map((months) => (
+                <option key={months} value={months}>{formatPlan(months)}</option>
+              ))}
+            </select>
+            <div className="flex gap-2">
+              <Button variant="ghost" onClick={() => setRenewState(null)} fullWidth>Cancel</Button>
+              <Button icon="event_repeat" onClick={handleRenewKey} fullWidth>Renew</Button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* Enable Tunnel Modal */}

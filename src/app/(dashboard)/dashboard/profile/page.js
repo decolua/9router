@@ -30,6 +30,15 @@ export default function ProfilePage() {
   const [passwords, setPasswords] = useState({ current: "", new: "", confirm: "" });
   const [passStatus, setPassStatus] = useState({ type: "", message: "" });
   const [passLoading, setPassLoading] = useState(false);
+  const [adminKeyStatus, setAdminKeyStatus] = useState({
+    configured: false,
+    createdAt: null,
+    updatedAt: null,
+  });
+  const [adminKeyPlaintext, setAdminKeyPlaintext] = useState("");
+  const [adminKeyLoading, setAdminKeyLoading] = useState(false);
+  const [adminKeyMessage, setAdminKeyMessage] = useState({ type: "", message: "" });
+  const [adminKeyConfirmOpen, setAdminKeyConfirmOpen] = useState(false);
   const [dbLoading, setDbLoading] = useState(false);
   const [dbStatus, setDbStatus] = useState({ type: "", message: "" });
   const [dbAuth, setDbAuth] = useState({ open: false, mode: "", password: "" });
@@ -87,6 +96,7 @@ export default function ProfilePage() {
         console.error("Failed to fetch settings:", err);
         setLoading(false);
       });
+    loadAdminKeyStatus();
   }, []);
 
   useEffect(() => {
@@ -192,6 +202,24 @@ export default function ProfilePage() {
     }
   };
 
+  const loadAdminKeyStatus = async ({ preserveMessage = false } = {}) => {
+    try {
+      const res = await fetch("/api/settings/admin-key", { cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setAdminKeyStatus(data);
+        if (!preserveMessage) setAdminKeyMessage({ type: "", message: "" });
+        return;
+      }
+      setAdminKeyMessage({
+        type: "error",
+        message: data.error || "Failed to load admin API key status",
+      });
+    } catch (err) {
+      setAdminKeyMessage({ type: "error", message: "Failed to load admin API key status" });
+    }
+  };
+
   const handlePasswordChange = async (e) => {
     e.preventDefault();
     if (passwords.new !== passwords.confirm) {
@@ -224,6 +252,71 @@ export default function ProfilePage() {
       setPassStatus({ type: "error", message: "An error occurred" });
     } finally {
       setPassLoading(false);
+    }
+  };
+
+  const rotateAdminKey = async () => {
+    setAdminKeyConfirmOpen(false);
+    setAdminKeyLoading(true);
+    setAdminKeyPlaintext("");
+    setAdminKeyMessage({ type: "", message: "" });
+
+    try {
+      const res = await fetch("/api/settings/admin-key", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({
+          expectedUpdatedAt: adminKeyStatus.updatedAt || "",
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        if (res.status === 409) {
+          await loadAdminKeyStatus({ preserveMessage: true });
+        }
+        setAdminKeyMessage({
+          type: "error",
+          message: data.error || "Failed to generate admin API key",
+        });
+        return;
+      }
+
+      setAdminKeyStatus(data.status);
+      setAdminKeyPlaintext(data.key || "");
+      setAdminKeyMessage({
+        type: "success",
+        message: "Admin API key generated. Copy it now; it will not be shown again.",
+      });
+    } catch (err) {
+      setAdminKeyMessage({ type: "error", message: "Failed to generate admin API key" });
+    } finally {
+      setAdminKeyLoading(false);
+    }
+  };
+
+  const handleAdminKeyAction = () => {
+    if (adminKeyStatus.configured) {
+      setAdminKeyConfirmOpen(true);
+      return;
+    }
+    rotateAdminKey();
+  };
+
+  const copyAdminKey = async () => {
+    if (!adminKeyPlaintext) return;
+    try {
+      if (!navigator?.clipboard?.writeText) {
+        throw new Error("Clipboard unavailable");
+      }
+      await navigator.clipboard.writeText(adminKeyPlaintext);
+      setAdminKeyMessage({ type: "success", message: "Admin API key copied" });
+    } catch (err) {
+      setAdminKeyMessage({
+        type: "error",
+        message: "Copy failed. Copy the key manually before leaving this page.",
+      });
     }
   };
 
@@ -752,6 +845,70 @@ export default function ProfilePage() {
           </div>
         </Card>
 
+        <Card>
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="p-2 rounded-lg bg-amber-500/10 text-amber-500 shrink-0">
+                <span className="material-symbols-outlined text-[20px]">key</span>
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-base sm:text-lg font-semibold">Admin API Key</h3>
+                <p className="text-xs sm:text-sm text-text-muted">
+                  Customer API key management access
+                </p>
+              </div>
+            </div>
+            <Button
+              icon={adminKeyStatus.configured ? "sync" : "key"}
+              onClick={handleAdminKeyAction}
+              loading={adminKeyLoading}
+              className="w-full sm:w-auto"
+            >
+              {adminKeyStatus.configured ? "Regenerate" : "Create"}
+            </Button>
+          </div>
+
+          <div className="mt-4 rounded-lg border border-border bg-bg p-3 sm:p-4">
+            <div className="flex flex-col gap-1">
+              <p className="text-sm text-text-main">
+                Status: {adminKeyStatus.configured ? "Configured" : "Not configured"}
+              </p>
+              {adminKeyStatus.updatedAt && (
+                <p className="text-xs sm:text-sm text-text-muted">
+                  Updated {new Date(adminKeyStatus.updatedAt).toLocaleString()}
+                </p>
+              )}
+            </div>
+
+            {adminKeyPlaintext && (
+              <div className="mt-3 flex flex-col sm:flex-row gap-2">
+                <code className="min-w-0 flex-1 rounded-lg bg-surface px-3 py-2 text-xs sm:text-sm font-mono break-all">
+                  {adminKeyPlaintext}
+                </code>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  icon="content_copy"
+                  onClick={copyAdminKey}
+                  className="w-full sm:w-auto shrink-0"
+                >
+                  Copy
+                </Button>
+              </div>
+            )}
+
+            {adminKeyMessage.message && (
+              <p
+                role="status"
+                aria-live="polite"
+                className={`mt-3 text-xs sm:text-sm ${adminKeyMessage.type === "error" ? "text-red-500" : "text-green-600 dark:text-green-400"}`}
+              >
+                {adminKeyMessage.message}
+              </p>
+            )}
+          </div>
+        </Card>
+
         {/* OIDC */}
         <Card>
           <button
@@ -1136,6 +1293,17 @@ export default function ProfilePage() {
           setLangOpen(false);
           setLocale(next);
         }}
+      />
+      <ConfirmModal
+        isOpen={adminKeyConfirmOpen}
+        onClose={() => setAdminKeyConfirmOpen(false)}
+        onConfirm={rotateAdminKey}
+        title="Regenerate Admin API Key"
+        message="This replaces the current admin API key immediately. Existing integrations using the old key will stop working. Continue?"
+        confirmText="Regenerate"
+        cancelText="Cancel"
+        variant="danger"
+        loading={adminKeyLoading}
       />
       <ConfirmModal
         isOpen={shutdownOpen}

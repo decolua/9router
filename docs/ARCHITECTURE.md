@@ -1,6 +1,6 @@
 # 9Router Architecture
 
-_Last updated: 2026-02-06_
+_Last updated: 2026-06-23_
 
 ## Executive Summary
 
@@ -151,6 +151,8 @@ Usage DB:
 
 - Dashboard cookie auth: `src/proxy.js`, `src/app/api/auth/login/route.js`
 - API key generation/verification: `src/shared/utils/apiKey.js`
+- Admin customer-key management: dashboard can create/regenerate one admin API key, stored hashed in settings. `/api/admin/keys/*` accepts that key via `Authorization: Bearer` or `x-admin-api-key` and manages customer API keys without dashboard JWT.
+- Customer API key expiration: `apiKeys` records can carry `planMonths`, `expiresAt`, `deactivatedReason`, and `updatedAt`; lazy expiry runs before key lists and key validation.
 - Provider secrets persisted in `providerConnections` entries
 - Optional proxy support for upstream calls via env proxy variables (`open-sse/utils/proxyFetch.js`)
 
