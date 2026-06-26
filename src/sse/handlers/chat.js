@@ -39,7 +39,22 @@ function stripReasoningFromMessages(body) {
   return modified ? { ...body, messages: [...body.messages] } : body;
 }
 
+/**
+ * Fix message ordering for providers that require specific role sequences.
+ * Mistral requires the last message to be user/tool (or assistant with prefix=true).
+ * If the last message is an assistant without prefix, add prefix: true so the
+ * provider can continue generation from that point.
+ */
+function fixMessageOrdering(messages) {
+  if (!messages || !Array.isArray(messages) || messages.length === 0) return;
+  const last = messages[messages.length - 1];
+  if (last && last.role === "assistant" && !last.prefix) {
+    last.prefix = true;
+  }
+}
 
+
+/**
  * Handle chat completion request
  * Supports: OpenAI, Claude, Gemini, OpenAI Responses API formats
  * Format detection and translation handled by translator
@@ -65,7 +80,7 @@ export async function handleChat(request, clientRawRequest = null) {
   cacheClaudeHeaders(clientRawRequest.headers);
 
   // Strip reasoning_content from conversation history (providers like Mistral reject it)
-  body = stripReasoningFromMessages(body);
+
 
   // Log request endpoint and model
   const url = new URL(request.url);
@@ -209,6 +224,14 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   }
 
   const { provider, model } = modelInfo;
+
+  // Strip reasoning_content for providers that reject it (Mistral, etc.)
+  // Preserve for providers that require it (DeepSeek thinking mode)
+  if (!provider.startsWith("deepseek")) {
+    body = stripReasoningFromMessages(body);
+  }
+  // Fix message ordering for all providers (prefix: true for last assistant)
+  fixMessageOrdering(body.messages);
 
   // Log model routing (alias → actual model)
   if (modelStr !== `${provider}/${model}`) {
