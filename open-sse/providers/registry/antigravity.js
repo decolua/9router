@@ -21,13 +21,12 @@ export default {
   serviceKinds: ["llm", "image"],
   transport: {
     baseUrls: [
-      "https://daily-cloudcode-pa.googleapis.com",
       "https://daily-cloudcode-pa.sandbox.googleapis.com",
+      "https://daily-cloudcode-pa.googleapis.com",
+      "https://cloudcode-pa.googleapis.com",
     ],
     format: "antigravity",
-    headers: {
-      "User-Agent": "antigravity/1.107.0 darwin/arm64",
-    },
+    headers: {},
     retry: {
       "429": {
         attempts: 3,

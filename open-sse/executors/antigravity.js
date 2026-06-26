@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
-import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, INTERNAL_REQUEST_HEADER, AG_DEFAULT_TOOLS, AG_TOOL_SUFFIX } from "../config/appConstants.js";
+import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, ANTIGRAVITY_VERSION, INTERNAL_REQUEST_HEADER, AG_DEFAULT_TOOLS, AG_TOOL_SUFFIX } from "../config/appConstants.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
@@ -17,6 +17,9 @@ function sanitizeFunctionName(name) {
 
 const MAX_RETRY_AFTER_MS = 10000;
 const MAX_ANTIGRAVITY_OUTPUT_TOKENS = 16384;
+
+// Stable per-process session ID (matches AG Manager's SESSION_ID = one UUID per app launch)
+const ANTIGRAVITY_SESSION_ID = crypto.randomUUID();
 
 // Fields Google generateContent rejects (Claude/OpenAI/Qwen thinking fields set at body root by thinkingUnified.js)
 const ANTIGRAVITY_REQUEST_BLACKLIST = [
@@ -91,6 +94,10 @@ export class AntigravityExecutor extends BaseExecutor {
       "Authorization": `Bearer ${credentials.accessToken}`,
       "User-Agent": this.config.headers?.["User-Agent"] || ANTIGRAVITY_HEADERS["User-Agent"],
       [INTERNAL_REQUEST_HEADER.name]: INTERNAL_REQUEST_HEADER.value,
+      // Identity headers matching real Antigravity client fingerprint
+      "x-client-name": "antigravity",
+      "x-client-version": ANTIGRAVITY_VERSION,
+      "x-vscode-sessionid": ANTIGRAVITY_SESSION_ID,
       ...(sid && { "X-Machine-Session-Id": sid }),
       "Accept": stream ? "text/event-stream" : "application/json"
     };

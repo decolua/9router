@@ -127,9 +127,22 @@ export const AG_DEFAULT_TOOLS = new Set([
   "write_to_file"
 ]);
 
+// Antigravity version fingerprint — match real Antigravity/Electron client headers
+export const ANTIGRAVITY_VERSION = "4.2.5";
+const ANTIGRAVITY_CHROME = "132.0.6834.160";
+const ANTIGRAVITY_ELECTRON = "39.2.3";
+
+function antigravityPlatformInfo() {
+  switch (platform()) {
+    case "darwin": return "Macintosh; Intel Mac OS X 10_15_7";
+    case "win32": return "Windows NT 10.0; Win64; x64";
+    default: return "X11; Linux x86_64";
+  }
+}
+
 // Antigravity chat/stream headers
 export const ANTIGRAVITY_HEADERS = {
-  "User-Agent": `antigravity/1.107.0 ${platform()}/${arch()}`
+  "User-Agent": `Antigravity/${ANTIGRAVITY_VERSION} (${antigravityPlatformInfo()}) Chrome/${ANTIGRAVITY_CHROME} Electron/${ANTIGRAVITY_ELECTRON}`
 };
 
 // Cloud Code Assist API
