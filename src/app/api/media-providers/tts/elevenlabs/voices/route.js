@@ -40,8 +40,9 @@ export async function GET(request) {
           name: voice.name,
           gender: voice.labels?.gender || "",
           lang: code,
-          // premade voices are free; professional library voices added to account may require paid plan
-          free_users_allowed: voice.category === "premade" || voice.is_owner === true
+          // Prefer an explicit free flag (curated default roster); otherwise infer:
+          // premade voices are free; professional library voices may require a paid plan
+          free_users_allowed: voice.free_users_allowed ?? (voice.category === "premade" || voice.is_owner === true)
         });
       }
     };

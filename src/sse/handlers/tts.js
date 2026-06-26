@@ -72,9 +72,15 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language, st
   const { provider, model } = modelInfo;
   log.info("ROUTING", `Provider: ${provider}, Voice: ${model}`);
 
+  // Optional voice stability (ElevenLabs: 0=Creative, 0.5=Natural, 1=Robust)
+  const stability = typeof body.stability === "number" ? body.stability : undefined;
+  // Optional language override (ElevenLabs: ISO 639-1 language_code, e.g. "vi")
+  const languageCode = typeof body.language_code === "string" ? body.language_code
+    : (typeof body.languageCode === "string" ? body.languageCode : undefined);
+
   // noAuth providers — no credential needed
   if (!CREDENTIALED_PROVIDERS.has(provider)) {
-    const result = await handleTtsCore({ provider, model, input: body.input, responseFormat, language, style });
+    const result = await handleTtsCore({ provider, model, input: body.input, responseFormat, language, style, stability, languageCode });
     if (result.success) return result.response;
     return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "TTS failed");
   }
@@ -99,7 +105,7 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language, st
 
     log.info("AUTH", `\x1b[32mUsing ${provider} account: ${credentials.connectionName}\x1b[0m`);
 
-    const result = await handleTtsCore({ provider, model, input: body.input, credentials, responseFormat, language, style });
+    const result = await handleTtsCore({ provider, model, input: body.input, credentials, responseFormat, language, style, stability, languageCode });
 
     if (result.success) return result.response;
 

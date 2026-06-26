@@ -48,6 +48,17 @@ const MIMO_VOICES = [
   { id: "Dean",          name: "Dean" },
 ].map((v) => ({ type: "tts", ...v }));
 
+// ElevenLabs models that accept `language_code`. Verified against the live API:
+// eleven_multilingual_v2 answers 400 unsupported_language ("Model
+// 'eleven_multilingual_v2' does not support language_code 'vi'"), while v3,
+// flash_v2_5 and turbo_v2_5 all return audio. Shared by the adapter and the
+// dashboard panel so the two can't drift apart.
+export const ELEVEN_LANGUAGE_CODE_MODELS = new Set([
+  "eleven_v3",
+  "eleven_flash_v2_5",
+  "eleven_turbo_v2_5",
+]);
+
 // ── TTS Config (config-driven, single source of truth) ─────────────────────
 export const TTS_MODELS_CONFIG = {
   openai: {
@@ -79,10 +90,13 @@ export const TTS_MODELS_CONFIG = {
   },
   elevenlabs: {
     models: [
+      { id: "eleven_v3",              name: "Eleven v3 (Most Expressive · 70+ langs)", type: "tts" },
+      { id: "eleven_multilingual_v2", name: "Multilingual v2 (Quality)",  type: "tts" },
       { id: "eleven_flash_v2_5",      name: "Flash v2.5 (Fastest)",      type: "tts" },
       { id: "eleven_turbo_v2_5",      name: "Turbo v2.5 (Fast)",         type: "tts" },
-      { id: "eleven_multilingual_v2", name: "Multilingual v2 (Quality)",  type: "tts" },
-      { id: "eleven_monolingual_v1",  name: "Monolingual v1 (English)",  type: "tts" },
+      // eleven_monolingual_v1 removed: the API now rejects it with
+      // "the models eleven_monolingual_v1 and eleven_multilingual_v1 have been
+      // deprecated and are no longer available", so offering it only produces a 400.
     ],
     // voices come from API, not hardcoded
   },
