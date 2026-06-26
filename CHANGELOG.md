@@ -5,6 +5,7 @@
 - Add new models: Claude Opus 4.8 (Claude Code), GPT 5.4 Mini (Codex)
 
 ## Fixes
+- CI publish: install CLI dev dependencies during the package build so the MITM esbuild step can run on Actions.
 - CI publish: build the CLI package with project-root tracing so the standalone output matches the existing packer layout.
 - DeepSeek thinking mode: echo `reasoning_content` back on follow-up/tool-call turns so OpenCode-free and custom providers no longer 400 with "reasoning_content must be passed back" (#1543)
 - Reasoning injector: match deepseek/kimi model ids case-insensitively (covers custom providers using capitalized model names)

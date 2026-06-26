@@ -41,6 +41,7 @@ jobs:
           echo "=== CLI structure after patching ==="
           cat package.json
           tree -L 2 .
+          npm install --include=dev --ignore-scripts --no-package-lock --registry=https://registry.npmjs.org
           node - <<'NODE'
           const fs = require("fs");
           const script = "scripts/build-cli.js";
