@@ -18,14 +18,26 @@ if (!global._statsEmitter) {
 if (!global._pendingTimers) global._pendingTimers = {};
 if (!global._recentRing) global._recentRing = { items: [], initialized: false };
 if (!global._connectionMapCache) global._connectionMapCache = { map: {}, ts: 0 };
+if (!global._statsEmitTimers) global._statsEmitTimers = { pending: null, update: null };
 
 const pendingRequests = global._pendingRequests;
 const lastErrorProvider = global._lastErrorProvider;
 const pendingTimers = global._pendingTimers;
 const recentRing = global._recentRing;
 const connCache = global._connectionMapCache;
+const statsEmitTimers = global._statsEmitTimers;
 
 export const statsEmitter = global._statsEmitter;
+
+function scheduleStatsEvent(event, delayMs = 150) {
+  const key = event === "update" ? "update" : "pending";
+  if (statsEmitTimers[key]) return;
+  statsEmitTimers[key] = setTimeout(() => {
+    statsEmitTimers[key] = null;
+    statsEmitter.emit(event);
+  }, delayMs);
+  statsEmitTimers[key]?.unref?.();
+}
 
 function getLocalDateKey(timestamp) {
   const d = timestamp ? new Date(timestamp) : new Date();
@@ -178,7 +190,7 @@ export function trackPendingRequest(model, provider, connectionId, started, erro
       if (connectionId && pendingRequests.byAccount[connectionId]?.[modelKey] > 0) {
         pendingRequests.byAccount[connectionId][modelKey] = 0;
       }
-      statsEmitter.emit("pending");
+      scheduleStatsEvent("pending");
     }, PENDING_TIMEOUT_MS);
   } else {
     clearTimeout(pendingTimers[timerKey]);
@@ -192,7 +204,7 @@ export function trackPendingRequest(model, provider, connectionId, started, erro
 
   const t = new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
   console.log(`[${t}] [PENDING] ${started ? "START" : "END"}${error ? " (ERROR)" : ""} | provider=${provider} | model=${model}`);
-  statsEmitter.emit("pending");
+  scheduleStatsEvent("pending");
 }
 
 export async function getActiveRequests() {
@@ -251,9 +263,35 @@ export async function saveRequestUsage(entry) {
     const promptTokens = tokens.prompt_tokens || tokens.input_tokens || 0;
     const completionTokens = tokens.completion_tokens || tokens.output_tokens || 0;
 
+    let inserted = false;
+
     // All 3 writes (history insert, daily upsert, lifetime counter) in ONE transaction.
     // better-sqlite3 is sync → no JS yield mid-transaction → no race in same process.
     db.transaction(() => {
+      const existing = db.get(
+        `SELECT id, endpoint FROM usageHistory
+         WHERE timestamp = ?
+           AND COALESCE(provider, '') = COALESCE(?, '')
+           AND COALESCE(model, '') = COALESCE(?, '')
+           AND COALESCE(connectionId, '') = COALESCE(?, '')
+           AND COALESCE(apiKey, '') = COALESCE(?, '')
+           AND promptTokens = ?
+           AND completionTokens = ?
+         ORDER BY id DESC LIMIT 1`,
+        [
+          entry.timestamp, entry.provider || null, entry.model || null,
+          entry.connectionId || null, entry.apiKey || null,
+          promptTokens, completionTokens,
+        ]
+      );
+
+      if (existing) {
+        if (!existing.endpoint && entry.endpoint) {
+          db.run(`UPDATE usageHistory SET endpoint = ? WHERE id = ?`, [entry.endpoint, existing.id]);
+        }
+        return;
+      }
+
       db.run(
         `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
@@ -277,10 +315,13 @@ export async function saveRequestUsage(entry) {
       const cur = db.get(`SELECT value FROM _meta WHERE key = 'totalRequestsLifetime'`);
       const next = (cur ? parseInt(cur.value, 10) : 0) + 1;
       db.run(`INSERT INTO _meta(key, value) VALUES('totalRequestsLifetime', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [String(next)]);
+      inserted = true;
     });
 
-    pushToRing(entry);
-    statsEmitter.emit("update");
+    if (inserted) {
+      pushToRing(entry);
+      scheduleStatsEvent("update", 250);
+    }
   } catch (e) {
     console.error("Failed to save usage stats:", e);
   }
