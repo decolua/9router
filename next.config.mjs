@@ -8,9 +8,14 @@ const tracingRoot = process.env.NEXT_TRACING_ROOT_MODE === "workspace"
   ? join(projectRoot, "..")
   : projectRoot;
 const proxyClientMaxBodySize = process.env.NINEROUTER_PROXY_CLIENT_MAX_BODY_SIZE || "128mb";
+// Optional sub-path deployment (e.g. behind a reverse proxy at /9router).
+// When set, Next.js prefixes all routes, _next assets, <Link>, router.push
+// and fetch("/api/...") calls automatically. Empty = root (default).
+const basePath = process.env.NINEROUTER_BASE_PATH || "";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  basePath: basePath || undefined,
   distDir: process.env.NEXT_DIST_DIR || ".next",
   output: "standalone",
   serverExternalPackages: ["better-sqlite3", "sql.js", "node:sqlite", "bun:sqlite"],

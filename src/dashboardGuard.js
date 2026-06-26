@@ -173,7 +173,23 @@ export const __test__ = {
   extractApiKey,
   canAccessPublicLlmApi,
   canAccessLocalOnlyRoute,
+  redirectWithBasePath,
 };
+
+// Build a redirect URL that preserves the configured basePath (e.g. when
+// deployed under a sub-path like /9router). Next.js basePath is stripped
+// from request.nextUrl.pathname, so absolute-path redirects such as
+// ``new URL("/login", request.url)`` resolve against the origin and lose
+// the prefix, producing a 404. We instead prefix the path with the
+// runtime basePath (from the request or the NINEROUTER_BASE_PATH env),
+// keeping the sub-path deployment working transparently.
+function redirectWithBasePath(request, path) {
+  const basePath = request?.nextUrl?.basePath || process.env.NINEROUTER_BASE_PATH || "";
+  const prefixed = basePath && path.startsWith("/") && !path.startsWith(basePath + "/") && path !== basePath
+    ? `${basePath}${path}`
+    : path;
+  return new URL(prefixed, request.url);
+}
 
 export async function proxy(request) {
   const { pathname } = request.nextUrl;
@@ -222,7 +238,7 @@ export async function proxy(request) {
           const tunnelHost = settings.tunnelUrl ? new URL(settings.tunnelUrl).hostname.toLowerCase() : "";
           const tailscaleHost = settings.tailscaleUrl ? new URL(settings.tailscaleUrl).hostname.toLowerCase() : "";
           if ((tunnelHost && host === tunnelHost) || (tailscaleHost && host === tailscaleHost)) {
-            return NextResponse.redirect(new URL("/login", request.url));
+            return NextResponse.redirect(redirectWithBasePath(request, "/login"));
           }
         }
       }
@@ -239,16 +255,16 @@ export async function proxy(request) {
       if (await verifyDashboardAuthToken(token)) {
         return NextResponse.next();
       } else {
-        return NextResponse.redirect(new URL("/login", request.url));
+        return NextResponse.redirect(redirectWithBasePath(request, "/login"));
       }
     }
 
-    return NextResponse.redirect(new URL("/login", request.url));
+    return NextResponse.redirect(redirectWithBasePath(request, "/login"));
   }
 
   // Redirect / to /dashboard if logged in, or /dashboard if it's the root
   if (pathname === "/") {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    return NextResponse.redirect(redirectWithBasePath(request, "/dashboard"));
   }
 
   return NextResponse.next();
