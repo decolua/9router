@@ -1,8 +1,10 @@
 // NanoBanana API — async submit + poll record-info
 import { sleep, nowSec, sizeToAspectRatio, POLL_INTERVAL_MS, POLL_TIMEOUT_MS } from "./_base.js";
+import { PROVIDER_MEDIA } from "../../providers/index.js";
 
-const SUBMIT_URL = "https://api.nanobananaapi.ai/api/v1/nanobanana/generate";
-const POLL_BASE = "https://api.nanobananaapi.ai/api/v1/nanobanana/record-info";
+const IMG_CFG = PROVIDER_MEDIA["nanobanana"]?.imageConfig || {};
+const SUBMIT_URL = IMG_CFG.baseUrl;
+const POLL_BASE = IMG_CFG.pollUrl;
 
 export default {
   async: true,

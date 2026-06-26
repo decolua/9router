@@ -20,6 +20,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const [polling, setPolling] = useState(false);
   const popupRef = useRef(null);
   const pollingAbortRef = useRef(false);
+  const openedRef = useRef(false);
   const { copied, copy } = useCopyToClipboard();
 
   // State for client-only values to avoid hydration mismatch
@@ -156,7 +157,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setError(null);
 
       // Device code flow providers
-      const deviceCodeProviders = ["github", "qwen", "kiro", "kimi-coding", "kilocode", "codebuddy", "qoder"];
+      const deviceCodeProviders = ["github", "qwen", "kiro", "kimi-coding", "kilocode", "codebuddy-cn", "qoder"];
       if (deviceCodeProviders.includes(provider)) {
         setIsDeviceCode(true);
         setStep("waiting");
@@ -310,6 +311,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   // Reset state and start OAuth when modal opens
   useEffect(() => {
     if (isOpen && provider) {
+      // Guard against StrictMode/effect re-runs auto-opening multiple tabs.
+      if (openedRef.current) return;
+      openedRef.current = true;
       setAuthData(null);
       setCallbackUrl("");
       setError(null);
@@ -321,6 +325,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     } else if (!isOpen) {
       // Abort polling and cleanup proxy when modal closes
       pollingAbortRef.current = true;
+      openedRef.current = false;
       if (provider === "codex") {
         fetch("/api/oauth/codex/stop-proxy").catch(() => {});
       } else if (provider === "xai") {

@@ -7,7 +7,7 @@ const OPTIONAL_FIELDS = [
   "accessToken", "refreshToken", "expiresAt", "tokenType",
   "scope", "projectId", "apiKey", "testStatus",
   "lastTested", "lastError", "lastErrorAt", "rateLimitedUntil", "expiresIn", "errorCode",
-  "consecutiveUseCount",
+  "consecutiveUseCount", "idToken", "lastRefreshAt",
 ];
 
 function rowToConn(row) {

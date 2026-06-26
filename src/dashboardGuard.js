@@ -32,7 +32,7 @@ const PUBLIC_API_PATHS = [
 ];
 
 // Public top-level prefixes (LLM API endpoints with their own API key auth).
-const PUBLIC_PREFIXES = ["/v1", "/v1beta", "/api/v1", "/api/v1beta"];
+const PUBLIC_PREFIXES = ["/v1", "/v1beta", "/api/v1", "/api/v1beta", "/codex"];
 
 // Always require JWT token regardless of requireLogin setting
 const ALWAYS_PROTECTED = [
@@ -78,6 +78,9 @@ const LOCAL_ONLY_PATHS = [
   "/api/tunnel/disable",
   "/api/oauth/cursor/auto-import",
   "/api/oauth/kiro/auto-import",
+  "/api/auth/reset-password",
+  "/api/headroom/start",
+  "/api/headroom/stop",
 ];
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
@@ -88,8 +91,18 @@ function isLoopbackHostname(h) {
   return LOOPBACK_HOSTS.has(name);
 }
 
-function isLocalRequest(request) {
-  if (!isLoopbackHostname(request.headers.get("host"))) return false;
+export function isLocalRequest(request) {
+  // Stamped by custom-server.js when forwarding headers exist: request came through
+  // a reverse proxy, so the loopback socket is the proxy hop, not the end-user.
+  if (request.headers.get("x-9r-via-proxy")) return false;
+  // Trusted peer IP from TCP socket (custom-server.js); unspoofable. Primary anchor for "local".
+  const realIp = request.headers.get("x-9r-real-ip");
+  if (realIp) {
+    if (!isLoopbackHostname(realIp)) return false;
+  } else if (!isLoopbackHostname(request.headers.get("host"))) {
+    // Fallback for bare server.js (dev) without custom-server: legacy Host-based check.
+    return false;
+  }
   const origin = request.headers.get("origin");
   if (origin) {
     try {
@@ -106,7 +119,11 @@ function isPublicLlmApi(pathname) {
 function extractApiKey(request) {
   const authHeader = request.headers.get("Authorization");
   if (authHeader?.startsWith("Bearer ")) return authHeader.slice(7);
-  return request.headers.get("x-api-key");
+  const apiKeyHeader = request.headers.get("x-api-key");
+  if (apiKeyHeader) return apiKeyHeader;
+  const googleApiKeyHeader = request.headers.get("x-goog-api-key");
+  if (googleApiKeyHeader) return googleApiKeyHeader;
+  return request.nextUrl.searchParams?.get("key") || null;
 }
 
 async function hasValidApiKey(request) {

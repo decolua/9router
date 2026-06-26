@@ -4,228 +4,97 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import QuotaTable from "./QuotaTable";
 import Toggle from "@/shared/components/Toggle";
-import { parseQuotaData, calculatePercentage } from "./utils";
+import Tooltip from "@/shared/components/Tooltip";
+import {
+  parseQuotaData,
+  calculatePercentage,
+  getConnectionLabel,
+  getConnectionQuotaRemaining,
+  sortVisibleConnections,
+  buildLoadingState,
+  filterQuotaStateByConnections,
+  getConnectionsEmptyMessage,
+  getPageSizeLabel,
+  getConnectionsPaginationSummary,
+  getSafePagination,
+  getSafeTotals,
+  shouldResetPage,
+  getPaginationPageValue,
+  getProviderOptions,
+  reconcileConnectionsPage,
+  getQuotaCache,
+  setQuotaCache,
+  QUOTA_CACHE_KEY,
+  REFRESH_INTERVAL_MS,
+  CLAUDE_REFRESH_INTERVAL_MS,
+  DEPLETED_QUOTA_THRESHOLD,
+  AUTO_REFRESH_STORAGE_KEY,
+  CONNECTIONS_PAGE_SIZE,
+  ACCOUNT_PAGE_SIZE_OPTIONS,
+  ACCOUNT_PAGE_SIZE_MAX,
+  ACCOUNT_FILTER_OPTIONS,
+  QUOTA_SORT_OPTIONS,
+} from "./utils";
 import Card from "@/shared/components/Card";
-import { EditConnectionModal } from "@/shared/components";
+import { ConfirmModal, EditConnectionModal } from "@/shared/components";
 import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
+import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
-function getConnectionLabel(connection) {
-  const isEmail = (value) =>
-    typeof value === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-  if (isEmail(connection.email)) return connection.email;
-  if (isEmail(connection.name)) return connection.name;
-  return connection.name;
+// Maps the stored providerSpecificData.authMethod to a human label for Kiro.
+// Values come from the Kiro connect flows: builder-id/idc (device code),
+// google/github (social), imported (refresh-token paste), api_key (headless).
+const KIRO_METHOD_LABELS = {
+  "builder-id": "AWS Builder ID",
+  idc: "IAM Identity Center",
+  google: "Google",
+  github: "GitHub",
+  imported: "Imported Token",
+  api_key: "API Key",
+};
+
+function kiroMethodLabel(conn) {
+  const m = conn.providerSpecificData?.authMethod;
+  if (m && KIRO_METHOD_LABELS[m]) return KIRO_METHOD_LABELS[m];
+  return conn.authType === "api_key" ? "API Key" : "OAuth";
 }
 
-function getConnectionQuotaRemaining(connection, quotaData) {
-  const quota = quotaData[connection.id]?.quotas?.[0];
-  if (!quota) return Number.POSITIVE_INFINITY;
-  if (typeof quota.remaining === "number") return quota.remaining;
-  return Number.POSITIVE_INFINITY;
-}
-
-function sortVisibleConnections(
-  connections,
-  quotaData,
-  expiringFirst,
-  providerFilter,
-  quotaSortMode,
-) {
-  if (providerFilter === "codex" && quotaSortMode !== "default") {
-    return [...connections].sort((a, b) => {
-      const remainingA = getConnectionQuotaRemaining(a, quotaData);
-      const remainingB = getConnectionQuotaRemaining(b, quotaData);
-      const remainingDiff =
-        quotaSortMode === "remaining-asc"
-          ? remainingA - remainingB
-          : remainingB - remainingA;
-
-      if (remainingDiff !== 0) return remainingDiff;
-      return (getConnectionLabel(a) || "").localeCompare(
-        getConnectionLabel(b) || "",
-      );
-    });
+function getConnectionSecondaryLabel(connection) {
+  if (connection.name?.trim() && connection.email?.trim() && connection.name.trim() !== connection.email.trim()) {
+    return connection.email.trim();
   }
 
-  if (!expiringFirst) return connections;
-
-  const getEarliestResetTime = (connection) => {
-    const resetTimes = (quotaData[connection.id]?.quotas || [])
-      .map((quota) =>
-        quota.resetAt
-          ? new Date(quota.resetAt).getTime()
-          : Number.POSITIVE_INFINITY,
-      )
-      .filter((time) => Number.isFinite(time));
-    return resetTimes.length > 0
-      ? Math.min(...resetTimes)
-      : Number.POSITIVE_INFINITY;
-  };
-
-  return [...connections].sort((a, b) => {
-    const expiryDiff = getEarliestResetTime(a) - getEarliestResetTime(b);
-    if (expiryDiff !== 0) return expiryDiff;
-    return (
-      (a.provider || "").localeCompare(b.provider || "") ||
-      (getConnectionLabel(a) || "").localeCompare(getConnectionLabel(b) || "")
-    );
-  });
-}
-
-function buildLoadingState(connections) {
-  const nextLoadingState = {};
-  connections.forEach((connection) => {
-    nextLoadingState[connection.id] = true;
-  });
-  return nextLoadingState;
-}
-
-function filterQuotaStateByConnections(state, connections) {
-  const visibleIds = new Set(connections.map((connection) => connection.id));
-  return Object.fromEntries(
-    Object.entries(state).filter(([id]) => visibleIds.has(id)),
-  );
-}
-
-function getConnectionsPageRange(pagination) {
-  if (!pagination.total) {
-    return { start: 0, end: 0 };
+  if (connection.name?.trim() && connection.displayName?.trim() && connection.name.trim() !== connection.displayName.trim()) {
+    return connection.displayName.trim();
   }
 
-  const start = (pagination.page - 1) * pagination.pageSize + 1;
-  const end = Math.min(pagination.page * pagination.pageSize, pagination.total);
-  return { start, end };
+  return null;
 }
 
-function getConnectionsEmptyMessage(totals, providerFilter, accountFilter) {
-  if (!totals.eligibleConnections) {
-    return {
-      icon: "cloud_off",
-      title: "No Providers Connected",
-      description:
-        "Connect to providers with OAuth to track your API quota limits and usage.",
-    };
-  }
-
-  if (!totals.providerFilteredConnections) {
-    return {
-      icon: "filter_alt_off",
-      title: "No Accounts Match Current Filters",
-      description:
-        providerFilter === "all"
-          ? "Try changing the account status filter to see more quota trackers."
-          : `No ${accountFilter === "inactive" ? "turned off" : accountFilter === "active" ? "active" : "matching"} accounts found for ${providerFilter}.`,
-    };
-  }
-
-  return {
-    icon: "filter_alt_off",
-    title: "No Accounts On This Page",
-    description:
-      "Try moving to another page or refreshing the current filters.",
-  };
+// Region is stored for builder-id/idc/api_key flows; social and imported flows
+// omit it, so fall back to the region segment of the profileArn
+// (arn:aws:codewhisperer:<region>:...).
+function kiroRegion(conn) {
+  const r = conn.providerSpecificData?.region;
+  if (r) return r;
+  const arn = conn.providerSpecificData?.profileArn;
+  const seg = typeof arn === "string" ? arn.split(":")[3] : "";
+  return seg || "";
 }
 
-function sortRequestFromExpiringFirst(expiringFirst) {
-  return expiringFirst ? "expiring" : "priority";
+function getCodexResetCreditCount(quota) {
+  const value = quota?.raw?.resetCredits?.availableCount;
+  const count = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(count) ? Math.max(0, count) : 0;
 }
-
-function getPageSizeLabel(pageSize, isCustomPageSize) {
-  return isCustomPageSize ? `Custom: ${pageSize} / page` : `${pageSize} / page`;
-}
-
-function getConnectionsPaginationSummary(pagination) {
-  const { start, end } = getConnectionsPageRange(pagination);
-  return `Showing ${start}-${end} of ${pagination.total}`;
-}
-
-function getSafePagination(pagination, fallbackPageSize) {
-  return (
-    pagination || {
-      page: 1,
-      pageSize: fallbackPageSize,
-      total: 0,
-      totalPages: 1,
-    }
-  );
-}
-
-function getSafeTotals(totals, fallbackTotal = 0) {
-  return (
-    totals || {
-      eligibleConnections: fallbackTotal,
-      providerFilteredConnections: fallbackTotal,
-    }
-  );
-}
-
-function shouldResetPage(previousValue, nextValue) {
-  return previousValue !== nextValue;
-}
-
-function getPaginationPageValue(dataPagination, fallbackPage) {
-  return dataPagination?.page || fallbackPage;
-}
-
-function getProviderOptions(dataProviderOptions) {
-  return dataProviderOptions || [];
-}
-
-async function reconcileConnectionsPage(fetchConnections, targetPage) {
-  const nextConnections = await fetchConnections(targetPage);
-  return nextConnections;
-}
-
-const QUOTA_CACHE_KEY = "quotaCacheData";
-
-function getQuotaCache() {
-  if (typeof window === "undefined") return {};
-  try {
-    const cached = window.localStorage.getItem(QUOTA_CACHE_KEY);
-    return cached ? JSON.parse(cached) : {};
-  } catch (error) {
-    console.error("Error reading quota cache:", error);
-    return {};
-  }
-}
-
-function setQuotaCache(connectionId, quotaEntry) {
-  if (typeof window === "undefined") return;
-  try {
-    const cache = getQuotaCache();
-    cache[connectionId] = {
-      ...quotaEntry,
-      cachedAt: new Date().toISOString(),
-    };
-    window.localStorage.setItem(QUOTA_CACHE_KEY, JSON.stringify(cache));
-  } catch (error) {
-    console.error("Error writing quota cache:", error);
-  }
-}
-
-const REFRESH_INTERVAL_MS = 60000; // 60 seconds
-const DEPLETED_QUOTA_THRESHOLD = 5; // percent
-const AUTO_REFRESH_STORAGE_KEY = "quotaAutoRefresh";
-const ACCOUNT_FILTER_OPTIONS = [
-  { value: "all", label: "All accounts" },
-  { value: "active", label: "Active" },
-  { value: "inactive", label: "Turned off" },
-];
-const QUOTA_SORT_OPTIONS = [
-  { value: "default", label: "Default quota order" },
-  { value: "remaining-asc", label: "% quota: low to high" },
-  { value: "remaining-desc", label: "% quota: high to low" },
-];
-const CONNECTIONS_PAGE_SIZE = 20;
-const ACCOUNT_PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
-const ACCOUNT_PAGE_SIZE_MAX = 500;
 
 export default function ProviderLimits() {
+  const { copied, copy } = useCopyToClipboard();
   const [connections, setConnections] = useState([]);
   const [quotaData, setQuotaData] = useState({});
   const [loading, setLoading] = useState({});
   const [errors, setErrors] = useState({});
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [autoPingMap, setAutoPingMap] = useState({});
   const [lastUpdated, setLastUpdated] = useState(null);
   const [hasHydratedAutoRefresh, setHasHydratedAutoRefresh] = useState(false);
   const [refreshingAll, setRefreshingAll] = useState(false);
@@ -233,6 +102,8 @@ export default function ProviderLimits() {
   const [connectionsLoading, setConnectionsLoading] = useState(true);
   const [deletingId, setDeletingId] = useState(null);
   const [togglingId, setTogglingId] = useState(null);
+  const [resettingLimitId, setResettingLimitId] = useState(null);
+  const [resetConfirmState, setResetConfirmState] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedConnection, setSelectedConnection] = useState(null);
   const [proxyPools, setProxyPools] = useState([]);
@@ -261,6 +132,7 @@ export default function ProviderLimits() {
 
   const intervalRef = useRef(null);
   const countdownRef = useRef(null);
+  const tickCountRef = useRef(0);
 
   const fetchConnections = useCallback(
     async (targetPage = page) => {
@@ -390,6 +262,32 @@ export default function ProviderLimits() {
     [fetchQuota],
   );
 
+  const handleResetCodexLimit = useCallback(
+    async (connectionId, provider) => {
+      if (provider !== "codex" || resettingLimitId) return;
+
+      setResettingLimitId(connectionId);
+      setErrors((prev) => ({ ...prev, [connectionId]: null }));
+
+      try {
+        const response = await fetch(`/api/usage/${connectionId}/codex-reset-credits`, { method: "POST" });
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(result.message || result.error || result.code || "Failed to reset Codex limit");
+        }
+
+        await fetchQuota(connectionId, provider);
+        setLastUpdated(new Date());
+      } catch (error) {
+        setErrors((prev) => ({ ...prev, [connectionId]: error.message || "Failed to reset Codex limit" }));
+      } finally {
+        setResettingLimitId(null);
+      }
+    },
+    [fetchQuota, resettingLimitId],
+  );
+
   const handleDeleteConnection = useCallback(
     async (id) => {
       if (!confirm("Delete this connection?")) return;
@@ -505,11 +403,17 @@ export default function ProviderLimits() {
     };
   }, []);
 
-  const refreshAll = useCallback(async () => {
+  const refreshAll = useCallback(async (force = false) => {
     if (refreshingAll) return;
 
     setRefreshingAll(true);
     setCountdown(60);
+
+    // Throttle Claude: poll its quota every Nth auto-tick (manual force bypasses)
+    const tick = (tickCountRef.current += 1);
+    const claudeEvery = Math.round(CLAUDE_REFRESH_INTERVAL_MS / REFRESH_INTERVAL_MS);
+    const shouldFetch = (conn) =>
+      force || conn.provider !== "claude" || tick % claudeEvery === 0;
 
     try {
       const visibleConnections = await fetchConnections(page);
@@ -523,7 +427,9 @@ export default function ProviderLimits() {
       );
 
       await Promise.all(
-        visibleConnections.map((conn) => fetchQuota(conn.id, conn.provider)),
+        visibleConnections
+          .filter(shouldFetch)
+          .map((conn) => fetchQuota(conn.id, conn.provider)),
       );
 
       setLastUpdated(new Date());
@@ -570,6 +476,31 @@ export default function ProviderLimits() {
     if (typeof window === "undefined" || !hasHydratedAutoRefresh) return;
     window.localStorage.setItem(AUTO_REFRESH_STORAGE_KEY, String(autoRefresh));
   }, [autoRefresh, hasHydratedAutoRefresh]);
+
+  // Load Claude auto-ping per-connection map
+  useEffect(() => {
+    fetch("/api/settings", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : {}))
+      .then((s) => setAutoPingMap(s?.claudeAutoPing?.connections || {}))
+      .catch(() => {});
+  }, []);
+
+  const toggleAutoPing = useCallback(async (connectionId, on) => {
+    const next = { ...autoPingMap, [connectionId]: on };
+    setAutoPingMap(next);
+    try {
+      const r = await fetch("/api/settings", { cache: "no-store" });
+      const s = r.ok ? await r.json() : {};
+      const cfg = { ...(s.claudeAutoPing || {}), connections: next };
+      await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ claudeAutoPing: cfg }),
+      });
+    } catch {
+      setAutoPingMap(autoPingMap);
+    }
+  }, [autoPingMap]);
 
   // Auto-refresh interval
   useEffect(() => {
@@ -618,7 +549,7 @@ export default function ProviderLimits() {
         }
       } else if (autoRefresh && hasHydratedAutoRefresh) {
         // Resume auto-refresh when tab becomes visible
-        intervalRef.current = setInterval(refreshAll, REFRESH_INTERVAL_MS);
+        intervalRef.current = setInterval(() => refreshAll(), REFRESH_INTERVAL_MS);
         countdownRef.current = setInterval(() => {
           setCountdown((prev) => (prev <= 1 ? 60 : prev - 1));
         }, 1000);
@@ -941,10 +872,11 @@ export default function ProviderLimits() {
             )}
           </button>
 
+
           {/* Refresh all button */}
           <button
             type="button"
-            onClick={refreshAll}
+            onClick={() => refreshAll(true)}
             disabled={refreshingAll}
             className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-black/10 px-2 text-xs text-text-primary transition-colors hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5 disabled:opacity-50"
             title="Refresh all"
@@ -974,7 +906,10 @@ export default function ProviderLimits() {
 
           // Use table layout for all providers
           const isInactive = conn.isActive === false;
-          const rowBusy = deletingId === conn.id || togglingId === conn.id;
+          const isCodex = conn.provider === "codex";
+          const resetCreditCount = getCodexResetCreditCount(quota);
+          const isResettingLimit = resettingLimitId === conn.id;
+          const rowBusy = deletingId === conn.id || togglingId === conn.id || isResettingLimit;
 
           return (
             <Card
@@ -1005,53 +940,147 @@ export default function ProviderLimits() {
                           {getConnectionLabel(conn)}
                         </p>
                       ) : null}
+                      {getConnectionSecondaryLabel(conn) ? (
+                        <p className="text-[11px] text-text-muted/80 truncate">
+                          {getConnectionSecondaryLabel(conn)}
+                        </p>
+                      ) : null}
+                      {isCodex && (
+                        <p className="text-[11px] text-text-muted truncate">
+                          Reset eligible: {resetCreditCount}
+                        </p>
+                      )}
+                      {conn.provider === "kiro" && (
+                        <div className="mt-1 flex flex-wrap items-center gap-1">
+                          <span className="rounded-full bg-brand-500/10 px-2 py-0.5 text-[10px] font-semibold text-brand-600 dark:text-brand-300">
+                            {kiroMethodLabel(conn)}
+                          </span>
+                          {kiroRegion(conn) && (
+                            <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-600 dark:text-blue-400">
+                              {kiroRegion(conn)}
+                            </span>
+                          )}
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                              isInactive
+                                ? "bg-surface-2 text-text-muted"
+                                : conn.testStatus === "active" || conn.testStatus === "success"
+                                  ? "bg-green-500/10 text-green-600 dark:text-green-400"
+                                  : conn.testStatus === "error" || conn.testStatus === "expired" || conn.testStatus === "unavailable"
+                                    ? "bg-red-500/10 text-red-600 dark:text-red-400"
+                                    : "bg-surface-2 text-text-muted"
+                            }`}
+                          >
+                            {isInactive ? "disabled" : conn.testStatus || "unknown"}
+                          </span>
+                          {conn.providerSpecificData?.profileArn && (
+                            <button
+                              type="button"
+                              onClick={() => copy(conn.providerSpecificData.profileArn, conn.id)}
+                              title={conn.providerSpecificData.profileArn}
+                              className="inline-flex max-w-full items-center gap-1 rounded-full border border-border-subtle px-2 py-0.5 text-[10px] text-text-muted transition-colors hover:text-primary"
+                            >
+                              <span className="material-symbols-outlined text-[12px]">
+                                {copied === conn.id ? "check" : "content_copy"}
+                              </span>
+                              <code className="truncate font-mono">
+                                {conn.providerSpecificData.profileArn}
+                              </code>
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => refreshProvider(conn.id, conn.provider)}
-                      disabled={isLoading || rowBusy}
-                      aria-label="Refresh quota"
-                      className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50"
-                      title="Refresh quota"
-                    >
-                      <span
-                        className={`material-symbols-outlined text-[18px] text-text-muted ${isLoading ? "animate-spin" : ""}`}
+                    {isCodex && (
+                      <Tooltip text={`Codex reset credits remaining: ${resetCreditCount}`}>
+                        <div
+                          className={`hidden h-8 items-center gap-1 rounded-lg border px-2 text-[11px] sm:flex ${
+                            resetCreditCount > 0
+                              ? "border-primary/30 bg-primary/5 text-primary"
+                              : "border-black/10 bg-black/[0.02] text-text-muted dark:border-white/10 dark:bg-white/[0.03]"
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-[14px]">restart_alt</span>
+                          <span className="tabular-nums">{resetCreditCount}</span>
+                        </div>
+                      </Tooltip>
+                    )}
+                    {isCodex && resetCreditCount > 0 && (
+                      <Tooltip text={`Use one Codex reset credit. Available: ${resetCreditCount}`}>
+                        <button
+                          type="button"
+                          onClick={() => setResetConfirmState({ connection: conn, resetCreditCount })}
+                          disabled={isLoading || rowBusy}
+                          className="flex h-8 items-center gap-1 rounded-lg border border-primary/30 px-2 text-[11px] text-primary transition-colors hover:bg-primary/10 disabled:opacity-50"
+                        >
+                          <span className={`material-symbols-outlined text-[15px] ${isResettingLimit ? "animate-spin" : ""}`}>
+                            {isResettingLimit ? "progress_activity" : "bolt"}
+                          </span>
+                          <span className="hidden lg:inline">Reset limit</span>
+                        </button>
+                      </Tooltip>
+                    )}
+                    {conn.provider === "claude" && conn.authType === "oauth" && (
+                      <Tooltip text="When your 5h quota runs out, auto-sends a request the moment it resets so a new window starts right away.">
+                        <button
+                          type="button"
+                          onClick={() => toggleAutoPing(conn.id, !(autoPingMap[conn.id] === true))}
+                          aria-label="Toggle auto-ping"
+                          className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${autoPingMap[conn.id] === true ? "text-primary" : "text-text-muted"}`}
+                        >
+                          <span className="material-symbols-outlined text-[18px]">bolt</span>
+                        </button>
+                      </Tooltip>
+                    )}
+                    <Tooltip text="Refresh quota">
+                      <button
+                        type="button"
+                        onClick={() => refreshProvider(conn.id, conn.provider)}
+                        disabled={isLoading || rowBusy}
+                        aria-label="Refresh quota"
+                        className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50"
                       >
-                        refresh
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedConnection(conn);
-                        setShowEditModal(true);
-                      }}
-                      disabled={rowBusy}
-                      aria-label="Edit connection"
-                      className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary transition-colors disabled:opacity-50"
-                      title="Edit connection"
-                    >
-                      <span className="material-symbols-outlined text-[18px]">
-                        edit
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteConnection(conn.id)}
-                      disabled={rowBusy}
-                      aria-label="Delete connection"
-                      className="p-1.5 rounded-lg hover:bg-red-500/10 text-red-500 transition-colors disabled:opacity-50"
-                      title="Delete connection"
-                    >
-                      <span
-                        className={`material-symbols-outlined text-[18px] ${deletingId === conn.id ? "animate-pulse" : ""}`}
+                        <span
+                          className={`material-symbols-outlined text-[18px] text-text-muted ${isLoading ? "animate-spin" : ""}`}
+                        >
+                          refresh
+                        </span>
+                      </button>
+                    </Tooltip>
+                    <Tooltip text="Edit connection">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedConnection(conn);
+                          setShowEditModal(true);
+                        }}
+                        disabled={rowBusy}
+                        aria-label="Edit connection"
+                        className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary transition-colors disabled:opacity-50"
                       >
-                        delete
-                      </span>
-                    </button>
+                        <span className="material-symbols-outlined text-[18px]">
+                          edit
+                        </span>
+                      </button>
+                    </Tooltip>
+                    <Tooltip text="Delete connection">
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteConnection(conn.id)}
+                        disabled={rowBusy}
+                        aria-label="Delete connection"
+                        className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-red-500/10 text-red-500 transition-colors disabled:opacity-50"
+                      >
+                        <span
+                          className={`material-symbols-outlined text-[18px] ${deletingId === conn.id ? "animate-pulse" : ""}`}
+                        >
+                          delete
+                        </span>
+                      </button>
+                    </Tooltip>
                     <div
                       className="inline-flex items-center pl-0.5"
                       title={
@@ -1229,6 +1258,25 @@ export default function ProviderLimits() {
             </div>
           </div>
         </div>
+
+      <ConfirmModal
+        isOpen={Boolean(resetConfirmState)}
+        onClose={() => {
+          if (!resettingLimitId) setResetConfirmState(null);
+        }}
+        onConfirm={async () => {
+          const connection = resetConfirmState?.connection;
+          if (!connection) return;
+          await handleResetCodexLimit(connection.id, connection.provider);
+          setResetConfirmState(null);
+        }}
+        title="Reset Codex limit?"
+        message={`Use 1 Codex reset credit for ${getConnectionLabel(resetConfirmState?.connection || {}) || "this account"}. This cannot be undone. Remaining credits: ${resetConfirmState?.resetCreditCount ?? 0}.`}
+        confirmText="Reset limit"
+        cancelText="Cancel"
+        variant="danger"
+        loading={Boolean(resettingLimitId)}
+      />
 
       <EditConnectionModal
         isOpen={showEditModal}

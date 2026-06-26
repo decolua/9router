@@ -18,6 +18,7 @@ import {
   ANTIGRAVITY_CONFIG,
   GITHUB_CONFIG,
   KIRO_CONFIG,
+  assertValidAwsRegion,
   CURSOR_CONFIG,
   KIMI_CODING_CONFIG,
   KILOCODE_CONFIG,
@@ -27,24 +28,18 @@ import {
   getOAuthClientMetadata,
 } from "./constants/oauth";
 import { XAI_CONFIG, XAI_PKCE_VERIFIER_BYTES } from "./constants/xai";
+import {
+  validateXaiOAuthEndpoint,
+  decodeXaiIdTokenEmail,
+  extractEmailFromAccessToken,
+  extractCodexAccountInfo,
+  fetchKiroProfileArn,
+} from "./providerHelpers";
+
+export { extractCodexAccountInfo, fetchKiroProfileArn };
 
 // Inlined from services/xai.js to keep web route bundle free of `open` (CLI-only) package
 let cachedXaiDiscovery = null;
-
-function validateXaiOAuthEndpoint(rawUrl, field) {
-  const value = String(rawUrl || "").trim();
-  if (!value) throw new Error(`xai discovery ${field} is empty`);
-  let parsed;
-  try { parsed = new URL(value); } catch (err) {
-    throw new Error(`xai discovery ${field} is invalid: ${err.message}`);
-  }
-  if (parsed.protocol !== "https:") throw new Error(`xai discovery ${field} must use https: ${value}`);
-  const host = parsed.hostname.toLowerCase().trim();
-  if (host !== "x.ai" && !host.endsWith(".x.ai")) {
-    throw new Error(`xai discovery ${field} host ${host} is not on x.ai`);
-  }
-  return value;
-}
 
 async function discoverXaiEndpoints() {
   if (cachedXaiDiscovery) return cachedXaiDiscovery;
@@ -61,60 +56,6 @@ async function discoverXaiEndpoints() {
   } catch { /* fall through to static fallback */ }
   cachedXaiDiscovery = { authorizeUrl: XAI_CONFIG.authorizeUrl, tokenUrl: XAI_CONFIG.tokenUrl };
   return cachedXaiDiscovery;
-}
-
-function decodeXaiIdTokenEmail(idToken) {
-  if (!idToken || typeof idToken !== "string") return undefined;
-  const parts = idToken.split(".");
-  if (parts.length !== 3) return undefined;
-  try {
-    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const padding = (BASE64_BLOCK_SIZE - (base64.length % BASE64_BLOCK_SIZE)) % BASE64_BLOCK_SIZE;
-    const json = Buffer.from(base64 + "=".repeat(padding), "base64").toString("utf8");
-    const payload = JSON.parse(json);
-    return payload.email || payload.preferred_username || payload.sub || undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-const BASE64_BLOCK_SIZE = 4;
-
-/**
- * Decode JWT access token and extract a stable account identifier for display/upsert.
- * @param {string} accessToken
- * @returns {string|undefined}
- */
-function decodeJwtPayload(jwt) {
-  try {
-    if (!jwt || typeof jwt !== "string") return null;
-    const parts = jwt.split(".");
-    if (parts.length !== 3) return null;
-    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const missingPadding = (BASE64_BLOCK_SIZE - (base64.length % BASE64_BLOCK_SIZE)) % BASE64_BLOCK_SIZE;
-    const padded = base64 + "=".repeat(missingPadding);
-    return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
-  } catch {
-    return null;
-  }
-}
-
-function extractEmailFromAccessToken(accessToken) {
-  const payload = decodeJwtPayload(accessToken);
-  if (!payload) return undefined;
-  return payload.email || payload.preferred_username || payload.sub || undefined;
-}
-
-// Extract codex account info from id_token or access token
-export function extractCodexAccountInfo(idToken) {
-  const payload = decodeJwtPayload(idToken);
-  if (!payload) return {};
-  const chatgpt = payload["https://api.openai.com/auth"] || {};
-  return {
-    email: payload.email,
-    chatgptAccountId: chatgpt.chatgpt_account_id || payload.account_id,
-    chatgptPlanType: chatgpt.chatgpt_plan_type || payload.plan_type,
-  };
 }
 
 // Provider configurations
@@ -179,8 +120,8 @@ const PROVIDERS = {
   codex: {
     config: CODEX_CONFIG,
     flowType: "authorization_code_pkce",
-    fixedPort: 1455,
-    callbackPath: "/auth/callback",
+    fixedPort: CODEX_CONFIG.fixedPort,
+    callbackPath: CODEX_CONFIG.callbackPath,
     buildAuthUrl: (config, redirectUri, state, codeChallenge) => {
       const params = {
         response_type: "code",
@@ -852,6 +793,7 @@ const PROVIDERS = {
     requestDeviceCode: async (config, codeChallenge, options = {}) => {
       const trimmedRegion = typeof options.region === "string" ? options.region.trim() : "";
       const region = trimmedRegion || "us-east-1";
+      assertValidAwsRegion(region);
       const trimmedStartUrl = typeof options.startUrl === "string" ? options.startUrl.trim() : "";
       const startUrl = trimmedStartUrl || config.startUrl;
       const authMethod = options.authMethod === "idc" ? "idc" : "builder-id";
@@ -920,6 +862,7 @@ const PROVIDERS = {
     },
     pollToken: async (config, deviceCode, codeVerifier, extraData) => {
       const region = extraData?._region || "us-east-1";
+      assertValidAwsRegion(region);
       const tokenUrl = `https://oidc.${region}.amazonaws.com/token`;
       const response = await fetch(tokenUrl, {
         method: "POST",
@@ -1237,7 +1180,7 @@ const PROVIDERS = {
   // 1. POST stateUrl → get { state, authUrl }
   // 2. Open authUrl in browser
   // 3. Poll tokenUrl with state until success (code 0) or timeout
-  codebuddy: {
+  "codebuddy-cn": {
     config: CODEBUDDY_CONFIG,
     flowType: "device_code",
     requestDeviceCode: async (config) => {
@@ -1269,23 +1212,25 @@ const PROVIDERS = {
       };
     },
     pollToken: async (config, deviceCode) => {
-      const response = await fetch(config.tokenUrl, {
-        method: "POST",
+      // CodeBuddy polls the token endpoint via GET with the state as a query
+      // param (not POST/body) — matches the official CLI's /v2/plugin/auth/token?state=...
+      const response = await fetch(`${config.tokenUrl}?state=${encodeURIComponent(deviceCode)}`, {
+        method: "GET",
         headers: {
-          "Content-Type": "application/json",
           Accept: "application/json",
           "User-Agent": config.userAgent,
           "X-Requested-With": "XMLHttpRequest",
           "X-Domain": "copilot.tencent.com",
           "X-No-Authorization": "true",
           "X-No-User-Id": "true",
+          "X-No-Enterprise-Id": "true",
+          "X-No-Department-Info": "true",
           "X-Product": "SaaS",
         },
-        body: JSON.stringify({ state: deviceCode }),
       });
       if (!response.ok) return { ok: false, data: { error: "request_failed" } };
       const data = await response.json();
-      // code 11217 = pending, code 0 = success
+      // code 11217 = pending (RetryFetchToken), code 0 = success
       if (data.code === 0 && data.data?.accessToken) {
         return {
           ok: true,
@@ -1293,6 +1238,7 @@ const PROVIDERS = {
             access_token: data.data.accessToken,
             refresh_token: data.data.refreshToken || "",
             token_type: data.data.tokenType || "Bearer",
+            expires_in: data.data.expiresIn,
           },
         };
       }
@@ -1302,7 +1248,7 @@ const PROVIDERS = {
     mapTokens: (tokens) => ({
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
-      expiresIn: 86400,
+      expiresIn: tokens.expires_in || 86400,
       providerSpecificData: {},
     }),
   },
@@ -1413,7 +1359,13 @@ export async function pollForToken(providerName, deviceCode, codeVerifier, extra
       if (provider.postExchange) {
         extra = await provider.postExchange(result.data);
       }
-      return { success: true, tokens: provider.mapTokens(result.data, extra) };
+      const tokens = provider.mapTokens(result.data, extra);
+      // Kiro IDC/Builder-ID tokens lack profileArn; resolve it to avoid 403
+      if (providerName === "kiro" && !tokens.providerSpecificData?.profileArn) {
+        const profileArn = await fetchKiroProfileArn(tokens.accessToken);
+        if (profileArn) tokens.providerSpecificData.profileArn = profileArn;
+      }
+      return { success: true, tokens };
     } else {
       // Check if it's still pending authorization
       if (result.data.error === 'authorization_pending' || result.data.error === 'slow_down') {
