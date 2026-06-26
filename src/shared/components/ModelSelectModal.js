@@ -250,6 +250,7 @@ export default function ModelSelectModal({
           }));
 
         // Also read from customModels (primary storage for compatible provider models)
+        // providerAlias in DB uses the raw providerId, not the display prefix
         const customNodeModels = customModels
           .filter((m) => m.providerAlias === providerId)
           .map((m) => ({
@@ -260,13 +261,11 @@ export default function ModelSelectModal({
           }));
 
         // Merge and dedupe by value
-        const seen = new Set();
-        const allModels = [...nodeModels, ...customNodeModels].filter((m) => {
-          if (seen.has(m.value)) return false;
-          seen.add(m.value);
-          return true;
-        });
+        const seen = new Set(nodeModels.map((m) => m.value));
+        const allModels = [...nodeModels, ...customNodeModels.filter((m) => !seen.has(m.value))];
 
+        // Always show compatible providers that are connected, even with no aliases.
+        // When no aliases exist, show a placeholder so users know it's available.
         const modelsToShow = allModels.length > 0 ? allModels : [{
           id: `__placeholder__${providerId}`,
           name: `${nodePrefix}/model-id`,
