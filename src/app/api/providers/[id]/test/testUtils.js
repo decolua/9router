@@ -551,7 +551,8 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid, error: valid ? null : "Invalid API key" };
       }
       case "volcengine-ark":
-      case "byteplus": {
+      case "byteplus":
+      case "sensenova": {
         const res = await fetchWithConnectionProxy(PROVIDERS[connection.provider]?.baseUrl, {
           method: "POST",
           headers: { "Authorization": `Bearer ${connection.apiKey}`, "content-type": "application/json" },
