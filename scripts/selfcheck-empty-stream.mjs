@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { readFile } from "node:fs/promises";
 
-import { synthOpenAIErrorChunk, synthResponsesFailure } from "../open-sse/utils/diagnostics.js";
+import { synthClaudeErrorEvents, synthOpenAIErrorChunk, synthResponsesFailure } from "../open-sse/utils/diagnostics.js";
 import { convertResponsesStreamToJson } from "../open-sse/transformer/streamToJsonConverter.js";
 
 function streamFromText(text) {
@@ -14,6 +14,12 @@ const chatError = synthOpenAIErrorChunk({ provider: "test", model: "model", reas
 assert.match(chatError, /^data: /);
 assert.match(chatError, /"chat\.completion\.chunk"/);
 assert.match(chatError, /"upstream_empty_response"/);
+
+const claudeError = synthClaudeErrorEvents({ provider: "test", model: "model", reason: "empty_stream" });
+assert.match(claudeError, /event: message_start/);
+assert.match(claudeError, /event: content_block_delta/);
+assert.match(claudeError, /event: message_stop/);
+assert.doesNotMatch(claudeError, /^data: \{"object":"chat\.completion\.chunk"/m);
 
 const responsesFailure = synthResponsesFailure("empty_stream");
 assert.match(responsesFailure, /event: response\.failed/);
@@ -61,6 +67,14 @@ assert.match(
   streamSrc,
   /producedOutput = \(\) => totalContentLength > 0 \|\| sawToolCalls \|\| sawResponsesContent \|\| sseEmittedCount > 0/,
   "producedOutput() must include sseEmittedCount > 0",
+);
+
+// Bug 3: truly-empty streams must synthesize the client's stream format. Claude
+// clients reject OpenAI chat chunks on /v1/messages as malformed HTTP 200 bodies.
+assert.match(
+  streamSrc,
+  /sourceFormat === FORMATS\.CLAUDE\s*\? synthClaudeErrorEvents/,
+  "empty-stream fallback must emit Claude-shaped events for Claude clients",
 );
 
 console.log("selfcheck-empty-stream: ok");

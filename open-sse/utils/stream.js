@@ -4,7 +4,7 @@ import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
-import { reportMalformed200, synthOpenAIErrorChunk, synthResponsesFailure } from "./diagnostics.js";
+import { reportMalformed200, synthClaudeErrorEvents, synthOpenAIErrorChunk, synthResponsesFailure } from "./diagnostics.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
 import { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER } from "./sseConstants.js";
@@ -460,7 +460,9 @@ export function createSSEStream(options = {}) {
             const reason = emitEmptyDiagnostics();
             const emptyOutput = sourceFormat === FORMATS.OPENAI_RESPONSES
               ? synthResponsesFailure(reason)
-              : synthOpenAIErrorChunk({ provider, model, reason });
+              : sourceFormat === FORMATS.CLAUDE
+                ? synthClaudeErrorEvents({ provider, model, reason })
+                : synthOpenAIErrorChunk({ provider, model, reason });
             reqLogger?.appendConvertedChunk?.(emptyOutput);
             controller.enqueue(sharedEncoder.encode(emptyOutput));
             sseEmittedCount++;
@@ -533,7 +535,9 @@ export function createSSEStream(options = {}) {
           const reason = emitEmptyDiagnostics(openAIResponsesTerminalSeen ? "empty" : "no_terminal");
           const emptyOutput = wantsResponses
             ? synthResponsesFailure(reason)
-            : synthOpenAIErrorChunk({ provider, model, reason });
+            : sourceFormat === FORMATS.CLAUDE
+              ? synthClaudeErrorEvents({ provider, model, reason })
+              : synthOpenAIErrorChunk({ provider, model, reason });
           reqLogger?.appendConvertedChunk?.(emptyOutput);
           controller.enqueue(sharedEncoder.encode(emptyOutput));
           sseEmittedCount++;

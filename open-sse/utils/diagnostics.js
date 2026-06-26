@@ -20,6 +20,11 @@ function describeReason(reason) {
   return REASON_MESSAGES[reason] || reason || "empty response";
 }
 
+function emptyResponseMessage({ provider, reason }) {
+  return `[${provider || "?"}] returned an empty response (${describeReason(reason)}). ` +
+    "Likely quota exhaustion, an overloaded upstream, or a proxy/gateway intercepting the stream.";
+}
+
 /**
  * Log one structured [MALFORMED-200] line. Noop-safe (any field optional).
  * Surfaced to stdout so it is grep/SQL-correlatable with requestDetails.
@@ -52,12 +57,50 @@ export function synthOpenAIErrorChunk({ provider, model, reason }) {
     model: model || "unknown",
     choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
     error: {
-      message: `[${provider || "?"}] returned an empty response (${describeReason(reason)}). ` +
-        "Likely quota exhaustion, an overloaded upstream, or a proxy/gateway intercepting the stream.",
+      message: emptyResponseMessage({ provider, reason }),
       type: "upstream_empty_response",
     },
   };
   return `data: ${JSON.stringify(body)}\n\n`;
+}
+
+/** Claude Messages API failure events (SSE text) for an empty stream. */
+export function synthClaudeErrorEvents({ provider, model, reason }) {
+  const message = emptyResponseMessage({ provider, reason });
+  const id = `msg_empty_${Date.now()}`;
+  const events = [
+    {
+      type: "message_start",
+      message: {
+        id,
+        type: "message",
+        role: "assistant",
+        model: model || "unknown",
+        content: [],
+        stop_reason: null,
+        stop_sequence: null,
+        usage: { input_tokens: 0, output_tokens: 0 },
+      },
+    },
+    {
+      type: "content_block_start",
+      index: 0,
+      content_block: { type: "text", text: "" },
+    },
+    {
+      type: "content_block_delta",
+      index: 0,
+      delta: { type: "text_delta", text: message },
+    },
+    { type: "content_block_stop", index: 0 },
+    {
+      type: "message_delta",
+      delta: { stop_reason: "end_turn", stop_sequence: null },
+      usage: { output_tokens: 0 },
+    },
+    { type: "message_stop" },
+  ];
+  return events.map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join("");
 }
 
 /**
