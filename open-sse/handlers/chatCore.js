@@ -74,7 +74,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Image generation models require non-streaming (Google v1internal:generateContent)
   const modelType = getModelType(alias, model);
   const isImageGenModel = modelType === "imageGen" || /image|imagen|image-generation/i.test(model);
-  if (isImageGenModel && (provider === "antigravity" || provider === "gemini-cli")) {
+  if (isImageGenModel && provider === "antigravity") {
     stream = false;
   }
 

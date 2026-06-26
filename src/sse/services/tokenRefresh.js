@@ -113,7 +113,7 @@ function normalizeExpiresAt(expiresAt) {
  * @returns {boolean}
  */
 function needsProjectId(provider) {
-  return provider === "antigravity" || provider === "gemini-cli";
+  return provider === "antigravity";
 }
 
 /**

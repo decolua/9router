@@ -11,7 +11,7 @@ Pipeline uses **OpenAI as the intermediate format**:
 
 Components:
 - `index.js` — `translateRequest` / `translateResponse` / `register(from, to, requestFn, responseFn)` / registry.
-- `formats.js` — `FORMATS` enum (openai, claude, gemini, gemini-cli, openai-responses, antigravity, kiro, cursor, commandcode, ollama, vertex).
+- `formats.js` — `FORMATS` enum (openai, claude, gemini, openai-responses, antigravity, kiro, cursor, commandcode, ollama, vertex).
 - `request/<from>-to-<to>.js` — one-way request translation.
 - `response/<from>-to-<to>.js` — one-way SSE response translation.
 - `schema/` — pure data enums (no logic): `roles.js` (ROLE, GEMINI_ROLE), `blocks.js` (OPENAI_BLOCK, CLAUDE_BLOCK, RESPONSES_ITEM, valid-type lists), `finishReasons.js` (OPENAI_FINISH, CLAUDE_STOP, GEMINI_FINISH), `defaults.js` (MODEL_FALLBACK, DEFAULT_IMAGE_MIME). Import via `schema/index.js`.

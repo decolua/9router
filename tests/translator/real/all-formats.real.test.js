@@ -87,7 +87,6 @@ const SSE_MARKER = {
   "openai-responses": /response\.|"type"\s*:\s*"response|\[DONE\]/,
   claude: /event:\s*\w|"type"\s*:\s*"(message_start|content_block|message_delta)"/,
   gemini: /"candidates"|"content"|data:/,
-  "gemini-cli": /"candidates"|"content"|data:/,
   antigravity: /"candidates"|"content"|data:/,
 };
 
@@ -239,7 +238,6 @@ const BUILDERS = {
   "openai-responses": responsesBody,
   claude: claudeBody,
   gemini: geminiBody,
-  "gemini-cli": geminiBody,
   antigravity: antigravityBody,
 };
 

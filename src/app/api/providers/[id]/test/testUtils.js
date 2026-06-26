@@ -9,7 +9,6 @@ import {
   shouldRefreshCredentials,
 } from "open-sse/services/oauthCredentialManager.js";
 import {
-  GEMINI_CONFIG,
   ANTIGRAVITY_CONFIG,
   KIRO_CONFIG,
   QWEN_CONFIG,
@@ -32,13 +31,6 @@ const OAUTH_TEST_CONFIG = {
     body: JSON.stringify({ model: "gpt-5.3-codex", input: [], stream: false, store: false }),
     // 400 (bad request) means auth succeeded; only 401/403 means token is bad
     acceptStatuses: [400],
-    refreshable: true,
-  },
-  "gemini-cli": {
-    url: "https://www.googleapis.com/oauth2/v1/userinfo?alt=json",
-    method: "GET",
-    authHeader: "Authorization",
-    authPrefix: "Bearer ",
     refreshable: true,
   },
   antigravity: {
@@ -157,8 +149,8 @@ async function refreshOAuthToken(connection) {
   if (!refreshToken) return null;
 
   try {
-    if (provider === "gemini-cli" || provider === "antigravity") {
-      const config = provider === "gemini-cli" ? GEMINI_CONFIG : ANTIGRAVITY_CONFIG;
+    if (provider === "antigravity") {
+      const config = ANTIGRAVITY_CONFIG;
       const response = await fetch("https://oauth2.googleapis.com/token", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
