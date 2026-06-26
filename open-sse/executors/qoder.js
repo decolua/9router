@@ -31,8 +31,7 @@ import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { SSE_DONE } from "../utils/sseConstants.js";
 import { FETCH_CONNECT_TIMEOUT_MS } from "../config/runtimeConfig.js";
 import {
-  QODER_CHAT_URL_ENCODED,
-  QODER_MODEL_MAP,
+  getQoderEndpointConfig,
 } from "../shared/qoder/constants.js";
 import { getQoderModelConfig, resolveQoderModels } from "../services/qoderModels.js";
 
@@ -126,7 +125,7 @@ function truncate(s, n) {
  * Map the OpenAI-style request body into the exact shape Qoder expects.
  */
 async function buildQoderRequestBody({ model, body, credentials, log, proxyOptions, signal }) {
-  const qoderKey = String(model || "").replace(/^qoder\//, "");
+  const qoderKey = String(model || "").replace(/^qoder(?:-cn)?\//, "");
   
   // Fetch model config from dynamic API instead of relying on static QODER_MODEL_MAP.
   // This allows support for new Qoder models (e.g., qmodel_latest) without code changes.
@@ -322,12 +321,12 @@ function wrapQoderSSE(response, model) {
 }
 
 export class QoderExecutor extends BaseExecutor {
-  constructor() {
-    super("qoder", PROVIDERS.qoder);
+  constructor(provider = "qoder") {
+    super(provider, PROVIDERS[provider] || PROVIDERS.qoder);
   }
 
   buildUrl() {
-    return QODER_CHAT_URL_ENCODED;
+    return getQoderEndpointConfig(this.provider).chatUrlEncoded;
   }
 
   // Override execute entirely — Qoder needs:
@@ -337,8 +336,17 @@ export class QoderExecutor extends BaseExecutor {
   //   - response stream re-wrapped from {statusCodeValue, body} to OpenAI SSE
   async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
     const url = this.buildUrl();
+    const effectiveCredentials = {
+      ...(credentials || {}),
+      provider: this.provider,
+      providerSpecificData: {
+        ...(credentials?.providerSpecificData || {}),
+        provider: credentials?.providerSpecificData?.provider || this.provider,
+        region: credentials?.providerSpecificData?.region || (this.provider === "qoder-cn" ? "cn" : "intl"),
+      },
+    };
 
-    const psd = credentials?.providerSpecificData || {};
+    const psd = effectiveCredentials.providerSpecificData || {};
     if (!psd.userId) {
       // No user id → no way to sign. Surface a 401 so the dashboard nudges
       // the user back to OAuth.
@@ -348,7 +356,7 @@ export class QoderExecutor extends BaseExecutor {
       );
       return { response: fakeResp, url, headers: {}, transformedBody: body };
     }
-    if (!credentials?.accessToken) {
+    if (!effectiveCredentials?.accessToken) {
       // Same shape as the userId guard — clean 401 so chatCore reports
       // "reconnect" rather than bubbling cosy.js's synchronous throw as 500.
       const fakeResp = new Response(
@@ -361,7 +369,7 @@ export class QoderExecutor extends BaseExecutor {
     let qoderKey;
     let payload;
     try {
-      ({ qoderKey, payload } = await buildQoderRequestBody({ model, body, credentials, log, proxyOptions, signal }));
+      ({ qoderKey, payload } = await buildQoderRequestBody({ model, body, credentials: effectiveCredentials, log, proxyOptions, signal }));
     } catch (err) {
       const fakeResp = new Response(
         JSON.stringify({ error: { message: err.message } }),
@@ -381,9 +389,9 @@ export class QoderExecutor extends BaseExecutor {
         url,
         {
           userId: psd.userId,
-          authToken: credentials.accessToken,
-          name: credentials.displayName || "",
-          email: credentials.email || "",
+          authToken: effectiveCredentials.accessToken,
+          name: effectiveCredentials.displayName || "",
+          email: effectiveCredentials.email || "",
           machineId: psd.machineId || "",
         },
       );
@@ -431,7 +439,7 @@ export class QoderExecutor extends BaseExecutor {
       return { response, url, headers, transformedBody: payload };
     }
 
-    const wrapped = wrapQoderSSE(response, `qoder/${qoderKey}`);
+    const wrapped = wrapQoderSSE(response, `${this.provider}/${qoderKey}`);
     return { response: wrapped, url, headers, transformedBody: payload };
   }
 

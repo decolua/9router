@@ -10,7 +10,7 @@ const snapPath = join(here, "alias-baseline.json");
 
 // All known alias tokens to probe (collected from both maps' historical keys)
 const ALIAS_TOKENS = [
-  "cc","cx","gc","qw","if","ag","gh","kr","cu","kc","kmc","cl","oc","ocg","qd","qoder",
+  "cc","cx","gc","qw","if","ag","gh","kr","cu","kc","kmc","cl","oc","ocg","qd","qoder","qdc","qoder-cn",
   "el","openai","vercel","vercel-ai-gateway","anthropic","gemini","openrouter","glm","kimi",
   "minimax","minimax-cn","hf","huggingface","ds","deepseek","cmc","commandcode","groq","xai",
   "mistral","pplx","perplexity","together","fireworks","cerebras","cohere","nvidia","nebius",
