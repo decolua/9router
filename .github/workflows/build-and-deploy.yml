@@ -41,7 +41,20 @@ jobs:
           echo "=== CLI structure after patching ==="
           cat package.json
           tree -L 2 .
-          npm run build
+          node - <<'NODE'
+          const fs = require("fs");
+          const script = "scripts/build-cli.js";
+          const source = fs.readFileSync(script, "utf8");
+          const next = source.replace(
+            'NEXT_TRACING_ROOT_MODE: "workspace",',
+            'NEXT_TRACING_ROOT_MODE: process.env.NEXT_TRACING_ROOT_MODE || "workspace",'
+          );
+          if (next === source) {
+            throw new Error("Unable to patch NEXT_TRACING_ROOT_MODE for CLI build");
+          }
+          fs.writeFileSync(script, next);
+          NODE
+          NEXT_TRACING_ROOT_MODE=project npm run build
 
       - name: Bump version before publish
         working-directory: cli
