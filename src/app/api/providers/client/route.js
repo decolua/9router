@@ -9,6 +9,9 @@ const SAFE_FIELDS = [
   "testStatus", "lastError", "lastErrorAt", "errorCode",
   "expiresAt", "lastUsedAt", "consecutiveUseCount",
   "createdAt", "updatedAt",
+  // Persisted last-known quota (written by the usage route) so the UI can
+  // render immediately without waiting for a per-connection live refetch.
+  "quotaInfos", "quotaPlan", "quotaMessage", "quotaUpdatedAt",
 ];
 
 const SAFE_PSD_FIELDS = [

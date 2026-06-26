@@ -3,6 +3,7 @@ import "open-sse/index.js";
 
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
 import { getUsageForProvider } from "open-sse/services/usage.js";
+import { parseQuotaData } from "open-sse/services/usage/normalize.js";
 import { getExecutor } from "open-sse/executors/index.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
@@ -180,6 +181,25 @@ export async function GET(request, { params }) {
       } catch (retryError) {
         console.warn(`[Usage] ${connection.provider}: force refresh failed: ${retryError.message}`);
       }
+    }
+
+    // Persist last-known quota onto the connection so the connection list can
+    // ship it to the UI without waiting for a live refetch. Only overwrite
+    // quotaInfos when we actually got buckets back — keeps the last good
+    // snapshot when a provider transiently returns an auth/empty response.
+    try {
+      const quotaInfos = parseQuotaData(connection.provider, usage);
+      const quotaUpdate = {
+        quotaUpdatedAt: new Date().toISOString(),
+        quotaPlan: usage?.plan ?? null,
+        quotaMessage: usage?.message ?? null,
+      };
+      if (quotaInfos.length > 0) {
+        quotaUpdate.quotaInfos = quotaInfos;
+      }
+      await updateProviderConnection(connection.id, quotaUpdate);
+    } catch (persistError) {
+      console.warn(`[Usage] ${connection.provider}: failed to persist quota: ${persistError.message}`);
     }
 
     return Response.json(usage);

@@ -1,12 +1,17 @@
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings } from "@/lib/localDb";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
-import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
+import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil, isQuotaDepleted, getQuotaResetUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
 let selectionMutex = Promise.resolve();
+
+// Throttle "out of quota" skip logs (selection runs per-request, so a depleted
+// account would otherwise flood the console log). Per-connection, last-logged ms.
+const QUOTA_SKIP_LOG_THROTTLE_MS = 60_000;
+const quotaSkipLogAt = new Map();
 
 /**
  * Get provider credentials from localDb
@@ -60,12 +65,30 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return null;
     }
 
-    // Filter out model-locked and excluded connections
+    // Filter out model-locked, quota-depleted, and excluded connections.
+    // Collect quota-depleted skips so we can surface them to the console log.
+    const quotaDepletedSkips = [];
     const availableConnections = connections.filter(c => {
       if (excludeSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
+      const quotaResetUntil = getQuotaResetUntil(c);
+      if (quotaResetUntil) {
+        quotaDepletedSkips.push({ conn: c, quotaResetUntil });
+        return false; // out of quota — skip until resetAt
+      }
       return true;
     });
+
+    // Log each quota-based skip (throttled per account) so it shows in
+    // /dashboard/console-log: which account is out of quota and when it resets.
+    for (const { conn: c, quotaResetUntil } of quotaDepletedSkips) {
+      const last = quotaSkipLogAt.get(c.id) || 0;
+      if (Date.now() - last >= QUOTA_SKIP_LOG_THROTTLE_MS) {
+        quotaSkipLogAt.set(c.id, Date.now());
+        const connName = c.displayName || c.name || c.email || c.id?.slice(0, 8);
+        log.info("AUTH", `${provider} | skip "${connName}" — out of quota, resets ${quotaResetUntil} (${formatRetryAfter(quotaResetUntil)})`);
+      }
+    }
 
     log.debug("AUTH", `${provider} | available: ${availableConnections.length}/${connections.length}`);
     connections.forEach(c => {
@@ -78,9 +101,14 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     });
 
     if (availableConnections.length === 0) {
-      // Find earliest lock expiry across all connections for retry timing
-      const lockedConns = connections.filter(c => isModelLockActive(c, model));
-      const expiries = lockedConns.map(c => getEarliestModelLockUntil(c)).filter(Boolean);
+      // Find earliest unavailability expiry (model lock or quota reset) for retry timing
+      const lockedConns = connections.filter(c => isModelLockActive(c, model) || isQuotaDepleted(c));
+      const expiries = lockedConns.map(c => {
+        const lockUntil = getEarliestModelLockUntil(c);
+        const quotaReset = getQuotaResetUntil(c);
+        if (lockUntil && quotaReset) return lockUntil < quotaReset ? lockUntil : quotaReset;
+        return lockUntil || quotaReset;
+      }).filter(Boolean);
       const earliest = expiries.sort()[0] || null;
       if (earliest) {
         const earliestConn = lockedConns[0];
