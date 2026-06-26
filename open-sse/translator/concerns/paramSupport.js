@@ -42,3 +42,30 @@ export function stripUnsupportedParams(provider, model, body) {
   }
   return body;
 }
+
+// Model-specific param renames (max_tokens → max_completion_tokens for newer OpenAI models)
+const MODEL_PARAM_RENAMES = {
+  "openai": [
+    { match: /gpt-5|o[134]-/, rename: { max_tokens: "max_completion_tokens" } },
+  ],
+};
+
+/**
+ * Apply model-specific param renames (e.g. max_tokens → max_completion_tokens for gpt-5+).
+ * @param {string} provider
+ * @param {string} model
+ * @param {object} body
+ */
+export function applyParamRenames(provider, model, body) {
+  const rules = MODEL_PARAM_RENAMES[provider] || [];
+  for (const rule of rules) {
+    if (rule.match.test(model)) {
+      for (const [from, to] of Object.entries(rule.rename)) {
+        if (body[from] !== undefined && body[to] === undefined) {
+          body[to] = body[from];
+          delete body[from];
+        }
+      }
+    }
+  }
+}
