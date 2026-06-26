@@ -7,6 +7,11 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
   const [aliasValue, setAliasValue] = useState(alias || "");
   const inputRef = useRef(null);
 
+  // Sync aliasValue when alias prop changes (e.g. after API call)
+  useEffect(() => {
+    if (!editing) setAliasValue(alias || "");
+  }, [alias, editing]);
+
   useEffect(() => {
     if (editing && inputRef.current) {
       inputRef.current.focus();
