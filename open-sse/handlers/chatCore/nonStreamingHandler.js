@@ -11,7 +11,21 @@ import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { openAIResponsesBodyToClaude, openAIResponsesBodyToOpenAI } from "../../translator/response/openai-responses-nonstream.js";
 
 /**
- * Translate non-streaming response body from provider format → OpenAI format.
+ * Translate non-streaming response body from upstream format → client format.
+ *
+ * `targetFormat` is what the **client** asked for (i.e. the source format the
+ * client sent). `sourceFormat` is the format the upstream returned in. When
+ * they differ, we convert.
+ *
+ * Most branches translate into OpenAI chat.completion shape (the legacy
+ * default). The OPENAI_RESPONSES branch is an exception: it returns whichever
+ * shape the client actually requested — Claude body when the client sent
+ * Claude, OpenAI chat when the client sent OpenAI — so the caller receives a
+ * body matching their original request, including a usage object (some
+ * clients validate `usage.input_tokens`).
+ *
+ * Streaming responses go through translateResponse() — this function only
+ * handles non-streaming JSON bodies.
  */
 export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat) {
   if (targetFormat === sourceFormat || targetFormat === FORMATS.OPENAI) return responseBody;
