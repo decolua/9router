@@ -62,6 +62,12 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
   }, [selectedMethod, isOpen]);
 
   const handleMethodSelect = (method) => {
+    // External IdP is a self-contained flow rendered by KiroOAuthWrapper;
+    // forward to the parent immediately so the wrapper can mount its form.
+    if (method === "external-idp") {
+      onMethodSelect("external-idp");
+      return;
+    }
     setSelectedMethod(method);
     setError(null);
   };
@@ -252,6 +258,22 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
                   <h3 className="font-semibold mb-1">Import Token</h3>
                   <p className="text-sm text-text-muted">
                     Paste refresh token from Kiro IDE.
+                  </p>
+                </div>
+              </div>
+            </button>
+
+            {/* External IdP (Microsoft Entra ID / Azure AD) */}
+            <button
+              onClick={() => handleMethodSelect("external-idp")}
+              className="w-full p-4 text-left border border-border rounded-lg hover:bg-sidebar transition-colors"
+            >
+              <div className="flex items-start gap-3">
+                <span className="material-symbols-outlined text-primary mt-0.5">cloud</span>
+                <div className="flex-1">
+                  <h3 className="font-semibold mb-1">External IdP (Microsoft Entra ID)</h3>
+                  <p className="text-sm text-text-muted">
+                    For enterprise tenants using Azure AD as an external identity provider.
                   </p>
                 </div>
               </div>

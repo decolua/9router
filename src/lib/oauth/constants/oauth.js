@@ -67,6 +67,27 @@ export const GITHUB_CONFIG = { ...PROVIDER_OAUTH["github"] };
 // Kiro OAuth Configuration (multi-method: AWS Builder ID / IDC / Social / Import Token)
 export const KIRO_CONFIG = { ...PROVIDER_OAUTH["kiro"] };
 
+// Kiro external_idp (Microsoft Entra ID / Azure AD) — defaults are intentionally
+// empty. The UI prompts the user for issuer_url, client_id, and scopes because
+// these values are tenant-specific and per-Kiro-IDE-rotation. The form pre-fills
+// sensible defaults from kiro-login-helper.py and Kiro IDE's hosted sign-in
+// descriptor so the user only edits when their tenant differs.
+export const KIRO_EXTERNAL_IDP_DEFAULTS = {
+  // Token host for Microsoft Entra (multi-tenant common).
+  tokenHost: "https://login.microsoftonline.com",
+  // Default scopes per Kiro IDE: openid + profile + email + offline_access for
+  // refresh tokens + CodeWhisperer API.
+  scopes: "openid profile email offline_access",
+  // Loopback redirect URI per Kiro IDE's kiro-login-helper.py:55-68.
+  redirectUri: "http://localhost:3128/oauth/callback",
+  // Loopback port to bind during OAuth flow.
+  loopbackPort: 3128,
+  // Loopback bind host. localhost only — never expose 0.0.0.0.
+  loopbackHost: "127.0.0.1",
+  // Maximum time to wait for the Microsoft redirect before giving up.
+  loopbackTimeoutMs: 5 * 60 * 1000, // 5 minutes
+};
+
 // AWS region allowlist pattern — prevents SSRF via region injection into upstream URLs (GHSA-6mwv-4mrm-5p3m)
 export const AWS_REGION_PATTERN = /^[a-z]{2}-[a-z]+-\d{1,2}$/;
 
