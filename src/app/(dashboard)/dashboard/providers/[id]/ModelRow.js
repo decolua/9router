@@ -1,7 +1,37 @@
+import { useState, useRef, useEffect } from "react";
 import PropTypes from "prop-types";
 import { CapacityBadges } from "@/shared/components";
 
-export default function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting, onDisable, caps }) {
+export default function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onSetAlias, onTest, isTesting, onDisable, caps }) {
+  const [editing, setEditing] = useState(false);
+  const [aliasValue, setAliasValue] = useState(alias || "");
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editing]);
+
+  const handleAliasSubmit = async () => {
+    const trimmed = aliasValue.trim();
+    if (trimmed && trimmed !== alias) {
+      await onSetAlias?.(trimmed);
+    } else if (!trimmed && alias) {
+      await onDeleteAlias?.();
+    }
+    setEditing(false);
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter") handleAliasSubmit();
+    if (e.key === "Escape") {
+      setAliasValue(alias || "");
+      setEditing(false);
+    }
+  };
+
   const borderColor = testStatus === "ok"
     ? "border-green-500/40"
     : testStatus === "error"
@@ -26,7 +56,29 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <code className="max-w-[72vw] truncate rounded bg-sidebar px-1.5 py-0.5 font-mono text-xs text-text-muted sm:max-w-[360px]">{fullModel}</code>
           <span className="flex min-w-0 items-center text-[9px] gap-1 pl-1">
-            {model.name && <span className="truncate text-[9px] italic text-text-muted/70">{model.name}</span>}
+            {editing ? (
+              <input
+                ref={inputRef}
+                type="text"
+                value={aliasValue}
+                onChange={(e) => setAliasValue(e.target.value)}
+                onBlur={handleAliasSubmit}
+                onKeyDown={handleKeyDown}
+                placeholder="alias name"
+                className="bg-surface border border-primary/50 rounded px-1 py-0.5 text-[9px] text-text-main outline-none w-24"
+              />
+            ) : (
+              <span
+                className={`truncate text-[9px] italic cursor-pointer hover:text-primary transition-colors ${alias ? "text-primary/80" : "text-text-muted/70"}`}
+                onClick={() => {
+                  setAliasValue(alias || "");
+                  setEditing(true);
+                }}
+                title={alias ? `Alias: ${alias} (click to edit)` : "Click to set alias"}
+              >
+                {alias || model.name || "set alias"}
+              </span>
+            )}
             <CapacityBadges caps={caps} colorOverride="text-text-muted/70" size={12} />
           </span>
         </div>
@@ -84,6 +136,7 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
 ModelRow.propTypes = {
   model: PropTypes.shape({
     id: PropTypes.string.isRequired,
+    name: PropTypes.string,
   }).isRequired,
   fullModel: PropTypes.string.isRequired,
   alias: PropTypes.string,
@@ -93,6 +146,7 @@ ModelRow.propTypes = {
   isCustom: PropTypes.bool,
   isFree: PropTypes.bool,
   onDeleteAlias: PropTypes.func,
+  onSetAlias: PropTypes.func,
   onTest: PropTypes.func,
   isTesting: PropTypes.bool,
   onDisable: PropTypes.func,
