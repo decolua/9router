@@ -7,7 +7,7 @@ import { AI_PROVIDERS } from "@/shared/constants/providers";
 
 const BULK_PLACEHOLDER = `name1|sk-key1\nname2|sk-key2\nsk-key-only-auto-named`;
 
-export default function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthropic, authType, authHint, website, proxyPools, error, onSave, onBulkDone, onClose }) {
+export default function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthropic, authType, authHint, website, loginUrl, onOpenLogin, proxyPools, error, onSave, onBulkDone, onClose }) {
   const NONE_PROXY_POOL_VALUE = "__none__";
   const isOllamaLocal = provider === "ollama-local";
   const isCookie = authType === "cookie";
@@ -160,6 +160,32 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   return (
     <Modal isOpen={isOpen} title={`Add ${providerName || provider} ${credentialLabel}`} onClose={onClose}>
       <div className="flex flex-col gap-4">
+        {/* Login popup section for cookie auth providers */}
+        {isCookie && loginUrl && (
+          <div className="bg-surface-secondary p-4 rounded-lg border border-accent/20 space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-semibold text-text-primary">Step 1: Login to {providerName}</h4>
+              <Button
+                size="sm"
+                variant="primary"
+                icon="open_in_new"
+                onClick={onOpenLogin}
+              >
+                Open Login Page
+              </Button>
+            </div>
+            <div className="text-xs text-text-muted space-y-2">
+              <p>Login with Google at the website above, then extract your cookies:</p>
+              <ol className="list-decimal list-inside space-y-1">
+                <li>Open Developer Tools (<kbd className="px-1 py-0.5 bg-sidebar rounded text-[10px] font-mono">F12</kbd>)</li>
+                <li>Go to <strong>Application</strong> → <strong>Cookies</strong> → <strong>{new URL(loginUrl).hostname}</strong></li>
+                <li>Right-click any cookie → <strong>Select All</strong> → <strong>Copy</strong></li>
+                <li>Paste the full cookie string below</li>
+              </ol>
+            </div>
+          </div>
+        )}
+
         {/* Mode switcher */}
         <div className="flex gap-2">
           <Button size="sm" variant={mode === "single" ? "primary" : "ghost"} onClick={() => { setMode("single"); setBulkResult(null); }}>Single</Button>
@@ -378,6 +404,8 @@ AddApiKeyModal.propTypes = {
   authType: PropTypes.string,
   authHint: PropTypes.string,
   website: PropTypes.string,
+  loginUrl: PropTypes.string,
+  onOpenLogin: PropTypes.func,
   proxyPools: PropTypes.arrayOf(PropTypes.shape({
     id: PropTypes.string,
     name: PropTypes.string,

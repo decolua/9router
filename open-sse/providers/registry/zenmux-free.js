@@ -5,9 +5,9 @@ export default {
   alias: "zmf",
   aliases: ["zenmux", "zm"],
   uiAlias: "ZF",
-  category: "webCookie",
+  category: "free",
   authType: "cookie",
-  authHint: "Paste ALL cookies from zenmux.ai as a raw Cookie header string (export from browser)",
+  authHint: "Paste ALL cookies from zenmux.ai as a raw Cookie header string after logging in.",
   display: {
     name: "ZenMux Free (Web)",
     icon: "bolt",
