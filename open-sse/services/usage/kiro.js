@@ -56,14 +56,11 @@ export async function getKiroUsage(accessToken, providerSpecificData, proxyOptio
   // Without this header the GetUsageLimits call is rejected (401/403).
   const isApiKey = authMethod === "api_key";
   // External IdP tokens (Microsoft Entra ID / Azure AD via SSO) need the
-  // same treatment on the quota API: `tokentype: EXTERNAL_IDP` or upstream
+  // same treatment on the quota API: EXTERNAL_IDP token type, or upstream
   // rejects the request as an invalid bearer token.
   const isExternalIdp = authMethod === "external_idp";
-  const apiKeyHeaders = isApiKey
-    ? { tokentype: "API_KEY" }
-    : isExternalIdp
-      ? { tokentype: "EXTERNAL_IDP" }
-      : {};
+  const apiKeyHeaders = isApiKey ? { tokentype: "API_KEY" } : {};
+  const externalIdpHeaders = isExternalIdp ? { TokenType: "EXTERNAL_IDP" } : {};
 
   // For api-key auth, never inject the shared default placeholder profileArn —
   // CodeWhisperer 403s a request whose profileArn isn't owned by the key's
@@ -92,6 +89,7 @@ export async function getKiroUsage(accessToken, providerSpecificData, proxyOptio
             "x-amz-user-agent": "aws-sdk-js/1.0.0 KiroIDE",
             "user-agent": "aws-sdk-js/1.0.0 KiroIDE",
             ...apiKeyHeaders,
+            ...externalIdpHeaders,
           },
         },
         proxyOptions
@@ -107,6 +105,7 @@ export async function getKiroUsage(accessToken, providerSpecificData, proxyOptio
           "x-amz-target": "AmazonCodeWhispererService.GetUsageLimits",
           "Accept": "application/json",
           ...apiKeyHeaders,
+          ...externalIdpHeaders,
         },
         body: JSON.stringify({
           origin: "AI_EDITOR",
@@ -129,6 +128,7 @@ export async function getKiroUsage(accessToken, providerSpecificData, proxyOptio
             "Authorization": `Bearer ${accessToken}`,
             "Accept": "application/json",
             ...apiKeyHeaders,
+            ...externalIdpHeaders,
           },
         }, proxyOptions);
       },

@@ -27,6 +27,7 @@ export default {
     { id: "minimax-m2.5", name: "MiniMax M2.5" },
     { id: "glm-4.7-flash", name: "GLM 4.7 Flash" },
     { id: "qwen3.5", name: "Qwen3.5" },
+    { id: "minimax-m3", name: "MiniMax M3" },
   ],
   serviceKinds: ["llm"],
   features: {

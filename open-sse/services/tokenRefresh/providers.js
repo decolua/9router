@@ -2,6 +2,7 @@ import { PROVIDERS, PROVIDER_OAUTH } from "../../config/providers.js";
 import { OAUTH_ENDPOINTS, GITHUB_COPILOT } from "../../config/appConstants.js";
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import { dedupRefresh } from "./dedup.js";
+import { buildExternalIdpRefreshParams } from "../../../src/lib/oauth/kiroExternalIdp.js";
 
 let _xaiServiceSingleton = null;
 export async function refreshXaiToken(refreshToken, log) {
@@ -318,39 +319,21 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
   const region = providerSpecificData?.region;
 
   if (authMethod === "external_idp") {
-    const tokenEndpoint = providerSpecificData?.tokenEndpoint;
-    if (!clientId || !tokenEndpoint) {
-      log?.error?.("TOKEN_REFRESH", "Kiro external_idp refresh missing clientId or tokenEndpoint");
-      return null;
-    }
-
-    // Re-validate the stored token endpoint against the Microsoft Entra allow-list
-    // on every refresh. A tampered providerSpecificData.tokenEndpoint would
-    // otherwise exfiltrate the refresh_token + client_id to an attacker host (SSRF).
+    let refreshRequest;
     try {
-      const { validateExternalIdpEndpoint } = await import("../../../src/lib/oauth/services/kiroHostedSso.js");
-      validateExternalIdpEndpoint(tokenEndpoint);
-    } catch (err) {
-      log?.error?.("TOKEN_REFRESH", `Kiro external_idp refresh rejected token endpoint: ${err.message}`);
+      refreshRequest = buildExternalIdpRefreshParams(refreshToken, providerSpecificData);
+    } catch (error) {
+      log?.warn?.("TOKEN_REFRESH", `Invalid Kiro external_idp refresh config: ${error.message}`);
       return null;
     }
 
-    const form = new URLSearchParams({
-      client_id: clientId,
-      grant_type: "refresh_token",
-      refresh_token: refreshToken,
-    });
-    if (providerSpecificData?.scopes) {
-      form.set("scope", providerSpecificData.scopes);
-    }
-
-    const response = await proxyAwareFetch(tokenEndpoint, {
+    const response = await proxyAwareFetch(refreshRequest.tokenEndpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
         Accept: "application/json",
       },
-      body: form.toString(),
+      body: refreshRequest.body,
     }, proxyOptions);
 
     if (!response.ok) {
@@ -363,6 +346,7 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
     }
 
     const tokens = await response.json();
+
     log?.info?.("TOKEN_REFRESH", "Successfully refreshed Kiro external_idp token", {
       hasNewAccessToken: !!tokens.access_token,
       hasNewRefreshToken: !!tokens.refresh_token,
@@ -373,7 +357,10 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token || refreshToken,
       expiresIn: tokens.expires_in || 3600,
-      ...(await resolveKiroProfileArnPatch(providerSpecificData, tokens.access_token, tokens.profileArn)),
+      providerSpecificData: {
+        ...refreshRequest.providerSpecificData,
+        ...((await resolveKiroProfileArnPatch(providerSpecificData, tokens.access_token, tokens.profileArn))?.providerSpecificData || {}),
+      },
     };
   }
 
