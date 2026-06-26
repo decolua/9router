@@ -25,10 +25,14 @@ export class CodeBuddyExecutor extends DefaultExecutor {
     const eff = transformed.reasoning_effort;
     if (eff === "none" || eff === "off") {
       delete transformed.reasoning_effort; // gateway has no "none" — just omit
-    } else {
-      if (!eff) transformed.reasoning_effort = "medium";
+    } else if (eff) {
+      // Client explicitly asked for reasoning — mirror the CLI's reasoning_summary
+      // so CodeBuddy surfaces the model's reasoning.
       transformed.reasoning_summary = "auto";
     }
+    // No reasoning requested: leave both unset. Forcing reasoning_effort:"medium"
+    // + reasoning_summary on plain requests makes CodeBuddy trip its content
+    // filter and return an error (#2071).
     return transformed;
   }
 }

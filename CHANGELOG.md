@@ -1,3 +1,38 @@
+# v0.5.12 (2026-06-26)
+
+## Features
+- Add token-saver dashboard page — decolua
+- Add bulk delete for provider connections — teddytkz
+- Resolve GitHub Copilot model catalog from upstream — caiqinzhou
+- Add Venice AI provider — Brokenc0de
+- Add Kiro external_idp import for Microsoft SSO (CLIProxyAPI) — Stevanus Pangau
+- Overhaul Blackbox provider catalog + WebUI test support — suryacagur
+
+## Fixes
+- Provider thinking compatibility (DeepSeek/Gemini) — Mink Nguyen
+- Stop double-counting streaming usage at source — decolua
+- Usage logging dedupe to reduce stats churn — Mink Nguyen
+- Prevent non-JSON SSE lines / duplicate [DONE] from breaking clients (PR #2046) — qianze
+- Resolve Gemini TTS models from catalog — nguyenha935
+- Support Kiro IDC (organization) token import — quanturbo
+- Preserve forced streaming for JSON clients (#2031) — Joseph Yaksich
+- Preserve Responses text format (Codex) — tenglong
+- Support Gemini native TTS generateContent endpoint — nguyenha935
+- Add missing zh-CN endpoint key label (i18n) — weimaozhen
+- CodeBuddy: only send reasoning params when client requests reasoning (#2071) — Rex
+- Show custom provider models in combo picker — Sapto
+- Docker: add docker-compose.yml with headroom enabled by default — nitsuahlabs
+- Clarify token diagnostics vs provider billing (headroom, #1998) — Sutarto Jordan Chrisfivo
+- Translate openai-responses input through OpenAI for compression (#1998) — Ankit
+- Kiro: report 1M context window for claude-opus-4.8 — EdisonPVE
+- Avoid stale redirects after auth changes (#2100) — Emirhan
+- Mark Claude Opus 4.7 (dashed id) as 1M context — Brokenc0de
+- Preserve reasoning effort through Codex translations — ntdung6868
+- Token-saver: full width card layout — decolua
+- Antigravity: retry transient upstream failures — Sutarto Jordan Chrisfivo
+- Param-support: handle strip rules without match/drop (#1960) — Joseph Yaksich
+- Translator: resolve custom provider prefix in debug endpoint (#1083) — hamsa0x7
+
 # v0.5.8 (2026-06-21)
 
 ## Features
@@ -286,34 +321,3 @@
 ## Fixes
 - fix(docker): restore `/app/server.js` (v0.4.38 regression)
 
-# v0.4.38 (2026-05-13)
-
-## Features
-- Add DeepSeek TUI as CLI tool in dashboard (#1088)
-
-## Fixes
-- Fix broken Docker image in v0.4.36/v0.4.37 (#1096, #1097)
-
-## Improvements
-- Clean Docker tags + clearer pulls badge
-
-# v0.4.37 (2026-05-13)
-
-## Improvements
-- Security hardening — upgrade recommended
-
-# v0.4.36 (2026-05-13)
-
-## Features
-- Add MiniMax TTS provider support (#1043)
-- Docker images now published on both Docker Hub (`decolua/9router`) and GHCR — pull from your preferred registry
-
-## Improvements
-- Replace browser confirm dialogs with custom ConfirmModal (#1060)
-
-## Fixes
-- Fix Docker `Cannot find module 'next'` error in standalone build
-- Restore /app/server.js in Docker standalone build (#1064, #1067)
-- Fix CLI TUI menu arrow-key escape sequences leaking (^[[A^[[B)
-- Switch macOS/Linux tray to systray2 fork (fixes Kaspersky AV false-positive) (#1080)
-- Fix zoom controls contrast in topology view (#1066)

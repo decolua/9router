@@ -1,11 +1,19 @@
 // Gemini TTS — generateContent with AUDIO modality returns PCM L16, wrap as WAV
 import { Buffer } from "node:buffer";
-import { PROVIDER_MEDIA } from "../../providers/index.js";
+import { PROVIDER_MEDIA, PROVIDER_MODELS } from "../../providers/index.js";
 
 const TTS_CFG = PROVIDER_MEDIA["gemini"]?.ttsConfig || {};
 const TTS_BASE = TTS_CFG.baseUrl;
-const KNOWN_MODELS = (TTS_CFG.models || []).map((m) => m.id);
-const DEFAULT_MODEL = KNOWN_MODELS[0];
+const FALLBACK_MODEL = "gemini-3.1-flash-tts-preview";
+const KNOWN_MODELS = [
+  ...(TTS_CFG.models || []),
+  ...(PROVIDER_MODELS["gemini-tts-models"] || []),
+  ...(PROVIDER_MODELS.gemini || []).filter((m) => (m.kind || m.type) === "tts"),
+]
+  .map((m) => m?.id)
+  .filter(Boolean)
+  .filter((id, index, list) => list.indexOf(id) === index);
+const DEFAULT_MODEL = KNOWN_MODELS[0] || FALLBACK_MODEL;
 const DEFAULT_VOICE = "Kore";
 
 // Parse "model/voice" — if input doesn't match a known TTS model, treat it as voice with default model

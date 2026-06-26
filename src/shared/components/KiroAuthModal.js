@@ -13,12 +13,14 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
   const [idcStartUrl, setIdcStartUrl] = useState("");
   const [idcRegion, setIdcRegion] = useState("us-east-1");
   const [refreshToken, setRefreshToken] = useState("");
+  const [cliProxyJson, setCliProxyJson] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [apiKeyRegion, setApiKeyRegion] = useState("us-east-1");
   const [error, setError] = useState(null);
   const [importing, setImporting] = useState(false);
   const [autoDetecting, setAutoDetecting] = useState(false);
   const [autoDetected, setAutoDetected] = useState(false);
+  const [idcCredentials, setIdcCredentials] = useState(null);
 
   // Auto-detect token when import method is selected
   useEffect(() => {
@@ -28,6 +30,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
       setAutoDetecting(true);
       setError(null);
       setAutoDetected(false);
+      setIdcCredentials(null);
 
       try {
         const res = await fetch("/api/oauth/kiro/auto-import");
@@ -36,6 +39,16 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
         if (data.found) {
           setRefreshToken(data.refreshToken);
           setAutoDetected(true);
+          // Store IDC/organization credentials if present
+          if (data.clientId && data.clientSecret) {
+            setIdcCredentials({
+              clientId: data.clientId,
+              clientSecret: data.clientSecret,
+              region: data.region,
+              authMethod: data.authMethod,
+              profileArn: data.profileArn,
+            });
+          }
         } else {
           setError(data.error || "Could not auto-detect token");
         }
@@ -72,7 +85,10 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
       const res = await fetch("/api/oauth/kiro/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken: refreshToken.trim() }),
+        body: JSON.stringify({
+          refreshToken: refreshToken.trim(),
+          ...(idcCredentials || {}),
+        }),
       });
 
       const data = await res.json();
@@ -83,6 +99,36 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
 
       // Success - notify parent to refresh connections
       onMethodSelect("import");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleImportCliProxyJson = async () => {
+    if (!cliProxyJson.trim()) {
+      setError("Please paste CLIProxyAPI auth JSON");
+      return;
+    }
+
+    setImporting(true);
+    setError(null);
+
+    try {
+      const res = await fetch("/api/oauth/kiro/import-cli-proxy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ json: cliProxyJson.trim() }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "CLIProxyAPI import failed");
+      }
+
+      onMethodSelect("import-cli-proxy");
     } catch (err) {
       setError(err.message);
     } finally {
@@ -237,6 +283,22 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
                   <h3 className="font-semibold mb-1">Import Token</h3>
                   <p className="text-sm text-text-muted">
                     Paste refresh token from Kiro IDE.
+                  </p>
+                </div>
+              </div>
+            </button>
+
+            {/* Import CLIProxyAPI JSON */}
+            <button
+              onClick={() => handleMethodSelect("import-cli-proxy")}
+              className="w-full p-4 text-left border border-border rounded-lg hover:bg-sidebar transition-colors"
+            >
+              <div className="flex items-start gap-3">
+                <span className="material-symbols-outlined text-primary mt-0.5">data_object</span>
+                <div className="flex-1">
+                  <h3 className="font-semibold mb-1">Import CLIProxyAPI JSON</h3>
+                  <p className="text-sm text-text-muted">
+                    Paste external_idp auth JSON from CLIProxyAPI/Kiro Microsoft login.
                   </p>
                 </div>
               </div>
@@ -478,6 +540,47 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
                 </div>
               </>
             )}
+          </div>
+        )}
+
+        {/* Import CLIProxyAPI JSON */}
+        {selectedMethod === "import-cli-proxy" && (
+          <div className="space-y-4">
+            <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-200 dark:border-blue-800">
+              <div className="flex gap-2">
+                <span className="material-symbols-outlined text-blue-600 dark:text-blue-400">info</span>
+                <p className="text-sm text-blue-800 dark:text-blue-200">
+                  Paste the Kiro CLIProxyAPI auth JSON containing auth_method=external_idp. Only Microsoft login token endpoints are accepted.
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                CLIProxyAPI Auth JSON <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                value={cliProxyJson}
+                onChange={(e) => setCliProxyJson(e.target.value)}
+                placeholder={'{"auth_method":"external_idp","access_token":"...","refresh_token":"...","client_id":"...","token_endpoint":"https://login.microsoftonline.com/.../oauth2/v2.0/token","profile_arn":"...","scopes":"..."}'}
+                className="min-h-40 w-full rounded-md border border-border bg-background p-3 font-mono text-sm outline-none focus:border-primary"
+              />
+            </div>
+
+            {error && (
+              <div className="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200 dark:border-red-800">
+                <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <Button onClick={handleImportCliProxyJson} fullWidth disabled={importing || !cliProxyJson.trim()}>
+                {importing ? "Importing..." : "Import CLIProxyAPI JSON"}
+              </Button>
+              <Button onClick={handleBack} variant="ghost" fullWidth>
+                Back
+              </Button>
+            </div>
           </div>
         )}
       </div>
