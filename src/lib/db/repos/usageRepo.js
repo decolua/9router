@@ -3,6 +3,12 @@ import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMeta, setMeta } from "../helpers/metaStore.js";
 
+function maskApiKey(key) {
+  if (!key || typeof key !== "string") return null;
+  if (key.length <= 8) return key.charAt(0) + "***";
+  return key.slice(0, 8) + "***";
+}
+
 const PENDING_TIMEOUT_MS = 60 * 1000;
 const RING_CAP = 50;
 const CONN_CACHE_TTL_MS = 30 * 1000;
@@ -18,14 +24,26 @@ if (!global._statsEmitter) {
 if (!global._pendingTimers) global._pendingTimers = {};
 if (!global._recentRing) global._recentRing = { items: [], initialized: false };
 if (!global._connectionMapCache) global._connectionMapCache = { map: {}, ts: 0 };
+if (!global._statsEmitTimers) global._statsEmitTimers = { pending: null, update: null };
 
 const pendingRequests = global._pendingRequests;
 const lastErrorProvider = global._lastErrorProvider;
 const pendingTimers = global._pendingTimers;
 const recentRing = global._recentRing;
 const connCache = global._connectionMapCache;
+const statsEmitTimers = global._statsEmitTimers;
 
 export const statsEmitter = global._statsEmitter;
+
+function scheduleStatsEvent(event, delayMs = 150) {
+  const key = event === "update" ? "update" : "pending";
+  if (statsEmitTimers[key]) return;
+  statsEmitTimers[key] = setTimeout(() => {
+    statsEmitTimers[key] = null;
+    statsEmitter.emit(event);
+  }, delayMs);
+  statsEmitTimers[key]?.unref?.();
+}
 
 function getLocalDateKey(timestamp) {
   const d = timestamp ? new Date(timestamp) : new Date();
@@ -178,7 +196,7 @@ export function trackPendingRequest(model, provider, connectionId, started, erro
       if (connectionId && pendingRequests.byAccount[connectionId]?.[modelKey] > 0) {
         pendingRequests.byAccount[connectionId][modelKey] = 0;
       }
-      statsEmitter.emit("pending");
+      scheduleStatsEvent("pending");
     }, PENDING_TIMEOUT_MS);
   } else {
     clearTimeout(pendingTimers[timerKey]);
@@ -192,7 +210,7 @@ export function trackPendingRequest(model, provider, connectionId, started, erro
 
   const t = new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
   console.log(`[${t}] [PENDING] ${started ? "START" : "END"}${error ? " (ERROR)" : ""} | provider=${provider} | model=${model}`);
-  statsEmitter.emit("pending");
+  scheduleStatsEvent("pending");
 }
 
 export async function getActiveRequests() {
@@ -251,9 +269,35 @@ export async function saveRequestUsage(entry) {
     const promptTokens = tokens.prompt_tokens || tokens.input_tokens || 0;
     const completionTokens = tokens.completion_tokens || tokens.output_tokens || 0;
 
+    let inserted = false;
+
     // All 3 writes (history insert, daily upsert, lifetime counter) in ONE transaction.
     // better-sqlite3 is sync → no JS yield mid-transaction → no race in same process.
     db.transaction(() => {
+      const existing = db.get(
+        `SELECT id, endpoint FROM usageHistory
+         WHERE timestamp = ?
+           AND COALESCE(provider, '') = COALESCE(?, '')
+           AND COALESCE(model, '') = COALESCE(?, '')
+           AND COALESCE(connectionId, '') = COALESCE(?, '')
+           AND COALESCE(apiKey, '') = COALESCE(?, '')
+           AND promptTokens = ?
+           AND completionTokens = ?
+         ORDER BY id DESC LIMIT 1`,
+        [
+          entry.timestamp, entry.provider || null, entry.model || null,
+          entry.connectionId || null, entry.apiKey || null,
+          promptTokens, completionTokens,
+        ]
+      );
+
+      if (existing) {
+        if (!existing.endpoint && entry.endpoint) {
+          db.run(`UPDATE usageHistory SET endpoint = ? WHERE id = ?`, [entry.endpoint, existing.id]);
+        }
+        return;
+      }
+
       db.run(
         `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
@@ -277,10 +321,13 @@ export async function saveRequestUsage(entry) {
       const cur = db.get(`SELECT value FROM _meta WHERE key = 'totalRequestsLifetime'`);
       const next = (cur ? parseInt(cur.value, 10) : 0) + 1;
       db.run(`INSERT INTO _meta(key, value) VALUES('totalRequestsLifetime', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [String(next)]);
+      inserted = true;
     });
 
-    pushToRing(entry);
-    statsEmitter.emit("update");
+    if (inserted) {
+      pushToRing(entry);
+      scheduleStatsEvent("update", 250);
+    }
   } catch (e) {
     console.error("Failed to save usage stats:", e);
   }
@@ -301,7 +348,7 @@ export async function getUsageHistory(filter = {}) {
 
   return rows.map((r) => ({
     timestamp: r.timestamp, provider: r.provider, model: r.model,
-    connectionId: r.connectionId, apiKey: r.apiKey, endpoint: r.endpoint,
+    connectionId: r.connectionId, apiKeyMasked: maskApiKey(r.apiKey), endpoint: r.endpoint,
     cost: r.cost, status: r.status, tokens: parseJson(r.tokens, {}),
   }));
 }
@@ -475,9 +522,10 @@ export async function getUsageStats(period = "all") {
         const apiKeyVal = ak.apiKey;
         const keyInfo = apiKeyVal ? apiKeyMap[apiKeyVal] : null;
         const keyName = keyInfo?.name || (apiKeyVal ? apiKeyVal.slice(0, 8) + "..." : "Local (No API Key)");
-        const apiKeyKey = apiKeyVal || "local-no-key";
+        const apiKeyMasked = maskApiKey(apiKeyVal);
+        const apiKeyKey = apiKeyMasked || "local-no-key";
         if (!stats.byApiKey[akKey]) {
-          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0, rawModel, provider: providerDisplayName, apiKey: apiKeyVal, keyName, apiKeyKey, lastUsed: dateKey };
+          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0, rawModel, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyKey, lastUsed: dateKey };
         }
         stats.byApiKey[akKey].requests += ak.requests || 0;
         stats.byApiKey[akKey].promptTokens += ak.promptTokens || 0;
@@ -586,16 +634,17 @@ export async function getUsageStats(period = "all") {
       if (r.apiKey && typeof r.apiKey === "string") {
         const keyInfo = apiKeyMap[r.apiKey];
         const keyName = keyInfo?.name || r.apiKey.slice(0, 8) + "...";
-        const akKey = `${r.apiKey}|${r.model}|${r.provider || "unknown"}`;
+        const apiKeyMasked = maskApiKey(r.apiKey);
+        const akKey = `${apiKeyMasked}|${r.model}|${r.provider || "unknown"}`;
         if (!stats.byApiKey[akKey]) {
-          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKey: r.apiKey, keyName, apiKeyKey: r.apiKey, lastUsed: r.timestamp };
+          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyKey: apiKeyMasked, lastUsed: r.timestamp };
         }
         const ake = stats.byApiKey[akKey];
         ake.requests++; ake.promptTokens += promptTokens; ake.completionTokens += completionTokens; ake.cost += entryCost;
         if (new Date(r.timestamp) > new Date(ake.lastUsed)) ake.lastUsed = r.timestamp;
       } else {
         if (!stats.byApiKey["local-no-key"]) {
-          stats.byApiKey["local-no-key"] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKey: null, keyName: "Local (No API Key)", apiKeyKey: "local-no-key", lastUsed: r.timestamp };
+          stats.byApiKey["local-no-key"] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKeyMasked: null, keyName: "Local (No API Key)", apiKeyKey: "local-no-key", lastUsed: r.timestamp };
         }
         const ake = stats.byApiKey["local-no-key"];
         ake.requests++; ake.promptTokens += promptTokens; ake.completionTokens += completionTokens; ake.cost += entryCost;

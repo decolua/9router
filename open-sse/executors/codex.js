@@ -32,7 +32,8 @@ const CODEX_PASSTHROUGH_TOOL_TYPES = new Set(["custom"]);
 // Allowlist of fields accepted by Codex Responses API — anything else is stripped
 const RESPONSES_API_ALLOWLIST = new Set([
   "model", "input", "instructions", "tools", "tool_choice", "stream", "store",
-  "reasoning", "service_tier", "include", "prompt_cache_key", "client_metadata"
+  "reasoning", "service_tier", "include", "prompt_cache_key", "client_metadata",
+  "text"
 ]);
 
 // Convert role=system → role=developer in body.input (keeps content in cacheable prefix)

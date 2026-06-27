@@ -1,8 +1,10 @@
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
+import { resolveKiroModel } from "../config/kiroConstants.js";
 import { v4 as uuidv4 } from "uuid";
 import { refreshKiroToken } from "../services/tokenRefresh.js";
 import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
+import { getCapabilitiesForModel } from "../providers/capabilities.js";
 
 /**
  * KiroExecutor - Executor for Kiro AI (AWS CodeWhisperer)
@@ -24,7 +26,11 @@ export class KiroExecutor extends BaseExecutor {
     // exactly like an OAuth access token, but with an extra `tokentype: API_KEY`
     // header so CodeWhisperer treats it as a long-lived API key rather than an
     // OIDC/social access token. Mirrors the Kiro IDE headless-auth behavior.
-    const isApiKey = credentials?.providerSpecificData?.authMethod === "api_key";
+    // Enterprise / Microsoft Entra (external_idp) tokens are OAuth access tokens,
+    // but CodeWhisperer requires TokenType=EXTERNAL_IDP to bind them to profiles.
+    const authMethod = credentials?.providerSpecificData?.authMethod;
+    const isApiKey = authMethod === "api_key";
+    const isExternalIdp = authMethod === "external_idp";
 
     const apiKey = credentials?.apiKey || (isApiKey ? credentials?.accessToken : null);
     if (isApiKey && apiKey) {
@@ -32,6 +38,9 @@ export class KiroExecutor extends BaseExecutor {
       headers["tokentype"] = "API_KEY";
     } else if (credentials.accessToken) {
       headers["Authorization"] = `Bearer ${credentials.accessToken}`;
+      if (isExternalIdp) {
+        headers["TokenType"] = "EXTERNAL_IDP";
+      }
     }
 
     return headers;
@@ -47,13 +56,16 @@ export class KiroExecutor extends BaseExecutor {
    * BaseExecutor.execute() returns immediately (only 429 / network errors fall
    * through to the next host). So for api-key auth we must try the *.amazonaws.com
    * CodeWhisperer hosts FIRST, mirroring the Kiro-Go reference fork which never
-   * routes api-key traffic through kiro.dev. OAuth keeps the default order
-   * (kiro.dev first) since its token is what that gateway accepts.
+   * routes api-key traffic through kiro.dev. External IdP enterprise tokens also
+   * use the CodeWhisperer surface, with the `TokenType: EXTERNAL_IDP` header.
+   * Other OAuth methods keep the default order (kiro.dev first) since their
+   * tokens are what that gateway accepts.
    */
   getOrderedBaseUrls(credentials) {
     const baseUrls = this.getBaseUrls();
-    const isApiKey = credentials?.providerSpecificData?.authMethod === "api_key";
-    if (!isApiKey) return baseUrls;
+    const authMethod = credentials?.providerSpecificData?.authMethod;
+    const isCodeWhispererSurface = authMethod === "api_key" || authMethod === "external_idp";
+    if (!isCodeWhispererSurface) return baseUrls;
     const amazon = baseUrls.filter((u) => u.includes("amazonaws.com"));
     const others = baseUrls.filter((u) => !u.includes("amazonaws.com"));
     return amazon.length > 0 ? [...amazon, ...others] : baseUrls;
@@ -101,6 +113,8 @@ export class KiroExecutor extends BaseExecutor {
     let chunkIndex = 0;
     const responseId = `chatcmpl-${Date.now()}`;
     const created = Math.floor(Date.now() / 1000);
+    const capabilityModel = resolveKiroModel(model).upstream;
+    const contextWindow = getCapabilitiesForModel("kiro", capabilityModel).contextWindow || 200000;
     const state = {
       endDetected: false,
       finishEmitted: false,
@@ -357,9 +371,8 @@ export class KiroExecutor extends BaseExecutor {
                 : 0;
 
               // Estimate input tokens from contextUsagePercentage
-              // Kiro models typically have 200k context window
               const estimatedInputTokens = state.contextUsagePercentage > 0
-                ? Math.floor(state.contextUsagePercentage * 200000 / 100)
+                ? Math.floor(state.contextUsagePercentage * contextWindow / 100)
                 : 0;
 
               state.usage = {

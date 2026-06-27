@@ -139,7 +139,7 @@ export default function ProviderDetailPage() {
   const isFreeNoAuth = !!FREE_PROVIDERS[providerId]?.noAuth;
   const models = getModelsByProviderId(providerId);
   const providerAlias = getProviderAlias(providerId);
-  
+
   const isOpenAICompatible = isOpenAICompatibleProvider(providerId);
   const isAnthropicCompatible = isAnthropicCompatibleProvider(providerId);
   const isCompatible = isOpenAICompatible || isAnthropicCompatible;
@@ -147,7 +147,7 @@ export default function ProviderDetailPage() {
   const oauthConnectionLabel = providerId === "xai" ? "Grok Build OAuth" : "OAuth";
   const apiKeyConnectionLabel = providerId === "xai" ? "xAI API Key" : "API Key";
   const thinkingConfig = AI_PROVIDERS[providerId]?.thinkingConfig || THINKING_CONFIG.extended;
-  
+
   const providerStorageAlias = isCompatible ? providerId : providerAlias;
   const providerDisplayAlias = isCompatible
     ? (providerNode?.prefix || providerId)
@@ -511,7 +511,7 @@ export default function ProviderDetailPage() {
       for (const model of models) {
         const modelId = model.id || model.name;
         if (!modelId) continue;
-        
+
         // Qoder model ID format may be "qoder/auto" or "auto", need to remove prefix
         const cleanModelId = modelId.replace(/^qoder\//, "");
         const alreadyExists = customModels.some(
@@ -524,7 +524,7 @@ export default function ProviderDetailPage() {
         await handleAddCustomModel(cleanModelId, "llm", providerStorageAlias);
         importedCount += 1;
       }
-      
+
       if (importedCount === 0) {
         alert(translate("All models already exist, no new models added"));
       } else {
@@ -639,7 +639,7 @@ export default function ProviderDetailPage() {
         try {
           const res = await fetch(`/api/providers/${id}`, { method: "DELETE" });
           if (res.ok) {
-            setConnections(connections.filter(c => c.id !== id));
+            setConnections(prev => prev.filter(c => c.id !== id));
           }
         } catch (error) {
           console.log("Error deleting connection:", error);
@@ -648,24 +648,28 @@ export default function ProviderDetailPage() {
     });
   };
 
-  const handleDeleteAll = () => {
-    if (connections.length === 0) return;
-    const count = connections.length;
+  const handleBulkDelete = () => {
+    const count = selectedConnectionIds.length;
+    if (count === 0) return;
     setConfirmState({
-      title: "Delete All Connections",
-      message: `Delete all ${count} connection${count === 1 ? "" : "s"} for this provider? This cannot be undone.`,
-      confirmText: "Delete All",
+      title: `Delete ${count} Connection${count > 1 ? "s" : ""}`,
+      message: `Delete ${count} connection${count > 1 ? "s" : ""}? This cannot be undone.`,
       onConfirm: async () => {
         setConfirmState(null);
-        try {
-          const res = await fetch(`/api/providers?provider=${encodeURIComponent(providerId)}`, { method: "DELETE" });
-          if (res.ok) {
-            setConnections([]);
-            setConnectionsPage(1);
+        let failed = 0;
+        const idsToDelete = [...selectedConnectionIds];
+        for (const id of idsToDelete) {
+          try {
+            const res = await fetch(`/api/providers/${id}`, { method: "DELETE" });
+            if (!res.ok) failed += 1;
+          } catch (error) {
+            console.log("Error deleting connection:", error);
+            failed += 1;
           }
-        } catch (error) {
-          console.log("Error deleting all connections:", error);
         }
+        setConnections(prev => prev.filter(c => !idsToDelete.includes(c.id)));
+        setSelectedConnectionIds([]);
+        if (failed > 0) alert(`Deleted ${idsToDelete.length - failed} connection(s), ${failed} failed.`);
       }
     });
   };
@@ -874,20 +878,26 @@ export default function ProviderDetailPage() {
 
   const connectionsList = (
     <div className="flex min-w-0 flex-col divide-y divide-black/[0.03] dark:divide-white/[0.03]">
-      {pagedConnections
-        .map((conn, index) => {
-          const globalIndex = (safePage - 1) * CONNECTIONS_PAGE_SIZE + index;
-          return (
-            <div key={conn.id} className="flex min-w-0 items-stretch">
-              <div className="flex-1 min-w-0">
-                <ConnectionRow
-                  connection={conn}
-                  proxyPools={proxyPools}
-                  isOAuth={isOAuth}
-                  isFirst={globalIndex === 0}
-                  isLast={globalIndex === connections.length - 1}
-                  onMoveUp={() => handleSwapPriority(globalIndex, globalIndex - 1)}
-                  onMoveDown={() => handleSwapPriority(globalIndex, globalIndex + 1)}
+      {connections
+        .map((conn, index) => (
+          <div key={conn.id} className="flex min-w-0 items-stretch">
+            <div className="flex shrink-0 items-center pl-1 sm:pl-2">
+              <input
+                type="checkbox"
+                checked={isSelected(conn.id)}
+                onChange={() => toggleSelectConnection(conn.id)}
+                className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+              />
+            </div>
+            <div className="flex-1 min-w-0">
+              <ConnectionRow
+                connection={conn}
+                proxyPools={proxyPools}
+                isOAuth={isOAuth}
+                isFirst={index === 0}
+                isLast={index === connections.length - 1}
+                onMoveUp={() => handleSwapPriority(index, index - 1)}
+                onMoveDown={() => handleSwapPriority(index, index + 1)}
                 onToggleActive={(isActive) => handleUpdateConnectionStatus(conn.id, isActive)}
                 autoPing={providerId === "claude" && conn.authType === "oauth" ? {
                   on: autoPing.connections[conn.id] === true,
@@ -1386,6 +1396,16 @@ export default function ProviderDetailPage() {
               )}
               {connections.length > 0 && (
                 <>
+                  {selectedConnectionIds.length > 0 && (
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      icon="delete"
+                      onClick={handleBulkDelete}
+                    >
+                      Delete Selected ({selectedConnectionIds.length})
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     variant="secondary"
@@ -1519,6 +1539,19 @@ export default function ProviderDetailPage() {
                       <span>Running: {connections.find((conn) => conn.id === oneByOneCurrentConnectionId)?.name || oneByOneCurrentConnectionId}</span>
                     )}
                   </div>
+                </div>
+              )}
+              {connections.length > 0 && (
+                <div className="mb-3 flex items-center gap-2 border-b border-black/[0.03] pb-2 dark:border-white/[0.03]">
+                  <label className="flex cursor-pointer items-center gap-1.5 text-xs text-text-muted hover:text-primary">
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={toggleSelectAllConnections}
+                      className="h-3.5 w-3.5 rounded border-gray-300 text-primary focus:ring-primary"
+                    />
+                    Select All
+                  </label>
                 </div>
               )}
               {connectionsList}
