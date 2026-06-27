@@ -11,7 +11,7 @@ import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { resolveCopilotModels } from "open-sse/services/copilotModels.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
-import { getCapabilitiesForModel, DEFAULT_CAPABILITIES, capabilitiesFromServiceKind } from "open-sse/providers/capabilities.js";
+import { getCapabilitiesForModel, DEFAULT_CAPABILITIES, capabilitiesFromServiceKind, getComboCapabilities } from "open-sse/providers/capabilities.js";
 import { tryCacheFromRawResponse, getCachedUpstreamCapabilities, fetchAndCacheUpstreamModels } from "@/lib/upstreamModelMetadata";
 
 // Per-provider live model resolvers. Each receives a connection record and
@@ -97,78 +97,8 @@ function modelKind(model) {
  * @param {string[]} modelStrs — combo model strings (e.g. ["openai/gpt-5", "anthropic/claude-sonnet-4.6"])
  * @returns {object} aggregated capabilities
  */
-function getComboCapabilities(modelStrs) {
-  if (!Array.isArray(modelStrs) || modelStrs.length === 0) {
-    return { ...DEFAULT_CAPABILITIES };
-  }
-
-  // Parse each model string into { provider, model }
-  const parsed = [];
-  for (const ms of modelStrs) {
-    if (typeof ms !== "string" || !ms.trim()) continue;
-    const slash = ms.indexOf("/");
-    if (slash > 0) {
-      parsed.push({ provider: ms.slice(0, slash), model: ms.slice(slash + 1) });
-    } else {
-      // No slash → treat the whole string as the model, infer provider from prefix
-      parsed.push({ provider: "", model: ms });
-    }
-  }
-  if (parsed.length === 0) return { ...DEFAULT_CAPABILITIES };
-
-  // Resolve capabilities for each constituent
-  const capsList = parsed.map(({ provider, model }) =>
-    getCapabilitiesForModel(provider, model)
-  );
-
-  return aggregateCapabilities(capsList);
-}
-
-/**
- * Aggregate an array of capabilities objects.
- * Boolean: AND. Numeric: MIN. thinkingFormat: common if unanimous.
- */
-function aggregateCapabilities(capsList) {
-  const first = capsList[0];
-  if (!first) return { ...DEFAULT_CAPABILITIES };
-
-  const booleanKeys = [
-    "vision", "pdf", "audioInput", "videoInput",
-    "audioOutput", "imageOutput", "search", "tools", "reasoning",
-    "thinkingCanDisable",
-  ];
-  const numericKeys = ["contextWindow", "maxOutput"];
-
-  const result = { ...DEFAULT_CAPABILITIES };
-
-  for (const key of booleanKeys) {
-    result[key] = capsList.every((c) => c?.[key] === true);
-  }
-
-  for (const key of numericKeys) {
-    const vals = capsList.map((c) => c?.[key]).filter((v) => typeof v === "number" && Number.isFinite(v));
-    if (vals.length > 0) {
-      result[key] = Math.min(...vals);
-    }
-  }
-
-  // thinkingFormat: unanimity check
-  const formats = capsList.map((c) => c?.thinkingFormat).filter((f) => typeof f === "string");
-  if (formats.length === capsList.length && formats.every((f) => f === formats[0])) {
-    result.thinkingFormat = formats[0];
-  }
-
-  // thinkingRange: conservative bounds
-  const ranges = capsList.map((c) => c?.thinkingRange).filter((r) => r && typeof r === "object");
-  if (ranges.length === capsList.length) {
-    result.thinkingRange = {
-      min: Math.max(...ranges.map((r) => r.min ?? 0)),
-      max: Math.min(...ranges.map((r) => r.max ?? Infinity)),
-    };
-  }
-
-  return result;
-}
+// getComboCapabilities / aggregateCapabilities live in open-sse/providers/capabilities.js
+// so the unit test can import the real implementation (no duplicated logic).
 
 // For dynamic/unknown model IDs (compatible providers, alias map, custom models)
 // fall back to provider-level kind matching when per-model type is unavailable.
