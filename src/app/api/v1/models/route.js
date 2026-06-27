@@ -1,4 +1,4 @@
-import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS, getModelKind } from "@/shared/constants/models";
+import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS, getModelKind, getModelUpstreamId } from "@/shared/constants/models";
 import {
   AI_PROVIDERS,
   getProviderAlias,
@@ -11,7 +11,8 @@ import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { resolveCopilotModels } from "open-sse/services/copilotModels.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
-import { capabilitiesFromServiceKind } from "open-sse/providers/capabilities.js";
+import { getCapabilitiesForModel, DEFAULT_CAPABILITIES, capabilitiesFromServiceKind, getComboCapabilities } from "open-sse/providers/capabilities.js";
+import { tryCacheFromRawResponse, getCachedUpstreamCapabilities, fetchAndCacheUpstreamModels } from "@/lib/upstreamModelMetadata";
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
@@ -84,6 +85,21 @@ function modelKind(model) {
   return MODEL_TYPE_TO_KIND[k] || LLM_KIND;
 }
 
+/**
+ * Compute aggregate capabilities for a combo from its constituent models.
+ *
+ * - Boolean caps (vision, pdf, audioInput, etc.): true only when EVERY model is true (AND).
+ * - Numeric caps (contextWindow, maxOutput): minimum across all models.
+ * - thinkingFormat: the common value if all models agree; null otherwise.
+ * - thinkingCanDisable: true only when every model allows disabling thinking.
+ * - thinkingRange: { min: max-of-mins, max: min-of-maxes } to be conservative.
+ *
+ * @param {string[]} modelStrs — combo model strings (e.g. ["openai/gpt-5", "anthropic/claude-sonnet-4.6"])
+ * @returns {object} aggregated capabilities
+ */
+// getComboCapabilities / aggregateCapabilities live in open-sse/providers/capabilities.js
+// so the unit test can import the real implementation (no duplicated logic).
+
 // For dynamic/unknown model IDs (compatible providers, alias map, custom models)
 // fall back to provider-level kind matching when per-model type is unavailable.
 function inferKindFromUnknownModelId(modelId) {
@@ -92,6 +108,40 @@ function inferKindFromUnknownModelId(modelId) {
   if (/tts|speech|audio|voice/.test(lower)) return "tts";
   if (/image|imagen|dall-?e|flux|sdxl|sd-|stable-diffusion/.test(lower)) return "image";
   return LLM_KIND;
+}
+
+// ── Litellm-compatible model_info helpers ────────────────────────────────
+
+const KIND_TO_LITELLM_MODE = {
+  llm: "chat",
+  image: "image_generation",
+  tts: "audio_transcription",
+  stt: "audio_transcription",
+  embedding: "embedding",
+};
+
+function kindToMode(kind) {
+  return KIND_TO_LITELLM_MODE[kind] || "chat";
+}
+
+function capsToModelInfo(caps, kind, ownedBy) {
+  const info = {};
+  if (caps.contextWindow != null) {
+    info.max_input_tokens = caps.contextWindow;
+    info.max_tokens = caps.contextWindow;
+  }
+  if (caps.maxOutput != null) info.max_output_tokens = caps.maxOutput;
+  if (caps.vision != null) info.supports_vision = caps.vision;
+  if (caps.pdf != null) info.supports_pdf_input = caps.pdf;
+  if (caps.audioInput != null) info.supports_audio_input = caps.audioInput;
+  if (caps.audioOutput != null) info.supports_audio_output = caps.audioOutput;
+  if (caps.search != null) info.supports_web_search = caps.search;
+  if (caps.tools != null) info.supports_function_calling = caps.tools;
+  if (caps.reasoning != null) info.supports_reasoning = caps.reasoning;
+  info.supports_system_messages = kind === "llm" || kind === "imageToText";
+  info.mode = kindToMode(kind);
+  info.litellm_provider = ownedBy;
+  return info;
 }
 
 async function fetchCompatibleModelIds(connection) {
@@ -139,6 +189,10 @@ async function fetchCompatibleModelIds(connection) {
     const data = await response.json();
     const rawModels = parseOpenAIStyleModels(data);
 
+    // Cache any extended metadata found in the upstream response
+    // for subsequent /v1/models/info calls (best-effort, never blocks).
+    try { tryCacheFromRawResponse(connection.provider, rawModels); } catch { /* noop */ }
+
     return Array.from(
       new Set(
         rawModels
@@ -174,10 +228,12 @@ function comboMatchesKinds(combo, kindFilter) {
  */
 export async function buildModelsList(kindFilter) {
   let connections = [];
+  let dbUnavailable = false;
   try {
     connections = await getProviderConnections();
     connections = connections.filter(c => c.isActive !== false);
   } catch (e) {
+    dbUnavailable = true;
     console.log("Could not fetch providers, returning all models");
   }
 
@@ -230,11 +286,13 @@ export async function buildModelsList(kindFilter) {
     if (combo.kind === "webSearch" || combo.kind === "webFetch") {
       entry.kind = combo.kind;
     }
+    const comboKind = combo.kind || LLM_KIND;
+    entry.model_info = capsToModelInfo(getComboCapabilities(combo.models), comboKind, "combo");
     models.push(entry);
   }
 
-  if (connections.length === 0) {
-    // DB unavailable -> return static models, filtered by per-model kind
+  if (dbUnavailable) {
+    // DB unavailable -> return all static models as fallback, filtered by kind
     const aliasToProviderId = Object.fromEntries(
       Object.entries(PROVIDER_ID_TO_ALIAS).map(([id, alias]) => [alias, id])
     );
@@ -244,11 +302,16 @@ export async function buildModelsList(kindFilter) {
       for (const model of providerModels) {
         if (!kindFilter.includes(modelKind(model))) continue;
         if (isDisabled(alias, model.id)) continue;
-        models.push({
+        const modelEntry = {
           id: `${alias}/${model.id}`,
           object: "model",
           owned_by: alias,
-        });
+        };
+        // Enrich with model_info from static capabilities
+        const entryUpstreamModelId = getModelUpstreamId(alias, model.id) || model.id;
+        const entryCaps = getCapabilitiesForModel(providerId, entryUpstreamModelId);
+        modelEntry.model_info = capsToModelInfo(entryCaps, modelKind(model), alias);
+        models.push(modelEntry);
       }
     }
 
@@ -266,6 +329,7 @@ export async function buildModelsList(kindFilter) {
         id: `${providerAlias}/${modelId}`,
         object: "model",
         owned_by: providerAlias,
+        model_info: capsToModelInfo(getCapabilitiesForModel(providerAlias, modelId), LLM_KIND, providerAlias),
       });
     }
   } else {
@@ -302,6 +366,12 @@ export async function buildModelsList(kindFilter) {
 
       if (isCompatibleProvider && rawModelIds.length === 0 && !UPSTREAM_CONNECTION_RE.test(providerId)) {
         rawModelIds = await fetchCompatibleModelIds(conn);
+      }
+
+      // Warm upstream capability cache for compatible providers so model_info
+      // enrichment uses live contextWindow/maxOutput/vision/reasoning values.
+      if (isCompatibleProvider && !getCachedUpstreamCapabilities(providerId, rawModelIds[0])) {
+        try { await fetchAndCacheUpstreamModels(conn); } catch { /* best-effort */ }
       }
 
       // Config-driven live catalog override (e.g. Kiro returns dynamic
@@ -391,8 +461,20 @@ export async function buildModelsList(kindFilter) {
           object: "model",
           owned_by: outputAlias,
         };
-        const caps = capabilitiesFromServiceKind(customKind);
-        if (caps) model.capabilities = caps;
+
+        // Enrich with Litellm-compatible model_info
+        const upstreamModelId = getModelUpstreamId(staticAlias, modelId) || modelId;
+        const caps = getCapabilitiesForModel(providerId, upstreamModelId);
+        const upstreamCaps = getCachedUpstreamCapabilities(providerId, upstreamModelId);
+        if (upstreamCaps) {
+          if (upstreamCaps.contextWindow != null) caps.contextWindow = upstreamCaps.contextWindow;
+          if (upstreamCaps.maxOutput != null) caps.maxOutput = upstreamCaps.maxOutput;
+          if (upstreamCaps.vision != null) caps.vision = upstreamCaps.vision;
+          if (upstreamCaps.reasoning != null) caps.reasoning = upstreamCaps.reasoning;
+          if (upstreamCaps.search != null) caps.search = upstreamCaps.search;
+        }
+        model.model_info = capsToModelInfo(caps, kind, outputAlias);
+
         models.push(model);
       }
 
@@ -404,6 +486,7 @@ export async function buildModelsList(kindFilter) {
           object: "model",
           kind: "webSearch",
           owned_by: outputAlias,
+          model_info: { mode: "chat", litellm_provider: outputAlias, supports_web_search: true, supports_function_calling: false },
         });
       }
       if (kindFilter.includes("webFetch") && providerInfo?.fetchConfig) {
@@ -412,6 +495,7 @@ export async function buildModelsList(kindFilter) {
           object: "model",
           kind: "webFetch",
           owned_by: outputAlias,
+          model_info: { mode: "chat", litellm_provider: outputAlias, supports_web_search: true, supports_function_calling: false },
         });
       }
     }

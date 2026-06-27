@@ -242,6 +242,111 @@ export const PATTERN_CAPABILITIES = [
 ];
 
 /**
+ * Aggregate an array of per-model capabilities into a single conservative
+ * set for a combo. Rules:
+ *   - boolean caps (vision, pdf, audioInput, videoInput, audioOutput,
+ *     imageOutput, search, tools, reasoning, thinkingCanDisable):
+ *     true only when EVERY model is true (AND).
+ *   - numeric caps (contextWindow, maxOutput): MIN of finite values.
+ *   - thinkingFormat: kept only if unanimous across all models; null otherwise.
+ *   - thinkingRange: { min: max-of-mins, max: min-of-maxes } — conservative bounds.
+ *     If any model is missing thinkingRange, the combo drops it.
+ *   - thinkingCanDisable: AND (treated as boolean above).
+ */
+export function aggregateCapabilities(capsList) {
+  if (!Array.isArray(capsList) || capsList.length === 0) {
+    return { ...DEFAULT_CAPABILITIES };
+  }
+
+  const booleanKeys = [
+    "vision", "pdf", "audioInput", "videoInput",
+    "audioOutput", "imageOutput", "search", "tools", "reasoning",
+    "thinkingCanDisable",
+  ];
+  const numericKeys = ["contextWindow", "maxOutput"];
+
+  const result = { ...DEFAULT_CAPABILITIES };
+
+  for (const key of booleanKeys) {
+    result[key] = capsList.every((c) => c?.[key] === true);
+  }
+
+  for (const key of numericKeys) {
+    const vals = capsList
+      .map((c) => c?.[key])
+      .filter((v) => typeof v === "number" && Number.isFinite(v));
+    if (vals.length > 0) {
+      // Reduce (not spread) so huge combo lists can't blow Math.min's argument stack.
+      result[key] = vals.reduce((m, v) => (v < m ? v : m), Infinity);
+    }
+  }
+
+  // thinkingFormat: unanimity required
+  const formats = capsList
+    .map((c) => c?.thinkingFormat)
+    .filter((f) => typeof f === "string");
+  if (
+    formats.length === capsList.length &&
+    formats.every((f) => f === formats[0])
+  ) {
+    result.thinkingFormat = formats[0];
+  } else {
+    result.thinkingFormat = null;
+  }
+
+  // thinkingRange: conservative bounds, only when ALL models have it
+  const ranges = capsList
+    .map((c) => c?.thinkingRange)
+    .filter((r) => r && typeof r === "object");
+  if (ranges.length === capsList.length) {
+    const mins = ranges.map((r) => (typeof r.min === "number" ? r.min : 0));
+    const maxes = ranges.map((r) =>
+      typeof r.max === "number" ? r.max : Infinity
+    );
+    // ponytail: reduce-based min/max scales to thousands of constituents;
+    // current combos are <100 so spread would work too.
+    result.thinkingRange = {
+      min: mins.reduce((m, v) => (v > m ? v : m), -Infinity),
+      max: maxes.reduce((m, v) => (v < m ? v : m), Infinity),
+    };
+  } else {
+    result.thinkingRange = null;
+  }
+
+  return result;
+}
+
+/**
+ * Parse combo model strings ("provider/model" or "model" if no slash) and
+ * aggregate their capabilities. Empty / non-string entries are skipped.
+ * Returns DEFAULT_CAPABILITIES when no model resolves.
+ */
+export function getComboCapabilities(modelStrs) {
+  if (!Array.isArray(modelStrs) || modelStrs.length === 0) {
+    return { ...DEFAULT_CAPABILITIES };
+  }
+
+  const parsed = [];
+  for (const ms of modelStrs) {
+    if (typeof ms !== "string" || !ms.trim()) continue;
+    const slash = ms.indexOf("/");
+    if (slash > 0) {
+      parsed.push({ provider: ms.slice(0, slash), model: ms.slice(slash + 1) });
+    } else {
+      // No slash → treat the whole string as the model id (getCapabilitiesForModel
+      // will try provider="" and fall back to MODEL_CAPABILITIES / patterns).
+      parsed.push({ provider: "", model: ms });
+    }
+  }
+  if (parsed.length === 0) return { ...DEFAULT_CAPABILITIES };
+
+  const capsList = parsed.map(({ provider, model }) =>
+    getCapabilitiesForModel(provider, model)
+  );
+  return aggregateCapabilities(capsList);
+}
+
+/**
  * Resolve capabilities for a model using the 4-step fallback chain,
  * merged over DEFAULT_CAPABILITIES so the result is always complete.
  *
