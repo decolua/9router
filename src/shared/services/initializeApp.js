@@ -17,6 +17,17 @@ import { getMitmStatus, startMitm, loadEncryptedPassword, initDbHooks, restoreTo
 import { syncToJson as syncMitmAliasCache } from "@/lib/mitmAliasCache";
 import { killAllBridges } from "@/lib/mcp/stdioSseBridge";
 
+// Lazy-import digest scheduler (only activates if TELEGRAM_BOT_TOKEN is set)
+function startDigestSchedulerSafe() {
+  if (!process.env.TELEGRAM_BOT_TOKEN) return;
+  import("@/lib/telegram/scheduler.js")
+    .then(({ startDigestScheduler }) => {
+      startDigestScheduler();
+      console.log("[InitApp] Digest scheduler started");
+    })
+    .catch((e) => console.log("[InitApp] Digest scheduler skipped:", e.message));
+}
+
 // Inject correct paths and DB hooks into manager.js (CJS) from ESM context
 (function bootstrapMitm() {
   if (!process.env.MITM_SERVER_PATH) {
@@ -73,6 +84,7 @@ export async function initializeApp() {
     // Defer the heavy work — nothing here blocks incoming requests.
     setTimeout(() => {
       runHeavyStartup().catch((e) => console.error("[InitApp] deferred startup failed:", e.message));
+      startDigestSchedulerSafe();
     }, STARTUP_DEFER_MS);
   } catch (error) {
     console.error("[InitApp] Error:", error);

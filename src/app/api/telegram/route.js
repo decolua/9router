@@ -44,6 +44,8 @@ import {
   generateSong,
   generateSongAudio,
 } from "@/lib/telegram/media.js";
+import { getDigestConfig, setDigestConfig } from "@/lib/telegram/digest.js";
+import { triggerDigestNow } from "@/lib/telegram/scheduler.js";
 
 const SYSTEM_PROMPT = [
   "You are a direct, capable AI assistant operating inside Telegram. You have tools available; use them whenever they would help the user.",
@@ -238,6 +240,10 @@ async function handle(chatId, text) {
 
   if (text === "/song" || text.startsWith("/song ")) {
     return handleSong(chatId, text.replace(/^\/song\s*/, ""));
+  }
+
+  if (text === "/digest" || text.startsWith("/digest ")) {
+    return handleDigest(chatId, text.replace(/^\/digest\s*/, ""));
   }
 
   if (text.startsWith("/")) {
@@ -723,6 +729,121 @@ async function countActiveProviders() {
 
 function escapeForCode(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// ─── /digest command ───────────────────────────────────────────────────────
+
+async function handleDigest(chatId, raw) {
+  const arg = String(raw || "").trim().toLowerCase();
+  const config = await getDigestConfig(chatId);
+
+  // /digest (no args) → show current status
+  if (!arg) {
+    const status = config.enabled ? "✅ ON" : "❌ OFF";
+    const localHour = config.hour || 7;
+    const tz = config.timezone || 0;
+    const tzLabel = tz >= 0 ? `UTC+${tz}` : `UTC${tz}`;
+    const topics = (config.topics || []).join(", ") || "tech, ai";
+    const weather = config.weather || "(not set)";
+
+    return safeSend(chatId, [
+      `<b>📅 Daily Digest</b> ${status}`,
+      "",
+      `⏰ Time: <b>${localHour}:00</b> (${tzLabel})`,
+      `📰 Topics: <code>${escapeForCode(topics)}</code>`,
+      `🌤️ Weather: <code>${escapeForCode(weather)}</code>`,
+      `🌐 Language: <code>${escapeForCode(config.language || "auto")}</code>`,
+      "",
+      "<b>Commands:</b>",
+      "<code>/digest on</code> — enable daily digest",
+      "<code>/digest off</code> — disable",
+      "<code>/digest now</code> — send one right now",
+      "<code>/digest time 8</code> — set hour (0-23)",
+      "<code>/digest tz +7</code> — set timezone (UTC offset)",
+      "<code>/digest topics ai,crypto,startups</code>",
+      "<code>/digest weather Phnom Penh</code>",
+      "<code>/digest lang vi</code> — set output language",
+    ].join("\n"));
+  }
+
+  // /digest on
+  if (arg === "on" || arg === "enable") {
+    config.enabled = true;
+    await setDigestConfig(chatId, config);
+    const tz = config.timezone || 0;
+    const tzLabel = tz >= 0 ? `UTC+${tz}` : `UTC${tz}`;
+    return safeSend(chatId, `✅ Daily digest enabled! You'll receive it at <b>${config.hour || 7}:00</b> (${tzLabel}) every day.`);
+  }
+
+  // /digest off
+  if (arg === "off" || arg === "disable") {
+    config.enabled = false;
+    await setDigestConfig(chatId, config);
+    return safeSend(chatId, "❌ Daily digest disabled.");
+  }
+
+  // /digest now — send immediately
+  if (arg === "now" || arg === "test") {
+    await safeSend(chatId, "<i>Generating your digest...</i>");
+    await triggerDigestNow(chatId, config);
+    return;
+  }
+
+  // /digest time <hour>
+  if (arg.startsWith("time ")) {
+    const hour = parseInt(arg.slice(5).trim(), 10);
+    if (isNaN(hour) || hour < 0 || hour > 23) {
+      return safeSend(chatId, "Hour must be 0-23. Example: <code>/digest time 8</code>");
+    }
+    config.hour = hour;
+    await setDigestConfig(chatId, config);
+    return safeSend(chatId, `⏰ Digest time set to <b>${hour}:00</b>`);
+  }
+
+  // /digest tz <offset>
+  if (arg.startsWith("tz ")) {
+    const raw = arg.slice(3).trim().replace(/^utc/i, "");
+    const tz = parseInt(raw, 10);
+    if (isNaN(tz) || tz < -12 || tz > 14) {
+      return safeSend(chatId, "Timezone offset must be -12 to +14. Example: <code>/digest tz +7</code>");
+    }
+    config.timezone = tz;
+    await setDigestConfig(chatId, config);
+    const label = tz >= 0 ? `UTC+${tz}` : `UTC${tz}`;
+    return safeSend(chatId, `🌍 Timezone set to <b>${label}</b>`);
+  }
+
+  // /digest topics <comma-separated>
+  if (arg.startsWith("topics ")) {
+    const topics = arg.slice(7).split(",").map((t) => t.trim()).filter(Boolean);
+    if (topics.length === 0) {
+      return safeSend(chatId, "Provide comma-separated topics. Example: <code>/digest topics ai,crypto,startups</code>");
+    }
+    config.topics = topics.slice(0, 5); // max 5 topics
+    await setDigestConfig(chatId, config);
+    return safeSend(chatId, `📰 Digest topics: <code>${escapeForCode(config.topics.join(", "))}</code>`);
+  }
+
+  // /digest weather <city>
+  if (arg.startsWith("weather ")) {
+    const city = raw.slice(8).trim(); // use original case from `raw`
+    if (!city) {
+      return safeSend(chatId, "Example: <code>/digest weather Phnom Penh</code>");
+    }
+    config.weather = city;
+    await setDigestConfig(chatId, config);
+    return safeSend(chatId, `🌤️ Weather city set to <b>${escapeForCode(city)}</b>`);
+  }
+
+  // /digest lang <code>
+  if (arg.startsWith("lang ")) {
+    const lang = arg.slice(5).trim();
+    config.language = lang || null;
+    await setDigestConfig(chatId, config);
+    return safeSend(chatId, `🌐 Digest language: <b>${escapeForCode(lang || "auto")}</b>`);
+  }
+
+  return safeSend(chatId, "Unknown digest option. Send <code>/digest</code> to see all options.");
 }
 
 // ─── Media handlers: photo, document, voice ────────────────────────────────

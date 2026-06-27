@@ -42,6 +42,7 @@ curl -fsS -X POST "${TG}/setMyCommands" \
     {"command":"script",     "description":"Write a video script (hook/30s/60s/3min)"},
     {"command":"idea",       "description":"Generate 5 content ideas"},
     {"command":"song",       "description":"Write a song (--genre pop --mood happy topic)"},
+    {"command":"digest",     "description":"Daily morning briefing (usage, news, weather, tips)"},
     {"command":"setlang",    "description":"Set default output language"},
     {"command":"img",        "description":"Generate an image from a prompt"},
     {"command":"say",        "description":"Read text aloud (TTS)"},
