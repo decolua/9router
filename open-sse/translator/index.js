@@ -109,7 +109,9 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   // Always normalize to clean OpenAI format when target is OpenAI
   // This handles hybrid requests (e.g., OpenAI messages + Claude tools)
   if (targetFormat === FORMATS.OPENAI) {
-    result = filterToOpenAIFormat(result);
+    result = filterToOpenAIFormat(result, {
+      preserveCacheControl: !!PROVIDERS[provider]?.quirks?.preserveCacheControl,
+    });
   }
 
   // Final step: prepare request for Claude format endpoints
