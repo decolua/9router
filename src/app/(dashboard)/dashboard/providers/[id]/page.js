@@ -1731,14 +1731,6 @@ export default function ProviderDetailPage() {
                       {oneByOneStopping ? "Stopping..." : "Stop"}
                     </Button>
                   )}
-                  <Button
-                    size="sm"
-                    variant="danger"
-                    icon="delete_sweep"
-                    onClick={handleDeleteAll}
-                  >
-                    Delete All
-                  </Button>
                 </>
               )}
               {/* Thinking config */}
