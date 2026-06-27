@@ -217,9 +217,11 @@ export function createSSEStream(options = {}) {
             sseEmittedCount++;
           }
 
-          // [DONE] not emitted in translate mode — some clients' SSE decoders
-          // fail to parse the OpenAI sentinel on Claude-format translated streams.
-          // message_stop already signals end-of-response; stream close handles it.
+          if (keepsOpenAIResponsesFormat && !streamDoneSent) {
+            const doneOutput = "data: [DONE]\n\n";
+            reqLogger?.appendConvertedChunk?.(doneOutput);
+            controller.enqueue(sharedEncoder.encode(doneOutput));
+          }
           streamDoneSent = true;
           if (keepsOpenAIResponsesFormat) openAIResponsesDoneSent = true;
           continue;
@@ -415,8 +417,13 @@ export function createSSEStream(options = {}) {
           openAIResponsesTerminalSeen = true;
         }
 
-        // [DONE] not emitted in translate mode — see comment above.
-        // Passthrough mode still emits it for standard OpenAI clients.
+        if (keepsOpenAIResponsesFormat && !openAIResponsesDoneSent && !streamDoneSent) {
+          const doneOutput = "data: [DONE]\n\n";
+          reqLogger?.appendConvertedChunk?.(doneOutput);
+          controller.enqueue(sharedEncoder.encode(doneOutput));
+          openAIResponsesDoneSent = true;
+          streamDoneSent = true;
+        }
 
         if (!hasValidUsage(state?.usage) && totalContentLength > 0) {
           state.usage = estimateUsage(body, totalContentLength, sourceFormat);
