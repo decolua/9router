@@ -20,6 +20,7 @@
 - Support Gemini native TTS generateContent endpoint — nguyenha935
 - Add missing zh-CN endpoint key label (i18n) — weimaozhen
 - CodeBuddy: only send reasoning params when client requests reasoning (#2071) — Rex
+- CodeBuddy CN: show one-shot bonus packs as expiring, not monthly-replenishing
 - Show custom provider models in combo picker — Sapto
 - Docker: add docker-compose.yml with headroom enabled by default — nitsuahlabs
 - Clarify token diagnostics vs provider billing (headroom, #1998) — Sutarto Jordan Chrisfivo
