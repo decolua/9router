@@ -1,7 +1,7 @@
 {
   "name": "zcus-9router",
   "version": "0.5.12",
-  "description": "9Router CLI - Start and manage 9Router server",
+  "description": "Zcus 9Router CLI - Start and manage Zcus 9Router server",
   "bin": {
     "zcus-9router": "./cli.js"
   },
@@ -34,6 +34,7 @@
     "node": ">=18.0.0"
   },
   "keywords": [
+    "zcus-9router",
     "9router",
     "cli",
     "proxy",
