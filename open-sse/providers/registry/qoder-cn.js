@@ -16,7 +16,7 @@ export default {
   },
   category: "free",
   transport: {
-    baseUrl: "https://api3.qoder.com.cn/algo/api/v2/service/pro/sse/agent_chat_generation",
+    baseUrl: "https://gateway.qoder.com.cn/algo/api/v2/service/pro/sse/agent_chat_generation",
     headers: {},
     timeoutMs: 120000,
     stallTimeoutMs: 120000,
@@ -31,7 +31,7 @@ export default {
     region: "cn",
     openApiBaseUrl: "https://openapi.qoder.com.cn",
     centerBaseUrl: "",
-    chatBaseUrl: "https://api3.qoder.com.cn",
+    chatBaseUrl: "https://gateway.qoder.com.cn",
     deviceTokenUrl: "https://openapi.qoder.com.cn/api/v1/deviceToken/poll",
     refreshUrl: "",
     userInfoUrl: "https://openapi.qoder.com.cn/api/v1/userinfo",

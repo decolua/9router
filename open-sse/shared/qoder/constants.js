@@ -27,7 +27,10 @@ export const QODER_CHAT_URL_ENCODED = `${QODER_CHAT_URL}&Encode=1`;
 export const QODER_MODEL_LIST_URL = `${QODER_CHAT_BASE}/algo/api/v2/model/list`;
 
 export const QODER_CN_OPENAPI_BASE = "https://openapi.qoder.com.cn";
-export const QODER_CN_CHAT_BASE = "https://api3.qoder.com.cn";
+// Qoder CN CLI routes api1/api2/api3/center traffic through the unified
+// gateway host. api3.qoder.com.cn currently serves a qoder.sh certificate and
+// rejects CN device tokens on the algo endpoints.
+export const QODER_CN_CHAT_BASE = "https://gateway.qoder.com.cn";
 export const QODER_CN_LOGIN_URL = "https://qoder.com.cn/users/sign-in";
 export const QODER_CN_DEVICE_SELECT_URL = "https://qoder.com.cn/device/selectAccounts";
 export const QODER_CN_DEVICE_TOKEN_URL = `${QODER_CN_OPENAPI_BASE}/api/v1/deviceToken/poll`;

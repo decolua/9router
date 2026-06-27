@@ -711,7 +711,7 @@
     "format": "openai"
   },
   "qoder-cn": {
-    "baseUrl": "https://api3.qoder.com.cn/algo/api/v2/service/pro/sse/agent_chat_generation",
+    "baseUrl": "https://gateway.qoder.com.cn/algo/api/v2/service/pro/sse/agent_chat_generation",
     "headers": {},
     "timeoutMs": 120000,
     "stallTimeoutMs": 120000,
