@@ -15,7 +15,7 @@ export const GITHUB_CONFIG = {
 
 // Updater configuration
 export const UPDATER_CONFIG = {
-  npmPackageName: "9router",
+  npmPackageName: "zcus-9router",
   installCmd: "npm i -g 9router",
   installCmdLatest: "npm i -g 9router@latest --prefer-online",
   shutdownCountdownSec: 3,
@@ -29,7 +29,7 @@ export const UPDATER_CONFIG = {
   waitForExitMinMs: 5000,
   waitForExitMaxMs: 20000,
   waitForExitCheckMs: 500,
-  appPort: 20128,
+  appPort: 20129,
 };
 
 // Theme configuration

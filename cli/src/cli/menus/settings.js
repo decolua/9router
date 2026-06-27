@@ -32,7 +32,7 @@ async function showSettingsMenu(breadcrumb = []) {
         lines.push(`  Endpoint: ${COLORS.green}${tunnel.publicUrl}/v1${COLORS.reset}`);
         lines.push(`  Tunnel:   ${COLORS.green}ON${COLORS.reset} ${COLORS.dim}(${tunnel.shortId})${COLORS.reset}`);
       } else {
-        lines.push(`  Endpoint: http://localhost:20128/v1`);
+        lines.push(`  Endpoint: http://localhost:20129/v1`);
         lines.push(`  Tunnel:   ${COLORS.red}OFF${COLORS.reset} ${COLORS.dim}(local only)${COLORS.reset}`);
       }
 

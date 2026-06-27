@@ -1,10 +1,10 @@
 {
-  "name": "9router-app",
+  "name": "zcus-9router",
   "version": "0.5.12",
   "description": "9Router web dashboard",
   "private": true,
   "scripts": {
-    "dev": "next dev --webpack --port 20127",
+    "dev": "next dev --webpack --port 20129",
     "build": "next build --webpack",
     "start": "next start",
     "dev:bun": "bun --bun next dev --webpack --port 20127",

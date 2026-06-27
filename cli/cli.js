@@ -59,7 +59,7 @@ try { ensureTrayRuntime({ silent: true }); } catch {}
 const APP_NAME = pkg.name; // Use from package.json
 const INSTALL_CMD_LATEST = `npm i -g ${APP_NAME}@latest --prefer-online`;
 
-const DEFAULT_PORT = 20128;
+const DEFAULT_PORT = 20129;
 const DEFAULT_HOST = "0.0.0.0";
 
 // First non-internal IPv4 — the address remote peers actually reach when bound to 0.0.0.0.

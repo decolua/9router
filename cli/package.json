@@ -1,9 +1,9 @@
 {
-  "name": "9router",
+  "name": "zcus-9router",
   "version": "0.5.12",
   "description": "9Router CLI - Start and manage 9Router server",
   "bin": {
-    "9router": "./cli.js"
+    "zcus-9router": "./cli.js"
   },
   "files": [
     "cli.js",

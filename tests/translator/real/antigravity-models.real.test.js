@@ -1,13 +1,13 @@
-// REAL integration test: hits localhost:20128/v1 with real API key for all antigravity models.
+// REAL integration test: hits localhost:20129/v1 with real API key for all antigravity models.
 // Verifies tool-call with optional field in schema doesn't cause 400 INVALID_ARGUMENT.
 //
 //   RUN_REAL=1 npx vitest run --config tests/vitest.config.js tests/translator/real/antigravity-models.real.test.js
-//   RUN_REAL=1 AG_URL=http://localhost:20128/v1 AG_KEY=sk-xxx npx vitest run ...
+//   RUN_REAL=1 AG_URL=http://localhost:20129/v1 AG_KEY=sk-xxx npx vitest run ...
 //
 import { describe, it, expect } from "vitest";
 
 const RUN_REAL = process.env.RUN_REAL === "1";
-const BASE_URL = process.env.AG_URL || "http://localhost:20128/v1";
+const BASE_URL = process.env.AG_URL || "http://localhost:20129/v1";
 const API_KEY = process.env.AG_KEY;
 const TIMEOUT_MS = 90000;
 

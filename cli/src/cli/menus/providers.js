@@ -491,7 +491,7 @@ async function handleAddOAuthConnection(providerId) {
   console.log(`  ${COLORS.bold}${COLORS.cyan}2.${COLORS.reset} Complete authorization in browser`);
   console.log();
   console.log(`  ${COLORS.bold}${COLORS.cyan}3.${COLORS.reset} Copy the callback URL from address bar`);
-  console.log(`     ${COLORS.dim}(looks like: http://localhost:20128/callback?code=...)${COLORS.reset}`);
+  console.log(`     ${COLORS.dim}(looks like: http://localhost:20129/callback?code=...)${COLORS.reset}`);
   console.log();
   
   const callbackUrl = await prompt("  Paste callback URL: ");

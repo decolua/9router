@@ -18,10 +18,10 @@ RUN npm run build
 FROM ${NODE_IMAGE} AS runner
 WORKDIR /app
 
-LABEL org.opencontainers.image.title="9router"
+LABEL org.opencontainers.image.title="zcus-9router"
 
 ENV NODE_ENV=production
-ENV PORT=20128
+ENV PORT=20129
 ENV HOSTNAME=0.0.0.0
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV DATA_DIR=/app/data
@@ -47,7 +47,7 @@ RUN apk --no-cache upgrade && apk --no-cache add su-exec && \
   printf '#!/bin/sh\nchown -R node:node /app/data /app/data-home 2>/dev/null\nexec su-exec node "$@"\n' > /entrypoint.sh && \
   chmod +x /entrypoint.sh
 
-EXPOSE 20128
+EXPOSE 20129
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["node", "custom-server.js"]

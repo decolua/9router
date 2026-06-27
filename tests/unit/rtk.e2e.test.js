@@ -4,7 +4,7 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 
-const PORT = process.env.RTK_E2E_PORT || "20128";
+const PORT = process.env.RTK_E2E_PORT || "20129";
 const BASE = `http://localhost:${PORT}`;
 const API_KEY = process.env.RTK_E2E_KEY || "";
 const LOG_FILE = process.env.RTK_E2E_LOG || "";

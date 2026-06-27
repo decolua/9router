@@ -113,7 +113,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     if (connection) {
       // skip strategy
     } else if (strategy === "round-robin") {
-      const stickyLimit = providerOverride.stickyRoundRobinLimit || settings.stickyRoundRobinLimit || 3;
+      const stickyLimitRaw = providerOverride.stickyRoundRobinLimit ?? settings.stickyRoundRobinLimit ?? 3;
+      const stickyLimit = stickyLimitRaw <= 0 ? Infinity : stickyLimitRaw;
 
       // Sort by lastUsed (most recent first) to find current candidate
       const byRecency = [...availableConnections].sort((a, b) => {
