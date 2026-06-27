@@ -119,6 +119,34 @@ export const telegram = {
     });
   },
 
+  // Send voice note (ogg opus preferred by Telegram).
+  sendVoice(chatId, audioBuffer, opts = {}) {
+    return callMultipart("sendVoice", {
+      chat_id: chatId,
+      voice: {
+        _file: true,
+        buffer: audioBuffer,
+        mime: opts.mime || "audio/ogg",
+        filename: opts.filename || "voice.ogg",
+      },
+      caption: opts.caption || undefined,
+      parse_mode: opts.caption ? "HTML" : undefined,
+    });
+  },
+
+  // Get file download path from file_id.
+  async getFile(fileId) {
+    return call("getFile", { file_id: fileId });
+  },
+
+  // Download a file by its file_path (returned by getFile).
+  async downloadFile(filePath) {
+    const url = `${API_BASE}/file/bot${token()}/${filePath}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`download failed: ${res.status}`);
+    return Buffer.from(await res.arrayBuffer());
+  },
+
   answerCallback(callbackQueryId, text) {
     return call("answerCallbackQuery", {
       callback_query_id: callbackQueryId,

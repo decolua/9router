@@ -35,6 +35,15 @@ import {
   platformList,
 } from "@/lib/telegram/contentGen.js";
 import { getAdapter } from "@/lib/db/driver.js";
+import {
+  downloadTelegramFile,
+  getBestPhotoFileId,
+  analyzeImage,
+  analyzeDocument,
+  transcribeVoice,
+  generateSong,
+  generateSongAudio,
+} from "@/lib/telegram/media.js";
 
 const SYSTEM_PROMPT = [
   "You are a direct, capable AI assistant operating inside Telegram. You have tools available; use them whenever they would help the user.",
@@ -70,9 +79,9 @@ export async function POST(request) {
 
   const userId = msg.from?.id;
   const chatId = msg.chat?.id;
-  const text = (msg.text || "").trim();
+  const text = (msg.text || msg.caption || "").trim();
 
-  if (!chatId || !text) return NextResponse.json({ ok: true });
+  if (!chatId) return NextResponse.json({ ok: true });
 
   // /myid is the one command we always answer (helps you set up TELEGRAM_OWNER_CHAT_ID
   // if you didn't get it from @userinfobot for some reason).
@@ -82,9 +91,36 @@ export async function POST(request) {
   }
 
   if (!isAllowed(userId)) {
-    // Silently ignore strangers. Don't even reply — Telegram lets a bot stay silent.
     return NextResponse.json({ ok: true });
   }
+
+  // ─── Media messages: photo, document, voice ──────────────────────────
+  if (msg.photo) {
+    handlePhoto(chatId, msg).catch((e) => {
+      console.error("[telegram] photo handler error:", e);
+      safeSend(chatId, `<b>Error:</b> <code>${escapeForCode(e?.message || String(e))}</code>`);
+    });
+    return NextResponse.json({ ok: true });
+  }
+
+  if (msg.document) {
+    handleDocument(chatId, msg).catch((e) => {
+      console.error("[telegram] document handler error:", e);
+      safeSend(chatId, `<b>Error:</b> <code>${escapeForCode(e?.message || String(e))}</code>`);
+    });
+    return NextResponse.json({ ok: true });
+  }
+
+  if (msg.voice || msg.audio) {
+    handleVoice(chatId, msg).catch((e) => {
+      console.error("[telegram] voice handler error:", e);
+      safeSend(chatId, `<b>Error:</b> <code>${escapeForCode(e?.message || String(e))}</code>`);
+    });
+    return NextResponse.json({ ok: true });
+  }
+
+  // Text-only messages require text content
+  if (!text) return NextResponse.json({ ok: true });
 
   // Don't make Telegram wait for the LLM. Ack now, finish in the background.
   handle(chatId, text).catch((e) => {
@@ -198,6 +234,10 @@ async function handle(chatId, text) {
   }
   if (text === "/setlang" || text.startsWith("/setlang ")) {
     return handleSetLang(chatId, text.replace(/^\/setlang\s*/, ""));
+  }
+
+  if (text === "/song" || text.startsWith("/song ")) {
+    return handleSong(chatId, text.replace(/^\/song\s*/, ""));
   }
 
   if (text.startsWith("/")) {
@@ -684,6 +724,162 @@ async function countActiveProviders() {
 function escapeForCode(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
+
+// ─── Media handlers: photo, document, voice ────────────────────────────────
+
+async function handlePhoto(chatId, msg) {
+  await telegram.sendChatAction(chatId, "typing").catch(() => {});
+
+  const fileId = getBestPhotoFileId(msg.photo);
+  if (!fileId) {
+    return safeSend(chatId, "Couldn't get the photo. Try sending it again.");
+  }
+
+  const caption = (msg.caption || "").trim();
+  await safeSend(chatId, "<i>Analyzing image...</i>");
+
+  try {
+    const { buffer } = await downloadTelegramFile(fileId);
+    const { text, model } = await analyzeImage(chatId, buffer, caption);
+
+    // Save to conversation memory
+    const userMsg = caption ? `[Sent a photo] ${caption}` : "[Sent a photo for analysis]";
+    await appendMessage(chatId, "user", userMsg);
+    await appendMessage(chatId, "assistant", text);
+
+    const html = toTelegramHtml(text);
+    const header = `<i>(${escapeForCode(model)})</i>\n\n`;
+    for (const part of splitForTelegram(header + html)) {
+      await safeSend(chatId, part);
+    }
+  } catch (e) {
+    await safeSend(chatId, `<b>Vision error:</b> <code>${escapeForCode(e?.message || String(e))}</code>`);
+  }
+}
+
+async function handleDocument(chatId, msg) {
+  await telegram.sendChatAction(chatId, "typing").catch(() => {});
+
+  const doc = msg.document;
+  const fileName = doc.file_name || "unknown";
+  const mimeType = doc.mime_type || "application/octet-stream";
+  const fileSize = doc.file_size || 0;
+
+  // Telegram Bot API limit: 20MB for downloads
+  if (fileSize > 20 * 1024 * 1024) {
+    return safeSend(chatId, "File is too large (max 20MB for Telegram bot downloads).");
+  }
+
+  const caption = (msg.caption || "").trim();
+  await safeSend(chatId, `<i>Reading ${escapeForCode(fileName)}...</i>`);
+
+  try {
+    const { buffer } = await downloadTelegramFile(doc.file_id);
+    const { text, model } = await analyzeDocument(chatId, buffer, fileName, mimeType, caption);
+
+    // Save to conversation memory
+    const userMsg = caption
+      ? `[Sent file: ${fileName}] ${caption}`
+      : `[Sent file: ${fileName} for analysis]`;
+    await appendMessage(chatId, "user", userMsg);
+    await appendMessage(chatId, "assistant", text);
+
+    const html = toTelegramHtml(text);
+    const header = model === "system" ? "" : `<i>(${escapeForCode(model)})</i>\n\n`;
+    for (const part of splitForTelegram(header + html)) {
+      await safeSend(chatId, part);
+    }
+  } catch (e) {
+    await safeSend(chatId, `<b>File error:</b> <code>${escapeForCode(e?.message || String(e))}</code>`);
+  }
+}
+
+async function handleVoice(chatId, msg) {
+  await telegram.sendChatAction(chatId, "typing").catch(() => {});
+
+  const voice = msg.voice || msg.audio;
+  const fileId = voice.file_id;
+  const mimeType = voice.mime_type || "audio/ogg";
+
+  try {
+    const { buffer } = await downloadTelegramFile(fileId);
+    const transcription = await transcribeVoice(buffer, mimeType);
+
+    if (!transcription) {
+      // No STT provider available — inform user
+      return safeSend(chatId, [
+        "<b>No speech-to-text provider configured.</b>",
+        "",
+        "Connect an STT provider in the dashboard to enable voice messages.",
+        "Supported: OpenAI Whisper, Groq Whisper, Deepgram, etc.",
+      ].join("\n"));
+    }
+
+    // Show transcription to user, then process as normal chat
+    await safeSend(chatId, `<i>You said:</i> "${escapeForCode(transcription)}"`);
+
+    // Process the transcribed text through the normal chat pipeline
+    await handle(chatId, transcription);
+  } catch (e) {
+    await safeSend(chatId, `<b>Voice error:</b> <code>${escapeForCode(e?.message || String(e))}</code>`);
+  }
+}
+
+// ─── /song command ─────────────────────────────────────────────────────────
+
+async function handleSong(chatId, raw) {
+  await telegram.sendChatAction(chatId, "typing").catch(() => {});
+  const input = String(raw || "").trim();
+
+  if (!input) {
+    return safeSend(chatId, [
+      "<b>Usage:</b>",
+      "<code>/song &lt;topic&gt;</code>",
+      "<code>/song --genre pop --mood happy Love in the rain</code>",
+      "<code>/song --lang vi Coding all night</code>",
+      "",
+      "<b>Options:</b>",
+      "<code>--genre</code>  pop, rock, hiphop, rnb, jazz, edm, country, lofi, ballad...",
+      "<code>--mood</code>   happy, sad, energetic, chill, romantic, angry, nostalgic...",
+      "<code>--lang</code>   en, vi, ja, ko, zh, es, fr...",
+    ].join("\n"));
+  }
+
+  const { rest, flags } = parseFlags(input, ["genre", "mood", "lang"]);
+
+  if (!rest) {
+    return safeSend(chatId, "Give me a topic! Example: <code>/song Love under the moonlight</code>");
+  }
+
+  try {
+    const { text: lyrics, model } = await generateSong(chatId, {
+      topic: rest,
+      genre: flags.genre || null,
+      mood: flags.mood || null,
+      language: flags.lang || null,
+    });
+
+    const header = `<b>Song</b>  <i>(${escapeForCode(model)})</i>\n\n`;
+    const html = toTelegramHtml(lyrics);
+    for (const part of splitForTelegram(header + html)) {
+      await safeSend(chatId, part);
+    }
+
+    // Try to generate audio if a music model is available
+    const audioBuffer = await generateSongAudio(chatId, lyrics, flags.genre).catch(() => null);
+    if (audioBuffer && audioBuffer.length > 0) {
+      await safeSendAudio(chatId, audioBuffer, {
+        mime: "audio/mpeg",
+        filename: "song.mp3",
+        caption: `<b>${escapeForCode(rest.slice(0, 60))}</b>${flags.genre ? ` (${escapeForCode(flags.genre)})` : ""}`,
+      });
+    }
+  } catch (e) {
+    await safeSend(chatId, `<b>Error:</b> <code>${escapeForCode(e?.message || String(e))}</code>`);
+  }
+}
+
+// ─── Helpers ───────────────────────────────────────────────────────────────
 
 async function safeSend(chatId, html) {
   try {
