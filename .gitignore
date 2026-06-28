@@ -77,3 +77,50 @@ gitbook/README.md
 open-sse.old/
 .graphifyignore
 graphify-out/*
+
+# ──────────────────────────────────────────────────────────────
+# Personal / non-9router working files (AGL airfield work + local
+# agent tooling). These live in this folder for convenience but are
+# NOT part of 9router — keep them out of the repo. Root-anchored so
+# they never shadow tracked project assets in subfolders.
+# ──────────────────────────────────────────────────────────────
+
+# AGL / airfield artifacts (decks, drawings, maps, scripts, data)
+/*.pptx
+/AUH-*.png
+/AUH-*.jpg
+/AUH-*.html
+/agl-sketch-*
+/civil-phase*.png
+/detailA-phase*.png
+/duct*.png
+/duct*.jpg
+/d-bands.png
+/d-legend.png
+/e-bands.png
+/e-legend*.png
+/seg[0-9].png
+/w[0-9].png
+/z[0-9].png
+/p2leg.png
+/dot-positions.json
+/dots32.json
+/build_deck.py
+/split_phases.py
+/restyle_duct.py
+/tomtom-map.html
+/TWY-C-D10-works-tomtom.html
+/_azi_inspect/
+/_sealant_inspect/
+/qa/
+
+# Local agent / skills tooling (not part of 9router's own skills/ dir)
+/.agents/
+/.claude/
+/SKILLS-MAP.md
+/skills-lock.json
+/gstack/
+/gemini-cli/
+
+# stray local log
+/debug.log
