@@ -43,9 +43,10 @@ async function listKindModels(kind) {
 // ─── shared helpers ───────────────────────────────────────────────────────
 
 // Treat these as "try the next provider" rather than terminal errors.
+// 400 = model not supported for image gen on this account type
 // 401/403 = wrong/expired token, 404 = model not in this provider, 429 = quota,
 // 5xx = upstream is down. In all cases, our other connected providers may work.
-const FALLBACK_STATUSES = new Set([401, 402, 403, 404, 408, 425, 429, 500, 502, 503, 504]);
+const FALLBACK_STATUSES = new Set([400, 401, 402, 403, 404, 408, 425, 429, 500, 502, 503, 504]);
 
 function isFallbackError(status, body) {
   if (FALLBACK_STATUSES.has(status)) return true;
@@ -80,7 +81,7 @@ const IMAGE_PRIORITY = (id) => {
   if (/dall-?e-3/.test(s)) return 70;       // OpenAI DALL-E 3 (paid but reliable)
   if (/gpt-image/.test(s)) return 68;
   if (/dall-?e-2/.test(s)) return 60;
-  if (/codex/.test(s)) return 55;
+  if (/codex/.test(s)) return 15;           // Codex ChatGPT — gpt-5.4 doesn't support image gen
   if (/replicate/.test(s)) return 50;
   if (/gemini-3.*pro-preview/.test(s)) return 30; // pro variants — usually cheaper quota but slower
   return 20;
