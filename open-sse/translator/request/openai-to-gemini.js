@@ -35,6 +35,17 @@ function sanitizeGeminiFunctionName(name) {
   return sanitized.substring(0, 64);
 }
 
+function normalizeGeminiContents(contents) {
+  const out = [];
+  for (const c of contents || []) {
+    if (!c?.role || !Array.isArray(c.parts) || c.parts.length === 0) continue;
+    const last = out.at(-1);
+    if (last?.role === c.role) last.parts.push(...c.parts);
+    else out.push({ ...c, parts: [...c.parts] });
+  }
+  return out;
+}
+
 // Core: Convert OpenAI request to Gemini format (base for all variants)
 function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG_SIGNATURE) {
   const result = {
@@ -217,6 +228,7 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
     }
   }
 
+  result.contents = normalizeGeminiContents(result.contents);
   return result;
 }
 
@@ -425,6 +437,7 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
     envelope.request.systemInstruction = { role: GEMINI_ROLE.USER, parts: systemParts };
   }
 
+  envelope.request.contents = normalizeGeminiContents(envelope.request.contents);
   return envelope;
 }
 
