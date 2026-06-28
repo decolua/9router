@@ -299,7 +299,7 @@ function wrapInCloudCodeEnvelope(model, geminiCLI, credentials = null, isAntigra
 }
 
 // Wrap Claude format in Cloud Code envelope for Antigravity
-function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = null) {
+function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = null, signature = DEFAULT_THINKING_AG_SIGNATURE) {
   const projectId = credentials?.projectId || generateProjectId();
 
   const envelope = {
@@ -343,6 +343,7 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
             parts.push({ text: block.text });
           } else if (block.type === CLAUDE_BLOCK.TOOL_USE) {
             parts.push({
+              thoughtSignature: signature,
               functionCall: {
                 id: block.id,
                 name: sanitizeGeminiFunctionName(block.name),

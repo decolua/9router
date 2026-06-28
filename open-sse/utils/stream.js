@@ -350,7 +350,9 @@ export function createSSEStream(options = {}) {
           // Some clients (e.g. OpenClaw) expect the OpenAI-style sentinel:
           //   data: [DONE]\n\n
           // Without it they can hang until timeout and trigger failover.
-          if (!streamDoneSent) {
+          // Gemini-family clients (Antigravity, Vertex, Gemini) reject this sentinel with 400 syntax errors.
+          const isGeminiFamily = provider === "antigravity" || provider === "gemini" || provider === "vertex";
+          if (!streamDoneSent && !isGeminiFamily) {
             const doneOutput = "data: [DONE]\n\n";
             reqLogger?.appendConvertedChunk?.(doneOutput);
             controller.enqueue(sharedEncoder.encode(doneOutput));
