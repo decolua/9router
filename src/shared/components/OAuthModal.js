@@ -65,7 +65,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setError(err.message);
       setStep("error");
     }
-  }, [authData, provider, onSuccess]);
+  }, [authData, provider, onSuccess, oauthMeta]);
 
   const completeXaiManualCode = useCallback(async (code) => {
     if (!authData?.state) return;
@@ -387,7 +387,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     const handleCallback = async (data) => {
       if (callbackProcessedRef.current) return; // Already processed
 
-      const { code, state, error: callbackError, errorDescription } = data;
+      const { code, token, state, error: callbackError, errorDescription } = data;
 
       if (callbackError) {
         callbackProcessedRef.current = true;
@@ -396,9 +396,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         return;
       }
 
-      if (code) {
+      if (token || code) {
         callbackProcessedRef.current = true;
-        await exchangeTokens(code, state);
+        await exchangeTokens(token || code, state);
       }
     };
 
@@ -477,8 +477,14 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         return;
       }
 
+      if (provider === "kimchi" && input && !input.includes("://") && !input.includes("?")) {
+        await exchangeTokens(input, null);
+        return;
+      }
+
       const url = new URL(input);
       const code = url.searchParams.get("code");
+      const token = url.searchParams.get("token");
       const state = url.searchParams.get("state");
       const errorParam = url.searchParams.get("error");
 
@@ -486,11 +492,17 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         throw new Error(url.searchParams.get("error_description") || errorParam);
       }
 
-      if (!code) {
-        throw new Error(provider === "xai" ? "Paste the callback URL or copied xAI code" : "No authorization code found in URL");
+      if (!code && !token) {
+        throw new Error(
+          provider === "xai"
+            ? "Paste the callback URL or copied xAI code"
+            : provider === "kimchi"
+              ? "No Kimchi token found in URL"
+              : "No authorization code found in URL"
+        );
       }
 
-      await exchangeTokens(code, state);
+      await exchangeTokens(token || code, state);
     } catch (err) {
       setError(err.message);
       setStep("error");
@@ -509,11 +521,14 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
   if (!provider || !providerInfo) return null;
   const isXaiProvider = provider === "xai";
+  const isKimchiProvider = provider === "kimchi";
   const deviceLoginUrl = deviceData?.verification_uri_complete || deviceData?.verification_uri || "";
   const modalTitle = isXaiProvider ? "Connect Grok Build OAuth" : `Connect ${providerInfo.name}`;
   const manualPlaceholder = isXaiProvider
     ? "http://127.0.0.1:56121/callback?code=... or copied code"
-    : placeholderUrl;
+    : isKimchiProvider
+      ? `${placeholderUrl.replace("code=...", "token=...")} or copied token`
+      : placeholderUrl;
 
   return (
     <Modal isOpen={isOpen} title={modalTitle} onClose={handleClose} size="lg">
@@ -554,11 +569,13 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
               <div>
                 <p className="text-sm font-medium mb-2">
-                  Step 2: Paste the {provider === "xai" ? "callback URL or copied code" : "callback URL"} here
+                  Step 2: Paste the {provider === "xai" ? "callback URL or copied code" : isKimchiProvider ? "callback URL or copied token" : "callback URL"} here
                 </p>
                 <p className="text-xs text-text-muted mb-2">
                   {provider === "xai"
                     ? "If xAI shows a code instead of redirecting, paste that code here."
+                    : isKimchiProvider
+                      ? "After authorization, copy the full callback URL or token from your browser."
                     : "After authorization, copy the full URL from your browser."}
                 </p>
                 <Input
