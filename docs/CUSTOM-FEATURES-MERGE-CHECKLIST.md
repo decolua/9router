@@ -1,3 +1,8 @@
+> **QUY TẮC CHANGELOG: TUYỆT ĐỐI KHÔNG dùng `CHANGELOG.md`.**
+> Fork `diepxuan/9router` chỉ dùng file này làm changelog duy nhất.
+> Mọi thay đổi (provider, feature, fix, update) đều ghi vào đây, tại section tương ứng.
+> Mục đích: giúp mọi aiagent/session (kể cả aiagent hoặc session mới khởi tạo) hiểu ngay fork này custom những gì, thay đổi những gì, không cần đọc CHANGELOG gốc.
+
 # Custom Features Merge Checklist
 
 Tài liệu này ghi lại các chức năng được bổ sung riêng trong fork `diepxuan/9router`, không mặc định có trong upstream `decolua/9router` tại thời điểm ghi nhận.

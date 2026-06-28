@@ -5,6 +5,7 @@ import { buildClineHeaders } from "../../src/shared/utils/clineAuth.js";
 import { getCachedClaudeHeaders } from "../utils/claudeHeaderCache.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
+import { stripNvidiaUnsupportedParams } from "../diepxuan/executorHooks.js";
 
 export class DefaultExecutor extends BaseExecutor {
   constructor(provider) {
@@ -13,7 +14,13 @@ export class DefaultExecutor extends BaseExecutor {
 
   transformRequest(model, body) {
     const transformed = this.applyJsonSchemaFallback(body);
-    return injectReasoningContent({ provider: this.provider, model, body: transformed });
+    const withReasoning = injectReasoningContent({ provider: this.provider, model, body: transformed });
+    return this.stripNvidiaUnsupportedParams(withReasoning);
+  }
+
+  // This hook lives in open-sse/diepxuan/executorHooks.js
+  stripNvidiaUnsupportedParams(body) {
+    return stripNvidiaUnsupportedParams(this.provider, body);
   }
 
   // Fallback json_schema → json_object for openai-compatible providers without native Structured Output.
