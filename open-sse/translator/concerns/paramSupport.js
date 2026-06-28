@@ -10,10 +10,13 @@ const STRIP_RULES = [
   { provider: "github", match: /gpt-5\.4/i, drop: ["temperature"] },
   // GitHub Copilot Claude (except opus/sonnet 4.6): thinking + reasoning_effort rejected. #713
   { provider: "github", match: (m) => /claude/i.test(m) && !/claude.*(opus|sonnet).*4\.6/i.test(m), drop: ["thinking", "reasoning_effort"] },
+  // Cloudflare Workers AI: content must be plain string, rejects OpenAI content-part array (#1926)
+  { provider: "cloudflare-ai", flattenContent: true },
 ];
 
 // Test a rule's match (regex or predicate) against the model id.
 function matches(rule, model) {
+  if (!rule.match) return true;
   return typeof rule.match === "function" ? rule.match(model) : rule.match.test(model);
 }
 
@@ -23,8 +26,18 @@ export function stripUnsupportedParams(provider, model, body) {
   for (const rule of STRIP_RULES) {
     if (rule.provider && rule.provider !== provider) continue;
     if (!matches(rule, model)) continue;
-    for (const key of rule.drop) {
+    for (const key of rule.drop || []) {
       if (body[key] !== undefined) delete body[key];
+    }
+    // CF Workers AI oneOf root schema only accepts content as plain string (#1926)
+    if (rule.flattenContent && Array.isArray(body.messages)) {
+      for (const msg of body.messages) {
+        if (msg && Array.isArray(msg.content)) {
+          msg.content = msg.content
+            .map(b => (b?.type === "text" && typeof b.text === "string") ? b.text : "")
+            .join("");
+        }
+      }
     }
   }
   return body;

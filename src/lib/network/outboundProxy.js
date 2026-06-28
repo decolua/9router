@@ -3,6 +3,20 @@ function normalizeString(value) {
   return String(value).trim();
 }
 
+const ALLOWED_PROXY_SCHEMES = ["http:", "https:", "socks5:", "socks4:", "socks5h:", "socks4a:"];
+
+function validateProxyUrl(url) {
+  if (!url) return null;
+  if (/[\n\r`$]/.test(url)) return null;
+  try {
+    const parsed = new URL(url);
+    if (!ALLOWED_PROXY_SCHEMES.includes(parsed.protocol)) return null;
+    return parsed.href;
+  } catch {
+    return null;
+  }
+}
+
 export function applyOutboundProxyEnv(
   { outboundProxyEnabled, outboundProxyUrl, outboundNoProxy } = {}
 ) {
@@ -46,11 +60,14 @@ export function applyOutboundProxyEnv(
   }
 
   if (proxyUrl) {
-    process.env.HTTP_PROXY = proxyUrl;
-    process.env.HTTPS_PROXY = proxyUrl;
-    process.env.ALL_PROXY = proxyUrl;
-    process.env.NINE_ROUTER_PROXY_URL = proxyUrl;
-    managed = true;
+    const validated = validateProxyUrl(proxyUrl);
+    if (validated) {
+      process.env.HTTP_PROXY = validated;
+      process.env.HTTPS_PROXY = validated;
+      process.env.ALL_PROXY = validated;
+      process.env.NINE_ROUTER_PROXY_URL = validated;
+      managed = true;
+    }
   }
 
   if (noProxy) {

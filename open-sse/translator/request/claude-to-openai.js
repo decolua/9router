@@ -80,6 +80,16 @@ export function claudeToOpenAIRequest(model, body, stream) {
     result.tool_choice = convertToolChoice(body.tool_choice);
   }
 
+  if (body.reasoning_effort !== undefined) {
+    result.reasoning_effort = body.reasoning_effort;
+  } else if (body.reasoning?.effort !== undefined) {
+    result.reasoning_effort = body.reasoning.effort;
+  }
+
+  if (body.reasoning !== undefined) {
+    result.reasoning = body.reasoning;
+  }
+
   return result;
 }
 

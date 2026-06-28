@@ -38,6 +38,8 @@ function isBlockedIpv4(host) {
 
 function isBlockedIpv6(host) {
   const h = host.replace(/^\[|\]$/g, "").toLowerCase();
+  const v4Mapped = h.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  if (v4Mapped) return isBlockedIpv4(v4Mapped[1]);
   if (h === "::1" || h === "::") return true;
   return h.startsWith("fe80:") || h.startsWith("fc") || h.startsWith("fd");
 }

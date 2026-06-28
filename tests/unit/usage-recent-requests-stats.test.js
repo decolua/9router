@@ -75,6 +75,46 @@ describe("usage stats recent request API key metadata", () => {
     expect(JSON.stringify(stats.recentRequests)).not.toContain("sk-test-1234567890");
   });
 
+  it("keeps known daily summary API keys distinct without returning plaintext", async () => {
+    mocks.getApiKeys.mockResolvedValue([
+      { id: "key-1", key: "sk-aaa-1111", name: "Agent CLI", createdAt: "2026-05-18T19:00:00.000Z" },
+      { id: "key-2", key: "sk-bbb-2222", name: "Teammate", createdAt: "2026-05-18T19:00:00.000Z" },
+    ]);
+    mocks.db.all.mockImplementation((sql) => {
+      if (sql.includes("ORDER BY id DESC LIMIT 100")) return [];
+      if (sql.includes("SELECT dateKey, data FROM usageDaily")) {
+        return [
+          {
+            dateKey: "2026-05-18",
+            data: JSON.stringify({
+              byApiKey: {
+                "sk-aaa-1111|gpt-5|openai": { requests: 2, promptTokens: 15, completionTokens: 27, cost: 0, rawModel: "gpt-5", provider: "openai", apiKey: "sk-aaa-1111" },
+                "sk-bbb-2222|gpt-5|openai": { requests: 1, promptTokens: 3, completionTokens: 4, cost: 0, rawModel: "gpt-5", provider: "openai", apiKey: "sk-bbb-2222" },
+              },
+            }),
+          },
+        ];
+      }
+      return [];
+    });
+
+    const stats = await getUsageStats("7d");
+
+    const serialized = JSON.stringify(stats.byApiKey);
+    expect(serialized).not.toContain("sk-aaa-1111");
+    expect(serialized).not.toContain("sk-bbb-2222");
+
+    const rows = Object.values(stats.byApiKey);
+    const agentCli = rows.find((r) => r.keyName === "Agent CLI");
+    const teammate = rows.find((r) => r.keyName === "Teammate");
+    expect(agentCli.apiKeyId).toBe("key-1");
+    expect(teammate.apiKeyId).toBe("key-2");
+    expect(agentCli.requests).toBe(2);
+    expect(teammate.requests).toBe(1);
+    expect(agentCli).not.toHaveProperty("apiKey");
+    expect(agentCli).not.toHaveProperty("apiKeyKey");
+  });
+
   it("strips plaintext keys from the byApiKey aggregate while keeping known keys distinct", async () => {
     mocks.getApiKeys.mockResolvedValue([
       { id: "key-1", key: "sk-aaa-1111", name: "Agent CLI", createdAt: "2026-05-18T19:00:00.000Z" },
@@ -82,7 +122,7 @@ describe("usage stats recent request API key metadata", () => {
     ]);
     // period "24h" builds byApiKey from the raw-rows path (usageRepo Z.609 query).
     mocks.db.all.mockImplementation((sql) => {
-      if (sql.includes("promptTokens, completionTokens, cost, tokens FROM usageHistory WHERE timestamp")) {
+      if (sql.includes("provider, model, connectionId, apiKey, endpoint, promptTokens")) {
         return [
           { timestamp: "2026-05-18T20:00:00.000Z", provider: "openai", model: "gpt-5", apiKey: "sk-aaa-1111", tokens: JSON.stringify({ prompt_tokens: 10, completion_tokens: 20 }), cost: 0 },
           { timestamp: "2026-05-18T20:01:00.000Z", provider: "openai", model: "gpt-5", apiKey: "sk-aaa-1111", tokens: JSON.stringify({ prompt_tokens: 5, completion_tokens: 7 }), cost: 0 },

@@ -3,7 +3,7 @@ import { translateRequest } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
 import { normalizeClaudePassthrough } from "../translator/formats/claude.js";
 import { COLORS } from "../utils/stream.js";
-import { createStreamController } from "../utils/streamHandler.js";
+import { createStreamController, isXaiReasoningRequest } from "../utils/streamHandler.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
 import { getModelTargetFormat, getModelStrip, getModelUpstreamId, getModelType, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
@@ -22,7 +22,7 @@ import { dedupeTools } from "../utils/toolDeduper.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { injectPonytail } from "../rtk/ponytail.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
-import { compressWithHeadroom, formatHeadroomLog } from "../rtk/headroom.js";
+import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, isHeadroomPhantomSavings } from "../rtk/headroom.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
@@ -71,6 +71,13 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const providerRequiresStreaming = PROVIDERS[provider]?.forceStream === true;
   let stream = providerRequiresStreaming ? true : (body.stream !== false);
 
+  // Image generation models require non-streaming (Google v1internal:generateContent)
+  const modelType = getModelType(alias, model);
+  const isImageGenModel = modelType === "imageGen" || /image|imagen|image-generation/i.test(model);
+  if (isImageGenModel && (provider === "antigravity" || provider === "gemini-cli")) {
+    stream = false;
+  }
+
   // DeepSeek-TUI: interactive TUI panel sends stream:true and needs SSE.
   // Non-interactive mode (-p flag) sends without stream and can't parse SSE.
   // Only force non-streaming when client didn't explicitly request it.
@@ -82,7 +89,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const acceptHeader = clientRawRequest?.headers?.accept || "";
   const clientPrefersJson = acceptHeader.includes("application/json");
   const clientPrefersSSE = acceptHeader.includes("text/event-stream");
-  if (clientPrefersJson && !clientPrefersSSE && body.stream !== true) {
+  if (clientPrefersJson && !clientPrefersSSE && body.stream !== true && !providerRequiresStreaming) {
     stream = false;
   }
 
@@ -155,15 +162,42 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (rtkLine) log?.debug?.("RTK", rtkLine);
 
   // Headroom: optional external proxy compression; fail open if proxy is absent.
-  const headroomStats = await compressWithHeadroom(translatedBody, { enabled: headroomEnabled, url: headroomUrl, model: upstreamModel, format: finalFormat, compressUserMessages: headroomCompressUserMessages });
+  const headroomDiagnostics = {};
+  const headroomStats = await compressWithHeadroom(translatedBody, { enabled: headroomEnabled, url: headroomUrl, model: upstreamModel, format: finalFormat, compressUserMessages: headroomCompressUserMessages, diagnostics: headroomDiagnostics });
   const headroomLine = formatHeadroomLog(headroomStats);
-  if (headroomLine) log?.info?.("HEADROOM", headroomLine);
+  const headroomSizeLine = formatHeadroomSizeLog(headroomDiagnostics);
+  if (headroomLine) {
+    log?.info?.("HEADROOM", `${headroomLine}${headroomSizeLine ? ` | ${headroomSizeLine}` : ""}`);
+    if (isHeadroomPhantomSavings(headroomStats, headroomDiagnostics)) {
+      log?.warn?.("HEADROOM", `reported token delta, but outbound JSON shrank <5%; provider may bill near-original payload | ${headroomSizeLine}`);
+    }
+  } else if (headroomEnabled) log?.warn?.("HEADROOM", `skipped: ${headroomDiagnostics.reason || "compression unavailable"}${headroomDiagnostics.endpoint ? ` (${headroomDiagnostics.endpoint})` : ""}`);
 
   // Caveman: inject terse-style system prompt
   if (cavemanEnabled && cavemanLevel) {
     injectCaveman(translatedBody, finalFormat, cavemanLevel);
     log?.debug?.("CAVEMAN", `${cavemanLevel} | ${finalFormat}`);
   }
+
+  // Token Saver observability: summarize RTK byte savings + caveman state for request details.
+  const rtkSaved = rtkStats ? (rtkStats.bytesBefore - rtkStats.bytesAfter) : 0;
+  const tokenSaver = (rtkStats && rtkStats.hits?.length) || (cavemanEnabled && cavemanLevel)
+    ? {
+        rtk: rtkStats && rtkStats.hits?.length
+          ? {
+              bytesBefore: rtkStats.bytesBefore,
+              bytesAfter: rtkStats.bytesAfter,
+              savedBytes: rtkSaved,
+              savedPercent: rtkStats.bytesBefore > 0
+                ? Number(((rtkSaved / rtkStats.bytesBefore) * 100).toFixed(1))
+                : 0,
+              hits: rtkStats.hits.length,
+              filtersUsed: [...new Set(rtkStats.hits.map((h) => h.filter))],
+            }
+          : null,
+        caveman: cavemanEnabled && cavemanLevel ? { level: cavemanLevel } : null,
+      }
+    : null;
 
   // Ponytail: inject lazy-senior-dev system prompt
   if (ponytailEnabled && ponytailLevel) {

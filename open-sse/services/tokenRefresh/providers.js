@@ -2,6 +2,7 @@ import { PROVIDERS, PROVIDER_OAUTH } from "../../config/providers.js";
 import { OAUTH_ENDPOINTS, GITHUB_COPILOT } from "../../config/appConstants.js";
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import { dedupRefresh } from "./dedup.js";
+import { buildExternalIdpRefreshParams } from "../../../src/lib/oauth/kiroExternalIdp.js";
 
 let _xaiServiceSingleton = null;
 export async function refreshXaiToken(refreshToken, log) {
@@ -308,6 +309,49 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
   const clientId = providerSpecificData?.clientId;
   const clientSecret = providerSpecificData?.clientSecret;
   const region = providerSpecificData?.region;
+
+  if (authMethod === "external_idp") {
+    let refreshRequest;
+    try {
+      refreshRequest = buildExternalIdpRefreshParams(refreshToken, providerSpecificData);
+    } catch (error) {
+      log?.warn?.("TOKEN_REFRESH", `Invalid Kiro external_idp refresh config: ${error.message}`);
+      return null;
+    }
+
+    const response = await proxyAwareFetch(refreshRequest.tokenEndpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+      },
+      body: refreshRequest.body,
+    }, proxyOptions);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      log?.error?.("TOKEN_REFRESH", "Failed to refresh Kiro external_idp token", {
+        status: response.status,
+        error: errorText,
+      });
+      return null;
+    }
+
+    const tokens = await response.json();
+
+    log?.info?.("TOKEN_REFRESH", "Successfully refreshed Kiro external_idp token", {
+      hasNewAccessToken: !!tokens.access_token,
+      hasNewRefreshToken: !!tokens.refresh_token,
+      expiresIn: tokens.expires_in,
+    });
+
+    return {
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token || refreshToken,
+      expiresIn: tokens.expires_in,
+      providerSpecificData: refreshRequest.providerSpecificData,
+    };
+  }
 
   if (clientId && clientSecret) {
     const isIDC = authMethod === "idc";

@@ -1,5 +1,9 @@
 export default {
   id: "codebuddy-cn",
+  // Short model prefix (cbcn/glm-5.2). "cbcn" = CodeBuddy CN; reserve "cbai"
+  // for a future codebuddy-ai (intl) provider. The full id still resolves.
+  alias: "cbcn",
+  uiAlias: "cbcn",
   hidden: false,
   priority: 90,
   display: {
@@ -12,6 +16,8 @@ export default {
     },
   },
   category: "oauth",
+  authModes: ["oauth", "apikey"],
+  hasOAuth: true,
   transport: {
     baseUrl: "https://copilot.tencent.com/v2/chat/completions",
     forceStream: true,
@@ -31,6 +37,11 @@ export default {
       combined: true,
       header: "Authorization",
       scheme: "bearer",
+    },
+    // Quota endpoint differs from the chat gateway: POST returns nested Tencent
+    // billing payload (data.Response.Data.Accounts[]). See services/usage/codebuddy-cn.js.
+    usage: {
+      url: "https://copilot.tencent.com/v2/billing/meter/get-user-resource",
     },
   },
   models: [
@@ -58,5 +69,9 @@ export default {
     userAgent: "CLI/2.63.2 CodeBuddy/2.63.2",
     platform: "CLI",
     pollInterval: 5000,
+  },
+  features: {
+    usage: true,
+    usageApikey: true,
   },
 };
