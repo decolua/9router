@@ -142,6 +142,54 @@ export function normalizeUsage(usage) {
 }
 
 /**
+ * Canonicalize usage into ONE storage/cost convention so token counts and cost
+ * are consistent across providers:
+ *   prompt_tokens               = total input INCLUDING cache read + cache creation
+ *   cached_tokens               = cache-read portion (subset of prompt_tokens)
+ *   cache_creation_input_tokens = cache-write portion (subset of prompt_tokens)
+ *   completion_tokens, reasoning_tokens, total_tokens
+ *
+ * Discriminator: Claude reports cache_read_input_tokens with a prompt that
+ * EXCLUDES cache, so we fold cache into prompt. OpenAI/Gemini report
+ * cached_tokens already counted inside prompt, so we pass through. Idempotent:
+ * once folded the output carries cached_tokens (not cache_read_input_tokens),
+ * so re-running takes the passthrough branch and does not double-add.
+ *
+ * @param {object} usage - a normalizeUsage()-shaped object
+ * @returns {object|null} canonical token object, or null for invalid input
+ */
+export function canonicalizeUsage(usage) {
+  if (!usage || typeof usage !== "object" || Array.isArray(usage)) return null;
+
+  const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  const completion = num(usage.completion_tokens ?? usage.output_tokens);
+  const reasoning = num(usage.reasoning_tokens);
+  const cacheCreation = num(usage.cache_creation_input_tokens);
+
+  let prompt = num(usage.prompt_tokens ?? usage.input_tokens);
+  let cached;
+
+  // Claude path: prompt excludes cache; cache_read_input_tokens is separate.
+  if (usage.cache_read_input_tokens !== undefined) {
+    cached = num(usage.cache_read_input_tokens);
+    prompt = prompt + cached + cacheCreation;
+  } else {
+    // OpenAI/Gemini path: prompt already includes cached_tokens.
+    cached = num(usage.cached_tokens);
+  }
+
+  const result = {
+    prompt_tokens: prompt,
+    completion_tokens: completion,
+    total_tokens: usage.total_tokens !== undefined ? num(usage.total_tokens) : prompt + completion,
+    cached_tokens: cached,
+    cache_creation_input_tokens: cacheCreation,
+  };
+  if (reasoning > 0) result.reasoning_tokens = reasoning;
+  return result;
+}
+
+/**
  * Check if usage has valid token data
  * Valid = has at least one token field with value > 0
  * Invalid = empty object {}, null, undefined, no token fields, or all zeros
