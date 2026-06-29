@@ -126,6 +126,29 @@ export const PROVIDER_PRICING = {
   gh: {
     "gpt-5.3-codex": { input: 1.75, output: 14.00, cached: 0.175, reasoning: 14.00, cache_creation: 1.75 },
   },
+
+  // Fireworks AI — OpenAI-compatible, reasoning/cache_creation not separately
+  // charged (completion_tokens already includes reasoning tokens; setting
+  // reasoning/cache_creation to output/input would double-count in the
+  // cost calculator).
+  fireworks: {
+    "accounts/fireworks/models/glm-5p2":                { input: 1.40, output: 4.40, cached: 0.14,  reasoning: 0, cache_creation: 0 },
+    "accounts/fireworks/routers/glm-5p2-fast":          { input: 2.10, output: 6.60, cached: 0.21,  reasoning: 0, cache_creation: 0 },
+    "accounts/fireworks/models/glm-5p1":                { input: 1.40, output: 4.40, cached: 0.26,  reasoning: 0, cache_creation: 0 },
+    "accounts/fireworks/routers/glm-5p1-fast":          { input: 2.80, output: 8.80, cached: 0.52,  reasoning: 0, cache_creation: 0 },
+    "accounts/fireworks/models/qwen3p7-plus":           { input: 0.40, output: 1.60, cached: 0.08,  reasoning: 0, cache_creation: 0 },
+    "accounts/fireworks/models/minimax-m3":             { input: 0.30, output: 1.20, cached: 0.06,  reasoning: 0, cache_creation: 0 },
+    "accounts/fireworks/models/minimax-m2p7":           { input: 0.30, output: 1.20, cached: 0.06,  reasoning: 0, cache_creation: 0 },
+    "accounts/fireworks/models/kimi-k2p7-code":         { input: 0.95, output: 4.00, cached: 0.19,  reasoning: 0, cache_creation: 0 },
+    "accounts/fireworks/routers/kimi-k2p7-code-fast":   { input: 1.90, output: 8.00, cached: 0.38,  reasoning: 0, cache_creation: 0 },
+    "accounts/fireworks/models/kimi-k2p6":              { input: 0.95, output: 4.00, cached: 0.16,  reasoning: 0, cache_creation: 0 },
+    "accounts/fireworks/routers/kimi-k2p6-turbo":       { input: 2.00, output: 8.00, cached: 0.30,  reasoning: 0, cache_creation: 0 },
+    "accounts/fireworks/routers/kimi-k2p6-fast":        { input: 2.00, output: 8.00, cached: 0.30,  reasoning: 0, cache_creation: 0 },
+    "accounts/fireworks/models/gpt-oss-120b":           { input: 0.15, output: 0.60, cached: 0.015, reasoning: 0, cache_creation: 0 },
+    "accounts/fireworks/models/gpt-oss-20b":            { input: 0.07, output: 0.30, cached: 0.035, reasoning: 0, cache_creation: 0 },
+    "accounts/fireworks/models/deepseek-v4-pro":        { input: 1.74, output: 3.48, cached: 0.145, reasoning: 0, cache_creation: 0 },
+    "accounts/fireworks/models/deepseek-v4-flash":      { input: 0.14, output: 0.28, cached: 0.028, reasoning: 0, cache_creation: 0 },
+  },
 };
 
 /**

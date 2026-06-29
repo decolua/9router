@@ -98,6 +98,29 @@ export const MODEL_CAPABILITIES = {
  * Provider-specific capability overrides. Keyed by provider alias/id.
  */
 export const PROVIDER_CAPABILITIES = {
+  // Fireworks AI — all models served via OpenAI-compatible API, so
+  // thinkingFormat must be "openai" (overrides family-native patterns like
+  // zai/deepseek/kimi/minimax/qwen that would produce wrong wire shapes).
+  // vision derived from modalities.input, not attachment field.
+  fireworks: {
+    "accounts/fireworks/models/glm-5p2":                { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true,  contextWindow: 1048575, maxOutput: 131072 },
+    "accounts/fireworks/routers/glm-5p2-fast":          { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true,  contextWindow: 1048575, maxOutput: 131072 },
+    "accounts/fireworks/models/glm-5p1":                { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true,  contextWindow: 202800,  maxOutput: 131072 },
+    "accounts/fireworks/routers/glm-5p1-fast":          { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true,  contextWindow: 202800,  maxOutput: 131072 },
+    "accounts/fireworks/models/qwen3p7-plus":           { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true,  contextWindow: 262143, maxOutput: 65536 },
+    "accounts/fireworks/models/minimax-m3":             { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 524287,  maxOutput: 512000 },
+    "accounts/fireworks/models/minimax-m2p7":           { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 196607,  maxOutput: 196608 },
+    "accounts/fireworks/models/kimi-k2p7-code":         { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true,  contextWindow: 262143, maxOutput: 262000 },
+    "accounts/fireworks/routers/kimi-k2p7-code-fast":   { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true,  contextWindow: 262143, maxOutput: 262000 },
+    "accounts/fireworks/models/kimi-k2p6":              { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true,  contextWindow: 262143, maxOutput: 262000 },
+    "accounts/fireworks/routers/kimi-k2p6-turbo":       { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true,  contextWindow: 262143, maxOutput: 262000 },
+    "accounts/fireworks/routers/kimi-k2p6-fast":        { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true,  contextWindow: 262143, maxOutput: 262000 },
+    "accounts/fireworks/models/gpt-oss-120b":           { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 131071,  maxOutput: 32768 },
+    "accounts/fireworks/models/gpt-oss-20b":            { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 131071,  maxOutput: 32768 },
+    "accounts/fireworks/models/deepseek-v4-pro":        { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true,  contextWindow: 1048575, maxOutput: 384000 },
+    "accounts/fireworks/models/deepseek-v4-flash":      { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true,  contextWindow: 1048575, maxOutput: 384000 },
+  },
+
   // CodeBuddy.cn — authoritative per-model metadata from the gateway's model
   // config (contextWindow=maxInputTokens, maxOutput=maxOutputTokens, vision=
   // supportsImages). Every model reasons via OpenAI-style reasoning_effort
