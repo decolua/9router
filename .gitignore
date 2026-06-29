@@ -75,3 +75,5 @@ gitbook/README.md
 
 # Refactor backup reference (do not bundle/lint)
 open-sse.old/
+.graphifyignore
+graphify-out/*

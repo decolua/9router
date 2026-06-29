@@ -12,6 +12,8 @@ export const UNSUPPORTED_SCHEMA_CONSTRAINTS = [
   "default", "examples",
   // JSON Schema meta keywords
   "$schema", "$defs", "definitions", "const", "$ref", "$comment",
+  // Annotation keywords (rejected by Gemini/Antigravity - e.g. MCP tool schemas set these)
+  "deprecated", "readOnly", "writeOnly",
   // Object validation keywords (not supported)
   "additionalProperties", "propertyNames", "patternProperties", "enumDescriptions",
   // Complex schema keywords (handled by flattenAnyOfOneOf/mergeAllOf)

@@ -127,7 +127,8 @@ export class KiroExecutor extends BaseExecutor {
       hasReasoningContent: false,
       reasoningChunkCount: 0,
       toolCallIndex: 0,
-      seenToolIds: new Map()
+      seenToolIds: new Map(),
+      inThinking: false
     };
 
     const transformStream = new TransformStream({
@@ -164,7 +165,36 @@ export class KiroExecutor extends BaseExecutor {
 
           // Handle assistantResponseEvent
           if (eventType === "assistantResponseEvent" && event.payload?.content) {
-            const content = event.payload.content;
+            let content = event.payload.content;
+
+            // Kiro Claude models can leak <thinking> blocks into the content stream.
+            // We strip these literal tags to prevent duplication, as the reasoning 
+            // is already routed correctly via reasoningContentEvent.
+            if (state.inThinking) {
+              if (content.includes("</thinking>")) {
+                state.inThinking = false;
+                const after = content.split("</thinking>").slice(1).join("</thinking>");
+                content = after.startsWith("\n") ? after.substring(1) : after;
+              } else {
+                content = ""; // Drop entirely while inside thinking block
+              }
+            } else if (content.includes("<thinking>")) {
+              state.inThinking = true;
+              if (content.includes("</thinking>")) {
+                state.inThinking = false;
+                const before = content.split("<thinking>")[0];
+                const after = content.split("</thinking>").slice(1).join("</thinking>");
+                content = before + (after.startsWith("\n") ? after.substring(1) : after);
+              } else {
+                content = content.split("<thinking>")[0];
+              }
+            }
+
+            if (!content && state.hasReasoningContent) {
+              // If we stripped everything, skip emitting an empty content chunk
+              continue;
+            }
+
             state.totalContentLength += content.length;
 
             const chunk = {
@@ -353,6 +383,11 @@ export class KiroExecutor extends BaseExecutor {
             if (metrics && typeof metrics === 'object') {
               const inputTokens = metrics.inputTokens || 0;
               const outputTokens = metrics.outputTokens || 0;
+              // ponytail: Amazon Q upstream does not expose cache fields today,
+              // but pick up cache_read_input_tokens / cache_creation_input_tokens
+              // if the event shape grows them so cost tracking stays accurate.
+              const cachedTokens = metrics.cacheReadInputTokens || metrics.cache_read_input_tokens || 0;
+              const cacheCreationInputTokens = metrics.cacheCreationInputTokens || metrics.cache_creation_input_tokens || 0;
 
               if (inputTokens > 0 || outputTokens > 0) {
                 state.usage = {
@@ -360,6 +395,8 @@ export class KiroExecutor extends BaseExecutor {
                   completion_tokens: outputTokens,
                   total_tokens: inputTokens + outputTokens
                 };
+                if (cachedTokens > 0) state.usage.cached_tokens = cachedTokens;
+                if (cacheCreationInputTokens > 0) state.usage.cache_creation_input_tokens = cacheCreationInputTokens;
               }
             }
           }
