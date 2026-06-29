@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import QuotaTable from "./QuotaTable";
 import Toggle from "@/shared/components/Toggle";
@@ -97,8 +98,267 @@ function getCodexResetCreditCount(quota) {
   return Number.isFinite(count) ? Math.max(0, count) : 0;
 }
 
+const QUOTA_FILTER_STORAGE_KEY = "quotaTrackerFilterState";
+const QUOTA_FILTER_NAVIGATION_STORAGE_KEY = "quotaTrackerNavigationTarget";
+const FILTER_URL_KEYS = {
+  providerFilter: "provider",
+  accountFilter: "accountStatus",
+  quotaSortMode: "quotaSort",
+  expiringFirst: "expiringFirst",
+  pageSize: "pageSize",
+  page: "page",
+};
+const ACCOUNT_FILTER_VALUES = new Set(
+  ACCOUNT_FILTER_OPTIONS.map((option) => option.value),
+);
+const QUOTA_SORT_VALUES = new Set(
+  QUOTA_SORT_OPTIONS.map((option) => option.value),
+);
+const DEFAULT_QUOTA_FILTER_STATE = {
+  providerFilter: "all",
+  accountFilter: "all",
+  quotaSortMode: "default",
+  expiringFirst: false,
+  pageSize: CONNECTIONS_PAGE_SIZE,
+  page: 1,
+};
+
+function normalizeProviderFilter(value) {
+  const normalized = typeof value === "string" ? value.trim() : "";
+  return normalized || "all";
+}
+
+function normalizeAccountFilter(value) {
+  return ACCOUNT_FILTER_VALUES.has(value) ? value : "all";
+}
+
+function normalizeQuotaSortMode(value) {
+  return QUOTA_SORT_VALUES.has(value) ? value : "default";
+}
+
+function normalizeExpiringFirst(value) {
+  return value === true || value === "true" || value === "1";
+}
+
+function normalizePageSize(value) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return CONNECTIONS_PAGE_SIZE;
+  return Math.min(ACCOUNT_PAGE_SIZE_MAX, Math.max(1, parsed));
+}
+
+function normalizePage(value) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return 1;
+  return Math.max(1, parsed);
+}
+
+function normalizeQuotaFilterState(value = {}) {
+  return {
+    providerFilter: normalizeProviderFilter(value.providerFilter),
+    accountFilter: normalizeAccountFilter(value.accountFilter),
+    quotaSortMode: normalizeQuotaSortMode(value.quotaSortMode),
+    expiringFirst: normalizeExpiringFirst(value.expiringFirst),
+    pageSize: normalizePageSize(value.pageSize),
+    page: normalizePage(value.page),
+  };
+}
+
+function readStoredQuotaFilterState() {
+  if (typeof window === "undefined") return null;
+  try {
+    const stored = window.localStorage.getItem(QUOTA_FILTER_STORAGE_KEY);
+    if (!stored) return null;
+    const parsed = JSON.parse(stored);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return null;
+    }
+    return normalizeQuotaFilterState(parsed);
+  } catch (error) {
+    console.error("Error reading quota filter preference cache:", error);
+    return null;
+  }
+}
+
+function writeStoredQuotaFilterState(state) {
+  if (typeof window === "undefined") return;
+  try {
+    const normalizedState = normalizeQuotaFilterState(state);
+    window.localStorage.setItem(
+      QUOTA_FILTER_STORAGE_KEY,
+      JSON.stringify(normalizedState),
+    );
+    window.dispatchEvent(
+      new CustomEvent("quotaTrackerFilterStateChange", {
+        detail: normalizedState,
+      }),
+    );
+  } catch (error) {
+    console.error("Error writing quota filter preference cache:", error);
+  }
+}
+
+function hasQuotaFilterSearchParams(searchParams) {
+  return Object.values(FILTER_URL_KEYS).some((key) => searchParams.has(key));
+}
+
+function readQuotaFilterValue(searchParams, stateKey, normalize, fallbackValue) {
+  const urlKey = FILTER_URL_KEYS[stateKey];
+  if (searchParams.has(urlKey)) {
+    return normalize(searchParams.get(urlKey));
+  }
+  return fallbackValue;
+}
+
+function readQuotaFilterState(searchParams, fallbackState = DEFAULT_QUOTA_FILTER_STATE) {
+  const fallback = normalizeQuotaFilterState(fallbackState);
+  return {
+    providerFilter: readQuotaFilterValue(
+      searchParams,
+      "providerFilter",
+      normalizeProviderFilter,
+      fallback.providerFilter,
+    ),
+    accountFilter: readQuotaFilterValue(
+      searchParams,
+      "accountFilter",
+      normalizeAccountFilter,
+      fallback.accountFilter,
+    ),
+    quotaSortMode: readQuotaFilterValue(
+      searchParams,
+      "quotaSortMode",
+      normalizeQuotaSortMode,
+      fallback.quotaSortMode,
+    ),
+    expiringFirst: readQuotaFilterValue(
+      searchParams,
+      "expiringFirst",
+      normalizeExpiringFirst,
+      fallback.expiringFirst,
+    ),
+    pageSize: readQuotaFilterValue(
+      searchParams,
+      "pageSize",
+      normalizePageSize,
+      fallback.pageSize,
+    ),
+    page: readQuotaFilterValue(
+      searchParams,
+      "page",
+      normalizePage,
+      fallback.page,
+    ),
+  };
+}
+
+async function writeQuotaFilterState(state) {
+  try {
+    await fetch("/api/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        quotaTrackerState: normalizeQuotaFilterState(state),
+      }),
+    });
+  } catch (error) {
+    console.error("Error writing quota filter preference:", error);
+  }
+}
+
+function setSearchParam(params, key, value, defaultValue) {
+  if (value === defaultValue) {
+    params.delete(key);
+  } else {
+    params.set(key, String(value));
+  }
+}
+
+function buildQuotaFilterSearch(searchParams, state) {
+  const params = new URLSearchParams(searchParams.toString());
+  params.delete("stateTs");
+  setSearchParam(
+    params,
+    FILTER_URL_KEYS.providerFilter,
+    normalizeProviderFilter(state.providerFilter),
+    "all",
+  );
+  setSearchParam(
+    params,
+    FILTER_URL_KEYS.accountFilter,
+    normalizeAccountFilter(state.accountFilter),
+    "all",
+  );
+  setSearchParam(
+    params,
+    FILTER_URL_KEYS.quotaSortMode,
+    normalizeQuotaSortMode(state.quotaSortMode),
+    "default",
+  );
+  setSearchParam(
+    params,
+    FILTER_URL_KEYS.expiringFirst,
+    normalizeExpiringFirst(state.expiringFirst) ? "1" : "0",
+    "0",
+  );
+  setSearchParam(
+    params,
+    FILTER_URL_KEYS.pageSize,
+    normalizePageSize(state.pageSize),
+    CONNECTIONS_PAGE_SIZE,
+  );
+  setSearchParam(
+    params,
+    FILTER_URL_KEYS.page,
+    normalizePage(state.page),
+    1,
+  );
+  return params;
+}
+
+function getCurrentSearchParams(searchParams) {
+  if (typeof window === "undefined") {
+    return new URLSearchParams(searchParams.toString());
+  }
+  return new URLSearchParams(window.location.search);
+}
+
+function readPendingQuotaFilterNavigation() {
+  if (typeof window === "undefined") return null;
+  try {
+    const target = window.sessionStorage.getItem(
+      QUOTA_FILTER_NAVIGATION_STORAGE_KEY,
+    );
+    if (!target) return null;
+
+    window.sessionStorage.removeItem(QUOTA_FILTER_NAVIGATION_STORAGE_KEY);
+    const url = new URL(target, window.location.origin);
+    if (url.pathname !== window.location.pathname) return null;
+    return new URLSearchParams(url.search);
+  } catch (error) {
+    console.error("Error reading quota navigation target:", error);
+    return null;
+  }
+}
+
+function isSameFilterState(currentState, nextState) {
+  return (
+    currentState.providerFilter === nextState.providerFilter &&
+    currentState.accountFilter === nextState.accountFilter &&
+    currentState.quotaSortMode === nextState.quotaSortMode &&
+    currentState.expiringFirst === nextState.expiringFirst &&
+    currentState.pageSize === nextState.pageSize &&
+    currentState.page === nextState.page
+  );
+}
+
 export default function ProviderLimits() {
-  const { copied, copy } = useCopyToClipboard();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const initialFilterStateRef = useRef(null);
+  if (!initialFilterStateRef.current) {
+    initialFilterStateRef.current = readQuotaFilterState(searchParams);
+  }
+  const initialFilterState = initialFilterStateRef.current;
   const [connections, setConnections] = useState([]);
   const [quotaData, setQuotaData] = useState({});
   const [loading, setLoading] = useState({});
@@ -106,6 +366,7 @@ export default function ProviderLimits() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [autoPingMaps, setAutoPingMaps] = useState({ claude: {}, codex: {} });
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [hasHydratedSavedState, setHasHydratedSavedState] = useState(false);
   const [hasHydratedAutoRefresh, setHasHydratedAutoRefresh] = useState(false);
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [countdown, setCountdown] = useState(60);
@@ -117,21 +378,29 @@ export default function ProviderLimits() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedConnection, setSelectedConnection] = useState(null);
   const [proxyPools, setProxyPools] = useState([]);
-  const [providerFilter, setProviderFilter] = useState("all");
+  const [providerFilter, setProviderFilter] = useState(
+    initialFilterState.providerFilter,
+  );
   const [providerOptions, setProviderOptions] = useState([]);
-  const [accountFilter, setAccountFilter] = useState("all");
-  const [quotaSortMode, setQuotaSortMode] = useState("default");
-  const [expiringFirst, setExpiringFirst] = useState(false);
+  const [accountFilter, setAccountFilter] = useState(
+    initialFilterState.accountFilter,
+  );
+  const [quotaSortMode, setQuotaSortMode] = useState(
+    initialFilterState.quotaSortMode,
+  );
+  const [expiringFirst, setExpiringFirst] = useState(
+    initialFilterState.expiringFirst,
+  );
   const [providerMenuOpen, setProviderMenuOpen] = useState(false);
   const [bulkToggling, setBulkToggling] = useState(false);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(CONNECTIONS_PAGE_SIZE);
+  const [page, setPage] = useState(initialFilterState.page);
+  const [pageSize, setPageSize] = useState(initialFilterState.pageSize);
   const [customPageSizeInput, setCustomPageSizeInput] = useState(
-    String(CONNECTIONS_PAGE_SIZE),
+    String(initialFilterState.pageSize),
   );
   const [pagination, setPagination] = useState({
     page: 1,
-    pageSize: CONNECTIONS_PAGE_SIZE,
+    pageSize: initialFilterState.pageSize,
     total: 0,
     totalPages: 1,
   });
@@ -143,6 +412,241 @@ export default function ProviderLimits() {
   const intervalRef = useRef(null);
   const countdownRef = useRef(null);
   const tickCountRef = useRef(0);
+  const filterStateRef = useRef(initialFilterState);
+  const lastPersistedFilterStateRef = useRef(null);
+  const lastSyncedQueryRef = useRef(searchParams.toString());
+  const hasLocalFilterInteractionRef = useRef(false);
+  const hydratingFromUrlRef = useRef(false);
+
+  const filterState = useMemo(
+    () => ({
+      providerFilter,
+      accountFilter,
+      quotaSortMode,
+      expiringFirst,
+      pageSize,
+      page,
+    }),
+    [providerFilter, accountFilter, quotaSortMode, expiringFirst, pageSize, page],
+  );
+
+  useEffect(() => {
+    filterStateRef.current = normalizeQuotaFilterState(filterState);
+  }, [filterState]);
+
+  const persistFilterState = useCallback((state) => {
+    const normalizedState = normalizeQuotaFilterState(state);
+    writeStoredQuotaFilterState(normalizedState);
+    if (
+      lastPersistedFilterStateRef.current &&
+      isSameFilterState(lastPersistedFilterStateRef.current, normalizedState)
+    ) {
+      filterStateRef.current = lastPersistedFilterStateRef.current;
+      return lastPersistedFilterStateRef.current;
+    }
+    const nextState = normalizedState;
+    lastPersistedFilterStateRef.current = nextState;
+    filterStateRef.current = nextState;
+    writeQuotaFilterState(nextState);
+    return nextState;
+  }, []);
+
+  const applyFilterStateToControls = useCallback((state) => {
+    const normalizedState = normalizeQuotaFilterState(state);
+    filterStateRef.current = normalizedState;
+    setProviderFilter(normalizedState.providerFilter);
+    setAccountFilter(normalizedState.accountFilter);
+    setQuotaSortMode(normalizedState.quotaSortMode);
+    setExpiringFirst(normalizedState.expiringFirst);
+    setPageSize(normalizedState.pageSize);
+    setCustomPageSizeInput(String(normalizedState.pageSize));
+    setPage(normalizedState.page);
+    return normalizedState;
+  }, []);
+
+  const replaceQuotaFilterUrl = useCallback(
+    (state) => {
+      const params = buildQuotaFilterSearch(
+        getCurrentSearchParams(searchParams),
+        state,
+      );
+      const query = params.toString();
+      lastSyncedQueryRef.current = query;
+      const targetUrl = query ? `${pathname}?${query}` : pathname;
+      window.history.replaceState(window.history.state, "", targetUrl);
+    },
+    [pathname, searchParams],
+  );
+
+  const applyQuotaFilterState = useCallback(
+    (nextState) => {
+      hasLocalFilterInteractionRef.current = true;
+      const normalizedState = applyFilterStateToControls(nextState);
+      persistFilterState(normalizedState);
+      replaceQuotaFilterUrl(normalizedState);
+      return normalizedState;
+    },
+    [applyFilterStateToControls, persistFilterState, replaceQuotaFilterUrl],
+  );
+
+  useEffect(() => {
+    if (hasHydratedSavedState) return;
+
+    let cancelled = false;
+    fetch("/api/settings", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((settings) => {
+        if (cancelled) return;
+        if (hasLocalFilterInteractionRef.current) return;
+        const dbFilterState = normalizeQuotaFilterState(
+          settings?.quotaTrackerState,
+        );
+        const currentParams = getCurrentSearchParams(searchParams);
+        const navigationParams = readPendingQuotaFilterNavigation();
+        const sourceParams = navigationParams || currentParams;
+        const urlHasFilterState = hasQuotaFilterSearchParams(sourceParams);
+        const nextFilterState = urlHasFilterState
+          ? readQuotaFilterState(sourceParams)
+          : readStoredQuotaFilterState() || dbFilterState;
+        const normalizedState = applyFilterStateToControls(nextFilterState);
+        if (navigationParams || !urlHasFilterState) {
+          replaceQuotaFilterUrl(normalizedState);
+        } else {
+          lastSyncedQueryRef.current = sourceParams.toString();
+        }
+      })
+      .catch((error) => {
+        console.error("Error reading quota filter preference:", error);
+      })
+      .finally(() => {
+        if (!cancelled) setHasHydratedSavedState(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applyFilterStateToControls, hasHydratedSavedState, replaceQuotaFilterUrl, searchParams]);
+
+  useEffect(() => {
+    if (!hasHydratedSavedState) return;
+    const currentParams = getCurrentSearchParams(searchParams);
+    const currentQuery = currentParams.toString();
+
+    if (currentQuery === lastSyncedQueryRef.current) return;
+
+    lastSyncedQueryRef.current = currentQuery;
+
+    if (!hasQuotaFilterSearchParams(currentParams)) {
+      const storedFilterState = readStoredQuotaFilterState();
+      if (!storedFilterState) return;
+
+      if (!isSameFilterState(filterStateRef.current, storedFilterState)) {
+        hydratingFromUrlRef.current = true;
+        applyFilterStateToControls(storedFilterState);
+      }
+      replaceQuotaFilterUrl(storedFilterState);
+      return;
+    }
+
+    const nextFilterState = readQuotaFilterState(currentParams);
+    if (isSameFilterState(filterStateRef.current, nextFilterState)) return;
+
+    hydratingFromUrlRef.current = true;
+    applyFilterStateToControls(nextFilterState);
+  }, [applyFilterStateToControls, hasHydratedSavedState, replaceQuotaFilterUrl, searchParams]);
+
+  useEffect(() => {
+    if (!hasHydratedSavedState) return;
+
+    if (hydratingFromUrlRef.current) {
+      hydratingFromUrlRef.current = false;
+      persistFilterState(filterState);
+      return;
+    }
+
+    const persistedFilterState = persistFilterState(filterState);
+    const params = buildQuotaFilterSearch(
+      getCurrentSearchParams(searchParams),
+      persistedFilterState,
+    );
+    const query = params.toString();
+    const currentQuery = getCurrentSearchParams(searchParams).toString();
+    lastSyncedQueryRef.current = query;
+
+    if (query === currentQuery) return;
+    replaceQuotaFilterUrl(persistedFilterState);
+  }, [filterState, hasHydratedSavedState, persistFilterState, replaceQuotaFilterUrl, searchParams]);
+
+  const updateProviderFilter = useCallback(
+    (nextValue) => {
+      const nextFilter = normalizeProviderFilter(nextValue);
+      applyQuotaFilterState({
+        ...filterState,
+        providerFilter: nextFilter,
+        page: shouldResetPage(providerFilter, nextFilter) ? 1 : page,
+      });
+      setProviderMenuOpen(false);
+    },
+    [applyQuotaFilterState, filterState, page, providerFilter],
+  );
+
+  const updateAccountFilter = useCallback(
+    (nextValue) => {
+      const nextFilter = normalizeAccountFilter(nextValue);
+      applyQuotaFilterState({
+        ...filterState,
+        accountFilter: nextFilter,
+        page: shouldResetPage(accountFilter, nextFilter) ? 1 : page,
+      });
+    },
+    [accountFilter, applyQuotaFilterState, filterState, page],
+  );
+
+  const updateQuotaSortMode = useCallback(
+    (nextValue) => {
+      const nextMode = normalizeQuotaSortMode(nextValue);
+      applyQuotaFilterState({
+        ...filterState,
+        quotaSortMode: nextMode,
+        page: shouldResetPage(quotaSortMode, nextMode) ? 1 : page,
+      });
+    },
+    [applyQuotaFilterState, filterState, page, quotaSortMode],
+  );
+
+  const updateExpiringFirst = useCallback(
+    (nextValue) => {
+      const nextEnabled = normalizeExpiringFirst(nextValue);
+      applyQuotaFilterState({
+        ...filterState,
+        expiringFirst: nextEnabled,
+        page: shouldResetPage(expiringFirst, nextEnabled) ? 1 : page,
+      });
+    },
+    [applyQuotaFilterState, expiringFirst, filterState, page],
+  );
+
+  const updatePageSize = useCallback(
+    (nextValue) => {
+      const nextPageSize = normalizePageSize(nextValue);
+      applyQuotaFilterState({
+        ...filterState,
+        pageSize: nextPageSize,
+        page: shouldResetPage(pageSize, nextPageSize) ? 1 : page,
+      });
+    },
+    [applyQuotaFilterState, filterState, page, pageSize],
+  );
+
+  const updatePage = useCallback(
+    (nextPage) => {
+      applyQuotaFilterState({
+        ...filterState,
+        page: normalizePage(nextPage),
+      });
+    },
+    [applyQuotaFilterState, filterState],
+  );
 
   const fetchConnections = useCallback(
     async (targetPage = page) => {
@@ -183,7 +687,7 @@ export default function ProviderLimits() {
         return [];
       }
     },
-    [accountFilter, expiringFirst, page, pageSize, providerFilter],
+    [accountFilter, page, pageSize, providerFilter],
   );
 
   // Fetch quota for a specific connection
@@ -399,6 +903,17 @@ export default function ProviderLimits() {
   );
 
   useEffect(() => {
+    if (
+      providerFilter === "all" ||
+      providerOptions.length === 0 ||
+      providerOptions.includes(providerFilter)
+    ) {
+      return;
+    }
+    applyQuotaFilterState({ ...filterState, providerFilter: "all", page: 1 });
+  }, [applyQuotaFilterState, filterState, providerFilter, providerOptions]);
+
+  useEffect(() => {
     let cancelled = false;
     fetch("/api/proxy-pools?isActive=true", { cache: "no-store" })
       .then((res) => res.json())
@@ -419,13 +934,13 @@ export default function ProviderLimits() {
     setRefreshingAll(true);
     setCountdown(60);
 
-    // Throttle Claude: poll its quota every Nth auto-tick (manual force bypasses)
-    const tick = (tickCountRef.current += 1);
-    const claudeEvery = Math.round(CLAUDE_REFRESH_INTERVAL_MS / REFRESH_INTERVAL_MS);
-    const shouldFetch = (conn) =>
-      force || conn.provider !== "claude" || tick % claudeEvery === 0;
-
     try {
+      // Throttle Claude: poll its quota every Nth auto-tick (manual force bypasses)
+      const tick = (tickCountRef.current += 1);
+      const claudeEvery = Math.round(CLAUDE_REFRESH_INTERVAL_MS / REFRESH_INTERVAL_MS);
+      const shouldFetch = (conn) =>
+        force || conn.provider !== "claude" || tick % claudeEvery === 0;
+
       const visibleConnections = await fetchConnections(page);
 
       setLoading(buildLoadingState(visibleConnections));
@@ -451,6 +966,8 @@ export default function ProviderLimits() {
   }, [refreshingAll, fetchConnections, fetchQuota, page]);
 
   useEffect(() => {
+    if (!hasHydratedSavedState) return;
+
     const initializeData = async () => {
       setConnectionsLoading(true);
       const visibleConnections = await fetchConnections(page);
@@ -472,7 +989,7 @@ export default function ProviderLimits() {
     };
 
     initializeData();
-  }, [fetchConnections, fetchQuota, page]);
+  }, [fetchConnections, fetchQuota, hasHydratedSavedState, page]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -738,13 +1255,7 @@ export default function ProviderLimits() {
                 <div className="absolute left-0 z-40 mt-2 w-64 overflow-hidden rounded-2xl border border-black/10 bg-surface/95 p-1.5 shadow-xl shadow-black/10 backdrop-blur dark:border-white/10 dark:bg-surface/95 sm:w-72">
                   <button
                     type="button"
-                    onClick={() => {
-                      if (shouldResetPage(providerFilter, "all")) {
-                        setPage(1);
-                      }
-                      setProviderFilter("all");
-                      setProviderMenuOpen(false);
-                    }}
+                    onClick={() => updateProviderFilter("all")}
                     className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${providerFilter === "all" ? "bg-primary/10 text-primary" : "text-text-primary hover:bg-black/5 dark:hover:bg-white/10"}`}
                   >
                     <span className="material-symbols-outlined text-[22px]">
@@ -763,13 +1274,7 @@ export default function ProviderLimits() {
                       <button
                         key={provider}
                         type="button"
-                        onClick={() => {
-                          if (shouldResetPage(providerFilter, provider)) {
-                            setPage(1);
-                          }
-                          setProviderFilter(provider);
-                          setProviderMenuOpen(false);
-                        }}
+                        onClick={() => updateProviderFilter(provider)}
                         className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${providerFilter === provider ? "bg-primary/10 text-primary" : "text-text-primary hover:bg-black/5 dark:hover:bg-white/10"}`}
                       >
                         <ProviderIcon
@@ -796,13 +1301,7 @@ export default function ProviderLimits() {
           </div>
           <select
             value={accountFilter}
-            onChange={(event) => {
-              const nextValue = event.target.value;
-              if (shouldResetPage(accountFilter, nextValue)) {
-                setPage(1);
-              }
-              setAccountFilter(nextValue);
-            }}
+            onChange={(event) => updateAccountFilter(event.target.value)}
             className="h-8 rounded-lg border border-black/10 bg-black/[0.02] px-2 text-xs text-text-primary outline-none transition-colors hover:bg-black/5 dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/10"
             aria-label="Filter accounts by status"
           >
@@ -816,7 +1315,7 @@ export default function ProviderLimits() {
           {providerFilter === "codex" && (
             <select
               value={quotaSortMode}
-              onChange={(event) => setQuotaSortMode(event.target.value)}
+              onChange={(event) => updateQuotaSortMode(event.target.value)}
               className="h-8 rounded-lg border border-black/10 bg-black/[0.02] px-2 text-xs text-text-primary outline-none transition-colors hover:bg-black/5 dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/10"
               aria-label="Sort Codex quotas by remaining"
             >
@@ -830,7 +1329,7 @@ export default function ProviderLimits() {
 
           <button
             type="button"
-            onClick={() => setExpiringFirst((prev) => !prev)}
+            onClick={() => updateExpiringFirst(!expiringFirst)}
             aria-pressed={expiringFirst}
             className={`flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2 text-xs transition-colors ${expiringFirst ? "border-amber-500/40 bg-amber-500/10 text-amber-500" : "border-black/10 text-text-primary hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"}`}
             title="Sort accounts by earliest quota reset time"
@@ -1161,9 +1660,7 @@ export default function ProviderLimits() {
                   if (nextValue === "custom") return;
                   const nextPageSize = Number.parseInt(nextValue, 10);
                   if (Number.isFinite(nextPageSize)) {
-                    setPage(1);
-                    setPageSize(nextPageSize);
-                    setCustomPageSizeInput(String(nextPageSize));
+                    updatePageSize(nextPageSize);
                   }
                 }}
                 className="h-8 rounded-lg border border-black/10 bg-black/[0.02] px-2 text-xs text-text-primary outline-none transition-colors hover:bg-black/5 dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/10"
@@ -1190,9 +1687,7 @@ export default function ProviderLimits() {
                     return;
                   }
                   const nextPageSize = Math.min(ACCOUNT_PAGE_SIZE_MAX, Math.max(1, parsedValue));
-                  setPage(1);
-                  setPageSize(nextPageSize);
-                  setCustomPageSizeInput(String(nextPageSize));
+                  updatePageSize(nextPageSize);
                 }}
                 onKeyDown={(event) => {
                   if (event.key !== "Enter") return;
@@ -1202,9 +1697,7 @@ export default function ProviderLimits() {
                     return;
                   }
                   const nextPageSize = Math.min(ACCOUNT_PAGE_SIZE_MAX, Math.max(1, parsedValue));
-                  setPage(1);
-                  setPageSize(nextPageSize);
-                  setCustomPageSizeInput(String(nextPageSize));
+                  updatePageSize(nextPageSize);
                 }}
                 className="h-8 w-20 rounded-lg border border-black/10 bg-black/[0.02] px-2 text-xs text-text-primary outline-none transition-colors hover:bg-black/5 dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/10"
                 aria-label="Custom accounts per page"
@@ -1215,7 +1708,7 @@ export default function ProviderLimits() {
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
-                onClick={() => setPage(1)}
+                onClick={() => updatePage(1)}
                 disabled={
                   pagination.page <= 1 || connectionsLoading || refreshingAll
                 }
@@ -1225,9 +1718,7 @@ export default function ProviderLimits() {
               </button>
               <button
                 type="button"
-                onClick={() =>
-                  setPage((currentPage) => Math.max(1, currentPage - 1))
-                }
+                onClick={() => updatePage(Math.max(1, page - 1))}
                 disabled={
                   pagination.page <= 1 || connectionsLoading || refreshingAll
                 }
@@ -1241,9 +1732,7 @@ export default function ProviderLimits() {
               <button
                 type="button"
                 onClick={() =>
-                  setPage((currentPage) =>
-                    Math.min(pagination.totalPages, currentPage + 1),
-                  )
+                  updatePage(Math.min(pagination.totalPages, page + 1))
                 }
                 disabled={
                   pagination.page >= pagination.totalPages ||
@@ -1259,7 +1748,7 @@ export default function ProviderLimits() {
               </button>
               <button
                 type="button"
-                onClick={() => setPage(pagination.totalPages)}
+                onClick={() => updatePage(pagination.totalPages)}
                 disabled={
                   pagination.page >= pagination.totalPages ||
                   connectionsLoading ||

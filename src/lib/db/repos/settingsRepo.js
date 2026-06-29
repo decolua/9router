@@ -4,6 +4,15 @@ import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 const DEFAULT_HEADROOM_URL = process.env.HEADROOM_URL || "http://localhost:8787";
 
+const DEFAULT_QUOTA_TRACKER_STATE = {
+  providerFilter: "all",
+  accountFilter: "all",
+  quotaSortMode: "default",
+  expiringFirst: false,
+  pageSize: 20,
+  page: 1,
+};
+
 const DEFAULT_SETTINGS = {
   cloudEnabled: false,
   tunnelEnabled: false,
@@ -40,6 +49,7 @@ const DEFAULT_SETTINGS = {
   headroomCompressUserMessages: false,
   cavemanEnabled: false,
   cavemanLevel: "full",
+  quotaTrackerState: DEFAULT_QUOTA_TRACKER_STATE,
   ponytailEnabled: false,
   ponytailLevel: "full",
 };
@@ -53,6 +63,10 @@ async function readRaw() {
 // Merge raw settings with defaults; backward-compat for missing keys
 function mergeWithDefaults(raw) {
   const merged = { ...DEFAULT_SETTINGS, ...(raw || {}) };
+  merged.quotaTrackerState = {
+    ...DEFAULT_QUOTA_TRACKER_STATE,
+    ...((raw || {}).quotaTrackerState || {}),
+  };
   for (const [key, defVal] of Object.entries(DEFAULT_SETTINGS)) {
     if (merged[key] === undefined) {
       if (
