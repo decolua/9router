@@ -32,6 +32,9 @@ export default {
       "429": {
         attempts: 3,
       },
+      "500": {
+        attempts: 3,
+      },
       "503": {
         attempts: 3,
       },
