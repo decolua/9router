@@ -201,6 +201,42 @@ describe("DB SQLite layer — public API parity", () => {
     expect(stats.byProvider.openai.promptTokens).toBeGreaterThanOrEqual(300);
   });
 
+  it("usage: 24h and today byApiKey keep keys with the same masked prefix separate", async () => {
+    await sqliteDb.importDb({
+      settings: {},
+      apiKeys: [
+        { id: "ak-collision-1", key: "sk-c84eb11fa877e0e9-aaaaaa-11111111", name: "collision-one", machineId: "m1", isActive: true },
+        { id: "ak-collision-2", key: "sk-c84eb11fa877e0e9-bbbbbb-22222222", name: "collision-two", machineId: "m2", isActive: true },
+      ],
+    });
+
+    await sqliteDb.saveRequestUsage({
+      provider: "codex", model: "gpt-5.5", connectionId: "c1",
+      apiKey: "sk-c84eb11fa877e0e9-aaaaaa-11111111",
+      tokens: { prompt_tokens: 11, completion_tokens: 5 },
+      endpoint: "/v1/chat/completions", status: "ok",
+    });
+    await sqliteDb.saveRequestUsage({
+      provider: "codex", model: "gpt-5.5", connectionId: "c1",
+      apiKey: "sk-c84eb11fa877e0e9-bbbbbb-22222222",
+      tokens: { prompt_tokens: 17, completion_tokens: 7 },
+      endpoint: "/v1/chat/completions", status: "ok",
+    });
+
+    for (const period of ["24h", "today"]) {
+      const stats = await sqliteDb.getUsageStats(period);
+      const entries = Object.values(stats.byApiKey).filter((entry) => entry.rawModel === "gpt-5.5" && entry.provider === "codex");
+
+      expect(entries).toHaveLength(2);
+      expect(entries.map((entry) => entry.keyName).sort()).toEqual(["collision-one", "collision-two"]);
+      expect(entries.map((entry) => entry.requests).sort()).toEqual([1, 1]);
+      expect(new Set(entries.map((entry) => entry.apiKeyMasked)).size).toBe(1);
+      expect(new Set(entries.map((entry) => entry.apiKeyKey)).size).toBe(1);
+      expect(entries.every((entry) => entry.apiKeyKey === entry.apiKeyMasked)).toBe(true);
+      expect(Object.keys(stats.byApiKey).some((key) => key.includes("sk-c84eb11fa877e0e9"))).toBe(false);
+    }
+  });
+
   it("usage: pending tracking in-memory", () => {
     sqliteDb.trackPendingRequest("gpt-4", "openai", "c1", true);
     expect(global._pendingRequests.byModel["gpt-4 (openai)"]).toBe(1);
