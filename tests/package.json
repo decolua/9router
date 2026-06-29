@@ -13,5 +13,8 @@
   },
   "engines": {
     "node": ">=18"
+  },
+  "dependencies": {
+    "uuid": "^14.0.1"
   }
 }
