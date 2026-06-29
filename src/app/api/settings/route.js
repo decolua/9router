@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSettings, updateSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { resetComboRotation } from "open-sse/services/combo.js";
+import { runQuotaAutoPingTick } from "@/shared/services/quotaAutoPing";
 import bcrypt from "bcryptjs";
 
 export const dynamic = "force-dynamic";
@@ -94,6 +95,16 @@ export async function PATCH(request) {
       Object.prototype.hasOwnProperty.call(body, "comboStrategies")
     ) {
       resetComboRotation();
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(body, "claudeAutoPing") ||
+      Object.prototype.hasOwnProperty.call(body, "codexAutoPing")
+    ) {
+      // Run once immediately after opt-in changes so users don't wait for the next scheduler tick.
+      runQuotaAutoPingTick().catch((error) => {
+        console.warn("[AutoPing] settings-triggered tick failed:", error.message);
+      });
     }
 
     const { password, oidcClientSecret, ...safeSettings } = settings;
