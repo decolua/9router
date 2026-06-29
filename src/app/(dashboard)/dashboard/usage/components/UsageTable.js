@@ -56,6 +56,9 @@ function ValueCells({ item, viewMode, isSummary = false }) {
         {isSummary && item.inputCost === undefined ? "—" : fmtCost(item.inputCost)}
       </td>
       <td className="px-6 py-3 text-right text-text-muted">
+        {item.cachedCost ? fmtCost(item.cachedCost) : "—"}
+      </td>
+      <td className="px-6 py-3 text-right text-text-muted">
         {isSummary && item.outputCost === undefined ? "—" : fmtCost(item.outputCost)}
       </td>
       <td className="px-6 py-3 text-right font-medium text-warning">
@@ -143,6 +146,7 @@ export default function UsageTable({
     }
     return [
       { field: "promptTokens", label: "Input Cost" },
+      { field: "cachedCost", label: "Cached Cost" },
       { field: "completionTokens", label: "Output Cost" },
       { field: "cost", label: "Total Cost" },
     ];

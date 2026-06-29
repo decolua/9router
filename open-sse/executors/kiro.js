@@ -353,6 +353,11 @@ export class KiroExecutor extends BaseExecutor {
             if (metrics && typeof metrics === 'object') {
               const inputTokens = metrics.inputTokens || 0;
               const outputTokens = metrics.outputTokens || 0;
+              // ponytail: Amazon Q upstream does not expose cache fields today,
+              // but pick up cache_read_input_tokens / cache_creation_input_tokens
+              // if the event shape grows them so cost tracking stays accurate.
+              const cachedTokens = metrics.cacheReadInputTokens || metrics.cache_read_input_tokens || 0;
+              const cacheCreationInputTokens = metrics.cacheCreationInputTokens || metrics.cache_creation_input_tokens || 0;
 
               if (inputTokens > 0 || outputTokens > 0) {
                 state.usage = {
@@ -360,6 +365,8 @@ export class KiroExecutor extends BaseExecutor {
                   completion_tokens: outputTokens,
                   total_tokens: inputTokens + outputTokens
                 };
+                if (cachedTokens > 0) state.usage.cached_tokens = cachedTokens;
+                if (cacheCreationInputTokens > 0) state.usage.cache_creation_input_tokens = cacheCreationInputTokens;
               }
             }
           }
