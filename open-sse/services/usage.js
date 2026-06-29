@@ -10,6 +10,7 @@ import { getCodexUsage, consumeCodexRateLimitResetCredit } from "./usage/codex.j
 export { consumeCodexRateLimitResetCredit };
 import { getKiroUsage } from "./usage/kiro.js";
 import { getMiniMaxUsage } from "./usage/minimax.js";
+import { getCodeBuddyCnUsage } from "./usage/codebuddy-cn.js";
 import {
   getQwenUsage,
   getIflowUsage,
@@ -41,6 +42,7 @@ const USAGE_HANDLERS = {
   minimax: (c) => getMiniMaxUsage(c.apiKey, c.provider, c.proxyOptions),
   "minimax-cn": (c) => getMiniMaxUsage(c.apiKey, c.provider, c.proxyOptions),
   "vercel-ai-gateway": (c) => getVercelAiGatewayUsage(c.apiKey, c.proxyOptions),
+  "codebuddy-cn": (c) => getCodeBuddyCnUsage(c.accessToken, c.apiKey, c.providerSpecificData, c.proxyOptions),
 };
 
 export async function getUsageForProvider(connection, proxyOptions = null) {

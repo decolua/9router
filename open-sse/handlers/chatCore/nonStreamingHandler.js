@@ -37,6 +37,12 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
             function: { name: part.functionCall.name, arguments: JSON.stringify(part.functionCall.args || {}) }
           });
         }
+        // Handle inline image data (from image generation models)
+        const inlineData = part.inlineData || part.inline_data;
+        if (inlineData?.data) {
+          const mimeType = inlineData.mimeType || inlineData.mime_type || "image/png";
+          textContent += `\n![image](data:${mimeType};base64,${inlineData.data})\n`;
+        }
       }
     }
 
@@ -161,7 +167,13 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   }
 
   reqLogger.logProviderResponse(providerResponse.status, providerResponse.statusText, providerResponse.headers, responseBody);
-  if (onRequestSuccess) await onRequestSuccess();
+  if (onRequestSuccess) {
+    Promise.resolve()
+      .then(onRequestSuccess)
+      .catch(err => {
+        console.error("[ChatCore] onRequestSuccess failed:", err?.message || err);
+      });
+  }
 
   // Decloak tool_use names once on raw Claude body, before any translation (INPUT side)
   responseBody = decloakToolNames(responseBody, toolNameMap);

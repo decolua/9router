@@ -104,6 +104,53 @@ async function probeClineAccessToken(accessToken) {
   return res;
 }
 
+const CLOUD_CODE_ASSIST_TEST_URL = "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist";
+const CLOUD_CODE_ASSIST_TEST_BODY = JSON.stringify({
+  metadata: {
+    ideType: "IDE_UNSPECIFIED",
+    platform: "PLATFORM_UNSPECIFIED",
+    pluginType: "GEMINI",
+  },
+});
+
+function parseProviderErrorMessage(bodyText, fallback) {
+  if (!bodyText) return fallback;
+  try {
+    const parsed = JSON.parse(bodyText);
+    const message = parsed?.error?.message || parsed?.message || parsed?.error;
+    if (typeof message === "string" && message.trim()) return message.trim();
+    if (message) return JSON.stringify(message);
+  } catch {
+    // fall through
+  }
+  return bodyText.trim() || fallback;
+}
+
+async function probeCloudCodeAssistAccess(connection, accessToken, effectiveProxy = null) {
+  const userAgent = connection.provider === "antigravity"
+    ? "google-api-nodejs-client/9.15.1 vscode-antigravity/1.107.0"
+    : "google-api-nodejs-client/9.15.1 gemini-cli/0.34.0";
+
+  const res = await fetchWithConnectionProxy(CLOUD_CODE_ASSIST_TEST_URL, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      "User-Agent": userAgent,
+    },
+    body: CLOUD_CODE_ASSIST_TEST_BODY,
+  }, effectiveProxy);
+
+  if (res.ok) return { valid: true, error: null };
+
+  const bodyText = await res.text().catch(() => "");
+  return {
+    valid: false,
+    error: parseProviderErrorMessage(bodyText, `API returned ${res.status}`),
+    status: res.status,
+  };
+}
+
 async function refreshOAuthToken(connection) {
   const provider = connection.provider;
   const refreshToken = connection.refreshToken;
@@ -251,6 +298,23 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
     if (refreshed) return { valid: true, error: null, refreshed, newTokens };
     if (tokenExpired) return { valid: false, error: "Token expired", refreshed: false };
     return { valid: true, error: null, refreshed: false, newTokens: null };
+  }
+
+  if (connection.provider === "gemini-cli" || connection.provider === "antigravity") {
+    const initial = await probeCloudCodeAssistAccess(connection, accessToken, effectiveProxy);
+    if (initial.valid) return { valid: true, error: null, refreshed, newTokens };
+
+    if (initial.status === 401 && config.refreshable && !refreshed && connection.refreshToken) {
+      const tokens = await refreshOAuthToken(connection);
+      if (tokens?.accessToken) {
+        const retry = await probeCloudCodeAssistAccess(connection, tokens.accessToken, effectiveProxy);
+        if (retry.valid) return { valid: true, error: null, refreshed: true, newTokens: tokens };
+        return { valid: false, error: retry.error, refreshed: true, newTokens: tokens };
+      }
+      return { valid: false, error: "Token invalid or revoked", refreshed: false };
+    }
+
+    return { valid: false, error: initial.error, refreshed };
   }
 
   if (connection.provider === "cline") {
@@ -624,6 +688,13 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
       case "xiaomi-tokenplan": {
         const baseUrls = { "xiaomi-mimo": "https://api.xiaomimimo.com/v1", "xiaomi-tokenplan": "https://token-plan-sgp.xiaomimimo.com/v1" };
         const res = await fetchWithConnectionProxy(`${baseUrls[connection.provider]}/models`, {
+          headers: { Authorization: `Bearer ${connection.apiKey}` },
+        }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+      }
+      case "blackbox": {
+        const baseUrl = PROVIDERS["blackbox"]?.baseUrl?.replace(/\/chat\/completions$/, "") || "https://api.blackbox.ai/v1";
+        const res = await fetchWithConnectionProxy(`${baseUrl}/models`, {
           headers: { Authorization: `Bearer ${connection.apiKey}` },
         }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
