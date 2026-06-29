@@ -1,4 +1,5 @@
 import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS } from "../config/errorConfig.js";
+import { updateContextLengthFromError } from "../diepxuan/contextLength/errorParser.js";
 
 /**
  * Calculate exponential backoff cooldown for rate limits (429)
@@ -20,7 +21,10 @@ export function getQuotaCooldown(backoffLevel = 0) {
  * @param {number} backoffLevel - Current backoff level for exponential backoff
  * @returns {{ shouldFallback: boolean, cooldownMs: number, newBackoffLevel?: number }}
  */
-export function checkFallbackError(status, errorText, backoffLevel = 0) {
+export function checkFallbackError(status, errorText, backoffLevel = 0, modelId = null) {
+  // diepxuan: capture 400 context-length errors to update model cache
+  if (modelId) updateContextLengthFromError(status, errorText, modelId);
+
   const lowerError = errorText
     ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
     : "";

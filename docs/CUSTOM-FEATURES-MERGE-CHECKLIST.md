@@ -810,3 +810,63 @@ Lần kiểm tra gần nhất trong workspace:
 - Local branch tại thời điểm kiểm tra từng có trạng thái `main...origin/main [behind 1]` do automation tạo thêm commit build trên origin.
 
 Khi dùng tài liệu này trong lần sau, luôn kiểm tra lại trạng thái git hiện tại thay vì dựa vào ghi chú cũ.
+
+---
+
+## 14. Auto Context Length Info (2026-06-28)
+
+### Mục đích
+Tự động thu thập và cập nhật `context_length` (max tokens) cho mọi model, để:
+- `/v1/models` endpoint trả về `context_length` chính xác cho Codex/OpenAI clients
+- Combo fallback không thử model nhỏ trước model lớn một cách mù quáng
+- Hook cho proactive truncation (tương lai) sử dụng context info
+
+### Nguồn dữ liệu (theo thứ tự ưu tiên)
+1. **Provider `/v1/models` API** — 1 call / 24h, cache vào SQLite
+2. **Parse 400 error** — Học từ lỗi `maximum context length is X tokens`
+3. **MODEL_INFO static** — Fallback cuối cùng
+
+### Files cần giữ (fork layer)
+
+```
+open-sse/diepxuan/contextLength/
+  cache.js          -- SQLite cache, priority: error > api > static
+  modelsApi.js      -- Fetch NVIDIA /v1/models, parse max_model_len
+  errorParser.js    -- Parse 400 "max context" error
+  index.js          -- Public API: getContextLength, getContextLengthBatch
+```
+
+### Injection points (base files)
+
+| Base file | Thay đổi |
+|-----------|----------|
+| `src/app/api/v1/models/route.js` | Register NVIDIA resolver + add `context_length` field |
+| `open-sse/services/accountFallback.js` | `checkFallbackError(status, error, backoff, modelId)` — cache 400 |
+| `open-sse/services/combo.js` | Pass `modelStr` to `checkFallbackError` |
+
+### Checklist khi rebase upstream
+
+```bash
+# Files còn nguyên
+test -f open-sse/diepxuan/contextLength/index.js
+test -f open-sse/diepxuan/contextLength/cache.js
+test -f open-sse/diepxuan/contextLength/modelsApi.js
+test -f open-sse/diepxuan/contextLength/errorParser.js
+
+# Pattern còn nguyên trong base files
+grep -q "resolveProviderModelsWithContext" src/app/api/v1/models/route.js
+grep -q "updateContextLengthFromError" open-sse/services/accountFallback.js
+grep -q "diepxuan: capture 400" open-sse/services/accountFallback.js
+
+# Smoke test
+curl -s http://localhost:20128/api/v1/models | grep -q "context_length"
+```
+
+### Smoke test
+
+1. Khởi động server, gọi `GET /v1/models` → tìm `nvidia/minimaxai/minimax-m2.7` → có `context_length`.
+2. Trigger request vượt context (gửi 400K tokens) → nhận 400 → kiểm tra cache:
+   ```bash
+   sqlite3 /var/lib/9router/db/data.sqlite "SELECT model_id, context_length, source FROM model_context_info;"
+   ```
+3. Tắt `DIEPXUAN_ENABLED=false` → vẫn hoạt động (fallback MODEL_INFO).

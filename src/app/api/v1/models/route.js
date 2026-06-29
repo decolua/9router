@@ -9,6 +9,8 @@ import { getProviderConnections, getCombos, getCustomModels, getModelAliases } f
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
+import { resolveProviderModelsWithContext } from "open-sse/diepxuan/contextLength/modelsApi.js";
+import { getContextLengthBatchCached, getStaticContextLength } from "open-sse/diepxuan/contextLength/index.js";
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
@@ -34,6 +36,11 @@ const LIVE_MODEL_RESOLVERS = {
     return {
       models: result.models.map((m) => ({ id: m.id, name: m.name })),
     };
+  },
+  // diepxuan: NVIDIA NIM live catalog with context_length
+  nvidia: async (conn) => {
+    const result = await resolveProviderModelsWithContext(conn);
+    return result?.models?.length ? result : null;
   }
 };
 
@@ -404,9 +411,18 @@ export async function buildModelsList(kindFilter) {
 
   const dedupedModels = [];
   const seenModelIds = new Set();
+  // diepxuan: enrich with context_length for LLM models
+  const contextLengths = getContextLengthBatchCached(models.map((m) => m?.id).filter(Boolean));
   for (const model of models) {
     if (!model?.id || seenModelIds.has(model.id)) continue;
     seenModelIds.add(model.id);
+    if (model.object === "model") {
+      const cached = contextLengths.get(model.id);
+      const contextLength = cached?.contextLength || getStaticContextLength(model.id);
+      if (typeof contextLength === "number" && contextLength > 0) {
+        model.context_length = contextLength;
+      }
+    }
     dedupedModels.push(model);
   }
 

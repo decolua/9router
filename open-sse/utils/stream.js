@@ -85,6 +85,9 @@ export function createSSEStream(options = {}) {
 
         // Passthrough mode: normalize and forward
         if (mode === STREAM_MODE.PASSTHROUGH) {
+          // Strip SSE comment lines (e.g. NVIDIA telemetry `: {...}`)
+          // if (trimmed && !trimmed.startsWith("data:")) continue;
+
           let output;
           let injectedUsage = false;
 
@@ -193,7 +196,7 @@ export function createSSEStream(options = {}) {
           totalContentLength += parsed.delta.thinking.length;
           accumulatedThinking += parsed.delta.thinking;
         }
-        
+
         // OpenAI format - content
         if (parsed.choices?.[0]?.delta?.content) {
           totalContentLength += parsed.choices[0].delta.content.length;
@@ -204,7 +207,7 @@ export function createSSEStream(options = {}) {
           totalContentLength += parsed.choices[0].delta.reasoning_content.length;
           accumulatedThinking += parsed.choices[0].delta.reasoning_content;
         }
-        
+
         // Gemini format
         if (parsed.candidates?.[0]?.content?.parts) {
           for (const part of parsed.candidates[0].content.parts) {
@@ -290,7 +293,7 @@ export function createSSEStream(options = {}) {
           } else {
             appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
           }
-          
+
           // IMPORTANT: In passthrough mode we still must terminate the SSE stream.
           // Some clients (e.g. OpenClaw) expect the OpenAI-style sentinel:
           //   data: [DONE]\n\n
@@ -360,7 +363,7 @@ export function createSSEStream(options = {}) {
         } else {
           appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
         }
-        
+
         if (onStreamComplete) {
           onStreamComplete({
             content: accumulatedContent,
