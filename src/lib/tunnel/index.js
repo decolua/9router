@@ -29,6 +29,11 @@ export {
   isTailscaleRunning,
   isTailscaleRunningStrict,
   isTailscaleLoggedIn,
+  isTailscaleLoggedInStrict,
+  isSystemDaemonRunning,
+  isDaemonAlive,
+  startFunnel,
+  getTailscaleBin,
   installTailscale,
   startLogin,
   startDaemonWithPassword,
@@ -44,4 +49,5 @@ export {
   NETWORK_SETTLE_MS,
   WATCHDOG_INTERVAL_MS,
   NETWORK_CHECK_INTERVAL_MS,
+  VIRTUAL_IFACE_REGEX,
 } from "./shared/watchdogConfig.js";

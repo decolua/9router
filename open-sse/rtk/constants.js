@@ -19,8 +19,12 @@ export const STATUS_MAX_UNTRACKED = 10;        // config::limits().status_max_un
 export const LS_EXT_SUMMARY_TOP = 5;           // top-N extensions in summary
 export const LS_NOISE_DIRS = [
   "node_modules", ".git", "target", "__pycache__",
-  ".next", "dist", "build", ".venv", "venv",
-  ".cache", ".idea", ".vscode", ".DS_Store"
+  ".next", "dist", "build", ".cache", ".turbo",
+  ".vercel", ".pytest_cache", ".mypy_cache", ".tox",
+  ".venv", "venv",
+  "env", // Python legacy virtualenv; .env (dotenv) intentionally excluded
+  "coverage", ".nyc_output", ".DS_Store", "Thumbs.db",
+  ".idea", ".vscode", ".vs", "*.egg-info", ".eggs"
 ];
 
 // tree filter_tree_output cap (no rust cap, we add one to be safe)

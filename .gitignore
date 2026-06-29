@@ -73,4 +73,7 @@ scripts/agSniffer/*
 gitbooks/*
 gitbook/README.md
 
-*.ps1
+# Refactor backup reference (do not bundle/lint)
+open-sse.old/
+.graphifyignore
+graphify-out/*
