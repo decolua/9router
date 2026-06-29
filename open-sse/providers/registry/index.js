@@ -94,6 +94,7 @@ import p91 from "./xai.js";
 import p92 from "./xiaomi-mimo.js";
 import p93 from "./xiaomi-tokenplan.js";
 import p94 from "./youcom.js";
+import p95 from "./zenmux-free.js";
 
 export default [
   p0,
@@ -190,5 +191,6 @@ export default [
   p91,
   p92,
   p93,
-  p94
+  p94,
+  p95
 ];

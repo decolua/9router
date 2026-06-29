@@ -14,6 +14,7 @@ const ALIAS_TO_PROVIDER_ID = { ...MEDIA_ONLY_ALIASES };
 for (const entry of REGISTRY) {
   ALIAS_TO_PROVIDER_ID[entry.id] = entry.id;
   if (entry.alias) ALIAS_TO_PROVIDER_ID[entry.alias] = entry.id;
+  if (entry.uiAlias) ALIAS_TO_PROVIDER_ID[entry.uiAlias] = entry.id;
   for (const a of entry.aliases || []) ALIAS_TO_PROVIDER_ID[a] = entry.id;
 }
 
