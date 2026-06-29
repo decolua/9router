@@ -5,6 +5,7 @@ import { extractUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage,
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
+import { stripTaggedThinking } from "./taggedThinkingNormalizer.js";
 
 import { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER } from "./sseConstants.js";
 
@@ -48,7 +49,8 @@ export function createSSEStream(options = {}) {
     connectionId = null,
     body = null,
     onStreamComplete = null,
-    apiKey = null
+    apiKey = null,
+    continuityEnabled = false
   } = options;
 
   let buffer = "";
@@ -130,20 +132,70 @@ export function createSSEStream(options = {}) {
                 }
               }
 
-              if (!hasValuableContent(parsed, FORMATS.OPENAI)) {
+              if (!hasValuableContent(parsed)) {
                 continue;
               }
 
-              const delta = parsed.choices?.[0]?.delta;
-              const content = delta?.content;
-              const reasoning = delta?.reasoning_content;
-              if (content && typeof content === "string") {
-                totalContentLength += content.length;
-                accumulatedContent += content;
+              let tagsStripped = false;
+              if (continuityEnabled) {
+                tagsStripped = stripTaggedThinking(parsed);
               }
-              if (reasoning && typeof reasoning === "string") {
-                totalContentLength += reasoning.length;
-                accumulatedThinking += reasoning;
+
+              const unwrapped = parsed.response || parsed;
+              if (unwrapped.delta?.text) {
+                totalContentLength += unwrapped.delta.text.length;
+                accumulatedContent += unwrapped.delta.text;
+              }
+              if (unwrapped.delta?.thinking) {
+                totalContentLength += unwrapped.delta.thinking.length;
+                accumulatedThinking += unwrapped.delta.thinking;
+              }
+              if (typeof unwrapped.delta === "string" && unwrapped.type) {
+                totalContentLength += unwrapped.delta.length;
+                if (unwrapped.type.includes("reasoning")) {
+                  accumulatedThinking += unwrapped.delta;
+                } else {
+                  accumulatedContent += unwrapped.delta;
+                }
+              }
+              if (unwrapped.choices?.[0]?.delta?.content) {
+                totalContentLength += unwrapped.choices[0].delta.content.length;
+                accumulatedContent += unwrapped.choices[0].delta.content;
+              }
+              if (unwrapped.choices?.[0]?.delta?.reasoning_content) {
+                totalContentLength += unwrapped.choices[0].delta.reasoning_content.length;
+                accumulatedThinking += unwrapped.choices[0].delta.reasoning_content;
+              }
+              if (unwrapped.candidates?.[0]?.content?.parts) {
+                for (const part of unwrapped.candidates[0].content.parts) {
+                  if (part.text && typeof part.text === "string") {
+                    if (part.thought === true) {
+                      totalContentLength += part.text.length;
+                      accumulatedThinking += part.text;
+                    } else {
+                      totalContentLength += part.text.length;
+                      accumulatedContent += part.text;
+                    }
+                  }
+                }
+              }
+              // Ollama format: { message: { content, thinking } }
+              if (unwrapped.message?.content) {
+                totalContentLength += unwrapped.message.content.length;
+                accumulatedContent += unwrapped.message.content;
+              }
+              if (unwrapped.message?.thinking) {
+                totalContentLength += unwrapped.message.thinking.length;
+                accumulatedThinking += unwrapped.message.thinking;
+              }
+              // CommandCode format (AI SDK v5): { type:"text-delta"|"reasoning-delta", text }
+              if (unwrapped.type === "text-delta" && typeof unwrapped.text === "string") {
+                totalContentLength += unwrapped.text.length;
+                accumulatedContent += unwrapped.text;
+              }
+              if (unwrapped.type === "reasoning-delta" && typeof unwrapped.text === "string") {
+                totalContentLength += unwrapped.text.length;
+                accumulatedThinking += unwrapped.text;
               }
 
               const extracted = extractUsage(parsed);
@@ -151,20 +203,24 @@ export function createSSEStream(options = {}) {
                 usage = extracted;
               }
 
-              const isFinishChunk = parsed.choices?.[0]?.finish_reason;
+              const isFinishChunk = unwrapped.choices?.[0]?.finish_reason;
               if (isFinishChunk && !hasValidUsage(parsed.usage)) {
                 const estimated = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
                 parsed.usage = filterUsageForFormat(estimated, FORMATS.OPENAI);
-                output = `data: ${JSON.stringify(parsed)}\n`;
+                const nl = line.endsWith("\r") ? "\r\n" : "\n";
+                output = `data: ${JSON.stringify(parsed)}${nl}`;
                 usage = estimated;
                 injectedUsage = true;
               } else if (isFinishChunk && usage) {
                 const buffered = addBufferToUsage(usage);
                 parsed.usage = filterUsageForFormat(buffered, FORMATS.OPENAI);
-                output = `data: ${JSON.stringify(parsed)}\n`;
+                const nl = line.endsWith("\r") ? "\r\n" : "\n";
+                output = `data: ${JSON.stringify(parsed)}${nl}`;
+                usage = buffered;
                 injectedUsage = true;
-              } else if (idFixed || fieldsInjected) {
-                output = `data: ${JSON.stringify(parsed)}\n`;
+              } else if (idFixed || fieldsInjected || tagsStripped) {
+                const nl = line.endsWith("\r") ? "\r\n" : "\n";
+                output = `data: ${JSON.stringify(parsed)}${nl}`;
                 injectedUsage = true;
               }
             } catch {
@@ -193,6 +249,10 @@ export function createSSEStream(options = {}) {
 
         const parsed = parseSSELine(trimmed, targetFormat);
         if (!parsed) continue;
+
+        if (continuityEnabled) {
+          stripTaggedThinking(parsed);
+        }
 
         // Responses API same-format passthrough: preserve event framing + track terminal state
         const isOpenAIResponsesStream = targetFormat === FORMATS.OPENAI_RESPONSES;
@@ -227,41 +287,70 @@ export function createSSEStream(options = {}) {
           continue;
         }
 
+        const unwrapped = parsed.response || parsed;
+
         // Claude format - content
-        if (parsed.delta?.text) {
-          totalContentLength += parsed.delta.text.length;
-          accumulatedContent += parsed.delta.text;
+        if (unwrapped.delta?.text) {
+          totalContentLength += unwrapped.delta.text.length;
+          accumulatedContent += unwrapped.delta.text;
         }
         // Claude format - thinking
-        if (parsed.delta?.thinking) {
-          totalContentLength += parsed.delta.thinking.length;
-          accumulatedThinking += parsed.delta.thinking;
+        if (unwrapped.delta?.thinking) {
+          totalContentLength += unwrapped.delta.thinking.length;
+          accumulatedThinking += unwrapped.delta.thinking;
+        }
+        // Responses API format - delta is a top-level string
+        if (typeof unwrapped.delta === "string" && unwrapped.type) {
+          totalContentLength += unwrapped.delta.length;
+          if (unwrapped.type.includes("reasoning")) {
+            accumulatedThinking += unwrapped.delta;
+          } else {
+            accumulatedContent += unwrapped.delta;
+          }
         }
         
         // OpenAI format - content
-        if (parsed.choices?.[0]?.delta?.content) {
-          totalContentLength += parsed.choices[0].delta.content.length;
-          accumulatedContent += parsed.choices[0].delta.content;
+        if (unwrapped.choices?.[0]?.delta?.content) {
+          totalContentLength += unwrapped.choices[0].delta.content.length;
+          accumulatedContent += unwrapped.choices[0].delta.content;
         }
         // OpenAI format - reasoning
-        if (parsed.choices?.[0]?.delta?.reasoning_content) {
-          totalContentLength += parsed.choices[0].delta.reasoning_content.length;
-          accumulatedThinking += parsed.choices[0].delta.reasoning_content;
+        if (unwrapped.choices?.[0]?.delta?.reasoning_content) {
+          totalContentLength += unwrapped.choices[0].delta.reasoning_content.length;
+          accumulatedThinking += unwrapped.choices[0].delta.reasoning_content;
         }
         
         // Gemini format
-        if (parsed.candidates?.[0]?.content?.parts) {
-          for (const part of parsed.candidates[0].content.parts) {
+        if (unwrapped.candidates?.[0]?.content?.parts) {
+          for (const part of unwrapped.candidates[0].content.parts) {
             if (part.text && typeof part.text === "string") {
-              totalContentLength += part.text.length;
-              // Check if this is thinking content
               if (part.thought === true) {
+                totalContentLength += part.text.length;
                 accumulatedThinking += part.text;
               } else {
+                totalContentLength += part.text.length;
                 accumulatedContent += part.text;
               }
             }
           }
+        }
+        // Ollama format: { message: { content, thinking } }
+        if (unwrapped.message?.content) {
+          totalContentLength += unwrapped.message.content.length;
+          accumulatedContent += unwrapped.message.content;
+        }
+        if (unwrapped.message?.thinking) {
+          totalContentLength += unwrapped.message.thinking.length;
+          accumulatedThinking += unwrapped.message.thinking;
+        }
+        // CommandCode format (AI SDK v5): { type:"text-delta"|"reasoning-delta", text }
+        if (unwrapped.type === "text-delta" && typeof unwrapped.text === "string") {
+          totalContentLength += unwrapped.text.length;
+          accumulatedContent += unwrapped.text;
+        }
+        if (unwrapped.type === "reasoning-delta" && typeof unwrapped.text === "string") {
+          totalContentLength += unwrapped.text.length;
+          accumulatedThinking += unwrapped.text;
         }
 
         // Extract usage
@@ -450,7 +539,7 @@ export function createSSEStream(options = {}) {
   });
 }
 
-export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null) {
+export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, continuityEnabled = false) {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
     targetFormat,
@@ -462,11 +551,12 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
     connectionId,
     body,
     onStreamComplete,
-    apiKey
+    apiKey,
+    continuityEnabled
   });
 }
 
-export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null) {
+export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, continuityEnabled = false) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
     provider,
@@ -475,6 +565,7 @@ export function createPassthroughStreamWithLogger(provider = null, reqLogger = n
     connectionId,
     body,
     onStreamComplete,
-    apiKey
+    apiKey,
+    continuityEnabled
   });
 }

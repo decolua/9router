@@ -18,6 +18,8 @@ import { handleForcedSSEToJson } from "./chatCore/sseToJsonHandler.js";
 import { handleNonStreamingResponse } from "./chatCore/nonStreamingHandler.js";
 import { handleStreamingResponse, buildOnStreamComplete } from "./chatCore/streamingHandler.js";
 import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.js";
+import { captureSessionId, extractClientSessionId, getRecentThoughts, saveRecentThought } from "../utils/sessionManager.js";
+import { injectContinuity } from "../rtk/continuity.js";
 import { dedupeTools } from "../utils/toolDeduper.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { injectPonytail } from "../rtk/ponytail.js";
@@ -34,11 +36,18 @@ import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
  * @param {object} options.credentials - Provider credentials
  * @param {string} options.sourceFormatOverride - Override detected source format (e.g. "openai-responses")
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, sourceFormatOverride, providerThinking }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, sourceFormatOverride, providerThinking, continuityEnabled, continuityCount }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
 
   const sourceFormat = sourceFormatOverride || detectFormat(body);
+  // Continuity: session ID must be provider-independent so combo switching shares the same thought buffer.
+  // Use apiKey as scope (stable per client across all combo providers) instead of connectionId (provider-specific).
+  const continuitySessionId = captureSessionId(body, credentials, apiKey);
+  // Thought buffer key: decoupled from session ID (which changes on context summarization
+  // because assistantTextSessionId hashes message content that shifts on truncation/summary).
+  // Uses client-provided session ID when available (stable across summarization), falls back to apiKey.
+  const thoughtKey = extractClientSessionId(credentials?.rawHeaders, body) || apiKey || continuitySessionId;
 
   // Check for bypass patterns (warmup, skip, cc naming)
   const bypassResponse = handleBypassRequest(body, model, userAgent, ccFilterNaming);
@@ -185,6 +194,15 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     log?.debug?.("PONYTAIL", `${ponytailLevel} | ${finalFormat}`);
   }
 
+  // Continuity: inject framed recent thoughts into system prompt
+  if (continuityEnabled) {
+    const recentThoughts = getRecentThoughts(thoughtKey, continuityCount);
+    if (recentThoughts && recentThoughts.length > 0) {
+      injectContinuity(translatedBody, finalFormat, recentThoughts);
+      log?.debug?.("CONTINUITY", `injected ${recentThoughts.length} thoughts into system | ${finalFormat}`);
+    }
+  }
+
   const executor = getExecutor(provider);
   trackPendingRequest(model, provider, connectionId, true);
   appendRequestLog({ model, provider, connectionId, status: "PENDING" }).catch(() => { });
@@ -308,7 +326,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     return createErrorResult(statusCode, errMsg, resetsAtMs);
   }
 
-  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess };
+  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, continuityEnabled, saveThinking: continuityEnabled ? (thinking) => { if (thinking) saveRecentThought(thoughtKey, thinking); } : null };
   const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
 
@@ -326,8 +344,14 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   }
 
   // Streaming response
-  const { onStreamComplete } = buildOnStreamComplete({ ...sharedCtx });
-  return handleStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, streamController, onStreamComplete });
+  const { onStreamComplete: _origOnStreamComplete } = buildOnStreamComplete({ ...sharedCtx });
+  const onStreamComplete = (contentObj, usage, ttftAt) => {
+    if (contentObj?.thinking && sharedCtx.saveThinking) {
+      sharedCtx.saveThinking(contentObj.thinking);
+    }
+    return _origOnStreamComplete(contentObj, usage, ttftAt);
+  };
+  return handleStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, streamController, onStreamComplete, continuityEnabled });
 }
 
 export function isTokenExpiringSoon(expiresAt, bufferMs = 5 * 60 * 1000) {

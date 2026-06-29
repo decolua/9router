@@ -4,6 +4,8 @@ import { fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
 import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
 import { createErrorResult } from "../../utils/error.js";
+import { extractThinking } from "../../utils/thinkingExtractor.js";
+import { stripTaggedThinking } from "../../utils/taggedThinkingNormalizer.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats } from "./requestDetail.js";
@@ -198,7 +200,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
 /**
  * Handle non-streaming response from provider.
  */
-export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, trackDone, appendLog }) {
+export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, trackDone, appendLog, saveThinking, continuityEnabled }) {
   trackDone();
   const contentType = providerResponse.headers.get("content-type") || "";
   let responseBody;
@@ -256,6 +258,16 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   if (!isClaudeMessageResponse) {
     if (!translatedResponse.object) translatedResponse.object = "chat.completion";
     if (!translatedResponse.created) translatedResponse.created = Math.floor(Date.now() / 1000);
+  }
+
+  // Strip content-embedded thinking tags (keep inner text as visible content) and extract thinking (continuity)
+  if (continuityEnabled) {
+    stripTaggedThinking(translatedResponse);
+
+    const extractedThinking = extractThinking(translatedResponse);
+    if (extractedThinking && saveThinking) {
+      saveThinking(extractedThinking);
+    }
   }
 
   // Strip Azure-specific fields

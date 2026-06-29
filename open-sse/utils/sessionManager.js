@@ -13,6 +13,7 @@ import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
 
 // Runtime storage: Key = connectionId, Value = { sessionId, lastUsed }
 const runtimeSessionStore = new Map();
+const recentThoughtsStore = new Map();
 
 // Periodically evict entries that haven't been used within TTL
 const cleanupInterval = setInterval(() => {
@@ -131,7 +132,7 @@ function extractAntigravitySession(body) {
     return m ? normalizeSessionId(m[1]) : null;
 }
 
-function extractClientSessionId(headers, body) {
+export function extractClientSessionId(headers, body) {
     const claude = extractClaudeCodeSession(body?.metadata?.user_id);
     if (claude) return `claude:${claude}`;
     const antigravity = extractAntigravitySession(body);
@@ -229,3 +230,52 @@ const assistantCleanup = setInterval(() => {
     }
 }, MEMORY_CONFIG.sessionCleanupIntervalMs);
 if (assistantCleanup.unref) assistantCleanup.unref();
+
+const MAX_RECENT_THOUGHT_CHARS = 32000;
+
+function evictLeastRecentlyUsedThoughtSession() {
+    let oldestKey = null;
+    let oldestTs = Infinity;
+    for (const [sid, entry] of recentThoughtsStore) {
+        if (entry.lastUsed < oldestTs) {
+            oldestTs = entry.lastUsed;
+            oldestKey = sid;
+        }
+    }
+    if (oldestKey) recentThoughtsStore.delete(oldestKey);
+}
+
+export function saveRecentThought(sessionId, raw) {
+    if (!sessionId || raw == null || raw === "") return;
+    if (typeof raw === "string" && raw.length > MAX_RECENT_THOUGHT_CHARS) {
+        console.warn(`[continuity] skipping oversize reasoning checkpoint (${raw.length} chars)`);
+        return;
+    }
+    let entry = recentThoughtsStore.get(sessionId);
+    if (!entry) {
+        if (recentThoughtsStore.size >= 1000) evictLeastRecentlyUsedThoughtSession();
+        entry = { thoughts: [], lastUsed: Date.now() };
+        recentThoughtsStore.set(sessionId, entry);
+    }
+    entry.thoughts.push(raw);
+    if (entry.thoughts.length > 100) entry.thoughts.shift();
+    entry.lastUsed = Date.now();
+}
+
+export function getRecentThoughts(sessionId, count = 100) {
+    const entry = recentThoughtsStore.get(sessionId);
+    if (!entry) return [];
+    entry.lastUsed = Date.now();
+    return entry.thoughts.slice(-count);
+}
+
+// Cleanup expired thought entries independently of runtimeSessionStore
+const thoughtsCleanup = setInterval(() => {
+    const now = Date.now();
+    for (const [sid, entry] of recentThoughtsStore) {
+        if (now - entry.lastUsed > MEMORY_CONFIG.sessionTtlMs) {
+            recentThoughtsStore.delete(sid);
+        }
+    }
+}, MEMORY_CONFIG.sessionCleanupIntervalMs);
+if (thoughtsCleanup.unref) thoughtsCleanup.unref();

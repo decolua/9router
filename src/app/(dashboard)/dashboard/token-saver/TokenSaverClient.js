@@ -28,6 +28,8 @@ export default function TokenSaverClient() {
   const [cavemanLevel, setCavemanLevel] = useState("full");
   const [ponytailEnabled, setPonytailEnabled] = useState(false);
   const [ponytailLevel, setPonytailLevel] = useState("full");
+  const [continuityEnabled, setContinuityEnabled] = useState(false);
+  const [continuityCount, setContinuityCount] = useState(3);
   const [locale, setLocale] = useState("en");
 
   const { copied, copy } = useCopyToClipboard();
@@ -152,6 +154,20 @@ export default function TokenSaverClient() {
     patchSetting({ ponytailLevel: level });
   };
 
+  const handleContinuityEnabled = (value) => {
+    setContinuityEnabled(value);
+    patchSetting({ continuityEnabled: value });
+  };
+
+  const handleContinuityCount = (e) => {
+    let val = parseInt(e.target.value, 10);
+    if (isNaN(val)) val = 1;
+    if (val < 1) val = 1;
+    if (val > 100) val = 100;
+    setContinuityCount(val);
+    patchSetting({ continuityCount: val });
+  };
+
   useEffect(() => {
     const loadSettings = async () => {
       try {
@@ -165,6 +181,8 @@ export default function TokenSaverClient() {
           setCavemanLevel(data.cavemanLevel || "full");
           setPonytailEnabled(!!data.ponytailEnabled);
           setPonytailLevel(data.ponytailLevel || "full");
+          setContinuityEnabled(!!data.continuityEnabled);
+          setContinuityCount(parseInt(data.continuityCount) || 3);
           refreshHeadroomStatus();
         }
       } catch {}
@@ -355,6 +373,45 @@ export default function TokenSaverClient() {
             <Toggle
               checked={ponytailEnabled}
               onChange={() => handlePonytailEnabled(!ponytailEnabled)}
+            />
+          </div>
+        </div>
+
+        {/* Continuity Feature (experimental, opt-in) */}
+        <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">
+              Continuity{" "}
+              <span className="text-xs font-normal text-primary">(Experimental)</span>
+            </p>
+            <p className="text-sm text-text-muted">
+              Replay recent reasoning checkpoints into the system prompt for cross-model continuation
+            </p>
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            {continuityEnabled && (
+              <div className="flex flex-col items-end gap-1">
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 bg-surface-2 px-2 py-1 rounded border border-border">
+                    <span className="text-xs text-text-muted">Count:</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={continuityCount}
+                      onChange={handleContinuityCount}
+                      className="w-12 px-1 text-xs bg-transparent border-none focus:outline-none text-text"
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-primary">
+                  Replaying up to {continuityCount} reasoning checkpoints into the system prompt.
+                </p>
+              </div>
+            )}
+            <Toggle
+              checked={continuityEnabled}
+              onChange={() => handleContinuityEnabled(!continuityEnabled)}
             />
           </div>
         </div>

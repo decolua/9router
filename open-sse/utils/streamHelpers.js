@@ -34,23 +34,26 @@ export function parseSSELine(line, format = null) {
 }
 
 // Check if chunk has valuable content (not empty)
-export function hasValuableContent(chunk, format) {
+export function hasValuableContent(chunk, format = null) {
+  const unwrapped = chunk.response || chunk;
+  const fmt = format || (unwrapped.candidates !== undefined ? FORMATS.GEMINI : (unwrapped.choices === undefined && (unwrapped.type !== undefined || unwrapped.delta !== undefined) ? FORMATS.CLAUDE : FORMATS.OPENAI));
+
   // OpenAI format
-  if (format === FORMATS.OPENAI && chunk.choices?.[0]?.delta) {
-    const delta = chunk.choices[0].delta;
+  if (fmt === FORMATS.OPENAI && unwrapped.choices?.[0]?.delta) {
+    const delta = unwrapped.choices[0].delta;
     return delta.content && delta.content !== "" ||
            delta.reasoning_content && delta.reasoning_content !== "" ||
            delta.tool_calls && delta.tool_calls.length > 0 ||
-           chunk.choices[0].finish_reason ||
+           unwrapped.choices[0].finish_reason ||
            delta.role;
   }
 
   // Claude format
-  if (format === FORMATS.CLAUDE) {
-    const isContentBlockDelta = chunk.type === "content_block_delta";
-    const hasText = chunk.delta?.text && chunk.delta.text !== "";
-    const hasThinking = chunk.delta?.thinking && chunk.delta.thinking !== "";
-    const hasInputJson = chunk.delta?.partial_json && chunk.delta.partial_json !== "";
+  if (fmt === FORMATS.CLAUDE) {
+    const isContentBlockDelta = unwrapped.type === "content_block_delta";
+    const hasText = unwrapped.delta?.text && unwrapped.delta.text !== "";
+    const hasThinking = unwrapped.delta?.thinking && unwrapped.delta.thinking !== "";
+    const hasInputJson = unwrapped.delta?.partial_json && unwrapped.delta.partial_json !== "";
     
     if (isContentBlockDelta && !hasText && !hasThinking && !hasInputJson) {
       return false;

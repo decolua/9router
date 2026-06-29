@@ -4,6 +4,8 @@ import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { FORMATS } from "../../translator/formats.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats } from "./requestDetail.js";
+import { stripTaggedThinking, stripTags } from "../../utils/taggedThinkingNormalizer.js";
+import { extractThinking } from "../../utils/thinkingExtractor.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
@@ -102,7 +104,7 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
  * Handle case: provider forced streaming but client wants JSON.
  * Supports both Codex/Responses API SSE and standard Chat Completions SSE.
  */
-export async function handleForcedSSEToJson({ providerResponse, sourceFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, trackDone, appendLog }) {
+export async function handleForcedSSEToJson({ providerResponse, sourceFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, trackDone, appendLog, continuityEnabled, saveThinking }) {
   const contentType = providerResponse.headers.get("content-type") || "";
   const isSSE = contentType.includes("text/event-stream") || (contentType === "" && isResponsesProvider(provider));
   if (!isSSE) return null; // not handled here
@@ -126,7 +128,12 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
       appendLog({ tokens: usage, status: "200 OK" });
       saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint });
 
-      const { msgItem, textContent } = pickAssistantMessageForChatCompletion(jsonResponse.output);
+      const { msgItem, textContent: rawTextContent } = pickAssistantMessageForChatCompletion(jsonResponse.output);
+      let textContent = rawTextContent;
+      if (continuityEnabled) {
+        const stripped = stripTags(textContent);
+        if (stripped !== null) textContent = stripped;
+      }
       const totalLatency = Date.now() - requestStartTime;
 
       saveRequestDetail(buildRequestDetail({
@@ -183,6 +190,12 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
         };
       }
 
+      // Continuity: extract thinking for session buffer
+      if (continuityEnabled) {
+        const thinkingForBuffer = extractThinking(jsonResponse);
+        if (thinkingForBuffer && saveThinking) saveThinking(thinkingForBuffer);
+      }
+
       return { success: true, response: new Response(JSON.stringify(finalResp), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
     } catch (err) {
       console.error("[ChatCore] Responses API SSE→JSON failed:", err);
@@ -214,6 +227,13 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
       },
       status: "success"
     }, { endpoint: clientRawRequest?.endpoint || null })).catch(() => {});
+
+    // Continuity: strip tagged thinking + extract thinking for session buffer
+    if (continuityEnabled) {
+      stripTaggedThinking(parsed);
+      const extractedThinking = extractThinking(parsed);
+      if (extractedThinking && saveThinking) saveThinking(extractedThinking);
+    }
 
     // Strip reasoning_content only when content is non-empty.
     // When content is empty (e.g. thinking models that used all tokens for reasoning),
