@@ -2,21 +2,24 @@
  * Unit tests for open-sse/translator/request/openai-to-kiro.js
  *
  * Tests cover:
- *  - buildKiroPayload() - basic message conversion
+ *  - openaiToKiroRequest() - basic message conversion
  *  - Image forwarding fix: images in currentMessage must be included in payload
  */
 
 import { describe, it, expect } from "vitest";
-import { buildKiroPayload } from "../../open-sse/translator/request/openai-to-kiro.js";
+import { openaiToKiroRequest } from "../../open-sse/translator/request/openai-to-kiro.js";
 
-describe("buildKiroPayload", () => {
+const contentOf = (result) =>
+  result.conversationState.currentMessage.userInputMessage.content;
+
+describe("openaiToKiroRequest", () => {
   describe("basic message conversion", () => {
     it("should convert a simple text message", () => {
       const body = {
         messages: [{ role: "user", content: "Hello" }]
       };
 
-      const result = buildKiroPayload("claude-sonnet-4.6", body, true, {});
+      const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
 
       const currentMsg = result.conversationState.currentMessage;
       expect(currentMsg.userInputMessage.content).toContain("Hello");
@@ -29,7 +32,7 @@ describe("buildKiroPayload", () => {
         messages: [{ role: "user", content: "No images here" }]
       };
 
-      const result = buildKiroPayload("claude-sonnet-4.6", body, true, {});
+      const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
 
       const currentMsg = result.conversationState.currentMessage;
       expect(currentMsg.userInputMessage.images).toBeUndefined();
@@ -51,7 +54,7 @@ describe("buildKiroPayload", () => {
         ]
       };
 
-      const result = buildKiroPayload("claude-sonnet-4.6", body, true, {});
+      const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
 
       const currentMsg = result.conversationState.currentMessage;
       expect(currentMsg.userInputMessage.images).toBeDefined();
@@ -75,7 +78,7 @@ describe("buildKiroPayload", () => {
         ]
       };
 
-      const result = buildKiroPayload("claude-sonnet-4.6", body, true, {});
+      const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
 
       const currentMsg = result.conversationState.currentMessage;
       expect(currentMsg.userInputMessage.images).toHaveLength(2);
@@ -95,7 +98,7 @@ describe("buildKiroPayload", () => {
         ]
       };
 
-      const result = buildKiroPayload("claude-sonnet-4.6", body, true, {});
+      const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
 
       const currentMsg = result.conversationState.currentMessage;
       expect(currentMsg.userInputMessage.images).toBeUndefined();
@@ -115,7 +118,7 @@ describe("buildKiroPayload", () => {
         ]
       };
 
-      const result = buildKiroPayload("claude-sonnet-4.6", body, true, {});
+      const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
 
       const currentMsg = result.conversationState.currentMessage;
       expect(currentMsg.userInputMessage.content).toContain("What is in this image?");
@@ -135,7 +138,7 @@ describe("buildKiroPayload", () => {
         ]
       };
 
-      const result = buildKiroPayload("claude-sonnet-4.6", body, true, {});
+      const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
 
       const currentMsg = result.conversationState.currentMessage;
       // HTTP URLs are not supported by Kiro — converted to text placeholder
@@ -166,7 +169,7 @@ describe("buildKiroPayload", () => {
         // note: no `tools`
       };
 
-      const result = buildKiroPayload("claude-sonnet-4.6", body, true, {});
+      const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
       const cs = result.conversationState;
 
       // No structured tool content anywhere
@@ -201,7 +204,7 @@ describe("buildKiroPayload", () => {
         ]
       };
 
-      const result = buildKiroPayload("claude-sonnet-4.6", body, true, {});
+      const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
       const cs = result.conversationState;
 
       const allJson = JSON.stringify(cs);
@@ -233,7 +236,7 @@ describe("buildKiroPayload", () => {
         ]
       };
 
-      const result = buildKiroPayload("claude-sonnet-4.6", body, true, {});
+      const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
       const cs = result.conversationState;
 
       // Structured tool spec carried on currentMessage
@@ -270,7 +273,7 @@ describe("buildKiroPayload", () => {
         ]
       };
 
-      const result = buildKiroPayload("claude-sonnet-4.6", body, true, {});
+      const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
       const cs = result.conversationState;
       const allJson = JSON.stringify(cs);
 
@@ -278,6 +281,85 @@ describe("buildKiroPayload", () => {
       expect(allJson).not.toContain("orphan_call");
       // ...but the content is preserved as salvaged text, not discarded.
       expect(allJson).toContain("[Tool result: important orphaned output]");
+    });
+  });
+
+  describe("thinking budget", () => {
+    it("maps reasoning_effort low to max_thinking_length 1024", () => {
+      const body = {
+        reasoning_effort: "low",
+        messages: [{ role: "user", content: "Think lightly" }]
+      };
+
+      const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
+
+      expect(contentOf(result)).toContain("<max_thinking_length>1024</max_thinking_length>");
+    });
+
+    it("maps reasoning_effort high to max_thinking_length 24576", () => {
+      const body = {
+        reasoning_effort: "high",
+        messages: [{ role: "user", content: "Think deeply" }]
+      };
+
+      const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
+
+      expect(contentOf(result)).toContain("<max_thinking_length>24576</max_thinking_length>");
+    });
+
+    it("clamps reasoning_effort max to Kiro max_thinking_length 32000", () => {
+      const body = {
+        reasoning_effort: "max",
+        messages: [{ role: "user", content: "Think as much as possible" }]
+      };
+
+      const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
+
+      expect(contentOf(result)).toContain("<max_thinking_length>32000</max_thinking_length>");
+    });
+
+    it("clamps OpenAI Responses reasoning.effort xhigh to max_thinking_length 32000", () => {
+      const body = {
+        reasoning: { effort: "xhigh" },
+        messages: [{ role: "user", content: "Think extra deeply" }]
+      };
+
+      const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
+
+      expect(contentOf(result)).toContain("<max_thinking_length>32000</max_thinking_length>");
+    });
+
+    it("uses Claude thinking.budget_tokens as max_thinking_length", () => {
+      const body = {
+        thinking: { type: "enabled", budget_tokens: 4096 },
+        messages: [{ role: "user", content: "Use a fixed budget" }]
+      };
+
+      const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
+
+      expect(contentOf(result)).toContain("<max_thinking_length>4096</max_thinking_length>");
+    });
+
+    it("uses the default budget for synthetic -thinking models with no explicit config", () => {
+      const body = {
+        messages: [{ role: "user", content: "Think by model suffix" }]
+      };
+
+      const result = openaiToKiroRequest("claude-sonnet-4.6-thinking", body, true, {});
+
+      expect(contentOf(result)).toContain("<max_thinking_length>16000</max_thinking_length>");
+    });
+
+    it("does not inject thinking prefix for reasoning_effort none", () => {
+      const body = {
+        reasoning_effort: "none",
+        messages: [{ role: "user", content: "Do not think" }]
+      };
+
+      const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
+
+      expect(contentOf(result)).not.toContain("<thinking_mode>enabled</thinking_mode>");
+      expect(contentOf(result)).not.toContain("<max_thinking_length>");
     });
   });
 });

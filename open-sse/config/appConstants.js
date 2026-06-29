@@ -1,8 +1,9 @@
 import { platform, arch } from "os";
+import { PROVIDERS, PROVIDER_OAUTH } from "./providers.js";
 
-// === Gemini CLI ===
-export const GEMINI_CLI_VERSION = "0.34.0";
-export const GEMINI_CLI_API_CLIENT = "google-genai-sdk/1.41.0 gl-node/v22.19.0";
+// === Gemini CLI === derive từ registry gemini-cli.transport
+export const GEMINI_CLI_VERSION = PROVIDERS["gemini-cli"]?.cliVersion;
+export const GEMINI_CLI_API_CLIENT = PROVIDERS["gemini-cli"]?.apiClient;
 
 // Map Node arch to Gemini CLI arch string (x64/x86/arm64/...)
 function geminiCLIArch() {
@@ -16,11 +17,13 @@ export function geminiCLIUserAgent(model = "unknown") {
 }
 
 // === GitHub Copilot ===
+// Derive từ registry github.transport.copilot
+const _ghCopilot = PROVIDERS.github?.copilot || {};
 export const GITHUB_COPILOT = {
-  VSCODE_VERSION: "1.110.0",
-  COPILOT_CHAT_VERSION: "0.38.0",
-  USER_AGENT: "GitHubCopilotChat/0.38.0",
-  API_VERSION: "2025-04-01",
+  VSCODE_VERSION: _ghCopilot.vscodeVersion,
+  COPILOT_CHAT_VERSION: _ghCopilot.chatVersion,
+  USER_AGENT: _ghCopilot.userAgent,
+  API_VERSION: _ghCopilot.apiVersion,
 };
 
 // === Antigravity enums ===
@@ -152,43 +155,19 @@ export const LOAD_CODE_ASSIST_METADATA = {
 export const CLAUDE_SYSTEM_PROMPT = "You are Claude Code, Anthropic's official CLI for Claude.";
 export const ANTIGRAVITY_DEFAULT_SYSTEM = "You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.**Absolute paths only****Proactiveness**";
 
-// Proactive token refresh lead times per provider (ms)
-export const REFRESH_LEAD_MS = {
-  codex:       5 * 24 * 60 * 60 * 1000, // 5 days
-  claude:       4 * 60 * 60 * 1000,     // 4 hours
-  iflow:       24 * 60 * 60 * 1000,     // 24 hours
-  qwen:        20 * 60 * 1000,          // 20 minutes
-  "kimi-coding": 5 * 60 * 1000,         // 5 minutes
-  antigravity:  5 * 60 * 1000,          // 5 minutes
-};
+// Derive từ registry oauth.refreshLeadMs
+export const REFRESH_LEAD_MS = Object.fromEntries(
+  Object.entries(PROVIDER_OAUTH).filter(([, o]) => o.refreshLeadMs).map(([id, o]) => [id, o.refreshLeadMs])
+);
 
 // OAuth endpoints
 export const OAUTH_ENDPOINTS = {
-  google: {
-    token: "https://oauth2.googleapis.com/token",
-    auth: "https://accounts.google.com/o/oauth2/auth"
-  },
-  openai: {
-    token: "https://auth.openai.com/oauth/token",
-    auth: "https://auth.openai.com/oauth/authorize"
-  },
-  anthropic: {
-    token: "https://api.anthropic.com/v1/oauth/token",
-    auth: "https://api.anthropic.com/v1/oauth/authorize"
-  },
-  qwen: {
-    token: "https://qwen.ai/api/v1/oauth2/token",
-    auth: "https://qwen.ai/api/v1/oauth2/device/code"
-  },
-  iflow: {
-    token: "https://iflow.cn/oauth/token",
-    auth: "https://iflow.cn/oauth"
-  },
-  github: {
-    token: "https://github.com/login/oauth/access_token",
-    auth: "https://github.com/login/oauth/authorize",
-    deviceCode: "https://github.com/login/device/code"
-  }
+  google:    { token: "https://oauth2.googleapis.com/token", auth: "https://accounts.google.com/o/oauth2/auth" },
+  openai:    { token: PROVIDER_OAUTH["codex"]?.tokenUrl, auth: PROVIDER_OAUTH["codex"]?.authorizeUrl },
+  anthropic: { token: PROVIDER_OAUTH["claude"]?.tokenUrl, auth: "https://api.anthropic.com/v1/oauth/authorize" }, // ≠ claude.authorizeUrl (claude.ai login) — keep
+  qwen:      { token: PROVIDER_OAUTH["qwen"]?.tokenUrl, auth: PROVIDER_OAUTH["qwen"]?.deviceCodeUrl },
+  iflow:     { token: PROVIDER_OAUTH["iflow"]?.tokenUrl, auth: PROVIDER_OAUTH["iflow"]?.authorizeUrl },
+  github:    { token: PROVIDER_OAUTH["github"]?.tokenUrl, auth: PROVIDER_OAUTH["github"]?.authorizeUrl, deviceCode: PROVIDER_OAUTH["github"]?.deviceCodeUrl },
 };
 
 // Generate Kimi OAuth custom headers

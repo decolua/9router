@@ -2,9 +2,8 @@ import { getProviderConnectionById, updateProviderConnection } from "@/lib/local
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { testProxyUrl } from "@/lib/network/proxyTest";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
-import { PROVIDER_ENDPOINTS } from "@/shared/constants/config";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
-import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
+import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
 import {
   refreshProviderCredentials,
   shouldRefreshCredentials,
@@ -91,7 +90,7 @@ const OAUTH_TEST_CONFIG = {
     authHeader: "Authorization",
     authPrefix: "Bearer ",
   },
-  codebuddy: { tokenExists: true },
+  "codebuddy-cn": { tokenExists: true },
 };
 
 async function probeClineAccessToken(accessToken) {
@@ -103,6 +102,53 @@ async function probeClineAccessToken(accessToken) {
   });
 
   return res;
+}
+
+const CLOUD_CODE_ASSIST_TEST_URL = "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist";
+const CLOUD_CODE_ASSIST_TEST_BODY = JSON.stringify({
+  metadata: {
+    ideType: "IDE_UNSPECIFIED",
+    platform: "PLATFORM_UNSPECIFIED",
+    pluginType: "GEMINI",
+  },
+});
+
+function parseProviderErrorMessage(bodyText, fallback) {
+  if (!bodyText) return fallback;
+  try {
+    const parsed = JSON.parse(bodyText);
+    const message = parsed?.error?.message || parsed?.message || parsed?.error;
+    if (typeof message === "string" && message.trim()) return message.trim();
+    if (message) return JSON.stringify(message);
+  } catch {
+    // fall through
+  }
+  return bodyText.trim() || fallback;
+}
+
+async function probeCloudCodeAssistAccess(connection, accessToken, effectiveProxy = null) {
+  const userAgent = connection.provider === "antigravity"
+    ? "google-api-nodejs-client/9.15.1 vscode-antigravity/1.107.0"
+    : "google-api-nodejs-client/9.15.1 gemini-cli/0.34.0";
+
+  const res = await fetchWithConnectionProxy(CLOUD_CODE_ASSIST_TEST_URL, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      "User-Agent": userAgent,
+    },
+    body: CLOUD_CODE_ASSIST_TEST_BODY,
+  }, effectiveProxy);
+
+  if (res.ok) return { valid: true, error: null };
+
+  const bodyText = await res.text().catch(() => "");
+  return {
+    valid: false,
+    error: parseProviderErrorMessage(bodyText, `API returned ${res.status}`),
+    status: res.status,
+  };
 }
 
 async function refreshOAuthToken(connection) {
@@ -254,6 +300,23 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
     return { valid: true, error: null, refreshed: false, newTokens: null };
   }
 
+  if (connection.provider === "gemini-cli" || connection.provider === "antigravity") {
+    const initial = await probeCloudCodeAssistAccess(connection, accessToken, effectiveProxy);
+    if (initial.valid) return { valid: true, error: null, refreshed, newTokens };
+
+    if (initial.status === 401 && config.refreshable && !refreshed && connection.refreshToken) {
+      const tokens = await refreshOAuthToken(connection);
+      if (tokens?.accessToken) {
+        const retry = await probeCloudCodeAssistAccess(connection, tokens.accessToken, effectiveProxy);
+        if (retry.valid) return { valid: true, error: null, refreshed: true, newTokens: tokens };
+        return { valid: false, error: retry.error, refreshed: true, newTokens: tokens };
+      }
+      return { valid: false, error: "Token invalid or revoked", refreshed: false };
+    }
+
+    return { valid: false, error: initial.error, refreshed };
+  }
+
   if (connection.provider === "cline") {
     const tryProbe = async (token) => {
       const res = await probeClineAccessToken(token);
@@ -356,10 +419,25 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
     try {
       modelsBase = modelsBase.replace(/\/$/, "");
       if (modelsBase.endsWith("/messages")) modelsBase = modelsBase.slice(0, -9);
-      const res = await fetchWithConnectionProxy(`${modelsBase}/models`, {
-        headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "Authorization": `Bearer ${connection.apiKey}` },
+      const messagesUrl = `${modelsBase}/v1/messages`;
+      const model = connection.defaultModel || "claude-3-haiku-20240307";
+      const res = await fetchWithConnectionProxy(messagesUrl, {
+        method: "POST",
+        headers: {
+          "x-api-key": connection.apiKey,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+          "Authorization": `Bearer ${connection.apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: 1,
+          messages: [{ role: "user", content: "test" }],
+        }),
       }, effectiveProxy);
-      return { valid: res.ok, error: res.ok ? null : "Invalid API key or base URL" };
+      // 400/529 still confirms key accepted; only 401/403 = bad key
+      const valid = res.status !== 401 && res.status !== 403;
+      return { valid, error: valid ? null : "Invalid API key or base URL" };
     } catch (err) {
       return { valid: false, error: err.message };
     }
@@ -474,7 +552,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
       }
       case "volcengine-ark":
       case "byteplus": {
-        const res = await fetchWithConnectionProxy(PROVIDER_ENDPOINTS[connection.provider], {
+        const res = await fetchWithConnectionProxy(PROVIDERS[connection.provider]?.baseUrl, {
           method: "POST",
           headers: { "Authorization": `Bearer ${connection.apiKey}`, "content-type": "application/json" },
           body: JSON.stringify({ model: getDefaultModel(connection.provider), max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
@@ -503,7 +581,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "perplexity": {
-        const res = await fetchWithConnectionProxy("https://api.perplexity.ai/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
+        const res = await fetchWithConnectionProxy("https://api.perplexity.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "together": {
@@ -527,7 +605,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "siliconflow": {
-        const res = await fetchWithConnectionProxy("https://api.siliconflow.cn/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
+        const res = await fetchWithConnectionProxy("https://api.siliconflow.com/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "hyperbolic": {

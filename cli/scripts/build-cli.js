@@ -17,7 +17,6 @@ const EXCLUDE_PATTERNS = [
   "@img",           // Sharp image processing (not needed with unoptimized images)
   "sharp",          // Sharp core lib (not needed with unoptimized images)
   "detect-libc",    // Sharp dependency
-  "logs",           // Runtime logs
   ".env",           // Environment files
   ".env.local",
   ".env.*.local",
@@ -136,7 +135,15 @@ console.log("✅ Cleaned\n");
 console.log("3️⃣  Copying Next.js standalone build to app/cli/app...");
 const standaloneRoot = path.join(appDir, ".next", "standalone");
 const standaloneRootResolved = path.join(buildDistDir, "standalone");
-const standaloneRootToUse = fs.existsSync(standaloneRootResolved) ? standaloneRootResolved : standaloneRoot;
+let standaloneRootToUse = fs.existsSync(standaloneRootResolved) ? standaloneRootResolved : standaloneRoot;
+// Next.js 16 nests standalone output under the project name when NEXT_TRACING_ROOT_MODE=workspace
+// e.g. .next-cli-build/standalone/9router/server.js
+const pkgName = path.basename(appDir);
+const nestedRoot = path.join(standaloneRootToUse, pkgName);
+if (fs.existsSync(path.join(nestedRoot, "server.js")) && !fs.existsSync(path.join(standaloneRootToUse, "server.js"))) {
+  console.log(`ℹ️  Detected nested standalone output: ${pkgName}/`);
+  standaloneRootToUse = nestedRoot;
+}
 const standaloneApp = fs.existsSync(path.join(standaloneRootToUse, "server.js"))
   ? standaloneRootToUse
   : path.join(standaloneRootToUse, "app");
@@ -153,6 +160,15 @@ if (standaloneApp !== standaloneRootToUse && fs.existsSync(standaloneNodeModules
   copyRecursive(standaloneNodeModules, path.join(cliAppDir, "node_modules"));
 }
 console.log("✅ Copied standalone build\n");
+
+// Step 3a: Copy custom server (injects real socket IP, strips spoofable XFF).
+const customServerSrc = path.join(appDir, "custom-server.js");
+if (fs.existsSync(customServerSrc)) {
+  fs.copyFileSync(customServerSrc, path.join(cliAppDir, "custom-server.js"));
+  console.log("✅ Copied custom-server.js\n");
+} else {
+  console.warn("⚠️  custom-server.js not found — server will run without real-IP injection\n");
+}
 
 // Step 3b: Ensure sql.js (pure JS fallback) bundled in app/cli/app/node_modules.
 // Strip better-sqlite3 (native) — it lives in ~/.9router/runtime to avoid

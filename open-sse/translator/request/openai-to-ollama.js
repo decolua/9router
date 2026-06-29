@@ -1,5 +1,8 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
+import { parseDataUri } from "../concerns/image.js";
+import { safeParseJSON } from "../concerns/json.js";
+import { ROLE, OPENAI_BLOCK } from "../schema/index.js";
 
 /**
  * Convert OpenAI request to Ollama format
@@ -67,7 +70,7 @@ function normalizeMessages(messages) {
 
   // First pass: build tool_call_id -> tool_name map from assistant messages
   for (const msg of messages) {
-    if (msg.role === "assistant" && msg.tool_calls) {
+    if (msg.role === ROLE.ASSISTANT && msg.tool_calls) {
       for (const tc of msg.tool_calls) {
         if (tc.id && tc.function?.name) {
           toolCallMap.set(tc.id, tc.function.name);
@@ -79,7 +82,7 @@ function normalizeMessages(messages) {
   // Second pass: convert messages
   for (const msg of messages) {
     // Handle tool result messages (OpenAI format -> Ollama format)
-    if (msg.role === "tool") {
+    if (msg.role === ROLE.TOOL) {
       const toolResult = normalizeContent(msg.content);
       if (!toolResult) continue;
 
@@ -87,7 +90,7 @@ function normalizeMessages(messages) {
       const toolName = toolCallMap.get(msg.tool_call_id) || msg.name || "unknown_tool";
 
       result.push({
-        role: "tool",
+        role: ROLE.TOOL,
         tool_name: toolName,
         content: toolResult
       });
@@ -95,23 +98,23 @@ function normalizeMessages(messages) {
     }
 
     // Handle assistant messages with tool_calls
-    if (msg.role === "assistant" && msg.tool_calls) {
+    if (msg.role === ROLE.ASSISTANT && msg.tool_calls) {
       const content = normalizeContent(msg.content) || "";
       
       // Convert OpenAI tool_calls format to Ollama format
       const ollamaToolCalls = msg.tool_calls.map(tc => ({
-        type: "function",
+        type: OPENAI_BLOCK.FUNCTION,
         function: {
           index: tc.index || 0,
           name: tc.function?.name || "",
           arguments: typeof tc.function?.arguments === "string" 
-            ? JSON.parse(tc.function.arguments || "{}")
+            ? safeParseJSON(tc.function.arguments || "{}", {})
             : tc.function?.arguments || {}
         }
       }));
 
       result.push({
-        role: "assistant",
+        role: ROLE.ASSISTANT,
         content: content,
         tool_calls: ollamaToolCalls
       });
@@ -124,7 +127,7 @@ function normalizeMessages(messages) {
     const images = extractImagesFromContent(msg.content);
 
     // Skip empty messages (except assistant)
-    if (!content && role !== "assistant") continue;
+    if (!content && role !== ROLE.ASSISTANT) continue;
 
     const out = {
       role: role,
@@ -153,7 +156,7 @@ function normalizeContent(content) {
   if (Array.isArray(content)) {
     // Extract text from content array
     const textParts = content
-      .filter(block => block && block.type === "text" && block.text)
+      .filter(block => block && block.type === OPENAI_BLOCK.TEXT && block.text)
       .map(block => block.text);
 
     return textParts.join("\n") || "";
@@ -174,15 +177,15 @@ function extractImagesFromContent(content) {
   const images = [];
 
   for (const block of content) {
-    if (!block || block.type !== "image_url") continue;
+    if (!block || block.type !== OPENAI_BLOCK.IMAGE_URL) continue;
 
     const url = typeof block.image_url === "string" ? block.image_url : block.image_url?.url;
     if (typeof url !== "string" || !url) continue;
 
-    const m = url.match(/^data:[^;]+;base64,([\s\S]+)$/);
-    if (!m) continue;
+    const parsed = parseDataUri(url);
+    if (!parsed) continue;
 
-    images.push(m[1]);
+    images.push(parsed.base64);
   }
 
   return images;

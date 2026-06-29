@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { MODEL_PRICING } from "../../src/shared/constants/pricing.js";
+import { MODEL_PRICING } from "../../open-sse/providers/pricing.js";
 
 describe("MiniMax-M3 pricing", () => {
   it("includes MiniMax-M3 in MODEL_PRICING", () => {
