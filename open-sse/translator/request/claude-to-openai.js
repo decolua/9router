@@ -129,8 +129,24 @@ function fixMissingToolResponsesOpenAI(messages) {
   }
 }
 
+// Wrap mid-conversation system text so it ends as a user turn (avoids Anthropic prefill 400)
+function systemReminderText(content) {
+  const parts = Array.isArray(content)
+    ? content.filter(c => c?.type === CLAUDE_BLOCK.TEXT).map(c => c.text || "")
+    : [typeof content === "string" ? content : ""];
+  const text = parts.filter(Boolean).join("\n");
+  if (!text.trim()) return "";
+  return `<system-reminder>\n${text}\n</system-reminder>`;
+}
+
 // Convert single Claude message - returns single message or array of messages
 function convertClaudeMessage(msg) {
+  // Mid-conversation system message -> user (per Anthropic placement rules)
+  if (msg.role === ROLE.SYSTEM) {
+    const text = systemReminderText(msg.content);
+    return text ? { role: ROLE.USER, content: text } : null;
+  }
+
   const role = msg.role === ROLE.USER || msg.role === ROLE.TOOL ? ROLE.USER : ROLE.ASSISTANT;
   
   // Simple string content

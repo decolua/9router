@@ -284,6 +284,10 @@ Default URLs:
         <img src="./public/providers/cursor.png" width="60" alt="Cursor"/><br/>
         <b>Cursor</b>
       </td>
+      <td align="center" width="120">
+        <img src="./public/providers/kimchi.png" width="60" alt="Kimchi"/><br/>
+        <b>Kimchi</b>
+      </td>
     </tr>
   </table>
 </div>
