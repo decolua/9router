@@ -249,9 +249,9 @@ export default function ModelSelectModal({
             value: `${nodePrefix}/${fullModel.replace(`${providerId}/`, "")}`,
           }));
 
-        // Merge custom models registered via /api/models/custom for this provider
+        // Also read from customModels (primary storage for compatible provider models)
         // providerAlias in DB uses the raw providerId, not the display prefix
-        const registeredCustom = customModels
+        const customNodeModels = customModels
           .filter((m) => m.providerAlias === providerId)
           .map((m) => ({
             id: m.id,
@@ -259,12 +259,14 @@ export default function ModelSelectModal({
             value: `${nodePrefix}/${m.id}`,
             isCustom: true,
           }));
+
+        // Merge and dedupe by value
         const seen = new Set(nodeModels.map((m) => m.value));
-        const mergedModels = [...nodeModels, ...registeredCustom.filter((m) => !seen.has(m.value))];
+        const allModels = [...nodeModels, ...customNodeModels.filter((m) => !seen.has(m.value))];
 
         // Always show compatible providers that are connected, even with no aliases.
         // When no aliases exist, show a placeholder so users know it's available.
-        const modelsToShow = mergedModels.length > 0 ? mergedModels : [{
+        const modelsToShow = allModels.length > 0 ? allModels : [{
           id: `__placeholder__${providerId}`,
           name: `${nodePrefix}/model-id`,
           value: `${nodePrefix}/model-id`,
@@ -277,7 +279,7 @@ export default function ModelSelectModal({
           color: providerInfo.color,
           models: modelsToShow,
           isCustom: true,
-          hasModels: mergedModels.length > 0,
+          hasModels: allModels.length > 0,
         };
       } else {
         const hardcodedModels = getModelsByProviderId(providerId);

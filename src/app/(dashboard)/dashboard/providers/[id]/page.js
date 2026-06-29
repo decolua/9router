@@ -1476,7 +1476,7 @@ export default function ProviderDetailPage() {
                       icon="add"
                       onClick={triggerAddConnection}
                     >
-                      {isCompatible ? "Add API Key" : (providerId === "iflow" ? "OAuth" : "Add Connection")}
+                      {providerId === "iflow" ? "OAuth" : "Add Connection"}
                     </Button>
                   </>
                 )}
@@ -1514,7 +1514,6 @@ export default function ProviderDetailPage() {
                 </div>
               )}
               {connectionsList}
-              {!isCompatible && (
                 <div className="mt-4 grid grid-cols-1 gap-2 sm:flex">
                   {providerId === "iflow" && (
                     <Button
@@ -1571,7 +1570,6 @@ export default function ProviderDetailPage() {
                     </Button>
                   )}
                 </div>
-              )}
             </>
           )}
         </Card>
