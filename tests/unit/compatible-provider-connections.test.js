@@ -38,14 +38,14 @@ async function setupTestContext(nodeData) {
   };
 }
 
-function makeRequest(provider) {
+function makeRequest(provider, name = "Test Connection") {
   return new Request("https://9router.local/api/providers", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       provider,
       apiKey: "test-key",
-      name: "Test Connection",
+      name,
       defaultModel: "test-model",
     }),
   });
@@ -145,26 +145,24 @@ describe("compatible provider connections API", () => {
     });
   });
 
-  it("returns 400 for a duplicate connection on the same compatible node", async () => {
+  it("allows multiple API-key connections on the same compatible node (key pool)", async () => {
     const ctx = await setupTestContext({
-      id: "openai-compatible-duplicate-test",
+      id: "openai-compatible-multikey-test",
       type: "openai-compatible",
-      name: "Duplicate Guard Node",
-      prefix: "dup",
+      name: "Multi Key Node",
+      prefix: "multi",
       apiType: "chat",
-      baseUrl: "https://duplicate-guard.test/v1",
+      baseUrl: "https://multi-key.test/v1",
     });
     cleanup = ctx.cleanup;
 
-    const firstResponse = await ctx.POST(makeRequest(ctx.node.id));
-    const secondResponse = await ctx.POST(makeRequest(ctx.node.id));
-    const secondBody = await secondResponse.json();
+    const firstResponse = await ctx.POST(makeRequest(ctx.node.id, "Key A"));
+    const secondResponse = await ctx.POST(makeRequest(ctx.node.id, "Key B"));
     const storedConnections = await ctx.getProviderConnections({ provider: ctx.node.id });
 
     expect(firstResponse.status).toBe(201);
-    expect(secondResponse.status).toBe(400);
-    expect(secondBody.error).toContain("Only one connection is allowed");
-    expect(storedConnections).toHaveLength(1);
-    expectCompatibleConnection(storedConnections[0], ctx.node, { apiType: "chat" });
+    expect(secondResponse.status).toBe(201);
+    expect(storedConnections).toHaveLength(2);
+    storedConnections.forEach((conn) => expectCompatibleConnection(conn, ctx.node, { apiType: "chat" }));
   });
 });
