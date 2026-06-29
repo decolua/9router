@@ -7,7 +7,8 @@ import { CSS } from "@dnd-kit/utilities";
 import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifiers";
 import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, Select } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
-import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, getProviderAlias } from "@/shared/constants/providers";
+import { getModelsByProviderId } from "@/shared/constants/models";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
@@ -459,6 +460,61 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
   const [modelAliases, setModelAliases] = useState({});
+
+  // Auto-populate first available model on create (not edit)
+  useEffect(() => {
+    if (!isOpen) return;
+    setName(combo?.name || "");
+    if (combo) {
+      setModels(combo.models || []);
+    }
+  }, [isOpen, combo]);
+
+  // Automatically populate the first available model when creating
+  useEffect(() => {
+    if (!isOpen || !!combo) return; // Only on create
+    if (models.length > 0) return;  // Already populated
+
+    const fetchAndPopulate = async () => {
+      try {
+        // Fetch disabled models
+        const [aliasesRes, disabledRes] = await Promise.all([
+          fetch("/api/models/alias"),
+          fetch("/api/models/disabled"),
+        ]);
+        const aliasesData = aliasesRes.ok ? await aliasesRes.json() : {};
+        const disabledData = disabledRes.ok ? await disabledRes.json() : {};
+        setModelAliases(aliasesData.aliases || {});
+
+        const disabledByAlias = disabledData.disabled || {};
+
+        // Build list of model values (providerId/modelId) from activeProviders
+        const availableModels = [];
+        for (const provider of activeProviders) {
+          // Skip inactive provider connections
+          if (provider.isActive === false) continue;
+          const alias = getProviderAlias(provider.provider);
+          const disabled = new Set(disabledByAlias[alias] || []);
+
+          // Get hardcoded models
+          const hardcoded = getModelsByProviderId(provider.provider);
+          for (const m of hardcoded) {
+            if (!disabled.has(m.id)) {
+              availableModels.push(`${alias}/${m.id}`);
+            }
+          }
+        }
+
+        if (availableModels.length > 0) {
+          setModels([availableModels[0]]);
+        }
+      } catch (err) {
+        console.error("Error auto-populating models:", err);
+      }
+    };
+
+    fetchAndPopulate();
+  }, [isOpen, combo, activeProviders]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),

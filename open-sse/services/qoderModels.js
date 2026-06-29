@@ -18,6 +18,7 @@ import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { buildCosyHeaders } from "../shared/qoder/cosy.js";
 import {
   QODER_MODEL_LIST_URL,
+  QODER_USERINFO_URL,
 } from "../shared/qoder/constants.js";
 
 const FETCH_TIMEOUT_MS = 15_000;
@@ -105,14 +106,36 @@ async function fetchQoderCatalogRaw(credentials, signal, proxyOptions = null) {
     if (signal && abortListener) signal.removeEventListener("abort", abortListener);
   }
 
-  if (!response.ok) return null;
+  if (!response.ok) {
+    console.warn(`qoder: model list returned ${response.status}`);
+    return null;
+  }
 
   const body = await response.json().catch(() => null);
-  if (!body || !Array.isArray(body.chat)) return null;
+  if (!body) {
+    console.warn("qoder: model list returned non-JSON body");
+    return null;
+  }
+
+  // Try common response shapes: `chat` array (current Qoder format),
+  // `data` array (OpenAI-compatible), `models` array, or a flat array.
+  const modelArray = (() => {
+    if (Array.isArray(body.data?.models)) return body.data.models;          // { data: { models: [...] } }
+    if (Array.isArray(body.chat)) return body.chat;                         // { chat: [...] }
+    if (Array.isArray(body.data)) return body.data;                         // { data: [...] }
+    if (Array.isArray(body.models)) return body.models;                     // { models: [...] }
+    if (Array.isArray(body.result)) return body.result;                     // { result: [...] }
+    if (Array.isArray(body)) return body;                                   // [...] (flat)
+    return null;
+  })();
+  if (!modelArray || modelArray.length === 0) {
+    console.warn("qoder: model list returned empty or unrecognized format", Object.keys(body));
+    return null;
+  }
 
   const models = [];
   const rawConfigs = new Map();
-  for (const entry of body.chat) {
+  for (const entry of modelArray) {
     if (!entry || typeof entry !== "object") continue;
     const key = entry.key;
     if (!key) continue;
@@ -153,6 +176,30 @@ export async function getQoderModelConfig(credentials, modelKey, options = {}) {
 }
 
 /**
+ * Try to recover a missing userId by hitting the (Bearer-authenticated)
+ * userinfo endpoint. This is a fallback for connections created before
+ * the userinfo-based id recovery was added (issue #2138).
+ */
+async function recoverUserId(accessToken) {
+  try {
+    const res = await fetch(QODER_USERINFO_URL, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json",
+      },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null);
+    if (!data) return null;
+    return (data.id || data.user_id || data.sub || "").trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Resolve the live model catalog + raw configs for a credential. Caches
  * results for CACHE_TTL_MS so repeated chat requests don't re-fetch, and
  * deduplicates concurrent misses so parallel chat windows fan-out exactly
@@ -161,7 +208,17 @@ export async function getQoderModelConfig(credentials, modelKey, options = {}) {
 export async function resolveQoderModels(credentials, options = {}) {
   if (!credentials?.accessToken) return null;
   const psd = credentials.providerSpecificData || {};
-  if (!psd.userId) return null;
+  // If userId is missing (connections from before the userinfo recovery
+  // was added, see issue #2138), try to recover it from the userinfo
+  // endpoint so the COSY-signed model list request can proceed.
+  if (!psd.userId) {
+    const recovered = await recoverUserId(credentials.accessToken);
+    if (!recovered) return null;
+    // Patch the live credentials object so the downstream COSY signer
+    // has what it needs. This is in-memory only; the DB is not updated
+    // (that happens on re-login).
+    psd.userId = recovered;
+  }
 
   const key = cacheKey(credentials);
   const now = Date.now();

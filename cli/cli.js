@@ -239,7 +239,8 @@ function killAllAppProcesses(appPort) {
             const cmd = line.toLowerCase();
             const isAppProcess =
               (cmd.includes("node") && cmd.includes("9router") && (cmd.includes("cli.js") || cmd.includes("\\9router") || cmd.includes("/9router")))
-              || cmd.includes("next-server");
+              || cmd.includes("next-server")
+              || cmd.includes("9router next-server");
             if (isAppProcess) {
               const match = line.match(/^"(\d+)"/);
               if (match && match[1] && match[1] !== process.pid.toString()) {
@@ -265,7 +266,8 @@ function killAllAppProcesses(appPort) {
             const cmd = line.toLowerCase();
             const isAppProcess =
               (cmd.includes("node") && cmd.includes("9router") && (cmd.includes("cli.js") || cmd.includes("/9router")))
-              || cmd.includes("next-server");
+              || cmd.includes("next-server")
+              || cmd.includes("9router next-server");
             if (isAppProcess) {
               const parts = line.trim().split(/\s+/);
               const pid = parts[1];
@@ -499,6 +501,9 @@ if (!fs.existsSync(serverPath)) {
   process.exit(1);
 }
 
+// Preload script that sets a unique process.title (Issue #2117).
+const preloadPath = path.join(__dirname, "preload-server-title.js");
+
 // Check for updates FIRST, then start server
 checkForUpdate().then((latestVersion) => {
   killAllAppProcesses(port).then(() => {
@@ -574,7 +579,7 @@ function startServer(latestVersion) {
   function spawnServer() {
     serverStartTime = Date.now();
     crashLog = [];
-    const child = spawn(RUNTIME, ["--max-old-space-size=6144", serverPath], {
+    const child = spawn(RUNTIME, ["--require", preloadPath, "--max-old-space-size=6144", serverPath], {
       cwd: standaloneDir,
       stdio: showLog ? "inherit" : ["ignore", "ignore", "pipe"],
       detached: true,

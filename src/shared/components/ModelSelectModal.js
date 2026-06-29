@@ -336,16 +336,23 @@ export default function ModelSelectModal({
       }
     });
 
-    // Filter out disabled models per provider (disabled keyed by storage alias OR providerId)
+    // Annotate disabled models per provider instead of hiding them — show greyed-out with "Disabled" badge
     Object.entries(groups).forEach(([providerId, group]) => {
       const aliasKey = getProviderAlias(providerId);
       const disabledIds = new Set([
         ...(disabledModels[aliasKey] || []),
         ...(disabledModels[providerId] || []),
       ]);
-      if (disabledIds.size === 0) return;
-      group.models = group.models.filter((m) => !disabledIds.has(m.id));
-      if (group.models.length === 0) delete groups[providerId];
+      if (disabledIds.size > 0) {
+        group._disabledCount = 0;
+        group.models = group.models.map((m) => {
+          const d = disabledIds.has(m.id);
+          if (d) group._disabledCount++;
+          return { ...m, _disabled: d };
+        });
+      } else {
+        group._disabledCount = 0;
+      }
     });
 
     return groups;
@@ -497,26 +504,35 @@ export default function ModelSelectModal({
               <span className="text-[10px] text-text-muted">
                 ({group.models.length})
               </span>
+              {group._disabledCount > 0 && (
+                <span className="text-[9px] text-text-muted/60">
+                  {group._disabledCount} disabled
+                </span>
+              )}
             </div>
 
             <div className="flex flex-wrap gap-1.5">
               {group.models.map((model) => {
                 const isSelected = selectedModel === model.value;
                 const isPlaceholder = model.isPlaceholder;
+                const isDisabled = model._disabled;
                 return (
                   <button
                     key={model.value}
-                    onClick={() => handleSelect(model)}
-                    title={isPlaceholder ? "Select to pre-fill, then edit model ID in the input" : undefined}
+                    onClick={() => { if (!isDisabled) handleSelect(model); }}
+                    title={isPlaceholder ? "Select to pre-fill, then edit model ID in the input" : isDisabled ? "This model has been disabled" : undefined}
+                    disabled={isDisabled}
                     className={`
-                      px-2 py-1 rounded-xl text-xs font-medium transition-all border hover:cursor-pointer
-                      ${isPlaceholder
-                        ? "border-dashed border-border text-text-muted hover:border-primary/50 hover:text-primary bg-surface italic"
-                        : isSelected
-                          ? "bg-primary text-white border-primary"
-                          : addedModelValues.includes(model.value)
-                            ? "bg-primary border-primary text-white hover:bg-primary-hover"
-                            : "bg-surface border-border text-text-main hover:border-primary/50 hover:bg-primary/5"
+                      px-2 py-1 rounded-xl text-xs font-medium transition-all border
+                      ${isDisabled
+                        ? "border-dashed border-border/50 text-text-muted/50 bg-surface/50 cursor-not-allowed line-through"
+                        : isPlaceholder
+                          ? "border-dashed border-border text-text-muted hover:border-primary/50 hover:text-primary bg-surface italic cursor-pointer"
+                          : isSelected
+                            ? "bg-primary text-white border-primary cursor-pointer"
+                            : addedModelValues.includes(model.value)
+                              ? "bg-primary border-primary text-white hover:bg-primary-hover cursor-pointer"
+                              : "bg-surface border-border text-text-main hover:border-primary/50 hover:bg-primary/5 cursor-pointer"
                       }
                     `}
                   >
@@ -528,6 +544,11 @@ export default function ModelSelectModal({
                         <>
                           <span className="material-symbols-outlined text-[11px]">edit</span>
                           {model.name}
+                        </>
+                      ) : isDisabled ? (
+                        <>
+                          {model.name}
+                          <span className="text-[9px] font-semibold text-text-muted/50 ml-1">Disabled</span>
                         </>
                       ) : model.isCustom ? (
                         <>

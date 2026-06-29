@@ -24,9 +24,14 @@ export default {
     },
   },
   models: [
-    { id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4" },
-    { id: "claude-opus-4-20250514", name: "Claude Opus 4" },
-    { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet" },
+    { id: "claude-opus-4-8", name: "Claude Opus 4.8" },
+    { id: "claude-opus-4-7", name: "Claude Opus 4.7" },
+    { id: "claude-opus-4-6", name: "Claude Opus 4.6" },
+    { id: "claude-opus-4-5-20251101", name: "Claude Opus 4.5" },
+    { id: "claude-opus-4-1-20250805", name: "Claude Opus 4.1" },
+    { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
+    { id: "claude-sonnet-4-5-20250929", name: "Claude Sonnet 4.5" },
+    { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5" },
   ],
   serviceKinds: ["llm","imageToText"],
 };

@@ -43,7 +43,10 @@ export function claudeToOpenAIResponse(chunk, state) {
       } else if (block?.type === CLAUDE_BLOCK.THINKING) {
         state.inThinkingBlock = true;
         state.currentBlockIndex = chunk.index;
-        results.push(createChunk(state, { content: "<think>" }));
+        // Do NOT emit "<think>" as content — the thinking text is already
+        // delivered exclusively via reasoning_content (thinking_delta → line 73).
+        // Emitting <think>/</think> as content was the original cause of #2158:
+        // reasoning leaked into the visible answer text.
       } else if (block?.type === CLAUDE_BLOCK.TOOL_USE) {
         const toolCallIndex = state.toolCallIndex++;
         // Restore original tool name from mapping (Claude OAuth)
@@ -94,7 +97,7 @@ export function claudeToOpenAIResponse(chunk, state) {
         break;
       }
       if (state.inThinkingBlock && chunk.index === state.currentBlockIndex) {
-        results.push(createChunk(state, { content: "</think>" }));
+        // Don't emit "</think>" as content (see content_block_start for reasoning)
         state.inThinkingBlock = false;
       }
       state.textBlockStarted = false;

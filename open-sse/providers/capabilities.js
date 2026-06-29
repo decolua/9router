@@ -98,6 +98,13 @@ export const MODEL_CAPABILITIES = {
  * Provider-specific capability overrides. Keyed by provider alias/id.
  */
 export const PROVIDER_CAPABILITIES = {
+  // NVIDIA NIM — OpenAI-compatible API; override thinking formats from glob patterns
+  // which would otherwise inject MiniMax/Z.ai native fields the NVIDIA endpoint rejects.
+  "nvidia": {
+    "minimaxai/minimax-m3":   { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 512000 },
+    "minimaxai/minimax-m2.7": { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 204800, maxOutput: 131072 },
+    "z-ai/glm4.7":            { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 128000 },
+  },
   // CodeBuddy.cn — authoritative per-model metadata from the gateway's model
   // config (contextWindow=maxInputTokens, maxOutput=maxOutputTokens, vision=
   // supportsImages). Every model reasons via OpenAI-style reasoning_effort

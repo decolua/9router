@@ -609,7 +609,10 @@ const PROVIDERS = {
           access_token: result.accessToken,
           refresh_token: result.refreshToken,
           expires_in: expiresIn,
-          _qoderUserId: result.userId,
+          // If the token poll didn't return a userId, try the userinfo
+          // profile (which has a separate id field). Without a userId the
+          // COSY signing fails silently and model fetch returns nothing.
+          _qoderUserId: result.userId || userInfo.id,
           _qoderMachineId: extraData?._qoderMachineId || "",
           _qoderName: userInfo.name,
           _qoderEmail: userInfo.email,

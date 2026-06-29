@@ -5,6 +5,8 @@ import Modal from "./Modal";
 import Input from "./Input";
 import Button from "./Button";
 import ModelSelectModal from "./ModelSelectModal";
+import { getModelsByProviderId } from "@/shared/constants/models";
+import { getProviderAlias } from "@/shared/constants/providers";
 
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
 
@@ -61,6 +63,44 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
   const [modelAliases, setModelAliases] = useState({});
+
+  // Automatically populate the first available model when creating (not editing)
+  useEffect(() => {
+    if (!isOpen || !!combo) return;
+    if (models.length > 0) return;
+
+    const populate = async () => {
+      try {
+        const [aliasesRes, disabledRes] = await Promise.all([
+          fetch("/api/models/alias"),
+          fetch("/api/models/disabled"),
+        ]);
+        const aliasesData = aliasesRes.ok ? await aliasesRes.json() : {};
+        const disabledData = disabledRes.ok ? await disabledRes.json() : {};
+        if (aliasesRes.ok) setModelAliases(aliasesData.aliases || {});
+
+        const disabledByAlias = disabledData.disabled || {};
+        const available = [];
+
+        for (const provider of activeProviders) {
+          // Skip inactive provider connections
+          if (provider.isActive === false) continue;
+          const alias = getProviderAlias(provider.provider);
+          const disabled = new Set(disabledByAlias[alias] || []);
+          const hardcoded = getModelsByProviderId(provider.provider);
+          for (const m of hardcoded) {
+            if (!disabled.has(m.id)) available.push(`${alias}/${m.id}`);
+          }
+        }
+
+        if (available.length > 0) setModels([available[0]]);
+      } catch (err) {
+        console.error("Error auto-populating models:", err);
+      }
+    };
+
+    populate();
+  }, [isOpen, combo, activeProviders]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!isOpen) return;

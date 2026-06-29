@@ -161,9 +161,8 @@ export class KiroExecutor extends BaseExecutor {
           // Handle assistantResponseEvent
           if (eventType === "assistantResponseEvent" && event.payload?.content) {
             let content = event.payload.content;
-
             // Kiro Claude models can leak <thinking> blocks into the content stream.
-            // We strip these literal tags to prevent duplication, as the reasoning 
+            // We strip these literal tags to prevent duplication, as the reasoning
             // is already routed correctly via reasoningContentEvent.
             if (state.inThinking) {
               if (content.includes("</thinking>")) {

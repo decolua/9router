@@ -163,11 +163,12 @@ export class QoderService {
           "User-Agent": "Go-http-client/2.0",
         },
       });
-      if (!response.ok) return { name: "", email: "" };
+      if (!response.ok) return { name: "", email: "", id: "" };
       const body = await response.json();
       return {
         name: (body.name || body.username || "").trim(),
         email: (body.email || "").trim(),
+        id: (body.id || body.user_id || body.sub || "").trim(),
         organizationId: (body.organization_id || "").trim(),
       };
     } catch {

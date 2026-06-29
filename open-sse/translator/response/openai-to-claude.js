@@ -180,6 +180,8 @@ export function openaiToClaudeResponse(chunk, state) {
   }
 
   // Tool calls
+  // GLM 5.2 compat: `id` and `function.name` may arrive in separate streaming chunks.
+  // Defer content_block_start until name is available; emit on name receipt or at finish.
   if (delta?.tool_calls) {
     for (const tc of delta.tool_calls) {
       const idx = tc.index ?? 0;
@@ -192,22 +194,57 @@ export function openaiToClaudeResponse(chunk, state) {
         const toolBlockIndex = state.nextBlockIndex++;
         state.toolCalls.set(idx, { id: tc.id, name: tc.function?.name || "", blockIndex: toolBlockIndex });
 
-        // Strip prefix from tool name for response
+        // Only emit content_block_start when name is present.
+        // GLM 5.2 may send id and name in separate chunks — defer until name arrives.
         let toolName = tc.function?.name || "";
-        if (toolName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)) {
-          toolName = toolName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length);
-        }
-
-        results.push({
-          type: "content_block_start",
-          index: toolBlockIndex,
-          content_block: {
-            type: CLAUDE_BLOCK.TOOL_USE,
-            id: tc.id,
-            name: toolName,
-            input: {}
+        if (toolName) {
+          if (toolName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)) {
+            toolName = toolName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length);
           }
-        });
+          results.push({
+            type: "content_block_start",
+            index: toolBlockIndex,
+            content_block: {
+              type: CLAUDE_BLOCK.TOOL_USE,
+              id: tc.id,
+              name: toolName,
+              input: {}
+            }
+          });
+        } else {
+          // Defer: mark as pending, emit content_block_start when name arrives
+          if (!state.pendingToolStarts) state.pendingToolStarts = new Map();
+          state.pendingToolStarts.set(idx, { id: tc.id, blockIndex: toolBlockIndex });
+        }
+      }
+
+      // Name arriving on a separate chunk (after id) — GLM 5.2 compat
+      if (tc.function?.name) {
+        const toolInfo = state.toolCalls.get(idx);
+        if (toolInfo) {
+          toolInfo.name = tc.function.name;
+
+          // If this tool start was pending, emit content_block_start now
+          if (state.pendingToolStarts?.has(idx)) {
+            const pending = state.pendingToolStarts.get(idx);
+            state.pendingToolStarts.delete(idx);
+
+            let toolName = tc.function.name;
+            if (toolName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)) {
+              toolName = toolName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length);
+            }
+            results.push({
+              type: "content_block_start",
+              index: pending.blockIndex,
+              content_block: {
+                type: CLAUDE_BLOCK.TOOL_USE,
+                id: pending.id,
+                name: toolName,
+                input: {}
+              }
+            });
+          }
+        }
       }
 
       if (tc.function?.arguments) {
@@ -227,6 +264,22 @@ export function openaiToClaudeResponse(chunk, state) {
     stopTextBlock(state, results);
 
     for (const [idx, toolInfo] of state.toolCalls) {
+      // Emit deferred content_block_start if name arrived after id but never flushed
+      // (GLM 5.2 may send name in the same chunk as finish_reason)
+      if (state.pendingToolStarts?.has(idx)) {
+        const pending = state.pendingToolStarts.get(idx);
+        state.pendingToolStarts.delete(idx);
+        results.push({
+          type: "content_block_start",
+          index: pending.blockIndex,
+          content_block: {
+            type: CLAUDE_BLOCK.TOOL_USE,
+            id: pending.id,
+            name: toolInfo.name || "",
+            input: {}
+          }
+        });
+      }
       // Emit buffered + sanitized args as single delta before stop
       const buffered = state.toolArgBuffers?.get(idx);
       if (buffered) {

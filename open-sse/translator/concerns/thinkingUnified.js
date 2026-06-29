@@ -167,7 +167,9 @@ function applyFormat(fmt, body, cfg, caps) {
   switch (fmt) {
     case "openai": {
       if (none && canDisable) { body.reasoning_effort = "none"; break; }
-      const level = toLevel(eff);
+      let level = toLevel(eff);
+      // OpenAI accepts: none|minimal|low|medium|high|xhigh — clamp "max" to "xhigh"
+      if (level === "max") level = "xhigh";
       if (level) body.reasoning_effort = level;
       break;
     }

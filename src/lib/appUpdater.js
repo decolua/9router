@@ -52,6 +52,7 @@ function collectAppPids() {
         // Match anything running from 9router install dir or wrapper cli.js
         const isAppProcess = lower.includes("9router") ||
           lower.includes("next-server") ||
+          lower.includes("9router next-server") ||
           lower.includes("\\bin\\app\\") ||
           lower.includes("/bin/app/") ||
           lower.includes("cli.js");
