@@ -1,3 +1,5 @@
+import { CLAUDE_API_HEADERS } from "../shared.js";
+
 export default {
   id: "xiaomi-tokenplan",
   priority: 300,
@@ -29,6 +31,19 @@ export default {
     },
     defaultRegion: "sgp",
   },
+  // Multi-endpoint: pick the transport matching client sourceFormat to skip translation.
+  // baseUrl omitted — region-dynamic, resolved in the executor's buildUrl.
+  transports: [
+    {
+      format: "openai",
+      auth: { combined: true, header: "Authorization", scheme: "bearer" },
+    },
+    {
+      format: "claude",
+      headers: { ...CLAUDE_API_HEADERS },
+      auth: { combined: true, header: "x-api-key", scheme: "raw" },
+    },
+  ],
   models: [
     { id: "mimo-v2.5-pro", name: "MiMo V2.5 Pro" },
     { id: "mimo-v2.5-pro-claude", name: "MiMo V2.5 Pro (Claude Native)", targetFormat: "claude", upstreamModelId: "mimo-v2.5-pro" },

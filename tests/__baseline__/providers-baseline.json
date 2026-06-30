@@ -349,8 +349,8 @@
     "baseUrl": "https://gitlab.com/api/v4/chat/completions",
     "format": "openai"
   },
-  "codebuddy": {
-    "baseUrl": "https://copilot.tencent.com/v1/chat/completions",
+  "codebuddy-cn": {
+    "baseUrl": "https://copilot.tencent.com/v2/chat/completions",
     "format": "openai"
   },
   "opencode-go": {

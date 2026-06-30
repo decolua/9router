@@ -182,4 +182,35 @@ describe("fusion combo", () => {
     expect(judgeBody.messages[1].tool_calls).toBeDefined();
     expect(judgeBody.messages[2].role).toBe("tool");
   });
+
+  it("flattens Anthropic-style tool_use and tool_result blocks in arrays", async () => {
+    const handleSingleModel = vi.fn(async () => okResponse("ans"));
+    await handleFusionChat({
+      body: {
+        messages: [
+          { role: "user", content: "do it" },
+          { role: "assistant", content: [{ type: "text", text: "ok" }, { type: "tool_use", id: "t1", name: "run" }] },
+          { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "done" }] }
+        ],
+        tools: [{ name: "run", description: "d" }]
+      },
+      models: ["p/a", "p/b"],
+      handleSingleModel,
+      log,
+      judgeModel: "p/judge"
+    });
+
+    const panelCalls = handleSingleModel.mock.calls.filter(([,, isPanel]) => isPanel === true);
+    expect(panelCalls.length).toBe(2);
+    const panelBody = panelCalls[0][0];
+    
+    expect(panelBody.tools).toBeUndefined();
+    expect(panelBody.messages.length).toBe(3);
+    
+    // Flattened tool_use
+    expect(panelBody.messages[1].content).toBe("ok\n[Called tools: run]");
+    
+    // Flattened tool_result
+    expect(panelBody.messages[2].content).toBe("[Tool result: done]");
+  });
 });

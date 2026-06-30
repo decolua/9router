@@ -155,17 +155,26 @@ export async function POST(request) {
           normalizedBase = normalizedBase.slice(0, -9); // remove /messages
         }
 
-        const modelsUrl = `${normalizedBase}/models`;
+        const messagesUrl = `${normalizedBase}/v1/messages`;
+        const model = node.defaultModel || "claude-3-haiku-20240307";
 
-        const res = await fetch(modelsUrl, {
+        const res = await fetch(messagesUrl, {
+          method: "POST",
           headers: {
             "x-api-key": apiKey,
             "anthropic-version": "2023-06-01",
-            "Authorization": `Bearer ${apiKey}`
+            "content-type": "application/json",
+            "Authorization": `Bearer ${apiKey}`,
           },
+          body: JSON.stringify({
+            model,
+            max_tokens: 1,
+            messages: [{ role: "user", content: "test" }],
+          }),
         });
 
-        isValid = res.ok;
+        // 400/529 still confirms key accepted; only 401/403 = bad key
+        isValid = res.status !== 401 && res.status !== 403;
         return NextResponse.json({
           valid: isValid,
           error: isValid ? null : "Invalid API key",

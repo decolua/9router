@@ -538,15 +538,20 @@ function errorMessage(error) {
 
 function buildOpenAIErrorChunk(error, state) {
   const message = errorMessage(error);
-  // Standalone OpenAI error envelope (no choices) — clients surface this as a
-  // real error. A finish chunk with empty delta would close the stream silently.
-  return {
-    error: {
-      message,
-      type: error?.type || "api_error",
-      code: error?.code || null
-    }
+  const meta = {
+    id: state.chatId || `chatcmpl-${Date.now()}`,
+    created: state.created || Math.floor(Date.now() / 1000),
+    model: state.model || MODEL_FALLBACK
   };
+  // Strict OpenAI clients (e.g. GitHub Copilot Chat) throw "Response contained no
+  // choices" if any chunk lacks `choices`, swallowing the real upstream error. So we
+  // surface the error as a visible content delta, then close with a finish chunk that
+  // also carries `choices`. A bare {error:{...}} envelope (no choices) breaks them.
+  state.finishReason = OPENAI_FINISH.STOP;
+  return [
+    buildChunk(meta, { role: ROLE.ASSISTANT, content: `[Upstream error] ${message}` }),
+    buildChunk(meta, {}, OPENAI_FINISH.STOP)
+  ];
 }
 
 export function openaiResponsesToClaudeResponse(chunk, state) {

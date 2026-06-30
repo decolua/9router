@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import Link from "next/link";
 import PropTypes from "prop-types";
 import ProviderIcon from "@/shared/components/ProviderIcon";
@@ -112,6 +112,13 @@ const getPageInfo = (pathname) => {
       icon: "security",
       breadcrumbs: [],
     };
+  if (pathname.includes("/token-saver"))
+    return {
+      title: "Token Saver",
+      description: "Compress prompts and outputs to save tokens",
+      icon: "savings",
+      breadcrumbs: [],
+    };
   if (pathname.includes("/cli-tools"))
     return {
       title: "CLI Tools",
@@ -173,7 +180,6 @@ const getPageInfo = (pathname) => {
 
 export default function Header({ onMenuClick, showMenuButton = true }) {
   const pathname = usePathname();
-  const router = useRouter();
   const [displayName, setDisplayName] = useState("");
   const [loginMethod, setLoginMethod] = useState("");
   const [donateOpen, setDonateOpen] = useState(false);
@@ -212,8 +218,7 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
     try {
       const res = await fetch("/api/auth/logout", { method: "POST" });
       if (res.ok) {
-        router.push("/login");
-        router.refresh();
+        window.location.assign("/login");
       }
     } catch (err) {
       console.error("Failed to logout:", err);

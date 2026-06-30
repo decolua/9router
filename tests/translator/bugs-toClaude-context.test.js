@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import "./registerAll.js";
 import { translateRequest } from "../../open-sse/translator/index.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
+import { prepareClaudeRequest } from "../../open-sse/translator/formats/claude.js";
 
 // anthropic-compatible provider so prepareClaudeRequest runs the openai→claude path
 const T = (body) =>
@@ -16,9 +17,7 @@ describe("OpenAI → Claude context mapping", () => {
     expect(JSON.stringify(out.system), "Claude Code prompt injected").not.toContain("Claude Code");
   });
 
-  // openai-to-claude.js:268-273 — assistant.reasoning_content not mapped to a thinking block
-  // KNOWN BUG
-  it.fails("assistant reasoning_content becomes a thinking block", () => {
+  it("assistant reasoning_content becomes a thinking block", () => {
     const out = T({
       messages: [
         { role: "user", content: "q" },
@@ -27,6 +26,11 @@ describe("OpenAI → Claude context mapping", () => {
       ],
     });
     expect(JSON.stringify(out), "reasoning_content lost").toContain("my hidden reasoning");
+    const assistant = out.messages.find((m) => m.role === "assistant");
+    expect(assistant.content[0]).toEqual(expect.objectContaining({
+      type: "thinking",
+      thinking: "my hidden reasoning",
+    }));
   });
 
   // openai-to-claude.js:298 — tool_choice "none" mapped to {type:"auto"} (loses "do not call" intent)
@@ -61,5 +65,23 @@ describe("OpenAI → Claude context mapping", () => {
       ] }],
     });
     expect(JSON.stringify(out), "remote image dropped").toContain("pic.png");
+  });
+
+  it("DeepSeek Claude transport adds a thinking placeholder before tool_use in thinking mode", () => {
+    const out = prepareClaudeRequest({
+      model: "deepseek-v4-pro",
+      thinking: { type: "enabled" },
+      messages: [
+        { role: "user", content: [{ type: "text", text: "q" }] },
+        { role: "assistant", content: [{ type: "tool_use", id: "toolu_1", name: "Read", input: { file_path: "x" } }] },
+        { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_1", content: "ok" }] },
+        { role: "user", content: [{ type: "text", text: "continue" }] },
+      ],
+    }, "deepseek");
+
+    const assistant = out.messages.find((m) => m.role === "assistant");
+    expect(assistant.content[0]).toEqual({ type: "thinking", thinking: "." });
+    expect(assistant.content[1]).toEqual(expect.objectContaining({ type: "tool_use", id: "toolu_1" }));
+    expect(assistant.content[0].signature).toBeUndefined();
   });
 });

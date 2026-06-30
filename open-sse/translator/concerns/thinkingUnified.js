@@ -4,7 +4,7 @@
 
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 import { PROVIDERS } from "../../providers/index.js";
-import { LEVEL_TO_BUDGET, budgetToLevel, effortToBudget } from "./thinking.js";
+import { LEVEL_TO_BUDGET, budgetToLevel, effortToBudget, effortToThinkingLevel } from "./thinking.js";
 
 // Map a target wire-format to its native thinking format (when capability has none).
 const FORMAT_TO_NATIVE = {
@@ -127,6 +127,11 @@ function toLevel(cfg) {
   return null;
 }
 
+function toGeminiThinkingLevel(cfg) {
+  const raw = cfg.mode === "auto" ? "high" : (toLevel(cfg) || "high");
+  return effortToThinkingLevel(raw);
+}
+
 // Gemini nests thinkingConfig under generationConfig. gemini-cli / antigravity wrap
 // the whole request in a { request: { generationConfig } } envelope — target the
 // envelope's generationConfig when present, else the top-level one.
@@ -163,7 +168,7 @@ function applyFormat(fmt, body, cfg, caps) {
     case "openai": {
       if (none && canDisable) { body.reasoning_effort = "none"; break; }
       const level = toLevel(eff);
-      if (level) body.reasoning_effort = level === "xhigh" || level === "max" ? "high" : level;
+      if (level) body.reasoning_effort = level;
       break;
     }
     case "claude-adaptive": {
@@ -179,7 +184,7 @@ function applyFormat(fmt, body, cfg, caps) {
       break;
     }
     case "gemini-level": {
-      const level = none ? "minimal" : (toLevel(eff) || "high");
+      const level = none ? "minimal" : toGeminiThinkingLevel(eff);
       setGeminiThinking(body, { thinkingLevel: level, includeThoughts: level !== "minimal" });
       break;
     }

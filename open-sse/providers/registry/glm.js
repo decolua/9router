@@ -19,10 +19,7 @@ export default {
     baseUrl: "https://api.z.ai/api/anthropic/v1/messages",
     format: "claude",
     urlSuffix: "?beta=true",
-    headers: {
-      "Anthropic-Version": "2023-06-01",
-      "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14",
-    },
+    headers: { ...CLAUDE_API_HEADERS },
     auth: {
       combined: true,
       header: "x-api-key",
@@ -32,6 +29,21 @@ export default {
       url: "https://api.z.ai/api/monitor/usage/quota/limit",
     },
   },
+  // Multi-endpoint: pick the transport matching client sourceFormat to skip translation.
+  transports: [
+    {
+      format: "openai",
+      baseUrl: "https://api.z.ai/api/coding/paas/v4/chat/completions",
+      auth: { combined: true, header: "Authorization", scheme: "bearer" },
+    },
+    {
+      format: "claude",
+      baseUrl: "https://api.z.ai/api/anthropic/v1/messages",
+      urlSuffix: "?beta=true",
+      headers: { ...CLAUDE_API_HEADERS },
+      auth: { combined: true, header: "x-api-key", scheme: "raw" },
+    },
+  ],
   models: [
     { id: "glm-5.2", name: "GLM 5.2" },
     { id: "glm-5.1", name: "GLM 5.1" },

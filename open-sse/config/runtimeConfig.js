@@ -31,14 +31,24 @@ export const MEMORY_CONFIG = {
   proxyDispatchersMaxSize: 20,
 };
 
-// Stream stall timeout: abort if no chunk received within this duration.
-// Kiro extended-thinking and large file writes can pause output for 60-120s
-// while Claude reasons or compiles a response, so 30s caused false "stall"
-// aborts mid-conversation. The agentic system prompt itself notes the Kiro
-// upstream has a 2-3 minute timeout, so we match that ceiling here.
-export const STREAM_STALL_TIMEOUT_MS = 180 * 1000;
+// Parse a positive integer env override, falling back to a default.
+function envMs(name, def) {
+  const raw = process.env[name];
+  if (raw == null || raw === "") return def;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : def;
+}
+
+// Inter-chunk stall timeout (once tokens are flowing). Kiro extended-thinking
+// and large file writes can pause output for 60-120s, so a short timeout caused
+// false "stall" aborts mid-conversation. Generous headroom. Env: STREAM_STALL_TIMEOUT_MS.
+export const STREAM_STALL_TIMEOUT_MS = envMs("STREAM_STALL_TIMEOUT_MS", 360 * 1000);
+
+// Time-to-first-token timeout (prompt prefill). Env: STREAM_FIRST_CHUNK_TIMEOUT_MS.
+export const STREAM_FIRST_CHUNK_TIMEOUT_MS = envMs("STREAM_FIRST_CHUNK_TIMEOUT_MS", 200 * 1000);
+
 // Fetch connect timeout: abort if upstream doesn't return response headers within this duration.
-export const FETCH_CONNECT_TIMEOUT_MS = 20 * 1000;
+export const FETCH_CONNECT_TIMEOUT_MS = envMs("FETCH_CONNECT_TIMEOUT_MS", 60 * 1000);
 // Claude-compatible proxy pools can legitimately take longer to return headers,
 // especially when routing to overloaded free/pooled backends.
 export const ANTHROPIC_COMPATIBLE_FETCH_CONNECT_TIMEOUT_MS = 90 * 1000;
@@ -57,6 +67,8 @@ export function resolveFetchConnectTimeoutMs(provider, config = {}, credentials 
   return FETCH_CONNECT_TIMEOUT_MS;
 }
 
+// Gemini native TTS fetch timeout: abort if Google does not return response headers in time.
+export const GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS = envMs("GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS", 45 * 1000);
 // Default token limits
 export const DEFAULT_MAX_TOKENS = 64000;
 export const DEFAULT_MIN_TOKENS = 32000;

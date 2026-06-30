@@ -181,26 +181,41 @@ export default function ModelSelectModal({
             name: aliasName,
             value: fullModel,
           }));
+        const customRegisteredModels = customModels
+          .filter((m) => m.providerAlias === alias)
+          .map((m) => ({
+            id: m.id,
+            name: m.name || m.id,
+            value: `${alias}/${m.id}`,
+            kind: getModelKind(m),
+            isCustom: true,
+          }));
 
         // For typed kinds, only include hardcoded typed models (aliases are typically LLM-only and lack type info)
         let combined = aliasModels;
         if (kindFilter && TYPED_KINDS.has(kindFilter)) {
-          combined = getModelsByProviderId(providerId)
+          const registeredTyped = customRegisteredModels.filter((m) => getModelKind(m) === kindFilter);
+          combined = [
+            ...registeredTyped,
+            ...getModelsByProviderId(providerId)
             .filter((m) => getModelKind(m) === kindFilter)
-            .map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, kind: getModelKind(m) }));
+            .map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, kind: getModelKind(m) }))
+            .filter((m) => !registeredTyped.some((registered) => registered.value === m.value)),
+          ];
           // Fallback: provider-as-model when no hardcoded models match (tts/image/webFetch only)
           if (combined.length === 0 && ALLOW_PROVIDER_FALLBACK_KINDS.has(kindFilter)) {
             const supports = (providerInfo.serviceKinds || ["llm"]).includes(kindFilter);
             if (supports) combined = [{ id: providerId, name: providerInfo.name, value: alias }];
           }
         } else {
-          // LLM/null kind: merge hardcoded models (e.g. mimo-free → mimo-auto) with aliases
-          const seen = new Set(aliasModels.map((m) => m.value));
+          // LLM/null kind: merge hardcoded models (e.g. mimo-free → mimo-auto) with user-added models
+          const registeredLlms = customRegisteredModels.filter((m) => !getModelKind(m) || getModelKind(m) === "llm");
+          const seen = new Set([...aliasModels, ...registeredLlms].map((m) => m.value));
           const hardcoded = getModelsByProviderId(providerId)
             .filter((m) => !getModelKind(m) || getModelKind(m) === "llm")
             .map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, kind: getModelKind(m) }))
             .filter((m) => !seen.has(m.value));
-          combined = [...aliasModels, ...hardcoded];
+          combined = [...registeredLlms, ...aliasModels.filter((m) => !registeredLlms.some((registered) => registered.value === m.value)), ...hardcoded];
         }
 
         if (combined.length > 0) {
@@ -234,9 +249,22 @@ export default function ModelSelectModal({
             value: `${nodePrefix}/${fullModel.replace(`${providerId}/`, "")}`,
           }));
 
+        // Merge custom models registered via /api/models/custom for this provider
+        // providerAlias in DB uses the raw providerId, not the display prefix
+        const registeredCustom = customModels
+          .filter((m) => m.providerAlias === providerId)
+          .map((m) => ({
+            id: m.id,
+            name: m.name || m.id,
+            value: `${nodePrefix}/${m.id}`,
+            isCustom: true,
+          }));
+        const seen = new Set(nodeModels.map((m) => m.value));
+        const mergedModels = [...nodeModels, ...registeredCustom.filter((m) => !seen.has(m.value))];
+
         // Always show compatible providers that are connected, even with no aliases.
         // When no aliases exist, show a placeholder so users know it's available.
-        const modelsToShow = nodeModels.length > 0 ? nodeModels : [{
+        const modelsToShow = mergedModels.length > 0 ? mergedModels : [{
           id: `__placeholder__${providerId}`,
           name: `${nodePrefix}/model-id`,
           value: `${nodePrefix}/model-id`,
@@ -249,7 +277,7 @@ export default function ModelSelectModal({
           color: providerInfo.color,
           models: modelsToShow,
           isCustom: true,
-          hasModels: nodeModels.length > 0,
+          hasModels: mergedModels.length > 0,
         };
       } else {
         const hardcodedModels = getModelsByProviderId(providerId);
@@ -551,4 +579,3 @@ ModelSelectModal.propTypes = {
   addedModelValues: PropTypes.arrayOf(PropTypes.string),
   closeOnSelect: PropTypes.bool,
 };
-
