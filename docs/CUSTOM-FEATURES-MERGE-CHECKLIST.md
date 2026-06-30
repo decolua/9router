@@ -870,3 +870,144 @@ curl -s http://localhost:20128/api/v1/models | grep -q "context_length"
    sqlite3 /var/lib/9router/db/data.sqlite "SELECT model_id, context_length, source FROM model_context_info;"
    ```
 3. Tắt `DIEPXUAN_ENABLED=false` → vẫn hoạt động (fallback MODEL_INFO).
+
+---
+
+## 15. CLI tools dynamic current-origin endpoint
+
+### Mục đích
+
+Dashboard CLI tools trong fork ưu tiên endpoint theo origin hiện tại của browser thay vì hard-code `localhost` hoặc ép `localhost` sang `127.0.0.1`. Điều này phục vụ môi trường nội bộ dùng hostname/domain như `9router.diepxuan.corp`, reverse proxy, tunnel hoặc VM IP động.
+
+Base UI chỉ giữ bridge mỏng; policy nằm trong fork layer:
+
+Files fork layer:
+- `src/diepxuan/app/dashboard/cli-tools/baseUrl.js`
+
+Base files có bridge:
+- `src/app/(dashboard)/dashboard/cli-tools/[toolId]/ToolDetailClient.js`
+- `src/app/(dashboard)/dashboard/cli-tools/components/BaseUrlSelect.js`
+- `src/app/(dashboard)/dashboard/cli-tools/components/DefaultToolCard.js`
+- `src/app/(dashboard)/dashboard/cli-tools/components/DeepSeekTuiToolCard.js`
+- `src/app/(dashboard)/dashboard/cli-tools/components/HermesToolCard.js`
+- `src/app/(dashboard)/dashboard/cli-tools/components/JcodeToolCard.js`
+- `src/app/(dashboard)/dashboard/cli-tools/components/OpenClawToolCard.js`
+
+### Logic cần giữ
+
+Trong `src/diepxuan/app/dashboard/cli-tools/baseUrl.js` phải có:
+
+```js
+getCurrentBrowserOrigin()
+getCliToolBaseUrl()
+getToolDetailBaseUrl()
+```
+
+Base files chỉ nên import helper:
+
+```js
+@/diepxuan/app/dashboard/cli-tools/baseUrl
+```
+
+Không đưa lại literal fallback cứng vào component nếu không có lý do rõ ràng:
+- `http://localhost:20128`
+- `http://127.0.0.1:20128`
+- `url.replace("://localhost", "://127.0.0.1")`
+
+### Checklist sau merge upstream
+
+```bash
+grep -R "getCliToolBaseUrl\|getCurrentBrowserOrigin\|getToolDetailBaseUrl" -n src/diepxuan/app/dashboard/cli-tools src/app/\(dashboard\)/dashboard/cli-tools | head -80
+grep -R "127.0.0.1:20128\|localhost:20128\|://127.0.0.1" -n src/app/\(dashboard\)/dashboard/cli-tools || true
+node --check src/diepxuan/app/dashboard/cli-tools/baseUrl.js
+node --check src/app/\(dashboard\)/dashboard/cli-tools/components/BaseUrlSelect.js
+node --check src/app/\(dashboard\)/dashboard/cli-tools/components/DefaultToolCard.js
+node --check src/app/\(dashboard\)/dashboard/cli-tools/components/DeepSeekTuiToolCard.js
+node --check src/app/\(dashboard\)/dashboard/cli-tools/components/HermesToolCard.js
+node --check src/app/\(dashboard\)/dashboard/cli-tools/components/JcodeToolCard.js
+node --check src/app/\(dashboard\)/dashboard/cli-tools/components/OpenClawToolCard.js
+```
+
+### Smoke test khuyến nghị
+
+1. Mở dashboard bằng hostname thực tế, ví dụ `http://9router.diepxuan.corp:20128` hoặc reverse proxy tương ứng.
+2. Mở `/dashboard/cli-tools` và một tool detail page.
+3. Kiểm tra Base URL mặc định trong snippet/settings là origin hiện tại, không bị đổi sang `127.0.0.1`.
+4. Apply settings cho Hermes/JCode/OpenClaw/DeepSeek TUI nếu tool có sẵn, kiểm tra file config ghi đúng origin.
+
+---
+
+## 16. Codex subagent config description
+
+### Mục đích
+
+Fork thêm `description` cho `[agents.subagent]` khi tạo config Codex CLI, để subagent có mô tả rõ ràng trong config sinh ra từ dashboard/API.
+
+Files fork layer:
+- `src/diepxuan/app/dashboard/cli-tools/codex.js`
+
+Base files có bridge:
+- `src/app/(dashboard)/dashboard/cli-tools/components/CodexToolCard.js`
+- `src/app/api/cli-tools/codex-settings/route.js`
+
+### Logic cần giữ
+
+Trong fork layer phải có:
+
+```js
+CODEX_SUBAGENT_DESCRIPTION
+extendCodexSubagentConfig()
+```
+
+Base files chỉ import helper/value từ:
+
+```js
+@/diepxuan/app/dashboard/cli-tools/codex
+```
+
+### Checklist sau merge upstream
+
+```bash
+grep -R "CODEX_SUBAGENT_DESCRIPTION\|extendCodexSubagentConfig" -n src/diepxuan/app/dashboard/cli-tools src/app/\(dashboard\)/dashboard/cli-tools/components/CodexToolCard.js src/app/api/cli-tools/codex-settings/route.js
+node --check src/diepxuan/app/dashboard/cli-tools/codex.js
+node --check src/app/\(dashboard\)/dashboard/cli-tools/components/CodexToolCard.js
+node --check src/app/api/cli-tools/codex-settings/route.js
+```
+
+### Smoke test khuyến nghị
+
+1. Mở Codex tool card.
+2. Copy manual config hoặc apply settings.
+3. Kiểm tra `[agents.subagent]` có cả `description` và `model`.
+
+---
+
+## 17. Root `dev.sh` nội bộ DiepXuan
+
+### Mục đích
+
+`dev.sh` ở root repo là script vận hành môi trường dev nội bộ của anh, giữ nguyên ở root để tiện dùng. Đây là custom fork, không tách sang `scripts/diepxuan`.
+
+Script quản lý:
+- detect VM IP động qua `ip route` hoặc `hostname -I`.
+- hosts entry cho `9router.diepxuan.corp` với marker `# 9router-dev managed`.
+- systemd service `9router-dev`.
+- stop/start service production `9router` khi start/stop dev để tránh tranh port.
+
+### File cần giữ
+
+- `dev.sh`
+
+### Checklist sau merge upstream
+
+```bash
+test -x dev.sh && echo "dev.sh executable OK"
+grep -n "9router.diepxuan.corp\|9router-dev\|HOSTS_MARKER\|get_vm_ip\|stop_prod_service\|start_prod_service" dev.sh
+bash -n dev.sh
+```
+
+### Lưu ý vận hành
+
+- Không tự ý chuyển `dev.sh` sang thư mục khác.
+- Không tự ý chạy `./dev.sh start|stop|restart` trong session agent nếu anh chưa yêu cầu, vì script cần root và chạm `/etc/hosts`/systemd.
+- Khi rebase upstream, nếu `dev.sh` conflict thì ưu tiên giữ behavior nội bộ ở trên.

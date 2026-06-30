@@ -7,6 +7,7 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import { parseTOML, stringifyTOML } from "confbox";
+import { extendCodexSubagentConfig } from "@/diepxuan/app/dashboard/cli-tools/codex";
 
 const execAsync = promisify(exec);
 
@@ -143,9 +144,9 @@ export async function POST(request) {
 
     // Add subagent configuration
     const effectiveSubagentModel = subagentModel || model;
-    setNestedSection(parsed, "agents.subagent", {
+    setNestedSection(parsed, "agents.subagent", extendCodexSubagentConfig({
       model: effectiveSubagentModel,
-    });
+    }));
 
     // Write merged config
     const configContent = stringifyTOML(parsed);

@@ -6,11 +6,28 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# Hàm lấy IPv4 hiện tại của VM
+get_vm_ip() {
+    local ip_addr=""
+
+    if command -v ip >/dev/null 2>&1; then
+        ip_addr=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i=1; i<=NF; i++) if ($i == "src") {print $(i+1); exit}}')
+    fi
+
+    if [ -z "${ip_addr}" ]; then
+        ip_addr=$(hostname -I 2>/dev/null | awk '{for (i=1; i<=NF; i++) if ($i ~ /^[0-9]+\./) {print $i; exit}}')
+    fi
+
+    echo "${ip_addr}"
+}
+
 # Cấu hình
-HOST_IP="10.0.0.122"
+HOST_IP="${HOST_IP:-$(get_vm_ip)}"
 HOSTNAME="9router.diepxuan.corp"
 SERVICE_NAME="9router-dev"
+PROD_SERVICE_NAME="9router"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+HOSTS_MARKER="# ${SERVICE_NAME} managed"
 
 # Hàm kiểm tra quyền root
 check_root() {
@@ -20,22 +37,55 @@ check_root() {
     fi
 }
 
+# Hàm kiểm tra systemd service có tồn tại
+service_exists() {
+    local service_name=$1
+    systemctl list-unit-files "${service_name}.service" --no-legend 2>/dev/null | grep -q .
+}
+
+# Hàm stop service production để nhường port cho dev
+stop_prod_service() {
+    if service_exists "${PROD_SERVICE_NAME}"; then
+        systemctl stop "${PROD_SERVICE_NAME}.service" 2>/dev/null || true
+        echo -e "${GREEN}✓ Systemd service ${PROD_SERVICE_NAME} stopped${NC}"
+    else
+        echo -e "${YELLOW}⚠ Systemd service ${PROD_SERVICE_NAME} not found; skip stop${NC}"
+    fi
+}
+
+# Hàm start lại service production sau khi tắt dev
+start_prod_service() {
+    if service_exists "${PROD_SERVICE_NAME}"; then
+        if systemctl start "${PROD_SERVICE_NAME}.service"; then
+            echo -e "${GREEN}✓ Systemd service ${PROD_SERVICE_NAME} started${NC}"
+        else
+            echo -e "${RED}✗ Failed to start systemd service ${PROD_SERVICE_NAME}${NC}"
+        fi
+    else
+        echo -e "${YELLOW}⚠ Systemd service ${PROD_SERVICE_NAME} not found; skip start${NC}"
+    fi
+}
+
 # Hàm cập nhật /etc/hosts
 update_hosts() {
     local action=$1  # "add" hoặc "remove"
-    
+
+    if [ -z "${HOST_IP}" ]; then
+        echo -e "${RED}✗ Cannot detect VM IP address${NC}"
+        exit 1
+    fi
+
     if [ "$action" = "add" ]; then
-        if ! grep -q "${HOSTNAME}" /etc/hosts; then
-            echo "${HOST_IP}  ${HOSTNAME}" >> /etc/hosts
-            echo -e "${GREEN}✓ Added to /etc/hosts: ${HOST_IP}  ${HOSTNAME}${NC}"
-        else
-            # Uncomment nếu đã bị comment
-            sed -i "s|^#.*${HOST_IP}.*${HOSTNAME}|${HOST_IP}  ${HOSTNAME}|" /etc/hosts
-            echo -e "${GREEN}✓ Updated /etc/hosts: ${HOST_IP}  ${HOSTNAME}${NC}"
+        # Chỉ quản lý dòng do 9router-dev tạo, không đụng hostname hệ thống như 127.0.1.1.
+        sed -i "\|${HOSTS_MARKER}|d" /etc/hosts
+        echo "${HOST_IP}  ${HOSTNAME}  ${HOSTS_MARKER}" >> /etc/hosts
+        echo -e "${GREEN}✓ Updated /etc/hosts: ${HOST_IP}  ${HOSTNAME}${NC}"
+        if grep -qE "^127\.[0-9.]+[[:space:]].*[[:space:]]${HOSTNAME}([[:space:]]|$)" /etc/hosts 2>/dev/null; then
+            echo -e "${YELLOW}⚠ ${HOSTNAME} also exists on a 127.x.x.x hosts line; local resolution may prefer loopback.${NC}"
         fi
     else
-        # Comment dòng hosts
-        sed -i "s|^${HOST_IP}.*${HOSTNAME}|# ${HOST_IP}  ${HOSTNAME}|" /etc/hosts
+        # Chỉ comment dòng do 9router-dev tạo, không comment hostname hệ thống.
+        sed -i "s|^\([^#].*${HOSTS_MARKER}\)|# \1|" /etc/hosts
         echo -e "${GREEN}✓ Commented /etc/hosts entry${NC}"
     fi
 }
@@ -43,7 +93,7 @@ update_hosts() {
 # Hàm quản lý systemd service
 manage_service() {
     local action=$1  # "start" hoặc "stop"
-    
+
     if [ "$action" = "start" ]; then
         # Tạo service file
         cat > "${SERVICE_FILE}" << EOF
@@ -78,15 +128,18 @@ EOF
 # Hàm start
 do_start() {
     check_root
-    
+
     echo -e "\n${GREEN}🚀 Starting 9Router development environment...${NC}"
-    
+
     # Cập nhật hosts
     update_hosts "add"
-    
+
+    # Stop production service để tránh tranh port với dev service
+    stop_prod_service
+
     # Quản lý systemd service
     manage_service "start"
-    
+
     # Kiểm tra trạng thái
     sleep 2
     if systemctl is-active --quiet "${SERVICE_NAME}.service"; then
@@ -102,16 +155,21 @@ do_start() {
 
 # Hàm stop
 do_stop() {
+    local restart_prod=${1:-yes}
     check_root
-    
+
     echo -e "\n${YELLOW}🛑 Stopping 9Router development environment...${NC}"
-    
+
     # Cập nhật hosts (comment)
     update_hosts "remove"
-    
+
     # Quản lý systemd service
     manage_service "stop"
-    
+
+    if [ "${restart_prod}" = "yes" ]; then
+        start_prod_service
+    fi
+
     echo -e "${GREEN}✅ Development environment stopped${NC}"
 }
 
@@ -126,16 +184,20 @@ do_logs() {
 do_status() {
     echo -e "\n${YELLOW}📊 9Router Development Status${NC}"
     echo "================================"
-    
+
     # Kiểm tra hosts
-    if grep -q "^${HOST_IP}.*${HOSTNAME}" /etc/hosts 2>/dev/null; then
+    if grep -q "^${HOST_IP}.*${HOSTNAME}.*${HOSTS_MARKER}" /etc/hosts 2>/dev/null; then
         echo -e "${GREEN}✓${NC} Hosts entry: ${HOST_IP}  ${HOSTNAME}"
-    elif grep -q "^#.*${HOST_IP}.*${HOSTNAME}" /etc/hosts 2>/dev/null; then
+    elif grep -q "^#.*${HOST_IP}.*${HOSTNAME}.*${HOSTS_MARKER}" /etc/hosts 2>/dev/null; then
         echo -e "${YELLOW}⚠${NC} Hosts entry (commented): ${HOST_IP}  ${HOSTNAME}"
     else
         echo -e "${RED}✗${NC} No hosts entry"
     fi
-    
+
+    if grep -qE "^127\.[0-9.]+[[:space:]].*[[:space:]]${HOSTNAME}([[:space:]]|$)" /etc/hosts 2>/dev/null; then
+        echo -e "${YELLOW}⚠${NC} ${HOSTNAME} also exists on a 127.x.x.x hosts line"
+    fi
+
     # Kiểm tra service
     if systemctl is-active --quiet "${SERVICE_NAME}.service" 2>/dev/null; then
         echo -e "${GREEN}✓${NC} Service: ${SERVICE_NAME} (running)"
@@ -163,7 +225,7 @@ case "${1:-start}" in
         do_logs
         ;;
     restart)
-        do_stop
+        do_stop "no"
         do_start
         ;;
     *)

@@ -411,6 +411,77 @@
         "open-sse/diepxuan/services/usageHooks.js",
         "tests/unit/diepxuan-feature-flags.test.js"
       ]
+    },
+    {
+      "id": "cli-tools-current-origin-endpoint",
+      "description": "CLI tool config snippets and settings prefer the current browser origin via a DiepXuan helper instead of hard-coded localhost/127.0.0.1.",
+      "requiredFiles": [
+        "src/diepxuan/app/dashboard/cli-tools/baseUrl.js",
+        "src/app/(dashboard)/dashboard/cli-tools/[toolId]/ToolDetailClient.js",
+        "src/app/(dashboard)/dashboard/cli-tools/components/BaseUrlSelect.js",
+        "src/app/(dashboard)/dashboard/cli-tools/components/DefaultToolCard.js",
+        "src/app/(dashboard)/dashboard/cli-tools/components/DeepSeekTuiToolCard.js",
+        "src/app/(dashboard)/dashboard/cli-tools/components/HermesToolCard.js",
+        "src/app/(dashboard)/dashboard/cli-tools/components/JcodeToolCard.js",
+        "src/app/(dashboard)/dashboard/cli-tools/components/OpenClawToolCard.js"
+      ],
+      "requiredPatterns": [
+        { "file": "src/diepxuan/app/dashboard/cli-tools/baseUrl.js", "pattern": "getCurrentBrowserOrigin" },
+        { "file": "src/diepxuan/app/dashboard/cli-tools/baseUrl.js", "pattern": "getCliToolBaseUrl" },
+        { "file": "src/diepxuan/app/dashboard/cli-tools/baseUrl.js", "pattern": "getToolDetailBaseUrl" },
+        { "file": "src/app/(dashboard)/dashboard/cli-tools/[toolId]/ToolDetailClient.js", "pattern": "getToolDetailBaseUrl" },
+        { "file": "src/app/(dashboard)/dashboard/cli-tools/components/BaseUrlSelect.js", "pattern": "getCurrentBrowserOrigin" },
+        { "file": "src/app/(dashboard)/dashboard/cli-tools/components/DefaultToolCard.js", "pattern": "getCliToolBaseUrl" },
+        { "file": "src/app/(dashboard)/dashboard/cli-tools/components/DeepSeekTuiToolCard.js", "pattern": "getCliToolBaseUrl" },
+        { "file": "src/app/(dashboard)/dashboard/cli-tools/components/HermesToolCard.js", "pattern": "getCliToolBaseUrl" },
+        { "file": "src/app/(dashboard)/dashboard/cli-tools/components/JcodeToolCard.js", "pattern": "getCliToolBaseUrl" },
+        { "file": "src/app/(dashboard)/dashboard/cli-tools/components/OpenClawToolCard.js", "pattern": "getCliToolBaseUrl" }
+      ],
+      "syntaxCheck": [
+        "src/diepxuan/app/dashboard/cli-tools/baseUrl.js",
+        "src/app/(dashboard)/dashboard/cli-tools/[toolId]/ToolDetailClient.js",
+        "src/app/(dashboard)/dashboard/cli-tools/components/BaseUrlSelect.js",
+        "src/app/(dashboard)/dashboard/cli-tools/components/DefaultToolCard.js",
+        "src/app/(dashboard)/dashboard/cli-tools/components/DeepSeekTuiToolCard.js",
+        "src/app/(dashboard)/dashboard/cli-tools/components/HermesToolCard.js",
+        "src/app/(dashboard)/dashboard/cli-tools/components/JcodeToolCard.js",
+        "src/app/(dashboard)/dashboard/cli-tools/components/OpenClawToolCard.js"
+      ]
+    },
+    {
+      "id": "codex-subagent-description",
+      "description": "Codex CLI generated config includes a DiepXuan-owned description for agents.subagent.",
+      "requiredFiles": [
+        "src/diepxuan/app/dashboard/cli-tools/codex.js",
+        "src/app/(dashboard)/dashboard/cli-tools/components/CodexToolCard.js",
+        "src/app/api/cli-tools/codex-settings/route.js"
+      ],
+      "requiredPatterns": [
+        { "file": "src/diepxuan/app/dashboard/cli-tools/codex.js", "pattern": "CODEX_SUBAGENT_DESCRIPTION" },
+        { "file": "src/diepxuan/app/dashboard/cli-tools/codex.js", "pattern": "extendCodexSubagentConfig" },
+        { "file": "src/app/(dashboard)/dashboard/cli-tools/components/CodexToolCard.js", "pattern": "CODEX_SUBAGENT_DESCRIPTION" },
+        { "file": "src/app/api/cli-tools/codex-settings/route.js", "pattern": "extendCodexSubagentConfig" }
+      ],
+      "syntaxCheck": [
+        "src/diepxuan/app/dashboard/cli-tools/codex.js",
+        "src/app/(dashboard)/dashboard/cli-tools/components/CodexToolCard.js",
+        "src/app/api/cli-tools/codex-settings/route.js"
+      ]
+    },
+    {
+      "id": "diepxuan-root-dev-sh",
+      "description": "Root dev.sh is a DiepXuan-owned systemd/hosts helper for the internal development environment.",
+      "requiredFiles": [
+        "dev.sh"
+      ],
+      "requiredPatterns": [
+        { "file": "dev.sh", "pattern": "9router\\.diepxuan\\.corp" },
+        { "file": "dev.sh", "pattern": "9router-dev" },
+        { "file": "dev.sh", "pattern": "HOSTS_MARKER" },
+        { "file": "dev.sh", "pattern": "get_vm_ip" },
+        { "file": "dev.sh", "pattern": "stop_prod_service" },
+        { "file": "dev.sh", "pattern": "start_prod_service" }
+      ]
     }
   ]
 }
