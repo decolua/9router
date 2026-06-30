@@ -206,6 +206,16 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
 // exponential backoff.
 const KIRO_RATE_LIMIT_COOLDOWN_MS = 8 * 1000;
 
+export function isProviderAccountUnavailableError(status, errorText) {
+  if (Number(status) !== 429) return false;
+  const text = errorText ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase() : "";
+  return text.includes("provider_account_unavailable")
+    || text.includes("no dispatchable account")
+    || text.includes("kiro adapter")
+    || text.includes("user_request_rate_exceeded")
+    || text.includes("http 429 from kiro runtime");
+}
+
 export async function markAccountUnavailable(connectionId, status, errorText, provider = null, model = null, resetsAtMs = null) {
   if (!connectionId || connectionId === "noauth") return { shouldFallback: false, cooldownMs: 0 };
   const connections = await getProviderConnections({ provider });
@@ -223,8 +233,8 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   }
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
 
-  // Kiro 429: clamp to a short cooldown so the account rotates back in fast.
-  if (provider === "kiro" && status === 429) {
+  // Kiro 429 / compatible-node Kiro adapter miss: clamp to a short cooldown so it rejoins fast.
+  if ((provider === "kiro" && status === 429) || isProviderAccountUnavailableError(status, errorText)) {
     cooldownMs = Math.min(cooldownMs, KIRO_RATE_LIMIT_COOLDOWN_MS);
   }
 

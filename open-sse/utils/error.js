@@ -1,4 +1,5 @@
 import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES } from "../config/errorConfig.js";
+import { FORMATS } from "../translator/formats.js";
 
 /**
  * Build OpenAI-compatible error response body
@@ -6,15 +7,42 @@ import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES } from "../config/errorConfig.js";
  * @param {string} message - Error message
  * @returns {object} Error response object
  */
-export function buildErrorBody(statusCode, message) {
-  const errorInfo = ERROR_TYPES[statusCode] || 
-    (statusCode >= 500 
+export function isContextWindowError(statusCode, message) {
+  if (![400, 413].includes(Number(statusCode))) return false;
+  const text = message ? String(message).toLowerCase() : "";
+  return text.includes("context window")
+    || text.includes("context limit")
+    || text.includes("context_length_exceeded")
+    || text.includes("maximum context")
+    || text.includes("too many tokens")
+    || text.includes("input length and max_tokens")
+    || text.includes("exceeds the context");
+}
+
+function claudeErrorType(statusCode, message) {
+  if (statusCode === 401) return "authentication_error";
+  if (statusCode === 403) return "permission_error";
+  if (statusCode === 404) return "not_found_error";
+  if (statusCode === 429) return "rate_limit_error";
+  if (statusCode >= 500) return "api_error";
+  if (statusCode === 413 && !isContextWindowError(statusCode, message)) return "request_too_large";
+  return "invalid_request_error";
+}
+
+export function buildErrorBody(statusCode, message, sourceFormat = null) {
+  const msg = message || DEFAULT_ERROR_MESSAGES[statusCode] || "An error occurred";
+  if (sourceFormat === FORMATS.CLAUDE) {
+    return { type: "error", error: { type: claudeErrorType(statusCode, msg), message: msg } };
+  }
+
+  const errorInfo = ERROR_TYPES[statusCode] ||
+    (statusCode >= 500
       ? { type: "server_error", code: "internal_server_error" }
       : { type: "invalid_request_error", code: "" });
 
   return {
     error: {
-      message: message || DEFAULT_ERROR_MESSAGES[statusCode] || "An error occurred",
+      message: msg,
       type: errorInfo.type,
       code: errorInfo.code
     }
@@ -27,14 +55,31 @@ export function buildErrorBody(statusCode, message) {
  * @param {string} message - Error message
  * @returns {Response} HTTP Response object
  */
-export function errorResponse(statusCode, message) {
-  return new Response(JSON.stringify(buildErrorBody(statusCode, message)), {
+export function errorResponse(statusCode, message, sourceFormat = null) {
+  return new Response(JSON.stringify(buildErrorBody(statusCode, message, sourceFormat)), {
     status: statusCode,
     headers: {
       "Content-Type": "application/json",
       "Access-Control-Allow-Origin": "*"
     }
   });
+}
+
+function extractErrorMessage(bodyText) {
+  if (!bodyText) return "";
+  try {
+    const json = typeof bodyText === "string" ? JSON.parse(bodyText) : bodyText;
+    const message = json.error?.message || json.message || json.error || bodyText;
+    return typeof message === "string" ? message : JSON.stringify(message);
+  } catch {
+    return String(bodyText);
+  }
+}
+
+function inferWrappedStatus(statusCode, message) {
+  const text = message ? String(message).toLowerCase() : "";
+  if (text.includes("http 429") || text.includes("user_request_rate_exceeded")) return 429;
+  return Number(statusCode) || 500;
 }
 
 /**
@@ -63,29 +108,19 @@ export async function parseUpstreamError(response, executor = null) {
     bodyText = "";
   }
 
-  // Let executor-specific parser extract provider-specific fields (e.g. codex resetsAtMs)
   if (executor && typeof executor.parseError === "function") {
     try {
       const parsed = executor.parseError(response, bodyText);
       if (parsed && typeof parsed === "object") {
-        const msg = parsed.message || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
-        return { statusCode: parsed.status || response.status, message: msg, resetsAtMs: parsed.resetsAtMs };
+        const msg = extractErrorMessage(parsed.message || bodyText) || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
+        return { statusCode: inferWrappedStatus(parsed.status || response.status, msg), message: msg, resetsAtMs: parsed.resetsAtMs };
       }
     } catch { /* fall through to default parsing */ }
   }
 
-  let message = "";
-  try {
-    const json = JSON.parse(bodyText);
-    message = json.error?.message || json.message || json.error || bodyText;
-  } catch {
-    message = bodyText;
-  }
+  const finalMessage = extractErrorMessage(bodyText) || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
 
-  const messageStr = typeof message === "string" ? message : JSON.stringify(message);
-  const finalMessage = messageStr || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
-
-  return { statusCode: response.status, message: finalMessage };
+  return { statusCode: inferWrappedStatus(response.status, finalMessage), message: finalMessage };
 }
 
 /**
@@ -95,13 +130,13 @@ export async function parseUpstreamError(response, executor = null) {
  * @param {number} [resetsAtMs] - Optional precise cooldown expiry (ms epoch) for provider-specific quota errors
  * @returns {{ success: false, status: number, error: string, response: Response, resetsAtMs?: number }}
  */
-export function createErrorResult(statusCode, message, resetsAtMs) {
+export function createErrorResult(statusCode, message, resetsAtMs, sourceFormat = null) {
   return {
     success: false,
     status: statusCode,
     error: message,
     resetsAtMs,
-    response: errorResponse(statusCode, message)
+    response: errorResponse(statusCode, message, sourceFormat)
   };
 }
 

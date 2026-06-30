@@ -3,7 +3,7 @@
  */
 
 import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
-import { unavailableResponse } from "../utils/error.js";
+import { isContextWindowError, unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
 
@@ -255,6 +255,11 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       // Normalize error text to string (Worker-safe)
       if (typeof errorText !== "string") {
         try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
+      }
+
+      if (isContextWindowError(result.status, errorText)) {
+        log.warn("COMBO", `Model ${modelStr} hit context window; returning to client`, { status: result.status });
+        return result;
       }
 
       // Check if should fallback to next model

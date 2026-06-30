@@ -9,6 +9,8 @@ import { buildUsage } from "../concerns/usage.js";
 import { fallbackToolCallId } from "../concerns/toolCall.js";
 import { reasoningDelta, extractReasoningText } from "../concerns/reasoning.js";
 import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM, OPENAI_FINISH, MODEL_FALLBACK } from "../schema/index.js";
+import { openaiToClaudeResponse } from "./openai-to-claude.js";
+import { isContextWindowError } from "../../utils/error.js";
 
 /**
  * Translate OpenAI chunk to Responses API events
@@ -506,12 +508,7 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
       state.error = error;
       state.finishReasonSent = true;
 
-      // Surface the error as an OpenAI-compatible error chunk
-      return buildChunk(
-        { id: state.chatId || `chatcmpl-${Date.now()}`, created: state.created || Math.floor(Date.now() / 1000), model: state.model || MODEL_FALLBACK },
-        { content: `[Error] ${error.message || JSON.stringify(error)}` },
-        OPENAI_FINISH.STOP
-      );
+      return buildOpenAIErrorChunk(error, state);
     }
     return null;
   }
@@ -530,6 +527,56 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
   return null;
 }
 
+function extractResponseError(chunk) {
+  const data = chunk?.data || chunk || {};
+  return data.error || data.response?.error || null;
+}
+
+function errorMessage(error) {
+  return error?.message || (error ? JSON.stringify(error) : "OpenAI Responses stream failed");
+}
+
+function buildOpenAIErrorChunk(error, state) {
+  const message = errorMessage(error);
+  // Standalone OpenAI error envelope (no choices) — clients surface this as a
+  // real error. A finish chunk with empty delta would close the stream silently.
+  return {
+    error: {
+      message,
+      type: error?.type || "api_error",
+      code: error?.code || null
+    }
+  };
+}
+
+export function openaiResponsesToClaudeResponse(chunk, state) {
+  if (!chunk) return openaiToClaudeResponse(openaiResponsesToOpenAIResponse(chunk, state), state);
+
+  const eventType = chunk.type || chunk.event;
+  if (eventType === "error" || eventType === "response.failed") {
+    if (state.finishReasonSent) return null;
+    const error = extractResponseError(chunk);
+    if (!error) return null;
+
+    state.error = error;
+    state.finishReasonSent = true;
+    const message = errorMessage(error);
+    const status = isContextWindowError(400, message) ? 400 : 500;
+
+    return {
+      type: "error",
+      error: {
+        type: status === 400 ? "invalid_request_error" : "api_error",
+        message
+      }
+    };
+  }
+
+  const openAIChunk = openaiResponsesToOpenAIResponse(chunk, state);
+  return openAIChunk ? openaiToClaudeResponse(openAIChunk, state) : null;
+}
+
 // Register both directions
 register(FORMATS.OPENAI, FORMATS.OPENAI_RESPONSES, null, openaiToOpenAIResponsesResponse);
 register(FORMATS.OPENAI_RESPONSES, FORMATS.OPENAI, null, openaiResponsesToOpenAIResponse);
+register(FORMATS.OPENAI_RESPONSES, FORMATS.CLAUDE, null, openaiResponsesToClaudeResponse);

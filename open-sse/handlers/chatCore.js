@@ -118,7 +118,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     translatedBody = translateRequest(sourceFormat, targetFormat, upstreamModel, body, stream, credentials, provider, reqLogger, stripList, connectionId, clientTool);
     if (!translatedBody) {
       trackPendingRequest(model, provider, connectionId, false, true);
-      return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Failed to translate request for ${sourceFormat} → ${targetFormat}`);
+      return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Failed to translate request for ${sourceFormat} → ${targetFormat}`, undefined, sourceFormat);
     }
     toolNameMap = translatedBody._toolNameMap;
     delete translatedBody._toolNameMap;
@@ -228,11 +228,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
     if (error.name === "AbortError") {
       streamController.handleError(error);
-      return createErrorResult(499, "Request aborted");
+      return createErrorResult(499, "Request aborted", undefined, sourceFormat);
     }
     const errMsg = formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
     console.log(`${COLORS.red}[ERROR] ${errMsg}${COLORS.reset}`);
-    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg);
+    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg, undefined, sourceFormat);
   }
 
   // Handle 401/403 - try token refresh (skip for noAuth providers)
@@ -275,7 +275,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
     console.log(`${COLORS.red}[ERROR] ${errMsg}${COLORS.reset}`);
     reqLogger.logError(new Error(message), finalBody || translatedBody);
-    return createErrorResult(statusCode, errMsg, resetsAtMs);
+    return createErrorResult(statusCode, errMsg, resetsAtMs, sourceFormat);
   }
 
   const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess };

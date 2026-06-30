@@ -4,6 +4,7 @@ import {
   getProviderCredentials,
   markAccountUnavailable,
   clearAccountError,
+  isProviderAccountUnavailableError,
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
@@ -11,7 +12,7 @@ import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
-import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
+import { errorResponse, isContextWindowError, unavailableResponse } from "open-sse/utils/error.js";
 import { handleComboChat, handleFusionChat } from "open-sse/services/combo.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS, jitteredBackoff } from "open-sse/config/runtimeConfig.js";
@@ -203,14 +204,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   let lastError = null;
   let lastStatus = null;
 
-  // Kiro budgeted rescan: when every account is briefly 429-locked (slot
-  // contention, not real quota), don't give up immediately — clear the
-  // per-attempt exclusion set, wait a short jittered interval, and rescan.
-  // Kiro 429 cooldowns are clamped to a few seconds (see markAccountUnavailable),
-  // so accounts rejoin rotation fast. Bounded by KIRO_RESCAN_BUDGET_MS.
-  const KIRO_RESCAN_BUDGET_MS = 60 * 1000;
-  const kiroRescanEnabled = provider === "kiro";
-  const rescanDeadline = Date.now() + KIRO_RESCAN_BUDGET_MS;
+  const RESCAN_BUDGET_MS = 60 * 1000;
+  const providerAccountUnavailableRetryEnabled = provider === "kiro" || provider.startsWith("openai-compatible-") || provider.startsWith("anthropic-compatible-");
+  const rescanDeadline = Date.now() + RESCAN_BUDGET_MS;
   let rescanRound = 0;
 
   while (true) {
@@ -218,20 +214,18 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
-      // Kiro: rescan within budget instead of surfacing 503 right away.
-      // Only when the blockage is rate-limit contention (429), not hard errors
-      // like 401/500 — those accounts are genuinely broken and rescanning them
-      // would just burn the budget.
-      const blockedByRateLimit = credentials?.allRateLimited === true || lastStatus === HTTP_STATUS.RATE_LIMITED;
-      if (kiroRescanEnabled && blockedByRateLimit && Date.now() < rescanDeadline) {
+      const retryableContention = credentials?.allRateLimited === true
+        || isProviderAccountUnavailableError(lastStatus, lastError)
+        || (provider === "kiro" && lastStatus === HTTP_STATUS.RATE_LIMITED);
+      if (providerAccountUnavailableRetryEnabled && retryableContention && Date.now() < rescanDeadline) {
         rescanRound++;
         const waitMs = Math.min(
           jitteredBackoff(rescanRound, { baseDelayMs: 600, maxDelayMs: 5000, jitterRatio: 0.4 }),
           Math.max(0, rescanDeadline - Date.now())
         );
-        log.info("CHAT", `[${provider}/${model}] all accounts busy, rescan ${rescanRound} after ${Math.round(waitMs)}ms`);
+        log.info("CHAT", `[${provider}/${model}] provider accounts busy, rescan ${rescanRound} after ${Math.round(waitMs)}ms`);
         await new Promise(resolve => setTimeout(resolve, waitMs));
-        excludeConnectionIds.clear(); // give every account another shot
+        excludeConnectionIds.clear();
         continue;
       }
 
@@ -346,6 +340,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     }
 
     if (result.success) return result.response;
+
+    if (isContextWindowError(result.status, result.error)) {
+      return result.response;
+    }
 
     // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);

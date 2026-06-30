@@ -1,6 +1,8 @@
 import { FORMATS } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
+import { extractReasoningText } from "../../translator/concerns/reasoning.js";
+import { fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
 import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
 import { createErrorResult } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
@@ -9,11 +11,56 @@ import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, sav
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 
+function safeParseToolInput(value) {
+  if (typeof value !== "string") return value || {};
+  try { return JSON.parse(value || "{}"); } catch { return {}; }
+}
+
+function openAIResponseToClaude(responseBody) {
+  const choice = responseBody?.choices?.[0];
+  const msg = choice?.message || {};
+  const content = [];
+  const reasoning = extractReasoningText(msg);
+  if (reasoning) content.push({ type: "thinking", thinking: reasoning });
+
+  const text = typeof msg.content === "string" ? msg.content : "";
+  if (text) content.push({ type: "text", text });
+
+  for (const tc of (Array.isArray(msg.tool_calls) ? msg.tool_calls : [])) {
+    content.push({
+      type: "tool_use",
+      id: tc.id || `toolu_${Date.now()}`,
+      name: tc.function?.name || tc.name || "tool",
+      input: safeParseToolInput(tc.function?.arguments || tc.input)
+    });
+  }
+
+  return {
+    id: responseBody?.id?.startsWith?.("msg_") ? responseBody.id : `msg_${responseBody?.id || Date.now()}`,
+    type: "message",
+    role: "assistant",
+    model: responseBody?.model || "claude",
+    content,
+    stop_reason: fromOpenAIFinish(choice?.finish_reason || "stop", "claude"),
+    stop_sequence: null,
+    usage: {
+      input_tokens: responseBody?.usage?.prompt_tokens || 0,
+      output_tokens: responseBody?.usage?.completion_tokens || 0
+    }
+  };
+}
+
 /**
- * Translate non-streaming response body from provider format → OpenAI format.
+ * Translate non-streaming response body from provider format → client format.
  */
 export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat) {
-  if (targetFormat === sourceFormat || targetFormat === FORMATS.OPENAI) return responseBody;
+  if (targetFormat === sourceFormat) return responseBody;
+
+  if (sourceFormat === FORMATS.CLAUDE && responseBody?.choices) {
+    return openAIResponseToClaude(responseBody);
+  }
+
+  if (targetFormat === FORMATS.OPENAI) return responseBody;
 
   // Gemini / Antigravity
   if (targetFormat === FORMATS.GEMINI || targetFormat === FORMATS.ANTIGRAVITY || targetFormat === FORMATS.GEMINI_CLI || targetFormat === FORMATS.VERTEX) {
@@ -185,8 +232,10 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   }
 
   // Ensure OpenAI-required fields
-  if (!translatedResponse.object) translatedResponse.object = "chat.completion";
-  if (!translatedResponse.created) translatedResponse.created = Math.floor(Date.now() / 1000);
+  if (sourceFormat !== FORMATS.CLAUDE) {
+    if (!translatedResponse.object) translatedResponse.object = "chat.completion";
+    if (!translatedResponse.created) translatedResponse.created = Math.floor(Date.now() / 1000);
+  }
 
   // Strip Azure-specific fields
   delete translatedResponse.prompt_filter_results;

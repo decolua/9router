@@ -25,23 +25,9 @@ export async function POST(request) {
     });
   }
 
-  // Estimate token count based on content length
-  const messages = body.messages || [];
-  let totalChars = 0;
-  for (const msg of messages) {
-    if (typeof msg.content === "string") {
-      totalChars += msg.content.length;
-    } else if (Array.isArray(msg.content)) {
-      for (const part of msg.content) {
-        if (part.type === "text" && part.text) {
-          totalChars += part.text.length;
-        }
-      }
-    }
-  }
-
-  // Rough estimate: ~4 chars per token
-  const inputTokens = Math.ceil(totalChars / 4);
+  const serialized = JSON.stringify(body);
+  const inputTokens = Math.ceil(serialized.length * 2);
+  console.log(`[count_tokens] bytes=${serialized.length} estimated=${inputTokens}`);
 
   return new Response(JSON.stringify({
     input_tokens: inputTokens
