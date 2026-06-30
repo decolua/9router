@@ -118,3 +118,38 @@ describe("aggregateComboCapabilities — context/output limits", () => {
     expect(caps.maxOutput).toBe(262144);
   });
 });
+
+describe("aggregateComboCapabilities — nested combo resolution via comboLookup", () => {
+  it("resolves nested combo and unions vision from its members", () => {
+    const lookup = { "inner-combo": ["opencode-go/deepseek-v4-pro", "opencode-go/mimo-v2.5"] };
+    const caps = aggregateComboCapabilities(["inner-combo"], lookup);
+    expect(caps.reasoning).toBe(true);
+    expect(caps.vision).toBe(true); // mimo brings vision through the lookup
+  });
+
+  it("outer combo gets vision via nested combo containing mimo", () => {
+    const lookup = { "deepseek-v4-pro-fusion": ["opencode-go/deepseek-v4-pro", "opencode-go/mimo-v2.5"] };
+    const caps = aggregateComboCapabilities(["deepseek-v4-pro-fusion", "openai/gpt-5"], lookup);
+    expect(caps.vision).toBe(true);
+    expect(caps.reasoning).toBe(true);
+  });
+
+  it("contextWindow is min across all resolved leaves", () => {
+    // deepseek-v4-pro (*deepseek-v4*): 1000000; mimo-v2.5: 1048576 → min = 1000000
+    const lookup = { "inner": ["opencode-go/deepseek-v4-pro"] };
+    const caps = aggregateComboCapabilities(["inner", "opencode-go/mimo-v2.5"], lookup);
+    expect(caps.contextWindow).toBe(1000000);
+  });
+
+  it("handles cycles without throwing", () => {
+    const lookup = { "a": ["b"], "b": ["a"] };
+    expect(() => aggregateComboCapabilities(["a"], lookup)).not.toThrow();
+  });
+
+  it("without comboLookup bare combo name falls through to pattern match", () => {
+    // *deepseek-v4* pattern: reasoning true, vision false
+    const caps = aggregateComboCapabilities(["deepseek-v4-pro-fusion"]);
+    expect(caps.reasoning).toBe(true);
+    expect(caps.vision).toBe(false);
+  });
+});

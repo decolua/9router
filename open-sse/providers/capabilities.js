@@ -329,11 +329,18 @@ export const PATTERN_CAPABILITIES = [
  * Conservative: contextWindow = min; maxOutput = max
  *
  * @param {string[]} comboModels
+ * @param {Object|null} [comboLookup] optional map of combo name → models array for nested resolution
+ * @param {number} [_depth] internal recursion depth guard
  * @returns {object|null} full capabilities object, or null for empty input
  */
-export function aggregateComboCapabilities(comboModels) {
-  if (!comboModels?.length) return null;
+export function aggregateComboCapabilities(comboModels, comboLookup = null, _depth = 0) {
+  if (!comboModels?.length || _depth > 6) return null;
   const allCaps = comboModels.map((fullId) => {
+    // Nested combo: bare name (no slash) that exists in the lookup — recurse
+    if (!fullId.includes("/") && comboLookup?.[fullId]) {
+      return aggregateComboCapabilities(comboLookup[fullId], comboLookup, _depth + 1)
+          ?? getCapabilitiesForModel(null, fullId);
+    }
     const slash = fullId.indexOf("/");
     const provider = slash === -1 ? null : fullId.slice(0, slash);
     const model = slash === -1 ? fullId : fullId.slice(slash + 1);
