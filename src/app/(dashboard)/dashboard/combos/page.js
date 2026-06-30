@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -8,7 +8,6 @@ import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifi
 import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, Select, Toggle } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
-import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
@@ -52,8 +51,8 @@ export default function CombosPage() {
   const [activeProviders, setActiveProviders] = useState([]);
   const [comboStrategies, setComboStrategies] = useState({});
   const [capacityAdapter, setCapacityAdapter] = useState(EMPTY_CAPACITY_ADAPTER);
-  const { getCaps } = useModelCaps();
   const [confirmState, setConfirmState] = useState(null);
+  const { getCaps } = useModelCaps();
   const { copied, copy } = useCopyToClipboard();
 
   useEffect(() => {
@@ -70,7 +69,7 @@ export default function CombosPage() {
       const combosData = await combosRes.json();
       const providersData = await providersRes.json();
       const settingsData = settingsRes.ok ? await settingsRes.json() : {};
-      
+
       // Only LLM combos here - webSearch/webFetch combos belong to media-providers/web
       if (combosRes.ok) setCombos((combosData.combos || []).filter(c => !c.kind || c.kind === "llm"));
       if (providersRes.ok) {

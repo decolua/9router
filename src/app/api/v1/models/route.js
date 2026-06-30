@@ -237,7 +237,6 @@ function comboMatchesKinds(combo, kindFilter) {
   return kindFilter.includes(kind);
 }
 
-<<<<<<< HEAD
 /**
  * Build OpenAI-format models list filtered by service kinds.
  * @param {string[]} kindFilter - List of service kinds to include (e.g. ["llm"], ["webSearch","webFetch"]).
@@ -247,9 +246,6 @@ export async function buildModelsList(kindFilter, options = {}) {
   // 9router instance's fetchCompatibleModelIds — skip dynamic fetch to break
   // cross-instance recursive loops.
   const skipDynamicFetch = options.skipDynamicFetch === true;
-=======
-export async function buildModelsList(kindFilter) {
->>>>>>> b8441719 (feat(models): wire capability metadata to all /v1/models entries)
   let connections = [];
   try {
     connections = await getProviderConnections();
@@ -485,20 +481,14 @@ export async function buildModelsList(kindFilter) {
           object: "model",
           owned_by: outputAlias,
         };
-<<<<<<< HEAD
         // Live-catalog resolvers (kiro/qoder/github/clinepass) mostly only return
         // { id, name } — no per-model capability data. Fall back to the same
         // pattern-matched capabilities the dashboard uses (useModelCaps.js) so
         // dynamically-discovered LLM models still surface vision/reasoning/search/tools.
-        const caps = liveCapabilitiesById.get(modelId)
-          || capabilitiesFromServiceKind(customKind || liveKind)
-          || (kind === LLM_KIND ? getCapabilitiesForModel(providerId, modelId) : null);
-        if (caps) model.capabilities = caps;
-=======
         const liveCaps = liveCapabilitiesById.get(modelId);
         const serviceCaps = capabilitiesFromServiceKind(customKind || liveKind);
-        model.capabilities = liveCaps || serviceCaps || getCapabilitiesForModel(providerId, modelId);
->>>>>>> b8441719 (feat(models): wire capability metadata to all /v1/models entries)
+        const caps = liveCaps || serviceCaps || (kind === LLM_KIND ? getCapabilitiesForModel(providerId, modelId) : null);
+        if (caps) model.capabilities = caps;
         models.push(model);
       }
 
