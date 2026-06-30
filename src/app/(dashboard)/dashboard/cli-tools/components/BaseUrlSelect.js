@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
+import { getCurrentBrowserOrigin } from "@/diepxuan/app/dashboard/cli-tools/baseUrl";
 
 const STORAGE_KEY = "9router.cliToolEndpointPresets";
 const CUSTOM_VALUE = "__custom__";
@@ -29,12 +30,12 @@ const writeSavedPresets = (presets) => {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(presets));
 };
 
-const buildOptions = ({ requiresExternalUrl, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl, cloudEnabled, cloudUrl, savedPresets, withV1 }) => {
+const buildOptions = ({ requiresExternalUrl, currentOrigin, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl, cloudEnabled, cloudUrl, savedPresets, withV1 }) => {
   const opts = [];
   const wrap = (url) => (withV1 ? ensureV1(url) : (url || "").replace(/\/+$/, ""));
   if (!requiresExternalUrl) {
-    const localUrl = wrap(`http://127.0.0.1:${UPDATER_CONFIG.appPort}`);
-    opts.push({ value: "local", label: localUrl, url: localUrl });
+    const currentUrl = wrap(currentOrigin);
+    if (currentUrl) opts.push({ value: "current", label: currentUrl, url: currentUrl });
   }
   if (tunnelEnabled && tunnelPublicUrl) {
     const u = wrap(tunnelPublicUrl);
@@ -68,22 +69,25 @@ export default function BaseUrlSelect({
   withV1 = true,
 }) {
   const [savedPresets, setSavedPresets] = useState([]);
+  const [currentOrigin, setCurrentOrigin] = useState("");
   const [mode, setMode] = useState("");
   const [customInput, setCustomInput] = useState("");
   const initializedRef = useRef(false);
 
   useEffect(() => {
+    setCurrentOrigin(getCurrentBrowserOrigin() || `http://localhost:${UPDATER_CONFIG.appPort}`);
     setSavedPresets(readSavedPresets());
   }, []);
 
   const options = useMemo(
-    () => buildOptions({ requiresExternalUrl, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl, cloudEnabled, cloudUrl, savedPresets, withV1 }),
-    [requiresExternalUrl, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl, cloudEnabled, cloudUrl, savedPresets, withV1]
+    () => buildOptions({ requiresExternalUrl, currentOrigin, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl, cloudEnabled, cloudUrl, savedPresets, withV1 }),
+    [requiresExternalUrl, currentOrigin, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl, cloudEnabled, cloudUrl, savedPresets, withV1]
   );
 
-  // Always default to first option (127.0.0.1) on mount, ignore persisted value
+  // Always default to the current browser origin on mount, ignore persisted value.
   useEffect(() => {
     if (initializedRef.current) return;
+    if (!requiresExternalUrl && !currentOrigin) return;
     if (options.length === 0) return;
     initializedRef.current = true;
     const first = options.find((o) => o.value !== CUSTOM_VALUE);

@@ -6,6 +6,7 @@ import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
 import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
+import { CODEX_SUBAGENT_DESCRIPTION } from "@/diepxuan/app/dashboard/cli-tools/codex";
 
 export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled, initialStatus, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl }) {
   const [codexStatus, setCodexStatus] = useState(initialStatus || null);
@@ -174,6 +175,7 @@ base_url = "${getEffectiveBaseUrl()}"
 wire_api = "responses"
 
 [agents.subagent]
+description = "${CODEX_SUBAGENT_DESCRIPTION}"
 model = "${effectiveSubagentModel}"
 `;
 

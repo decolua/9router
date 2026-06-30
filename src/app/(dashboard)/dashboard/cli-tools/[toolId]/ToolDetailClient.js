@@ -5,6 +5,7 @@ import Link from "next/link";
 import { CardSkeleton } from "@/shared/components";
 import { CLI_TOOLS } from "@/shared/constants/cliTools";
 import { getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
+import { getToolDetailBaseUrl } from "@/diepxuan/app/dashboard/cli-tools/baseUrl";
 import {
   ClaudeToolCard, CodexToolCard, DroidToolCard, OpenClawToolCard,
   HermesToolCard, DefaultToolCard, OpenCodeToolCard, CoworkToolCard,
@@ -93,10 +94,7 @@ export default function ToolDetailClient({ toolId, machineId }) {
   }, []);
 
   const getBaseUrl = () => {
-    if (tunnelEnabled && tunnelPublicUrl) return tunnelPublicUrl;
-    if (cloudEnabled && CLOUD_URL) return CLOUD_URL;
-    if (typeof window !== "undefined") return window.location.origin;
-    return "http://localhost:20128";
+    return getToolDetailBaseUrl({ tunnelEnabled, tunnelPublicUrl, cloudEnabled, cloudUrl: CLOUD_URL });
   };
 
   const renderToolCard = () => {

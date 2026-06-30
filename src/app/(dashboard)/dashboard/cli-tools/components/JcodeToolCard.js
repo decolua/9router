@@ -6,6 +6,7 @@ import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
 import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
+import { getCliToolBaseUrl } from "@/diepxuan/app/dashboard/cli-tools/baseUrl";
 
 export default function JcodeToolCard({
   tool,
@@ -103,13 +104,8 @@ export default function JcodeToolCard({
     }
   };
 
-  const normalizeLocalhost = (url) => url.replace("://localhost", "://127.0.0.1");
-
   const getLocalBaseUrl = () => {
-    if (typeof window !== "undefined") {
-      return normalizeLocalhost(window.location.origin);
-    }
-    return "http://127.0.0.1:20128";
+    return getCliToolBaseUrl({ baseUrl });
   };
 
   const getEffectiveBaseUrl = () => {
