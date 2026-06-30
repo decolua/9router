@@ -13,6 +13,11 @@ export {
   getApiKeys, getApiKeyById, createApiKey, updateApiKey, deleteApiKey, validateApiKey,
   getCombos, getComboById, getComboByName,
   createCombo, updateCombo, deleteCombo,
+  // MCP gateway
+  getInstances, getInstanceById, getInstanceBySlug, getEnabledInstancesByIds,
+  createInstance, updateInstance, deleteInstance,
+  getGatewayKeys, getGatewayKeyById, createGatewayKey, deleteGatewayKey,
+  validateGatewayKey, getGrantsForKey, getGrantsForKeyDetailed, setGrants,
   getModelAliases, setModelAlias, deleteModelAlias,
   getCustomModels, addCustomModel, deleteCustomModel,
   getMitmAlias, setMitmAliasAll,
