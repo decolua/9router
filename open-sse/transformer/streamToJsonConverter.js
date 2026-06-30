@@ -30,9 +30,18 @@ function processSSEMessage(msg, state) {
   } else if (eventType === "response.completed" || eventType === "response.done") {
     state.status = "completed";
     if (parsed.response?.usage) {
-      state.usage.input_tokens = parsed.response.usage.input_tokens || 0;
-      state.usage.output_tokens = parsed.response.usage.output_tokens || 0;
-      state.usage.total_tokens = parsed.response.usage.total_tokens || 0;
+      const u = parsed.response.usage;
+      state.usage.input_tokens = u.input_tokens || 0;
+      state.usage.output_tokens = u.output_tokens || 0;
+      state.usage.total_tokens = u.total_tokens || 0;
+      if (u.cache_read_input_tokens || u.cache_creation_input_tokens) {
+        if (u.cache_read_input_tokens) state.usage.cache_read_input_tokens = u.cache_read_input_tokens;
+        if (u.cache_creation_input_tokens) state.usage.cache_creation_input_tokens = u.cache_creation_input_tokens;
+      }
+      const details = u.input_tokens_details || u.prompt_tokens_details;
+      if (details && typeof details.cached_tokens === "number") {
+        state.usage.cache_read_input_tokens = details.cached_tokens;
+      }
     }
   } else if (eventType === "response.failed") {
     state.status = "failed";

@@ -2,6 +2,7 @@ import { convertResponsesStreamToJson } from "../../transformer/streamToJsonConv
 import { createErrorResult } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { FORMATS } from "../../translator/formats.js";
+import { fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats } from "./requestDetail.js";
 
@@ -32,6 +33,120 @@ function pickAssistantMessageForChatCompletion(output) {
   }
   const last = messages[messages.length - 1];
   return { msgItem: last, textContent: textFromResponsesMessageItem(last) };
+}
+
+function shouldEnableClaudeCompat(mode, sourceFormat, body) {
+  if (sourceFormat !== FORMATS.CLAUDE) return false;
+  if (mode === "always") return true;
+  if (mode !== "auto") return false;
+  const systemTexts = Array.isArray(body?.system)
+    ? body.system.map((part) => (typeof part?.text === "string" ? part.text : "")).filter(Boolean)
+    : [];
+  const stopSequences = Array.isArray(body?.stop_sequences) ? body.stop_sequences : [];
+  return systemTexts.some((text) => text.includes("You are a security monitor for autonomous AI coding agents"))
+    || stopSequences.includes("</block>");
+}
+
+function parseToolArgs(value) {
+  if (!value) return {};
+  if (typeof value === "object") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return {};
+  }
+}
+
+function buildClaudeMessageFromOpenAICompletion(responseBody, { model, claudeCompat }) {
+  const choice = responseBody?.choices?.[0];
+  if (!choice) return responseBody;
+  const message = choice.message || {};
+  const content = [];
+  const reasoning = message.reasoning_content || message.provider_specific_fields?.reasoning_content || "";
+  if (reasoning && !claudeCompat) content.push({ type: "thinking", thinking: reasoning });
+  if (typeof message.content === "string" && message.content.length > 0) {
+    content.push({ type: "text", text: message.content });
+  }
+  for (const toolCall of message.tool_calls || []) {
+    const fn = toolCall.function || {};
+    content.push({
+      type: "tool_use",
+      id: toolCall.id || `toolu_${Date.now()}_${content.length}`,
+      name: fn.name || toolCall.name || "",
+      input: parseToolArgs(fn.arguments || toolCall.arguments),
+    });
+  }
+  if (content.length === 0) content.push({ type: "text", text: "" });
+  const usage = responseBody.usage || {};
+  const claudeUsage = { input_tokens: usage.prompt_tokens || usage.input_tokens || 0, output_tokens: usage.completion_tokens || usage.output_tokens || 0 };
+  if (usage.prompt_tokens_details && typeof usage.prompt_tokens_details.cached_tokens === "number") {
+    claudeUsage.cache_read_input_tokens = usage.prompt_tokens_details.cached_tokens;
+  }
+  return {
+    id: String(responseBody.id || `msg_${Date.now()}`).replace(/^chatcmpl-/, ""),
+    type: "message",
+    role: "assistant",
+    model: responseBody.model || model || "unknown",
+    content,
+    stop_reason: fromOpenAIFinish(choice.finish_reason, FORMATS.CLAUDE),
+    stop_sequence: null,
+    usage: claudeUsage,
+  };
+}
+
+function buildClaudeUsage(jsonResponse) {
+  const u = (jsonResponse && jsonResponse.usage) || {};
+  const out = { input_tokens: u.input_tokens || 0, output_tokens: u.output_tokens || 0 };
+  if (u.cache_read_input_tokens || u.cache_creation_input_tokens) {
+    if (u.cache_read_input_tokens) out.cache_read_input_tokens = u.cache_read_input_tokens;
+    if (u.cache_creation_input_tokens) out.cache_creation_input_tokens = u.cache_creation_input_tokens;
+  }
+  const details = u.input_tokens_details || u.prompt_tokens_details;
+  if (details && typeof details.cached_tokens === "number") {
+    out.cache_read_input_tokens = details.cached_tokens;
+  }
+  return out;
+}
+
+function buildClaudeMessageResponse({ jsonResponse, textContent, toolCalls, inTokens, outTokens, model, claudeCompat }) {
+  const content = [];
+  const outputItems = Array.isArray(jsonResponse.output) ? jsonResponse.output : [];
+  const reasoningParts = [];
+  if (!claudeCompat) {
+    for (const item of outputItems) {
+      if (item?.type === "reasoning" && Array.isArray(item.summary)) {
+        for (const part of item.summary) {
+          if (typeof part?.text === "string") reasoningParts.push(part.text);
+        }
+      }
+      if (!Array.isArray(item?.content)) continue;
+      for (const part of item.content) {
+        if (typeof part?.text === "string" && part.type !== "output_text") reasoningParts.push(part.text);
+      }
+    }
+  }
+  const reasoning = reasoningParts.join("");
+  if (reasoning) content.push({ type: "thinking", thinking: reasoning });
+  if (textContent) content.push({ type: "text", text: textContent });
+  for (const toolCall of toolCalls) {
+    content.push({
+      type: "tool_use",
+      id: toolCall.id,
+      name: toolCall.function.name,
+      input: parseToolArgs(toolCall.function.arguments),
+    });
+  }
+  if (content.length === 0) content.push({ type: "text", text: "" });
+  return {
+    id: String(jsonResponse.id || `msg_${Date.now()}`).replace(/^chatcmpl-/, ""),
+    type: "message",
+    role: "assistant",
+    model: jsonResponse.model || model,
+    content,
+    stop_reason: fromOpenAIFinish(jsonResponse.status === "completed" || jsonResponse.status === "done" ? "stop" : (toolCalls.length > 0 ? "tool_calls" : (jsonResponse.status || "stop")), FORMATS.CLAUDE),
+    stop_sequence: null,
+    usage: buildClaudeUsage(jsonResponse),
+  };
 }
 
 /**
@@ -102,7 +217,7 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
  * Handle case: provider forced streaming but client wants JSON.
  * Supports both Codex/Responses API SSE and standard Chat Completions SSE.
  */
-export async function handleForcedSSEToJson({ providerResponse, sourceFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, trackDone, appendLog }) {
+export async function handleForcedSSEToJson({ providerResponse, sourceFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, trackDone, appendLog, claudeClassifierCompat }) {
   const contentType = providerResponse.headers.get("content-type") || "";
   const isSSE = contentType.includes("text/event-stream") || (contentType === "" && isResponsesProvider(provider));
   if (!isSSE) return null; // not handled here
@@ -148,25 +263,36 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
       let finalResp;
 
       // Extract tool calls from Responses API output (function_call items)
-      const funcCallItems = (jsonResponse.output || []).filter(item => item.type === "function_call");
+      const funcCallItems = (jsonResponse.output || []).filter((item) => item.type === "function_call");
       const toolCalls = funcCallItems.map((item, idx) => ({
         id: item.call_id || `call_${item.name}_${Date.now()}_${idx}`,
         type: "function",
         function: {
           name: item.name,
-          arguments: typeof item.arguments === "string" ? item.arguments : JSON.stringify(item.arguments || {})
-        }
+          arguments: typeof item.arguments === "string" ? item.arguments : JSON.stringify(item.arguments || {}),
+        },
       }));
       const hasToolCalls = toolCalls.length > 0;
+      const claudeCompat = shouldEnableClaudeCompat(claudeClassifierCompat, sourceFormat, body);
 
-      if (sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI) {
+      if (sourceFormat === FORMATS.CLAUDE) {
+        finalResp = buildClaudeMessageResponse({
+          jsonResponse,
+          textContent,
+          toolCalls,
+          inTokens,
+          outTokens,
+          model,
+          claudeCompat,
+        });
+      } else if (sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI) {
         finalResp = {
           response: {
             candidates: [{ content: { role: "model", parts: [{ text: textContent || "" }] }, finishReason: "STOP", index: 0 }],
             usageMetadata: { promptTokenCount: inTokens, candidatesTokenCount: outTokens, totalTokenCount: inTokens + outTokens },
             modelVersion: model,
-            responseId: jsonResponse.id || `resp_${Date.now()}`
-          }
+            responseId: jsonResponse.id || `resp_${Date.now()}`,
+          },
         };
       } else {
         const message = { role: "assistant", content: textContent || (hasToolCalls ? null : "") };
@@ -179,7 +305,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
           created: jsonResponse.created_at || Math.floor(Date.now() / 1000),
           model: jsonResponse.model || model,
           choices: [{ index: 0, message, finish_reason: finishReason }],
-          usage: { prompt_tokens: inTokens, completion_tokens: outTokens, total_tokens: inTokens + outTokens }
+          usage: { prompt_tokens: inTokens, completion_tokens: outTokens, total_tokens: inTokens + outTokens },
         };
       }
 
@@ -227,7 +353,12 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
       }
     }
 
-    return { success: true, response: new Response(JSON.stringify(parsed), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
+    const claudeCompat = shouldEnableClaudeCompat(claudeClassifierCompat, sourceFormat, body);
+    const finalResp = sourceFormat === FORMATS.CLAUDE
+      ? buildClaudeMessageFromOpenAICompletion(parsed, { model, claudeCompat })
+      : parsed;
+
+    return { success: true, response: new Response(JSON.stringify(finalResp), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
   } catch (err) {
     console.error("[ChatCore] Chat Completions SSE→JSON failed:", err);
     return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Failed to convert streaming response to JSON");

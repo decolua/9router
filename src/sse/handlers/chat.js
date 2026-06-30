@@ -260,6 +260,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       ponytailEnabled: !!chatSettings.ponytailEnabled,
       ponytailLevel: chatSettings.ponytailLevel || "full",
       providerThinking,
+      claudeClassifierCompat: chatSettings.claudeClassifierCompat || "off",
       // Detect source format by endpoint + body
       sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
       onCredentialsRefreshed: async (newCreds) => {

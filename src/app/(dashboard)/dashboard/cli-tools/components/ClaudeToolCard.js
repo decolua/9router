@@ -39,6 +39,7 @@ export default function ClaudeToolCard({
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
   const [ccFilterNaming, setCcFilterNaming] = useState(false);
+  const [claudeClassifierCompat, setClaudeClassifierCompat] = useState("off");
   const hasInitializedModels = useRef(false);
 
   const getConfigStatus = () => {
@@ -72,6 +73,7 @@ export default function ClaudeToolCard({
   useEffect(() => {
     fetch("/api/settings").then(r => r.json()).then(data => {
       setCcFilterNaming(!!data.ccFilterNaming);
+      setClaudeClassifierCompat(data.claudeClassifierCompat || "off");
     }).catch(() => {});
   }, []);
 
@@ -82,6 +84,22 @@ export default function ClaudeToolCard({
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ccFilterNaming: value }),
+    }).catch(() => {});
+  };
+
+  const cycleClassifierCompat = (current) => {
+    if (current === "off") return "auto";
+    if (current === "auto") return "always";
+    return "off";
+  };
+
+  const handleCycleClassifierCompat = async () => {
+    const next = cycleClassifierCompat(claudeClassifierCompat);
+    setClaudeClassifierCompat(next);
+    await fetch("/api/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ claudeClassifierCompat: next }),
     }).catch(() => {});
   };
 
@@ -351,6 +369,28 @@ export default function ClaudeToolCard({
                       <span className="material-symbols-outlined text-text-muted text-[14px] cursor-help">info</span>
                     </Tooltip>
                   </label>
+                </div>
+
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
+                  <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Classifier compat</span>
+                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
+                  <button
+                    type="button"
+                    onClick={handleCycleClassifierCompat}
+                    className={`flex w-fit items-center gap-1.5 rounded border px-2 py-2 text-xs font-mono cursor-pointer transition-colors sm:py-1.5 ${
+                      claudeClassifierCompat === "off"
+                        ? "bg-red-500/10 text-red-600 border-red-500/30 hover:bg-red-500/20"
+                        : claudeClassifierCompat === "auto"
+                          ? "bg-yellow-500/10 text-yellow-600 border-yellow-500/30 hover:bg-yellow-500/20"
+                          : "bg-green-500/10 text-green-600 border-green-500/30 hover:bg-green-500/20"
+                    }`}
+                  >
+                    {claudeClassifierCompat.toUpperCase()}
+                    <span className="material-symbols-outlined text-[14px]">cyclone</span>
+                  </button>
+                  <Tooltip text="When on, 9router detects Claude Code's auto-mode classifier calls and replies with '<block>no</block>' so low-cost combo fallbacks don't fail-closed. Cycle: off → auto → always → off.">
+                    <span className="material-symbols-outlined text-text-muted text-[14px] cursor-help">info</span>
+                  </Tooltip>
                 </div>
               </div>
 

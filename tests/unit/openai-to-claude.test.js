@@ -204,3 +204,146 @@ describe("openaiToClaudeResponse", () => {
     });
   });
 });
+
+
+// P0 RED: Claude classifier compatibility mode contract.
+// When the downstream client is a Claude-format classifier, the OpenAI->Claude
+// response translator MUST suppress thinking blocks (the classifier rejects them)
+// while still emitting text content and tool_use blocks unchanged.
+// Encoded as the minimal state flag `claudeCompat: true` — no other API invented.
+describe("openaiToClaudeResponse compat mode (Claude classifier)", () => {
+  function makeCompatState() {
+    return { toolCalls: new Map(), claudeCompat: true };
+  }
+
+  function flatten(result) {
+    if (!result) return [];
+    return Array.isArray(result) ? result : [result];
+  }
+
+  it("suppresses thinking blocks when state.claudeCompat is true", () => {
+    const state = makeCompatState();
+    const chunk = {
+      id: "chatcmpl-compat-reason",
+      model: "gpt-test",
+      choices: [{
+        delta: { reasoning_content: "let me think about this" }
+      }]
+    };
+
+    const events = flatten(openaiToClaudeResponse(chunk, state));
+
+    const thinkingStarts = events.filter(e => e.content_block?.type === "thinking");
+    const thinkingDeltas = events.filter(e => e.delta?.type === "thinking_delta");
+    expect(thinkingStarts).toEqual([]);
+    expect(thinkingDeltas).toEqual([]);
+  });
+
+  it("preserves text content blocks when state.claudeCompat is true", () => {
+    const state = makeCompatState();
+    const chunk = {
+      id: "chatcmpl-compat-text",
+      model: "gpt-test",
+      choices: [{
+        delta: { content: "Hello, classifier." }
+      }]
+    };
+
+    const events = flatten(openaiToClaudeResponse(chunk, state));
+
+    const textStarts = events.filter(e => e.content_block?.type === "text");
+    const textDeltas = events.filter(e => e.delta?.type === "text_delta");
+    expect(textStarts.length).toBeGreaterThan(0);
+    expect(textDeltas.length).toBeGreaterThan(0);
+    expect(events.some(e => e.content_block?.type === "thinking")).toBe(false);
+  });
+
+  it("preserves tool_use blocks when state.claudeCompat is true", () => {
+    const state = makeCompatState();
+    // Open the tool block first (id + name), then sanitize happens on finish.
+    const openEvents = flatten(openaiToClaudeResponse({
+      id: "chatcmpl-compat-tool",
+      model: "gpt-test",
+      choices: [{
+        delta: {
+          tool_calls: [{
+            index: 0,
+            id: "call_classifier",
+            function: { name: "classify", arguments: '{"label":"spam"}' }
+          }]
+        }
+      }]
+    }, state));
+
+    const finishEvents = flatten(openaiToClaudeResponse({
+      id: "chatcmpl-compat-tool",
+      model: "gpt-test",
+      choices: [{
+        delta: { tool_calls: [{ index: 0, function: { arguments: "" } }] },
+        finish_reason: "tool_calls",
+      }]
+    }, state));
+
+    const all = [...openEvents, ...finishEvents];
+    const toolStarts = all.filter(e => e.content_block?.type === "tool_use");
+    expect(toolStarts.length).toBeGreaterThan(0);
+    expect(all.some(e => e.content_block?.type === "thinking")).toBe(false);
+  });
+
+  it("mixed reasoning+text+tool_use under compat: text/tool flow, thinking is dropped", () => {
+    const state = makeCompatState();
+
+    const r1 = flatten(openaiToClaudeResponse({
+      id: "chatcmpl-compat-mix",
+      model: "gpt-test",
+      choices: [{ delta: { reasoning_content: "internal chain of thought" } }]
+    }, state));
+
+    const r2 = flatten(openaiToClaudeResponse({
+      id: "chatcmpl-compat-mix",
+      model: "gpt-test",
+      choices: [{ delta: { content: "Answer" } }]
+    }, state));
+
+    const r3 = flatten(openaiToClaudeResponse({
+      id: "chatcmpl-compat-mix",
+      model: "gpt-test",
+      choices: [{
+        delta: {
+          tool_calls: [{
+            index: 0,
+            id: "call_search",
+            function: { name: "search", arguments: '{"q":"x"}' }
+          }]
+        }
+      }]
+    }, state));
+
+    const r4 = flatten(openaiToClaudeResponse({
+      id: "chatcmpl-compat-mix",
+      model: "gpt-test",
+      choices: [{ finish_reason: "tool_calls" }]
+    }, state));
+
+    const all = [...r1, ...r2, ...r3, ...r4];
+
+    expect(all.some(e => e.content_block?.type === "thinking")).toBe(false);
+    expect(all.some(e => e.delta?.type === "thinking_delta")).toBe(false);
+    expect(all.some(e => e.content_block?.type === "text")).toBe(true);
+    expect(all.some(e => e.content_block?.type === "tool_use")).toBe(true);
+  });
+
+  // Control: default behavior (no flag) MUST still emit thinking. Locks the
+  // contract that compat is opt-in only — so a fix can't just "always drop".
+  it("emits thinking blocks by default (control: claudeCompat flag absent)", () => {
+    const state = { toolCalls: new Map() };
+    const events = flatten(openaiToClaudeResponse({
+      id: "chatcmpl-default",
+      model: "gpt-test",
+      choices: [{ delta: { reasoning_content: "regular chain of thought" } }]
+    }, state));
+
+    expect(events.some(e => e.content_block?.type === "thinking")).toBe(true);
+    expect(events.some(e => e.delta?.type === "thinking_delta")).toBe(true);
+  });
+});

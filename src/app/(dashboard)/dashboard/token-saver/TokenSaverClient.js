@@ -1,7 +1,13 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Card, Button, Input, Modal, Toggle } from "@/shared/components";
+import {
+  Card,
+  Button,
+  Input,
+  Modal,
+  Toggle,
+} from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { getCurrentLocale, onLocaleChange } from "@/i18n/runtime";
 import {
@@ -9,6 +15,14 @@ import {
   CAVEMAN_LEVELS,
   PONYTAIL_LEVELS,
 } from "../endpoint/endpointConstants";
+
+function sanitizeCavemanLevel(level, locale) {
+  const nextLevel = level || "full";
+  const current = CAVEMAN_LEVELS.find((lvl) => lvl.id === nextLevel);
+  return current?.wenyan && !WENYAN_LOCALES.includes(locale)
+    ? "ultra"
+    : nextLevel;
+}
 
 export default function TokenSaverClient() {
   const [rtkEnabled, setRtkEnabledState] = useState(true);
@@ -28,29 +42,17 @@ export default function TokenSaverClient() {
   const [cavemanLevel, setCavemanLevel] = useState("full");
   const [ponytailEnabled, setPonytailEnabled] = useState(false);
   const [ponytailLevel, setPonytailLevel] = useState("full");
-  const [locale, setLocale] = useState("en");
+  const [locale, setLocale] = useState(() => getCurrentLocale());
 
   const { copied, copy } = useCopyToClipboard();
-
-  useEffect(() => {
-    setLocale(getCurrentLocale());
-    return onLocaleChange(() => setLocale(getCurrentLocale()));
-  }, []);
 
   const isWenyanLocale = WENYAN_LOCALES.includes(locale);
   const visibleCavemanLevels = isWenyanLocale
     ? CAVEMAN_LEVELS
     : CAVEMAN_LEVELS.filter((lvl) => !lvl.wenyan);
+  const effectiveCavemanLevel = sanitizeCavemanLevel(cavemanLevel, locale);
 
-  useEffect(() => {
-    const current = CAVEMAN_LEVELS.find((lvl) => lvl.id === cavemanLevel);
-    if (current?.wenyan && !isWenyanLocale) {
-      setCavemanLevel("ultra");
-      patchSetting({ cavemanLevel: "ultra" });
-    }
-  }, [isWenyanLocale, cavemanLevel]);
-
-  const patchSetting = async (patch) => {
+  async function patchSetting(patch) {
     try {
       await fetch("/api/settings", {
         method: "PATCH",
@@ -138,8 +140,9 @@ export default function TokenSaverClient() {
   }, [refreshHeadroomStatus]);
 
   const handleCavemanLevel = (level) => {
-    setCavemanLevel(level);
-    patchSetting({ cavemanLevel: level });
+    const nextLevel = sanitizeCavemanLevel(level, locale);
+    setCavemanLevel(nextLevel);
+    patchSetting({ cavemanLevel: nextLevel });
   };
 
   const handlePonytailEnabled = (value) => {
@@ -152,6 +155,8 @@ export default function TokenSaverClient() {
     patchSetting({ ponytailLevel: level });
   };
 
+  useEffect(() => onLocaleChange(() => setLocale(getCurrentLocale())), []);
+
   useEffect(() => {
     const loadSettings = async () => {
       try {
@@ -162,7 +167,9 @@ export default function TokenSaverClient() {
           setHeadroomEnabled(!!data.headroomEnabled);
           setHeadroomUrl(data.headroomUrl || "http://localhost:8787");
           setCavemanEnabled(!!data.cavemanEnabled);
-          setCavemanLevel(data.cavemanLevel || "full");
+          setCavemanLevel(
+            sanitizeCavemanLevel(data.cavemanLevel || "full", locale)
+          );
           setPonytailEnabled(!!data.ponytailEnabled);
           setPonytailLevel(data.ponytailLevel || "full");
           refreshHeadroomStatus();
@@ -170,7 +177,7 @@ export default function TokenSaverClient() {
       } catch {}
     };
     loadSettings();
-  }, [refreshHeadroomStatus]);
+  }, [locale, refreshHeadroomStatus]);
 
   const headroomRunning = !!headroomStatus.running;
   const headroomStatusLabel = headroomStatus.loading
@@ -283,7 +290,7 @@ export default function TokenSaverClient() {
                       key={lvl.id}
                       onClick={() => handleCavemanLevel(lvl.id)}
                       className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
-                        cavemanLevel === lvl.id
+                        effectiveCavemanLevel === lvl.id
                           ? "bg-primary text-white border-primary"
                           : "bg-transparent border-border text-text-muted hover:bg-surface-2"
                       }`}
@@ -295,7 +302,9 @@ export default function TokenSaverClient() {
                 </div>
                 <p className="text-xs text-primary">
                   {
-                    CAVEMAN_LEVELS.find((lvl) => lvl.id === cavemanLevel)
+                    CAVEMAN_LEVELS.find(
+                      (lvl) => lvl.id === effectiveCavemanLevel
+                    )
                       ?.desc
                   }
                 </p>

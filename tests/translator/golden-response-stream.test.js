@@ -116,3 +116,52 @@ describe("GOLDEN response stream: OpenAI-Responses (codex) → OpenAI", () => {
     expect(runStream(FORMATS.OPENAI_RESPONSES, FORMATS.OPENAI, events)).toMatchSnapshot();
   });
 });
+
+
+// P0 RED: OpenAI provider → Claude client stream with classifier-compat flag.
+// When the downstream Claude-format consumer is a classifier that rejects
+// `thinking` content blocks, the translator pipeline must drop thinking while
+// keeping text + tool_use flows intact. The state flag is the minimal contract.
+describe("GOLDEN response stream: OpenAI → Claude (classifier compat: suppress thinking)", () => {
+  function runCompatStream(events) {
+    const state = { ...initState(FORMATS.CLAUDE), claudeCompat: true };
+    const all = [];
+    for (const ev of events) {
+      const out = translateResponse(FORMATS.OPENAI, FORMATS.CLAUDE, ev, state);
+      if (Array.isArray(out)) all.push(...out);
+      else if (out) all.push(out);
+    }
+    return stripVolatile(all);
+  }
+
+  it("text + reasoning + tool_use under compat: thinking dropped, text/tool_use flow", () => {
+    const events = [
+      { id: "chatcmpl-compat-1", model: "gpt-test", choices: [{ delta: { reasoning_content: "let me think" } }] },
+      { id: "chatcmpl-compat-1", model: "gpt-test", choices: [{ delta: { content: "Hello, classifier." } }] },
+      { id: "chatcmpl-compat-1", model: "gpt-test", choices: [{
+        delta: { tool_calls: [{ index: 0, id: "call_search", function: { name: "search", arguments: '{"q":"x"}' } }] }
+      }] },
+      { id: "chatcmpl-compat-1", model: "gpt-test", choices: [{ finish_reason: "tool_calls" }] },
+    ];
+
+    const chunks = runCompatStream(events);
+
+    const thinkingStarts = chunks.filter(
+      e => e.type === "content_block_start" && e.content_block?.type === "thinking"
+    );
+    const thinkingDeltas = chunks.filter(
+      e => e.type === "content_block_delta" && e.delta?.type === "thinking_delta"
+    );
+    expect(thinkingStarts).toEqual([]);
+    expect(thinkingDeltas).toEqual([]);
+
+    const textStarts = chunks.filter(
+      e => e.type === "content_block_start" && e.content_block?.type === "text"
+    );
+    const toolStarts = chunks.filter(
+      e => e.type === "content_block_start" && e.content_block?.type === "tool_use"
+    );
+    expect(textStarts.length).toBeGreaterThan(0);
+    expect(toolStarts.length).toBeGreaterThan(0);
+  });
+});

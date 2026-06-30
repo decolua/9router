@@ -10,6 +10,18 @@ import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, sav
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 
+function shouldEnableClaudeCompat(mode, sourceFormat, body) {
+  if (sourceFormat !== FORMATS.CLAUDE) return false;
+  if (mode === "always") return true;
+  if (mode !== "auto") return false;
+  const systemTexts = Array.isArray(body?.system)
+    ? body.system.map((part) => (typeof part?.text === "string" ? part.text : "")).filter(Boolean)
+    : [];
+  const stopSequences = Array.isArray(body?.stop_sequences) ? body.stop_sequences : [];
+  return systemTexts.some((text) => text.includes("You are a security monitor for autonomous AI coding agents"))
+    || stopSequences.includes("</block>");
+}
+
 function parseToolArguments(value) {
   if (!value) return {};
   if (typeof value === "object") return value;
@@ -20,14 +32,14 @@ function parseToolArguments(value) {
   }
 }
 
-function openAICompletionToClaudeMessage(responseBody) {
+function openAICompletionToClaudeMessage(responseBody, options = {}) {
   if (!responseBody?.choices?.[0]) return responseBody;
   const choice = responseBody.choices[0];
   const message = choice.message || {};
   const content = [];
 
   const reasoning = message.reasoning_content || message.provider_specific_fields?.reasoning_content || "";
-  if (reasoning) {
+  if (reasoning && !options.claudeCompat) {
     content.push({ type: "thinking", thinking: reasoning });
   }
   if (typeof message.content === "string" && message.content.length > 0) {
@@ -45,6 +57,18 @@ function openAICompletionToClaudeMessage(responseBody) {
   if (content.length === 0) content.push({ type: "text", text: "" });
 
   const usage = responseBody.usage || {};
+  const claudeUsage = {
+    input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
+    output_tokens: usage.completion_tokens || usage.output_tokens || 0,
+  };
+  if (usage.cache_read_input_tokens || usage.cache_creation_input_tokens) {
+    if (usage.cache_read_input_tokens) claudeUsage.cache_read_input_tokens = usage.cache_read_input_tokens;
+    if (usage.cache_creation_input_tokens) claudeUsage.cache_creation_input_tokens = usage.cache_creation_input_tokens;
+  }
+  const details = usage.prompt_tokens_details || usage.input_tokens_details;
+  if (details && typeof details.cached_tokens === "number") {
+    claudeUsage.cache_read_input_tokens = details.cached_tokens;
+  }
   return {
     id: String(responseBody.id || `msg_${Date.now()}`).replace(/^chatcmpl-/, ""),
     type: "message",
@@ -53,20 +77,20 @@ function openAICompletionToClaudeMessage(responseBody) {
     content,
     stop_reason: fromOpenAIFinish(choice.finish_reason, FORMATS.CLAUDE),
     stop_sequence: null,
-    usage: {
-      input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
-      output_tokens: usage.completion_tokens || usage.output_tokens || 0,
-    },
+    usage: claudeUsage,
   };
 }
 
 /**
  * Translate non-streaming response body from provider format → OpenAI format.
  */
-export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat) {
+export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, options = {}) {
   if (targetFormat === sourceFormat) return responseBody;
   if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.CLAUDE) {
-    return openAICompletionToClaudeMessage(responseBody);
+    return openAICompletionToClaudeMessage(responseBody, options);
+  }
+  if (targetFormat === FORMATS.OPENAI_RESPONSES && sourceFormat === FORMATS.CLAUDE) {
+    return openAICompletionToClaudeMessage(responseBody, options);
   }
   if (targetFormat === FORMATS.OPENAI) return responseBody;
 
@@ -198,7 +222,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
 /**
  * Handle non-streaming response from provider.
  */
-export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, trackDone, appendLog }) {
+export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, trackDone, appendLog, claudeClassifierCompat }) {
   trackDone();
   const contentType = providerResponse.headers.get("content-type") || "";
   let responseBody;
@@ -238,7 +262,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint });
 
   const translatedResponse = needsTranslation(targetFormat, sourceFormat)
-    ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
+    ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, { claudeCompat: shouldEnableClaudeCompat(claudeClassifierCompat, sourceFormat, body) })
     : responseBody;
   const isClaudeMessageResponse = sourceFormat === FORMATS.CLAUDE && translatedResponse?.type === "message";
 

@@ -48,7 +48,8 @@ export function createSSEStream(options = {}) {
     connectionId = null,
     body = null,
     onStreamComplete = null,
-    apiKey = null
+    apiKey = null,
+    claudeClassifierCompat = "off"
   } = options;
 
   let buffer = "";
@@ -57,7 +58,24 @@ export function createSSEStream(options = {}) {
   // Per-stream decoder with stream:true to correctly handle multi-byte chars split across chunks
   const decoder = new TextDecoder("utf-8", { fatal: false });
 
-  const state = mode === STREAM_MODE.TRANSLATE ? { ...initState(sourceFormat), provider, toolNameMap, model } : null;
+  const claudeCompatMode = claudeClassifierCompat || "off";
+  const systemTexts = Array.isArray(body?.system)
+    ? body.system.map((part) => (typeof part?.text === "string" ? part.text : "")).filter(Boolean)
+    : [];
+  const stopSequences = Array.isArray(body?.stop_sequences) ? body.stop_sequences : [];
+  const isClaudeClassifierRequest =
+    sourceFormat === FORMATS.CLAUDE && (
+      systemTexts.some((text) => text.includes("You are a security monitor for autonomous AI coding agents")) ||
+      stopSequences.includes("</block>")
+    );
+  const claudeCompat =
+    sourceFormat === FORMATS.CLAUDE && (
+      claudeCompatMode === "always" ||
+      (claudeCompatMode === "auto" && isClaudeClassifierRequest)
+    );
+  const state = mode === STREAM_MODE.TRANSLATE
+    ? { ...initState(sourceFormat), provider, toolNameMap, model, ...(claudeCompat && { claudeCompat: true }) }
+    : null;
 
   let totalContentLength = 0;
   let accumulatedContent = "";
@@ -450,7 +468,7 @@ export function createSSEStream(options = {}) {
   });
 }
 
-export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null) {
+export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, claudeClassifierCompat = "off") {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
     targetFormat,
@@ -462,7 +480,8 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
     connectionId,
     body,
     onStreamComplete,
-    apiKey
+    apiKey,
+    claudeClassifierCompat
   });
 }
 

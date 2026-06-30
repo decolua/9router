@@ -47,6 +47,11 @@ async function showSettingsMenu(breadcrumb = []) {
       const authColor = authMode === "password" ? COLORS.green : COLORS.yellow;
       lines.push(`  Auth:     ${authColor}${authMode.toUpperCase()}${COLORS.reset} ${COLORS.dim}(login mode)${COLORS.reset}`);
 
+      // Claude classifier compat section
+      const classifierMode = data?.settings?.claudeClassifierCompat || "off";
+      const classifierColor = classifierMode === "off" ? COLORS.red : classifierMode === "auto" ? COLORS.yellow : COLORS.green;
+      lines.push(`  Classifier: ${classifierColor}${classifierMode.toUpperCase()}${COLORS.reset} ${COLORS.dim}(Claude compat mode)${COLORS.reset}`);
+
       return lines.join("\n");
     },
     refresh: async () => {
@@ -81,6 +86,13 @@ async function showSettingsMenu(breadcrumb = []) {
           return `Token Saver (Headroom): ${on ? "ON" : "OFF"} → toggle`;
         },
         action: async (d) => { await toggleHeadroom(d?.settings?.headroomEnabled === true); return true; }
+      },
+      {
+        label: (d) => {
+          const mode = d?.settings?.claudeClassifierCompat || "off";
+          return `Claude Classifier Compat: ${mode.toUpperCase()} → cycle`;
+        },
+        action: async (d) => { await cycleClassifierCompat(d?.settings?.claudeClassifierCompat || "off"); return true; }
       },
       {
         label: "🔑 Reset Password to Default",
@@ -174,6 +186,20 @@ async function toggleHeadroom(currentlyOn) {
   const result = await api.updateSettings({ headroomEnabled: next });
   if (result.success) {
     showStatus(`Headroom ${next ? "enabled" : "disabled"}`, "success");
+  } else {
+    showStatus(`Failed: ${result.error}`, "error");
+  }
+  await pause();
+}
+
+const CLASSIFIER_COMPAT_MODES = ["off", "auto", "always"];
+
+async function cycleClassifierCompat(currentMode) {
+  const idx = CLASSIFIER_COMPAT_MODES.indexOf(currentMode);
+  const next = CLASSIFIER_COMPAT_MODES[(idx === -1 ? 0 : (idx + 1) % CLASSIFIER_COMPAT_MODES.length)];
+  const result = await api.updateSettings({ claudeClassifierCompat: next });
+  if (result.success) {
+    showStatus(`Claude classifier compat set to ${next}`, "success");
   } else {
     showStatus(`Failed: ${result.error}`, "error");
   }

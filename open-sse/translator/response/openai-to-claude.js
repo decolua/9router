@@ -137,7 +137,7 @@ export function openaiToClaudeResponse(chunk, state) {
 
   // Handle reasoning (thinking) across vendor shapes - GLM/DeepSeek/Qwen/MiniMax/etc.
   const reasoningContent = extractReasoningText(delta);
-  if (reasoningContent) {
+  if (reasoningContent && !state.claudeCompat) {
     stopTextBlock(state, results);
 
     if (!state.thinkingBlockStarted) {
