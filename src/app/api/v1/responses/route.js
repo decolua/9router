@@ -1,5 +1,6 @@
 import { handleChat } from "@/sse/handlers/chat.js";
 import { initTranslators } from "open-sse/translator/index.js";
+import { withEarlyStreamKeepalive } from "open-sse/utils/earlyStreamKeepalive.js";
 
 let initialized = false;
 
@@ -26,5 +27,16 @@ export async function OPTIONS() {
  */
 export async function POST(request) {
   await ensureInitialized();
+
+  // Codex CLI and other Responses API consumers use SSE and may drop the
+  // connection if no bytes arrive within a few seconds. Keep the connection warm
+  // with early keepalives while the upstream produces its first token.
+  const accept = String(request.headers.get("accept") || "").toLowerCase();
+  if (accept.includes("text/event-stream")) {
+    return await withEarlyStreamKeepalive(handleChat(request), {
+      signal: request.signal,
+    });
+  }
+
   return await handleChat(request);
 }

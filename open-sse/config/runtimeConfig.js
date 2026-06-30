@@ -81,6 +81,10 @@ export function resolveRetryEntry(entry) {
   };
 }
 
+// Outbound payload validation gate. Set VALIDATE_OUTBOUND=false to disable
+// the gate in an emergency (keys are still stripped).
+export const VALIDATE_OUTBOUND = process.env.VALIDATE_OUTBOUND !== "false";
+
 // Requests containing these texts will bypass provider
 export const SKIP_PATTERNS = [
   "Please write a 5-10 word title for the following conversation:"

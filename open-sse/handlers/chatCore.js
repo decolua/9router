@@ -2,6 +2,7 @@ import { detectFormat, getTargetFormat, resolveTransport } from "../services/pro
 import { translateRequest } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
 import { normalizeClaudePassthrough } from "../translator/formats/claude.js";
+import { validateOutboundPayload, stripInternalKeys } from "../translator/validate.js";
 import { COLORS } from "../utils/stream.js";
 import { createStreamController } from "../utils/streamHandler.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
@@ -9,7 +10,7 @@ import { createRequestLogger } from "../utils/requestLogger.js";
 import { getModelTargetFormat, getModelStrip, getModelUpstreamId, getModelType, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { PROVIDERS } from "../config/providers.js";
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
-import { HTTP_STATUS } from "../config/runtimeConfig.js";
+import { HTTP_STATUS, VALIDATE_OUTBOUND } from "../config/runtimeConfig.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import { trackPendingRequest, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { getExecutor } from "../executors/index.js";
@@ -233,6 +234,35 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     const connectionName = credentials?.connectionName || credentials?.connectionId || "unknown";
     log?.debug?.("PROXY", `${provider.toUpperCase()} | ${model} | conn=${connectionName} | no_proxy=${proxyOptions.connectionNoProxy}`);
   }
+
+  // Outbound validation gate. Run format-specific shape checks (which also
+  // catch leftover internal keys) FIRST so the gate can return 400 with a
+  // precise error. After the gate passes, strip any remaining underscore
+  // keys defensively — this is the passthrough safety net.
+  if (VALIDATE_OUTBOUND) {
+    const validation = validateOutboundPayload(finalFormat, translatedBody);
+    if (!validation.ok) {
+      const summary = validation.errors
+        .map((e) => `${e.path}: ${e.message}`)
+        .join("; ");
+      const errMsg = `Outbound validation failed for ${finalFormat}: ${summary}`;
+      log?.warn?.("VALIDATE", errMsg);
+      trackPendingRequest(model, provider, connectionId, false, true);
+      appendRequestLog({ model, provider, connectionId, status: `FAILED ${HTTP_STATUS.BAD_REQUEST}` }).catch(() => { });
+      saveRequestDetail(buildRequestDetail({
+        provider, model, connectionId,
+        latency: { ttft: 0, total: Date.now() - requestStartTime },
+        tokens: { prompt_tokens: 0, completion_tokens: 0 },
+        request: extractRequestConfig(body, stream),
+        providerRequest: translatedBody || null,
+        response: { error: errMsg, status: HTTP_STATUS.BAD_REQUEST, thinking: null },
+        status: "error"
+      })).catch(() => { });
+      return createErrorResult(HTTP_STATUS.BAD_REQUEST, errMsg);
+    }
+  }
+  // Defensive strip AFTER the gate.
+  stripInternalKeys(translatedBody);
 
   // Execute request
   let providerResponse, providerUrl, providerHeaders, finalBody;
