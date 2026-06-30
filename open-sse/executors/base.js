@@ -1,5 +1,4 @@
-import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG, resolveRetryEntry, FETCH_CONNECT_TIMEOUT_MS } from "../config/runtimeConfig.js";
-import { shouldRefreshCredentials } from "../services/oauthCredentialManager.js";
+import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG, resolveRetryEntry, resolveFetchConnectTimeoutMs } from "../config/runtimeConfig.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { dbg } from "../utils/debugLog.js";
 import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE } from "../providers/shared.js";
@@ -102,8 +101,14 @@ export class BaseExecutor {
     let lastStatus = 0;
     const retryAttemptsByUrl = {};
 
-    // Merge default retry config with provider-specific config
+    // Merge default retry config with provider-specific config.
+    // Anthropic-compatible custom proxy pools often fail by slow header response;
+    // pair their longer connect timeout with fewer network retries to avoid
+    // hanging one account for many minutes before account fallback can rotate.
     const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...this.config.retry };
+    if (this.provider?.startsWith?.("anthropic-compatible-") && this.config.retry?.[HTTP_STATUS.BAD_GATEWAY] == null) {
+      retryConfig[HTTP_STATUS.BAD_GATEWAY] = { attempts: 1, delayMs: 2000 };
+    }
 
     // Schedule retry via retryConfig[statusKey]. Returns true when caller should `urlIndex--; continue`
     // response (optional) lets a subclass hook compute a dynamic delay (e.g. antigravity Retry-After).
@@ -130,16 +135,16 @@ export class BaseExecutor {
 
       if (!retryAttemptsByUrl[urlIndex]) retryAttemptsByUrl[urlIndex] = 0;
 
-      // Abort if upstream doesn't return response headers within connection timeout
+      // Abort if upstream doesn't return response headers within the configured connect timeout.
+      const connectTimeoutMs = resolveFetchConnectTimeoutMs(this.provider, this.config, credentials);
       const connectCtrl = new AbortController();
-      const timeoutMs = this.config?.timeoutMs || FETCH_CONNECT_TIMEOUT_MS;
-      const connectTimer = setTimeout(() => connectCtrl.abort(new Error("fetch connect timeout")), timeoutMs);
+      const connectTimer = setTimeout(() => connectCtrl.abort(new Error("fetch connect timeout")), connectTimeoutMs);
       const mergedSignal = signal ? AbortSignal.any([signal, connectCtrl.signal]) : connectCtrl.signal;
 
       try {
         const bodyStr = JSON.stringify(transformedBody);
         const fetchT0 = Date.now();
-        dbg("FETCH", `${this.provider.toUpperCase()} → ${url} | body=${bodyStr.length}B | connectTimeout=${timeoutMs}ms`);
+        dbg("FETCH", `${this.provider.toUpperCase()} → ${url} | body=${bodyStr.length}B | connectTimeout=${connectTimeoutMs}ms`);
         const response = await proxyAwareFetch(url, {
           method: "POST",
           headers,

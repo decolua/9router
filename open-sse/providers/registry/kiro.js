@@ -23,8 +23,22 @@ export default {
       "https://q.us-east-1.amazonaws.com/generateAssistantResponse",
     ],
     format: "kiro",
-    retry: {
-      "429": 0,
+    // 429 is handled by the aggressive `kiroRateLimit` path in the executor;
+    // other transient statuses still use the shared retry config.
+    retry: { 502: 3, 503: 3 },
+    // Aggressive 429 contention handling. Kiro/CodeWhisperer is heavily shared,
+    // so a 429 usually means "another client grabbed the slot" rather than a
+    // real per-account quota wall. Instead of giving up after a couple fixed
+    // waits, we poll freed capacity on a short, *jittered* exponential backoff
+    // so we win the race for a freed slot more often. Honors upstream
+    // Retry-After when present. Two profiles selected per-request by the user's
+    // Kiro mode (providerStrategies.kiro.kiroMode):
+    //   - balance: fewer, faster retries so multi-account rotation kicks in
+    //     sooner (better when you have several Kiro accounts).
+    //   - stress:  more, longer retries to fight harder on a single account.
+    kiroRateLimit: {
+      balance: { maxAttempts: 5, baseDelayMs: 250, maxDelayMs: 4000, jitterRatio: 0.5 },
+      stress: { maxAttempts: 8, baseDelayMs: 400, maxDelayMs: 8000, jitterRatio: 0.5 },
     },
     headers: {
       "Content-Type": "application/json",

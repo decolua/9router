@@ -15,11 +15,22 @@ function getTimeString() {
  * @param {string} options.provider - Provider name
  * @param {string} options.model - Model name
  */
-export function createStreamController({ onDisconnect, onError, log, provider, model } = {}) {
+export function createStreamController({ onDisconnect, onError, log, provider, model, externalSignal } = {}) {
   const abortController = new AbortController();
   const startTime = Date.now();
   let disconnected = false;
   let abortTimeout = null;
+
+  // Allow a caller (e.g. hedged-request loser) to abort this request from the
+  // outside. Forwards the external abort into our internal controller so the
+  // upstream fetch and stream pipeline tear down cleanly.
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      abortController.abort();
+    } else {
+      externalSignal.addEventListener("abort", () => abortController.abort(), { once: true });
+    }
+  }
 
   const logStream = (status) => {
     const duration = Date.now() - startTime;

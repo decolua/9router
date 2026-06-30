@@ -12,6 +12,24 @@ import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM } from "../schema/index.js";
 // Responses API enforces max 64 chars on call_id (#393)
 const MAX_CALL_ID_LEN = 64;
 const clampCallId = (id) => (typeof id === "string" && id.length > MAX_CALL_ID_LEN ? id.substring(0, MAX_CALL_ID_LEN) : id);
+const WEB_SEARCH_TOOL_TYPES = /^web_search/;
+
+function isWebSearchTool(tool) {
+  return typeof tool?.type === "string" && WEB_SEARCH_TOOL_TYPES.test(tool.type);
+}
+
+function isWebSearchToolChoice(choice) {
+  return choice?.type === "web_search" || (choice?.type === "tool" && choice?.name === "web_search");
+}
+
+function convertToolChoiceToResponses(choice) {
+  if (!choice || typeof choice === "string") return choice;
+  if (isWebSearchToolChoice(choice)) return { type: "web_search" };
+  if (choice.type === "function" && choice.function?.name) {
+    return { type: "function", name: choice.function.name };
+  }
+  return choice;
+}
 
 /**
  * Convert OpenAI Responses API request to OpenAI Chat Completions format
@@ -157,6 +175,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   if (body.tools && Array.isArray(body.tools)) {
     result.tools = body.tools
       .map(tool => {
+        if (isWebSearchTool(tool)) return tool;
         // Already in Chat Completions format: { type: "function", function: { name, ... } }
         if (tool.function) return tool;
         // Responses API function tool: { type: "function", name, description, parameters }
@@ -299,7 +318,8 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
   // Convert tools format
   if (body.tools && Array.isArray(body.tools)) {
     result.tools = body.tools.map(tool => {
-      if (tool.type === OPENAI_BLOCK.FUNCTION) {
+      if (isWebSearchTool(tool)) return tool;
+      if (tool.type === "function") {
         return {
           type: OPENAI_BLOCK.FUNCTION,
           name: tool.function.name,
@@ -310,6 +330,10 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
       }
       return tool;
     });
+  }
+
+  if (body.tool_choice !== undefined) {
+    result.tool_choice = convertToolChoiceToResponses(body.tool_choice);
   }
 
   // Pass through other relevant fields

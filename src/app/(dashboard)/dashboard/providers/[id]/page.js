@@ -63,6 +63,7 @@ export default function ProviderDetailPage() {
   const [providerStrategy, setProviderStrategy] = useState(null);
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
   const [thinkingMode, setThinkingMode] = useState("auto");
+  const [kiroMode, setKiroMode] = useState("balance");
   const [autoPing, setAutoPing] = useState({ enabled: false, connections: {} });
   const [suggestedModels, setSuggestedModels] = useState([]);
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
@@ -275,6 +276,8 @@ export default function ProviderDetailPage() {
       const override = (settingsData.providerStrategies || {})[providerId] || {};
       setProviderStrategy(override.fallbackStrategy || null);
       setProviderStickyLimit(override.stickyRoundRobinLimit != null ? String(override.stickyRoundRobinLimit) : "1");
+      // Kiro request-contention mode (balance | stress)
+      setKiroMode(override.kiroMode || "balance");
       // Load per-provider thinking config
       const thinkingCfg = (settingsData.providerThinking || {})[providerId] || {};
       setThinkingMode(thinkingCfg.mode || "auto");
@@ -365,6 +368,44 @@ export default function ProviderDetailPage() {
   const handleStickyLimitChange = (value) => {
     setProviderStickyLimit(value);
     saveProviderStrategy("round-robin", value);
+  };
+
+  // Persist Kiro request-contention mode into providerStrategies.kiro.kiroMode,
+  // preserving any existing fallbackStrategy / sticky override on that entry.
+  const saveKiroMode = async (mode) => {
+    try {
+      const settingsRes = await fetch("/api/settings", { cache: "no-store" });
+      const settingsData = settingsRes.ok ? await settingsRes.json() : {};
+      const current = settingsData.providerStrategies || {};
+      const existing = current[providerId] || {};
+
+      const override = { ...existing };
+      if (!mode || mode === "balance") {
+        delete override.kiroMode; // balance is the default — keep settings clean
+      } else {
+        override.kiroMode = mode;
+      }
+
+      const updated = { ...current };
+      if (Object.keys(override).length === 0) {
+        delete updated[providerId];
+      } else {
+        updated[providerId] = override;
+      }
+
+      await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ providerStrategies: updated }),
+      });
+    } catch (error) {
+      console.log("Error saving Kiro mode:", error);
+    }
+  };
+
+  const handleKiroModeChange = (mode) => {
+    setKiroMode(mode);
+    saveKiroMode(mode);
   };
 
   const saveThinkingConfig = async (mode) => {
@@ -1410,6 +1451,27 @@ export default function ProviderDetailPage() {
                   </select>
                 </div>
               )} */}
+              {/* Kiro request-contention mode */}
+              {providerId === "kiro" && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-text-muted font-medium" title="How hard to fight for a slot when Kiro returns 429. Balance rotates accounts sooner; Stress retries harder and (with 2+ accounts) races requests in parallel — higher abuse risk, burns more quota.">
+                    Request Mode
+                  </span>
+                  <select
+                    value={kiroMode}
+                    onChange={(e) => handleKiroModeChange(e.target.value)}
+                    className="text-xs px-2 py-1 border border-border rounded-md bg-background focus:outline-none focus:border-primary"
+                  >
+                    <option value="balance">Balance</option>
+                    <option value="stress">Stress</option>
+                  </select>
+                  {kiroMode === "stress" && (
+                    <span className="text-xs text-warning" title="Stress mode races requests across multiple accounts and retries aggressively. This roughly doubles upstream load, burns quota faster, and may get your accounts rate-limited harder by AWS.">
+                      ⚠ aggressive — burns quota
+                    </span>
+                  )}
+                </div>
+              )}
               {/* Round Robin toggle */}
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs text-text-muted font-medium">Round Robin</span>
@@ -1514,6 +1576,18 @@ export default function ProviderDetailPage() {
                 </div>
               )}
               {connectionsList}
+              {isCompatible && (
+                <div className="mt-4 grid grid-cols-1 gap-2 sm:flex">
+                  <Button
+                    size="sm"
+                    icon="add"
+                    onClick={triggerAddConnection}
+                    className="w-full sm:w-auto"
+                  >
+                    Add API Key
+                  </Button>
+                </div>
+              )}
               {!isCompatible && (
                 <div className="mt-4 grid grid-cols-1 gap-2 sm:flex">
                   {providerId === "iflow" && (

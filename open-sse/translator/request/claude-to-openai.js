@@ -10,6 +10,58 @@ function stripAnthropicBillingHeader(text) {
   return text.replace(/^x-anthropic-billing-header:[^\n]*(?:\r?\n)?/i, "");
 }
 
+const WEB_SEARCH_TOOL_TYPES = /^web_search/;
+const CLAUDE_AGENT_TOOL_NAMES = new Set(["Agent"]);
+
+function isClaudeWebSearchTool(tool) {
+  return typeof tool?.type === "string" && WEB_SEARCH_TOOL_TYPES.test(tool.type);
+}
+
+function sanitizeClaudeAgentInput(toolName, input) {
+  if (!CLAUDE_AGENT_TOOL_NAMES.has(toolName) || !input || typeof input !== "object" || Array.isArray(input)) {
+    return input || {};
+  }
+
+  if (!("isolation" in input)) return input;
+  const { isolation, ...sanitizedInput } = input;
+  return sanitizedInput;
+}
+
+function sanitizeClaudeAgentSchema(tool) {
+  const schema = tool.input_schema || { type: "object", properties: {} };
+  if (!CLAUDE_AGENT_TOOL_NAMES.has(tool.name) || !schema || typeof schema !== "object" || Array.isArray(schema)) {
+    return schema;
+  }
+
+  const properties = schema.properties;
+  if (!properties || typeof properties !== "object" || Array.isArray(properties) || !("isolation" in properties)) {
+    return schema;
+  }
+
+  const { isolation, ...sanitizedProperties } = properties;
+  const sanitizedSchema = { ...schema, properties: sanitizedProperties };
+  if (Array.isArray(schema.required)) {
+    sanitizedSchema.required = schema.required.filter(key => key !== "isolation");
+  }
+  return sanitizedSchema;
+}
+
+function convertClaudeTool(tool) {
+  if (isClaudeWebSearchTool(tool)) {
+    const { input_schema, ...nativeTool } = tool;
+    return nativeTool;
+  }
+
+  return {
+    type: "function",
+    function: {
+      name: tool.name,
+      description: String(tool.description || ""),
+      parameters: sanitizeClaudeAgentSchema(tool)
+    }
+  };
+}
+
 // Convert Claude request to OpenAI format
 export function claudeToOpenAIRequest(model, body, stream) {
   const result = {
@@ -64,20 +116,14 @@ export function claudeToOpenAIRequest(model, body, stream) {
   fixMissingToolResponsesOpenAI(result.messages);
 
   // Tools
+  const hasWebSearchTool = body.tools?.some?.(isClaudeWebSearchTool) || false;
   if (body.tools && Array.isArray(body.tools)) {
-    result.tools = body.tools.map(tool => ({
-      type: OPENAI_BLOCK.FUNCTION,
-      function: {
-        name: tool.name,
-        description: String(tool.description || ""),
-        parameters: tool.input_schema || { type: "object", properties: {} }
-      }
-    }));
+    result.tools = body.tools.map(convertClaudeTool);
   }
 
   // Tool choice
   if (body.tool_choice) {
-    result.tool_choice = convertToolChoice(body.tool_choice);
+    result.tool_choice = convertToolChoice(body.tool_choice, hasWebSearchTool);
   }
 
   if (body.reasoning_effort !== undefined) {
@@ -183,7 +229,7 @@ function convertClaudeMessage(msg) {
             type: OPENAI_BLOCK.FUNCTION,
             function: {
               name: block.name,
-              arguments: JSON.stringify(block.input || {})
+              arguments: JSON.stringify(sanitizeClaudeAgentInput(block.name, block.input))
             }
           });
           break;
@@ -246,14 +292,18 @@ function convertClaudeMessage(msg) {
 }
 
 // Convert tool choice
-function convertToolChoice(choice) {
+function convertToolChoice(choice, hasWebSearchTool = false) {
   if (!choice) return "auto";
   if (typeof choice === "string") return choice;
   
   switch (choice.type) {
     case "auto": return "auto";
     case "any": return "required";
-    case "tool": return { type: OPENAI_BLOCK.FUNCTION, function: { name: choice.name } };
+    case "tool":
+      if (hasWebSearchTool && choice.name === "web_search") {
+        return { type: "web_search" };
+      }
+      return { type: "function", function: { name: choice.name } };
     default: return "auto";
   }
 }

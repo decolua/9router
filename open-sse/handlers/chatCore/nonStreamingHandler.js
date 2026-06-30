@@ -2,6 +2,7 @@ import { FORMATS } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
 import { fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
+import { extractReasoningText } from "../../translator/concerns/reasoning.js";
 import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
 import { createErrorResult } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
@@ -26,7 +27,8 @@ function openAICompletionToClaudeMessage(responseBody) {
   const message = choice.message || {};
   const content = [];
 
-  const reasoning = message.reasoning_content || message.provider_specific_fields?.reasoning_content || "";
+  // extractReasoningText covers reasoning_content/reasoning/reasoning_details[] across vendors.
+  const reasoning = extractReasoningText(message) || message.provider_specific_fields?.reasoning_content || "";
   if (reasoning) {
     content.push({ type: "thinking", thinking: reasoning });
   }
@@ -61,11 +63,11 @@ function openAICompletionToClaudeMessage(responseBody) {
 }
 
 /**
- * Translate non-streaming response body from provider format → OpenAI format.
+ * Translate non-streaming response body from provider format → client format.
  */
 export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat) {
   if (targetFormat === sourceFormat) return responseBody;
-  if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.CLAUDE) {
+  if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.CLAUDE && responseBody?.choices) {
     return openAICompletionToClaudeMessage(responseBody);
   }
   if (targetFormat === FORMATS.OPENAI) return responseBody;

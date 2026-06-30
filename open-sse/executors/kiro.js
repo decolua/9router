@@ -3,6 +3,8 @@ import { PROVIDERS } from "../config/providers.js";
 import { resolveKiroModel } from "../config/kiroConstants.js";
 import { v4 as uuidv4 } from "uuid";
 import { refreshKiroToken } from "../services/tokenRefresh.js";
+import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG, resolveRetryEntry, KIRO_RATE_LIMIT_DEFAULT, jitteredBackoff } from "../config/runtimeConfig.js";
 import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 
@@ -81,25 +83,117 @@ export class KiroExecutor extends BaseExecutor {
   }
 
   /**
-   * Kiro execute — delegate to BaseExecutor for endpoint fallback + retry, then
-   * transform the binary AWS EventStream into OpenAI-shaped SSE on success.
-   *
-   * BaseExecutor.execute() walks config.baseUrls (runtime.us-east-1.kiro.dev →
-   * codewhisperer → q) advancing to the next host on 429 (shouldRetry) and on
-   * network/5xx errors, while tryRetry handles in-place retries per `retry: {429: 2}`.
-   * Note: api-key connections reorder these so the *.amazonaws.com hosts come
-   * first — see getOrderedBaseUrls/buildUrl above.
-   * Note: the baseUrls are alternate surfaces of one regional service, so rotation
-   * is edge-level failover — it does not grant fresh 429 quota. Per-account 429
-   * spreading is handled upstream by account rotation in sse/handlers/chat.js.
-   *
-   * Errors are returned untransformed so the upstream handler can read the body,
-   * classify the status, and trigger account fallback/cooldown.
+   * Parse an upstream-suggested retry delay (ms) from rate-limit headers.
+   * CodeWhisperer occasionally returns Retry-After / x-ratelimit-* hints; when
+   * present we honor them (capped) instead of guessing with backoff.
+   * Returns null when no usable hint is found.
    */
-  async execute(args) {
-    const result = await super.execute(args);
-    if (result?.response?.ok) {
-      result.response = this.transformEventStreamToSSE(result.response, args.model);
+  parseRetryAfterMs(headers) {
+    if (!headers?.get) return null;
+
+    const retryAfter = headers.get("retry-after");
+    if (retryAfter) {
+      const seconds = parseInt(retryAfter, 10);
+      if (!Number.isNaN(seconds) && seconds > 0) return seconds * 1000;
+      const date = new Date(retryAfter);
+      if (!Number.isNaN(date.getTime())) {
+        const diff = date.getTime() - Date.now();
+        if (diff > 0) return diff;
+      }
+    }
+
+    const resetAfter = headers.get("x-ratelimit-reset-after");
+    if (resetAfter) {
+      const seconds = parseInt(resetAfter, 10);
+      if (!Number.isNaN(seconds) && seconds > 0) return seconds * 1000;
+    }
+
+    return null;
+  }
+
+  /**
+   * Resolve the active 429 retry profile for a given Kiro mode.
+   * Supports both the new two-profile shape ({ balance, stress }) and a flat
+   * legacy shape ({ maxAttempts, ... }). Falls back to KIRO_RATE_LIMIT_DEFAULT.
+   */
+  resolveRateLimitProfile(kiroMode) {
+    const cfg = this.config.kiroRateLimit || {};
+    const mode = kiroMode === "stress" ? "stress" : "balance";
+    // New shape: per-mode profiles
+    if (cfg.balance || cfg.stress) {
+      return { ...KIRO_RATE_LIMIT_DEFAULT, ...(cfg[mode] || cfg.balance || {}) };
+    }
+    // Legacy flat shape
+    return { ...KIRO_RATE_LIMIT_DEFAULT, ...cfg };
+  }
+
+  /**
+   * Custom execute for Kiro - handles AWS EventStream binary response.
+   *
+   * Kiro/CodeWhisperer is a heavily-shared upstream, so a 429 most often means
+   * a peer client grabbed the slot, not that this account is truly out of
+   * quota. We therefore retry 429s aggressively on a short *jittered*
+   * exponential backoff (many attempts, randomized waits) to win the race for
+   * freed capacity, while honoring any explicit Retry-After hint. Non-429
+   * errors fall back to the existing fixed retry config and are surfaced for
+   * account-level cooldown handling upstream.
+   *
+   * `kiroMode` ("balance" | "stress") selects how hard we fight on a single
+   * account before surfacing the 429 for account rotation upstream.
+   */
+  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null, kiroMode = "balance" }) {
+    const url = this.buildUrl(model, stream, 0);
+    const transformedBody = this.transformRequest(model, body, stream, credentials);
+    const bodyStr = JSON.stringify(transformedBody);
+
+    // Merge default retry config with provider-specific config (non-429 statuses)
+    const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...this.config.retry };
+    const rl = this.resolveRateLimitProfile(kiroMode);
+
+    let retryAttempts = 0;   // generic non-429 retries (per retryConfig)
+    let rateLimitAttempts = 0; // 429-specific aggressive retries
+
+    while (true) {
+      const headers = this.buildHeaders(credentials, stream);
+
+      const response = await proxyAwareFetch(url, {
+        method: "POST",
+        headers,
+        body: bodyStr,
+        signal
+      }, proxyOptions);
+
+      // --- Aggressive 429 contention handling ---
+      if (response.status === HTTP_STATUS.RATE_LIMITED && rateLimitAttempts < rl.maxAttempts) {
+        rateLimitAttempts++;
+        const hintMs = this.parseRetryAfterMs(response.headers);
+        const waitMs = hintMs != null
+          ? Math.min(hintMs, rl.maxDelayMs)
+          : jitteredBackoff(rateLimitAttempts, rl);
+        log?.debug?.("RETRY", `429 contention retry ${rateLimitAttempts}/${rl.maxAttempts} after ${Math.round(waitMs)}ms${hintMs != null ? " (Retry-After)" : ""}`);
+        // Drain the body so the underlying connection can be reused.
+        try { await response.body?.cancel?.(); } catch { /* noop */ }
+        await new Promise(resolve => setTimeout(resolve, waitMs));
+        continue;
+      }
+
+      // --- Generic retry for other transient statuses (502/503/504/...) ---
+      const { attempts: maxRetries, delayMs } = resolveRetryEntry(retryConfig[response.status]);
+      if (!response.ok && response.status !== HTTP_STATUS.RATE_LIMITED && maxRetries > 0 && retryAttempts < maxRetries) {
+        retryAttempts++;
+        log?.debug?.("RETRY", `${response.status} retry ${retryAttempts}/${maxRetries} after ${delayMs / 1000}s`);
+        try { await response.body?.cancel?.(); } catch { /* noop */ }
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+        continue;
+      }
+
+      if (!response.ok) {
+        return { response, url, headers, transformedBody };
+      }
+
+      // Success - transform binary EventStream to SSE and return
+      const transformedResponse = this.transformEventStreamToSSE(response, model);
+      return { response: transformedResponse, url, headers, transformedBody };
     }
     return result;
   }
