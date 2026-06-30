@@ -1,9 +1,9 @@
 import { createHash } from "crypto";
 
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { buildKimchiUserAgent, refreshKimchiCliVersion } from "./kimchiUserAgent.js";
 
 export const KIMCHI_API = "https://llm.kimchi.dev";
-export const KIMCHI_USER_AGENT = "kimchi/0.0.0";
 
 const FETCH_TIMEOUT_MS = 20_000;
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -104,6 +104,7 @@ export function getCachedKimchiModelMetadata(modelId) {
 }
 
 async function fetchKimchiCatalogRaw(token, endpoint, options = {}) {
+  await refreshKimchiCliVersion({ log: options.log });
   const url = buildKimchiModelsUrl(endpoint);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(new Error("Kimchi models fetch timeout")), FETCH_TIMEOUT_MS);
@@ -117,7 +118,7 @@ async function fetchKimchiCatalogRaw(token, endpoint, options = {}) {
       headers: {
         "Accept": "application/json",
         "Authorization": `Bearer ${token}`,
-        "User-Agent": KIMCHI_USER_AGENT,
+        "User-Agent": buildKimchiUserAgent(),
       },
       cache: "no-store",
       signal,

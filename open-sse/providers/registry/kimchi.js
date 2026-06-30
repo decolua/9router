@@ -1,3 +1,5 @@
+import { buildKimchiUserAgent } from "../../services/kimchiUserAgent.js";
+
 export default {
   id: "kimchi",
   priority: 95,
@@ -20,7 +22,7 @@ export default {
     baseUrl: "https://llm.kimchi.dev/openai/v1/chat/completions",
     format: "openai",
     headers: {
-      "User-Agent": "kimchi/0.0.0",
+      "User-Agent": buildKimchiUserAgent(),
     },
     auth: {
       combined: true,

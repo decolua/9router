@@ -19,6 +19,7 @@ import {
   KIMCHI_CONFIG,
 } from "@/lib/oauth/constants/oauth";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
+import { buildKimchiUserAgent } from "open-sse/services/kimchiUserAgent.js";
 
 // OAuth provider test endpoints
 const OAUTH_TEST_CONFIG = {
@@ -99,7 +100,7 @@ const OAUTH_TEST_CONFIG = {
     authPrefix: "Bearer ",
     extraHeaders: {
       Accept: "application/json",
-      "User-Agent": "kimchi/0.0.0",
+      "User-Agent": buildKimchiUserAgent(),
     },
     refreshable: false,
   },
@@ -352,6 +353,25 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
     newTokens = tokens;
     accessToken = tokens.accessToken;
     return await tryProbe(accessToken);
+  }
+
+  if (connection.provider === "kimchi") {
+    const warnings = [];
+    const { resolveKimchiModels } = await import("open-sse/services/kimchiModels.js");
+    const result = await resolveKimchiModels({
+      accessToken,
+      providerSpecificData: connection.providerSpecificData || {},
+    }, {
+      forceRefresh: true,
+      proxyOptions: effectiveProxy,
+      log: { warn: (_scope, message) => warnings.push(message) },
+    });
+    if (result?.models?.length) return { valid: true, error: null, refreshed, newTokens };
+    return {
+      valid: false,
+      error: warnings[0] || "Kimchi model metadata unavailable",
+      refreshed,
+    };
   }
 
   try {
