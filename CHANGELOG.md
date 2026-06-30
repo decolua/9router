@@ -1,3 +1,24 @@
+# v0.5.15 (2026-06-29)
+
+## Features
+- Add Kimchi OAuth provider — Nant361
+- Refine Qwen vision/video + thinking model patterns — decolua
+- Opt-in Codex auto-ping quota keep-alive — Emirhan
+
+## Fixes
+- **Responses**: handle response.done terminal events (#2142) — rifuki
+- **Headroom**: skip unsafe responses tool history (#2132) — Sutarto Jordan Chrisfivo
+- **Translator**: map mid-conversation system message to user (claude→openai) — decolua
+- **Gemini**: normalize contents to prevent 400 invalid_argument (#2192) — warelik
+- **Gemini**: backfill thoughtSignature + suppress stream done sentinel — WARELIK
+- **Alicode**: preserve cache_control for DashScope providers (#2069) — Rex
+- **Antigravity**: strip deprecated/readOnly/writeOnly from tool schemas — iletai, Yudhistira-Official
+- **CodeBuddy CN**: show bonus packs as one-time, not monthly-replenishing — whale9820
+- **Kiro**: strip leaked <thinking> tags from content stream (#2158) — hamsa0x7
+- **Tray**: make Windows context menu DPI-aware — Emirhan
+- **Kilocode**: expose full gateway catalog in combo model picker — jellylarper
+- **OpenCode**: fix Go GLM — decolua
+
 # v0.5.12 (2026-06-26)
 
 ## Features
@@ -20,6 +41,7 @@
 - Support Gemini native TTS generateContent endpoint — nguyenha935
 - Add missing zh-CN endpoint key label (i18n) — weimaozhen
 - CodeBuddy: only send reasoning params when client requests reasoning (#2071) — Rex
+- CodeBuddy CN: show one-shot bonus packs as expiring, not monthly-replenishing
 - Show custom provider models in combo picker — Sapto
 - Docker: add docker-compose.yml with headroom enabled by default — nitsuahlabs
 - Clarify token diagnostics vs provider billing (headroom, #1998) — Sutarto Jordan Chrisfivo

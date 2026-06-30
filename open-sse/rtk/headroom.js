@@ -73,6 +73,14 @@ function maskEndpoint(endpoint) {
   }
 }
 
+function hasUnsafeResponsesInputForCompression(body) {
+  if (!Array.isArray(body?.input)) return false;
+  return body.input.some((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+    return typeof item.type === "string" && item.type !== "message";
+  });
+}
+
 // POST messages to Headroom /v1/compress; returns compressed messages + stats or null.
 async function callCompress(url, messages, model, timeoutMs, compressUserMessages, diagnostics) {
   const endpoint = buildCompressEndpoint(url);
@@ -143,6 +151,10 @@ export async function compressWithHeadroom(body, { enabled, url, model, format, 
     // messages. Translate input -> OpenAI -> compress -> translate back to input so
     // body.input keeps the Responses contract (the proxy only understands OpenAI). (#1998)
     if (format === "openai-responses") {
+      if (hasUnsafeResponsesInputForCompression(body)) {
+        setDiagnostic(diagnostics, "skipped: openai-responses tool/reasoning input is not safe to compress");
+        return null;
+      }
       const oai = openaiResponsesToOpenAIRequest(model, body, false);
       if (!Array.isArray(oai?.messages)) return null;
       const data = await callCompress(url, oai.messages, model, timeoutMs, compressUserMessages, diagnostics || {});
