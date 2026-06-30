@@ -56,6 +56,12 @@ export const MITM_TOOLS = {
     configType: "mitm",
     mitmDomain: "q.us-east-1.amazonaws.com",
     defaultModels: [
+      // Kiro's agent mode sends modelId "auto" for the main turn and "simple-task"
+      // for background sub-tasks. Without a matching slot getMappedModel returns null
+      // and the turn is passed through to the Kiro upstream instead of the configured
+      // provider. Wire ids seen in MITM captures of /generateAssistantResponse
+      // (runtime.us-east-1.kiro.dev), 2026-06-02 and 2026-06-14.
+      { id: "auto", name: "Auto (Kiro Agent)", alias: "auto" },
       { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5", alias: "claude-sonnet-4.5" },
       { id: "claude-sonnet-4", name: "Claude Sonnet 4", alias: "claude-sonnet-4" },
       { id: "claude-haiku-4.5", name: "Claude Haiku 4.5", alias: "claude-haiku-4.5" },

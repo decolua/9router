@@ -186,6 +186,7 @@
 - Add new models: Claude Opus 4.8 (Claude Code), GPT 5.4 Mini (Codex)
 
 ## Fixes
+- Kiro MITM: route Kiro's agent/"vibe" turns to the configured model provider instead of leaking them back to AWS. Kiro's current client sends modelId `auto` for the main turn (and `simple-task` for background sub-tasks), for which there was no mappable slot — `getMappedModel` returned null, so the `/generateAssistantResponse` call was passed through to AWS/CodeWhisperer instead of the provider you configured. (The eventual "monthly usage limit" was only the downstream symptom once the AWS quota was gone.)
 - DeepSeek thinking mode: echo `reasoning_content` back on follow-up/tool-call turns so OpenCode-free and custom providers no longer 400 with "reasoning_content must be passed back" (#1543)
 - Reasoning injector: match deepseek/kimi model ids case-insensitively (covers custom providers using capitalized model names)
 - OpenCode suggested-models: include free models without the `-free` suffix, e.g. `big-pickle` (#1535)
