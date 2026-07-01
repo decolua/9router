@@ -23,6 +23,11 @@ import BulkImportCodexModal from "./BulkImportCodexModal";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
 
+const AUTO_PING_SETTINGS_KEYS = {
+  claude: "claudeAutoPing",
+  codex: "codexAutoPing",
+};
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -273,7 +278,8 @@ export default function ProviderDetailPage() {
       // Load per-provider thinking config
       const thinkingCfg = (settingsData.providerThinking || {})[providerId] || {};
       setThinkingMode(thinkingCfg.mode || "auto");
-      const apCfg = settingsData.claudeAutoPing || {};
+      const autoPingSettingsKey = AUTO_PING_SETTINGS_KEYS[providerId];
+      const apCfg = autoPingSettingsKey ? settingsData[autoPingSettingsKey] || {} : {};
       setAutoPing({ enabled: apCfg.enabled === true, connections: apCfg.connections || {} });
       if (nodesRes.ok) {
         let node = (nodesData.nodes || []).find((entry) => entry.id === providerId) || null;
@@ -388,12 +394,15 @@ export default function ProviderDetailPage() {
   };
 
   const saveAutoPing = async (next) => {
+    const autoPingSettingsKey = AUTO_PING_SETTINGS_KEYS[providerId];
+    if (!autoPingSettingsKey) return;
+
     setAutoPing(next);
     try {
       await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ claudeAutoPing: next }),
+        body: JSON.stringify({ [autoPingSettingsKey]: next }),
       });
     } catch (error) {
       console.log("Error saving auto-ping config:", error);
@@ -888,9 +897,10 @@ export default function ProviderDetailPage() {
                 onMoveUp={() => handleSwapPriority(index, index - 1)}
                 onMoveDown={() => handleSwapPriority(index, index + 1)}
                 onToggleActive={(isActive) => handleUpdateConnectionStatus(conn.id, isActive)}
-                autoPing={providerId === "claude" && conn.authType === "oauth" ? {
+                autoPing={AUTO_PING_SETTINGS_KEYS[providerId] && conn.authType === "oauth" ? {
                   on: autoPing.connections[conn.id] === true,
                   onToggle: (on) => handleAutoPingConnection(conn.id, on),
+                  provider: providerId,
                 } : null}
                 onUpdateProxy={async (proxyPoolId) => {
                   try {
