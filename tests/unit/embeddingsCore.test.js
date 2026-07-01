@@ -368,6 +368,48 @@ describe("buildEmbeddingsHeaders", () => {
     expect(init.headers["HTTP-Referer"]).toBeUndefined();
     expect(init.headers["X-Title"]).toBeUndefined();
   });
+
+  it("openai-compatible-* sends client identity headers for embeddings", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
+
+    await handleEmbeddingsCore(makeOptions({
+      modelInfo: { provider: "openai-compatible-local", model: "nomic-embed" },
+      credentials: {
+        apiKey: "local-key",
+        providerSpecificData: {
+          baseUrl: "http://localhost:11434/v1",
+          clientIdentityProfile: "openclaw",
+        },
+      },
+    }));
+
+    const [, init] = vi.mocked(fetch).mock.calls[0];
+    expect(init.headers["Authorization"]).toBe("Bearer local-key");
+    expect(init.headers["User-Agent"]).toBe("openclaw/2026.2.3");
+  });
+
+  it("openai-compatible-* embeddings auth header wins over custom identity Authorization", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
+
+    await handleEmbeddingsCore(makeOptions({
+      modelInfo: { provider: "openai-compatible-local", model: "nomic-embed" },
+      credentials: {
+        apiKey: "local-key",
+        providerSpecificData: {
+          baseUrl: "http://localhost:11434/v1",
+          clientIdentityProfile: "custom",
+          clientIdentityHeaders: {
+            Authorization: "Bearer wrong-key",
+            "User-Agent": "custom/1.0",
+          },
+        },
+      },
+    }));
+
+    const [, init] = vi.mocked(fetch).mock.calls[0];
+    expect(init.headers["Authorization"]).toBe("Bearer local-key");
+    expect(init.headers["User-Agent"]).toBe("custom/1.0");
+  });
 });
 
 // ─── Test: handleEmbeddingsCore — input validation ───────────────────────────

@@ -10,6 +10,7 @@ import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { mergeClientIdentityHeaders } from "open-sse/shared/clientIdentityHeaders.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -438,10 +439,11 @@ export async function GET(request, { params }) {
       const url = `${baseUrl.replace(/\/$/, "")}/models`;
       const response = await fetch(url, {
         method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${connection.apiKey}`,
-        },
+        headers: mergeClientIdentityHeaders(
+          { "Content-Type": "application/json" },
+          connection.providerSpecificData || {},
+          { "Authorization": `Bearer ${connection.apiKey}` },
+        ),
       });
 
       if (!response.ok) {
@@ -477,12 +479,17 @@ export async function GET(request, { params }) {
       const url = `${baseUrl}/models`;
       const response = await fetch(url, {
         method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": connection.apiKey,
-          "anthropic-version": "2023-06-01",
-          "Authorization": `Bearer ${connection.apiKey}`
-        },
+        headers: mergeClientIdentityHeaders(
+          {
+            "Content-Type": "application/json",
+            "anthropic-version": "2023-06-01",
+          },
+          connection.providerSpecificData || {},
+          {
+            "x-api-key": connection.apiKey,
+            "Authorization": `Bearer ${connection.apiKey}`,
+          },
+        ),
       });
 
       if (!response.ok) {

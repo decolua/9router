@@ -16,6 +16,7 @@ import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { mergeClientIdentityHeaders } from "open-sse/shared/clientIdentityHeaders.js";
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
@@ -138,7 +139,7 @@ function inferKindFromUnknownModelId(modelId) {
   return LLM_KIND;
 }
 
-async function fetchCompatibleModelIds(connection) {
+export async function fetchCompatibleModelIds(connection) {
   if (!connection?.apiKey) return [];
 
   const baseUrl = typeof connection?.providerSpecificData?.baseUrl === "string"
@@ -148,24 +149,33 @@ async function fetchCompatibleModelIds(connection) {
   if (!baseUrl) return [];
 
   let url = `${baseUrl}/models`;
-  const headers = {
+  const baseHeaders = {
     "Content-Type": "application/json",
   };
+  let authHeaders = {};
 
   if (isOpenAICompatibleProvider(connection.provider)) {
-    headers.Authorization = `Bearer ${connection.apiKey}`;
+    authHeaders = { Authorization: `Bearer ${connection.apiKey}` };
   } else if (isAnthropicCompatibleProvider(connection.provider)) {
     if (url.endsWith("/messages/models")) {
       url = url.slice(0, -9);
     } else if (url.endsWith("/messages")) {
       url = `${url.slice(0, -9)}/models`;
     }
-    headers["x-api-key"] = connection.apiKey;
-    headers["anthropic-version"] = "2023-06-01";
-    headers.Authorization = `Bearer ${connection.apiKey}`;
+    authHeaders = {
+      "x-api-key": connection.apiKey,
+      "anthropic-version": "2023-06-01",
+      Authorization: `Bearer ${connection.apiKey}`,
+    };
   } else {
     return [];
   }
+
+  const headers = mergeClientIdentityHeaders(
+    baseHeaders,
+    connection.providerSpecificData || {},
+    authHeaders,
+  );
 
   try {
     const controller = new AbortController();

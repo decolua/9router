@@ -3,6 +3,10 @@ import { PROVIDERS, PROVIDER_OAUTH } from "../config/providers.js";
 import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE } from "../providers/shared.js";
 import { OAUTH_ENDPOINTS, buildKimiHeaders } from "../config/appConstants.js";
 import { buildClineHeaders } from "../shared/clineAuth.js";
+import {
+  buildClientIdentityHeaders,
+  shouldStripClaudeIdentityHeaders,
+} from "../shared/clientIdentityHeaders.js";
 import { getCachedClaudeHeaders } from "../utils/claudeHeaderCache.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
@@ -166,19 +170,32 @@ export class DefaultExecutor extends BaseExecutor {
     const desc = rt?.auth || AUTH_DESCRIPTORS[this.provider] || this.resolveAuthDescriptor();
     // Hooks run BEFORE auth so dynamic overlays (claude cached headers) can't clobber the token.
     for (const hook of desc.hooks || []) HEADER_HOOKS[hook]?.(headers, credentials);
-    applyAuth(headers, desc, credentials);
+    const identityConfig = credentials?.providerSpecificData || {};
+    const identityHeaders = buildClientIdentityHeaders(identityConfig);
+    Object.assign(headers, identityHeaders);
 
-    // Strip first-party Claude Code identity headers for non-Anthropic anthropic-compatible upstreams
+    const authHeaders = {};
+    applyAuth(authHeaders, desc, credentials);
+    Object.assign(headers, authHeaders);
+
     if (this.provider?.startsWith?.("anthropic-compatible-")) {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || "";
       const isOfficialAnthropic = baseUrl === "" || baseUrl.includes("api.anthropic.com");
+      if (!isOfficialAnthropic && credentials.apiKey && !headers["Authorization"]) {
+        headers["Authorization"] = `Bearer ${credentials.apiKey}`;
+      }
+    }
+
+    // Strip first-party Claude Code identity headers for non-Anthropic anthropic-compatible upstreams
+    if (shouldStripClaudeIdentityHeaders({
+      provider: this.provider,
+      baseUrl: credentials?.providerSpecificData?.baseUrl || "",
+      clientIdentityProfile: identityConfig.clientIdentityProfile,
+      identityHeaders,
+    })) {
+      const baseUrl = credentials?.providerSpecificData?.baseUrl || "";
+      const isOfficialAnthropic = baseUrl === "" || baseUrl.includes("api.anthropic.com");
       if (!isOfficialAnthropic) {
-        // Some third-party Anthropic-compatible gateways require Bearer auth in
-        // addition to x-api-key. Send both (x-api-key already set above) so
-        // gateways that read either header succeed.
-        if (credentials.apiKey && !headers["Authorization"]) {
-          headers["Authorization"] = `Bearer ${credentials.apiKey}`;
-        }
         delete headers["anthropic-dangerous-direct-browser-access"];
         delete headers["Anthropic-Dangerous-Direct-Browser-Access"];
         delete headers["x-app"];
