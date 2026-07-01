@@ -158,7 +158,7 @@ function stripAll(body) {
 }
 
 // Apply unified thinking config to body in the resolved provider-native format.
-function applyFormat(fmt, body, cfg, caps) {
+function applyFormat(fmt, body, cfg, caps, isCodex = false) {
   const none = cfg.mode === "none";
   const canDisable = caps.thinkingCanDisable !== false;
   // Model cannot disable thinking → clamp "none" to minimal effort instead.
@@ -168,9 +168,10 @@ function applyFormat(fmt, body, cfg, caps) {
     case "openai": {
       if (none && canDisable) { body.reasoning_effort = "none"; break; }
       const level = toLevel(eff);
-      // OpenAI/Codex native only accept none/minimal/low/medium/high.
-      // xhigh/max are 9router-internal extended levels — clamp to high.
-      if (level) body.reasoning_effort = level === "xhigh" || level === "max" ? "high" : level;
+      // Plain OpenAI Chat/Responses only accept none/minimal/low/medium/high;
+      // xhigh/max are 9router-internal extended levels — clamp to high there.
+      // Codex accepts xhigh/max natively, so preserve them on that surface.
+      if (level) body.reasoning_effort = (!isCodex && (level === "xhigh" || level === "max")) ? "high" : level;
       break;
     }
     case "claude-adaptive": {
@@ -268,6 +269,9 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
 
   const fmt = resolveFormat(targetFormat, cleanModel, provider);
   stripAll(body);
-  applyFormat(fmt, body, cfg, caps);
+  // Codex accepts the extended xhigh/max levels natively; plain OpenAI Chat/Responses
+  // do not, so applyFormat needs to know which openai-native surface this is.
+  const isCodex = targetFormat === "codex" || provider === "codex" || /codex/i.test(cleanModel || "");
+  applyFormat(fmt, body, cfg, caps, isCodex);
   return body;
 }
