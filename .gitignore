@@ -77,3 +77,10 @@ gitbook/README.md
 open-sse.old/
 .graphifyignore
 graphify-out/*
+
+# Agent/session tooling noise
+.opencode/
+.playwright-mcp/
+.superpowers/
+test-results/
+[0-9][0-9][0-9][0-9]-[0-9][0-9]-*.txt
