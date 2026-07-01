@@ -62,6 +62,9 @@ export async function createProviderNode(data) {
     prefix: data.prefix,
     apiType: data.apiType,
     baseUrl: data.baseUrl,
+    // Per-node transport override for anthropic-compatible gateways that only
+    // expose OpenAI-shape /v1/chat/completions (default: false → use /v1/messages).
+    useChatCompletions: data.useChatCompletions === true,
     createdAt: now,
     updatedAt: now,
   };
@@ -76,6 +79,10 @@ export async function updateProviderNode(id, data) {
     const row = db.get(`SELECT * FROM providerNodes WHERE id = ?`, [id]);
     if (!row) return;
     const merged = { ...rowToNode(row), ...data, updatedAt: new Date().toISOString() };
+    // Normalize: preserve the boolean flag explicitly so false is persisted, not dropped.
+    if (data.useChatCompletions !== undefined) {
+      merged.useChatCompletions = data.useChatCompletions === true;
+    }
     upsert(db, merged);
     result = merged;
   });

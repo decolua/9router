@@ -43,3 +43,18 @@ export function normalizeProviderSpecificData(provider, body = {}, providerSpeci
 
   return Object.keys(next).length > 0 ? next : null;
 }
+
+/**
+ * Prefix a per-connection `defaultModel` with the provider's namespace prefix
+ * when the upstream namespace is required. Compatible providers return models
+ * like `zm/glm-5.2-free`; without the prefix the model is sent as `glm-5.2-free`
+ * to the gateway and rejected as unknown.
+ */
+export function normalizeDefaultModel(prefix, model) {
+  if (typeof model !== "string" || !model.trim()) return model || null;
+  const trimmed = model.trim();
+  if (typeof prefix !== "string" || !prefix.trim()) return trimmed;
+  const p = prefix.trim();
+  if (trimmed === p || trimmed.startsWith(p + "/")) return trimmed;
+  return `${p}/${trimmed}`;
+}

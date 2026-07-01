@@ -17,6 +17,30 @@ const CUSTOM_EMBEDDING_DEFAULTS = {
   baseUrl: "https://api.openai.com/v1",
 };
 
+// Auto-detect endpoint family from /v1/models response shape.
+// Some third-party Anthropic-compatible gateways (e.g. api.xpiki.com) only
+// expose /v1/chat/completions even though they market themselves as Anthropic
+// compatible. Probe /v1/models once; if the first entry has OpenAI-style id
+// (no ":" and no "anthropic_messages" family) we route through chat_completions.
+async function detectUseChatCompletions(baseUrl, headers) {
+  if (!baseUrl) return null;
+  const url = `${baseUrl.replace(/\/$/, "")}/models`;
+  try {
+    const r = await fetch(url, { method: "GET", headers, signal: AbortSignal.timeout(8000) });
+    if (!r.ok) return null;
+    const data = await r.json();
+    const list = Array.isArray(data) ? data : (data?.data || data?.models || []);
+    if (!Array.isArray(list) || list.length === 0) return null;
+    // Heuristic: if any model advertises anthropic_messages family, prefer /v1/messages.
+    const supportsAnthropic = list.some(m => Array.isArray(m?.endpoint_families) && m.endpoint_families.includes("anthropic_messages"));
+    // Heuristic: known OpenAI-shape (no "owned_by" + "object":"model") and no anthropic_messages
+    // strongly suggests the gateway is chat-only.
+    return !supportsAnthropic;
+  } catch {
+    return null;
+  }
+}
+
 // GET /api/provider-nodes - List all provider nodes
 export async function GET() {
   try {
@@ -86,11 +110,24 @@ export async function POST(request) {
         sanitizedBaseUrl = sanitizedBaseUrl.slice(0, -9); // remove /messages
       }
 
+      // Decide transport: client can pass useChatCompletions explicitly, or we
+      // probe /v1/models with the supplied API key (if any) and fall back to
+      // unauthenticated probe. If both probes fail we keep Anthropic default.
+      let useChatCompletions = body.useChatCompletions === true;
+      if (!useChatCompletions) {
+        const probeHeaders = { "Content-Type": "application/json" };
+        if (typeof body.apiKey === "string" && body.apiKey.trim()) {
+          probeHeaders["Authorization"] = `Bearer ${body.apiKey.trim()}`;
+        }
+        useChatCompletions = (await detectUseChatCompletions(sanitizedBaseUrl, probeHeaders)) === true;
+      }
+
       const node = await createProviderNode({
         id: `${ANTHROPIC_COMPATIBLE_PREFIX}${generateId()}`,
         type: "anthropic-compatible",
         prefix: prefix.trim(),
         baseUrl: sanitizedBaseUrl,
+        useChatCompletions,
         name: name.trim(),
       });
       return NextResponse.json({ node }, { status: 201 });

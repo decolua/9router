@@ -51,10 +51,18 @@ function makeRequest(provider, name = "Test Connection") {
   });
 }
 
+function makeRequestWith(provider, { apiKey, name }) {
+  return new Request("https://9router.local/api/providers", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ provider, apiKey, name, defaultModel: "test-model" }),
+  });
+}
+
 function expectCompatibleConnection(connection, node, { apiType } = {}) {
   expect(connection.provider).toBe(node.id);
   expect(connection.authType).toBe("apikey");
-  expect(connection.defaultModel).toBe("test-model");
+  expect(connection.defaultModel).toBe(`${node.prefix}/test-model`);
   expect(connection.providerSpecificData).toMatchObject({
     prefix: node.prefix,
     baseUrl: node.baseUrl,
@@ -105,7 +113,7 @@ describe("compatible provider connections API", () => {
     expect(storedConnections[0]).toMatchObject({
       provider: ctx.node.id,
       authType: "apikey",
-      defaultModel: "test-model",
+      defaultModel: `${ctx.node.prefix}/test-model`,
       providerSpecificData: {
         prefix: ctx.node.prefix,
         apiType: "chat",
@@ -136,7 +144,7 @@ describe("compatible provider connections API", () => {
     expect(storedConnections[0]).toMatchObject({
       provider: ctx.node.id,
       authType: "apikey",
-      defaultModel: "test-model",
+      defaultModel: `${ctx.node.prefix}/test-model`,
       providerSpecificData: {
         prefix: ctx.node.prefix,
         baseUrl: ctx.node.baseUrl,
@@ -147,7 +155,7 @@ describe("compatible provider connections API", () => {
 
   it("allows multiple API-key connections on the same compatible node (key pool)", async () => {
     const ctx = await setupTestContext({
-      id: "openai-compatible-multikey-test",
+      id: "openai-compatible-keypool-test",
       type: "openai-compatible",
       name: "Multi Key Node",
       prefix: "multi",
@@ -164,5 +172,46 @@ describe("compatible provider connections API", () => {
     expect(secondResponse.status).toBe(201);
     expect(storedConnections).toHaveLength(2);
     storedConnections.forEach((conn) => expectCompatibleConnection(conn, ctx.node, { apiType: "chat" }));
+  });
+
+  it("rejects an OpenAI-compatible id whose node type is anthropic-compatible", async () => {
+    const ctx = await setupTestContext({
+      id: "openai-compatible-mismatch",
+      type: "anthropic-compatible",
+      name: "Mismatched Node",
+      prefix: "mis",
+      baseUrl: "https://mismatch.test/v1",
+    });
+    cleanup = ctx.cleanup;
+
+    const res = await ctx.POST(makeRequestWith(ctx.node.id, { apiKey: "k", name: "K" }));
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.error).toContain("node type");
+    const stored = await ctx.getProviderConnections({ provider: ctx.node.id });
+    expect(stored).toHaveLength(0);
+  });
+
+  it("allows multiple distinctly named API-key connections on one compatible node", async () => {
+    const ctx = await setupTestContext({
+      id: "openai-compatible-multikey-test",
+      type: "openai-compatible",
+      name: "OpenAI Compatible Multi-Key Node",
+      prefix: "ocm",
+      apiType: "chat",
+      baseUrl: "https://openai-multikey.test/v1",
+    });
+    cleanup = ctx.cleanup;
+
+    const first = await ctx.POST(makeRequestWith(ctx.node.id, { apiKey: "key-1", name: "Key One" }));
+    const second = await ctx.POST(makeRequestWith(ctx.node.id, { apiKey: "key-2", name: "Key Two" }));
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+
+    const stored = await ctx.getProviderConnections({ provider: ctx.node.id });
+    expect(stored).toHaveLength(2);
+    expect(stored.map((c) => c.name).sort()).toEqual(["Key One", "Key Two"]);
   });
 });

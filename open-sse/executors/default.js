@@ -173,6 +173,13 @@ export class DefaultExecutor extends BaseExecutor {
     if (this.provider?.startsWith?.("anthropic-compatible-")) {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || ANTHROPIC_COMPAT_BASE;
       const normalized = baseUrl.replace(/\/$/, "");
+      // Some third-party Anthropic-compatible gateways only expose OpenAI-shape
+      // /v1/chat/completions. When the node was created via auto-detect or
+      // explicitly flipped, route through chat_completions with the OpenAI-shape
+      // body shape (handled in transformRequest below).
+      if (credentials?.providerSpecificData?.useChatCompletions === true) {
+        return `${normalized}/chat/completions`;
+      }
       return `${normalized}/messages`;
     }
     // gemini-format: build :streamGenerateContent / :generateContent path

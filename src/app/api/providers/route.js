@@ -8,7 +8,7 @@ import {
 } from "@/models";
 import { APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { AI_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider } from "@/shared/constants/providers";
-import { normalizeProviderId, normalizeProviderSpecificData } from "@/lib/providerNormalization";
+import { normalizeProviderId, normalizeProviderSpecificData, normalizeDefaultModel } from "@/lib/providerNormalization";
 
 export const dynamic = "force-dynamic";
 
@@ -133,6 +133,9 @@ export async function POST(request) {
       if (!node) {
         return NextResponse.json({ error: "OpenAI Compatible node not found" }, { status: 404 });
       }
+      if (node.type !== "openai-compatible") {
+        return NextResponse.json({ error: "Provider node type does not match OpenAI Compatible prefix" }, { status: 400 });
+      }
       providerSpecificData = {
         prefix: node.prefix,
         apiType: node.apiType,
@@ -144,10 +147,16 @@ export async function POST(request) {
       if (!node) {
         return NextResponse.json({ error: "Anthropic Compatible node not found" }, { status: 404 });
       }
+      if (node.type !== "anthropic-compatible") {
+        return NextResponse.json({ error: "Provider node type does not match Anthropic Compatible prefix" }, { status: 400 });
+      }
       providerSpecificData = {
         prefix: node.prefix,
         baseUrl: node.baseUrl,
         nodeName: node.name,
+        // Inherit the node-level transport override so the executor picks
+        // /v1/chat/completions for OpenAI-shape Anthropic-compatible gateways.
+        useChatCompletions: node.useChatCompletions === true,
       };
     } else if (isCustomEmbeddingProvider(provider)) {
       const node = await getProviderNodeById(provider);
@@ -183,7 +192,12 @@ export async function POST(request) {
       apiKey: apiKey || "",
       priority: priority || 1,
       globalPriority: globalPriority || null,
-      defaultModel: defaultModel || null,
+      // Auto-prefix defaultModel with the node's namespace for compatible providers
+      // so users can type the bare upstream id (e.g. "glm-5.2-free") and still hit
+      // a prefixed model namespace (e.g. "zm/glm-5.2-free") on the gateway.
+      defaultModel: (isOpenAICompatibleProvider(provider) || isAnthropicCompatibleProvider(provider))
+        ? normalizeDefaultModel(mergedProviderSpecificData?.prefix, defaultModel)
+        : (defaultModel || null),
       providerSpecificData: mergedProviderSpecificData,
       isActive: true,
       testStatus: testStatus || "unknown",

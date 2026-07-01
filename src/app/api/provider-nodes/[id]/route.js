@@ -58,6 +58,13 @@ export async function PUT(request, { params }) {
       updates.apiType = apiType;
     }
 
+    if (node.type === "anthropic-compatible") {
+      // Allow clients to override the auto-detected transport.
+      if (typeof body.useChatCompletions === "boolean") {
+        updates.useChatCompletions = body.useChatCompletions;
+      }
+    }
+
     const updated = await updateProviderNode(id, updates);
 
     const connections = await getProviderConnections({ provider: id });
@@ -69,6 +76,7 @@ export async function PUT(request, { params }) {
           apiType: node.type === "openai-compatible" ? apiType : undefined,
           baseUrl: sanitizedBaseUrl,
           nodeName: updated.name,
+          useChatCompletions: node.type === "anthropic-compatible" ? (updates.useChatCompletions ?? node.useChatCompletions) : undefined,
         }
       })
     )));

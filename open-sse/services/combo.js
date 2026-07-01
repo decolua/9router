@@ -226,12 +226,18 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
  * @returns {Promise<Response>}
  */
-export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true }) {
+export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch }) {
   // Apply rotation strategy if enabled
   let rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
 
   // Auto-switch: float models that satisfy the request's required capabilities to the front.
-  if (autoSwitch) {
+  // Round-robin disables auto-switch by default — the user explicitly asked to rotate evenly,
+  // and reordering by capability pins a single model and breaks rotation (fixes:
+  // combo round-robin not switching models).
+  const effectiveAutoSwitch = autoSwitch !== undefined
+    ? autoSwitch
+    : comboStrategy !== "round-robin";
+  if (effectiveAutoSwitch) {
     const required = detectRequiredCapabilities(body);
     if (required.size > 0) {
       const reordered = reorderByCapabilities(rotatedModels, required);
