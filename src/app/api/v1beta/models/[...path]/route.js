@@ -12,6 +12,8 @@ import { initTranslators } from "open-sse/translator/index.js";
 
 let initialized = false;
 const GEMINI_NATIVE_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
+// Gemini model id charset (matches sanitizeGeminiFunctionName); blocks path traversal in upstream URL.
+const GEMINI_NATIVE_MODEL_PATTERN = /^[a-zA-Z0-9_.:-]+$/;
 
 /**
  * Initialize translators once
@@ -238,6 +240,9 @@ async function forwardGeminiNativeRequest(request, body, model, action) {
   if (authError) return authError;
 
   const modelId = normalizeGeminiNativeModel(model);
+  if (!GEMINI_NATIVE_MODEL_PATTERN.test(modelId)) {
+    return Response.json({ error: { message: "Invalid model" } }, { status: 400 });
+  }
   const excludeConnectionIds = new Set();
   const bodyText = JSON.stringify(body);
   let lastError = null;

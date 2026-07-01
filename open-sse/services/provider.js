@@ -159,12 +159,10 @@ export function hasThinkingConfig(body) {
   return !!(body.reasoning_effort || body.thinking?.type === "enabled");
 }
 
-// Normalize thinking config based on last message role
-// - If lastMessage is not user → remove thinking config
-// - If lastMessage is user AND has thinking config → keep it (force enable)
+// Normalize provider-native thinking config based on last message role.
+// OpenAI reasoning_effort is request-level and must survive tool-result turns.
 export function normalizeThinkingConfig(body) {
   if (!isLastMessageFromUser(body)) {
-    delete body.reasoning_effort;
     delete body.thinking;
   }
   return body;
