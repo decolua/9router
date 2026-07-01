@@ -367,6 +367,11 @@ export class CodexExecutor extends BaseExecutor {
     }
     delete body.reasoning_effort;
 
+    // Codex accepts none/minimal/low/medium/high/xhigh — map 9router's `max` down to xhigh.
+    if (body.reasoning?.effort === "max") {
+      body.reasoning.effort = "xhigh";
+    }
+
     // Include reasoning encrypted content (required by Codex backend for reasoning models)
     if (body.reasoning && body.reasoning.effort && body.reasoning.effort !== 'none') {
       body.include = ["reasoning.encrypted_content"];

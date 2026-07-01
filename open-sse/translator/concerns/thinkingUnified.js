@@ -168,7 +168,9 @@ function applyFormat(fmt, body, cfg, caps) {
     case "openai": {
       if (none && canDisable) { body.reasoning_effort = "none"; break; }
       const level = toLevel(eff);
-      if (level) body.reasoning_effort = level;
+      // OpenAI/Codex native only accept none/minimal/low/medium/high.
+      // xhigh/max are 9router-internal extended levels — clamp to high.
+      if (level) body.reasoning_effort = level === "xhigh" || level === "max" ? "high" : level;
       break;
     }
     case "claude-adaptive": {

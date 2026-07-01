@@ -74,15 +74,16 @@ export default function RequestLogger() {
                   <th className="px-3 py-2 border-r border-border">Account</th>
                   <th className="px-3 py-2 border-r border-border">In</th>
                   <th className="px-3 py-2 border-r border-border">Out</th>
+                  <th className="px-3 py-2 border-r border-border">Cache</th>
                   <th className="px-3 py-2">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
                 {logs.map((log, i) => {
                   const parts = log.split(" | ");
-                  if (parts.length < 7) return null;
+                  if (parts.length < 8) return null;
 
-                  const status = parts[6];
+                  const status = parts[7];
                   const isPending = status.includes("PENDING");
                   const isFailed = status.includes("FAILED");
                   const isSuccess = status.includes("OK");
@@ -99,6 +100,7 @@ export default function RequestLogger() {
                       <td className="px-3 py-1.5 border-r border-border truncate max-w-[150px]" title={parts[3]}>{parts[3]}</td>
                       <td className="px-3 py-1.5 border-r border-border text-right text-primary">{parts[4]}</td>
                       <td className="px-3 py-1.5 border-r border-border text-right text-success">{parts[5]}</td>
+                      <td className="px-3 py-1.5 border-r border-border text-right text-warning">{parts[6]}</td>
                       <td className={`px-3 py-1.5 font-bold ${isSuccess ? 'text-success' :
                           isFailed ? 'text-error' :
                             'text-primary animate-pulse'

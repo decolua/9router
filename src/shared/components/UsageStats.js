@@ -68,7 +68,8 @@ function RecentRequests({ requests = [] }) {
                     </td>
                     <td className="py-1.5 font-mono truncate max-w-[120px]" title={r.model}>{r.model}</td>
                     <td className="py-1.5 text-right whitespace-nowrap">
-                      <span className="text-primary">{fmt(r.promptTokens)}↑</span>
+                      <span className="text-primary">{fmt(Math.max(0, (r.promptTokens || 0) - (r.cachedTokens || 0)))}↑</span>
+                      {r.cachedTokens > 0 && <span className="text-warning"> +{fmt(r.cachedTokens)}⚡</span>}
                       {" "}
                       <span className="text-success">{fmt(r.completionTokens)}↓</span>
                     </td>

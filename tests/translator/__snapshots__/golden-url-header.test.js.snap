@@ -866,6 +866,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > together → headers
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > venice → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > vercel-ai-gateway → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -1205,6 +1224,13 @@ exports[`GOLDEN buildUrl (default executor providers) > together → url (stream
 {
   "nonStream": "https://api.together.xyz/v1/chat/completions",
   "stream": "https://api.together.xyz/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > venice → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://api.venice.ai/api/v1/chat/completions",
+  "stream": "https://api.venice.ai/api/v1/chat/completions",
 }
 `;
 

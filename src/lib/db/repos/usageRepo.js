@@ -246,6 +246,7 @@ export async function getActiveRequests() {
         timestamp: e.timestamp, model: e.model, provider: e.provider || "",
         promptTokens: t.prompt_tokens || t.input_tokens || 0,
         completionTokens: t.completion_tokens || t.output_tokens || 0,
+        cachedTokens: (t.cached_tokens || t.cache_read_input_tokens || 0) + (t.cache_creation_input_tokens || 0),
         status: e.status || "ok",
       };
     })
@@ -403,7 +404,7 @@ export async function getUsageStats(period = "all") {
         timestamp: r.timestamp, model: r.model, provider: r.provider || "",
         promptTokens: t.prompt_tokens || t.input_tokens || 0,
         completionTokens: t.completion_tokens || t.output_tokens || 0,
-        cachedTokens: t.cached_tokens || t.cache_read_input_tokens || 0,
+        cachedTokens: (t.cached_tokens || t.cache_read_input_tokens || 0) + (t.cache_creation_input_tokens || 0),
         status: r.status || "ok",
       };
     })
@@ -788,7 +789,11 @@ export async function getRecentLogs(limit = 200) {
       const tk = r.tokens ? parseJson(r.tokens, {}) : {};
       const sent = r.promptTokens ?? tk.prompt_tokens ?? "-";
       const received = r.completionTokens ?? tk.completion_tokens ?? "-";
-      return `${ts} | ${m} | ${p} | ${account} | ${sent} | ${received} | ${r.status || "-"}`;
+      // cached = subset of prompt (cache_read + cache_creation). 0 → "-".
+      const cacheRead = tk.cached_tokens ?? tk.cache_read_input_tokens ?? 0;
+      const cacheCreate = tk.cache_creation_input_tokens ?? 0;
+      const cached = (cacheRead + cacheCreate) || "-";
+      return `${ts} | ${m} | ${p} | ${account} | ${sent} | ${received} | ${cached} | ${r.status || "-"}`;
     });
   } catch (e) {
     console.error("[usageRepo] getRecentLogs failed:", e.message);
