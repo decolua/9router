@@ -5,7 +5,7 @@ import {
   isAnthropicCompatibleProvider,
   isOpenAICompatibleProvider,
 } from "@/shared/constants/providers";
-import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
+import { getProviderConnections, getCombos, getCustomModels, getModelAliases, getApiKeyAllowedModels } from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
@@ -183,10 +183,12 @@ function comboMatchesKinds(combo, kindFilter) {
  */
 export async function buildModelsList(kindFilter) {
   let connections = [];
+  let dbOk = true;
   try {
     connections = await getProviderConnections();
     connections = connections.filter(c => c.isActive !== false);
   } catch (e) {
+    dbOk = false;
     console.log("Could not fetch providers, returning all models");
   }
 
@@ -242,7 +244,7 @@ export async function buildModelsList(kindFilter) {
     models.push(entry);
   }
 
-  if (connections.length === 0) {
+  if (!dbOk) {
     // DB unavailable -> return static models, filtered by per-model kind
     const aliasToProviderId = Object.fromEntries(
       Object.entries(PROVIDER_ID_TO_ALIAS).map(([id, alias]) => [alias, id])
@@ -467,9 +469,32 @@ export async function OPTIONS() {
  * GET /v1/models - OpenAI compatible models list (LLM/chat models only by default).
  * For other capabilities use /v1/models/{kind} (image, tts, stt, embedding, image-to-text, web).
  */
-export async function GET() {
+export async function GET(request) {
   try {
-    const data = await buildModelsList([LLM_KIND]);
+    let data = await buildModelsList([LLM_KIND]);
+
+    // If the request carries an API key with an allow-list, filter the catalog
+    // to that key's available models (alias-aware: alias and target are equivalent).
+    try {
+      const authHeader = request?.headers?.get("Authorization");
+      const apiKey = authHeader?.startsWith("Bearer ")
+        ? authHeader.slice(7)
+        : request?.headers?.get("x-api-key");
+      if (apiKey) {
+        const allowed = await getApiKeyAllowedModels(apiKey);
+        if (allowed.length) {
+          const aliases = (await getModelAliases()) || {};
+          const expanded = new Set(allowed);
+          for (const a of allowed) if (aliases[a]) expanded.add(String(aliases[a]));
+          data = data.filter((m) => {
+            if (expanded.has(m.id)) return true;
+            const resolved = aliases[m.id] ? String(aliases[m.id]) : null;
+            return resolved ? expanded.has(resolved) : false;
+          });
+        }
+      }
+    } catch { /* fail open: return full catalog on any error */ }
+
     return Response.json({ object: "list", data }, {
       headers: { "Access-Control-Allow-Origin": "*" },
     });

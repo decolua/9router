@@ -41,5 +41,24 @@ export function normalizeProviderSpecificData(provider, body = {}, providerSpeci
     if (baseUrl) next.baseUrl = baseUrl;
   }
 
+  // AutoClaw: when importing an access_token as an API key, decode the JWT
+  // to extract device_id (needed for token refresh) and source_id. The JWT
+  // payload carries { user_id, device_id, source_id, jti, exp }.
+  if (provider === "autoclaw" && !next.deviceId) {
+    const token = (body.apiKey || "").replace(/^Bearer\s+/i, "");
+    if (token && token.split(".").length === 3) {
+      try {
+        const payload = token.split(".")[1];
+        const json = JSON.parse(
+          Buffer.from(payload + "=".repeat(-payload.length % 4), "base64url").toString("utf8")
+        );
+        next.deviceId = json.device_id || "";
+        next.sourceId = "autoclaw";
+      } catch {
+        // Not a valid JWT — leave providerSpecificData as-is.
+      }
+    }
+  }
+
   return Object.keys(next).length > 0 ? next : null;
 }

@@ -4,6 +4,8 @@
 
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import { U } from "./shared.js";
+import { PROVIDER_OAUTH } from "../../providers/index.js";
+import crypto from "crypto";
 
 // GLM quota endpoints (region-aware) — url from registry transport.usage
 const GLM_QUOTA_URLS = {
@@ -58,7 +60,8 @@ export async function getOllamaUsage(accessToken, providerSpecificData) {
     const plan = providerSpecificData?.plan || "Free";
     return {
       plan,
-      message: "Ollama Cloud uses a free tier with light usage limits (resets every 5h & 7d). For detailed usage tracking, visit ollama.com/settings/keys.",
+      message:
+        "Ollama Cloud uses a free tier with light usage limits (resets every 5h & 7d). For detailed usage tracking, visit ollama.com/settings/keys.",
       quotas: [],
     };
   } catch (error) {
@@ -78,12 +81,16 @@ export async function getGlmUsage(apiKey, provider, proxyOptions = null) {
   const quotaUrl = GLM_QUOTA_URLS[region];
 
   try {
-    const response = await proxyAwareFetch(quotaUrl, {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        Accept: "application/json",
+    const response = await proxyAwareFetch(
+      quotaUrl,
+      {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          Accept: "application/json",
+        },
       },
-    }, proxyOptions);
+      proxyOptions,
+    );
 
     if (!response.ok) {
       if (response.status === 401) {
@@ -143,13 +150,17 @@ export async function getVercelAiGatewayUsage(apiKey, proxyOptions = null) {
   }
 
   try {
-    const response = await proxyAwareFetch(VERCEL_AI_GATEWAY_CREDITS_URL, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        Accept: "application/json",
+    const response = await proxyAwareFetch(
+      VERCEL_AI_GATEWAY_CREDITS_URL,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          Accept: "application/json",
+        },
       },
-    }, proxyOptions);
+      proxyOptions,
+    );
 
     if (response.status === 401 || response.status === 403) {
       return { message: "Vercel AI Gateway API key invalid or expired." };
@@ -158,7 +169,9 @@ export async function getVercelAiGatewayUsage(apiKey, proxyOptions = null) {
     if (!response.ok) {
       const errorText = await response.text().catch(() => "");
       const trimmed = errorText ? `: ${errorText.slice(0, 200)}` : "";
-      return { message: `Vercel AI Gateway credits API error (${response.status})${trimmed}` };
+      return {
+        message: `Vercel AI Gateway credits API error (${response.status})${trimmed}`,
+      };
     }
 
     const data = await response.json();
@@ -175,7 +188,8 @@ export async function getVercelAiGatewayUsage(apiKey, proxyOptions = null) {
     if (balance <= 0 && totalUsed <= 0) {
       return {
         plan: "Pay-as-you-go",
-        message: "Vercel AI Gateway connected. No credit allocation found (BYOK or unfunded account).",
+        message:
+          "Vercel AI Gateway connected. No credit allocation found (BYOK or unfunded account).",
         quotas: {},
       };
     }
@@ -223,7 +237,9 @@ export async function getQoderUsage(accessToken, proxyOptions = null) {
       proxyOptions,
     );
     if (!response.ok) {
-      return { message: `Qoder connected. Usage fetch returned ${response.status}.` };
+      return {
+        message: `Qoder connected. Usage fetch returned ${response.status}.`,
+      };
     }
     const body = await response.json().catch(() => null);
     if (!body) {
@@ -237,9 +253,10 @@ export async function getQoderUsage(accessToken, proxyOptions = null) {
     // Qoder publishes a single absolute reset timestamp (`expiresAt` in ms);
     // surface it on every quota record as ISO so the table can render
     // "resets at" alongside used/total.
-    const expiresAtMs = Number.isFinite(Number(body.expiresAt)) && Number(body.expiresAt) > 0
-      ? Number(body.expiresAt)
-      : null;
+    const expiresAtMs =
+      Number.isFinite(Number(body.expiresAt)) && Number(body.expiresAt) > 0
+        ? Number(body.expiresAt)
+        : null;
     const resetAt = expiresAtMs ? new Date(expiresAtMs).toISOString() : null;
     const quotas = {
       user: {
@@ -264,6 +281,106 @@ export async function getQoderUsage(accessToken, proxyOptions = null) {
       expiresAt: expiresAtMs,
     };
   } catch (error) {
-    return { message: `Qoder connected. Unable to fetch usage: ${error.message}` };
+    return {
+      message: `Qoder connected. Unable to fetch usage: ${error.message}`,
+    };
+  }
+}
+
+/**
+ * AutoClaw usage — wallet reward-points balance.
+ *
+ * Calls GET /agent-assetmgr/api/v2/wallets?biz_app_id=autoclaw which returns
+ * the wallet envelope { code, data: ... }. The `data` field can be either a
+ * single wallet object or an array of wallets — we handle both.
+ *
+ * IMPORTANT: the assetmgr API uses a lowercase `authorization` header — using
+ * `Authorization` (capital) returns 410000 "Please log in." The LLM proxy uses
+ * `X-Authorization`; this usage handler uses the correct lowercase variant.
+ *
+ * The balance is a reward-points count (not USD). We surface it as a single
+ * "Points" quota row so the existing QuotaTable can render it. Since there is
+ * no fixed cap, we mark it as unlimited (used = 0, remaining = total_balance).
+ */
+export async function getAutoClawUsage(accessToken, proxyOptions = null) {
+  if (!accessToken) {
+    return { message: "AutoClaw access token not available." };
+  }
+  // Spec re-atclaw.md §1: assetmgr wallet uses lowercase `authorization: Bearer …`.
+  // Uppercase Authorization → 410000 "Please log in.".
+  let token = accessToken;
+  if (!token.startsWith("Bearer ")) token = `Bearer ${token}`;
+
+  // Wallet endpoint also requires app-signing headers (same as all AutoClaw
+  // userapi calls). Without them → 410000 "Please log in." even with a
+  // valid Bearer token.
+  const oauth = PROVIDER_OAUTH["autoclaw"] || {};
+  const appId = oauth.appId || "100003";
+  const appKey = oauth.appKey || "38d2391985e2369a5fb8227d8e6cd5e5";
+  const ts = String(Math.floor(Date.now() / 1000));
+  const sign = crypto
+    .createHash("md5")
+    .update(`${appId}&${ts}&${appKey}`)
+    .digest("hex");
+
+  try {
+    const response = await proxyAwareFetch(
+      U("autoclaw").url,
+      {
+        method: "GET",
+        headers: {
+          "X-Auth-Appid": appId,
+          "X-Auth-TimeStamp": ts,
+          "X-Auth-Sign": sign,
+          "X-Product": "autoclaw",
+          "X-Version": "1.9.1",
+          "X-Tm": "win",
+          "X-Trace-Id": crypto.randomUUID(),
+          authorization: token,
+          Accept: "application/json",
+        },
+      },
+      proxyOptions,
+    );
+
+    if (response.status === 401 || response.status === 403) {
+      return { message: "AutoClaw access token invalid or expired." };
+    }
+    if (!response.ok) {
+      return { message: `AutoClaw wallet API error (${response.status}).` };
+    }
+
+    const json = await response.json();
+
+    if (json.code != null && json.code !== 0) {
+      return { message: `AutoClaw wallet error: ${json.msg || json.code}` };
+    }
+
+    const rawData = json.data;
+    const wallets = Array.isArray(rawData)
+      ? rawData
+      : rawData && typeof rawData === "object"
+        ? [rawData]
+        : [];
+    let totalBalance = 0;
+    for (const w of wallets) {
+      const v = w?.total_balance ?? w?.balance ?? w?.totalBalance ?? 0;
+      totalBalance += Number(v) || 0;
+    }
+
+    return {
+      plan: "AutoClaw",
+      quotas: {
+        Points: {
+          used: 0,
+          total: 0,
+          remaining: totalBalance,
+          remainingPercentage: 100,
+          unlimited: true,
+        },
+      },
+    };
+  } catch (error) {
+    return { message: `AutoClaw error: ${error.message}` };
   }
 }

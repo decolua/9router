@@ -1,4 +1,4 @@
-import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings } from "@/lib/localDb";
+import { getProviderConnections, validateApiKey, getApiKeyLimitStatus, getApiKeyAllowedModels, getApiKeyRpmLimit, updateProviderConnection, getSettings } from "@/lib/localDb";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
@@ -309,4 +309,102 @@ export function extractApiKey(request) {
 export async function isValidApiKey(apiKey) {
   if (!apiKey) return false;
   return await validateApiKey(apiKey);
+}
+
+/**
+ * Check whether an API key has exceeded its configured token limit.
+ * Keys without a limit (or no key at all) are never blocked.
+ * Fails open on errors so a DB hiccup never breaks live traffic.
+ * @param {string|null} apiKey
+ * @returns {Promise<{exceeded:boolean, used:number, limit:number, window:string}>}
+ */
+export async function checkApiKeyLimit(apiKey) {
+  if (!apiKey) return { exceeded: false, used: 0, limit: 0, window: "monthly" };
+  try {
+    const status = await getApiKeyLimitStatus(apiKey);
+    return {
+      exceeded: status.exceeded,
+      used: status.used,
+      limit: status.limit,
+      window: status.window,
+    };
+  } catch (e) {
+    log.warn("AUTH", `API key limit check failed: ${e.message}`);
+    return { exceeded: false, used: 0, limit: 0, window: "monthly" };
+  }
+}
+
+/**
+ * Check whether a model is allowed for an API key.
+ * Keys without an allow-list (or no key) permit everything. Fails open on errors.
+ * @param {string|null} apiKey
+ * @param {string} modelStr - the model/combo string the client requested
+ * @returns {Promise<{allowed:boolean, allowedModels:string[]}>}
+ */
+export async function checkApiKeyModelAllowed(apiKey, modelStr) {
+  if (!apiKey || !modelStr) return { allowed: true, allowedModels: [] };
+  try {
+    const allowedModels = await getApiKeyAllowedModels(apiKey);
+    if (!allowedModels.length) return { allowed: true, allowedModels: [] };
+
+    // Direct match.
+    if (allowedModels.includes(modelStr)) return { allowed: true, allowedModels };
+
+    // Alias-aware match: treat an alias and its target model as equivalent so the
+    // admin can list either form in the allow-list and clients can call either.
+    let aliases = {};
+    try {
+      const { getModelAliases } = await import("@/lib/localDb");
+      aliases = (await getModelAliases()) || {};
+    } catch {}
+
+    // Build the set of allowed values expanded with alias targets.
+    const expanded = new Set(allowedModels);
+    for (const a of allowedModels) {
+      if (aliases[a]) expanded.add(String(aliases[a])); // allow-list has an alias → add its target
+    }
+    // Requested model resolved through alias (client used an alias name).
+    const resolvedRequested = aliases[modelStr] ? String(aliases[modelStr]) : null;
+
+    const allowed = expanded.has(modelStr) || (resolvedRequested && expanded.has(resolvedRequested));
+    return { allowed: !!allowed, allowedModels };
+  } catch (e) {
+    log.warn("AUTH", `API key model check failed: ${e.message}`);
+    return { allowed: true, allowedModels: [] };
+  }
+}
+
+// In-memory sliding-window store for per-key RPM limiting (shared across modules).
+if (!global._apiKeyRpmStore) global._apiKeyRpmStore = new Map();
+const apiKeyRpmStore = global._apiKeyRpmStore;
+const RPM_WINDOW_MS = 60 * 1000;
+
+/**
+ * Enforce a per-API-key requests-per-minute limit using a 60s sliding window.
+ * Counts a request slot on each allowed call. Fails open on errors.
+ * @param {string|null} apiKey
+ * @returns {Promise<{limited:boolean, rpm:number, retryAfter:number}>}
+ */
+export async function checkApiKeyRpm(apiKey) {
+  if (!apiKey) return { limited: false, rpm: 0, retryAfter: 0 };
+  try {
+    const rpm = await getApiKeyRpmLimit(apiKey);
+    if (!rpm || rpm <= 0) return { limited: false, rpm: 0, retryAfter: 0 };
+
+    const now = Date.now();
+    const recent = (apiKeyRpmStore.get(apiKey) || []).filter((t) => now - t < RPM_WINDOW_MS);
+
+    if (recent.length >= rpm) {
+      apiKeyRpmStore.set(apiKey, recent);
+      const retryAfter = Math.max(1, Math.ceil((RPM_WINDOW_MS - (now - recent[0])) / 1000));
+      return { limited: true, rpm, retryAfter };
+    }
+
+    recent.push(now);
+    apiKeyRpmStore.set(apiKey, recent);
+    return { limited: false, rpm, retryAfter: 0 };
+  } catch (e) {
+    log.warn("AUTH", `API key RPM check failed: ${e.message}`);
+    return { limited: false, rpm: 0, retryAfter: 0 };
+  }
 }

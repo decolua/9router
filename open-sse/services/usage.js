@@ -5,7 +5,10 @@
 import { getGitHubUsage } from "./usage/github.js";
 import { getGeminiUsage, getAntigravityUsage } from "./usage/google.js";
 import { getClaudeUsage } from "./usage/claude.js";
-import { getCodexUsage, consumeCodexRateLimitResetCredit } from "./usage/codex.js";
+import {
+  getCodexUsage,
+  consumeCodexRateLimitResetCredit,
+} from "./usage/codex.js";
 
 export { consumeCodexRateLimitResetCredit };
 import { getKiroUsage } from "./usage/kiro.js";
@@ -18,6 +21,7 @@ import {
   getGlmUsage,
   getVercelAiGatewayUsage,
   getQoderUsage,
+  getAutoClawUsage,
 } from "./usage/misc.js";
 
 /**
@@ -27,12 +31,16 @@ import {
  */
 // provider → usage handler (ctx carries every arg each handler needs)
 const USAGE_HANDLERS = {
-  github: (c) => getGitHubUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
-  "gemini-cli": (c) => getGeminiUsage(c.accessToken, c.providerDataWithProjectId, c.proxyOptions),
-  antigravity: (c) => getAntigravityUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
+  github: (c) =>
+    getGitHubUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
+  "gemini-cli": (c) =>
+    getGeminiUsage(c.accessToken, c.providerDataWithProjectId, c.proxyOptions),
+  antigravity: (c) =>
+    getAntigravityUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
   claude: (c) => getClaudeUsage(c.accessToken, c.proxyOptions),
   codex: (c) => getCodexUsage(c.accessToken, c.proxyOptions),
-  kiro: (c) => getKiroUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
+  kiro: (c) =>
+    getKiroUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
   qoder: (c) => getQoderUsage(c.accessToken, c.proxyOptions),
   qwen: (c) => getQwenUsage(c.accessToken, c.providerSpecificData),
   iflow: (c) => getIflowUsage(c.accessToken),
@@ -42,11 +50,19 @@ const USAGE_HANDLERS = {
   minimax: (c) => getMiniMaxUsage(c.apiKey, c.provider, c.proxyOptions),
   "minimax-cn": (c) => getMiniMaxUsage(c.apiKey, c.provider, c.proxyOptions),
   "vercel-ai-gateway": (c) => getVercelAiGatewayUsage(c.apiKey, c.proxyOptions),
-  "codebuddy-cn": (c) => getCodeBuddyCnUsage(c.accessToken, c.apiKey, c.providerSpecificData, c.proxyOptions),
+  "codebuddy-cn": (c) =>
+    getCodeBuddyCnUsage(
+      c.accessToken,
+      c.apiKey,
+      c.providerSpecificData,
+      c.proxyOptions,
+    ),
+  autoclaw: (c) => getAutoClawUsage(c.accessToken || c.apiKey, c.proxyOptions),
 };
 
 export async function getUsageForProvider(connection, proxyOptions = null) {
-  const { provider, accessToken, apiKey, providerSpecificData, projectId } = connection;
+  const { provider, accessToken, apiKey, providerSpecificData, projectId } =
+    connection;
   const providerDataWithProjectId = {
     ...(providerSpecificData || {}),
     ...(projectId ? { projectId } : {}),
@@ -54,5 +70,12 @@ export async function getUsageForProvider(connection, proxyOptions = null) {
 
   const handler = USAGE_HANDLERS[provider];
   if (!handler) return { message: `Usage API not implemented for ${provider}` };
-  return await handler({ provider, accessToken, apiKey, providerSpecificData, providerDataWithProjectId, proxyOptions });
+  return await handler({
+    provider,
+    accessToken,
+    apiKey,
+    providerSpecificData,
+    providerDataWithProjectId,
+    proxyOptions,
+  });
 }

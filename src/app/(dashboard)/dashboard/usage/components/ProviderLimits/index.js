@@ -164,7 +164,11 @@ export default function ProviderLimits() {
         if (!response.ok) throw new Error("Failed to fetch connections");
 
         const data = await response.json();
-        const connectionList = data.connections || [];
+        // Hide providers yang balance-nya sudah ditampilkan inline di halaman
+        // dashboard/providers/[id] agar tidak dobel muncul di Quota Tracker.
+        const connectionList = (data.connections || []).filter(
+          (conn) => conn.provider !== "autoclaw",
+        );
         const nextPagination = getSafePagination(data.pagination, pageSize);
         const nextTotals = getSafeTotals(data.totals, connectionList.length);
 

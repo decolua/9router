@@ -168,6 +168,7 @@ export const OAUTH_ENDPOINTS = {
   qwen:      { token: PROVIDER_OAUTH["qwen"]?.tokenUrl, auth: PROVIDER_OAUTH["qwen"]?.deviceCodeUrl },
   iflow:     { token: PROVIDER_OAUTH["iflow"]?.tokenUrl, auth: PROVIDER_OAUTH["iflow"]?.authorizeUrl },
   github:    { token: PROVIDER_OAUTH["github"]?.tokenUrl, auth: PROVIDER_OAUTH["github"]?.authorizeUrl, deviceCode: PROVIDER_OAUTH["github"]?.deviceCodeUrl },
+  autoclaw:  { token: PROVIDER_OAUTH["autoclaw"]?.tokenUrl, auth: PROVIDER_OAUTH["autoclaw"]?.authorizeUrl, refresh: PROVIDER_OAUTH["autoclaw"]?.refreshUrl },
 };
 
 // Generate Kimi OAuth custom headers

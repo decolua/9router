@@ -40,6 +40,11 @@ const DEFAULT_SETTINGS = {
   headroomCompressUserMessages: false,
   cavemanEnabled: false,
   cavemanLevel: "full",
+  // Public usage lookup (/usage-check). Empty password = feature disabled.
+  usageLookupToken: "",
+  usageLookupPassword: "",
+  // Providers whose tokens are NOT counted toward API key limits/usage.
+  tokenLimitExcludedProviders: [],
   ponytailEnabled: false,
   ponytailLevel: "full",
 };

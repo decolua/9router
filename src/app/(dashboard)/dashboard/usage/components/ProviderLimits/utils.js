@@ -175,8 +175,14 @@ export function getPaginationPageValue(dataPagination, fallbackPage) {
   return dataPagination?.page || fallbackPage;
 }
 
+// Providers yang balance-nya ditampilkan inline di dashboard/providers/[id]
+// dan tidak perlu muncul di halaman Quota Tracker (menghindari duplikasi UI).
+const QUOTA_TRACKER_HIDDEN_PROVIDERS = new Set(["autoclaw"]);
+
 export function getProviderOptions(dataProviderOptions) {
-  return dataProviderOptions || [];
+  return (dataProviderOptions || []).filter(
+    (opt) => !QUOTA_TRACKER_HIDDEN_PROVIDERS.has(opt?.id || opt?.value)
+  );
 }
 
 export async function reconcileConnectionsPage(fetchConnections, targetPage) {

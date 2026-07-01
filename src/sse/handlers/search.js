@@ -4,6 +4,7 @@ import {
   clearAccountError,
   extractApiKey,
   isValidApiKey,
+  checkApiKeyLimit,
 } from "../services/auth.js";
 import { getSettings, getCombos } from "@/lib/localDb";
 import { AI_PROVIDERS, resolveProviderId } from "@/shared/constants/providers.js";
@@ -55,6 +56,18 @@ export async function handleSearch(request) {
     if (!valid) {
       log.warn("AUTH", "Invalid API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
+    }
+  }
+
+  // Enforce per-key token limit (independent of requireApiKey)
+  if (apiKey) {
+    const limit = await checkApiKeyLimit(apiKey);
+    if (limit.exceeded) {
+      log.warn("AUTH", `API key token limit exceeded (${limit.used}/${limit.limit} per ${limit.window})`);
+      return errorResponse(
+        HTTP_STATUS.RATE_LIMITED,
+        `Token limit exceeded for this API key: ${limit.used}/${limit.limit} tokens used (${limit.window}).`
+      );
     }
   }
 

@@ -78,6 +78,16 @@ export const TABLES = {
       name: "TEXT",
       machineId: "TEXT",
       isActive: "INTEGER DEFAULT 1",
+      // Token limit per key. 0 / NULL = unlimited.
+      tokenLimit: "INTEGER DEFAULT 0",
+      // Window the limit applies over: "total" | "daily" | "monthly".
+      limitWindow: "TEXT DEFAULT 'monthly'",
+      // Requests-per-minute limit for this key. 0 / NULL = unlimited.
+      rpmLimit: "INTEGER DEFAULT 0",
+      // Manual reset marker: usage before this timestamp is not counted toward the limit.
+      limitResetAt: "TEXT",
+      // JSON array of allowed model values for this key. NULL/empty = all allowed.
+      allowedModels: "TEXT",
       createdAt: "TEXT NOT NULL",
     },
     indexes: ["CREATE INDEX IF NOT EXISTS idx_ak_key ON apiKeys(key)"],

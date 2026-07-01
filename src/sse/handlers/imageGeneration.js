@@ -4,6 +4,7 @@ import {
   clearAccountError,
   extractApiKey,
   isValidApiKey,
+  checkApiKeyLimit,
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
@@ -41,6 +42,17 @@ export async function handleImageGeneration(request) {
     if (!apiKey) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
     const valid = await isValidApiKey(apiKey);
     if (!valid) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
+  }
+
+  // Enforce per-key token limit (independent of requireApiKey)
+  if (apiKey) {
+    const limit = await checkApiKeyLimit(apiKey);
+    if (limit.exceeded) {
+      return errorResponse(
+        HTTP_STATUS.RATE_LIMITED,
+        `Token limit exceeded for this API key: ${limit.used}/${limit.limit} tokens used (${limit.window}).`
+      );
+    }
   }
 
   if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");

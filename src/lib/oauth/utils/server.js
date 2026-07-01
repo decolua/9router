@@ -78,7 +78,11 @@ export function startLocalServer(onCallback, fixedPort = null) {
 
     server.on("error", (err) => {
       if (err.code === "EADDRINUSE" && fixedPort) {
-        reject(new Error(`Port ${fixedPort} is already in use. Please close other applications using this port.`));
+        reject(
+          new Error(
+            `Port ${fixedPort} is already in use. Please close other applications using this port.`,
+          ),
+        );
       } else {
         reject(err);
       }
@@ -206,7 +210,9 @@ export function startCodexProxy(appPort) {
       if (session) {
         try {
           if (errorParam) {
-            throw new Error(url.searchParams.get("error_description") || errorParam);
+            throw new Error(
+              url.searchParams.get("error_description") || errorParam,
+            );
           }
           if (!code) throw new Error("No authorization code received");
 
@@ -219,7 +225,7 @@ export function startCodexProxy(appPort) {
             code,
             session.redirectUri,
             session.codeVerifier,
-            state
+            state,
           );
           const connection = await createProviderConnection({
             provider: "codex",
@@ -257,7 +263,10 @@ export function startCodexProxy(appPort) {
 
     server.listen(CODEX_PORT, "127.0.0.1", () => {
       codexProxyServer = server;
-      codexProxyTimeout = setTimeout(() => stopCodexProxy(), CODEX_PROXY_TIMEOUT_MS);
+      codexProxyTimeout = setTimeout(
+        () => stopCodexProxy(),
+        CODEX_PROXY_TIMEOUT_MS,
+      );
       resolve({ success: true });
     });
 
@@ -349,7 +358,9 @@ export function startXaiProxy(appPort) {
       if (session) {
         try {
           if (errorParam) {
-            throw new Error(url.searchParams.get("error_description") || errorParam);
+            throw new Error(
+              url.searchParams.get("error_description") || errorParam,
+            );
           }
           if (!code) throw new Error("No authorization code received");
 
@@ -361,7 +372,7 @@ export function startXaiProxy(appPort) {
             code,
             session.redirectUri,
             session.codeVerifier,
-            state
+            state,
           );
           const connection = await createProviderConnection({
             provider: "xai",
@@ -424,3 +435,127 @@ export function stopXaiProxy() {
   }
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// AutoClaw fixed-port proxy on 127.0.0.1:18432
+// AutoClaw's Google OAuth client hardcodes redirect_uri to
+// http://localhost:18432/auth/callback-google. The proxy catches the callback,
+// stashes {code, state} into a session, and the device_code poll loop does the
+// actual exchange via AutoClaw's google-oauth-login API (needs app-signing headers).
+// ───────────────────────────────────────────────────────────────────────────
+
+let autoclawProxyServer = null;
+let autoclawProxyTimeout = null;
+const AUTOCLOW_PROXY_TIMEOUT_MS = 300000; // 5 minutes
+const AUTOCLOW_PROXY_PORT = 18432;
+const AUTOCLOW_CALLBACK_PATH = "/auth/callback-google";
+
+// Sessions keyed by device_code (= AutoClaw's API state). Each session holds
+// { deviceId, status, code, state, error, createdAt }.
+const autoclawSessions = new Map();
+
+export function registerAutoClawSession(deviceCode, deviceId) {
+  if (!deviceCode || !deviceId) return false;
+  autoclawSessions.set(deviceCode, {
+    deviceId,
+    status: "pending",
+    createdAt: Date.now(),
+  });
+  return true;
+}
+
+export function getAutoClawSessionStatus(deviceCode) {
+  return autoclawSessions.get(deviceCode) || null;
+}
+
+export function clearAutoClawSession(deviceCode) {
+  autoclawSessions.delete(deviceCode);
+}
+
+export function startAutoClawProxy() {
+  return new Promise((resolve) => {
+    if (autoclawProxyServer) {
+      resolve({ success: true });
+      return;
+    }
+
+    const server = http.createServer(async (req, res) => {
+      const url = new URL(req.url, "http://localhost");
+      console.log(
+        `[autoclaw-proxy] incoming ${req.method} ${url.pathname}${url.search.slice(0, 100)} from ${req.socket.remoteAddress}`,
+      );
+
+      if (url.pathname !== AUTOCLOW_CALLBACK_PATH) {
+        res.writeHead(404);
+        res.end("Not found");
+        return;
+      }
+
+      const code = url.searchParams.get("code");
+      const state = url.searchParams.get("state");
+      const errorParam = url.searchParams.get("error");
+
+      // Match session by state (= device_code = AutoClaw's API state).
+      const session = state ? autoclawSessions.get(state) : null;
+
+      if (session) {
+        if (errorParam) {
+          session.status = "error";
+          session.error =
+            url.searchParams.get("error_description") || errorParam;
+        } else if (code) {
+          session.status = "exchanging";
+          session.code = code;
+        } else {
+          session.status = "error";
+          session.error = "No authorization code received";
+        }
+      }
+
+      // Render result page to browser.
+      const success = !errorParam && !!code;
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(
+        renderCodexResultPage(
+          success,
+          success
+            ? "You can close this window."
+            : errorParam || "No code received",
+        ),
+      );
+
+      // Keep proxy alive for a bit in case of re-render; poll loop will stop it.
+    });
+
+    server.listen(AUTOCLOW_PROXY_PORT, "127.0.0.1", () => {
+      autoclawProxyServer = server;
+      autoclawProxyTimeout = setTimeout(
+        () => stopAutoClawProxy(),
+        AUTOCLOW_PROXY_TIMEOUT_MS,
+      );
+      console.log(
+        `[autoclaw-proxy] listening on 127.0.0.1:${AUTOCLOW_PROXY_PORT}${AUTOCLOW_CALLBACK_PATH}`,
+      );
+      resolve({ success: true });
+    });
+
+    server.on("error", (err) => {
+      console.log(`[autoclaw-proxy] listen error: ${err.code} ${err.message}`);
+      if (err.code === "EADDRINUSE") {
+        resolve({ success: false, reason: "port_busy" });
+      } else {
+        resolve({ success: false, reason: err.message });
+      }
+    });
+  });
+}
+
+export function stopAutoClawProxy() {
+  if (autoclawProxyTimeout) {
+    clearTimeout(autoclawProxyTimeout);
+    autoclawProxyTimeout = null;
+  }
+  if (autoclawProxyServer) {
+    autoclawProxyServer.close();
+    autoclawProxyServer = null;
+  }
+}

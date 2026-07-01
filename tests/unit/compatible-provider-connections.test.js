@@ -6,7 +6,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 const originalDataDir = process.env.DATA_DIR;
 
 async function setupTestContext(nodeData) {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-compatible-provider-"));
+  const tempDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), "9router-compatible-provider-"),
+  );
   process.env.DATA_DIR = tempDir;
   vi.resetModules();
   vi.doMock("next/server", () => ({
@@ -21,10 +23,8 @@ async function setupTestContext(nodeData) {
   }));
 
   const { POST } = await import("@/app/api/providers/route.js");
-  const {
-    createProviderNode,
-    getProviderConnections,
-  } = await import("@/models/index.js");
+  const { createProviderNode, getProviderConnections } =
+    await import("@/models/index.js");
 
   const node = await createProviderNode(nodeData);
 
@@ -97,7 +97,9 @@ describe("compatible provider connections API", () => {
     const response = await ctx.POST(makeRequest(ctx.node.id));
     const body = await response.json();
     const connection = body.connection;
-    const storedConnections = await ctx.getProviderConnections({ provider: ctx.node.id });
+    const storedConnections = await ctx.getProviderConnections({
+      provider: ctx.node.id,
+    });
 
     expect(response.status).toBe(201);
     expect(storedConnections).toHaveLength(1);
@@ -128,7 +130,9 @@ describe("compatible provider connections API", () => {
     const response = await ctx.POST(makeRequest(ctx.node.id));
     const body = await response.json();
     const connection = body.connection;
-    const storedConnections = await ctx.getProviderConnections({ provider: ctx.node.id });
+    const storedConnections = await ctx.getProviderConnections({
+      provider: ctx.node.id,
+    });
 
     expect(response.status).toBe(201);
     expect(storedConnections).toHaveLength(1);
@@ -145,26 +149,45 @@ describe("compatible provider connections API", () => {
     });
   });
 
-  it("returns 400 for a duplicate connection on the same compatible node", async () => {
+  it("allows multiple API-key connections on the same compatible node", async () => {
     const ctx = await setupTestContext({
       id: "openai-compatible-duplicate-test",
       type: "openai-compatible",
-      name: "Duplicate Guard Node",
+      name: "Multi Key Node",
       prefix: "dup",
       apiType: "chat",
-      baseUrl: "https://duplicate-guard.test/v1",
+      baseUrl: "https://multi-key.test/v1",
     });
     cleanup = ctx.cleanup;
 
-    const firstResponse = await ctx.POST(makeRequest(ctx.node.id));
-    const secondResponse = await ctx.POST(makeRequest(ctx.node.id));
-    const secondBody = await secondResponse.json();
-    const storedConnections = await ctx.getProviderConnections({ provider: ctx.node.id });
+    const makeKeyRequest = (apiKey, name) =>
+      new Request("https://9router.local/api/providers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: ctx.node.id,
+          apiKey,
+          name,
+          defaultModel: "test-model",
+        }),
+      });
+
+    const firstResponse = await ctx.POST(makeKeyRequest("test-key-1", "Key 1"));
+    const secondResponse = await ctx.POST(
+      makeKeyRequest("test-key-2", "Key 2"),
+    );
+    const storedConnections = await ctx.getProviderConnections({
+      provider: ctx.node.id,
+    });
 
     expect(firstResponse.status).toBe(201);
-    expect(secondResponse.status).toBe(400);
-    expect(secondBody.error).toContain("Only one connection is allowed");
-    expect(storedConnections).toHaveLength(1);
-    expectCompatibleConnection(storedConnections[0], ctx.node, { apiType: "chat" });
+    expect(secondResponse.status).toBe(201);
+    expect(storedConnections).toHaveLength(2);
+    expectCompatibleConnection(storedConnections[0], ctx.node, {
+      apiType: "chat",
+    });
+    expectCompatibleConnection(storedConnections[1], ctx.node, {
+      apiType: "chat",
+    });
   });
 });

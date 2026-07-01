@@ -7,18 +7,37 @@ import {
   getProxyPoolById,
 } from "@/models";
 import { APIKEY_PROVIDERS } from "@/shared/constants/config";
-import { AI_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider } from "@/shared/constants/providers";
-import { normalizeProviderId, normalizeProviderSpecificData } from "@/lib/providerNormalization";
+import {
+  AI_PROVIDERS,
+  FREE_TIER_PROVIDERS,
+  WEB_COOKIE_PROVIDERS,
+  isOpenAICompatibleProvider,
+  isAnthropicCompatibleProvider,
+  isCustomEmbeddingProvider,
+} from "@/shared/constants/providers";
+import {
+  normalizeProviderId,
+  normalizeProviderSpecificData,
+} from "@/lib/providerNormalization";
 
 export const dynamic = "force-dynamic";
 
 function normalizeProxyConfig(body = {}) {
   const enabled = body?.connectionProxyEnabled === true;
-  const url = typeof body?.connectionProxyUrl === "string" ? body.connectionProxyUrl.trim() : "";
-  const noProxy = typeof body?.connectionNoProxy === "string" ? body.connectionNoProxy.trim() : "";
+  const url =
+    typeof body?.connectionProxyUrl === "string"
+      ? body.connectionProxyUrl.trim()
+      : "";
+  const noProxy =
+    typeof body?.connectionNoProxy === "string"
+      ? body.connectionNoProxy.trim()
+      : "";
 
   if (enabled && !url) {
-    return { error: "Connection proxy URL is required when connection proxy is enabled" };
+    return {
+      error:
+        "Connection proxy URL is required when connection proxy is enabled",
+    };
   }
 
   return {
@@ -29,7 +48,12 @@ function normalizeProxyConfig(body = {}) {
 }
 
 async function normalizeProxyPoolId(proxyPoolId) {
-  if (proxyPoolId === undefined || proxyPoolId === null || proxyPoolId === "" || proxyPoolId === "__none__") {
+  if (
+    proxyPoolId === undefined ||
+    proxyPoolId === null ||
+    proxyPoolId === "" ||
+    proxyPoolId === "__none__"
+  ) {
     return { proxyPoolId: null };
   }
 
@@ -58,13 +82,18 @@ export async function GET() {
       for (const node of nodes) {
         if (node.id && node.name) nodeNameMap[node.id] = node.name;
       }
-    } catch { }
+    } catch {}
 
     // Hide sensitive fields, enrich name for compatible providers
-    const safeConnections = connections.map(c => {
-      const isCompatible = isOpenAICompatibleProvider(c.provider) || isAnthropicCompatibleProvider(c.provider);
+    const safeConnections = connections.map((c) => {
+      const isCompatible =
+        isOpenAICompatibleProvider(c.provider) ||
+        isAnthropicCompatibleProvider(c.provider);
       const name = isCompatible
-        ? (c.name || nodeNameMap[c.provider] || c.providerSpecificData?.nodeName || c.provider)
+        ? c.name ||
+          nodeNameMap[c.provider] ||
+          c.providerSpecificData?.nodeName ||
+          c.provider
         : c.name;
       return {
         ...c,
@@ -79,7 +108,10 @@ export async function GET() {
     return NextResponse.json({ connections: safeConnections });
   } catch (error) {
     console.log("Error fetching providers:", error);
-    return NextResponse.json({ error: "Failed to fetch providers" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to fetch providers" },
+      { status: 500 },
+    );
   }
 }
 
@@ -88,7 +120,15 @@ export async function POST(request) {
   try {
     const body = await request.json();
     const provider = normalizeProviderId(body.provider);
-    const { apiKey, name, displayName, priority, globalPriority, defaultModel, testStatus } = body;
+    const {
+      apiKey,
+      name,
+      displayName,
+      priority,
+      globalPriority,
+      defaultModel,
+      testStatus,
+    } = body;
     const proxyConfig = normalizeProxyConfig(body);
     if (proxyConfig.error) {
       return NextResponse.json({ error: proxyConfig.error }, { status: 400 });
@@ -96,7 +136,10 @@ export async function POST(request) {
 
     const proxyPoolResult = await normalizeProxyPoolId(body.proxyPoolId);
     if (proxyPoolResult.error) {
-      return NextResponse.json({ error: proxyPoolResult.error }, { status: 400 });
+      return NextResponse.json(
+        { error: proxyPoolResult.error },
+        { status: 400 },
+      );
     }
     const proxyPoolId = proxyPoolResult.proxyPoolId;
 
@@ -104,8 +147,10 @@ export async function POST(request) {
     const isWebCookieProvider = !!WEB_COOKIE_PROVIDERS[provider];
     // Dual-auth providers (e.g. codebuddy-cn, xai) live under category "oauth" but also
     // accept an API key via authModes — they aren't in APIKEY_PROVIDERS, so allow them here.
-    const supportsApiKeyMode = !!AI_PROVIDERS[provider]?.authModes?.includes("apikey");
-    const isValidProvider = APIKEY_PROVIDERS[provider] ||
+    const supportsApiKeyMode =
+      !!AI_PROVIDERS[provider]?.authModes?.includes("apikey");
+    const isValidProvider =
+      APIKEY_PROVIDERS[provider] ||
       FREE_TIER_PROVIDERS[provider] ||
       supportsApiKeyMode ||
       isWebCookieProvider ||
@@ -117,26 +162,33 @@ export async function POST(request) {
       return NextResponse.json({ error: "Invalid provider" }, { status: 400 });
     }
     if (!apiKey && provider !== "ollama-local") {
-      return NextResponse.json({ error: `${isWebCookieProvider ? "Cookie value" : "API Key"} is required` }, { status: 400 });
+      return NextResponse.json(
+        {
+          error: `${isWebCookieProvider ? "Cookie value" : "API Key"} is required`,
+        },
+        { status: 400 },
+      );
     }
     const connectionName = name || displayName || AI_PROVIDERS[provider]?.name;
     if (!connectionName) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
     }
 
-    let providerSpecificData = normalizeProviderSpecificData(provider, body, body.providerSpecificData);
+    let providerSpecificData = normalizeProviderSpecificData(
+      provider,
+      body,
+      body.providerSpecificData,
+    );
 
-    // Compatible/embedding nodes allow exactly one connection each. These guards were
-    // dropped accidentally during the bun:sqlite refactor (v0.4.28); restored to honor
-    // the contract locked in by tests/unit/compatible-provider-connections.test.js (#925).
+    // Compatible nodes share one endpoint but allow multiple API keys (key rotation /
+    // load-balancing). Custom embedding nodes still allow exactly one connection.
     if (isOpenAICompatibleProvider(provider)) {
       const node = await getProviderNodeById(provider);
       if (!node) {
-        return NextResponse.json({ error: "OpenAI Compatible node not found" }, { status: 404 });
-      }
-      const existingConnections = await getProviderConnections({ provider });
-      if (existingConnections.length > 0) {
-        return NextResponse.json({ error: "Only one connection is allowed for this OpenAI Compatible node" }, { status: 400 });
+        return NextResponse.json(
+          { error: "OpenAI Compatible node not found" },
+          { status: 404 },
+        );
       }
       providerSpecificData = {
         prefix: node.prefix,
@@ -147,11 +199,10 @@ export async function POST(request) {
     } else if (isAnthropicCompatibleProvider(provider)) {
       const node = await getProviderNodeById(provider);
       if (!node) {
-        return NextResponse.json({ error: "Anthropic Compatible node not found" }, { status: 404 });
-      }
-      const existingConnections = await getProviderConnections({ provider });
-      if (existingConnections.length > 0) {
-        return NextResponse.json({ error: "Only one connection is allowed for this Anthropic Compatible node" }, { status: 400 });
+        return NextResponse.json(
+          { error: "Anthropic Compatible node not found" },
+          { status: 404 },
+        );
       }
       providerSpecificData = {
         prefix: node.prefix,
@@ -161,11 +212,20 @@ export async function POST(request) {
     } else if (isCustomEmbeddingProvider(provider)) {
       const node = await getProviderNodeById(provider);
       if (!node) {
-        return NextResponse.json({ error: "Custom Embedding node not found" }, { status: 404 });
+        return NextResponse.json(
+          { error: "Custom Embedding node not found" },
+          { status: 404 },
+        );
       }
       const existingConnections = await getProviderConnections({ provider });
       if (existingConnections.length > 0) {
-        return NextResponse.json({ error: "Only one connection is allowed for this Custom Embedding node" }, { status: 400 });
+        return NextResponse.json(
+          {
+            error:
+              "Only one connection is allowed for this Custom Embedding node",
+          },
+          { status: 400 },
+        );
       }
       providerSpecificData = {
         prefix: node.prefix,
@@ -185,6 +245,31 @@ export async function POST(request) {
       mergedProviderSpecificData.proxyPoolId = proxyPoolId;
     }
 
+    // AutoClaw: the imported "API key" is actually a JWT access_token (TTL 24h).
+    // Decode exp so the dashboard can show expiry and the usage route can
+    // trigger refresh (refresh_token is absent in apikey mode — the user must
+    // re-import when it expires, unless they connected via OAuth).
+    let expiresAt = null;
+    if (provider === "autoclaw" && apiKey) {
+      const token = apiKey.replace(/^Bearer\s+/i, "");
+      if (token.split(".").length === 3) {
+        try {
+          const payload = token.split(".")[1];
+          const json = JSON.parse(
+            Buffer.from(
+              payload + "=".repeat(-payload.length % 4),
+              "base64url",
+            ).toString("utf8"),
+          );
+          if (typeof json.exp === "number") {
+            expiresAt = new Date(json.exp * 1000).toISOString();
+          }
+        } catch {
+          // Not a valid JWT — skip expiry.
+        }
+      }
+    }
+
     const newConnection = await createProviderConnection({
       provider,
       authType: isWebCookieProvider ? "cookie" : "apikey",
@@ -196,6 +281,7 @@ export async function POST(request) {
       providerSpecificData: mergedProviderSpecificData,
       isActive: true,
       testStatus: testStatus || "unknown",
+      ...(expiresAt ? { expiresAt } : {}),
     });
 
     // Hide sensitive fields
@@ -205,6 +291,9 @@ export async function POST(request) {
     return NextResponse.json({ connection: result }, { status: 201 });
   } catch (error) {
     console.log("Error creating provider:", error);
-    return NextResponse.json({ error: "Failed to create provider" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to create provider" },
+      { status: 500 },
+    );
   }
 }

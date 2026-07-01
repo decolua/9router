@@ -1,5 +1,5 @@
 import {
-  extractApiKey, isValidApiKey,
+  extractApiKey, isValidApiKey, checkApiKeyLimit,
   getProviderCredentials, markAccountUnavailable,
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
@@ -29,11 +29,22 @@ export async function handleStt(request) {
   log.request("POST", `/v1/audio/transcriptions | ${modelStr}`);
 
   const settings = await getSettings();
+  const apiKey = extractApiKey(request);
   if (settings.requireApiKey) {
-    const apiKey = extractApiKey(request);
     if (!apiKey) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
     const valid = await isValidApiKey(apiKey);
     if (!valid) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
+  }
+
+  // Enforce per-key token limit (independent of requireApiKey)
+  if (apiKey) {
+    const limit = await checkApiKeyLimit(apiKey);
+    if (limit.exceeded) {
+      return errorResponse(
+        HTTP_STATUS.RATE_LIMITED,
+        `Token limit exceeded for this API key: ${limit.used}/${limit.limit} tokens used (${limit.window}).`
+      );
+    }
   }
 
   if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");

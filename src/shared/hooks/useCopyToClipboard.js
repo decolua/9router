@@ -12,19 +12,31 @@ export function useCopyToClipboard(resetDelay = 2000) {
   const timeoutRef = useRef(null);
 
   const copy = useCallback((text, id = "default") => {
-    const write = async () => {
-      if (navigator?.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-      } else {
+    const fallbackCopy = () => {
+      try {
         const textarea = document.createElement("textarea");
         textarea.value = text;
         textarea.style.position = "fixed";
+        textarea.style.top = "-9999px";
         textarea.style.opacity = "0";
+        textarea.setAttribute("readonly", "");
         document.body.appendChild(textarea);
         textarea.select();
         document.execCommand("copy");
         document.body.removeChild(textarea);
+      } catch { /* ignore */ }
+    };
+
+    const write = async () => {
+      // navigator.clipboard only works in secure contexts (HTTPS/localhost).
+      // Fall back to execCommand for plain HTTP, and also if writeText rejects.
+      if (navigator?.clipboard?.writeText && window.isSecureContext) {
+        try {
+          await navigator.clipboard.writeText(text);
+          return;
+        } catch { /* fall through to fallback */ }
       }
+      fallbackCopy();
     };
     write();
     setCopied(id);

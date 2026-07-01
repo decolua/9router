@@ -739,6 +739,46 @@ export async function getChartData(period = "7d") {
   });
 }
 
+/**
+ * Daily token chart for a single API key, last N days (inclusive).
+ * Used by the public usage-check page to render a sparkline per key.
+ * @param {string} apiKey
+ * @param {number} days
+ * @returns {Promise<Array<{label:string, tokens:number, requests:number}>>}
+ */
+export async function getApiKeyDailyChart(apiKey, days = 14) {
+  if (!apiKey) return [];
+  const db = await getAdapter();
+  const n = Math.max(1, Math.min(60, Number(days) || 14));
+  const today = new Date();
+  const startDate = new Date(today);
+  startDate.setDate(startDate.getDate() - (n - 1));
+  startDate.setHours(0, 0, 0, 0);
+
+  const rows = db.all(
+    `SELECT timestamp, promptTokens, completionTokens FROM usageHistory WHERE apiKey = ? AND timestamp >= ?`,
+    [apiKey, startDate.toISOString()],
+  );
+
+  const dayMap = {};
+  for (const r of rows) {
+    const t = new Date(r.timestamp);
+    const key = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+    if (!dayMap[key]) dayMap[key] = { tokens: 0, requests: 0 };
+    dayMap[key].tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
+    dayMap[key].requests += 1;
+  }
+
+  const labelFn = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date(today);
+    d.setDate(d.getDate() - (n - 1 - i));
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const v = dayMap[key] || { tokens: 0, requests: 0 };
+    return { label: labelFn(d), tokens: v.tokens, requests: v.requests };
+  });
+}
+
 function formatLogDate(date = new Date()) {
   const pad = (n) => String(n).padStart(2, "0");
   return `${pad(date.getDate())}-${pad(date.getMonth() + 1)}-${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
