@@ -68,6 +68,16 @@ describe("applyThinking per provider format", () => {
     const out = apply("gemini", "gemini-3-pro", { reasoning_effort: "medium" }, "gemini");
     expect(out.generationConfig.thinkingConfig.thinkingLevel).toBe("medium");
   });
+  it("gemini-3 clamps unsupported max/xhigh thinking levels to high", () => {
+    const outMax = apply("gemini", "gemini-3-pro", { reasoning_effort: "max" }, "gemini");
+    const outXhigh = apply("gemini", "gemini-3-pro", { reasoning_effort: "xhigh" }, "gemini");
+    expect(outMax.generationConfig.thinkingConfig.thinkingLevel).toBe("high");
+    expect(outXhigh.generationConfig.thinkingConfig.thinkingLevel).toBe("high");
+  });
+  it("gemini-3 maps auto thinking level to high instead of sending unsupported auto", () => {
+    const out = apply("gemini", "gemini-3-pro", { reasoning_effort: "auto" }, "gemini");
+    expect(out.generationConfig.thinkingConfig.thinkingLevel).toBe("high");
+  });
   it("gemini-2.5 → thinkingBudget", () => {
     const out = apply("gemini", "gemini-2.5-flash", { reasoning_effort: "high" }, "gemini");
     expect(out.generationConfig.thinkingConfig.thinkingBudget).toBe(24576);
@@ -112,6 +122,10 @@ describe("applyThinking per provider format", () => {
   it("suffix overrides body", () => {
     const out = apply("openai", "gpt-5(low)", { reasoning_effort: "high" }, "openai");
     expect(out.reasoning_effort).toBe("low");
+  });
+  it("openai keeps xhigh for reasoning models", () => {
+    const out = apply("openai", "gpt-5.3-codex", { reasoning_effort: "xhigh" }, "codex");
+    expect(out.reasoning_effort).toBe("xhigh");
   });
 });
 

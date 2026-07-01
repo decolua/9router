@@ -66,8 +66,8 @@ describe("compressWithHeadroom", () => {
 });
 
 describe("formatHeadroomLog", () => {
-  it("formats savings", () => {
+  it("formats reported token deltas without implying provider billing savings", () => {
     expect(formatHeadroomLog({ tokens_before: 100, tokens_after: 25, tokens_saved: 75 }))
-      .toBe("saved 75 tokens / 100 (75.0%) after=25");
+      .toBe("reported token delta=75 before=100 after=25 (75.0%)");
   });
 });

@@ -109,15 +109,22 @@ export async function getCodeBuddyCnUsage(accessToken, apiKey, providerSpecificD
         total: num(acc.CycleCapacitySizePrecise, acc.CycleCapacitySize),
         resetAt: parseResetTime(acc.CycleEndTime),
         unlimited: false,
+        // Recurring allowance: the CycleEndTime is the next refresh, not the
+        // final expiry. The UI must show "Resets in", not "Expires in".
+        recurring: true,
       };
     });
     // Bonus packs: use the lifetime Capacity balance; resetAt is the expiry.
+    // These are one-shot credits (CycleEndTime == DeductionEndTime), so they
+    // never replenish — mark recurring:false so the UI shows "Expires in"
+    // instead of implying a monthly refill.
     bonuses.forEach((acc, i) => {
       quotas[`Bonus Pack ${i + 1}`] = {
         used: num(acc.CapacityUsedPrecise, acc.CapacityUsed),
         total: num(acc.CapacitySizePrecise, acc.CapacitySize),
         resetAt: parseResetTime(acc.CycleEndTime),
         unlimited: false,
+        recurring: false,
       };
     });
 

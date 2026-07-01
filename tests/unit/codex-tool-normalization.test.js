@@ -20,6 +20,47 @@ function normalizeTools(tools) {
 }
 
 describe("CodexExecutor tool normalization", () => {
+  it("preserves Responses text.format for structured outputs", () => {
+    const executor = new CodexExecutor();
+    const schema = {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        title: { type: "string" },
+      },
+      required: ["title"],
+    };
+    const body = {
+      model: "gpt-5.4-mini",
+      input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "test for session title" }] }],
+      stream: true,
+      metadata: { unsupported: true },
+      text: {
+        format: {
+          type: "json_schema",
+          name: "codex_output_schema",
+          strict: true,
+          schema,
+        },
+      },
+    };
+
+    executor.transformRequest("gpt-5.4-mini", body, true, {
+      connectionId: "test-codex-structured-output",
+      providerSpecificData: {},
+    });
+
+    expect(body.text).toEqual({
+      format: {
+        type: "json_schema",
+        name: "codex_output_schema",
+        strict: true,
+        schema,
+      },
+    });
+    expect(body.metadata).toBeUndefined();
+  });
+
   it("preserves Responses-native tool_search tools", () => {
     const tools = normalizeTools([
       {
