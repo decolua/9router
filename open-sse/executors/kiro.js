@@ -29,7 +29,7 @@ export class KiroExecutor extends BaseExecutor {
     const authMethod = credentials?.providerSpecificData?.authMethod;
     const isApiKey = authMethod === "api_key";
     // External IdP tokens (Microsoft Entra ID / Azure AD via SSO) must be
-    // tagged with `tokentype: EXTERNAL_IDP` on every CodeWhisperer call
+    // tagged with `TokenType: EXTERNAL_IDP` on every CodeWhisperer call
     // (data plane, ListAvailableModels, usage). Without it, upstream rejects
     // the request as "The bearer token included in the request is invalid".
     const isExternalIdp = authMethod === "external_idp";
@@ -38,9 +38,6 @@ export class KiroExecutor extends BaseExecutor {
     if (isApiKey && apiKey) {
       headers["Authorization"] = `Bearer ${apiKey}`;
       headers["tokentype"] = "API_KEY";
-    } else if (isExternalIdp && credentials.accessToken) {
-      headers["Authorization"] = `Bearer ${credentials.accessToken}`;
-      headers["tokentype"] = "EXTERNAL_IDP";
     } else if (credentials.accessToken) {
       headers["Authorization"] = `Bearer ${credentials.accessToken}`;
       if (isExternalIdp) {

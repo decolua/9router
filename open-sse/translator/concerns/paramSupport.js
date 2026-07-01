@@ -63,8 +63,9 @@ const MIN_RULES = [
 // fire on every model. Add an explicit `match` (or a `provider` guard) on any
 // new rule.
 function matches(rule, model) {
-  if (!rule.match) return true;
-  return typeof rule.match === "function" ? rule.match(model) : rule.match.test(model);
+  if (typeof rule.match === "function") return rule.match(model);
+  if (rule.match instanceof RegExp) return rule.match.test(model);
+  return true;
 }
 
 // Remove unsupported params from body in place; returns body.
