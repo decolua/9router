@@ -168,7 +168,9 @@ function applyFormat(fmt, body, cfg, caps) {
     case "openai": {
       if (none && canDisable) { body.reasoning_effort = "none"; break; }
       const level = toLevel(eff);
-      if (level) body.reasoning_effort = level;
+      // Vercel / OpenAI Chat Completions only accept "none|minimal|low|medium|high|xhigh"
+      // for reasoning.effort. Internal "max" maps to "xhigh". Drop unknown levels.
+      if (level) body.reasoning_effort = level === "max" ? "xhigh" : level;
       break;
     }
     case "claude-adaptive": {

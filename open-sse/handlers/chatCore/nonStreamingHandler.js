@@ -5,6 +5,7 @@ import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.j
 import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
 import { createErrorResult } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
+import { unwrapClinepassEnvelope } from "../../utils/clinepassEnvelope.js";
 import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
@@ -228,6 +229,16 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
       .catch(err => {
         console.error("[ChatCore] onRequestSuccess failed:", err?.message || err);
       });
+  }
+
+  // Unwrap ClinePass {success, data} envelope before decloak/translation
+  {
+    const { body: unwrapped, error: envError } = unwrapClinepassEnvelope(responseBody, provider);
+    if (envError) {
+      appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, envError.message);
+    }
+    responseBody = unwrapped;
   }
 
   // Decloak tool_use names once on raw Claude body, before any translation (INPUT side)

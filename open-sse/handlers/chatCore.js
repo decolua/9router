@@ -320,7 +320,23 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // True non-streaming response
   if (!stream) {
-    const result = await handleNonStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat, reqLogger, toolNameMap, trackDone, appendLog });
+    let result = await handleNonStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat, reqLogger, toolNameMap, trackDone, appendLog });
+
+    // ClinePass sometimes returns {success:false, error:"empty response content"} transiently
+    if (provider === "clinepass" && !result?.success && /empty/i.test(result?.error || "")) {
+      log?.warn?.("RETRY", `clinepass returned empty content, retrying once after 2s`);
+      await new Promise(r => setTimeout(r, 2000));
+      try {
+        const retry = await executor.execute({ model, body: translatedBody, stream: false, credentials, signal: streamController.signal, log, proxyOptions });
+        if (retry?.response?.ok) {
+          providerResponse = retry.response;
+          result = await handleNonStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat, reqLogger, toolNameMap, trackDone, appendLog });
+        }
+      } catch (retryErr) {
+        log?.warn?.("RETRY", `clinepass retry failed: ${retryErr.message}`);
+      }
+    }
+
     streamController.handleComplete();
     return result;
   }
