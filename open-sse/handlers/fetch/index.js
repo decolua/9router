@@ -4,6 +4,17 @@
 const DEFAULT_TIMEOUT_MS = 15000;
 const DEFAULT_FORMAT = "markdown";
 
+function getDefaultTimeoutMs() {
+  const env = process.env.FIRECRAWL_TIMEOUT_MS;
+  if (!env) return DEFAULT_TIMEOUT_MS;
+  const n = Number(env);
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_TIMEOUT_MS;
+}
+
+function getDefaultFormat() {
+  return process.env.FIRECRAWL_DEFAULT_FORMAT || DEFAULT_FORMAT;
+}
+
 /**
  * @typedef {Object} FetchResult
  * @property {boolean} success
@@ -93,15 +104,15 @@ export async function handleFetchCore({ url, format, maxCharacters, provider, pr
     return { success: false, status: 400, error: "provider is required" };
   }
 
-  const fmt = format || DEFAULT_FORMAT;
-  const timeoutMs = providerConfig?.timeoutMs || DEFAULT_TIMEOUT_MS;
+  const fmt = format || getDefaultFormat();
+  const timeoutMs = providerConfig?.timeoutMs || getDefaultTimeoutMs();
   const apiKey = credentials?.apiKey || credentials?.key || credentials?.token || "";
   const costPerQuery = providerConfig?.costPerQuery ?? null;
   const startedAt = Date.now();
 
   try {
-    if (provider === "firecrawl") {
-      return await runFirecrawl({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery, startedAt });
+    if (provider === "firecrawl" || provider === "firecrawl_custom") {
+      return await runFirecrawl({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery, startedAt, provider });
     }
     if (provider === "jina-reader") {
       return await runJina({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery, startedAt });
@@ -119,19 +130,34 @@ export async function handleFetchCore({ url, format, maxCharacters, provider, pr
   }
 }
 
-async function runFirecrawl({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery, startedAt }) {
+async function runFirecrawl({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery, startedAt, provider }) {
+  const isCustom = provider === "firecrawl_custom";
+
+  if (!isCustom && !apiKey) {
+    return { success: false, status: 400, error: "FIRECRAWL_API_KEY is required for the official Firecrawl provider" };
+  }
+
+  const baseUrl = isCustom
+    ? (process.env.FIRECRAWL_BASE_URL || "http://127.0.0.1:3002")
+    : (process.env.FIRECRAWL_BASE_URL || "https://api.firecrawl.dev");
+  const endpoint = isCustom ? "/v2/scrape" : "/v1/scrape";
+
+  const headers = { "content-type": "application/json" };
+  if (!isCustom && apiKey) {
+    headers.authorization = `Bearer ${apiKey}`;
+  }
+
   const upstreamStart = Date.now();
-  const r = await tryFetch("https://api.firecrawl.dev/v1/scrape", {
+  const r = await tryFetch(`${baseUrl}${endpoint}`, {
     method: "POST",
-    headers: {
-      "content-type": "application/json",
-      ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {})
-    },
+    headers,
     body: JSON.stringify({ url, formats: [fmt] })
   }, timeoutMs);
 
   if (!r.ok) {
-    return { success: false, status: r.timeout ? 504 : 502, error: r.error };
+    const status = r.timeout ? 504 : 502;
+    const error = isCustom ? `Custom Firecrawl instance unreachable: ${r.error}` : r.error;
+    return { success: false, status, error };
   }
   const upstreamMs = Date.now() - upstreamStart;
   const { json } = await readJsonOrText(r.res);
@@ -144,7 +170,7 @@ async function runFirecrawl({ url, fmt, timeoutMs, apiKey, maxCharacters, costPe
   return {
     success: true,
     data: buildData({
-      provider: "firecrawl", url, title, format: fmt, text,
+      provider, url, title, format: fmt, text,
       costUsd: costPerQuery, responseMs: Date.now() - startedAt, upstreamMs
     })
   };
