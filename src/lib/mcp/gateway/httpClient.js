@@ -1,5 +1,6 @@
 // HTTP/SSE upstream MCP client for the gateway.
 
+import { updateInstance } from "@/lib/localDb";
 import { ensureFreshToken, oauthMetaFromTokens } from "./oauthRefresh";
 import { retryWithBackoff } from "./retry";
 import { isJsonRpcResponse, isRecord } from "./guards";
@@ -130,6 +131,20 @@ export async function mcpRequest(instance, jsonRpc, opts = {}) {
 
       if (res.status === 401 || res.status === 403) {
         const body = await res.text().catch(() => "");
+        // Durably flag OAuth instances as needing login + capture the
+        // WWW-Authenticate challenge so the authorize route can do RFC 9728
+        // discovery without a second round-trip. Best-effort: never mask the
+        // auth error if the persist fails (row may be gone mid-flight).
+        if (currentInstance.oauth && currentInstance.id) {
+          const challenge = res.headers.get("www-authenticate");
+          await updateInstance(currentInstance.id, {
+            oauthTokens: {
+              ...(currentInstance.oauthTokens ?? {}),
+              needsReauth: true,
+              ...(challenge ? { _lastChallenge: challenge } : {}),
+            },
+          }).catch(() => {});
+        }
         throw new McpAuthError(`upstream ${res.status} for ${currentInstance.slug}`, {
           status: res.status,
           ...(currentInstance.slug !== undefined ? { slug: currentInstance.slug } : {}),

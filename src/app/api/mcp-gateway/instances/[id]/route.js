@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { getInstanceById, updateInstance, deleteInstance } from "@/lib/localDb";
+import { deriveOauthStatus } from "@/lib/mcp/gateway/oauthStatus";
 
 export const dynamic = "force-dynamic";
 
 function stripSecrets(inst) {
   if (!inst) return inst;
   const { headers: _h, env: _e, oauthTokens: _o, ...out } = inst;
-  void _h; void _e; void _o;
+  void _h; void _e;
+  out.oauthStatus = deriveOauthStatus(!!inst.oauth, _o);
   return out;
 }
 

@@ -38,9 +38,17 @@ export const runtime = "nodejs";
 const CALLBACK_TIMEOUT_MS = 300_000;
 
 function appBase(request) {
-  // Trust the inbound Host; the callback lands on the same app.
   const url = new URL(request.url);
-  return `${url.protocol}//${request.headers.get("x-forwarded-host") || url.host}`;
+  // Honor the proxy chain: TLS is terminated upstream (cloudflared), so the
+  // app serves plain http. Use x-forwarded-proto (first segment of a possible
+  // comma list) + x-forwarded-host so the OAuth redirect_uri matches what the
+  // browser/AS actually sees.
+  const proto =
+    (request.headers.get("x-forwarded-proto") || "")
+      .split(",")[0]
+      .trim() || url.protocol.replace(":", "");
+  const host = request.headers.get("x-forwarded-host") || url.host;
+  return `${proto}://${host}`;
 }
 
 function buildAuthorizeUrl(opts) {

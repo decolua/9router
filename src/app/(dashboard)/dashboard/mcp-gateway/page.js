@@ -14,6 +14,9 @@ import {
 import { useNotificationStore } from "@/store/notificationStore";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
+function nowMs() {
+  return Date.now();
+}
 const KIND_OPTIONS = [
   { value: "http", label: "HTTP" },
   { value: "sse", label: "SSE" },
@@ -160,11 +163,11 @@ export default function McpGatewayPage() {
         return;
       }
       const state = authBody.state;
-      const startedAt = Date.now();
+      const startedAt = nowMs();
       const pollMs = 1500;
-      const maxMs = 60_000;
+      const maxMs = 300_000;
       const tick = async () => {
-        if (Date.now() - startedAt > maxMs) {
+        if (nowMs() - startedAt > maxMs) {
           notify({ type: "warning", message: "OAuth flow timed out — check the popup tab" });
           return;
         }
@@ -290,6 +293,8 @@ export default function McpGatewayPage() {
                       <Badge size="sm" variant="default">{i.kind}</Badge>
                       <Badge size="sm" variant="default">{i.transport}</Badge>
                       {i.oauth && <Badge size="sm" variant="info">oauth</Badge>}
+                      {i.oauth && i.oauthStatus === "needs_login" && <Badge size="sm" variant="warning" dot>needs login</Badge>}
+                      {i.oauth && i.oauthStatus === "connected" && <Badge size="sm" variant="success" dot>connected</Badge>}
                       {i.enabled ? (
                         <Badge size="sm" variant="success" dot>enabled</Badge>
                       ) : (
@@ -311,14 +316,28 @@ export default function McpGatewayPage() {
                               : ""}
                           </span>
                         ) : (
-                          <span className="text-red-600 dark:text-red-400">test failed: {test.error}</span>
+                          <>
+                            <span className="text-red-600 dark:text-red-400">test failed: {test.error}</span>
+                            {/requires re-login|upstream 40[13]/.test(test.error ?? "") && (
+                              <Button size="sm" variant="ghost" icon="login" className="ml-2" onClick={() => connectInstance(i.id)}>Login</Button>
+                            )}
+                          </>
                         )}
                       </div>
                     )}
                   </div>
                   <div className="flex gap-1 shrink-0">
                     <Button size="sm" variant="ghost" icon="play_arrow" onClick={() => testInstance(i.id)} loading={test?.loading}>Test</Button>
-                    {i.oauth && <Button size="sm" variant="ghost" icon="login" onClick={() => connectInstance(i.id)}>Connect</Button>}
+                    {i.oauth && (
+                      <Button
+                        size="sm"
+                        variant={i.oauthStatus === "connected" ? "ghost" : "primary"}
+                        icon="login"
+                        onClick={() => connectInstance(i.id)}
+                      >
+                        {i.oauthStatus === "connected" ? "Re-login" : "Connect"}
+                      </Button>
+                    )}
                     <Button size="sm" variant="ghost" icon="edit" onClick={() => setEditing({
                       ...i,
                       args: stringifyMaybe(i.args),

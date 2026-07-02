@@ -182,7 +182,7 @@ export default function McpGatewayServersPage() {
       const state = typeof authBody.state === "string" ? authBody.state : "";
       const startedAt = Date.now();
       const pollMs = 1500;
-      const maxMs = 60_000;
+      const maxMs = 300_000;
       const tick = async () => {
         if (Date.now() - startedAt > maxMs) {
           notify({ type: "warning", message: "OAuth flow timed out — check the popup tab" });
@@ -254,6 +254,8 @@ export default function McpGatewayServersPage() {
                       <Badge size="sm" variant="default">{i.kind}</Badge>
                       <Badge size="sm" variant="default">{i.transport}</Badge>
                       {i.oauth && <Badge size="sm" variant="info">oauth</Badge>}
+                      {i.oauth && i.oauthStatus === "needs_login" && <Badge size="sm" variant="warning" dot>needs login</Badge>}
+                      {i.oauth && i.oauthStatus === "connected" && <Badge size="sm" variant="success" dot>connected</Badge>}
                       {i.enabled ? (
                         <Badge size="sm" variant="success" dot>enabled</Badge>
                       ) : (
@@ -271,14 +273,28 @@ export default function McpGatewayServersPage() {
                             {test.sample?.length ? ` — sample: ${test.sample.map((s) => s.name).join(", ")}` : ""}
                           </span>
                         ) : (
-                          <span className="text-red-600 dark:text-red-400">test failed: {test.error}</span>
+                          <>
+                            <span className="text-red-600 dark:text-red-400">test failed: {test.error}</span>
+                            {/requires re-login|upstream 40[13]/.test(test.error ?? "") && (
+                              <Button size="sm" variant="ghost" icon="login" className="ml-2" onClick={() => connectInstance(i.id)}>Login</Button>
+                            )}
+                          </>
                         )}
                       </div>
                     )}
                   </div>
                   <div className="flex gap-1 shrink-0">
                     <Button size="sm" variant="ghost" icon="play_arrow" onClick={() => testInstance(i.id)} loading={test?.loading ?? false}>Test</Button>
-                    {i.oauth && <Button size="sm" variant="ghost" icon="login" onClick={() => connectInstance(i.id)}>Connect</Button>}
+                    {i.oauth && (
+                      <Button
+                        size="sm"
+                        variant={i.oauthStatus === "connected" ? "ghost" : "primary"}
+                        icon="login"
+                        onClick={() => connectInstance(i.id)}
+                      >
+                        {i.oauthStatus === "connected" ? "Re-login" : "Connect"}
+                      </Button>
+                    )}
                     <Button size="sm" variant="ghost" icon="edit" onClick={() => setEditing(instanceToForm(i))}>Edit</Button>
                     <Button size="sm" variant="ghost" icon="delete" onClick={() => setConfirmDelete(i)} />
                   </div>
