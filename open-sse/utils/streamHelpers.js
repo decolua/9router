@@ -1,5 +1,21 @@
 import { FORMATS } from "../translator/formats.js";
 
+// ANSI / VT100 escape sequence pattern.
+// Matches: CSI sequences (\x1b[ ... final-byte), OSC sequences (\x1b] ... ST/BEL),
+// single-char escapes (\x1b[A-Z\[\]\\^_`]), and raw C0 controls except \t, \n, \r.
+// gc/ (Gemini Cloud Code Assist) occasionally prepends terminal control chars
+// (cursor-up, clear-line, carriage-return) to SSE frames before the "data:" prefix,
+// which masks the prefix and causes strict client SSE parsers to crash or hang.
+const ANSI_ESCAPE_RE = /\x1b(?:\[[0-9;?]*[A-Za-z]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[A-Z\[\]\\^_`])|[\x00-\x08\x0b\x0c\x0e-\x1f]/g;
+
+/**
+ * Strip ANSI / VT100 terminal control sequences from a string.
+ * Safe to call on SSE line text — does not touch printable content or JSON.
+ */
+export function stripAnsiCodes(str) {
+  return str ? str.replace(ANSI_ESCAPE_RE, "") : str;
+}
+
 // Parse SSE data line
 export function parseSSELine(line, format = null) {
   if (!line) return null;
@@ -17,10 +33,18 @@ export function parseSSELine(line, format = null) {
     return null;
   }
 
-  // Standard SSE format: "data: {...}"
-  if (line.charCodeAt(0) !== 100) return null; // 'd' = 100
+  // Strip any terminal control sequences that some upstream sources (e.g. gc/ Cloud Code
+  // Assist) prepend to SSE lines as progress/loading indicators. Without this, the "data:"
+  // prefix check below fails and the entire frame is silently dropped, which can cause the
+  // client SSE parser to stall waiting for a frame that never arrives.
+  const clean = line.charCodeAt(0) === 0x1b || (line.charCodeAt(0) < 0x20 && line.charCodeAt(0) !== 0x09)
+    ? stripAnsiCodes(line)
+    : line;
 
-  const data = line.slice(5).trim();
+  // Standard SSE format: "data: {...}"
+  if (clean.charCodeAt(0) !== 100) return null; // 'd' = 100
+
+  const data = clean.slice(5).trim();
   if (data === "[DONE]") return { done: true };
 
   try {

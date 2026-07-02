@@ -6,6 +6,7 @@ import { toOpenAIUsage } from "../concerns/usage.js";
 import { reasoningDelta } from "../concerns/reasoning.js";
 import { encodeDataUri } from "../concerns/image.js";
 import { toOpenAIFinish } from "../concerns/finishReason.js";
+import { stripAnsiCodes } from "../../utils/streamHelpers.js";
 
 // Build chunk meta for current gemini state
 function chunkMeta(state) {
@@ -79,11 +80,17 @@ export function geminiToOpenAIResponse(chunk, state) {
       // can also stream thought parts without a signature; those must not be
       // surfaced as normal assistant content in OpenAI-compatible clients.
       if (part.text !== undefined && part.text !== "") {
-        results.push(buildChunk(
-          chunkMeta(state),
-          isThought ? reasoningDelta(part.text) : { content: part.text },
-          null
-        ));
+        // gc/ (Cloud Code Assist) can embed raw ANSI terminal codes in text parts
+        // (e.g. from internal progress output). Strip them so they don't appear as
+        // literal control bytes in the forwarded SSE stream.
+        const text = stripAnsiCodes(part.text);
+        if (text) {
+          results.push(buildChunk(
+            chunkMeta(state),
+            isThought ? reasoningDelta(text) : { content: text },
+            null
+          ));
+        }
       }
 
       // Function call
