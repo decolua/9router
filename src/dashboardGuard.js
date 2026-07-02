@@ -242,6 +242,14 @@ export async function proxy(request) {
     return NextResponse.json({ error: "gateway key required" }, { status: 401 });
   }
 
+  // CIMD client-metadata document is fetched server-to-server by the upstream
+  // OAuth authorization server (no dashboard session), so it must be public.
+  // Only the exact `.../client-metadata` leaf is exempt — authorize/callback/
+  // status stay behind the standard auth below.
+  if (pathname.startsWith("/api/mcp-gateway/oauth/") && pathname.endsWith("/client-metadata")) {
+    return NextResponse.next();
+  }
+
   // Deny-by-default for /api/* — public allow-list bypasses, everything else requires auth.
   if (pathname.startsWith("/api/")) {
     if (isPublicApi(pathname)) return NextResponse.next();

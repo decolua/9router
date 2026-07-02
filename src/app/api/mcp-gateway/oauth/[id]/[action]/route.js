@@ -31,6 +31,11 @@ import {
 import { discoverAuth } from "@/lib/mcp/gateway/oauthDiscovery";
 import { registerClient } from "@/lib/mcp/gateway/oauthRegister";
 import { storeTokens } from "@/lib/mcp/gateway/oauthRefresh";
+import {
+  cimdClientId,
+  buildClientMetadataDocument,
+  isPubliclyFetchableBase,
+} from "@/lib/mcp/gateway/oauthCimd";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -75,6 +80,31 @@ async function ensureClient(instance, request) {
   // Try discovery + dynamic registration.
   const meta = await discoverAuth(instance.url, { wwwAuthenticate: instance.oauthTokens?._lastChallenge });
   if (!meta?.registration_endpoint) {
+    // No Dynamic Client Registration. If the AS supports Client ID Metadata
+    // Documents, use our per-instance metadata URL as the client_id — no
+    // pre-registration needed. The AS fetches that URL server-to-server, so it
+    // must resolve to a public origin.
+    if (meta?.client_id_metadata_document_supported) {
+      const base = appBase(request);
+      if (!isPubliclyFetchableBase(base)) {
+        throw new Error("this server uses client-id metadata documents, which require a public URL — open the dashboard via your public/tunnel URL (not localhost) and retry, or set a client_id manually");
+      }
+      const clientId = cimdClientId(base, instance.id);
+      const newTokens = {
+        ...(instance.oauthTokens || {}),
+        resource: meta.resource,
+        scope: instance.oauthTokens?.scope,
+        _lastChallenge: instance.oauthTokens?._lastChallenge,
+        client: { clientId, cimd: true },
+        as: {
+          token_endpoint: meta.token_endpoint,
+          authorization_endpoint: meta.authorization_endpoint,
+          registration_endpoint: meta.registration_endpoint,
+        },
+      };
+      await updateInstance(instance.id, { oauthTokens: newTokens });
+      return { clientId, clientSecret: null };
+    }
     throw new Error("no client_id configured and AS has no registration_endpoint — set client_id manually in the instance form");
   }
   const redirectUri = `${appBase(request)}/api/mcp-gateway/oauth/${instance.id}/callback`;
@@ -113,6 +143,21 @@ function toOauthInstance(raw) {
 export async function GET(request, context) {
   const { id, action } = await context.params;
   const url = new URL(request.url);
+
+  if (action === "client-metadata") {
+    // Client ID Metadata Document — fetched server-to-server by the upstream
+    // authorization server (no dashboard session; public by design). Its URL is
+    // the client_id itself, so the document's client_id must equal this URL.
+    const raw = await getInstanceById(id);
+    if (!raw) return NextResponse.json({ error: "instance not found" }, { status: 404 });
+    const doc = buildClientMetadataDocument({
+      base: appBase(request),
+      instanceId: id,
+      slug: raw.slug,
+      scope: raw.oauthTokens?.scope,
+    });
+    return NextResponse.json(doc);
+  }
 
   if (action === "authorize") {
     const raw = await getInstanceById(id);
