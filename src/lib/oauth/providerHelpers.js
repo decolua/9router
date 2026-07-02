@@ -1,3 +1,5 @@
+import { buildKiroProfileEndpoint } from "../../../open-sse/config/kiroRegions.js";
+
 const BASE64_BLOCK_SIZE = 4;
 
 function validateXaiOAuthEndpoint(rawUrl, field) {
@@ -52,9 +54,7 @@ function extractEmailFromAccessToken(accessToken) {
 
 export async function fetchKiroProfileArn(accessToken, region = "us-east-1") {
   if (!accessToken) return null;
-  const endpoint = region === "us-east-1"
-    ? "https://codewhisperer.us-east-1.amazonaws.com/ListAvailableProfiles"
-    : `https://q.${region}.amazonaws.com/ListAvailableProfiles`;
+  const endpoint = buildKiroProfileEndpoint(region);
   try {
     const response = await fetch(endpoint, {
       method: "POST",

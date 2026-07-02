@@ -3,6 +3,7 @@ import { PROVIDERS } from "../config/providers.js";
 import { v4 as uuidv4 } from "uuid";
 import { refreshKiroToken } from "../services/tokenRefresh.js";
 import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
+import { resolveKiroRegion, buildKiroBaseUrls } from "../config/kiroRegions.js";
 
 /**
  * KiroExecutor - Executor for Kiro AI (AWS CodeWhisperer)
@@ -38,46 +39,28 @@ export class KiroExecutor extends BaseExecutor {
   }
 
   /**
-   * Auth-aware endpoint ordering.
+   * Build the region-correct, auth-aware ordered endpoint list.
    *
-   * API-key Kiro connections store a raw CodeWhisperer credential (validated
-   * against codewhisperer.us-east-1.amazonaws.com via ListAvailableProfiles).
-   * The Kiro IDE gateway (runtime.*.kiro.dev) expects Kiro OIDC/social tokens
-   * and rejects an `tokentype: API_KEY` token with 401/403 — which
-   * BaseExecutor.execute() returns immediately (only 429 / network errors fall
-   * through to the next host). So for api-key auth we must try the *.amazonaws.com
-   * CodeWhisperer hosts FIRST, mirroring the Kiro-Go reference fork which never
-   * routes api-key traffic through kiro.dev. OAuth keeps the default order
-   * (kiro.dev first) since its token is what that gateway accepts.
+   * Endpoints are derived from the credential's region via buildKiroBaseUrls()
+   * (the single source of truth in kiroRegions.js), so a eu-central-1 token is
+   * sent to eu-central-1 hosts and hosts that don't exist in the region are
+   * never attempted.
+   *
+   * API-key connections store a raw CodeWhisperer credential. The Kiro IDE
+   * gateway (runtime.*.kiro.dev) expects OIDC/social tokens and rejects an
+   * `tokentype: API_KEY` token with 401/403 — which BaseExecutor.execute()
+   * returns immediately (only 429 / network errors fall through to the next
+   * host). So for api-key auth we try the *.amazonaws.com CodeWhisperer hosts
+   * FIRST, mirroring the Kiro-Go reference fork. OAuth/IDC keep the default
+   * order (kiro.dev first) since that gateway accepts their tokens.
    */
   getOrderedBaseUrls(credentials) {
-    const baseUrls = this.getBaseUrls();
+    const baseUrls = buildKiroBaseUrls(resolveKiroRegion(credentials));
     const isApiKey = credentials?.providerSpecificData?.authMethod === "api_key";
-
-    // Resolve the credential's region from explicit field or from the profileArn
-    // (ARN format: arn:aws:codewhisperer:<region>:<account>:profile/...)
-    const profileArn = credentials?.providerSpecificData?.profileArn || "";
-    const region = credentials?.providerSpecificData?.region
-      || (profileArn ? profileArn.split(":")[3] : "")
-      || "us-east-1";
-
-    let urls = isApiKey
-      ? (() => {
-          const amazon = baseUrls.filter((u) => u.includes("amazonaws.com"));
-          const others = baseUrls.filter((u) => !u.includes("amazonaws.com"));
-          return amazon.length > 0 ? [...amazon, ...others] : baseUrls;
-        })()
-      : baseUrls;
-
-    // For non-us-east-1 regions: replace region in URLs and remove codewhisperer.*
-    // URLs (that subdomain only exists for us-east-1).
-    if (region && region !== "us-east-1") {
-      urls = urls
-        .filter((u) => !u.includes("codewhisperer."))
-        .map((u) => u.replace(/us-east-1/g, region));
-    }
-
-    return urls;
+    if (!isApiKey) return baseUrls;
+    const amazon = baseUrls.filter((u) => u.includes("amazonaws.com"));
+    const others = baseUrls.filter((u) => !u.includes("amazonaws.com"));
+    return amazon.length > 0 ? [...amazon, ...others] : baseUrls;
   }
 
   buildUrl(model, stream, urlIndex = 0, credentials = null) {

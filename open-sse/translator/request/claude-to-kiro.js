@@ -30,7 +30,7 @@ import {
   resolveKiroThinkingBudget,
   buildThinkingSystemPrefix,
   KIRO_AGENTIC_SYSTEM_PROMPT,
-  resolveDefaultProfileArn,
+  resolveKiroProfileArn,
 } from "../../config/kiroConstants.js";
 import { DEFAULT_IMAGE_MIME } from "../schema/index.js";
 import { ROLE, CLAUDE_BLOCK } from "../schema/index.js";
@@ -393,13 +393,8 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
     reconcileOrphanedToolResults(history, currentMessage);
   }
 
-  // API-key auth must never use the shared default ARN (403); OAuth/social fall back to it.
-  // For non-us-east-1 regions, skip the default ARN (it's us-east-1 and gets rejected by EU endpoints).
-  const authMethod = credentials?.providerSpecificData?.authMethod;
-  const credRegion = credentials?.providerSpecificData?.region;
-  const profileArn = authMethod === "api_key"
-    ? (credentials?.providerSpecificData?.profileArn || "")
-    : (credentials?.providerSpecificData?.profileArn || (credRegion && credRegion !== "us-east-1" ? "" : resolveDefaultProfileArn(authMethod)));
+  // Resolve the profileArn (region-aligned) via the single source of truth.
+  const profileArn = resolveKiroProfileArn(credentials);
 
   let finalContent = currentMessage?.userInputMessage?.content || "";
 

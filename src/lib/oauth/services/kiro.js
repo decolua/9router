@@ -1,4 +1,5 @@
 import { KIRO_CONFIG, assertValidAwsRegion } from "../constants/oauth.js";
+import { buildKiroProfileEndpoint } from "../../../../open-sse/config/kiroRegions.js";
 
 /**
  * Kiro OAuth Service
@@ -268,7 +269,7 @@ export class KiroService {
    */
   async listAvailableProfiles(accessToken, region = "us-east-1") {
     assertValidAwsRegion(region);
-    const endpoint = `https://codewhisperer.${region}.amazonaws.com`;
+    const endpoint = buildKiroProfileEndpoint(region);
 
     const response = await fetch(endpoint, {
       method: "POST",

@@ -1,6 +1,7 @@
 import { PROVIDERS, PROVIDER_OAUTH } from "../../config/providers.js";
 import { OAUTH_ENDPOINTS, GITHUB_COPILOT } from "../../config/appConstants.js";
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
+import { buildKiroOidcEndpoint, KIRO_DEFAULT_REGION } from "../../config/kiroRegions.js";
 import { dedupRefresh } from "./dedup.js";
 
 let _xaiServiceSingleton = null;
@@ -296,7 +297,7 @@ async function resolveKiroProfileArnPatch(providerSpecificData, accessToken, ref
   let profileArn = refreshedArn?.trim?.() || null;
   if (!profileArn) {
     const { fetchKiroProfileArn } = await import("../../../src/lib/oauth/providers.js");
-    const region = providerSpecificData?.region || "us-east-1";
+    const region = providerSpecificData?.region || KIRO_DEFAULT_REGION;
     profileArn = await fetchKiroProfileArn(accessToken, region);
   }
   return profileArn ? { providerSpecificData: { profileArn } } : {};
@@ -312,9 +313,7 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
 
   if (clientId && clientSecret) {
     const isIDC = authMethod === "idc";
-    const endpoint = isIDC && region
-      ? `https://oidc.${region}.amazonaws.com/token`
-      : "https://oidc.us-east-1.amazonaws.com/token";
+    const endpoint = buildKiroOidcEndpoint(isIDC ? region : KIRO_DEFAULT_REGION);
 
     const response = await proxyAwareFetch(endpoint, {
       method: "POST",

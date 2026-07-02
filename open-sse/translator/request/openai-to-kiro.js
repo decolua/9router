@@ -11,7 +11,7 @@ import {
   resolveKiroThinkingBudget,
   buildThinkingSystemPrefix,
   KIRO_AGENTIC_SYSTEM_PROMPT,
-  resolveDefaultProfileArn
+  resolveKiroProfileArn
 } from "../../config/kiroConstants.js";
 import { parseDataUri } from "../concerns/image.js";
 import { DEFAULT_IMAGE_MIME } from "../schema/index.js";
@@ -524,17 +524,10 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
 
   const { history, currentMessage } = convertMessages(messages, tools, upstreamModel);
 
-  // API-key (headless) auth uses a raw CodeWhisperer credential whose profile is
-  // account-specific. Injecting the shared builder-id/social *default* placeholder
-  // ARN makes CodeWhisperer reject the request with 403 "bearer token invalid"
-  // (the ARN doesn't belong to the key's account). So for api_key, only send a
-  // profileArn that was actually resolved for this connection — never the default.
-  // OAuth/social keep the default fallback (their tokens accept it).
-  const authMethod = credentials?.providerSpecificData?.authMethod;
-  const credRegion = credentials?.providerSpecificData?.region;
-  const profileArn = authMethod === "api_key"
-    ? (credentials?.providerSpecificData?.profileArn || "")
-    : (credentials?.providerSpecificData?.profileArn || (credRegion && credRegion !== "us-east-1" ? "" : resolveDefaultProfileArn(authMethod)));
+  // Resolve the profileArn (region-aligned) via the single source of truth.
+  // Handles api_key (never the shared default), us-east-1 default fallback, and
+  // region alignment so a stored us-east-1 ARN is corrected to the request region.
+  const profileArn = resolveKiroProfileArn(credentials);
 
   let finalContent = currentMessage?.userInputMessage?.content || "";
 
