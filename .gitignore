@@ -77,3 +77,8 @@ gitbook/README.md
 open-sse.old/
 .graphifyignore
 graphify-out/*
+
+
+dist/*
+.omc
+.claude

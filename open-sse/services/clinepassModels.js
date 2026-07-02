@@ -39,8 +39,8 @@ export async function resolveClinepassModels(credentials) {
     const models = rawList
       .filter((m) => typeof m?.id === "string" && m.id.startsWith("cline-pass/"))
       .map((m) => ({
-        id: m.id,
-        name: m.name || m.id,
+        id: m.id.slice("cline-pass/".length),
+        name: m.name || m.id.slice("cline-pass/".length),
       }));
 
     return models.length ? { models } : null;
