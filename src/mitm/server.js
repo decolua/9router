@@ -10,6 +10,7 @@ const { log, err, dumpRequest, createResponseDumper, clearDumpDir } = require(".
 const { IS_DEV, LSOF_BIN, TARGET_HOSTS, URL_PATTERNS, MODEL_SYNONYMS, MODEL_PATTERNS, MODEL_NO_MAP, getToolForHost } = require("./config");
 const { DATA_DIR, MITM_DIR } = require("./paths");
 const { getCertForDomain } = require("./cert/generate");
+const { ensureRootCASync } = require("./cert/rootCA");
 const { getMitmAlias } = require("./dbReader");
 const { applyAntigravityIdeVersionOverride } = require("./antigravityIdeVersion");
 const LOCAL_PORT = 443;
@@ -55,6 +56,16 @@ function sniCallback(servername, cb) {
   }
 }
 
+// Auto-generate Root CA on first run or when the files are missing/expired.
+// On Windows a fresh install (or deleted %APPDATA%\9router) leaves no rootCA.key,
+// which previously caused an immediate process.exit(1) (#2224).
+try {
+  ensureRootCASync();
+} catch (e) {
+  err(`Failed to generate Root CA: ${e.message}`);
+  process.exit(1);
+}
+
 let sslOptions;
 try {
   const rootKey = fs.readFileSync(path.join(MITM_DIR, "rootCA.key"));
@@ -62,7 +73,7 @@ try {
   rootCAPem = rootCert.toString("utf8");
   sslOptions = { key: rootKey, cert: rootCert, SNICallback: sniCallback };
 } catch (e) {
-  err(`Root CA not found: ${e.message}`);
+  err(`Failed to load Root CA after generation: ${e.message}`);
   process.exit(1);
 }
 

@@ -163,8 +163,62 @@ function generateLeafCert(domain, rootCA) {
   };
 }
 
+/**
+ * Synchronous Root CA bootstrap — same logic as generateRootCA() but
+ * without an async wrapper, so it can be called at module load time in
+ * CommonJS scripts (e.g. server.js) before the event loop is running.
+ * Returns true when new keys were written, false when existing keys are
+ * still valid, throws on failure.
+ */
+function ensureRootCASync() {
+  const exists = fs.existsSync(ROOT_CA_KEY_PATH) && fs.existsSync(ROOT_CA_CERT_PATH);
+  if (exists && !isCertExpired(ROOT_CA_CERT_PATH)) return false;
+
+  if (exists) {
+    console.log("[MITM] Root CA expired or expiring soon — regenerating...");
+    try { fs.unlinkSync(ROOT_CA_KEY_PATH); } catch { /* ignore */ }
+    try { fs.unlinkSync(ROOT_CA_CERT_PATH); } catch { /* ignore */ }
+  } else {
+    console.log("[MITM] Root CA not found — generating now...");
+  }
+
+  if (!fs.existsSync(MITM_DIR)) {
+    fs.mkdirSync(MITM_DIR, { recursive: true });
+  }
+
+  const keys = forge.pki.rsa.generateKeyPair(2048);
+
+  const cert = forge.pki.createCertificate();
+  cert.publicKey = keys.publicKey;
+  cert.serialNumber = "01";
+  cert.validity.notBefore = new Date();
+  cert.validity.notAfter = new Date();
+  cert.validity.notAfter.setFullYear(cert.validity.notBefore.getFullYear() + 10);
+
+  const attrs = [
+    { name: "commonName", value: "9Router MITM Root CA" },
+    { name: "organizationName", value: "9Router" },
+    { name: "countryName", value: "US" }
+  ];
+  cert.setSubject(attrs);
+  cert.setIssuer(attrs);
+  cert.setExtensions([
+    { name: "basicConstraints", cA: true, critical: true },
+    { name: "keyUsage", keyCertSign: true, cRLSign: true, critical: true },
+    { name: "subjectKeyIdentifier" }
+  ]);
+  cert.sign(keys.privateKey, forge.md.sha256.create());
+
+  fs.writeFileSync(ROOT_CA_KEY_PATH, forge.pki.privateKeyToPem(keys.privateKey));
+  fs.writeFileSync(ROOT_CA_CERT_PATH, forge.pki.certificateToPem(cert));
+
+  console.log("[MITM] Root CA generated successfully");
+  return true;
+}
+
 module.exports = {
   generateRootCA,
+  ensureRootCASync,
   loadRootCA,
   generateLeafCert,
   isCertExpired,
