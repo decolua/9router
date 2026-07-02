@@ -26,6 +26,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [selectedProxyPoolId, setSelectedProxyPoolId] = useState("__none__");
 
   useEffect(() => {
     if (connection) {
@@ -46,6 +47,8 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       if (connection.provider === "cloudflare-ai" && connection.providerSpecificData) {
         setCloudflareData({ accountId: connection.providerSpecificData.accountId || "" });
       }
+      // Load proxy pool from providerSpecificData
+      setSelectedProxyPoolId(connection.providerSpecificData?.proxyPoolId || "__none__");
       setTestResult(null);
       setValidationResult(null);
     }
@@ -141,14 +144,24 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       // Add Azure-specific data if this is an Azure connection
       if (isAzure) {
         updates.providerSpecificData = {
+          ...connection.providerSpecificData,
           azureEndpoint: azureData.azureEndpoint,
           apiVersion: azureData.apiVersion,
           deployment: azureData.deployment,
           organization: azureData.organization,
+          proxyPoolId: selectedProxyPoolId,
         };
-      }
-      if (isCloudflareAi) {
-        updates.providerSpecificData = { accountId: cloudflareData.accountId };
+      } else if (isCloudflareAi) {
+        updates.providerSpecificData = {
+          ...connection.providerSpecificData,
+          accountId: cloudflareData.accountId,
+          proxyPoolId: selectedProxyPoolId,
+        };
+      } else {
+        updates.providerSpecificData = {
+          ...connection.providerSpecificData,
+          proxyPoolId: selectedProxyPoolId,
+        };
       }
       
       await onSave(updates);
@@ -255,6 +268,24 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
             )}
           </div>
         )}
+
+        {/* Proxy Pool per account */}
+        <div className="flex flex-col gap-1">
+          <label className="text-sm font-medium text-text-muted">Proxy (per account)</label>
+          <select
+            value={selectedProxyPoolId}
+            onChange={(e) => setSelectedProxyPoolId(e.target.value)}
+            className="bg-sidebar border border-accent/20 rounded-lg px-3 py-2 text-sm text-text focus:outline-none focus:border-accent"
+          >
+            <option value="__none__">-- Không dùng proxy --</option>
+            {(proxyPools || []).filter(p => p.isActive !== false).map((pool) => (
+              <option key={pool.id} value={pool.id}>{pool.name} ({pool.proxyUrl})</option>
+            ))}
+          </select>
+          {selectedProxyPoolId && selectedProxyPoolId !== "__none__" && (
+            <p className="text-xs text-green-400">✓ Account này sẽ dùng proxy riêng</p>
+          )}
+        </div>
 
         <div className="flex gap-2">
           <Button onClick={handleSubmit} fullWidth disabled={saving}>{saving ? "Saving..." : "Save"}</Button>
