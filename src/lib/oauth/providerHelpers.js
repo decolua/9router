@@ -50,13 +50,17 @@ function extractEmailFromAccessToken(accessToken) {
   return payload.email || payload.preferred_username || payload.sub || undefined;
 }
 
-export async function fetchKiroProfileArn(accessToken) {
+export async function fetchKiroProfileArn(accessToken, region = "us-east-1") {
   if (!accessToken) return null;
+  const endpoint = region === "us-east-1"
+    ? "https://codewhisperer.us-east-1.amazonaws.com/ListAvailableProfiles"
+    : `https://q.${region}.amazonaws.com/ListAvailableProfiles`;
   try {
-    const response = await fetch("https://codewhisperer.us-east-1.amazonaws.com/ListAvailableProfiles", {
+    const response = await fetch(endpoint, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
+        "Content-Type": "application/x-amz-json-1.0",
+        "x-amz-target": "AmazonCodeWhispererService.ListAvailableProfiles",
         Accept: "application/json",
         Authorization: `Bearer ${accessToken}`,
       },
@@ -64,7 +68,10 @@ export async function fetchKiroProfileArn(accessToken) {
     });
     if (!response.ok) return null;
     const data = await response.json();
-    return data.profiles?.find((p) => p.arn?.trim())?.arn?.trim() || null;
+    const profiles = data.profiles || [];
+    return profiles.find((p) => p.arn?.includes(region))?.arn?.trim()
+      || profiles.find((p) => p.arn?.trim())?.arn?.trim()
+      || null;
   } catch {
     return null;
   }

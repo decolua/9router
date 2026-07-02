@@ -531,9 +531,10 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
   // profileArn that was actually resolved for this connection — never the default.
   // OAuth/social keep the default fallback (their tokens accept it).
   const authMethod = credentials?.providerSpecificData?.authMethod;
+  const credRegion = credentials?.providerSpecificData?.region;
   const profileArn = authMethod === "api_key"
     ? (credentials?.providerSpecificData?.profileArn || "")
-    : (credentials?.providerSpecificData?.profileArn || resolveDefaultProfileArn(authMethod));
+    : (credentials?.providerSpecificData?.profileArn || (credRegion && credRegion !== "us-east-1" ? "" : resolveDefaultProfileArn(authMethod)));
 
   let finalContent = currentMessage?.userInputMessage?.content || "";
 

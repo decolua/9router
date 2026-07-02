@@ -53,10 +53,31 @@ export class KiroExecutor extends BaseExecutor {
   getOrderedBaseUrls(credentials) {
     const baseUrls = this.getBaseUrls();
     const isApiKey = credentials?.providerSpecificData?.authMethod === "api_key";
-    if (!isApiKey) return baseUrls;
-    const amazon = baseUrls.filter((u) => u.includes("amazonaws.com"));
-    const others = baseUrls.filter((u) => !u.includes("amazonaws.com"));
-    return amazon.length > 0 ? [...amazon, ...others] : baseUrls;
+
+    // Resolve the credential's region from explicit field or from the profileArn
+    // (ARN format: arn:aws:codewhisperer:<region>:<account>:profile/...)
+    const profileArn = credentials?.providerSpecificData?.profileArn || "";
+    const region = credentials?.providerSpecificData?.region
+      || (profileArn ? profileArn.split(":")[3] : "")
+      || "us-east-1";
+
+    let urls = isApiKey
+      ? (() => {
+          const amazon = baseUrls.filter((u) => u.includes("amazonaws.com"));
+          const others = baseUrls.filter((u) => !u.includes("amazonaws.com"));
+          return amazon.length > 0 ? [...amazon, ...others] : baseUrls;
+        })()
+      : baseUrls;
+
+    // For non-us-east-1 regions: replace region in URLs and remove codewhisperer.*
+    // URLs (that subdomain only exists for us-east-1).
+    if (region && region !== "us-east-1") {
+      urls = urls
+        .filter((u) => !u.includes("codewhisperer."))
+        .map((u) => u.replace(/us-east-1/g, region));
+    }
+
+    return urls;
   }
 
   buildUrl(model, stream, urlIndex = 0, credentials = null) {

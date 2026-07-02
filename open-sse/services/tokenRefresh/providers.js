@@ -296,7 +296,8 @@ async function resolveKiroProfileArnPatch(providerSpecificData, accessToken, ref
   let profileArn = refreshedArn?.trim?.() || null;
   if (!profileArn) {
     const { fetchKiroProfileArn } = await import("../../../src/lib/oauth/providers.js");
-    profileArn = await fetchKiroProfileArn(accessToken);
+    const region = providerSpecificData?.region || "us-east-1";
+    profileArn = await fetchKiroProfileArn(accessToken, region);
   }
   return profileArn ? { providerSpecificData: { profileArn } } : {};
 }
