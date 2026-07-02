@@ -10,12 +10,10 @@ export default {
     textIcon: "CP",
     website: "https://cline.bot",
     notice: {
-      signupUrl: "https://app.cline.bot",
+      apiKeyUrl: "https://app.cline.bot/settings/api-keys",
     },
   },
-  category: "oauth",
-  authModes: ["oauth", "apikey"],
-  hasOAuth: true,
+  category: "apikey",
   transport: {
     baseUrl: "https://api.cline.bot/api/v1/chat/completions",
     thinkingFormat: "openai",
@@ -27,9 +25,6 @@ export default {
       combined: true,
       header: "Authorization",
       scheme: "bearer",
-      hooks: [
-        "clinepassHeaders",
-      ],
     },
   },
   models: [
@@ -44,13 +39,6 @@ export default {
     { id: "cline-pass/qwen3.7-max", name: "Qwen3.7 Max (ClinePass)" },
     { id: "cline-pass/qwen3.7-plus", name: "Qwen3.7 Plus (ClinePass)" },
   ],
-  oauth: {
-    appBaseUrl: "https://app.cline.bot",
-    apiBaseUrl: "https://api.cline.bot",
-    authorizeUrl: "https://api.cline.bot/api/v1/auth/authorize",
-    tokenUrl: "https://api.cline.bot/api/v1/auth/token",
-    refreshUrl: "https://api.cline.bot/api/v1/auth/refresh",
-  },
   thinkingConfig: {
     options: ["auto", "on", "off"],
     defaultMode: "auto",

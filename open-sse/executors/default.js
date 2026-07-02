@@ -2,7 +2,7 @@ import { BaseExecutor } from "./base.js";
 import { PROVIDERS, PROVIDER_OAUTH } from "../config/providers.js";
 import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE } from "../providers/shared.js";
 import { OAUTH_ENDPOINTS, buildKimiHeaders } from "../config/appConstants.js";
-import { buildClineHeaders, getClineAuthorizationHeader } from "../shared/clineAuth.js";
+import { buildClineHeaders } from "../shared/clineAuth.js";
 import { getCachedClaudeHeaders } from "../utils/claudeHeaderCache.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
@@ -41,12 +41,6 @@ function applyAuth(headers, desc, credentials) {
 const HEADER_HOOKS = {
   kimiHeaders: (h) => Object.assign(h, buildKimiHeaders()),
   clineHeaders: (h, c) => Object.assign(h, buildClineHeaders(c.apiKey || c.accessToken)),
-  // ClinePass uses the plain OpenAI Chat Completions shape — only set the
-  // workos-prefixed Authorization here; HTTP-Referer / X-Title remain from registry.headers.
-  clinepassHeaders: (h, c) => {
-    const authorization = getClineAuthorizationHeader(c.apiKey || c.accessToken);
-    if (authorization) h.Authorization = authorization;
-  },
   kilocodeOrg: (h, c) => { if (c.providerSpecificData?.orgId) h["X-Kilocode-OrganizationID"] = c.providerSpecificData.orgId; },
   claudeOverlay: (h) => {
     const cached = getCachedClaudeHeaders();
@@ -260,7 +254,6 @@ export class DefaultExecutor extends BaseExecutor {
       gemini: () => this.refreshFromGrant(credentials, proxyOptions),
       kiro: () => this.refreshKiro(credentials.refreshToken, proxyOptions),
       cline: () => this.refreshCline(credentials.refreshToken, proxyOptions),
-      clinepass: () => this.refreshCline(credentials.refreshToken, proxyOptions),
       "kimi-coding": () => this.refreshKimiCoding(credentials.refreshToken, proxyOptions),
       kilocode: () => this.refreshKilocode(credentials.refreshToken, proxyOptions)
     };

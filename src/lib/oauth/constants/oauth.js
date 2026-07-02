@@ -102,9 +102,6 @@ export const KILOCODE_CONFIG = { ...PROVIDER_OAUTH["kilocode"] };
 // Cline OAuth Configuration (Local Callback Flow via app.cline.bot)
 export const CLINE_CONFIG = { ...PROVIDER_OAUTH["cline"] };
 
-// ClinePass OAuth Configuration (Local Callback Flow via app.cline.bot)
-export const CLINEPASS_CONFIG = { ...PROVIDER_OAUTH["clinepass"] };
-
 // GitLab Duo OAuth Configuration (Authorization Code Flow with PKCE)
 export const GITLAB_CONFIG = { ...PROVIDER_OAUTH["gitlab"] };
 
@@ -133,7 +130,6 @@ export const PROVIDERS = {
   KIMI_CODING: "kimi-coding",
   KILOCODE: "kilocode",
   CLINE: "cline",
-  CLINEPASS: "clinepass",
   GITLAB: "gitlab",
   CODEBUDDY: "codebuddy-cn",
   KIMCHI: "kimchi",
