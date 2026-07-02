@@ -61,40 +61,41 @@ import p58 from "./mistral.js";
 import p59 from "./mmf.js";
 import p60 from "./nanobanana.js";
 import p61 from "./nebius.js";
-import p62 from "./nvidia.js";
-import p63 from "./ollama-local.js";
-import p64 from "./ollama.js";
-import p65 from "./openai.js";
-import p66 from "./opencode-go.js";
-import p67 from "./opencode.js";
-import p68 from "./openrouter.js";
-import p69 from "./perplexity-web.js";
-import p70 from "./perplexity.js";
-import p71 from "./playht.js";
-import p72 from "./qoder.js";
-import p73 from "./qwen.js";
-import p74 from "./recraft.js";
-import p75 from "./runwayml.js";
-import p76 from "./sdwebui.js";
-import p77 from "./searchapi.js";
-import p78 from "./searxng.js";
-import p79 from "./serper.js";
-import p80 from "./siliconflow.js";
-import p81 from "./stability-ai.js";
-import p82 from "./tavily.js";
-import p83 from "./together.js";
-import p84 from "./topaz.js";
-import p85 from "./tortoise.js";
-import p86 from "./venice.js";
-import p87 from "./vercel-ai-gateway.js";
-import p88 from "./vertex-partner.js";
-import p89 from "./vertex.js";
-import p90 from "./volcengine-ark.js";
-import p91 from "./voyage-ai.js";
-import p92 from "./xai.js";
-import p93 from "./xiaomi-mimo.js";
-import p94 from "./xiaomi-tokenplan.js";
-import p95 from "./youcom.js";
+import p62 from "./nube-sh.js";
+import p63 from "./nvidia.js";
+import p64 from "./ollama-local.js";
+import p65 from "./ollama.js";
+import p66 from "./openai.js";
+import p67 from "./opencode-go.js";
+import p68 from "./opencode.js";
+import p69 from "./openrouter.js";
+import p70 from "./perplexity-web.js";
+import p71 from "./perplexity.js";
+import p72 from "./playht.js";
+import p73 from "./qoder.js";
+import p74 from "./qwen.js";
+import p75 from "./recraft.js";
+import p76 from "./runwayml.js";
+import p77 from "./sdwebui.js";
+import p78 from "./searchapi.js";
+import p79 from "./searxng.js";
+import p80 from "./serper.js";
+import p81 from "./siliconflow.js";
+import p82 from "./stability-ai.js";
+import p83 from "./tavily.js";
+import p84 from "./together.js";
+import p85 from "./topaz.js";
+import p86 from "./tortoise.js";
+import p87 from "./venice.js";
+import p88 from "./vercel-ai-gateway.js";
+import p89 from "./vertex-partner.js";
+import p90 from "./vertex.js";
+import p91 from "./volcengine-ark.js";
+import p92 from "./voyage-ai.js";
+import p93 from "./xai.js";
+import p94 from "./xiaomi-mimo.js";
+import p95 from "./xiaomi-tokenplan.js";
+import p96 from "./youcom.js";
 
 export default [
   p0,
@@ -192,5 +193,6 @@ export default [
   p92,
   p93,
   p94,
-  p95
+  p95,
+  p96
 ];
