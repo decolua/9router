@@ -55,10 +55,22 @@ describe("extractThinking", () => {
 });
 
 describe("applyThinking per provider format", () => {
-  it("claude 4.6+ → adaptive output_config (no budget_tokens)", () => {
+  it("claude 4.6+ → adaptive output_config (no budget_tokens) + summarized display", () => {
     const out = apply("claude", "claude-opus-4.7", { reasoning_effort: "high" }, "claude");
     expect(out.output_config).toEqual({ effort: "high" });
-    expect(out.thinking).toBeUndefined();
+    // Opus 4.7/4.8 default thinking.display to "omitted"; we explicitly request
+    // summarized so reasoning summary flows back to clients.
+    expect(out.thinking).toEqual({ type: "adaptive", display: "summarized" });
+  });
+  it("claude adaptive none → disabled WITHOUT display (Anthropic rejects display on disabled)", () => {
+    const out = apply("claude", "claude-opus-4.8", { reasoning_effort: "none" }, "claude");
+    expect(out.thinking).toEqual({ type: "disabled" });
+    expect(out.output_config).toBeUndefined();
+  });
+  it("claude opus-4.8 adaptive → summarized display", () => {
+    const out = apply("claude", "claude-opus-4.8", { reasoning_effort: "high" }, "claude");
+    expect(out.output_config).toEqual({ effort: "high" });
+    expect(out.thinking).toEqual({ type: "adaptive", display: "summarized" });
   });
   it("claude haiku → enabled+budget", () => {
     const out = apply("claude", "claude-haiku-4.5", { reasoning_effort: "high" }, "claude");

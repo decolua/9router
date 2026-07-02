@@ -4,6 +4,20 @@ import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { dbg } from "../utils/debugLog.js";
 import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE } from "../providers/shared.js";
 
+function removeBetaFlag(headers, flag) {
+  for (const key of ["anthropic-beta", "Anthropic-Beta"]) {
+    if (!headers[key]) continue;
+    const filtered = headers[key]
+      .split(",")
+      .map(s => s.trim())
+      .filter(Boolean)
+      .filter(f => f !== flag)
+      .join(",");
+    if (filtered) headers[key] = filtered;
+    else delete headers[key];
+  }
+}
+
 /**
  * BaseExecutor - Base class for provider executors
  */
@@ -127,6 +141,9 @@ export class BaseExecutor {
       const url = this.buildUrl(model, stream, urlIndex, credentials);
       const transformedBody = this.transformRequest(model, body, stream, credentials);
       const headers = this.buildHeaders(credentials, stream);
+      if (transformedBody?.thinking?.display === "summarized") {
+        removeBetaFlag(headers, "redact-thinking-2026-02-12");
+      }
 
       if (!retryAttemptsByUrl[urlIndex]) retryAttemptsByUrl[urlIndex] = 0;
 

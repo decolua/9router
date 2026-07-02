@@ -84,6 +84,48 @@ describe("BaseExecutor.execute — network error retry/fallback", () => {
   });
 });
 
+describe("BaseExecutor.execute — Anthropic summarized thinking headers", () => {
+  it("removes redact-thinking beta when summarized thinking is requested", async () => {
+    const ex = makeExec({
+      baseUrl: "https://x/api",
+      headers: {
+        "Anthropic-Beta": "claude-code-20250219,redact-thinking-2026-02-12,effort-2025-11-24",
+      },
+    });
+    fetchMock.mockResolvedValueOnce(res(200));
+
+    await ex.execute({
+      model: "m",
+      body: { thinking: { type: "adaptive", display: "summarized" } },
+      stream: false,
+      credentials: creds,
+    });
+
+    const headers = fetchMock.mock.calls[0][1].headers;
+    expect(headers["Anthropic-Beta"]).toBe("claude-code-20250219,effort-2025-11-24");
+  });
+
+  it("keeps redact-thinking beta when summarized thinking is not requested", async () => {
+    const ex = makeExec({
+      baseUrl: "https://x/api",
+      headers: {
+        "Anthropic-Beta": "claude-code-20250219,redact-thinking-2026-02-12,effort-2025-11-24",
+      },
+    });
+    fetchMock.mockResolvedValueOnce(res(200));
+
+    await ex.execute({
+      model: "m",
+      body: { thinking: { type: "adaptive" } },
+      stream: false,
+      credentials: creds,
+    });
+
+    const headers = fetchMock.mock.calls[0][1].headers;
+    expect(headers["Anthropic-Beta"]).toContain("redact-thinking-2026-02-12");
+  });
+});
+
 describe("BaseExecutor.execute — computeRetryDelay hook veto", () => {
   it("only invokes computeRetryDelay when status has retry config", async () => {
     const ex = makeExec({ baseUrl: "https://x/api", retry: { 503: { attempts: 1, delayMs: 0 } } });
