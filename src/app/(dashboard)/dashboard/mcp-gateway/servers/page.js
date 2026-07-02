@@ -30,7 +30,7 @@ const TRANSPORT_OPTIONS = [
 ];
 
 function emptyInstance() {
-  return { slug: "", title: "", kind: "http", transport: "http", url: "", command: "", args: "", env: "", headers: "", oauth: false, enabled: true };
+  return { slug: "", title: "", kind: "http", transport: "http", url: "", command: "", args: "", env: "", headers: "", oauth: false, enabled: true, clientId: "", clientSecret: "", scope: "" };
 }
 
 function parseMaybeJson(s, fallback) {
@@ -66,6 +66,8 @@ function parseMcpInstances(value) {
     env: i.env,
     headers: i.headers,
     oauth: !!i.oauth,
+    oauthStatus: typeof i.oauthStatus === "string" ? i.oauthStatus : (i.oauth ? "needs_login" : "none"),
+    oauthClientConfigured: !!i.oauthClientConfigured,
     enabled: i.enabled !== false,
   }));
 }
@@ -97,6 +99,11 @@ function instanceToForm(instance) {
     headers: stringifyMaybe(instance.headers),
     oauth: instance.oauth,
     enabled: instance.enabled,
+    // Write-only OAuth client credentials — never echoed back from the API.
+    clientId: "",
+    clientSecret: "",
+    scope: "",
+    oauthClientConfigured: !!instance.oauthClientConfigured,
   };
 }
 
@@ -128,8 +135,12 @@ export default function McpGatewayServersPage() {
   }, [reload]);
 
   async function saveInstance(form) {
+    // oauthClientConfigured is display-only; clientId/clientSecret/scope are
+    // consumed server-side and folded into oauthTokens.
+    const { oauthClientConfigured: _occ, ...formFields } = form;
+    void _occ;
     const payload = {
-      ...form,
+      ...formFields,
       args: parseMaybeJson(form.args, []),
       env: parseMaybeJson(form.env, {}),
       headers: parseMaybeJson(form.headers, {}),
@@ -372,6 +383,41 @@ function InstanceEditModal({ initial, onClose, onSave }) {
           <Toggle checked={form.oauth} onChange={(v) => patch({ oauth: v })} label="Requires OAuth" description="Instance needs an Authorization token from a browser login" />
           <Toggle checked={form.enabled} onChange={(v) => patch({ enabled: v })} label="Enabled" />
         </div>
+
+        {form.oauth && (
+          <div className="space-y-3 rounded-md border border-border p-3">
+            <div className="text-xs text-text-muted">
+              Most servers self-register automatically. Only fill these in if the server&apos;s
+              authorization server has no dynamic registration and Connect reports
+              &ldquo;set client_id manually&rdquo;.
+              {form.oauthClientConfigured && (
+                <span className="ml-1 text-green-600 dark:text-green-400">A client_id is already saved — leave blank to keep it.</span>
+              )}
+            </div>
+            <Input
+              label="OAuth Client ID"
+              value={form.clientId}
+              onChange={(e) => patch({ clientId: e.target.value })}
+              placeholder={form.oauthClientConfigured ? "•••••• (leave blank to keep)" : "pre-registered client_id (or client-id metadata URL)"}
+            />
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                label="OAuth Client Secret"
+                value={form.clientSecret}
+                onChange={(e) => patch({ clientSecret: e.target.value })}
+                placeholder="optional (public/PKCE clients omit)"
+                hint="only for confidential clients"
+              />
+              <Input
+                label="OAuth Scope"
+                value={form.scope}
+                onChange={(e) => patch({ scope: e.target.value })}
+                placeholder="e.g. mcp"
+                hint="space-separated; optional"
+              />
+            </div>
+          </div>
+        )}
       </div>
     </Modal>
   );

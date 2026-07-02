@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getInstances, createInstance } from "@/lib/localDb";
 import { deriveOauthStatus } from "@/lib/mcp/gateway/oauthStatus";
+import { mergeOauthClientConfig } from "@/lib/mcp/gateway/oauthClientConfig";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,7 @@ function stripSecrets(inst) {
   const { headers: _h, env: _e, oauthTokens: _o, ...out } = inst;
   void _h; void _e;
   out.oauthStatus = deriveOauthStatus(!!inst.oauth, _o);
+  out.oauthClientConfigured = !!(_o && _o.client && _o.client.clientId);
   return out;
 }
 
@@ -55,6 +57,9 @@ export async function POST(request) {
     const body = await request.json();
     const errs = validatePayload(body);
     if (errs.length) return NextResponse.json({ error: errs.join("; ") }, { status: 400 });
+    // Fold any manually-entered OAuth client credentials into oauthTokens.
+    const oauthTokens = mergeOauthClientConfig(null, body);
+    if (oauthTokens) body.oauthTokens = oauthTokens;
     const inst = await createInstance(body);
     return NextResponse.json({ instance: stripSecrets(inst) }, { status: 201 });
   } catch (e) {
