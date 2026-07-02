@@ -393,9 +393,12 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
     reconcileOrphanedToolResults(history, currentMessage);
   }
 
-  // API-key auth must never use the shared default ARN (403); OAuth/social fall back to it.
+  // api_key / idc / external_idp must never use the shared default ARN (belongs
+  // to another account → 403 "bearer token invalid"); OAuth/social fall back to it.
   const authMethod = credentials?.providerSpecificData?.authMethod;
-  const profileArn = authMethod === "api_key"
+  const accountBoundAuth =
+    authMethod === "api_key" || authMethod === "idc" || authMethod === "external_idp";
+  const profileArn = accountBoundAuth
     ? (credentials?.providerSpecificData?.profileArn || "")
     : (credentials?.providerSpecificData?.profileArn || resolveDefaultProfileArn(authMethod));
 
