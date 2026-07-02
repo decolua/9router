@@ -19,6 +19,7 @@ import { handleNonStreamingResponse } from "./chatCore/nonStreamingHandler.js";
 import { handleStreamingResponse, buildOnStreamComplete } from "./chatCore/streamingHandler.js";
 import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.js";
 import { dedupeTools } from "../utils/toolDeduper.js";
+import { stripOrphanedToolResults } from "../translator/concerns/toolCall.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { injectPonytail } from "../rtk/ponytail.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
@@ -119,6 +120,13 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     } catch (e) { log?.warn?.("MODALITY", `image prefetch failed: ${e.message}`); }
   }
 
+  // Strip orphaned tool results before translation so the translator never sees
+  // stale call_id references that client-side history truncation left behind.
+  const preStripped = stripOrphanedToolResults(body);
+  if (preStripped > 0) {
+    log?.debug?.("TOOLCLEAN", `pre-translation: stripped ${preStripped} orphaned tool result(s)`);
+  }
+
   let translatedBody;
   let toolNameMap;
   if (passthrough) {
@@ -165,6 +173,14 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const headroomStats = await compressWithHeadroom(translatedBody, { enabled: headroomEnabled, url: headroomUrl, model: upstreamModel, format: finalFormat, compressUserMessages: headroomCompressUserMessages });
   const headroomLine = formatHeadroomLog(headroomStats);
   if (headroomLine) log?.info?.("HEADROOM", headroomLine);
+
+  // Strip orphaned tool results again after RTK/Headroom compression — both
+  // compressors can remove assistant turns containing tool_calls, which would
+  // otherwise leave dangling tool results that strict providers reject with 400.
+  const postStripped = stripOrphanedToolResults(translatedBody);
+  if (postStripped > 0) {
+    log?.debug?.("TOOLCLEAN", `post-compression: stripped ${postStripped} orphaned tool result(s)`);
+  }
 
   // Caveman: inject terse-style system prompt
   if (cavemanEnabled && cavemanLevel) {
