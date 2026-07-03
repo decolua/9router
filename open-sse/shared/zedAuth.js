@@ -145,6 +145,62 @@ export function buildZedUserAuthHeader(credentials) {
   return `${userId} ${accessToken}`;
 }
 
+export function parseZedUsageLimit(limit) {
+  if (!limit) return null;
+  if (typeof limit === "number") return limit;
+  if (typeof limit === "string") {
+    if (limit.toLowerCase() === "unlimited") return "unlimited";
+    const parsed = Number(limit);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  if (typeof limit === "object") {
+    if (Object.prototype.hasOwnProperty.call(limit, "unlimited")) return "unlimited";
+    if (Object.prototype.hasOwnProperty.call(limit, "limited")) {
+      const parsed = Number(limit.limited);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+  }
+  return null;
+}
+
+export function getZedModelRequestDiagnostics(userInfo = {}) {
+  const plan = userInfo?.plan || {};
+  const planName = plan.plan_v3 || plan.plan_v2 || plan.plan || "current plan";
+  const modelRequests = plan.usage?.model_requests || {};
+  const limit = parseZedUsageLimit(modelRequests.limit);
+  const used = Number.isFinite(Number(modelRequests.used)) ? Number(modelRequests.used) : null;
+  const billingEnabled = plan.is_usage_based_billing_enabled === true;
+  const lowerPlan = String(planName).toLowerCase();
+  const isTrial = lowerPlan.includes("trial");
+  const isPro = lowerPlan.includes("pro");
+  const isFree = lowerPlan.includes("free");
+  const hasOverdueInvoices = plan.has_overdue_invoices === true;
+
+  let message = "";
+  if (hasOverdueInvoices) {
+    message = `Zed reports overdue invoices for ${planName}; hosted model completions may be blocked until billing is resolved.`;
+  } else if (limit === 0 && (isTrial || isPro) && !billingEnabled) {
+    message = `Zed account is on ${planName}, but hosted model request limit is 0 and usage-based billing is disabled. Zed will return trial_blocked for completions until trial/billing access is enabled or unblocked.`;
+  } else if (limit === 0 && isFree) {
+    message = `Zed account is on ${planName}, which has a hosted model request limit of 0. Start a Zed Pro trial or upgrade in Zed to use completions.`;
+  } else if (limit === 0) {
+    message = `Zed account currently has a hosted model request limit of 0, so completions are blocked by Zed billing/plan settings.`;
+  }
+
+  return {
+    blocked: !!message,
+    message,
+    planName,
+    limit,
+    used,
+    billingEnabled,
+    isTrial,
+    isPro,
+    isFree,
+    hasOverdueInvoices,
+  };
+}
+
 function getSystemId(credentials) {
   return credentials?.providerSpecificData?.systemId || credentials?.systemId || "";
 }

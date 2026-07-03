@@ -19,7 +19,7 @@ import {
   KIMCHI_CONFIG,
 } from "@/lib/oauth/constants/oauth";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
-import { fetchZedAuthenticatedUser } from "open-sse/shared/zedAuth.js";
+import { fetchZedAuthenticatedUser, getZedModelRequestDiagnostics } from "open-sse/shared/zedAuth.js";
 
 // OAuth provider test endpoints
 const OAUTH_TEST_CONFIG = {
@@ -365,10 +365,14 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
 
   if (connection.provider === "zed") {
     try {
-      await fetchZedAuthenticatedUser({
+      const userInfo = await fetchZedAuthenticatedUser({
         accessToken,
         providerSpecificData: connection.providerSpecificData || {},
       }, { proxyOptions: effectiveProxy });
+      const diagnostics = getZedModelRequestDiagnostics(userInfo);
+      if (diagnostics.blocked) {
+        return { valid: false, error: diagnostics.message, refreshed, newTokens };
+      }
       return { valid: true, error: null, refreshed, newTokens };
     } catch (err) {
       if (err.status === 401) return { valid: false, error: "Token invalid or revoked", refreshed };

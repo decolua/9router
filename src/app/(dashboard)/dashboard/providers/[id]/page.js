@@ -32,6 +32,13 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function getLiveModelCaps(model) {
+  const caps = {};
+  if (model?.supportsImages) caps.vision = true;
+  if (model?.supportsThinking) caps.reasoning = true;
+  return Object.keys(caps).length > 0 ? caps : null;
+}
+
 export default function ProviderDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -65,6 +72,10 @@ export default function ProviderDetailPage() {
   const [thinkingMode, setThinkingMode] = useState("auto");
   const [autoPing, setAutoPing] = useState({ enabled: false, connections: {} });
   const [suggestedModels, setSuggestedModels] = useState([]);
+  const [liveModels, setLiveModels] = useState([]);
+  const [liveModelsLoading, setLiveModelsLoading] = useState(false);
+  const [liveModelsWarning, setLiveModelsWarning] = useState("");
+  const [liveModelsError, setLiveModelsError] = useState("");
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
   const [disabledModelIds, setDisabledModelIds] = useState([]);
   const [confirmState, setConfirmState] = useState(null);
@@ -427,6 +438,62 @@ export default function ProviderDetailPage() {
     fetchSuggestedModels(fetcher).then(setSuggestedModels);
   }, [providerId]);
 
+  useEffect(() => {
+    if (providerId !== "zed") {
+      setLiveModels([]);
+      setLiveModelsWarning("");
+      setLiveModelsError("");
+      setLiveModelsLoading(false);
+      return;
+    }
+
+    const activeConnection = connections.find((conn) => conn.isActive !== false);
+    if (!activeConnection) {
+      setLiveModels([]);
+      setLiveModelsWarning("");
+      setLiveModelsError("");
+      setLiveModelsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const fetchLiveModels = async () => {
+      setLiveModelsLoading(true);
+      setLiveModelsWarning("");
+      setLiveModelsError("");
+      try {
+        const res = await fetch(`/api/providers/${activeConnection.id}/models`, { cache: "no-store" });
+        const data = await res.json();
+        if (cancelled) return;
+        if (!res.ok) {
+          setLiveModels([]);
+          setLiveModelsError(data.error || translate("Failed to fetch models"));
+          return;
+        }
+        setLiveModels((data.models || [])
+          .map((model) => ({
+            ...model,
+            id: model.id || model.name,
+            name: model.name || model.id,
+          }))
+          .filter((model) => model.id));
+        setLiveModelsWarning(data.warning || "");
+      } catch (error) {
+        if (!cancelled) {
+          setLiveModels([]);
+          setLiveModelsError(error.message || translate("Error fetching models"));
+        }
+      } finally {
+        if (!cancelled) setLiveModelsLoading(false);
+      }
+    };
+
+    fetchLiveModels();
+    return () => {
+      cancelled = true;
+    };
+  }, [providerId, connections]);
+
   const handleSetAlias = async (modelId, alias, providerAliasOverride = providerAlias) => {
     const fullModel = `${providerAliasOverride}/${modelId}`;
     try {
@@ -510,7 +577,7 @@ export default function ProviderDetailPage() {
       }
       const models = data.models || [];
       if (models.length === 0) {
-        alert(translate("No models returned"));
+        alert(data.warning || translate("No models returned"));
         return;
       }
 
@@ -1025,9 +1092,15 @@ export default function ProviderDetailPage() {
     }
     // Combine hardcoded models with Kilo free models (deduplicated)
     // Exclude non-llm models (embedding, tts, etc.) — they have dedicated pages under media-providers
-    const allModels = [
+    const builtInModels = [
       ...models,
-      ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
+      ...(providerId === "zed"
+        ? liveModels.filter((liveModel) => !models.some((model) => model.id === liveModel.id))
+        : []),
+    ];
+    const allModels = [
+      ...builtInModels,
+      ...kiloFreeModels.filter((fm) => !builtInModels.some((m) => m.id === fm.id)),
     ].filter((m) => { const k = getModelKind(m); return !k || k === "llm"; });
     const disabledSet = new Set(disabledModelIds);
     const displayModels = allModels.filter((m) => !disabledSet.has(m.id));
@@ -1036,7 +1109,7 @@ export default function ProviderDetailPage() {
       customModels,
       modelAliases,
       providerAlias: providerStorageAlias,
-      builtInModels: models,
+      builtInModels,
       type: "llm",
     });
 
@@ -1089,7 +1162,7 @@ export default function ProviderDetailPage() {
               isTesting={testingModelIds.has(model.id)}
               isFree={model.isFree}
               onDisable={() => handleDisableModel(model.id)}
-              caps={getCaps(`${providerId}/${model.id}`)}
+              caps={model.capabilities || getLiveModelCaps(model) || getCaps(`${providerId}/${model.id}`)}
             />
           );
         })}
@@ -1584,9 +1657,15 @@ export default function ProviderDetailPage() {
             {"Available Models"}
           </h2>
           {!isCompatible && (() => {
-            const allIds = [
+            const builtInModels = [
               ...models,
-              ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
+              ...(providerId === "zed"
+                ? liveModels.filter((liveModel) => !models.some((model) => model.id === liveModel.id))
+                : []),
+            ];
+            const allIds = [
+              ...builtInModels,
+              ...kiloFreeModels.filter((fm) => !builtInModels.some((m) => m.id === fm.id)),
             ].filter((m) => { const k = getModelKind(m); return !k || k === "llm"; }).map((m) => m.id);
             const activeIds = allIds.filter((id) => !disabledModelIds.includes(id));
             return (
@@ -1607,6 +1686,23 @@ export default function ProviderDetailPage() {
         </div>
         {!!modelsTestError && (
           <p className="text-xs text-red-500 mb-3 break-words">{modelsTestError}</p>
+        )}
+        {providerId === "zed" && (liveModelsLoading || liveModelsWarning || liveModelsError) && (
+          <div className={`mb-3 flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${
+            liveModelsError
+              ? "border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400"
+              : "border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400"
+          }`}>
+            <span
+              className="material-symbols-outlined mt-0.5 shrink-0 text-[16px]"
+              style={liveModelsLoading ? { animation: "spin 1s linear infinite" } : undefined}
+            >
+              {liveModelsLoading ? "progress_activity" : liveModelsError ? "error" : "info"}
+            </span>
+            <span className="min-w-0 break-words">
+              {liveModelsLoading ? "Fetching Zed hosted models..." : (liveModelsError || liveModelsWarning)}
+            </span>
+          </div>
         )}
         {renderModelsSection()}
       </Card>

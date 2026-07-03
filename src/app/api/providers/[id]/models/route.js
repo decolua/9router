@@ -8,7 +8,7 @@ import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
-import { resolveZedModels } from "open-sse/shared/zedAuth.js";
+import { fetchZedAuthenticatedUser, getZedModelRequestDiagnostics, resolveZedModels } from "open-sse/shared/zedAuth.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -168,6 +168,33 @@ const buildQoderModelsResolver = () => ({
     return { models: [], warning };
   },
 });
+
+const buildZedNoModelsWarning = (userInfo) => {
+  const diagnostics = getZedModelRequestDiagnostics(userInfo);
+  const planName = diagnostics.planName;
+  const zedModelsEnabled = Object.values(userInfo?.configuration_by_organization || {})
+    .every((config) => config?.is_zed_model_provider_enabled !== false);
+
+  if (!zedModelsEnabled) {
+    return "Zed returned no hosted models because the Zed model provider is disabled for this organization.";
+  }
+  if (diagnostics.blocked) {
+    return diagnostics.message;
+  }
+  if (String(planName).toLowerCase().includes("trial") || String(planName).toLowerCase().includes("pro")) {
+    return `Zed returned no hosted models even though this account is on ${planName}. Refresh the provider connection or check the Zed billing/AI usage page.`;
+  }
+  return "Zed returned no hosted models for this account or organization.";
+};
+
+const resolveZedNoModelsWarning = async (credentials) => {
+  try {
+    const userInfo = await fetchZedAuthenticatedUser(credentials);
+    return buildZedNoModelsWarning(userInfo);
+  } catch {
+    return "Zed returned no hosted models for this account or organization.";
+  }
+};
 
 // Provider models endpoints configuration
 const PROVIDER_MODELS_CONFIG = {
@@ -358,31 +385,39 @@ const PROVIDER_MODELS_CONFIG = {
   "qoder-cn": buildQoderModelsResolver(),
   zed: {
     customResolver: async (connection) => {
+      const credentials = {
+        accessToken: connection.accessToken,
+        providerSpecificData: connection.providerSpecificData || {},
+      };
       try {
-        const result = await resolveZedModels({
-          accessToken: connection.accessToken,
-          providerSpecificData: connection.providerSpecificData || {},
-        }, { forceRefresh: true });
+        const result = await resolveZedModels(credentials, { forceRefresh: true });
+        const models = (result?.models || []).map((model) => ({
+          id: model.id,
+          name: model.name,
+          provider: model.provider,
+          isLatest: model.isLatest,
+          contextLength: model.contextLength,
+          contextLengthInMaxMode: model.contextLengthInMaxMode,
+          maxOutputTokens: model.maxOutputTokens,
+          supportsTools: model.supportsTools,
+          supportsImages: model.supportsImages,
+          supportsThinking: model.supportsThinking,
+          supportsDisablingThinking: model.supportsDisablingThinking,
+          supportsFastMode: model.supportsFastMode,
+          supportsServerSideCompaction: model.supportsServerSideCompaction,
+          supportedEffortLevels: model.supportedEffortLevels,
+          supportsStreamingTools: model.supportsStreamingTools,
+          supportsParallelToolCalls: model.supportsParallelToolCalls,
+          disabledReason: model.disabledReason,
+        }));
+        if (models.length === 0) {
+          return {
+            models,
+            warning: await resolveZedNoModelsWarning(credentials),
+          };
+        }
         return {
-          models: (result?.models || []).map((model) => ({
-            id: model.id,
-            name: model.name,
-            provider: model.provider,
-            isLatest: model.isLatest,
-            contextLength: model.contextLength,
-            contextLengthInMaxMode: model.contextLengthInMaxMode,
-            maxOutputTokens: model.maxOutputTokens,
-            supportsTools: model.supportsTools,
-            supportsImages: model.supportsImages,
-            supportsThinking: model.supportsThinking,
-            supportsDisablingThinking: model.supportsDisablingThinking,
-            supportsFastMode: model.supportsFastMode,
-            supportsServerSideCompaction: model.supportsServerSideCompaction,
-            supportedEffortLevels: model.supportedEffortLevels,
-            supportsStreamingTools: model.supportsStreamingTools,
-            supportsParallelToolCalls: model.supportsParallelToolCalls,
-            disabledReason: model.disabledReason,
-          })),
+          models,
         };
       } catch (error) {
         return { error: `Failed to fetch Zed models: ${error.message}`, status: error.status || 500 };

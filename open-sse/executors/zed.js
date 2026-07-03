@@ -251,6 +251,34 @@ export class ZedExecutor extends BaseExecutor {
     };
   }
 
+  parseError(response, bodyText) {
+    let parsed = null;
+    try {
+      parsed = JSON.parse(bodyText || "{}");
+    } catch {
+      parsed = null;
+    }
+
+    const code = parsed?.code || parsed?.error?.code || "";
+    const rawMessage = parsed?.message || parsed?.error?.message || bodyText || response.statusText;
+    if (code === "trial_blocked") {
+      return {
+        status: response.status,
+        message: `Zed trial access is blocked upstream. The account can list hosted models, but Zed is refusing completions until trial/billing access is enabled or unblocked. Zed says: ${rawMessage}`,
+      };
+    }
+    if (code) {
+      return {
+        status: response.status,
+        message: `Zed ${code}: ${rawMessage}`,
+      };
+    }
+    return {
+      status: response.status,
+      message: rawMessage || `Zed upstream error: ${response.status}`,
+    };
+  }
+
   async refreshCredentials() {
     return null;
   }
