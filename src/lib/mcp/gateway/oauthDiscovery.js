@@ -40,11 +40,29 @@ export function parseResourceMetadataFromChallenge(wwwAuth) {
 }
 
 /**
+ * Resolve the well-known metadata URL for an authorization server.
+ * If the AS URL already targets a well-known endpoint, returns it as-is.
+ * Otherwise constructs the standard well-known path from the AS origin.
+ * @param {string} asUrl
+ * @returns {string | null}
+ */
+export function resolveWellKnownUrl(asUrl) {
+  try {
+    const u = new URL(asUrl);
+    if (u.pathname.includes("/.well-known/oauth-authorization-server")) return asUrl;
+    return new URL("/.well-known/oauth-authorization-server", asUrl).toString();
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Walk the OAuth discovery chain.
  * @param {string | undefined} instanceUrl
  * @param {object} [opts]
  * @returns {Promise<object | null>}
  */
+
 export async function discoverAuth(instanceUrl, opts = {}) {
   const challengeUrl = opts.wwwAuthenticate ? parseResourceMetadataFromChallenge(opts.wwwAuthenticate) : null;
   const candidates = [];
@@ -69,13 +87,7 @@ export async function discoverAuth(instanceUrl, opts = {}) {
     : [new URL("/.well-known/oauth-authorization-server", instanceUrl).toString()];
 
   for (const asUrl of asList) {
-    const wellKnown = (() => {
-      try {
-        const u = new URL(asUrl);
-        if (!u.pathname || u.pathname === "/") return asUrl;
-        return new URL("/.well-known/oauth-authorization-server", asUrl).toString();
-      } catch { return null; }
-    })();
+    const wellKnown = resolveWellKnownUrl(asUrl);
     if (!wellKnown) continue;
     const meta = await tryFetchJson(wellKnown);
     if (isRecord(meta) && (meta.authorization_endpoint || meta.token_endpoint)) {
