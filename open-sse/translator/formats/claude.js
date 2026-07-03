@@ -150,6 +150,33 @@ export function normalizeClaudePassthrough(body, model = "") {
     }
   }
 
+  // 3. Drop thinking blocks whose signature is not Claude's (combo mixes models,
+  // so foreign signatures leak into history and Anthropic rejects them).
+  const thinkingEnabled = body.thinking?.type === "enabled";
+  if (Array.isArray(body.messages)) {
+    for (const msg of body.messages) {
+      if (msg.role !== ROLE.ASSISTANT || !Array.isArray(msg.content)) continue;
+      let hasToolUse = false;
+      let hasKeptThinking = false;
+      const kept = [];
+      for (const block of msg.content) {
+        if (block.type === CLAUDE_BLOCK.THINKING || block.type === CLAUDE_BLOCK.REDACTED_THINKING) {
+          if (isValidClaudeSignature(block.signature)) {
+            hasKeptThinking = true;
+            kept.push(block);
+          }
+          continue;
+        }
+        if (block.type === CLAUDE_BLOCK.TOOL_USE) hasToolUse = true;
+        kept.push(block);
+      }
+      msg.content = kept;
+      if (thinkingEnabled && !hasKeptThinking && hasToolUse) {
+        msg.content.unshift(buildThinkingPlaceholder("claude"));
+      }
+    }
+  }
+
   return body;
 }
 
