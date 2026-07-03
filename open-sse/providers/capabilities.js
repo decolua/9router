@@ -94,6 +94,16 @@ export const MODEL_CAPABILITIES = {
  * Provider-specific capability overrides. Keyed by provider alias/id.
  */
 export const PROVIDER_CAPABILITIES = {
+  // NVIDIA NIM — models hosted on NVIDIA's OpenAI-compatible endpoint.
+  // MiniMax models (e.g. minimaxai/minimax-m2.7) match the "*minimax-m2.7*"
+  // pattern which gives thinkingFormat:"minimax" (body.thinking field). NVIDIA's
+  // wrapper rejects this with "Unsupported parameter(s): thinking" (#2268).
+  // Disable reasoning for NVIDIA-hosted third-party models that don't expose a
+  // thinking interface through the NIM proxy.
+  "nvidia": {
+    "minimaxai/minimax-m2.7": { reasoning: false },
+  },
+
   // CodeBuddy.cn — authoritative per-model metadata from the gateway's model
   // config (contextWindow=maxInputTokens, maxOutput=maxOutputTokens, vision=
   // supportsImages). Every model reasons via OpenAI-style reasoning_effort
