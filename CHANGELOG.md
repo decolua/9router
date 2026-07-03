@@ -1,3 +1,25 @@
+# v0.5.18 (2026-07-03)
+
+## Features
+- **Usage**: track cached tokens + correct input/output/cache cost (#2209) — hodtien
+- **Codex**: show reset credit expiry details (#2290) — Rafli Ahmad Zulfikar
+- **NVIDIA**: add new models and capabilities — decolua
+- **ClinePass**: add provider support — sternelee
+
+## Fixes
+- **Usage**: dedupe streaming request-details log entries — Qin Li
+- **Claude**: drop foreign thinking signatures in passthrough — decolua
+- Prevent non-SSE stream pipe crash and cross-IdP account overwrites (#2244) — KunN-21
+- **Kiro**: route IdC auth to regional CodeWhisperer surface (#2297) — Volodymyr Saakian
+- **Kiro**: add Claude Sonnet 5 model support (#2264) — Edison42
+- **Xiaomi-tokenplan**: region selector, key validation, multi-connection (#2251) — MiQieR
+- **Translator**: strict Anthropic content block compliance (#2225) — Sahrul Ramadhan Hardiansyah
+- **Kimchi**: strip reasoning_content echo to bound multi-turn input tokens — KunN-21
+- **Kimchi**: bump User-Agent to kimchi/0.1.40 (#2256) — Ansh7473
+- **Codebuddy-cn**: strip empty tool_calls arrays to preserve reasoning — zmf
+- **Antigravity**: preserve Claude tool delta index (#2223) — Sutarto Jordan Chrisfivo
+- **MITM**: generate root CA on server startup (#2228) — Sutarto Jordan Chrisfivo
+
 # v0.5.15 (2026-06-29)
 
 ## Features
@@ -303,43 +325,3 @@
 
 ## Breaking Changes
 - Tunnel public URL changed — old tunnel links no longer work, please reconnect to get the new URL
-
-# v0.4.44 (2026-05-15)
-
-## Features
-- Add Blackbox provider with `bb` alias (#1143)
-- Add Xiaomi token plan provider
-- Enhance model select modal UX + modal traffic lights (#1111)
-- Default Usage dashboard period to Today (#1141)
-
-## Fixes
-- Fix Cowork model selection and Windows CLI packaging (#1129)
-- Update provider name retrieval for compatibility provider (#1135)
-- Update JWT_SECRET handling
-
-# v0.4.41 (2026-05-14)
-
-## Features
-- Add jcode CLI tool integration with auto-configuration (#1047)
-- Redesign CLI Tools dashboard: grid layout (1/2/3 cols) + dedicated detail page per tool
-- Add drag-and-drop reordering for combo models (#1108)
-- Add Today period option to Usage & Analytics (#1063)
-- Add DeepSeek V4 Pro effort aliases (#950)
-
-## Fixes
-- fix(autostart): work on nvm + npm 9/10, actually register with launchctl (#1104, fixes #1082)
-- Fix Ollama usage not tracked/shown in UI (#1102)
-- fix(opencode): preserve DeepSeek reasoning content (#1099, fixes #1093)
-- Fix TUI input lag (replace enquirer with native readline, persistent raw mode)
-- fix(ui): show API key row actions on mobile (#1112)
-
-## Improvements
-- Sync DeepSeek TUI card style with other CLI tools (badges, layout, manual config modal)
-- Add official logos for Amp CLI, jcode, Qwen Code (replace generic icons)
-- Resize deepseek-tui icon 1024→128 with padding for visual consistency
-
-# v0.4.39 (2026-05-14)
-
-## Fixes
-- fix(docker): restore `/app/server.js` (v0.4.38 regression)
-
