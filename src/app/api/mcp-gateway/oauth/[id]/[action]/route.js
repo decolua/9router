@@ -70,12 +70,28 @@ function buildAuthorizeUrl(opts) {
 }
 
 async function ensureClient(instance, request) {
+  const currentBase = appBase(request);
+  const currentRedirect = currentBase + "/api/mcp-gateway/oauth/" + instance.id + "/callback";
   if (instance.oauthTokens?.client?.clientId) {
-    return {
-      clientId: instance.oauthTokens.client.clientId,
-      // Preserve || semantics: empty string becomes null (same as original JS)
-      clientSecret: instance.oauthTokens.client.clientSecret || null,
-    };
+    // CIMD clients do not use redirect_uri; always safe to reuse.
+    if (instance.oauthTokens.client.cimd) {
+      return {
+        clientId: instance.oauthTokens.client.clientId,
+        clientSecret: instance.oauthTokens.client.clientSecret || null,
+      };
+    }
+    const storedRedirect = instance.oauthTokens.client.redirectUri;
+    // Reuse the existing client only if the redirect_uri it was registered
+    // with still matches the current app base. Behind a tunnel the base can
+    // change (localhost to public URL), and the AS will reject a mismatched
+    // redirect_uri with invalid_redirect_uri.
+    if (storedRedirect === currentRedirect) {
+      return {
+        clientId: instance.oauthTokens.client.clientId,
+        clientSecret: instance.oauthTokens.client.clientSecret || null,
+      };
+    }
+    // Base changed — fall through to re-register a new client.
   }
   // Try discovery + dynamic registration.
   const meta = await discoverAuth(instance.url, { wwwAuthenticate: instance.oauthTokens?._lastChallenge });
@@ -107,7 +123,7 @@ async function ensureClient(instance, request) {
     }
     throw new Error("no client_id configured and AS has no registration_endpoint — set client_id manually in the instance form");
   }
-  const redirectUri = `${appBase(request)}/api/mcp-gateway/oauth/${instance.id}/callback`;
+  const redirectUri = currentRedirect;
   const reg = await registerClient(meta.registration_endpoint, redirectUri);
   // Persist client + as metadata so subsequent refreshes have what they need.
   const newTokens = {
@@ -118,6 +134,7 @@ async function ensureClient(instance, request) {
       clientId: reg.clientId,
       clientSecret: reg.clientSecret,
       clientIdIssuedAt: reg.clientIdIssuedAt,
+      redirectUri: redirectUri,
     },
     as: {
       token_endpoint: meta.token_endpoint,

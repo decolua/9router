@@ -335,7 +335,7 @@ export default function McpGatewayPage() {
                         icon="login"
                         onClick={() => connectInstance(i.id)}
                       >
-                        {i.oauthStatus === "connected" ? "Re-login" : "Connect"}
+                        {i.oauthStatus === "connected" ? "Re-login" : "Login"}
                       </Button>
                     )}
                     <Button size="sm" variant="ghost" icon="edit" onClick={() => setEditing({
