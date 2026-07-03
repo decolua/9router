@@ -41,6 +41,11 @@ export default {
     },
   },
   models: [
+    // GoldenEye is GitHub's auto-routing model available on ALL tiers including free.
+    // Listed first so it is the default for connection tests and model selector.
+    // Free-tier users MUST use this model — premium models (gpt-5.x, claude-opus, etc.)
+    // return 403 on free accounts. Paid users can select any model below.
+    { id: "goldeneye-free-auto", name: "GoldenEye (Auto)" },
     { id: "gpt-5.2", name: "GPT-5.2" },
     { id: "gpt-5.2-codex", name: "GPT-5.2 Codex" },
     { id: "gpt-5.3-codex", name: "GPT-5.3 Codex" },
@@ -57,7 +62,6 @@ export default {
     { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro" },
     { id: "grok-code-fast-1", name: "Grok Code Fast 1" },
     { id: "oswe-vscode-prime", name: "Raptor Mini" },
-    { id: "goldeneye-free-auto", name: "GoldenEye" },
     { id: "text-embedding-3-small", name: "Text Embedding 3 Small (GitHub)", kind: "embedding" },
     { id: "text-embedding-3-large", name: "Text Embedding 3 Large (GitHub)", kind: "embedding" },
   ],
