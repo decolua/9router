@@ -10,6 +10,7 @@ export default {
     website: "https://zed.dev",
     notice: {
       signupUrl: "https://zed.dev",
+      text: "Zed native sign-in currently redirects through GitHub. Sign out of Zed/GitHub or use a private browser window to switch accounts.",
     },
   },
   category: "oauth",

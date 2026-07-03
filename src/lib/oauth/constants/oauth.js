@@ -39,7 +39,7 @@ export const QWEN_CONFIG = { ...PROVIDER_OAUTH["qwen"] };
 export const QODER_CONFIG = { ...PROVIDER_OAUTH["qoder"] };
 export const QODER_CN_CONFIG = { ...PROVIDER_OAUTH["qoder-cn"] };
 
-// Zed native-app sign-in flow (GitHub OAuth behind zed.dev).
+// Zed native-app sign-in flow. zed.dev currently redirects this through GitHub.
 export const ZED_CONFIG = { ...PROVIDER_OAUTH["zed"] };
 
 // iFlow OAuth Configuration (Authorization Code)

@@ -587,7 +587,11 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const isKimchiProvider = provider === "kimchi";
   const isZedProvider = provider === "zed";
   const deviceLoginUrl = deviceData?.verification_uri_complete || deviceData?.verification_uri || "";
-  const modalTitle = isXaiProvider ? "Connect Grok Build OAuth" : `Connect ${providerInfo.name}`;
+  const modalTitle = isXaiProvider
+    ? "Connect Grok Build OAuth"
+    : isZedProvider
+      ? `Connect ${providerInfo.name} via Zed/GitHub`
+      : `Connect ${providerInfo.name}`;
   const manualPlaceholder = isXaiProvider
     ? "http://127.0.0.1:56121/callback?code=... or copied code"
     : isKimchiProvider
@@ -595,6 +599,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       : isZedProvider
         ? "http://127.0.0.1:58443/?user_id=...&access_token=..."
       : placeholderUrl;
+  const zedSignInHint = "Zed's native sign-in currently redirects through GitHub. To switch accounts, sign out of Zed/GitHub or use a private browser window before retrying.";
 
   return (
     <Modal isOpen={isOpen} title={modalTitle} onClose={handleClose} size="lg">
@@ -608,9 +613,15 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
                 progress_activity
               </span>
               <span className="text-sm">
-                {isXaiProvider ? "Waiting for Grok Build OAuth…" : "Waiting for popup authorization…"}
+                {isXaiProvider ? "Waiting for Grok Build OAuth…" : isZedProvider ? "Waiting for Zed/GitHub sign-in..." : "Waiting for popup authorization…"}
               </span>
             </div>
+
+            {isZedProvider && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+                {zedSignInHint}
+              </div>
+            )}
 
             {/* Divider */}
             <div className="flex items-center gap-3 my-1">
@@ -623,7 +634,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
             <div className="space-y-4">
               <div>
                 <p className="text-sm font-medium mb-2">
-                  Step 1: Open this {isXaiProvider ? "Grok Build OAuth URL" : "URL"} in your browser
+                  Step 1: Open this {isXaiProvider ? "Grok Build OAuth URL" : isZedProvider ? "Zed/GitHub sign-in URL" : "URL"} in your browser
                 </p>
                 <div className="flex gap-2">
                   <Input value={authData?.authUrl || ""} readOnly className="flex-1 font-mono text-xs" />

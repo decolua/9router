@@ -413,12 +413,15 @@ const PROVIDERS = {
         isPersonal: !!org?.is_personal,
       })).filter((org) => org.id);
       const githubLogin = user.github_login || user.username || "";
-      const displayName = user.name || user.username || githubLogin || null;
+      const zedEmail = user.email || "";
+      const accountIdentifier = zedEmail || githubLogin || (tokens.user_id ? `zed-user-${tokens.user_id}` : null);
+      const displayName = user.name || user.username || githubLogin || accountIdentifier || null;
       return {
         accessToken: tokens.access_token,
         refreshToken: null,
         expiresIn: null,
-        email: githubLogin || (tokens.user_id ? `zed-user-${tokens.user_id}` : null),
+        name: displayName || accountIdentifier,
+        email: accountIdentifier,
         displayName,
         providerSpecificData: {
           authMethod: "native_app_signin",
@@ -426,6 +429,7 @@ const PROVIDERS = {
           systemId: tokens.system_id || "",
           username: user.username || "",
           githubLogin,
+          email: zedEmail,
           avatarUrl: user.avatar_url || "",
           defaultOrganizationId,
           organizationId: defaultOrganizationId,
@@ -1644,5 +1648,34 @@ export async function backfillCodexEmails() {
   } catch (err) {
     codexBackfillDone = false;
     console.log("backfillCodexEmails failed:", err?.message || err);
+  }
+}
+
+let zedNameBackfillDone = false;
+
+// Older Zed connections used github_login as the connection name because the
+// native sign-in endpoint redirects through GitHub. Prefer Zed's display name
+// when the user has not explicitly renamed the connection.
+export async function backfillZedConnectionNames() {
+  if (zedNameBackfillDone) return;
+  zedNameBackfillDone = true;
+  try {
+    const { getProviderConnections, updateProviderConnection } = await import("@/lib/localDb");
+    const connections = await getProviderConnections();
+    const targets = connections.filter((c) => {
+      if (c.provider !== "zed" || c.authType !== "oauth") return false;
+      const displayName = String(c.displayName || "").trim();
+      if (!displayName) return false;
+      const name = String(c.name || "").trim();
+      if (!name || name === displayName) return false;
+      const githubLogin = String(c.providerSpecificData?.githubLogin || "").trim();
+      return name === c.email || name === githubLogin || /^Account \d+$/.test(name) || /^zed-user-/.test(name);
+    });
+    for (const conn of targets) {
+      await updateProviderConnection(conn.id, { name: conn.displayName });
+    }
+  } catch (err) {
+    zedNameBackfillDone = false;
+    console.log("backfillZedConnectionNames failed:", err?.message || err);
   }
 }
