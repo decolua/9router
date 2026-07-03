@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Modal, Input, Button, Badge } from "@/shared/components";
+import { translate } from "@/i18n/runtime";
 
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 
@@ -108,7 +109,7 @@ export default function AddCustomEmbeddingModal({ isOpen, onClose, onCreated, on
   };
 
   return (
-    <Modal isOpen={isOpen} title={isEdit ? "Edit Custom Embedding" : "Add Custom Embedding"} onClose={onClose}>
+    <Modal isOpen={isOpen} title={isEdit ? translate("Edit Custom Embedding") : translate("Add Custom Embedding")} onClose={onClose}>
       <div className="flex flex-col gap-4">
         <Input
           label="Name"
