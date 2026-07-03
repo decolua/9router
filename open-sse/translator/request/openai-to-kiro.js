@@ -267,11 +267,32 @@ function convertMessages(messages, tools, model) {
   };
 
   for (let i = 0; i < messages.length; i++) {
-    const msg = messages[i];
+    let msg = messages[i];
     let role = msg.role;
 
-    // Normalize: system/tool -> user
-    if (role === ROLE.SYSTEM || role === ROLE.TOOL) {
+    // Normalize: system -> user (with <system-reminder> wrapper to mark provenance)
+    // tool -> user (raw content, no wrapper — tool output is already structured)
+    if (role === ROLE.SYSTEM) {
+      role = ROLE.USER;
+      // Wrap in <system-reminder> so the model can distinguish injected system
+      // instructions from actual user input (#2306 — without this the full Claude Code
+      // system prompt appears as raw user text, leaking context and wasting tokens).
+      const extractText = (content) => {
+        if (typeof content === "string") return content;
+        if (Array.isArray(content)) {
+          return content
+            .filter(c => c.type === OPENAI_BLOCK.TEXT || c.text)
+            .map(c => c.text || "")
+            .filter(Boolean)
+            .join("\n");
+        }
+        return "";
+      };
+      const rawText = extractText(msg.content);
+      if (rawText) {
+        msg = { ...msg, content: `<system-reminder>\n${rawText}\n</system-reminder>` };
+      }
+    } else if (role === ROLE.TOOL) {
       role = ROLE.USER;
     }
 
