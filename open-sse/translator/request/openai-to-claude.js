@@ -357,6 +357,16 @@ function openaiToClaudeRequestForAntigravity(model, body, stream) {
 
       return { ...msg, content: updatedContent };
     });
+
+    // Vertex AI (used by Antigravity) rejects conversations ending with an assistant
+    // message ("This model does not support assistant message prefill"). Strip any
+    // trailing assistant turn so the conversation always ends with a user message.
+    while (
+      result.messages.length > 0 &&
+      result.messages[result.messages.length - 1].role === ROLE.ASSISTANT
+    ) {
+      result.messages.pop();
+    }
   }
 
   return result;
