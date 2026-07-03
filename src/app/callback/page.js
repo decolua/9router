@@ -13,6 +13,8 @@ function CallbackContent() {
   useEffect(() => {
     const code = searchParams.get("code");
     const token = searchParams.get("token");
+    const accessToken = searchParams.get("access_token");
+    const userId = searchParams.get("user_id");
     const state = searchParams.get("state");
     const error = searchParams.get("error");
     const errorDescription = searchParams.get("error_description");
@@ -20,6 +22,8 @@ function CallbackContent() {
     const callbackData = {
       code,
       token,
+      accessToken,
+      userId,
       state,
       error,
       errorDescription,
@@ -72,7 +76,7 @@ function CallbackContent() {
       console.log("localStorage failed:", e);
     }
 
-    if (!(code || token || error)) {
+    if (!(code || token || accessToken || error)) {
       setTimeout(() => setStatus("manual"), 0);
       return;
     }

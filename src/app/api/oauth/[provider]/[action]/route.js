@@ -18,6 +18,11 @@ import {
   registerXaiSession,
   getXaiSessionStatus,
   clearXaiSession,
+  startZedProxy,
+  stopZedProxy,
+  registerZedSession,
+  getZedSessionStatus,
+  clearZedSession,
 } from "@/lib/oauth/utils/server";
 
 async function completeXaiManualCode(code, state) {
@@ -82,8 +87,8 @@ export async function GET(request, { params }) {
     }
 
     if (action === "start-proxy") {
-      if (!["codex", "xai"].includes(provider)) {
-        return NextResponse.json({ error: "Proxy only supported for codex/xai" }, { status: 400 });
+      if (!["codex", "xai", "zed"].includes(provider)) {
+        return NextResponse.json({ error: "Proxy only supported for codex/xai/zed" }, { status: 400 });
       }
       const appPort = searchParams.get("app_port");
       if (!appPort) {
@@ -92,31 +97,45 @@ export async function GET(request, { params }) {
       const state = searchParams.get("state");
       const codeVerifier = searchParams.get("code_verifier");
       const redirectUri = searchParams.get("redirect_uri");
-      const result = provider === "xai"
-        ? await startXaiProxy(Number(appPort))
-        : await startCodexProxy(Number(appPort));
+      const result = provider === "zed"
+        ? await startZedProxy(Number(appPort))
+        : provider === "xai"
+          ? await startXaiProxy(Number(appPort))
+          : await startCodexProxy(Number(appPort));
       let serverSide = false;
       if (result.success && state && codeVerifier && redirectUri) {
-        serverSide = provider === "xai"
-          ? registerXaiSession({ state, codeVerifier, redirectUri })
-          : registerCodexSession({ state, codeVerifier, redirectUri });
+        serverSide = provider === "zed"
+          ? registerZedSession({
+              state,
+              codeVerifier,
+              redirectUri,
+              systemId: searchParams.get("system_id"),
+            })
+          : provider === "xai"
+            ? registerXaiSession({ state, codeVerifier, redirectUri })
+            : registerCodexSession({ state, codeVerifier, redirectUri });
       }
       return NextResponse.json({ ...result, serverSide });
     }
 
     if (action === "poll-status") {
-      if (!["codex", "xai"].includes(provider)) {
-        return NextResponse.json({ error: "Poll only supported for codex/xai" }, { status: 400 });
+      if (!["codex", "xai", "zed"].includes(provider)) {
+        return NextResponse.json({ error: "Poll only supported for codex/xai/zed" }, { status: 400 });
       }
       const state = searchParams.get("state");
       if (!state) {
         return NextResponse.json({ error: "Missing state" }, { status: 400 });
       }
-      const session = provider === "xai" ? getXaiSessionStatus(state) : getCodexSessionStatus(state);
+      const session = provider === "zed"
+        ? getZedSessionStatus(state)
+        : provider === "xai"
+          ? getXaiSessionStatus(state)
+          : getCodexSessionStatus(state);
       if (!session) return NextResponse.json({ status: "unknown" });
       if (session.status === "done" || session.status === "error") {
         const payload = { ...session };
-        if (provider === "xai") clearXaiSession(state);
+        if (provider === "zed") clearZedSession(state);
+        else if (provider === "xai") clearXaiSession(state);
         else clearCodexSession(state);
         return NextResponse.json(payload);
       }
@@ -124,10 +143,11 @@ export async function GET(request, { params }) {
     }
 
     if (action === "stop-proxy") {
-      if (!["codex", "xai"].includes(provider)) {
-        return NextResponse.json({ error: "Proxy only supported for codex/xai" }, { status: 400 });
+      if (!["codex", "xai", "zed"].includes(provider)) {
+        return NextResponse.json({ error: "Proxy only supported for codex/xai/zed" }, { status: 400 });
       }
-      if (provider === "xai") stopXaiProxy();
+      if (provider === "zed") stopZedProxy();
+      else if (provider === "xai") stopXaiProxy();
       else stopCodexProxy();
       return NextResponse.json({ success: true });
     }

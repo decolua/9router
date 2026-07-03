@@ -8,6 +8,7 @@ import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
+import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -355,6 +356,39 @@ const PROVIDER_MODELS_CONFIG = {
   },
   qoder: buildQoderModelsResolver(),
   "qoder-cn": buildQoderModelsResolver(),
+  zed: {
+    customResolver: async (connection) => {
+      try {
+        const result = await resolveZedModels({
+          accessToken: connection.accessToken,
+          providerSpecificData: connection.providerSpecificData || {},
+        }, { forceRefresh: true });
+        return {
+          models: (result?.models || []).map((model) => ({
+            id: model.id,
+            name: model.name,
+            provider: model.provider,
+            isLatest: model.isLatest,
+            contextLength: model.contextLength,
+            contextLengthInMaxMode: model.contextLengthInMaxMode,
+            maxOutputTokens: model.maxOutputTokens,
+            supportsTools: model.supportsTools,
+            supportsImages: model.supportsImages,
+            supportsThinking: model.supportsThinking,
+            supportsDisablingThinking: model.supportsDisablingThinking,
+            supportsFastMode: model.supportsFastMode,
+            supportsServerSideCompaction: model.supportsServerSideCompaction,
+            supportedEffortLevels: model.supportedEffortLevels,
+            supportsStreamingTools: model.supportsStreamingTools,
+            supportsParallelToolCalls: model.supportsParallelToolCalls,
+            disabledReason: model.disabledReason,
+          })),
+        };
+      } catch (error) {
+        return { error: `Failed to fetch Zed models: ${error.message}`, status: error.status || 500 };
+      }
+    },
+  },
   "gemini-cli": {
     customResolver: buildOAuthResolver({
       refreshFn: (conn) => refreshGoogleToken(conn.refreshToken, GEMINI_CONFIG.clientId, GEMINI_CONFIG.clientSecret),

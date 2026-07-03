@@ -19,6 +19,7 @@ import {
   KIMCHI_CONFIG,
 } from "@/lib/oauth/constants/oauth";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
+import { fetchZedAuthenticatedUser } from "open-sse/shared/zedAuth.js";
 
 // OAuth provider test endpoints
 const OAUTH_TEST_CONFIG = {
@@ -91,6 +92,7 @@ const OAUTH_TEST_CONFIG = {
     authPrefix: "Bearer ",
   },
   cline: { refreshable: true },
+  zed: { custom: true },
   gitlab: {
     // Test by hitting the GitLab user API — requires api or read_user scope
     url: "https://gitlab.com/api/v4/user",
@@ -359,6 +361,20 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
     newTokens = tokens;
     accessToken = tokens.accessToken;
     return await tryProbe(accessToken);
+  }
+
+  if (connection.provider === "zed") {
+    try {
+      await fetchZedAuthenticatedUser({
+        accessToken,
+        providerSpecificData: connection.providerSpecificData || {},
+      }, { proxyOptions: effectiveProxy });
+      return { valid: true, error: null, refreshed, newTokens };
+    } catch (err) {
+      if (err.status === 401) return { valid: false, error: "Token invalid or revoked", refreshed };
+      if (err.status === 403) return { valid: false, error: "Access denied", refreshed };
+      return { valid: false, error: err.message, refreshed };
+    }
   }
 
   try {

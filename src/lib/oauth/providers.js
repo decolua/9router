@@ -15,6 +15,7 @@ import {
   QWEN_CONFIG,
   QODER_CONFIG,
   QODER_CN_CONFIG,
+  ZED_CONFIG,
   IFLOW_CONFIG,
   ANTIGRAVITY_CONFIG,
   GITHUB_CONFIG,
@@ -38,6 +39,13 @@ import {
   extractCodexAccountInfo,
   fetchKiroProfileArn,
 } from "./providerHelpers";
+import {
+  createZedNativeAuthData,
+  decryptZedAccessToken,
+  fetchZedAuthenticatedUser,
+  parseZedCallbackPayload,
+  resolveZedOrganizationId,
+} from "open-sse/shared/zedAuth.js";
 
 export { extractCodexAccountInfo, fetchKiroProfileArn };
 
@@ -342,6 +350,88 @@ const PROVIDERS = {
         mapped.providerSpecificData = { idToken: tokens.id_token };
       }
       return mapped;
+    },
+  },
+
+  zed: {
+    config: ZED_CONFIG,
+    flowType: "native_app_signin",
+    generateAuthData: async (config, redirectUri) => {
+      let nativeAppPort = config.defaultNativeAppPort || 58443;
+      try {
+        const parsed = new URL(redirectUri || "");
+        const port = Number(parsed.port || (parsed.protocol === "https:" ? 443 : 80));
+        if (Number.isFinite(port) && port > 0 && port < 65536 && port !== 80 && port !== 443) {
+          nativeAppPort = port;
+        }
+      } catch {
+        // Keep default native app port.
+      }
+      const state = generateState();
+      const authData = await createZedNativeAuthData(config, { nativeAppPort });
+      return {
+        authUrl: authData.authUrl,
+        state,
+        codeVerifier: authData.privateKeyVerifier,
+        codeChallenge: null,
+        redirectUri,
+        flowType: "native_app_signin",
+        fixedPort: nativeAppPort,
+        callbackPath: "/",
+        _zedNativeAppPort: nativeAppPort,
+        _zedSystemId: authData.systemId,
+      };
+    },
+    exchangeToken: async (config, callbackPayload, redirectUri, privateKeyVerifier, _state, meta = {}) => {
+      const parsed = parseZedCallbackPayload(callbackPayload);
+      const accessToken = decryptZedAccessToken(parsed.encryptedAccessToken, privateKeyVerifier);
+      const systemId = meta._zedSystemId || meta.systemId || "";
+      const credentials = {
+        accessToken,
+        providerSpecificData: {
+          userId: parsed.userId,
+          systemId,
+        },
+      };
+      const userInfo = await fetchZedAuthenticatedUser(credentials, { config });
+      return {
+        access_token: accessToken,
+        user_id: parsed.userId,
+        system_id: systemId,
+        user_info: userInfo,
+      };
+    },
+    mapTokens: (tokens) => {
+      const user = tokens.user_info?.user || {};
+      const defaultOrganizationId = resolveZedOrganizationId(
+        { providerSpecificData: { userId: tokens.user_id } },
+        tokens.user_info,
+      );
+      const organizations = (tokens.user_info?.organizations || []).map((org) => ({
+        id: typeof org?.id === "string" ? org.id : String(org?.id || ""),
+        name: String(org?.name || ""),
+        isPersonal: !!org?.is_personal,
+      })).filter((org) => org.id);
+      const githubLogin = user.github_login || user.username || "";
+      const displayName = user.name || user.username || githubLogin || null;
+      return {
+        accessToken: tokens.access_token,
+        refreshToken: null,
+        expiresIn: null,
+        email: githubLogin || (tokens.user_id ? `zed-user-${tokens.user_id}` : null),
+        displayName,
+        providerSpecificData: {
+          authMethod: "native_app_signin",
+          userId: tokens.user_id,
+          systemId: tokens.system_id || "",
+          username: user.username || "",
+          githubLogin,
+          avatarUrl: user.avatar_url || "",
+          defaultOrganizationId,
+          organizationId: defaultOrganizationId,
+          organizations,
+        },
+      };
     },
   },
 
@@ -1407,6 +1497,9 @@ export async function generateAuthData(providerName, redirectUri, meta) {
   const config = provider.prepareConfig
     ? await provider.prepareConfig(provider.config, meta || {})
     : provider.config;
+  if (provider.generateAuthData) {
+    return provider.generateAuthData(config, redirectUri, meta || {});
+  }
   const { codeVerifier, codeChallenge, state } = generatePKCE(provider.pkceVerifierBytes);
 
   let authUrl;

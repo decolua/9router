@@ -97,6 +97,7 @@ import p94 from "./xai.js";
 import p95 from "./xiaomi-mimo.js";
 import p96 from "./xiaomi-tokenplan.js";
 import p97 from "./youcom.js";
+import p98 from "./zed.js";
 
 export default [
   p0,
@@ -196,5 +197,6 @@ export default [
   p94,
   p95,
   p96,
-  p97
+  p97,
+  p98
 ];
