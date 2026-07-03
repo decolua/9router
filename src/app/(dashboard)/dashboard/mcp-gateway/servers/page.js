@@ -303,7 +303,7 @@ export default function McpGatewayServersPage() {
                         icon="login"
                         onClick={() => connectInstance(i.id)}
                       >
-                        {i.oauthStatus === "connected" ? "Re-login" : "Connect"}
+                        {i.oauthStatus === "connected" ? "Re-login" : "Login"}
                       </Button>
                     )}
                     <Button size="sm" variant="ghost" icon="edit" onClick={() => setEditing(instanceToForm(i))}>Edit</Button>
