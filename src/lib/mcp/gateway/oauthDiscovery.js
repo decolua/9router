@@ -93,6 +93,9 @@ export async function discoverAuth(instanceUrl, opts = {}) {
     if (isRecord(meta) && (meta.authorization_endpoint || meta.token_endpoint)) {
       return {
         ...meta,
+        // Preserve registration_endpoint from the protected-resource doc if the
+        // AS well-known doc does not advertise one (RFC 8414 does not require it).
+        registration_endpoint: meta.registration_endpoint || resourceDoc.registration_endpoint,
         resource: resourceDoc.resource || instanceUrl,
         authorization_servers: asList,
         _discovery: { protectedResource: resourceDoc._source, as: wellKnown },
