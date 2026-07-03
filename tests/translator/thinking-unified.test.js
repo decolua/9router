@@ -93,6 +93,11 @@ describe("applyThinking per provider format", () => {
     expect(out.thinking).toEqual({ type: "enabled" });
     expect(out.reasoning_effort).toBe("high");
   });
+  it("Z.ai GLM China preserves reasoning_effort when thinking is enabled", () => {
+    const out = apply("openai", "glm-5.2", { reasoning_effort: "max" }, "glm-cn");
+    expect(out.thinking).toEqual({ type: "enabled" });
+    expect(out.reasoning_effort).toBe("max");
+  });
   it("Z.ai GLM maps max/xhigh reasoning_effort to max", () => {
     const outMax = apply("openai", "glm-5.2", { reasoning_effort: "max" }, "glm");
     const outXhigh = apply("openai", "glm-5.2", { reasoning_effort: "xhigh" }, "glm");
