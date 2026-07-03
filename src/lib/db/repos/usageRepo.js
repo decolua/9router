@@ -138,35 +138,11 @@ async function calculateCost(provider, model, tokens) {
     const pricing = await getPricingForModel(provider, model);
     if (!pricing) return 0;
 
-    let cost = 0;
-    const inputTokens = tokens.prompt_tokens || tokens.input_tokens || 0;
-    const cachedTokens = tokens.cached_tokens || tokens.cache_read_input_tokens || 0;
-    const cacheCreationTokens = tokens.cache_creation_input_tokens || 0;
-    // prompt_tokens is cache-inclusive (see canonicalizeUsage): cached + cache_creation
-    // are subsets, so subtract both to avoid charging them at the full input rate.
-    const nonCachedInput = Math.max(0, inputTokens - cachedTokens - cacheCreationTokens);
-    cost += nonCachedInput * (pricing.input / 1000000);
-
-    if (cachedTokens > 0) {
-      const cachedRate = pricing.cached || pricing.input;
-      cost += cachedTokens * (cachedRate / 1000000);
-    }
-
-    const outputTokens = tokens.completion_tokens || tokens.output_tokens || 0;
-    cost += outputTokens * (pricing.output / 1000000);
-
-    const reasoningTokens = tokens.reasoning_tokens || 0;
-    if (reasoningTokens > 0) {
-      const rate = pricing.reasoning || pricing.output;
-      cost += reasoningTokens * (rate / 1000000);
-    }
-
-    if (cacheCreationTokens > 0) {
-      const rate = pricing.cache_creation || pricing.input;
-      cost += cacheCreationTokens * (rate / 1000000);
-    }
-
-    return cost;
+    // Delegate the actual math to the single source of truth (avoids the two
+    // copies drifting apart — see open-sse/providers/pricing.js for the
+    // cache-inclusive prompt_tokens convention this assumes).
+    const { calculateCostFromTokens } = await import("open-sse/providers/pricing.js");
+    return calculateCostFromTokens(tokens, pricing);
   } catch (e) {
     console.error("Error calculating cost:", e);
     return 0;

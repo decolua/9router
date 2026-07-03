@@ -3,7 +3,7 @@ import { createHash } from "crypto";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
 export const KIMCHI_API = "https://llm.kimchi.dev";
-export const KIMCHI_USER_AGENT = "kimchi/0.0.0";
+export const KIMCHI_USER_AGENT = "kimchi/0.1.40";
 
 const FETCH_TIMEOUT_MS = 20_000;
 const CACHE_TTL_MS = 5 * 60 * 1000;

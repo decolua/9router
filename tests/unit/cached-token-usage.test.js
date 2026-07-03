@@ -74,6 +74,19 @@ describe("canonicalizeUsage", () => {
     expect(canonicalizeUsage(null)).toBeNull();
     expect(canonicalizeUsage(undefined)).toBeNull();
   });
+
+  it("folds a Claude cache-miss first write (cache_creation only, no cache_read yet)", () => {
+    // Cache-miss on first write: upstream emits cache_creation_input_tokens but
+    // no cache_read_input_tokens. Must still fold into prompt.
+    const out = canonicalizeUsage({
+      prompt_tokens: 100,
+      completion_tokens: 20,
+      cache_creation_input_tokens: 500,
+    });
+    expect(out.prompt_tokens).toBe(600);
+    expect(out.cached_tokens).toBe(0);
+    expect(out.cache_creation_input_tokens).toBe(500);
+  });
 });
 
 describe("calculateCostFromTokens (canonical inclusive convention)", () => {
@@ -136,6 +149,16 @@ describe("Anthropic streaming usage (message_start carries cache, message_delta 
     expect(canon.cached_tokens).toBe(200);
     expect(canon.cache_creation_input_tokens).toBe(30);
     expect(canon.completion_tokens).toBe(50);
+  });
+
+  it("does not let a NaN field poison the running max-merge", () => {
+    // typeof NaN === "number", so a naive Math.max(prev, NaN) is NaN.
+    const prev = { prompt_tokens: 100, cache_read_input_tokens: 200 };
+    const bad = { prompt_tokens: NaN, completion_tokens: 50 };
+    const merged = mergeUsage(prev, bad);
+    expect(merged.prompt_tokens).toBe(100);
+    expect(merged.cache_read_input_tokens).toBe(200);
+    expect(merged.completion_tokens).toBe(50);
   });
 });
 

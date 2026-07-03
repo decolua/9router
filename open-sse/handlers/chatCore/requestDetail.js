@@ -49,8 +49,8 @@ export function extractUsageFromResponse(responseBody) {
     return {
       prompt_tokens: responseBody.usageMetadata.promptTokenCount || 0,
       completion_tokens: responseBody.usageMetadata.candidatesTokenCount || 0,
-      cached_tokens: responseBody.usageMetadata.cachedContentTokenCount,
-      reasoning_tokens: responseBody.usageMetadata.thoughtsTokenCount
+      cached_tokens: responseBody.usageMetadata.cachedContentTokenCount || 0,
+      reasoning_tokens: responseBody.usageMetadata.thoughtsTokenCount || 0
     };
   }
 

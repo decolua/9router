@@ -171,6 +171,7 @@ describe("Kiro → Claude (direct route, OpenAI-shaped chunks from executor)", (
     const jsonDelta = events.find(
       (e) => e.type === "content_block_delta" && e.delta.type === "input_json_delta"
     );
+    expect(jsonDelta.index).toBeDefined();
     expect(jsonDelta.delta.partial_json).toBe('{"q":"x"}');
     const md = events.find((e) => e.type === "message_delta");
     expect(md.delta.stop_reason).toBe("tool_use");

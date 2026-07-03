@@ -67,6 +67,25 @@ function stripToolArtifacts(body) {
   });
 }
 
+// Strip `reasoning_content` echoed by clients on assistant messages — but
+// only when it's a real thinking block. `DefaultExecutor.transformRequest`
+// runs `injectReasoningContent` first and may inject a 1-char placeholder
+// (" ") for upstream validation; the placeholder is small (no token cost
+// worth stripping) and stripping it would re-trigger upstream to complain
+// about missing reasoning on the next turn. Threshold matches the
+// placeholder length with a safety margin.
+const REASONING_PLACEHOLDER_MAX_LEN = 8;
+
+export function stripReasoningContent(body) {
+  if (!Array.isArray(body?.messages)) return;
+  for (const msg of body.messages) {
+    if (msg && msg.role === "assistant" && typeof msg.reasoning_content === "string"
+        && msg.reasoning_content.length > REASONING_PLACEHOLDER_MAX_LEN) {
+      delete msg.reasoning_content;
+    }
+  }
+}
+
 function isAnthropicBackedKimchiModel(model) {
   const meta = getCachedKimchiModelMetadata(model);
   if (meta?.provider === "anthropic" || meta?.upstreamProvider === "anthropic") return true;
@@ -96,6 +115,7 @@ export class KimchiExecutor extends DefaultExecutor {
 
     stripMessageArtifacts(transformed);
     stripToolArtifacts(transformed);
+    stripReasoningContent(transformed);
     return transformed;
   }
 }

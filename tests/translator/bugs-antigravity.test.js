@@ -1,7 +1,7 @@
 // Real Antigravity-MITM requests (Gemini-internal: { request: { contents, ... } }) → OpenAI.
 import { describe, it, expect } from "vitest";
 import "./registerAll.js";
-import { translateRequest } from "../../open-sse/translator/index.js";
+import { translateRequest, translateResponse, initState } from "../../open-sse/translator/index.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
 import { AntigravityExecutor } from "../../open-sse/executors/antigravity.js";
 
@@ -9,10 +9,9 @@ const AG2O = (req) =>
   translateRequest(FORMATS.ANTIGRAVITY, FORMATS.OPENAI, "m", { request: req }, true, null, null);
 
 describe("Antigravity → OpenAI", () => {
-  // antigravity-to-openai.js:177-189 — content with BOTH functionResponse and functionCall/text
-  // returns toolResults early → drops the tool calls / text.
-  // KNOWN BUG
-  it.fails("functionResponse + functionCall in same content keeps both", () => {
+  // antigravity-to-openai.js — content with BOTH functionResponse and functionCall/text
+  // previously returned toolResults early → dropped tool calls / text (fixed in #2225)
+  it("functionResponse + functionCall in same content keeps both", () => {
     const out = AG2O({
       contents: [{
         role: "model",
@@ -51,6 +50,32 @@ describe("Antigravity → OpenAI", () => {
       ? content.some((c) => c.type === "text" && c.text === "")
       : content === "";
     expect(hasEmpty, "empty text part emitted").toBe(false);
+  });
+});
+
+describe("Antigravity → Claude", () => {
+  it("tool call input_json_delta includes Anthropic index", () => {
+    const state = initState(FORMATS.CLAUDE);
+    const events = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.CLAUDE, {
+      response: {
+        responseId: "resp-1",
+        modelVersion: "gemini-pro-agent",
+        candidates: [{
+          content: {
+            role: "model",
+            parts: [{ functionCall: { name: "bash", args: { command: "git status" } } }],
+          },
+          finishReason: "STOP",
+          index: 0,
+        }],
+      },
+    }, state);
+
+    const jsonDelta = events.find(
+      (event) => event.type === "content_block_delta" && event.delta?.type === "input_json_delta"
+    );
+    expect(jsonDelta).toMatchObject({ index: expect.any(Number) });
+    expect(JSON.parse(jsonDelta.delta.partial_json)).toEqual({ command: "git status" });
   });
 });
 
