@@ -42,18 +42,39 @@ export const runtime = "nodejs";
 
 const CALLBACK_TIMEOUT_MS = 300_000;
 
+// Compute the public base URL for OAuth redirect_uri and CIMD client IDs.
+// Priority: explicit env override > X-Forwarded headers > request URL.
+// OAuth AS require a publicly reachable redirect_uri; localhost works only
+// for local dev. Behind cloudflared the X-Forwarded-* headers carry the
+// public origin. For non-forwarded deployments set MCP_GATEWAY_OAUTH_PUBLIC_URL.
 function appBase(request) {
+  const envOverride =
+    process.env.MCP_GATEWAY_OAUTH_PUBLIC_URL ||
+    process.env.OAUTH_PUBLIC_BASE_URL;
+  if (envOverride) {
+    try { return new URL(envOverride).origin; } catch { /* invalid, fall through */ }
+  }
   const url = new URL(request.url);
-  // Honor the proxy chain: TLS is terminated upstream (cloudflared), so the
-  // app serves plain http. Use x-forwarded-proto (first segment of a possible
-  // comma list) + x-forwarded-host so the OAuth redirect_uri matches what the
-  // browser/AS actually sees.
   const proto =
     (request.headers.get("x-forwarded-proto") || "")
       .split(",")[0]
       .trim() || url.protocol.replace(":", "");
   const host = request.headers.get("x-forwarded-host") || url.host;
   return `${proto}://${host}`;
+}
+
+// Check if a base URL is suitable for OAuth redirect_uri.
+// AS require a publicly reachable HTTPS URL. localhost/loopback only works
+// if an explicit env override (MCP_GATEWAY_OAUTH_PUBLIC_URL) was set.
+function isOAuthCapableBase(base) {
+  try {
+    const u = new URL(base);
+    // Must be HTTPS + publicly reachable (rejects loopback/private IPs).
+    // Reuses isPubliclyFetchableBase (rejects loopback/non-public hosts).
+    return u.protocol === "https:" && isPubliclyFetchableBase(base);
+  } catch {
+    return false;
+  }
 }
 
 function buildAuthorizeUrl(opts) {
@@ -181,6 +202,12 @@ export async function GET(request, context) {
     if (!raw) return NextResponse.json({ error: "instance not found" }, { status: 404 });
     const instance = toOauthInstance(raw);
     if (!instance.url) return NextResponse.json({ error: "instance has no url" }, { status: 400 });
+    const base = appBase(request);
+    if (!isOAuthCapableBase(base)) {
+      return NextResponse.json({
+        error: "OAuth requires a public HTTPS URL. Set MCP_GATEWAY_OAUTH_PUBLIC_URL env var or access the dashboard through your Cloudflare tunnel.",
+      }, { status: 400 });
+    }
     let client;
     try {
       client = await ensureClient(instance, request);
