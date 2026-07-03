@@ -94,7 +94,7 @@ export class QoderService {
    *
    * Upstream returns 202/404 while waiting; 200 with a JSON body when done.
    */
-  async pollDeviceToken({ nonce, codeVerifier }) {
+  async pollDeviceToken({ nonce, codeVerifier, proxyOptions = null }) {
     if (!nonce || !codeVerifier) {
       throw new Error("pollDeviceToken: missing nonce or code verifier");
     }
@@ -106,6 +106,7 @@ export class QoderService {
         Accept: "application/json",
         "User-Agent": "Go-http-client/2.0",
       },
+      proxyOptions,
     });
 
     // Pending — server has registered the device code but the user hasn't
@@ -153,7 +154,7 @@ export class QoderService {
    * Fetch profile info for the freshly-issued token. Best-effort — failures
    * shouldn't block login; returning empty strings is fine.
    */
-  async fetchUserInfo(accessToken) {
+  async fetchUserInfo(accessToken, proxyOptions = null) {
     try {
       const response = await fetchWithTimeout(QODER_USERINFO_URL, {
         method: "GET",
@@ -162,6 +163,7 @@ export class QoderService {
           Accept: "application/json",
           "User-Agent": "Go-http-client/2.0",
         },
+        proxyOptions,
       });
       if (!response.ok) return { name: "", email: "" };
       const body = await response.json();

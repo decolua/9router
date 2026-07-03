@@ -307,7 +307,9 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   }
 
   const connectionProxyUrl = resolveConnectionProxyUrl(targetUrl, proxyOptions);
-  const envProxyUrl = connectionProxyUrl ? null : normalizeProxyUrl(getEnvProxyUrl(targetUrl));
+  const envProxyUrl = connectionProxyUrl || proxyOptions?.disableEnvProxy === true
+    ? null
+    : normalizeProxyUrl(getEnvProxyUrl(targetUrl));
   const proxyUrl = connectionProxyUrl || envProxyUrl;
 
   // MITM DNS bypass: for known MITM-intercepted hosts, resolve real IP to avoid DNS spoof
@@ -357,7 +359,8 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
  * Patched global fetch with env-proxy support and MITM DNS bypass
  */
 async function patchedFetch(url, options = {}) {
-  return proxyAwareFetch(url, options, null);
+  const { proxyOptions, ...restOptions } = options;
+  return proxyAwareFetch(url, restOptions, proxyOptions || null);
 }
 
 // Idempotency guard — only patch once to avoid wrapping multiple times

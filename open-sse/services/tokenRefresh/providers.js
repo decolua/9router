@@ -294,6 +294,9 @@ export async function refreshCodexToken(refreshToken, log) {
           grant_type: "refresh_token",
           refresh_token: refreshToken,
         }),
+        // ponytail: Codex refresh has no per-connection proxy context here;
+        // pass proxyOptions through refreshTokenByProvider before honoring pools.
+        proxyOptions: { disableEnvProxy: true },
       });
 
       if (!response.ok) {

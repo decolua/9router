@@ -1,3 +1,4 @@
+import "open-sse/utils/proxyFetch.js";
 import { NextResponse } from "next/server";
 import { 
   getProvider, 
@@ -7,6 +8,8 @@ import {
   pollForToken 
 } from "@/lib/oauth/providers";
 import { createProviderConnection } from "@/models";
+import { ensureOutboundProxyInitialized } from "@/lib/network/initOutboundProxy";
+import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import {
   startCodexProxy,
   stopCodexProxy,
@@ -20,7 +23,27 @@ import {
   clearXaiSession,
 } from "@/lib/oauth/utils/server";
 
-async function completeXaiManualCode(code, state) {
+async function proxyOptionsForPool(proxyPoolId) {
+  if (!proxyPoolId || proxyPoolId === "__none__") return { disableEnvProxy: true };
+  const proxyConfig = await resolveConnectionProxyConfig({ proxyPoolId });
+  if (!proxyConfig || proxyConfig.source === "none" || proxyConfig.source === "error") return { disableEnvProxy: true };
+  return {
+    connectionProxyEnabled: proxyConfig.connectionProxyEnabled === true,
+    connectionProxyUrl: proxyConfig.connectionProxyUrl || "",
+    connectionNoProxy: proxyConfig.connectionNoProxy || "",
+    vercelRelayUrl: proxyConfig.vercelRelayUrl || "",
+    strictProxy: proxyConfig.strictProxy === true,
+  };
+}
+
+function withProxyPoolData(providerSpecificData, proxyPoolId) {
+  return {
+    ...(providerSpecificData || {}),
+    ...(proxyPoolId && proxyPoolId !== "__none__" ? { proxyPoolId } : {}),
+  };
+}
+
+async function completeXaiManualCode(code, state, proxyPoolId = null) {
   const session = state ? getXaiSessionStatus(state) : null;
   if (!session) {
     throw new Error("xAI OAuth session not found; restart the login flow and paste the code again");
@@ -28,17 +51,21 @@ async function completeXaiManualCode(code, state) {
   if (!code) throw new Error("Missing xAI authorization code");
 
   try {
+    const selectedProxyPoolId = proxyPoolId || session.proxyPoolId;
     const tokenData = await exchangeTokens(
       "xai",
       code,
       session.redirectUri,
       session.codeVerifier,
-      state
+      state,
+      undefined,
+      await proxyOptionsForPool(selectedProxyPoolId)
     );
     const connection = await createProviderConnection({
       provider: "xai",
       authType: "oauth",
       ...tokenData,
+      providerSpecificData: withProxyPoolData(tokenData.providerSpecificData, selectedProxyPoolId),
       expiresAt: tokenData.expiresIn
         ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString()
         : null,
@@ -68,16 +95,23 @@ async function completeXaiManualCode(code, state) {
 // GET /api/oauth/[provider]/device-code - Request device code (for device_code flow)
 export async function GET(request, { params }) {
   try {
+    await ensureOutboundProxyInitialized();
     const { provider, action } = await params;
     const { searchParams } = new URL(request.url);
 
     if (action === "authorize") {
       const redirectUri = searchParams.get("redirect_uri") || "http://localhost:8080/callback";
+      const proxyPoolId = searchParams.get("proxyPoolId");
       // Collect provider-specific meta params (e.g. gitlab passes baseUrl, clientId, clientSecret)
-      const reservedParams = new Set(["redirect_uri"]);
+      const reservedParams = new Set(["redirect_uri", "proxyPoolId"]);
       const meta = {};
       searchParams.forEach((value, key) => { if (!reservedParams.has(key)) meta[key] = value; });
-      const authData = await generateAuthData(provider, redirectUri, Object.keys(meta).length ? meta : undefined);
+      const authData = await generateAuthData(
+        provider,
+        redirectUri,
+        Object.keys(meta).length ? meta : undefined,
+        await proxyOptionsForPool(proxyPoolId)
+      );
       return NextResponse.json(authData);
     }
 
@@ -92,14 +126,15 @@ export async function GET(request, { params }) {
       const state = searchParams.get("state");
       const codeVerifier = searchParams.get("code_verifier");
       const redirectUri = searchParams.get("redirect_uri");
+      const proxyPoolId = searchParams.get("proxyPoolId");
       const result = provider === "xai"
         ? await startXaiProxy(Number(appPort))
         : await startCodexProxy(Number(appPort));
       let serverSide = false;
       if (result.success && state && codeVerifier && redirectUri) {
         serverSide = provider === "xai"
-          ? registerXaiSession({ state, codeVerifier, redirectUri })
-          : registerCodexSession({ state, codeVerifier, redirectUri });
+          ? registerXaiSession({ state, codeVerifier, redirectUri, proxyPoolId })
+          : registerCodexSession({ state, codeVerifier, redirectUri, proxyPoolId });
       }
       return NextResponse.json({ ...result, serverSide });
     }
@@ -138,7 +173,9 @@ export async function GET(request, { params }) {
         return NextResponse.json({ error: "Provider does not support device code flow" }, { status: 400 });
       }
 
-      const authData = await generateAuthData(provider, null);
+      const proxyPoolId = searchParams.get("proxyPoolId");
+      const proxyOptions = await proxyOptionsForPool(proxyPoolId);
+      const authData = await generateAuthData(provider, null, undefined, proxyOptions);
       const startUrl = searchParams.get("start_url");
       const region = searchParams.get("region");
       const authMethod = searchParams.get("auth_method");
@@ -163,10 +200,10 @@ export async function GET(request, { params }) {
       ];
       let deviceData;
       if (noPkceDeviceProviders.includes(provider)) {
-        deviceData = await requestDeviceCode(provider, undefined, deviceOptions);
+        deviceData = await requestDeviceCode(provider, undefined, deviceOptions, proxyOptions);
       } else {
         // Qwen and other PKCE providers
-        deviceData = await requestDeviceCode(provider, authData.codeChallenge, deviceOptions);
+        deviceData = await requestDeviceCode(provider, authData.codeChallenge, deviceOptions, proxyOptions);
       }
 
       return NextResponse.json({
@@ -188,6 +225,7 @@ export async function GET(request, { params }) {
 // POST /api/oauth/[provider]/poll - Poll for token (device_code flow)
 export async function POST(request, { params }) {
   try {
+    await ensureOutboundProxyInitialized();
     const { provider, action } = await params;
     let body;
     try {
@@ -197,7 +235,7 @@ export async function POST(request, { params }) {
     }
 
     if (action === "exchange") {
-      const { code, redirectUri, codeVerifier, state, meta } = body;
+      const { code, redirectUri, codeVerifier, state, meta, proxyPoolId } = body;
 
       // Detect if "code" is actually a raw JWT access token (starts with eyJ)
       if (code && code.startsWith("eyJ") && code.includes(".")) {
@@ -217,7 +255,7 @@ export async function POST(request, { params }) {
         const planType = info.chatgptPlanType || directPayload.plan_type;
         const email = info.email || directPayload.email;
 
-        const providerSpecificData = { authMethod: "access_token" };
+        const providerSpecificData = withProxyPoolData({ authMethod: "access_token" }, proxyPoolId);
         if (accountId) providerSpecificData.chatgptAccountId = accountId;
         if (planType) providerSpecificData.chatgptPlanType = planType;
 
@@ -248,13 +286,22 @@ export async function POST(request, { params }) {
       }
 
       // Exchange code for tokens (meta carries provider-specific params, e.g. gitlab clientId/baseUrl)
-      const tokenData = await exchangeTokens(provider, code, redirectUri, codeVerifier, state, meta);
+      const tokenData = await exchangeTokens(
+        provider,
+        code,
+        redirectUri,
+        codeVerifier,
+        state,
+        meta,
+        await proxyOptionsForPool(proxyPoolId)
+      );
 
       // Save to database
       const connection = await createProviderConnection({
         provider,
         authType: "oauth",
         ...tokenData,
+        providerSpecificData: withProxyPoolData(tokenData.providerSpecificData, proxyPoolId),
         expiresAt: tokenData.expiresIn 
           ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString() 
           : null,
@@ -273,7 +320,7 @@ export async function POST(request, { params }) {
     }
 
     if (action === "poll") {
-      const { deviceCode, codeVerifier, extraData } = body;
+      const { deviceCode, codeVerifier, extraData, proxyPoolId } = body;
 
       if (!deviceCode) {
         return NextResponse.json({ error: "Missing device code" }, { status: 400 });
@@ -281,13 +328,14 @@ export async function POST(request, { params }) {
 
       // Providers that don't use PKCE for device code
       const noPkceProviders = ["github", "kimi", "kimi-coding", "kilocode", "codebuddy-cn"];
+      const proxyOptions = await proxyOptionsForPool(proxyPoolId);
       let result;
       if (noPkceProviders.includes(provider)) {
         // kimi needs extraData._kimiDeviceId for stable X-Msh-Device-Id (CLIProxyAPI parity)
-        result = await pollForToken(provider, deviceCode, null, extraData);
+        result = await pollForToken(provider, deviceCode, null, extraData, proxyOptions);
       } else if (provider === "kiro") {
         // Kiro needs extraData (clientId, clientSecret) from device code response
-        result = await pollForToken(provider, deviceCode, null, extraData);
+        result = await pollForToken(provider, deviceCode, null, extraData, proxyOptions);
       } else if (provider === "qoder") {
         // Qoder needs both the PKCE verifier (codeVerifier) and the machineId
         // captured at device-code time (extraData._qoderMachineId) so
@@ -295,13 +343,13 @@ export async function POST(request, { params }) {
         if (!codeVerifier) {
           return NextResponse.json({ error: "Missing code verifier" }, { status: 400 });
         }
-        result = await pollForToken(provider, deviceCode, codeVerifier, extraData);
+        result = await pollForToken(provider, deviceCode, codeVerifier, extraData, proxyOptions);
       } else {
         // Qwen and other PKCE providers
         if (!codeVerifier) {
           return NextResponse.json({ error: "Missing code verifier" }, { status: 400 });
         }
-        result = await pollForToken(provider, deviceCode, codeVerifier);
+        result = await pollForToken(provider, deviceCode, codeVerifier, null, proxyOptions);
       }
 
       if (result.success) {
@@ -311,6 +359,7 @@ export async function POST(request, { params }) {
           provider: providerId,
           authType: "oauth",
           ...result.tokens,
+          providerSpecificData: withProxyPoolData(result.tokens.providerSpecificData, proxyPoolId),
           expiresAt: result.tokens.expiresIn 
             ? new Date(Date.now() + result.tokens.expiresIn * 1000).toISOString() 
             : null,
@@ -341,8 +390,8 @@ export async function POST(request, { params }) {
       if (provider !== "xai") {
         return NextResponse.json({ error: "Manual code only supported for xai" }, { status: 400 });
       }
-      const { code, state } = body;
-      const connection = await completeXaiManualCode(String(code || "").trim(), String(state || "").trim());
+      const { code, state, proxyPoolId } = body;
+      const connection = await completeXaiManualCode(String(code || "").trim(), String(state || "").trim(), proxyPoolId);
       return NextResponse.json({ success: true, connection });
     }
 
