@@ -214,6 +214,9 @@ function killAllAppProcesses(appPort) {
     try {
       // Kill MIT first (privileged process, needs special handling)
       killProxyByPidFile();
+      // Kill Headroom proxy by PID file — detached process that outlives the main server.
+      // Must stop before npm rename; it holds a handle on the app/ directory on Windows (#2265).
+      killByPidFile(path.join(getAppDataDir(), "headroom", "proxy.pid"));
       // Kill cloudflared/tailscale by PID file (precise, only this app's tunnel)
       killTunnelByPidFile();
 
@@ -610,6 +613,8 @@ function startServer(latestVersion) {
       } catch (e) { }
       // Kill MIT server (privileged process) via PID file
       killProxyByPidFile();
+      // Kill Headroom proxy (detached process, holds handle on app/ on Windows)
+      killByPidFile(path.join(getAppDataDir(), "headroom", "proxy.pid"));
       // Kill cloudflared/tailscale via PID file (only this app's tunnel)
       killTunnelByPidFile();
       // Kill server process directly
