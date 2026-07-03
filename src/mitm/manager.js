@@ -49,6 +49,7 @@ const MITM_RESTART_RESET_MS = 60000;
 let mitmRestartCount = 0;
 let mitmLastStartTime = 0;
 let mitmIsRestarting = false;
+let mitmStarting = false; // prevents concurrent startServer() calls from the same process
 
 function resolveBundledServerPath() {
   if (process.env.MITM_SERVER_PATH) return process.env.MITM_SERVER_PATH;
@@ -486,6 +487,12 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
     throw new Error("MITM server is already running");
   }
 
+  if (mitmStarting) {
+    throw new Error("MITM server is already starting");
+  }
+  mitmStarting = true;
+
+  try {
   await killLeftoverMitm(sudoPassword);
 
   if (!IS_WIN) {
@@ -707,6 +714,9 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
   if (sudoPassword) setCachedPassword(sudoPassword);
 
   return { running: true, pid: serverPid };
+  } finally {
+    mitmStarting = false;
+  }
 }
 
 /**
