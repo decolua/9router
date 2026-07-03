@@ -116,6 +116,10 @@ function resolveCacheSessionId(body, credentials) {
   });
 }
 
+function normalizeReasoningEffort(value) {
+  return value === "max" ? "xhigh" : value;
+}
+
 /**
  * Codex Executor - handles OpenAI Codex API (Responses API format)
  * Automatically injects default instructions if missing
@@ -347,7 +351,7 @@ export class CodexExecutor extends BaseExecutor {
 
     // Extract thinking level from model name suffix
     // e.g., gpt-5.3-codex-high → high, gpt-5.3-codex → medium (default)
-    const effortLevels = ['none', 'low', 'medium', 'high', 'xhigh'];
+    const effortLevels = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
     let modelEffort = null;
     for (const level of effortLevels) {
       if (body.model.endsWith(`-${level}`)) {
@@ -360,10 +364,11 @@ export class CodexExecutor extends BaseExecutor {
 
     // Priority: explicit reasoning.effort > reasoning_effort param > model suffix > default (medium)
     if (!body.reasoning) {
-      const effort = body.reasoning_effort || modelEffort || 'low';
+      const effort = normalizeReasoningEffort(body.reasoning_effort || modelEffort || 'low');
       body.reasoning = { effort, summary: "auto" };
-    } else if (!body.reasoning.summary) {
-      body.reasoning.summary = "auto";
+    } else {
+      body.reasoning.effort = normalizeReasoningEffort(body.reasoning.effort);
+      if (!body.reasoning.summary) body.reasoning.summary = "auto";
     }
     delete body.reasoning_effort;
 
