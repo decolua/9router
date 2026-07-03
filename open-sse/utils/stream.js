@@ -91,7 +91,6 @@ export function createSSEStream(options = {}) {
   let sseLineCount = 0;
   let sseEmittedCount = 0;
   const eventTypeCounts = {};
-  const thinkSplitter = createThinkTagSplitter();
 
   // Track Responses API event framing for same-format passthrough (codex)
   let currentOpenAIResponsesEvent = null;
@@ -192,25 +191,11 @@ export function createSSEStream(options = {}) {
               }
 
               const delta = parsed.choices?.[0]?.delta;
-              let content = delta?.content;
-              const reasoning = extractReasoningText(delta);
+              const content = delta?.content;
+              const reasoning = delta?.reasoning_content;
               if (content && typeof content === "string") {
-                // Strip inline think tags; route tag-content to reasoning accumulator
-                const split = thinkSplitter.feed(content);
-                content = split.text || null;
-                if (split.reasoning) {
-                  accumulatedThinking += split.reasoning;
-                  totalContentLength += split.reasoning.length;
-                }
-                if (content) {
-                  totalContentLength += content.length;
-                  accumulatedContent += content;
-                  parsed.choices[0].delta.content = content;
-                  fieldsInjected = true;
-                } else if (parsed.choices[0].delta.content !== undefined) {
-                  delete parsed.choices[0].delta.content;
-                  fieldsInjected = true;
-                }
+                totalContentLength += content.length;
+                accumulatedContent += content;
               }
               if (reasoning && typeof reasoning === "string") {
                 totalContentLength += reasoning.length;
@@ -318,37 +303,16 @@ export function createSSEStream(options = {}) {
           accumulatedThinking += parsed.delta.thinking;
         }
 
-        // OpenAI format - content (route inline think tags to reasoning accumulator)
+        // OpenAI format - content
         if (parsed.choices?.[0]?.delta?.content) {
-          const _rawContent = parsed.choices[0].delta.content;
-          const _split = thinkSplitter.feed(_rawContent);
-
-          // Strip tags from parsed object before sending to translator
-          if (_split.text !== _rawContent) {
-            if (_split.text) {
-              parsed.choices[0].delta.content = _split.text;
-            } else {
-              delete parsed.choices[0].delta.content;
-            }
-          }
-
-          if (_split.text) {
-            totalContentLength += _split.text.length;
-            accumulatedContent += _split.text;
-          }
-          if (_split.reasoning) {
-            totalContentLength += _split.reasoning.length;
-            accumulatedThinking += _split.reasoning;
-          }
+          totalContentLength += parsed.choices[0].delta.content.length;
+          accumulatedContent += parsed.choices[0].delta.content;
         }
-        // OpenAI format - reasoning (matches openai-responses.js vendor shapes: reasoning_content / reasoning / reasoning_details[])
-        const _openaiDelta = parsed.choices?.[0]?.delta;
-        if (_openaiDelta) {
-          const _reasoning = extractReasoningText(_openaiDelta);
-          if (_reasoning) {
-            totalContentLength += _reasoning.length;
-            accumulatedThinking += _reasoning;
-          }
+        // OpenAI format - reasoning
+        if (parsed.choices?.[0]?.delta?.reasoning_content) {
+          totalContentLength +=
+            parsed.choices[0].delta.reasoning_content.length;
+          accumulatedThinking += parsed.choices[0].delta.reasoning_content;
         }
 
         // Gemini format
