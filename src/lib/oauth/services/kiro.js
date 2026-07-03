@@ -268,29 +268,45 @@ export class KiroService {
    */
   async listAvailableProfiles(accessToken, region = "us-east-1") {
     assertValidAwsRegion(region);
-    const endpoint = `https://codewhisperer.${region}.amazonaws.com`;
-
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-amz-json-1.0",
-        "x-amz-target": "AmazonCodeWhispererService.ListAvailableProfiles",
-        "Authorization": `Bearer ${accessToken}`,
-        "Accept": "application/json",
-      },
-      body: JSON.stringify({ maxResults: 10 }),
-    });
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Failed to list profiles: ${error}`);
+    // The Q Developer profile can live in a different region than the caller's
+    // IAM Identity Center, and the legacy codewhisperer.* host only exists in
+    // us-east-1 (every other region uses q.<region>). Try the requested region
+    // first, then the known Q Developer regions, and return the first profile.
+    const hostFor = (r) => r === "us-east-1"
+      ? "https://codewhisperer.us-east-1.amazonaws.com"
+      : `https://q.${r}.amazonaws.com`;
+    const candidates = [...new Set([region, "us-east-1", "eu-central-1"])];
+    let lastError = null;
+    for (const r of candidates) {
+      try {
+        const response = await fetch(hostFor(r), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-amz-json-1.0",
+            "x-amz-target": "AmazonCodeWhispererService.ListAvailableProfiles",
+            "Authorization": `Bearer ${accessToken}`,
+            "Accept": "application/json",
+          },
+          body: JSON.stringify({ maxResults: 10 }),
+        });
+        if (!response.ok) {
+          lastError = new Error(`ListAvailableProfiles ${r} failed: ${await response.text()}`);
+          continue;
+        }
+        const data = await response.json();
+        const profiles = Array.isArray(data?.profiles) ? data.profiles : [];
+        if (profiles.length === 0) continue;
+        const arnOf = (p) => p?.arn || p?.profileArn || null;
+        const match = profiles.find((p) => arnOf(p)?.split(":")[3] === r) || profiles[0];
+        const arn = arnOf(match);
+        if (arn) return arn;
+      } catch (e) {
+        lastError = e;
+        continue;
+      }
     }
-
-    const data = await response.json();
-    const profiles = Array.isArray(data?.profiles) ? data.profiles : [];
-    const arnOf = (p) => p?.arn || p?.profileArn || null;
-    const match = profiles.find((p) => arnOf(p)?.split(":")[3] === region) || profiles[0];
-    return arnOf(match);
+    if (lastError) throw lastError;
+    return null;
   }
 
   /**
