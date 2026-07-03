@@ -27,6 +27,7 @@ import { FORMATS } from "../formats.js";
 import { v4 as uuidv4 } from "uuid";
 import {
   resolveKiroModel,
+  toKiroModelId,
   resolveKiroThinkingBudget,
   buildThinkingSystemPrefix,
   KIRO_AGENTIC_SYSTEM_PROMPT,
@@ -375,6 +376,8 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
   const topP = body.top_p;
 
   const { upstream: upstreamModel, agentic } = resolveKiroModel(model);
+  // Kiro API requires dash-notation version numbers (claude-sonnet-4-5 not claude-sonnet-4.5)
+  const kiroModelId = toKiroModelId(upstreamModel);
   const thinkingBudget = resolveKiroThinkingBudget(body, credentials?.rawHeaders, model);
 
   // Guard 1: no client tools → flatten all tool interactions to text.
@@ -385,7 +388,7 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
   const { history, currentMessage } = convertClaudeMessagesToKiro(
     messages,
     tools,
-    upstreamModel
+    kiroModelId
   );
 
   // Guard 2: tools present → reconcile dangling tool_results.
@@ -427,7 +430,7 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
       currentMessage: {
         userInputMessage: {
           content: finalContent,
-          modelId: upstreamModel,
+          modelId: kiroModelId,
           origin: "AI_EDITOR",
           ...(currentMessage?.userInputMessage?.userInputMessageContext && {
             userInputMessageContext:
@@ -453,7 +456,7 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
 
   // Non-enumerable hint so the executor can route the upstream model id.
   Object.defineProperty(payload, "_kiroUpstreamModel", {
-    value: upstreamModel,
+    value: kiroModelId,
     enumerable: false,
   });
 

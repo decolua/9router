@@ -195,6 +195,24 @@ export function stripThinkingSuffix(model) {
 }
 
 /**
+ * Normalise a 9router model id to the wire format the Kiro API expects.
+ * Kiro rejects Claude model IDs that use dot notation for the version number
+ * (e.g. "claude-sonnet-4.5") — it only accepts dash notation ("claude-sonnet-4-5").
+ * Non-Claude models (deepseek-3.2, MiniMax-M2.5) are passed through unchanged
+ * because their dots are semantically part of the stable upstream model name and
+ * those models work correctly with dots.
+ *
+ * @param {string} upstream Model id with synthetic suffixes already stripped
+ * @returns {string} Kiro-wire model id
+ */
+export function toKiroModelId(upstream) {
+  if (typeof upstream === "string" && upstream.startsWith("claude-")) {
+    return upstream.replace(/\./g, "-");
+  }
+  return upstream;
+}
+
+/**
  * Resolve a 9router model id to the real upstream Kiro model id, plus flags
  * describing which behaviours the suffixes implied.
  *

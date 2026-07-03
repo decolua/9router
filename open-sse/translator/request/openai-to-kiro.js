@@ -8,6 +8,7 @@ import { v4 as uuidv4 } from "uuid";
 import { resolveSessionId } from "../../utils/sessionManager.js";
 import {
   resolveKiroModel,
+  toKiroModelId,
   resolveKiroThinkingBudget,
   buildThinkingSystemPrefix,
   KIRO_AGENTIC_SYSTEM_PROMPT,
@@ -520,9 +521,11 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
   const topP = body.top_p;
 
   const { upstream: upstreamModel, agentic } = resolveKiroModel(model);
+  // Kiro API requires dash-notation version numbers (claude-sonnet-4-5 not claude-sonnet-4.5)
+  const kiroModelId = toKiroModelId(upstreamModel);
   const thinkingBudget = resolveKiroThinkingBudget(body, credentials?.rawHeaders, model);
 
-  const { history, currentMessage } = convertMessages(messages, tools, upstreamModel);
+  const { history, currentMessage } = convertMessages(messages, tools, kiroModelId);
 
   // API-key (headless) auth uses a raw CodeWhisperer credential whose profile is
   // account-specific. Injecting the shared builder-id/social *default* placeholder
@@ -559,7 +562,7 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
       currentMessage: {
         userInputMessage: {
           content: finalContent,
-          modelId: upstreamModel,
+          modelId: kiroModelId,
           origin: "AI_EDITOR",
           ...(currentMessage?.userInputMessage?.images?.length > 0 && {
             images: currentMessage.userInputMessage.images
@@ -586,7 +589,7 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
 
   // Tag payload so the executor can route the upstream model id correctly.
   Object.defineProperty(payload, "_kiroUpstreamModel", {
-    value: upstreamModel,
+    value: kiroModelId,
     enumerable: false
   });
 
