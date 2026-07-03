@@ -20,7 +20,7 @@ export default {
     baseUrl: "https://llm.kimchi.dev/openai/v1/chat/completions",
     format: "openai",
     headers: {
-      "User-Agent": "kimchi/0.1.40",
+      "User-Agent": "kimchi/0.1.50",
     },
     auth: {
       combined: true,

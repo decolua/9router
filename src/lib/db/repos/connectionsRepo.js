@@ -98,13 +98,26 @@ export async function createProviderConnection(data) {
 
     let existing = null;
     if (data.authType === "oauth" && data.email) {
+      const incomingUsername = data.providerSpecificData?.username;
       const incomingWs = data.providerSpecificData?.chatgptAccountId;
       existing = all.find(c => {
         if (c.authType !== "oauth" || c.email !== data.email) return false;
-        // If both sides have a workspace ID, they must match for dedup
+        // Workspace providers (Codex) use workspace ID when both sides have it
         const existingWs = c.providerSpecificData?.chatgptAccountId;
         if (incomingWs && existingWs) return incomingWs === existingWs;
-        return true; // fallback: email-only match for non-workspace providers
+        if (incomingWs && !existingWs) return false;
+        if (!incomingWs && existingWs) return false;
+        // Non-workspace providers: match on (email + username) so cross-IdP
+        // accounts don't overwrite each other. Require username on both sides
+        // — if only one side has it, treat as a distinct identity rather than
+        // collapsing onto the bare-email fallback (which would re-introduce
+        // the cross-IdP overwrite).
+        const existingUsername = c.providerSpecificData?.username;
+        if (incomingUsername && existingUsername) {
+          return incomingUsername === existingUsername;
+        }
+        if (incomingUsername || existingUsername) return false;
+        return true;
       });
     } else if (data.authType === "apikey" && data.name) {
       existing = all.find(c => c.authType === "apikey" && c.name === data.name);
