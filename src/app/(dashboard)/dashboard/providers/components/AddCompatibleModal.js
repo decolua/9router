@@ -41,6 +41,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
     prefix: "",
     ...(config.hasApiType ? { apiType: "chat" } : {}),
     baseUrl: config.defaultBaseUrl,
+    iconUrl: "",
   });
 
   const [formData, setFormData] = useState(initialFormData);
@@ -74,6 +75,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           ...(config.hasApiType ? { apiType: formData.apiType } : {}),
           baseUrl: formData.baseUrl,
           type: config.type,
+          ...(formData.iconUrl.trim() ? { iconUrl: formData.iconUrl } : {}),
         }),
       });
       const data = await res.json();
@@ -164,6 +166,13 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           onChange={(e) => setFormData({ ...formData, baseUrl: e.target.value })}
           placeholder={config.defaultBaseUrl}
           hint={config.baseUrlHint}
+        />
+        <Input
+          label="Icon URL (optional)"
+          value={formData.iconUrl}
+          onChange={(e) => setFormData({ ...formData, iconUrl: e.target.value })}
+          placeholder="https://example.com/logo.png"
+          hint="Optional. A square image URL shown as this provider's icon. Falls back to a text badge if unset or it fails to load."
         />
         <Input
           label="API Key (for Check)"

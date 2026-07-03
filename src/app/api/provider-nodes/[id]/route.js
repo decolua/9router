@@ -6,7 +6,7 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { name, prefix, apiType, baseUrl } = body;
+    const { name, prefix, apiType, baseUrl, iconUrl } = body;
     const node = await getProviderNodeById(id);
 
     if (!node) {
@@ -52,6 +52,7 @@ export async function PUT(request, { params }) {
       name: name.trim(),
       prefix: prefix.trim(),
       baseUrl: sanitizedBaseUrl,
+      iconUrl: iconUrl?.trim() || undefined,
     };
 
     if (node.type === "openai-compatible") {

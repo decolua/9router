@@ -10,6 +10,7 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
     prefix: "",
     apiType: "chat",
     baseUrl: "https://api.openai.com/v1",
+    iconUrl: "",
   });
   const [saving, setSaving] = useState(false);
   const [checkKey, setCheckKey] = useState("");
@@ -24,6 +25,7 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
         prefix: node.prefix || "",
         apiType: node.apiType || "chat",
         baseUrl: node.baseUrl || (isAnthropic ? "https://api.anthropic.com/v1" : "https://api.openai.com/v1"),
+        iconUrl: node.iconUrl || "",
       });
     }
   }, [node, isAnthropic]);
@@ -41,6 +43,7 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
         name: formData.name,
         prefix: formData.prefix,
         baseUrl: formData.baseUrl,
+        ...(formData.iconUrl.trim() ? { iconUrl: formData.iconUrl } : {}),
       };
       if (!isAnthropic) {
         payload.apiType = formData.apiType;
@@ -106,6 +109,13 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
           onChange={(e) => setFormData({ ...formData, baseUrl: e.target.value })}
           placeholder={isAnthropic ? "https://api.anthropic.com/v1" : "https://api.openai.com/v1"}
           hint={`Use the base URL (ending in /v1) for your ${isAnthropic ? "Anthropic" : "OpenAI"}-compatible API.`}
+        />
+        <Input
+          label="Icon URL (optional)"
+          value={formData.iconUrl}
+          onChange={(e) => setFormData({ ...formData, iconUrl: e.target.value })}
+          placeholder="https://example.com/logo.png"
+          hint="Optional. A square image URL shown as this provider's icon. Falls back to a text badge if unset or it fails to load."
         />
         <div className="flex gap-2">
           <Input

@@ -263,6 +263,7 @@ export default function ProvidersPage() {
       color: "#10A37F",
       textIcon: "OC",
       apiType: node.apiType,
+      ...(node.iconUrl ? { iconUrl: node.iconUrl } : {}),
     }))
     .filter((p) => matchSearch(p.name));
 
@@ -273,6 +274,7 @@ export default function ProvidersPage() {
       name: node.name || "Anthropic Compatible",
       color: "#D97757",
       textIcon: "AC",
+      ...(node.iconUrl ? { iconUrl: node.iconUrl } : {}),
     }))
     .filter((p) => matchSearch(p.name));
 
@@ -651,7 +653,7 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
               }}
             >
               <ProviderIcon
-                src={`/providers/${provider.id}.png`}
+                src={provider.iconUrl || `/providers/${provider.id}.png`}
                 alt={provider.name}
                 size={30}
                 className="object-contain rounded-lg max-w-[32px] max-h-[32px]"
@@ -756,6 +758,7 @@ function ApiKeyProviderCard({
   };
 
   const getIconPath = () => {
+    if (provider.iconUrl) return provider.iconUrl;
     if (isCompatible)
       return provider.apiType === "responses"
         ? "/providers/oai-r.png"
