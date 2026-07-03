@@ -27,6 +27,7 @@ import {
   refreshProviderCredentials as _refreshProviderCredentials,
   shouldRefreshCredentials as _shouldRefreshCredentials,
 } from "open-sse/services/oauthCredentialManager.js";
+import { exchangeCopilotRuntimeToken } from "open-sse/services/copilotStatus.js";
 
 export const TOKEN_EXPIRY_BUFFER_MS = BUFFER_MS;
 
@@ -105,6 +106,23 @@ function normalizeExpiresAt(expiresAt) {
   const date = new Date(expiresAt);
   if (!Number.isFinite(date.getTime())) return null;
   return date.toISOString();
+}
+
+function toEpochMs(expiresAt) {
+  if (!expiresAt) return 0;
+  if (typeof expiresAt === "number") return expiresAt < 1e12 ? expiresAt * 1000 : expiresAt;
+  if (/^\d+$/.test(String(expiresAt))) {
+    const n = Number(expiresAt);
+    return n < 1e12 ? n * 1000 : n;
+  }
+  const parsed = new Date(expiresAt).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function copilotStatusToHttp(status) {
+  if (status === "dead") return 401;
+  if (status && status.includes("ratelimit")) return 429;
+  return 403;
 }
 
 /**
@@ -266,9 +284,7 @@ export async function checkAndRefreshToken(provider, credentials) {
   // ── 2. GitHub Copilot token expiry ────────────────────────────────────────
   if (provider === "github") {
     const copilotToken = creds.providerSpecificData?.copilotToken;
-    const copilotExpiresAt = creds.providerSpecificData?.copilotTokenExpiresAt
-      ? creds.providerSpecificData.copilotTokenExpiresAt * 1000
-      : 0;
+    const copilotExpiresAt = toEpochMs(creds.providerSpecificData?.copilotTokenExpiresAt);
     const now              = Date.now();
     const remaining        = copilotExpiresAt - now;
 
@@ -278,12 +294,21 @@ export async function checkAndRefreshToken(provider, credentials) {
         expiresIn: copilotToken ? Math.round(remaining / 1000) : "missing",
       });
 
-      const copilotTokenResult = await refreshCopilotToken(creds.accessToken);
-      if (copilotTokenResult) {
+      const proxyOptions = {
+        connectionProxyEnabled: creds.providerSpecificData?.connectionProxyEnabled === true,
+        connectionProxyUrl: creds.providerSpecificData?.connectionProxyUrl || "",
+        connectionNoProxy: creds.providerSpecificData?.connectionNoProxy || "",
+        vercelRelayUrl: creds.providerSpecificData?.vercelRelayUrl || "",
+      };
+      const copilotTokenResult = await exchangeCopilotRuntimeToken(creds.accessToken, proxyOptions);
+      if (copilotTokenResult.valid) {
         const updatedSpecific = {
           ...creds.providerSpecificData,
-          copilotToken:          copilotTokenResult.token,
-          copilotTokenExpiresAt: copilotTokenResult.expiresAt,
+          copilotToken:          copilotTokenResult.runtimeToken,
+          copilotTokenExpiresAt: copilotTokenResult.tokenExpiresAt,
+          copilotSku:            copilotTokenResult.sku,
+          copilotTier:           copilotTokenResult.tier,
+          copilotProxyEndpoint:  copilotTokenResult.proxyEndpoint,
         };
 
         await updateProviderCredentials(creds.connectionId, {
@@ -291,7 +316,21 @@ export async function checkAndRefreshToken(provider, credentials) {
         });
 
         creds.providerSpecificData = updatedSpecific;
-        creds.copilotToken = copilotTokenResult.token;
+        creds.copilotToken = copilotTokenResult.runtimeToken;
+      } else {
+        const lockUntilMs = copilotTokenResult.lockUntil ? new Date(copilotTokenResult.lockUntil).getTime() : null;
+        log.warn("TOKEN_REFRESH", "Copilot profile status check failed", {
+          connectionId: creds.connectionId,
+          status: copilotTokenResult.status,
+          error: copilotTokenResult.error,
+        });
+        return {
+          ...creds,
+          refreshAccountWide: true,
+          refreshError: copilotTokenResult.error || copilotTokenResult.status || "Copilot token refresh failed",
+          refreshStatus: copilotTokenResult.httpStatus || copilotStatusToHttp(copilotTokenResult.status),
+          refreshLockUntilMs: Number.isFinite(lockUntilMs) ? lockUntilMs : null,
+        };
       }
     }
   }
