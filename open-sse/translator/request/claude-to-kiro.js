@@ -34,6 +34,7 @@ import {
 } from "../../config/kiroConstants.js";
 import { DEFAULT_IMAGE_MIME } from "../schema/index.js";
 import { ROLE, CLAUDE_BLOCK } from "../schema/index.js";
+import { extractForwardableSystemText } from "../concerns/claudeCodeSystem.js";
 
 /** Stringify a tool_use input as a readable line. */
 function toolUseToText(name, input) {
@@ -404,16 +405,10 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
 
   let finalContent = currentMessage?.userInputMessage?.content || "";
 
-  // System prompt → prepend to the user content.
-  if (body.system) {
-    let systemText = "";
-    if (typeof body.system === "string") {
-      systemText = body.system;
-    } else if (Array.isArray(body.system)) {
-      systemText = body.system.map((s) => s.text || "").join("\n");
-    }
-    if (systemText) finalContent = `${systemText}\n\n${finalContent}`;
-  }
+  // System prompt → prepend to the user content. Kiro has no native system
+  // field, so do not forward Claude Code's harness prompt as user-visible text.
+  const systemText = extractForwardableSystemText(body.system);
+  if (systemText) finalContent = `${systemText}\n\n${finalContent}`;
 
   // Prefix order: thinking_mode tag, timestamp marker, then agentic prompt.
   const timestamp = new Date().toISOString();

@@ -284,6 +284,42 @@ describe("openaiToKiroRequest", () => {
     });
   });
 
+  describe("system prompt filtering", () => {
+    it("should drop Claude Code harness system messages before sending to Kiro", () => {
+      const body = {
+        messages: [
+          {
+            role: "system",
+            content: "You are Claude Code, Anthropic's official CLI for Claude.\nSecret harness text."
+          },
+          { role: "user", content: "hello" }
+        ]
+      };
+
+      const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
+      const content = contentOf(result);
+
+      expect(content).toContain("hello");
+      expect(content).not.toContain("You are Claude Code");
+      expect(content).not.toContain("Secret harness text");
+    });
+
+    it("should keep non-harness system messages", () => {
+      const body = {
+        messages: [
+          { role: "system", content: "Answer in Vietnamese." },
+          { role: "user", content: "hello" }
+        ]
+      };
+
+      const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
+      const content = contentOf(result);
+
+      expect(content).toContain("Answer in Vietnamese.");
+      expect(content).toContain("hello");
+    });
+  });
+
   describe("thinking budget", () => {
     it("maps reasoning_effort low to max_thinking_length 1024", () => {
       const body = {
