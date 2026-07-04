@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { createPassthroughStreamWithLogger } from "../../open-sse/utils/stream.js";
+import { FORMATS } from "../../open-sse/translator/formats.js";
+import {
+  createPassthroughStreamWithLogger,
+  createSSETransformStreamWithLogger,
+} from "../../open-sse/utils/stream.js";
 
 vi.mock("@/lib/usageDb.js", () => ({
   trackPendingRequest: vi.fn(),
@@ -56,6 +60,43 @@ describe("Antigravity Recent Requests usage", () => {
     await writeAndCollect(stream, [`data: ${JSON.stringify(event)}\n\n`]);
 
     expect(completed?.content?.content).toBe("A useful Antigravity response.");
+    expect(completed?.usage?.prompt_tokens).toBeGreaterThan(0);
+    expect(completed?.usage?.completion_tokens).toBeGreaterThan(0);
+    expect(completed?.usage?.estimated).toBe(true);
+  });
+
+  it("estimates usage for translated Antigravity wrapped content when upstream omits usageMetadata", async () => {
+    let completed = null;
+    const stream = createSSETransformStreamWithLogger(
+      FORMATS.ANTIGRAVITY,
+      FORMATS.OPENAI,
+      "antigravity",
+      null,
+      null,
+      "claude-opus-4-6-thinking",
+      "conn-1",
+      { messages: [{ role: "user", content: "hello" }] },
+      (content, usage) => {
+        completed = { content, usage };
+      },
+      null,
+    );
+
+    const event = {
+      response: {
+        candidates: [{
+          content: {
+            role: "model",
+            parts: [{ text: "Translated Antigravity response." }],
+          },
+          finishReason: "STOP",
+        }],
+      },
+    };
+
+    await writeAndCollect(stream, [`data: ${JSON.stringify(event)}\n\n`]);
+
+    expect(completed?.content?.content).toBe("Translated Antigravity response.");
     expect(completed?.usage?.prompt_tokens).toBeGreaterThan(0);
     expect(completed?.usage?.completion_tokens).toBeGreaterThan(0);
     expect(completed?.usage?.estimated).toBe(true);

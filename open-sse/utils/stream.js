@@ -22,6 +22,20 @@ const STREAM_MODE = {
   PASSTHROUGH: "passthrough" // No translation, normalize output, extract usage
 };
 
+function getGeminiFamilyParts(chunk) {
+  const parts = chunk?.response?.candidates?.[0]?.content?.parts
+    || chunk?.candidates?.[0]?.content?.parts;
+  return Array.isArray(parts) ? parts : [];
+}
+
+function accumulateGeminiFamilyParts(parts, accumulate) {
+  for (const part of parts) {
+    if (part.text && typeof part.text === "string") {
+      accumulate(part.text, part.thought === true);
+    }
+  }
+}
+
 /**
  * Create unified SSE transform stream
  * @param {object} options
@@ -160,19 +174,14 @@ export function createSSEStream(options = {}) {
                 accumulatedThinking += reasoning;
               }
 
-              const geminiParts = parsed.response?.candidates?.[0]?.content?.parts || parsed.candidates?.[0]?.content?.parts;
-              if (Array.isArray(geminiParts)) {
-                for (const part of geminiParts) {
-                  if (part.text && typeof part.text === "string") {
-                    totalContentLength += part.text.length;
-                    if (part.thought === true) {
-                      accumulatedThinking += part.text;
-                    } else {
-                      accumulatedContent += part.text;
-                    }
-                  }
+              accumulateGeminiFamilyParts(getGeminiFamilyParts(parsed), (text, isThought) => {
+                totalContentLength += text.length;
+                if (isThought) {
+                  accumulatedThinking += text;
+                } else {
+                  accumulatedContent += text;
                 }
-              }
+              });
 
               const extracted = extractUsage(parsed);
               if (extracted) {
@@ -277,20 +286,15 @@ export function createSSEStream(options = {}) {
           accumulatedThinking += parsed.choices[0].delta.reasoning_content;
         }
         
-        // Gemini format
-        if (parsed.candidates?.[0]?.content?.parts) {
-          for (const part of parsed.candidates[0].content.parts) {
-            if (part.text && typeof part.text === "string") {
-              totalContentLength += part.text.length;
-              // Check if this is thinking content
-              if (part.thought === true) {
-                accumulatedThinking += part.text;
-              } else {
-                accumulatedContent += part.text;
-              }
-            }
+        // Gemini-family format (Gemini/Vertex direct and Antigravity wrapped)
+        accumulateGeminiFamilyParts(getGeminiFamilyParts(parsed), (text, isThought) => {
+          totalContentLength += text.length;
+          if (isThought) {
+            accumulatedThinking += text;
+          } else {
+            accumulatedContent += text;
           }
-        }
+        });
 
         // Extract usage
         const extracted = extractUsage(parsed);
