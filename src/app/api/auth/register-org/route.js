@@ -7,6 +7,8 @@ import { createOrgSettings } from "@/lib/db/repos/settingsRepo.js";
 import { createUser } from "@/lib/db/repos/usersRepo.js";
 import { validatePassword } from "@/lib/auth/passwordPolicy";
 import { auditFromRequest, AuditAction } from "@/lib/audit";
+import { qTransaction } from "@/lib/db/query.js";
+import { getAdapter } from "@/lib/db/driver.js";
 
 export async function POST(request) {
   if (!isSaas()) {
@@ -40,18 +42,25 @@ export async function POST(request) {
     }
 
     const org = await createOrganization({ slug: orgSlug, name: orgName });
-    await createOrgSettings(org.id, {
-      multiUserEnabled: true,
-      signupMode: "invite",
-      requireLogin: true,
-    });
+    if (!org?.id) {
+      return NextResponse.json({ error: "Failed to create organization" }, { status: 500 });
+    }
 
-    const user = await createUser({
-      orgId: org.id,
-      email,
-      name,
-      password,
-      role: "admin",
+    const db = await getAdapter();
+    const user = await qTransaction(db, async () => {
+      await createOrgSettings(org.id, {
+        multiUserEnabled: true,
+        signupMode: "invite",
+        requireLogin: true,
+      });
+
+      return createUser({
+        orgId: org.id,
+        email,
+        name,
+        password,
+        role: "admin",
+      });
     });
 
     await auditFromRequest(request, {

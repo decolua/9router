@@ -43,7 +43,7 @@ function withPasswordHash(row) {
 }
 
 async function resolveOrgId(orgId) {
-  if (orgId) return orgId;
+  if (orgId != null && String(orgId).trim() !== "") return String(orgId).trim();
   const runtime = getRuntimeOrgId();
   if (runtime) return runtime;
   return getDefaultOrgId();
@@ -143,7 +143,7 @@ export async function createUser({ orgId, email, name, password, role = "member"
 
   await qRun(
     db,
-    `INSERT INTO users(id, orgId, email, name, passwordHash, role, oidcSub, status, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO users(id, "orgId", email, name, "passwordHash", role, "oidcSub", status, "createdAt", "updatedAt") VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [user.id, user.orgId, user.email, user.name, user.passwordHash, user.role, user.oidcSub, user.status, user.createdAt, user.updatedAt],
   );
 

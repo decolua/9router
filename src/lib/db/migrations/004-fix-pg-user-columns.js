@@ -5,6 +5,7 @@ import { qAll, qExec, qGet, qRun } from "../query.js";
 import { DEFAULT_ADMIN_EMAIL } from "./003-multi-user.js";
 
 const COLUMN_REPAIRS = [
+  { table: "users", from: "orgid", to: "orgId" },
   { table: "users", from: "passwordhash", to: "passwordHash" },
   { table: "users", from: "oidcsub", to: "oidcSub" },
   { table: "userSettings", from: "userid", to: "userId" },

@@ -182,6 +182,7 @@ export async function runMigrationOncePostgres(adapter) {
   await runVersionedMigrations(adapter);
   await verifyMasterKeyAgainstStored(adapter);
   await syncSchemaFromTables(adapter);
+  await repairPostgresUserSchema(adapter);
 
   const legacyMain = readJsonSafe(LEGACY_FILES.main);
   const alreadyImported = fs.existsSync(MIGRATED_MARKER);

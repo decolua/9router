@@ -14,6 +14,7 @@ const CAMEL_COLUMNS = [
   "lastErrorAt", "rateLimitedUntil", "expiresIn", "errorCode", "consecutiveUseCount",
   "passwordHash", "oidcSub", "userId", "tokenHash", "createdBy", "usedAt",
   "mfaEnabled", "mfaSecret", "actorUserId", "actorEmail", "targetType", "targetId",
+  "orgId",
 ];
 
 function quotePgIdent(name) {

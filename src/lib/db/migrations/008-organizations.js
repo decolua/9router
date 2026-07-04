@@ -121,7 +121,7 @@ function addOrgIdColumnSync(db, table, defaultOrgId) {
 async function tableHasColumnPg(db, table, column) {
   const row = await qGet(
     db,
-    `SELECT 1 AS ok FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ? AND column_name = ?`,
+    `SELECT 1 AS ok FROM information_schema.columns WHERE table_schema = current_schema() AND LOWER(table_name) = LOWER(?) AND LOWER(column_name) = LOWER(?)`,
     [table, column],
   );
   return !!row;
