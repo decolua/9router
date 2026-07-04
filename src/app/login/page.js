@@ -62,6 +62,7 @@ export default function LoginPage() {
           setSignupMode(data.signupMode || "invite");
           setSaas(data.saas === true);
           setOrgName(data.organization?.name || "");
+          if (data.organization?.slug) setOrgSlug(data.organization.slug);
         }
       } catch {
         // allow login attempt
@@ -208,7 +209,7 @@ export default function LoginPage() {
 
             {passwordAvailable && !showMfa && (
               <form onSubmit={handleLogin} className="flex flex-col gap-4">
-                {saas && !getClientOrgSlug() && !orgName && (
+                {saas && !getClientOrgSlug() && !orgSlug && !orgName && (
                   <div className="flex flex-col gap-2">
                     <label className="text-sm font-medium">Organization URL</label>
                     <Input
