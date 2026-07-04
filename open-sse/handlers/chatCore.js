@@ -26,6 +26,7 @@ import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, isHeadr
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
+import { SSE_HEADERS_CORS } from "../utils/sseConstants.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -68,8 +69,17 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   }
 
   const clientRequestedStreaming = body.stream === true || sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI;
+  const isUpstreamGemini = targetFormat === FORMATS.GEMINI || targetFormat === FORMATS.VERTEX || targetFormat === FORMATS.ANTIGRAVITY || targetFormat === FORMATS.GEMINI_CLI;
+  // Gemini 3.x and 2.5 thinking models are forced non-streaming upstream when client wants stream
+  // This allows 9Router to capture the thought summary and simulate standard sequential SSE back to the client.
+  const isThinkingModel = isUpstreamGemini && (model.includes("gemini-3") || model.includes("gemini-2.5") || model.includes("gemini-pro-agent"));
+  const forceNonStreamForThinking = isThinkingModel && clientRequestedStreaming;
+
   const providerRequiresStreaming = PROVIDERS[provider]?.forceStream === true;
   let stream = providerRequiresStreaming ? true : (body.stream !== false);
+  if (forceNonStreamForThinking) {
+    stream = false;
+  }
 
   // Image generation models require non-streaming (Google v1internal:generateContent)
   const modelType = getModelType(alias, model);
@@ -322,6 +332,128 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (!stream) {
     const result = await handleNonStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat, reqLogger, toolNameMap, trackDone, appendLog });
     streamController.handleComplete();
+
+    // If client requested stream, but we forced non-streaming upstream to get the thought summaries:
+    // convert the static JSON response into a simulated SSE stream.
+    if (forceNonStreamForThinking && result.ok) {
+      try {
+        const parsed = await result.clone().json();
+        const encoder = new TextEncoder();
+        const id = parsed.id || `chatcmpl-${Date.now()}`;
+        const modelName = parsed.model || model;
+        const created = parsed.created || Math.floor(Date.now() / 1000);
+
+        const simulateStream = new ReadableStream({
+          async start(controller) {
+            const sendChunk = (data) => {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+            };
+
+            const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+            const splitIntoChunks = (text, size) => {
+              const chunks = [];
+              for (let i = 0; i < text.length; i += size) {
+                chunks.push(text.slice(i, i + size));
+              }
+              return chunks;
+            };
+
+            if (sourceFormat === FORMATS.CLAUDE) {
+              let thinkingText = "";
+              let textContent = "";
+              const toolCalls = [];
+
+              for (const block of parsed.content || []) {
+                if (block.type === "thinking") thinkingText += block.thinking || "";
+                else if (block.type === "text") textContent += block.text || "";
+                else if (block.type === "tool_use") toolCalls.push(block);
+              }
+
+              sendChunk({ type: "message_start", message: { id, role: "assistant", model: modelName, type: "message", content: [], usage: { input_tokens: parsed.usage?.input_tokens || 0, output_tokens: 0 } } });
+
+              let blockIndex = 0;
+              if (thinkingText) {
+                sendChunk({ type: "content_block_start", index: blockIndex, content_block: { type: "thinking" } });
+                const chunks = splitIntoChunks(thinkingText, 15);
+                for (const chunk of chunks) {
+                  sendChunk({ type: "content_block_delta", index: blockIndex, delta: { type: "thinking_delta", thinking: chunk } });
+                  await sleep(15);
+                }
+                sendChunk({ type: "content_block_stop", index: blockIndex });
+                blockIndex++;
+              }
+
+              if (textContent) {
+                sendChunk({ type: "content_block_start", index: blockIndex, content_block: { type: "text", text: "" } });
+                const chunks = splitIntoChunks(textContent, 12);
+                for (const chunk of chunks) {
+                  sendChunk({ type: "content_block_delta", index: blockIndex, delta: { type: "text_delta", text: chunk } });
+                  await sleep(10);
+                }
+                sendChunk({ type: "content_block_stop", index: blockIndex });
+                blockIndex++;
+              }
+
+              for (const tc of toolCalls) {
+                sendChunk({ type: "content_block_start", index: blockIndex, content_block: tc });
+                sendChunk({ type: "content_block_stop", index: blockIndex });
+                blockIndex++;
+              }
+
+              sendChunk({ type: "message_delta", delta: { stop_reason: parsed.stop_reason || "end_turn" }, usage: { output_tokens: parsed.usage?.output_tokens || 0 } });
+              sendChunk({ type: "message_stop" });
+            } else {
+              const choice = parsed.choices?.[0] || {};
+              const msg = choice.message || {};
+              const reasoning = msg.reasoning_content || "";
+              const content = msg.content || "";
+              const toolCalls = msg.tool_calls || [];
+
+              // Assistant role metadata chunk
+              sendChunk({ id, object: "chat.completion.chunk", created, model: modelName, choices: [{ index: 0, delta: { role: "assistant" }, finish_reason: null }] });
+
+              // Stream reasoning_content chunks
+              if (reasoning) {
+                const chunks = splitIntoChunks(reasoning, 20);
+                for (const chunk of chunks) {
+                  sendChunk({ id, object: "chat.completion.chunk", created, model: modelName, choices: [{ index: 0, delta: { reasoning_content: chunk }, finish_reason: null }] });
+                  await sleep(15);
+                }
+              }
+
+              // Stream content chunks
+              if (content) {
+                const chunks = splitIntoChunks(content, 16);
+                for (const chunk of chunks) {
+                  sendChunk({ id, object: "chat.completion.chunk", created, model: modelName, choices: [{ index: 0, delta: { content: chunk }, finish_reason: null }] });
+                  await sleep(10);
+                }
+              }
+
+              if (toolCalls.length > 0) {
+                sendChunk({ id, object: "chat.completion.chunk", created, model: modelName, choices: [{ index: 0, delta: { tool_calls: toolCalls }, finish_reason: null }] });
+              }
+
+              const finalChunk = { id, object: "chat.completion.chunk", created, model: modelName, choices: [{ index: 0, delta: {}, finish_reason: choice.finish_reason || "stop" }] };
+              if (parsed.usage) finalChunk.usage = parsed.usage;
+              sendChunk(finalChunk);
+
+              controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            }
+
+            controller.close();
+          }
+        });
+
+        return {
+          success: true,
+          response: new Response(simulateStream, { headers: SSE_HEADERS_CORS })
+        };
+      } catch (err) {
+        console.error("[ChatCore] Failed to simulate stream from non-streaming response:", err.message);
+      }
+    }
+
     return result;
   }
 
