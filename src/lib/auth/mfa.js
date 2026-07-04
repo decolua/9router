@@ -17,7 +17,13 @@ function loadJwtSecret() {
   }
 }
 
-const MFA_SECRET = new TextEncoder().encode(loadJwtSecret());
+let mfaSecretBytes = null;
+function getMfaSecretBytes() {
+  if (!mfaSecretBytes) {
+    mfaSecretBytes = new TextEncoder().encode(loadJwtSecret());
+  }
+  return mfaSecretBytes;
+}
 
 function storeSecret(plain) {
   if (isMasterKeyConfigured()) return encryptString(plain);
@@ -75,13 +81,13 @@ export async function createMfaChallengeToken(userId) {
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("5m")
-    .sign(MFA_SECRET);
+    .sign(getMfaSecretBytes());
 }
 
 export async function verifyMfaChallengeToken(token) {
   if (!token) return null;
   try {
-    const { payload } = await jwtVerify(token, MFA_SECRET);
+    const { payload } = await jwtVerify(token, getMfaSecretBytes());
     if (!payload?.mfaPending || !payload?.userId) return null;
     return { userId: payload.userId };
   } catch {
