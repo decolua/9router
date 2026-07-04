@@ -7,8 +7,9 @@ import { checkLock, recordFail, recordSuccess, getClientIp } from "@/lib/auth/lo
 import { getSettings } from "@/lib/localDb";
 import { auditFromRequest, AuditAction } from "@/lib/audit";
 import { isMfaRequired, createMfaChallengeToken } from "@/lib/auth/mfa";
-import { requireOrgFromRequest, runWithRequestOrg } from "@/lib/org/orgContext.js";
-import { getOrganizationById } from "@/lib/db/repos/organizationsRepo.js";
+import { resolveOrgFromRequest, runWithOrgId } from "@/lib/org/orgContext.js";
+import { getOrganizationById, getOrganizationBySlug } from "@/lib/db/repos/organizationsRepo.js";
+import { isSaas } from "@/lib/deploy/deployMode.js";
 
 const RESET_HINT = "Use Forgot password below, or contact your org admin for a reset link.";
 
@@ -20,11 +21,22 @@ function isTunnelRequest(request, settings) {
 }
 
 export async function POST(request) {
-  return runWithRequestOrg(request, async () => {
-    try {
-      const { org, error: orgError } = await requireOrgFromRequest(request);
-      if (orgError) return orgError;
+  const body = await request.json();
+  const { email, password, orgSlug: bodyOrgSlug } = body;
 
+  let org = await resolveOrgFromRequest(request);
+  if (!org && bodyOrgSlug) {
+    org = await getOrganizationBySlug(String(bodyOrgSlug).trim().toLowerCase());
+  }
+  if (!org) {
+    if (isSaas()) {
+      return NextResponse.json({ error: "Organization not found" }, { status: 404 });
+    }
+    return NextResponse.json({ error: "Organization not configured" }, { status: 503 });
+  }
+
+  return runWithOrgId(org.id, async () => {
+    try {
       const ip = getClientIp(request);
       const lock = checkLock(ip);
       if (lock.locked) {
@@ -34,7 +46,6 @@ export async function POST(request) {
         );
       }
 
-      const { email, password } = await request.json();
       const settings = await getSettings(org.id);
 
       if (isTunnelRequest(request, settings) && settings.tunnelDashboardAccess !== true) {

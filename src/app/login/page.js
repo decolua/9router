@@ -4,10 +4,19 @@ import { useState, useEffect } from "react";
 import { Card, Button, Input } from "@/shared/components";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { getClientOrgSlug, orgScopedPath } from "@/lib/org/clientOrgPath.js";
+
+function orgAuthHeaders(extra = {}, orgSlug = "") {
+  const slug = getClientOrgSlug() || String(orgSlug || "").trim().toLowerCase();
+  const headers = { ...extra };
+  if (slug) headers["x-ebr-org-slug"] = slug;
+  return headers;
+}
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [orgSlug, setOrgSlug] = useState(() => getClientOrgSlug() || "");
   const [error, setError] = useState("");
   const [resetHint, setResetHint] = useState("");
   const [retryAfter, setRetryAfter] = useState(0);
@@ -36,11 +45,14 @@ export default function LoginPage() {
   useEffect(() => {
     async function checkAuth() {
       try {
-        const res = await fetch("/api/auth/status", { cache: "no-store" });
+        const res = await fetch(orgScopedPath("/api/auth/status"), {
+          cache: "no-store",
+          headers: orgAuthHeaders({}, orgSlug),
+        });
         if (res.ok) {
           const data = await res.json();
           if (data.requireLogin === false || data.currentUser) {
-            router.push("/dashboard");
+            router.push(orgScopedPath("/dashboard"));
             router.refresh();
             return;
           }
@@ -58,7 +70,7 @@ export default function LoginPage() {
       }
     }
     checkAuth();
-  }, [router]);
+  }, [router, orgSlug]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -66,11 +78,18 @@ export default function LoginPage() {
     setError("");
     setResetHint("");
 
+    const slug = getClientOrgSlug() || orgSlug.trim().toLowerCase();
+    if (saas && !slug) {
+      setError("Enter your organization URL (e.g. pludous)");
+      setLoading(false);
+      return;
+    }
+
     try {
-      const res = await fetch("/api/auth/login", {
+      const res = await fetch(orgScopedPath("/api/auth/login"), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        headers: orgAuthHeaders({ "Content-Type": "application/json" }, slug),
+        body: JSON.stringify({ email, password, orgSlug: slug || undefined }),
       });
 
       if (res.ok) {
@@ -81,7 +100,7 @@ export default function LoginPage() {
           setError("");
           return;
         }
-        router.push("/dashboard");
+        router.push(orgScopedPath("/dashboard"));
         router.refresh();
       } else {
         const data = await res.json();
@@ -101,13 +120,13 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/auth/login/mfa", {
+      const res = await fetch(orgScopedPath("/api/auth/login/mfa"), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mfaToken, code: mfaCode }),
+        headers: orgAuthHeaders({ "Content-Type": "application/json" }, orgSlug),
+        body: JSON.stringify({ mfaToken, code: mfaCode, orgSlug: orgSlug || undefined }),
       });
       if (res.ok) {
-        router.push("/dashboard");
+        router.push(orgScopedPath("/dashboard"));
         router.refresh();
       } else {
         const data = await res.json();
@@ -126,10 +145,10 @@ export default function LoginPage() {
     setForgotMessage("");
     setError("");
     try {
-      const res = await fetch("/api/auth/forgot-password", {
+      const res = await fetch(orgScopedPath("/api/auth/forgot-password"), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: forgotEmail || email }),
+        headers: orgAuthHeaders({ "Content-Type": "application/json" }, orgSlug),
+        body: JSON.stringify({ email: forgotEmail || email, orgSlug: orgSlug || undefined }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Request failed");
@@ -142,7 +161,7 @@ export default function LoginPage() {
   };
 
   const handleOidcLogin = () => {
-    window.location.href = "/api/auth/oidc/start";
+    window.location.href = orgScopedPath("/api/auth/oidc/start");
   };
 
   const oidcAvailable = oidcConfigured && ["oidc", "both"].includes(authMode);
@@ -189,6 +208,20 @@ export default function LoginPage() {
 
             {passwordAvailable && !showMfa && (
               <form onSubmit={handleLogin} className="flex flex-col gap-4">
+                {saas && !getClientOrgSlug() && !orgName && (
+                  <div className="flex flex-col gap-2">
+                    <label className="text-sm font-medium">Organization URL</label>
+                    <Input
+                      type="text"
+                      placeholder="your-team"
+                      value={orgSlug}
+                      onChange={(e) => setOrgSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+                      required
+                    />
+                    <p className="text-xs text-text-muted">The name you chose when creating your organization (e.g. pludous)</p>
+                  </div>
+                )}
+
                 <div className="flex flex-col gap-2">
                   <label className="text-sm font-medium">Email</label>
                   <Input
@@ -249,7 +282,7 @@ export default function LoginPage() {
 
                 {showSignupLink && (
                   <p className="text-xs text-center text-text-muted">
-                    Need an account? <Link href="/signup" className="text-primary hover:underline">Create one</Link>
+                    Need an account? <Link href={orgScopedPath("/signup")} className="text-primary hover:underline">Create one</Link>
                   </p>
                 )}
 
