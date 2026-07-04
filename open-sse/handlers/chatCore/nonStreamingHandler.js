@@ -275,16 +275,11 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     translatedResponse.usage = filterUsageForFormat(addBufferToUsage(translatedResponse.usage), sourceFormat);
   }
 
-  // Strip reasoning_content only when content is non-empty.
-  // When content is empty (e.g. thinking models that used all tokens for reasoning),
-  // reasoning_content is the only useful output and must be preserved.
-  if (!isClaudeMessageResponse && translatedResponse?.choices) {
-    for (const choice of translatedResponse.choices) {
-      if (choice?.message?.reasoning_content && choice.message.content) {
-        delete choice.message.reasoning_content;
-      }
-    }
-  }
+  // Preserve reasoning_content whenever the upstream exposes it.
+  // OpenAI-compatible clients such as Hermes, Cursor, and OpenWebUI use this
+  // field to render a separate thinking block. Removing it when content is
+  // also present makes visible reasoning impossible for Gemini/Vertex thinking
+  // models and other reasoning-capable providers.
 
   reqLogger.logConvertedResponse(translatedResponse);
 

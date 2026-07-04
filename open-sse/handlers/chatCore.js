@@ -335,9 +335,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
     // If client requested stream, but we forced non-streaming upstream to get the thought summaries:
     // convert the static JSON response into a simulated SSE stream.
-    if (forceNonStreamForThinking && result.ok) {
+    if (forceNonStreamForThinking && result?.success && result?.response?.ok) {
       try {
-        const parsed = await result.clone().json();
+        const parsed = await result.response.clone().json();
         const encoder = new TextEncoder();
         const id = parsed.id || `chatcmpl-${Date.now()}`;
         const modelName = parsed.model || model;
