@@ -19,10 +19,10 @@ import {
 } from "../shared/zedAuth.js";
 
 const PROVIDER = {
-  anthropic: "Anthropic",
-  openai: "OpenAi",
-  google: "Google",
-  xai: "XAi",
+  anthropic: "anthropic",
+  openai: "open_ai",
+  google: "google",
+  xai: "x_ai",
 };
 
 function normalizeZedProvider(value, model) {
@@ -264,7 +264,7 @@ export class ZedExecutor extends BaseExecutor {
     if (code === "trial_blocked") {
       return {
         status: response.status,
-        message: `Zed trial access is blocked upstream. The account can list hosted models, but Zed is refusing completions until trial/billing access is enabled or unblocked. Zed says: ${rawMessage}`,
+        message: `Zed upstream returned trial_blocked: ${rawMessage}`,
       };
     }
     if (code) {

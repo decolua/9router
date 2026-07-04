@@ -180,15 +180,15 @@ export function getZedModelRequestDiagnostics(userInfo = {}) {
   if (hasOverdueInvoices) {
     message = `Zed reports overdue invoices for ${planName}; hosted model completions may be blocked until billing is resolved.`;
   } else if (limit === 0 && (isTrial || isPro) && !billingEnabled) {
-    message = `Zed account is on ${planName}, but hosted model request limit is 0 and usage-based billing is disabled. Zed will return trial_blocked for completions until trial/billing access is enabled or unblocked.`;
+    message = `Zed reports ${planName} with model_requests.limit=0 and usage-based billing disabled. This field is informational; model availability and completion access are still determined by Zed upstream responses.`;
   } else if (limit === 0 && isFree) {
-    message = `Zed account is on ${planName}, which has a hosted model request limit of 0. Start a Zed Pro trial or upgrade in Zed to use completions.`;
+    message = `Zed reports ${planName} with model_requests.limit=0. Hosted model access depends on Zed's upstream account state.`;
   } else if (limit === 0) {
-    message = `Zed account currently has a hosted model request limit of 0, so completions are blocked by Zed billing/plan settings.`;
+    message = `Zed reports model_requests.limit=0 for this account. Hosted model access depends on Zed's upstream account state.`;
   }
 
   return {
-    blocked: !!message,
+    blocked: false,
     message,
     planName,
     limit,
