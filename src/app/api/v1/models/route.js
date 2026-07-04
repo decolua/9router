@@ -12,12 +12,33 @@ import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { resolveCopilotModels } from "open-sse/services/copilotModels.js";
 import { resolveClinepassModels } from "open-sse/services/clinepassModels.js";
+import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { capabilitiesFromServiceKind } from "open-sse/providers/capabilities.js";
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
 // Adding a provider here makes /v1/models prefer the live catalog for it.
+const resolveQoderLiveModels = async (conn) => {
+  const providerId = conn.provider === "qoder-cn" ? "qoder-cn" : "qoder";
+  const result = await resolveQoderModels({
+    provider: providerId,
+    accessToken: conn.accessToken,
+    refreshToken: conn.refreshToken,
+    email: conn.email,
+    displayName: conn.displayName,
+    providerSpecificData: {
+      ...(conn.providerSpecificData || {}),
+      provider: providerId,
+      region: providerId === "qoder-cn" ? "cn" : "intl",
+    }
+  });
+  if (!result?.models?.length) return null;
+  return {
+    models: result.models.map((m) => ({ id: m.id, name: m.name })),
+  };
+};
+
 const LIVE_MODEL_RESOLVERS = {
   kiro: async (conn) => {
     const result = await resolveKiroModels({
@@ -27,19 +48,8 @@ const LIVE_MODEL_RESOLVERS = {
     }, { log: console });
     return result?.models?.length ? { models: result.models } : null;
   },
-  qoder: async (conn) => {
-    const result = await resolveQoderModels({
-      accessToken: conn.accessToken,
-      refreshToken: conn.refreshToken,
-      email: conn.email,
-      displayName: conn.displayName,
-      providerSpecificData: conn.providerSpecificData || {}
-    });
-    if (!result?.models?.length) return null;
-    return {
-      models: result.models.map((m) => ({ id: m.id, name: m.name })),
-    };
-  },
+  qoder: resolveQoderLiveModels,
+  "qoder-cn": resolveQoderLiveModels,
   kimchi: async (conn) => {
     const result = await resolveKimchiModels({
       accessToken: conn.accessToken,
@@ -71,6 +81,15 @@ const LIVE_MODEL_RESOLVERS = {
       apiKey: conn.apiKey,
     });
     return result?.models?.length ? { models: result.models } : null;
+  },
+  zed: async (conn) => {
+    const result = await resolveZedModels({
+      accessToken: conn.accessToken,
+      providerSpecificData: conn.providerSpecificData || {},
+    });
+    return result?.models?.length ? {
+      models: result.models.map((m) => ({ id: m.id, name: m.name })),
+    } : null;
   }
 };
 

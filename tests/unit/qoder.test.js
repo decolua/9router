@@ -28,6 +28,7 @@ import { __test__ as qoderExecutorInternals } from "../../open-sse/executors/qod
 // instance to avoid hidden state.
 const generatePkcePair = () => new QoderService().generatePkcePair();
 const initiateDeviceFlow = () => new QoderService().initiateDeviceFlow();
+const initiateCnDeviceFlow = () => new QoderService("qoder-cn").initiateDeviceFlow();
 const parseExpiry = QoderService.parseExpiry;
 
 describe("QODER_MODEL_MAP", () => {
@@ -135,6 +136,25 @@ describe("initiateDeviceFlow", () => {
     expect(flow.verificationUriComplete).toContain("challenge_method=S256");
     expect(flow.verificationUriComplete).toContain(`nonce=${flow.nonce}`);
     expect(flow.verificationUriComplete).toContain(`machine_id=${flow.machineId}`);
+  });
+
+  it("wraps Qoder CN device authorization in the sign-in oauth_callback", () => {
+    const flow = initiateCnDeviceFlow();
+    const outer = new URL(flow.verificationUriComplete);
+    expect(outer.origin).toBe("https://qoder.com.cn");
+    expect(outer.pathname).toBe("/users/sign-in");
+    expect(outer.searchParams.get("biz_variant")).toBe("qoderwork");
+
+    const callback = outer.searchParams.get("oauth_callback");
+    expect(callback).toBeTruthy();
+    const inner = new URL(callback);
+    expect(inner.origin).toBe("https://qoder.com.cn");
+    expect(inner.pathname).toBe("/device/selectAccounts");
+    expect(inner.searchParams.get("challenge_method")).toBe("S256");
+    expect(inner.searchParams.get("nonce")).toBe(flow.nonce);
+    expect(inner.searchParams.get("machine_id")).toBe(flow.machineId);
+    expect(inner.searchParams.get("client_id")).toBe("1c5e33e1-364d-4ce6-b02c-acaa81274a5c");
+    expect(inner.searchParams.get("redirect_uri")).toBe("qoder-work-cn://");
   });
 
   it("returns nonce and machineId as UUIDs", () => {

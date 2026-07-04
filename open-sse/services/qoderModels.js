@@ -17,7 +17,7 @@ import { createHash } from "crypto";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { buildCosyHeaders } from "../shared/qoder/cosy.js";
 import {
-  QODER_MODEL_LIST_URL,
+  getQoderEndpointConfig,
 } from "../shared/qoder/constants.js";
 
 const FETCH_TIMEOUT_MS = 15_000;
@@ -41,7 +41,8 @@ const inflight = new Map();
 function cacheKey(credentials) {
   const psd = credentials?.providerSpecificData || {};
   const seed = psd.userId || credentials?.refreshToken || credentials?.accessToken || "anonymous";
-  return createHash("sha256").update(`qoder:${seed}`).digest("hex");
+  const endpointConfig = getQoderEndpointConfig(credentials);
+  return createHash("sha256").update(`${endpointConfig.id}:${seed}`).digest("hex");
 }
 
 /**
@@ -67,11 +68,13 @@ function cosyCredsFromConnection(credentials) {
 async function fetchQoderCatalogRaw(credentials, signal, proxyOptions = null) {
   const creds = cosyCredsFromConnection(credentials);
   if (!creds.userId || !creds.authToken) return null;
+  const endpointConfig = getQoderEndpointConfig(credentials);
+  const modelListUrl = endpointConfig.modelListUrl;
 
   const headers = {
     Accept: "application/json",
     "Accept-Encoding": "identity",
-    ...buildCosyHeaders(Buffer.alloc(0), QODER_MODEL_LIST_URL, creds),
+    ...buildCosyHeaders(Buffer.alloc(0), modelListUrl, creds),
   };
 
   const controller = new AbortController();
@@ -92,7 +95,7 @@ async function fetchQoderCatalogRaw(credentials, signal, proxyOptions = null) {
       }
     }
     response = await proxyAwareFetch(
-      QODER_MODEL_LIST_URL,
+      modelListUrl,
       {
         method: "GET",
         headers,

@@ -19,6 +19,7 @@ import {
   KIMCHI_CONFIG,
 } from "@/lib/oauth/constants/oauth";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
+import { fetchZedAuthenticatedUser, getZedModelRequestDiagnostics } from "open-sse/shared/zedAuth.js";
 
 // OAuth provider test endpoints
 const OAUTH_TEST_CONFIG = {
@@ -75,6 +76,13 @@ const OAUTH_TEST_CONFIG = {
     authPrefix: "Bearer ",
     refreshable: false,
   },
+  "qoder-cn": {
+    url: "https://openapi.qoder.com.cn/api/v1/userinfo",
+    method: "GET",
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    refreshable: false,
+  },
   "kimi-coding": { checkExpiry: true, refreshable: false },
   cursor: { tokenExists: true },
   kilocode: {
@@ -84,6 +92,7 @@ const OAUTH_TEST_CONFIG = {
     authPrefix: "Bearer ",
   },
   cline: { refreshable: true },
+  zed: { custom: true },
   gitlab: {
     // Test by hitting the GitLab user API — requires api or read_user scope
     url: "https://gitlab.com/api/v4/user",
@@ -352,6 +361,24 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
     newTokens = tokens;
     accessToken = tokens.accessToken;
     return await tryProbe(accessToken);
+  }
+
+  if (connection.provider === "zed") {
+    try {
+      const userInfo = await fetchZedAuthenticatedUser({
+        accessToken,
+        providerSpecificData: connection.providerSpecificData || {},
+      }, { proxyOptions: effectiveProxy });
+      const diagnostics = getZedModelRequestDiagnostics(userInfo);
+      if (diagnostics.blocked) {
+        return { valid: false, error: diagnostics.message, refreshed, newTokens };
+      }
+      return { valid: true, error: null, refreshed, newTokens };
+    } catch (err) {
+      if (err.status === 401) return { valid: false, error: "Token invalid or revoked", refreshed };
+      if (err.status === 403) return { valid: false, error: "Access denied", refreshed };
+      return { valid: false, error: err.message, refreshed };
+    }
   }
 
   try {

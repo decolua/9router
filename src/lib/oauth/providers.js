@@ -14,6 +14,8 @@ import {
   GEMINI_CONFIG,
   QWEN_CONFIG,
   QODER_CONFIG,
+  QODER_CN_CONFIG,
+  ZED_CONFIG,
   IFLOW_CONFIG,
   ANTIGRAVITY_CONFIG,
   GITHUB_CONFIG,
@@ -37,6 +39,13 @@ import {
   extractCodexAccountInfo,
   fetchKiroProfileArn,
 } from "./providerHelpers";
+import {
+  createZedNativeAuthData,
+  decryptZedAccessToken,
+  fetchZedAuthenticatedUser,
+  parseZedCallbackPayload,
+  resolveZedOrganizationId,
+} from "open-sse/shared/zedAuth.js";
 
 export { extractCodexAccountInfo, fetchKiroProfileArn };
 
@@ -58,6 +67,95 @@ async function discoverXaiEndpoints() {
   } catch { /* fall through to static fallback */ }
   cachedXaiDiscovery = { authorizeUrl: XAI_CONFIG.authorizeUrl, tokenUrl: XAI_CONFIG.tokenUrl };
   return cachedXaiDiscovery;
+}
+
+function createQoderProvider(config, providerId) {
+  const region = config.region || (providerId === "qoder-cn" ? "cn" : "intl");
+  return {
+    config,
+    flowType: "device_code",
+    requestDeviceCode: async (runtimeConfig) => {
+      const { QoderService } = await import("@/lib/oauth/services/qoder");
+      const flow = new QoderService(runtimeConfig).initiateDeviceFlow();
+      return {
+        device_code: flow.nonce,
+        user_code: flow.nonce.slice(0, 8).toUpperCase(),
+        verification_uri: runtimeConfig.loginUrl,
+        verification_uri_complete: flow.verificationUriComplete,
+        expires_in: 300,
+        interval: 2,
+        codeVerifier: flow.codeVerifier,
+        _qoderNonce: flow.nonce,
+        _qoderMachineId: flow.machineId,
+        _qoderProviderId: providerId,
+        _qoderRegion: region,
+      };
+    },
+    pollToken: async (runtimeConfig, deviceCode, codeVerifier, extraData) => {
+      const { QoderService } = await import("@/lib/oauth/services/qoder");
+      const svc = new QoderService(runtimeConfig);
+      const nonce = deviceCode || extraData?._qoderNonce;
+      const verifier = codeVerifier || extraData?._qoderVerifier;
+      if (!nonce || !verifier) {
+        return {
+          ok: false,
+          data: { error: "invalid_request", error_description: "Missing nonce/verifier" },
+        };
+      }
+      let result;
+      try {
+        result = await svc.pollDeviceToken({ nonce, codeVerifier: verifier });
+      } catch (err) {
+        return {
+          ok: false,
+          data: { error: "poll_failed", error_description: err.message },
+        };
+      }
+      if (result.status === "pending") {
+        return { ok: false, data: { error: "authorization_pending" } };
+      }
+      const userInfo = await svc.fetchUserInfo(result.accessToken);
+      const minSeconds = 24 * 60 * 60;
+      const remainingSeconds = Math.floor((result.expireTime - Date.now()) / 1000);
+      const expiresIn = Math.max(minSeconds, remainingSeconds);
+      return {
+        ok: true,
+        data: {
+          access_token: result.accessToken,
+          refresh_token: result.refreshToken,
+          expires_in: expiresIn,
+          _qoderUserId: result.userId,
+          _qoderMachineId: extraData?._qoderMachineId || "",
+          _qoderName: userInfo.name,
+          _qoderEmail: userInfo.email,
+          _qoderOrganizationId: userInfo.organizationId,
+          _qoderProviderId: extraData?._qoderProviderId || providerId,
+          _qoderRegion: extraData?._qoderRegion || region,
+        },
+      };
+    },
+    mapTokens: (tokens) => {
+      const rawEmail = (tokens._qoderEmail || "").trim();
+      const displayName = (tokens._qoderName || "").trim() || null;
+      const userId = tokens._qoderUserId || "";
+      const email = rawEmail || (userId ? `qoder-user-${userId}` : null);
+      return {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token || null,
+        expiresIn: tokens.expires_in,
+        email,
+        displayName,
+        providerSpecificData: {
+          authMethod: "device",
+          userId,
+          machineId: tokens._qoderMachineId || "",
+          organizationId: tokens._qoderOrganizationId || "",
+          provider: tokens._qoderProviderId || providerId,
+          region: tokens._qoderRegion || region,
+        },
+      };
+    },
+  };
 }
 
 // Provider configurations
@@ -252,6 +350,92 @@ const PROVIDERS = {
         mapped.providerSpecificData = { idToken: tokens.id_token };
       }
       return mapped;
+    },
+  },
+
+  zed: {
+    config: ZED_CONFIG,
+    flowType: "native_app_signin",
+    generateAuthData: async (config, redirectUri) => {
+      let nativeAppPort = config.defaultNativeAppPort || 58443;
+      try {
+        const parsed = new URL(redirectUri || "");
+        const port = Number(parsed.port || (parsed.protocol === "https:" ? 443 : 80));
+        if (Number.isFinite(port) && port > 0 && port < 65536 && port !== 80 && port !== 443) {
+          nativeAppPort = port;
+        }
+      } catch {
+        // Keep default native app port.
+      }
+      const state = generateState();
+      const authData = await createZedNativeAuthData(config, { nativeAppPort });
+      return {
+        authUrl: authData.authUrl,
+        state,
+        codeVerifier: authData.privateKeyVerifier,
+        codeChallenge: null,
+        redirectUri,
+        flowType: "native_app_signin",
+        fixedPort: nativeAppPort,
+        callbackPath: "/",
+        _zedNativeAppPort: nativeAppPort,
+        _zedSystemId: authData.systemId,
+      };
+    },
+    exchangeToken: async (config, callbackPayload, redirectUri, privateKeyVerifier, _state, meta = {}) => {
+      const parsed = parseZedCallbackPayload(callbackPayload);
+      const accessToken = decryptZedAccessToken(parsed.encryptedAccessToken, privateKeyVerifier);
+      const systemId = meta._zedSystemId || meta.systemId || "";
+      const credentials = {
+        accessToken,
+        providerSpecificData: {
+          userId: parsed.userId,
+          systemId,
+        },
+      };
+      const userInfo = await fetchZedAuthenticatedUser(credentials, { config });
+      return {
+        access_token: accessToken,
+        user_id: parsed.userId,
+        system_id: systemId,
+        user_info: userInfo,
+      };
+    },
+    mapTokens: (tokens) => {
+      const user = tokens.user_info?.user || {};
+      const defaultOrganizationId = resolveZedOrganizationId(
+        { providerSpecificData: { userId: tokens.user_id } },
+        tokens.user_info,
+      );
+      const organizations = (tokens.user_info?.organizations || []).map((org) => ({
+        id: typeof org?.id === "string" ? org.id : String(org?.id || ""),
+        name: String(org?.name || ""),
+        isPersonal: !!org?.is_personal,
+      })).filter((org) => org.id);
+      const githubLogin = user.github_login || user.username || "";
+      const zedEmail = user.email || "";
+      const accountIdentifier = zedEmail || githubLogin || (tokens.user_id ? `zed-user-${tokens.user_id}` : null);
+      const displayName = user.name || user.username || githubLogin || accountIdentifier || null;
+      return {
+        accessToken: tokens.access_token,
+        refreshToken: null,
+        expiresIn: null,
+        name: displayName || accountIdentifier,
+        email: accountIdentifier,
+        displayName,
+        providerSpecificData: {
+          authMethod: "native_app_signin",
+          userId: tokens.user_id,
+          systemId: tokens.system_id || "",
+          username: user.username || "",
+          githubLogin,
+          email: zedEmail,
+          avatarUrl: user.avatar_url || "",
+          defaultOrganizationId,
+          organizationId: defaultOrganizationId,
+          organizations,
+        },
+      };
     },
   },
 
@@ -544,104 +728,8 @@ const PROVIDERS = {
     }),
   },
 
-  qoder: {
-    config: QODER_CONFIG,
-    flowType: "device_code",
-    // Qoder uses a custom device flow: PKCE + nonce + machine_id are generated
-    // locally, the user lands on qoder.com/device/selectAccounts in the
-    // browser, and we poll openapi.qoder.sh until a `dt-...` token appears.
-    requestDeviceCode: async (config) => {
-      const { QoderService } = await import("@/lib/oauth/services/qoder");
-      const flow = new QoderService().initiateDeviceFlow();
-      // Match the device_code shape the rest of the OAuthModal expects
-      // (device_code, user_code, verification_uri[_complete], interval).
-      // The poll endpoint identifies us by nonce+verifier, not by a
-      // server-issued device_code, so we plumb our own values through:
-      //   device_code   = nonce  (modal forwards as deviceCode on poll)
-      //   codeVerifier  = our PKCE verifier (route forwards as codeVerifier)
-      return {
-        device_code: flow.nonce,
-        user_code: flow.nonce.slice(0, 8).toUpperCase(),
-        verification_uri: config.loginUrl,
-        verification_uri_complete: flow.verificationUriComplete,
-        expires_in: 300,
-        interval: 2,
-        codeVerifier: flow.codeVerifier,
-        _qoderNonce: flow.nonce,
-        _qoderMachineId: flow.machineId,
-      };
-    },
-    pollToken: async (config, deviceCode, codeVerifier, extraData) => {
-      const { QoderService } = await import("@/lib/oauth/services/qoder");
-      const svc = new QoderService();
-      const nonce = deviceCode || extraData?._qoderNonce;
-      const verifier = codeVerifier || extraData?._qoderVerifier;
-      if (!nonce || !verifier) {
-        return {
-          ok: false,
-          data: { error: "invalid_request", error_description: "Missing nonce/verifier" },
-        };
-      }
-      let result;
-      try {
-        result = await svc.pollDeviceToken({ nonce, codeVerifier: verifier });
-      } catch (err) {
-        return {
-          ok: false,
-          data: { error: "poll_failed", error_description: err.message },
-        };
-      }
-      if (result.status === "pending") {
-        return { ok: false, data: { error: "authorization_pending" } };
-      }
-      // Best-effort profile lookup so we have a name/email to display.
-      const userInfo = await svc.fetchUserInfo(result.accessToken);
-      // expireTime is a Unix-ms timestamp from QoderService.parseExpiry,
-      // which already falls back to "now + 30 days" when the upstream
-      // omits expiry. Floor to a sane minimum (1 day) so a stale or
-      // skewed upstream timestamp doesn't truncate the stored token below
-      // something useful.
-      const minSeconds = 24 * 60 * 60;
-      const remainingSeconds = Math.floor((result.expireTime - Date.now()) / 1000);
-      const expiresIn = Math.max(minSeconds, remainingSeconds);
-      return {
-        ok: true,
-        data: {
-          access_token: result.accessToken,
-          refresh_token: result.refreshToken,
-          expires_in: expiresIn,
-          _qoderUserId: result.userId,
-          _qoderMachineId: extraData?._qoderMachineId || "",
-          _qoderName: userInfo.name,
-          _qoderEmail: userInfo.email,
-          _qoderOrganizationId: userInfo.organizationId,
-        },
-      };
-    },
-    mapTokens: (tokens) => {
-      const rawEmail = (tokens._qoderEmail || "").trim();
-      const displayName = (tokens._qoderName || "").trim() || null;
-      const userId = tokens._qoderUserId || "";
-      // Dedup in createProviderConnection requires a non-empty email. When
-      // fetchUserInfo silently fails (returns ""), fall back to a stable
-      // synthetic identifier derived from userId so re-logins update the
-      // existing row instead of accumulating "Account N" duplicates.
-      const email = rawEmail || (userId ? `qoder-user-${userId}` : null);
-      return {
-        accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token || null,
-        expiresIn: tokens.expires_in,
-        email,
-        displayName,
-        providerSpecificData: {
-          authMethod: "device",
-          userId,
-          machineId: tokens._qoderMachineId || "",
-          organizationId: tokens._qoderOrganizationId || "",
-        },
-      };
-    },
-  },
+  qoder: createQoderProvider(QODER_CONFIG, "qoder"),
+  "qoder-cn": createQoderProvider(QODER_CN_CONFIG, "qoder-cn"),
 
   qwen: {
     config: QWEN_CONFIG,
@@ -1413,6 +1501,9 @@ export async function generateAuthData(providerName, redirectUri, meta) {
   const config = provider.prepareConfig
     ? await provider.prepareConfig(provider.config, meta || {})
     : provider.config;
+  if (provider.generateAuthData) {
+    return provider.generateAuthData(config, redirectUri, meta || {});
+  }
   const { codeVerifier, codeChallenge, state } = generatePKCE(provider.pkceVerifierBytes);
 
   let authUrl;
@@ -1557,5 +1648,34 @@ export async function backfillCodexEmails() {
   } catch (err) {
     codexBackfillDone = false;
     console.log("backfillCodexEmails failed:", err?.message || err);
+  }
+}
+
+let zedNameBackfillDone = false;
+
+// Older Zed connections used github_login as the connection name because the
+// native sign-in endpoint redirects through GitHub. Prefer Zed's display name
+// when the user has not explicitly renamed the connection.
+export async function backfillZedConnectionNames() {
+  if (zedNameBackfillDone) return;
+  zedNameBackfillDone = true;
+  try {
+    const { getProviderConnections, updateProviderConnection } = await import("@/lib/localDb");
+    const connections = await getProviderConnections();
+    const targets = connections.filter((c) => {
+      if (c.provider !== "zed" || c.authType !== "oauth") return false;
+      const displayName = String(c.displayName || "").trim();
+      if (!displayName) return false;
+      const name = String(c.name || "").trim();
+      if (!name || name === displayName) return false;
+      const githubLogin = String(c.providerSpecificData?.githubLogin || "").trim();
+      return name === c.email || name === githubLogin || /^Account \d+$/.test(name) || /^zed-user-/.test(name);
+    });
+    for (const conn of targets) {
+      await updateProviderConnection(conn.id, { name: conn.displayName });
+    }
+  } catch (err) {
+    zedNameBackfillDone = false;
+    console.log("backfillZedConnectionNames failed:", err?.message || err);
   }
 }

@@ -1,6 +1,6 @@
 import http from "http";
 import { URL } from "url";
-import { CODEX_CONFIG } from "../constants/oauth.js";
+import { CODEX_CONFIG, ZED_CONFIG } from "../constants/oauth.js";
 
 /**
  * Start a local HTTP server to receive OAuth callback
@@ -421,6 +421,149 @@ export function stopXaiProxy() {
   if (xaiProxyServer) {
     xaiProxyServer.close();
     xaiProxyServer = null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Zed native-app sign-in callback proxy on 127.0.0.1:58443
+// ---------------------------------------------------------------------------
+
+let zedProxyServer = null;
+let zedProxyTimeout = null;
+let zedActiveState = null;
+const zedPendingExchanges = new Map();
+const ZED_PROXY_TIMEOUT_MS = 300000; // 5 minutes
+const ZED_PROXY_PORT = ZED_CONFIG.defaultNativeAppPort || 58443;
+
+export function registerZedSession({ state, codeVerifier, redirectUri, systemId }) {
+  if (!state || !codeVerifier || !redirectUri) return false;
+  zedActiveState = state;
+  zedPendingExchanges.set(state, {
+    codeVerifier,
+    redirectUri,
+    systemId: systemId || "",
+    status: "pending",
+    createdAt: Date.now(),
+  });
+  return true;
+}
+
+export function getZedSessionStatus(state) {
+  return zedPendingExchanges.get(state) || null;
+}
+
+export function clearZedSession(state) {
+  zedPendingExchanges.delete(state);
+  if (zedActiveState === state) zedActiveState = null;
+}
+
+function getActiveZedSession() {
+  if (zedActiveState && zedPendingExchanges.has(zedActiveState)) {
+    return zedPendingExchanges.get(zedActiveState);
+  }
+  const newest = Array.from(zedPendingExchanges.values())
+    .filter((session) => session.status === "pending")
+    .sort((a, b) => b.createdAt - a.createdAt)[0];
+  return newest || null;
+}
+
+export function startZedProxy(appPort) {
+  return new Promise((resolve) => {
+    if (zedProxyServer) {
+      resolve({ success: true });
+      return;
+    }
+
+    const server = http.createServer(async (req, res) => {
+      const url = new URL(req.url, `http://127.0.0.1:${ZED_PROXY_PORT}`);
+      const isZedCallbackPath = url.pathname === "/" || url.pathname === "/callback" || url.pathname === "/auth/callback";
+      if (!isZedCallbackPath) {
+        res.writeHead(404);
+        res.end("Not found");
+        return;
+      }
+
+      const errorParam = url.searchParams.get("error");
+      const userId = url.searchParams.get("user_id");
+      const encryptedAccessToken = url.searchParams.get("access_token");
+      const session = getActiveZedSession();
+
+      if (!session) {
+        const redirectUrl = `http://localhost:${appPort}/callback${url.search}`;
+        res.writeHead(302, { Location: redirectUrl });
+        res.end();
+        stopZedProxy();
+        return;
+      }
+
+      try {
+        if (errorParam) {
+          throw new Error(url.searchParams.get("error_description") || errorParam);
+        }
+        if (!userId || !encryptedAccessToken) {
+          throw new Error("No Zed credentials received");
+        }
+
+        const { exchangeTokens } = await import("../providers.js");
+        const { createProviderConnection } = await import("@/models");
+        const callbackUrl = `http://127.0.0.1:${ZED_PROXY_PORT}${url.pathname}${url.search}`;
+        const tokenData = await exchangeTokens(
+          "zed",
+          callbackUrl,
+          session.redirectUri,
+          session.codeVerifier,
+          null,
+          { _zedSystemId: session.systemId },
+        );
+        const connection = await createProviderConnection({
+          provider: "zed",
+          authType: "oauth",
+          ...tokenData,
+          expiresAt: tokenData.expiresIn
+            ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString()
+            : null,
+          testStatus: "active",
+        });
+
+        session.status = "done";
+        session.connectionId = connection.id;
+        session.email = connection.email;
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(renderCodexResultPage(true, "You can close this window."));
+      } catch (err) {
+        session.status = "error";
+        session.error = err.message;
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(renderCodexResultPage(false, err.message));
+      } finally {
+        stopZedProxy();
+      }
+    });
+
+    server.listen(ZED_PROXY_PORT, "127.0.0.1", () => {
+      zedProxyServer = server;
+      zedProxyTimeout = setTimeout(() => stopZedProxy(), ZED_PROXY_TIMEOUT_MS);
+      resolve({ success: true });
+    });
+
+    server.on("error", (err) => {
+      if (err.code === "EADDRINUSE") {
+        resolve({ success: false, reason: "port_busy" });
+      } else {
+        resolve({ success: false, reason: err.message });
+      }
+    });
+  });
+}
+
+export function stopZedProxy() {
+  if (zedProxyTimeout) {
+    clearTimeout(zedProxyTimeout);
+    zedProxyTimeout = null;
+  }
+  if (zedProxyServer) {
+    zedProxyServer.close();
+    zedProxyServer = null;
   }
 }
 

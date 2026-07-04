@@ -44,6 +44,10 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const exchangeTokens = useCallback(async (code, state) => {
     if (!authData) return;
     try {
+      const meta = { ...(oauthMeta || {}) };
+      if (provider === "zed" && authData._zedSystemId) {
+        meta._zedSystemId = authData._zedSystemId;
+      }
       const res = await fetch(`/api/oauth/${provider}/exchange`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -52,7 +56,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
           redirectUri: authData.redirectUri,
           codeVerifier: authData.codeVerifier,
           state,
-          ...(oauthMeta ? { meta: oauthMeta } : {}),
+          ...(Object.keys(meta).length ? { meta } : {}),
         }),
       });
 
@@ -155,9 +159,10 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     if (!provider) return;
     try {
       setError(null);
+      callbackProcessedRef.current = false;
 
       // Device code flow providers
-      const deviceCodeProviders = ["github", "qwen", "kiro", "kimi-coding", "kilocode", "codebuddy-cn", "qoder"];
+      const deviceCodeProviders = ["github", "qwen", "kiro", "kimi-coding", "kilocode", "codebuddy-cn", "qoder", "qoder-cn"];
       if (deviceCodeProviders.includes(provider)) {
         setIsDeviceCode(true);
         setStep("waiting");
@@ -183,6 +188,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         // Pass extraData for Kiro (contains _clientId, _clientSecret) and
         // Qoder (contains _qoderMachineId / _qoderNonce — needed so mapTokens
         // can persist the machine id alongside the token).
+        const isQoderProvider = provider === "qoder" || provider === "qoder-cn";
         const extraData = provider === "kiro"
           ? {
               _clientId: data._clientId,
@@ -191,11 +197,13 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
               _authMethod: data._authMethod,
               _startUrl: data._startUrl,
             }
-          : provider === "qoder"
+          : isQoderProvider
           ? {
               _qoderNonce: data._qoderNonce,
               _qoderMachineId: data._qoderMachineId,
               _qoderVerifier: data.codeVerifier,
+              _qoderProviderId: data._qoderProviderId,
+              _qoderRegion: data._qoderRegion,
             }
           : null;
         startPolling(
@@ -219,6 +227,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         redirectUri = "http://localhost:1455/auth/callback";
       } else if (provider === "xai") {
         redirectUri = "http://127.0.0.1:56121/callback";
+      } else if (provider === "zed") {
+        redirectUri = "http://127.0.0.1:58443/";
       } else {
         redirectUri = `http://localhost:${appPort}/callback`;
       }
@@ -275,7 +285,28 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         }
       }
 
-      setAuthData({ ...data, redirectUri, codexServerSide, xaiServerSide });
+      let zedProxyActive = false;
+      let zedServerSide = false;
+      if (provider === "zed") {
+        try {
+          const proxyUrl = new URL(`/api/oauth/zed/start-proxy`, window.location.origin);
+          proxyUrl.searchParams.set("app_port", appPort);
+          proxyUrl.searchParams.set("state", data.state);
+          proxyUrl.searchParams.set("code_verifier", data.codeVerifier);
+          proxyUrl.searchParams.set("redirect_uri", redirectUri);
+          if (data._zedSystemId) {
+            proxyUrl.searchParams.set("system_id", data._zedSystemId);
+          }
+          const proxyRes = await fetch(proxyUrl.toString());
+          const proxyData = await proxyRes.json();
+          zedProxyActive = proxyData.success;
+          zedServerSide = !!proxyData.serverSide;
+        } catch {
+          zedProxyActive = false;
+        }
+      }
+
+      setAuthData({ ...data, redirectUri, codexServerSide, xaiServerSide, zedServerSide });
 
       if (provider === "codex" && codexProxyActive) {
         // Proxy active: callback will be handled server-side (auto-exchange) or via channels (fallback)
@@ -285,6 +316,12 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
           setStep("input");
         }
       } else if (provider === "xai" && xaiProxyActive) {
+        setStep("waiting");
+        popupRef.current = window.open(data.authUrl, "oauth_popup", "width=600,height=700");
+        if (!popupRef.current) {
+          setStep("input");
+        }
+      } else if (provider === "zed" && zedProxyActive) {
         setStep("waiting");
         popupRef.current = window.open(data.authUrl, "oauth_popup", "width=600,height=700");
         if (!popupRef.current) {
@@ -330,13 +367,21 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         fetch("/api/oauth/codex/stop-proxy").catch(() => {});
       } else if (provider === "xai") {
         fetch("/api/oauth/xai/stop-proxy").catch(() => {});
+      } else if (provider === "zed") {
+        fetch("/api/oauth/zed/stop-proxy").catch(() => {});
       }
     }
   }, [isOpen, provider, startOAuthFlow]);
 
   // Fixed-port server-side mode: poll status (proxy auto-exchanges + saves DB)
   useEffect(() => {
-    const pollProvider = authData?.codexServerSide ? "codex" : authData?.xaiServerSide ? "xai" : null;
+    const pollProvider = authData?.codexServerSide
+      ? "codex"
+      : authData?.xaiServerSide
+        ? "xai"
+        : authData?.zedServerSide
+          ? "zed"
+          : null;
     if (!pollProvider || !authData?.state) return;
     if (callbackProcessedRef.current) return;
     let cancelled = false;
@@ -387,12 +432,18 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     const handleCallback = async (data) => {
       if (callbackProcessedRef.current) return; // Already processed
 
-      const { code, token, state, error: callbackError, errorDescription } = data;
+      const { code, token, accessToken, userId, state, error: callbackError, errorDescription, fullUrl } = data;
 
       if (callbackError) {
         callbackProcessedRef.current = true;
         setError(errorDescription || callbackError);
         setStep("error");
+        return;
+      }
+
+      if (provider === "zed" && accessToken && userId) {
+        callbackProcessedRef.current = true;
+        await exchangeTokens(fullUrl || JSON.stringify({ user_id: userId, access_token: accessToken }), state);
         return;
       }
 
@@ -468,16 +519,25 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
       // Detect raw JWT access token (starts with eyJ) — skip URL parsing
       if (input.startsWith("eyJ") && input.includes(".")) {
+        callbackProcessedRef.current = true;
         await exchangeTokens(input, null);
         return;
       }
 
       if (provider === "xai" && input && !input.includes("://") && !input.includes("?") && !input.includes("code=")) {
+        callbackProcessedRef.current = true;
         await completeXaiManualCode(input);
         return;
       }
 
       if (provider === "kimchi" && input && !input.includes("://") && !input.includes("?")) {
+        callbackProcessedRef.current = true;
+        await exchangeTokens(input, null);
+        return;
+      }
+
+      if (provider === "zed") {
+        callbackProcessedRef.current = true;
         await exchangeTokens(input, null);
         return;
       }
@@ -502,6 +562,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         );
       }
 
+      callbackProcessedRef.current = true;
       await exchangeTokens(token || code, state);
     } catch (err) {
       setError(err.message);
@@ -515,6 +576,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       fetch("/api/oauth/codex/stop-proxy").catch(() => {});
     } else if (provider === "xai") {
       fetch("/api/oauth/xai/stop-proxy").catch(() => {});
+    } else if (provider === "zed") {
+      fetch("/api/oauth/zed/stop-proxy").catch(() => {});
     }
     onClose();
   }, [onClose, provider]);
@@ -522,13 +585,21 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   if (!provider || !providerInfo) return null;
   const isXaiProvider = provider === "xai";
   const isKimchiProvider = provider === "kimchi";
+  const isZedProvider = provider === "zed";
   const deviceLoginUrl = deviceData?.verification_uri_complete || deviceData?.verification_uri || "";
-  const modalTitle = isXaiProvider ? "Connect Grok Build OAuth" : `Connect ${providerInfo.name}`;
+  const modalTitle = isXaiProvider
+    ? "Connect Grok Build OAuth"
+    : isZedProvider
+      ? `Connect ${providerInfo.name} via Zed/GitHub`
+      : `Connect ${providerInfo.name}`;
   const manualPlaceholder = isXaiProvider
     ? "http://127.0.0.1:56121/callback?code=... or copied code"
     : isKimchiProvider
       ? `${placeholderUrl.replace("code=...", "token=...")} or copied token`
+      : isZedProvider
+        ? "http://127.0.0.1:58443/?user_id=...&access_token=..."
       : placeholderUrl;
+  const zedSignInHint = "Zed's native sign-in currently redirects through GitHub. To switch accounts, sign out of Zed/GitHub or use a private browser window before retrying.";
 
   return (
     <Modal isOpen={isOpen} title={modalTitle} onClose={handleClose} size="lg">
@@ -542,9 +613,15 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
                 progress_activity
               </span>
               <span className="text-sm">
-                {isXaiProvider ? "Waiting for Grok Build OAuth…" : "Waiting for popup authorization…"}
+                {isXaiProvider ? "Waiting for Grok Build OAuth…" : isZedProvider ? "Waiting for Zed/GitHub sign-in..." : "Waiting for popup authorization…"}
               </span>
             </div>
+
+            {isZedProvider && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+                {zedSignInHint}
+              </div>
+            )}
 
             {/* Divider */}
             <div className="flex items-center gap-3 my-1">
@@ -557,7 +634,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
             <div className="space-y-4">
               <div>
                 <p className="text-sm font-medium mb-2">
-                  Step 1: Open this {isXaiProvider ? "Grok Build OAuth URL" : "URL"} in your browser
+                  Step 1: Open this {isXaiProvider ? "Grok Build OAuth URL" : isZedProvider ? "Zed/GitHub sign-in URL" : "URL"} in your browser
                 </p>
                 <div className="flex gap-2">
                   <Input value={authData?.authUrl || ""} readOnly className="flex-1 font-mono text-xs" />
