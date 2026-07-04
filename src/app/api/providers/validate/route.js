@@ -287,6 +287,13 @@ export async function POST(request) {
           isValid = openrouterRes.ok;
           break;
 
+        case "hcnsec":
+          const hcnsecRes = await fetch("https://api.hcnsec.cn/v1/models", {
+            headers: { "Authorization": `Bearer ${apiKey}` },
+          });
+          isValid = hcnsecRes.ok;
+          break;
+
         case "glm":
         case "glm-cn":
         case "kimi":

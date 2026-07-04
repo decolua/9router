@@ -137,12 +137,25 @@ console.log("3️⃣  Copying Next.js standalone build to app/cli/app...");
 const standaloneRoot = path.join(appDir, ".next", "standalone");
 const standaloneRootResolved = path.join(buildDistDir, "standalone");
 const standaloneRootToUse = fs.existsSync(standaloneRootResolved) ? standaloneRootResolved : standaloneRoot;
-const standaloneApp = fs.existsSync(path.join(standaloneRootToUse, "server.js"))
-  ? standaloneRootToUse
-  : path.join(standaloneRootToUse, "app");
+let standaloneApp = standaloneRootToUse;
+if (!fs.existsSync(path.join(standaloneApp, "server.js"))) {
+  const subdirs = fs.readdirSync(standaloneRootToUse).filter(name => {
+    try {
+      return fs.statSync(path.join(standaloneRootToUse, name)).isDirectory() && name !== "node_modules";
+    } catch {
+      return false;
+    }
+  });
+  const found = subdirs.find(name => fs.existsSync(path.join(standaloneRootToUse, name, "server.js")));
+  if (found) {
+    standaloneApp = path.join(standaloneRootToUse, found);
+  } else {
+    standaloneApp = path.join(standaloneRootToUse, "app");
+  }
+}
 if (!fs.existsSync(standaloneApp)) {
   console.error("❌ Next.js standalone build not found under .next/standalone");
-  console.error("Expected either .next/standalone/server.js or .next/standalone/app/");
+  console.error("Expected either .next/standalone/server.js or .next/standalone/app/ or .next/standalone/[folder]/");
   process.exit(1);
 }
 copyRecursive(standaloneApp, cliAppDir);

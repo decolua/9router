@@ -120,6 +120,10 @@ export const PROVIDERS = {
       "X-Title": "Endpoint Proxy"
     }
   },
+  hcnsec: {
+    baseUrl: "https://api.hcnsec.cn/v1/chat/completions",
+    format: "openai"
+  },
   openai: {
     baseUrl: "https://api.openai.com/v1/chat/completions",
     format: "openai"

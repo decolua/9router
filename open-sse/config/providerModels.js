@@ -309,6 +309,9 @@ export const PROVIDER_MODELS = {
     { id: "google/imagen-3.0-generate-002", name: "Imagen 3 (via OpenRouter)", type: "image", params: ["n", "size"] },
     { id: "black-forest-labs/FLUX.1-schnell", name: "FLUX.1 Schnell (via OpenRouter)", type: "image", params: ["n", "size"] },
   ],
+  hcnsec: [
+    { id: "step-image-edit-2", name: "Step Image Edit 2 (Huancheng)", type: "image", params: ["size"] }
+  ],
   glm: [
     { id: "glm-5.1", name: "GLM 5.1" },
     { id: "glm-5", name: "GLM 5" },
