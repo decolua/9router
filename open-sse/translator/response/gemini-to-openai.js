@@ -61,7 +61,7 @@ export function geminiToOpenAIResponse(chunk, state) {
       
       // Handle thought signature (thinking mode).
       // PR #1752 routes unsigned thought parts to reasoning_content.
-      // Gemni/Vertex 3.x may emit thought parts with a signature but without
+      // Gemini/Vertex 3.x may emit thought parts with a signature but without
       // the `thought` flag — treat those as reasoning content too.
       if (hasThoughtSig) {
         const hasTextContent = part.text !== undefined && part.text !== "";

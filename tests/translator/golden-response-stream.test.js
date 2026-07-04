@@ -70,6 +70,15 @@ describe("GOLDEN response stream: Gemini → OpenAI", () => {
     ];
     expect(runStream(FORMATS.GEMINI, FORMATS.OPENAI, events)).toMatchSnapshot();
   });
+
+  it("thought with signature but no thought:true → reasoning_content (not content)", () => {
+    const events = [
+      { candidates: [{ content: { parts: [{ text: "thinking with sig", thoughtSignature: "signed" }] } }], responseId: "resp_3", modelVersion: "gemini-3.5-flash" },
+      { candidates: [{ content: { parts: [{ text: "Answer" }] } }] },
+      { candidates: [{ finishReason: "STOP" }] },
+    ];
+    expect(runStream(FORMATS.GEMINI, FORMATS.OPENAI, events)).toMatchSnapshot();
+  });
 });
 
 describe("GOLDEN response stream: Kiro → OpenAI", () => {
