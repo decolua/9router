@@ -83,12 +83,11 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
 
     if (content?.parts) {
       for (const part of content.parts) {
-        const hasThoughtSig = part.thoughtSignature || part.thought_signature;
         const isThought = part.thought === true;
-        // Thought parts: flagged by thought=true OR carrying a thoughtSignature.
-        // Gemini/Vertex 3.x may emit thought parts with signature but without
-        // the `thought` flag; route both to reasoning_content per PR #1752.
-        if ((isThought || hasThoughtSig) && part.text) reasoningContent += part.text;
+        // Gemini marks visible thought summaries with `thought: true`.
+        // `thoughtSignature` is encrypted state metadata and can appear on
+        // ordinary final text/functionCall parts, so it is not a reasoning flag.
+        if (isThought && part.text) reasoningContent += part.text;
         else if (part.text !== undefined) textContent += part.text;
         if (part.functionCall) {
           toolCalls.push({

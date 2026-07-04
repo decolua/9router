@@ -56,35 +56,12 @@ export function geminiToOpenAIResponse(chunk, state) {
   // Process parts
   if (content?.parts) {
     for (const part of content.parts) {
-      const hasThoughtSig = part.thoughtSignature || part.thought_signature;
       const isThought = part.thought === true;
       
-      // Handle thought signature (thinking mode).
-      // PR #1752 routes unsigned thought parts to reasoning_content.
-      // Gemini/Vertex 3.x may emit thought parts with a signature but without
-      // the `thought` flag — treat those as reasoning content too.
-      if (hasThoughtSig) {
-        const hasTextContent = part.text !== undefined && part.text !== "";
-        const hasFunctionCall = !!part.functionCall;
-        
-        if (hasTextContent) {
-          results.push(buildChunk(
-            chunkMeta(state),
-            reasoningDelta(part.text),
-            null
-          ));
-        }
-        
-        if (hasFunctionCall) {
-          results.push(emitFunctionCall(part.functionCall, state));
-        }
-        continue;
-      }
-
-      // Text content. Gemini marks model-internal thinking with `thought: true`.
-      // Some responses include a thoughtSignature, but Google AI Studio/Gemini API
-      // can also stream thought parts without a signature; those must not be
-      // surfaced as normal assistant content in OpenAI-compatible clients.
+      // Text content. Gemini marks visible model-internal thinking with
+      // `thought: true`. `thoughtSignature` alone is only opaque bookkeeping;
+      // Google can attach it to final text and functionCall parts, so it must
+      // not be treated as readable reasoning by itself.
       if (part.text !== undefined && part.text !== "") {
         results.push(buildChunk(
           chunkMeta(state),
