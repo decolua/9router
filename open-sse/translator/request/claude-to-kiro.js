@@ -29,6 +29,7 @@ import {
   resolveKiroModel,
   resolveKiroThinkingBudget,
   buildThinkingSystemPrefix,
+  resolveKiroEffort,
   KIRO_AGENTIC_SYSTEM_PROMPT,
   resolveDefaultProfileArn,
 } from "../../config/kiroConstants.js";
@@ -418,7 +419,7 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
   // Prefix order: thinking_mode tag, timestamp marker, then agentic prompt.
   const timestamp = new Date().toISOString();
   const prefixParts = [];
-  if (thinkingBudget !== null) prefixParts.push(buildThinkingSystemPrefix(thinkingBudget));
+  if (thinkingBudget !== null) prefixParts.push(buildThinkingSystemPrefix());
   prefixParts.push(`[Context: Current time is ${timestamp}]`);
   if (agentic) prefixParts.push(KIRO_AGENTIC_SYSTEM_PROMPT);
   finalContent = `${prefixParts.join("\n\n")}\n\n${finalContent}`;
@@ -452,6 +453,13 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
     if (maxTokens) payload.inferenceConfig.maxTokens = maxTokens;
     if (temperature !== undefined) payload.inferenceConfig.temperature = temperature;
     if (topP !== undefined) payload.inferenceConfig.topP = topP;
+  }
+
+  // Reasoning depth (official Kiro effort, per https://kiro.dev/docs/cli/chat/effort/).
+  // Gated on thinkingBudget so effort ships only when reasoning is enabled.
+  if (thinkingBudget !== null) {
+    const effort = resolveKiroEffort(body, upstreamModel);
+    if (effort) payload.output_config = { effort };
   }
 
   // Non-enumerable hint so the executor can route the upstream model id.

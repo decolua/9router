@@ -16,7 +16,7 @@
  */
 
 import { extractThinking } from "../translator/concerns/thinkingUnified.js";
-import { effortToBudget } from "../translator/concerns/thinking.js";
+import { effortToBudget, budgetToLevel } from "../translator/concerns/thinking.js";
 
 export const KIRO_AGENTIC_SUFFIX = "-agentic";
 export const KIRO_THINKING_SUFFIX = "-thinking";
@@ -227,13 +227,50 @@ export function resolveKiroModel(model) {
 
 /**
  * Build the magic system-prompt prefix that turns Kiro reasoning on.
- * Same shape as CLIProxyAPIPlus.
  *
- * @param {number} [budget=KIRO_THINKING_BUDGET_DEFAULT]
+ * Per official Kiro docs (https://kiro.dev/docs/cli/chat/effort/), reasoning
+ * depth is controlled by `output_config.effort` on the payload (see
+ * resolveKiroEffort), not a thinking-length tag — so only the on/off
+ * `<thinking_mode>` signal remains here. The legacy `<max_thinking_length>`
+ * tag (CLIProxyAPIPlus reverse-engineered hack, hard-clamped to 32000) is gone.
  */
-export function buildThinkingSystemPrefix(budget = KIRO_THINKING_BUDGET_DEFAULT) {
-  const safeBudget = Math.max(1, Math.min(32000, Number(budget) || KIRO_THINKING_BUDGET_DEFAULT));
-  return `<thinking_mode>enabled</thinking_mode>\n<max_thinking_length>${safeBudget}</max_thinking_length>`;
+export function buildThinkingSystemPrefix() {
+  return `<thinking_mode>enabled</thinking_mode>`;
+}
+
+// xhigh is Opus 4.7/4.8 only (per Kiro effort docs). Opus 4.6 + Sonnet 4.6
+// top out at max and reject xhigh → clamp down to high there.
+function supportsXhigh(model) {
+  const m = String(model || "").toLowerCase();
+  return m.includes("opus-4-7") || m.includes("opus-4-8")
+    || m.includes("opus-4.7") || m.includes("opus-4.8");
+}
+
+/**
+ * Resolve the `output_config.effort` level for a Kiro request from client
+ * thinking intent. Returns "low"|"medium"|"high"|"xhigh"|"max", or null when
+ * thinking is explicitly disabled.
+ *
+ * Reuses extractThinking so every client shape (Claude output_config.effort /
+ * thinking.budget_tokens, OpenAI reasoning_effort, Gemini, Qwen) maps
+ * consistently. Callers gate this on the existing thinking-enabled check
+ * (resolveKiroThinkingBudget !== null) — when thinking is on but the client
+ * gave no explicit level, this returns "high" (preserves the prior default-on
+ * behaviour).
+ *
+ * @param {object} body OpenAI/Claude-shaped request body
+ * @param {string} [model] Upstream Kiro model id (for the xhigh capability check)
+ * @returns {string|null} effort level, or null when thinking is disabled
+ */
+export function resolveKiroEffort(body, model) {
+  const cfg = extractThinking(body);
+  if (!cfg) return "high";                 // thinking on via signal, no explicit level
+  if (cfg.mode === "none") return null;
+  if (cfg.mode === "auto") return "high";
+  if (cfg.mode === "budget") return budgetToLevel(cfg.budget) || "high";
+  // mode === "level"
+  if (cfg.level === "xhigh" && !supportsXhigh(model)) return "high";
+  return cfg.level;
 }
 
 function pickHeader(headers, name) {

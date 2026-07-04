@@ -239,7 +239,9 @@ function applyFormat(fmt, body, cfg, caps) {
       break;
     }
     case "kiro":
-      // Kiro thinking handled via system-tag injection in openai-to-kiro.js; no body field here.
+      // Handled natively by the translator (output_config.effort + thinking_mode
+      // content tag). applyThinking passthroughs kiro before stripAll — this case
+      // is unreachable but kept for completeness.
       break;
     default:
       break;
@@ -265,6 +267,12 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
   if (!cfg) return body;
 
   const fmt = resolveFormat(targetFormat, cleanModel, provider);
+  // Kiro owns its thinking wire-up natively in the translator: the
+  // `<thinking_mode>` content tag (on/off) + `output_config.effort` (depth).
+  // stripAll here would delete the translator-set output_config, so passthrough.
+  // Key on targetFormat (not fmt) — fmt resolves to a Claude thinking format via
+  // model caps even when the wire target is kiro.
+  if (targetFormat === "kiro") return body;
   stripAll(body);
   applyFormat(fmt, body, cfg, caps);
   return body;

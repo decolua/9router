@@ -63,16 +63,37 @@ describe("Claude → Kiro (direct route)", () => {
     expect(out.conversationState.currentMessage.userInputMessage.content).toContain(
       "<thinking_mode>enabled</thinking_mode>"
     );
+    // Legacy <max_thinking_length> tag is gone — depth now rides output_config.effort.
+    expect(out.conversationState.currentMessage.userInputMessage.content).not.toContain(
+      "<max_thinking_length>"
+    );
+    // Effort ships as a model-level param when thinking is on.
+    expect(out.output_config?.effort).toBe("high");
   });
 
-  it("maps output_config.effort high to Kiro max_thinking_length 24576", () => {
+  it("maps client reasoning_effort to output_config.effort", () => {
+    const out = translateRequest(
+      FORMATS.CLAUDE,
+      FORMATS.KIRO,
+      "claude-opus-4-8-thinking",
+      { messages: [{ role: "user", content: "hi" }], reasoning_effort: "max" },
+      true,
+      null,
+      "kiro"
+    );
+    expect(out.output_config?.effort).toBe("max");
+  });
+
+  it("maps output_config.effort high through to the Kiro payload", () => {
     const out = C2K({
       output_config: { effort: "high" },
       messages: [{ role: "user", content: "think with adaptive effort" }],
     });
 
-    expect(out.conversationState.currentMessage.userInputMessage.content).toContain(
-      "<max_thinking_length>24576</max_thinking_length>"
+    // Effort rides output_config on the payload (not a max_thinking_length tag).
+    expect(out.output_config?.effort).toBe("high");
+    expect(out.conversationState.currentMessage.userInputMessage.content).not.toContain(
+      "<max_thinking_length>"
     );
   });
 });

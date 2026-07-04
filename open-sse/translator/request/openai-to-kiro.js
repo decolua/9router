@@ -10,6 +10,7 @@ import {
   resolveKiroModel,
   resolveKiroThinkingBudget,
   buildThinkingSystemPrefix,
+  resolveKiroEffort,
   KIRO_AGENTIC_SYSTEM_PROMPT,
   resolveDefaultProfileArn
 } from "../../config/kiroConstants.js";
@@ -551,7 +552,7 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
   // then context/timestamp marker, then optional agentic chunked-write prompt.
   const prefixParts = [];
   if (thinkingBudget !== null) {
-    prefixParts.push(buildThinkingSystemPrefix(thinkingBudget));
+    prefixParts.push(buildThinkingSystemPrefix());
   }
   prefixParts.push(`[Context: Current time is ${timestamp}]`);
   if (agentic) {
@@ -589,6 +590,13 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
     if (maxTokens) payload.inferenceConfig.maxTokens = maxTokens;
     if (temperature !== undefined) payload.inferenceConfig.temperature = temperature;
     if (topP !== undefined) payload.inferenceConfig.topP = topP;
+  }
+
+  // Reasoning depth (official Kiro effort, per https://kiro.dev/docs/cli/chat/effort/).
+  // Gated on thinkingBudget so effort ships only when reasoning is enabled.
+  if (thinkingBudget !== null) {
+    const effort = resolveKiroEffort(body, upstreamModel);
+    if (effort) payload.output_config = { effort };
   }
 
   // Tag payload so the executor can route the upstream model id correctly.

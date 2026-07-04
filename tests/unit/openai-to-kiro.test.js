@@ -285,7 +285,7 @@ describe("openaiToKiroRequest", () => {
   });
 
   describe("thinking budget", () => {
-    it("maps reasoning_effort low to max_thinking_length 1024", () => {
+    it("maps reasoning_effort low to output_config.effort low (no max_thinking_length tag)", () => {
       const body = {
         reasoning_effort: "low",
         messages: [{ role: "user", content: "Think lightly" }]
@@ -293,10 +293,11 @@ describe("openaiToKiroRequest", () => {
 
       const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
 
-      expect(contentOf(result)).toContain("<max_thinking_length>1024</max_thinking_length>");
+      expect(result.output_config?.effort).toBe("low");
+      expect(contentOf(result)).not.toContain("<max_thinking_length>");
     });
 
-    it("maps reasoning_effort high to max_thinking_length 24576", () => {
+    it("maps reasoning_effort high to output_config.effort high", () => {
       const body = {
         reasoning_effort: "high",
         messages: [{ role: "user", content: "Think deeply" }]
@@ -304,10 +305,10 @@ describe("openaiToKiroRequest", () => {
 
       const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
 
-      expect(contentOf(result)).toContain("<max_thinking_length>24576</max_thinking_length>");
+      expect(result.output_config?.effort).toBe("high");
     });
 
-    it("clamps reasoning_effort max to Kiro max_thinking_length 32000", () => {
+    it("passes reasoning_effort max through to output_config.effort", () => {
       const body = {
         reasoning_effort: "max",
         messages: [{ role: "user", content: "Think as much as possible" }]
@@ -315,10 +316,10 @@ describe("openaiToKiroRequest", () => {
 
       const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
 
-      expect(contentOf(result)).toContain("<max_thinking_length>32000</max_thinking_length>");
+      expect(result.output_config?.effort).toBe("max");
     });
 
-    it("clamps OpenAI Responses reasoning.effort xhigh to max_thinking_length 32000", () => {
+    it("clamps xhigh to high on Sonnet 4.6 (no xhigh support)", () => {
       const body = {
         reasoning: { effort: "xhigh" },
         messages: [{ role: "user", content: "Think extra deeply" }]
@@ -326,10 +327,10 @@ describe("openaiToKiroRequest", () => {
 
       const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
 
-      expect(contentOf(result)).toContain("<max_thinking_length>32000</max_thinking_length>");
+      expect(result.output_config?.effort).toBe("high");
     });
 
-    it("uses Claude thinking.budget_tokens as max_thinking_length", () => {
+    it("maps Claude thinking.budget_tokens to an effort level via budgetToLevel", () => {
       const body = {
         thinking: { type: "enabled", budget_tokens: 4096 },
         messages: [{ role: "user", content: "Use a fixed budget" }]
@@ -337,17 +338,18 @@ describe("openaiToKiroRequest", () => {
 
       const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
 
-      expect(contentOf(result)).toContain("<max_thinking_length>4096</max_thinking_length>");
+      // 4096 tokens → "low"
+      expect(result.output_config?.effort).toBe("low");
     });
 
-    it("uses the default budget for synthetic -thinking models with no explicit config", () => {
+    it("defaults to effort high for synthetic -thinking models with no explicit config", () => {
       const body = {
         messages: [{ role: "user", content: "Think by model suffix" }]
       };
 
       const result = openaiToKiroRequest("claude-sonnet-4.6-thinking", body, true, {});
 
-      expect(contentOf(result)).toContain("<max_thinking_length>16000</max_thinking_length>");
+      expect(result.output_config?.effort).toBe("high");
     });
 
     it("does not inject thinking prefix for reasoning_effort none", () => {
