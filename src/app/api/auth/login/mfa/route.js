@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
 import { getUserById } from "@/lib/db/repos/usersRepo.js";
+import { getOrganizationById } from "@/lib/db/repos/organizationsRepo.js";
 import { auditFromRequest, AuditAction } from "@/lib/audit";
 import { verifyMfaChallengeToken, verifyMfaCode } from "@/lib/auth/mfa";
 import { checkLock, recordFail, recordSuccess, getClientIp } from "@/lib/auth/loginLimiter";
@@ -39,9 +40,12 @@ export async function POST(request) {
       return NextResponse.json({ error: "Account unavailable" }, { status: 403 });
     }
 
+    const orgRecord = user.orgId ? await getOrganizationById(user.orgId) : null;
     const cookieStore = await cookies();
     await setDashboardAuthCookie(cookieStore, request, {
       userId: user.id,
+      orgId: user.orgId,
+      orgSlug: orgRecord?.slug,
       role: user.role,
       email: user.email,
       name: user.name,

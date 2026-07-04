@@ -94,4 +94,32 @@ describe("dedupePrompt", () => {
     expect(line).toContain("[DEDUP]");
     expect(line).toContain("collapsed 2");
   });
+
+  it("collapses duplicate text in Gemini contents.parts", () => {
+    const body = {
+      contents: [
+        { role: "user", parts: [{ text: LARGE }] },
+        { role: "model", parts: [{ text: "ack" }] },
+        { role: "user", parts: [{ text: LARGE }] },
+      ],
+    };
+    const stats = dedupePrompt(body, true, FORMATS.GEMINI);
+    expect(stats?.dupBlocks).toBe(1);
+    expect(body.contents[2].parts[0].text.startsWith("[dup-ref:")).toBe(true);
+  });
+
+  it("collapses duplicate text in Antigravity request.contents", () => {
+    const body = {
+      userAgent: "antigravity",
+      request: {
+        contents: [
+          { role: "user", parts: [{ text: LARGE }] },
+          { role: "user", parts: [{ text: LARGE }] },
+        ],
+      },
+    };
+    const stats = dedupePrompt(body, true, FORMATS.ANTIGRAVITY);
+    expect(stats?.dupBlocks).toBe(1);
+    expect(body.request.contents[1].parts[0].text.startsWith("[dup-ref:")).toBe(true);
+  });
 });

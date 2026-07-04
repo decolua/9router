@@ -20,10 +20,13 @@ const OPTIONAL_FIELDS = [
   "consecutiveUseCount",
 ];
 
-const UPSERT_SQL = `INSERT INTO providerConnections(id, userId, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt)
- VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+import { getRuntimeUserId } from "../../auth/runtimeUserContext.js";
+import { resolveOrgId, tenantFilters, tenantFiltersSync } from "../helpers/orgScope.js";
+
+const UPSERT_SQL = `INSERT INTO providerConnections(id, orgId, userId, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt)
+ VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
  ON CONFLICT(id) DO UPDATE SET
-   userId=excluded.userId, provider=excluded.provider, authType=excluded.authType, name=excluded.name,
+   orgId=excluded.orgId, userId=excluded.userId, provider=excluded.provider, authType=excluded.authType, name=excluded.name,
    email=excluded.email, priority=excluded.priority, isActive=excluded.isActive,
    data=excluded.data, updatedAt=excluded.updatedAt`;
 
@@ -33,6 +36,8 @@ function rowToConn(row) {
   return {
     ...extra,
     id: row.id,
+    orgId: row.orgId ?? null,
+    userId: row.userId ?? null,
     provider: row.provider,
     authType: row.authType,
     name: row.name,
@@ -45,9 +50,10 @@ function rowToConn(row) {
 }
 
 function connToRow(c) {
-  const { id, userId, provider, authType, name, email, priority, isActive, createdAt, updatedAt, ...rest } = c;
+  const { id, orgId, userId, provider, authType, name, email, priority, isActive, createdAt, updatedAt, ...rest } = c;
   return {
     id,
+    orgId: orgId ?? null,
     userId: userId ?? null,
     provider,
     authType,
@@ -63,7 +69,7 @@ function connToRow(c) {
 
 function upsertParams(c) {
   const r = connToRow(c);
-  return [r.id, r.userId, r.provider, r.authType, r.name, r.email, r.priority, r.isActive, r.data, r.createdAt, r.updatedAt];
+  return [r.id, r.orgId, r.userId, r.provider, r.authType, r.name, r.email, r.priority, r.isActive, r.data, r.createdAt, r.updatedAt];
 }
 
 function upsertSync(db, c) {
@@ -74,8 +80,8 @@ async function upsertAsync(db, c) {
   await qRun(db, UPSERT_SQL, upsertParams(c));
 }
 
-function reorderInTxSync(db, providerId, userId) {
-  const list = db.all(`SELECT * FROM providerConnections WHERE provider = ? AND userId = ?`, [providerId, userId]).map(rowToConn);
+function reorderInTxSync(db, providerId, userId, orgId) {
+  const list = db.all(`SELECT * FROM providerConnections WHERE provider = ? AND userId = ? AND orgId = ?`, [providerId, userId, orgId]).map(rowToConn);
   list.sort((a, b) => {
     const pDiff = (a.priority || 0) - (b.priority || 0);
     if (pDiff !== 0) return pDiff;
@@ -86,8 +92,8 @@ function reorderInTxSync(db, providerId, userId) {
   });
 }
 
-async function reorderInTxAsync(db, providerId, userId) {
-  const rows = await qAll(db, `SELECT * FROM providerConnections WHERE provider = ? AND userId = ?`, [providerId, userId]);
+async function reorderInTxAsync(db, providerId, userId, orgId) {
+  const rows = await qAll(db, `SELECT * FROM providerConnections WHERE provider = ? AND userId = ? AND orgId = ?`, [providerId, userId, orgId]);
   const list = rows.map(rowToConn);
   list.sort((a, b) => {
     const pDiff = (a.priority || 0) - (b.priority || 0);
@@ -126,6 +132,7 @@ function buildNewConnection(data, all, now) {
   }
   const conn = {
     id: uuidv4(),
+    orgId: data.orgId,
     userId: data.userId,
     provider: data.provider,
     authType: data.authType || "oauth",
@@ -145,46 +152,45 @@ function buildNewConnection(data, all, now) {
   return conn;
 }
 
-import { getRuntimeUserId } from "../../auth/runtimeUserContext.js";
-
 async function scopedUserId(userId) {
   return userId || getRuntimeUserId() || null;
 }
 
 export async function getProviderConnections(filter = {}) {
   const db = await getAdapter();
-  const where = [];
-  const params = [];
   const userId = await scopedUserId(filter.userId);
-  if (userId) { where.push("userId = ?"); params.push(userId); }
-  if (filter.provider) { where.push("provider = ?"); params.push(filter.provider); }
-  if (filter.isActive !== undefined) { where.push("isActive = ?"); params.push(filter.isActive ? 1 : 0); }
-  const sql = `SELECT * FROM providerConnections${where.length ? ` WHERE ${where.join(" AND ")}` : ""}`;
+  const { conds, params } = await tenantFilters({ orgId: filter.orgId, userId });
+  if (filter.provider) { conds.push("provider = ?"); params.push(filter.provider); }
+  if (filter.isActive !== undefined) { conds.push("isActive = ?"); params.push(filter.isActive ? 1 : 0); }
+  const sql = `SELECT * FROM providerConnections${conds.length ? ` WHERE ${conds.join(" AND ")}` : ""}`;
   const rows = await qAll(db, sql, params);
   const list = rows.map(rowToConn);
   list.sort((a, b) => (a.priority || 999) - (b.priority || 999));
   return list;
 }
 
-export async function getProviderConnectionById(id, userId = null) {
+export async function getProviderConnectionById(id, userId = null, orgId = null) {
   const db = await getAdapter();
-  const row = userId
-    ? await qGet(db, `SELECT * FROM providerConnections WHERE id = ? AND userId = ?`, [id, userId])
-    : await qGet(db, `SELECT * FROM providerConnections WHERE id = ?`, [id]);
+  const { conds, params } = await tenantFilters({ orgId, userId });
+  conds.push("id = ?");
+  params.push(id);
+  const row = await qGet(db, `SELECT * FROM providerConnections WHERE ${conds.join(" AND ")}`, params);
   return rowToConn(row);
 }
 
 export async function createProviderConnection(data) {
   const userId = data.userId || getRuntimeUserId();
+  const orgId = await resolveOrgId(data.orgId);
   if (!userId) throw new Error("userId is required");
-  data = { ...data, userId };
+  if (!orgId) throw new Error("orgId is required");
+  data = { ...data, userId, orgId };
   const db = await getAdapter();
   const now = new Date().toISOString();
 
   if (db.dialect === "postgres") {
     let result;
     await db.transaction(async (tx) => {
-      const rows = await tx.all(`SELECT * FROM providerConnections WHERE provider = ? AND userId = ?`, [data.provider, data.userId]);
+      const rows = await tx.all(`SELECT * FROM providerConnections WHERE provider = ? AND userId = ? AND orgId = ?`, [data.provider, data.userId, data.orgId]);
       const all = rows.map(rowToConn);
       const existing = findExistingConnection(all, data);
       if (existing) {
@@ -195,7 +201,7 @@ export async function createProviderConnection(data) {
       }
       const conn = buildNewConnection(data, all, now);
       await upsertAsync(tx, conn);
-      await reorderInTxAsync(tx, data.provider, data.userId);
+      await reorderInTxAsync(tx, data.provider, data.userId, data.orgId);
       result = conn;
     });
     return result;
@@ -203,7 +209,7 @@ export async function createProviderConnection(data) {
 
   let result;
   db.transaction(() => {
-    const all = db.all(`SELECT * FROM providerConnections WHERE provider = ? AND userId = ?`, [data.provider, data.userId]).map(rowToConn);
+    const all = db.all(`SELECT * FROM providerConnections WHERE provider = ? AND userId = ? AND orgId = ?`, [data.provider, data.userId, data.orgId]).map(rowToConn);
     const existing = findExistingConnection(all, data);
     if (existing) {
       const merged = { ...existing, ...data, updatedAt: now };
@@ -213,26 +219,27 @@ export async function createProviderConnection(data) {
     }
     const conn = buildNewConnection(data, all, now);
     upsertSync(db, conn);
-    reorderInTxSync(db, data.provider, data.userId);
+    reorderInTxSync(db, data.provider, data.userId, data.orgId);
     result = conn;
   });
   return result;
 }
 
-export async function updateProviderConnection(id, data, userId = null) {
+export async function updateProviderConnection(id, data, userId = null, orgId = null) {
   const db = await getAdapter();
+  const { conds, params } = await tenantFilters({ orgId, userId });
 
   if (db.dialect === "postgres") {
     let result;
     await db.transaction(async (tx) => {
-      const row = userId
-        ? await tx.get(`SELECT * FROM providerConnections WHERE id = ? AND userId = ?`, [id, userId])
-        : await tx.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
+      const lookup = [...conds, "id = ?"];
+      const lookupParams = [...params, id];
+      const row = await tx.get(`SELECT * FROM providerConnections WHERE ${lookup.join(" AND ")}`, lookupParams);
       if (!row) { result = null; return; }
       const existing = rowToConn(row);
       const merged = { ...existing, ...data, updatedAt: new Date().toISOString() };
       await upsertAsync(tx, merged);
-      if (data.priority !== undefined) await reorderInTxAsync(tx, existing.provider, existing.userId || userId);
+      if (data.priority !== undefined) await reorderInTxAsync(tx, existing.provider, existing.userId || userId, existing.orgId || orgId);
       result = merged;
     });
     return result;
@@ -240,31 +247,32 @@ export async function updateProviderConnection(id, data, userId = null) {
 
   let result;
   db.transaction(() => {
-    const row = userId
-      ? db.get(`SELECT * FROM providerConnections WHERE id = ? AND userId = ?`, [id, userId])
-      : db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
+    const lookup = [...conds, "id = ?"];
+    const lookupParams = [...params, id];
+    const row = db.get(`SELECT * FROM providerConnections WHERE ${lookup.join(" AND ")}`, lookupParams);
     if (!row) { result = null; return; }
     const existing = rowToConn(row);
     const merged = { ...existing, ...data, updatedAt: new Date().toISOString() };
     upsertSync(db, merged);
-    if (data.priority !== undefined) reorderInTxSync(db, existing.provider, existing.userId || userId);
+    if (data.priority !== undefined) reorderInTxSync(db, existing.provider, existing.userId || userId, existing.orgId || orgId);
     result = merged;
   });
   return result;
 }
 
-export async function deleteProviderConnection(id, userId = null) {
+export async function deleteProviderConnection(id, userId = null, orgId = null) {
   const db = await getAdapter();
+  const { conds, params } = await tenantFilters({ orgId, userId });
 
   if (db.dialect === "postgres") {
     let ok = false;
     await db.transaction(async (tx) => {
-      const row = userId
-        ? await tx.get(`SELECT provider, userId FROM providerConnections WHERE id = ? AND userId = ?`, [id, userId])
-        : await tx.get(`SELECT provider, userId FROM providerConnections WHERE id = ?`, [id]);
+      const lookup = [...conds, "id = ?"];
+      const lookupParams = [...params, id];
+      const row = await tx.get(`SELECT provider, userId, orgId FROM providerConnections WHERE ${lookup.join(" AND ")}`, lookupParams);
       if (!row) return;
       await tx.run(`DELETE FROM providerConnections WHERE id = ?`, [id]);
-      await reorderInTxAsync(tx, row.provider, row.userId);
+      await reorderInTxAsync(tx, row.provider, row.userId, row.orgId);
       ok = true;
     });
     return ok;
@@ -272,35 +280,34 @@ export async function deleteProviderConnection(id, userId = null) {
 
   let ok = false;
   db.transaction(() => {
-    const row = userId
-      ? db.get(`SELECT provider, userId FROM providerConnections WHERE id = ? AND userId = ?`, [id, userId])
-      : db.get(`SELECT provider, userId FROM providerConnections WHERE id = ?`, [id]);
+    const lookup = [...conds, "id = ?"];
+    const lookupParams = [...params, id];
+    const row = db.get(`SELECT provider, userId, orgId FROM providerConnections WHERE ${lookup.join(" AND ")}`, lookupParams);
     if (!row) return;
     db.run(`DELETE FROM providerConnections WHERE id = ?`, [id]);
-    reorderInTxSync(db, row.provider, row.userId);
+    reorderInTxSync(db, row.provider, row.userId, row.orgId);
     ok = true;
   });
   return ok;
 }
 
-export async function deleteProviderConnectionsByProvider(providerId, userId = null) {
+export async function deleteProviderConnectionsByProvider(providerId, userId = null, orgId = null) {
   const db = await getAdapter();
-  if (userId) {
-    const before = await qGet(db, `SELECT COUNT(*) AS n FROM providerConnections WHERE provider = ? AND userId = ?`, [providerId, userId]);
-    await qRun(db, `DELETE FROM providerConnections WHERE provider = ? AND userId = ?`, [providerId, userId]);
-    return before?.n || 0;
-  }
-  const before = await qGet(db, `SELECT COUNT(*) AS n FROM providerConnections WHERE provider = ?`, [providerId]);
-  await qRun(db, `DELETE FROM providerConnections WHERE provider = ?`, [providerId]);
+  const { conds, params } = await tenantFilters({ orgId, userId });
+  conds.push("provider = ?");
+  params.push(providerId);
+  const before = await qGet(db, `SELECT COUNT(*) AS n FROM providerConnections WHERE ${conds.join(" AND ")}`, params);
+  await qRun(db, `DELETE FROM providerConnections WHERE ${conds.join(" AND ")}`, params);
   return before?.n || 0;
 }
 
-export async function reorderProviderConnections(providerId, userId) {
+export async function reorderProviderConnections(providerId, userId, orgId = null) {
   const db = await getAdapter();
+  const resolvedOrg = await resolveOrgId(orgId);
   if (db.dialect === "postgres") {
-    await db.transaction(async (tx) => reorderInTxAsync(tx, providerId, userId));
+    await db.transaction(async (tx) => reorderInTxAsync(tx, providerId, userId, resolvedOrg));
   } else {
-    db.transaction(() => reorderInTxSync(db, providerId, userId));
+    db.transaction(() => reorderInTxSync(db, providerId, userId, resolvedOrg));
   }
 }
 
@@ -356,16 +363,22 @@ export async function cleanupProviderConnections() {
 
   if (db.dialect === "postgres") {
     let cleaned = 0;
+    const orgId = await resolveOrgId();
     await db.transaction(async (tx) => {
-      const rows = await tx.all(`SELECT * FROM providerConnections`);
+      const rows = orgId
+        ? await tx.all(`SELECT * FROM providerConnections WHERE orgId = ?`, [orgId])
+        : await tx.all(`SELECT * FROM providerConnections`);
       cleaned = await cleanupRows(tx, rows);
     });
     return cleaned;
   }
 
   let cleaned = 0;
+  const { orgId } = tenantFiltersSync();
   db.transaction(() => {
-    const rows = db.all(`SELECT * FROM providerConnections`);
+    const rows = orgId
+      ? db.all(`SELECT * FROM providerConnections WHERE orgId = ?`, [orgId])
+      : db.all(`SELECT * FROM providerConnections`);
     cleaned = cleanupRowsSync(db, rows);
   });
   return cleaned;

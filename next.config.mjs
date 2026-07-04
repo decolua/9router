@@ -14,8 +14,13 @@ const nextConfig = {
   output: "standalone",
   serverExternalPackages: ["better-sqlite3", "sql.js", "node:sqlite", "bun:sqlite"],
   async headers() {
+    // Evaluated at runtime so .env is loaded. HSTS on localhost breaks `next dev`.
+    const enableHsts =
+      process.env.NODE_ENV === "production" &&
+      process.env.AUTH_COOKIE_SECURE === "true";
+
     const securityHeaders = [
-      { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
+      ...(enableHsts ? [{ key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" }] : []),
       { key: "X-Frame-Options", value: "DENY" },
       { key: "X-Content-Type-Options", value: "nosniff" },
       { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },

@@ -8,7 +8,9 @@ import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { parseEncryptedJson, stringifyEncryptedJson } from "../helpers/encryptedJsonCol.js";
 import { isMasterKeyConfigured } from "../../crypto/masterKey.js";
 import { setMetaSync } from "../helpers/metaStore.js";
+import { readSettingsDataSync, readSettingsDataPostgres, writeSettingsDataSync, writeSettingsDataPostgres } from "../helpers/settingsRow.js";
 import { TABLES, buildCreateTableSql } from "../schema.js";
+import { ensureDefaultOrganizationSync } from "../repos/organizationsRepo.js";
 
 const DEFAULT_ADMIN_EMAIL = "admin@local";
 const USER_SCOPED_KV = ["modelAliases", "customModels", "mitmAlias"];
@@ -44,6 +46,14 @@ function resolveLegacyPassword(settings) {
   return process.env.INITIAL_PASSWORD || "123456";
 }
 
+function usersHasOrgIdSync(db) {
+  try {
+    return db.all("PRAGMA table_info(users)").some((c) => c.name === "orgId");
+  } catch {
+    return false;
+  }
+}
+
 function createAdminUserSync(db, settingsRaw) {
   const settings = readSettingsData(settingsRaw);
   const now = new Date().toISOString();
@@ -53,10 +63,26 @@ function createAdminUserSync(db, settingsRaw) {
     passwordHash = hashPassword(resolveLegacyPassword(settings));
   }
 
-  db.run(
-    `INSERT INTO users(id, email, name, passwordHash, role, status, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
-    [adminId, DEFAULT_ADMIN_EMAIL, "Admin", passwordHash, "admin", "active", now, now]
-  );
+  const withOrgId = usersHasOrgIdSync(db);
+  let orgId = null;
+  if (withOrgId) {
+    try {
+      db.exec(buildCreateTableSql("organizations", TABLES.organizations));
+    } catch {}
+    orgId = ensureDefaultOrganizationSync(db);
+  }
+
+  if (withOrgId) {
+    db.run(
+      `INSERT INTO users(id, orgId, email, name, passwordHash, role, status, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [adminId, orgId, DEFAULT_ADMIN_EMAIL, "Admin", passwordHash, "admin", "active", now, now],
+    );
+  } else {
+    db.run(
+      `INSERT INTO users(id, email, name, passwordHash, role, status, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
+      [adminId, DEFAULT_ADMIN_EMAIL, "Admin", passwordHash, "admin", "active", now, now],
+    );
+  }
 
   const userPrefs = {};
   for (const key of USER_SETTINGS_KEYS) {
@@ -74,7 +100,7 @@ function createAdminUserSync(db, settingsRaw) {
   orgSettings.multiUserEnabled = true;
   orgSettings.signupMode = orgSettings.signupMode || "invite";
 
-  return { adminId, orgSettings };
+  return { adminId, orgSettings, orgId: withOrgId ? orgId : null };
 }
 
 function backfillUserIdSync(db, adminId) {
@@ -164,18 +190,46 @@ export async function multiUserPostgres(db) {
   const existingAdmin = await qGet(db, `SELECT id FROM users WHERE role = 'admin' LIMIT 1`);
   if (existingAdmin) return;
 
-  const settingsRow = await qGet(db, `SELECT data FROM settings WHERE id = 1`);
-  const settings = readSettingsData(settingsRow?.data);
+  await qExec(db, buildCreateTableSql("organizations", TABLES.organizations, "postgres"));
+  const defaultOrgId = await (async () => {
+    const row = await qGet(db, `SELECT id FROM organizations WHERE slug = 'default'`);
+    if (row?.id) return row.id;
+    const now = new Date().toISOString();
+    const id = uuidv4();
+    await qRun(
+      db,
+      `INSERT INTO organizations(id, slug, name, status, plan, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?)`,
+      [id, "default", process.env.INSTANCE_NAME || "Default Organization", "active", "free", now, now],
+    );
+    return id;
+  })();
+
+  const settingsRaw = await readSettingsDataPostgres(db);
+  const settings = readSettingsData(settingsRaw);
   const now = new Date().toISOString();
   const adminId = uuidv4();
   let passwordHash = settings.password || null;
   if (!passwordHash) passwordHash = hashPassword(resolveLegacyPassword(settings));
 
-  await qRun(
+  const userCols = await qAll(
     db,
-    `INSERT INTO users(id, email, name, passwordHash, role, status, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
-    [adminId, DEFAULT_ADMIN_EMAIL, "Admin", passwordHash, "admin", "active", now, now]
+    `SELECT column_name AS name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'users'`,
   );
+  const hasOrgId = userCols.some((c) => c.name === "orgId");
+
+  if (hasOrgId) {
+    await qRun(
+      db,
+      `INSERT INTO users(id, "orgId", email, name, "passwordHash", role, status, "createdAt", "updatedAt") VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [adminId, defaultOrgId, DEFAULT_ADMIN_EMAIL, "Admin", passwordHash, "admin", "active", now, now],
+    );
+  } else {
+    await qRun(
+      db,
+      `INSERT INTO users(id, email, name, "passwordHash", role, status, "createdAt", "updatedAt") VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
+      [adminId, DEFAULT_ADMIN_EMAIL, "Admin", passwordHash, "admin", "active", now, now],
+    );
+  }
 
   const userPrefs = {};
   for (const key of USER_SETTINGS_KEYS) {
@@ -192,11 +246,7 @@ export async function multiUserPostgres(db) {
   const { stringifyEncryptedJson } = await import("../helpers/encryptedJsonCol.js");
   const { stringifyJson } = await import("../helpers/jsonCol.js");
   const serializeSettings = isMasterKeyConfigured() ? stringifyEncryptedJson : stringifyJson;
-  await qRun(
-    db,
-    `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
-    [serializeSettings(orgSettings)]
-  );
+  await writeSettingsDataPostgres(db, serializeSettings(orgSettings), { orgId: defaultOrgId });
 
   for (const table of ["providerConnections", "apiKeys", "combos", "usageHistory", "requestDetails"]) {
     await qRun(db, `UPDATE "${table}" SET "userId" = ? WHERE "userId" IS NULL OR "userId" = ''`, [adminId]);
@@ -230,14 +280,11 @@ export default {
       return;
     }
 
-    const settingsRow = db.get(`SELECT data FROM settings WHERE id = 1`);
-    const { adminId, orgSettings } = createAdminUserSync(db, settingsRow?.data);
+    const settingsRaw = readSettingsDataSync(db);
+    const { adminId, orgSettings, orgId } = createAdminUserSync(db, settingsRaw);
 
     const serializeSettings = isMasterKeyConfigured() ? stringifyEncryptedJson : stringifyJson;
-    db.run(
-      `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
-      [serializeSettings(orgSettings)]
-    );
+    writeSettingsDataSync(db, serializeSettings(orgSettings), { orgId: orgId || "bootstrap" });
 
     backfillUserIdSync(db, adminId);
     setMetaSync(db, "defaultAdminUserId", adminId);

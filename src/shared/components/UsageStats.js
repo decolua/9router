@@ -17,6 +17,7 @@ import OptimizationSavings from "@/app/(dashboard)/dashboard/usage/components/Op
 import UsageTable, { fmt, fmtTime } from "@/app/(dashboard)/dashboard/usage/components/UsageTable";
 import ProviderTopology from "@/app/(dashboard)/dashboard/usage/components/ProviderTopology";
 import UsageChart from "@/app/(dashboard)/dashboard/usage/components/UsageChart";
+import { usageScopeQueryString } from "@/lib/auth/usageScope";
 
 function timeAgo(timestamp) {
   const diff = Math.floor((Date.now() - new Date(timestamp)) / 1000);
@@ -190,7 +191,7 @@ const PERIODS = [
   { value: "60d", label: "60D" },
 ];
 
-export default function UsageStats({ period: periodProp, setPeriod: setPeriodProp, hidePeriodSelector = false } = {}) {
+export default function UsageStats({ period: periodProp, setPeriod: setPeriodProp, hidePeriodSelector = false, usageScope = "mine" } = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -229,13 +230,14 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       .catch(() => {});
   }, []);
 
-  // Fetch filtered stats via REST when period changes
+  // Fetch filtered stats via REST when period or scope changes
   useEffect(() => {
-    // First load: show full spinner; subsequent: show subtle fetching indicator
-    if (!stats) setLoading(true);
-    else setFetching(true);
+    setStats(null);
+    setLoading(true);
+    setFetching(false);
 
-    fetch(`/api/usage/stats?period=${period}`)
+    const scopeQs = usageScopeQueryString(usageScope);
+    fetch(`/api/usage/stats?period=${period}&${scopeQs}`)
       .then((r) => r.ok ? r.json() : null)
       .then((data) => {
         if (data) setStats((prev) => ({ ...prev, ...data }));
@@ -245,11 +247,12 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
         setLoading(false);
         setFetching(false);
       });
-  }, [period]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [period, usageScope]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // SSE connection - real-time updates for activeRequests + recentRequests only
   useEffect(() => {
-    const es = new EventSource("/api/usage/stream");
+    const scopeQs = usageScopeQueryString(usageScope);
+    const es = new EventSource(`/api/usage/stream?${scopeQs}`);
 
     es.onmessage = (e) => {
       try {
@@ -271,7 +274,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
     es.onerror = () => setLoading(false);
 
     return () => es.close();
-  }, []);
+  }, [usageScope]);
 
   const toggleSort = useCallback((tableType, field) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -436,7 +439,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       {loading ? spinner : <OverviewCards stats={stats} />}
 
       {/* Optimization Savings (TOAAS layer attribution) */}
-      {loading ? null : <OptimizationSavings period={period} />}
+      {loading ? null : <OptimizationSavings period={period} usageScope={usageScope} />}
 
       {/* Provider topology + Recent Requests */}
       {loading ? spinner : (
@@ -452,7 +455,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       )}
 
       {/* Token / Cost chart - sync period */}
-      {loading ? spinner : <UsageChart period={period} />}
+      {loading ? spinner : <UsageChart period={period} usageScope={usageScope} />}
 
       {/* Table with dropdown selector */}
       <div className="flex flex-col gap-3">

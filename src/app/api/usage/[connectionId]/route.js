@@ -6,6 +6,7 @@ import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
+import { withUsageUser } from "@/lib/auth/runtimeUserContext.js";
 
 // Detect auth-expired messages returned by usage providers instead of throwing
 const AUTH_EXPIRED_PATTERNS = ["expired", "authentication", "unauthorized", "401", "re-authorize"];
@@ -102,14 +103,12 @@ async function refreshAndUpdateCredentials(connection, force = false, proxyOptio
 /**
  * GET /api/usage/[connectionId] - Get usage data for a specific connection
  */
-export async function GET(request, { params }) {
+export const GET = withUsageUser(async (request, { params }, _user, { filterUserId }) => {
   let connection;
   try {
     const { connectionId } = await params;
 
-
-    // Get connection from database
-    connection = await getProviderConnectionById(connectionId);
+    connection = await getProviderConnectionById(connectionId, filterUserId || undefined);
     if (!connection) {
       return Response.json({ error: "Connection not found" }, { status: 404 });
     }
@@ -168,4 +167,4 @@ export async function GET(request, { params }) {
     console.warn(`[Usage] ${provider}: ${error.message}`);
     return Response.json({ error: error.message }, { status: 500 });
   }
-}
+});

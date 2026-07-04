@@ -305,50 +305,44 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
-  const handleRtkEnabled = async (value) => {
+  const patchSetting = async (patch) => {
     try {
       const res = await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rtkEnabled: value }),
-      });
-      if (res.ok) setRtkEnabledState(value);
-    } catch (error) {
-      console.log("Error updating rtkEnabled:", error);
-    }
-  };
-
-  const handlePrefixCacheEnabled = (value) => {
-    setPrefixCacheEnabled(value);
-    patchSetting({ prefixCacheEnabled: value });
-  };
-
-  const patchSetting = async (patch) => {
-    try {
-      await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
       });
+      if (!res.ok) return false;
+      const data = await res.json();
+      const [key] = Object.keys(patch);
+      return Object.prototype.hasOwnProperty.call(data, key) && data[key] === patch[key];
     } catch (error) {
       console.log("Error updating setting:", error);
+      return false;
     }
   };
 
-  const handleCavemanEnabled = (value) => {
-    setCavemanEnabled(value);
-    patchSetting({ cavemanEnabled: value });
+  const applySettingToggle = async (patch, setState, value) => {
+    const prev = !value;
+    setState(value);
+    const ok = await patchSetting(patch);
+    if (!ok) setState(prev);
   };
 
-  const handleCavemanLevel = (level) => {
+  const handleRtkEnabled = (value) => applySettingToggle({ rtkEnabled: value }, setRtkEnabledState, value);
+
+  const handlePrefixCacheEnabled = (value) => applySettingToggle({ prefixCacheEnabled: value }, setPrefixCacheEnabled, value);
+
+  const handleCavemanEnabled = (value) => applySettingToggle({ cavemanEnabled: value }, setCavemanEnabled, value);
+
+  const handleCavemanLevel = async (level) => {
+    const prev = cavemanLevel;
     setCavemanLevel(level);
-    patchSetting({ cavemanLevel: level });
+    const ok = await patchSetting({ cavemanLevel: level });
+    if (!ok) setCavemanLevel(prev);
   };
 
-  const handleCompactPoliciesEnabled = (value) => {
-    setCompactPoliciesEnabled(value);
-    patchSetting({ compactPoliciesEnabled: value });
-  };
+  const handleCompactPoliciesEnabled = (value) => applySettingToggle({ compactPoliciesEnabled: value }, setCompactPoliciesEnabled, value);
 
   const handlePromptDedupEnabled = (value) => {
     setPromptDedupEnabled(value);

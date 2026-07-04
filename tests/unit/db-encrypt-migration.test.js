@@ -50,7 +50,7 @@ describe("migration 002 encrypt-secrets", () => {
     const { getAdapter } = await import("@/lib/db/driver.js");
     const db = await getAdapter();
 
-    const settings = db.get(`SELECT data FROM settings WHERE id = 1`);
+    const settings = db.get(`SELECT data FROM settings LIMIT 1`);
     expect(isEncrypted(settings.data)).toBe(true);
 
     const conn = db.get(`SELECT data FROM providerConnections WHERE id = 'pc1'`);
@@ -78,7 +78,7 @@ describe("migration 002 encrypt-secrets", () => {
 
     const { validateApiKey } = await import("@/lib/db/repos/apiKeysRepo.js");
     const ok = await validateApiKey("sk-lookup-test");
-    expect(ok).toBe(true);
+    expect(ok?.valid).toBe(true);
     const bad = await validateApiKey("sk-wrong");
     expect(bad).toBe(false);
   });

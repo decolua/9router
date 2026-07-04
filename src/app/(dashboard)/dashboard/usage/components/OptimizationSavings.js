@@ -6,6 +6,7 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
 import Card from "@/shared/components/Card";
+import { usageScopeQueryString } from "@/lib/auth/usageScope";
 
 const fmt = (n) => new Intl.NumberFormat().format(Math.round(n || 0));
 const fmtPct = (n) => `${((n || 0) * 100).toFixed(1)}%`;
@@ -22,7 +23,7 @@ const fmtTokens = (n) => {
   return String(Math.round(n || 0));
 };
 
-export default function OptimizationSavings({ period }) {
+export default function OptimizationSavings({ period, usageScope = "mine" }) {
   const [data, setData] = useState(null);
   const [series, setSeries] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -30,9 +31,10 @@ export default function OptimizationSavings({ period }) {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    const scopeQs = usageScopeQueryString(usageScope);
     Promise.all([
-      fetch(`/api/usage/optimization?period=${encodeURIComponent(period)}`).then((r) => r.ok ? r.json() : null),
-      fetch(`/api/usage/optimization/series?period=${encodeURIComponent(period)}`).then((r) => r.ok ? r.json() : null),
+      fetch(`/api/usage/optimization?period=${encodeURIComponent(period)}&${scopeQs}`).then((r) => r.ok ? r.json() : null),
+      fetch(`/api/usage/optimization/series?period=${encodeURIComponent(period)}&${scopeQs}`).then((r) => r.ok ? r.json() : null),
     ]).then(([summary, ser]) => {
       if (cancelled) return;
       setData(summary);
@@ -40,7 +42,7 @@ export default function OptimizationSavings({ period }) {
       setLoading(false);
     }).catch(() => { if (!cancelled) { setData(null); setSeries([]); setLoading(false); } });
     return () => { cancelled = true; };
-  }, [period]);
+  }, [period, usageScope]);
 
   if (loading) {
     return (
@@ -200,4 +202,5 @@ function Pill({ label, count, total }) {
 
 OptimizationSavings.propTypes = {
   period: PropTypes.string.isRequired,
+  usageScope: PropTypes.string,
 };

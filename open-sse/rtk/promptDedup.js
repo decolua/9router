@@ -13,10 +13,12 @@
 // Shapes covered:
 //   - OpenAI chat: messages[].content as string or array of {type:"text"|"input_text", text}
 //   - Claude messages[].content as array of {type:"text", text} (skip tool_result)
-//   - Claude body.system as array of {type:"text", text}
+//   - Claude body.system as array of {type:"text", text} or string
 //   - OpenAI Responses input[] same shape as messages
+//   - Gemini / Vertex / Antigravity: contents[].parts[].text and systemInstruction.parts
 
 import { FORMATS } from "../translator/formats.js";
+import { resolveConversationItems, isGeminiLikeFormat } from "./bodyShapes.js";
 
 const MIN_DEDUP_SIZE = 400;       // bytes — below this, replacement token costs more than savings
 const REF_PREFIX = "[dup-ref:";
@@ -38,25 +40,13 @@ function refToken(hex, firstMsgIdx) {
 export function dedupePrompt(body, enabled, format) {
   if (!enabled || !body) return null;
 
-  const items = Array.isArray(body.messages) ? body.messages
-    : Array.isArray(body.input) ? body.input
-    : null;
-
+  const items = resolveConversationItems(body);
   const stats = { bytesBefore: 0, bytesAfter: 0, dupBlocks: 0, hits: [] };
 
   try {
-    // First occurrence index per hash, scoped to this single request
     const seen = new Map();
 
-    // Claude body.system (array form only — strings stay as-is; client can't pin them with cache_control)
-    if (format === FORMATS.CLAUDE && Array.isArray(body.system)) {
-      for (let i = 0; i < body.system.length; i++) {
-        const blk = body.system[i];
-        if (!isPlainTextBlock(blk)) continue;
-        if (blk.cache_control) continue;  // owned by prefix cache layer
-        replaceIfDup(blk, "text", seen, stats, /*msgIdx*/ -1 - i); // negative = system-block index
-      }
-    }
+    dedupeSystemBlocks(body, format, seen, stats);
 
     if (!items) return stats.dupBlocks > 0 ? stats : null;
 
@@ -68,6 +58,12 @@ export function dedupePrompt(body, enabled, format) {
       if (msg.type === "function_call_output") continue;
       // OpenAI tool message — RTK's territory, skip
       if (msg.role === "tool") continue;
+
+      // Gemini-shaped turn: parts[].text
+      if (Array.isArray(msg.parts)) {
+        dedupeGeminiParts(msg.parts, seen, stats, i);
+        continue;
+      }
 
       // String content
       if (typeof msg.content === "string") {
@@ -96,6 +92,43 @@ export function dedupePrompt(body, enabled, format) {
   }
 
   return stats.dupBlocks > 0 ? stats : null;
+}
+
+function dedupeSystemBlocks(body, format, seen, stats) {
+  // Claude body.system (array or string)
+  if (format === FORMATS.CLAUDE) {
+    if (Array.isArray(body.system)) {
+      for (let i = 0; i < body.system.length; i++) {
+        const blk = body.system[i];
+        if (!isPlainTextBlock(blk)) continue;
+        if (blk.cache_control) continue;
+        replaceIfDup(blk, "text", seen, stats, -1 - i);
+      }
+    } else if (typeof body.system === "string") {
+      body.system = replaceStringIfDup(body.system, seen, stats, -1);
+    }
+    return;
+  }
+
+  // Gemini systemInstruction.parts
+  if (isGeminiLikeFormat(format) && body.systemInstruction?.parts) {
+    dedupeGeminiParts(body.systemInstruction.parts, seen, stats, -1);
+    return;
+  }
+
+  // Antigravity nests system under request
+  if (format === FORMATS.ANTIGRAVITY && body.request?.systemInstruction?.parts) {
+    dedupeGeminiParts(body.request.systemInstruction.parts, seen, stats, -1);
+  }
+}
+
+function dedupeGeminiParts(parts, seen, stats, msgIdx) {
+  for (let j = 0; j < parts.length; j++) {
+    const part = parts[j];
+    if (!part || part.thought || part.functionCall || part.functionResponse) continue;
+    if (typeof part.text !== "string") continue;
+    replaceIfDup(part, "text", seen, stats, msgIdx);
+  }
 }
 
 function isPlainTextBlock(blk) {

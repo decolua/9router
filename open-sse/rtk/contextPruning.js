@@ -20,6 +20,7 @@
 // Returns stats { prunedMessages, prunedBytes, keptMessages, totalBytesBefore } or null.
 
 import { FORMATS } from "../translator/formats.js";
+import { resolveConversationItems, isGeminiLikeFormat } from "./bodyShapes.js";
 
 const DEFAULT_KEEP_LAST = 8;
 const DEFAULT_MIN_BYTES = 12000;
@@ -31,11 +32,7 @@ export function pruneContext(body, enabled, format, opts = {}) {
   const keepLast = clampInt(opts.keepLast, 4, 64, DEFAULT_KEEP_LAST);
   const minBytes = Math.max(2000, opts.minBytes ?? DEFAULT_MIN_BYTES);
 
-  const items = Array.isArray(body.messages) ? body.messages
-    : Array.isArray(body.input) ? body.input
-    : Array.isArray(body.contents) ? body.contents
-    : null;
-
+  const items = resolveConversationItems(body);
   if (!items || items.length === 0) return null;
 
   try {
@@ -121,11 +118,7 @@ function findFirstUserIdx(items, format) {
   for (let i = 0; i < items.length; i++) {
     const m = items[i];
     if (!m) continue;
-    if (format === FORMATS.GEMINI || format === FORMATS.GEMINI_CLI || format === FORMATS.VERTEX) {
-      if (m.role === "user") return i;
-    } else {
-      if (m.role === "user") return i;
-    }
+    if (m.role === "user") return i;
   }
   return -1;
 }
@@ -148,7 +141,18 @@ function expandToSafeBoundary(items, idx, direction) {
 
 function hasUnpairedToolUse(prev, cur) {
   if (!prev || !cur) return false;
-  // assistant message with tool_use blocks must be followed by user/tool with matching tool_result
+
+  // Gemini / Antigravity: model turn with functionCall ↔ user turn with functionResponse
+  if (Array.isArray(prev.parts)) {
+    const hasFunctionCall = prev.parts.some((p) => p && p.functionCall);
+    if (hasFunctionCall) {
+      const hasFunctionResponse = Array.isArray(cur.parts)
+        && cur.parts.some((p) => p && p.functionResponse);
+      return hasFunctionResponse;
+    }
+  }
+
+  // Claude / OpenAI: assistant tool_use ↔ user tool_result
   if (prev.role !== "assistant") return false;
   const blocks = Array.isArray(prev.content) ? prev.content : [];
   const hasToolUse = blocks.some((b) => b && b.type === "tool_use");
@@ -165,7 +169,7 @@ function buildPruneMarker(prunedCount, prunedBytes, format) {
   if (format === FORMATS.CLAUDE) {
     return { role: "user", content: [{ type: "text", text }] };
   }
-  if (format === FORMATS.GEMINI || format === FORMATS.GEMINI_CLI || format === FORMATS.VERTEX) {
+  if (isGeminiLikeFormat(format)) {
     return { role: "user", parts: [{ text }] };
   }
   return { role: "user", content: text };

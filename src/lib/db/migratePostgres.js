@@ -148,6 +148,27 @@ async function runVersionedMigrations(adapter) {
     lastApplied = 6;
     console.log("[DB][migrate] applied #6 security-extensions");
   }
+  if (lastApplied < 7) {
+    const m007 = (await import("./migrations/007-backfill-connection-userid.js")).default;
+    if (m007.upPostgres) await m007.upPostgres(adapter);
+    await setMeta(adapter, "schemaVersion", 7);
+    lastApplied = 7;
+    console.log("[DB][migrate] applied #7 backfill-connection-userid");
+  }
+  if (lastApplied < 8) {
+    const { organizationsPostgres } = await import("./migrations/008-organizations.js");
+    await organizationsPostgres(adapter);
+    await setMeta(adapter, "schemaVersion", 8);
+    lastApplied = 8;
+    console.log("[DB][migrate] applied #8 organizations");
+  }
+  if (lastApplied < 9) {
+    const { orgScopePostgres } = await import("./migrations/009-org-scope.js");
+    await orgScopePostgres(adapter);
+    await setMeta(adapter, "schemaVersion", 9);
+    lastApplied = 9;
+    console.log("[DB][migrate] applied #9 org-scope");
+  }
   return { applied: lastApplied - current, from: current, to: lastApplied };
 }
 
@@ -165,10 +186,12 @@ export async function runMigrationOncePostgres(adapter) {
   const legacyMain = readJsonSafe(LEGACY_FILES.main);
   const alreadyImported = fs.existsSync(MIGRATED_MARKER);
   if (fresh && legacyMain && !alreadyImported) {
+    const { getDefaultOrgId } = await import("./repos/organizationsRepo.js");
+    const orgId = (await getDefaultOrgId()) || "legacy";
     await qRun(
       adapter,
-      `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
-      [stringifyJson(legacyMain.settings || {})]
+      `INSERT INTO settings(orgId, data) VALUES(?, ?) ON CONFLICT(orgId) DO UPDATE SET data = excluded.data`,
+      [orgId, stringifyJson(legacyMain.settings || {})],
     );
     await encryptSecretsPostgres(adapter);
     try { fs.writeFileSync(MIGRATED_MARKER, new Date().toISOString()); } catch {}

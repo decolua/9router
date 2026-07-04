@@ -1,0 +1,31 @@
+# Caddy reverse proxy for ebRouter SaaS (wildcard TLS via Cloudflare DNS).
+#
+# Requires:
+#   - DNS A/AAAA for app.example.com and *.app.example.com → this server
+#   - CLOUDFLARE_API_TOKEN in .env (Zone.DNS Edit)
+#   - ACME_EMAIL in .env
+#
+# Start with: docker compose --profile proxy up -d
+
+{
+	email {$ACME_EMAIL}
+}
+
+# Apex — marketing, register-org, health checks
+{$SAAS_BASE_DOMAIN} {
+	encode gzip zstd
+	reverse_proxy ebrouter:20128
+}
+
+# Wildcard — per-org subdomains (acme.app.example.com)
+*.{$SAAS_BASE_DOMAIN} {
+	encode gzip zstd
+	tls {
+		dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+	}
+	reverse_proxy ebrouter:20128 {
+		header_up Host {host}
+		header_up X-Forwarded-Host {host}
+		header_up X-Forwarded-Proto {scheme}
+	}
+}

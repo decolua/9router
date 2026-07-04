@@ -21,6 +21,14 @@ import crypto from "node:crypto";
 import { isMasterKeyConfigured, getMasterKey, getKeyFingerprint } from "../../crypto/masterKey.js";
 import { encrypt, isEncrypted } from "../../crypto/envelope.js";
 import { setMetaSync } from "../helpers/metaStore.js";
+import {
+  readSettingsDataSync,
+  readSettingsDataPostgres,
+  writeSettingsDataSync,
+  writeSettingsDataPostgres,
+  settingsColumnsSync,
+  settingsColumnsPostgres,
+} from "../helpers/settingsRow.js";
 
 const API_KEY_HASH_DOMAIN = "ebrouter-apikey-hash:";
 
@@ -64,10 +72,17 @@ export async function encryptSecretsPostgres(db) {
     if (next !== r.data) await qRun(db, `UPDATE providerConnections SET data = ? WHERE id = ?`, [next, r.id]);
   }
 
-  const settingsRow = await qGet(db, `SELECT id, data FROM settings WHERE id = 1`);
-  if (settingsRow) {
-    const next = encryptIfNeeded(settingsRow.data, key);
-    if (next !== settingsRow.data) await qRun(db, `UPDATE settings SET data = ? WHERE id = 1`, [next]);
+  const settingsRaw = await readSettingsDataPostgres(db);
+  if (settingsRaw) {
+    const next = encryptIfNeeded(settingsRaw, key);
+    if (next !== settingsRaw) {
+      const cols = await settingsColumnsPostgres(db);
+      if (cols.has("orgId")) {
+        await qRun(db, `UPDATE settings SET data = ? WHERE "orgId" = (SELECT "orgId" FROM settings LIMIT 1)`, [next]);
+      } else {
+        await qRun(db, `UPDATE settings SET data = ? WHERE id = 1`, [next]);
+      }
+    }
   }
 
   for (const r of apiKeyRows) {
@@ -110,11 +125,17 @@ export default {
       if (next !== r.data) db.run(`UPDATE providerConnections SET data = ? WHERE id = ?`, [next, r.id]);
     }
 
-    // settings.data (single row)
-    const settingsRow = db.get(`SELECT id, data FROM settings WHERE id = 1`);
-    if (settingsRow) {
-      const next = encryptIfNeeded(settingsRow.data, key);
-      if (next !== settingsRow.data) db.run(`UPDATE settings SET data = ? WHERE id = 1`, [next]);
+    const settingsRaw = readSettingsDataSync(db);
+    if (settingsRaw) {
+      const next = encryptIfNeeded(settingsRaw, key);
+      if (next !== settingsRaw) {
+        const cols = settingsColumnsSync(db);
+        if (cols.has("orgId")) {
+          db.run(`UPDATE settings SET data = ? WHERE rowid = (SELECT rowid FROM settings LIMIT 1)`, [next]);
+        } else {
+          db.run(`UPDATE settings SET data = ? WHERE id = 1`, [next]);
+        }
+      }
     }
 
     // apiKeys.key — encrypt for display. keyHash already backfilled above for lookups.

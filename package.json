@@ -4,7 +4,7 @@
   "description": "ebRouter web dashboard",
   "private": true,
   "scripts": {
-    "dev": "next dev --webpack --port 20128",
+    "dev": "node scripts/dev.mjs",
     "build": "next build --webpack",
     "start": "next start",
     "dev:bun": "bun --bun next dev --webpack --port 20128",

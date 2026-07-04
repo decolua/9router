@@ -65,16 +65,33 @@ async function tryPostgres() {
   }
 }
 
+function allowSqliteFallback() {
+  return process.env.ALLOW_SQLITE_FALLBACK === "true" || process.env.VITEST === "true";
+}
+
 async function initAdapter() {
-  const pg = await tryPostgres();
-  if (pg) {
-    if (!state.logged) {
-      console.log(`[DB] Driver: postgres | url: ${process.env.DATABASE_URL?.replace(/:[^:@/]+@/, ":***@")}`);
-      state.logged = true;
+  const databaseUrl = process.env.DATABASE_URL?.trim();
+
+  if (databaseUrl) {
+    const pg = await tryPostgres();
+    if (pg) {
+      if (!state.logged) {
+        console.log(`[DB] Driver: postgres | url: ${databaseUrl.replace(/:[^:@/]+@/, ":***@")}`);
+        state.logged = true;
+      }
+      const { runMigrationOnce } = await import("./migrate.js");
+      await runMigrationOnce(pg);
+      return pg;
     }
-    const { runMigrationOnce } = await import("./migrate.js");
-    await runMigrationOnce(pg);
-    return pg;
+    throw new Error(
+      "[DB] DATABASE_URL is set but PostgreSQL is unavailable. Check the connection string and ensure PostgreSQL is running."
+    );
+  }
+
+  if (!allowSqliteFallback()) {
+    throw new Error(
+      "[DB] DATABASE_URL is required. Set DATABASE_URL to your PostgreSQL connection string (see .env.example)."
+    );
   }
 
   ensureDirs();

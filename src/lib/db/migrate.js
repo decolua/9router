@@ -141,7 +141,20 @@ function importLegacyMain(adapter, data) {
   if (!data || typeof data !== "object") return;
 
   if (data.settings) {
-    adapter.run(`INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`, [stringifyJson(data.settings)]);
+    const defaultOrgId =
+      getMetaSync(adapter, "defaultOrgId", null) ||
+      adapter.get(`SELECT id FROM organizations WHERE slug = 'default'`)?.id;
+    if (defaultOrgId) {
+      adapter.run(
+        `INSERT INTO settings(orgId, data) VALUES(?, ?) ON CONFLICT(orgId) DO UPDATE SET data = excluded.data`,
+        [defaultOrgId, stringifyJson(data.settings)],
+      );
+    } else {
+      adapter.run(
+        `INSERT INTO settings(orgId, data) VALUES(?, ?) ON CONFLICT(orgId) DO UPDATE SET data = excluded.data`,
+        ["legacy", stringifyJson(data.settings)],
+      );
+    }
   }
 
   importWithAssertion(adapter, "providerConnections", data.providerConnections || [], (c) => {

@@ -4,7 +4,9 @@ import { setUserRole } from "@/lib/db/repos/usersRepo.js";
 import { withAdminUser } from "@/lib/auth/runtimeUserContext.js";
 import { auditFromRequest, AuditAction } from "@/lib/audit";
 import { createPasswordResetToken } from "@/lib/auth/passwordReset";
-import { isSmtpConfigured } from "@/lib/email/smtp";
+import { isSmtpConfigured, sendPasswordResetEmail } from "@/lib/email/smtp";
+import { buildOrgDashboardUrl } from "@/lib/org/orgContext.js";
+import { getOrganizationById } from "@/lib/db/repos/organizationsRepo.js";
 
 export const dynamic = "force-dynamic";
 
@@ -34,9 +36,9 @@ export const POST = withAdminUser(async (request, _ctx, admin) => {
       expiresInHours,
     });
 
-    const origin = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || "";
-    const signupUrl = origin
-      ? `${origin.replace(/\/+$/, "")}/signup?token=${encodeURIComponent(invite.token)}`
+    const org = await getOrganizationById(admin.orgId);
+    const signupUrl = org?.slug
+      ? `${buildOrgDashboardUrl(org.slug, "/signup")}?token=${encodeURIComponent(invite.token)}`
       : null;
 
     await auditFromRequest(request, {
@@ -116,9 +118,18 @@ export const PUT = withAdminUser(async (request, _ctx, admin) => {
     const target = users.find((u) => u.id === id);
     if (!target) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
-    const result = await createPasswordResetToken(target.email, { createdBy: admin.id });
+    const result = await createPasswordResetToken(target.email, { orgId: admin.orgId, createdBy: admin.id, request });
     if (!result.user) {
       return NextResponse.json({ error: "User not found or password login not available" }, { status: 404 });
+    }
+    if (!result.resetUrl) {
+      return NextResponse.json({ error: "Could not build reset URL — set BASE_URL in .env or access the dashboard via its public URL." }, { status: 500 });
+    }
+
+    let emailed = false;
+    if (isSmtpConfigured()) {
+      await sendPasswordResetEmail({ to: result.user.email, resetUrl: result.resetUrl });
+      emailed = true;
     }
 
     await auditFromRequest(request, {
@@ -132,9 +143,9 @@ export const PUT = withAdminUser(async (request, _ctx, admin) => {
 
     return NextResponse.json({
       success: true,
-      resetUrl: result.resetUrl,
-      emailed: isSmtpConfigured(),
-      message: isSmtpConfigured()
+      resetUrl: emailed ? null : result.resetUrl,
+      emailed,
+      message: emailed
         ? "Reset link emailed to the user."
         : "SMTP not configured — share this one-time reset URL securely with the user.",
     });

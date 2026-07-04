@@ -35,19 +35,29 @@ export async function getUserSettings(userId) {
   return mergeDefaults(await readRaw(userId));
 }
 
+const USER_SETTINGS_UPSERT_SQL = `INSERT INTO userSettings(userId, data) VALUES(?, ?) ON CONFLICT(userId) DO UPDATE SET data = excluded.data`;
+
 export async function updateUserSettings(userId, updates) {
   if (!userId) throw new Error("userId is required");
   const db = await getAdapter();
   let next;
-  db.transaction(() => {
-    const row = db.get(`SELECT data FROM userSettings WHERE userId = ?`, [userId]);
-    const current = row ? parseJson(row.data, {}) : {};
-    next = { ...current, ...updates };
-    db.run(
-      `INSERT INTO userSettings(userId, data) VALUES(?, ?) ON CONFLICT(userId) DO UPDATE SET data = excluded.data`,
-      [userId, stringifyJson(next)]
-    );
-  });
+
+  if (db.dialect === "postgres") {
+    await db.transaction(async (tx) => {
+      const row = await tx.get(`SELECT data FROM userSettings WHERE userId = ?`, [userId]);
+      const current = row ? parseJson(row.data, {}) : {};
+      next = { ...current, ...updates };
+      await tx.run(USER_SETTINGS_UPSERT_SQL, [userId, stringifyJson(next)]);
+    });
+  } else {
+    db.transaction(() => {
+      const row = db.get(`SELECT data FROM userSettings WHERE userId = ?`, [userId]);
+      const current = row ? parseJson(row.data, {}) : {};
+      next = { ...current, ...updates };
+      db.run(USER_SETTINGS_UPSERT_SQL, [userId, stringifyJson(next)]);
+    });
+  }
+
   return mergeDefaults(next);
 }
 

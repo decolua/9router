@@ -21,6 +21,7 @@ export default function ProfilePage() {
   const [mfaLoading, setMfaLoading] = useState(false);
   const [dbLoading, setDbLoading] = useState(false);
   const [dbStatus, setDbStatus] = useState({ type: "", message: "" });
+  const [dbInfo, setDbInfo] = useState({ driver: "postgres", display: "PostgreSQL", exportFormat: "sql" });
   const [oidcForm, setOidcForm] = useState({
     authMode: "password",
     oidcIssuerUrl: "",
@@ -46,10 +47,13 @@ export default function ProfilePage() {
   const [proxyTestLoading, setProxyTestLoading] = useState(false);
 
   useEffect(() => {
-    fetch("/api/settings")
-      .then((res) => res.json())
-      .then((data) => {
+    Promise.all([
+      fetch("/api/settings").then((res) => res.json()),
+      fetch("/api/settings/database?info=1").then((res) => (res.ok ? res.json() : null)),
+    ])
+      .then(([data, databaseInfo]) => {
         setSettings(data);
+        if (databaseInfo) setDbInfo(databaseInfo);
         setMfaEnabled(data?.mfaEnabled === true);
         setOidcForm({
           authMode: data?.authMode || "password",
@@ -531,20 +535,28 @@ export default function ProfilePage() {
         throw new Error(data.error || "Failed to export database");
       }
 
-      const payload = await res.json();
-      const content = JSON.stringify(payload, null, 2);
-      const blob = new Blob([content], { type: "application/json" });
+      const format = res.headers.get("X-Backup-Format") || dbInfo.exportFormat || "sql";
+      const contentDisposition = res.headers.get("Content-Disposition") || "";
+      const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
+      const stamp = new Date().toISOString().replace(/[.:]/g, "-");
+      const fallbackName = format === "sql"
+        ? `ebrouter-backup-${stamp}.sql`
+        : `ebrouter-backup-${stamp}.json`;
+      const filename = filenameMatch?.[1] || fallbackName;
+      const content = await res.text();
+      const blob = new Blob([content], {
+        type: res.headers.get("Content-Type") || (format === "sql" ? "application/sql" : "application/json"),
+      });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
-      const stamp = new Date().toISOString().replace(/[.:]/g, "-");
       anchor.href = url;
-      anchor.download = `ebrouter-backup-${stamp}.json`;
+      anchor.download = filename;
       document.body.appendChild(anchor);
       anchor.click();
       document.body.removeChild(anchor);
       URL.revokeObjectURL(url);
 
-      setDbStatus({ type: "success", message: "Database backup downloaded" });
+      setDbStatus({ type: "success", message: `Database backup downloaded (${filename})` });
     } catch (err) {
       setDbStatus({ type: "error", message: err.message || "Failed to export database" });
     } finally {
@@ -561,12 +573,14 @@ export default function ProfilePage() {
 
     try {
       const raw = await file.text();
-      const payload = JSON.parse(raw);
+      const isSql = file.name.toLowerCase().endsWith(".sql");
 
       const res = await fetch("/api/settings/database", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        headers: isSql
+          ? { "Content-Type": "application/sql" }
+          : { "Content-Type": "application/json" },
+        body: isSql ? raw : JSON.stringify(JSON.parse(raw)),
       });
 
       const data = await res.json().catch(() => ({}));
@@ -600,7 +614,9 @@ export default function ProfilePage() {
               </div>
               <div>
                 <h2 className="text-lg sm:text-xl font-semibold">Local Mode</h2>
-                <p className="text-sm text-text-muted">Running on your machine</p>
+                <p className="text-sm text-text-muted">
+                  {dbInfo.driver === "postgres" ? "Connected to PostgreSQL" : "Running on your machine"}
+                </p>
               </div>
             </div>
             <div className="inline-flex p-1 rounded-lg bg-black/5 dark:bg-white/5 w-full sm:w-auto">
@@ -627,8 +643,17 @@ export default function ProfilePage() {
           <div className="flex flex-col gap-3 pt-4 border-t border-border">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-3 rounded-lg bg-bg border border-border gap-2">
               <div>
-                <p className="font-medium text-sm sm:text-base">Database Location</p>
-                <p className="text-xs sm:text-sm text-text-muted font-mono break-all">~/.9router/db/data.sqlite</p>
+                <p className="font-medium text-sm sm:text-base">Database</p>
+                <p className="text-xs sm:text-sm text-text-muted font-mono break-all">
+                  {dbInfo.driver === "postgres"
+                    ? `PostgreSQL · ${dbInfo.display}`
+                    : dbInfo.display}
+                </p>
+                {dbInfo.exportFormat === "sql" && (
+                  <p className="text-xs text-text-muted mt-1">
+                    Download creates a full `.sql` backup (users, providers, settings, and all tables).
+                  </p>
+                )}
               </div>
             </div>
             <div className="flex flex-col sm:flex-row gap-2">
@@ -653,7 +678,7 @@ export default function ProfilePage() {
               <input
                 ref={importFileRef}
                 type="file"
-                accept="application/json,.json"
+                accept="application/json,.json,.sql,application/sql,text/plain"
                 className="hidden"
                 onChange={handleImportDatabase}
               />

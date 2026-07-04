@@ -13,6 +13,7 @@ import {
   Legend,
 } from "recharts";
 import Card from "@/shared/components/Card";
+import { usageScopeQueryString } from "@/lib/auth/usageScope";
 
 const fmtTokens = (n) => {
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
@@ -22,7 +23,7 @@ const fmtTokens = (n) => {
 
 const fmtCost = (n) => `$${(n || 0).toFixed(4)}`;
 
-export default function UsageChart({ period = "7d" }) {
+export default function UsageChart({ period = "7d", usageScope = "mine" }) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState("tokens");
@@ -30,7 +31,8 @@ export default function UsageChart({ period = "7d" }) {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/usage/chart?period=${period}`);
+      const scopeQs = usageScopeQueryString(usageScope);
+      const res = await fetch(`/api/usage/chart?period=${period}&${scopeQs}`);
       if (res.ok) {
         const json = await res.json();
         setData(json);
@@ -40,7 +42,7 @@ export default function UsageChart({ period = "7d" }) {
     } finally {
       setLoading(false);
     }
-  }, [period]);
+  }, [period, usageScope]);
 
   useEffect(() => {
     fetchData();
@@ -138,4 +140,5 @@ export default function UsageChart({ period = "7d" }) {
 
 UsageChart.propTypes = {
   period: PropTypes.string,
+  usageScope: PropTypes.string,
 };

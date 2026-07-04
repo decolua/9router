@@ -3,12 +3,36 @@ import { EventEmitter } from "events";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMeta, setMeta } from "../helpers/metaStore.js";
-import { getRuntimeUserId } from "../../auth/runtimeUserContext.js";
+import { getRuntimeUserId, getRuntimeOrgId } from "../../auth/runtimeUserContext.js";
 
 const PENDING_TIMEOUT_MS = 60 * 1000;
 const RING_CAP = 50;
 const CONN_CACHE_TTL_MS = 30 * 1000;
 const PERIOD_MS = { "24h": 86400000, "7d": 604800000, "30d": 2592000000, "60d": 5184000000 };
+
+function sqlTenantFilter(filterUserId, conds, params, orgId = null) {
+  const resolvedOrg = orgId || getRuntimeOrgId();
+  if (resolvedOrg) {
+    conds.push("orgId = ?");
+    params.push(resolvedOrg);
+  }
+  if (filterUserId) {
+    conds.push("userId = ?");
+    params.push(filterUserId);
+  }
+}
+
+function getPeriodCutoff(period) {
+  if (period === "today") {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    return startOfDay.toISOString();
+  }
+  if (period === "24h") return new Date(Date.now() - PERIOD_MS["24h"]).toISOString();
+  const ms = PERIOD_MS[period];
+  if (ms) return new Date(Date.now() - ms).toISOString();
+  return null;
+}
 
 // In-memory state shared across Next.js modules
 if (!global._pendingRequests) global._pendingRequests = { byModel: {}, byAccount: {} };
@@ -103,8 +127,9 @@ async function ensureRingInitialized() {
   recentRing.initialized = true;
   try {
     const db = await getAdapter();
-    const rows = await qAll(db, `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, cost, status, tokens FROM usageHistory ORDER BY id DESC LIMIT ?`, [RING_CAP]);
+    const rows = await qAll(db, `SELECT userId, timestamp, provider, model, connectionId, apiKey, endpoint, cost, status, tokens FROM usageHistory ORDER BY id DESC LIMIT ?`, [RING_CAP]);
     recentRing.items = rows.reverse().map((r) => ({
+      userId: r.userId || null,
       timestamp: r.timestamp, provider: r.provider, model: r.model, connectionId: r.connectionId,
       apiKey: r.apiKey, endpoint: r.endpoint, cost: r.cost, status: r.status,
       tokens: parseJson(r.tokens, {}),
@@ -197,11 +222,26 @@ export function trackPendingRequest(model, provider, connectionId, started, erro
   statsEmitter.emit("pending");
 }
 
-export async function getActiveRequests() {
+export async function getActiveRequests(filterUserId = null) {
   const activeRequests = [];
-  const connectionMap = await getConnectionMapCached();
+  let connectionMap = await getConnectionMapCached();
+  let allowedConnections = null;
+
+  if (filterUserId) {
+    try {
+      const { getProviderConnections } = await import("./connectionsRepo.js");
+      const userConnections = await getProviderConnections({ userId: filterUserId });
+      allowedConnections = new Set(userConnections.map((c) => c.id));
+      connectionMap = {};
+      for (const c of userConnections) connectionMap[c.id] = c.name || c.email || c.id;
+    } catch {
+      allowedConnections = new Set();
+      connectionMap = {};
+    }
+  }
 
   for (const [connectionId, models] of Object.entries(pendingRequests.byAccount)) {
+    if (allowedConnections && !allowedConnections.has(connectionId)) continue;
     for (const [modelKey, count] of Object.entries(models)) {
       if (count > 0) {
         const accountName = connectionMap[connectionId] || `Account ${connectionId.slice(0, 8)}...`;
@@ -218,6 +258,7 @@ export async function getActiveRequests() {
   await ensureRingInitialized();
   const seen = new Set();
   const recentRequests = [...recentRing.items]
+    .filter((e) => !filterUserId || e.userId === filterUserId)
     .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
     .map((e) => {
       const t = e.tokens || {};
@@ -257,29 +298,31 @@ export async function saveRequestUsage(entry) {
     // better-sqlite3 is sync → no JS yield mid-transaction → no race in same process.
     db.transaction(() => {
       const userId = entry.userId || getRuntimeUserId() || null;
+      const orgId = entry.orgId || getRuntimeOrgId() || null;
       db.run(
-        `INSERT INTO usageHistory(userId, timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO usageHistory(orgId, userId, timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          userId, entry.timestamp, entry.provider || null, entry.model || null,
+          orgId, userId, entry.timestamp, entry.provider || null, entry.model || null,
           entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
           promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
           stringifyJson(tokens), stringifyJson(entry.meta || {}),
-        ]
+        ],
       );
 
       const dateKey = getLocalDateKey(entry.timestamp);
-      const row = db.get(`SELECT data FROM usageDaily WHERE dateKey = ?`, [dateKey]);
+      const dailyOrgId = orgId || "default";
+      const row = db.get(`SELECT data FROM usageDaily WHERE orgId = ? AND dateKey = ?`, [dailyOrgId, dateKey]);
       const day = row ? parseJson(row.data, {}) : {
         requests: 0, promptTokens: 0, completionTokens: 0, cost: 0,
         byProvider: {}, byModel: {}, byAccount: {}, byApiKey: {}, byEndpoint: {},
       };
       aggregateEntryToDay(day, entry);
-      db.run(`INSERT INTO usageDaily(dateKey, data) VALUES(?, ?) ON CONFLICT(dateKey) DO UPDATE SET data = excluded.data`, [dateKey, stringifyJson(day)]);
+      db.run(`INSERT INTO usageDaily(orgId, dateKey, data) VALUES(?, ?, ?) ON CONFLICT(orgId, dateKey) DO UPDATE SET data = excluded.data`, [dailyOrgId, dateKey, stringifyJson(day)]);
 
-      // Atomic counter increment in same transaction
-      const cur = db.get(`SELECT value FROM _meta WHERE key = 'totalRequestsLifetime'`);
+      const metaKey = dailyOrgId ? `totalRequestsLifetime:${dailyOrgId}` : "totalRequestsLifetime";
+      const cur = db.get(`SELECT value FROM _meta WHERE key = ?`, [metaKey]);
       const next = (cur ? parseInt(cur.value, 10) : 0) + 1;
-      db.run(`INSERT INTO _meta(key, value) VALUES('totalRequestsLifetime', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [String(next)]);
+      db.run(`INSERT INTO _meta(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [metaKey, String(next)]);
     });
 
     pushToRing(entry);
@@ -290,7 +333,7 @@ export async function saveRequestUsage(entry) {
 }
 
 // Per-day savings time-series. Buckets size depends on period (hourly for today/24h, daily otherwise).
-export async function getOptimizationSeries(period = "7d") {
+export async function getOptimizationSeries(period = "7d", filterUserId = null) {
   const db = await getAdapter();
   const now = Date.now();
 
@@ -317,9 +360,14 @@ export async function getOptimizationSeries(period = "7d") {
     labelFn = (t) => new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric" });
   }
 
+  const conds = ["timestamp >= ?"];
+  const params = [new Date(start).toISOString()];
+  sqlTenantFilter(filterUserId, conds, params);
+  const where = `WHERE ${conds.join(" AND ")}`;
+
   const rows = await qAll(db, 
-    `SELECT timestamp, tokens, meta FROM usageHistory WHERE timestamp >= ?`,
-    [new Date(start).toISOString()]
+    `SELECT timestamp, tokens, meta FROM usageHistory ${where}`,
+    params
   );
 
   const series = Array.from({ length: buckets }, (_, i) => ({
@@ -346,12 +394,12 @@ export async function getOptimizationSeries(period = "7d") {
 
 // Optimization savings: aggregates the per-layer attribution we now persist into
 // usageHistory.meta + cache token stats from tokens column.
-export async function getOptimizationSavings(period = "7d") {
+export async function getOptimizationSavings(period = "7d", filterUserId = null) {
   const db = await getAdapter();
   const now = Date.now();
   const ms = PERIOD_MS[period];
 
-  const conds = ["status = 'ok' OR status = 'success' OR status IS NULL"];
+  const conds = ["(status = 'ok' OR status = 'success' OR status IS NULL)"];
   const params = [];
   if (period === "today") {
     const start = new Date();
@@ -362,8 +410,9 @@ export async function getOptimizationSavings(period = "7d") {
     conds.push("timestamp >= ?");
     params.push(new Date(now - ms).toISOString());
   }
+  sqlTenantFilter(filterUserId, conds, params);
 
-  const where = `WHERE (${conds[0]})${conds.length > 1 ? " AND " + conds.slice(1).join(" AND ") : ""}`;
+  const where = `WHERE ${conds.join(" AND ")}`;
   const rows = await qAll(db, 
     `SELECT promptTokens, completionTokens, cost, tokens, meta FROM usageHistory ${where}`,
     params
@@ -424,11 +473,12 @@ export async function getOptimizationSavings(period = "7d") {
   return out;
 }
 
-export async function getUsageHistory(filter = {}) {
+export async function getUsageHistory(filter = {}, filterUserId = null) {
   const db = await getAdapter();
   const conds = [];
   const params = [];
 
+  sqlTenantFilter(filterUserId ?? filter.filterUserId, conds, params);
   if (filter.provider) { conds.push("provider = ?"); params.push(filter.provider); }
   if (filter.model) { conds.push("model = ?"); params.push(filter.model); }
   if (filter.startDate) { conds.push("timestamp >= ?"); params.push(new Date(filter.startDate).toISOString()); }
@@ -444,17 +494,22 @@ export async function getUsageHistory(filter = {}) {
   }));
 }
 
-function loadDaysInRange(adapter, maxDays) {
+function loadDaysInRange(adapter, maxDays, orgId = null) {
+  const resolvedOrg = orgId || getRuntimeOrgId();
   if (maxDays == null) {
+    if (resolvedOrg) return adapter.all(`SELECT dateKey, data FROM usageDaily WHERE orgId = ?`, [resolvedOrg]);
     return adapter.all(`SELECT dateKey, data FROM usageDaily`);
   }
   const today = new Date();
   const cutoff = new Date(today.getFullYear(), today.getMonth(), today.getDate() - maxDays + 1);
   const cutoffKey = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, "0")}-${String(cutoff.getDate()).padStart(2, "0")}`;
+  if (resolvedOrg) {
+    return adapter.all(`SELECT dateKey, data FROM usageDaily WHERE orgId = ? AND dateKey >= ?`, [resolvedOrg, cutoffKey]);
+  }
   return adapter.all(`SELECT dateKey, data FROM usageDaily WHERE dateKey >= ?`, [cutoffKey]);
 }
 
-export async function getUsageStats(period = "all") {
+export async function getUsageStats(period = "all", filterUserId = null) {
   const db = await getAdapter();
 
   const [{ getProviderConnections }, { getApiKeys }, { getProviderNodes }] = await Promise.all([
@@ -463,8 +518,9 @@ export async function getUsageStats(period = "all") {
     import("./nodesRepo.js"),
   ]);
 
+  const connFilter = filterUserId ? { userId: filterUserId } : {};
   let allConnections = [];
-  try { allConnections = await getProviderConnections(); } catch {}
+  try { allConnections = await getProviderConnections(connFilter); } catch {}
   const connectionMap = {};
   for (const c of allConnections) connectionMap[c.id] = c.name || c.email || c.id;
 
@@ -475,32 +531,9 @@ export async function getUsageStats(period = "all") {
   } catch {}
 
   let allApiKeys = [];
-  try { allApiKeys = await getApiKeys(); } catch {}
+  try { allApiKeys = await getApiKeys(filterUserId || undefined); } catch {}
   const apiKeyMap = {};
   for (const k of allApiKeys) apiKeyMap[k.key] = { name: k.name, id: k.id, createdAt: k.createdAt };
-
-  // recentRequests from live history (last 100 entries enough for 20 deduped)
-  const recentRows = await qAll(db, `SELECT timestamp, provider, model, tokens, status FROM usageHistory ORDER BY id DESC LIMIT 100`);
-  const seen = new Set();
-  const recentRequests = recentRows
-    .map((r) => {
-      const t = parseJson(r.tokens, {}) || {};
-      return {
-        timestamp: r.timestamp, model: r.model, provider: r.provider || "",
-        promptTokens: t.prompt_tokens || t.input_tokens || 0,
-        completionTokens: t.completion_tokens || t.output_tokens || 0,
-        status: r.status || "ok",
-      };
-    })
-    .filter((e) => {
-      if (e.promptTokens === 0 && e.completionTokens === 0) return false;
-      const minute = e.timestamp ? e.timestamp.slice(0, 16) : "";
-      const key = `${e.model}|${e.provider}|${e.promptTokens}|${e.completionTokens}|${minute}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .slice(0, 20);
 
   const stats = {
     totalRequests: 0,
@@ -509,24 +542,14 @@ export async function getUsageStats(period = "all") {
     last10Minutes: [],
     pending: pendingRequests,
     activeRequests: [],
-    recentRequests,
-    errorProvider: (Date.now() - lastErrorProvider.ts < 10000) ? lastErrorProvider.provider : "",
+    recentRequests: [],
+    errorProvider: "",
   };
 
-  // Active requests
-  for (const [connectionId, models] of Object.entries(pendingRequests.byAccount)) {
-    for (const [modelKey, count] of Object.entries(models)) {
-      if (count > 0) {
-        const accountName = connectionMap[connectionId] || `Account ${connectionId.slice(0, 8)}...`;
-        const match = modelKey.match(/^(.*) \((.*)\)$/);
-        stats.activeRequests.push({
-          model: match ? match[1] : modelKey,
-          provider: match ? match[2] : "unknown",
-          account: accountName, count,
-        });
-      }
-    }
-  }
+  const scopedActive = await getActiveRequests(filterUserId);
+  stats.activeRequests = scopedActive.activeRequests;
+  stats.recentRequests = scopedActive.recentRequests;
+  stats.errorProvider = scopedActive.errorProvider;
 
   // last10Minutes — query 10min window
   const now = new Date();
@@ -538,9 +561,12 @@ export async function getUsageStats(period = "all") {
     bucketMap[ts] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0 };
     stats.last10Minutes.push(bucketMap[ts]);
   }
+  const last10Conds = ["timestamp >= ?", "timestamp <= ?"];
+  const last10Params = [tenMinutesAgo.toISOString(), now.toISOString()];
+  sqlTenantFilter(filterUserId, last10Conds, last10Params);
   const recent10 = await qAll(db, 
-    `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ? AND timestamp <= ?`,
-    [tenMinutesAgo.toISOString(), now.toISOString()]
+    `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE ${last10Conds.join(" AND ")}`,
+    last10Params
   );
   for (const r of recent10) {
     const tt = new Date(r.timestamp).getTime();
@@ -553,7 +579,7 @@ export async function getUsageStats(period = "all") {
     }
   }
 
-  const useDailySummary = period !== "24h" && period !== "today";
+  const useDailySummary = !filterUserId && period !== "24h" && period !== "today";
 
   if (useDailySummary) {
     const periodDays = { "7d": 7, "30d": 30, "60d": 60 };
@@ -642,9 +668,12 @@ export async function getUsageStats(period = "all") {
 
     // Overlay precise lastUsed timestamps from history
     const overlayCutoff = maxDays ? Date.now() - maxDays * 86400000 : 0;
+    const overlayConds = ["timestamp >= ?"];
+    const overlayParams = [new Date(overlayCutoff).toISOString()];
+    sqlTenantFilter(filterUserId, overlayConds, overlayParams);
     const histRows = await qAll(db, 
-      `SELECT timestamp, provider, model, connectionId, apiKey, endpoint FROM usageHistory WHERE timestamp >= ?`,
-      [new Date(overlayCutoff).toISOString()]
+      `SELECT timestamp, provider, model, connectionId, apiKey, endpoint FROM usageHistory WHERE ${overlayConds.join(" AND ")}`,
+      overlayParams
     );
     for (const e of histRows) {
       const ts = e.timestamp;
@@ -667,18 +696,15 @@ export async function getUsageStats(period = "all") {
       if (stats.byEndpoint[endpointKey] && new Date(ts) > new Date(stats.byEndpoint[endpointKey].lastUsed)) stats.byEndpoint[endpointKey].lastUsed = ts;
     }
   } else {
-    // 24h / today: live history
-    let cutoff;
-    if (period === "today") {
-      const startOfDay = new Date();
-      startOfDay.setHours(0, 0, 0, 0);
-      cutoff = startOfDay.toISOString();
-    } else {
-      cutoff = new Date(Date.now() - PERIOD_MS["24h"]).toISOString();
-    }
+    const histConds = [];
+    const histParams = [];
+    const cutoff = getPeriodCutoff(period);
+    if (cutoff) { histConds.push("timestamp >= ?"); histParams.push(cutoff); }
+    sqlTenantFilter(filterUserId, histConds, histParams);
+    const histWhere = histConds.length ? `WHERE ${histConds.join(" AND ")}` : "";
     const filtered = await qAll(db, 
-      `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, tokens FROM usageHistory WHERE timestamp >= ?`,
-      [cutoff]
+      `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, tokens FROM usageHistory ${histWhere}`,
+      histParams
     );
 
     for (const r of filtered) {
@@ -755,9 +781,16 @@ export async function getUsageStats(period = "all") {
   return stats;
 }
 
-export async function getChartData(period = "7d") {
+export async function getChartData(period = "7d", filterUserId = null) {
   const db = await getAdapter();
   const now = Date.now();
+
+  const historyConds = (extraConds, extraParams) => {
+    const conds = [...extraConds];
+    const params = [...extraParams];
+    sqlTenantFilter(filterUserId, conds, params);
+    return { conds, params };
+  };
 
   if (period === "today") {
     const bucketCount = 24;
@@ -769,9 +802,10 @@ export async function getChartData(period = "7d") {
     const labelFn = (ts) => new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
     const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0 }));
 
+    const { conds, params } = historyConds(["timestamp >= ?"], [new Date(startTime).toISOString()]);
     const rows = await qAll(db, 
-      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?`,
-      [new Date(startTime).toISOString()]
+      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE ${conds.join(" AND ")}`,
+      params
     );
     for (const r of rows) {
       const t = new Date(r.timestamp).getTime();
@@ -792,9 +826,10 @@ export async function getChartData(period = "7d") {
     const startTime = now - bucketCount * bucketMs;
     const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0 }));
 
+    const { conds, params } = historyConds(["timestamp >= ?"], [new Date(startTime).toISOString()]);
     const rows = await qAll(db, 
-      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?`,
-      [new Date(startTime).toISOString()]
+      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE ${conds.join(" AND ")}`,
+      params
     );
     for (const r of rows) {
       const t = new Date(r.timestamp).getTime();
@@ -807,10 +842,41 @@ export async function getChartData(period = "7d") {
   }
 
   const bucketCount = period === "7d" ? 7 : period === "30d" ? 30 : 60;
+
+  if (filterUserId) {
+    const today = new Date();
+    const labelFn = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const cutoff = getPeriodCutoff(period === "24h" ? "24h" : period);
+    const { conds, params } = historyConds(cutoff ? ["timestamp >= ?"] : [], cutoff ? [cutoff] : []);
+    const rows = await qAll(db,
+      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory${conds.length ? ` WHERE ${conds.join(" AND ")}` : ""}`,
+      params
+    );
+    const dayMap = {};
+    for (const r of rows) {
+      const d = new Date(r.timestamp);
+      const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      if (!dayMap[dateKey]) dayMap[dateKey] = { tokens: 0, cost: 0 };
+      dayMap[dateKey].tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
+      dayMap[dateKey].cost += r.cost || 0;
+    }
+    return Array.from({ length: bucketCount }, (_, i) => {
+      const d = new Date(today);
+      d.setDate(d.getDate() - (bucketCount - 1 - i));
+      const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const dayData = dayMap[dateKey];
+      return {
+        label: labelFn(d),
+        tokens: dayData?.tokens || 0,
+        cost: dayData?.cost || 0,
+      };
+    });
+  }
+
   const today = new Date();
   const labelFn = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
-  // Build map of dateKey → day data
+  // Build map of dateKey → day data (org-wide daily aggregates)
   const dayRows = loadDaysInRange(db, bucketCount);
   const dayMap = {};
   for (const r of dayRows) dayMap[r.dateKey] = parseJson(r.data, {});
@@ -836,19 +902,25 @@ function formatLogDate(date = new Date()) {
 // No-op: request log is now derived from usageHistory table on read.
 export async function appendRequestLog() {}
 
-export async function getRecentLogs(limit = 200) {
+export async function getRecentLogs(limit = 200, filterUserId = null) {
   try {
     const db = await getAdapter();
+    const conds = [];
+    const params = [];
+    sqlTenantFilter(filterUserId, conds, params);
+    const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
+    params.push(limit);
     const rows = await qAll(db, 
-      `SELECT timestamp, provider, model, connectionId, promptTokens, completionTokens, status, tokens FROM usageHistory ORDER BY id DESC LIMIT ?`,
-      [limit],
+      `SELECT timestamp, provider, model, connectionId, promptTokens, completionTokens, status, tokens FROM usageHistory ${where} ORDER BY id DESC LIMIT ?`,
+      params,
     );
     if (!rows.length) return [];
 
     const connMap = {};
     try {
       const { getProviderConnections } = await import("./connectionsRepo.js");
-      const connections = await getProviderConnections();
+      const connFilter = filterUserId ? { userId: filterUserId } : {};
+      const connections = await getProviderConnections(connFilter);
       for (const c of connections) connMap[c.id] = c.name || c.email || "";
     } catch {}
 

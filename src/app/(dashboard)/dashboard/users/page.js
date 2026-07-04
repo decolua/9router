@@ -9,6 +9,7 @@ export default function UsersAdminPage() {
   const [error, setError] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
   const [lastInvite, setLastInvite] = useState(null);
+  const [lastReset, setLastReset] = useState(null);
   const [creating, setCreating] = useState(false);
   const [busyId, setBusyId] = useState(null);
 
@@ -75,6 +76,7 @@ export default function UsersAdminPage() {
   async function issuePasswordReset(id, email) {
     if (!confirm(`Issue a password reset link for ${email}?`)) return;
     setBusyId(id);
+    setLastReset(null);
     try {
       const res = await fetch("/api/users", {
         method: "PUT",
@@ -83,11 +85,7 @@ export default function UsersAdminPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to issue reset link");
-      if (data.resetUrl) {
-        prompt(data.message || "Share this reset URL securely:", data.resetUrl);
-      } else {
-        alert(data.message || "Reset link issued.");
-      }
+      setLastReset({ email, resetUrl: data.resetUrl, message: data.message, emailed: data.emailed });
     } catch (e) {
       alert(e.message);
     } finally {
@@ -171,6 +169,21 @@ export default function UsersAdminPage() {
 
       {error && <p className="text-red-500 text-sm">{error}</p>}
 
+      {lastReset && (
+        <Card>
+          <p className="font-semibold mb-1">
+            Password reset for {lastReset.email}
+          </p>
+          <p className="text-sm text-text-muted mb-3">{lastReset.message}</p>
+          {lastReset.resetUrl ? (
+            <div className="p-3 bg-sidebar rounded text-xs break-all">
+              <p className="font-medium mb-1">Share this one-time reset link:</p>
+              <code>{lastReset.resetUrl}</code>
+            </div>
+          ) : null}
+        </Card>
+      )}
+
       <Card>
         <h2 className="font-semibold mb-3">Users</h2>
         {loading ? (
@@ -201,7 +214,7 @@ export default function UsersAdminPage() {
                         <option value="admin">admin</option>
                       </select>
                     )}
-                    <Button variant="secondary" size="sm" disabled={isBusy} onClick={() => issuePasswordReset(u.id, u.email)}>
+                    <Button variant="secondary" size="sm" loading={isBusy} disabled={isBusy} onClick={() => issuePasswordReset(u.id, u.email)}>
                       Reset password
                     </Button>
                     {u.status === "active" && !isAdmin && (

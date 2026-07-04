@@ -11,7 +11,8 @@ export function isSmtpConfigured() {
 
 export async function sendPasswordResetEmail({ to, resetUrl }) {
   if (!smtpConfigured()) {
-    console.info("[email] SMTP not configured — password reset URL not emailed:", to);
+    console.info(`[email] SMTP not configured — password reset URL not emailed to ${to}`);
+    console.info(`[email] Reset URL: ${resetUrl}`);
     return { sent: false, reason: "smtp_not_configured" };
   }
 

@@ -2,8 +2,11 @@ import { qAll, qGet, qRun } from "../query.js";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "./jsonCol.js";
 
-export function makeKv(scope, userId = null) {
-  const effectiveScope = userId ? `${scope}:user:${userId}` : scope;
+export function makeKv(scope, userId = null, orgId = null) {
+  let effectiveScope = scope;
+  if (userId) {
+    effectiveScope = orgId ? `${scope}:org:${orgId}:user:${userId}` : `${scope}:user:${userId}`;
+  }
   return {
     scope: effectiveScope,
     async get(key, fallback = null) {

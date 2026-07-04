@@ -88,7 +88,7 @@ function getInputTokens(tokens) {
   return prompt < cache ? cache : prompt;
 }
 
-export default function RequestDetailsTab() {
+export default function RequestDetailsTab({ usageScope = "mine" }) {
   const [details, setDetails] = useState([]);
   const [pagination, setPagination] = useState({
     page: 1,
@@ -109,7 +109,9 @@ export default function RequestDetailsTab() {
 
   const fetchProviders = useCallback(async () => {
     try {
-      const res = await fetch("/api/usage/providers");
+      params.set("scope", usageScope === "all" ? "all" : "mine");
+
+      const res = await fetch(`/api/usage/providers?scope=${usageScope === "all" ? "all" : "mine"}`);
       const data = await res.json();
       setProviders(data.providers || []);
 
@@ -118,18 +120,19 @@ export default function RequestDetailsTab() {
     } catch (error) {
       console.error("Failed to fetch providers:", error);
     }
-  }, []);
+  }, [usageScope]);
 
   const fetchDetails = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams({
         page: pagination.page.toString(),
-        pageSize: pagination.pageSize.toString()
+        pageSize: pagination.pageSize.toString(),
       });
       if (filters.provider) params.append("provider", filters.provider);
       if (filters.startDate) params.append("startDate", filters.startDate);
       if (filters.endDate) params.append("endDate", filters.endDate);
+      params.set("scope", usageScope === "all" ? "all" : "mine");
 
       const res = await fetch(`/api/usage/request-details?${params}`);
       const data = await res.json();
@@ -141,7 +144,7 @@ export default function RequestDetailsTab() {
     } finally {
       setLoading(false);
     }
-  }, [pagination.page, pagination.pageSize, filters]);
+  }, [pagination.page, pagination.pageSize, filters, usageScope]);
 
   useEffect(() => {
     fetchProviders();

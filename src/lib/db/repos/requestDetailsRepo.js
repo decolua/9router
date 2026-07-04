@@ -1,7 +1,8 @@
 import { qAll, qGet, qRun, qExec } from "../query.js";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
-import { getRuntimeUserId } from "../../auth/runtimeUserContext.js";
+import { getRuntimeUserId, getRuntimeOrgId } from "../../auth/runtimeUserContext.js";
+import { resolveOrgId, tenantFilters } from "../helpers/orgScope.js";
 
 const DEFAULT_MAX_RECORDS = 200;
 const DEFAULT_BATCH_SIZE = 20;
@@ -81,6 +82,7 @@ async function flushToDatabase() {
       const db = await getAdapter();
       const config = await getObservabilityConfig();
 
+      const scopedOrgId = getRuntimeOrgId() || null;
       db.transaction(() => {
         for (const item of items) {
           if (!item.id) item.id = generateDetailId(item.model);
@@ -102,18 +104,25 @@ async function flushToDatabase() {
             response: truncateField(item.response, config.maxJsonSize),
           };
 
+          const orgId = item.orgId || getRuntimeOrgId() || null;
           db.run(
-            `INSERT INTO requestDetails(id, userId, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET userId = excluded.userId, timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data`,
-            [record.id, item.userId || getRuntimeUserId(), record.timestamp, record.provider, record.model, record.connectionId, record.status, stringifyJson(record)]
+            `INSERT INTO requestDetails(id, orgId, userId, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET orgId = excluded.orgId, userId = excluded.userId, timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data`,
+            [record.id, orgId, item.userId || getRuntimeUserId(), record.timestamp, record.provider, record.model, record.connectionId, record.status, stringifyJson(record)],
           );
         }
 
-        const cnt = db.get(`SELECT COUNT(*) as c FROM requestDetails`);
+        const countConds = scopedOrgId ? `WHERE orgId = ?` : "";
+        const countParams = scopedOrgId ? [scopedOrgId] : [];
+        const cnt = db.get(`SELECT COUNT(*) as c FROM requestDetails ${countConds}`, countParams);
         if (cnt && cnt.c > config.maxRecords) {
-          db.run(
-            `DELETE FROM requestDetails WHERE id IN (SELECT id FROM requestDetails ORDER BY timestamp ASC LIMIT ?)`,
-            [cnt.c - config.maxRecords]
-          );
+          if (scopedOrgId) {
+            db.run(
+              `DELETE FROM requestDetails WHERE id IN (SELECT id FROM requestDetails WHERE orgId = ? ORDER BY timestamp ASC LIMIT ?)`,
+              [scopedOrgId, cnt.c - config.maxRecords],
+            );
+          } else {
+            db.run(`DELETE FROM requestDetails WHERE id IN (SELECT id FROM requestDetails ORDER BY timestamp ASC LIMIT ?)`, [cnt.c - config.maxRecords]);
+          }
         }
       });
     }
@@ -147,8 +156,12 @@ export async function getRequestDetails(filter = {}) {
   const db = await getAdapter();
   const conds = [];
   const params = [];
+  const orgId = filter.orgId || getRuntimeOrgId();
+  if (orgId) { conds.push("orgId = ?"); params.push(orgId); }
 
-  if (filter.userId) { conds.push("userId = ?"); params.push(filter.userId); }
+  if (Object.prototype.hasOwnProperty.call(filter, "filterUserId")) {
+    if (filter.filterUserId) { conds.push("userId = ?"); params.push(filter.filterUserId); }
+  } else if (filter.userId) { conds.push("userId = ?"); params.push(filter.userId); }
   else {
     const userId = getRuntimeUserId();
     if (userId) { conds.push("userId = ?"); params.push(userId); }
@@ -181,12 +194,15 @@ export async function getRequestDetails(filter = {}) {
   };
 }
 
-export async function getRequestDetailById(id, userId = null) {
+export async function getRequestDetailById(id, userId = null, orgId = null) {
   const db = await getAdapter();
-  const scoped = userId || getRuntimeUserId();
-  const row = scoped
-    ? await qGet(db, `SELECT data FROM requestDetails WHERE id = ? AND userId = ?`, [id, scoped])
-    : await qGet(db, `SELECT data FROM requestDetails WHERE id = ?`, [id]);
+  const scopedUser = userId || getRuntimeUserId();
+  const scopedOrg = orgId || getRuntimeOrgId();
+  const conds = ["id = ?"];
+  const params = [id];
+  if (scopedOrg) { conds.push("orgId = ?"); params.push(scopedOrg); }
+  if (scopedUser) { conds.push("userId = ?"); params.push(scopedUser); }
+  const row = await qGet(db, `SELECT data FROM requestDetails WHERE ${conds.join(" AND ")}`, params);
   return row ? parseJson(row.data, null) : null;
 }
 

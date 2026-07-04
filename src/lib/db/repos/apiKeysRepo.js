@@ -1,9 +1,11 @@
 import { qAll, qGet, qRun } from "../query.js";
-import { v4 as uuidv4 } from "uuid";
 import crypto from "node:crypto";
+import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { isMasterKeyConfigured } from "../../crypto/masterKey.js";
 import { encryptString, decryptString } from "../helpers/encryptedJsonCol.js";
+import { getRuntimeUserId } from "../../auth/runtimeUserContext.js";
+import { resolveOrgId, tenantFilters, tenantFiltersSync } from "../helpers/orgScope.js";
 
 const API_KEY_HASH_DOMAIN = "ebrouter-apikey-hash:";
 
@@ -30,6 +32,7 @@ function rowToKey(row) {
   if (!row) return null;
   return {
     id: row.id,
+    orgId: row.orgId || null,
     userId: row.userId || null,
     key: decryptKey(row.key),
     name: row.name,
@@ -39,35 +42,37 @@ function rowToKey(row) {
   };
 }
 
-import { getRuntimeUserId } from "../../auth/runtimeUserContext.js";
-
-export async function getApiKeys(userId) {
+export async function getApiKeys(userId, orgId) {
   const db = await getAdapter();
-  const scoped = userId || getRuntimeUserId() || null;
-  const rows = scoped
-    ? await qAll(db, `SELECT * FROM apiKeys WHERE userId = ? ORDER BY createdAt ASC`, [scoped])
-    : await qAll(db, `SELECT * FROM apiKeys ORDER BY createdAt ASC`);
+  const { conds, params } = await tenantFilters({ orgId, userId: userId || getRuntimeUserId() });
+  const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
+  const rows = await qAll(db, `SELECT * FROM apiKeys ${where} ORDER BY createdAt ASC`, params);
   return rows.map(rowToKey);
 }
 
-export async function getApiKeyById(id, userId = null) {
+export async function getApiKeyById(id, userId = null, orgId = null) {
   const db = await getAdapter();
-  const row = userId
-    ? await qGet(db, `SELECT * FROM apiKeys WHERE id = ? AND userId = ?`, [id, userId])
-    : await qGet(db, `SELECT * FROM apiKeys WHERE id = ?`, [id]);
+  const { conds, params } = await tenantFilters({ orgId, userId });
+  conds.push("id = ?");
+  params.push(id);
+  const row = await qGet(db, `SELECT * FROM apiKeys WHERE ${conds.join(" AND ")}`, params);
   return rowToKey(row);
 }
 
-export async function createApiKey(name, machineId, userId) {
-  const scoped = userId || getRuntimeUserId();
+export async function createApiKey(name, machineId, userId, orgId) {
+  const scopedUser = userId || getRuntimeUserId();
+  const scopedOrg = await resolveOrgId(orgId);
   if (!machineId) throw new Error("machineId is required");
-  if (!scoped) throw new Error("userId is required");
+  if (!scopedUser) throw new Error("userId is required");
+  if (!scopedOrg) throw new Error("orgId is required");
+
   const db = await getAdapter();
   const { generateApiKeyWithMachine } = await import("@/shared/utils/apiKey");
   const result = generateApiKeyWithMachine(machineId);
   const apiKey = {
     id: uuidv4(),
-    userId: scoped,
+    orgId: scopedOrg,
+    userId: scopedUser,
     name,
     key: result.key,
     machineId,
@@ -76,51 +81,52 @@ export async function createApiKey(name, machineId, userId) {
   };
   await qRun(
     db,
-    `INSERT INTO apiKeys(id, userId, key, keyHash, name, machineId, isActive, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
-    [apiKey.id, scoped, encryptKey(apiKey.key), hashApiKey(apiKey.key), apiKey.name, apiKey.machineId, 1, apiKey.createdAt]
+    `INSERT INTO apiKeys(id, orgId, userId, key, keyHash, name, machineId, isActive, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [apiKey.id, apiKey.orgId, apiKey.userId, encryptKey(apiKey.key), hashApiKey(apiKey.key), apiKey.name, apiKey.machineId, 1, apiKey.createdAt],
   );
-  return { ...apiKey, userId: scoped };
+  return apiKey;
 }
 
-export async function updateApiKey(id, data, userId = null) {
+export async function updateApiKey(id, data, userId = null, orgId = null) {
   const db = await getAdapter();
+  const { conds, params } = await tenantFilters({ orgId, userId });
+  conds.push("id = ?");
+  params.push(id);
   let result = null;
   db.transaction(() => {
-    const row = userId
-      ? db.get(`SELECT * FROM apiKeys WHERE id = ? AND userId = ?`, [id, userId])
-      : db.get(`SELECT * FROM apiKeys WHERE id = ?`, [id]);
+    const row = db.get(`SELECT * FROM apiKeys WHERE ${conds.join(" AND ")}`, params);
     if (!row) return;
     const merged = { ...rowToKey(row), ...data };
     db.run(
       `UPDATE apiKeys SET key = ?, keyHash = ?, name = ?, machineId = ?, isActive = ? WHERE id = ?`,
-      [encryptKey(merged.key), hashApiKey(merged.key), merged.name, merged.machineId, merged.isActive ? 1 : 0, id]
+      [encryptKey(merged.key), hashApiKey(merged.key), merged.name, merged.machineId, merged.isActive ? 1 : 0, id],
     );
     result = merged;
   });
   return result;
 }
 
-export async function deleteApiKey(id, userId = null) {
+export async function deleteApiKey(id, userId = null, orgId = null) {
   const db = await getAdapter();
-  const res = userId
-    ? await qRun(db, `DELETE FROM apiKeys WHERE id = ? AND userId = ?`, [id, userId])
-    : await qRun(db, `DELETE FROM apiKeys WHERE id = ?`, [id]);
+  const { conds, params } = await tenantFilters({ orgId, userId });
+  conds.push("id = ?");
+  params.push(id);
+  const res = await qRun(db, `DELETE FROM apiKeys WHERE ${conds.join(" AND ")}`, params);
   return (res?.changes ?? 0) > 0;
 }
 
 export async function validateApiKey(key) {
   const db = await getAdapter();
   const h = hashApiKey(key);
-  let row = await qGet(db, `SELECT isActive, userId FROM apiKeys WHERE keyHash = ?`, [h]);
-  if (!row) row = await qGet(db, `SELECT isActive, userId FROM apiKeys WHERE key = ?`, [key]);
+  let row = await qGet(db, `SELECT isActive, userId, orgId FROM apiKeys WHERE keyHash = ?`, [h]);
+  if (!row) row = await qGet(db, `SELECT isActive, userId, orgId FROM apiKeys WHERE key = ?`, [key]);
   if (!row) return false;
   const active = row.isActive === 1 || row.isActive === true;
   if (!active) return false;
-  if (!row.userId) return { valid: true, userId: null };
-  return { valid: true, userId: row.userId };
+  if (!row.userId) return { valid: true, userId: null, orgId: row.orgId || null };
+  return { valid: true, userId: row.userId, orgId: row.orgId || null };
 }
 
-/** Backward-compatible boolean check. */
 export async function isApiKeyValid(key) {
   const result = await validateApiKey(key);
   return result === true || result?.valid === true;
@@ -131,4 +137,18 @@ export async function resolveApiKeyUserId(key) {
   if (!result) return null;
   if (result === true) return null;
   return result.userId || null;
+}
+
+export async function resolveApiKeyOrgId(key) {
+  const result = await validateApiKey(key);
+  if (!result) return null;
+  if (result === true) return null;
+  return result.orgId || null;
+}
+
+export async function resolveApiKeyContext(key) {
+  const result = await validateApiKey(key);
+  if (!result) return null;
+  if (result === true) return { userId: null, orgId: await resolveOrgId() };
+  return { userId: result.userId || null, orgId: result.orgId || (await resolveOrgId()) };
 }

@@ -21,4 +21,5 @@ export {
   createUser, verifyUserPassword, updateUser, setUserStatus, createInvite, consumeInvite, deleteUser,
   getUserSettings, updateUserSettings, getEffectiveSettings,
   exportDb, importDb,
+  createBackupDownload, getDatabaseInfo,
 } from "@/lib/db/index.js";

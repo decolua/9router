@@ -8,6 +8,8 @@ import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 const originalDataDir = process.env.DATA_DIR;
 let tempDir;
 let db;
+let admin;
+let runWithContext;
 
 beforeAll(async () => {
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-concurrent-"));
@@ -15,9 +17,13 @@ beforeAll(async () => {
   vi.resetModules();
   db = await import("@/lib/db/index.js");
   await db.initDb();
+  admin = await db.getAdminUser();
+  ({ runWithContext } = await import("@/lib/auth/runtimeUserContext.js"));
 });
 
 afterAll(() => {
+  try { global._dbAdapter?.instance?.close?.(); } catch {}
+  delete global._dbAdapter;
   if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
   if (originalDataDir === undefined) delete process.env.DATA_DIR;
   else process.env.DATA_DIR = originalDataDir;
@@ -46,7 +52,7 @@ describe("DB Concurrency — atomic safety", () => {
   });
 
   it("200 parallel saveRequestDetail → all flushed", async () => {
-    await db.updateSettings({ enableObservability: true, observabilityBatchSize: 10 });
+    await runWithContext({ orgId: admin.orgId, userId: admin.id }, () => db.updateSettings({ enableObservability: true, observabilityBatchSize: 10 }));
 
     const N = 200;
     const promises = [];
@@ -73,12 +79,12 @@ describe("DB Concurrency — atomic safety", () => {
         provider: "anthropic", model: `m-${i % 3}`, connectionId: "c2",
         tokens: { prompt_tokens: 20 }, status: "ok",
       }));
-      ops.push(db.setModelAlias(`a-${i}`, `target-${i}`));
+      ops.push(runWithContext({ orgId: admin.orgId, userId: admin.id }, () => db.setModelAlias(admin.id, `a-${i}`, `target-${i}`)));
       ops.push(db.disableModels("openai", [`d-${i}`]));
     }
     await Promise.all(ops);
 
-    const aliases = await db.getModelAliases();
+    const aliases = await runWithContext({ orgId: admin.orgId, userId: admin.id }, () => db.getModelAliases(admin.id));
     expect(Object.keys(aliases).filter((k) => k.startsWith("a-")).length).toBe(50);
 
     const disabled = await db.getDisabledByProvider("openai");
@@ -103,20 +109,20 @@ describe("DB Concurrency — atomic safety", () => {
   });
 
   it("OAuth refresh race: parallel updateProviderConnection on same id", async () => {
-    const conn = await db.createProviderConnection({
+    const conn = await runWithContext({ orgId: admin.orgId, userId: admin.id }, () => db.createProviderConnection({
       provider: "oauth-test", authType: "oauth", email: "x@y.com",
       accessToken: "initial", refreshToken: "rt-initial",
-    });
+    }));
 
     // 20 parallel updates each with a unique field
     const N = 20;
     const promises = [];
     for (let i = 0; i < N; i++) {
-      promises.push(db.updateProviderConnection(conn.id, { [`marker${i}`]: i }));
+      promises.push(runWithContext({ orgId: admin.orgId, userId: admin.id }, () => db.updateProviderConnection(conn.id, { [`marker${i}`]: i })));
     }
     await Promise.all(promises);
 
-    const after = await db.getProviderConnectionById(conn.id);
+    const after = await runWithContext({ orgId: admin.orgId, userId: admin.id }, () => db.getProviderConnectionById(conn.id));
     for (let i = 0; i < N; i++) {
       expect(after[`marker${i}`]).toBe(i); // no field lost
     }
@@ -127,12 +133,12 @@ describe("DB Concurrency — atomic safety", () => {
     const N = 30;
     const promises = [];
     for (let i = 0; i < N; i++) {
-      promises.push(db.addCustomModel({ providerAlias: "racep", id: "racemodel", type: "llm", name: "r" }));
+      promises.push(runWithContext({ orgId: admin.orgId, userId: admin.id }, () => db.addCustomModel(admin.id, { providerAlias: "racep", id: "racemodel", type: "llm", name: "r" })));
     }
     const results = await Promise.all(promises);
     const trueCount = results.filter((r) => r === true).length;
     expect(trueCount).toBe(1); // exactly one wins
-    const all = await db.getCustomModels();
+    const all = await runWithContext({ orgId: admin.orgId, userId: admin.id }, () => db.getCustomModels(admin.id));
     expect(all.filter((m) => m.providerAlias === "racep" && m.id === "racemodel").length).toBe(1);
   });
 

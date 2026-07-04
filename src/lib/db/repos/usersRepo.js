@@ -3,6 +3,8 @@ import crypto from "node:crypto";
 import { v4 as uuidv4 } from "uuid";
 import { qAll, qGet, qRun } from "../query.js";
 import { getAdapter } from "../driver.js";
+import { getDefaultOrgId } from "./organizationsRepo.js";
+import { getRuntimeOrgId } from "../../auth/runtimeUserContext.js";
 
 const INVITE_TOKEN_DOMAIN = "ebrouter-invite:";
 
@@ -24,6 +26,7 @@ function rowToUser(row) {
   if (!row) return null;
   return {
     id: row.id,
+    orgId: pickRowField(row, "orgId") || null,
     email: row.email,
     name: row.name,
     role: row.role || "member",
@@ -39,15 +42,31 @@ function withPasswordHash(row) {
   return row ? { ...rowToUser(row), passwordHash: pickRowField(row, "passwordHash") } : null;
 }
 
-export async function getUsers() {
+async function resolveOrgId(orgId) {
+  if (orgId) return orgId;
+  const runtime = getRuntimeOrgId();
+  if (runtime) return runtime;
+  return getDefaultOrgId();
+}
+
+export async function getUsers(orgId) {
+  const resolved = await resolveOrgId(orgId);
   const db = await getAdapter();
   try {
-    const rows = await qAll(db, `SELECT id, email, name, role, oidcSub, status, mfaEnabled, createdAt, updatedAt FROM users ORDER BY createdAt ASC`);
+    const rows = await qAll(
+      db,
+      `SELECT id, orgId, email, name, role, oidcSub, status, mfaEnabled, createdAt, updatedAt FROM users WHERE orgId = ? ORDER BY createdAt ASC`,
+      [resolved],
+    );
     return rows.map(rowToUser);
   } catch (err) {
     const msg = String(err?.message || err);
     if (/mfaEnabled/i.test(msg) && /does not exist|no such column/i.test(msg)) {
-      const rows = await qAll(db, `SELECT id, email, name, role, oidcSub, status, createdAt, updatedAt FROM users ORDER BY createdAt ASC`);
+      const rows = await qAll(
+        db,
+        `SELECT id, orgId, email, name, role, oidcSub, status, createdAt, updatedAt FROM users WHERE orgId = ? ORDER BY createdAt ASC`,
+        [resolved],
+      );
       return rows.map(rowToUser);
     }
     throw err;
@@ -60,42 +79,58 @@ export async function getUserById(id) {
   return rowToUser(row);
 }
 
-export async function getUserByEmail(email) {
+export async function getUserByEmail(email, orgId) {
+  const resolved = await resolveOrgId(orgId);
   const db = await getAdapter();
-  const row = await qGet(db, `SELECT * FROM users WHERE LOWER(email) = LOWER(?)`, [String(email || "").trim()]);
+  const row = await qGet(
+    db,
+    `SELECT * FROM users WHERE orgId = ? AND LOWER(email) = LOWER(?)`,
+    [resolved, String(email || "").trim()],
+  );
   return withPasswordHash(row);
 }
 
-export async function getUserByOidcSub(oidcSub) {
+export async function getUserByOidcSub(oidcSub, orgId) {
   if (!oidcSub) return null;
+  const resolved = await resolveOrgId(orgId);
   const db = await getAdapter();
-  const row = await qGet(db, `SELECT * FROM users WHERE oidcSub = ?`, [oidcSub]);
+  const row = await qGet(db, `SELECT * FROM users WHERE orgId = ? AND oidcSub = ?`, [resolved, oidcSub]);
   return withPasswordHash(row);
 }
 
-export async function getAdminUser() {
+export async function getAdminUser(orgId) {
+  const resolved = await resolveOrgId(orgId);
   const db = await getAdapter();
-  const row = await qGet(db, `SELECT * FROM users WHERE role = 'admin' AND status = 'active' ORDER BY createdAt ASC LIMIT 1`);
+  const row = await qGet(
+    db,
+    `SELECT * FROM users WHERE orgId = ? AND role = 'admin' AND status = 'active' ORDER BY createdAt ASC LIMIT 1`,
+    [resolved],
+  );
   return withPasswordHash(row);
 }
 
-export async function countUsers() {
+export async function countUsers(orgId) {
+  const resolved = await resolveOrgId(orgId);
   const db = await getAdapter();
-  const row = await qGet(db, `SELECT COUNT(*) AS n FROM users`);
+  const row = await qGet(db, `SELECT COUNT(*) AS n FROM users WHERE orgId = ?`, [resolved]);
   return row?.n ?? 0;
 }
 
-export async function createUser({ email, name, password, role = "member", oidcSub = null }) {
+export async function createUser({ orgId, email, name, password, role = "member", oidcSub = null }) {
+  const resolvedOrgId = await resolveOrgId(orgId);
+  if (!resolvedOrgId) throw new Error("Organization not configured");
+
   const normalizedEmail = String(email || "").trim().toLowerCase();
   if (!normalizedEmail) throw new Error("Email is required");
 
-  const existing = await getUserByEmail(normalizedEmail);
+  const existing = await getUserByEmail(normalizedEmail, resolvedOrgId);
   if (existing) throw new Error("Email already registered");
 
   const db = await getAdapter();
   const now = new Date().toISOString();
   const user = {
     id: uuidv4(),
+    orgId: resolvedOrgId,
     email: normalizedEmail,
     name: (name || normalizedEmail.split("@")[0]).trim(),
     passwordHash: password ? await bcrypt.hash(password, 10) : null,
@@ -108,16 +143,16 @@ export async function createUser({ email, name, password, role = "member", oidcS
 
   await qRun(
     db,
-    `INSERT INTO users(id, email, name, passwordHash, role, oidcSub, status, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [user.id, user.email, user.name, user.passwordHash, user.role, user.oidcSub, user.status, user.createdAt, user.updatedAt]
+    `INSERT INTO users(id, orgId, email, name, passwordHash, role, oidcSub, status, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [user.id, user.orgId, user.email, user.name, user.passwordHash, user.role, user.oidcSub, user.status, user.createdAt, user.updatedAt],
   );
 
   await qRun(db, `INSERT INTO userSettings(userId, data) VALUES(?, ?)`, [user.id, "{}"]);
   return rowToUser(user);
 }
 
-export async function verifyUserPassword(email, password) {
-  const user = await getUserByEmail(email);
+export async function verifyUserPassword(email, password, orgId) {
+  const user = await getUserByEmail(email, orgId);
   if (!user || user.status !== "active") return null;
   if (!user.passwordHash) return null;
   const ok = await bcrypt.compare(password, user.passwordHash);
@@ -146,19 +181,21 @@ export async function updateUser(id, updates) {
   await qRun(
     db,
     `UPDATE users SET name = ?, passwordHash = ?, role = ?, status = ?, oidcSub = ?, updatedAt = ? WHERE id = ?`,
-    [next.name, next.passwordHash, next.role, next.status, next.oidcSub, next.updatedAt, id]
+    [next.name, next.passwordHash, next.role, next.status, next.oidcSub, next.updatedAt, id],
   );
 
   return await getUserById(id);
 }
 
-export async function createInvite({ email = null, role = "member", createdBy, expiresInHours = 168 }) {
+export async function createInvite({ orgId, email = null, role = "member", createdBy, expiresInHours = 168 }) {
+  const resolvedOrgId = await resolveOrgId(orgId);
   const token = crypto.randomBytes(32).toString("base64url");
   const tokenHash = hashInviteToken(token);
   const now = new Date();
   const expiresAt = new Date(now.getTime() + expiresInHours * 3600000).toISOString();
   const invite = {
     id: uuidv4(),
+    orgId: resolvedOrgId,
     email: email ? String(email).trim().toLowerCase() : null,
     tokenHash,
     role: role === "admin" ? "admin" : "member",
@@ -171,17 +208,22 @@ export async function createInvite({ email = null, role = "member", createdBy, e
   const db = await getAdapter();
   await qRun(
     db,
-    `INSERT INTO userInvites(id, email, tokenHash, role, createdBy, expiresAt, usedAt, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
-    [invite.id, invite.email, invite.tokenHash, invite.role, invite.createdBy, invite.expiresAt, invite.usedAt, invite.createdAt]
+    `INSERT INTO userInvites(id, orgId, email, tokenHash, role, createdBy, expiresAt, usedAt, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [invite.id, invite.orgId, invite.email, invite.tokenHash, invite.role, invite.createdBy, invite.expiresAt, invite.usedAt, invite.createdAt],
   );
 
   return { ...invite, token };
 }
 
-export async function consumeInvite(token, { email, name, password }) {
+export async function consumeInvite(token, { email, name, password, orgId }) {
+  const resolvedOrgId = await resolveOrgId(orgId);
   const tokenHash = hashInviteToken(token);
   const db = await getAdapter();
-  const row = await qGet(db, `SELECT * FROM userInvites WHERE tokenHash = ?`, [tokenHash]);
+  const row = await qGet(
+    db,
+    `SELECT * FROM userInvites WHERE tokenHash = ? AND (orgId IS NULL OR orgId = ? OR orgId = '')`,
+    [tokenHash, resolvedOrgId],
+  );
   if (!row) throw new Error("Invalid invite token");
   if (row.usedAt) throw new Error("Invite already used");
   if (row.expiresAt && new Date(row.expiresAt) < new Date()) throw new Error("Invite expired");
@@ -193,6 +235,7 @@ export async function consumeInvite(token, { email, name, password }) {
   }
 
   const user = await createUser({
+    orgId: row.orgId || resolvedOrgId,
     email: normalizedEmail,
     name,
     password,
@@ -212,7 +255,11 @@ export async function setUserStatus(id, status) {
   if (!target) throw new Error("User not found");
 
   if (status === "disabled") {
-    const admins = await qGet(db, `SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND status = 'active'`);
+    const admins = await qGet(
+      db,
+      `SELECT COUNT(*) AS n FROM users WHERE orgId = ? AND role = 'admin' AND status = 'active'`,
+      [target.orgId],
+    );
     if (target.role === "admin" && (admins?.n ?? 0) <= 1) {
       throw new Error("Cannot disable the last admin user");
     }
@@ -221,7 +268,7 @@ export async function setUserStatus(id, status) {
   await qRun(
     db,
     `UPDATE users SET status = ?, updatedAt = ? WHERE id = ?`,
-    [status, new Date().toISOString(), id]
+    [status, new Date().toISOString(), id],
   );
   return await getUserById(id);
 }
@@ -245,7 +292,11 @@ export async function deleteUser(id) {
   const target = await getUserById(id);
   if (!target) throw new Error("User not found");
 
-  const activeAdmins = await qGet(db, `SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND status = 'active'`);
+  const activeAdmins = await qGet(
+    db,
+    `SELECT COUNT(*) AS n FROM users WHERE orgId = ? AND role = 'admin' AND status = 'active'`,
+    [target.orgId],
+  );
   if (target.role === "admin" && (activeAdmins?.n ?? 0) <= 1) {
     throw new Error("Cannot delete the last admin user");
   }
@@ -299,7 +350,11 @@ export async function setUserRole(id, role) {
   if (!target) throw new Error("User not found");
 
   if (target.role === "admin" && role !== "admin") {
-    const admins = await qGet(db, `SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND status = 'active'`);
+    const admins = await qGet(
+      db,
+      `SELECT COUNT(*) AS n FROM users WHERE orgId = ? AND role = 'admin' AND status = 'active'`,
+      [target.orgId],
+    );
     if ((admins?.n ?? 0) <= 1) throw new Error("Cannot demote the last admin user");
   }
 

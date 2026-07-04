@@ -5,6 +5,7 @@ import { getAdapter } from "@/lib/db/driver.js";
 import { getUserByEmail, updateUser } from "@/lib/db/repos/usersRepo.js";
 import { validatePassword } from "./passwordPolicy.js";
 import { sendPasswordResetEmail } from "@/lib/email/smtp.js";
+import { getPublicOrigin } from "./oidc.js";
 
 const RESET_TOKEN_DOMAIN = "ebrouter-password-reset:";
 const DEFAULT_TTL_HOURS = Number(process.env.PASSWORD_RESET_TTL_HOURS || 1);
@@ -16,8 +17,13 @@ function hashToken(token) {
   return h.digest("hex");
 }
 
-export async function createPasswordResetToken(email, { createdBy = null } = {}) {
-  const user = await getUserByEmail(email);
+function resolveResetBaseUrl(request) {
+  if (request) return getPublicOrigin(request);
+  return (process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || "").replace(/\/+$/, "");
+}
+
+export async function createPasswordResetToken(email, { orgId, createdBy = null, request = null } = {}) {
+  const user = await getUserByEmail(email, orgId);
   if (!user || user.status !== "active" || !user.passwordHash) {
     return { user: null, token: null, resetUrl: null };
   }
@@ -36,14 +42,19 @@ export async function createPasswordResetToken(email, { createdBy = null } = {})
     [id, user.id, tokenHash, expiresAt, null, createdBy, now.toISOString()]
   );
 
-  const base = (process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || "").replace(/\/+$/, "");
+  const base = resolveResetBaseUrl(request);
   const resetUrl = base ? `${base}/reset-password?token=${encodeURIComponent(token)}` : null;
+  if (!resetUrl) {
+    console.warn(
+      "[password-reset] Could not determine public origin — reset link cannot be built. Set BASE_URL in .env (e.g. http://localhost:20128)."
+    );
+  }
 
   return { user, token, resetUrl };
 }
 
-export async function requestPasswordReset(email) {
-  const result = await createPasswordResetToken(email);
+export async function requestPasswordReset(email, { orgId, request = null } = {}) {
+  const result = await createPasswordResetToken(email, { orgId, request });
   if (result.user && result.resetUrl) {
     await sendPasswordResetEmail({
       to: result.user.email,

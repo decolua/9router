@@ -317,6 +317,29 @@ export default function Sidebar({ onClose }) {
 
             {isAdmin && (
               <Link
+                href="/dashboard/organization"
+                onClick={onClose}
+                className={cn(
+                  "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
+                  isActive("/dashboard/organization")
+                    ? "bg-primary/10 text-primary"
+                    : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+                )}
+              >
+                <span
+                  className={cn(
+                    "material-symbols-outlined text-[18px]",
+                    isActive("/dashboard/organization") ? "fill-1" : "group-hover:text-primary transition-colors"
+                  )}
+                >
+                  domain
+                </span>
+                <span className="text-[13px] font-medium">Organization</span>
+              </Link>
+            )}
+
+            {isAdmin && (
+              <Link
                 href="/dashboard/users"
                 onClick={onClose}
                 className={cn(

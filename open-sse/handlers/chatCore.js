@@ -84,12 +84,75 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   reqLogger.logRawRequest(body);
   log?.debug?.("FORMAT", `${sourceFormat} → ${targetFormat} | stream=${stream}`);
 
+  const timings = {};
+
+  // Per-request optimization-layer attribution. Persisted into usage row's `meta` column.
+  const attribution = { format: sourceFormat, timings };
+
+  // Routing attribution (decision made upstream in chat.js before provider resolution)
+  if (routingDecision && routingDecision.to) {
+    attribution.routing = {
+      from: routingDecision.from,
+      to: routingDecision.to,
+      reason: routingDecision.reason,
+      classification: routingDecision.classification,
+    };
+  }
+
+  // Token savers: apply on source body BEFORE translation so every provider benefits.
+  const tRtk = Date.now();
+  const rtkStats = compressMessages(body, rtkEnabled);
+  timings.rtk = Date.now() - tRtk;
+  const rtkLine = formatRtkLog(rtkStats);
+  if (rtkLine) console.log(rtkLine);
+  if (rtkStats && rtkStats.bytesBefore > 0) {
+    attribution.rtk = {
+      bytesIn: rtkStats.bytesBefore,
+      bytesOut: rtkStats.bytesAfter,
+      saved: rtkStats.bytesBefore - rtkStats.bytesAfter,
+      hits: rtkStats.hits.length,
+    };
+  }
+
+  if (contextPruningEnabled) {
+    const tPrune = Date.now();
+    const pruneStats = pruneContext(body, true, sourceFormat, {
+      keepLast: contextPruningKeepLast,
+      minBytes: contextPruningMinBytes,
+    });
+    timings.contextPruning = Date.now() - tPrune;
+    const pruneLine = formatPruneLog(pruneStats);
+    if (pruneLine) console.log(pruneLine);
+    if (pruneStats) {
+      attribution.contextPruning = {
+        prunedMessages: pruneStats.prunedMessages,
+        prunedBytes: pruneStats.prunedBytes,
+        keptMessages: pruneStats.keptMessages,
+        totalBytesBefore: pruneStats.totalBytesBefore,
+      };
+    }
+  }
+
+  if (promptDedupEnabled) {
+    const tDedup = Date.now();
+    const dedupStats = dedupePrompt(body, true, sourceFormat);
+    timings.promptDedup = Date.now() - tDedup;
+    const dedupLine = formatDedupLog(dedupStats);
+    if (dedupLine) console.log(dedupLine);
+    if (dedupStats) {
+      attribution.promptDedup = {
+        bytesIn: dedupStats.bytesBefore,
+        bytesOut: dedupStats.bytesAfter,
+        saved: dedupStats.bytesBefore - dedupStats.bytesAfter,
+        dupBlocks: dedupStats.dupBlocks,
+      };
+    }
+  }
+
   // Native passthrough: CLI tool and provider are the same ecosystem
   // Skip all translation/normalization — only model and Bearer are swapped
   const clientTool = detectClientTool(clientRawRequest?.headers || {}, body);
   const passthrough = isNativePassthrough(clientTool, provider);
-
-  const timings = {};
 
   let translatedBody;
   let toolNameMap;
@@ -118,76 +181,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     }
   }
 
-  // Token savers: applied at the final body just before dispatch
-  // Covers both passthrough (source shape) and translated (target shape) flows
+  // Post-translation injections: prefix cache, caveman, compact policies
   const finalFormat = passthrough ? sourceFormat : targetFormat;
-
-  // Per-request optimization-layer attribution. Persisted into usage row's `meta` column.
-  const attribution = { format: finalFormat, timings };
-
-  // Routing attribution (decision made upstream in chat.js before provider resolution)
-  if (routingDecision && routingDecision.to) {
-    attribution.routing = {
-      from: routingDecision.from,
-      to: routingDecision.to,
-      reason: routingDecision.reason,
-      classification: routingDecision.classification,
-    };
-  }
-
-  // RTK: compress tool_result content
-  const tRtk = Date.now();
-  const rtkStats = compressMessages(translatedBody, rtkEnabled);
-  timings.rtk = Date.now() - tRtk;
-  const rtkLine = formatRtkLog(rtkStats);
-  if (rtkLine) console.log(rtkLine);
-  if (rtkStats && rtkStats.bytesBefore > 0) {
-    attribution.rtk = {
-      bytesIn: rtkStats.bytesBefore,
-      bytesOut: rtkStats.bytesAfter,
-      saved: rtkStats.bytesBefore - rtkStats.bytesAfter,
-      hits: rtkStats.hits.length,
-    };
-  }
-
-  // Context Pruning (Phase 5): drop oldest middle turns when context grows past threshold.
-  // Runs after RTK so the byte estimate reflects the post-compression size.
-  if (contextPruningEnabled) {
-    const tPrune = Date.now();
-    const pruneStats = pruneContext(translatedBody, true, finalFormat, {
-      keepLast: contextPruningKeepLast,
-      minBytes: contextPruningMinBytes,
-    });
-    timings.contextPruning = Date.now() - tPrune;
-    const pruneLine = formatPruneLog(pruneStats);
-    if (pruneLine) console.log(pruneLine);
-    if (pruneStats) {
-      attribution.contextPruning = {
-        prunedMessages: pruneStats.prunedMessages,
-        prunedBytes: pruneStats.prunedBytes,
-        keptMessages: pruneStats.keptMessages,
-        totalBytesBefore: pruneStats.totalBytesBefore,
-      };
-    }
-  }
-
-  // Prompt Deduplication (Phase 4): collapse duplicate large blocks within the request.
-  // Runs after pruning so we don't waste cycles deduping content we just dropped.
-  if (promptDedupEnabled) {
-    const tDedup = Date.now();
-    const dedupStats = dedupePrompt(translatedBody, true, finalFormat);
-    timings.promptDedup = Date.now() - tDedup;
-    const dedupLine = formatDedupLog(dedupStats);
-    if (dedupLine) console.log(dedupLine);
-    if (dedupStats) {
-      attribution.promptDedup = {
-        bytesIn: dedupStats.bytesBefore,
-        bytesOut: dedupStats.bytesAfter,
-        saved: dedupStats.bytesBefore - dedupStats.bytesAfter,
-        dupBlocks: dedupStats.dupBlocks,
-      };
-    }
-  }
 
   // Prefix Cache Awareness: mark stable prefix (system + tools) for upstream cache reuse.
   // Runs BEFORE caveman/compact so their inserts splice into the cached prefix.

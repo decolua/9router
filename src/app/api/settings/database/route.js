@@ -1,23 +1,40 @@
 import { NextResponse } from "next/server";
-import { exportDb, getSettings, importDb } from "@/lib/localDb";
+import { createBackupDownload, getDatabaseInfo, importDb, getSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 
-export async function GET() {
+export async function GET(request) {
   try {
-    const payload = await exportDb();
-    return NextResponse.json(payload);
+    const url = new URL(request.url);
+    if (url.searchParams.get("info") === "1") {
+      return NextResponse.json(getDatabaseInfo());
+    }
+
+    const backup = await createBackupDownload();
+    return new NextResponse(backup.content, {
+      headers: {
+        "Content-Type": backup.contentType,
+        "Content-Disposition": `attachment; filename="${backup.filename}"`,
+        "X-Backup-Format": backup.format,
+      },
+    });
   } catch (error) {
     console.log("Error exporting database:", error);
-    return NextResponse.json({ error: "Failed to export database" }, { status: 500 });
+    return NextResponse.json({ error: error?.message || "Failed to export database" }, { status: 500 });
   }
 }
 
 export async function POST(request) {
   try {
-    const payload = await request.json();
-    await importDb(payload);
+    const contentType = request.headers.get("content-type") || "";
 
-    // Ensure proxy settings take effect immediately after a DB import.
+    if (contentType.includes("application/sql") || contentType.includes("text/plain")) {
+      const sql = await request.text();
+      await importDb(sql);
+    } else {
+      const payload = await request.json();
+      await importDb(payload);
+    }
+
     try {
       const settings = await getSettings();
       applyOutboundProxyEnv(settings);

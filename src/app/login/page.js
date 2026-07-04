@@ -16,6 +16,8 @@ export default function LoginPage() {
   const [oidcConfigured, setOidcConfigured] = useState(false);
   const [oidcLoginLabel, setOidcLoginLabel] = useState("Sign in with OIDC");
   const [signupMode, setSignupMode] = useState("invite");
+  const [saas, setSaas] = useState(false);
+  const [orgName, setOrgName] = useState("");
   const [ready, setReady] = useState(false);
   const [mfaToken, setMfaToken] = useState("");
   const [mfaCode, setMfaCode] = useState("");
@@ -46,6 +48,8 @@ export default function LoginPage() {
           setOidcConfigured(data.oidcConfigured === true);
           setOidcLoginLabel(data.oidcLoginLabel || "Sign in with OIDC");
           setSignupMode(data.signupMode || "invite");
+          setSaas(data.saas === true);
+          setOrgName(data.organization?.name || "");
         }
       } catch {
         // allow login attempt
@@ -163,9 +167,13 @@ export default function LoginPage() {
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-primary mb-2">ebRouter</h1>
           <p className="text-text-muted">
-            {authMode === "oidc" && oidcConfigured
-              ? "Sign in with your OIDC provider"
-              : "Sign in to your workspace"}
+            {orgName
+              ? `Sign in to ${orgName}`
+              : authMode === "oidc" && oidcConfigured
+                ? "Sign in with your OIDC provider"
+                : saas
+                  ? "Sign in to your organization workspace"
+                  : "Sign in to your workspace"}
           </p>
         </div>
 
@@ -242,6 +250,12 @@ export default function LoginPage() {
                 {showSignupLink && (
                   <p className="text-xs text-center text-text-muted">
                     Need an account? <Link href="/signup" className="text-primary hover:underline">Create one</Link>
+                  </p>
+                )}
+
+                {saas && !orgName && (
+                  <p className="text-xs text-center text-text-muted">
+                    New team? <Link href="/register" className="text-primary hover:underline">Create an organization</Link>
                   </p>
                 )}
 
