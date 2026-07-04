@@ -12,6 +12,8 @@ import {
   buildThinkingSystemPrefix,
   resolveKiroEffort,
   resolveKiroMaxTokens,
+  resolveKiroThinkingField,
+  useKiroThinkingField,
   KIRO_AGENTIC_SYSTEM_PROMPT,
   resolveDefaultProfileArn
 } from "../../config/kiroConstants.js";
@@ -554,7 +556,9 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
   // Order: thinking_mode tag first (so Kiro sees it before any user text),
   // then context/timestamp marker, then optional agentic chunked-write prompt.
   const prefixParts = [];
-  if (thinkingBudget !== null) {
+  // Reasoning on-signal: the <thinking_mode> content tag by default, or (when
+  // KIRO_THINKING_FIELD=1) the native thinking payload field added below instead.
+  if (thinkingBudget !== null && !useKiroThinkingField()) {
     prefixParts.push(buildThinkingSystemPrefix());
   }
   prefixParts.push(`[Context: Current time is ${timestamp}]`);
@@ -600,6 +604,12 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
   if (thinkingBudget !== null) {
     const effort = resolveKiroEffort(body, upstreamModel);
     if (effort) payload.output_config = { effort };
+  }
+
+  // A/B (KIRO_THINKING_FIELD=1): native thinking payload field in place of the
+  // <thinking_mode> content tag, to test whether CodeWhisperer honors it.
+  if (thinkingBudget !== null && useKiroThinkingField()) {
+    payload.thinking = resolveKiroThinkingField(body, upstreamModel);
   }
 
   // Tag payload so the executor can route the upstream model id correctly.

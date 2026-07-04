@@ -6,7 +6,7 @@
  *  - Image forwarding fix: images in currentMessage must be included in payload
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { openaiToKiroRequest } from "../../open-sse/translator/request/openai-to-kiro.js";
 
 const contentOf = (result) =>
@@ -362,6 +362,52 @@ describe("openaiToKiroRequest", () => {
 
       expect(contentOf(result)).not.toContain("<thinking_mode>enabled</thinking_mode>");
       expect(contentOf(result)).not.toContain("<max_thinking_length>");
+    });
+  });
+
+  describe("KIRO_THINKING_FIELD toggle", () => {
+    // Save/restore the env flag so the A/B toggle doesn't leak across tests.
+    const prev = process.env.KIRO_THINKING_FIELD;
+    afterEach(() => {
+      if (prev === undefined) delete process.env.KIRO_THINKING_FIELD;
+      else process.env.KIRO_THINKING_FIELD = prev;
+    });
+
+    it("off (default): uses the <thinking_mode> tag, no thinking payload field", () => {
+      delete process.env.KIRO_THINKING_FIELD;
+      const result = openaiToKiroRequest(
+        "claude-opus-4-8",
+        { reasoning_effort: "max", messages: [{ role: "user", content: "think" }] },
+        true, {}
+      );
+      expect(contentOf(result)).toContain("<thinking_mode>enabled</thinking_mode>");
+      expect(result.thinking).toBeUndefined();
+      expect(result.output_config?.effort).toBe("max");
+    });
+
+    it("on: swaps the tag for a native thinking payload field", () => {
+      process.env.KIRO_THINKING_FIELD = "1";
+      const result = openaiToKiroRequest(
+        "claude-opus-4-8",
+        { reasoning_effort: "max", messages: [{ role: "user", content: "think" }] },
+        true, {}
+      );
+      // Tag gone from content, native field present alongside output_config.
+      expect(contentOf(result)).not.toContain("<thinking_mode>");
+      expect(result.thinking).toEqual({ type: "adaptive", display: "summarized" });
+      expect(result.output_config?.effort).toBe("max");
+    });
+
+    it("on + disabled: thinking field type is disabled, tag still absent", () => {
+      process.env.KIRO_THINKING_FIELD = "1";
+      const result = openaiToKiroRequest(
+        "claude-opus-4-8",
+        { reasoning_effort: "none", messages: [{ role: "user", content: "no think" }] },
+        true, {}
+      );
+      // reasoning_effort:none → thinkingBudget null → neither tag nor field ship.
+      expect(contentOf(result)).not.toContain("<thinking_mode>");
+      expect(result.thinking).toBeUndefined();
     });
   });
 });

@@ -31,6 +31,8 @@ import {
   buildThinkingSystemPrefix,
   resolveKiroEffort,
   resolveKiroMaxTokens,
+  resolveKiroThinkingField,
+  useKiroThinkingField,
   KIRO_AGENTIC_SYSTEM_PROMPT,
   resolveDefaultProfileArn,
 } from "../../config/kiroConstants.js";
@@ -419,9 +421,11 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
   }
 
   // Prefix order: thinking_mode tag, timestamp marker, then agentic prompt.
+  // Reasoning on-signal: <thinking_mode> content tag by default, or (when
+  // KIRO_THINKING_FIELD=1) the native thinking payload field added below.
   const timestamp = new Date().toISOString();
   const prefixParts = [];
-  if (thinkingBudget !== null) prefixParts.push(buildThinkingSystemPrefix());
+  if (thinkingBudget !== null && !useKiroThinkingField()) prefixParts.push(buildThinkingSystemPrefix());
   prefixParts.push(`[Context: Current time is ${timestamp}]`);
   if (agentic) prefixParts.push(KIRO_AGENTIC_SYSTEM_PROMPT);
   finalContent = `${prefixParts.join("\n\n")}\n\n${finalContent}`;
@@ -462,6 +466,12 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
   if (thinkingBudget !== null) {
     const effort = resolveKiroEffort(body, upstreamModel);
     if (effort) payload.output_config = { effort };
+  }
+
+  // A/B (KIRO_THINKING_FIELD=1): native thinking payload field in place of the
+  // <thinking_mode> content tag, to test whether CodeWhisperer honors it.
+  if (thinkingBudget !== null && useKiroThinkingField()) {
+    payload.thinking = resolveKiroThinkingField(body, upstreamModel);
   }
 
   // Non-enumerable hint so the executor can route the upstream model id.

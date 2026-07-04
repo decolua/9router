@@ -238,6 +238,31 @@ export function buildThinkingSystemPrefix() {
   return `<thinking_mode>enabled</thinking_mode>`;
 }
 
+// A/B toggle: when KIRO_THINKING_FIELD=1, reasoning is signalled via a native
+// `thinking` payload field (per the Kiro CLI chat docs) instead of the
+// <thinking_mode> content-tag, so we can test whether the CodeWhisperer
+// generateAssistantResponse endpoint honors the field on its own. Default off
+// keeps the proven tag behavior.
+export function useKiroThinkingField() {
+  return process.env.KIRO_THINKING_FIELD === "1";
+}
+
+/**
+ * Build the native `thinking` payload field for a Kiro request, or null when
+ * thinking is disabled. Shape follows the Kiro CLI chat docs
+ * (https://kiro.dev/docs/cli/chat/effort/): { type: "adaptive"|"disabled" }.
+ * `display` is included for adaptive so summarized reasoning is returned.
+ *
+ * @param {object} body Request body
+ * @param {string} [model] Upstream Kiro model id
+ * @returns {{type: string, display?: string}|null}
+ */
+export function resolveKiroThinkingField(body, model) {
+  const effort = resolveKiroEffort(body, model);
+  if (effort === null) return { type: "disabled" };
+  return { type: "adaptive", display: "summarized" };
+}
+
 // xhigh is Opus 4.7/4.8 only (per Kiro effort docs). Opus 4.6 + Sonnet 4.6
 // top out at max and reject xhigh → clamp down to high there.
 function supportsXhigh(model) {
