@@ -116,9 +116,23 @@ export async function countUsers(orgId) {
   return row?.n ?? 0;
 }
 
-export async function createUser({ orgId, email, name, password, role = "member", oidcSub = null }) {
-  const resolvedOrgId = await resolveOrgId(orgId);
-  if (!resolvedOrgId) throw new Error("Organization not configured");
+export async function createUser({
+  orgId,
+  email,
+  name,
+  password,
+  role = "member",
+  oidcSub = null,
+  requireOrgId = false,
+}) {
+  const explicitOrgId = orgId != null && String(orgId).trim() !== "" ? String(orgId).trim() : null;
+  const resolvedOrgId = requireOrgId
+    ? explicitOrgId
+    : (explicitOrgId || await resolveOrgId(orgId));
+
+  if (!resolvedOrgId) {
+    throw new Error(requireOrgId ? "orgId is required to create a user" : "Organization not configured");
+  }
 
   const normalizedEmail = String(email || "").trim().toLowerCase();
   if (!normalizedEmail) throw new Error("Email is required");
@@ -143,8 +157,9 @@ export async function createUser({ orgId, email, name, password, role = "member"
 
   await qRun(
     db,
-    `INSERT INTO users(id, "orgId", email, name, "passwordHash", role, "oidcSub", status, "createdAt", "updatedAt") VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [user.id, user.orgId, user.email, user.name, user.passwordHash, user.role, user.oidcSub, user.status, user.createdAt, user.updatedAt],
+    `INSERT INTO users(id, "orgId", email, name, "passwordHash", role, "oidcSub", status, "createdAt", "updatedAt")
+     VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [user.id, resolvedOrgId, user.email, user.name, user.passwordHash, user.role, user.oidcSub, user.status, user.createdAt, user.updatedAt],
   );
 
   await qRun(db, `INSERT INTO userSettings(userId, data) VALUES(?, ?)`, [user.id, "{}"]);

@@ -30,10 +30,56 @@ async function tableExists(db, tableName) {
 async function listColumns(db, tableName) {
   const rows = await qAll(
     db,
-    `SELECT column_name AS name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ?`,
+    `SELECT column_name AS name FROM information_schema.columns WHERE table_schema = current_schema() AND LOWER(table_name) = LOWER(?)`,
     [tableName]
   );
   return rows.map((r) => r.name);
+}
+
+/** Normalize users.orgId — fixes lowercase orgid vs quoted "orgId" mismatch on PostgreSQL. */
+export async function ensureUsersOrgIdColumn(db) {
+  if (!(await tableExists(db, "users"))) return;
+
+  const cols = await listColumns(db, "users");
+  const orgCols = cols.filter((c) => c.toLowerCase() === "orgid");
+
+  if (orgCols.length === 0) {
+    await qExec(db, `ALTER TABLE "users" ADD COLUMN "orgId" TEXT`);
+    console.log("[DB][repair] added users.orgId column");
+  } else if (orgCols.length === 1 && orgCols[0] !== "orgId") {
+    await qExec(db, `ALTER TABLE "users" RENAME COLUMN "${orgCols[0]}" TO "orgId"`);
+    console.log(`[DB][repair] renamed users.${orgCols[0]} → orgId`);
+  } else if (orgCols.length > 1) {
+    let canonical = orgCols.find((c) => c === "orgId") || orgCols[0];
+    for (const col of orgCols) {
+      if (col === canonical) continue;
+      await qRun(
+        db,
+        `UPDATE "users" SET "${canonical}" = COALESCE("${canonical}", "${col}") WHERE "${col}" IS NOT NULL`,
+      );
+      await qExec(db, `ALTER TABLE "users" DROP COLUMN "${col}"`);
+      console.log(`[DB][repair] merged users.${col} → ${canonical}`);
+    }
+    if (canonical !== "orgId") {
+      await qExec(db, `ALTER TABLE "users" RENAME COLUMN "${canonical}" TO "orgId"`);
+      canonical = "orgId";
+    }
+  }
+
+  const defaultOrg = await qGet(db, `SELECT id FROM organizations ORDER BY "createdAt" ASC LIMIT 1`);
+  if (defaultOrg?.id) {
+    await qRun(
+      db,
+      `UPDATE "users" SET "orgId" = ? WHERE "orgId" IS NULL OR "orgId" = ''`,
+      [defaultOrg.id],
+    );
+  }
+
+  try {
+    await qExec(db, `ALTER TABLE "users" ALTER COLUMN "orgId" SET NOT NULL`);
+  } catch {
+    // already NOT NULL
+  }
 }
 
 async function mergeDuplicateColumns(db, table, from, to) {
@@ -93,6 +139,7 @@ export async function repairPostgresUserSchema(db) {
       await mergeDuplicateColumns(db, repair.table, repair.from, repair.to);
     }
   }
+  await ensureUsersOrgIdColumn(db);
   await ensureAdminPassword(db);
 }
 

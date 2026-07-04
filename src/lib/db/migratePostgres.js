@@ -169,6 +169,13 @@ async function runVersionedMigrations(adapter) {
     lastApplied = 9;
     console.log("[DB][migrate] applied #9 org-scope");
   }
+  if (lastApplied < 10) {
+    const { fixUsersOrgIdPostgres } = await import("./migrations/010-fix-users-orgid-column.js");
+    await fixUsersOrgIdPostgres(adapter);
+    await setMeta(adapter, "schemaVersion", 10);
+    lastApplied = 10;
+    console.log("[DB][migrate] applied #10 fix-users-orgid-column");
+  }
   return { applied: lastApplied - current, from: current, to: lastApplied };
 }
 
