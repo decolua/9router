@@ -36,6 +36,16 @@ describe("antigravity computeRetryDelay hook (D3)", () => {
     expect(await ag.computeRetryDelay(res(503), 1)).toBe(2000);
   });
 
+  it("does not retry Antigravity capacity on the same account", async () => {
+    const r = res(503, {}, {
+      error: {
+        reason: "MODEL_CAPACITY_EXHAUSTED",
+        message: "No capacity available for model claude-opus-4-6-thinking on the server",
+      },
+    });
+    expect(await ag.computeRetryDelay(r, 1)).toBe(false);
+  });
+
   it("retries Antigravity agent terminated body even when status is not 429", async () => {
     const r = res(500, {}, { error: { message: "Agent execution terminated due to error" } });
     expect(await ag.computeRetryDelay(r, 1)).toBe(2000);

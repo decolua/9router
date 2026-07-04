@@ -160,6 +160,20 @@ export function createSSEStream(options = {}) {
                 accumulatedThinking += reasoning;
               }
 
+              const geminiParts = parsed.response?.candidates?.[0]?.content?.parts || parsed.candidates?.[0]?.content?.parts;
+              if (Array.isArray(geminiParts)) {
+                for (const part of geminiParts) {
+                  if (part.text && typeof part.text === "string") {
+                    totalContentLength += part.text.length;
+                    if (part.thought === true) {
+                      accumulatedThinking += part.text;
+                    } else {
+                      accumulatedContent += part.text;
+                    }
+                  }
+                }
+              }
+
               const extracted = extractUsage(parsed);
               if (extracted) {
                 usage = mergeUsage(usage, extracted);

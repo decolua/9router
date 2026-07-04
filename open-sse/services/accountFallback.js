@@ -50,6 +50,19 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
 }
 
 /**
+ * Antigravity capacity is a per-request server saturation signal, not an
+ * account quota/rate-limit. It should skip the current connection only for
+ * this request and must not write cooldown state to DB.
+ */
+export function isAntigravityCapacityError(status, errorText = "") {
+  const text = typeof errorText === "string" ? errorText : JSON.stringify(errorText || "");
+  return Number(status) === 503 && (
+    /MODEL_CAPACITY_EXHAUSTED/i.test(text) ||
+    /No capacity available for model/i.test(text)
+  );
+}
+
+/**
  * Check if account is currently unavailable (cooldown not expired)
  */
 export function isAccountUnavailable(unavailableUntil) {

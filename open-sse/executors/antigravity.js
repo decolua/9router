@@ -7,6 +7,7 @@ import { resolveSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { cleanJSONSchemaForAntigravity } from "../translator/formats/gemini.js";
 import { DEFAULT_THINKING_AG_SIGNATURE } from "../config/defaultThinkingSignature.js";
+import { isAntigravityCapacityError } from "../services/accountFallback.js";
 
 // Sanitize function name: Gemini requires [a-zA-Z_][a-zA-Z0-9_.:\-]{0,63}
 function sanitizeFunctionName(name) {
@@ -373,6 +374,8 @@ export class AntigravityExecutor extends BaseExecutor {
     }
 
     const errorMessage = this.extractErrorMessage(errorJson, bodyText);
+
+    if (isAntigravityCapacityError(response.status, errorMessage)) return false;
 
     if (!retryMs) {
       retryMs = this.parseRetryFromErrorMessage(errorMessage);
