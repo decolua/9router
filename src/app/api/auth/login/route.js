@@ -7,7 +7,8 @@ import { checkLock, recordFail, recordSuccess, getClientIp } from "@/lib/auth/lo
 import { getSettings } from "@/lib/localDb";
 import { auditFromRequest, AuditAction } from "@/lib/audit";
 import { isMfaRequired, createMfaChallengeToken } from "@/lib/auth/mfa";
-import { resolveOrgFromRequest, runWithOrgId } from "@/lib/org/orgContext.js";
+import { resolveOrgFromRequest } from "@/lib/org/orgContext.js";
+import { runWithOrgId } from "@/lib/auth/runtimeUserContext.js";
 import { getOrganizationById, getOrganizationBySlug } from "@/lib/db/repos/organizationsRepo.js";
 import { isSaas } from "@/lib/deploy/deployMode.js";
 
