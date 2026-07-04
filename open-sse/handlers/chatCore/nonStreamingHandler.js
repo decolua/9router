@@ -83,7 +83,12 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
 
     if (content?.parts) {
       for (const part of content.parts) {
-        if (part.thought === true && part.text) reasoningContent += part.text;
+        const hasThoughtSig = part.thoughtSignature || part.thought_signature;
+        const isThought = part.thought === true;
+        // Thought parts: flagged by thought=true OR carrying a thoughtSignature.
+        // Gemini/Vertex 3.x may emit thought parts with signature but without
+        // the `thought` flag; route both to reasoning_content per PR #1752.
+        if ((isThought || hasThoughtSig) && part.text) reasoningContent += part.text;
         else if (part.text !== undefined) textContent += part.text;
         if (part.functionCall) {
           toolCalls.push({
