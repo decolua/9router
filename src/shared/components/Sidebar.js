@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG, UPDATER_CONFIG } from "@/shared/constants/config";
+import { orgScopedPath } from "@/lib/org/clientOrgPath.js";
 import { MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import Button from "./Button";
@@ -49,12 +50,13 @@ export default function Sidebar({ onClose }) {
   const [shutdownCountdown, setShutdownCountdown] = useState(0);
   const [enableTranslator, setEnableTranslator] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [orgName, setOrgName] = useState("");
   const { copied, copy } = useCopyToClipboard(2000);
 
   const INSTALL_CMD = UPDATER_CONFIG.installCmdLatest;
 
   useEffect(() => {
-    fetch("/api/settings", { cache: "no-store" })
+    fetch(orgScopedPath("/api/settings"), { cache: "no-store" })
       .then(res => res.json())
       .then(data => {
         if (data.enableTranslator) setEnableTranslator(true);
@@ -62,9 +64,10 @@ export default function Sidebar({ onClose }) {
       })
       .catch(() => {});
 
-    fetch("/api/auth/status", { cache: "no-store" })
+    fetch(orgScopedPath("/api/auth/status"), { cache: "no-store" })
       .then(res => res.json())
       .then(data => {
+        if (data?.organization?.name) setOrgName(data.organization.name);
         if (data?.isAdmin === true || data?.currentUser?.role === "admin") {
           setIsAdmin(true);
         }
@@ -143,13 +146,19 @@ export default function Sidebar({ onClose }) {
 
         {/* Logo */}
         <div className="px-6 py-4 flex flex-col gap-2">
-          <Link href="/dashboard" className="flex items-center gap-3">
+          <Link href={orgScopedPath("/dashboard")} className="flex items-center gap-3">
             <div className="flex items-center justify-center size-9 rounded-[10px] bg-gradient-to-br from-brand-500 to-brand-700 shadow-[var(--shadow-warm)]">
               <span className="material-symbols-outlined text-white text-[20px]">hub</span>
             </div>
-            <div className="flex flex-col">
-              <h1 className="text-lg font-semibold tracking-tight text-text-main">
-                {APP_CONFIG.name}
+            <div className="flex flex-col min-w-0">
+              <h1 className="text-lg font-semibold tracking-tight text-text-main flex items-center gap-1.5 min-w-0">
+                <span className="truncate">{APP_CONFIG.name}</span>
+                {orgName ? (
+                  <>
+                    <span className="text-text-muted font-normal shrink-0">·</span>
+                    <span className="truncate text-primary font-medium">{orgName}</span>
+                  </>
+                ) : null}
               </h1>
               <span className="text-xs text-text-muted">v{APP_CONFIG.version}</span>
             </div>

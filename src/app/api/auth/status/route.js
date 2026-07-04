@@ -5,22 +5,31 @@ import { isOidcConfigured } from "@/lib/auth/oidc";
 import { getDashboardAuthSession } from "@/lib/auth/dashboardSession";
 import { getUserByEmail } from "@/lib/db/repos/usersRepo.js";
 import { getSessionUser } from "@/lib/auth/requestContext.js";
-import { resolveOrgFromRequest, runWithRequestOrg } from "@/lib/org/orgContext.js";
-import { getDeployMode, isSaas } from "@/lib/deploy/deployMode.js";
+import { resolveOrgWithFallback } from "@/lib/org/orgContext.js";
+import { runWithOrgId } from "@/lib/auth/runtimeUserContext.js";
+import { getOrganizationById, getDefaultOrgId } from "@/lib/db/repos/organizationsRepo.js";
+import { getDeployMode, isOnPrem, isSaas } from "@/lib/deploy/deployMode.js";
 
 const STATUS_RESPONSE_HEADERS = {
   "Cache-Control": "no-store",
 };
 
 export async function GET(request) {
-  return runWithRequestOrg(request, async () => {
+  const cookieStore = await cookies();
+  const token = cookieStore.get("auth_token")?.value;
+  const session = token ? await getDashboardAuthSession(token) : null;
+
+  let org = await resolveOrgWithFallback(request, { session });
+  const orgId = org?.id || (isOnPrem() ? await getDefaultOrgId() : null);
+
+  return runWithOrgId(orgId, async () => {
     try {
-      const org = await resolveOrgFromRequest(request);
-      const settings = await getSettings(org?.id);
-      const cookieStore = await cookies();
-      const token = cookieStore.get("auth_token")?.value;
-      const session = await getDashboardAuthSession(token);
       const currentUser = await getSessionUser(token, { orgId: org?.id });
+      if (!org && currentUser?.orgId) {
+        org = await getOrganizationById(currentUser.orgId);
+      }
+
+      const settings = await getSettings(org?.id);
       const requireLogin = settings.requireLogin !== false;
       const authMode = settings.authMode || "password";
       const userCount = org ? await countUsers(org.id) : 0;

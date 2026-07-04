@@ -43,6 +43,25 @@ export async function resolveOrgFromRequest(request) {
   return getOrganizationBySlug(slug);
 }
 
+/** Resolve org from JWT session or user record when URL/header lacks tenant slug (SaaS dashboard). */
+export async function resolveOrgWithFallback(request, { session = null, user = null } = {}) {
+  const fromRequest = await resolveOrgFromRequest(request);
+  if (fromRequest) return fromRequest;
+
+  if (session?.orgId) {
+    const org = await getOrganizationById(session.orgId);
+    if (org) return org;
+  }
+  if (session?.orgSlug) {
+    const org = await getOrganizationBySlug(String(session.orgSlug).trim().toLowerCase());
+    if (org) return org;
+  }
+  if (user?.orgId) {
+    return getOrganizationById(user.orgId);
+  }
+  return null;
+}
+
 export async function requireOrgFromRequest(request) {
   const org = await resolveOrgFromRequest(request);
   if (org) return { org, error: null };
