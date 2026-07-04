@@ -30,6 +30,7 @@ import {
   resolveKiroThinkingBudget,
   buildThinkingSystemPrefix,
   resolveKiroEffort,
+  resolveKiroMaxTokens,
   KIRO_AGENTIC_SYSTEM_PROMPT,
   resolveDefaultProfileArn,
 } from "../../config/kiroConstants.js";
@@ -371,7 +372,8 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
   let messages = Array.isArray(body.messages) ? body.messages : [];
   const tools = Array.isArray(body.tools) ? body.tools : [];
   const clientProvidedTools = tools.length > 0;
-  const maxTokens = body.max_tokens || 32000;
+  // Honor client max_tokens, clamped to the model ceiling (Opus 4.8 = 128000).
+  const maxTokens = resolveKiroMaxTokens(body, resolveKiroModel(model).upstream);
   const temperature = body.temperature;
   const topP = body.top_p;
 

@@ -11,6 +11,7 @@ import {
   resolveKiroThinkingBudget,
   buildThinkingSystemPrefix,
   resolveKiroEffort,
+  resolveKiroMaxTokens,
   KIRO_AGENTIC_SYSTEM_PROMPT,
   resolveDefaultProfileArn
 } from "../../config/kiroConstants.js";
@@ -516,11 +517,13 @@ function convertMessages(messages, tools, model) {
 export function openaiToKiroRequest(model, body, stream, credentials) {
   const messages = body.messages || [];
   const tools = body.tools || [];
-  const maxTokens = 32000;
   const temperature = body.temperature;
   const topP = body.top_p;
 
   const { upstream: upstreamModel, agentic } = resolveKiroModel(model);
+  // Honor client max_tokens, clamped to the model's ceiling (Opus 4.8 = 128000).
+  // Was hardcoded to 32000, which silently capped Opus 4.8 at a quarter of its range.
+  const maxTokens = resolveKiroMaxTokens(body, upstreamModel);
   const thinkingBudget = resolveKiroThinkingBudget(body, credentials?.rawHeaders, model);
 
   const { history, currentMessage } = convertMessages(messages, tools, upstreamModel);

@@ -273,6 +273,39 @@ export function resolveKiroEffort(body, model) {
   return cfg.level;
 }
 
+// Per-model max output token ceiling (per https://kiro.dev/docs/cli/chat/effort/).
+// Opus 4.8 = 128000; Opus 4.7/4.6 + Sonnet 4.6 = 64000. Unknown models keep the
+// conservative 32000 default the Kiro path shipped with.
+const KIRO_MAX_TOKENS_FLOOR = 1024;
+const KIRO_MAX_TOKENS_DEFAULT = 32000;
+function modelMaxTokensCap(model) {
+  const m = String(model || "").toLowerCase();
+  if (m.includes("opus-4-8") || m.includes("opus-4.8")) return 128000;
+  if (m.includes("opus-4-7") || m.includes("opus-4.7")
+    || m.includes("opus-4-6") || m.includes("opus-4.6")
+    || m.includes("sonnet-4-6") || m.includes("sonnet-4.6")) return 64000;
+  return KIRO_MAX_TOKENS_DEFAULT;
+}
+
+/**
+ * Resolve the max output tokens for a Kiro inferenceConfig. Honors the client's
+ * requested max_tokens, clamped to [1024, model cap]. Falls back to the model
+ * cap when the client sends nothing (previously hardcoded to 32000, which
+ * silently capped Opus 4.8 at a quarter of its 128000 ceiling).
+ *
+ * @param {object} body Request body (Claude max_tokens / OpenAI max_tokens)
+ * @param {string} [model] Upstream Kiro model id
+ * @returns {number} clamped max output tokens
+ */
+export function resolveKiroMaxTokens(body, model) {
+  const cap = modelMaxTokensCap(model);
+  const requested = Number(body?.max_tokens);
+  if (Number.isFinite(requested) && requested > 0) {
+    return Math.max(KIRO_MAX_TOKENS_FLOOR, Math.min(cap, requested));
+  }
+  return cap;
+}
+
 function pickHeader(headers, name) {
   if (!headers) return undefined;
   if (typeof headers.get === "function") {

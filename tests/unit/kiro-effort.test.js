@@ -1,7 +1,37 @@
 // Unit tests for resolveKiroEffort — maps client thinking intent to the
 // output_config.effort level Kiro accepts natively (per official docs).
 import { describe, it, expect } from "vitest";
-import { resolveKiroEffort } from "../../open-sse/config/kiroConstants.js";
+import { resolveKiroEffort, resolveKiroMaxTokens } from "../../open-sse/config/kiroConstants.js";
+
+describe("resolveKiroMaxTokens", () => {
+  it("honors client max_tokens within the model cap", () => {
+    expect(resolveKiroMaxTokens({ max_tokens: 64000 }, "claude-opus-4-8")).toBe(64000);
+  });
+
+  it("clamps to the model ceiling (Opus 4.8 = 128000)", () => {
+    expect(resolveKiroMaxTokens({ max_tokens: 200000 }, "claude-opus-4-8")).toBe(128000);
+  });
+
+  it("Opus 4.7 / 4.6 / Sonnet 4.6 cap at 64000", () => {
+    expect(resolveKiroMaxTokens({ max_tokens: 200000 }, "claude-opus-4-7")).toBe(64000);
+    expect(resolveKiroMaxTokens({ max_tokens: 200000 }, "claude-opus-4-6")).toBe(64000);
+    expect(resolveKiroMaxTokens({ max_tokens: 200000 }, "claude-sonnet-4-6")).toBe(64000);
+  });
+
+  it("defaults to the model cap when client sends no max_tokens", () => {
+    expect(resolveKiroMaxTokens({}, "claude-opus-4-8")).toBe(128000);
+    expect(resolveKiroMaxTokens({}, "claude-opus-4-7")).toBe(64000);
+  });
+
+  it("unknown models keep the conservative 32000 default", () => {
+    expect(resolveKiroMaxTokens({}, "some-other-model")).toBe(32000);
+    expect(resolveKiroMaxTokens({ max_tokens: 999999 }, "some-other-model")).toBe(32000);
+  });
+
+  it("floors at 1024", () => {
+    expect(resolveKiroMaxTokens({ max_tokens: 10 }, "claude-opus-4-8")).toBe(1024);
+  });
+});
 
 describe("resolveKiroEffort", () => {
   it("passes reasoning_effort levels through", () => {
