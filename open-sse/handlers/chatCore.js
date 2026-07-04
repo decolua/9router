@@ -26,6 +26,20 @@ import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, isHeadr
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
+import { extractThinking } from "../translator/concerns/thinkingUnified.js";
+
+// Format a one-line reasoning-effort/thinking indicator for the console log.
+// Returns "" when no thinking intent is present (caller skips empty lines).
+function formatThinkingLine(body, provider, model) {
+  const cfg = extractThinking(body);
+  if (!cfg) return "";
+  const effort = cfg.mode === "none" ? "off"
+    : cfg.mode === "auto" ? "auto"
+    : cfg.mode === "budget" ? `budget:${cfg.budget}`
+    : cfg.level;
+  const ts = new Date().toLocaleTimeString("en-US", { hour12: false });
+  return `${COLORS.cyan}[${ts}] 🧠 [THINK] ${provider} | ${model} | effort=${effort}${COLORS.reset}`;
+}
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -136,6 +150,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     delete translatedBody._toolNameMap;
     translatedBody.model = upstreamModel;
   }
+
+  // Log resolved reasoning effort/thinking for the upstream provider call.
+  const thinkLine = formatThinkingLine(translatedBody, provider, model);
+  if (thinkLine) console.log(thinkLine);
 
   // Dedupe duplicate built-in tools when equivalent MCP tools are present (Claude clients only).
   if (clientTool === "claude" && Array.isArray(translatedBody.tools)) {
