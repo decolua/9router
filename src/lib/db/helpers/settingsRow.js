@@ -12,7 +12,8 @@ export async function settingsColumnsPostgres(db) {
   const { qAll } = await import("../query.js");
   const cols = await qAll(
     db,
-    `SELECT column_name AS name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'settings'`,
+    `SELECT column_name AS name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ?`,
+    ["settings"],
   );
   return new Set(cols.map((r) => r.name));
 }

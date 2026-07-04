@@ -44,10 +44,10 @@ function shouldQuotePgIdent(name, knownIdents) {
 /** Quote camelCase tables/columns for PostgreSQL (skips already-quoted idents). */
 export function quotePgSql(sql) {
   const knownIdents = new Set([...CAMEL_TABLES, ...CAMEL_COLUMNS]);
-  // Split on double-quoted strings so DDL like `"key"` is not re-quoted to `""key""`.
-  const parts = sql.split(/("(?:[^"]|"")*")/g);
+  // Split on SQL string literals and double-quoted idents so we never quote inside '...' or "...".
+  const parts = sql.split(/('(?:''|[^'])*'|"(?:[^"]|"")*")/g);
   return parts.map((part) => {
-    if (part.startsWith('"')) return part;
+    if (part.startsWith("'") || part.startsWith('"')) return part;
     return part.replace(/\b([a-zA-Z_][a-zA-Z0-9_]*)\b/g, (match) => (
       shouldQuotePgIdent(match, knownIdents) ? quotePgIdent(match) : match
     ));

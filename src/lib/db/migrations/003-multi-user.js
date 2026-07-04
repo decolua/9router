@@ -213,7 +213,8 @@ export async function multiUserPostgres(db) {
 
   const userCols = await qAll(
     db,
-    `SELECT column_name AS name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'users'`,
+    `SELECT column_name AS name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ?`,
+    ["users"],
   );
   const hasOrgId = userCols.some((c) => String(c.name).toLowerCase() === "orgid");
 

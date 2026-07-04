@@ -6,7 +6,8 @@ import { qAll, qExec } from "../query.js";
 export async function securityExtensionsPostgres(adapter) {
   const existing = await qAll(
     adapter,
-    `SELECT column_name AS name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'users'`
+    `SELECT column_name AS name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ?`,
+    ["users"],
   );
   const names = new Set(existing.map((r) => r.name));
   const lower = new Set(existing.map((r) => r.name.toLowerCase()));
