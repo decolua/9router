@@ -110,6 +110,17 @@ export const PROVIDER_CAPABILITIES = {
     "z-ai/glm-5.2": { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 128000 },
     "deepseek-ai/deepseek-v4-pro": { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 65536 },
     "deepseek-ai/deepseek-v4-flash": { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 65536 },
+    "moonshotai/kimi-k2.6": { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 262144, maxOutput: 262144 },
+    "nvidia/ising-calibration-1-35b-a3b": { reasoning: true, thinkingFormat: "openai", contextWindow: 128000 },
+    "nvidia/nemotron-3-nano-30b-a3b": { reasoning: true, thinkingFormat: "openai", contextWindow: 128000 },
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning": { vision: true, audioInput: true, reasoning: true, thinkingFormat: "openai", contextWindow: 128000 },
+    "nvidia/nemotron-3-ultra-550b-a55b": { reasoning: true, thinkingFormat: "openai", contextWindow: 128000 },
+    "nvidia/nemotron-nano-12b-v2-vl": { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 128000 },
+    "nvidia/nvidia-nemotron-nano-9b-v2": { reasoning: true, thinkingFormat: "openai", contextWindow: 128000 },
+    "qwen/qwen3-next-80b-a3b-instruct": { reasoning: true, thinkingFormat: "openai", contextWindow: 262144 },
+    "qwen/qwen3.5-122b-a10b": { vision: true, videoInput: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 65536 },
+    "stepfun-ai/step-3.5-flash": { reasoning: true, thinkingFormat: "openai", contextWindow: 128000 },
+    "stepfun-ai/step-3.7-flash": { reasoning: true, thinkingFormat: "openai", contextWindow: 128000 },
   },
   // CodeBuddy.cn — authoritative per-model metadata from the gateway's model
   // config (contextWindow=maxInputTokens, maxOutput=maxOutputTokens, vision=
