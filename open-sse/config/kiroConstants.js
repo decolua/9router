@@ -8,8 +8,9 @@
  *   - `-agentic` model suffix detection + chunked-write system prompt
  *   - reasoning / thinking trigger detection (Anthropic-Beta header,
  *     Claude `thinking`, OpenAI `reasoning_effort`, AMP/Cursor magic tag)
- *   - the `<thinking_mode>enabled</thinking_mode>` system-prompt injection
- *     that turns Kiro reasoning on
+ *   - reasoning depth + adaptive field, nested inside
+ *     `additionalModelRequestFields` to match the real Kiro IDE wire format
+ *     (reverse-engineered from the kiro.kiro-agent bundle)
  *
  * Kiro upstream does not advertise `-agentic` model IDs; they are a 9router
  * fiction. The suffix is stripped before the request leaves this process.
@@ -97,8 +98,7 @@ REMEMBER: When in doubt, write LESS per operation. Multiple small operations > o
  * Reuses the shared thinkingUnified parser (extractThinking) so every client
  * shape (Claude output_config.effort / thinking.budget_tokens, OpenAI
  * reasoning_effort / reasoning.effort, Gemini, Qwen) maps consistently. Explicit
- * `none`/`off`/disabled wins and returns null (no prefix injected).
- * buildThinkingSystemPrefix performs Kiro's final 1..32000 clamp.
+ * `none`/`off`/disabled wins and returns null (no effort shipped).
  *
  * @param {object} body OpenAI/Claude-shaped request body
  * @param {object} [headers] Original inbound HTTP headers (case-insensitive)
@@ -170,7 +170,8 @@ export function stripAgenticSuffix(model) {
 /**
  * Detect whether a model id is a 9router synthetic thinking variant
  * (e.g. `claude-sonnet-4.5-thinking`). Same upstream model as the base; the
- * only difference is `<thinking_mode>enabled</thinking_mode>` injection.
+ * only difference is reasoning defaults to ON (effort + adaptive field ship
+ * inside `additionalModelRequestFields`).
  *
  * Note: real Kiro thinking-capable variants exist (e.g. `kimi-k2-thinking` in
  * other providers), but for the `kr/` namespace there is no `-thinking`
@@ -225,26 +226,13 @@ export function resolveKiroModel(model) {
   return { upstream, agentic, thinking };
 }
 
-/**
- * Build the magic system-prompt prefix that turns Kiro reasoning on.
- *
- * Per official Kiro docs (https://kiro.dev/docs/cli/chat/effort/), reasoning
- * depth is controlled by `output_config.effort` on the payload (see
- * resolveKiroEffort), not a thinking-length tag — so only the on/off
- * `<thinking_mode>` signal remains here. The legacy `<max_thinking_length>`
- * tag (CLIProxyAPIPlus reverse-engineered hack, hard-clamped to 32000) is gone.
- */
-export function buildThinkingSystemPrefix() {
-  return `<thinking_mode>enabled</thinking_mode>`;
-}
-
-// A/B toggle: when KIRO_THINKING_FIELD=1, reasoning is signalled via a native
-// `thinking` payload field (per the Kiro CLI chat docs) instead of the
-// <thinking_mode> content-tag, so we can test whether the CodeWhisperer
-// generateAssistantResponse endpoint honors the field on its own. Default off
-// keeps the proven tag behavior.
-export function useKiroThinkingField() {
-  return process.env.KIRO_THINKING_FIELD === "1";
+// Adaptive `thinking` payload field ships by default — matches the real Kiro
+// IDE wire format (reverse-engineered from the kiro.kiro-agent bundle: the
+// `Er` builder at extension.js:419837 nests {thinking, output_config} inside
+// `additionalModelRequestFields`). Set KIRO_THINKING_FIELD=0 to suppress the
+// adaptive field; output_config.effort still ships.
+export function kiroThinkingFieldEnabled() {
+  return process.env.KIRO_THINKING_FIELD !== "0";
 }
 
 /**
@@ -298,37 +286,44 @@ export function resolveKiroEffort(body, model) {
   return cfg.level;
 }
 
-// Per-model max output token ceiling (per https://kiro.dev/docs/cli/chat/effort/).
-// Opus 4.8 = 128000; Opus 4.7/4.6 + Sonnet 4.6 = 64000. Unknown models keep the
-// conservative 32000 default the Kiro path shipped with.
-const KIRO_MAX_TOKENS_FLOOR = 1024;
-const KIRO_MAX_TOKENS_DEFAULT = 32000;
+// Effort → additionalModelRequestFields.max_tokens bucket (clean buckets).
+// max_tokens is a sibling of thinking/output_config inside the model's
+// additionalModelRequestFieldsSchema; the gateway maps it to output budget.
+const EFFORT_MAX_TOKENS = {
+  low: 16000, medium: 32000, high: 64000, xhigh: 96000, max: 128000
+};
+
+// Per-model max_tokens ceiling, from each model's live
+// additionalModelRequestFieldsSchema (captured via `kiro-cli chat --list-models`
+// with KIRO_LOG_LEVEL=trace). Models not listed don't expose max_tokens in
+// their schema → null (caller must omit the field or the gateway rejects it).
+// ponytail: Opus 4.7 ceiling is 128000 on the live gateway (the kiro.dev docs
+// table is stale — shows 64000); update if the schema changes.
 function modelMaxTokensCap(model) {
   const m = String(model || "").toLowerCase();
   if (m.includes("opus-4-8") || m.includes("opus-4.8")) return 128000;
-  if (m.includes("opus-4-7") || m.includes("opus-4.7")
-    || m.includes("opus-4-6") || m.includes("opus-4.6")
-    || m.includes("sonnet-4-6") || m.includes("sonnet-4.6")) return 64000;
-  return KIRO_MAX_TOKENS_DEFAULT;
+  if (m.includes("opus-4-7") || m.includes("opus-4.7")) return 128000;
+  if (m.includes("opus-4-6") || m.includes("opus-4.6")) return 64000;
+  if (m.includes("sonnet-4-6") || m.includes("sonnet-4.6")) return 64000;
+  return null;
 }
 
 /**
- * Resolve the max output tokens for a Kiro inferenceConfig. Honors the client's
- * requested max_tokens, clamped to [1024, model cap]. Falls back to the model
- * cap when the client sends nothing (previously hardcoded to 32000, which
- * silently capped Opus 4.8 at a quarter of its 128000 ceiling).
+ * Resolve additionalModelRequestFields.max_tokens from the effort level.
+ * Returns null when effort is unset/unknown or the model has no max_tokens
+ * schema (caller omits the field). Clamped to [1024, model cap] per the schema.
  *
- * @param {object} body Request body (Claude max_tokens / OpenAI max_tokens)
- * @param {string} [model] Upstream Kiro model id
- * @returns {number} clamped max output tokens
+ * @param {string|null} effort effort level from resolveKiroEffort
+ * @param {string} [model] upstream Kiro model id
+ * @returns {number|null}
  */
-export function resolveKiroMaxTokens(body, model) {
+export function resolveKiroMaxTokens(effort, model) {
+  if (!effort) return null;
+  const bucket = EFFORT_MAX_TOKENS[effort];
+  if (!bucket) return null;
   const cap = modelMaxTokensCap(model);
-  const requested = Number(body?.max_tokens);
-  if (Number.isFinite(requested) && requested > 0) {
-    return Math.max(KIRO_MAX_TOKENS_FLOOR, Math.min(cap, requested));
-  }
-  return cap;
+  if (cap === null) return null;
+  return Math.max(1024, Math.min(bucket, cap));
 }
 
 function pickHeader(headers, name) {

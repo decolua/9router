@@ -136,7 +136,11 @@ export class KiroExecutor extends BaseExecutor {
       reasoningChunkCount: 0,
       toolCallIndex: 0,
       seenToolIds: new Map(),
-      inThinking: false
+      inThinking: false,
+      // Effort A/B instrumentation (DEBUG_KIRO_EFFORT=1): tally reasoning vs
+      // answer bytes so effort=low can be compared to effort=max on the wire.
+      reasoningChars: 0,
+      answerChars: 0
     };
 
     const transformStream = new TransformStream({
@@ -204,6 +208,7 @@ export class KiroExecutor extends BaseExecutor {
             }
 
             state.totalContentLength += content.length;
+            state.answerChars += content.length;
 
             const chunk = {
               id: responseId,
@@ -235,6 +240,7 @@ export class KiroExecutor extends BaseExecutor {
             if (reasoningText) {
               state.hasReasoningContent = true;
               state.totalContentLength += reasoningText.length;
+              state.reasoningChars += reasoningText.length;
 
               const reasoningDelta = state.reasoningChunkCount === 0 && chunkIndex === 0
                 ? { role: "assistant", reasoning_content: reasoningText }
@@ -469,6 +475,16 @@ export class KiroExecutor extends BaseExecutor {
       },
 
       flush(controller) {
+        // Effort A/B (DEBUG_KIRO_EFFORT=1): one-line reasoning-vs-answer tally
+        // so effort=low and effort=max can be compared for the same prompt.
+        if (process.env.DEBUG_KIRO_EFFORT === "1") {
+          const r = state.reasoningChars, a = state.answerChars;
+          const ratio = a > 0 ? (r / a).toFixed(2) : "n/a";
+          console.log(
+            `[KIRO-EFFORT] model=${model} reasoning=${r}c answer=${a}c ratio=${ratio} reasoningChunks=${state.reasoningChunkCount}`
+          );
+        }
+
         // Emit finish chunk if not already sent
         if (!state.finishEmitted) {
           state.finishEmitted = true;

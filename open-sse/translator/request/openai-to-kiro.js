@@ -9,11 +9,10 @@ import { resolveSessionId } from "../../utils/sessionManager.js";
 import {
   resolveKiroModel,
   resolveKiroThinkingBudget,
-  buildThinkingSystemPrefix,
   resolveKiroEffort,
-  resolveKiroMaxTokens,
   resolveKiroThinkingField,
-  useKiroThinkingField,
+  resolveKiroMaxTokens,
+  kiroThinkingFieldEnabled,
   KIRO_AGENTIC_SYSTEM_PROMPT,
   resolveDefaultProfileArn
 } from "../../config/kiroConstants.js";
@@ -509,24 +508,22 @@ function convertMessages(messages, tools, model) {
  *    Kiro's 2-3 minute server timeout. The suffix is stripped before being
  *    sent upstream.
  *
- * 2. Thinking / reasoning. Kiro does not accept `thinking.type` or
- *    `reasoning_effort` natively. The only way to enable reasoning is to
- *    inject `<thinking_mode>enabled</thinking_mode>` into the user content
- *    sent upstream. Detection covers Anthropic-Beta header, Claude API
- *    `thinking`, OpenAI `reasoning_effort`, AMP/Cursor magic tags, and model
- *    name hints.
+ * 2. Thinking / reasoning. Reasoning depth + the adaptive `thinking` field
+ *    are nested inside `additionalModelRequestFields` (the only CodeWhisperer
+ *    SDK input member that carries them — matches the real Kiro IDE wire
+ *    format). Detection covers Anthropic-Beta header, Claude API `thinking`,
+ *    OpenAI `reasoning_effort`, AMP/Cursor magic tags, and model name hints.
  */
 export function openaiToKiroRequest(model, body, stream, credentials) {
   const messages = body.messages || [];
   const tools = body.tools || [];
-  const temperature = body.temperature;
-  const topP = body.top_p;
 
   const { upstream: upstreamModel, agentic } = resolveKiroModel(model);
-  // Honor client max_tokens, clamped to the model's ceiling (Opus 4.8 = 128000).
-  // Was hardcoded to 32000, which silently capped Opus 4.8 at a quarter of its range.
-  const maxTokens = resolveKiroMaxTokens(body, upstreamModel);
   const thinkingBudget = resolveKiroThinkingBudget(body, credentials?.rawHeaders, model);
+  // Real Kiro sends no inferenceConfig — effort (nested in
+  // additionalModelRequestFields below) is the sole output knob, applied
+  // server-side by the gateway.
+  const effort = thinkingBudget !== null ? resolveKiroEffort(body, upstreamModel) : null;
 
   const { history, currentMessage } = convertMessages(messages, tools, upstreamModel);
 
@@ -553,14 +550,9 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
   const timestamp = new Date().toISOString();
 
   // Build the system-prompt prefix that goes ABOVE the user message body.
-  // Order: thinking_mode tag first (so Kiro sees it before any user text),
-  // then context/timestamp marker, then optional agentic chunked-write prompt.
+  // Real Kiro signals reasoning only via the `thinking` payload field below —
+  // never a content tag — so the prefix is just context + optional agentic prompt.
   const prefixParts = [];
-  // Reasoning on-signal: the <thinking_mode> content tag by default, or (when
-  // KIRO_THINKING_FIELD=1) the native thinking payload field added below instead.
-  if (thinkingBudget !== null && !useKiroThinkingField()) {
-    prefixParts.push(buildThinkingSystemPrefix());
-  }
   prefixParts.push(`[Context: Current time is ${timestamp}]`);
   if (agentic) {
     prefixParts.push(KIRO_AGENTIC_SYSTEM_PROMPT);
@@ -592,25 +584,18 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
     payload.profileArn = profileArn;
   }
 
-  if (maxTokens || temperature !== undefined || topP !== undefined) {
-    payload.inferenceConfig = {};
-    if (maxTokens) payload.inferenceConfig.maxTokens = maxTokens;
-    if (temperature !== undefined) payload.inferenceConfig.temperature = temperature;
-    if (topP !== undefined) payload.inferenceConfig.topP = topP;
+  // Reasoning + output budget: real Kiro nests { thinking, output_config,
+  // max_tokens } inside additionalModelRequestFields — the only CodeWhisperer
+  // SDK input member that carries them. Top-level placement is silently dropped
+  // by the gateway, so effort never took effect before this nesting.
+  const amrf = {};
+  if (thinkingBudget !== null && kiroThinkingFieldEnabled()) {
+    amrf.thinking = resolveKiroThinkingField(body, upstreamModel);
   }
-
-  // Reasoning depth (official Kiro effort, per https://kiro.dev/docs/cli/chat/effort/).
-  // Gated on thinkingBudget so effort ships only when reasoning is enabled.
-  if (thinkingBudget !== null) {
-    const effort = resolveKiroEffort(body, upstreamModel);
-    if (effort) payload.output_config = { effort };
-  }
-
-  // A/B (KIRO_THINKING_FIELD=1): native thinking payload field in place of the
-  // <thinking_mode> content tag, to test whether CodeWhisperer honors it.
-  if (thinkingBudget !== null && useKiroThinkingField()) {
-    payload.thinking = resolveKiroThinkingField(body, upstreamModel);
-  }
+  if (effort) amrf.output_config = { effort };
+  const maxTokens = resolveKiroMaxTokens(effort, upstreamModel);
+  if (maxTokens) amrf.max_tokens = maxTokens;
+  if (Object.keys(amrf).length) payload.additionalModelRequestFields = amrf;
 
   // Tag payload so the executor can route the upstream model id correctly.
   Object.defineProperty(payload, "_kiroUpstreamModel", {

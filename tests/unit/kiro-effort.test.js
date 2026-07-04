@@ -1,35 +1,35 @@
-// Unit tests for resolveKiroEffort — maps client thinking intent to the
-// output_config.effort level Kiro accepts natively (per official docs).
+// Unit tests for resolveKiroEffort + resolveKiroMaxTokens — effort is the
+// output_config.effort level; max_tokens is its effort-derived sibling inside
+// additionalModelRequestFields (per the live additionalModelRequestFieldsSchema).
 import { describe, it, expect } from "vitest";
 import { resolveKiroEffort, resolveKiroMaxTokens } from "../../open-sse/config/kiroConstants.js";
 
 describe("resolveKiroMaxTokens", () => {
-  it("honors client max_tokens within the model cap", () => {
-    expect(resolveKiroMaxTokens({ max_tokens: 64000 }, "claude-opus-4-8")).toBe(64000);
+  it("maps effort levels to clean buckets", () => {
+    expect(resolveKiroMaxTokens("low", "claude-opus-4-8")).toBe(16000);
+    expect(resolveKiroMaxTokens("medium", "claude-opus-4-8")).toBe(32000);
+    expect(resolveKiroMaxTokens("high", "claude-opus-4-8")).toBe(64000);
+    expect(resolveKiroMaxTokens("xhigh", "claude-opus-4-8")).toBe(96000);
+    expect(resolveKiroMaxTokens("max", "claude-opus-4-8")).toBe(128000);
   });
 
-  it("clamps to the model ceiling (Opus 4.8 = 128000)", () => {
-    expect(resolveKiroMaxTokens({ max_tokens: 200000 }, "claude-opus-4-8")).toBe(128000);
+  it("clamps to the per-model ceiling (opus-4-6 / sonnet-4-6 = 64000)", () => {
+    expect(resolveKiroMaxTokens("max", "claude-opus-4-6")).toBe(64000);
+    expect(resolveKiroMaxTokens("max", "claude-sonnet-4-6")).toBe(64000);
+    expect(resolveKiroMaxTokens("xhigh", "claude-opus-4-6")).toBe(64000);
   });
 
-  it("Opus 4.7 / 4.6 / Sonnet 4.6 cap at 64000", () => {
-    expect(resolveKiroMaxTokens({ max_tokens: 200000 }, "claude-opus-4-7")).toBe(64000);
-    expect(resolveKiroMaxTokens({ max_tokens: 200000 }, "claude-opus-4-6")).toBe(64000);
-    expect(resolveKiroMaxTokens({ max_tokens: 200000 }, "claude-sonnet-4-6")).toBe(64000);
+  it("opus-4-7 ceiling is 128000 on the live gateway (docs table is stale)", () => {
+    expect(resolveKiroMaxTokens("max", "claude-opus-4-7")).toBe(128000);
   });
 
-  it("defaults to the model cap when client sends no max_tokens", () => {
-    expect(resolveKiroMaxTokens({}, "claude-opus-4-8")).toBe(128000);
-    expect(resolveKiroMaxTokens({}, "claude-opus-4-7")).toBe(64000);
+  it("returns null when effort is unset (thinking off → omit max_tokens)", () => {
+    expect(resolveKiroMaxTokens(null, "claude-opus-4-8")).toBeNull();
   });
 
-  it("unknown models keep the conservative 32000 default", () => {
-    expect(resolveKiroMaxTokens({}, "some-other-model")).toBe(32000);
-    expect(resolveKiroMaxTokens({ max_tokens: 999999 }, "some-other-model")).toBe(32000);
-  });
-
-  it("floors at 1024", () => {
-    expect(resolveKiroMaxTokens({ max_tokens: 10 }, "claude-opus-4-8")).toBe(1024);
+  it("returns null for models without a max_tokens schema (omit the field)", () => {
+    expect(resolveKiroMaxTokens("high", "some-other-model")).toBeNull();
+    expect(resolveKiroMaxTokens("max", "deepseek-3.2")).toBeNull();
   });
 });
 
