@@ -42,9 +42,10 @@ const { isModelAllowed, enforceApiKeyModelPolicy } = await import(
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
-function makeRequest(authHeader = null) {
+function makeRequest(authHeader = null, cliToken = null) {
   const headers = new Headers();
   if (authHeader) headers.set("authorization", `Bearer ${authHeader}`);
+  if (cliToken) headers.set("x-9r-cli-token", cliToken);
   return { headers };
 }
 
@@ -226,5 +227,18 @@ describe("enforceApiKeyModelPolicy", () => {
     const result = await enforceApiKeyModelPolicy(makeRequest("sk-test"), "anthropic/claude");
     expect(mocks.errorResponse).toHaveBeenCalledWith(403, expect.any(String));
     expect(mocks.errorResponse).not.toHaveBeenCalledWith(429, expect.any(String));
+  });
+
+  it("skips policy enforcement for internal dashboard requests (x-9r-cli-token)", async () => {
+    mocks.extractApiKey.mockReturnValue("sk-test");
+    mocks.getApiKeyByKey.mockResolvedValue({
+      id: "1", name: "test", isActive: true,
+      policy: { allowedModels: ["openai/gpt-4o"], maxTokens: 1, maxCostUsd: 1 },
+    });
+    // Even with a restrictive policy + exceeded limits, internal requests bypass
+    mocks.getApiKeyUsageTotals.mockResolvedValue({ totalTokens: 9999, totalCost: 9999, totalRequests: 1 });
+    const result = await enforceApiKeyModelPolicy(makeRequest("sk-test", "cli-token-abc"), "anthropic/claude");
+    expect(result).toBe(null);
+    expect(mocks.getApiKeyByKey).not.toHaveBeenCalled();
   });
 });

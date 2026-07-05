@@ -34,6 +34,12 @@ export function isModelAllowed(policy, modelStr) {
  * @returns {Promise<Response | null>} null if allowed, error Response if rejected
  */
 export async function enforceApiKeyModelPolicy(request, modelStr) {
+  // Skip policy enforcement for internal dashboard requests (e.g. provider test,
+  // model ping) — these carry an x-9r-cli-token header and are not from external
+  // API consumers. Policy only applies to external client requests.
+  const cliToken = request?.headers?.get("x-9r-cli-token");
+  if (cliToken) return null;
+
   const apiKey = extractApiKey(request);
   if (!apiKey) return null;
 
