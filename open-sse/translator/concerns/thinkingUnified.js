@@ -40,8 +40,18 @@ export function parseSuffix(model) {
 export function extractThinking(body) {
   if (!body || typeof body !== "object") return null;
 
+  // Kiro nests { thinking, output_config } inside additionalModelRequestFields
+  // (the CodeWhisperer SDK envelope — see claude-to-kiro.js). Read those two
+  // fields from the envelope when present so a post-translation Kiro body
+  // extracts the same as a top-level shape. Pre-translation bodies (and every
+  // other target) lack the envelope, so `nested` stays `body` for them.
+  const amrf = body.additionalModelRequestFields;
+  const nested = amrf && typeof amrf === "object" && (amrf.output_config || amrf.thinking)
+    ? amrf
+    : body;
+
   // Claude output_config.effort (explicit) — priority over adaptive thinking
-  const oc = body.output_config?.effort;
+  const oc = nested.output_config?.effort;
   if (typeof oc === "string" && oc) {
     const e = oc.toLowerCase();
     if (e === "none" || e === "off") return { mode: "none" };
@@ -50,7 +60,7 @@ export function extractThinking(body) {
   }
 
   // Claude shape
-  const t = body.thinking;
+  const t = nested.thinking;
   if (t && typeof t === "object") {
     if (t.type === "disabled") return { mode: "none" };
     if (t.type === "adaptive" || t.type === "enabled") {
