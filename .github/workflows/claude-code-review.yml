@@ -2,10 +2,10 @@ name: Claude PR Review
 
 # Claude reviews every pull request. Requires (see setup notes):
 #   1. The Claude GitHub App installed on this repo
-#   2. A repo secret for auth — either CLAUDE_CODE_OAUTH_TOKEN (uses your
-#      Claude subscription; run `claude setup-token` locally to generate it)
-#      or ANTHROPIC_API_KEY (billed per use). This file uses the OAuth token;
-#      swap the `with:` line below if you prefer an API key.
+#   2. A repo secret for auth — this file uses ANTHROPIC_API_KEY (billed per
+#      use; create one at console.anthropic.com). Alternative:
+#      CLAUDE_CODE_OAUTH_TOKEN (uses your Claude subscription; run
+#      `claude setup-token` locally) — swap the `with:` line below to use it.
 
 on:
   pull_request:
@@ -25,8 +25,8 @@ jobs:
 
       - uses: anthropics/claude-code-action@v1
         with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Alternative: anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Alternative: claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           track_progress: true
           prompt: |
             Review this pull request for the 9Router codebase (Next.js LLM
