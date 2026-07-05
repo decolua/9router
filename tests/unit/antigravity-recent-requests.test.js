@@ -31,6 +31,55 @@ async function writeAndCollect(transform, chunks) {
 }
 
 describe("Antigravity Recent Requests usage", () => {
+  it("finalizes native Antigravity usage when the final chunk arrives before stream close", async () => {
+    let completed = null;
+    const stream = createPassthroughStreamWithLogger(
+      "antigravity",
+      null,
+      "claude-opus-4-6-thinking",
+      "conn-1",
+      { request: { contents: [{ role: "user", parts: [{ text: "hello" }] }] } },
+      (content, usage) => {
+        completed = { content, usage };
+      },
+      null,
+    );
+
+    const writer = stream.writable.getWriter();
+    const reader = stream.readable.getReader();
+    const readOne = reader.read();
+
+    const event = {
+      response: {
+        candidates: [{
+          content: {
+            role: "model",
+            parts: [{ text: "AG_NATIVE_USAGE_OK" }],
+          },
+          finishReason: "STOP",
+        }],
+        usageMetadata: {
+          promptTokenCount: 18,
+          candidatesTokenCount: 12,
+          totalTokenCount: 30,
+        },
+      },
+    };
+
+    await writer.write(new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`));
+    await readOne;
+
+    expect(completed?.content?.content).toBe("AG_NATIVE_USAGE_OK");
+    expect(completed?.usage).toMatchObject({
+      prompt_tokens: 18,
+      completion_tokens: 12,
+      total_tokens: 30,
+    });
+
+    await writer.abort();
+    await reader.cancel().catch(() => {});
+  });
+
   it("estimates usage for Antigravity passthrough content when upstream omits usageMetadata", async () => {
     let completed = null;
     const stream = createPassthroughStreamWithLogger(
