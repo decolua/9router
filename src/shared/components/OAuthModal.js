@@ -10,7 +10,7 @@ import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
  * - Localhost: Auto callback via popup message
  * - Remote: Manual paste callback URL
  */
-export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, onClose, oauthMeta, idcConfig }) {
+export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, onClose, oauthMeta, idcConfig, proxyPools = [] }) {
   const [step, setStep] = useState("waiting"); // waiting | input | success | error
   const [authData, setAuthData] = useState(null);
   const [callbackUrl, setCallbackUrl] = useState("");
@@ -18,6 +18,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const [isDeviceCode, setIsDeviceCode] = useState(false);
   const [deviceData, setDeviceData] = useState(null);
   const [polling, setPolling] = useState(false);
+  const [selectedProxyPoolId, setSelectedProxyPoolId] = useState("");
   const popupRef = useRef(null);
   const pollingAbortRef = useRef(false);
   const openedRef = useRef(false);
@@ -52,6 +53,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
           redirectUri: authData.redirectUri,
           codeVerifier: authData.codeVerifier,
           state,
+          proxyPoolId: selectedProxyPoolId,
           ...(oauthMeta ? { meta: oauthMeta } : {}),
         }),
       });
@@ -65,7 +67,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setError(err.message);
       setStep("error");
     }
-  }, [authData, provider, onSuccess, oauthMeta]);
+  }, [authData, provider, onSuccess, oauthMeta, selectedProxyPoolId]);
 
   const completeXaiManualCode = useCallback(async (code) => {
     if (!authData?.state) return;
@@ -73,7 +75,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       const res = await fetch("/api/oauth/xai/manual-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code, state: authData.state }),
+        body: JSON.stringify({ code, state: authData.state, proxyPoolId: selectedProxyPoolId }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -84,10 +86,10 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setError(err.message);
       setStep("error");
     }
-  }, [authData, onSuccess]);
+  }, [authData, onSuccess, selectedProxyPoolId]);
 
   // Poll for device code token
-  const startPolling = useCallback(async (deviceCode, codeVerifier, interval, extraData, deadlineMs) => {
+  const startPolling = useCallback(async (deviceCode, codeVerifier, interval, extraData, deadlineMs, proxyPoolId) => {
     pollingAbortRef.current = false;
     setPolling(true);
     // Honor the upstream's expires_in when supplied (qoder sets 300s) so we
@@ -117,7 +119,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         const res = await fetch(`/api/oauth/${provider}/poll`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ deviceCode, codeVerifier, extraData }),
+          body: JSON.stringify({ deviceCode, codeVerifier, extraData, proxyPoolId }),
         });
 
         const data = await res.json();
@@ -151,7 +153,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   }, [provider, onSuccess]);
 
   // Start OAuth flow
-  const startOAuthFlow = useCallback(async () => {
+  const startOAuthFlow = useCallback(async (proxyPoolId = selectedProxyPoolId) => {
     if (!provider) return;
     try {
       setError(null);
@@ -173,6 +175,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         setStep("waiting");
 
         const deviceCodeUrl = new URL(`/api/oauth/${provider}/device-code`, window.location.origin);
+        if (proxyPoolId) {
+          deviceCodeUrl.searchParams.set("proxyPoolId", proxyPoolId);
+        }
         if (provider === "kiro" && idcConfig?.startUrl) {
           deviceCodeUrl.searchParams.set("start_url", idcConfig.startUrl);
           if (idcConfig.region) {
@@ -220,6 +225,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
           Number.isFinite(data.expires_in) && data.expires_in > 0
             ? data.expires_in * 1000
             : undefined,
+          proxyPoolId,
         );
         return;
       }
@@ -238,12 +244,16 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       // Build authorize URL first to get codeVerifier/state for codex server-side mode
       const authorizeUrl = new URL(`/api/oauth/${provider}/authorize`, window.location.origin);
       authorizeUrl.searchParams.set("redirect_uri", redirectUri);
+      if (proxyPoolId) {
+        authorizeUrl.searchParams.set("proxyPoolId", proxyPoolId);
+      }
       if (oauthMeta) {
         Object.entries(oauthMeta).forEach(([k, v]) => { if (v) authorizeUrl.searchParams.set(k, v); });
       }
       const res = await fetch(authorizeUrl.toString());
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
+      setAuthData({ ...data, redirectUri, codexServerSide: false, xaiServerSide: false });
 
       // Codex: start proxy with server-side session (auto-exchange) + fallback to channels
       let codexProxyActive = false;
@@ -255,6 +265,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
           proxyUrl.searchParams.set("state", data.state);
           proxyUrl.searchParams.set("code_verifier", data.codeVerifier);
           proxyUrl.searchParams.set("redirect_uri", redirectUri);
+          if (proxyPoolId) {
+            proxyUrl.searchParams.set("proxyPoolId", proxyPoolId);
+          }
           const proxyRes = await fetch(proxyUrl.toString());
           const proxyData = await proxyRes.json();
           codexProxyActive = proxyData.success;
@@ -274,6 +287,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
           proxyUrl.searchParams.set("state", data.state);
           proxyUrl.searchParams.set("code_verifier", data.codeVerifier);
           proxyUrl.searchParams.set("redirect_uri", redirectUri);
+          if (proxyPoolId) {
+            proxyUrl.searchParams.set("proxyPoolId", proxyPoolId);
+          }
           const proxyRes = await fetch(proxyUrl.toString());
           const proxyData = await proxyRes.json();
           xaiProxyActive = proxyData.success;
@@ -329,7 +345,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setError(err.message);
       setStep("error");
     }
-  }, [provider, isLocalhost, startPolling, oauthMeta, idcConfig]);
+  }, [provider, isLocalhost, startPolling, oauthMeta, idcConfig, selectedProxyPoolId]);
 
   // Reset state and start OAuth when modal opens
   useEffect(() => {
@@ -343,8 +359,10 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setIsDeviceCode(false);
       setDeviceData(null);
       setPolling(false);
+      const initialProxyPoolId = proxyPools.find((pool) => pool.isActive === true)?.id || "";
+      setSelectedProxyPoolId(initialProxyPoolId);
       pollingAbortRef.current = false;
-      startOAuthFlow();
+      startOAuthFlow(initialProxyPoolId);
     } else if (!isOpen) {
       // Abort polling and cleanup proxy when modal closes
       pollingAbortRef.current = true;
@@ -355,7 +373,28 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         fetch("/api/oauth/xai/stop-proxy").catch(() => {});
       }
     }
-  }, [isOpen, provider, startOAuthFlow]);
+  }, [isOpen, provider, startOAuthFlow, proxyPools]);
+
+  const handleProxyPoolChange = async (event) => {
+    const proxyPoolId = event.target.value;
+    setSelectedProxyPoolId(proxyPoolId);
+    pollingAbortRef.current = true;
+    setPolling(false);
+
+    if (provider === "codex") {
+      fetch("/api/oauth/codex/stop-proxy").catch(() => {});
+    } else if (provider === "xai") {
+      fetch("/api/oauth/xai/stop-proxy").catch(() => {});
+    }
+
+    setAuthData(null);
+    setCallbackUrl("");
+    setError(null);
+    setIsDeviceCode(false);
+    setDeviceData(null);
+    pollingAbortRef.current = false;
+    await startOAuthFlow(proxyPoolId);
+  };
 
   // Fixed-port server-side mode: poll status (proxy auto-exchanges + saves DB)
   useEffect(() => {
@@ -556,58 +595,77 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   return (
     <Modal isOpen={isOpen} title={modalTitle} onClose={handleClose} size="lg">
       <div className="flex flex-col gap-4">
+        {proxyPools.length > 0 && (step === "waiting" || step === "input") && (
+          <div className="flex flex-col gap-1.5 p-3 border border-border rounded-lg bg-sidebar/30">
+            <label className="text-xs font-medium text-text-muted uppercase tracking-wider">
+              Routing Proxy Pool
+            </label>
+            <select
+              value={selectedProxyPoolId}
+              onChange={handleProxyPoolChange}
+              className="w-full bg-input text-sm border border-border rounded-lg px-3 py-2 outline-none focus:border-primary"
+            >
+              <option value="">Direct Connection</option>
+              {proxyPools.map((pool) => (
+                <option key={pool.id} value={pool.id}>
+                  {pool.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {/* Waiting + Manual Input combined (non-device-code) */}
         {(step === "waiting" || step === "input") && !isDeviceCode && (
           <>
             {/* Option A: Auto via popup */}
-            <div className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg bg-sidebar/50">
-              <span className="material-symbols-outlined text-base text-primary animate-spin">
-                progress_activity
-              </span>
-              <span className="text-sm">
-                {isXaiProvider ? "Waiting for Grok Build OAuth…" : "Waiting for popup authorization…"}
-              </span>
+            <div className="flex flex-col gap-2 px-3 py-2 border border-border rounded-lg bg-sidebar/50">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-base text-primary animate-spin">
+                  progress_activity
+                </span>
+                <span className="text-sm">
+                  {isXaiProvider ? "Waiting for Grok Build OAuth…" : "Waiting for popup authorization…"}
+                </span>
+              </div>
+              {authData?.authUrl && (
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Input value={authData.authUrl} readOnly className="min-w-0 flex-1 font-mono text-xs" />
+                  <Button variant="secondary" icon={copied === "auth_url" ? "check" : "content_copy"} onClick={() => copy(authData.authUrl, "auth_url")}>
+                    Copy
+                  </Button>
+                  <Button variant="ghost" icon="open_in_new" onClick={() => window.open(authData.authUrl, "_blank", "noopener,noreferrer")}>
+                    Open
+                  </Button>
+                </div>
+              )}
             </div>
 
             {/* Divider */}
             <div className="flex items-center gap-3 my-1">
               <div className="flex-1 h-px bg-border" />
-              <span className="text-xs text-text-muted uppercase tracking-wider">Or paste callback URL manually</span>
+              <span className="text-xs text-text-muted uppercase tracking-wider">Paste callback URL manually</span>
               <div className="flex-1 h-px bg-border" />
             </div>
 
             {/* Option B: Manual paste */}
-            <div className="space-y-4">
-              <div>
-                <p className="text-sm font-medium mb-2">
-                  Step 1: Open this {isXaiProvider ? "Grok Build OAuth URL" : "URL"} in your browser
-                </p>
-                <div className="flex gap-2">
-                  <Input value={authData?.authUrl || ""} readOnly className="flex-1 font-mono text-xs" />
-                  <Button variant="secondary" icon={copied === "auth_url" ? "check" : "content_copy"} onClick={() => copy(authData?.authUrl, "auth_url")} disabled={!authData?.authUrl}>
-                    Copy
-                  </Button>
-                </div>
-              </div>
-
-              <div>
-                <p className="text-sm font-medium mb-2">
-                  Step 2: Paste the {provider === "xai" ? "callback URL or copied code" : isKimchiProvider ? "callback URL or copied token" : "callback URL"} here
-                </p>
-                <p className="text-xs text-text-muted mb-2">
-                  {provider === "xai"
-                    ? "If xAI shows a code instead of redirecting, paste that code here."
-                    : isKimchiProvider
-                      ? "After authorization, copy the full callback URL or token from your browser."
-                    : "After authorization, copy the full URL from your browser."}
-                </p>
-                <Input
-                  value={callbackUrl}
-                  onChange={(e) => setCallbackUrl(e.target.value)}
-                  placeholder={manualPlaceholder}
-                  className="font-mono text-xs"
-                />
-              </div>
+            <div>
+              <p className="text-sm font-medium mb-2">
+                Paste the {provider === "xai" ? "callback URL or copied code" : isKimchiProvider ? "callback URL or copied token" : "callback URL"} here
+              </p>
+              <p className="text-xs text-text-muted mb-2">
+                {provider === "xai"
+                  ? "If xAI shows a code instead of redirecting, paste that code here."
+                  : isKimchiProvider
+                    ? "After authorization, copy the full callback URL or token from your browser."
+                  : "After authorization, copy the full URL from your browser."}
+              </p>
+              <Input
+                value={callbackUrl}
+                onChange={(e) => setCallbackUrl(e.target.value)}
+                placeholder={manualPlaceholder}
+                className="font-mono text-xs"
+              />
             </div>
 
             <div className="flex gap-2">
@@ -724,4 +782,9 @@ OAuthModal.propTypes = {
     startUrl: PropTypes.string,
     region: PropTypes.string,
   }),
+  proxyPools: PropTypes.arrayOf(PropTypes.shape({
+    id: PropTypes.string,
+    name: PropTypes.string,
+    isActive: PropTypes.bool,
+  })),
 };

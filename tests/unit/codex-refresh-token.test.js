@@ -47,7 +47,7 @@ describe("Codex Refresh Token", () => {
       expect(result.accessToken).toBe("new-access");
       expect(result.idToken).toBe("new-id-token");
       expect(fetchMock).toHaveBeenCalledWith(
-        "https://auth.openai.com/oauth/token",
+        "https://auth.openai.com/api/accounts/oauth/token",
         expect.objectContaining({
           method: "POST",
           headers: expect.objectContaining({
