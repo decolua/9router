@@ -149,6 +149,15 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_rd_conn ON requestDetails(connectionId)",
     ],
   },
+  apiKeyUsageTotals: {
+    columns: {
+      apiKeyId: "TEXT PRIMARY KEY",
+      totalTokens: "INTEGER DEFAULT 0",
+      totalCost: "REAL DEFAULT 0",
+      totalRequests: "INTEGER DEFAULT 0",
+      updatedAt: "TEXT NOT NULL",
+    },
+  },
 };
 
 export function buildCreateTableSql(name, def) {

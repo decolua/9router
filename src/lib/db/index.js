@@ -67,6 +67,11 @@ export {
   saveRequestDetail, getRequestDetails, getRequestDetailById,
 } from "./repos/requestDetailsRepo.js";
 
+// API key usage totals
+export {
+  getApiKeyUsageTotals, getAllApiKeyUsageTotals,
+} from "./repos/apiKeyUsageTotalsRepo.js";
+
 // Export/import full DB
 export async function exportDb() {
   const db = await getAdapter();

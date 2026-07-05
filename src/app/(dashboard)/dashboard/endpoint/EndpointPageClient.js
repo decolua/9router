@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
-import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal } from "@/shared/components";
+import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal, ModelSelectModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import {
   TUNNEL_BENEFITS,
@@ -26,6 +26,9 @@ export default function APIPageClient({ machineId }) {
   const [confirmState, setConfirmState] = useState(null);
   const [editingKeyModels, setEditingKeyModels] = useState(null);
   const [modelsInput, setModelsInput] = useState("");
+  const [showModelModal, setShowModelModal] = useState(false);
+  const [connections, setConnections] = useState([]);
+  const [modelAliases, setModelAliases] = useState({});
 
   const [requireApiKey, setRequireApiKey] = useState(false);
   const [requireLogin, setRequireLogin] = useState(true);
@@ -257,10 +260,22 @@ export default function APIPageClient({ machineId }) {
 
   const fetchData = async () => {
     try {
-      const keysRes = await fetch("/api/keys");
-      const keysData = await keysRes.json();
+      const [keysRes, provRes, aliasRes] = await Promise.all([
+        fetch("/api/keys"),
+        fetch("/api/providers"),
+        fetch("/api/models/alias"),
+      ]);
       if (keysRes.ok) {
+        const keysData = await keysRes.json();
         setKeys(keysData.keys || []);
+      }
+      if (provRes.ok) {
+        const provData = await provRes.json();
+        setConnections(provData.connections || []);
+      }
+      if (aliasRes.ok) {
+        const aliasData = await aliasRes.json();
+        setModelAliases(aliasData.aliases || {});
       }
     } catch (error) {
       console.log("Error fetching data:", error);
@@ -670,31 +685,40 @@ export default function APIPageClient({ machineId }) {
   };
 
   const handleEditModels = (key) => {
-    const allowed = key.policy?.allowedModels || [];
     setEditingKeyModels(key);
-    setModelsInput(allowed.join("\n"));
   };
 
-  const handleSaveModels = async () => {
+  const handleModelSelect = (model) => {
+    const current = editingKeyModels?.policy?.allowedModels || [];
+    if (current.includes(model.value)) {
+      // Deselect — remove from list
+      const updated = current.filter((m) => m !== model.value);
+      setEditingKeyModels({ ...editingKeyModels, policy: { ...editingKeyModels.policy, allowedModels: updated } });
+    } else {
+      setEditingKeyModels({ ...editingKeyModels, policy: { ...editingKeyModels.policy, allowedModels: [...current, model.value] } });
+    }
+  };
+
+  const handleSavePolicy = async () => {
     if (!editingKeyModels) return;
-    const models = modelsInput
-      .split("\n")
-      .map((m) => m.trim())
-      .filter(Boolean);
+    const { policy } = editingKeyModels;
     try {
       const res = await fetch(`/api/keys/${editingKeyModels.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ allowedModels: models }),
+        body: JSON.stringify({
+          allowedModels: policy?.allowedModels || [],
+          maxTokens: policy?.maxTokens ?? null,
+          maxCostUsd: policy?.maxCostUsd ?? null,
+        }),
       });
       if (res.ok) {
         const data = await res.json();
-        setKeys(prev => prev.map(k => k.id === editingKeyModels.id ? { ...k, policy: data.key?.policy || { allowedModels: models } } : k));
+        setKeys(prev => prev.map(k => k.id === editingKeyModels.id ? { ...k, ...data.key } : k));
         setEditingKeyModels(null);
-        setModelsInput("");
       }
     } catch (error) {
-      console.log("Error saving models:", error);
+      console.log("Error saving policy:", error);
     }
   };
 
@@ -1068,6 +1092,20 @@ export default function APIPageClient({ machineId }) {
                       tune
                     </span>
                   </div>
+                  {(key.policy?.maxTokens != null || key.policy?.maxCostUsd != null) && (
+                    <div className="flex flex-wrap items-center gap-2 mt-1">
+                      {key.policy?.maxTokens != null && (
+                        <span className={`text-xs ${key.usage?.totalTokens >= key.policy.maxTokens ? "text-red-500" : "text-text-muted"}`}>
+                          {key.usage?.totalTokens?.toLocaleString() || 0} / {key.policy.maxTokens.toLocaleString()} tokens
+                        </span>
+                      )}
+                      {key.policy?.maxCostUsd != null && (
+                        <span className={`text-xs ${key.usage?.totalCost >= key.policy.maxCostUsd ? "text-red-500" : "text-text-muted"}`}>
+                          ${key.usage?.totalCost?.toFixed(4) || "0.0000"} / ${key.policy.maxCostUsd} cost
+                        </span>
+                      )}
+                    </div>
+                  )}
                   {key.isActive === false && (
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
                   )}
@@ -1139,38 +1177,118 @@ export default function APIPageClient({ machineId }) {
         </div>
       </Modal>
 
-      {/* Edit Allowed Models Modal */}
+      {/* Edit Policy Modal */}
       <Modal
         isOpen={!!editingKeyModels}
-        title={`Allowed Models — ${editingKeyModels?.name || ""}`}
-        onClose={() => {
-          setEditingKeyModels(null);
-          setModelsInput("");
-        }}
+        title={`API Key Policy — ${editingKeyModels?.name || ""}`}
+        onClose={() => setEditingKeyModels(null)}
       >
         <div className="flex flex-col gap-4">
+          {/* Allowed Models */}
           <div>
-            <p className="text-sm text-text-muted mb-2">
-              Enter one model per line. Leave empty to allow all models.
-              Use the exact model string clients send (e.g. <code className="text-xs">openai/gpt-4o-mini</code>, combo names, or aliases).
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-medium">Allowed Models</p>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon="add"
+                onClick={() => setShowModelModal(true)}
+                disabled={connections.filter((c) => c.isActive !== false).length === 0}
+              >
+                Select Models
+              </Button>
+            </div>
+            <p className="text-xs text-text-muted mb-2">
+              Leave empty to allow all models. Click a model chip to add/remove.
             </p>
-            <textarea
-              className="w-full min-h-[160px] px-3 py-2 rounded-lg bg-bg-secondary border border-border text-sm font-mono resize-y focus:outline-none focus:ring-2 focus:ring-primary"
-              value={modelsInput}
-              onChange={(e) => setModelsInput(e.target.value)}
-              placeholder={"openai/gpt-4o-mini\nkr/claude-sonnet-4.5\ncheap-coding"}
-              autoFocus
-            />
+            {(editingKeyModels?.policy?.allowedModels || []).length > 0 ? (
+              <div className="flex flex-wrap gap-1.5 p-2 rounded-lg bg-bg-secondary border border-border min-h-[40px]">
+                {(editingKeyModels?.policy?.allowedModels || []).map((model) => (
+                  <span
+                    key={model}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs bg-primary/10 text-primary border border-primary/20"
+                  >
+                    {model}
+                    <button
+                      onClick={() => {
+                        const updated = (editingKeyModels.policy?.allowedModels || []).filter((m) => m !== model);
+                        setEditingKeyModels({ ...editingKeyModels, policy: { ...editingKeyModels.policy, allowedModels: updated } });
+                      }}
+                      className="hover:text-red-500 transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-[12px]">close</span>
+                    </button>
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <div className="p-2 rounded-lg bg-bg-secondary border border-border text-xs text-text-muted">
+                All models allowed
+              </div>
+            )}
           </div>
+
+          {/* Token & Cost Limits */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-sm font-medium mb-1 block">Max Tokens (lifetime)</label>
+              <input
+                type="number"
+                className="w-full px-3 py-1.5 rounded-lg bg-bg-secondary border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                value={editingKeyModels?.policy?.maxTokens ?? ""}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setEditingKeyModels({
+                    ...editingKeyModels,
+                    policy: {
+                      ...editingKeyModels.policy,
+                      maxTokens: val === "" ? null : Number(val),
+                    },
+                  });
+                }}
+                placeholder="Unlimited"
+                min="0"
+              />
+              {editingKeyModels?.usage && editingKeyModels?.policy?.maxTokens != null && (
+                <p className="text-xs text-text-muted mt-1">
+                  Used: {editingKeyModels.usage.totalTokens?.toLocaleString() || 0}
+                </p>
+              )}
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1 block">Max Cost USD (lifetime)</label>
+              <input
+                type="number"
+                step="0.01"
+                className="w-full px-3 py-1.5 rounded-lg bg-bg-secondary border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                value={editingKeyModels?.policy?.maxCostUsd ?? ""}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setEditingKeyModels({
+                    ...editingKeyModels,
+                    policy: {
+                      ...editingKeyModels.policy,
+                      maxCostUsd: val === "" ? null : Number(val),
+                    },
+                  });
+                }}
+                placeholder="Unlimited"
+                min="0"
+              />
+              {editingKeyModels?.usage && editingKeyModels?.policy?.maxCostUsd != null && (
+                <p className="text-xs text-text-muted mt-1">
+                  Used: ${editingKeyModels.usage.totalCost?.toFixed(4) || "0.0000"}
+                </p>
+              )}
+            </div>
+          </div>
+
           <div className="flex gap-2">
-            <Button onClick={handleSaveModels} fullWidth>
+            <Button onClick={handleSavePolicy} fullWidth>
               Save
             </Button>
             <Button
-              onClick={() => {
-                setEditingKeyModels(null);
-                setModelsInput("");
-              }}
+              onClick={() => setEditingKeyModels(null)}
               variant="ghost"
               fullWidth
             >
@@ -1179,6 +1297,20 @@ export default function APIPageClient({ machineId }) {
           </div>
         </div>
       </Modal>
+
+      {/* Model Select Modal (multi-select for API key allowlist) */}
+      <ModelSelectModal
+        isOpen={showModelModal}
+        onClose={() => setShowModelModal(false)}
+        onSelect={handleModelSelect}
+        onDeselect={handleModelSelect}
+        selectedModel={null}
+        activeProviders={connections.filter((c) => c.isActive !== false)}
+        modelAliases={modelAliases}
+        addedModelValues={editingKeyModels?.policy?.allowedModels || []}
+        closeOnSelect={false}
+        title="Select Allowed Models"
+      />
 
       {/* Created Key Modal */}
       <Modal

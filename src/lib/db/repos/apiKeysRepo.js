@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 
-const DEFAULT_POLICY = { allowedModels: [] };
+const DEFAULT_POLICY = { allowedModels: [], maxTokens: null, maxCostUsd: null };
 
 function rowToKey(row) {
   if (!row) return null;

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { deleteApiKey, getApiKeyById, updateApiKey } from "@/lib/localDb";
+import { deleteApiKey, getApiKeyById, updateApiKey, getApiKeyUsageTotals } from "@/lib/localDb";
 
 // GET /api/keys/[id] - Get single key
 export async function GET(request, { params }) {
@@ -9,7 +9,8 @@ export async function GET(request, { params }) {
     if (!key) {
       return NextResponse.json({ error: "Key not found" }, { status: 404 });
     }
-    return NextResponse.json({ key });
+    const usage = await getApiKeyUsageTotals(id);
+    return NextResponse.json({ key: { ...key, usage } });
   } catch (error) {
     console.log("Error fetching key:", error);
     return NextResponse.json({ error: "Failed to fetch key" }, { status: 500 });
@@ -21,7 +22,7 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { isActive, allowedModels } = body;
+    const { isActive, allowedModels, maxTokens, maxCostUsd } = body;
 
     const existing = await getApiKeyById(id);
     if (!existing) {
@@ -30,8 +31,14 @@ export async function PUT(request, { params }) {
 
     const updateData = {};
     if (isActive !== undefined) updateData.isActive = isActive;
-    if (Array.isArray(allowedModels)) {
-      updateData.policy = { ...existing.policy, allowedModels };
+
+    // Merge policy fields — only update fields that are explicitly provided
+    const policyUpdate = {};
+    if (Array.isArray(allowedModels)) policyUpdate.allowedModels = allowedModels;
+    if (maxTokens !== undefined) policyUpdate.maxTokens = maxTokens != null ? Number(maxTokens) : null;
+    if (maxCostUsd !== undefined) policyUpdate.maxCostUsd = maxCostUsd != null ? Number(maxCostUsd) : null;
+    if (Object.keys(policyUpdate).length > 0) {
+      updateData.policy = { ...existing.policy, ...policyUpdate };
     }
 
     const updated = await updateApiKey(id, updateData);
