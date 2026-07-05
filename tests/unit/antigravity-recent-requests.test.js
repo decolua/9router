@@ -80,6 +80,58 @@ describe("Antigravity Recent Requests usage", () => {
     await reader.cancel().catch(() => {});
   });
 
+  it("finalizes translated Responses API Antigravity usage when the final chunk arrives before stream close", async () => {
+    let completed = null;
+    const stream = createSSETransformStreamWithLogger(
+      FORMATS.ANTIGRAVITY,
+      FORMATS.OPENAI_RESPONSES,
+      "antigravity",
+      null,
+      null,
+      "gemini-pro-agent",
+      "conn-1",
+      { input: "hello", stream: true },
+      (content, usage) => {
+        completed = { content, usage };
+      },
+      null,
+    );
+
+    const writer = stream.writable.getWriter();
+    const reader = stream.readable.getReader();
+    const readOne = reader.read();
+
+    const event = {
+      response: {
+        candidates: [{
+          content: {
+            role: "model",
+            parts: [{ text: "AG_RESPONSES_USAGE_OK" }],
+          },
+          finishReason: "STOP",
+        }],
+        usageMetadata: {
+          promptTokenCount: 21,
+          candidatesTokenCount: 13,
+          totalTokenCount: 34,
+        },
+      },
+    };
+
+    await writer.write(new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`));
+    await readOne;
+
+    expect(completed?.content?.content).toBe("AG_RESPONSES_USAGE_OK");
+    expect(completed?.usage).toMatchObject({
+      prompt_tokens: 21,
+      completion_tokens: 13,
+      total_tokens: 34,
+    });
+
+    await writer.abort();
+    await reader.cancel().catch(() => {});
+  });
+
   it("estimates usage for Antigravity passthrough content when upstream omits usageMetadata", async () => {
     let completed = null;
     const stream = createPassthroughStreamWithLogger(
