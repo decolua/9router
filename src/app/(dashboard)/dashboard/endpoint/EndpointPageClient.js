@@ -24,6 +24,8 @@ export default function APIPageClient({ machineId }) {
   const [newKeyName, setNewKeyName] = useState("");
   const [createdKey, setCreatedKey] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
+  const [editingKeyModels, setEditingKeyModels] = useState(null);
+  const [modelsInput, setModelsInput] = useState("");
 
   const [requireApiKey, setRequireApiKey] = useState(false);
   const [requireLogin, setRequireLogin] = useState(true);
@@ -667,6 +669,35 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
+  const handleEditModels = (key) => {
+    const allowed = key.policy?.allowedModels || [];
+    setEditingKeyModels(key);
+    setModelsInput(allowed.join("\n"));
+  };
+
+  const handleSaveModels = async () => {
+    if (!editingKeyModels) return;
+    const models = modelsInput
+      .split("\n")
+      .map((m) => m.trim())
+      .filter(Boolean);
+    try {
+      const res = await fetch(`/api/keys/${editingKeyModels.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ allowedModels: models }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setKeys(prev => prev.map(k => k.id === editingKeyModels.id ? { ...k, policy: data.key?.policy || { allowedModels: models } } : k));
+        setEditingKeyModels(null);
+        setModelsInput("");
+      }
+    } catch (error) {
+      console.log("Error saving models:", error);
+    }
+  };
+
   const maskKey = (fullKey) => {
     if (!fullKey || fullKey.length <= 10) return fullKey || "";
     return fullKey.slice(0, 6) + "•".repeat(fullKey.length - 10) + fullKey.slice(-4);
@@ -1024,6 +1055,19 @@ export default function APIPageClient({ machineId }) {
                   <p className="text-xs text-text-muted mt-1">
                     Created {new Date(key.createdAt).toLocaleDateString()}
                   </p>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <button
+                      onClick={() => handleEditModels(key)}
+                      className="text-xs text-text-muted hover:text-primary transition-colors"
+                    >
+                      {key.policy?.allowedModels?.length > 0
+                        ? `${key.policy.allowedModels.length} model${key.policy.allowedModels.length > 1 ? "s" : ""} allowed`
+                        : "All models"}
+                    </button>
+                    <span className="material-symbols-outlined text-[12px] text-text-muted">
+                      tune
+                    </span>
+                  </div>
                   {key.isActive === false && (
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
                   )}
@@ -1085,6 +1129,47 @@ export default function APIPageClient({ machineId }) {
               onClick={() => {
                 setShowAddModal(false);
                 setNewKeyName("");
+              }}
+              variant="ghost"
+              fullWidth
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit Allowed Models Modal */}
+      <Modal
+        isOpen={!!editingKeyModels}
+        title={`Allowed Models — ${editingKeyModels?.name || ""}`}
+        onClose={() => {
+          setEditingKeyModels(null);
+          setModelsInput("");
+        }}
+      >
+        <div className="flex flex-col gap-4">
+          <div>
+            <p className="text-sm text-text-muted mb-2">
+              Enter one model per line. Leave empty to allow all models.
+              Use the exact model string clients send (e.g. <code className="text-xs">openai/gpt-4o-mini</code>, combo names, or aliases).
+            </p>
+            <textarea
+              className="w-full min-h-[160px] px-3 py-2 rounded-lg bg-bg-secondary border border-border text-sm font-mono resize-y focus:outline-none focus:ring-2 focus:ring-primary"
+              value={modelsInput}
+              onChange={(e) => setModelsInput(e.target.value)}
+              placeholder={"openai/gpt-4o-mini\nkr/claude-sonnet-4.5\ncheap-coding"}
+              autoFocus
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={handleSaveModels} fullWidth>
+              Save
+            </Button>
+            <Button
+              onClick={() => {
+                setEditingKeyModels(null);
+                setModelsInput("");
               }}
               variant="ghost"
               fullWidth

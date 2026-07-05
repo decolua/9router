@@ -21,7 +21,7 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { isActive } = body;
+    const { isActive, allowedModels } = body;
 
     const existing = await getApiKeyById(id);
     if (!existing) {
@@ -30,6 +30,9 @@ export async function PUT(request, { params }) {
 
     const updateData = {};
     if (isActive !== undefined) updateData.isActive = isActive;
+    if (Array.isArray(allowedModels)) {
+      updateData.policy = { ...existing.policy, allowedModels };
+    }
 
     const updated = await updateApiKey(id, updateData);
 

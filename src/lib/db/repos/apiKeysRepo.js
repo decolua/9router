@@ -1,5 +1,8 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
+import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+
+const DEFAULT_POLICY = { allowedModels: [] };
 
 function rowToKey(row) {
   if (!row) return null;
@@ -9,6 +12,7 @@ function rowToKey(row) {
     name: row.name,
     machineId: row.machineId,
     isActive: row.isActive === 1 || row.isActive === true,
+    policy: parseJson(row.policy, DEFAULT_POLICY),
     createdAt: row.createdAt,
   };
 }
@@ -25,7 +29,7 @@ export async function getApiKeyById(id) {
   return rowToKey(row);
 }
 
-export async function createApiKey(name, machineId) {
+export async function createApiKey(name, machineId, policy = null) {
   if (!machineId) throw new Error("machineId is required");
   const db = await getAdapter();
   const { generateApiKeyWithMachine } = await import("@/shared/utils/apiKey");
@@ -36,11 +40,12 @@ export async function createApiKey(name, machineId) {
     key: result.key,
     machineId,
     isActive: true,
+    policy: policy || { allowedModels: [] },
     createdAt: new Date().toISOString(),
   };
   db.run(
-    `INSERT INTO apiKeys(id, key, name, machineId, isActive, createdAt) VALUES(?, ?, ?, ?, ?, ?)`,
-    [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, 1, apiKey.createdAt]
+    `INSERT INTO apiKeys(id, key, name, machineId, isActive, policy, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?)`,
+    [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, 1, stringifyJson(apiKey.policy), apiKey.createdAt]
   );
   return apiKey;
 }
@@ -53,8 +58,8 @@ export async function updateApiKey(id, data) {
     if (!row) return;
     const merged = { ...rowToKey(row), ...data };
     db.run(
-      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ? WHERE id = ?`,
-      [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, id]
+      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ?, policy = ? WHERE id = ?`,
+      [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, stringifyJson(merged.policy || DEFAULT_POLICY), id]
     );
     result = merged;
   });
@@ -72,4 +77,10 @@ export async function validateApiKey(key) {
   const row = db.get(`SELECT isActive FROM apiKeys WHERE key = ?`, [key]);
   if (!row) return false;
   return row.isActive === 1 || row.isActive === true;
+}
+
+export async function getApiKeyByKey(key) {
+  const db = await getAdapter();
+  const row = db.get(`SELECT * FROM apiKeys WHERE key = ?`, [key]);
+  return rowToKey(row);
 }
