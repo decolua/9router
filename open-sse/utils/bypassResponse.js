@@ -147,19 +147,35 @@ function mergeChunksToResponse(chunks, sourceFormat) {
   // Find the most complete chunk (usually the last one with content)
   let finalChunk = chunks[chunks.length - 1];
 
-  // For Claude format, find the message_stop or final message
+  // For Claude format, rebuild the final `message` object from the translated
+  // SSE events so non-streaming synthetic responses keep their content blocks.
   if (sourceFormat === FORMATS.CLAUDE) {
     const messageStop = chunks.find(c => c.type === "message_stop");
     if (messageStop) {
-      // Reconstruct complete message from chunks
-      const contentDelta = chunks.find(c => c.type === "content_block_delta");
       const messageDelta = chunks.find(c => c.type === "message_delta");
       const messageStart = chunks.find(c => c.type === "message_start");
-
       if (messageStart?.message) {
-        finalChunk = messageStart.message;
-        // message_start.usage has input + cache; message_delta.usage has the
-        // final output_tokens. Merge so cache survives (delta omits it).
+        finalChunk = {
+          ...messageStart.message,
+          content: [],
+        };
+        const blockMap = new Map();
+        for (const chunk of chunks) {
+          if (chunk?.type === "content_block_start" && typeof chunk.index === "number") {
+            blockMap.set(chunk.index, { ...(chunk.content_block || {}) });
+          }
+          if (chunk?.type === "content_block_delta" && typeof chunk.index === "number") {
+            const current = blockMap.get(chunk.index) || { type: "text", text: "" };
+            if (chunk.delta?.type === "text_delta") {
+              current.type = current.type || "text";
+              current.text = `${current.text || ""}${chunk.delta.text || ""}`;
+            }
+            blockMap.set(chunk.index, current);
+          }
+        }
+        finalChunk.content = [...blockMap.entries()]
+          .sort((a, b) => a[0] - b[0])
+          .map(([, block]) => block);
         const startUsage = messageStart.message.usage;
         const deltaUsage = messageDelta?.usage;
         if (startUsage || deltaUsage) {
@@ -177,6 +193,8 @@ function mergeChunksToResponse(chunks, sourceFormat) {
               : {})
           };
         }
+        if (messageDelta?.delta?.stop_reason !== undefined) finalChunk.stop_reason = messageDelta.delta.stop_reason;
+        if (messageDelta?.delta?.stop_sequence !== undefined) finalChunk.stop_sequence = messageDelta.delta.stop_sequence;
       }
     }
   }

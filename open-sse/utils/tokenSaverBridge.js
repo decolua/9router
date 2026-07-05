@@ -72,7 +72,7 @@ function formatGainStats(stats) {
  * `fetchStats` is lazy: only invoked when the matched command is
  * `/ponytail-gain`. This keeps the hot path cheap for normal requests.
  */
-export async function handlePonytailCommands(body, model, { fetchStats, helpText } = {}) {
+export async function handlePonytailCommands(body, model, { fetchStats, helpText, sourceFormatOverride, streamOverride } = {}) {
   if (!body.messages?.length) return null;
 
   const getText = (content) => {
@@ -109,8 +109,8 @@ export async function handlePonytailCommands(body, model, { fetchStats, helpText
     text = helpText || DEFAULT_PONYTAIL_HELP;
   }
 
-  const sourceFormat = detectFormat(body);
-  const stream = body.stream !== false;
+  const sourceFormat = sourceFormatOverride || detectFormat(body);
+  const stream = streamOverride ?? (body.stream !== false);
 
   return stream
     ? createStreamingResponse(sourceFormat, model, text)

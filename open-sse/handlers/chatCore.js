@@ -42,10 +42,16 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const sourceFormat = sourceFormatOverride || detectFormat(body);
 
   // Ponytail slash commands — must run before bypass heuristics.
-  // Lazy stats fetch: only invoked when the user actually types `/ponytail-gain`.
+  // Honor sourceFormatOverride and header-driven non-streaming requests.
+  const acceptHeader = clientRawRequest?.headers?.accept || "";
+  const clientPrefersJson = acceptHeader.includes("application/json");
+  const clientPrefersSSE = acceptHeader.includes("text/event-stream");
+  const ponytailStream = body.stream === true ? true : !(clientPrefersJson && !clientPrefersSSE);
   const ponytailResponse = await handlePonytailCommands(body, model, {
     fetchStats: () => getUsageStats("all"),
     helpText: DEFAULT_PONYTAIL_HELP,
+    sourceFormatOverride: sourceFormat,
+    streamOverride: ponytailStream,
   });
   if (ponytailResponse) return ponytailResponse;
 
@@ -95,9 +101,6 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Check client Accept header preference for non-streaming requests
   // This fixes AI SDK compatibility where clients send Accept: application/json
-  const acceptHeader = clientRawRequest?.headers?.accept || "";
-  const clientPrefersJson = acceptHeader.includes("application/json");
-  const clientPrefersSSE = acceptHeader.includes("text/event-stream");
   if (clientPrefersJson && !clientPrefersSSE && body.stream !== true && !providerRequiresStreaming) {
     stream = false;
   }
