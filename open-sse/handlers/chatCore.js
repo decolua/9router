@@ -11,7 +11,8 @@ import { PROVIDERS } from "../config/providers.js";
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
-import { trackPendingRequest, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
+import { handlePonytailCommands, DEFAULT_PONYTAIL_HELP } from "../utils/tokenSaverBridge.js";
+import { trackPendingRequest, appendRequestLog, saveRequestDetail, getUsageStats } from "@/lib/usageDb.js";
 import { getExecutor } from "../executors/index.js";
 import { buildRequestDetail, extractRequestConfig } from "./chatCore/requestDetail.js";
 import { handleForcedSSEToJson } from "./chatCore/sseToJsonHandler.js";
@@ -39,6 +40,14 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const requestStartTime = Date.now();
 
   const sourceFormat = sourceFormatOverride || detectFormat(body);
+
+  // Ponytail slash commands — must run before bypass heuristics.
+  // Lazy stats fetch: only invoked when the user actually types `/ponytail-gain`.
+  const ponytailResponse = await handlePonytailCommands(body, model, {
+    fetchStats: () => getUsageStats("all"),
+    helpText: DEFAULT_PONYTAIL_HELP,
+  });
+  if (ponytailResponse) return ponytailResponse;
 
   // Check for bypass patterns (warmup, skip, cc naming)
   const bypassResponse = handleBypassRequest(body, model, userAgent, ccFilterNaming);
