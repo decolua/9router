@@ -29,6 +29,7 @@ export default function APIPageClient({ machineId }) {
   const [showModelModal, setShowModelModal] = useState(false);
   const [connections, setConnections] = useState([]);
   const [modelAliases, setModelAliases] = useState({});
+  const [newKeyPolicy, setNewKeyPolicy] = useState({ allowedModels: [], maxTokens: null, maxCostUsd: null });
 
   const [requireApiKey, setRequireApiKey] = useState(false);
   const [requireLogin, setRequireLogin] = useState(true);
@@ -631,7 +632,12 @@ export default function APIPageClient({ machineId }) {
       const res = await fetch("/api/keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newKeyName }),
+        body: JSON.stringify({
+          name: newKeyName,
+          allowedModels: newKeyPolicy.allowedModels || [],
+          maxTokens: newKeyPolicy.maxTokens ?? null,
+          maxCostUsd: newKeyPolicy.maxCostUsd ?? null,
+        }),
       });
       const data = await res.json();
 
@@ -639,6 +645,7 @@ export default function APIPageClient({ machineId }) {
         setCreatedKey(data.key);
         await fetchData();
         setNewKeyName("");
+        setNewKeyPolicy({ allowedModels: [], maxTokens: null, maxCostUsd: null });
         setShowAddModal(false);
       }
     } catch (error) {
@@ -1150,6 +1157,7 @@ export default function APIPageClient({ machineId }) {
         onClose={() => {
           setShowAddModal(false);
           setNewKeyName("");
+          setNewKeyPolicy({ allowedModels: [], maxTokens: null, maxCostUsd: null });
         }}
       >
         <div className="flex flex-col gap-4">
@@ -1159,6 +1167,86 @@ export default function APIPageClient({ machineId }) {
             onChange={(e) => setNewKeyName(e.target.value)}
             placeholder="Production Key"
           />
+
+          {/* Allowed Models */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-medium">Allowed Models</p>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon="add"
+                onClick={() => setShowModelModal(true)}
+                disabled={connections.filter((c) => c.isActive !== false).length === 0}
+              >
+                Select Models
+              </Button>
+            </div>
+            <p className="text-xs text-text-muted mb-2">
+              Leave empty to allow all models.
+            </p>
+            {(newKeyPolicy.allowedModels || []).length > 0 ? (
+              <div className="flex flex-wrap gap-1.5 p-2 rounded-lg bg-bg-secondary border border-border min-h-[40px]">
+                {(newKeyPolicy.allowedModels || []).map((model) => (
+                  <span
+                    key={model}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs bg-primary/10 text-primary border border-primary/20"
+                  >
+                    {model}
+                    <button
+                      onClick={() => {
+                        setNewKeyPolicy({
+                          ...newKeyPolicy,
+                          allowedModels: newKeyPolicy.allowedModels.filter((m) => m !== model),
+                        });
+                      }}
+                      className="hover:text-red-500 transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-[12px]">close</span>
+                    </button>
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <div className="p-2 rounded-lg bg-bg-secondary border border-border text-xs text-text-muted">
+                All models allowed
+              </div>
+            )}
+          </div>
+
+          {/* Token & Cost Limits */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-sm font-medium mb-1 block">Max Tokens (lifetime)</label>
+              <input
+                type="number"
+                className="w-full px-3 py-1.5 rounded-lg bg-bg-secondary border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                value={newKeyPolicy.maxTokens ?? ""}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setNewKeyPolicy({ ...newKeyPolicy, maxTokens: val === "" ? null : Number(val) });
+                }}
+                placeholder="Unlimited"
+                min="0"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1 block">Max Cost USD (lifetime)</label>
+              <input
+                type="number"
+                step="0.01"
+                className="w-full px-3 py-1.5 rounded-lg bg-bg-secondary border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                value={newKeyPolicy.maxCostUsd ?? ""}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setNewKeyPolicy({ ...newKeyPolicy, maxCostUsd: val === "" ? null : Number(val) });
+                }}
+                placeholder="Unlimited"
+                min="0"
+              />
+            </div>
+          </div>
+
           <div className="flex gap-2">
             <Button onClick={handleCreateKey} fullWidth disabled={!newKeyName.trim()}>
               Create
@@ -1167,6 +1255,7 @@ export default function APIPageClient({ machineId }) {
               onClick={() => {
                 setShowAddModal(false);
                 setNewKeyName("");
+                setNewKeyPolicy({ allowedModels: [], maxTokens: null, maxCostUsd: null });
               }}
               variant="ghost"
               fullWidth
@@ -1298,16 +1387,33 @@ export default function APIPageClient({ machineId }) {
         </div>
       </Modal>
 
-      {/* Model Select Modal (multi-select for API key allowlist) */}
+      {/* Model Select Modal (multi-select for API key allowlist — create or edit) */}
       <ModelSelectModal
         isOpen={showModelModal}
         onClose={() => setShowModelModal(false)}
-        onSelect={handleModelSelect}
-        onDeselect={handleModelSelect}
+        onSelect={(model) => {
+          if (editingKeyModels) {
+            handleModelSelect(model);
+          } else {
+            const current = newKeyPolicy.allowedModels || [];
+            if (current.includes(model.value)) {
+              setNewKeyPolicy({ ...newKeyPolicy, allowedModels: current.filter((m) => m !== model.value) });
+            } else {
+              setNewKeyPolicy({ ...newKeyPolicy, allowedModels: [...current, model.value] });
+            }
+          }
+        }}
+        onDeselect={(model) => {
+          if (editingKeyModels) {
+            handleModelSelect(model);
+          } else {
+            setNewKeyPolicy({ ...newKeyPolicy, allowedModels: (newKeyPolicy.allowedModels || []).filter((m) => m !== model.value) });
+          }
+        }}
         selectedModel={null}
         activeProviders={connections.filter((c) => c.isActive !== false)}
         modelAliases={modelAliases}
-        addedModelValues={editingKeyModels?.policy?.allowedModels || []}
+        addedModelValues={editingKeyModels ? (editingKeyModels?.policy?.allowedModels || []) : (newKeyPolicy.allowedModels || [])}
         closeOnSelect={false}
         title="Select Allowed Models"
       />
