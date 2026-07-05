@@ -84,6 +84,10 @@ describe("headroom detect", () => {
 
   it("treats a reachable external proxy as running without local CLI", async () => {
     global.fetch = vi.fn(async () => new Response("ok", { status: 200 }));
+    mocks.execSync.mockImplementation((cmd) => {
+      if (String(cmd).includes("where") || String(cmd).includes("which")) throw new Error("not found");
+      throw new Error("unexpected execSync");
+    });
     mocks.execFileSync.mockImplementation(() => { throw new Error("pip unavailable"); });
 
     const status = await getHeadroomStatus("http://headroom:8787");

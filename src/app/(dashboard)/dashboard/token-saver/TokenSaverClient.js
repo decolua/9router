@@ -111,24 +111,38 @@ export default function TokenSaverClient() {
       });
       const data = await res.json();
       setHeadroomStatus({ ...data, loading: false });
-      // Fetch extras in parallel — only meaningful when headroom-ai is installed.
-      if (data?.installed) {
-        try {
-          const er = await fetch("/api/headroom/extras", {
-            headers: { "Cache-Control": "no-store" },
-          });
-          if (er.ok) {
-            const ed = await er.json();
-            setHeadroomExtras((s) => ({
-              ...s,
-              version: ed.version ?? null,
-              extras: ed.extras || { code: false, ml: false },
-              available: ed.available || ["code", "ml"],
-              loading: false,
-            }));
-            setPendingExtras([]);
-          }
-        } catch { /* silent */ }
+      if (!data?.installed) {
+        setHeadroomExtras({
+          version: null,
+          extras: { code: false, ml: false },
+          available: ["code", "ml"],
+          loading: false,
+        });
+        setPendingExtras([]);
+        return;
+      }
+      try {
+        const er = await fetch("/api/headroom/extras", {
+          headers: { "Cache-Control": "no-store" },
+        });
+        if (!er.ok) throw new Error("extras status failed");
+        const ed = await er.json();
+        setHeadroomExtras((s) => ({
+          ...s,
+          version: ed.version ?? null,
+          extras: ed.extras || { code: false, ml: false },
+          available: ed.available || ["code", "ml"],
+          loading: false,
+        }));
+        setPendingExtras([]);
+      } catch {
+        setHeadroomExtras({
+          version: null,
+          extras: { code: false, ml: false },
+          available: ["code", "ml"],
+          loading: false,
+        });
+        setPendingExtras([]);
       }
     } catch {
       setHeadroomStatus({
@@ -137,6 +151,13 @@ export default function TokenSaverClient() {
         python: null,
         loading: false,
       });
+      setHeadroomExtras({
+        version: null,
+        extras: { code: false, ml: false },
+        available: ["code", "ml"],
+        loading: false,
+      });
+      setPendingExtras([]);
     }
   }, []);
 

@@ -132,7 +132,7 @@ export function getHeadroomLogTail(maxLines = 200) {
 // is rejected to keep the install surface predictable. Always installs the
 // `proxy` base + whatever extras the user picked, regardless of what is
 // already present.
-export async function installHeadroomExtras(extras = [], { onProgress } = {}) {
+export async function installHeadroomExtras(extras = []) {
   const requested = Array.isArray(extras) ? extras.filter((e) => HEADROOM_COMPRESSION_EXTRAS.includes(e)) : [];
   const py = findPython310();
   if (!py) {

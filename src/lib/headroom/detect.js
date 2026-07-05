@@ -7,8 +7,8 @@ import path from "path";
 // useful for the 9router proxy use case, so we don't track them here.
 export const HEADROOM_COMPRESSION_EXTRAS = ["code", "ml"];
 
-// Marker packages that each extra pulls in. Detected via `pip show` so the
-// check stays shell-only and matches what headroom itself sees at runtime.
+// Marker packages that each extra pulls in. Detected from `pip list --format=json`
+// so one call can answer both the installed version and active extras.
 const EXTRA_MARKERS = {
   code: ["tree-sitter", "tree-sitter-language-pack"],
   ml: ["torch", "huggingface-hub"],
@@ -126,8 +126,17 @@ export async function getHeadroomStatus(url) {
   const installed = Boolean(path);
   const running = await probeProxyRunning(url);
   const localUrl = isLoopbackHeadroomUrl(url);
-  const extras = installed ? getInstalledHeadroomExtras(python) : { installed: false, version: null, extras: { code: false, ml: false } };
-  return { installed, path, running, python, localUrl, canStart: installed && localUrl, ...extras };
+  const extrasStatus = installed ? getInstalledHeadroomExtras(python) : { installed: false, version: null, extras: { code: false, ml: false } };
+  return {
+    installed,
+    path,
+    running,
+    python,
+    localUrl,
+    canStart: installed && localUrl,
+    version: extrasStatus.version,
+    extras: extrasStatus.extras,
+  };
 }
 
 // Parse installed headroom-ai version + which compression extras are

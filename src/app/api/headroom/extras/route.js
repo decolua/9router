@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { findPython310, getInstalledHeadroomExtras } from "@/lib/headroom/detect";
+import { findPython310, getInstalledHeadroomExtras, HEADROOM_COMPRESSION_EXTRAS } from "@/lib/headroom/detect";
 import { installHeadroomExtras } from "@/lib/headroom/process";
-import { HEADROOM_COMPRESSION_EXTRAS } from "@/lib/headroom/detect";
 
 export const dynamic = "force-dynamic";
 
