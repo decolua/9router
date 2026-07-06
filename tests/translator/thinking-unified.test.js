@@ -106,6 +106,16 @@ describe("applyThinking per provider format", () => {
     const out = apply("openai", "kimi-k2.6", { reasoning_effort: "high" }, "kimi");
     expect(out.reasoning_effort).toBe("high");
   });
+  it("Kimi auto → supported reasoning_effort", () => {
+    const out = apply("openai", "kimi-k2.7", { reasoning_effort: "auto" }, "kimchi");
+    expect(out.reasoning_effort).toBe("high");
+  });
+  it("Kimi unsupported OpenAI levels → supported reasoning_effort", () => {
+    const minimal = apply("openai", "kimi-k2.7", { reasoning_effort: "minimal" }, "kimchi");
+    const xhigh = apply("openai", "kimi-k2.7", { reasoning_effort: "xhigh" }, "kimchi");
+    expect(minimal.reasoning_effort).toBe("low");
+    expect(xhigh.reasoning_effort).toBe("max");
+  });
   it("MiniMax M3 → adaptive", () => {
     const out = apply("claude", "MiniMax-M3", { reasoning_effort: "high" }, "minimax");
     expect(out.thinking).toEqual({ type: "adaptive" });
