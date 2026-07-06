@@ -81,3 +81,5 @@ graphify-out/*
 log.txt
 backup.json
 .serena
+/dist/
+.vinext/

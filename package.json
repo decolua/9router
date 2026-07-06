@@ -3,6 +3,7 @@
   "version": "0.5.18",
   "description": "9Router web dashboard",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev --webpack --port 20127",
     "build": "next build --webpack",
@@ -11,7 +12,11 @@
     "build:bun": "bun --bun next build --webpack",
     "start:bun": "bun ./.next/standalone/server.js",
     "cli:pack": "npm --prefix cli run pack:cli",
-    "cli:publish": "npm --prefix cli run publish:cli"
+    "cli:publish": "npm --prefix cli run publish:cli",
+    "dev:vinext": "vinext dev --port 3001",
+    "build:vinext": "vinext build",
+    "start:vinext": "vinext start",
+    "start:vinext:custom": "node server.vinext.js"
   },
   "dependencies": {
     "@dnd-kit/core": "6.3.1",
@@ -22,9 +27,9 @@
     "@next/third-parties": "16.2.9",
     "@xyflow/react": "12.10.1",
     "bcryptjs": "3.0.3",
+    "chalk": "5.6.0",
     "confbox": "0.2.4",
     "express": "5.2.1",
-    "fs": "0.0.1-security",
     "http-proxy-middleware": "3.0.5",
     "jose": "6.1.3",
     "marked": "18.0.1",
@@ -35,15 +40,17 @@
     "node-machine-id": "1.1.12",
     "open": "11.0.0",
     "ora": "9.1.0",
-    "react": "19.2.4",
-    "react-dom": "19.2.4",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
     "react-is": "16.13.1",
+    "react-server-dom-webpack": "19.2.7",
     "recharts": "3.7.0",
     "selfsigned": "5.5.0",
     "socks-proxy-agent": "8.0.5",
     "sql.js": "1.14.1",
     "undici": "8.3.0",
     "uuid": "14.0.0",
+    "vinext": "1.0.0-beta.0",
     "zustand": "5.0.10"
   },
   "optionalDependencies": {
@@ -52,18 +59,18 @@
   "comment_better_sqlite3": "kept in optionalDependencies so npm install doesn't fail on systems without build tools — sql.js is used as fallback at runtime",
   "devDependencies": {
     "@tailwindcss/postcss": "4.1.18",
-    "eslint": "9",
+    "@vitejs/plugin-react": "6.0.3",
+    "@vitejs/plugin-rsc": "0.5.27",
+    "eslint": "9.39.4",
     "eslint-config-next": "16.1.6",
     "postcss": "8.5.15",
-    "tailwindcss": "4"
+    "tailwindcss": "4.3.1",
+    "typescript": "7.0.1-rc",
+    "vite": "8.1.3"
   },
-  "overrides": {
-    "dompurify": "3.4.5",
-    "marked": "18.0.4",
-    "next@>=16.0.0 <16.2.5": "16.2.6",
-    "node-forge": "1.4.0",
-    "postcss": "8.5.15",
-    "undici@>=7.0.0 <7.24.0": "8.3.0",
-    "uuid": "14.0.0"
+  "allowBuilds": {
+    "better-sqlite3": true,
+    "sharp": true,
+    "unrs-resolver": true
   }
 }
