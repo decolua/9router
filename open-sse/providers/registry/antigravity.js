@@ -1,4 +1,3 @@
-import { platform, arch } from "os";
 import { ANTIGRAVITY_OAUTH_CLIENT } from "../shared.js";
 
 export default {
