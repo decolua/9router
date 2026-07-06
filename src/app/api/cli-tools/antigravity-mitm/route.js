@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { execSync } from "child_process";
 import {
   getMitmStatus,
   startServer,
@@ -48,7 +49,7 @@ function requiresSudoPassword(pwd) {
 function checkIsAdmin() {
   if (isWin) {
     try {
-      require("child_process").execSync("net session >nul 2>&1", { windowsHide: true });
+      execSync("net session >nul 2>&1", { windowsHide: true });
       return true;
     } catch {
       return false;
