@@ -15,27 +15,37 @@
 // (req, res) objects, so mutating req.headers here propagates into the Web
 // Request that vinext builds and hands to route handlers.
 //
-// Usage:
-//   node server.vinext.js                  # after `vinext build`
-//   PORT=8080 HOST=127.0.0.1 node server.vinext.js
+// This file is location-portable: `outDir` resolves relative to its own
+// location, so it works both at the repo root (dist/standalone/dist) and when
+// copied into the CLI bundle (cli/app/dist).
 //
-// The build emits dist/standalone/{dist,node_modules,public,server.js}; this
-// entry reuses that output dir, so run it from the repo root.
+// Usage:
+//   node server.vinext.js                        # after `vinext build`
+//   PORT=20128 HOST=0.0.0.0 node server.vinext.js
+//   HOSTNAME=0.0.0.0 node server.vinext.js       # legacy Next env name also accepted
 
+import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { injectTrustedClientIp } from "./src/lib/clientIp.js";
 
 const { startProdServer } = await import("vinext/server/prod-server");
 
-const here = fileURLToPath(new URL(".", import.meta.url));
 const port = Number.parseInt(process.env.PORT ?? "3000", 10);
-const host = process.env.HOST ?? "0.0.0.0";
+// vinext reads HOST; Next's standalone used HOSTNAME. Accept both for parity.
+const host = process.env.HOST ?? process.env.HOSTNAME ?? "0.0.0.0";
+
+// Resolve the vinext server bundle dir relative to THIS file.
+// - Repo root layout:  <root>/server.vinext.js → <root>/dist/standalone/dist
+// - Bundled (cli/app): <cli/app>/server.vinext.js → <cli/app>/dist
+const here = import.meta.dirname;
+const outDir = existsSync(join(here, "dist", "standalone", "dist"))
+  ? join(here, "dist", "standalone", "dist")
+  : join(here, "dist");
 
 const { server } = await startProdServer({
   port,
   host,
-  outDir: join(here, "dist", "standalone", "dist"),
+  outDir,
 }).catch((error) => {
   console.error("[vinext] Failed to start standalone server");
   console.error(error);

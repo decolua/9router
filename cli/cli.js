@@ -506,16 +506,17 @@ function openBrowser(url) {
 }
 
 // Find standalone server (bundled in bin/app for published package).
-// Prefer custom-server.js (injects real socket IP) when present.
+// Prefer server.vinext.js (injects real socket IP via the trusted-IP
+// middleware) when present, fall back to the plain vinext server.js.
 const standaloneDir = path.join(__dirname, "app");
-const customServerPath = path.join(standaloneDir, "custom-server.js");
-const serverPath = fs.existsSync(customServerPath)
-  ? customServerPath
+const vinextEntryPath = path.join(standaloneDir, "server.vinext.js");
+const serverPath = fs.existsSync(vinextEntryPath)
+  ? vinextEntryPath
   : path.join(standaloneDir, "server.js");
 
 if (!fs.existsSync(serverPath)) {
   console.error("Error: Standalone build not found.");
-  console.error("Please run 'npm run cli:build' (or 'bun run cli:build') from the project root first.");
+  console.error("Please run 'npm run cli:pack' (or 'bun run cli:pack') from the project root first.");
   process.exit(1);
 }
 
@@ -602,6 +603,7 @@ function startServer(latestVersion) {
       env: {
         ...buildEnvWithRuntime(process.env),
         PORT: port.toString(),
+        HOST: host,
         HOSTNAME: host
       }
     });
