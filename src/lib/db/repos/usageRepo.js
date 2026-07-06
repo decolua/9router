@@ -750,13 +750,15 @@ export async function pruneOldUsageHistory(retentionDays = 90) {
     const db = await getAdapter();
     const cutoff = new Date(Date.now() - retentionDays * 86400000).toISOString();
 
-    // Use a transaction for safety
+    // The adapter's transaction(fn) executes the fn and returns its result
+    // (see adapters/*.js — better/bun/node all invoke the tx internally).
+    // Do NOT add a trailing () — that re-invokes the result and throws.
     const result = db.transaction(() => {
       return db.run(
         `DELETE FROM usageHistory WHERE timestamp < ?`,
         [cutoff]
       );
-    })();
+    });
 
     const deleted = result?.changes ?? result ?? 0;
     if (deleted > 0) {
