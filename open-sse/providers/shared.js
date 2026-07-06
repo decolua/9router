@@ -1,13 +1,15 @@
-// node:os is imported with a static import (fine — Vite only errors on access,
-// not import), but the os-derived header values resolve lazily via getters so
-// that merely importing this module (which the client-side provider registry
-// does transitively) does not call os.arch()/os.platform() at module load.
-
-import { platform, arch } from "os";
+// Use process.platform / process.arch instead of node:os. This module is
+// imported transitively by the client-side provider registry
+// (registry -> claude.js -> shared.js); importing node:os in a client chunk
+// triggers Vite's "externalized for browser compatibility" error. `process`
+// is a global shimmed by Vite/vinext, so there is no module import to
+// externalize. The values are identical (process.platform === os.platform(),
+// process.arch === os.arch()) on the server, and `undefined` in the browser
+// (the getters below are only ever read server-side, at request time).
 
 // === OS/Arch helpers (Stainless fingerprint) ===
 export function mapStainlessOs() {
-  const p = platform();
+  const p = process.platform;
   switch (p) {
     case "darwin": return "MacOS";
     case "win32": return "Windows";
@@ -18,7 +20,7 @@ export function mapStainlessOs() {
 }
 
 export function mapStainlessArch() {
-  const a = arch();
+  const a = process.arch;
   switch (a) {
     case "x64": return "x64";
     case "arm64": return "arm64";
