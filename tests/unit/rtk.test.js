@@ -10,6 +10,7 @@ import { tree } from "../../open-sse/rtk/filters/tree.js";
 import { smartTruncate } from "../../open-sse/rtk/filters/smartTruncate.js";
 import { readNumbered } from "../../open-sse/rtk/filters/readNumbered.js";
 import { searchList } from "../../open-sse/rtk/filters/searchList.js";
+import { gitLog } from "../../open-sse/rtk/filters/gitLog.js";
 import { autoDetectFilter } from "../../open-sse/rtk/autodetect.js";
 import { safeApply } from "../../open-sse/rtk/applyFilter.js";
 
@@ -52,6 +53,66 @@ function makeFindOutput() {
   for (let i = 0; i < 5; i++) lines.push(`./top${i}.md`);
   return lines.join("\n");
 }
+
+function makeGitLogOneline() {
+  return [
+    "abc1234 Add auth middleware",
+    "def5678 Fix token refresh race",
+    "fedcba9 Update docs"
+  ].join("\n");
+}
+
+function makeGitLogDefault() {
+  return [
+    "commit abc1234def5678abc1234def5678abc1234def5",
+    "Author: Dev One <dev1@example.com>",
+    "Date:   Sun Jul 6 10:00:00 2026 +0700",
+    "",
+    "    Add auth middleware",
+    "",
+    "    More body detail should be dropped.",
+    "    This is padding that consumes tokens."
+  ].join("\n");
+}
+
+function makeGitLogGraph() {
+  return [
+    "* abc1234 Add auth middleware",
+    "| * def5678 Fix token refresh race",
+    "|/",
+    "* fedcba9 Update docs"
+  ].join("\n");
+}
+
+describe("gitLog filter", () => {
+  it("compresses git log --oneline without losing commit subjects", () => {
+    const input = makeGitLogOneline();
+    const out = gitLog(input);
+    expect(out).toContain("abc1234");
+    expect(out).toContain("Add auth middleware");
+    expect(out.length).toBeLessThanOrEqual(input.length);
+  });
+
+  it("keeps commit header + subject in default git log, drops body detail", () => {
+    const input = makeGitLogDefault();
+    const out = gitLog(input);
+    expect(out).toContain("commit abc1234def5678abc1234def5678abc1234def5");
+    expect(out).toContain("Add auth middleware");
+    expect(out).not.toContain("More body detail should be dropped.");
+  });
+
+  it("strips graph-only decoration but keeps commit subjects", () => {
+    const input = makeGitLogGraph();
+    const out = gitLog(input);
+    expect(out).toContain("abc1234 Add auth middleware");
+    expect(out).toContain("def5678 Fix token refresh race");
+    expect(out).not.toContain("|/");
+  });
+
+  it("returns empty string for empty input", () => {
+    expect(gitLog("")).toBe("");
+  });
+});
 
 describe("RTK flag", () => {
   it("default off, toggle works", () => {
@@ -122,6 +183,16 @@ describe("autoDetectFilter", () => {
   });
   it("detects find", () => {
     expect(autoDetectFilter("./a/b.js\n./a/c.js\n./a/d.js").filterName).toBe("find");
+  });
+  it("detects git log via commit header", () => {
+    const input = [
+      "commit abc1234def5678abc1234def5678abc1234def5",
+      "Author: Dev One <dev1@example.com>",
+      "Date:   Sun Jul 6 10:00:00 2026 +0700",
+      "",
+      "    Add auth middleware"
+    ].join("\n");
+    expect(autoDetectFilter(input).filterName).toBe("git-log");
   });
   it("falls back to dedupLog for generic text", () => {
     const txt = "line1\nline2\nline3\nline4\nline5\nline6\n";
