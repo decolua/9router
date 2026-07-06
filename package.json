@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --webpack --port 20127",
-    "build": "next build --webpack",
+    "build": "node scripts/build-app.js",
     "start": "next start",
     "dev:bun": "bun --bun next dev --webpack --port 20127",
     "build:bun": "bun --bun next build --webpack",
