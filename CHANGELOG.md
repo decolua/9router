@@ -1,8 +1,81 @@
-# v0.5.12 (2026-06-29)
+# v0.5.18 (2026-07-03)
+
+## Features
+- **Usage**: track cached tokens + correct input/output/cache cost (#2209) — hodtien
+- **Codex**: show reset credit expiry details (#2290) — Rafli Ahmad Zulfikar
+- **NVIDIA**: add new models and capabilities — decolua
+- **ClinePass**: add provider support — sternelee
 
 ## Fixes
+- **Usage**: dedupe streaming request-details log entries — Qin Li
+- **Claude**: drop foreign thinking signatures in passthrough — decolua
+- Prevent non-SSE stream pipe crash and cross-IdP account overwrites (#2244) — KunN-21
+- **Kiro**: route IdC auth to regional CodeWhisperer surface (#2297) — Volodymyr Saakian
+- **Kiro**: add Claude Sonnet 5 model support (#2264) — Edison42
+- **Xiaomi-tokenplan**: region selector, key validation, multi-connection (#2251) — MiQieR
+- **Translator**: strict Anthropic content block compliance (#2225) — Sahrul Ramadhan Hardiansyah
+- **Kimchi**: strip reasoning_content echo to bound multi-turn input tokens — KunN-21
+- **Kimchi**: bump User-Agent to kimchi/0.1.40 (#2256) — Ansh7473
+- **Codebuddy-cn**: strip empty tool_calls arrays to preserve reasoning — zmf
+- **Antigravity**: preserve Claude tool delta index (#2223) — Sutarto Jordan Chrisfivo
+- **MITM**: generate root CA on server startup (#2228) — Sutarto Jordan Chrisfivo
 
-- Merge upstream `v0.5.12` and sync app/CLI version metadata so the dashboard banner and update checks report the new release.
+# v0.5.15 (2026-06-29)
+
+## Features
+- Add Kimchi OAuth provider — Nant361
+- Refine Qwen vision/video + thinking model patterns — decolua
+- Opt-in Codex auto-ping quota keep-alive — Emirhan
+
+## Fixes
+- **Responses**: handle response.done terminal events (#2142) — rifuki
+- **Headroom**: skip unsafe responses tool history (#2132) — Sutarto Jordan Chrisfivo
+- **Translator**: map mid-conversation system message to user (claude→openai) — decolua
+- **Gemini**: normalize contents to prevent 400 invalid_argument (#2192) — warelik
+- **Gemini**: backfill thoughtSignature + suppress stream done sentinel — WARELIK
+- **Alicode**: preserve cache_control for DashScope providers (#2069) — Rex
+- **Antigravity**: strip deprecated/readOnly/writeOnly from tool schemas — iletai, Yudhistira-Official
+- **CodeBuddy CN**: show bonus packs as one-time, not monthly-replenishing — whale9820
+- **Kiro**: strip leaked <thinking> tags from content stream (#2158) — hamsa0x7
+- **Tray**: make Windows context menu DPI-aware — Emirhan
+- **Kilocode**: expose full gateway catalog in combo model picker — jellylarper
+- **OpenCode**: fix Go GLM — decolua
+
+# v0.5.12 (2026-06-26)
+
+## Features
+- Add token-saver dashboard page — decolua
+- Add bulk delete for provider connections — teddytkz
+- Resolve GitHub Copilot model catalog from upstream — caiqinzhou
+- Add Venice AI provider — Brokenc0de
+- Add Kiro external_idp import for Microsoft SSO (CLIProxyAPI) — Stevanus Pangau
+- Overhaul Blackbox provider catalog + WebUI test support — suryacagur
+
+## Fixes
+- Provider thinking compatibility (DeepSeek/Gemini) — Mink Nguyen
+- Stop double-counting streaming usage at source — decolua
+- Usage logging dedupe to reduce stats churn — Mink Nguyen
+- Prevent non-JSON SSE lines / duplicate [DONE] from breaking clients (PR #2046) — qianze
+- Resolve Gemini TTS models from catalog — nguyenha935
+- Support Kiro IDC (organization) token import — quanturbo
+- Preserve forced streaming for JSON clients (#2031) — Joseph Yaksich
+- Preserve Responses text format (Codex) — tenglong
+- Support Gemini native TTS generateContent endpoint — nguyenha935
+- Add missing zh-CN endpoint key label (i18n) — weimaozhen
+- CodeBuddy: only send reasoning params when client requests reasoning (#2071) — Rex
+- CodeBuddy CN: show one-shot bonus packs as expiring, not monthly-replenishing
+- Show custom provider models in combo picker — Sapto
+- Docker: add docker-compose.yml with headroom enabled by default — nitsuahlabs
+- Clarify token diagnostics vs provider billing (headroom, #1998) — Sutarto Jordan Chrisfivo
+- Translate openai-responses input through OpenAI for compression (#1998) — Ankit
+- Kiro: report 1M context window for claude-opus-4.8 — EdisonPVE
+- Avoid stale redirects after auth changes (#2100) — Emirhan
+- Mark Claude Opus 4.7 (dashed id) as 1M context — Brokenc0de
+- Preserve reasoning effort through Codex translations — ntdung6868
+- Token-saver: full width card layout — decolua
+- Antigravity: retry transient upstream failures — Sutarto Jordan Chrisfivo
+- Param-support: handle strip rules without match/drop (#1960) — Joseph Yaksich
+- Translator: resolve custom provider prefix in debug endpoint (#1083) — hamsa0x7
 
 # v0.5.8 (2026-06-21)
 
@@ -145,8 +218,6 @@
 # v0.4.66 (2026-05-29)
 
 ## Features
-
-- Add Qoder provider: device-flow OAuth, COSY signing, WAF-bypass body encoding, live model catalog, dashboard quota tracker, 11 models (#1372)
 - Add new models: Claude Opus 4.8 (Claude Code), GPT 5.4 Mini (Codex)
 
 ## Fixes
@@ -285,7 +356,6 @@
 # v0.4.46 (2026-05-15)
 
 ## Breaking Changes
-
 - Tunnel public URL changed — old tunnel links no longer work, please reconnect to get the new URL
 
 # v0.4.44 (2026-05-15)
