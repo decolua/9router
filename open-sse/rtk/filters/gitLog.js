@@ -1,7 +1,9 @@
 // JS-native git-log filter
 // Compresses `git log` output: keeps commit headers, subjects, Author/Date;
 // drops body padding, decoration, embedded diff lines.
-export function gitLog(text, maxLines = 200) {
+import { GIT_LOG_MAX_LINES } from "../constants.js";
+
+export function gitLog(text, maxLines = GIT_LOG_MAX_LINES) {
   if (!text) return "";
 
   const input = String(text);
@@ -26,7 +28,8 @@ export function gitLog(text, maxLines = 200) {
     const trimmed = line.trim();
 
     // commit <sha> header — starts new commit entry
-    if (/^commit [0-9a-f]{7,40}$/i.test(trimmed)) {
+    // Also matched with leading graph decoration (`*   commit abc1234...` — --graph without --oneline)
+    if (/^commit [0-9a-f]{7,40}$/i.test(trimmed) || /^[*|/\\ ]+commit [0-9a-f]{7,40}/i.test(trimmed)) {
       inCommit = true;
       subjectSeen = false;
       pushLine(line);
@@ -34,15 +37,15 @@ export function gitLog(text, maxLines = 200) {
     }
 
     if (inCommit) {
-      // Author / Date — keep with indent
-      if (/^(Author|Date):/i.test(trimmed)) {
-        pushLine("  " + trimmed);
+      // Author / Date — keep as-is (already column 0 in raw, or graph-prefix stripped by commit-header match)
+      if (/^[*|/\\ ]*(Author|Date):/i.test(trimmed)) {
+        pushLine(trimmed);
         continue;
       }
       // blank — skip
       if (trimmed === "") continue;
-      // indented subject (4 spaces) — first one is subject
-      if (!subjectSeen && /^    \S/.test(line)) {
+      // indented subject (4 spaces, optionally preceded by graph decoration) — first one is subject
+      if (!subjectSeen && /^[*|/\\ ]*    \S/.test(line)) {
         pushLine("  Subject: " + trimmed);
         subjectSeen = true;
         continue;

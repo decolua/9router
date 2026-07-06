@@ -1,6 +1,6 @@
 // Port of auto_detect_filter (rtk/src/cmds/system/pipe_cmd.rs:132-188) + JS extras
-// Order: git-diff → git-status → git-log → build-output → grep → find → tree → ls → search-list
-//        → read-numbered → dedup-log → smart-truncate → null
+// Detection order: git-log → git-diff → git-status → build-output → grep → find → tree → ls → search-list
+//                  → read-numbered → dedup-log → smart-truncate → null
 import { DETECT_WINDOW, READ_NUMBERED_MIN_HIT_RATIO, SMART_TRUNCATE_MIN_LINES } from "./constants.js";
 import { gitDiff } from "./filters/gitDiff.js";
 import { gitStatus } from "./filters/gitStatus.js";
@@ -32,7 +32,6 @@ export function autoDetectFilter(text) {
   if (RE_GIT_LOG.test(head)) return gitLog;
   if (RE_GIT_DIFF.test(head) || RE_GIT_DIFF_HUNK.test(head)) return gitDiff;
   if (RE_GIT_STATUS.test(head)) return gitStatus;
-  if (RE_GIT_LOG.test(head)) return gitLog;
 
   // Build output BEFORE porcelain check: prevents cargo "Compiling" misdetection as git-status
   if (RE_BUILD_OUTPUT.test(head)) return buildOutput;

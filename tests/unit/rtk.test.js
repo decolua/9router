@@ -84,6 +84,57 @@ function makeGitLogGraph() {
   ].join("\n");
 }
 
+function makeGitLogGraphDefault() {
+  return [
+    "*   commit abc1234def5678abc1234def5678abc1234def5",
+    "|\\",
+    "| * commit def5678abc1234def5678abc1234def5678abc1",
+    "|/",
+    "|",
+    "* commit fedcba9abc1234fedcba9abc1234fedcba9abc1234",
+    "Author: Dev One <dev1@example.com>",
+    "Date:   Sun Jul 6 10:00:00 2026 +0700",
+    "",
+    "    Add auth middleware",
+    ""
+  ].join("\n");
+}
+
+function makeGitLogWithMerge() {
+  return [
+    "commit abc1234def5678abc1234def5678abc1234def5",
+    "Merge: abc1234 def5678",
+    "Author: Dev One <dev1@example.com>",
+    "Date:   Sun Jul 6 10:00:00 2026 +0700",
+    "",
+    "    Merge branch 'feature'"
+  ].join("\n");
+}
+
+function makeGitLogWithStats() {
+  return [
+    "commit abc1234def5678abc1234def5678abc1234def5",
+    "Author: Dev One <dev1@example.com>",
+    "Date:   Sun Jul 6 10:00:00 2026 +0700",
+    "",
+    "    Fix typo",
+    "",
+    " 2 files changed, 15 insertions(+), 3 deletions(-)"
+  ].join("\n");
+}
+
+function makeGitLogWithEmbeddedDiff() {
+  return [
+    "commit abc1234def5678abc1234def5678abc1234def5",
+    "Author: Dev One <dev1@example.com>",
+    "Date:   Sun Jul 6 10:00:00 2026 +0700",
+    "",
+    "    Fix typo",
+    "",
+    "diff --git a/src/main.js b/src/main.js"
+  ].join("\n");
+}
+
 describe("gitLog filter", () => {
   it("compresses git log --oneline without losing commit subjects", () => {
     const input = makeGitLogOneline();
@@ -111,6 +162,64 @@ describe("gitLog filter", () => {
 
   it("returns empty string for empty input", () => {
     expect(gitLog("")).toBe("");
+  });
+
+  it("returns empty string for null/undefined input", () => {
+    expect(gitLog(null)).toBe("");
+    expect(gitLog(undefined)).toBe("");
+  });
+
+  it("handles git log --graph without --oneline (graph-prefixed commit headers)", () => {
+    const input = makeGitLogGraphDefault();
+    const out = gitLog(input);
+    expect(out).toContain("commit abc1234def5678abc1234def5678abc1234def5");
+    expect(out).toContain("Add auth middleware");
+    // graph decoration dropped, pure-graph branch connectors dropped
+    expect(out).not.toContain("|\\");
+    expect(out).not.toContain("|/");
+  });
+
+  it("drops merge commit line ('Merge: abc1234 def5678')", () => {
+    const input = makeGitLogWithMerge();
+    const out = gitLog(input);
+    expect(out).toContain("commit abc1234def5678abc1234def5678abc1234def5");
+    expect(out).toContain("Merge branch 'feature'");
+    // "Merge:" line should be dropped (not in output)
+    expect(out).not.toContain("Merge:");
+  });
+
+  it("keeps stat-summary lines verbatim", () => {
+    const input = makeGitLogWithStats();
+    const out = gitLog(input);
+    expect(out).toContain("2 files changed, 15 insertions(+), 3 deletions(-)");
+  });
+
+  it("replaces embedded diff markers with '... diff body omitted'", () => {
+    const input = makeGitLogWithEmbeddedDiff();
+    const out = gitLog(input);
+    expect(out).toContain("diff body omitted");
+    // Original diff line replaced
+    expect(out).not.toContain("diff --git a/src/main.js b/src/main.js");
+  });
+
+  it("truncates beyond maxLines and reports skipped count", () => {
+    // Generate 50 commit lines but cap at 20
+    const lines = [];
+    for (let i = 0; i < 50; i++) {
+      lines.push(`commit ${String(i).padStart(40, "0")}`);
+    }
+    const input = lines.join("\n");
+    const out = gitLog(input, 20);
+    const outLines = out.split("\n").filter(l => l.length > 0);
+    expect(outLines.length).toBeLessThanOrEqual(21); // 20 commits + optional skipped note
+    expect(out).toContain("more lines");
+  });
+
+  it("preserves input when compressed output inflates", () => {
+    // Input shorter than output would be — e.g. tiny log
+    const input = "abc\ndef";
+    const out = gitLog(input, 10);
+    expect(out).toBe(input);
   });
 });
 
