@@ -1,8 +1,8 @@
-const fs = require("fs");
-const path = require("path");
-const zlib = require("zlib");
-const { DATA_DIR } = require("./paths");
-const { LOG_BLACKLIST_URL_PARTS } = require("./config");
+import fs from "fs";
+import path from "path";
+import zlib from "zlib";
+import { DATA_DIR } from "./paths";
+import { LOG_BLACKLIST_URL_PARTS } from "./config";
 
 function time() {
   return new Date().toLocaleTimeString("en-US", { hour12: false });
@@ -103,4 +103,4 @@ function createResponseDumper(req, tag = "raw") {
   };
 }
 
-module.exports = { log, err, dumpRequest, createResponseDumper, clearDumpDir };
+export { log, err, dumpRequest, createResponseDumper, clearDumpDir };

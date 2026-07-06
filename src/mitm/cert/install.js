@@ -1,9 +1,9 @@
-const fs = require("fs");
-const crypto = require("crypto");
-const { exec } = require("child_process");
-const { execWithPassword, isSudoAvailable } = require("../dns/dnsConfig.js");
-const { runElevatedPowerShell, quotePs } = require("../winElevated.js");
-const { log, err } = require("../logger");
+import fs from "fs";
+import crypto from "crypto";
+import { exec } from "child_process";
+import { execWithPassword, isSudoAvailable } from "../dns/dnsConfig.js";
+import { runElevatedPowerShell, quotePs } from "../winElevated.js";
+import { log, err } from "../logger";
 
 const IS_WIN = process.platform === "win32";
 const IS_MAC = process.platform === "darwin";
@@ -266,4 +266,4 @@ async function uninstallCertLinux(sudoPassword) {
   }
 }
 
-module.exports = { installCert, uninstallCert, checkCertInstalled };
+export { installCert, uninstallCert, checkCertInstalled };

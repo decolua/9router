@@ -1,6 +1,6 @@
-const fs = require("fs");
-const path = require("path");
-const os = require("os");
+import fs from "fs";
+import path from "path";
+import os from "os";
 
 const APP_NAME = "9router";
 
@@ -29,4 +29,4 @@ function getDataDir() {
 const DATA_DIR = getDataDir();
 const MITM_DIR = path.join(DATA_DIR, "mitm");
 
-module.exports = { DATA_DIR, MITM_DIR };
+export { DATA_DIR, MITM_DIR };

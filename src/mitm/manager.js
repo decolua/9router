@@ -1,22 +1,26 @@
-const { exec, spawn, execSync } = require("child_process");
-const path = require("path");
-const fs = require("fs");
-const os = require("os");
-const net = require("net");
-const https = require("https");
-const crypto = require("crypto");
-const { addDNSEntry, removeDNSEntry, removeAllDNSEntries, removeAllDNSEntriesSync, checkAllDNSStatus, TOOL_HOSTS, isSudoAvailable, isSudoPasswordRequired } = require("./dns/dnsConfig");
-const { isAdmin } = require("./winElevated.js");
+import { fileURLToPath } from "node:url";
+import { exec, spawn, execSync } from "child_process";
+import path from "path";
+import fs from "fs";
+import os from "os";
+import net from "net";
+import https from "https";
+import crypto from "crypto";
+import { machineIdSync } from "node-machine-id";
+import { addDNSEntry, removeDNSEntry, removeAllDNSEntries, removeAllDNSEntriesSync, checkAllDNSStatus, TOOL_HOSTS, isSudoAvailable, isSudoPasswordRequired, execWithPassword } from "./dns/dnsConfig";
+import { isAdmin, runElevatedPowerShell, quotePs } from "./winElevated.js";
+import { generateCert } from "./cert/generate";
+import { installCert, uninstallCert, checkCertInstalled } from "./cert/install";
+import { isCertExpired } from "./cert/rootCA";
+import { DATA_DIR, MITM_DIR } from "./paths";
+import { log, err } from "./logger";
+import { LSOF_BIN } from "./config";
+import { createSafeChild } from "../lib/safeChild";
 
 const IS_WIN = process.platform === "win32";
 const IS_MAC = process.platform === "darwin";
-const { generateCert } = require("./cert/generate");
-const { installCert, uninstallCert } = require("./cert/install");
-const { isCertExpired } = require("./cert/rootCA");
-const { DATA_DIR, MITM_DIR } = require("./paths");
-const { log, err } = require("./logger");
-const { LSOF_BIN } = require("./config");
-const { createSafeChild } = require("../lib/safeChild");
+
+const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 
@@ -144,7 +148,6 @@ function killProcess(pid, force = false, sudoPassword = null) {
     const sig = force ? "SIGKILL" : "SIGTERM";
     const cmd = `pkill -${sig} -P ${pid} 2>/dev/null; kill -${sig} ${pid} 2>/dev/null`;
     if (sudoPassword || isSudoAvailable()) {
-      const { execWithPassword } = require("./dns/dnsConfig");
       execWithPassword(cmd, sudoPassword || "").catch(() => exec(cmd, { windowsHide: true }, () => { }));
     } else {
       exec(cmd, { windowsHide: true }, () => { });
@@ -154,7 +157,6 @@ function killProcess(pid, force = false, sudoPassword = null) {
 
 function deriveKey() {
   try {
-    const { machineIdSync } = require("node-machine-id");
     const raw = machineIdSync();
     return crypto.createHash("sha256").update(raw + ENCRYPT_SALT).digest();
   } catch {
@@ -333,7 +335,6 @@ async function killLeftoverMitm(sudoPassword) {
     try {
       const escaped = SERVER_PATH.replace(/'/g, "'\\''");
       if (sudoPassword || isSudoAvailable()) {
-        const { execWithPassword } = require("./dns/dnsConfig");
         await execWithPassword(`pkill -SIGKILL -f "${escaped}" 2>/dev/null || true`, sudoPassword || "").catch(() => { });
       } else {
         exec(`pkill -SIGKILL -f "${escaped}" 2>/dev/null || true`, { windowsHide: true }, () => { });
@@ -394,7 +395,6 @@ async function getMitmStatus() {
   const dnsStatus = checkAllDNSStatus();
   const rootCACertPath = path.join(MITM_DIR, "rootCA.crt");
   const certExists = fs.existsSync(rootCACertPath);
-  const { checkCertInstalled } = require("./cert/install");
   const certTrusted = certExists ? await checkCertInstalled(rootCACertPath) : false;
 
   return { running, pid, certExists, certTrusted, dnsStatus };
@@ -458,7 +458,6 @@ async function killPort443Owner(owner, sudoPassword) {
     } catch { /* best effort */ }
   } else {
     try {
-      const { execWithPassword } = require("./dns/dnsConfig");
       if (sudoPassword || isSudoAvailable()) {
         await execWithPassword(`kill -9 ${owner.pid}`, sudoPassword || "");
       } else {
@@ -543,7 +542,6 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
   }
 
   // Step 1.5: Auto-install Root CA if not trusted yet
-  const { checkCertInstalled } = require("./cert/install");
   const rootCATrusted = await checkCertInstalled(rootCACertPath);
   const linuxNoSystemTrust = !IS_WIN && !IS_MAC && !isSudoAvailable();
   if (!rootCATrusted) {
@@ -765,14 +763,13 @@ async function stopServer(sudoPassword) {
     const hostsFile = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "drivers", "etc", "hosts");
     const allHosts = Object.values(TOOL_HOSTS).flat();
     try {
-      const { isAdmin, runElevatedPowerShell, quotePs } = require("./winElevated.js");
       if (isAdmin()) {
         // Direct fs write — bypass PowerShell to avoid parser pitfalls
         const content = fs.readFileSync(hostsFile, "utf8");
         const filtered = content.split(/\r?\n/).filter(l => !allHosts.some(h => l.includes(h))).join("\r\n");
         const next = filtered.replace(/[\r\n\s]+$/g, "") + "\r\n";
         if (next !== content) fs.writeFileSync(hostsFile, next, "utf8");
-        try { require("child_process").execSync("ipconfig /flushdns", { windowsHide: true, stdio: "ignore" }); } catch { /* ignore */ }
+        try { execSync("ipconfig /flushdns", { windowsHide: true, stdio: "ignore" }); } catch { /* ignore */ }
         log("🌐 DNS: ✅ all tool hosts removed");
       } else {
         const hostsList = allHosts.map(quotePs).join(",");
@@ -843,7 +840,6 @@ async function disableToolDNS(tool, sudoPassword) {
 async function trustCert(sudoPassword) {
   const rootCACertPath = path.join(MITM_DIR, "rootCA.crt");
   if (!fs.existsSync(rootCACertPath)) throw new Error("Root CA not found. Start server first to generate it.");
-  const { installCert } = require("./cert/install");
   if (!IS_WIN && !IS_MAC && !isSudoAvailable()) {
     log(`🔐 Cert: system trust unavailable (no sudo). Use file: ${rootCACertPath}`);
     return;
@@ -858,7 +854,7 @@ async function trustCert(sudoPassword) {
 const startMitm = startServer;
 const stopMitm = stopServer;
 
-module.exports = {
+export {
   getMitmStatus,
   startServer,
   stopServer,

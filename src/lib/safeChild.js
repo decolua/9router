@@ -6,11 +6,11 @@
  * with the sudo-spawned MITM server and tailscale daemons).
  *
  * Usage:
- *   const { createSafeChild } = require('@/lib/safeChild');
+ *   import { createSafeChild } from '@/lib/safeChild';
  *   const child = createSafeChild('sudo', [...], options);
  */
 
-const { spawn } = require('child_process');
+import { spawn } from 'child_process';
 
 /**
  * Creates a child process with guaranteed error handling.
@@ -72,6 +72,6 @@ function createSafeChild(command, args = [], options = {}, logger = null) {
   return child;
 }
 
-module.exports = {
+export {
   createSafeChild,
 };

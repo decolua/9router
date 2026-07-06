@@ -1,7 +1,7 @@
-const path = require("path");
-const fs = require("fs");
-const forge = require("node-forge");
-const { MITM_DIR } = require("../paths");
+import path from "path";
+import fs from "fs";
+import forge from "node-forge";
+import { MITM_DIR } from "../paths";
 
 const ROOT_CA_KEY_PATH = path.join(MITM_DIR, "rootCA.key");
 const ROOT_CA_CERT_PATH = path.join(MITM_DIR, "rootCA.crt");
@@ -163,7 +163,7 @@ function generateLeafCert(domain, rootCA) {
   };
 }
 
-module.exports = {
+export {
   generateRootCA,
   loadRootCA,
   generateLeafCert,
