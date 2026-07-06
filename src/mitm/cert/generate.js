@@ -1,7 +1,7 @@
-const path = require("path");
-const fs = require("fs");
-const { MITM_DIR } = require("../paths");
-const { generateRootCA, loadRootCA, generateLeafCert } = require("./rootCA");
+import path from "path";
+import fs from "fs";
+import { MITM_DIR } from "../paths";
+import { generateRootCA, loadRootCA, generateLeafCert } from "./rootCA";
 
 /**
  * Generate Root CA certificate (one-time setup)
@@ -29,4 +29,4 @@ function getCertForDomain(domain) {
   }
 }
 
-module.exports = { generateCert, getCertForDomain };
+export { generateCert, getCertForDomain };

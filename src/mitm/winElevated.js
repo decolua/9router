@@ -1,4 +1,4 @@
-const { exec, execSync } = require("child_process");
+import { exec, execSync } from "child_process";
 
 const IS_WIN = process.platform === "win32";
 
@@ -78,4 +78,4 @@ function runElevatedPowerShell(script) {
   });
 }
 
-module.exports = { isAdmin, runElevatedPowerShell, quotePs };
+export { isAdmin, runElevatedPowerShell, quotePs };

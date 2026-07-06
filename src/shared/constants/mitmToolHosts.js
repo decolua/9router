@@ -9,4 +9,4 @@ const TOOL_HOSTS = {
   cursor: ["api2.cursor.sh"],
 };
 
-module.exports = { TOOL_HOSTS };
+export { TOOL_HOSTS };

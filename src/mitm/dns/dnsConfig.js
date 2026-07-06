@@ -1,10 +1,10 @@
-const { exec, spawn, execSync } = require("child_process");
-const fs = require("fs");
-const path = require("path");
-const os = require("os");
-const { log, err } = require("../logger");
-const { TOOL_HOSTS } = require("../../shared/constants/mitmToolHosts.js");
-const { runElevatedPowerShell, isAdmin } = require("../winElevated.js");
+import { exec, spawn, execSync } from "child_process";
+import fs from "fs";
+import path from "path";
+import os from "os";
+import { log, err } from "../logger";
+import { TOOL_HOSTS } from "../../shared/constants/mitmToolHosts.js";
+import { runElevatedPowerShell, isAdmin } from "../winElevated.js";
 
 /**
  * Atomic-ish write for Windows hosts file with rollback on failure.
@@ -251,7 +251,7 @@ function removeAllDNSEntriesSync() {
   } catch { /* best effort during shutdown */ }
 }
 
-module.exports = {
+export {
   TOOL_HOSTS,
   addDNSEntry,
   removeDNSEntry,
