@@ -13,67 +13,71 @@ const { selectMenu } = require("./input");
  * @returns {Promise<void>}
  */
 async function showMenuWithBack(config) {
-  const {
-    title,
-    headerContent = "",
-    items,
-    backLabel = "← Back",
-    defaultIndex = 0,
-    refresh = null,
-    breadcrumb = []
-  } = config;
+	const {
+		title,
+		headerContent = "",
+		items,
+		backLabel = "← Back",
+		defaultIndex = 0,
+		refresh = null,
+		breadcrumb = [],
+	} = config;
 
-  while (true) {
-    // Call refresh if provided
-    let refreshedData = null;
-    if (refresh) {
-      refreshedData = await refresh();
-      if (refreshedData === null) {
-        // Refresh failed, exit menu
-        return;
-      }
-    }
+	while (true) {
+		// Call refresh if provided
+		let refreshedData = null;
+		if (refresh) {
+			refreshedData = await refresh();
+			if (refreshedData === null) {
+				// Refresh failed, exit menu
+				return;
+			}
+		}
 
-    // Build menu items with back at top
-    const menuItems = [
-      { label: backLabel, icon: "☆" },
-      ...items.map(item => ({
-        label: typeof item.label === "function" ? item.label(refreshedData) : item.label,
-        icon: "☆"
-      }))
-    ];
+		// Build menu items with back at top
+		const menuItems = [
+			{ label: backLabel, icon: "☆" },
+			...items.map((item) => ({
+				label:
+					typeof item.label === "function"
+						? item.label(refreshedData)
+						: item.label,
+				icon: "☆",
+			})),
+		];
 
-    // Resolve headerContent if it's a function
-    const resolvedHeader = typeof headerContent === "function" 
-      ? await headerContent(refreshedData) 
-      : headerContent;
+		// Resolve headerContent if it's a function
+		const resolvedHeader =
+			typeof headerContent === "function"
+				? await headerContent(refreshedData)
+				: headerContent;
 
-    const selected = await selectMenu(
-      title,
-      menuItems,
-      defaultIndex,
-      "",
-      resolvedHeader,
-      breadcrumb
-    );
+		const selected = await selectMenu(
+			title,
+			menuItems,
+			defaultIndex,
+			"",
+			resolvedHeader,
+			breadcrumb,
+		);
 
-    // Back or ESC
-    if (selected === -1 || selected === 0) {
-      return;
-    }
+		// Back or ESC
+		if (selected === -1 || selected === 0) {
+			return;
+		}
 
-    // Execute action for selected item
-    const actionIndex = selected - 1;
-    const item = items[actionIndex];
-    
-    if (item && item.action) {
-      const shouldContinue = await item.action(refreshedData);
-      // If action returns false, exit menu
-      if (shouldContinue === false) {
-        return;
-      }
-    }
-  }
+		// Execute action for selected item
+		const actionIndex = selected - 1;
+		const item = items[actionIndex];
+
+		if (item && item.action) {
+			const shouldContinue = await item.action(refreshedData);
+			// If action returns false, exit menu
+			if (shouldContinue === false) {
+				return;
+			}
+		}
+	}
 }
 
 /**
@@ -90,67 +94,75 @@ async function showMenuWithBack(config) {
  * @returns {Promise<void>}
  */
 async function showListMenu(config) {
-  const {
-    title,
-    headerContent = "",
-    fetchItems,
-    formatItem,
-    onSelect,
-    createAction = null,
-    backLabel = "← Back",
-    breadcrumb = []
-  } = config;
+	const {
+		title,
+		headerContent = "",
+		fetchItems,
+		formatItem,
+		onSelect,
+		createAction = null,
+		backLabel = "← Back",
+		breadcrumb = [],
+	} = config;
 
-  while (true) {
-    // Fetch items
-    const result = await fetchItems();
-    if (!result) {
-      return;
-    }
+	while (true) {
+		// Fetch items
+		const result = await fetchItems();
+		if (!result) {
+			return;
+		}
 
-    const items = result.items || [];
-    const metadata = result.metadata || {};
+		const items = result.items || [];
+		const metadata = result.metadata || {};
 
-    // Build menu items
-    const menuItems = [{ label: backLabel, icon: "☆" }];
-    
-    if (createAction) {
-      menuItems.push({ label: createAction.label, icon: "☆" });
-    }
+		// Build menu items
+		const menuItems = [{ label: backLabel, icon: "☆" }];
 
-    items.forEach(item => {
-      const formatted = formatItem(item);
-      menuItems.push({ label: formatted, icon: "☆" });
-    });
+		if (createAction) {
+			menuItems.push({ label: createAction.label, icon: "☆" });
+		}
 
-    const header = typeof headerContent === "function" 
-      ? await headerContent(metadata) 
-      : headerContent;
+		items.forEach((item) => {
+			const formatted = formatItem(item);
+			menuItems.push({ label: formatted, icon: "☆" });
+		});
 
-    const selected = await selectMenu(title, menuItems, 0, "", header, breadcrumb);
+		const header =
+			typeof headerContent === "function"
+				? await headerContent(metadata)
+				: headerContent;
 
-    // Back or ESC
-    if (selected === -1 || selected === 0) {
-      return;
-    }
+		const selected = await selectMenu(
+			title,
+			menuItems,
+			0,
+			"",
+			header,
+			breadcrumb,
+		);
 
-    // Create action
-    if (createAction && selected === 1) {
-      await createAction.action();
-      continue;
-    }
+		// Back or ESC
+		if (selected === -1 || selected === 0) {
+			return;
+		}
 
-    // Select item
-    const offset = createAction ? 2 : 1;
-    const itemIndex = selected - offset;
-    
-    if (itemIndex >= 0 && itemIndex < items.length) {
-      await onSelect(items[itemIndex]);
-    }
-  }
+		// Create action
+		if (createAction && selected === 1) {
+			await createAction.action();
+			continue;
+		}
+
+		// Select item
+		const offset = createAction ? 2 : 1;
+		const itemIndex = selected - offset;
+
+		if (itemIndex >= 0 && itemIndex < items.length) {
+			await onSelect(items[itemIndex]);
+		}
+	}
 }
 
 module.exports = {
-  showMenuWithBack,
-  showListMenu
+	showMenuWithBack,
+	showListMenu,
 };

@@ -7,16 +7,16 @@ const { ensureSqliteRuntime } = require("./sqliteRuntime");
 const { ensureTrayRuntime } = require("./trayRuntime");
 
 try {
-  ensureSqliteRuntime({ silent: false });
-  console.log("[9router] runtime SQLite deps ready");
+	ensureSqliteRuntime({ silent: false });
+	console.log("[9router] runtime SQLite deps ready");
 } catch (e) {
-  console.warn(`[9router] runtime warm-up skipped: ${e.message}`);
+	console.warn(`[9router] runtime warm-up skipped: ${e.message}`);
 }
 
 try {
-  ensureTrayRuntime({ silent: false });
+	ensureTrayRuntime({ silent: false });
 } catch (e) {
-  console.warn(`[9router] tray runtime skipped: ${e.message}`);
+	console.warn(`[9router] tray runtime skipped: ${e.message}`);
 }
 
 process.exit(0);
