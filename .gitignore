@@ -68,6 +68,8 @@ package-lock.json
 README1.md
 deploy*.sh
 ecosystem.config.*
+# Track our project pm2 process file (the *.config.* rule above would exclude it).
+!ecosystem.config.cjs
 
 scripts/agSniffer/*
 gitbooks/*

@@ -1151,9 +1151,9 @@ export MACHINE_ID_SALT="endpoint-proxy-salt"
 # Start
 npm run start
 
-# Or use PM2
+# Or use PM2 (process manager — auto-restart + boot persistence)
 npm install -g pm2
-pm2 start npm --name 9router -- start
+npm run start:pm2      # or: pm2 start ecosystem.config.cjs
 pm2 save
 pm2 startup
 ```
