@@ -160,8 +160,25 @@ if (skipUpdate && !trayMode && !process.stdin.isTTY) {
 	process.env.TRAY_MODE = "1";
 }
 
-// Always use Node.js runtime with absolute path
-const RUNTIME = process.execPath;
+// Resolve the Node.js binary to run the server with.
+// vinext's standalone server bundle targets the Node runtime (it bundles
+// node:undici, which calls internal node:util APIs like markAsUncloneable that
+// Bun's util polyfill lacks — running it under Bun throws on the first request).
+// If the CLI was launched via Bun (`bun cli/cli.js`), process.execPath is the
+// Bun binary; fall back to a real `node` resolved from PATH.
+function resolveNodeRuntime() {
+  if (process.versions.bun === undefined) return process.execPath;
+  try {
+    const which = process.platform === "win32" ? "where node" : "which node";
+    const found = execSync(which, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
+      .split(/\r?\n/).map((s) => s.trim()).filter(Boolean)[0];
+    if (found) return found;
+  } catch { /* node not on PATH */ }
+  // Last resort: keep whatever launched us (may still be bun — server will fail
+  // loudly with the undici error rather than a confusing "node not found").
+  return process.execPath;
+}
+const RUNTIME = resolveNodeRuntime();
 
 // Compare semver versions: returns 1 if a > b, -1 if a < b, 0 if equal
 function compareVersions(a, b) {
