@@ -4,6 +4,7 @@ import { homedir } from "os";
 import { join } from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import Database from "better-sqlite3";
 
 const execFileAsync = promisify(execFile);
 
@@ -77,9 +78,9 @@ const normalize = (value) => {
  * This is the preferred strategy — no external CLI required.
  */
 function extractTokensViaBetterSqlite(dbPath) {
-  // Dynamic require so the route stays importable even if native bindings fail
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const Database = require("better-sqlite3");
+  // better-sqlite3 is a serverExternalPackage, so it stays external at build
+  // time and is only resolved at runtime — the route stays importable even if
+  // native bindings fail (the try/catch around the caller handles load errors).
   const db = new Database(dbPath, { readonly: true, fileMustExist: true });
 
   const query = (key) => {
