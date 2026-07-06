@@ -1,14 +1,18 @@
 import { defineConfig, globalIgnores } from "eslint/config";
-import nextVitals from "eslint-config-next/core-web-vitals";
 
+// Minimal flat config. The old eslint-config-next/core-web-vitals ruleset was
+// removed with the Next.js dependency; vinext uses Vite, so the Next-specific
+// lint rules (no-html-link-for-pages, etc.) no longer apply. Add back
+// eslint-plugin-react / react-hooks here if you want React linting.
 const eslintConfig = defineConfig([
-  ...nextVitals,
-  // Override default ignores of eslint-config-next.
   globalIgnores([
-    // Default ignores of eslint-config-next:
+    "dist/**",
     ".next/**",
+    ".vinext/**",
     "out/**",
     "build/**",
+    "cli/app/**",
+    "node_modules/**",
     "next-env.d.ts",
   ]),
 ]);
