@@ -11,9 +11,14 @@ const LEVEL_KEYS = [
 ];
 
 describe("Caveman prompt coverage", () => {
-  it("has exactly six declared levels", () => {
-    expect(Object.keys(CAVEMAN_LEVELS).length).toBe(6);
-    expect(LEVEL_KEYS.length).toBe(6);
+  it("every level key has matching prompt and vice versa", () => {
+    const levelValues = Object.values(CAVEMAN_LEVELS);
+    for (const key of LEVEL_KEYS) {
+      expect(levelValues).toContain(key);
+    }
+    for (const value of levelValues) {
+      expect(LEVEL_KEYS).toContain(value);
+    }
   });
 
   it("has a prompt string for every level", () => {
@@ -44,6 +49,17 @@ describe("Caveman prompt coverage", () => {
   it("adds no-decorative-emoji guidance to every level", () => {
     for (const level of LEVEL_KEYS) {
       expect(CAVEMAN_PROMPTS[level]).toContain("No decorative emoji");
+    }
+  });
+});
+
+describe("Caveman internal consistency", () => {
+  it("no level uses Unicode arrow (SHARED_NO_DECORATION bans arrow shorthand)", () => {
+    // SHARED_NO_DECORATION uses ASCII -> to quote the banned pattern.
+    // Unicode → is the character old ULTRA used in "Pattern: [thing] → [result]".
+    // Verify no level now uses it.
+    for (const level of LEVEL_KEYS) {
+      expect(CAVEMAN_PROMPTS[level]).not.toContain("→");
     }
   });
 });
