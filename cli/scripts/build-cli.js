@@ -79,17 +79,15 @@ function copyRecursive(src, dest) {
   }
 }
 
-console.log("📦 Building 9Router CLI package with Next.js...\n");
+console.log("📦 Building 9Router CLI package with vinext...\n");
 
 // === Aggressive clean for reliable standalone builds ===
-// Always build into normal .next (Best Fix: custom distDir + workspace tracing
-// produces empty/incomplete standalone output in Next.js 16 + Bun/monorepo).
-// Clean .next + other artifacts for a pristine build.
-console.log("🧹 Cleaning previous build artifacts (aggressive clean for CLI build)...");
+// Clean dist (vinext output) + cli/app for a pristine build.
+console.log("🧹 Cleaning previous build artifacts...");
 const dirsToClean = [
   buildHomeDir,
   cliAppDir,
-  path.join(appDir, ".next"),           // Normal .next — guarantees clean standalone
+  path.join(appDir, "dist"),             // vinext standalone output
 ];
 for (const dir of dirsToClean) {
   if (fs.existsSync(dir)) {
@@ -120,8 +118,8 @@ if (appPkg.version !== cliPkg.version) {
   console.log(`✅ Version already synced: ${cliPkg.version}\n`);
 }
 
-// Step 1: Build app with Next.js (workspace tracing root → traced node_modules in standalone).
-console.log("1️⃣  Building Next.js app...");
+// Step 1: Build app with vinext (Vite) → emits dist/standalone/{server.js, dist/, node_modules/, public/}.
+console.log("1️⃣  Building vinext app...");
 try {
   execSync("npm run build", {
     stdio: "inherit",
@@ -132,119 +130,55 @@ try {
       USERPROFILE: buildHomeDir,
       APPDATA: path.join(buildHomeDir, "AppData", "Roaming"),
       LOCALAPPDATA: path.join(buildHomeDir, "AppData", "Local"),
-      NEXT_TRACING_ROOT_MODE: "workspace",
     }
   });
-  console.log("✅ Next.js build completed\n");
+  console.log("✅ vinext build completed\n");
 } catch (error) {
-  console.error("❌ Next.js build failed");
+  console.error("❌ vinext build failed");
   process.exit(1);
 }
 
-// Step 2: Copy Next.js standalone build to cli/app
-// (Best Fix: normal .next/standalone + robust detection for workspace tracing layout)
-console.log("2️⃣  Copying Next.js standalone build to app/cli/app...");
+// Step 2: Copy vinext standalone build to cli/app.
+// vinext emits a flat dist/standalone/{server.js, dist/, node_modules/, public/}.
+console.log("2️⃣  Copying vinext standalone build to cli/app...");
 
-const standaloneRoot = path.join(appDir, ".next", "standalone");
+const standaloneRoot = path.join(appDir, "dist", "standalone");
 
-/**
- * Robust finder for the directory containing server.js inside the standalone output.
- * When NEXT_TRACING_ROOT_MODE=workspace is used, Next.js nests the output under
- * the relative project folder (e.g. .next/standalone/9router/server.js).
- */
-function findStandaloneServerRoot(root) {
-  // 1. Direct hit (classic layout)
-  if (fs.existsSync(path.join(root, "server.js"))) {
-    return root;
-  }
-
-  // 2. Common with workspace tracingRoot: project name subfolder
-  //    e.g. standalone/9router/server.js or standalone/<basename>/server.js
-  if (fs.existsSync(root)) {
-    const entries = fs.readdirSync(root, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      const candidate = path.join(root, entry.name);
-      if (fs.existsSync(path.join(candidate, "server.js"))) {
-        return candidate;
-      }
-      // Sometimes another level (e.g. 9router/app)
-      const nestedApp = path.join(candidate, "app");
-      if (fs.existsSync(path.join(nestedApp, "server.js"))) {
-        return nestedApp;
-      }
-    }
-  }
-
-  // 3. Legacy nested-app layout
-  const legacyApp = path.join(root, "app");
-  if (fs.existsSync(path.join(legacyApp, "server.js"))) {
-    return legacyApp;
-  }
-
-  return null;
-}
-
-const standaloneApp = findStandaloneServerRoot(standaloneRoot);
-
-if (!standaloneApp) {
-  console.error("\n❌ Next.js standalone build not found (server.js missing inside standalone tree).");
+if (!fs.existsSync(path.join(standaloneRoot, "server.js"))) {
+  console.error("\n❌ vinext standalone build not found (dist/standalone/server.js missing).");
   console.error("Looked under: " + standaloneRoot);
-
-  // Rich diagnostics — this is the key information when workspace tracing is active
-  console.error("\n📁 Contents of .next/standalone:");
+  console.error("\n📁 Contents of dist/standalone:");
   try {
-    const st = fs.readdirSync(standaloneRoot);
-    console.error("  " + JSON.stringify(st, null, 2));
+    console.error("  " + JSON.stringify(fs.readdirSync(standaloneRoot), null, 2));
   } catch (e) {
-    console.error("  (could not read standalone dir: " + e.message + ")");
+    console.error("  (could not read dir: " + e.message + ")");
   }
-
-  console.error("\n🔍 Searching for any server.js under .next/standalone:");
-  try {
-    const { execSync } = require("child_process");
-    const found = execSync(`find "${standaloneRoot}" -name server.js 2>/dev/null | head -10`, { encoding: "utf8" }).trim();
-    console.error(found ? found : "  (no server.js found anywhere under standalone)");
-  } catch {
-    console.error("  (find command failed)");
-  }
-
-  console.error("\n📁 Top-level .next contents (for context):");
-  console.error("  " + JSON.stringify(
-    fs.existsSync(path.join(appDir, ".next")) ? fs.readdirSync(path.join(appDir, ".next")) : [],
-    null, 2
-  ));
-
-  console.error("\n💡 Likely cause:");
-  console.error("   Workspace tracing (NEXT_TRACING_ROOT_MODE=workspace) causes Next.js to nest");
-  console.error("   the standalone output under a project subfolder (e.g. standalone/9router/).");
-  console.error("   The finder above should have caught it — if you still see this, the build");
-  console.error("   may have produced an incomplete standalone tree.");
-
-  console.error("\n💡 Possible fixes:");
-  console.error("   • rm -rf .next cli/app && bun run cli:build   (clean + retry)");
-  console.error("   • Check the diagnostics above for the real location of server.js");
-
+  console.error("\n💡 Fix: rm -rf dist cli/app && bun run build && npm --prefix cli run build");
   process.exit(1);
 }
 
-console.log(`   → Found standalone server root: ${path.relative(appDir, standaloneApp)}`);
-copyRecursive(standaloneApp, cliAppDir);
-
-// Copy traced node_modules if they live at the standalone root level (older layout)
-const standaloneNodeModules = path.join(standaloneRoot, "node_modules");
-if (standaloneApp !== standaloneRoot && fs.existsSync(standaloneNodeModules)) {
-  copyRecursive(standaloneNodeModules, path.join(cliAppDir, "node_modules"));
-}
+console.log(`   → Found vinext standalone root: ${path.relative(appDir, standaloneRoot)}`);
+copyRecursive(standaloneRoot, cliAppDir);
 console.log("✅ Copied standalone build\n");
 
-// Step 3a: Copy custom server (injects real socket IP, strips spoofable XFF).
-const customServerSrc = path.join(appDir, "custom-server.js");
-if (fs.existsSync(customServerSrc)) {
-  fs.copyFileSync(customServerSrc, path.join(cliAppDir, "custom-server.js"));
-  console.log("✅ Copied custom-server.js\n");
+// Step 3a: Copy the vinext entry + trusted-IP middleware (replaces custom-server.js).
+// server.vinext.js prepends a "request" listener that injects x-9r-real-ip;
+// src/lib/clientIp.js holds the shared sanitizer.
+const vinextEntrySrc = path.join(appDir, "server.vinext.js");
+const clientIpSrc = path.join(appDir, "src", "lib", "clientIp.js");
+if (fs.existsSync(vinextEntrySrc)) {
+  fs.copyFileSync(vinextEntrySrc, path.join(cliAppDir, "server.vinext.js"));
+  // clientIp.js is imported via the relative path ./src/lib/clientIp.js
+  if (fs.existsSync(clientIpSrc)) {
+    const dest = path.join(cliAppDir, "src", "lib", "clientIp.js");
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(clientIpSrc, dest);
+    console.log("✅ Copied server.vinext.js + src/lib/clientIp.js\n");
+  } else {
+    console.warn("⚠️  src/lib/clientIp.js not found — real-IP injection will fail at runtime\n");
+  }
 } else {
-  console.warn("⚠️  custom-server.js not found — server will run without real-IP injection\n");
+  console.warn("⚠️  server.vinext.js not found — CLI will fall back to the plain vinext server.js (no real-IP injection)\n");
 }
 
 // Step 3b: Ensure sql.js (pure JS fallback) bundled in app/cli/app/node_modules.
@@ -279,19 +213,10 @@ if (fs.existsSync(betterDir)) {
 }
 console.log("");
 
-// Step 4: Copy static files
-// (into .next/static relative to the standalone server.js inside cli/app)
-console.log("4️⃣  Copying static files...");
-const staticSrc = path.join(appDir, ".next", "static");
-const staticDest = path.join(cliAppDir, ".next", "static");
-if (fs.existsSync(staticSrc)) {
-  copyRecursive(staticSrc, staticDest);
-  console.log("✅ Copied static files\n");
-} else {
-  console.log("⏭️  No static files found\n");
-}
+// Step 4: (no-op) Static assets live inside dist/standalone/dist/ — already copied in Step 2.
 
-// Step 5: Copy public folder if exists
+// Step 5: Copy public folder if exists (vinext standalone already includes it,
+// but copy explicitly as a safety net for the bundled layout).
 console.log("5️⃣  Copying public folder...");
 const publicSrc = path.join(appDir, "public");
 const publicDest = path.join(cliAppDir, "public");
@@ -302,17 +227,8 @@ if (fs.existsSync(publicSrc)) {
   console.log("⏭️  No public folder found\n");
 }
 
-// Step 6: Copy vendor-chunks (required for production)
-// (into .next/server/vendor-chunks relative to the standalone server.js)
-console.log("6️⃣  Copying vendor-chunks...");
-const vendorChunksSrc = path.join(appDir, ".next", "server", "vendor-chunks");
-const vendorChunksDest = path.join(cliAppDir, ".next", "server", "vendor-chunks");
-if (fs.existsSync(vendorChunksSrc)) {
-  copyRecursive(vendorChunksSrc, vendorChunksDest);
-  console.log("✅ Copied vendor-chunks\n");
-} else {
-  console.log("⏭️  No vendor-chunks found\n");
-}
+// Step 6: (no-op) vendor-chunks were a Next.js-specific path; vinext emits all
+// server bundles under dist/standalone/dist/ — already copied in Step 2.
 
 // Step 7: Copy MITM server files (not bundled by Next.js standalone)
 console.log("7️⃣  Copying MITM server files...");
