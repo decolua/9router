@@ -24,6 +24,15 @@ export default function TokenSaverClient() {
     useState(false);
   const [headroomActionLoading, setHeadroomActionLoading] = useState(false);
   const [headroomActionError, setHeadroomActionError] = useState("");
+  const [headroomExtras, setHeadroomExtras] = useState({
+    version: null,
+    extras: { code: false, ml: false },
+    available: ["code", "ml"],
+    loading: false,
+  });
+  const [pendingExtras, setPendingExtras] = useState([]);
+  const [extrasActionLoading, setExtrasActionLoading] = useState(false);
+  const [extrasActionError, setExtrasActionError] = useState("");
   const [cavemanEnabled, setCavemanEnabled] = useState(false);
   const [cavemanLevel, setCavemanLevel] = useState("full");
   const [ponytailEnabled, setPonytailEnabled] = useState(false);
@@ -102,6 +111,39 @@ export default function TokenSaverClient() {
       });
       const data = await res.json();
       setHeadroomStatus({ ...data, loading: false });
+      if (!data?.installed) {
+        setHeadroomExtras({
+          version: null,
+          extras: { code: false, ml: false },
+          available: ["code", "ml"],
+          loading: false,
+        });
+        setPendingExtras([]);
+        return;
+      }
+      try {
+        const er = await fetch("/api/headroom/extras", {
+          headers: { "Cache-Control": "no-store" },
+        });
+        if (!er.ok) throw new Error("extras status failed");
+        const ed = await er.json();
+        setHeadroomExtras((s) => ({
+          ...s,
+          version: ed.version ?? null,
+          extras: ed.extras || { code: false, ml: false },
+          available: ed.available || ["code", "ml"],
+          loading: false,
+        }));
+        setPendingExtras([]);
+      } catch {
+        setHeadroomExtras({
+          version: null,
+          extras: { code: false, ml: false },
+          available: ["code", "ml"],
+          loading: false,
+        });
+        setPendingExtras([]);
+      }
     } catch {
       setHeadroomStatus({
         installed: false,
@@ -109,6 +151,13 @@ export default function TokenSaverClient() {
         python: null,
         loading: false,
       });
+      setHeadroomExtras({
+        version: null,
+        extras: { code: false, ml: false },
+        available: ["code", "ml"],
+        loading: false,
+      });
+      setPendingExtras([]);
     }
   }, []);
 
@@ -136,6 +185,37 @@ export default function TokenSaverClient() {
       setHeadroomActionLoading(false);
     }
   }, [refreshHeadroomStatus]);
+
+  const togglePendingExtra = (extra) => {
+    setPendingExtras((cur) =>
+      cur.includes(extra) ? cur.filter((e) => e !== extra) : [...cur, extra]
+    );
+  };
+
+  const handleInstallExtras = useCallback(async () => {
+    if (pendingExtras.length === 0) return;
+    setExtrasActionLoading(true);
+    setExtrasActionError("");
+    try {
+      const res = await fetch("/api/headroom/extras", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ extras: pendingExtras }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Install failed");
+      setHeadroomExtras((s) => ({
+        ...s,
+        version: data.version ?? s.version,
+        extras: data.extras || s.extras,
+      }));
+      setPendingExtras([]);
+    } catch (e) {
+      setExtrasActionError(e.message);
+    } finally {
+      setExtrasActionLoading(false);
+    }
+  }, [pendingExtras]);
 
   const handleCavemanLevel = (level) => {
     setCavemanLevel(level);
@@ -257,6 +337,70 @@ export default function TokenSaverClient() {
             onChange={() => handleHeadroomEnabled(!headroomEnabled)}
           />
         </div>
+        {headroomStatus.installed && (
+          <div className="mt-3 ml-1 pl-3 border-l-2 border-border">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-text-muted">
+                Compression extras
+                {headroomExtras.version ? ` · v${headroomExtras.version}` : ""}:
+              </span>
+              {headroomExtras.available.map((extra) => {
+                const installed = !!headroomExtras.extras[extra];
+                const pending = pendingExtras.includes(extra);
+                return (
+                  <label
+                    key={extra}
+                    className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded border cursor-pointer transition-colors ${
+                      installed
+                        ? "border-success/40 bg-success/5 text-text"
+                        : pending
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border text-text-muted hover:bg-surface-2"
+                    }`}
+                    title={
+                      extra === "code"
+                        ? "tree-sitter AST compression for code responses"
+                        : "Kompress-v2 HF model for prose/agentic traces (~+1GB)"
+                    }
+                  >
+                    <input
+                      type="checkbox"
+                      className="w-3 h-3"
+                      checked={installed || pending}
+                      disabled={installed}
+                      onChange={() => togglePendingExtra(extra)}
+                    />
+                    <span className="font-medium">[{extra}]</span>
+                    <span className="opacity-70">
+                      {installed ? "installed" : "not installed"}
+                    </span>
+                  </label>
+                );
+              })}
+              {pendingExtras.length > 0 && (
+                <button
+                  onClick={handleInstallExtras}
+                  disabled={extrasActionLoading}
+                  className="text-xs px-2.5 py-1 rounded bg-primary text-white hover:opacity-90 disabled:opacity-50"
+                >
+                  {extrasActionLoading
+                    ? "Installing…"
+                    : `Install [proxy,${pendingExtras.join(",")}]`}
+                </button>
+              )}
+            </div>
+            {extrasActionError && (
+              <p className="text-xs text-error mt-1">{extrasActionError}</p>
+            )}
+            <p className="text-xs text-text-muted mt-1">
+              Default install is <code>[proxy]</code> only (SmartCrusher for
+              JSON). Adding <code>[code]</code> enables AST compression
+              (Python/JS/TS/Go/Rust/Java/C/C++/Perl). Adding <code>[ml]</code>{" "}
+              enables the Kompress-v2 HF model for prose/agentic traces but
+              adds ~1 GB (torch + huggingface-hub).
+            </p>
+          </div>
+        )}
         <div className="flex items-center justify-between pt-4 gap-4 flex-wrap">
           <div className="min-w-0 flex-1">
             <p className="font-medium">

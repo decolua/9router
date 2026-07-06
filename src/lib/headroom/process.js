@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import { spawn } from "child_process";
 import { DATA_DIR } from "@/lib/dataDir.js";
-import { findHeadroomBinary } from "./detect.js";
+import { findHeadroomBinary, findPython310, HEADROOM_COMPRESSION_EXTRAS, getInstalledHeadroomExtras } from "./detect.js";
 
 const HEADROOM_DIR = path.join(DATA_DIR, "headroom");
 const PID_FILE = path.join(HEADROOM_DIR, "proxy.pid");
@@ -125,4 +125,53 @@ export function getHeadroomLogTail(maxLines = 200) {
     const lines = content.split(/\r?\n/).filter(Boolean);
     return lines.slice(-maxLines).join("\n");
   } catch { return ""; }
+}
+
+// Install (or upgrade) headroom-ai with the requested compression extras.
+// `extras` is a whitelist from HEADROOM_COMPRESSION_EXTRAS — anything else
+// is rejected to keep the install surface predictable. Always installs the
+// `proxy` base + whatever extras the user picked, regardless of what is
+// already present.
+export async function installHeadroomExtras(extras = []) {
+  const requested = Array.isArray(extras) ? extras.filter((e) => HEADROOM_COMPRESSION_EXTRAS.includes(e)) : [];
+  const py = findPython310();
+  if (!py) {
+    const err = new Error("Python >= 3.10 not found");
+    err.code = "NO_PYTHON";
+    throw err;
+  }
+  if (!findHeadroomBinary()) {
+    const err = new Error("headroom-ai not installed (run `pip install headroom-ai[proxy]` first)");
+    err.code = "NOT_INSTALLED";
+    throw err;
+  }
+  // pip install string is built from a closed set (HEADROOM_COMPRESSION_EXTRAS),
+  // so it cannot be poisoned by caller input — the comma-list is a fixed
+  // ['proxy', ...requested]. No shell interpolation.
+  const extrasList = ["proxy", ...requested].join(",");
+  const spec = `headroom-ai[${extrasList}]`;
+  const args = ["-m", "pip", "install", "--upgrade", spec];
+
+  ensureDir();
+  const outFd = fs.openSync(path.join(HEADROOM_DIR, "install.log"), "a");
+  const child = spawn(py, args, {
+    stdio: ["ignore", outFd, outFd],
+    windowsHide: true,
+    env: { ...process.env },
+  });
+
+  return new Promise((resolve, reject) => {
+    child.once("error", (e) => { fs.closeSync(outFd); reject(e); });
+    child.once("exit", (code) => {
+      fs.closeSync(outFd);
+      if (code === 0) {
+        const status = getInstalledHeadroomExtras(py);
+        resolve({ success: true, code, spec, extras: requested, ...status });
+      } else {
+        const err = new Error(`pip install exited with code=${code} — see headroom/install.log`);
+        err.code = "INSTALL_FAILED";
+        reject(err);
+      }
+    });
+  });
 }
