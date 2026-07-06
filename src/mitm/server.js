@@ -48,6 +48,14 @@ function sniCallback(servername, cb) {
       cert: `${certData.cert}\n${rootCAPem}`
     });
     certCache.set(servername, ctx);
+
+    // Defensive cap — unique SNIs (tools) can accumulate over very long uptime
+    const MAX_CERT_CACHE = 1000;
+    if (certCache.size > MAX_CERT_CACHE) {
+      const oldest = certCache.keys().next().value;
+      certCache.delete(oldest);
+    }
+
     cb(null, ctx);
   } catch (e) {
     err(`SNI error for ${servername}: ${e.message}`);

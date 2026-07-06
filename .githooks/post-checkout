@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+# installed-by: ivt-hooks
+# Branch-naming policy enforcement on checkout.
+#
+# Git has no "pre-checkout" hook, so we validate on post-checkout and bounce
+# back to the previous branch when the new branch violates the policy. A
+# preserved post-checkout.pre-ivt is chained on valid checkouts only (we don't
+# run it on the rejected branch).
+#
+# Bypass: IVT_HOOK_SKIP=1. Detached HEAD and rebase/merge/cherry-pick in
+# progress are always allowed (internal git machinery).
+
+set -u
+
+# Locate the shared lib, dereferencing the installer's symlink. Portable across
+# bash 3.2 (BSD readlink), macOS 12.3+, and Linux (GNU readlink -f).
+hook_self="$0"
+hook_real="$hook_self"
+if command -v readlink >/dev/null 2>&1 && readlink -f -- / >/dev/null 2>&1; then
+  resolved="$(readlink -f -- "$hook_self" 2>/dev/null)" && [ -n "$resolved" ] && hook_real="$resolved"
+elif command -v greadlink >/dev/null 2>&1; then
+  resolved="$(greadlink -f "$hook_self" 2>/dev/null)" && [ -n "$resolved" ] && hook_real="$resolved"
+else
+  hops=0
+  while [ -L "$hook_real" ] && [ "$hops" -lt 40 ]; do
+    hops=$((hops + 1))
+    _dir="$(cd -P "$(dirname "$hook_real")" >/dev/null 2>&1 && pwd)"
+    _link="$(readlink "$hook_real")"
+    case "$_link" in
+      /*) hook_real="$_link" ;;
+      *)  hook_real="$_dir/$_link" ;;
+    esac
+  done
+fi
+hook_dir="$(cd -P "$(dirname "$hook_real")" >/dev/null 2>&1 && pwd)"
+# shellcheck disable=SC1091
+. "$hook_dir/lib.sh"
+
+# Guard against infinite recursion: the bounce-back below runs `git checkout`,
+# which re-fires this very hook. IVT_BOUNCING marks that nested run so it exits
+# immediately instead of bouncing again (which, between two invalid branches,
+# would loop forever and peg the CPU).
+[ "${IVT_BOUNCING:-0}" = "1" ] && { ivt_hook_debug "already bouncing; exiting"; exit 0; }
+
+[ -n "${IVT_HOOK_SKIP:-}" ] && { ivt_hook_debug "IVT_HOOK_SKIP set; exiting"; ivt_chain_next_hook post-checkout "$@"; exit 0; }
+
+prev_head="$1"
+new_head="$2"
+branch_flag="$3"
+
+# Only act on branch switches; file checkouts (`git checkout -- path`) have flag=0.
+if [ "$branch_flag" != "1" ]; then
+  ivt_chain_next_hook post-checkout "$@"
+  exit 0
+fi
+
+# Skip during rebase/merge/cherry-pick — symbolic-ref may be transient.
+git_dir="$(git rev-parse --git-dir 2>/dev/null || true)"
+if [ -n "$git_dir" ] && { [ -d "$git_dir/rebase-merge" ] || [ -d "$git_dir/rebase-apply" ] \
+     || [ -f "$git_dir/MERGE_HEAD" ] || [ -f "$git_dir/CHERRY_PICK_HEAD" ]; }; then
+  ivt_chain_next_hook post-checkout "$@"
+  exit 0
+fi
+
+new_branch="$(ivt_current_branch)"
+
+# Detached HEAD after checkout (e.g. `git checkout <sha>`) is fine.
+if [ -z "$new_branch" ]; then
+  ivt_chain_next_hook post-checkout "$@"
+  exit 0
+fi
+
+if ivt_branch_is_valid "$new_branch"; then
+  ivt_hook_debug "branch '$new_branch' is valid"
+  ivt_chain_next_hook post-checkout "$@"
+  exit 0
+fi
+
+cat >&2 <<EOF
+
+[branch policy] ❌ Rejected checkout to '$new_branch'.
+EOF
+ivt_print_policy
+
+# Recover the branch we just left from the HEAD reflog — entry for THIS
+# checkout is "moving from <from> to <new_branch>"; <from> is what we want.
+prev_branch=""
+if command -v git >/dev/null 2>&1; then
+  # Match the reflog line with literal field comparison, not a dynamic regex:
+  # a branch name with regex metacharacters (`.`, `+`, `[`, …) would otherwise
+  # break the match or error out in awk. The format is fixed and space-free —
+  # "checkout: moving from <from> to <to>" — so the destination is the last
+  # field ($NF) and the source is the third-from-last ($(NF-2)).
+  prev_branch="$(git reflog --pretty=format:'%gs' HEAD 2>/dev/null \
+    | awk -v cur="$new_branch" '
+        $1 == "checkout:" && $2 == "moving" && $3 == "from" && $NF == cur {
+          print $(NF-2)
+          exit
+        }
+      ')"
+  case "$prev_branch" in
+    ""|*"checkout:"*) prev_branch="" ;;
+  esac
+fi
+
+restored=0
+if [ -n "$prev_branch" ] && git show-ref --verify --quiet "refs/heads/$prev_branch" 2>/dev/null; then
+  if IVT_BOUNCING=1 git checkout --quiet "$prev_branch" 2>/dev/null; then
+    restored=1
+    echo "[branch policy] ↩ Switched back to '$prev_branch'." >&2
+  fi
+fi
+
+if [ "$restored" -ne 1 ]; then
+  # Previous state was detached HEAD (prev_branch parsed to a sha) or a sha we
+  # can't resolve as a branch. Detach from $new_branch before checking out
+  # $prev_head — otherwise git treats it as a no-op (the new branch sits at the
+  # same commit) and silently leaves HEAD on $new_branch.
+  if git rev-parse --quiet --verify "$prev_head^{commit}" >/dev/null 2>&1; then
+    IVT_BOUNCING=1 git checkout --quiet --detach 2>/dev/null
+    if IVT_BOUNCING=1 git checkout --quiet "$prev_head" 2>/dev/null; then
+      restored=1
+      # Clean up the just-created invalid branch: in the detached case there's
+      # no valid previous branch for the user to recover, and the lingering ref
+      # would be misleading (HEAD no longer points at it).
+      [ -n "$new_branch" ] && git branch --quiet -D "$new_branch" 2>/dev/null || true
+      echo "[branch policy] ↩ Switched back to previous commit ($prev_head, detached HEAD)." >&2
+    fi
+  fi
+fi
+
+if [ "$restored" -ne 1 ]; then
+  echo "[branch policy] ⚠ Could not auto-switch back. HEAD is now on '$new_branch'. Rename with:" >&2
+  echo "                  git branch -m IVT-XXXX-short-description" >&2
+fi
+
+cat >&2 <<EOF
+
+Tip: create your branch with the task id up front and this never triggers:
+    git checkout -b IVT-0999-short-description
+
+Set IVT_HOOK_SKIP=1 to bypass for one command:
+    IVT_HOOK_SKIP=1 git checkout <branch>
+
+EOF
+
+# post-checkout can't abort the checkout (git already moved HEAD); we bounced
+# back instead. Non-zero would only print git's own "hook declined" noise.
+exit 0

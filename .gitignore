@@ -77,3 +77,7 @@ gitbook/README.md
 open-sse.old/
 .graphifyignore
 graphify-out/*
+~/.9router
+log.txt
+backup.json
+.serena

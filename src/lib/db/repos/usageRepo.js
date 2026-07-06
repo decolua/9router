@@ -740,6 +740,35 @@ function formatLogDate(date = new Date()) {
 // No-op: request log is now derived from usageHistory table on read.
 export async function appendRequestLog() {}
 
+/**
+ * Safely prunes old rows from usageHistory.
+ * We deliberately do NOT touch usageDaily (the aggregates are small and valuable).
+ * Default retention: 90 days.
+ */
+export async function pruneOldUsageHistory(retentionDays = 90) {
+  try {
+    const db = await getAdapter();
+    const cutoff = new Date(Date.now() - retentionDays * 86400000).toISOString();
+
+    // Use a transaction for safety
+    const result = db.transaction(() => {
+      return db.run(
+        `DELETE FROM usageHistory WHERE timestamp < ?`,
+        [cutoff]
+      );
+    })();
+
+    const deleted = result?.changes ?? result ?? 0;
+    if (deleted > 0) {
+      console.log(`[usageRepo] Pruned ${deleted} old rows from usageHistory (older than ${retentionDays} days)`);
+    }
+    return deleted;
+  } catch (e) {
+    console.error("[usageRepo] pruneOldUsageHistory failed:", e.message);
+    return 0;
+  }
+}
+
 export async function getRecentLogs(limit = 200) {
   try {
     const db = await getAdapter();

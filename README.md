@@ -100,6 +100,8 @@ Claude Code/Codex/OpenClaw/Cursor/Cline Settings:
 
 This repository package is private (`9router-app`), so source/Docker execution is the expected local development path.
 
+### Run the Dashboard (Next.js)
+
 ```bash
 cp .env.example .env
 npm install
@@ -113,7 +115,49 @@ npm run build
 PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run start
 ```
 
-Default URLs:
+### Run the `9router` CLI locally (for development)
+
+The CLI lives in the `cli/` folder. Here are the easiest ways to run it from the project root:
+
+```bash
+# Quick run (recommended for most development)
+npm run cli
+
+# Or using Bun
+bun run cli:bun
+```
+
+**One-time (or after source changes): build the embedded Next.js server**
+
+The CLI embeds a standalone Next.js production build for the dashboard + API:
+
+```bash
+# From project root
+bun run cli:build
+# or: npm run cli:build
+```
+
+This step is now reliable (uses standard `.next/standalone` output).
+
+**Make the `9router` command globally available** (like after `npm install -g 9router`):
+
+```bash
+# Link the local CLI
+npm run cli:link
+
+# Now you can use the normal command
+9router
+```
+
+To unlink later:
+
+```bash
+npm run cli:unlink
+```
+
+**Note:** The first time you run the CLI it will set up its runtime dependencies in `~/.9router/runtime`.
+
+Default URLs (when running locally):
 - Dashboard: `http://localhost:20128/dashboard`
 - OpenAI-compatible API: `http://localhost:20128/v1`
 

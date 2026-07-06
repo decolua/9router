@@ -128,6 +128,13 @@ export async function saveRequestDetail(detail) {
 
   writeBuffer.push(detail);
 
+  // Hard cap on in-memory buffer to prevent unbounded growth under high load or flush failures.
+  // This is a safety net; the DB table itself is already capped.
+  const MAX_IN_MEMORY_BUFFER = 2000;
+  if (writeBuffer.length > MAX_IN_MEMORY_BUFFER) {
+    writeBuffer.shift(); // Drop oldest un-flushed detail
+  }
+
   // Trigger immediate flush if batch threshold reached.
   // flushToDatabase() drains entire buffer in a loop, so all pushes during await are persisted.
   if (writeBuffer.length >= config.batchSize) {

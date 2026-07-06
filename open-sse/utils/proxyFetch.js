@@ -223,7 +223,10 @@ async function getDispatcher(proxyUrl) {
   if (!proxyDispatchers.has(normalized)) {
     // Evict oldest entry if max size reached
     if (proxyDispatchers.size >= MEMORY_CONFIG.proxyDispatchersMaxSize) {
-      proxyDispatchers.delete(proxyDispatchers.keys().next().value);
+      const oldestKey = proxyDispatchers.keys().next().value;
+      const oldAgent = proxyDispatchers.get(oldestKey);
+      try { oldAgent?.close?.(); } catch {} // Properly close undici agent to release sockets
+      proxyDispatchers.delete(oldestKey);
     }
     const { ProxyAgent } = await import("undici");
     proxyDispatchers.set(normalized, new ProxyAgent({ uri: normalized }));
@@ -364,5 +367,31 @@ async function patchedFetch(url, options = {}) {
 if (globalThis.fetch !== patchedFetch) {
   globalThis.fetch = patchedFetch;
 }
+
+/**
+ * Periodic sweeper for DNS_CACHE to prevent unbounded growth.
+ * Runs every 10 minutes, removes expired entries.
+ */
+function startDnsCacheSweeper() {
+  const SWEEP_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+  const interval = setInterval(() => {
+    const now = Date.now();
+    let cleaned = 0;
+    for (const [host, entry] of DNS_CACHE) {
+      if (now >= entry.expiry) {
+        DNS_CACHE.delete(host);
+        cleaned++;
+      }
+    }
+    if (cleaned > 0) {
+      console.log(`[ProxyFetch] DNS_CACHE sweeper cleaned ${cleaned} expired entries`);
+    }
+  }, SWEEP_INTERVAL_MS);
+
+  if (typeof interval.unref === 'function') interval.unref();
+}
+
+// Start the sweeper (safe, unref'ed so it doesn't keep process alive)
+startDnsCacheSweeper();
 
 export default patchedFetch;

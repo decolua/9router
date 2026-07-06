@@ -312,6 +312,13 @@ export async function resolveKiroModels(credentials, options = {}) {
     rawModels: raw
   });
 
+  // Defensive cap — Kiro catalogs are per-credential and can accumulate over long uptime
+  const MAX_KIRO_CATALOG_CACHE = 500;
+  if (catalogCache.size > MAX_KIRO_CATALOG_CACHE) {
+    const oldest = catalogCache.keys().next().value;
+    catalogCache.delete(oldest);
+  }
+
   return { models: expanded, rawModels: raw };
 }
 

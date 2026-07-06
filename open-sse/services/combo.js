@@ -182,6 +182,12 @@ export function getRotatedModels(models, comboName, strategy, stickyLimit = 1) {
     });
   }
 
+  // Defensive cap
+  if (comboRotationState.size > 1000) {
+    const oldest = comboRotationState.keys().next().value;
+    comboRotationState.delete(oldest);
+  }
+
   return rotatedModels;
 }
 

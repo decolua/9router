@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# installed-by: ivt-hooks
+# Append the current branch's IVT-XXXX task id to the commit message.
+#
+# On a valid IVT branch the task id is extracted and appended to the subject
+# line. Skipped when the message already contains the id, or on infra branches
+# (main/master/develop/release/*). A preserved commit-msg.pre-ivt is chained
+# afterwards (DCO/sign-off bots keep working); its non-zero exit rejects.
+#
+# Bypass: git commit --no-verify skips all hooks; IVT_HOOK_SKIP=1 skips only
+# the ivt append while still chaining the previous hook.
+
+set -u
+
+msg_file="$1"
+
+# Locate the shared lib, dereferencing the installer's symlink. Portable across
+# bash 3.2 (BSD readlink), macOS 12.3+, and Linux (GNU readlink -f).
+hook_self="$0"
+hook_real="$hook_self"
+if command -v readlink >/dev/null 2>&1 && readlink -f -- / >/dev/null 2>&1; then
+  resolved="$(readlink -f -- "$hook_self" 2>/dev/null)" && [ -n "$resolved" ] && hook_real="$resolved"
+elif command -v greadlink >/dev/null 2>&1; then
+  resolved="$(greadlink -f "$hook_self" 2>/dev/null)" && [ -n "$resolved" ] && hook_real="$resolved"
+else
+  hops=0
+  while [ -L "$hook_real" ] && [ "$hops" -lt 40 ]; do
+    hops=$((hops + 1))
+    _dir="$(cd -P "$(dirname "$hook_real")" >/dev/null 2>&1 && pwd)"
+    _link="$(readlink "$hook_real")"
+    case "$_link" in
+      /*) hook_real="$_link" ;;
+      *)  hook_real="$_dir/$_link" ;;
+    esac
+  done
+fi
+hook_dir="$(cd -P "$(dirname "$hook_real")" >/dev/null 2>&1 && pwd)"
+# shellcheck disable=SC1091
+. "$hook_dir/lib.sh"
+
+# Chain any previous commit-msg with the (possibly rewritten) message file,
+# then propagate its exit status.
+chain_and_exit() {
+  ivt_chain_next_hook commit-msg "$msg_file"
+  exit $?
+}
+
+[ -n "${IVT_HOOK_SKIP:-}" ] && { ivt_hook_debug "IVT_HOOK_SKIP set; still chaining"; chain_and_exit; }
+
+branch="$(ivt_current_branch)"
+
+[ -n "$branch" ] && ivt_branch_is_infra "$branch" && chain_and_exit
+
+task_id=""
+if [ -n "$branch" ] && [[ "$branch" =~ $IVT_TASK_REGEX ]]; then
+  task_id="$(ivt_extract_task_id "$branch")"
+fi
+[ -z "$task_id" ] && chain_and_exit
+
+[ -f "$msg_file" ] || chain_and_exit
+
+# Skip if the task id is already in the real body. Read straight from the file
+# (ignoring '#' comment lines) — never slurp into a variable, which would strip
+# trailing newlines and let shell expansion mangle the message content.
+if grep -v '^[[:space:]]*#' "$msg_file" | grep -qE "$IVT_TASK_REGEX"; then
+  ivt_hook_debug "task id already present in message; leaving untouched"
+  chain_and_exit
+fi
+
+# Rewrite the subject (first non-blank, non-comment line) in place, appending
+# the task id and keeping every other line — body, blank separators, comments,
+# trailers — byte-for-byte. awk reads the file directly, so backslashes, dollar
+# signs, and backticks in the message are never expanded, and the final line is
+# processed even without a trailing newline. exit 1 ⇒ no eligible subject found.
+tmp="$(mktemp "${msg_file}.XXXXXX")"
+trap 'rm -f "$tmp"' EXIT
+
+awk -v task_id="$task_id" '
+  !done && $0 != "" && $0 !~ /^#/ {
+    print $0 " " task_id
+    done = 1
+    next
+  }
+  { print }
+  END { exit(done ? 0 : 1) }
+' "$msg_file" > "$tmp"
+
+if [ $? -ne 0 ]; then
+  ivt_hook_debug "empty commit body; nothing to append"
+  chain_and_exit
+fi
+
+# Preserve the original trailing-newline behaviour. awk always terminates the
+# last record with a newline; if the original file did NOT end with one, strip
+# the single newline awk added. The `printf x` sentinel guards real trailing
+# newlines from command-substitution stripping.
+if [ -s "$msg_file" ] && [ -n "$(tail -c 1 "$msg_file")" ]; then
+  content="$(cat "$tmp"; printf x)"
+  content="${content%x}"
+  content="${content%$'\n'}"
+  printf '%s' "$content" >"$tmp"
+fi
+
+mv "$tmp" "$msg_file"
+trap - EXIT
+ivt_hook_debug "appended '$task_id' to commit subject"
+chain_and_exit

@@ -16,6 +16,7 @@ const { isCertExpired } = require("./cert/rootCA");
 const { DATA_DIR, MITM_DIR } = require("./paths");
 const { log, err } = require("./logger");
 const { LSOF_BIN } = require("./config");
+const { createSafeChild } = require("../lib/safeChild");
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 
@@ -594,7 +595,7 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
 
     // Spawn directly — process already has admin rights
     // cwd=tmpdir so process doesn't lock the install dir on Windows (EBUSY on update)
-    serverProcess = spawn(
+    serverProcess = createSafeChild(
       process.execPath,
       [effectiveServerPath],
       {
@@ -608,7 +609,8 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
           NODE_ENV: "production",
           MITM_ROUTER_BASE: mitmRouterBase,
         },
-      }
+      },
+      { log, err }
     );
 
     if (_updateSettings) await _updateSettings({ mitmCertInstalled: true }).catch(() => { });
@@ -623,15 +625,16 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
       shellQuoteSingle(process.execPath),
       shellQuoteSingle(effectiveServerPath),
     ].join(" ");
-    serverProcess = spawn(
+    serverProcess = createSafeChild(
       "sudo", ["-S", "-E", "sh", "-c", inlineCmd],
-      { detached: false, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] }
+      { detached: false, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] },
+      { log, err }
     );
     serverProcess.stdin.write(`${sudoPassword}\n`);
     serverProcess.stdin.end();
   } else {
     // Docker/minimal images: no sudo — same as Windows-style direct spawn
-    serverProcess = spawn(process.execPath, [effectiveServerPath], {
+    serverProcess = createSafeChild(process.execPath, [effectiveServerPath], {
       detached: false,
       windowsHide: true,
       cwd: os.tmpdir(),
@@ -642,7 +645,7 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
         NODE_ENV: "production",
         MITM_ROUTER_BASE: mitmRouterBase,
       },
-    });
+    }, { log, err });
   }
 
   if (serverProcess) {

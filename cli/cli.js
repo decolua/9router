@@ -55,6 +55,26 @@ try { ensureSqliteRuntime({ silent: true }); } catch {}
 // Self-heal tray runtime (systray for macOS/Linux only). Windows skipped.
 try { ensureTrayRuntime({ silent: true }); } catch {}
 
+// Initialize crash logger for the CLI manager process itself (tray mode, background, etc.)
+// This ensures consistency with the server process and gives us crash logs even if the wrapper dies.
+// The path depends on how the CLI is invoked:
+// - After `bun run cli:build` or in published package: ./src/lib/crashLogger.js (copied during build)
+// - Running directly from monorepo root without build: ../src/lib/crashLogger.js
+try {
+  let crashMod;
+  try {
+    crashMod = require("./src/lib/crashLogger.js");
+  } catch {
+    // Fallback for running the raw cli/cli.js from the project root without a prior cli:build
+    crashMod = require("../src/lib/crashLogger.js");
+  }
+  const { initCrashLogger } = crashMod;
+  initCrashLogger();
+} catch (e) {
+  // Non-fatal — the server child has its own handler anyway
+  console.error("[cli] Failed to init crash logger:", e.message);
+}
+
 // Configuration constants
 const APP_NAME = pkg.name; // Use from package.json
 const INSTALL_CMD_LATEST = `npm i -g ${APP_NAME}@latest --prefer-online`;
@@ -495,7 +515,7 @@ const serverPath = fs.existsSync(customServerPath)
 
 if (!fs.existsSync(serverPath)) {
   console.error("Error: Standalone build not found.");
-  console.error("Please run 'npm run build:cli' first.");
+  console.error("Please run 'npm run cli:build' (or 'bun run cli:build') from the project root first.");
   process.exit(1);
 }
 
@@ -602,6 +622,15 @@ function startServer(latestVersion) {
   function cleanup() {
     if (isCleaningUp) return;
     isCleaningUp = true;
+
+    // Phase 5: Best-effort flush of crash logger on CLI shutdown
+    // (HIGH-risk area — kept minimal per impact analysis)
+    try {
+      if (global.__logCrash) {
+        global.__logCrash("cli-cleanup", new Error("CLI cleanup triggered"));
+      }
+    } catch {}
+
     try {
       // Kill tray if running
       try {

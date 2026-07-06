@@ -104,6 +104,13 @@ export async function refreshVertexToken(saJson, log) {
     const expiresAt = Date.now() + (expires_in ?? 3600) * 1000;
 
     vertexTokenCache.set(cacheKey, { token: access_token, expiresAt });
+
+    // Defensive size cap to prevent memory leak over very long uptime
+    const MAX_VERTEX_CACHE = 200;
+    if (vertexTokenCache.size > MAX_VERTEX_CACHE) {
+      const oldest = vertexTokenCache.keys().next().value;
+      vertexTokenCache.delete(oldest);
+    }
     log?.info?.("TOKEN_REFRESH", `Vertex token minted for ${saJson.client_email}`);
 
     return { accessToken: access_token, expiresAt };

@@ -9,8 +9,6 @@ const appDir = path.resolve(cliDir, "..");
 const rootDir = path.resolve(appDir, "..");
 const cliAppDir = path.join(cliDir, "app");
 const buildHomeDir = path.join(cliDir, ".build-home");
-const buildDistDirName = ".next-cli-build";
-const buildDistDir = path.join(appDir, buildDistDirName);
 
 // Exclude patterns for files/folders we don't want to copy
 const EXCLUDE_PATTERNS = [
@@ -83,6 +81,28 @@ function copyRecursive(src, dest) {
 
 console.log("📦 Building 9Router CLI package with Next.js...\n");
 
+// === Aggressive clean for reliable standalone builds ===
+// Always build into normal .next (Best Fix: custom distDir + workspace tracing
+// produces empty/incomplete standalone output in Next.js 16 + Bun/monorepo).
+// Clean .next + other artifacts for a pristine build.
+console.log("🧹 Cleaning previous build artifacts (aggressive clean for CLI build)...");
+const dirsToClean = [
+  buildHomeDir,
+  cliAppDir,
+  path.join(appDir, ".next"),           // Normal .next — guarantees clean standalone
+];
+for (const dir of dirsToClean) {
+  if (fs.existsSync(dir)) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+      console.log(`   ✓ Removed ${path.relative(process.cwd(), dir)}`);
+    } catch (e) {
+      console.warn(`   ⚠️  Failed to remove ${dir}: ${e.message}`);
+    }
+  }
+}
+console.log("✅ Cleaned previous build artifacts\n");
+
 fs.mkdirSync(buildHomeDir, { recursive: true });
 fs.mkdirSync(path.join(buildHomeDir, "AppData", "Roaming"), { recursive: true });
 fs.mkdirSync(path.join(buildHomeDir, "AppData", "Local"), { recursive: true });
@@ -112,7 +132,6 @@ try {
       USERPROFILE: buildHomeDir,
       APPDATA: path.join(buildHomeDir, "AppData", "Roaming"),
       LOCALAPPDATA: path.join(buildHomeDir, "AppData", "Local"),
-      NEXT_DIST_DIR: buildDistDirName,
       NEXT_TRACING_ROOT_MODE: "workspace",
     }
   });
@@ -122,41 +141,99 @@ try {
   process.exit(1);
 }
 
-// Step 2: Clean old app/cli/app if exists
-console.log("2️⃣  Cleaning old app/cli/app...");
-if (fs.existsSync(cliAppDir)) {
-  fs.rmSync(cliAppDir, { recursive: true, force: true });
-}
-console.log("✅ Cleaned\n");
+// Step 2: Copy Next.js standalone build to cli/app
+// (Best Fix: normal .next/standalone + robust detection for workspace tracing layout)
+console.log("2️⃣  Copying Next.js standalone build to app/cli/app...");
 
-// Step 3: Copy Next.js standalone build to app/cli/app.
-// Newer Next.js standalone output writes server.js/package.json plus .next/, src/, and
-// node_modules/ directly under .next/standalone. Older builds may still use a nested app/.
-console.log("3️⃣  Copying Next.js standalone build to app/cli/app...");
 const standaloneRoot = path.join(appDir, ".next", "standalone");
-const standaloneRootResolved = path.join(buildDistDir, "standalone");
-let standaloneRootToUse = fs.existsSync(standaloneRootResolved) ? standaloneRootResolved : standaloneRoot;
-// Next.js 16 nests standalone output under the project name when NEXT_TRACING_ROOT_MODE=workspace
-// e.g. .next-cli-build/standalone/9router/server.js
-const pkgName = path.basename(appDir);
-const nestedRoot = path.join(standaloneRootToUse, pkgName);
-if (fs.existsSync(path.join(nestedRoot, "server.js")) && !fs.existsSync(path.join(standaloneRootToUse, "server.js"))) {
-  console.log(`ℹ️  Detected nested standalone output: ${pkgName}/`);
-  standaloneRootToUse = nestedRoot;
+
+/**
+ * Robust finder for the directory containing server.js inside the standalone output.
+ * When NEXT_TRACING_ROOT_MODE=workspace is used, Next.js nests the output under
+ * the relative project folder (e.g. .next/standalone/9router/server.js).
+ */
+function findStandaloneServerRoot(root) {
+  // 1. Direct hit (classic layout)
+  if (fs.existsSync(path.join(root, "server.js"))) {
+    return root;
+  }
+
+  // 2. Common with workspace tracingRoot: project name subfolder
+  //    e.g. standalone/9router/server.js or standalone/<basename>/server.js
+  if (fs.existsSync(root)) {
+    const entries = fs.readdirSync(root, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const candidate = path.join(root, entry.name);
+      if (fs.existsSync(path.join(candidate, "server.js"))) {
+        return candidate;
+      }
+      // Sometimes another level (e.g. 9router/app)
+      const nestedApp = path.join(candidate, "app");
+      if (fs.existsSync(path.join(nestedApp, "server.js"))) {
+        return nestedApp;
+      }
+    }
+  }
+
+  // 3. Legacy nested-app layout
+  const legacyApp = path.join(root, "app");
+  if (fs.existsSync(path.join(legacyApp, "server.js"))) {
+    return legacyApp;
+  }
+
+  return null;
 }
-const standaloneApp = fs.existsSync(path.join(standaloneRootToUse, "server.js"))
-  ? standaloneRootToUse
-  : path.join(standaloneRootToUse, "app");
-if (!fs.existsSync(standaloneApp)) {
-  console.error("❌ Next.js standalone build not found under .next/standalone");
-  console.error("Expected either .next/standalone/server.js or .next/standalone/app/");
+
+const standaloneApp = findStandaloneServerRoot(standaloneRoot);
+
+if (!standaloneApp) {
+  console.error("\n❌ Next.js standalone build not found (server.js missing inside standalone tree).");
+  console.error("Looked under: " + standaloneRoot);
+
+  // Rich diagnostics — this is the key information when workspace tracing is active
+  console.error("\n📁 Contents of .next/standalone:");
+  try {
+    const st = fs.readdirSync(standaloneRoot);
+    console.error("  " + JSON.stringify(st, null, 2));
+  } catch (e) {
+    console.error("  (could not read standalone dir: " + e.message + ")");
+  }
+
+  console.error("\n🔍 Searching for any server.js under .next/standalone:");
+  try {
+    const { execSync } = require("child_process");
+    const found = execSync(`find "${standaloneRoot}" -name server.js 2>/dev/null | head -10`, { encoding: "utf8" }).trim();
+    console.error(found ? found : "  (no server.js found anywhere under standalone)");
+  } catch {
+    console.error("  (find command failed)");
+  }
+
+  console.error("\n📁 Top-level .next contents (for context):");
+  console.error("  " + JSON.stringify(
+    fs.existsSync(path.join(appDir, ".next")) ? fs.readdirSync(path.join(appDir, ".next")) : [],
+    null, 2
+  ));
+
+  console.error("\n💡 Likely cause:");
+  console.error("   Workspace tracing (NEXT_TRACING_ROOT_MODE=workspace) causes Next.js to nest");
+  console.error("   the standalone output under a project subfolder (e.g. standalone/9router/).");
+  console.error("   The finder above should have caught it — if you still see this, the build");
+  console.error("   may have produced an incomplete standalone tree.");
+
+  console.error("\n💡 Possible fixes:");
+  console.error("   • rm -rf .next cli/app && bun run cli:build   (clean + retry)");
+  console.error("   • Check the diagnostics above for the real location of server.js");
+
   process.exit(1);
 }
+
+console.log(`   → Found standalone server root: ${path.relative(appDir, standaloneApp)}`);
 copyRecursive(standaloneApp, cliAppDir);
 
-// Older nested-app layout stores traced node_modules at standalone root.
-const standaloneNodeModules = path.join(standaloneRootToUse, "node_modules");
-if (standaloneApp !== standaloneRootToUse && fs.existsSync(standaloneNodeModules)) {
+// Copy traced node_modules if they live at the standalone root level (older layout)
+const standaloneNodeModules = path.join(standaloneRoot, "node_modules");
+if (standaloneApp !== standaloneRoot && fs.existsSync(standaloneNodeModules)) {
   copyRecursive(standaloneNodeModules, path.join(cliAppDir, "node_modules"));
 }
 console.log("✅ Copied standalone build\n");
@@ -203,12 +280,12 @@ if (fs.existsSync(betterDir)) {
 console.log("");
 
 // Step 4: Copy static files
+// (into .next/static relative to the standalone server.js inside cli/app)
 console.log("4️⃣  Copying static files...");
 const staticSrc = path.join(appDir, ".next", "static");
-const staticSrcResolved = path.join(buildDistDir, "static");
-const staticDest = path.join(cliAppDir, buildDistDirName, "static");
-if (fs.existsSync(staticSrcResolved) || fs.existsSync(staticSrc)) {
-  copyRecursive(fs.existsSync(staticSrcResolved) ? staticSrcResolved : staticSrc, staticDest);
+const staticDest = path.join(cliAppDir, ".next", "static");
+if (fs.existsSync(staticSrc)) {
+  copyRecursive(staticSrc, staticDest);
   console.log("✅ Copied static files\n");
 } else {
   console.log("⏭️  No static files found\n");
@@ -226,12 +303,12 @@ if (fs.existsSync(publicSrc)) {
 }
 
 // Step 6: Copy vendor-chunks (required for production)
+// (into .next/server/vendor-chunks relative to the standalone server.js)
 console.log("6️⃣  Copying vendor-chunks...");
 const vendorChunksSrc = path.join(appDir, ".next", "server", "vendor-chunks");
-const vendorChunksSrcResolved = path.join(buildDistDir, "server", "vendor-chunks");
-const vendorChunksDest = path.join(cliAppDir, buildDistDirName, "server", "vendor-chunks");
-if (fs.existsSync(vendorChunksSrcResolved) || fs.existsSync(vendorChunksSrc)) {
-  copyRecursive(fs.existsSync(vendorChunksSrcResolved) ? vendorChunksSrcResolved : vendorChunksSrc, vendorChunksDest);
+const vendorChunksDest = path.join(cliAppDir, ".next", "server", "vendor-chunks");
+if (fs.existsSync(vendorChunksSrc)) {
+  copyRecursive(vendorChunksSrc, vendorChunksDest);
   console.log("✅ Copied vendor-chunks\n");
 } else {
   console.log("⏭️  No vendor-chunks found\n");
@@ -257,6 +334,26 @@ if (fs.existsSync(updaterSrc)) {
   console.log("✅ Copied updater files\n");
 } else {
   console.log("⏭️  No updater files found\n");
+}
+
+// Step 7c: Copy crashLogger for the outer CLI manager process (cli/cli.js)
+// This file lives in the main src/ but the thin CLI wrapper needs it too.
+// We place it under cli/src/lib/ so that after packing, require("./src/lib/crashLogger.js")
+// works both from source (after build) and in the published npm package.
+console.log("7️⃣ c Copying crash logger for CLI wrapper...");
+const crashLoggerSrc = path.join(appDir, "src", "lib", "crashLogger.js");
+const crashLoggerDestDir = path.join(cliDir, "src", "lib");
+const crashLoggerDest = path.join(crashLoggerDestDir, "crashLogger.js");
+try {
+  if (fs.existsSync(crashLoggerSrc)) {
+    fs.mkdirSync(crashLoggerDestDir, { recursive: true });
+    fs.copyFileSync(crashLoggerSrc, crashLoggerDest);
+    console.log("✅ Copied crashLogger.js to cli/src/lib/\n");
+  } else {
+    console.log("⏭️  No crashLogger.js found in main src/\n");
+  }
+} catch (e) {
+  console.warn("⚠️  Failed to copy crashLogger:", e.message);
 }
 
 // Step 8: Build MITM server (config driven - see app/cli/scripts/buildMitm.js)
