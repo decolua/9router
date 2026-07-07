@@ -5,6 +5,7 @@
 import { describe, it, expect } from "vitest";
 import { autoDetectFilter } from "../../open-sse/rtk/autodetect.js";
 import { find } from "../../open-sse/rtk/filters/find.js";
+import { grep } from "../../open-sse/rtk/filters/grep.js";
 
 const WIN_PATHS = [
   "C:\\Users\\me\\project\\src\\a.js",
