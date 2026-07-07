@@ -42,19 +42,38 @@ export default {
     },
   },
   models: [
+    // Opus (added per kiro.dev/changelog/models and kiro.dev/docs/models)
+    { id: "claude-opus-4.8", name: "Claude Opus 4.8" },
+    { id: "claude-opus-4.8-thinking", name: "Claude Opus 4.8 (Thinking)" },
+    { id: "claude-opus-4.8-agentic", name: "Claude Opus 4.8 (Agentic)" },
+    { id: "claude-opus-4.8-thinking-agentic", name: "Claude Opus 4.8 (Thinking + Agentic)" },
+    { id: "claude-opus-4.7", name: "Claude Opus 4.7" },
+    { id: "claude-opus-4.7-thinking", name: "Claude Opus 4.7 (Thinking)" },
+    { id: "claude-opus-4.7-agentic", name: "Claude Opus 4.7 (Agentic)" },
+    { id: "claude-opus-4.7-thinking-agentic", name: "Claude Opus 4.7 (Thinking + Agentic)" },
+    { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
+    { id: "claude-opus-4.5-thinking", name: "Claude Opus 4.5 (Thinking)" },
+    { id: "claude-opus-4.5-agentic", name: "Claude Opus 4.5 (Agentic)" },
+    { id: "claude-opus-4.5-thinking-agentic", name: "Claude Opus 4.5 (Thinking + Agentic)" },
+    // Sonnet
     { id: "claude-sonnet-5", name: "Claude Sonnet 5" },
     { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5" },
+    // Haiku
     { id: "claude-haiku-4.5", name: "Claude Haiku 4.5" },
+    // Non-Anthropic
     { id: "deepseek-3.2", name: "DeepSeek 3.2", strip: ["image","audio"] },
     { id: "qwen3-coder-next", name: "Qwen3 Coder Next", strip: ["image","audio"] },
     { id: "glm-5", name: "GLM 5" },
     { id: "MiniMax-M2.5", name: "MiniMax M2.5" },
+    // Thinking variants
     { id: "claude-sonnet-5-thinking", name: "Claude Sonnet 5 (Thinking)" },
     { id: "claude-sonnet-4.5-thinking", name: "Claude Sonnet 4.5 (Thinking)" },
     { id: "claude-haiku-4.5-thinking", name: "Claude Haiku 4.5 (Thinking)" },
+    // Agentic variants
     { id: "claude-sonnet-5-agentic", name: "Claude Sonnet 5 (Agentic)" },
     { id: "claude-sonnet-4.5-agentic", name: "Claude Sonnet 4.5 (Agentic)" },
     { id: "claude-haiku-4.5-agentic", name: "Claude Haiku 4.5 (Agentic)" },
+    // Thinking + Agentic variants
     { id: "claude-sonnet-5-thinking-agentic", name: "Claude Sonnet 5 (Thinking + Agentic)" },
     { id: "claude-sonnet-4.5-thinking-agentic", name: "Claude Sonnet 4.5 (Thinking + Agentic)" },
     { id: "claude-haiku-4.5-thinking-agentic", name: "Claude Haiku 4.5 (Thinking + Agentic)" },
