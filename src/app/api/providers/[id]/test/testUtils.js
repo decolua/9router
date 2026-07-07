@@ -276,6 +276,21 @@ async function refreshOAuthToken(connection) {
   }
 }
 
+/**
+ * Read a short snippet of an error response body for diagnostics, without
+ * throwing if the body is not text. Truncates to 200 chars and collapses
+ * whitespace so it fits on one line in the lastError column.
+ */
+async function safeReadErrorDetail(res) {
+  try {
+    const text = await res.text();
+    if (!text) return "";
+    return text.slice(0, 200).replace(/\s+/g, " ").trim();
+  } catch {
+    return "";
+  }
+}
+
 function isTokenExpired(connection) {
   return shouldRefreshCredentials(connection.provider, connection);
 }
@@ -333,25 +348,52 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
     const tryProbe = async (token) => {
       const res = await probeClineAccessToken(token);
       if (res.ok) return { valid: true, error: null, refreshed, newTokens };
-      if (res.status === 401) return { valid: false, error: "Token invalid or revoked", refreshed };
-      if (res.status === 403) return { valid: false, error: "Access denied", refreshed };
-      return { valid: false, error: `API returned ${res.status}`, refreshed };
+      if (res.status === 401) {
+        const detail = await safeReadErrorDetail(res);
+        return { valid: false, error: `Token invalid or revoked${detail ? ": " + detail : ""}`, refreshed, status: res.status };
+      }
+      if (res.status === 403) {
+        const detail = await safeReadErrorDetail(res);
+        return { valid: false, error: `Access denied${detail ? ": " + detail : ""}`, refreshed, status: res.status };
+      }
+      return { valid: false, error: `API returned ${res.status}`, refreshed, status: res.status };
     };
 
     const initial = await tryProbe(accessToken);
-    if (initial.valid || initial.error !== "Token invalid or revoked" || !connection.refreshToken) {
-      return initial;
+    if (initial.valid || initial.status !== 401 || !connection.refreshToken) {
+      // Strip internal status marker before returning
+      const { status, ...rest } = initial;
+      return rest;
     }
 
     const tokens = await refreshOAuthToken(connection);
     if (!tokens?.accessToken) {
-      return { valid: false, error: "Token invalid or revoked", refreshed: false };
+      return { valid: false, error: "Token invalid or revoked (refresh failed)", refreshed: false };
     }
 
     refreshed = true;
     newTokens = tokens;
     accessToken = tokens.accessToken;
-    return await tryProbe(accessToken);
+    const retry = await tryProbe(accessToken);
+    if (retry.valid) {
+      const { status, ...rest } = retry;
+      return rest;
+    }
+    if (retry.status === 401) {
+      // Refresh worked but API still 401 → account-level rejection.
+      // Preserve newTokens so the caller persists the rotated refresh_token.
+      return {
+        valid: false,
+        error: retry.error.replace(
+          /^Token invalid or revoked/,
+          "Account access denied by API (401 after token refresh)",
+        ),
+        refreshed: true,
+        newTokens,
+      };
+    }
+    const { status, ...rest } = retry;
+    return rest;
   }
 
   try {
@@ -368,22 +410,47 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
 
     if (res.status === 401 && config.refreshable && !refreshed && connection.refreshToken) {
       const tokens = await refreshOAuthToken(connection);
-      if (tokens) {
-        const retryUrl = config.buildUrl ? config.buildUrl(tokens.accessToken) : testUrl;
-        const retryHeaders = config.noAuth
-          ? { ...config.extraHeaders }
-          : { [config.authHeader]: `${config.authPrefix}${tokens.accessToken}`, ...config.extraHeaders };
-        const retryOpts = { method: config.method, headers: retryHeaders };
-        if (config.body) retryOpts.body = config.body;
-        const retryRes = await fetchWithConnectionProxy(retryUrl, retryOpts, effectiveProxy);
-        const retryAccepted = retryRes.ok || (config.acceptStatuses && config.acceptStatuses.includes(retryRes.status));
-        if (retryAccepted) return { valid: true, error: null, refreshed: true, newTokens: tokens };
+      if (!tokens) {
+        // Refresh itself failed → the refresh_token is dead.
+        return { valid: false, error: "Token invalid or revoked (refresh failed)", refreshed: false };
       }
-      return { valid: false, error: "Token invalid or revoked", refreshed: false };
+      const retryUrl = config.buildUrl ? config.buildUrl(tokens.accessToken) : testUrl;
+      const retryHeaders = config.noAuth
+        ? { ...config.extraHeaders }
+        : { [config.authHeader]: `${config.authPrefix}${tokens.accessToken}`, ...config.extraHeaders };
+      const retryOpts = { method: config.method, headers: retryHeaders };
+      if (config.body) retryOpts.body = config.body;
+      const retryRes = await fetchWithConnectionProxy(retryUrl, retryOpts, effectiveProxy);
+      const retryAccepted = retryRes.ok || (config.acceptStatuses && config.acceptStatuses.includes(retryRes.status));
+      if (retryAccepted) return { valid: true, error: null, refreshed: true, newTokens: tokens };
+      // Refresh worked but API still rejects: account-level issue, not a token issue.
+      // Preserve `newTokens` so the caller persists the rotated refresh_token —
+      // otherwise the next test would burn another rotation cycle on a stale RT.
+      const detail = await safeReadErrorDetail(retryRes);
+      return {
+        valid: false,
+        error: `Account access denied by API (${retryRes.status} after token refresh)${detail ? ": " + detail : ""}`,
+        refreshed: true,
+        newTokens: tokens,
+      };
     }
 
-    if (res.status === 401) return { valid: false, error: "Token invalid or revoked", refreshed };
-    if (res.status === 403) return { valid: false, error: "Access denied", refreshed };
+    if (res.status === 401) {
+      const detail = await safeReadErrorDetail(res);
+      return {
+        valid: false,
+        error: `Token invalid or revoked${detail ? ": " + detail : ""}`,
+        refreshed,
+      };
+    }
+    if (res.status === 403) {
+      const detail = await safeReadErrorDetail(res);
+      return {
+        valid: false,
+        error: `Access denied${detail ? ": " + detail : ""}`,
+        refreshed,
+      };
+    }
     return { valid: false, error: `API returned ${res.status}`, refreshed };
   } catch (err) {
     return { valid: false, error: err.message, refreshed };
