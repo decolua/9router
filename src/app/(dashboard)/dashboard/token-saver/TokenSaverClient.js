@@ -374,6 +374,16 @@ export default function TokenSaverClient() {
               {headroomStatusLabel}
             </span>
           </div>
+          {headroomRunning && (
+            <a
+              href="/api/headroom/proxy/dashboard"
+              target="_blank"
+              rel="noreferrer"
+              className="w-full rounded border border-border px-4 py-2 text-center text-sm hover:bg-surface-2"
+            >
+              Open Headroom Dashboard
+            </a>
+          )}
           <div className="flex flex-col gap-1">
             <p className="text-sm font-medium">Proxy URL</p>
             <Input
