@@ -45,6 +45,7 @@ function createSpinner(text) {
 const pkg = require("./package.json");
 const { ensureSqliteRuntime, buildEnvWithRuntime } = require("./hooks/sqliteRuntime");
 const { ensureTrayRuntime } = require("./hooks/trayRuntime");
+const { cleanupMitmHostsFile } = require("./hooks/cleanupMitmHosts");
 const args = process.argv.slice(2);
 
 // Self-heal SQLite runtime deps (sql.js + better-sqlite3) into ~/.9router/runtime
@@ -212,6 +213,7 @@ function killCloudflaredByAppPort(appPort) {
 function killAllAppProcesses(appPort) {
   return new Promise((resolve) => {
     try {
+      cleanupMitmHostsFile();
       // Kill MIT first (privileged process, needs special handling)
       killProxyByPidFile();
       // Kill cloudflared/tailscale by PID file (precise, only this app's tunnel)
@@ -603,6 +605,10 @@ function startServer(latestVersion) {
     if (isCleaningUp) return;
     isCleaningUp = true;
     try {
+      // Parent CLI must clean hosts — Next.js child is SIGKILL'd below and
+      // never runs initializeApp's removeAllDNSEntriesSync().
+      cleanupMitmHostsFile();
+
       // Kill tray if running
       try {
         const { killTray } = require("./src/cli/tray/tray");
@@ -612,12 +618,19 @@ function startServer(latestVersion) {
       killProxyByPidFile();
       // Kill cloudflared/tailscale via PID file (only this app's tunnel)
       killTunnelByPidFile();
+      // Graceful stop so Next.js can flush DB / run its own cleanup
+      if (server?.pid) {
+        try { process.kill(server.pid, "SIGTERM"); } catch (e) { }
+        sleepSync(400);
+      }
       // Kill server process directly
-      if (server.pid) {
-        process.kill(server.pid, "SIGKILL");
+      if (server?.pid) {
+        try { process.kill(server.pid, "SIGKILL"); } catch (e) { }
       }
       // Also try to kill process group
-      process.kill(-server.pid, "SIGKILL");
+      if (server?.pid) {
+        try { process.kill(-server.pid, "SIGKILL"); } catch (e) { }
+      }
     } catch (e) { }
   }
 
