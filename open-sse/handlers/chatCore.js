@@ -18,6 +18,7 @@ import { buildRequestDetail, extractRequestConfig } from "./chatCore/requestDeta
 import { handleForcedSSEToJson } from "./chatCore/sseToJsonHandler.js";
 import { handleNonStreamingResponse } from "./chatCore/nonStreamingHandler.js";
 import { handleStreamingResponse, buildOnStreamComplete } from "./chatCore/streamingHandler.js";
+import { probeSSEStream, replayStream, EMPTY_STREAM_MAX_RETRIES, EMPTY_STREAM_BASE_DELAY_MS } from "./chatCore/emptyStreamGuard.js";
 import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.js";
 import { dedupeTools } from "../utils/toolDeduper.js";
 import { injectCaveman } from "../rtk/caveman.js";
@@ -307,6 +308,59 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     console.log(`${COLORS.red}[ERROR] ${errMsg}${COLORS.reset}`);
     reqLogger.logError(new Error(message), finalBody || translatedBody);
     return createErrorResult(statusCode, errMsg, resetsAtMs);
+  }
+
+  // Antigravity empty-stream guard: probe the upstream SSE before anything is
+  // sent to the client. Gemini occasionally answers 200 with no usable output
+  // (empty candidates / thought-only / bare STOP) or aborts the turn with
+  // MALFORMED_FUNCTION_CALL before emitting content — both usually succeed on a
+  // plain retry with the identical request. On exhaustion return 502 so the
+  // account/combo fallback chain engages instead of the client hanging on an
+  // empty stream (#2188, #2229, #2259).
+  if (provider === "antigravity" && stream && providerResponse.body) {
+    for (let attempt = 0; ; attempt++) {
+      const probe = await probeSSEStream(providerResponse.body, { signal: streamController.signal });
+      if (probe.verdict === "aborted") {
+        trackPendingRequest(model, provider, connectionId, false, true);
+        return createErrorResult(499, "Request aborted");
+      }
+      if (probe.verdict === "ok") {
+        providerResponse = new Response(replayStream(probe.buffered, probe.reader), {
+          status: providerResponse.status,
+          headers: providerResponse.headers,
+        });
+        break;
+      }
+
+      log?.warn?.("STREAM", `${provider.toUpperCase()} | ${probe.verdict}${probe.reason ? ` (${probe.reason})` : ""} | attempt ${attempt + 1}/${EMPTY_STREAM_MAX_RETRIES + 1}`);
+      if (attempt >= EMPTY_STREAM_MAX_RETRIES) {
+        trackPendingRequest(model, provider, connectionId, false, true);
+        appendRequestLog({ model, provider, connectionId, status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` }).catch(() => { });
+        const errMsg = formatProviderError(
+          new Error(`empty response from upstream (${probe.verdict}${probe.reason ? `: ${probe.reason}` : ""}) after ${attempt + 1} attempts`),
+          provider, model, HTTP_STATUS.BAD_GATEWAY
+        );
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg);
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, EMPTY_STREAM_BASE_DELAY_MS * 2 ** attempt));
+      let retryResult;
+      try {
+        retryResult = await executor.execute({ model, body: translatedBody, stream, credentials, signal: streamController.signal, log, proxyOptions });
+      } catch (error) {
+        trackPendingRequest(model, provider, connectionId, false, true);
+        if (error.name === "AbortError") return createErrorResult(499, "Request aborted");
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY));
+      }
+      if (!retryResult.response.ok) {
+        trackPendingRequest(model, provider, connectionId, false, true);
+        const { statusCode, message, resetsAtMs } = await parseUpstreamError(retryResult.response, executor);
+        return createErrorResult(statusCode, formatProviderError(new Error(message), provider, model, statusCode), resetsAtMs);
+      }
+      providerResponse = retryResult.response;
+      providerUrl = retryResult.url;
+      finalBody = retryResult.transformedBody;
+    }
   }
 
   const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess };
