@@ -8,6 +8,7 @@ import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifi
 import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, Select } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { translate } from "@/i18n/runtime";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
@@ -155,17 +156,17 @@ export default function CombosPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <p className="text-sm text-text-muted mt-1">
-            Group models under one name, then pick a strategy per combo:
+            {translate("Group models under one name, then pick a strategy per combo:")}
           </p>
           <ul className="text-sm text-text-muted mt-2 flex flex-col gap-1">
-            <li><span className="font-medium text-text-main">Fallback</span> — tries models in order (next on failure)</li>
-            <li><span className="font-medium text-text-main">Round Robin</span> — rotates models across requests to spread load</li>
-            <li><span className="font-medium text-text-main">Fusion</span> — queries all models in parallel, then a judge synthesizes one answer. Best quality, but costs the most: every request bills all panel models + the judge (N+1 calls)</li>
-            <li><span className="font-medium text-text-main">Capacity auto-switch</span> — sends image/PDF/audio requests to a model that supports them first</li>
+            <li><span className="font-medium text-text-main">Fallback</span>{translate(" — tries models in order (next on failure)")}</li>
+            <li><span className="font-medium text-text-main">Round Robin</span>{translate(" — rotates models across requests to spread load")}</li>
+            <li><span className="font-medium text-text-main">Fusion</span>{translate(" — queries all models in parallel, then a judge synthesizes one answer. Best quality, but costs the most: every request bills all panel models + the judge (N+1 calls)")}</li>
+            <li><span className="font-medium text-text-main">Capacity auto-switch</span>{translate(" — sends image/PDF/audio requests to a model that supports them first")}</li>
           </ul>
         </div>
         <Button icon="add" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto whitespace-nowrap">
-          Create Combo
+          {translate("Create Combo")}
         </Button>
       </div>
 
@@ -176,10 +177,10 @@ export default function CombosPage() {
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 text-primary mb-4">
               <span className="material-symbols-outlined text-[32px]">layers</span>
             </div>
-            <p className="text-text-main font-medium mb-1">No combos yet</p>
-            <p className="text-sm text-text-muted mb-4">Create model combos with fallback support</p>
+            <p className="text-text-main font-medium mb-1">{translate("No combos yet")}</p>
+            <p className="text-sm text-text-muted mb-4">{translate("Create model combos with fallback support")}</p>
             <Button icon="add" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto">
-              Create Combo
+              {translate("Create Combo")}
             </Button>
           </div>
         </Card>
@@ -234,11 +235,13 @@ export default function CombosPage() {
   );
 }
 
-const STRATEGY_OPTIONS = [
-  { value: "fallback", label: "Fallback — try in order" },
-  { value: "round-robin", label: "Round Robin — rotate" },
-  { value: "fusion", label: "Fusion — panel + judge" },
-];
+function getStrategyOptions() {
+  return [
+    { value: "fallback", label: translate("Fallback — try in order") },
+    { value: "round-robin", label: translate("Round Robin — rotate") },
+    { value: "fusion", label: translate("Fusion — panel + judge") },
+  ];
+}
 
 function ComboCard({ combo, modelCaps = {}, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy }) {
   const [showJudgeSelect, setShowJudgeSelect] = useState(false);
@@ -273,14 +276,14 @@ function ComboCard({ combo, modelCaps = {}, activeProviders = [], copied, onCopy
             {/* Fusion: judge picker (Auto = first model) */}
             {isFusion && (
               <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
-                <span className="text-[11px] font-medium text-text-muted">Judge</span>
+                <span className="text-[11px] font-medium text-text-muted">{translate("Judge")}</span>
                 <button
                   onClick={() => setShowJudgeSelect(true)}
                   className="inline-flex max-w-full items-center gap-1 rounded border border-dashed border-primary/40 px-1.5 py-0.5 font-mono text-[11px] text-primary hover:border-primary hover:bg-primary/5 transition-colors"
                   title="Pick the model that fuses panel answers"
                 >
                   <span className="material-symbols-outlined text-[13px]">gavel</span>
-                  <span className="truncate">{judge || `Auto — ${combo.models[0] || "first model"}`}</span>
+                  <span className="truncate">{judge || `${translate("Auto")} — ${combo.models[0] || translate("first model")}`}</span>
                 </button>
                 {judge && (
                   <button
@@ -301,7 +304,7 @@ function ComboCard({ combo, modelCaps = {}, activeProviders = [], copied, onCopy
           {/* Strategy selector — always visible */}
           <div className="w-full sm:w-[200px]">
             <Select
-              options={STRATEGY_OPTIONS}
+              options={getStrategyOptions()}
               value={current}
               onChange={(e) => onSetStrategy({ fallbackStrategy: e.target.value })}
               selectClassName="py-1.5 text-xs"
@@ -317,7 +320,7 @@ function ComboCard({ combo, modelCaps = {}, activeProviders = [], copied, onCopy
               <span className="material-symbols-outlined text-[18px]">
                 {copied === `combo-${combo.id}` ? "check" : "content_copy"}
               </span>
-              <span className="text-[10px] leading-tight">Copy</span>
+              <span className="text-[10px] leading-tight">{translate("Copy")}</span>
             </button>
             <button
               onClick={onEdit}
@@ -325,7 +328,7 @@ function ComboCard({ combo, modelCaps = {}, activeProviders = [], copied, onCopy
               title="Edit"
             >
               <span className="material-symbols-outlined text-[18px]">edit</span>
-              <span className="text-[10px] leading-tight">Edit</span>
+              <span className="text-[10px] leading-tight">{translate("Edit")}</span>
             </button>
             <button
               onClick={onDelete}
@@ -345,7 +348,7 @@ function ComboCard({ combo, modelCaps = {}, activeProviders = [], copied, onCopy
         onClose={() => setShowJudgeSelect(false)}
         onSelect={(m) => { onSetStrategy({ judgeModel: m?.value || "" }); setShowJudgeSelect(false); }}
         activeProviders={activeProviders}
-        title="Select Judge Model"
+        title={translate("Select Judge Model")}
         addedModelValues={judge ? [judge] : []}
         closeOnSelect={true}
       />

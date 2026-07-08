@@ -42,7 +42,7 @@ const getPageInfo = (pathname) => {
     const kindConfig = MEDIA_PROVIDER_KINDS.find((k) => k.id === kindId);
     return {
       title: kindConfig?.label || kindId,
-      description: `Manage your ${kindConfig?.label || kindId} providers`,
+      description: translate("Manage your") + " " + (kindConfig?.label || kindId) + " " + translate("providers"),
       icon: kindConfig?.icon || "perm_media",
       breadcrumbs: [],
     };
@@ -71,44 +71,43 @@ const getPageInfo = (pathname) => {
 
   if (pathname.includes("/providers") && !pathname.includes("/media-providers"))
     return {
-      title: "Providers",
-      description: "Manage your AI provider connections",
+      title: translate("Providers"),
+      description: translate("Manage your AI provider connections"),
       icon: "dns",
       breadcrumbs: [],
     };
   if (pathname.includes("/combos"))
     return {
-      title: "Combos",
-      description: "Model combos with fallback",
+      title: translate("Combos"),
+      description: translate("Model combos with fallback"),
       icon: "layers",
       breadcrumbs: [],
     };
   if (pathname.includes("/usage"))
     return {
-      title: "Usage & Analytics",
-      description:
-        "Monitor your API usage, token consumption, and request logs",
+      title: translate("Usage & Analytics"),
+      description: translate("Monitor your API usage, token consumption, and request logs"),
       icon: "bar_chart",
       breadcrumbs: [],
     };
   if (pathname.includes("/auth-files"))
     return {
-      title: "Auth Files",
-      description: "Map provider credentials stored in the local database",
+      title: translate("Auth Files"),
+      description: translate("Map provider credentials stored in the local database"),
       icon: "vpn_key",
       breadcrumbs: [],
     };
   if (pathname.includes("/quota"))
     return {
-      title: "Quota Tracker",
-      description: "Track and manage your API quota limits",
+      title: translate("Quota Tracker"),
+      description: translate("Track and manage your API quota limits"),
       icon: "data_usage",
       breadcrumbs: [],
     };
   if (pathname.includes("/mitm"))
     return {
-      title: "MITM Proxy",
-      description: "Intercept CLI tool traffic and route through 9Router",
+      title: translate("MITM Proxy"),
+      description: translate("Intercept CLI tool traffic and route through 9Router"),
       icon: "security",
       breadcrumbs: [],
     };
@@ -121,57 +120,57 @@ const getPageInfo = (pathname) => {
     };
   if (pathname.includes("/cli-tools"))
     return {
-      title: "CLI Tools",
-      description: "Configure CLI tools",
+      title: translate("CLI Tools"),
+      description: translate("Configure CLI tools"),
       icon: "terminal",
       breadcrumbs: [],
     };
   if (pathname.includes("/proxy-pools"))
     return {
-      title: "Proxy Pools",
-      description: "Manage your proxy pool configurations",
+      title: translate("Proxy Pools"),
+      description: translate("Manage your proxy pool configurations"),
       icon: "lan",
       breadcrumbs: [],
     };
   if (pathname.includes("/skills"))
     return {
-      title: "Agent Skills",
-      description: "Copy a link and paste to your AI to use 9Router — no install needed",
+      title: translate("Agent Skills"),
+      description: translate("Copy a link and paste to your AI to use 9Router — no install needed"),
       icon: "extension",
       breadcrumbs: [],
     };
   if (pathname.includes("/endpoint"))
     return {
-      title: "Endpoint",
-      description: "API endpoint configuration",
+      title: translate("Endpoint"),
+      description: translate("API endpoint configuration"),
       icon: "api",
       breadcrumbs: [],
     };
   if (pathname.includes("/profile"))
     return {
-      title: "Settings",
-      description: "Manage your preferences",
+      title: translate("Settings"),
+      description: translate("Manage your preferences"),
       icon: "settings",
       breadcrumbs: [],
     };
   if (pathname.includes("/translator"))
     return {
-      title: "Translator",
-      description: "Debug translation flow between formats",
+      title: translate("Translator"),
+      description: translate("Debug translation flow between formats"),
       icon: "translate",
       breadcrumbs: [],
     };
   if (pathname.includes("/console-log"))
     return {
-      title: "Console Log",
-      description: "Live server console output",
+      title: translate("Console Log"),
+      description: translate("Live server console output"),
       icon: "monitor",
       breadcrumbs: [],
     };
   if (pathname === "/dashboard")
     return {
-      title: "Endpoint",
-      description: "API endpoint configuration",
+      title: translate("Endpoint"),
+      description: translate("API endpoint configuration"),
       icon: "api",
       breadcrumbs: [],
     };
