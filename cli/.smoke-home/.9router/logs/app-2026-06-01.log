@@ -1,6 +1,0 @@
-{"level":30,"time":"2026-06-01T07:32:00.042Z","service":"9router","scope":"bootstrap","msg":"instrumentation.register() invoked"}
-{"level":30,"time":"2026-06-01T07:32:00.120Z","service":"9router","tag":"TOKEN_REFRESH_WORKER","msg":"Started (tick=60000ms)"}
-{"level":30,"time":"2026-06-01T07:32:00.121Z","service":"9router","scope":"bootstrap","msg":"initializeApp completed"}
-{"level":30,"time":"2026-06-01T12:34:08.222Z","service":"9router","scope":"bootstrap","msg":"instrumentation.register() invoked"}
-{"level":30,"time":"2026-06-01T12:34:08.278Z","service":"9router","tag":"TOKEN_REFRESH_WORKER","msg":"Started (tick=60000ms)"}
-{"level":30,"time":"2026-06-01T12:34:08.279Z","service":"9router","scope":"bootstrap","msg":"initializeApp completed"}

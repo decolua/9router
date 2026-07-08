@@ -1,9 +1,0 @@
-{"level":30,"time":"2026-06-04T18:12:53.415Z","service":"9router","scope":"bootstrap","msg":"instrumentation.register() invoked"}
-{"level":30,"time":"2026-06-04T18:12:53.468Z","service":"9router","tag":"TOKEN_REFRESH_WORKER","msg":"Started (tick=60000ms)"}
-{"level":30,"time":"2026-06-04T18:12:53.468Z","service":"9router","scope":"bootstrap","msg":"initializeApp completed"}
-{"level":30,"time":"2026-06-04T19:21:14.270Z","service":"9router","scope":"bootstrap","msg":"instrumentation.register() invoked"}
-{"level":30,"time":"2026-06-04T19:21:14.324Z","service":"9router","tag":"TOKEN_REFRESH_WORKER","msg":"Started (tick=60000ms)"}
-{"level":30,"time":"2026-06-04T19:21:14.325Z","service":"9router","scope":"bootstrap","msg":"initializeApp completed"}
-{"level":30,"time":"2026-06-04T20:10:38.484Z","service":"9router","scope":"bootstrap","msg":"instrumentation.register() invoked"}
-{"level":30,"time":"2026-06-04T20:10:38.540Z","service":"9router","tag":"TOKEN_REFRESH_WORKER","msg":"Started (tick=60000ms)"}
-{"level":30,"time":"2026-06-04T20:10:38.541Z","service":"9router","scope":"bootstrap","msg":"initializeApp completed"}
