@@ -58,9 +58,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   const alias = PROVIDER_ID_TO_ALIAS[provider] || provider;
   const modelTargetFormat = getModelTargetFormat(alias, model);
-  // Multi-endpoint providers: pick transport matching sourceFormat → zero translation
+  // Multi-endpoint providers: pick transport matching sourceFormat → zero translation.
+  // Prefer the matched transport's format over per-model targetFormat so OpenAI clients
+  // hit the OpenAI endpoint with OpenAI-shaped tools (MiniMax rejects Anthropic tools on /v1).
   const runtimeTransport = resolveTransport(provider, sourceFormat);
-  const targetFormat = modelTargetFormat || runtimeTransport?.format || getTargetFormat(provider);
+  const targetFormat = runtimeTransport?.format || modelTargetFormat || getTargetFormat(provider);
   if (runtimeTransport && credentials) credentials.runtimeTransport = runtimeTransport;
   const stripList = getModelStrip(alias, model);
   const upstreamModel = getModelUpstreamId(alias, model);
