@@ -251,7 +251,19 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
 
     try {
-      const result = await handleSingleModel(body, modelStr);
+      // Deep-clone body per combo leg so mutations by one provider (e.g. glm
+      // normalizing messages/content) don't leak into the next leg (ollama).
+      // chat.js:245 already shallow-copies { ...body, model } but messages +
+      // nested content arrays are shared by reference — leg 1 mutations persist
+      // into leg 2. structuredClone handles plain JSON; fall back to JSON round-trip
+      // only if structuredClone throws (it won't for plain request bodies).
+      let legBody;
+      try {
+        legBody = structuredClone(body);
+      } catch {
+        legBody = JSON.parse(JSON.stringify(body));
+      }
+      const result = await handleSingleModel(legBody, modelStr);
       
       // Success (2xx) - return response
       if (result.ok) {
