@@ -184,7 +184,8 @@ function applyFormat(fmt, body, cfg, caps) {
     case "openai": {
       if (none && canDisable) { body.reasoning_effort = "none"; break; }
       const level = toLevel(eff);
-      if (level) body.reasoning_effort = level;
+      // OpenAI reasoning_effort enum caps at "xhigh" (no "max"); clamp Claude Code's "max".
+      if (level) body.reasoning_effort = level === "max" ? "xhigh" : level;
       break;
     }
     case "claude-adaptive": {
