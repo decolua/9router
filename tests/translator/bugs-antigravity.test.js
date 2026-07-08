@@ -303,3 +303,51 @@ describe("Antigravity → Claude stream finalization", () => {
     expect(endTurn).toBeUndefined();
   });
 });
+
+// Request-side tool id → name round-trip: functionResponse.name must match the
+// original functionCall name or Gemini rejects/ignores the tool loop.
+describe("OpenAI → Gemini functionResponse name recovery", () => {
+  const O2G = (messages) =>
+    translateRequest(FORMATS.OPENAI, FORMATS.GEMINI, "gemini-2.5-pro", { messages }, true, null, null);
+
+  const findResponse = (out) => {
+    for (const c of out.contents) {
+      const p = (c.parts || []).find((p) => p.functionResponse);
+      if (p) return p.functionResponse;
+    }
+    return null;
+  };
+
+  it("assistant tool_calls in history map id → name (tcID2Name)", () => {
+    const out = O2G([
+      { role: "user", content: "run it" },
+      { role: "assistant", tool_calls: [{ id: "my-tool_1736000000000_0", type: "function", function: { name: "my-tool", arguments: "{}" } }] },
+      { role: "tool", tool_call_id: "my-tool_1736000000000_0", content: "ok" },
+    ]);
+    expect(findResponse(out)?.name).toBe("my-tool");
+  });
+
+  // openai-to-gemini.js — the old fallback split the id on "-" and joined
+  // all-but-two segments; ids in the current `name_<ts>_<idx>` shape (or legacy
+  // hyphen shape with hyphenated tool names) must still recover the name when
+  // the assistant turn carrying the name was truncated out of history.
+  it("fallback recovers hyphenated names from generated ids (both separators)", () => {
+    for (const fid of ["my-tool_1736000000000_0", "my-tool-1736000000000-0"]) {
+      const out = O2G([
+        { role: "user", content: "run it" },
+        { role: "assistant", content: null, tool_calls: [{ id: fid, type: "function", function: { name: "my-tool", arguments: "{}" } }] },
+        { role: "tool", tool_call_id: fid, content: "ok" },
+      ]);
+      expect(findResponse(out)?.name, `id ${fid}`).toBe("my-tool");
+    }
+  });
+
+  it("foreign ids fall back to the id itself", () => {
+    const out = O2G([
+      { role: "user", content: "run it" },
+      { role: "assistant", tool_calls: [{ id: "toolu_01AbCdEf", type: "function", function: { name: "", arguments: "{}" } }] },
+      { role: "tool", tool_call_id: "toolu_01AbCdEf", content: "ok" },
+    ]);
+    expect(findResponse(out)?.name).toBe("toolu_01AbCdEf");
+  });
+});
