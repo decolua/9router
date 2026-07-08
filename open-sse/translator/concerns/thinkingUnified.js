@@ -4,6 +4,7 @@
 
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 import { PROVIDERS } from "../../providers/index.js";
+import { FORMATS } from "../formats.js";
 import { LEVEL_TO_BUDGET, budgetToLevel, effortToBudget, effortToThinkingLevel } from "./thinking.js";
 
 // Map a target wire-format to its native thinking format (when capability has none).
@@ -325,5 +326,20 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
   const fmt = resolveFormat(targetFormat, cleanModel, provider);
   stripAll(body);
   applyFormat(fmt, body, cfg, caps);
+  return body;
+}
+
+const MINIMAX_REASONING_SPLIT_PROVIDERS = new Set(["minimax", "minimax-cn"]);
+
+// MiniMax M3 OpenAI path: default embeds thinking in content as <think>.
+// Vendor recommends reasoning_split for OpenAI-compatible clients (clean content + reasoning_details).
+export function applyMinimaxReasoningSplit(targetFormat, model, body, provider = null) {
+  if (!body || typeof body !== "object") return body;
+  if (targetFormat !== FORMATS.OPENAI) return body;
+  if (!MINIMAX_REASONING_SPLIT_PROVIDERS.has(provider)) return body;
+  const { cleanModel } = parseSuffix(model);
+  if (!getCapabilitiesForModel(provider, cleanModel).reasoning) return body;
+  if (body.reasoning_split !== undefined) return body;
+  body.reasoning_split = true;
   return body;
 }

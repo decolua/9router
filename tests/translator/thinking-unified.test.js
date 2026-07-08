@@ -5,6 +5,7 @@ import {
   parseSuffix,
   extractThinking,
   applyThinking,
+  applyMinimaxReasoningSplit,
 } from "../../open-sse/translator/concerns/thinkingUnified.js";
 import { extractReasoningText } from "../../open-sse/translator/concerns/reasoning.js";
 
@@ -152,6 +153,29 @@ describe("applyThinking per provider format", () => {
   it("openai keeps xhigh for reasoning models", () => {
     const out = apply("openai", "gpt-5.3-codex", { reasoning_effort: "xhigh" }, "codex");
     expect(out.reasoning_effort).toBe("xhigh");
+  });
+});
+
+describe("applyMinimaxReasoningSplit", () => {
+  const split = (targetFormat, model, body, provider) => {
+    const b = JSON.parse(JSON.stringify(body));
+    applyMinimaxReasoningSplit(targetFormat, model, b, provider);
+    return b;
+  };
+
+  it("enables reasoning_split on MiniMax M3 OpenAI path by default", () => {
+    const out = split("openai", "MiniMax-M3", { messages: [{ role: "user", content: "hi" }] }, "minimax");
+    expect(out.reasoning_split).toBe(true);
+  });
+
+  it("skips on Claude transport path", () => {
+    const out = split("claude", "MiniMax-M3", { messages: [{ role: "user", content: "hi" }] }, "minimax");
+    expect(out.reasoning_split).toBeUndefined();
+  });
+
+  it("respects explicit client override", () => {
+    const out = split("openai", "MiniMax-M3", { reasoning_split: false, messages: [] }, "minimax");
+    expect(out.reasoning_split).toBe(false);
   });
 });
 
