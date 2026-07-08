@@ -132,4 +132,33 @@ describe("probeSSEStream", () => {
     ]), {});
     expect(probe.verdict).toBe("ok");
   });
+
+  // A client abort rejects the pending read (fetch body errors when the request
+  // signal fires). It must be classified "aborted", not "empty" — "empty" at the
+  // last attempt turns a disconnect into a 502 + a 30s account bench.
+  it("client abort during a pending read returns aborted, not empty", async () => {
+    const ac = new AbortController();
+    let ctrl;
+    const body = new ReadableStream({ start(c) { ctrl = c; } }); // never emits
+    ac.signal.addEventListener("abort", () => {
+      ctrl.error(Object.assign(new Error("This operation was aborted"), { name: "AbortError" }));
+    });
+    const probePromise = probeSSEStream(body, { signal: ac.signal });
+    setTimeout(() => ac.abort(), 10);
+    expect((await probePromise).verdict).toBe("aborted");
+  });
+
+  // error_finish discards the response — the upstream reader must be cancelled
+  // or the connection lingers until Google closes it.
+  it("error_finish cancels the upstream reader", async () => {
+    let cancelled = false;
+    const raw = `data: ${JSON.stringify(wrap({ candidates: [{ finishReason: "MALFORMED_FUNCTION_CALL" }] }))}\n\n`;
+    const body = new ReadableStream({
+      start(c) { c.enqueue(encoder.encode(raw)); }, // stream stays open
+      cancel() { cancelled = true; },
+    });
+    const probe = await probeSSEStream(body, {});
+    expect(probe.verdict).toBe("error_finish");
+    expect(cancelled).toBe(true);
+  });
 });

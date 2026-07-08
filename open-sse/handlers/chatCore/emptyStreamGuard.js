@@ -16,7 +16,14 @@ export const EMPTY_STREAM_BASE_DELAY_MS = 500;
 
 // A part is meaningful when it carries output the client can act on: a tool
 // call, inline data, or non-whitespace visible text. Thought-only parts are
-// not — thinking that never produced an answer IS the empty-response failure.
+// not — thinking that never produced an answer IS the empty-response failure
+// (#2229). Deliberate trade-off: the client receives nothing (not even
+// message_start) until the first meaningful part, so a long thinking phase
+// renders nothing and then replays in a burst. In exchange, retries are
+// invisible and byte-clean, and thought-only empties stay retryable. oh-my-pi
+// makes the opposite call — it streams thinking live and accepts duplicated
+// thinking blocks when an empty attempt is retried. The per-read stall escape
+// below bounds the worst-case wait.
 function isMeaningfulPart(part) {
   if (part.functionCall) return true;
   if (part.inlineData?.data || part.inline_data?.data) return true;
@@ -50,14 +57,21 @@ export async function probeSSEStream(body, { signal, stallTimeoutMs = STREAM_STA
     }
 
     let readResult;
+    let stallTimer;
     try {
       // Defensive stall escape: a byte-silent upstream must not hang the probe.
       readResult = await Promise.race([
         reader.read(),
-        new Promise((resolve) => setTimeout(() => resolve({ __stalled: true }), stallTimeoutMs)),
+        new Promise((resolve) => { stallTimer = setTimeout(() => resolve({ __stalled: true }), stallTimeoutMs); }),
       ]);
     } catch {
+      // A client abort rejects the pending read. Distinguish it from a truncated
+      // upstream, or the caller retries (or 502s + benches the account) a request
+      // nobody is waiting for.
+      if (signal?.aborted) return { verdict: "aborted" };
       return { verdict: "empty", buffered };
+    } finally {
+      clearTimeout(stallTimer);
     }
     if (readResult.__stalled) {
       try { reader.cancel(); } catch { /* already closed */ }
@@ -91,6 +105,8 @@ export async function probeSSEStream(body, { signal, stallTimeoutMs = STREAM_STA
       if (!response || typeof response !== "object") continue;
 
       if (response.error || parsed.error) {
+        // Discarding the response: release the upstream connection.
+        try { reader.cancel(); } catch { /* already closed */ }
         return { verdict: "error_finish", reason: (response.error || parsed.error).status || "error", buffered };
       }
 
@@ -110,6 +126,7 @@ export async function probeSSEStream(body, { signal, stallTimeoutMs = STREAM_STA
 
       const finishReason = candidate.finishReason && String(candidate.finishReason).toUpperCase();
       if (finishReason && GEMINI_ERROR_FINISH_REASONS.has(finishReason)) {
+        try { reader.cancel(); } catch { /* already closed */ }
         return { verdict: "error_finish", reason: finishReason, buffered };
       }
       // Safety-family finishes are content blocks, not flakes (same policy as
