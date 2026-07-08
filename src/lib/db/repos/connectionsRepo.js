@@ -119,6 +119,11 @@ export async function createProviderConnection(data) {
         if (incomingUsername || existingUsername) return false;
         return true;
       });
+    }
+    if (!existing && data.provider === "cursor" && data.providerSpecificData?.userId) {
+      existing = all.find(
+        (c) => c.providerSpecificData?.userId === data.providerSpecificData.userId,
+      );
     } else if (data.authType === "apikey" && data.name) {
       existing = all.find(c => c.authType === "apikey" && c.name === data.name);
     }

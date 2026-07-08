@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { CursorService } from "@/lib/oauth/services/cursor";
+import { findAndReadCursorLocalAuth } from "@/lib/oauth/services/cursorLocalStore.js";
 import { createProviderConnection } from "@/models";
 
 /**
@@ -9,10 +10,11 @@ import { createProviderConnection } from "@/models";
  * Request body:
  * - accessToken: string - Access token from cursorAuth/accessToken
  * - machineId: string - Machine ID from storage.serviceMachineId
+ * - cachedEmail: string - Optional email from cursorAuth/cachedEmail
  */
 export async function POST(request) {
   try {
-    const { accessToken, machineId } = await request.json();
+    const { accessToken, machineId, cachedEmail: bodyCachedEmail } = await request.json();
 
     if (!accessToken || typeof accessToken !== "string") {
       return NextResponse.json(
@@ -36,8 +38,20 @@ export async function POST(request) {
       machineId.trim()
     );
 
-    // Try to extract user info from token
-    const userInfo = cursorService.extractUserInfo(tokenData.accessToken);
+    let cachedEmail = typeof bodyCachedEmail === "string" ? bodyCachedEmail.trim() : null;
+    if (!cachedEmail) {
+      try {
+        const localAuth = await findAndReadCursorLocalAuth();
+        cachedEmail = localAuth?.cachedEmail || null;
+      } catch {
+        // Local DB lookup is best-effort.
+      }
+    }
+
+    const identity = cursorService.resolveIdentity({
+      accessToken: tokenData.accessToken,
+      cachedEmail,
+    });
 
     // Save to database
     const connection = await createProviderConnection({
@@ -46,12 +60,14 @@ export async function POST(request) {
       accessToken: tokenData.accessToken,
       refreshToken: null, // Cursor doesn't have public refresh endpoint
       expiresAt: new Date(Date.now() + tokenData.expiresIn * 1000).toISOString(),
-      email: userInfo?.email || null,
+      email: identity.email,
+      name: identity.name,
       providerSpecificData: {
         machineId: tokenData.machineId,
         authMethod: "imported",
         provider: "Imported",
-        userId: userInfo?.userId,
+        userId: identity.userId,
+        ...(identity.email ? { cachedEmail: identity.email } : {}),
       },
       testStatus: "active",
     });

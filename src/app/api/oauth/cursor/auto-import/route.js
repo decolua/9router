@@ -4,113 +4,18 @@ import { homedir } from "os";
 import { join } from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import {
+  CURSOR_ACCESS_TOKEN_KEYS,
+  CURSOR_CACHED_EMAIL_KEYS,
+  CURSOR_MACHINE_ID_KEYS,
+  getCursorDbCandidatePaths,
+  readCursorLocalAuthSync,
+} from "@/lib/oauth/services/cursorLocalStore.js";
 
 const execFileAsync = promisify(execFile);
 
-const ACCESS_TOKEN_KEYS = ["cursorAuth/accessToken", "cursorAuth/token"];
-const MACHINE_ID_KEYS = [
-  "storage.serviceMachineId",
-  "storage.machineId",
-  "telemetry.machineId",
-];
-
-/** Get candidate db paths by platform */
-function getCandidatePaths(platform) {
-  const home = homedir();
-
-  if (platform === "darwin") {
-    return [
-      join(
-        home,
-        "Library/Application Support/Cursor/User/globalStorage/state.vscdb",
-      ),
-      join(
-        home,
-        "Library/Application Support/Cursor - Insiders/User/globalStorage/state.vscdb",
-      ),
-    ];
-  }
-
-  if (platform === "win32") {
-    const appData = process.env.APPDATA || join(home, "AppData", "Roaming");
-    const localAppData =
-      process.env.LOCALAPPDATA || join(home, "AppData", "Local");
-    return [
-      join(appData, "Cursor", "User", "globalStorage", "state.vscdb"),
-      join(
-        appData,
-        "Cursor - Insiders",
-        "User",
-        "globalStorage",
-        "state.vscdb",
-      ),
-      join(localAppData, "Cursor", "User", "globalStorage", "state.vscdb"),
-      join(
-        localAppData,
-        "Programs",
-        "Cursor",
-        "User",
-        "globalStorage",
-        "state.vscdb",
-      ),
-    ];
-  }
-
-  return [
-    join(home, ".config/Cursor/User/globalStorage/state.vscdb"),
-    join(home, ".config/cursor/User/globalStorage/state.vscdb"),
-  ];
-}
-
-const normalize = (value) => {
-  if (typeof value !== "string") return value;
-  try {
-    const parsed = JSON.parse(value);
-    return typeof parsed === "string" ? parsed : value;
-  } catch {
-    return value;
-  }
-};
-
-/**
- * Extract tokens via better-sqlite3 (bundled dependency).
- * This is the preferred strategy — no external CLI required.
- */
 function extractTokensViaBetterSqlite(dbPath) {
-  // Dynamic require so the route stays importable even if native bindings fail
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const Database = require("better-sqlite3");
-  const db = new Database(dbPath, { readonly: true, fileMustExist: true });
-
-  const query = (key) => {
-    const row = db.prepare("SELECT value FROM itemTable WHERE key=? LIMIT 1").get(key);
-    return row?.value || null;
-  };
-
-  const normalize = (value) => {
-    if (typeof value !== "string") return value;
-    try {
-      const parsed = JSON.parse(value);
-      return typeof parsed === "string" ? parsed : value;
-    } catch {
-      return value;
-    }
-  };
-
-  let accessToken = null;
-  for (const key of ACCESS_TOKEN_KEYS) {
-    const raw = query(key);
-    if (raw) { accessToken = normalize(raw); break; }
-  }
-
-  let machineId = null;
-  for (const key of MACHINE_ID_KEYS) {
-    const raw = query(key);
-    if (raw) { machineId = normalize(raw); break; }
-  }
-
-  db.close();
-  return { accessToken, machineId };
+  return readCursorLocalAuthSync(dbPath);
 }
 
 /**
@@ -137,7 +42,7 @@ async function extractTokensViaCLI(dbPath) {
 
   // Try each key in priority order
   let accessToken = null;
-  for (const key of ACCESS_TOKEN_KEYS) {
+  for (const key of CURSOR_ACCESS_TOKEN_KEYS) {
     try {
       const raw = await query(
         `SELECT value FROM itemTable WHERE key='${key}' LIMIT 1`,
@@ -152,7 +57,7 @@ async function extractTokensViaCLI(dbPath) {
   }
 
   let machineId = null;
-  for (const key of MACHINE_ID_KEYS) {
+  for (const key of CURSOR_MACHINE_ID_KEYS) {
     try {
       const raw = await query(
         `SELECT value FROM itemTable WHERE key='${key}' LIMIT 1`,
@@ -166,7 +71,22 @@ async function extractTokensViaCLI(dbPath) {
     }
   }
 
-  return { accessToken, machineId };
+  let cachedEmail = null;
+  for (const key of CURSOR_CACHED_EMAIL_KEYS) {
+    try {
+      const raw = await query(
+        `SELECT value FROM itemTable WHERE key='${key}' LIMIT 1`,
+      );
+      if (raw) {
+        cachedEmail = normalize(raw);
+        break;
+      }
+    } catch {
+      /* try next */
+    }
+  }
+
+  return { accessToken, machineId, cachedEmail };
 }
 
 /**
@@ -177,7 +97,7 @@ async function extractTokensViaCLI(dbPath) {
 export async function GET() {
   try {
     const platform = process.platform;
-    const candidates = getCandidatePaths(platform);
+    const candidates = getCursorDbCandidatePaths(platform);
 
     let dbPath = null;
     for (const candidate of candidates) {
@@ -226,6 +146,7 @@ export async function GET() {
           found: true,
           accessToken: tokens.accessToken,
           machineId: tokens.machineId,
+          cachedEmail: tokens.cachedEmail || null,
         });
       }
     } catch {
@@ -240,6 +161,7 @@ export async function GET() {
           found: true,
           accessToken: tokens.accessToken,
           machineId: tokens.machineId,
+          cachedEmail: tokens.cachedEmail || null,
         });
       }
     } catch {

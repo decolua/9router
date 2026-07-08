@@ -14,6 +14,14 @@ import { CURSOR_CONFIG } from "../constants/oauth.js";
  * - storage.serviceMachineId: Machine ID for checksum
  */
 
+export function isCursorEmail(value) {
+  return typeof value === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+export function isAuth0Subject(value) {
+  return typeof value === "string" && /^auth0\|user_/i.test(value);
+}
+
 export class CursorService {
   constructor() {
     this.config = CURSOR_CONFIG;
@@ -140,16 +148,32 @@ export class CursorService {
         const decoded = JSON.parse(
           Buffer.from(payload.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString()
         );
-        return {
-          email: decoded.email || decoded.sub,
-          userId: decoded.sub || decoded.user_id,
-        };
+        const userId = decoded.sub || decoded.user_id || null;
+        const email = isCursorEmail(decoded.email) ? decoded.email : null;
+        return { email, userId };
       }
     } catch {
       // Token is not a JWT, that's okay
     }
 
     return null;
+  }
+
+  /**
+   * Resolve a human-readable identity for a Cursor connection.
+   */
+  resolveIdentity({ accessToken, cachedEmail, userId } = {}) {
+    const tokenInfo = accessToken ? this.extractUserInfo(accessToken) : null;
+    const resolvedUserId = userId || tokenInfo?.userId || null;
+    const email = isCursorEmail(cachedEmail)
+      ? cachedEmail
+      : tokenInfo?.email || null;
+
+    return {
+      email,
+      userId: resolvedUserId,
+      name: email,
+    };
   }
 
   /**

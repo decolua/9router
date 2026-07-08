@@ -6,6 +6,7 @@ import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
+import { backfillCursorConnectionIdentity } from "@/lib/oauth/services/cursorLocalStore.js";
 
 // Detect auth-expired messages returned by usage providers instead of throwing
 const AUTH_EXPIRED_PATTERNS = ["expired", "authentication", "unauthorized", "401", "re-authorize"];
@@ -13,6 +14,10 @@ function isAuthExpiredMessage(usage) {
   if (!usage?.message) return false;
   const msg = usage.message.toLowerCase();
   return AUTH_EXPIRED_PATTERNS.some((p) => msg.includes(p));
+}
+
+async function backfillCursorIdentity(connection) {
+  return backfillCursorConnectionIdentity(connection);
 }
 
 /**
@@ -130,6 +135,8 @@ export async function GET(request, { params }) {
     if (!connection) {
       return Response.json({ error: "Connection not found" }, { status: 404 });
     }
+
+    connection = await backfillCursorIdentity(connection);
 
     // Allow OAuth connections, plus whitelisted apikey providers (glm/minimax/kiro/...)
     // Kiro's headless api-key flow persists authType "api_key" (underscore) while
