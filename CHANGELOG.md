@@ -1,3 +1,22 @@
+# v0.5.20 (2026-07-07)
+
+## Features
+- **Thinking**: per-model thinking level picker on provider page — appends `(level)` suffix to copied model names for forced reasoning effort across all formats (openai, claude, gemini, deepseek, kimi, qwen, zai, minimax, hunyuan, step)
+- **RTK**: add JS-native git-log filter (#2423)
+- **Caveman**: add targeted upstream-aligned style rules (#2424)
+- **i18n**: add Farsi (fa) language support (#2385)
+
+## Fixes
+- **Thinking**: strip `(level)` suffix from upstream `body.model` so providers no longer reject requests
+- **Translator**: preserve developer instructions in openai-responses conversion (#2434)
+- **count_tokens**: count structured Anthropic blocks (#2419)
+- **Volcengine-ark**: clamp GLM-5 max_tokens to model output ceiling (#2428)
+- **Kimi**: normalize reasoning_effort to backend enum (#2427)
+- **Claude**: reconcile max_tokens vs thinking budget and lift per-model ceiling (#2381)
+- **Kiro**: deliver system prompt natively, add Opus 4.5/4.7/4.8, tolerate dash version ids (#2366)
+- **Headroom**: proxy dashboard through app (#2372)
+- **MITM**: recover from stale lock file on server start
+
 # v0.5.18 (2026-07-03)
 
 ## Features
