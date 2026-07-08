@@ -1,6 +1,6 @@
 // Concern #6: finish_reason / stop_reason mapping.
 // One entry per direction; switch by special format, default handles common providers.
-import { OPENAI_FINISH, CLAUDE_STOP, GEMINI_FINISH } from "../schema/finishReasons.js";
+import { OPENAI_FINISH, CLAUDE_STOP, GEMINI_FINISH, GEMINI_ERROR_FINISH_REASONS } from "../schema/finishReasons.js";
 
 // upstream finish/stop reason → OpenAI finish_reason
 export function toOpenAIFinish(reason, format) {
@@ -23,16 +23,25 @@ export function toOpenAIFinish(reason, format) {
         case "error": return OPENAI_FINISH.STOP;
         default: return reason || OPENAI_FINISH.STOP;
       }
-    case "gemini":
-      switch (String(reason).toUpperCase()) {
+    case "gemini": {
+      const geminiReason = String(reason).toUpperCase();
+      // Aborted turns (MALFORMED_FUNCTION_CALL, OTHER, ...) must surface as errors,
+      // not clean stops — a clean stop makes the client treat a broken turn as done.
+      if (GEMINI_ERROR_FINISH_REASONS.has(geminiReason)) return OPENAI_FINISH.ERROR;
+      switch (geminiReason) {
         case GEMINI_FINISH.STOP: return OPENAI_FINISH.STOP;
         case GEMINI_FINISH.MAX_TOKENS: return OPENAI_FINISH.LENGTH;
         case GEMINI_FINISH.SAFETY:
         case GEMINI_FINISH.RECITATION:
         case GEMINI_FINISH.BLOCKLIST:
+        case GEMINI_FINISH.SPII:
+        case GEMINI_FINISH.IMAGE_SAFETY:
         case GEMINI_FINISH.PROHIBITED_CONTENT: return OPENAI_FINISH.CONTENT_FILTER;
+        // Unknown values stay a clean stop: a future benign Gemini reason must not
+        // start erroring every Gemini-family provider at once.
         default: return OPENAI_FINISH.STOP;
       }
+    }
     case "kiro":
     case "ollama":
       switch (reason) {

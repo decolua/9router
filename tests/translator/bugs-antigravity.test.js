@@ -107,3 +107,119 @@ describe("Antigravity executor", () => {
     expect(query).toEqual({ type: "string", description: "Search query" });
   });
 });
+
+// Stability fixes: empty/aborted Antigravity streams must never surface as clean
+// end_turn to Claude Code (#2188, #2229, #2250, #2259, #2431).
+describe("Antigravity → OpenAI stream stability", () => {
+  const wrap = (response) => ({ response });
+
+  // concerns/finishReason.js — MALFORMED_FUNCTION_CALL used to fall through the
+  // default case to "stop" → end_turn: the model narrates a tool call, Gemini
+  // aborts it, and the client thinks the turn finished cleanly (#2250).
+  it("MALFORMED_FUNCTION_CALL maps to error finish, not stop", () => {
+    const state = initState(FORMATS.OPENAI);
+    translateResponse(FORMATS.ANTIGRAVITY, FORMATS.OPENAI, wrap({
+      responseId: "r1", modelVersion: "gemini-pro-agent",
+      candidates: [{ content: { role: "model", parts: [{ text: "I'll call the tool now." }] }, index: 0 }],
+    }), state);
+    const events = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.OPENAI, wrap({
+      candidates: [{ finishReason: "MALFORMED_FUNCTION_CALL", index: 0 }],
+    }), state);
+    const finish = events.find((e) => e.choices?.[0]?.finish_reason);
+    expect(finish.choices[0].finish_reason).toBe("error");
+  });
+
+  // gemini-to-openai.js — an error finish must not be upgraded to tool_calls even
+  // when a functionCall was emitted earlier in the stream.
+  it("error finish is not upgraded to tool_calls", () => {
+    const state = initState(FORMATS.OPENAI);
+    translateResponse(FORMATS.ANTIGRAVITY, FORMATS.OPENAI, wrap({
+      responseId: "r2", modelVersion: "gemini-pro-agent",
+      candidates: [{ content: { role: "model", parts: [{ functionCall: { name: "bash", args: { command: "ls" } } }] }, index: 0 }],
+    }), state);
+    const events = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.OPENAI, wrap({
+      candidates: [{ finishReason: "UNEXPECTED_TOOL_CALL", index: 0 }],
+    }), state);
+    const finish = events.find((e) => e.choices?.[0]?.finish_reason);
+    expect(finish.choices[0].finish_reason).toBe("error");
+  });
+
+  it("STOP with emitted tool call still upgrades to tool_calls", () => {
+    const state = initState(FORMATS.OPENAI);
+    const events = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.OPENAI, wrap({
+      responseId: "r3", modelVersion: "gemini-pro-agent",
+      candidates: [{
+        content: { role: "model", parts: [{ functionCall: { name: "bash", args: { command: "ls" } } }] },
+        finishReason: "STOP", index: 0,
+      }],
+    }), state);
+    const finish = events.find((e) => e.choices?.[0]?.finish_reason);
+    expect(finish.choices[0].finish_reason).toBe("tool_calls");
+  });
+
+  // gemini-to-openai.js — candidate-less chunk with promptFeedback.blockReason was
+  // dropped (return null) → empty 200 stream that never closes (#2188).
+  it("promptFeedback-only chunk closes the stream as content_filter", () => {
+    const state = initState(FORMATS.OPENAI);
+    const events = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.OPENAI, wrap({
+      responseId: "r4", modelVersion: "gemini-pro-agent",
+      promptFeedback: { blockReason: "SAFETY" },
+    }), state);
+    const finish = events.find((e) => e.choices?.[0]?.finish_reason);
+    expect(finish.choices[0].finish_reason).toBe("content_filter");
+  });
+
+  // gemini-to-openai.js — a {error:{...}} object embedded mid-stream in a 200
+  // response was dropped silently (#2259, #2431).
+  it("mid-stream error object closes the stream with an error finish", () => {
+    const state = initState(FORMATS.OPENAI);
+    translateResponse(FORMATS.ANTIGRAVITY, FORMATS.OPENAI, wrap({
+      responseId: "r5", modelVersion: "gemini-pro-agent",
+      candidates: [{ content: { role: "model", parts: [{ text: "partial" }] }, index: 0 }],
+    }), state);
+    const events = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.OPENAI, wrap({
+      error: { code: 429, status: "RESOURCE_EXHAUSTED", message: "Quota exceeded" },
+    }), state);
+    const finish = events.find((e) => e.choices?.[0]?.finish_reason);
+    expect(finish.choices[0].finish_reason).toBe("error");
+    expect(state.upstreamError).toMatchObject({ status: "RESOURCE_EXHAUSTED" });
+  });
+
+  // gemini-to-openai.js — usage-only keep-alive chunks must stay silent but keep usage.
+  it("candidate-less usage chunk returns nothing but preserves usage", () => {
+    const state = initState(FORMATS.OPENAI);
+    const events = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.OPENAI, wrap({
+      usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5, totalTokenCount: 15 },
+    }), state);
+    expect(events).toEqual([]);
+    expect(state.usage).toBeTruthy();
+  });
+
+  // gemini-to-openai.js — upstream functionCall.id was discarded and replaced by a
+  // regenerated name-based id, breaking functionResponse matching on replay.
+  it("upstream functionCall.id is preserved on the tool_call", () => {
+    const state = initState(FORMATS.OPENAI);
+    const events = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.OPENAI, wrap({
+      responseId: "r6", modelVersion: "gemini-pro-agent",
+      candidates: [{
+        content: { role: "model", parts: [{ functionCall: { id: "call_abc123", name: "bash", args: {} } }] },
+        finishReason: "STOP", index: 0,
+      }],
+    }), state);
+    const toolChunk = events.find((e) => e.choices?.[0]?.delta?.tool_calls);
+    expect(toolChunk.choices[0].delta.tool_calls[0].id).toBe("call_abc123");
+  });
+
+  it("generated tool ids use underscore separators and the Anthropic charset", () => {
+    const state = initState(FORMATS.OPENAI);
+    const events = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.OPENAI, wrap({
+      responseId: "r7", modelVersion: "gemini-pro-agent",
+      candidates: [{
+        content: { role: "model", parts: [{ functionCall: { name: "my-tool", args: {} } }] },
+        finishReason: "STOP", index: 0,
+      }],
+    }), state);
+    const toolChunk = events.find((e) => e.choices?.[0]?.delta?.tool_calls);
+    expect(toolChunk.choices[0].delta.tool_calls[0].id).toMatch(/^my-tool_\d+_0$/);
+  });
+});
