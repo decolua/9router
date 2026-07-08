@@ -5,6 +5,8 @@ import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBu
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
+import { sanitizeToolArgs } from "../translator/concerns/toolArgSanitizer.js";
+import { CLAUDE_BLOCK } from "../translator/schema/index.js";
 
 import { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER } from "./sseConstants.js";
 
@@ -13,6 +15,73 @@ export { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER };
 
 // sharedEncoder is stateless — safe to share across streams
 const sharedEncoder = new TextEncoder();
+
+// Claude passthrough tool_use arg sanitizer state (per-stream).
+// Buffers input_json_delta fragments per tool_use id; at content_block_stop,
+// sanitizes and re-emits a single consolidated content_block_delta.
+function createPassthroughToolState() {
+  // Map: contentBlockIndex → { id, name, fragments: string[] }
+  const toolBlocks = new Map();
+  // Map: toolUseId → contentBlockIndex (for matching deltas by index)
+  const indexToId = new Map();
+  return {
+    toolBlocks,
+    indexToId,
+  };
+}
+
+/**
+ * Process a parsed claude chunk in passthrough mode for tool_use sanitization.
+ * Returns null if no sanitization action needed (chunk should pass through as-is),
+ * or an array of replacement chunks to emit instead.
+ */
+function processClaudePassthroughToolUse(parsed, state) {
+  if (!parsed || typeof parsed !== "object") return null;
+
+  // content_block_start with tool_use: register a new tool block buffer
+  if (parsed.type === "content_block_start" && parsed.content_block?.type === CLAUDE_BLOCK.TOOL_USE) {
+    const idx = parsed.index;
+    const toolId = parsed.content_block.id;
+    const toolName = parsed.content_block.name;
+    state.toolBlocks.set(idx, { id: toolId, name: toolName, fragments: [] });
+    state.indexToId.set(toolId, idx);
+    return null; // pass through as-is
+  }
+
+  // content_block_delta with input_json_delta: buffer fragment, suppress emission
+  if (parsed.type === "content_block_delta" && parsed.delta?.type === "input_json_delta") {
+    const idx = parsed.index;
+    const block = state.toolBlocks.get(idx);
+    if (block) {
+      block.fragments.push(parsed.delta.partial_json);
+      return []; // suppress — we'll re-emit consolidated at content_block_stop
+    }
+    return null; // not a tracked tool block, pass through
+  }
+
+  // content_block_stop for a tracked tool_use: sanitize + re-emit consolidated delta
+  if (parsed.type === "content_block_stop") {
+    const idx = parsed.index;
+    const block = state.toolBlocks.get(idx);
+    if (block) {
+      state.toolBlocks.delete(idx);
+      state.indexToId.delete(block.id);
+      const rawArgs = block.fragments.join("");
+      const sanitized = sanitizeToolArgs(block.name, rawArgs);
+      // Always emit a single consolidated delta (sanitized or unchanged) + stop.
+      // The original fragments were suppressed; re-emit one consolidated delta here.
+      const consolidatedDelta = {
+        type: "content_block_delta",
+        index: idx,
+        delta: { type: "input_json_delta", partial_json: sanitized },
+      };
+      return [consolidatedDelta, parsed];
+    }
+    return null;
+  }
+
+  return null;
+}
 
 /**
  * Stream modes
@@ -73,6 +142,14 @@ export function createSSEStream(options = {}) {
   let openAIResponsesDoneSent = false;
   let streamDoneSent = false;  // track duplicate [DONE] across transform + flush
 
+  // Claude identity passthrough tool_use arg sanitizer state.
+  // Only active when sourceFormat === FORMATS.CLAUDE (claude↔ollama direct transport).
+  // Buffers input_json_delta fragments per tool_use content block; at
+  // content_block_stop, sanitizes args and re-emits a single consolidated delta.
+  const passthroughToolState = (mode === STREAM_MODE.PASSTHROUGH && sourceFormat === FORMATS.CLAUDE)
+    ? createPassthroughToolState()
+    : null;
+
   return new TransformStream({
     transform(chunk, controller) {
       if (!ttftAt) ttftAt = Date.now();
@@ -102,6 +179,45 @@ export function createSSEStream(options = {}) {
         if (mode === STREAM_MODE.PASSTHROUGH) {
           let output;
           let injectedUsage = false;
+
+          // Claude identity passthrough: sanitize tool_use args (AskUserQuestion,
+          // Read, etc.) before the OpenAI-specific hasValuableContent check below
+          // (claude chunks have no `choices` field and would be dropped).
+          // Buffers input_json_delta per tool_use id; at content_block_stop,
+          // sanitizes and re-emits a single consolidated delta.
+          if (passthroughToolState && trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
+            try {
+              const parsed = JSON.parse(trimmed.slice(5).trim());
+              const replacement = processClaudePassthroughToolUse(parsed, passthroughToolState);
+              if (replacement === null) {
+                // Not a tool_use-related chunk, or content_block_start that we track
+                // but pass through. If it's a claude chunk (has .type), emit it
+                // directly to bypass the OpenAI-specific hasValuableContent check.
+                if (parsed && typeof parsed === "object" && parsed.type && !parsed.choices) {
+                  output = `event: ${parsed.type}\ndata: ${JSON.stringify(parsed)}\n\n`;
+                  reqLogger?.appendConvertedChunk?.(output);
+                  controller.enqueue(sharedEncoder.encode(output));
+                  continue;
+                }
+                // Otherwise fall through to OpenAI passthrough logic below.
+              } else if (Array.isArray(replacement) && replacement.length === 0) {
+                // input_json_delta fragment for a tracked tool_use — suppress emission.
+                // Will re-emit consolidated sanitized delta at content_block_stop.
+                continue;
+              } else if (Array.isArray(replacement) && replacement.length > 0) {
+                // content_block_stop for a tracked tool_use: emit sanitized delta(s)
+                // + the stop event, then skip the rest of passthrough processing.
+                for (const ev of replacement) {
+                  const out = `event: ${ev.type}\ndata: ${JSON.stringify(ev)}\n\n`;
+                  reqLogger?.appendConvertedChunk?.(out);
+                  controller.enqueue(sharedEncoder.encode(out));
+                }
+                continue;
+              }
+            } catch {
+              // Non-JSON data line — fall through to normal passthrough emission
+            }
+          }
 
           if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
             try {
@@ -480,7 +596,7 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
   });
 }
 
-export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null) {
+export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, sourceFormat = null) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
     provider,
@@ -489,6 +605,7 @@ export function createPassthroughStreamWithLogger(provider = null, reqLogger = n
     connectionId,
     body,
     onStreamComplete,
-    apiKey
+    apiKey,
+    sourceFormat
   });
 }
