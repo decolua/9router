@@ -7,7 +7,7 @@ import { FORMATS } from "../../open-sse/translator/formats.js";
 // must clamp "max"→"xhigh" because OpenAI's reasoning_effort enum has no "max"
 // (L.openai caps at "xhigh"). Without the clamp, upstream returns HTTP 400
 // "max effort not support". See open-sse/providers/thinkingLevels.js:10.
-describe("Quick 260708-k1x: clamp thinking effort max→xhigh for OpenAI target", () => {
+describe("applyThinking (openai): clamp max effort to xhigh", () => {
   it("client output_config.effort:\"max\" → reasoning_effort:\"xhigh\" (not \"max\")", () => {
     const body = { output_config: { effort: "max" } };
     const out = applyThinking(FORMATS.OPENAI, "gpt-5", body, "openai");
