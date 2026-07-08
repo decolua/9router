@@ -393,15 +393,21 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
     reconcileOrphanedToolResults(history, currentMessage);
   }
 
-  // API-key auth must never use the shared default ARN (403); OAuth/social fall back to it.
+  // api_key / idc / external_idp must never use the shared default ARN (belongs
+  // to another account → 403 "bearer token invalid"); OAuth/social fall back to it.
   const authMethod = credentials?.providerSpecificData?.authMethod;
-  const profileArn = authMethod === "api_key"
+  const accountBoundAuth =
+    authMethod === "api_key" || authMethod === "idc" || authMethod === "external_idp";
+  const profileArn = accountBoundAuth
     ? (credentials?.providerSpecificData?.profileArn || "")
     : (credentials?.providerSpecificData?.profileArn || resolveDefaultProfileArn(authMethod));
 
   let finalContent = currentMessage?.userInputMessage?.content || "";
 
-  // System prompt → prepend to the user content.
+  // System prompt: pass via native systemInstruction field (Kiro/Q API supports it)
+  // and also prepend as <instructions> in user content as fallback for upstreams
+  // that don't support the native field.
+  let systemInstruction = undefined;
   if (body.system) {
     let systemText = "";
     if (typeof body.system === "string") {
@@ -409,7 +415,10 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
     } else if (Array.isArray(body.system)) {
       systemText = body.system.map((s) => s.text || "").join("\n");
     }
-    if (systemText) finalContent = `${systemText}\n\n${finalContent}`;
+    if (systemText) {
+      systemInstruction = systemText;
+      finalContent = `<instructions>\n${systemText}\n</instructions>\n\n${finalContent}`;
+    }
   }
 
   // Prefix order: thinking_mode tag, timestamp marker, then agentic prompt.
@@ -420,23 +429,29 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
   if (agentic) prefixParts.push(KIRO_AGENTIC_SYSTEM_PROMPT);
   finalContent = `${prefixParts.join("\n\n")}\n\n${finalContent}`;
 
+  const userInputMessage = {
+    content: finalContent,
+    modelId: upstreamModel,
+    origin: "AI_EDITOR",
+    ...(currentMessage?.userInputMessage?.userInputMessageContext && {
+      userInputMessageContext:
+        currentMessage.userInputMessage.userInputMessageContext,
+    }),
+    ...(currentMessage?.userInputMessage?.images && {
+      images: currentMessage.userInputMessage.images,
+    }),
+  };
+
+  if (systemInstruction) {
+    userInputMessage.systemInstruction = systemInstruction;
+  }
+
   const payload = {
     conversationState: {
       chatTriggerType: "MANUAL",
       conversationId: uuidv4(),
       currentMessage: {
-        userInputMessage: {
-          content: finalContent,
-          modelId: upstreamModel,
-          origin: "AI_EDITOR",
-          ...(currentMessage?.userInputMessage?.userInputMessageContext && {
-            userInputMessageContext:
-              currentMessage.userInputMessage.userInputMessageContext,
-          }),
-          ...(currentMessage?.userInputMessage?.images && {
-            images: currentMessage.userInputMessage.images,
-          }),
-        },
+        userInputMessage,
       },
       history,
     },

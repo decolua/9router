@@ -4,7 +4,9 @@ import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/sha
 import { GEMINI_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken, updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
+import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
+import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
@@ -78,6 +80,13 @@ const resolveQwenModelsUrl = (connection) => {
   }
   return `https://${value.replace(/\/$/, "")}/v1/models`;
 };
+
+const getStaticProviderModels = (providerId) =>
+  getModelsByProviderId(providerId).map((model) => ({
+    ...model,
+    id: model.id,
+    name: model.name || model.id,
+  }));
 
 // Generic custom resolver for OAuth providers that need refresh-on-401 + token persist.
 // Receives a `fetchFn(token)` and returns parsed models or throws.
@@ -241,6 +250,22 @@ const PROVIDER_MODELS_CONFIG = {
   nvidia: createOpenAIModelsConfig("https://integrate.api.nvidia.com/v1/models"),
   assemblyai: createOpenAIModelsConfig("https://api.assemblyai.com/v1/models"),
   "vercel-ai-gateway": createOpenAIModelsConfig("https://ai-gateway.vercel.sh/v1/models"),
+  kimchi: {
+    customResolver: async (connection) => {
+      const result = await resolveKimchiModels({
+        accessToken: connection.accessToken,
+        apiKey: connection.apiKey,
+        providerSpecificData: connection.providerSpecificData || {},
+      }, { forceRefresh: true, log: console });
+      if (result?.models?.length) {
+        return { models: result.models };
+      }
+      return {
+        models: getStaticProviderModels("kimchi"),
+        warning: "Kimchi returned no live models; falling back to static catalog.",
+      };
+    }
+  },
 
   // Custom resolvers (non-OpenAI-shaped APIs / token-refresh flows)
   kiro: {

@@ -118,6 +118,9 @@ export const GITLAB_CONFIG = { ...PROVIDER_OAUTH["gitlab"] };
 // CodeBuddy (Tencent) OAuth Configuration (Browser OAuth Polling Flow)
 export const CODEBUDDY_CONFIG = { ...PROVIDER_OAUTH["codebuddy-cn"] };
 
+// Kimchi OAuth Configuration (Browser token callback flow)
+export const KIMCHI_CONFIG = { ...PROVIDER_OAUTH["kimchi"] };
+
 // Freebuff OAuth Configuration (Custom Device/Browser Polling Flow)
 export const FREEBUFF_CONFIG = {
   codeUrl: "https://freebuff.com/api/auth/cli/code",

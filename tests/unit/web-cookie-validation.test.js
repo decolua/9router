@@ -12,6 +12,27 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const originalFetch = global.fetch;
 
+function looksLikeGrokWebCookie(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return false;
+  const normalized = raw.replace(/^cookie:\s*/i, "").trim();
+  return normalized.startsWith("sso=")
+    || normalized.startsWith("sso ")
+    || normalized.startsWith("session_paste=")
+    || normalized.startsWith("session_paste ")
+    || normalized.startsWith("U2FsdGVk");
+}
+
+function validateXaiApiKey(apiKey) {
+  if (looksLikeGrokWebCookie(apiKey)) {
+    return {
+      valid: false,
+      error: "This is a Grok Web cookie, not an xAI API key. Add it under Grok Web (Subscription) / grok-web.",
+    };
+  }
+  return { valid: true, error: null };
+}
+
 // Replicates the validation logic from app/src/app/api/providers/validate/route.js
 async function validateGrokWeb(apiKey) {
   const token = apiKey.startsWith("sso=") ? apiKey.slice(4) : apiKey;
@@ -136,6 +157,26 @@ describe("grok-web validation", () => {
     expect(headers["x-statsig-id"]).toBeTruthy();
     expect(headers["x-xai-request-id"]).toBeTruthy();
     expect(headers.traceparent).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-00$/);
+  });
+});
+
+describe("xai validation", () => {
+  it("should reject Grok Web sso cookie values", () => {
+    const result = validateXaiApiKey("sso=abc123");
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("Grok Web cookie");
+  });
+
+  it("should reject Grok Web session_paste values", () => {
+    const result = validateXaiApiKey("session_paste U2FsdGVkX1abc123");
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("grok-web");
+  });
+
+  it("should allow non-cookie xAI API key shaped values to continue to network validation", () => {
+    const result = validateXaiApiKey("xai-api-key-value");
+    expect(result.valid).toBe(true);
+    expect(result.error).toBeNull();
   });
 });
 

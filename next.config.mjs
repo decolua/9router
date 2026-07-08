@@ -48,6 +48,16 @@ const nextConfig = {
     };
     return config;
   },
+  async headers() {
+    return [
+      {
+        source: "/dashboard/:path*",
+        headers: [
+          { key: "Cache-Control", value: "no-store, max-age=0, must-revalidate" },
+        ],
+      },
+    ];
+  },
   async rewrites() {
     return [
       {

@@ -103,7 +103,9 @@ if (appPkg.version !== cliPkg.version) {
 // Step 1: Build app with Next.js (workspace tracing root → traced node_modules in standalone).
 console.log("1️⃣  Building Next.js app...");
 try {
-  execSync("npm run build", {
+  const nextBin = require("path").resolve(appDir, "node_modules/.bin/next");
+  execSync(`${nextBin} build --webpack`, {
+
     stdio: "inherit",
     cwd: appDir,
     env: {

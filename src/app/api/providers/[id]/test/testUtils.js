@@ -16,6 +16,7 @@ import {
   CLAUDE_CONFIG,
   CLINE_CONFIG,
   KILOCODE_CONFIG,
+  KIMCHI_CONFIG,
 } from "@/lib/oauth/constants/oauth";
 import { XAI_CONFIG } from "@/lib/oauth/constants/xai";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
@@ -133,6 +134,17 @@ const OAUTH_TEST_CONFIG = {
     authPrefix: "Bearer ",
   },
   "codebuddy-cn": { tokenExists: true },
+  kimchi: {
+    url: KIMCHI_CONFIG.validationUrl || "https://api.cast.ai/v1/llm/openai/supported-providers",
+    method: "GET",
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    extraHeaders: {
+      Accept: "application/json",
+      "User-Agent": "kimchi/0.1.40",
+    },
+    refreshable: false,
+  },
 };
 
 async function probeClineAccessToken(accessToken) {
@@ -320,6 +332,20 @@ async function refreshOAuthToken(connection) {
     console.log(`Error refreshing ${provider} token:`, err.message);
     return null;
   }
+}
+
+function looksLikeGrokWebCookie(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return false;
+  const normalized = raw.replace(/^cookie:\s*/i, "").trim();
+  return normalized.startsWith("sso=")
+    || normalized.startsWith("sso ")
+    || normalized.startsWith("session_paste=")
+    || normalized.startsWith("session_paste ")
+    || normalized.startsWith("U2FsdGVk")
+    || normalized.includes("sso=")
+    || normalized.includes("session_paste")
+    || normalized.includes("grok_device_id");
 }
 
 function isTokenExpired(connection) {
@@ -655,6 +681,12 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "xai": {
+        if (looksLikeGrokWebCookie(connection.apiKey)) {
+          return {
+            valid: false,
+            error: "This is a Grok Web cookie, not an xAI API key. Add it under Grok Web (Subscription) / grok-web.",
+          };
+        }
         const res = await fetchWithConnectionProxy("https://api.x.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
@@ -725,14 +757,23 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "grok-web": {
-        const token = connection.apiKey.startsWith("sso=") ? connection.apiKey.slice(4) : connection.apiKey;
+        const raw = String(connection.apiKey || "").trim();
+        let cookieStr = `sso=${raw}`;
+        const withoutHeaderPrefix = raw.replace(/^cookie:\s*/i, "").trim();
+        if (withoutHeaderPrefix.includes(";")) cookieStr = withoutHeaderPrefix;
+        else if (/^[A-Za-z0-9_.-]+=/.test(withoutHeaderPrefix)) cookieStr = withoutHeaderPrefix;
+        else if (withoutHeaderPrefix.startsWith("session_paste ")) cookieStr = `session_paste=${withoutHeaderPrefix.slice(14).trim()}`;
+        else if (withoutHeaderPrefix.startsWith("sso ")) cookieStr = `sso=${withoutHeaderPrefix.slice(4).trim()}`;
+        else if (withoutHeaderPrefix.startsWith("U2FsdGVk")) cookieStr = `session_paste=${withoutHeaderPrefix}`;
+        else cookieStr = `sso=${withoutHeaderPrefix}`;
+        
         const randomHex = (n) => Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => b.toString(16).padStart(2, "0")).join("");
         const statsigId = Buffer.from("e:TypeError: Cannot read properties of null (reading 'children')").toString("base64");
         const res = await fetchWithConnectionProxy("https://grok.com/rest/app-chat/conversations/new", {
           method: "POST",
           headers: {
             Accept: "*/*", "Content-Type": "application/json",
-            Cookie: `sso=${token}`, Origin: "https://grok.com", Referer: "https://grok.com/",
+            Cookie: cookieStr, Origin: "https://grok.com", Referer: "https://grok.com/",
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
             "x-statsig-id": statsigId, "x-xai-request-id": crypto.randomUUID(),
             traceparent: `00-${randomHex(16)}-${randomHex(8)}-00`,

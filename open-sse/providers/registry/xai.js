@@ -27,6 +27,8 @@ export default {
     refreshUrl: "https://auth.x.ai/oauth2/token",
   },
   models: [
+    { id: "grok-4.3", name: "Grok 4.3" },
+    { id: "grok-4.3-high", name: "Grok 4.3 High (Reasoning)" },
     { id: "grok-4", name: "Grok 4" },
     { id: "grok-4-fast-reasoning", name: "Grok 4 Fast Reasoning" },
     { id: "grok-code-fast-1", name: "Grok Code Fast" },

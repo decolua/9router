@@ -12,6 +12,7 @@ import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { translate } from "@/i18n/runtime";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
+import { formatLatency } from "@/lib/proxyDisplay";
 import ModelRow from "./ModelRow";
 import PassthroughModelsSection from "./PassthroughModelsSection";
 import CompatibleModelsSection from "./CompatibleModelsSection";
@@ -50,6 +51,9 @@ export default function ProviderDetailPage() {
   const [customModels, setCustomModels] = useState([]);
   const [headerImgError, setHeaderImgError] = useState(false);
   const [modelTestResults, setModelTestResults] = useState({});
+  const [modelSpeedResults, setModelSpeedResults] = useState({});
+  const [speedTestingModelId, setSpeedTestingModelId] = useState(null);
+  const [bulkSpeedTesting, setBulkSpeedTesting] = useState(false);
   const [modelsTestError, setModelsTestError] = useState("");
   const [testingModelIds, setTestingModelIds] = useState(() => new Set());
   const [showAddCustomModel, setShowAddCustomModel] = useState(false);
@@ -406,6 +410,7 @@ export default function ProviderDetailPage() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchConnections();
     fetchAliases();
     fetchCustomModels();
@@ -793,6 +798,7 @@ export default function ProviderDetailPage() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelectedConnectionIds((prev) => prev.filter((id) => connections.some((conn) => conn.id === id)));
   }, [connections]);
 
@@ -1165,6 +1171,9 @@ export default function ProviderDetailPage() {
             testStatus={modelTestResults[model.id]}
             onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
             isTesting={testingModelIds.has(model.id)}
+            onSpeedTest={hasSpeedTest && (connections.length > 0 || isFreeNoAuth) ? () => handleSpeedTestModel(model.id) : undefined}
+            isSpeedTesting={speedTestingModelId === model.id}
+            speedTestData={modelSpeedResults[model.id]}
             isCustom
             isFree={false}
             caps={getCaps(`${providerId}/${model.id}`)}
@@ -1190,6 +1199,9 @@ export default function ProviderDetailPage() {
               testStatus={modelTestResults[model.id]}
               onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
               isTesting={testingModelIds.has(model.id)}
+              onSpeedTest={hasSpeedTest && (connections.length > 0 || isFreeNoAuth) ? () => handleSpeedTestModel(model.id) : undefined}
+              isSpeedTesting={speedTestingModelId === model.id}
+              speedTestData={modelSpeedResults[model.id]}
               isFree={model.isFree}
               onDisable={() => handleDisableModel(model.id)}
               caps={getCaps(`${providerId}/${model.id}`)}

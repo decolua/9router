@@ -6,6 +6,17 @@ import { resolveOllamaLocalHost, resolveXiaomiTokenplanBaseUrl, PROVIDERS } from
 import { openaiToCommandCodeRequest } from "open-sse/translator/request/openai-to-commandcode.js";
 import { normalizeProviderId } from "@/lib/providerNormalization";
 
+function looksLikeGrokWebCookie(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return false;
+  const normalized = raw.replace(/^cookie:\s*/i, "").trim();
+  return normalized.startsWith("sso=")
+    || normalized.startsWith("sso ")
+    || normalized.startsWith("session_paste=")
+    || normalized.startsWith("session_paste ")
+    || normalized.startsWith("U2FsdGVk");
+}
+
 // Probe a webSearch/webFetch provider using its searchConfig/fetchConfig.
 // Returns true if API key is accepted (status !== 401 && !== 403).
 async function probeWebProvider(provider, apiKey) {
@@ -352,7 +363,6 @@ export async function POST(request) {
 
         case "deepseek":
         case "groq":
-        case "xai":
         case "mistral":
         case "perplexity":
         case "together":
@@ -380,13 +390,32 @@ export async function POST(request) {
           };
           const headers = {};
           if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-          const res = await fetch(endpoints[provider], { headers });
+          const res = await fetch(endpoints[provider], { headers, signal: AbortSignal.timeout(8000) });
           // xai returns 400 for bad key, 403 for valid-but-no-credit. Other providers use 401.
           if (provider === "xai") {
             isValid = res.status === 200 || res.status === 403;
+          } else if (provider === "xiaomi-tokenplan") {
+            // /models returns 403 for valid keys lacking list permission; only 401 means invalid
+            isValid = res.status !== 401;
           } else {
             isValid = res.ok;
           }
+          break;
+        }
+
+
+        case "xai": {
+          if (looksLikeGrokWebCookie(apiKey)) {
+            return NextResponse.json({
+              valid: false,
+              error: "This is a Grok Web cookie, not an xAI API key. Add it under Grok Web (Subscription) / grok-web.",
+            });
+          }
+
+          const endpoint = PROVIDERS.xai?.validateUrl;
+          const res = await fetch(endpoint, { headers: { Authorization: `Bearer ${apiKey}` } });
+          // xai returns 400 for bad key, 403 for valid-but-no-credit.
+          isValid = res.status === 200 || res.status === 403;
           break;
         }
 
@@ -485,8 +514,17 @@ export async function POST(request) {
           break;
         }
 
-        case "grok-web": {
-          const token = apiKey.startsWith("sso=") ? apiKey.slice(4) : apiKey;
+      case "grok-web": {
+          const raw = String(apiKey || "").trim();
+          let cookieStr = `sso=${raw}`;
+          const withoutHeaderPrefix = raw.replace(/^cookie:\s*/i, "").trim();
+          if (withoutHeaderPrefix.includes(";")) cookieStr = withoutHeaderPrefix;
+          else if (/^[A-Za-z0-9_.-]+=/.test(withoutHeaderPrefix)) cookieStr = withoutHeaderPrefix;
+          else if (withoutHeaderPrefix.startsWith("session_paste ")) cookieStr = `session_paste=${withoutHeaderPrefix.slice(14).trim()}`;
+          else if (withoutHeaderPrefix.startsWith("sso ")) cookieStr = `sso=${withoutHeaderPrefix.slice(4).trim()}`;
+          else if (withoutHeaderPrefix.startsWith("U2FsdGVk")) cookieStr = `session_paste=${withoutHeaderPrefix}`;
+          else cookieStr = `sso=${withoutHeaderPrefix}`;
+          
           // Cloudflare-bypass: send POST with same browser fingerprint headers as GrokWebExecutor
           const randomHex = (n) => {
             const a = new Uint8Array(n);
@@ -504,7 +542,7 @@ export async function POST(request) {
               "Accept-Language": "en-US,en;q=0.9",
               "Cache-Control": "no-cache",
               "Content-Type": "application/json",
-              Cookie: `sso=${token}`,
+              Cookie: cookieStr,
               Origin: "https://grok.com",
               Pragma: "no-cache",
               Referer: "https://grok.com/",
