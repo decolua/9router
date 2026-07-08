@@ -5,7 +5,7 @@ import {
   parseSuffix,
   extractThinking,
   applyThinking,
-  applyMinimaxReasoningSplit,
+  applyTransportRequestDefaults,
 } from "../../open-sse/translator/concerns/thinkingUnified.js";
 import { extractReasoningText } from "../../open-sse/translator/concerns/reasoning.js";
 
@@ -156,25 +156,25 @@ describe("applyThinking per provider format", () => {
   });
 });
 
-describe("applyMinimaxReasoningSplit", () => {
-  const split = (targetFormat, model, body, provider) => {
+describe("applyTransportRequestDefaults", () => {
+  const defaults = (targetFormat, body, provider) => {
     const b = JSON.parse(JSON.stringify(body));
-    applyMinimaxReasoningSplit(targetFormat, model, b, provider);
+    applyTransportRequestDefaults(targetFormat, b, provider);
     return b;
   };
 
-  it("enables reasoning_split on MiniMax M3 OpenAI path by default", () => {
-    const out = split("openai", "MiniMax-M3", { messages: [{ role: "user", content: "hi" }] }, "minimax");
+  it("applies openai transport requestDefaults for MiniMax", () => {
+    const out = defaults("openai", { messages: [{ role: "user", content: "hi" }] }, "minimax");
     expect(out.reasoning_split).toBe(true);
   });
 
-  it("skips on Claude transport path", () => {
-    const out = split("claude", "MiniMax-M3", { messages: [{ role: "user", content: "hi" }] }, "minimax");
+  it("skips defaults for non-matching transport format", () => {
+    const out = defaults("claude", { messages: [{ role: "user", content: "hi" }] }, "minimax");
     expect(out.reasoning_split).toBeUndefined();
   });
 
   it("respects explicit client override", () => {
-    const out = split("openai", "MiniMax-M3", { reasoning_split: false, messages: [] }, "minimax");
+    const out = defaults("openai", { reasoning_split: false, messages: [] }, "minimax");
     expect(out.reasoning_split).toBe(false);
   });
 });

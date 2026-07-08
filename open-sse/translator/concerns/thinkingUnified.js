@@ -4,7 +4,6 @@
 
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 import { PROVIDERS } from "../../providers/index.js";
-import { FORMATS } from "../formats.js";
 import { LEVEL_TO_BUDGET, budgetToLevel, effortToBudget, effortToThinkingLevel } from "./thinking.js";
 
 // Map a target wire-format to its native thinking format (when capability has none).
@@ -329,17 +328,25 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
   return body;
 }
 
-const MINIMAX_REASONING_SPLIT_PROVIDERS = new Set(["minimax", "minimax-cn"]);
+// Apply per-transport requestDefaults from the provider registry when the client
+// did not set a field. Multi-endpoint providers can scope defaults to a format
+// (e.g. MiniMax openai transport → reasoning_split).
+export function applyTransportRequestDefaults(targetFormat, body, provider = null) {
+  if (!body || typeof body !== "object" || !provider) return body;
+  const config = PROVIDERS[provider];
+  if (!config) return body;
 
-// MiniMax M3 OpenAI path: default embeds thinking in content as <think>.
-// Vendor recommends reasoning_split for OpenAI-compatible clients (clean content + reasoning_details).
-export function applyMinimaxReasoningSplit(targetFormat, model, body, provider = null) {
-  if (!body || typeof body !== "object") return body;
-  if (targetFormat !== FORMATS.OPENAI) return body;
-  if (!MINIMAX_REASONING_SPLIT_PROVIDERS.has(provider)) return body;
-  const { cleanModel } = parseSuffix(model);
-  if (!getCapabilitiesForModel(provider, cleanModel).reasoning) return body;
-  if (body.reasoning_split !== undefined) return body;
-  body.reasoning_split = true;
+  let defaults = null;
+  const transports = config.transports;
+  if (Array.isArray(transports) && transports.length) {
+    defaults = transports.find((t) => t.format === targetFormat)?.requestDefaults;
+  } else {
+    defaults = config.requestDefaults ?? config.transport?.requestDefaults;
+  }
+
+  if (!defaults || typeof defaults !== "object") return body;
+  for (const [key, value] of Object.entries(defaults)) {
+    if (body[key] === undefined) body[key] = value;
+  }
   return body;
 }
