@@ -135,10 +135,17 @@ export class CodexExecutor extends BaseExecutor {
     headers["session_id"] = this._currentSessionId || credentials?.connectionId || "default";
     // Identify client type to Codex backend (matches official codex CLI)
     if (!headers["originator"]) headers["originator"] = "codex_cli_rs";
-    // Workspace binding header — improves account scope + cache affinity
-    const workspaceId = credentials?.providerSpecificData?.workspaceId;
-    if (typeof workspaceId === "string" && workspaceId && !headers["chatgpt-account-id"]) {
-      headers["chatgpt-account-id"] = workspaceId;
+    // Account/workspace binding header — required when multiple Codex accounts
+    // are configured. OAuth import stores ChatGPT account ID as chatgptAccountId;
+    // older/custom rows may use workspaceId/accountId. Prefer explicit workspaceId
+    // but fall back to chatgptAccountId so requests don't cross-bind to the wrong
+    // OpenAI account and surface as token_invalid after adding another account.
+    const accountId =
+      credentials?.providerSpecificData?.workspaceId ||
+      credentials?.providerSpecificData?.chatgptAccountId ||
+      credentials?.providerSpecificData?.accountId;
+    if (typeof accountId === "string" && accountId && !headers["chatgpt-account-id"]) {
+      headers["chatgpt-account-id"] = accountId;
     }
     return headers;
   }
