@@ -149,6 +149,12 @@ export function createSSEStream(options = {}) {
   const passthroughToolState = (mode === STREAM_MODE.PASSTHROUGH && sourceFormat === FORMATS.CLAUDE)
     ? createPassthroughToolState()
     : null;
+  // [diag:ollama-passthrough] confirm claude identity passthrough transport is
+  // active for this stream (claude client ↔ claude-format upstream, e.g. ollama
+  // /v1/messages). Remove after validation.
+  if (passthroughToolState) {
+    console.log("[ollama-passthrough] active provider=" + provider + " model=" + model);
+  }
 
   return new TransformStream({
     transform(chunk, controller) {
@@ -466,6 +472,18 @@ export function createSSEStream(options = {}) {
             }
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(sharedEncoder.encode(output));
+          }
+
+          // [diag:ollama-passthrough-eof] detect orphaned tool_use blocks at
+          // stream end. If toolBlocks still has entries here, the upstream
+          // ended mid-tool_use (no content_block_stop arrived) and our buffered
+          // input_json_delta fragments are about to be silently dropped — the
+          // client already got content_block_start and will see an incomplete
+          // tool_use → "JSON Parse error: Unexpected EOF". Remove after validation.
+          if (passthroughToolState?.toolBlocks?.size > 0) {
+            const orphaned = [...passthroughToolState.toolBlocks.values()]
+              .map(b => `${b.id}:${b.name}(${b.fragments.length} frags)`);
+            console.log("[ollama-passthrough-eof] orphaned tool_use blocks:", orphaned.join(", "));
           }
 
           if (!hasValidUsage(usage) && totalContentLength > 0) {
