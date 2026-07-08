@@ -49,3 +49,16 @@ export const GEMINI_ERROR_FINISH_REASONS = new Set([
   GEMINI_FINISH.LANGUAGE,
   GEMINI_FINISH.NO_IMAGE,
 ]);
+
+// Gemini finishReasons that mean the content was blocked by policy. Deterministic
+// for a given prompt: retrying is pointless (same block every time), so the
+// empty-stream guard must release these instead of retrying — the translator
+// closes them as content_filter. Also the content_filter mapping source.
+export const GEMINI_CONTENT_FILTER_FINISH_REASONS = new Set([
+  GEMINI_FINISH.SAFETY,
+  GEMINI_FINISH.RECITATION,
+  GEMINI_FINISH.BLOCKLIST,
+  GEMINI_FINISH.SPII,
+  GEMINI_FINISH.IMAGE_SAFETY,
+  GEMINI_FINISH.PROHIBITED_CONTENT,
+]);

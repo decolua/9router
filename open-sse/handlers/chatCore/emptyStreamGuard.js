@@ -7,7 +7,7 @@
 // is sent to the client, so a bad attempt can be retried in place with the
 // identical request; a healthy stream is released on its first meaningful
 // part and replayed byte-identically.
-import { GEMINI_ERROR_FINISH_REASONS } from "../../translator/schema/finishReasons.js";
+import { GEMINI_ERROR_FINISH_REASONS, GEMINI_CONTENT_FILTER_FINISH_REASONS } from "../../translator/schema/finishReasons.js";
 import { STREAM_STALL_TIMEOUT_MS } from "../../config/runtimeConfig.js";
 
 // Mirrors oh-my-pi's empty-response policy: 2 retries, 500ms * 2^attempt backoff.
@@ -29,7 +29,9 @@ function isMeaningfulPart(part) {
  * chunk so a healthy stream can be replayed without loss.
  *
  * Verdicts:
- * - { verdict: "ok", buffered, reader }        first meaningful part seen
+ * - { verdict: "ok", buffered, reader }        first meaningful part seen, or a
+ *   deterministic content block (promptFeedback / safety finish) the translator
+ *   must close as content_filter — never retried
  * - { verdict: "empty", buffered }             stream ended with nothing meaningful
  * - { verdict: "error_finish", reason, buffered } aborted (MALFORMED_FUNCTION_CALL, ...)
  *   or an {error:{...}} object arrived before any meaningful part
@@ -92,6 +94,13 @@ export async function probeSSEStream(body, { signal, stallTimeoutMs = STREAM_STA
         return { verdict: "error_finish", reason: (response.error || parsed.error).status || "error", buffered };
       }
 
+      // Prompt blocked by policy: deterministic for this prompt — a retry resends
+      // the same blocked prompt, wasting quota and benching the account on
+      // exhaustion. Release instead; the translator closes it as content_filter.
+      if (!response.candidates?.length && response.promptFeedback?.blockReason) {
+        return { verdict: "ok", buffered, reader };
+      }
+
       const candidate = response.candidates?.[0];
       if (!candidate) continue;
 
@@ -102,6 +111,11 @@ export async function probeSSEStream(body, { signal, stallTimeoutMs = STREAM_STA
       const finishReason = candidate.finishReason && String(candidate.finishReason).toUpperCase();
       if (finishReason && GEMINI_ERROR_FINISH_REASONS.has(finishReason)) {
         return { verdict: "error_finish", reason: finishReason, buffered };
+      }
+      // Safety-family finishes are content blocks, not flakes (same policy as
+      // promptFeedback above): release so the translator closes as content_filter.
+      if (finishReason && GEMINI_CONTENT_FILTER_FINISH_REASONS.has(finishReason)) {
+        return { verdict: "ok", buffered, reader };
       }
       // Benign finish with nothing meaningful streamed → keep reading; if the
       // stream ends here it's the empty-response failure.

@@ -113,4 +113,23 @@ describe("probeSSEStream", () => {
     const replayed = await drain(replayStream(probe.buffered, probe.reader));
     expect(replayed).toBe(events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join(""));
   });
+
+  // Content blocks are deterministic — a retry resends the same blocked prompt and
+  // exhaustion benches the account. The guard must release them so the translator
+  // closes the stream as content_filter (#2188).
+  it("promptFeedback.blockReason-only stream releases as ok, replayed byte-identically", async () => {
+    const events = [wrap({ promptFeedback: { blockReason: "SAFETY" } })];
+    const probe = await probeSSEStream(sseBody(events), {});
+    expect(probe.verdict).toBe("ok");
+    const replayed = await drain(replayStream(probe.buffered, probe.reader));
+    expect(replayed).toBe(events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join(""));
+  });
+
+  it("SAFETY finish before any meaningful content releases as ok, not empty", async () => {
+    const probe = await probeSSEStream(sseBody([
+      wrap({ candidates: [{ content: { parts: [{ text: "hmm", thought: true }] } }] }),
+      wrap({ candidates: [{ finishReason: "SAFETY" }] }),
+    ]), {});
+    expect(probe.verdict).toBe("ok");
+  });
 });
