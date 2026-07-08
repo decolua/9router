@@ -1,7 +1,5 @@
 import {
-  QODER_DEVICE_TOKEN_URL,
-  QODER_LOGIN_URL,
-  QODER_USERINFO_URL,
+  getQoderEndpointConfig,
 } from "../../qoder/constants.js";
 import crypto from "crypto";
 import { v4 as uuidv4 } from "uuid";
@@ -52,6 +50,13 @@ async function fetchWithTimeout(url, init = {}) {
 }
 
 export class QoderService {
+  constructor(configOrProvider = "qoder") {
+    this.config = {
+      ...getQoderEndpointConfig(configOrProvider),
+      ...(configOrProvider && typeof configOrProvider === "object" ? configOrProvider : {}),
+    };
+  }
+
   /**
    * Generate a PKCE verifier + S256 challenge pair.
    * Uses 32 random bytes (matches qodercli/Veria).
@@ -77,9 +82,20 @@ export class QoderService {
       machine_id: machineId,
       nonce,
     });
+    if (this.config.clientId) params.set("client_id", this.config.clientId);
+    if (this.config.redirectUri) params.set("redirect_uri", this.config.redirectUri);
+
+    const deviceUrl = `${this.config.deviceAuthorizationUrl || this.config.loginUrl}?${params.toString()}`;
+    let verificationUriComplete = deviceUrl;
+    if (this.config.useSignInCallback) {
+      const loginParams = new URLSearchParams();
+      if (this.config.bizVariant) loginParams.set("biz_variant", this.config.bizVariant);
+      loginParams.set("oauth_callback", deviceUrl);
+      verificationUriComplete = `${this.config.loginUrl}?${loginParams.toString()}`;
+    }
 
     return {
-      verificationUriComplete: `${QODER_LOGIN_URL}?${params.toString()}`,
+      verificationUriComplete,
       codeVerifier: verifier,
       nonce,
       machineId,
@@ -98,7 +114,7 @@ export class QoderService {
     if (!nonce || !codeVerifier) {
       throw new Error("pollDeviceToken: missing nonce or code verifier");
     }
-    const url = `${QODER_DEVICE_TOKEN_URL}?nonce=${encodeURIComponent(nonce)}&verifier=${encodeURIComponent(codeVerifier)}&challenge_method=S256`;
+    const url = `${this.config.deviceTokenUrl}?nonce=${encodeURIComponent(nonce)}&verifier=${encodeURIComponent(codeVerifier)}&challenge_method=S256`;
 
     const response = await fetchWithTimeout(url, {
       method: "GET",
@@ -155,7 +171,7 @@ export class QoderService {
    */
   async fetchUserInfo(accessToken) {
     try {
-      const response = await fetchWithTimeout(QODER_USERINFO_URL, {
+      const response = await fetchWithTimeout(this.config.userInfoUrl, {
         method: "GET",
         headers: {
           Authorization: `Bearer ${accessToken}`,

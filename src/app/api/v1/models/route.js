@@ -18,6 +18,26 @@ import { capabilitiesFromServiceKind } from "open-sse/providers/capabilities.js"
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
 // Adding a provider here makes /v1/models prefer the live catalog for it.
+const resolveQoderLiveModels = async (conn) => {
+  const providerId = conn.provider === "qoder-cn" ? "qoder-cn" : "qoder";
+  const result = await resolveQoderModels({
+    provider: providerId,
+    accessToken: conn.accessToken,
+    refreshToken: conn.refreshToken,
+    email: conn.email,
+    displayName: conn.displayName,
+    providerSpecificData: {
+      ...(conn.providerSpecificData || {}),
+      provider: providerId,
+      region: providerId === "qoder-cn" ? "cn" : "intl",
+    }
+  });
+  if (!result?.models?.length) return null;
+  return {
+    models: result.models.map((m) => ({ id: m.id, name: m.name })),
+  };
+};
+
 const LIVE_MODEL_RESOLVERS = {
   kiro: async (conn) => {
     const result = await resolveKiroModels({
@@ -27,19 +47,8 @@ const LIVE_MODEL_RESOLVERS = {
     }, { log: console });
     return result?.models?.length ? { models: result.models } : null;
   },
-  qoder: async (conn) => {
-    const result = await resolveQoderModels({
-      accessToken: conn.accessToken,
-      refreshToken: conn.refreshToken,
-      email: conn.email,
-      displayName: conn.displayName,
-      providerSpecificData: conn.providerSpecificData || {}
-    });
-    if (!result?.models?.length) return null;
-    return {
-      models: result.models.map((m) => ({ id: m.id, name: m.name })),
-    };
-  },
+  qoder: resolveQoderLiveModels,
+  "qoder-cn": resolveQoderLiveModels,
   kimchi: async (conn) => {
     const result = await resolveKimchiModels({
       accessToken: conn.accessToken,
