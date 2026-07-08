@@ -34,8 +34,9 @@ describe("Windows find-path detection", () => {
       "C:\\Users\\me\\project\\src\\b.js:20:const y = 2",
       "C:\\Users\\me\\project\\src\\c.js:30:const z = 3"
     ].join("\n");
-    // Drive-letter paths are path-like, so this routes to `find` (still
-    // compaction-positive) rather than being left uncompressed.
+    // Each line is grep-shaped (file:line:content), so it routes to `grep`
+    // — but a drive-letter-only dump would route to `find`. Both are
+    // compaction-positive, so either is acceptable here.
     const f = autoDetectFilter(input);
     expect(f).not.toBeNull();
     expect([find, grep]).toContain(f);
