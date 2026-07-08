@@ -51,7 +51,7 @@ function classifyEvent(parsed, meaningfulSeen) {
     // translator closes the message with the error finish. Before content:
     // withhold and retry (usually transient, e.g. RESOURCE_EXHAUSTED blips).
     if (meaningfulSeen) return { action: "forward", terminal: true };
-    return { action: "hold", kind: "error_object", reason: errorObj.status || errorObj.message || "error" };
+    return { action: "hold", kind: "error_object", reason: errorObj.status || errorObj.message || "error", error: errorObj };
   }
 
   // Prompt blocked by policy: deterministic for this prompt — never retried.
@@ -97,8 +97,10 @@ function classifyEvent(parsed, meaningfulSeen) {
  * @param {AbortSignal} options.signal        client-disconnect signal
  * @param {object} options.log
  * @param {number} options.stallTimeoutMs     per-read stall escape
- * @param {(reason: string) => void} options.onExhausted  observer for "every
- *   attempt came back empty" (e.g. bench the account so client retries rotate)
+ * @param {(reason: string, meta: { upstreamError: object|null }) => void|Promise<void>} options.onExhausted
+ *   observer for "every attempt came back empty" (e.g. bench the account so
+ *   client retries rotate); awaited before the error event is emitted, and
+ *   handed the held upstream error object so quota reset times can be parsed
  * @returns {ReadableStream} byte stream for the SSE transform pipeline
  */
 export function createEmptyRetryStream({ body, reexecute, signal, log, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS, baseDelayMs = EMPTY_STREAM_BASE_DELAY_MS, onExhausted }) {
@@ -128,8 +130,13 @@ export function createEmptyRetryStream({ body, reexecute, signal, log, stallTime
         err.name = "AbortError";
         try { controller.error(err); } catch { /* already closed */ }
       };
-      const exhaust = (reason) => {
-        try { Promise.resolve(onExhausted?.(reason)).catch(() => { }); } catch { /* observer must not break the stream */ }
+      const exhaust = async (reason) => {
+        // Bench-before-emit: the error event triggers the client's automatic
+        // retry, so the observer (account bench) must complete first or the
+        // retry can land on the account that just failed.
+        try {
+          await Promise.resolve(onExhausted?.(reason, { upstreamError: lastHeld?.error || null }));
+        } catch { /* observer must not break the stream */ }
         // Re-emit the real upstream error when we held one (true status/message,
         // e.g. RESOURCE_EXHAUSTED); otherwise synthesize an embedded error. The
         // gemini translator converts either into the client-facing error finish.
@@ -201,7 +208,7 @@ export function createEmptyRetryStream({ body, reexecute, signal, log, stallTime
             const decision = classifyEvent(parsed, meaningfulSeen);
             if (decision.meaningful) meaningfulSeen = true;
             if (decision.action === "hold") {
-              held = { kind: decision.kind, reason: decision.reason, line };
+              held = { kind: decision.kind, reason: decision.reason, error: decision.error || null, line };
               lastHeld = held;
               continue;
             }

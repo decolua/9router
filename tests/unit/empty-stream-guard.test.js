@@ -213,6 +213,36 @@ describe("createEmptyRetryStream", () => {
     expect(reexecute).not.toHaveBeenCalled();
   });
 
+  // The error event triggers the client's automatic retry — the bench must have
+  // landed before it, or the retry can re-pick the account that just failed.
+  it("awaits onExhausted (account bench) before emitting the error event", async () => {
+    const order = [];
+    const stream = createEmptyRetryStream({
+      body: sseBody([bareStop()]),
+      reexecute: async () => { throw new Error("no more attempts"); },
+      onExhausted: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        order.push("benched");
+      },
+      baseDelayMs: 1,
+    });
+    const reader = stream.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (decoder.decode(value, { stream: true }).includes("error")) order.push("error-event");
+    }
+    expect(order).toEqual(["benched", "error-event"]);
+  });
+
+  it("passes the held upstream error to onExhausted so quota reset times can be parsed", async () => {
+    const onExhausted = vi.fn();
+    const quota = wrap({ error: { code: 429, status: "RESOURCE_EXHAUSTED", message: "Quota exceeded. Your quota will reset after 1h2m3s" } });
+    await runWrapper([[quota], [quota], [quota]], { onExhausted });
+    expect(onExhausted).toHaveBeenCalledTimes(1);
+    expect(onExhausted.mock.calls[0][1].upstreamError.message).toContain("reset after 1h2m3s");
+  });
+
   it("reexecute failure emits an error event carrying the upstream message", async () => {
     const onExhausted = vi.fn();
     const { out } = await runWrapper([[bareStop()]], {

@@ -333,7 +333,16 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
         reexecute,
         signal: streamController.signal,
         log,
-        onExhausted: (reason) => onUpstreamEmptyExhausted?.(formatProviderError(new Error(reason), provider, model, HTTP_STATUS.BAD_GATEWAY)),
+        onExhausted: (reason, { upstreamError } = {}) => {
+          if (!onUpstreamEmptyExhausted) return;
+          // Quota-style exhaustion carries the reset time only inside the error
+          // message ("Your quota will reset after 2h7m23s") — bench precisely.
+          const resetMs = executor.parseRetryFromErrorMessage?.(upstreamError?.message || reason);
+          return onUpstreamEmptyExhausted(
+            formatProviderError(new Error(reason), provider, model, HTTP_STATUS.BAD_GATEWAY),
+            resetMs ? Date.now() + resetMs : undefined
+          );
+        },
       }),
       { status: providerResponse.status, headers: providerResponse.headers }
     );
