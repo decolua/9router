@@ -2,6 +2,7 @@ import { EventEmitter } from "events";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMeta, setMeta } from "../helpers/metaStore.js";
+import { incrementApiKeyUsageSync } from "./apiKeyUsageTotalsRepo.js";
 
 function maskApiKey(key) {
   if (!key || typeof key !== "string") return null;
@@ -250,6 +251,13 @@ export async function saveRequestUsage(entry) {
     const promptTokens = tokens.prompt_tokens || tokens.input_tokens || 0;
     const completionTokens = tokens.completion_tokens || tokens.output_tokens || 0;
 
+    // Resolve apiKey string → apiKeyId for usage totals counter
+    let apiKeyId = null;
+    if (entry.apiKey) {
+      const keyRow = db.get(`SELECT id FROM apiKeys WHERE key = ?`, [entry.apiKey]);
+      if (keyRow) apiKeyId = keyRow.id;
+    }
+
     let inserted = false;
 
     // All 3 writes (history insert, daily upsert, lifetime counter) in ONE transaction.
@@ -302,6 +310,14 @@ export async function saveRequestUsage(entry) {
       const cur = db.get(`SELECT value FROM _meta WHERE key = 'totalRequestsLifetime'`);
       const next = (cur ? parseInt(cur.value, 10) : 0) + 1;
       db.run(`INSERT INTO _meta(key, value) VALUES('totalRequestsLifetime', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [String(next)]);
+
+      // Increment per-API-key lifetime usage totals
+      if (apiKeyId) {
+        incrementApiKeyUsageSync(db, apiKeyId, {
+          tokens: promptTokens + completionTokens,
+          cost: entry.cost || 0,
+        });
+      }
       inserted = true;
     });
 

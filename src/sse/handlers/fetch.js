@@ -13,6 +13,7 @@ import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { handleComboChat, getComboModelsFromData } from "open-sse/services/combo.js";
+import { enforceApiKeyModelPolicy } from "../services/apiKeyPolicy.js";
 import { assertPublicUrl } from "@/shared/utils/ssrfGuard.js";
 
 /**
@@ -86,6 +87,9 @@ export async function handleFetch(request) {
     log.warn("FETCH", "Blocked URL", { url: targetUrl });
     return errorResponse(HTTP_STATUS.BAD_REQUEST, err.message);
   }
+
+  const policyError = await enforceApiKeyModelPolicy(request, providerInput);
+  if (policyError) return policyError;
 
   // Combo expansion: providerInput may be a combo name → run fallback/round-robin across providers
   const combos = await getCombos();
