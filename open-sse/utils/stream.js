@@ -30,10 +30,40 @@ function createPassthroughToolState() {
   };
 }
 
+// Sentinel return values from processClaudePassthroughToolUse:
+//   null  → not a claude-shape chunk (e.g. has .choices) → caller falls through
+//           to the original OpenAI passthrough path (line 228+).
+//   "raw" → claude chunk NOT intercepted (non-tool-use, or tool_use
+//           content_block_start which we track + pass through raw). Caller
+//           emits the current line raw (`line + "\n"`), runs extractUsage, and
+//           continues. Restores pre-P1/P2 framing (one event: line, one
+//           blank-line separator).
+//   []    → tracked input_json_delta fragment — suppress emission. Caller
+//           continues without emitting. We re-emit consolidated sanitized
+//           delta at content_block_stop.
+//   [deltaObj, ...] → tracked content_block_stop — caller emits each delta
+//           re-serialized (`event: type\ndata: {...}\n\n`), THEN emits the
+//           current line raw, runs extractUsage, and continues.
+const PASSTHROUGH_RAW = "raw";
+
 /**
  * Process a parsed claude chunk in passthrough mode for tool_use sanitization.
- * Returns null if no sanitization action needed (chunk should pass through as-is),
- * or an array of replacement chunks to emit instead.
+ * Returns:
+ *   null  → not a claude-shape chunk (has .choices) → caller falls through
+ *           to the original OpenAI passthrough path.
+ *   "raw" → claude chunk NOT intercepted (non-tool-use), OR tool_use
+ *           content_block_start (tracked + pass through raw). Caller emits
+ *           the current line raw, runs extractUsage, continues. Restores
+ *           pre-P1/P2 framing (one event: line, one blank-line separator).
+ *   []    → tracked input_json_delta fragment — suppress. Caller continues
+ *           without emitting. We re-emit consolidated sanitized delta at
+ *           content_block_stop.
+ *   [deltaObj, ...] → tracked content_block_stop — caller emits each delta
+ *           re-serialized, THEN emits the current line raw, continues.
+ *
+ * Narrowed in fix(translator) — previously re-serialized EVERY claude chunk,
+ * producing duplicate `event:` lines + extra blank-line event separators
+ * (empty events) that caused "JSON Parse error: Unexpected EOF" under abort.
  */
 function processClaudePassthroughToolUse(parsed, state) {
   if (!parsed || typeof parsed !== "object") return null;
@@ -45,7 +75,7 @@ function processClaudePassthroughToolUse(parsed, state) {
     const toolName = parsed.content_block.name;
     state.toolBlocks.set(idx, { id: toolId, name: toolName, fragments: [] });
     state.indexToId.set(toolId, idx);
-    return null; // pass through as-is
+    return PASSTHROUGH_RAW; // track + pass through raw (no re-serialization)
   }
 
   // content_block_delta with input_json_delta: buffer fragment, suppress emission
@@ -56,7 +86,7 @@ function processClaudePassthroughToolUse(parsed, state) {
       block.fragments.push(parsed.delta.partial_json);
       return []; // suppress — we'll re-emit consolidated at content_block_stop
     }
-    return null; // not a tracked tool block, pass through
+    return PASSTHROUGH_RAW; // not a tracked tool block, pass through raw
   }
 
   // content_block_stop for a tracked tool_use: sanitize + re-emit consolidated delta
@@ -77,10 +107,12 @@ function processClaudePassthroughToolUse(parsed, state) {
       };
       return [consolidatedDelta, parsed];
     }
-    return null;
+    return PASSTHROUGH_RAW; // not a tracked tool block, pass through raw
   }
 
-  return null;
+  // Any other claude chunk (message_start, text/thinking content_block_start/
+  // delta/stop, message_delta, message_stop, ping) → NOT intercepted → emit raw.
+  return PASSTHROUGH_RAW;
 }
 
 /**
@@ -191,33 +223,54 @@ export function createSSEStream(options = {}) {
           // (claude chunks have no `choices` field and would be dropped).
           // Buffers input_json_delta per tool_use id; at content_block_stop,
           // sanitizes and re-emits a single consolidated delta.
+          //
+          // NARROWED (fix(translator)): the sanitizer intercepts ONLY tool_use
+          // blocks. Non-tool-use claude chunks return PASSTHROUGH_RAW and are
+          // emitted as raw lines (`line + "\n"`), restoring pre-P1/P2 framing.
+          // Previously the sanitizer re-serialized EVERY claude chunk, which
+          // produced duplicate `event:` lines (raw + re-serialized) and an
+          // extra blank-line event separator (empty SSE event) between every
+          // real event — under `disconnect: ResponseAborted` the client's SSE
+          // parser hit the empty/partial event and JSON.parse("") failed with
+          // "JSON Parse error: Unexpected EOF".
           if (passthroughToolState && trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
             try {
               const parsed = JSON.parse(trimmed.slice(5).trim());
               const replacement = processClaudePassthroughToolUse(parsed, passthroughToolState);
               if (replacement === null) {
-                // Not a tool_use-related chunk, or content_block_start that we track
-                // but pass through. If it's a claude chunk (has .type), emit it
-                // directly to bypass the OpenAI-specific hasValuableContent check.
-                if (parsed && typeof parsed === "object" && parsed.type && !parsed.choices) {
-                  output = `event: ${parsed.type}\ndata: ${JSON.stringify(parsed)}\n\n`;
-                  reqLogger?.appendConvertedChunk?.(output);
-                  controller.enqueue(sharedEncoder.encode(output));
-                  continue;
+                // Not a claude-shape chunk (has .choices) — fall through to
+                // the original OpenAI passthrough logic below.
+              } else if (replacement === PASSTHROUGH_RAW) {
+                // Non-tool-use claude chunk (or tool_use content_block_start we
+                // track + pass through). Emit the current line raw to preserve
+                // pre-P1/P2 framing, and run usage extraction (restoring the
+                // usage-tracking regression the old re-serialization caused).
+                // Skip hasValuableContent (claude chunks have no `choices`).
+                if (line.startsWith("data:") && !line.startsWith("data: ")) {
+                  output = "data: " + line.slice(5) + "\n";
+                } else {
+                  output = line + "\n";
                 }
-                // Otherwise fall through to OpenAI passthrough logic below.
+                const extracted = extractUsage(parsed);
+                if (extracted) usage = mergeUsage(usage, extracted);
+                reqLogger?.appendConvertedChunk?.(output);
+                controller.enqueue(sharedEncoder.encode(output));
+                continue;
               } else if (Array.isArray(replacement) && replacement.length === 0) {
-                // input_json_delta fragment for a tracked tool_use — suppress emission.
+                // input_json_delta fragment for a tracked tool_use — suppress.
                 // Will re-emit consolidated sanitized delta at content_block_stop.
                 continue;
               } else if (Array.isArray(replacement) && replacement.length > 0) {
-                // content_block_stop for a tracked tool_use: emit sanitized delta(s)
-                // + the stop event, then skip the rest of passthrough processing.
+                // content_block_stop for a tracked tool_use: emit the sanitized
+                // consolidated delta(s) re-serialized, THEN emit the stop event
+                // raw, and run usage extraction on the stop.
                 for (const ev of replacement) {
                   const out = `event: ${ev.type}\ndata: ${JSON.stringify(ev)}\n\n`;
                   reqLogger?.appendConvertedChunk?.(out);
                   controller.enqueue(sharedEncoder.encode(out));
                 }
+                const extracted = extractUsage(parsed);
+                if (extracted) usage = mergeUsage(usage, extracted);
                 continue;
               }
             } catch {
