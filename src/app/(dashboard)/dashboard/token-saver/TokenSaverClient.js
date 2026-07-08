@@ -28,6 +28,19 @@ export default function TokenSaverClient() {
   const [cavemanLevel, setCavemanLevel] = useState("full");
   const [ponytailEnabled, setPonytailEnabled] = useState(false);
   const [ponytailLevel, setPonytailLevel] = useState("full");
+  const [pxpipeEnabled, setPxpipeEnabled] = useState(false);
+  const [pxpipeMinChars, setPxpipeMinChars] = useState(25000);
+  const [pxpipeStatus, setPxpipeStatus] = useState({
+    installed: false,
+    installing: false,
+    running: false,
+    version: null,
+    loading: true,
+  });
+  const [pxpipeHealth, setPxpipeHealth] = useState(null);
+  const [showPxpipeModal, setShowPxpipeModal] = useState(false);
+  const [pxpipeActionLoading, setPxpipeActionLoading] = useState(false);
+  const [pxpipeActionError, setPxpipeActionError] = useState("");
   const [locale, setLocale] = useState("en");
 
   const { copied, copy } = useCopyToClipboard();
@@ -152,6 +165,59 @@ export default function TokenSaverClient() {
     patchSetting({ ponytailLevel: level });
   };
 
+  const refreshPxpipeStatus = useCallback(async () => {
+    setPxpipeStatus((s) => ({ ...s, loading: true }));
+    try {
+      const res = await fetch("/api/pxpipe/status", {
+        headers: { "Cache-Control": "no-store" },
+      });
+      const data = await res.json();
+      setPxpipeStatus({ ...data, loading: false });
+      if (typeof data.minChars === "number") setPxpipeMinChars(data.minChars);
+    } catch {
+      setPxpipeStatus({ installed: false, installing: false, running: false, version: null, loading: false });
+    }
+  }, []);
+
+  const runPxpipeHealth = useCallback(async () => {
+    try {
+      const res = await fetch("/api/pxpipe/health", { method: "POST" });
+      setPxpipeHealth(await res.json());
+    } catch (e) {
+      setPxpipeHealth({ healthy: false, checks: [], error: e.message });
+    }
+  }, []);
+
+  const pxpipeAction = useCallback(
+    async (endpoint) => {
+      setPxpipeActionError("");
+      setPxpipeActionLoading(true);
+      try {
+        const res = await fetch(`/api/pxpipe/${endpoint}`, { method: "POST" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `PXPIPE ${endpoint} failed`);
+        await refreshPxpipeStatus();
+        await runPxpipeHealth();
+      } catch (e) {
+        setPxpipeActionError(e.message);
+      } finally {
+        setPxpipeActionLoading(false);
+      }
+    },
+    [refreshPxpipeStatus, runPxpipeHealth]
+  );
+
+  const handlePxpipeEnabled = (value) => {
+    setPxpipeEnabled(value);
+    patchSetting({ pxpipeEnabled: value });
+  };
+
+  const handlePxpipeMinCharsBlur = () => {
+    const next = Math.max(0, Number(pxpipeMinChars) || 25000);
+    setPxpipeMinChars(next);
+    patchSetting({ pxpipeMinChars: next });
+  };
+
   useEffect(() => {
     const loadSettings = async () => {
       try {
@@ -165,12 +231,16 @@ export default function TokenSaverClient() {
           setCavemanLevel(data.cavemanLevel || "full");
           setPonytailEnabled(!!data.ponytailEnabled);
           setPonytailLevel(data.ponytailLevel || "full");
+          setPxpipeEnabled(!!data.pxpipeEnabled);
+          if (typeof data.pxpipeMinChars === "number") setPxpipeMinChars(data.pxpipeMinChars);
           refreshHeadroomStatus();
+          // PRD: run the PXPIPE health check automatically when the page opens
+          refreshPxpipeStatus().then(runPxpipeHealth);
         }
       } catch {}
     };
     loadSettings();
-  }, [refreshHeadroomStatus]);
+  }, [refreshHeadroomStatus, refreshPxpipeStatus, runPxpipeHealth]);
 
   const headroomRunning = !!headroomStatus.running;
   const headroomStatusLabel = headroomStatus.loading
@@ -186,6 +256,23 @@ export default function TokenSaverClient() {
   const headroomCanStart = !!headroomStatus.canStart;
   const headroomManaged =
     headroomLocalUrl && !!headroomStatus.managedPid;
+
+  const pxpipeHealthy = pxpipeHealth?.healthy === true;
+  const pxpipeStatusLabel = pxpipeStatus.loading
+    ? "Checking…"
+    : pxpipeStatus.installing
+      ? "Installing…"
+      : !pxpipeStatus.installed
+        ? "Not installed"
+        : pxpipeHealthy
+          ? "Healthy"
+          : pxpipeStatus.running
+            ? "Running"
+            : "Stopped";
+  const pxpipeChipClass =
+    pxpipeHealthy || pxpipeStatus.running
+      ? "bg-success/15 text-success"
+      : "bg-warning/15 text-warning";
 
   return (
     <div className="space-y-6 p-6">
@@ -358,6 +445,49 @@ export default function TokenSaverClient() {
             />
           </div>
         </div>
+        <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-3 flex-wrap">
+              <p className="font-medium">
+                Compress prompts as images{" "}
+                <a
+                  href="https://github.com/teamchong/pxpipe"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs font-normal text-primary underline hover:opacity-80"
+                >
+                  (PXPIPE)
+                </a>
+              </p>
+              <span className={`text-xs px-2 py-0.5 rounded ${pxpipeChipClass}`}>
+                {pxpipeStatusLabel}
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowPxpipeModal(true)}
+                className="text-xs text-primary underline hover:opacity-80"
+              >
+                {pxpipeStatus.installed ? "Manage" : "Setup"}
+              </button>
+              <a
+                href="/dashboard/pxpipe"
+                className="text-xs text-primary underline hover:opacity-80"
+              >
+                Dashboard
+              </a>
+            </div>
+            <p className="text-sm text-text-muted mt-1">
+              Transforms large textual context into optimized images before
+              sending to the LLM. Ideal for huge prompts, tool outputs and long
+              conversations.
+            </p>
+          </div>
+          <Toggle
+            checked={pxpipeEnabled}
+            disabled={!pxpipeStatus.installed}
+            onChange={() => handlePxpipeEnabled(!pxpipeEnabled)}
+          />
+        </div>
       </Card>
 
       <Modal
@@ -462,6 +592,114 @@ export default function TokenSaverClient() {
               onClick={() => setShowHeadroomInstallModal(false)}
               fullWidth
             >
+              Done
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={showPxpipeModal}
+        title={pxpipeStatus.installed ? "PXPIPE" : "Setup PXPIPE"}
+        onClose={() => setShowPxpipeModal(false)}
+      >
+        <div className="flex flex-col gap-4">
+          <p className="text-sm text-text-muted">
+            Compress prompts using multimodal encoding. Runs in-process — no
+            extra server or environment variables required.
+          </p>
+          <div className="flex items-center justify-between text-sm">
+            <span>Status</span>
+            <span className={pxpipeHealthy || pxpipeStatus.running ? "text-success" : "text-warning"}>
+              {pxpipeStatusLabel}
+              {pxpipeStatus.version ? ` · v${pxpipeStatus.version}` : ""}
+            </span>
+          </div>
+          {pxpipeHealth?.checks?.length > 0 && (
+            <div className="flex flex-col gap-1 rounded border border-border p-3">
+              <p className="text-sm font-medium mb-1">Health check</p>
+              {pxpipeHealth.checks.map((check) => (
+                <div key={check.id} className="flex items-center justify-between text-xs">
+                  <span className={check.ok ? "text-success" : "text-warning"}>
+                    {check.ok ? "●" : "○"} {check.label}
+                  </span>
+                  {check.detail && (
+                    <span className="text-text-muted font-mono truncate max-w-[50%]">{check.detail}</span>
+                  )}
+                </div>
+              ))}
+              {pxpipeHealth.error && (
+                <p className="text-xs text-warning mt-1">{pxpipeHealth.error}</p>
+              )}
+            </div>
+          )}
+          {!pxpipeStatus.installed ? (
+            <div className="flex flex-col gap-2">
+              <p className="text-sm text-warning">PXPIPE is not installed.</p>
+              <Button
+                onClick={() => pxpipeAction("install")}
+                fullWidth
+                disabled={pxpipeActionLoading || pxpipeStatus.installing}
+              >
+                {pxpipeActionLoading || pxpipeStatus.installing ? "Installing…" : "Install"}
+              </Button>
+              <p className="text-xs text-text-muted">
+                Installs the npm package <code className="font-mono">pxpipe-proxy</code> into
+                the 9Router data directory. May take a few minutes.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              {pxpipeStatus.running ? (
+                <>
+                  <Button onClick={() => pxpipeAction("restart")} variant="ghost" disabled={pxpipeActionLoading}>
+                    Restart
+                  </Button>
+                  <Button onClick={() => pxpipeAction("stop")} variant="ghost" disabled={pxpipeActionLoading}>
+                    Stop
+                  </Button>
+                </>
+              ) : (
+                <Button onClick={() => pxpipeAction("start")} disabled={pxpipeActionLoading}>
+                  {pxpipeActionLoading ? "Starting…" : "Start"}
+                </Button>
+              )}
+              <Button onClick={() => pxpipeAction("install")} variant="ghost" disabled={pxpipeActionLoading}>
+                Repair
+              </Button>
+              <a
+                href="/dashboard/pxpipe#logs"
+                className="col-span-2 rounded border border-border px-4 py-2 text-center text-sm hover:bg-surface-2"
+              >
+                Open Logs
+              </a>
+            </div>
+          )}
+          <div className="flex flex-col gap-1">
+            <p className="text-sm font-medium">Minimum prompt size (chars)</p>
+            <Input
+              value={String(pxpipeMinChars)}
+              onChange={(e) => setPxpipeMinChars(e.target.value)}
+              onBlur={handlePxpipeMinCharsBlur}
+              placeholder="25000"
+              className="font-mono text-sm"
+            />
+            <p className="text-xs text-text-muted">
+              Requests smaller than this bypass PXPIPE and are sent as-is.
+            </p>
+          </div>
+          {pxpipeActionError && (
+            <p className="text-sm text-warning">{pxpipeActionError}</p>
+          )}
+          <div className="flex gap-2">
+            <Button
+              onClick={() => refreshPxpipeStatus().then(runPxpipeHealth)}
+              variant="ghost"
+              fullWidth
+            >
+              Recheck
+            </Button>
+            <Button onClick={() => setShowPxpipeModal(false)} fullWidth>
               Done
             </Button>
           </div>
