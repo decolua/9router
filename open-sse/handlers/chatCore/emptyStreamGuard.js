@@ -1,13 +1,22 @@
-// Empty-stream guard for Antigravity: Gemini occasionally returns a 200 SSE
-// stream that carries no usable output — no candidates at all, thought-only
-// parts, or a benign STOP finish with empty text — or aborts the turn with an
-// error finishReason (MALFORMED_FUNCTION_CALL) before emitting anything.
+// Empty-stream guard for Antigravity — oh-my-pi parity.
+//
+// Gemini occasionally answers HTTP 200 with a stream that carries no usable
+// output (no candidates at all, thought-only parts, a bare STOP with empty
+// text) or aborts the turn (MALFORMED_FUNCTION_CALL) before emitting anything.
 // Delivered as-is the client receives a blank turn and silently halts
-// (#2188, #2229, #2259). The guard probes the upstream stream before anything
-// is sent to the client, so a bad attempt can be retried in place with the
-// identical request; a healthy stream is released on its first meaningful
-// part and replayed byte-identically.
-import { GEMINI_ERROR_FINISH_REASONS, GEMINI_CONTENT_FILTER_FINISH_REASONS } from "../../translator/schema/finishReasons.js";
+// (#2188, #2229, #2250, #2259).
+//
+// Mirrors oh-my-pi: every byte — thinking included — streams to the client
+// live; emptiness is judged per upstream attempt, after the fact. An attempt
+// that ends without meaningful content has its terminal event withheld and is
+// retried in place with the identical request; the retried attempt splices
+// into the same client stream (the translator inits its message once, so the
+// splice continues the same client message). Accepted wart, same as oh-my-pi:
+// the client may see thinking from a discarded attempt followed by the retry's
+// thinking inside one message. On exhaustion an {error:{...}} event is emitted
+// in-stream — the gemini translator turns it into the client-facing error
+// finish, which Anthropic clients treat as retryable.
+import { GEMINI_FINISH, GEMINI_ERROR_FINISH_REASONS, GEMINI_CONTENT_FILTER_FINISH_REASONS } from "../../translator/schema/finishReasons.js";
 import { STREAM_STALL_TIMEOUT_MS } from "../../config/runtimeConfig.js";
 
 // Mirrors oh-my-pi's empty-response policy: 2 retries, 500ms * 2^attempt backoff.
@@ -17,154 +26,226 @@ export const EMPTY_STREAM_BASE_DELAY_MS = 500;
 // A part is meaningful when it carries output the client can act on: a tool
 // call, inline data, or non-whitespace visible text. Thought-only parts are
 // not — thinking that never produced an answer IS the empty-response failure
-// (#2229). Deliberate trade-off: the client receives nothing (not even
-// message_start) until the first meaningful part, so a long thinking phase
-// renders nothing and then replays in a burst. In exchange, retries are
-// invisible and byte-clean, and thought-only empties stay retryable. oh-my-pi
-// makes the opposite call — it streams thinking live and accepts duplicated
-// thinking blocks when an empty attempt is retried. The per-read stall escape
-// below bounds the worst-case wait.
-function isMeaningfulPart(part) {
+// (#2229). Thought parts still stream to the client live; they just don't mark
+// the attempt as non-empty.
+export function isMeaningfulPart(part) {
   if (part.functionCall) return true;
   if (part.inlineData?.data || part.inline_data?.data) return true;
   if (part.thought === true) return false;
   return typeof part.text === "string" && part.text.trim().length > 0;
 }
 
-/**
- * Read the upstream SSE body until a verdict is reached, buffering every raw
- * chunk so a healthy stream can be replayed without loss.
- *
- * Verdicts:
- * - { verdict: "ok", buffered, reader }        first meaningful part seen, or a
- *   deterministic content block (promptFeedback / safety finish) the translator
- *   must close as content_filter — never retried
- * - { verdict: "empty", buffered }             stream ended with nothing meaningful
- * - { verdict: "error_finish", reason, buffered } aborted (MALFORMED_FUNCTION_CALL, ...)
- *   or an {error:{...}} object arrived before any meaningful part
- * - { verdict: "aborted" }                     client disconnected
- */
-export async function probeSSEStream(body, { signal, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS } = {}) {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  const buffered = [];
-  let lineBuffer = "";
+// Decide what to do with one parsed SSE event.
+// - forward: pass the original line through (optionally marking the stream
+//   terminal so the attempt is never retried)
+// - hold: withhold it — it is the terminal of an empty attempt; the message
+//   must stay open so the retried attempt can splice in.
+function classifyEvent(parsed, meaningfulSeen) {
+  // Antigravity wrapper
+  const response = parsed.response || parsed;
+  if (!response || typeof response !== "object") return { action: "forward" };
 
-  while (true) {
-    if (signal?.aborted) {
-      try { reader.cancel(); } catch { /* already closed */ }
-      return { verdict: "aborted" };
-    }
-
-    let readResult;
-    let stallTimer;
-    try {
-      // Defensive stall escape: a byte-silent upstream must not hang the probe.
-      readResult = await Promise.race([
-        reader.read(),
-        new Promise((resolve) => { stallTimer = setTimeout(() => resolve({ __stalled: true }), stallTimeoutMs); }),
-      ]);
-    } catch {
-      // A client abort rejects the pending read. Distinguish it from a truncated
-      // upstream, or the caller retries (or 502s + benches the account) a request
-      // nobody is waiting for.
-      if (signal?.aborted) return { verdict: "aborted" };
-      return { verdict: "empty", buffered };
-    } finally {
-      clearTimeout(stallTimer);
-    }
-    if (readResult.__stalled) {
-      try { reader.cancel(); } catch { /* already closed */ }
-      return { verdict: "empty", buffered };
-    }
-
-    const { done, value } = readResult;
-    if (done) return { verdict: "empty", buffered };
-
-    buffered.push(value);
-    lineBuffer += decoder.decode(value, { stream: true });
-
-    const lines = lineBuffer.split("\n");
-    lineBuffer = lines.pop(); // keep the trailing partial line
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith("data:")) continue;
-      const payload = trimmed.slice(5).trim();
-      if (!payload || payload === "[DONE]") continue;
-
-      let parsed;
-      try {
-        parsed = JSON.parse(payload);
-      } catch {
-        continue; // partial JSON split across reads — wait for more bytes
-      }
-
-      // Antigravity wrapper
-      const response = parsed.response || parsed;
-      if (!response || typeof response !== "object") continue;
-
-      if (response.error || parsed.error) {
-        // Discarding the response: release the upstream connection.
-        try { reader.cancel(); } catch { /* already closed */ }
-        return { verdict: "error_finish", reason: (response.error || parsed.error).status || "error", buffered };
-      }
-
-      // Prompt blocked by policy: deterministic for this prompt — a retry resends
-      // the same blocked prompt, wasting quota and benching the account on
-      // exhaustion. Release instead; the translator closes it as content_filter.
-      if (!response.candidates?.length && response.promptFeedback?.blockReason) {
-        return { verdict: "ok", buffered, reader };
-      }
-
-      const candidate = response.candidates?.[0];
-      if (!candidate) continue;
-
-      for (const part of candidate.content?.parts || []) {
-        if (isMeaningfulPart(part)) return { verdict: "ok", buffered, reader };
-      }
-
-      const finishReason = candidate.finishReason && String(candidate.finishReason).toUpperCase();
-      if (finishReason && GEMINI_ERROR_FINISH_REASONS.has(finishReason)) {
-        try { reader.cancel(); } catch { /* already closed */ }
-        return { verdict: "error_finish", reason: finishReason, buffered };
-      }
-      // Safety-family finishes are content blocks, not flakes (same policy as
-      // promptFeedback above): release so the translator closes as content_filter.
-      if (finishReason && GEMINI_CONTENT_FILTER_FINISH_REASONS.has(finishReason)) {
-        return { verdict: "ok", buffered, reader };
-      }
-      // Benign finish with nothing meaningful streamed → keep reading; if the
-      // stream ends here it's the empty-response failure.
-    }
+  const errorObj = response.error || parsed.error;
+  if (errorObj) {
+    // Embedded error object in a 200 stream. After content: forward — the
+    // translator closes the message with the error finish. Before content:
+    // withhold and retry (usually transient, e.g. RESOURCE_EXHAUSTED blips).
+    if (meaningfulSeen) return { action: "forward", terminal: true };
+    return { action: "hold", kind: "error_object", reason: errorObj.status || errorObj.message || "error" };
   }
+
+  // Prompt blocked by policy: deterministic for this prompt — never retried.
+  // Forward so the translator closes the stream as content_filter (#2188).
+  if (!response.candidates?.length && response.promptFeedback?.blockReason) {
+    return { action: "forward", terminal: true };
+  }
+
+  const candidate = response.candidates?.[0];
+  if (!candidate) return { action: "forward" }; // keep-alive / usage-only
+
+  let meaningful = false;
+  for (const part of candidate.content?.parts || []) {
+    if (isMeaningfulPart(part)) { meaningful = true; break; }
+  }
+
+  const finishReason = candidate.finishReason && String(candidate.finishReason).toUpperCase();
+  if (!finishReason) return { action: "forward", meaningful };
+
+  // Content blocks and token exhaustion are deterministic whatever the content
+  // — retrying re-runs the same outcome (oh-my-pi never retries these either).
+  if (GEMINI_CONTENT_FILTER_FINISH_REASONS.has(finishReason) || finishReason === GEMINI_FINISH.MAX_TOKENS) {
+    return { action: "forward", meaningful, terminal: true };
+  }
+
+  // Any other finish (bare STOP, MALFORMED_FUNCTION_CALL family, unknown) with
+  // content forwards normally — the translator emits the tool_calls upgrade or
+  // the error event. Without content it is the empty attempt's terminal.
+  if (meaningful || meaningfulSeen) return { action: "forward", meaningful, terminal: true };
+  return {
+    action: "hold",
+    kind: GEMINI_ERROR_FINISH_REASONS.has(finishReason) ? "error_finish" : "stop",
+    reason: finishReason,
+  };
 }
 
 /**
- * Rebuild a byte-identical body: replay the probed prefix, then pump the rest
- * of the upstream reader.
+ * Wrap the upstream SSE body so empty attempts are retried in-stream.
+ *
+ * @param {ReadableStream} options.body       attempt 1's body
+ * @param {() => Promise<ReadableStream>} options.reexecute  re-issue the
+ *   identical request; resolves to the new attempt's body, throws on failure
+ * @param {AbortSignal} options.signal        client-disconnect signal
+ * @param {object} options.log
+ * @param {number} options.stallTimeoutMs     per-read stall escape
+ * @param {(reason: string) => void} options.onExhausted  observer for "every
+ *   attempt came back empty" (e.g. bench the account so client retries rotate)
+ * @returns {ReadableStream} byte stream for the SSE transform pipeline
  */
-export function replayStream(buffered, reader) {
+export function createEmptyRetryStream({ body, reexecute, signal, log, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS, baseDelayMs = EMPTY_STREAM_BASE_DELAY_MS, onExhausted }) {
+  const encoder = new TextEncoder();
+  let currentReader = null;
+  let downstreamGone = false;
+
   return new ReadableStream({
     async start(controller) {
-      for (const chunk of buffered) controller.enqueue(chunk);
-      if (!reader) {
-        controller.close();
-        return;
-      }
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          controller.enqueue(value);
+      currentReader = body.getReader();
+      let meaningfulSeen = false;
+      let lastHeld = null; // last withheld terminal, kept for the exhaustion event
+
+      const emit = (text) => {
+        if (downstreamGone) return;
+        try { controller.enqueue(encoder.encode(text)); } catch { downstreamGone = true; }
+      };
+      const closeStream = () => {
+        if (downstreamGone) return;
+        try { controller.close(); } catch { /* already closed */ }
+      };
+      const abortStream = () => {
+        // cancel() rejects when the stream already errored — swallow the promise too
+        try { currentReader.cancel().catch(() => { }); } catch { /* already closed */ }
+        if (downstreamGone) return;
+        const err = new Error("Request aborted");
+        err.name = "AbortError";
+        try { controller.error(err); } catch { /* already closed */ }
+      };
+      const exhaust = (reason) => {
+        try { Promise.resolve(onExhausted?.(reason)).catch(() => { }); } catch { /* observer must not break the stream */ }
+        // Re-emit the real upstream error when we held one (true status/message,
+        // e.g. RESOURCE_EXHAUSTED); otherwise synthesize an embedded error. The
+        // gemini translator converts either into the client-facing error finish.
+        const line = lastHeld?.kind === "error_object"
+          ? lastHeld.line
+          : `data: ${JSON.stringify({ error: { code: 502, status: "EMPTY_RESPONSE", message: reason } })}`;
+        emit(`${line}\n\n`);
+        closeStream();
+      };
+
+      for (let attempt = 0; ; attempt++) {
+        const decoder = new TextDecoder();
+        let lineBuffer = "";
+        let held = null; // this attempt's withheld terminal
+        let terminalForwarded = false;
+        let endReason = "empty";
+
+        readAttempt: while (true) {
+          if (signal?.aborted) return abortStream();
+
+          let readResult;
+          let stallTimer;
+          try {
+            // Defensive stall escape: a byte-silent upstream must not hang the pipe.
+            readResult = await Promise.race([
+              currentReader.read(),
+              new Promise((resolve) => { stallTimer = setTimeout(() => resolve({ __stalled: true }), stallTimeoutMs); }),
+            ]);
+          } catch {
+            // A client abort rejects the pending read — never treat it as an
+            // empty attempt or a disconnect turns into a retry/error.
+            if (signal?.aborted) return abortStream();
+            endReason = "read_error";
+            break readAttempt; // truncated attempt
+          } finally {
+            clearTimeout(stallTimer);
+          }
+          if (readResult.__stalled) {
+            try { currentReader.cancel().catch(() => { }); } catch { /* already closed */ }
+            endReason = "stall";
+            break readAttempt;
+          }
+
+          const { done, value } = readResult;
+          if (done) break readAttempt;
+
+          lineBuffer += decoder.decode(value, { stream: true });
+          const lines = lineBuffer.split("\n");
+          lineBuffer = lines.pop(); // trailing partial line
+
+          for (const line of lines) {
+            // Empty-attempt tail: everything after the withheld terminal is
+            // part of the discarded attempt (usage trailers etc.) — drop it.
+            if (held) continue;
+
+            const trimmed = line.trim();
+            if (!trimmed.startsWith("data:")) { emit(line + "\n"); continue; }
+            const payload = trimmed.slice(5).trim();
+            if (!payload || payload === "[DONE]") { emit(line + "\n"); continue; }
+
+            let parsed;
+            try {
+              parsed = JSON.parse(payload);
+            } catch {
+              emit(line + "\n"); // not ours to judge — forward verbatim
+              continue;
+            }
+
+            const decision = classifyEvent(parsed, meaningfulSeen);
+            if (decision.meaningful) meaningfulSeen = true;
+            if (decision.action === "hold") {
+              held = { kind: decision.kind, reason: decision.reason, line };
+              lastHeld = held;
+              continue;
+            }
+            if (decision.terminal) terminalForwarded = true;
+            emit(line + "\n");
+          }
         }
-        controller.close();
-      } catch (error) {
-        controller.error(error);
+
+        // Attempt over. Content or a forwarded terminal ends the stream here —
+        // a truncated-with-content attempt is closed by the translator's flush
+        // finalization and is never retried (replay-unsafe, as in oh-my-pi).
+        if (meaningfulSeen || terminalForwarded) {
+          const remaining = lineBuffer + decoder.decode();
+          if (!held && remaining) emit(remaining);
+          closeStream();
+          return;
+        }
+
+        const reason = held ? held.reason : endReason;
+        log?.warn?.("STREAM", `ANTIGRAVITY | empty (${reason}) | attempt ${attempt + 1}/${EMPTY_STREAM_MAX_RETRIES + 1}`);
+
+        if (attempt >= EMPTY_STREAM_MAX_RETRIES) {
+          return exhaust(`empty response from upstream (${reason}) after ${attempt + 1} attempts`);
+        }
+
+        // Abort-aware backoff, then splice the retried attempt into this stream.
+        await new Promise((resolve) => {
+          const t = setTimeout(resolve, baseDelayMs * 2 ** attempt);
+          signal?.addEventListener?.("abort", () => { clearTimeout(t); resolve(); }, { once: true });
+        });
+        if (signal?.aborted) return abortStream();
+
+        try {
+          currentReader = (await reexecute()).getReader();
+        } catch (error) {
+          if (error?.name === "AbortError" || signal?.aborted) return abortStream();
+          return exhaust(error?.message || "retry request failed");
+        }
       }
     },
+
     cancel(reason) {
-      try { reader?.cancel(reason); } catch { /* already closed */ }
+      downstreamGone = true;
+      try { currentReader?.cancel(reason)?.catch?.(() => { }); } catch { /* already closed */ }
     },
   });
 }
