@@ -22,6 +22,7 @@ export default function APIPageClient({ machineId }) {
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
+  const [newKeyDailyLimitTokens, setNewKeyDailyLimitTokens] = useState("");
   const [createdKey, setCreatedKey] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
 
@@ -611,10 +612,12 @@ export default function APIPageClient({ machineId }) {
     if (!newKeyName.trim()) return;
 
     try {
+      const dailyLimitTokens = newKeyDailyLimitTokens.trim() === "" ? null : Number(newKeyDailyLimitTokens);
+      if (dailyLimitTokens !== null && (!Number.isSafeInteger(dailyLimitTokens) || dailyLimitTokens < 0)) return;
       const res = await fetch("/api/keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newKeyName }),
+        body: JSON.stringify({ name: newKeyName, dailyLimitTokens }),
       });
       const data = await res.json();
 
@@ -622,10 +625,28 @@ export default function APIPageClient({ machineId }) {
         setCreatedKey(data.key);
         await fetchData();
         setNewKeyName("");
+        setNewKeyDailyLimitTokens("");
         setShowAddModal(false);
       }
     } catch (error) {
       console.log("Error creating key:", error);
+    }
+  };
+
+  const handleUpdateKeyLimit = async (id, value) => {
+    const dailyLimitTokens = value.trim() === "" ? null : Number(value);
+    if (dailyLimitTokens !== null && (!Number.isSafeInteger(dailyLimitTokens) || dailyLimitTokens < 0)) return;
+    try {
+      const res = await fetch(`/api/keys/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dailyLimitTokens }),
+      });
+      if (res.ok) {
+        setKeys(prev => prev.map(k => k.id === id ? { ...k, dailyLimitTokens } : k));
+      }
+    } catch (error) {
+      console.log("Error updating key limit:", error);
     }
   };
 
@@ -1024,6 +1045,18 @@ export default function APIPageClient({ machineId }) {
                   <p className="text-xs text-text-muted mt-1">
                     Created {new Date(key.createdAt).toLocaleDateString()}
                   </p>
+                  <label className="mt-2 flex max-w-[220px] items-center gap-2 text-xs text-text-muted">
+                    <span className="shrink-0">Daily tokens</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      defaultValue={key.dailyLimitTokens ?? ""}
+                      placeholder="Unlimited"
+                      onBlur={(e) => handleUpdateKeyLimit(key.id, e.target.value)}
+                      className="w-full rounded border border-border bg-input px-2 py-1 text-xs text-text-main outline-none focus:border-brand-500/40 focus:ring-2 focus:ring-brand-500/20"
+                    />
+                  </label>
                   {key.isActive === false && (
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
                   )}
@@ -1068,6 +1101,7 @@ export default function APIPageClient({ machineId }) {
         onClose={() => {
           setShowAddModal(false);
           setNewKeyName("");
+          setNewKeyDailyLimitTokens("");
         }}
       >
         <div className="flex flex-col gap-4">
@@ -1077,6 +1111,15 @@ export default function APIPageClient({ machineId }) {
             onChange={(e) => setNewKeyName(e.target.value)}
             placeholder="Production Key"
           />
+          <Input
+            label="Daily token limit"
+            type="number"
+            min="0"
+            step="1"
+            value={newKeyDailyLimitTokens}
+            onChange={(e) => setNewKeyDailyLimitTokens(e.target.value)}
+            placeholder="Unlimited"
+          />
           <div className="flex gap-2">
             <Button onClick={handleCreateKey} fullWidth disabled={!newKeyName.trim()}>
               Create
@@ -1085,6 +1128,7 @@ export default function APIPageClient({ machineId }) {
               onClick={() => {
                 setShowAddModal(false);
                 setNewKeyName("");
+                setNewKeyDailyLimitTokens("");
               }}
               variant="ghost"
               fullWidth
