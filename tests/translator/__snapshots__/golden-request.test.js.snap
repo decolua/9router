@@ -308,10 +308,6 @@ What's in this image?",
       },
     ],
   },
-  "inferenceConfig": {
-    "maxTokens": 32000,
-    "temperature": 0.7,
-  },
   "profileArn": "arn:aws:codewhisperer:us-east-1:638616132270:profile/AAAACCCCXXXX",
 }
 `;

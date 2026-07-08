@@ -140,6 +140,12 @@ export class BaseExecutor {
         const bodyStr = JSON.stringify(transformedBody);
         const fetchT0 = Date.now();
         dbg("FETCH", `${this.provider.toUpperCase()} → ${url} | body=${bodyStr.length}B | connectTimeout=${timeoutMs}ms`);
+        // Opt-in wire-body dump (DEBUG_WIRE_BODY=1) — prints the exact JSON sent
+        // upstream, so effort/thinking fields (output_config, reasoning_effort,
+        // thinking) can be verified on the wire rather than inferred from intent.
+        if (process.env.DEBUG_WIRE_BODY === "1") {
+          dbg("WIRE", `${this.provider.toUpperCase()} → ${bodyStr}`);
+        }
         const response = await proxyAwareFetch(url, {
           method: "POST",
           headers,

@@ -8,15 +8,16 @@
  *   - `-agentic` model suffix detection + chunked-write system prompt
  *   - reasoning / thinking trigger detection (Anthropic-Beta header,
  *     Claude `thinking`, OpenAI `reasoning_effort`, AMP/Cursor magic tag)
- *   - the `<thinking_mode>enabled</thinking_mode>` system-prompt injection
- *     that turns Kiro reasoning on
+ *   - reasoning depth + adaptive field, nested inside
+ *     `additionalModelRequestFields` to match the real Kiro IDE wire format
+ *     (reverse-engineered from the kiro.kiro-agent bundle)
  *
  * Kiro upstream does not advertise `-agentic` model IDs; they are a 9router
  * fiction. The suffix is stripped before the request leaves this process.
  */
 
 import { extractThinking } from "../translator/concerns/thinkingUnified.js";
-import { effortToBudget } from "../translator/concerns/thinking.js";
+import { effortToBudget, budgetToLevel } from "../translator/concerns/thinking.js";
 
 export const KIRO_AGENTIC_SUFFIX = "-agentic";
 export const KIRO_THINKING_SUFFIX = "-thinking";
@@ -97,8 +98,7 @@ REMEMBER: When in doubt, write LESS per operation. Multiple small operations > o
  * Reuses the shared thinkingUnified parser (extractThinking) so every client
  * shape (Claude output_config.effort / thinking.budget_tokens, OpenAI
  * reasoning_effort / reasoning.effort, Gemini, Qwen) maps consistently. Explicit
- * `none`/`off`/disabled wins and returns null (no prefix injected).
- * buildThinkingSystemPrefix performs Kiro's final 1..32000 clamp.
+ * `none`/`off`/disabled wins and returns null (no effort shipped).
  *
  * @param {object} body OpenAI/Claude-shaped request body
  * @param {object} [headers] Original inbound HTTP headers (case-insensitive)
@@ -170,7 +170,8 @@ export function stripAgenticSuffix(model) {
 /**
  * Detect whether a model id is a 9router synthetic thinking variant
  * (e.g. `claude-sonnet-4.5-thinking`). Same upstream model as the base; the
- * only difference is `<thinking_mode>enabled</thinking_mode>` injection.
+ * only difference is reasoning defaults to ON (effort + adaptive field ship
+ * inside `additionalModelRequestFields`).
  *
  * Note: real Kiro thinking-capable variants exist (e.g. `kimi-k2-thinking` in
  * other providers), but for the `kr/` namespace there is no `-thinking`
@@ -225,15 +226,104 @@ export function resolveKiroModel(model) {
   return { upstream, agentic, thinking };
 }
 
+// Adaptive `thinking` payload field ships by default — matches the real Kiro
+// IDE wire format (reverse-engineered from the kiro.kiro-agent bundle: the
+// `Er` builder at extension.js:419837 nests {thinking, output_config} inside
+// `additionalModelRequestFields`). Set KIRO_THINKING_FIELD=0 to suppress the
+// adaptive field; output_config.effort still ships.
+export function kiroThinkingFieldEnabled() {
+  return process.env.KIRO_THINKING_FIELD !== "0";
+}
+
 /**
- * Build the magic system-prompt prefix that turns Kiro reasoning on.
- * Same shape as CLIProxyAPIPlus.
+ * Build the native `thinking` payload field for a Kiro request, or null when
+ * thinking is disabled. Shape follows the Kiro CLI chat docs
+ * (https://kiro.dev/docs/cli/chat/effort/): { type: "adaptive"|"disabled" }.
+ * `display` is included for adaptive so summarized reasoning is returned.
  *
- * @param {number} [budget=KIRO_THINKING_BUDGET_DEFAULT]
+ * @param {object} body Request body
+ * @param {string} [model] Upstream Kiro model id
+ * @returns {{type: string, display?: string}|null}
  */
-export function buildThinkingSystemPrefix(budget = KIRO_THINKING_BUDGET_DEFAULT) {
-  const safeBudget = Math.max(1, Math.min(32000, Number(budget) || KIRO_THINKING_BUDGET_DEFAULT));
-  return `<thinking_mode>enabled</thinking_mode>\n<max_thinking_length>${safeBudget}</max_thinking_length>`;
+export function resolveKiroThinkingField(body, model) {
+  const effort = resolveKiroEffort(body, model);
+  if (effort === null) return { type: "disabled" };
+  return { type: "adaptive", display: "summarized" };
+}
+
+// xhigh is Opus 4.7/4.8 only (per Kiro effort docs). Opus 4.6 + Sonnet 4.6
+// top out at max and reject xhigh → clamp down to high there.
+function supportsXhigh(model) {
+  const m = String(model || "").toLowerCase();
+  return m.includes("opus-4-7") || m.includes("opus-4-8")
+    || m.includes("opus-4.7") || m.includes("opus-4.8");
+}
+
+/**
+ * Resolve the `output_config.effort` level for a Kiro request from client
+ * thinking intent. Returns "low"|"medium"|"high"|"xhigh"|"max", or null when
+ * thinking is explicitly disabled.
+ *
+ * Reuses extractThinking so every client shape (Claude output_config.effort /
+ * thinking.budget_tokens, OpenAI reasoning_effort, Gemini, Qwen) maps
+ * consistently. Callers gate this on the existing thinking-enabled check
+ * (resolveKiroThinkingBudget !== null) — when thinking is on but the client
+ * gave no explicit level, this returns "high" (preserves the prior default-on
+ * behaviour).
+ *
+ * @param {object} body OpenAI/Claude-shaped request body
+ * @param {string} [model] Upstream Kiro model id (for the xhigh capability check)
+ * @returns {string|null} effort level, or null when thinking is disabled
+ */
+export function resolveKiroEffort(body, model) {
+  const cfg = extractThinking(body);
+  if (!cfg) return "high";                 // thinking on via signal, no explicit level
+  if (cfg.mode === "none") return null;
+  if (cfg.mode === "auto") return "high";
+  if (cfg.mode === "budget") return budgetToLevel(cfg.budget) || "high";
+  // mode === "level"
+  if (cfg.level === "xhigh" && !supportsXhigh(model)) return "high";
+  return cfg.level;
+}
+
+// Effort → additionalModelRequestFields.max_tokens bucket (clean buckets).
+// max_tokens is a sibling of thinking/output_config inside the model's
+// additionalModelRequestFieldsSchema; the gateway maps it to output budget.
+const EFFORT_MAX_TOKENS = {
+  low: 16000, medium: 32000, high: 64000, xhigh: 96000, max: 128000
+};
+
+// Per-model max_tokens ceiling, from each model's live
+// additionalModelRequestFieldsSchema (captured via `kiro-cli chat --list-models`
+// with KIRO_LOG_LEVEL=trace). Models not listed don't expose max_tokens in
+// their schema → null (caller must omit the field or the gateway rejects it).
+// ponytail: Opus 4.7 ceiling is 128000 on the live gateway (the kiro.dev docs
+// table is stale — shows 64000); update if the schema changes.
+function modelMaxTokensCap(model) {
+  const m = String(model || "").toLowerCase();
+  if (m.includes("opus-4-8") || m.includes("opus-4.8")) return 128000;
+  if (m.includes("opus-4-7") || m.includes("opus-4.7")) return 128000;
+  if (m.includes("opus-4-6") || m.includes("opus-4.6")) return 64000;
+  if (m.includes("sonnet-4-6") || m.includes("sonnet-4.6")) return 64000;
+  return null;
+}
+
+/**
+ * Resolve additionalModelRequestFields.max_tokens from the effort level.
+ * Returns null when effort is unset/unknown or the model has no max_tokens
+ * schema (caller omits the field). Clamped to [1024, model cap] per the schema.
+ *
+ * @param {string|null} effort effort level from resolveKiroEffort
+ * @param {string} [model] upstream Kiro model id
+ * @returns {number|null}
+ */
+export function resolveKiroMaxTokens(effort, model) {
+  if (!effort) return null;
+  const bucket = EFFORT_MAX_TOKENS[effort];
+  if (!bucket) return null;
+  const cap = modelMaxTokensCap(model);
+  if (cap === null) return null;
+  return Math.max(1024, Math.min(bucket, cap));
 }
 
 function pickHeader(headers, name) {

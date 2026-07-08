@@ -52,6 +52,24 @@ describe("extractThinking", () => {
   it("no intent → null", () => {
     expect(extractThinking({ messages: [] })).toBeNull();
   });
+  it("kiro envelope: output_config.effort nested in additionalModelRequestFields", () => {
+    expect(extractThinking({
+      additionalModelRequestFields: { output_config: { effort: "max" }, thinking: { type: "adaptive", display: "summarized" } },
+    })).toEqual({ mode: "level", level: "max" });
+  });
+  it("kiro envelope: adaptive thinking (no output_config) → auto", () => {
+    expect(extractThinking({
+      additionalModelRequestFields: { thinking: { type: "adaptive", display: "summarized" } },
+    })).toEqual({ mode: "auto" });
+  });
+  it("kiro envelope: disabled thinking → none", () => {
+    expect(extractThinking({
+      additionalModelRequestFields: { thinking: { type: "disabled" } },
+    })).toEqual({ mode: "none" });
+  });
+  it("empty additionalModelRequestFields → falls through to top-level (null)", () => {
+    expect(extractThinking({ additionalModelRequestFields: {}, messages: [] })).toBeNull();
+  });
 });
 
 describe("applyThinking per provider format", () => {

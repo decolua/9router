@@ -47,8 +47,18 @@ export function parseSuffix(model) {
 export function extractThinking(body) {
   if (!body || typeof body !== "object") return null;
 
+  // Kiro nests { thinking, output_config } inside additionalModelRequestFields
+  // (the CodeWhisperer SDK envelope — see claude-to-kiro.js). Read those two
+  // fields from the envelope when present so a post-translation Kiro body
+  // extracts the same as a top-level shape. Pre-translation bodies (and every
+  // other target) lack the envelope, so `nested` stays `body` for them.
+  const amrf = body.additionalModelRequestFields;
+  const nested = amrf && typeof amrf === "object" && (amrf.output_config || amrf.thinking)
+    ? amrf
+    : body;
+
   // Claude output_config.effort (explicit) — priority over adaptive thinking
-  const oc = body.output_config?.effort;
+  const oc = nested.output_config?.effort;
   if (typeof oc === "string" && oc) {
     const e = oc.toLowerCase();
     if (e === "none" || e === "off") return { mode: "none" };
@@ -57,7 +67,7 @@ export function extractThinking(body) {
   }
 
   // Claude shape
-  const t = body.thinking;
+  const t = nested.thinking;
   if (t && typeof t === "object") {
     if (t.type === "disabled") return { mode: "none" };
     if (t.type === "adaptive" || t.type === "enabled") {
@@ -255,7 +265,9 @@ function applyFormat(fmt, body, cfg, caps) {
       break;
     }
     case "kiro":
-      // Kiro thinking handled via system-tag injection in openai-to-kiro.js; no body field here.
+      // Handled natively by the translator (output_config.effort + thinking_mode
+      // content tag). applyThinking passthroughs kiro before stripAll — this case
+      // is unreachable but kept for completeness.
       break;
     default:
       break;
@@ -281,6 +293,12 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
   if (!cfg) return body;
 
   const fmt = resolveFormat(targetFormat, cleanModel, provider);
+  // Kiro owns its thinking wire-up natively in the translator: the
+  // `<thinking_mode>` content tag (on/off) + `output_config.effort` (depth).
+  // stripAll here would delete the translator-set output_config, so passthrough.
+  // Key on targetFormat (not fmt) — fmt resolves to a Claude thinking format via
+  // model caps even when the wire target is kiro.
+  if (targetFormat === "kiro") return body;
   stripAll(body);
   applyFormat(fmt, body, cfg, caps);
   return body;

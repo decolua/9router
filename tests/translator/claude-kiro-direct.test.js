@@ -50,7 +50,7 @@ describe("Claude → Kiro (direct route)", () => {
     expect(cur.userInputMessageContext?.toolResults?.length ?? 0).toBe(0);
   });
 
-  it("injects thinking_mode tag when model implies thinking", () => {
+  it("nests adaptive thinking field when model implies thinking (no tag)", () => {
     const out = translateRequest(
       FORMATS.CLAUDE,
       FORMATS.KIRO,
@@ -60,19 +60,46 @@ describe("Claude → Kiro (direct route)", () => {
       null,
       "kiro"
     );
-    expect(out.conversationState.currentMessage.userInputMessage.content).toContain(
-      "<thinking_mode>enabled</thinking_mode>"
+    // Real Kiro signals reasoning via the nested thinking field, never a content tag.
+    expect(out.conversationState.currentMessage.userInputMessage.content).not.toContain(
+      "<thinking_mode"
     );
+    expect(out.conversationState.currentMessage.userInputMessage.content).not.toContain(
+      "<max_thinking_length>"
+    );
+    expect(out.thinking).toBeUndefined();
+    expect(out.additionalModelRequestFields?.thinking).toEqual({ type: "adaptive", display: "summarized" });
+    expect(out.additionalModelRequestFields?.output_config?.effort).toBe("high");
+    // sonnet-4.5 has no max_tokens in its schema → field omitted.
+    expect(out.additionalModelRequestFields?.max_tokens).toBeUndefined();
+    expect(out.inferenceConfig).toBeUndefined();
   });
 
-  it("maps output_config.effort high to Kiro max_thinking_length 24576", () => {
+  it("maps client reasoning_effort to nested output_config.effort + max_tokens", () => {
+    const out = translateRequest(
+      FORMATS.CLAUDE,
+      FORMATS.KIRO,
+      "claude-opus-4-8-thinking",
+      { messages: [{ role: "user", content: "hi" }], reasoning_effort: "max" },
+      true,
+      null,
+      "kiro"
+    );
+    expect(out.additionalModelRequestFields?.output_config?.effort).toBe("max");
+    expect(out.additionalModelRequestFields?.max_tokens).toBe(128000);
+  });
+
+  it("maps output_config.effort high through to the nested Kiro payload", () => {
     const out = C2K({
       output_config: { effort: "high" },
       messages: [{ role: "user", content: "think with adaptive effort" }],
     });
 
-    expect(out.conversationState.currentMessage.userInputMessage.content).toContain(
-      "<max_thinking_length>24576</max_thinking_length>"
+    // Effort rides nested output_config (not a tag, not top-level).
+    expect(out.additionalModelRequestFields?.output_config?.effort).toBe("high");
+    expect(out.output_config).toBeUndefined();
+    expect(out.conversationState.currentMessage.userInputMessage.content).not.toContain(
+      "<max_thinking_length>"
     );
   });
 });

@@ -6,7 +6,7 @@
  *  - Image forwarding fix: images in currentMessage must be included in payload
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { openaiToKiroRequest } from "../../open-sse/translator/request/openai-to-kiro.js";
 
 const contentOf = (result) =>
@@ -285,7 +285,12 @@ describe("openaiToKiroRequest", () => {
   });
 
   describe("thinking budget", () => {
-    it("maps reasoning_effort low to max_thinking_length 1024", () => {
+    // Real Kiro nests { thinking, output_config, max_tokens } inside
+    // additionalModelRequestFields; there is no top-level output_config, no
+    // inferenceConfig, and no <thinking_mode> tag.
+    const amrf = (result) => result.additionalModelRequestFields;
+
+    it("maps reasoning_effort low to nested output_config.effort low + max_tokens bucket", () => {
       const body = {
         reasoning_effort: "low",
         messages: [{ role: "user", content: "Think lightly" }]
@@ -293,73 +298,127 @@ describe("openaiToKiroRequest", () => {
 
       const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
 
-      expect(contentOf(result)).toContain("<max_thinking_length>1024</max_thinking_length>");
+      expect(amrf(result)?.output_config?.effort).toBe("low");
+      expect(amrf(result)?.max_tokens).toBe(16000);
+      expect(amrf(result)?.thinking).toEqual({ type: "adaptive", display: "summarized" });
+      expect(result.output_config).toBeUndefined();
+      expect(result.inferenceConfig).toBeUndefined();
+      expect(contentOf(result)).not.toContain("<thinking_mode");
     });
 
-    it("maps reasoning_effort high to max_thinking_length 24576", () => {
-      const body = {
-        reasoning_effort: "high",
-        messages: [{ role: "user", content: "Think deeply" }]
-      };
-
-      const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
-
-      expect(contentOf(result)).toContain("<max_thinking_length>24576</max_thinking_length>");
+    it("maps reasoning_effort high to nested output_config.effort high", () => {
+      const result = openaiToKiroRequest(
+        "claude-sonnet-4.6",
+        { reasoning_effort: "high", messages: [{ role: "user", content: "Think deeply" }] },
+        true, {}
+      );
+      expect(amrf(result)?.output_config?.effort).toBe("high");
+      expect(amrf(result)?.max_tokens).toBe(64000);
     });
 
-    it("clamps reasoning_effort max to Kiro max_thinking_length 32000", () => {
-      const body = {
-        reasoning_effort: "max",
-        messages: [{ role: "user", content: "Think as much as possible" }]
-      };
-
-      const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
-
-      expect(contentOf(result)).toContain("<max_thinking_length>32000</max_thinking_length>");
+    it("passes reasoning_effort max through; max_tokens clamps to the model ceiling", () => {
+      const result = openaiToKiroRequest(
+        "claude-sonnet-4.6",
+        { reasoning_effort: "max", messages: [{ role: "user", content: "Think as much as possible" }] },
+        true, {}
+      );
+      expect(amrf(result)?.output_config?.effort).toBe("max");
+      // Sonnet 4.6 ceiling = 64000, so max clamps down from the 128000 bucket.
+      expect(amrf(result)?.max_tokens).toBe(64000);
     });
 
-    it("clamps OpenAI Responses reasoning.effort xhigh to max_thinking_length 32000", () => {
-      const body = {
-        reasoning: { effort: "xhigh" },
-        messages: [{ role: "user", content: "Think extra deeply" }]
-      };
-
-      const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
-
-      expect(contentOf(result)).toContain("<max_thinking_length>32000</max_thinking_length>");
+    it("Opus 4.8 keeps the full 128000 bucket at max_tokens max", () => {
+      const result = openaiToKiroRequest(
+        "claude-opus-4-8",
+        { reasoning_effort: "max", messages: [{ role: "user", content: "max out" }] },
+        true, {}
+      );
+      expect(amrf(result)?.max_tokens).toBe(128000);
     });
 
-    it("uses Claude thinking.budget_tokens as max_thinking_length", () => {
-      const body = {
-        thinking: { type: "enabled", budget_tokens: 4096 },
-        messages: [{ role: "user", content: "Use a fixed budget" }]
-      };
-
-      const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
-
-      expect(contentOf(result)).toContain("<max_thinking_length>4096</max_thinking_length>");
+    it("clamps xhigh to high on Sonnet 4.6 (no xhigh support)", () => {
+      const result = openaiToKiroRequest(
+        "claude-sonnet-4.6",
+        { reasoning: { effort: "xhigh" }, messages: [{ role: "user", content: "Think extra deeply" }] },
+        true, {}
+      );
+      expect(amrf(result)?.output_config?.effort).toBe("high");
     });
 
-    it("uses the default budget for synthetic -thinking models with no explicit config", () => {
-      const body = {
-        messages: [{ role: "user", content: "Think by model suffix" }]
-      };
+    it("maps Claude thinking.budget_tokens to an effort level via budgetToLevel", () => {
+      const result = openaiToKiroRequest(
+        "claude-sonnet-4.6",
+        { thinking: { type: "enabled", budget_tokens: 4096 }, messages: [{ role: "user", content: "Use a fixed budget" }] },
+        true, {}
+      );
+      // 4096 tokens → "low"
+      expect(amrf(result)?.output_config?.effort).toBe("low");
+    });
 
-      const result = openaiToKiroRequest("claude-sonnet-4.6-thinking", body, true, {});
-
-      expect(contentOf(result)).toContain("<max_thinking_length>16000</max_thinking_length>");
+    it("defaults to effort high for synthetic -thinking models with no explicit config", () => {
+      const result = openaiToKiroRequest(
+        "claude-sonnet-4.6-thinking",
+        { messages: [{ role: "user", content: "Think by model suffix" }] },
+        true, {}
+      );
+      expect(amrf(result)?.output_config?.effort).toBe("high");
     });
 
     it("does not inject thinking prefix for reasoning_effort none", () => {
-      const body = {
-        reasoning_effort: "none",
-        messages: [{ role: "user", content: "Do not think" }]
-      };
-
-      const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
-
-      expect(contentOf(result)).not.toContain("<thinking_mode>enabled</thinking_mode>");
+      const result = openaiToKiroRequest(
+        "claude-sonnet-4.6",
+        { reasoning_effort: "none", messages: [{ role: "user", content: "Do not think" }] },
+        true, {}
+      );
+      expect(contentOf(result)).not.toContain("<thinking_mode");
       expect(contentOf(result)).not.toContain("<max_thinking_length>");
+      // effort null → no max_tokens, no additionalModelRequestFields at all
+      expect(amrf(result)).toBeUndefined();
+    });
+  });
+
+  describe("KIRO_THINKING_FIELD toggle", () => {
+    // Save/restore the env flag so it doesn't leak across tests.
+    const prev = process.env.KIRO_THINKING_FIELD;
+    afterEach(() => {
+      if (prev === undefined) delete process.env.KIRO_THINKING_FIELD;
+      else process.env.KIRO_THINKING_FIELD = prev;
+    });
+
+    it("default (unset): adaptive thinking field nests inside additionalModelRequestFields", () => {
+      delete process.env.KIRO_THINKING_FIELD;
+      const result = openaiToKiroRequest(
+        "claude-opus-4-8",
+        { reasoning_effort: "max", messages: [{ role: "user", content: "think" }] },
+        true, {}
+      );
+      expect(contentOf(result)).not.toContain("<thinking_mode");
+      expect(result.thinking).toBeUndefined();
+      expect(result.additionalModelRequestFields?.thinking).toEqual({ type: "adaptive", display: "summarized" });
+      expect(result.additionalModelRequestFields?.output_config?.effort).toBe("max");
+      expect(result.inferenceConfig).toBeUndefined();
+    });
+
+    it("=0: suppresses the adaptive thinking field; effort still ships", () => {
+      process.env.KIRO_THINKING_FIELD = "0";
+      const result = openaiToKiroRequest(
+        "claude-opus-4-8",
+        { reasoning_effort: "max", messages: [{ role: "user", content: "think" }] },
+        true, {}
+      );
+      expect(result.additionalModelRequestFields?.thinking).toBeUndefined();
+      expect(result.additionalModelRequestFields?.output_config?.effort).toBe("max");
+    });
+
+    it("disabled intent: no additionalModelRequestFields at all", () => {
+      delete process.env.KIRO_THINKING_FIELD;
+      const result = openaiToKiroRequest(
+        "claude-opus-4-8",
+        { reasoning_effort: "none", messages: [{ role: "user", content: "no think" }] },
+        true, {}
+      );
+      expect(contentOf(result)).not.toContain("<thinking_mode");
+      expect(result.additionalModelRequestFields).toBeUndefined();
     });
   });
 });
