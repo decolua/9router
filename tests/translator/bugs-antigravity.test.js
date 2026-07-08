@@ -223,3 +223,83 @@ describe("Antigravity → OpenAI stream stability", () => {
     expect(toolChunk.choices[0].delta.tool_calls[0].id).toMatch(/^my-tool_\d+_0$/);
   });
 });
+
+// Claude-side stream finalization: truncated/aborted Antigravity streams must
+// always yield a well-formed Claude SSE sequence (#2229, #2259, #2431).
+describe("Antigravity → Claude stream finalization", () => {
+  const wrap = (response) => ({ response });
+  const textChunk = (text) => wrap({
+    responseId: "resp-x", modelVersion: "gemini-pro-agent",
+    candidates: [{ content: { role: "model", parts: [{ text }] }, index: 0 }],
+  });
+
+  // openai-to-claude.js — stream ends without finishReason (connection dropped):
+  // the message was never closed, Claude Code hung on a dangling message.
+  it("flush closes a stream that ended without finishReason", () => {
+    const state = initState(FORMATS.CLAUDE);
+    translateResponse(FORMATS.ANTIGRAVITY, FORMATS.CLAUDE, textChunk("partial answer"), state);
+    const flushed = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.CLAUDE, null, state);
+    const types = flushed.map((e) => e.type);
+    expect(types).toContain("content_block_stop");
+    expect(types).toContain("message_delta");
+    expect(types).toContain("message_stop");
+    const delta = flushed.find((e) => e.type === "message_delta");
+    expect(delta.delta.stop_reason).toBe("end_turn");
+  });
+
+  it("flush after a handled finish emits nothing", () => {
+    const state = initState(FORMATS.CLAUDE);
+    translateResponse(FORMATS.ANTIGRAVITY, FORMATS.CLAUDE, wrap({
+      responseId: "resp-y", modelVersion: "gemini-pro-agent",
+      candidates: [{ content: { role: "model", parts: [{ text: "done" }] }, finishReason: "STOP", index: 0 }],
+    }), state);
+    const flushed = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.CLAUDE, null, state);
+    expect(flushed).toEqual([]);
+  });
+
+  // openai-to-claude.js — a truncated stream with an unfinished tool call must
+  // still flush the buffered input_json_delta and close as tool_use.
+  it("flush finalizes an unfinished tool call as tool_use", () => {
+    const state = initState(FORMATS.CLAUDE);
+    translateResponse(FORMATS.ANTIGRAVITY, FORMATS.CLAUDE, wrap({
+      responseId: "resp-z", modelVersion: "gemini-pro-agent",
+      candidates: [{ content: { role: "model", parts: [{ functionCall: { name: "bash", args: { command: "ls" } } }] }, index: 0 }],
+    }), state);
+    const flushed = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.CLAUDE, null, state);
+    const jsonDelta = flushed.find((e) => e.delta?.type === "input_json_delta");
+    expect(JSON.parse(jsonDelta.delta.partial_json)).toEqual({ command: "ls" });
+    const delta = flushed.find((e) => e.type === "message_delta");
+    expect(delta.delta.stop_reason).toBe("tool_use");
+    expect(flushed.map((e) => e.type)).toContain("message_stop");
+  });
+
+  // openai-to-claude.js — duplicate finish_reason chunks (common from
+  // OpenAI-compatible upstreams) must not emit message_stop twice.
+  it("duplicate finish chunks emit a single message_stop", () => {
+    const state = initState(FORMATS.CLAUDE);
+    const first = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.CLAUDE, wrap({
+      responseId: "resp-d", modelVersion: "gemini-pro-agent",
+      candidates: [{ content: { role: "model", parts: [{ text: "hi" }] }, finishReason: "STOP", index: 0 }],
+    }), state);
+    const second = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.CLAUDE, wrap({
+      candidates: [{ finishReason: "STOP", index: 0 }],
+    }), state);
+    const stops = [...first, ...second].filter((e) => e.type === "message_stop");
+    expect(stops).toHaveLength(1);
+  });
+
+  // Full pivot: MALFORMED_FUNCTION_CALL must reach the Claude client as an error
+  // event, never as a clean end_turn (#2250).
+  it("MALFORMED_FUNCTION_CALL surfaces as an error event, not end_turn", () => {
+    const state = initState(FORMATS.CLAUDE);
+    translateResponse(FORMATS.ANTIGRAVITY, FORMATS.CLAUDE, textChunk("I'll run the command now."), state);
+    const events = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.CLAUDE, wrap({
+      candidates: [{ finishReason: "MALFORMED_FUNCTION_CALL", index: 0 }],
+    }), state);
+    const error = events.find((e) => e.type === "error");
+    expect(error).toBeTruthy();
+    expect(error.error.type).toBe("api_error");
+    const endTurn = events.find((e) => e.type === "message_delta" && e.delta?.stop_reason === "end_turn");
+    expect(endTurn).toBeUndefined();
+  });
+});

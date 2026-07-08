@@ -1,6 +1,6 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
-import { ROLE, CLAUDE_BLOCK, MODEL_FALLBACK } from "../schema/index.js";
+import { ROLE, CLAUDE_BLOCK, MODEL_FALLBACK, OPENAI_FINISH } from "../schema/index.js";
 import { fromOpenAIFinish } from "../concerns/finishReason.js";
 import { extractReasoningText } from "../concerns/reasoning.js";
 
@@ -67,9 +67,53 @@ function stopTextBlock(state, results) {
   state.textBlockStarted = false;
 }
 
+// Helper: flush buffered tool args + close every open tool_use block
+function flushToolBlocks(state, results) {
+  for (const [idx, toolInfo] of state.toolCalls) {
+    // Emit buffered + sanitized args as single delta before stop
+    const buffered = state.toolArgBuffers?.get(idx);
+    if (buffered) {
+      const sanitized = sanitizeToolArgs(toolInfo.name, buffered);
+      results.push({
+        type: "content_block_delta",
+        index: toolInfo.blockIndex,
+        delta: { type: "input_json_delta", partial_json: sanitized }
+      });
+    }
+    results.push({
+      type: "content_block_stop",
+      index: toolInfo.blockIndex
+    });
+  }
+}
+
+// Flush-time finalization: the upstream stream ended without a finish_reason
+// (truncated connection, or a gemini-family stream that closed after content).
+// Close open blocks and emit message_delta + message_stop so the Claude client
+// never hangs on a dangling message.
+function finalizeOnFlush(state) {
+  if (!state.messageStartSent || state.claudeFinishHandled) return null;
+  state.claudeFinishHandled = true;
+
+  const results = [];
+  stopThinkingBlock(state, results);
+  stopTextBlock(state, results);
+  flushToolBlocks(state, results);
+
+  const stopReason = state.toolCalls.size > 0 ? "tool_use" : "end_turn";
+  results.push({
+    type: "message_delta",
+    delta: { stop_reason: stopReason },
+    usage: state.usage || { input_tokens: 0, output_tokens: 0 }
+  });
+  results.push({ type: "message_stop" });
+  return results;
+}
+
 // Convert OpenAI stream chunk to Claude format
 export function openaiToClaudeResponse(chunk, state) {
-  if (!chunk || !chunk.choices?.[0]) return null;
+  if (!chunk) return finalizeOnFlush(state);
+  if (!chunk.choices?.[0]) return null;
 
   const results = [];
   const choice = chunk.choices[0];
@@ -221,39 +265,41 @@ export function openaiToClaudeResponse(chunk, state) {
     }
   }
 
-  // Finish
-  if (choice.finish_reason) {
+  // Finish — guard with a Claude-specific flag, NOT the shared state.finishReason:
+  // in a pivot like Antigravity/Gemini → OpenAI → Claude the upstream stage already
+  // sets state.finishReason (for stream.js usage injection); keying on it would
+  // suppress this flush and drop the buffered tool-call input_json_delta. The flag
+  // also dedupes repeated finish_reason chunks from OpenAI-compatible models.
+  if (choice.finish_reason && !state.claudeFinishHandled) {
+    state.claudeFinishHandled = true;
     stopThinkingBlock(state, results);
     stopTextBlock(state, results);
-
-    for (const [idx, toolInfo] of state.toolCalls) {
-      // Emit buffered + sanitized args as single delta before stop
-      const buffered = state.toolArgBuffers?.get(idx);
-      if (buffered) {
-        const sanitized = sanitizeToolArgs(toolInfo.name, buffered);
-        results.push({
-          type: "content_block_delta",
-          index: toolInfo.blockIndex,
-          delta: { type: "input_json_delta", partial_json: sanitized }
-        });
-      }
-      results.push({
-        type: "content_block_stop",
-        index: toolInfo.blockIndex
-      });
-    }
+    flushToolBlocks(state, results);
 
     // Mark finish for later usage injection in stream.js
     state.finishReason = choice.finish_reason;
 
-    // Use tracked usage (will be estimated in stream.js if not valid)
-    const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
-    results.push({
-      type: "message_delta",
-      delta: { stop_reason: convertFinishReason(choice.finish_reason) },
-      usage: finalUsage
-    });
-    results.push({ type: "message_stop" });
+    if (choice.finish_reason === OPENAI_FINISH.ERROR) {
+      // Upstream aborted the turn (e.g. Gemini MALFORMED_FUNCTION_CALL or an error
+      // object embedded in a 200 stream). A clean end_turn here makes the client
+      // treat a broken turn as a finished answer; a mid-stream error event is
+      // retryable by Anthropic clients.
+      const message = state.upstreamError?.message ||
+        "Upstream aborted the response (malformed function call or empty candidate)";
+      results.push({
+        type: "error",
+        error: { type: "api_error", message }
+      });
+    } else {
+      // Use tracked usage (will be estimated in stream.js if not valid)
+      const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
+      results.push({
+        type: "message_delta",
+        delta: { stop_reason: convertFinishReason(choice.finish_reason) },
+        usage: finalUsage
+      });
+      results.push({ type: "message_stop" });
+    }
   }
 
   return results.length > 0 ? results : null;
