@@ -18,6 +18,7 @@ import { buildRequestDetail, extractRequestConfig } from "./chatCore/requestDeta
 import { handleForcedSSEToJson } from "./chatCore/sseToJsonHandler.js";
 import { handleNonStreamingResponse } from "./chatCore/nonStreamingHandler.js";
 import { handleStreamingResponse, buildOnStreamComplete } from "./chatCore/streamingHandler.js";
+import { createEmptyRetryStream } from "./chatCore/emptyStreamGuard.js";
 import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.js";
 import { dedupeTools } from "../utils/toolDeduper.js";
 import { injectCaveman } from "../rtk/caveman.js";
@@ -35,7 +36,7 @@ import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
  * @param {object} options.credentials - Provider credentials
  * @param {string} options.sourceFormatOverride - Override detected source format (e.g. "openai-responses")
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, sourceFormatOverride, providerThinking }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, onUpstreamEmptyExhausted, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, sourceFormatOverride, providerThinking }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
 
@@ -307,6 +308,44 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     console.log(`${COLORS.red}[ERROR] ${errMsg}${COLORS.reset}`);
     reqLogger.logError(new Error(message), finalBody || translatedBody);
     return createErrorResult(statusCode, errMsg, resetsAtMs);
+  }
+
+  // Antigravity empty-stream guard — oh-my-pi parity: bytes (thinking included)
+  // stream to the client live; emptiness is judged per upstream attempt and an
+  // empty attempt is retried in-stream with the identical request, spliced into
+  // the same client message (see emptyStreamGuard.js). Exhaustion surfaces as an
+  // in-stream error event (retryable by Claude Code); onUpstreamEmptyExhausted
+  // lets the caller bench the account so the client's retry rotates to the next
+  // one (#2188, #2229, #2250, #2259).
+  if (provider === "antigravity" && stream && providerResponse.body) {
+    const reexecute = async () => {
+      const retryResult = await executor.execute({ model, body: translatedBody, stream, credentials, signal: streamController.signal, log, proxyOptions });
+      if (!retryResult.response.ok) {
+        const { statusCode, message } = await parseUpstreamError(retryResult.response, executor);
+        throw new Error(`[${statusCode}] ${message}`);
+      }
+      if (!retryResult.response.body) throw new Error("upstream returned no body");
+      return retryResult.response.body;
+    };
+    providerResponse = new Response(
+      createEmptyRetryStream({
+        body: providerResponse.body,
+        reexecute,
+        signal: streamController.signal,
+        log,
+        onExhausted: (reason, { upstreamError } = {}) => {
+          if (!onUpstreamEmptyExhausted) return;
+          // Quota-style exhaustion carries the reset time only inside the error
+          // message ("Your quota will reset after 2h7m23s") — bench precisely.
+          const resetMs = executor.parseRetryFromErrorMessage?.(upstreamError?.message || reason);
+          return onUpstreamEmptyExhausted(
+            formatProviderError(new Error(reason), provider, model, HTTP_STATUS.BAD_GATEWAY),
+            resetMs ? Date.now() + resetMs : undefined
+          );
+        },
+      }),
+      { status: providerResponse.status, headers: providerResponse.headers }
+    );
   }
 
   const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess };

@@ -271,6 +271,13 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       },
       onRequestSuccess: async () => {
         await clearAccountError(credentials.connectionId, credentials, model);
+      },
+      // Empty-stream retries exhausted mid-stream (headers already sent, so no
+      // pre-stream fallback is possible): bench the account so the client's
+      // automatic retry of the in-stream error lands on the next one. Quota
+      // exhaustion passes a precise resetsAtMs instead of the generic cooldown.
+      onUpstreamEmptyExhausted: async (reason, resetsAtMs) => {
+        await markAccountUnavailable(credentials.connectionId, HTTP_STATUS.BAD_GATEWAY, reason, provider, model, resetsAtMs);
       }
     });
 

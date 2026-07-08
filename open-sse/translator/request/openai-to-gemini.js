@@ -163,12 +163,11 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
 
               let name = tcID2Name[fid];
               if (!name) {
-                const idParts = fid.split("-");
-                if (idParts.length > 2) {
-                  name = idParts.slice(0, -2).join("-");
-                } else {
-                  name = fid;
-                }
+                // Generated ids encode the name: `name_<ts>_<idx>` (current) or
+                // `name-<ts>-<idx>` (legacy). Foreign ids (toolu_..., upstream
+                // functionCall.id) don't — fall back to the id itself, as before.
+                const m = fid.match(/^(.+?)[-_]\d{10,}[-_]\d+$/);
+                name = m ? m[1] : fid;
               }
 
               let resp = toolResponses[fid];

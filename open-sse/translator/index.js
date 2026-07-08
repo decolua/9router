@@ -179,6 +179,14 @@ export function translateResponse(targetFormat, sourceFormat, chunk, state) {
     }
   }
 
+  // Flush sentinel: a null chunk means "the stream ended" (stream.js flush).
+  // When step 1 has nothing to convert, forward the sentinel so the source-side
+  // translator can finalize a dangling message (all openai→X translators
+  // null-check their chunk, so this is a no-op unless one implements a flush).
+  if (chunk === null && results.length === 0) {
+    results = [null];
+  }
+
   // Step 2: openai -> source (if source is not openai)
   if (sourceFormat !== FORMATS.OPENAI) {
     const fromOpenAI = responseRegistry.get(`${FORMATS.OPENAI}:${sourceFormat}`);

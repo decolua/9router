@@ -1,6 +1,6 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
-import { ROLE, CLAUDE_BLOCK, MODEL_FALLBACK } from "../schema/index.js";
+import { ROLE, CLAUDE_BLOCK, MODEL_FALLBACK, OPENAI_FINISH } from "../schema/index.js";
 import { fromOpenAIFinish } from "../concerns/finishReason.js";
 import { extractReasoningText } from "../concerns/reasoning.js";
 
@@ -67,9 +67,88 @@ function stopTextBlock(state, results) {
   state.textBlockStarted = false;
 }
 
+// Helper: flush buffered tool args + close every open tool_use block
+function flushToolBlocks(state, results) {
+  for (const [idx, toolInfo] of state.toolCalls) {
+    // Emit buffered + sanitized args as single delta before stop
+    const buffered = state.toolArgBuffers?.get(idx);
+    if (buffered) {
+      const sanitized = sanitizeToolArgs(toolInfo.name, buffered);
+      results.push({
+        type: "content_block_delta",
+        index: toolInfo.blockIndex,
+        delta: { type: "input_json_delta", partial_json: sanitized }
+      });
+    }
+    results.push({
+      type: "content_block_stop",
+      index: toolInfo.blockIndex
+    });
+  }
+}
+
+// Convert OpenAI-shaped usage ({prompt_tokens, completion_tokens, ...}) to the
+// Claude shape ({input_tokens, output_tokens, cache_*}).
+function toClaudeUsage(usage) {
+  const promptTokens = typeof usage.prompt_tokens === "number" ? usage.prompt_tokens : 0;
+  const outputTokens = typeof usage.completion_tokens === "number" ? usage.completion_tokens : 0;
+
+  // Extract cache tokens from prompt_tokens_details
+  const cachedTokens = usage.prompt_tokens_details?.cached_tokens;
+  const cacheCreationTokens = usage.prompt_tokens_details?.cache_creation_tokens;
+  const cacheReadTokens = typeof cachedTokens === "number" ? cachedTokens : 0;
+  const cacheCreateTokens = typeof cacheCreationTokens === "number" ? cacheCreationTokens : 0;
+
+  // input_tokens = prompt_tokens - cached_tokens - cache_creation_tokens
+  // Because OpenAI's prompt_tokens includes all prompt-side tokens
+  const claudeUsage = {
+    input_tokens: promptTokens - cacheReadTokens - cacheCreateTokens,
+    output_tokens: outputTokens
+  };
+  if (cacheReadTokens > 0) claudeUsage.cache_read_input_tokens = cacheReadTokens;
+  if (cacheCreateTokens > 0) claudeUsage.cache_creation_input_tokens = cacheCreateTokens;
+
+  // Note: completion_tokens_details.reasoning_tokens is already included in output_tokens
+  // No need to add separately as Claude expects total output_tokens
+  return claudeUsage;
+}
+
+// Flush-time finalization: the upstream stream ended without a finish_reason
+// (truncated connection, or a gemini-family stream that closed after content).
+// Close open blocks and emit message_delta + message_stop so the Claude client
+// never hangs on a dangling message.
+function finalizeOnFlush(state) {
+  if (!state.messageStartSent || state.claudeFinishHandled) return null;
+  state.claudeFinishHandled = true;
+
+  const results = [];
+  stopThinkingBlock(state, results);
+  stopTextBlock(state, results);
+  flushToolBlocks(state, results);
+
+  // state.usage may still be OpenAI-shaped here: the gemini stage writes
+  // prompt/completion counts into the shared pivot state, and only a real
+  // finish chunk converts them — which a truncated stream never delivers.
+  const usage = state.usage?.input_tokens != null
+    ? state.usage
+    : state.usage?.prompt_tokens != null
+      ? toClaudeUsage(state.usage)
+      : { input_tokens: 0, output_tokens: 0 };
+
+  const stopReason = state.toolCalls.size > 0 ? "tool_use" : "end_turn";
+  results.push({
+    type: "message_delta",
+    delta: { stop_reason: stopReason },
+    usage
+  });
+  results.push({ type: "message_stop" });
+  return results;
+}
+
 // Convert OpenAI stream chunk to Claude format
 export function openaiToClaudeResponse(chunk, state) {
-  if (!chunk || !chunk.choices?.[0]) return null;
+  if (!chunk) return finalizeOnFlush(state);
+  if (!chunk.choices?.[0]) return null;
 
   const results = [];
   const choice = chunk.choices[0];
@@ -77,36 +156,7 @@ export function openaiToClaudeResponse(chunk, state) {
 
   // Track usage from OpenAI chunk if available
   if (chunk.usage && typeof chunk.usage === "object") {
-    const promptTokens = typeof chunk.usage.prompt_tokens === "number" ? chunk.usage.prompt_tokens : 0;
-    const outputTokens = typeof chunk.usage.completion_tokens === "number" ? chunk.usage.completion_tokens : 0;
-
-    // Extract cache tokens from prompt_tokens_details
-    const cachedTokens = chunk.usage.prompt_tokens_details?.cached_tokens;
-    const cacheCreationTokens = chunk.usage.prompt_tokens_details?.cache_creation_tokens;
-    const cacheReadTokens = typeof cachedTokens === "number" ? cachedTokens : 0;
-    const cacheCreateTokens = typeof cacheCreationTokens === "number" ? cacheCreationTokens : 0;
-
-    // input_tokens = prompt_tokens - cached_tokens - cache_creation_tokens
-    // Because OpenAI's prompt_tokens includes all prompt-side tokens
-    const inputTokens = promptTokens - cacheReadTokens - cacheCreateTokens;
-
-    state.usage = {
-      input_tokens: inputTokens,
-      output_tokens: outputTokens
-    };
-
-    // Add cache_read_input_tokens if present
-    if (cacheReadTokens > 0) {
-      state.usage.cache_read_input_tokens = cacheReadTokens;
-    }
-
-    // Add cache_creation_input_tokens if present
-    if (cacheCreateTokens > 0) {
-      state.usage.cache_creation_input_tokens = cacheCreateTokens;
-    }
-
-    // Note: completion_tokens_details.reasoning_tokens is already included in output_tokens
-    // No need to add separately as Claude expects total output_tokens
+    state.usage = toClaudeUsage(chunk.usage);
   }
 
   // First chunk - ALWAYS send message_start first
@@ -221,39 +271,41 @@ export function openaiToClaudeResponse(chunk, state) {
     }
   }
 
-  // Finish
-  if (choice.finish_reason) {
+  // Finish — guard with a Claude-specific flag, NOT the shared state.finishReason:
+  // in a pivot like Antigravity/Gemini → OpenAI → Claude the upstream stage already
+  // sets state.finishReason (for stream.js usage injection); keying on it would
+  // suppress this flush and drop the buffered tool-call input_json_delta. The flag
+  // also dedupes repeated finish_reason chunks from OpenAI-compatible models.
+  if (choice.finish_reason && !state.claudeFinishHandled) {
+    state.claudeFinishHandled = true;
     stopThinkingBlock(state, results);
     stopTextBlock(state, results);
-
-    for (const [idx, toolInfo] of state.toolCalls) {
-      // Emit buffered + sanitized args as single delta before stop
-      const buffered = state.toolArgBuffers?.get(idx);
-      if (buffered) {
-        const sanitized = sanitizeToolArgs(toolInfo.name, buffered);
-        results.push({
-          type: "content_block_delta",
-          index: toolInfo.blockIndex,
-          delta: { type: "input_json_delta", partial_json: sanitized }
-        });
-      }
-      results.push({
-        type: "content_block_stop",
-        index: toolInfo.blockIndex
-      });
-    }
+    flushToolBlocks(state, results);
 
     // Mark finish for later usage injection in stream.js
     state.finishReason = choice.finish_reason;
 
-    // Use tracked usage (will be estimated in stream.js if not valid)
-    const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
-    results.push({
-      type: "message_delta",
-      delta: { stop_reason: convertFinishReason(choice.finish_reason) },
-      usage: finalUsage
-    });
-    results.push({ type: "message_stop" });
+    if (choice.finish_reason === OPENAI_FINISH.ERROR) {
+      // Upstream aborted the turn (e.g. Gemini MALFORMED_FUNCTION_CALL or an error
+      // object embedded in a 200 stream). A clean end_turn here makes the client
+      // treat a broken turn as a finished answer; a mid-stream error event is
+      // retryable by Anthropic clients.
+      const message = state.upstreamError?.message ||
+        "Upstream aborted the response (malformed function call or empty candidate)";
+      results.push({
+        type: "error",
+        error: { type: "api_error", message }
+      });
+    } else {
+      // Use tracked usage (will be estimated in stream.js if not valid)
+      const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
+      results.push({
+        type: "message_delta",
+        delta: { stop_reason: convertFinishReason(choice.finish_reason) },
+        usage: finalUsage
+      });
+      results.push({ type: "message_stop" });
+    }
   }
 
   return results.length > 0 ? results : null;

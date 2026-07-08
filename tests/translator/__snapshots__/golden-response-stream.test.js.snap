@@ -261,7 +261,7 @@ exports[`GOLDEN response stream: Gemini → OpenAI > text + thought(no-sig) + fu
                 "arguments": "{"q":"x"}",
                 "name": "search",
               },
-              "id": "search-<TS>-0",
+              "id": "search_<TS>_0",
               "index": 0,
               "type": "function",
             },

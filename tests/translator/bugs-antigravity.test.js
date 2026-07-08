@@ -107,3 +107,264 @@ describe("Antigravity executor", () => {
     expect(query).toEqual({ type: "string", description: "Search query" });
   });
 });
+
+// Stability fixes: empty/aborted Antigravity streams must never surface as clean
+// end_turn to Claude Code (#2188, #2229, #2250, #2259, #2431).
+describe("Antigravity → OpenAI stream stability", () => {
+  const wrap = (response) => ({ response });
+
+  // concerns/finishReason.js — MALFORMED_FUNCTION_CALL used to fall through the
+  // default case to "stop" → end_turn: the model narrates a tool call, Gemini
+  // aborts it, and the client thinks the turn finished cleanly (#2250).
+  it("MALFORMED_FUNCTION_CALL maps to error finish, not stop", () => {
+    const state = initState(FORMATS.OPENAI);
+    translateResponse(FORMATS.ANTIGRAVITY, FORMATS.OPENAI, wrap({
+      responseId: "r1", modelVersion: "gemini-pro-agent",
+      candidates: [{ content: { role: "model", parts: [{ text: "I'll call the tool now." }] }, index: 0 }],
+    }), state);
+    const events = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.OPENAI, wrap({
+      candidates: [{ finishReason: "MALFORMED_FUNCTION_CALL", index: 0 }],
+    }), state);
+    const finish = events.find((e) => e.choices?.[0]?.finish_reason);
+    expect(finish.choices[0].finish_reason).toBe("error");
+  });
+
+  // gemini-to-openai.js — an error finish must not be upgraded to tool_calls even
+  // when a functionCall was emitted earlier in the stream.
+  it("error finish is not upgraded to tool_calls", () => {
+    const state = initState(FORMATS.OPENAI);
+    translateResponse(FORMATS.ANTIGRAVITY, FORMATS.OPENAI, wrap({
+      responseId: "r2", modelVersion: "gemini-pro-agent",
+      candidates: [{ content: { role: "model", parts: [{ functionCall: { name: "bash", args: { command: "ls" } } }] }, index: 0 }],
+    }), state);
+    const events = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.OPENAI, wrap({
+      candidates: [{ finishReason: "UNEXPECTED_TOOL_CALL", index: 0 }],
+    }), state);
+    const finish = events.find((e) => e.choices?.[0]?.finish_reason);
+    expect(finish.choices[0].finish_reason).toBe("error");
+  });
+
+  it("STOP with emitted tool call still upgrades to tool_calls", () => {
+    const state = initState(FORMATS.OPENAI);
+    const events = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.OPENAI, wrap({
+      responseId: "r3", modelVersion: "gemini-pro-agent",
+      candidates: [{
+        content: { role: "model", parts: [{ functionCall: { name: "bash", args: { command: "ls" } } }] },
+        finishReason: "STOP", index: 0,
+      }],
+    }), state);
+    const finish = events.find((e) => e.choices?.[0]?.finish_reason);
+    expect(finish.choices[0].finish_reason).toBe("tool_calls");
+  });
+
+  // gemini-to-openai.js — candidate-less chunk with promptFeedback.blockReason was
+  // dropped (return null) → empty 200 stream that never closes (#2188).
+  it("promptFeedback-only chunk closes the stream as content_filter", () => {
+    const state = initState(FORMATS.OPENAI);
+    const events = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.OPENAI, wrap({
+      responseId: "r4", modelVersion: "gemini-pro-agent",
+      promptFeedback: { blockReason: "SAFETY" },
+    }), state);
+    const finish = events.find((e) => e.choices?.[0]?.finish_reason);
+    expect(finish.choices[0].finish_reason).toBe("content_filter");
+  });
+
+  // gemini-to-openai.js — a {error:{...}} object embedded mid-stream in a 200
+  // response was dropped silently (#2259, #2431).
+  it("mid-stream error object closes the stream with an error finish", () => {
+    const state = initState(FORMATS.OPENAI);
+    translateResponse(FORMATS.ANTIGRAVITY, FORMATS.OPENAI, wrap({
+      responseId: "r5", modelVersion: "gemini-pro-agent",
+      candidates: [{ content: { role: "model", parts: [{ text: "partial" }] }, index: 0 }],
+    }), state);
+    const events = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.OPENAI, wrap({
+      error: { code: 429, status: "RESOURCE_EXHAUSTED", message: "Quota exceeded" },
+    }), state);
+    const finish = events.find((e) => e.choices?.[0]?.finish_reason);
+    expect(finish.choices[0].finish_reason).toBe("error");
+    expect(state.upstreamError).toMatchObject({ status: "RESOURCE_EXHAUSTED" });
+  });
+
+  // gemini-to-openai.js — usage-only keep-alive chunks must stay silent but keep usage.
+  it("candidate-less usage chunk returns nothing but preserves usage", () => {
+    const state = initState(FORMATS.OPENAI);
+    const events = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.OPENAI, wrap({
+      usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5, totalTokenCount: 15 },
+    }), state);
+    expect(events).toEqual([]);
+    expect(state.usage).toBeTruthy();
+  });
+
+  // gemini-to-openai.js — upstream functionCall.id was discarded and replaced by a
+  // regenerated name-based id, breaking functionResponse matching on replay.
+  it("upstream functionCall.id is preserved on the tool_call", () => {
+    const state = initState(FORMATS.OPENAI);
+    const events = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.OPENAI, wrap({
+      responseId: "r6", modelVersion: "gemini-pro-agent",
+      candidates: [{
+        content: { role: "model", parts: [{ functionCall: { id: "call_abc123", name: "bash", args: {} } }] },
+        finishReason: "STOP", index: 0,
+      }],
+    }), state);
+    const toolChunk = events.find((e) => e.choices?.[0]?.delta?.tool_calls);
+    expect(toolChunk.choices[0].delta.tool_calls[0].id).toBe("call_abc123");
+  });
+
+  it("generated tool ids use underscore separators and the Anthropic charset", () => {
+    const state = initState(FORMATS.OPENAI);
+    const events = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.OPENAI, wrap({
+      responseId: "r7", modelVersion: "gemini-pro-agent",
+      candidates: [{
+        content: { role: "model", parts: [{ functionCall: { name: "my-tool", args: {} } }] },
+        finishReason: "STOP", index: 0,
+      }],
+    }), state);
+    const toolChunk = events.find((e) => e.choices?.[0]?.delta?.tool_calls);
+    expect(toolChunk.choices[0].delta.tool_calls[0].id).toMatch(/^my-tool_\d+_0$/);
+  });
+});
+
+// Claude-side stream finalization: truncated/aborted Antigravity streams must
+// always yield a well-formed Claude SSE sequence (#2229, #2259, #2431).
+describe("Antigravity → Claude stream finalization", () => {
+  const wrap = (response) => ({ response });
+  const textChunk = (text) => wrap({
+    responseId: "resp-x", modelVersion: "gemini-pro-agent",
+    candidates: [{ content: { role: "model", parts: [{ text }] }, index: 0 }],
+  });
+
+  // openai-to-claude.js — stream ends without finishReason (connection dropped):
+  // the message was never closed, Claude Code hung on a dangling message.
+  it("flush closes a stream that ended without finishReason", () => {
+    const state = initState(FORMATS.CLAUDE);
+    translateResponse(FORMATS.ANTIGRAVITY, FORMATS.CLAUDE, textChunk("partial answer"), state);
+    const flushed = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.CLAUDE, null, state);
+    const types = flushed.map((e) => e.type);
+    expect(types).toContain("content_block_stop");
+    expect(types).toContain("message_delta");
+    expect(types).toContain("message_stop");
+    const delta = flushed.find((e) => e.type === "message_delta");
+    expect(delta.delta.stop_reason).toBe("end_turn");
+  });
+
+  it("flush after a handled finish emits nothing", () => {
+    const state = initState(FORMATS.CLAUDE);
+    translateResponse(FORMATS.ANTIGRAVITY, FORMATS.CLAUDE, wrap({
+      responseId: "resp-y", modelVersion: "gemini-pro-agent",
+      candidates: [{ content: { role: "model", parts: [{ text: "done" }] }, finishReason: "STOP", index: 0 }],
+    }), state);
+    const flushed = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.CLAUDE, null, state);
+    expect(flushed).toEqual([]);
+  });
+
+  // openai-to-claude.js — a truncated stream with an unfinished tool call must
+  // still flush the buffered input_json_delta and close as tool_use.
+  it("flush finalizes an unfinished tool call as tool_use", () => {
+    const state = initState(FORMATS.CLAUDE);
+    translateResponse(FORMATS.ANTIGRAVITY, FORMATS.CLAUDE, wrap({
+      responseId: "resp-z", modelVersion: "gemini-pro-agent",
+      candidates: [{ content: { role: "model", parts: [{ functionCall: { name: "bash", args: { command: "ls" } } }] }, index: 0 }],
+    }), state);
+    const flushed = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.CLAUDE, null, state);
+    const jsonDelta = flushed.find((e) => e.delta?.type === "input_json_delta");
+    expect(JSON.parse(jsonDelta.delta.partial_json)).toEqual({ command: "ls" });
+    const delta = flushed.find((e) => e.type === "message_delta");
+    expect(delta.delta.stop_reason).toBe("tool_use");
+    expect(flushed.map((e) => e.type)).toContain("message_stop");
+  });
+
+  // openai-to-claude.js — the gemini stage stores usageMetadata OpenAI-shaped in
+  // the shared state; a truncated stream never sees the finish chunk that would
+  // convert it. The flush must emit Claude-shaped usage, not prompt_tokens.
+  it("flush converts OpenAI-shaped usage to Claude shape", () => {
+    const state = initState(FORMATS.CLAUDE);
+    translateResponse(FORMATS.ANTIGRAVITY, FORMATS.CLAUDE, wrap({
+      responseId: "resp-u", modelVersion: "gemini-pro-agent",
+      candidates: [{ content: { role: "model", parts: [{ text: "partial" }] }, index: 0 }],
+      usageMetadata: { promptTokenCount: 20, candidatesTokenCount: 7, totalTokenCount: 27 },
+    }), state);
+    const flushed = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.CLAUDE, null, state);
+    const delta = flushed.find((e) => e.type === "message_delta");
+    expect(delta.usage.input_tokens).toBe(20);
+    expect(delta.usage.output_tokens).toBe(7);
+    expect(delta.usage.prompt_tokens).toBeUndefined();
+  });
+
+  // openai-to-claude.js — duplicate finish_reason chunks (common from
+  // OpenAI-compatible upstreams) must not emit message_stop twice.
+  it("duplicate finish chunks emit a single message_stop", () => {
+    const state = initState(FORMATS.CLAUDE);
+    const first = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.CLAUDE, wrap({
+      responseId: "resp-d", modelVersion: "gemini-pro-agent",
+      candidates: [{ content: { role: "model", parts: [{ text: "hi" }] }, finishReason: "STOP", index: 0 }],
+    }), state);
+    const second = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.CLAUDE, wrap({
+      candidates: [{ finishReason: "STOP", index: 0 }],
+    }), state);
+    const stops = [...first, ...second].filter((e) => e.type === "message_stop");
+    expect(stops).toHaveLength(1);
+  });
+
+  // Full pivot: MALFORMED_FUNCTION_CALL must reach the Claude client as an error
+  // event, never as a clean end_turn (#2250).
+  it("MALFORMED_FUNCTION_CALL surfaces as an error event, not end_turn", () => {
+    const state = initState(FORMATS.CLAUDE);
+    translateResponse(FORMATS.ANTIGRAVITY, FORMATS.CLAUDE, textChunk("I'll run the command now."), state);
+    const events = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.CLAUDE, wrap({
+      candidates: [{ finishReason: "MALFORMED_FUNCTION_CALL", index: 0 }],
+    }), state);
+    const error = events.find((e) => e.type === "error");
+    expect(error).toBeTruthy();
+    expect(error.error.type).toBe("api_error");
+    const endTurn = events.find((e) => e.type === "message_delta" && e.delta?.stop_reason === "end_turn");
+    expect(endTurn).toBeUndefined();
+  });
+});
+
+// Request-side tool id → name round-trip: functionResponse.name must match the
+// original functionCall name or Gemini rejects/ignores the tool loop.
+describe("OpenAI → Gemini functionResponse name recovery", () => {
+  const O2G = (messages) =>
+    translateRequest(FORMATS.OPENAI, FORMATS.GEMINI, "gemini-2.5-pro", { messages }, true, null, null);
+
+  const findResponse = (out) => {
+    for (const c of out.contents) {
+      const p = (c.parts || []).find((p) => p.functionResponse);
+      if (p) return p.functionResponse;
+    }
+    return null;
+  };
+
+  it("assistant tool_calls in history map id → name (tcID2Name)", () => {
+    const out = O2G([
+      { role: "user", content: "run it" },
+      { role: "assistant", tool_calls: [{ id: "my-tool_1736000000000_0", type: "function", function: { name: "my-tool", arguments: "{}" } }] },
+      { role: "tool", tool_call_id: "my-tool_1736000000000_0", content: "ok" },
+    ]);
+    expect(findResponse(out)?.name).toBe("my-tool");
+  });
+
+  // openai-to-gemini.js — the old fallback split the id on "-" and joined
+  // all-but-two segments; ids in the current `name_<ts>_<idx>` shape (or legacy
+  // hyphen shape with hyphenated tool names) must still recover the name when
+  // the assistant turn carrying the name was truncated out of history.
+  it("fallback recovers hyphenated names from generated ids (both separators)", () => {
+    for (const fid of ["my-tool_1736000000000_0", "my-tool-1736000000000-0"]) {
+      const out = O2G([
+        { role: "user", content: "run it" },
+        { role: "assistant", content: null, tool_calls: [{ id: fid, type: "function", function: { name: "my-tool", arguments: "{}" } }] },
+        { role: "tool", tool_call_id: fid, content: "ok" },
+      ]);
+      expect(findResponse(out)?.name, `id ${fid}`).toBe("my-tool");
+    }
+  });
+
+  it("foreign ids fall back to the id itself", () => {
+    const out = O2G([
+      { role: "user", content: "run it" },
+      { role: "assistant", tool_calls: [{ id: "toolu_01AbCdEf", type: "function", function: { name: "", arguments: "{}" } }] },
+      { role: "tool", tool_call_id: "toolu_01AbCdEf", content: "ok" },
+    ]);
+    expect(findResponse(out)?.name).toBe("toolu_01AbCdEf");
+  });
+});

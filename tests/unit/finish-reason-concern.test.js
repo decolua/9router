@@ -9,7 +9,13 @@ describe("toOpenAIFinish - gemini", () => {
     ["RECITATION", "content_filter"],
     ["BLOCKLIST", "content_filter"],
     ["PROHIBITED_CONTENT", "content_filter"],
-    ["OTHER", "stop"],
+    // Aborted turns surface as error (never a clean stop): forwarding e.g.
+    // MALFORMED_FUNCTION_CALL as "stop" made clients treat a broken turn as a
+    // finished answer. Truly unknown values still default to "stop".
+    ["MALFORMED_FUNCTION_CALL", "error"],
+    ["UNEXPECTED_TOOL_CALL", "error"],
+    ["OTHER", "error"],
+    ["SPII", "content_filter"],
     ["UNKNOWN_XYZ", "stop"],
     ["STOP", "stop"],
     ["MAX_TOKENS", "length"],
