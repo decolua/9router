@@ -273,6 +273,23 @@ describe("Antigravity → Claude stream finalization", () => {
     expect(flushed.map((e) => e.type)).toContain("message_stop");
   });
 
+  // openai-to-claude.js — the gemini stage stores usageMetadata OpenAI-shaped in
+  // the shared state; a truncated stream never sees the finish chunk that would
+  // convert it. The flush must emit Claude-shaped usage, not prompt_tokens.
+  it("flush converts OpenAI-shaped usage to Claude shape", () => {
+    const state = initState(FORMATS.CLAUDE);
+    translateResponse(FORMATS.ANTIGRAVITY, FORMATS.CLAUDE, wrap({
+      responseId: "resp-u", modelVersion: "gemini-pro-agent",
+      candidates: [{ content: { role: "model", parts: [{ text: "partial" }] }, index: 0 }],
+      usageMetadata: { promptTokenCount: 20, candidatesTokenCount: 7, totalTokenCount: 27 },
+    }), state);
+    const flushed = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.CLAUDE, null, state);
+    const delta = flushed.find((e) => e.type === "message_delta");
+    expect(delta.usage.input_tokens).toBe(20);
+    expect(delta.usage.output_tokens).toBe(7);
+    expect(delta.usage.prompt_tokens).toBeUndefined();
+  });
+
   // openai-to-claude.js — duplicate finish_reason chunks (common from
   // OpenAI-compatible upstreams) must not emit message_stop twice.
   it("duplicate finish chunks emit a single message_stop", () => {

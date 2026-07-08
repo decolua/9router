@@ -87,6 +87,32 @@ function flushToolBlocks(state, results) {
   }
 }
 
+// Convert OpenAI-shaped usage ({prompt_tokens, completion_tokens, ...}) to the
+// Claude shape ({input_tokens, output_tokens, cache_*}).
+function toClaudeUsage(usage) {
+  const promptTokens = typeof usage.prompt_tokens === "number" ? usage.prompt_tokens : 0;
+  const outputTokens = typeof usage.completion_tokens === "number" ? usage.completion_tokens : 0;
+
+  // Extract cache tokens from prompt_tokens_details
+  const cachedTokens = usage.prompt_tokens_details?.cached_tokens;
+  const cacheCreationTokens = usage.prompt_tokens_details?.cache_creation_tokens;
+  const cacheReadTokens = typeof cachedTokens === "number" ? cachedTokens : 0;
+  const cacheCreateTokens = typeof cacheCreationTokens === "number" ? cacheCreationTokens : 0;
+
+  // input_tokens = prompt_tokens - cached_tokens - cache_creation_tokens
+  // Because OpenAI's prompt_tokens includes all prompt-side tokens
+  const claudeUsage = {
+    input_tokens: promptTokens - cacheReadTokens - cacheCreateTokens,
+    output_tokens: outputTokens
+  };
+  if (cacheReadTokens > 0) claudeUsage.cache_read_input_tokens = cacheReadTokens;
+  if (cacheCreateTokens > 0) claudeUsage.cache_creation_input_tokens = cacheCreateTokens;
+
+  // Note: completion_tokens_details.reasoning_tokens is already included in output_tokens
+  // No need to add separately as Claude expects total output_tokens
+  return claudeUsage;
+}
+
 // Flush-time finalization: the upstream stream ended without a finish_reason
 // (truncated connection, or a gemini-family stream that closed after content).
 // Close open blocks and emit message_delta + message_stop so the Claude client
@@ -100,11 +126,20 @@ function finalizeOnFlush(state) {
   stopTextBlock(state, results);
   flushToolBlocks(state, results);
 
+  // state.usage may still be OpenAI-shaped here: the gemini stage writes
+  // prompt/completion counts into the shared pivot state, and only a real
+  // finish chunk converts them — which a truncated stream never delivers.
+  const usage = state.usage?.input_tokens != null
+    ? state.usage
+    : state.usage?.prompt_tokens != null
+      ? toClaudeUsage(state.usage)
+      : { input_tokens: 0, output_tokens: 0 };
+
   const stopReason = state.toolCalls.size > 0 ? "tool_use" : "end_turn";
   results.push({
     type: "message_delta",
     delta: { stop_reason: stopReason },
-    usage: state.usage || { input_tokens: 0, output_tokens: 0 }
+    usage
   });
   results.push({ type: "message_stop" });
   return results;
@@ -121,36 +156,7 @@ export function openaiToClaudeResponse(chunk, state) {
 
   // Track usage from OpenAI chunk if available
   if (chunk.usage && typeof chunk.usage === "object") {
-    const promptTokens = typeof chunk.usage.prompt_tokens === "number" ? chunk.usage.prompt_tokens : 0;
-    const outputTokens = typeof chunk.usage.completion_tokens === "number" ? chunk.usage.completion_tokens : 0;
-
-    // Extract cache tokens from prompt_tokens_details
-    const cachedTokens = chunk.usage.prompt_tokens_details?.cached_tokens;
-    const cacheCreationTokens = chunk.usage.prompt_tokens_details?.cache_creation_tokens;
-    const cacheReadTokens = typeof cachedTokens === "number" ? cachedTokens : 0;
-    const cacheCreateTokens = typeof cacheCreationTokens === "number" ? cacheCreationTokens : 0;
-
-    // input_tokens = prompt_tokens - cached_tokens - cache_creation_tokens
-    // Because OpenAI's prompt_tokens includes all prompt-side tokens
-    const inputTokens = promptTokens - cacheReadTokens - cacheCreateTokens;
-
-    state.usage = {
-      input_tokens: inputTokens,
-      output_tokens: outputTokens
-    };
-
-    // Add cache_read_input_tokens if present
-    if (cacheReadTokens > 0) {
-      state.usage.cache_read_input_tokens = cacheReadTokens;
-    }
-
-    // Add cache_creation_input_tokens if present
-    if (cacheCreateTokens > 0) {
-      state.usage.cache_creation_input_tokens = cacheCreateTokens;
-    }
-
-    // Note: completion_tokens_details.reasoning_tokens is already included in output_tokens
-    // No need to add separately as Claude expects total output_tokens
+    state.usage = toClaudeUsage(chunk.usage);
   }
 
   // First chunk - ALWAYS send message_start first
