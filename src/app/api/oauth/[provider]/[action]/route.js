@@ -26,7 +26,9 @@ import {
 async function proxyOptionsForPool(proxyPoolId) {
   if (!proxyPoolId || proxyPoolId === "__none__") return { disableEnvProxy: true };
   const proxyConfig = await resolveConnectionProxyConfig({ proxyPoolId });
-  if (!proxyConfig || proxyConfig.source === "none" || proxyConfig.source === "error") return { disableEnvProxy: true };
+  if (!proxyConfig || proxyConfig.source === "none" || proxyConfig.source === "error") {
+    throw new Error(`Proxy pool ${proxyPoolId} is unavailable`);
+  }
   return {
     connectionProxyEnabled: proxyConfig.connectionProxyEnabled === true,
     connectionProxyUrl: proxyConfig.connectionProxyUrl || "",

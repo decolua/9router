@@ -10,7 +10,7 @@ import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
  * - Localhost: Auto callback via popup message
  * - Remote: Manual paste callback URL
  */
-export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, onClose, oauthMeta, idcConfig, proxyPools = [] }) {
+export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, onClose, oauthMeta, idcConfig, proxyPools = [], proxyPoolsReady = true }) {
   const [step, setStep] = useState("waiting"); // waiting | input | success | error
   const [authData, setAuthData] = useState(null);
   const [callbackUrl, setCallbackUrl] = useState("");
@@ -350,6 +350,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   // Reset state and start OAuth when modal opens
   useEffect(() => {
     if (isOpen && provider) {
+      if (!proxyPoolsReady) return;
       // Guard against StrictMode/effect re-runs auto-opening multiple tabs.
       if (openedRef.current) return;
       openedRef.current = true;
@@ -373,7 +374,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         fetch("/api/oauth/xai/stop-proxy").catch(() => {});
       }
     }
-  }, [isOpen, provider, startOAuthFlow, proxyPools]);
+  }, [isOpen, provider, startOAuthFlow, proxyPools, proxyPoolsReady]);
 
   const handleProxyPoolChange = async (event) => {
     const proxyPoolId = event.target.value;
@@ -615,6 +616,15 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
           </div>
         )}
 
+        {!proxyPoolsReady && (
+          <div className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg bg-sidebar/50">
+            <span className="material-symbols-outlined text-base text-primary animate-spin">
+              progress_activity
+            </span>
+            <span className="text-sm">Loading proxy pools…</span>
+          </div>
+        )}
+
         {/* Waiting + Manual Input combined (non-device-code) */}
         {(step === "waiting" || step === "input") && !isDeviceCode && (
           <>
@@ -787,4 +797,5 @@ OAuthModal.propTypes = {
     name: PropTypes.string,
     isActive: PropTypes.bool,
   })),
+  proxyPoolsReady: PropTypes.bool,
 };
