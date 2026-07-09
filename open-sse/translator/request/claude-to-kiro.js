@@ -42,6 +42,7 @@ const SLACK_CHANNEL_RE = "[CGD][A-Z0-9]{8,}";
 const SLACK_TS_RE = "\\d{10}(?:\\.\\d{1,6})?|\\d{16}";
 const SLACK_TS_URL_RE = "\\d{10}(?:(?:\\.|%2E)\\d{1,6})?|\\d{16}";
 const FIRST_USER_ANCHOR_MAX = 2048;
+const CACHE_CONTROL_KEY = "cache_control";
 
 function withoutVolatileSessionHeaders(headers) {
   if (!headers || typeof headers !== "object") return headers;
@@ -71,6 +72,90 @@ function normalizeAnchorText(value) {
   } catch {
     return "";
   }
+}
+
+function hasCacheControl(value) {
+  return value && typeof value === "object" && value[CACHE_CONTROL_KEY] !== undefined;
+}
+
+function stripCacheControlForAnchor(value) {
+  if (Array.isArray(value)) return value.map(stripCacheControlForAnchor);
+  if (!value || typeof value !== "object") return value;
+
+  const clean = {};
+  for (const key of Object.keys(value).sort()) {
+    if (key === CACHE_CONTROL_KEY) continue;
+    const child = stripCacheControlForAnchor(value[key]);
+    if (child !== undefined) clean[key] = child;
+  }
+  return clean;
+}
+
+function stableAnchorJson(value) {
+  return JSON.stringify(stripCacheControlForAnchor(value));
+}
+
+function collectCacheControlAnchorSegments(body) {
+  const segments = [];
+  const pushSegment = (kind, value, cacheControlBearing = false) => {
+    segments.push({
+      cacheControlBearing,
+      value: stableAnchorJson([kind, value]),
+    });
+  };
+
+  if (typeof body?.system === "string") {
+    pushSegment("system:text", body.system);
+  } else if (Array.isArray(body?.system)) {
+    for (const part of body.system) {
+      pushSegment("system:block", part, hasCacheControl(part));
+    }
+  } else if (body?.system) {
+    pushSegment("system:block", body.system, hasCacheControl(body.system));
+  }
+
+  if (Array.isArray(body?.tools)) {
+    for (const tool of body.tools) {
+      pushSegment("tool", tool, hasCacheControl(tool));
+    }
+  }
+
+  if (Array.isArray(body?.messages)) {
+    for (const message of body.messages) {
+      const role = message?.role || "unknown";
+      const content = message?.content;
+      if (typeof content === "string") {
+        pushSegment(`message:${role}:text`, content);
+      } else if (Array.isArray(content)) {
+        for (const block of content) {
+          const kind =
+            typeof block === "string"
+              ? `message:${role}:text`
+              : `message:${role}:${block?.type || "block"}`;
+          pushSegment(kind, block, hasCacheControl(block));
+        }
+      } else if (content !== undefined && content !== null) {
+        pushSegment(`message:${role}:block`, content, hasCacheControl(content));
+      }
+    }
+  }
+
+  return segments;
+}
+
+function findClaudeCacheControlAnchor(body) {
+  const segments = collectCacheControlAnchorSegments(body);
+  let lastCacheControlIndex = -1;
+  for (let i = 0; i < segments.length; i++) {
+    if (segments[i].cacheControlBearing) lastCacheControlIndex = i;
+  }
+  if (lastCacheControlIndex === -1) return null;
+
+  const prefix = segments
+    .slice(0, lastCacheControlIndex + 1)
+    .map((segment) => segment.value)
+    .join("\n");
+  return `cache-control:${prefix}`;
 }
 
 function normalizeSlackTs(value) {
@@ -165,7 +250,7 @@ function bodyHasExplicitSessionId(body) {
 function bodyWithKiroPromptCacheKey(body, connectionId) {
   if (bodyHasExplicitSessionId(body)) return body;
 
-  const anchor = findKiroStableAnchor(body, connectionId);
+  const anchor = findClaudeCacheControlAnchor(body) || findKiroStableAnchor(body, connectionId);
   return {
     ...body,
     prompt_cache_key: deterministicUuid(`kiro:${anchor}`),

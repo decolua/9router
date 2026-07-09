@@ -9,6 +9,32 @@ import { FORMATS } from "../../open-sse/translator/formats.js";
 const C2K = (body, credentials = null) =>
   translateRequest(FORMATS.CLAUDE, FORMATS.KIRO, "claude-sonnet-4.5", body, true, credentials, "kiro");
 
+const cacheControlledBody = ({
+  systemText = "Stable system instructions",
+  toolDescription = "Lookup stable project context",
+  cachedUserText = "Cached thread context",
+  trailingUserText = "What should we do next?",
+} = {}) => ({
+  system: [{ type: "text", text: systemText, cache_control: { type: "ephemeral" } }],
+  tools: [
+    {
+      name: "lookup_context",
+      description: toolDescription,
+      input_schema: { type: "object", properties: { query: { type: "string" } } },
+      cache_control: { type: "ephemeral" },
+    },
+  ],
+  messages: [
+    {
+      role: "user",
+      content: [
+        { type: "text", text: cachedUserText, cache_control: { type: "ephemeral" } },
+        { type: "text", text: trailingUserText },
+      ],
+    },
+  ],
+});
+
 describe("Claude → Kiro (direct route)", () => {
   it("produces a Kiro conversationState payload", () => {
     const out = C2K({ messages: [{ role: "user", content: "hello" }] });
@@ -90,6 +116,36 @@ describe("Claude → Kiro (direct route)", () => {
     expect(first.conversationState.conversationId).not.toBe(second.conversationState.conversationId);
   });
 
+  it("uses cache_control prefix for Kiro conversationId and ignores trailing user text", () => {
+    const first = C2K(
+      cacheControlledBody({ trailingUserText: "Please summarize action items." }),
+      { rawHeaders: { "x-client-request-id": "req-a" }, connectionId: "kiro-conn" }
+    );
+    const second = C2K(
+      cacheControlledBody({ trailingUserText: "Please draft a reply instead." }),
+      { rawHeaders: { "x-client-request-id": "req-b" }, connectionId: "kiro-conn" }
+    );
+
+    expect(first.conversationState.conversationId).toBe(second.conversationState.conversationId);
+    expect(JSON.stringify(first)).not.toContain("cache_control");
+  });
+
+  it("uses different Kiro conversationIds for different cache_control prefixes", () => {
+    const first = C2K(cacheControlledBody({ cachedUserText: "Cached thread context A" }));
+    const second = C2K(cacheControlledBody({ cachedUserText: "Cached thread context B" }));
+    const differentToolPrefix = C2K(
+      cacheControlledBody({
+        cachedUserText: "Cached thread context A",
+        toolDescription: "Lookup different stable project context",
+      })
+    );
+
+    expect(first.conversationState.conversationId).not.toBe(second.conversationState.conversationId);
+    expect(first.conversationState.conversationId).not.toBe(
+      differentToolPrefix.conversationState.conversationId
+    );
+  });
+
   it.each([
     ["prompt_cache_key", "explicit-cache-key"],
     ["session_id", "explicit-session-id"],
@@ -100,6 +156,25 @@ describe("Claude → Kiro (direct route)", () => {
         [key]: value,
         metadata: { slack_thread: "C0130M8P4HK:1783546858.709689" },
         messages: [{ role: "user", content: "summarize this thread" }],
+      },
+      {
+        rawHeaders: { "x-client-request-id": "volatile-request-id" },
+        connectionId: "kiro-conn",
+      }
+    );
+
+    expect(out.conversationState.conversationId).toBe(value);
+  });
+
+  it.each([
+    ["prompt_cache_key", "explicit-cache-key"],
+    ["session_id", "explicit-session-id"],
+    ["conversation_id", "explicit-conversation-id"],
+  ])("respects explicit %s and does not replace it with a cache_control anchor", (key, value) => {
+    const out = C2K(
+      {
+        ...cacheControlledBody({ cachedUserText: "Cached prefix should not win" }),
+        [key]: value,
       },
       {
         rawHeaders: { "x-client-request-id": "volatile-request-id" },
