@@ -130,6 +130,20 @@ export function createSSEStream(options = {}) {
                 }
               }
 
+              // Strip empty tool_calls arrays that break AI SDK reasoning tracking.
+              // Some providers (e.g. CodeBuddy CN) include `"tool_calls": []` in
+              // every streaming delta. @ai-sdk/openai-compatible checks
+              // `delta.tool_calls != null` — an empty array passes this check,
+              // causing premature `reasoning-end` on every chunk.
+              if (parsed?.choices) {
+                for (const choice of parsed.choices) {
+                  if (choice.delta?.tool_calls && Array.isArray(choice.delta.tool_calls) && choice.delta.tool_calls.length === 0) {
+                    delete choice.delta.tool_calls;
+                    fieldsInjected = true;
+                  }
+                }
+              }
+
               if (!hasValuableContent(parsed, FORMATS.OPENAI)) {
                 continue;
               }

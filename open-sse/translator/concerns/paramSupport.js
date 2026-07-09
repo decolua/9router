@@ -1,3 +1,5 @@
+import { getCapabilitiesForModel } from "../../providers/capabilities.js";
+
 // Strip request params a given provider/model rejects upstream (e.g. HTTP 400).
 // Config-driven: add a rule instead of scattering `delete body.x` across executors.
 
@@ -16,6 +18,7 @@ const STRIP_RULES = [
   { provider: "xai", match: /grok/i, drop: ["reasoning_effort", "reasoning", "thinking"] },
   // Cloudflare Workers AI: content must be plain string, rejects OpenAI content-part array (#1926)
   { provider: "cloudflare-ai", flattenContent: true },
+<<<<<<< HEAD
   // Sakana fugu / fugu-ultra / fugu-ultra-20260615:
   //   - reasoning_effort only accepts `high` | `xhigh` | `max`. Any other value
   //     is rejected by the API. Claude Code may send `low`/`medium`/`minimal`,
@@ -53,6 +56,9 @@ const MIN_RULES = [
     match: /(^|\/)fugu(-ultra)?(-[0-9]+)?$/i,
     min: { max_tokens: 16, max_completion_tokens: 16, max_output_tokens: 16 },
   },
+=======
+  { provider: "volcengine-ark", match: /glm-5/i, clampToModelMaxOutput: true },
+>>>>>>> master
 ];
 
 // Test a rule's match (regex or predicate) against the model id.
@@ -66,6 +72,12 @@ function matches(rule, model) {
   if (typeof rule.match === "function") return rule.match(model);
   if (rule.match instanceof RegExp) return rule.match.test(model);
   return true;
+}
+
+function clampNumber(body, key, ceiling) {
+  if (typeof body[key] === "number" && Number.isFinite(body[key]) && body[key] > ceiling) {
+    body[key] = ceiling;
+  }
 }
 
 // Remove unsupported params from body in place; returns body.
@@ -100,6 +112,14 @@ export function stripUnsupportedParams(provider, model, body) {
             .map(b => (b?.type === "text" && typeof b.text === "string") ? b.text : "")
             .join("");
         }
+      }
+    }
+    if (rule.clampToModelMaxOutput) {
+      const ceiling = getCapabilitiesForModel(provider, model).maxOutput;
+      if (Number.isFinite(ceiling) && ceiling > 0) {
+        clampNumber(body, "max_tokens", ceiling);
+        clampNumber(body, "max_completion_tokens", ceiling);
+        clampNumber(body, "max_output_tokens", ceiling);
       }
     }
   }

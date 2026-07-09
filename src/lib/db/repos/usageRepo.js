@@ -138,6 +138,7 @@ async function calculateCost(provider, model, tokens) {
     const pricing = await getPricingForModel(provider, model);
     if (!pricing) return 0;
 
+<<<<<<< HEAD
     let cost = 0;
     const inputTokens = tokens.prompt_tokens || tokens.input_tokens || 0;
     const cachedTokens = tokens.cached_tokens || tokens.cache_read_input_tokens || 0;
@@ -167,6 +168,13 @@ async function calculateCost(provider, model, tokens) {
     }
 
     return cost;
+=======
+    // Delegate the actual math to the single source of truth (avoids the two
+    // copies drifting apart — see open-sse/providers/pricing.js for the
+    // cache-inclusive prompt_tokens convention this assumes).
+    const { calculateCostFromTokens } = await import("open-sse/providers/pricing.js");
+    return calculateCostFromTokens(tokens, pricing);
+>>>>>>> master
   } catch (e) {
     console.error("Error calculating cost:", e);
     return 0;
@@ -404,7 +412,11 @@ export async function getUsageStats(period = "all") {
         timestamp: r.timestamp, model: r.model, provider: r.provider || "",
         promptTokens: t.prompt_tokens || t.input_tokens || 0,
         completionTokens: t.completion_tokens || t.output_tokens || 0,
+<<<<<<< HEAD
         cachedTokens: (t.cached_tokens || t.cache_read_input_tokens || 0) + (t.cache_creation_input_tokens || 0),
+=======
+        cachedTokens: t.cached_tokens || t.cache_read_input_tokens || 0,
+>>>>>>> master
         status: r.status || "ok",
       };
     })

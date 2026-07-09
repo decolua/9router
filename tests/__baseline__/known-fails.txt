@@ -1,6 +1,5 @@
 tests/unit/antigravity-mitm.test.js :: Antigravity MITM model handling flags the out-of-box agent/Default model mandatory
 tests/unit/claude-header-forwarding.test.js :: proxyAwareFetch — api.anthropic.com routing routes api.anthropic.com to gotScraping (non-streaming) and returns ok response
-tests/unit/kiro-model-slots.test.js :: Kiro MITM model slots offers a mappable slot for the agent default model id 'auto'
 tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import extracts tokens using exact keys
 tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import falls back to fuzzy key matching on macOS when exact keys are missing
 tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import linux uses single hardcoded path and original error message

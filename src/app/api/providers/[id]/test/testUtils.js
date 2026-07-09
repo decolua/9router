@@ -99,7 +99,7 @@ const OAUTH_TEST_CONFIG = {
     authPrefix: "Bearer ",
     extraHeaders: {
       Accept: "application/json",
-      "User-Agent": "kimchi/0.0.0",
+      "User-Agent": "kimchi/0.1.40",
     },
     refreshable: false,
   },
