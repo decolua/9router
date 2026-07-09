@@ -1,6 +1,7 @@
 export default {
   id: "xai",
   alias: "xai",
+  display: { name: "xAI (API)", icon: "auto_awesome", color: "#FFFFFF", textIcon: "X", website: "https://console.x.ai" },
   hasOAuth: true,
   transport: {
     baseUrl: "https://api.x.ai/v1/chat/completions",
