@@ -48,6 +48,7 @@ function normalizeGeminiContents(contents) {
 
 // Core: Convert OpenAI request to Gemini format (base for all variants)
 function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG_SIGNATURE) {
+  const isGemma4 = typeof model === "string" && /gemma-4/i.test(model);
   const result = {
     model: model,
     contents: [],
@@ -113,8 +114,9 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
       } else if (role === ROLE.ASSISTANT) {
         const parts = [];
 
-        // Thinking/reasoning → thought part with signature
-        if (msg.reasoning_content) {
+        // Thinking/reasoning → thought part with signature.
+        // Gemma 4 rejects replayed synthetic thought parts in multi-turn history.
+        if (msg.reasoning_content && !isGemma4) {
           parts.push({
             thought: true,
             text: msg.reasoning_content
@@ -138,14 +140,18 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
             if (tc.type !== OPENAI_BLOCK.FUNCTION) continue;
 
             const args = tryParseJSON(tc.function?.arguments || "{}");
-            parts.push({
-              thoughtSignature: signature,
+            const functionCallPart = {
               functionCall: {
                 id: tc.id,
                 name: sanitizeGeminiFunctionName(tc.function.name),
                 args: args
               }
-            });
+            };
+            // Synthetic thought signatures are useful for Gemini/Antigravity
+            // replay, but Gemma 4 on Gemini API rejects them on functionCall
+            // history parts with a generic INVALID_ARGUMENT.
+            if (!isGemma4) functionCallPart.thoughtSignature = signature;
+            parts.push(functionCallPart);
             toolCallIds.push(tc.id);
           }
 
