@@ -9,7 +9,7 @@ export function secondsUntilLocalMidnight(now = new Date()) {
 export async function checkApiKeyDailyCost({ apiKey, model, provider, settings }) {
   const limits = settings?.apiKeyDailyCostLimits || {};
   const limit = limits[model];
-  if (limit == null || limit <= 0) {
+  if (typeof limit !== "number" || limit <= 0) {
     return { blocked: false };
   }
 
