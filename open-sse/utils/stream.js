@@ -5,6 +5,12 @@ import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBu
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
+import {
+  createMinimaxThinkingStreamState,
+  flushMinimaxThinkingStreamState,
+  isMinimaxThinkingProvider,
+  sanitizeMinimaxDelta,
+} from "./minimaxThinkingStream.js";
 
 import { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER } from "./sseConstants.js";
 
@@ -72,6 +78,10 @@ export function createSSEStream(options = {}) {
   let openAIResponsesTerminalSeen = false;
   let openAIResponsesDoneSent = false;
   let streamDoneSent = false;  // track duplicate [DONE] across transform + flush
+
+  const minimaxThinkingState = isMinimaxThinkingProvider(provider)
+    ? createMinimaxThinkingStreamState()
+    : null;
 
   return new TransformStream({
     transform(chunk, controller) {
@@ -141,6 +151,12 @@ export function createSSEStream(options = {}) {
                     delete choice.delta.tool_calls;
                     fieldsInjected = true;
                   }
+                }
+              }
+
+              if (minimaxThinkingState && parsed?.choices?.[0]?.delta) {
+                if (sanitizeMinimaxDelta(parsed.choices[0].delta, minimaxThinkingState)) {
+                  fieldsInjected = true;
                 }
               }
 
@@ -343,6 +359,35 @@ export function createSSEStream(options = {}) {
         if (remaining) buffer += remaining;
 
         if (mode === STREAM_MODE.PASSTHROUGH) {
+          if (minimaxThinkingState) {
+            const tail = flushMinimaxThinkingStreamState(minimaxThinkingState);
+            if (tail.content || tail.reasoning) {
+              const flushed = {
+                object: "chat.completion.chunk",
+                created: Math.floor(Date.now() / 1000),
+                model: model || "unknown",
+                choices: [{
+                  index: 0,
+                  delta: {
+                    ...(tail.content ? { content: tail.content } : {}),
+                    ...(tail.reasoning ? { reasoning_content: tail.reasoning } : {}),
+                  },
+                }],
+              };
+              if (tail.content) {
+                totalContentLength += tail.content.length;
+                accumulatedContent += tail.content;
+              }
+              if (tail.reasoning) {
+                totalContentLength += tail.reasoning.length;
+                accumulatedThinking += tail.reasoning;
+              }
+              const flushedOutput = `data: ${JSON.stringify(flushed)}\n`;
+              reqLogger?.appendConvertedChunk?.(flushedOutput);
+              controller.enqueue(sharedEncoder.encode(flushedOutput));
+            }
+          }
+
           if (buffer) {
             let output = buffer;
             if (buffer.startsWith("data:") && !buffer.startsWith("data: ")) {
