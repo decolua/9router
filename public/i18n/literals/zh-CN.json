@@ -187,6 +187,7 @@
   "End Date": "结束日期",
   "End-to-end TLS via Cloudflare": "通过 Cloudflare 的端到端 TLS",
   "Endpoint": "端点",
+  "Endpoint & Key": "端点与密钥",
   "Enter current password": "输入当前密码",
   "Enter new API key": "输入新的 API 密钥",
   "Enter new password": "输入新密码",
@@ -197,6 +198,8 @@
   "Expose your local 9Router to the internet. No port forwarding, no static IP needed. Share endpoint URL with your team or use it in Cursor, Cline, and other AI tools from anywhere.": "将您本地的 9Router 暴露到互联网。无需端口转发，无需静态 IP。与您的团队共享端点 URL 或从任何地方在 Cursor、Cline 和其他 AI 工具中使用它。",
   "Factory Droid - Manual Configuration": "Factory Droid - 手动配置",
   "Factory Droid CLI not installed": "Factory Droid CLI 未安装",
+  "Fetch Qoder Models": "获取 Qoder 模型",
+  "Fetching...": "获取中...",
   "Failed to load usage statistics.": "无法加载使用情况统计信息。",
   "Features": "功能特性",
   "Flush Interval (ms)": "刷新间隔（毫秒）",
@@ -326,6 +329,7 @@
   "Paste refresh token from Kiro IDE.": "从 Kiro IDE 粘贴刷新令牌。",
   "Paused": "已暂停",
   "Please add and connect providers first to configure CLI tools.": "请先添加并连接提供商以配置 CLI 工具。",
+  "Please add an active Qoder connection first": "请先添加一个活跃的 Qoder 连接",
   "Please copy the URL from the address bar and paste it in the application.": "请复制地址栏中的 URL 并将其粘贴到应用程序中。",
   "Please enter a Proxy URL to test": "请输入代理 URL 进行测试",
   "Please install Claude CLI to use this feature.": "请安装 Claude CLI 才能使用此功能。",
@@ -764,5 +768,6 @@
   "Click to add, click again to remove. Changes are saved automatically.": "点击添加，再次点击删除。更改将自动保存。",
   "Close": "关闭",
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ 风险提示：此提供商使用的订阅/OAuth 会话未获官方授权用于代理/路由器使用。账户可能被限制或封禁。使用风险自负。",
-  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM 通过本地 CA 拦截 IDE 工具（Antigravity、GitHub Copilot、Kiro）的 HTTPS 流量，将请求重定向到您的提供商。可能违反 ToS → 账户封禁风险。使用风险自负。"
+  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM 通过本地 CA 拦截 IDE 工具（Antigravity、GitHub Copilot、Kiro）的 HTTPS 流量，将请求重定向到您的提供商。可能违反 ToS → 账户封禁风险。使用风险自负。",
+  "Endpoint is exposed without an API key.": "端点未设置 API 密钥即对外暴露。"
 }

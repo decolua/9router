@@ -12,26 +12,28 @@
  *   - The request shape Qoder expects is non-trivial (chat_context with
  *     mirrored modelConfig, business block with stable IDs, system text
  *     hoisted out of the messages array). All ported from the reference.
- *   - Model identifier is one of the canonical 11 keys (auto / ultimate /
- *     performance / efficient / lite + 6 frontier "*model" ids); the
+ *   - Model identifier is one of the canonical Qoder keys (auto / ultimate /
+ *     performance / efficient / lite + frontier "*model" ids); the
  *     translator layer feeds us "qoder/<key>" so we strip the prefix.
  *   - Per-model `model_config` is fetched live from /algo/api/v2/model/list
  *     and cached. Sending the wrong block silently downgrades to a
  *     different model upstream, so a missing entry is a hard error.
  */
 
-import { qoderEncodeBody } from "@/lib/qoder/encoding.js";
-import { buildCosyHeaders } from "@/lib/qoder/cosy.js";
+import { qoderEncodeBody } from "../shared/qoder/encoding.js";
+import { buildCosyHeaders } from "../shared/qoder/cosy.js";
 import { v4 as uuidv4 } from "uuid";
 import { createHash } from "crypto";
 
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { SSE_DONE } from "../utils/sseConstants.js";
+import { FETCH_CONNECT_TIMEOUT_MS } from "../config/runtimeConfig.js";
 import {
   QODER_CHAT_URL_ENCODED,
   QODER_MODEL_MAP,
-} from "@/lib/qoder/constants.js";
+} from "../shared/qoder/constants.js";
 import { getQoderModelConfig, resolveQoderModels } from "../services/qoderModels.js";
 
 /**
@@ -125,10 +127,9 @@ function truncate(s, n) {
  */
 async function buildQoderRequestBody({ model, body, credentials, log, proxyOptions, signal }) {
   const qoderKey = String(model || "").replace(/^qoder\//, "");
-  if (!QODER_MODEL_MAP[qoderKey]) {
-    throw new Error(`Unsupported qoder model: "${qoderKey}" (received "${model}")`);
-  }
-
+  
+  // Fetch model config from dynamic API instead of relying on static QODER_MODEL_MAP.
+  // This allows support for new Qoder models (e.g., qmodel_latest) without code changes.
   let modelConfig = await getQoderModelConfig(credentials, qoderKey, { log, proxyOptions, signal });
   if (!modelConfig) {
     // Try a forced refresh once before giving up — the cache may simply
@@ -241,7 +242,7 @@ function wrapQoderSSE(response, model) {
 
     const data = trimmed.slice(5).trimStart();
     if (data === "[DONE]") {
-      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+      controller.enqueue(encoder.encode(SSE_DONE));
       doneEmitted = true;
       return;
     }
@@ -260,13 +261,13 @@ function wrapQoderSSE(response, model) {
         choices: [{ index: 0, delta: { content: `\n[qoder error ${statusVal}: ${truncate(msg, 200)}]` }, finish_reason: "stop" }],
       });
       controller.enqueue(encoder.encode(`data: ${errChunk}\n\n`));
-      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+      controller.enqueue(encoder.encode(SSE_DONE));
       doneEmitted = true;
       return;
     }
     if (!inner) return;
     if (inner === "[DONE]") {
-      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+      controller.enqueue(encoder.encode(SSE_DONE));
       doneEmitted = true;
       return;
     }
@@ -301,7 +302,7 @@ function wrapQoderSSE(response, model) {
         buffer = "";
       }
       if (!doneEmitted) {
-        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        controller.enqueue(encoder.encode(SSE_DONE));
         doneEmitted = true;
       }
     },
@@ -408,15 +409,21 @@ export class QoderExecutor extends BaseExecutor {
       ...cosyHeaders,
     };
 
+    // Abort if upstream doesn't return response headers within connect timeout.
+    const timeoutMs = this.config?.timeoutMs || FETCH_CONNECT_TIMEOUT_MS;
+    const connectCtrl = new AbortController();
+    const connectTimer = setTimeout(() => connectCtrl.abort(new Error("fetch connect timeout")), timeoutMs);
+    const mergedSignal = signal ? AbortSignal.any([signal, connectCtrl.signal]) : connectCtrl.signal;
+
     let response;
     try {
       response = await proxyAwareFetch(
         url,
-        { method: "POST", headers, body: encodedBodyBuf, signal },
+        { method: "POST", headers, body: encodedBodyBuf, signal: mergedSignal },
         proxyOptions,
       );
-    } catch (err) {
-      throw err;
+    } finally {
+      clearTimeout(connectTimer);
     }
 
     if (!response.ok) {
@@ -447,4 +454,5 @@ export default QoderExecutor;
 export const __test__ = {
   normalizeMessages,
   wrapQoderSSE,
+  buildQoderRequestBody,
 };

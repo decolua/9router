@@ -1,13 +1,12 @@
-// Some thinking-mode providers (DeepSeek, Kimi, ...) require reasoning_content
+// Some thinking-mode providers (DeepSeek, Kimi, MiniMax, ...) require reasoning_content
 // to be echoed back on assistant messages. Clients in OpenAI format don't send it,
 // so we inject a non-empty placeholder to satisfy upstream validation.
+import { PROVIDERS } from "../config/providers.js";
 
 const PLACEHOLDER = " ";
 
-// Provider-level rules: keyed by executor.provider
-const PROVIDER_RULES = {
-  deepseek: { scope: "all" }
-};
+// Provider-level rules derive from registry transport.reasoningInject (single source)
+const providerRuleFor = (provider) => PROVIDERS[provider]?.reasoningInject;
 
 // Model-level rules: matched by predicate against model id
 const MODEL_RULES = [
@@ -69,7 +68,7 @@ function applyDeepSeekV4ProAlias({ provider, model, body }) {
 }
 
 export function injectReasoningContent({ provider, model, body }) {
-  const providerRule = PROVIDER_RULES[provider];
+  const providerRule = providerRuleFor(provider);
   const modelRule = MODEL_RULES.find(r => r.match(model));
   const rule = providerRule || modelRule;
   const nextBody = applyDeepSeekV4ProAlias({ provider, model, body });

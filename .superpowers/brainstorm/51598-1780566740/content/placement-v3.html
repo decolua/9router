@@ -1,0 +1,132 @@
+<h2>v3 — Bám sát 9router design system</h2>
+<p class="subtitle">Dùng đúng tokens, components và className thật của codebase (Modal + Input + Badge + material-symbols-outlined)</p>
+
+<div class="mockup" style="max-width:480px;margin:0 auto">
+  <!-- Wrap in dark theme to match screenshot -->
+  <div style="background:#0f0f0f;padding:24px;border-radius:14px" class="dark">
+    <!-- Modal frame (mimics <Modal size="md">) -->
+    <div class="bg-surface border border-border-subtle rounded-[14px] shadow-[var(--shadow-elev)] overflow-hidden" style="background:#1a1a1a;border-color:#27272a">
+
+      <!-- Header: traffic lights + title -->
+      <div class="flex items-center justify-between p-2 border-b border-border-subtle" style="border-color:#27272a">
+        <div class="flex items-center">
+          <div class="hidden md:flex items-center gap-2 mr-4 ml-2">
+            <div class="w-4 h-4 rounded-full bg-[#FF5F56]"></div>
+            <div class="w-4 h-4 rounded-full bg-white/15"></div>
+            <div class="w-4 h-4 rounded-full bg-white/15"></div>
+          </div>
+          <h2 class="text-lg font-semibold text-text-main" style="color:#e4e4e7">Edit Connection</h2>
+        </div>
+      </div>
+
+      <!-- Body -->
+      <div class="flex flex-col gap-4 p-5" style="color:#e4e4e7">
+
+        <!-- Name field -->
+        <div class="flex flex-col gap-1.5">
+          <label class="text-sm font-medium text-text-main" style="color:#e4e4e7">Name</label>
+          <input class="w-full py-2.5 px-3 text-sm text-text-main bg-surface-2 rounded-[10px] border border-transparent" value="kakarlorc@gmail.com" style="background:#0f0f0f;color:#a1a1aa">
+        </div>
+
+        <!-- Email field -->
+        <div class="flex flex-col gap-1.5">
+          <label class="text-sm font-medium text-text-main" style="color:#e4e4e7">Email</label>
+          <input class="w-full py-2.5 px-3 text-sm text-text-main bg-surface-2 rounded-[10px] border border-transparent" value="kakarlorc@gmail.com" style="background:#0f0f0f;color:#e4e4e7">
+        </div>
+
+        <!-- Priority field -->
+        <div class="flex flex-col gap-1.5">
+          <label class="text-sm font-medium text-text-main" style="color:#e4e4e7">Priority</label>
+          <input class="w-full py-2.5 px-3 text-sm text-text-main bg-surface-2 rounded-[10px] border border-transparent" value="4" style="background:#0f0f0f;color:#e4e4e7">
+        </div>
+
+        <!-- Test button (ghost variant) -->
+        <div>
+          <button class="px-3 py-2 text-sm font-medium rounded-[10px] bg-surface-2 text-text-main border border-border-subtle hover:bg-surface transition-colors" style="background:#27272a;border-color:#3f3f46;color:#e4e4e7">
+            Test Connection
+          </button>
+        </div>
+
+        <!-- ★ NEW: Collapsible "Allowed models" section -->
+        <div class="bg-surface-2 border border-border-subtle rounded-[10px] overflow-hidden" style="background:#18181b;border-color:#27272a">
+
+          <button class="w-full flex items-center justify-between px-3 py-2.5 text-sm font-medium hover:bg-surface transition-colors" style="color:#e4e4e7" onclick="this.nextElementSibling.classList.toggle('hidden'); this.querySelector('.chev').classList.toggle('rotate-180')">
+            <span class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-[18px] text-text-muted" style="color:#a1a1aa">tune</span>
+              Allowed models
+              <span class="inline-flex items-center px-2 py-0.5 text-[10px] font-semibold rounded-full bg-brand-500/10 text-brand-300" style="background:rgba(99,102,241,0.1);color:#a5b4fc">2</span>
+            </span>
+            <span class="flex items-center gap-2">
+              <span class="text-[11px] text-text-muted font-normal" style="color:#71717a">empty = all models</span>
+              <span class="material-symbols-outlined text-[18px] text-text-muted chev transition-transform" style="color:#a1a1aa">expand_more</span>
+            </span>
+          </button>
+
+          <!-- Pills + Add button -->
+          <div class="px-3 pb-3 pt-1 border-t border-border-subtle" style="border-color:#27272a">
+            <div class="flex flex-wrap gap-1.5 mt-2">
+              <span class="inline-flex items-center gap-1.5 rounded-full font-semibold bg-brand-500/10 text-brand-300 px-2.5 py-1 text-xs" style="background:rgba(99,102,241,0.1);color:#a5b4fc">
+                gpt-5.5
+                <button class="opacity-60 hover:opacity-100" style="background:none;border:none;cursor:pointer;color:inherit;padding:0">
+                  <span class="material-symbols-outlined text-[14px]">close</span>
+                </button>
+              </span>
+              <span class="inline-flex items-center gap-1.5 rounded-full font-semibold bg-brand-500/10 text-brand-300 px-2.5 py-1 text-xs" style="background:rgba(99,102,241,0.1);color:#a5b4fc">
+                gpt-5.4
+                <button class="opacity-60 hover:opacity-100" style="background:none;border:none;cursor:pointer;color:inherit;padding:0">
+                  <span class="material-symbols-outlined text-[14px]">close</span>
+                </button>
+              </span>
+              <button class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium bg-surface text-text-muted border border-dashed border-border-subtle hover:border-brand-500/40 hover:text-text-main transition-colors" style="background:#27272a;color:#a1a1aa;border-color:#3f3f46;border-style:dashed">
+                <span class="material-symbols-outlined text-[14px]">add</span>
+                Add model
+              </button>
+            </div>
+            <p class="text-[11px] text-text-muted mt-2" style="color:#71717a">
+              <span class="material-symbols-outlined text-[12px] align-middle">info</span>
+              Only the selected models will be routed to this account.
+            </p>
+          </div>
+        </div>
+
+        <!-- Footer: Save (primary) + Cancel -->
+        <div class="flex items-center gap-2 pt-2">
+          <button class="flex-1 py-2.5 rounded-[10px] font-medium text-sm transition-colors" style="background:#f97316;color:#fff">
+            Save
+          </button>
+          <button class="py-2.5 px-4 rounded-[10px] text-sm font-medium text-text-muted hover:text-text-main transition-colors" style="background:transparent;color:#a1a1aa">
+            Cancel
+          </button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:24px">
+  <h3>Component mapping (sẽ dùng trong code thật)</h3>
+  <ul style="font-size:13px;line-height:1.8;color:#d4d4d8;font-family:ui-monospace,monospace">
+    <li><b>Container:</b> &lt;Modal size="md" title="Edit Connection"&gt; (đã có traffic lights + ESC + backdrop)</li>
+    <li><b>Form fields:</b> &lt;Input label="Name" /&gt; (đã có label + error + focus ring brand-500/30)</li>
+    <li><b>Pill tags:</b> &lt;Badge variant="primary" size="md"&gt; + close button bên trong</li>
+    <li><b>Add button:</b> &lt;Button variant="ghost" size="sm" icon="add"&gt;</li>
+    <li><b>Section toggle:</b> &lt;details&gt; native + icon <code>expand_more</code> xoay 180° khi mở</li>
+    <li><b>Picker popover:</b> &lt;Modal size="sm"&gt; mở khi click "Add model" → search + checkbox list (component mới, dùng pattern từ ModelSelectModal.js)</li>
+  </ul>
+</div>
+
+<div class="cards" style="margin-top:16px">
+  <div class="card" data-choice="ok" onclick="toggleSelect(this)">
+    <div class="card-body">
+      <h3>✓ Bám sát OK, hỏi tiếp</h3>
+      <p>Layout + tokens + components khớp codebase. Sang câu kế tiếp.</p>
+    </div>
+  </div>
+  <div class="card" data-choice="revise" onclick="toggleSelect(this)">
+    <div class="card-body">
+      <h3>↻ Vẫn cần chỉnh</h3>
+      <p>Mô tả trong terminal — spacing, màu, vị trí, hay cách hiển thị pill/tag.</p>
+    </div>
+  </div>
+</div>

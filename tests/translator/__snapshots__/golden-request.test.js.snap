@@ -1,0 +1,317 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`GOLDEN request: OpenAI → Claude > full body (system/image/tool/tool_result) 1`] = `
+{
+  "max_tokens": 64000,
+  "messages": [
+    {
+      "content": [
+        {
+          "text": "What's in this image?",
+          "type": "text",
+        },
+        {
+          "source": {
+            "data": "IMGDATA",
+            "media_type": "image/png",
+            "type": "base64",
+          },
+          "type": "image",
+        },
+      ],
+      "role": "user",
+    },
+    {
+      "content": [
+        {
+          "cache_control": {
+            "type": "ephemeral",
+          },
+          "id": "call_1",
+          "input": {
+            "city": "NYC",
+          },
+          "name": "get_weather",
+          "type": "tool_use",
+        },
+      ],
+      "role": "assistant",
+    },
+    {
+      "content": [
+        {
+          "content": "sunny",
+          "tool_use_id": "call_1",
+          "type": "tool_result",
+        },
+      ],
+      "role": "user",
+    },
+  ],
+  "model": "claude-opus-4-6",
+  "stream": true,
+  "system": [
+    {
+      "text": "You are Claude Code, Anthropic's official CLI for Claude.",
+      "type": "text",
+    },
+    {
+      "cache_control": {
+        "ttl": "1h",
+        "type": "ephemeral",
+      },
+      "text": "You are helpful.",
+      "type": "text",
+    },
+  ],
+  "temperature": 0.7,
+  "tools": [
+    {
+      "cache_control": {
+        "ttl": "1h",
+        "type": "ephemeral",
+      },
+      "description": "Get weather",
+      "input_schema": {
+        "properties": {
+          "city": {
+            "type": "string",
+          },
+        },
+        "required": [
+          "city",
+        ],
+        "type": "object",
+      },
+      "name": "get_weather",
+    },
+  ],
+}
+`;
+
+exports[`GOLDEN request: OpenAI → Claude > reasoning_effort → adaptive output_config (claude 4.6+) 1`] = `
+{
+  "max_tokens": 64000,
+  "messages": [
+    {
+      "content": [
+        {
+          "text": "hi",
+          "type": "text",
+        },
+      ],
+      "role": "user",
+    },
+  ],
+  "model": "claude-opus-4-6",
+  "output_config": {
+    "effort": "high",
+  },
+  "stream": true,
+  "system": [
+    {
+      "cache_control": {
+        "ttl": "1h",
+        "type": "ephemeral",
+      },
+      "text": "You are Claude Code, Anthropic's official CLI for Claude.",
+      "type": "text",
+    },
+  ],
+}
+`;
+
+exports[`GOLDEN request: OpenAI → Gemini > full body (system/image/tool/tool_result) 1`] = `
+{
+  "contents": [
+    {
+      "parts": [
+        {
+          "text": "What's in this image?",
+        },
+        {
+          "inlineData": {
+            "data": "IMGDATA",
+            "mime_type": "image/png",
+          },
+        },
+      ],
+      "role": "user",
+    },
+    {
+      "parts": [
+        {
+          "functionCall": {
+            "args": {
+              "city": "NYC",
+            },
+            "id": "call_1",
+            "name": "get_weather",
+          },
+          "thoughtSignature": "EuwGCukGAXLI2nxwZIq54WWSoL/YN0P3TsDZ7zRnLi8g0S4aVr2HUGxvaHKySuY6HAVzcE0GPGjXrytLIldxthSvfxgUlJh6Qa9Z+Oj5QZBlYdg6HaJ6yuY5R7waE6rdwBsRf7Ft2j3DJ9rMi9qhWFqApewYtPhls3VHtuvND3l8Rm09+lbAXQs6KKWEWrxNLKTBkfpMgXhRERc/TQRMZu1twAablm6/Zk1tsYRvfWKLsNbeKF+CCojJdXJKvnR/8Ouuoa+Y2Ti20hcW7aZIIjZDFYPU//k6Ybmhg69J/imbFai2ckhfLaisqdDkdoIiBJScTOUvYqP6AE9d4MsydSC+UlhIMk4hoP76R8vUSCZRMkjOaDXstf/QoVZKbt94wyRZgAJ1G0BqI8L5ow86kLpA4wJEtxsRGymOE4bKUvApveBakYDNM9APkf+LbtbzWSseGjoZcSlycF9iN8Q2XNYKRrHbv3Lr5Y8JjdH/5y/6SHkNehTEZugaeGnSPSyCTWto1kQgHpxdWmhkLfJGNUGLmue7Mesj4TSms4J33mRpYVhNB/J333FCqIP0hr/E7BkkjEn7yZ4X7SQlh+xKPurapsnHRwiKmtsilmEFrnTE9iQr+pMr6M29qqFNv1tr5yumbaJw8JW9sB15tNsRv+dW6BjNanbsKz7HCgKUBc8tGy+7YuhXzAfViyRefcjK7eZW0Fbyt7AbybJTKz78W8NH7ye6LAwzOebXpeZ4D43fNIt8bKh26qgduSQv/7o+pAflkuqHZ99YWgHQ8h8OkZFi3eOiSYjsjhdZ/czWOdoPI/OnqIldzMPF5YlrKBLFX8VhRKVmqgsmWf5PHGulHhMkVlS+XG2UIseGy69ARa93D78Gsa+1n1kJr7EEB7Rh+27vUMxVYLdz1yMSvE5nalTAlg/ZeG8+XQ0cHuAI3KbQpHW2Q++RdXfm5JzD5WdJZUU+Zn8t8UUn85BH4RxZLeE0qJikgSsKoYVBc6YhiMjhPgkR95ReimY4Z0xCJdRo1gjexOFeODZMpQF6Yxnoic7IrdgsFA3iePTbFnPp3IAM1fAThWhXJUn3QInUOTd5o1qmTmn6REbL15g/JQNl+dqUoPkhleeb2V3kjqp1okmO3wMZbPknR3S1LZNmlS72/iBQUm+n2b/RCn4PjmM2",
+        },
+      ],
+      "role": "model",
+    },
+    {
+      "parts": [
+        {
+          "functionResponse": {
+            "id": "call_1",
+            "name": "get_weather",
+            "response": {
+              "result": {
+                "result": "sunny",
+              },
+            },
+          },
+        },
+      ],
+      "role": "user",
+    },
+  ],
+  "generationConfig": {
+    "temperature": 0.7,
+  },
+  "model": "gemini-3-pro",
+  "safetySettings": [
+    {
+      "category": "HARM_CATEGORY_HATE_SPEECH",
+      "threshold": "OFF",
+    },
+    {
+      "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+      "threshold": "OFF",
+    },
+    {
+      "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+      "threshold": "OFF",
+    },
+    {
+      "category": "HARM_CATEGORY_HARASSMENT",
+      "threshold": "OFF",
+    },
+    {
+      "category": "HARM_CATEGORY_CIVIC_INTEGRITY",
+      "threshold": "OFF",
+    },
+  ],
+  "systemInstruction": {
+    "parts": [
+      {
+        "text": "You are helpful.",
+      },
+    ],
+    "role": "user",
+  },
+  "tools": [
+    {
+      "functionDeclarations": [
+        {
+          "description": "Get weather",
+          "name": "get_weather",
+          "parameters": {
+            "properties": {
+              "city": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "city",
+            ],
+            "type": "object",
+          },
+        },
+      ],
+    },
+  ],
+}
+`;
+
+exports[`GOLDEN request: OpenAI → Kiro > full body (image base64 + tool_result) 1`] = `
+{
+  "conversationState": {
+    "chatTriggerType": "MANUAL",
+    "currentMessage": {
+      "userInputMessage": {
+        "content": "[Context: Current time is <TS>
+
+continue",
+        "modelId": "claude-sonnet-4.5",
+        "origin": "AI_EDITOR",
+        "userInputMessageContext": {
+          "toolResults": [
+            {
+              "content": [
+                {
+                  "text": "sunny",
+                },
+              ],
+              "status": "success",
+              "toolUseId": "call_1",
+            },
+          ],
+          "tools": [
+            {
+              "toolSpecification": {
+                "description": "Get weather",
+                "inputSchema": {
+                  "json": {
+                    "properties": {
+                      "city": {
+                        "type": "string",
+                      },
+                    },
+                    "required": [
+                      "city",
+                    ],
+                    "type": "object",
+                  },
+                },
+                "name": "get_weather",
+              },
+            },
+          ],
+        },
+      },
+    },
+    "history": [
+      {
+        "userInputMessage": {
+          "content": "You are helpful.
+
+What's in this image?",
+          "images": [
+            {
+              "format": "png",
+              "source": {
+                "bytes": "IMGDATA",
+              },
+            },
+          ],
+          "modelId": "claude-sonnet-4.5",
+        },
+      },
+      {
+        "assistantResponseMessage": {
+          "content": "...",
+          "toolUses": [
+            {
+              "input": {
+                "city": "NYC",
+              },
+              "name": "get_weather",
+              "toolUseId": "call_1",
+            },
+          ],
+        },
+      },
+    ],
+  },
+  "inferenceConfig": {
+    "maxTokens": 32000,
+    "temperature": 0.7,
+  },
+  "profileArn": "arn:aws:codewhisperer:us-east-1:638616132270:profile/AAAACCCCXXXX",
+}
+`;

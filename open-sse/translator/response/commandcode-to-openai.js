@@ -17,6 +17,12 @@
  */
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
+import { ROLE, OPENAI_BLOCK, OPENAI_FINISH } from "../schema/index.js";
+import { buildChunk } from "../concerns/chunk.js";
+import { toOpenAIUsage } from "../concerns/usage.js";
+import { reasoningDelta } from "../concerns/reasoning.js";
+import { fallbackToolCallId } from "../concerns/toolCall.js";
+import { toOpenAIFinish } from "../concerns/finishReason.js";
 
 function ensureState(state, model) {
   if (!state.responseId) {
@@ -34,28 +40,16 @@ function ensureState(state, model) {
 }
 
 function makeChunk(state, delta, finishReason = null) {
-  return {
-    id: state.responseId,
-    object: "chat.completion.chunk",
-    created: state.created,
-    model: state.model,
-    choices: [{ index: 0, delta, finish_reason: finishReason }],
-  };
+  return buildChunk(
+    { id: state.responseId, created: state.created, model: state.model },
+    delta,
+    finishReason
+  );
 }
 
-function mapFinishReason(reason) {
-  switch (reason) {
-    case "stop": return "stop";
-    case "length": return "length";
-    case "tool-calls":
-    case "tool_use": return "tool_calls";
-    case "content-filter": return "content_filter";
-    case "error": return "stop";
-    default: return reason || "stop";
-  }
-}
+const mapFinishReason = (reason) => toOpenAIFinish(reason, "commandcode");
 
-export function convertCommandCodeToOpenAI(chunk, state) {
+export function commandCodeToOpenAIResponse(chunk, state) {
   if (!chunk) return null;
 
   // Already-OpenAI chunk: pass through
@@ -87,7 +81,7 @@ export function convertCommandCodeToOpenAI(chunk, state) {
     case "text-delta": {
       const text = event.text || event.delta || "";
       if (!text) break;
-      const delta = state.chunkIndex === 0 ? { role: "assistant", content: text } : { content: text };
+      const delta = state.chunkIndex === 0 ? { role: ROLE.ASSISTANT, content: text } : { content: text };
       state.chunkIndex++;
       state.openText = true;
       out.push(makeChunk(state, delta));
@@ -97,15 +91,13 @@ export function convertCommandCodeToOpenAI(chunk, state) {
       const text = event.text || "";
       if (!text) break;
       // Map reasoning to OpenAI "reasoning_content" field (used by deepseek-reasoner-style clients).
-      const delta = state.chunkIndex === 0
-        ? { role: "assistant", reasoning_content: text }
-        : { reasoning_content: text };
+      const delta = reasoningDelta(text, state.chunkIndex === 0);
       state.chunkIndex++;
       out.push(makeChunk(state, delta));
       break;
     }
     case "tool-input-start": {
-      const id = event.id || event.toolCallId || `call_${Date.now()}_${state.toolIndex}`;
+      const id = event.id || event.toolCallId || fallbackToolCallId(state.toolIndex);
       let idx = state.toolIndexById.get(id);
       if (idx == null) {
         idx = state.toolIndex++;
@@ -113,11 +105,11 @@ export function convertCommandCodeToOpenAI(chunk, state) {
       }
       state.openTools.add(id);
       const delta = {
-        ...(state.chunkIndex === 0 ? { role: "assistant" } : {}),
+        ...(state.chunkIndex === 0 ? { role: ROLE.ASSISTANT } : {}),
         tool_calls: [{
           index: idx,
           id,
-          type: "function",
+          type: OPENAI_BLOCK.FUNCTION,
           function: { name: event.toolName || "", arguments: "" },
         }],
       };
@@ -146,11 +138,11 @@ export function convertCommandCodeToOpenAI(chunk, state) {
       state.toolIndexById.set(id, idx);
       const argsStr = typeof event.input === "string" ? event.input : JSON.stringify(event.input ?? {});
       const delta = {
-        ...(state.chunkIndex === 0 ? { role: "assistant" } : {}),
+        ...(state.chunkIndex === 0 ? { role: ROLE.ASSISTANT } : {}),
         tool_calls: [{
           index: idx,
           id,
-          type: "function",
+          type: OPENAI_BLOCK.FUNCTION,
           function: { name: event.toolName || "", arguments: argsStr },
         }],
       };
@@ -167,22 +159,17 @@ export function convertCommandCodeToOpenAI(chunk, state) {
       const finishReason = state.finishReason || mapFinishReason(event.finishReason || "stop");
       const finalChunk = makeChunk(state, {}, finishReason);
       const totalUsage = event.totalUsage || state.usage;
-      if (totalUsage) {
-        finalChunk.usage = {
-          prompt_tokens: totalUsage.inputTokens ?? 0,
-          completion_tokens: totalUsage.outputTokens ?? 0,
-          total_tokens: totalUsage.totalTokens ?? ((totalUsage.inputTokens ?? 0) + (totalUsage.outputTokens ?? 0)),
-        };
-      }
+      const usage = toOpenAIUsage(totalUsage, "commandcode");
+      if (usage) finalChunk.usage = usage;
       out.push(finalChunk);
       break;
     }
     case "error": {
-      state.finishReason = "stop";
+      state.finishReason = OPENAI_FINISH.STOP;
       const errVal = event.error ?? event.message ?? "unknown";
       const errStr = typeof errVal === "string" ? errVal : JSON.stringify(errVal);
       out.push(makeChunk(state, { content: `\n\n[CommandCode error: ${errStr}]` }));
-      out.push(makeChunk(state, {}, "stop"));
+      out.push(makeChunk(state, {}, OPENAI_FINISH.STOP));
       break;
     }
     // Silently ignore: start, start-step, reasoning-start, reasoning-end, text-start, text-end,
@@ -194,4 +181,4 @@ export function convertCommandCodeToOpenAI(chunk, state) {
   return out.length ? out : null;
 }
 
-register(FORMATS.COMMANDCODE, FORMATS.OPENAI, null, convertCommandCodeToOpenAI);
+register(FORMATS.COMMANDCODE, FORMATS.OPENAI, null, commandCodeToOpenAIResponse);

@@ -1,0 +1,16 @@
+- generic [ref=e1]:
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - heading "9Router" [level=1] [ref=e5]
+      - paragraph [ref=e6]: Enter your password to access the dashboard
+    - generic [ref=e9]:
+      - generic [ref=e10]:
+        - text: Password
+        - textbox "Enter password" [active] [ref=e13]
+      - button "Login" [ref=e14] [cursor=pointer]
+      - paragraph [ref=e15]:
+        - text: Default password is
+        - code [ref=e16]: "123456"
+  - button "Open Next.js Dev Tools" [ref=e22] [cursor=pointer]:
+    - img [ref=e23]
+  - alert [ref=e26]

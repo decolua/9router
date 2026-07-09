@@ -1,0 +1,4 @@
+[     100ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:20127/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2477
+[     113ms] [LOG] [HMR] connected @ http://localhost:20127/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2477
+[     248ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "new-password"): (More info: https://goo.gl/9p2vKq) %o @ http://localhost:20127/login?v=now:0
+[    4070ms] [ERROR] Failed to load resource: net::ERR_ADDRESS_UNREACHABLE @ https://www.googletagmanager.com/gtag/js?id=G-LC959F603F:0

@@ -2,61 +2,49 @@
  * Usage Fetcher - Get usage data from provider APIs
  */
 
-import { CLIENT_METADATA, getPlatformUserAgent } from "../config/appConstants.js";
-import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { getGitHubUsage } from "./usage/github.js";
+import { getGeminiUsage, getAntigravityUsage } from "./usage/google.js";
+import { getClaudeUsage } from "./usage/claude.js";
+import { getCodexUsage, consumeCodexRateLimitResetCredit, getCodexRateLimitResetCredits } from "./usage/codex.js";
 
-// GitHub API config
-const GITHUB_CONFIG = {
-  apiVersion: "2022-11-28",
-  userAgent: "GitHubCopilotChat/0.26.7",
-};
-
-// GLM quota endpoints (region-aware)
-const GLM_QUOTA_URLS = {
-  international: "https://api.z.ai/api/monitor/usage/quota/limit",
-  china: "https://open.bigmodel.cn/api/monitor/usage/quota/limit",
-};
-
-// MiniMax usage endpoints (try in order, fallback on transient errors)
-const MINIMAX_USAGE_URLS = {
-  minimax: [
-    "https://www.minimax.io/v1/token_plan/remains",
-    "https://api.minimax.io/v1/api/openplatform/coding_plan/remains",
-  ],
-  "minimax-cn": [
-    "https://www.minimaxi.com/v1/api/openplatform/coding_plan/remains",
-    "https://api.minimaxi.com/v1/api/openplatform/coding_plan/remains",
-  ],
-};
-
-// Antigravity API config (from Quotio)
-const ANTIGRAVITY_CONFIG = {
-  quotaApiUrl: "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
-  loadProjectApiUrl: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
-  tokenUrl: "https://oauth2.googleapis.com/token",
-  clientId: "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com",
-  clientSecret: "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",
-  userAgent: getPlatformUserAgent(),
-};
-
-// Codex (OpenAI) API config
-const CODEX_CONFIG = {
-  usageUrl: "https://chatgpt.com/backend-api/wham/usage",
-};
-
-// Claude API config
-const CLAUDE_CONFIG = {
-  oauthUsageUrl: "https://api.anthropic.com/api/oauth/usage",
-  usageUrl: "https://api.anthropic.com/v1/organizations/{org_id}/usage",
-  settingsUrl: "https://api.anthropic.com/v1/settings",
-  apiVersion: "2023-06-01",
-};
+export { consumeCodexRateLimitResetCredit, getCodexRateLimitResetCredits };
+import { getKiroUsage } from "./usage/kiro.js";
+import { getMiniMaxUsage } from "./usage/minimax.js";
+import { getCodeBuddyCnUsage } from "./usage/codebuddy-cn.js";
+import {
+  getQwenUsage,
+  getIflowUsage,
+  getOllamaUsage,
+  getGlmUsage,
+  getVercelAiGatewayUsage,
+  getQoderUsage,
+} from "./usage/misc.js";
 
 /**
  * Get usage data for a provider connection
  * @param {Object} connection - Provider connection with accessToken
  * @returns {Object} Usage data with quotas
  */
+// provider → usage handler (ctx carries every arg each handler needs)
+const USAGE_HANDLERS = {
+  github: (c) => getGitHubUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
+  "gemini-cli": (c) => getGeminiUsage(c.accessToken, c.providerDataWithProjectId, c.proxyOptions),
+  antigravity: (c) => getAntigravityUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
+  claude: (c) => getClaudeUsage(c.accessToken, c.proxyOptions),
+  codex: (c) => getCodexUsage(c.accessToken, c.proxyOptions),
+  kiro: (c) => getKiroUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
+  qoder: (c) => getQoderUsage(c.accessToken, c.proxyOptions),
+  qwen: (c) => getQwenUsage(c.accessToken, c.providerSpecificData),
+  iflow: (c) => getIflowUsage(c.accessToken),
+  ollama: (c) => getOllamaUsage(c.accessToken),
+  glm: (c) => getGlmUsage(c.apiKey, c.provider, c.proxyOptions),
+  "glm-cn": (c) => getGlmUsage(c.apiKey, c.provider, c.proxyOptions),
+  minimax: (c) => getMiniMaxUsage(c.apiKey, c.provider, c.proxyOptions),
+  "minimax-cn": (c) => getMiniMaxUsage(c.apiKey, c.provider, c.proxyOptions),
+  "vercel-ai-gateway": (c) => getVercelAiGatewayUsage(c.apiKey, c.proxyOptions),
+  "codebuddy-cn": (c) => getCodeBuddyCnUsage(c.accessToken, c.apiKey, c.providerSpecificData, c.proxyOptions),
+};
+
 export async function getUsageForProvider(connection, proxyOptions = null) {
   const { provider, accessToken, apiKey, providerSpecificData, projectId } = connection;
   const providerDataWithProjectId = {
@@ -64,6 +52,7 @@ export async function getUsageForProvider(connection, proxyOptions = null) {
     ...(projectId ? { projectId } : {}),
   };
 
+<<<<<<< HEAD
   switch (provider) {
     case "github":
       return await getGitHubUsage(accessToken, providerSpecificData, proxyOptions);
@@ -1263,4 +1252,9 @@ async function getQoderUsage(accessToken, proxyOptions = null) {
   } catch (error) {
     return { message: `Qoder connected. Unable to fetch usage: ${error.message}` };
   }
+=======
+  const handler = USAGE_HANDLERS[provider];
+  if (!handler) return { message: `Usage API not implemented for ${provider}` };
+  return await handler({ provider, accessToken, apiKey, providerSpecificData, providerDataWithProjectId, proxyOptions });
+>>>>>>> master
 }

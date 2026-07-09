@@ -1,0 +1,86 @@
+<h2>Picker model whitelist cho account đặt ở đâu?</h2>
+<p class="subtitle">Trong modal Edit Connection (chỉnh 1 account), UI chọn model nên nằm thế nào?</p>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">Option A — Always visible field</div>
+    <div class="mockup-body" style="padding:12px;background:#fafafa">
+      <div class="mock-nav" style="background:#e5e7eb;color:#374151">Edit Connection · Codex</div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <input class="mock-input" value="Account 1 (Pro)" style="flex:1">
+        <input class="mock-input" value="Priority: 1" style="width:80px">
+      </div>
+      <div style="margin-top:8px">
+        <div class="label">Allowed models</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap">
+          <span style="background:#dbeafe;padding:3px 8px;border-radius:10px;font-size:11px">gpt-5.5 ✕</span>
+          <span style="background:#dbeafe;padding:3px 8px;border-radius:10px;font-size:11px">gpt-5.4 ✕</span>
+          <span style="background:#f3f4f6;padding:3px 8px;border-radius:10px;font-size:11px;color:#6b7280">+ add</span>
+        </div>
+      </div>
+      <div style="margin-top:8px;height:80px;background:#fff;border:1px dashed #d1d5db;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:11px">[Proxy / Test / Save buttons]</div>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">Option B — Collapsible "Models" section</div>
+    <div class="mockup-body" style="padding:12px;background:#fafafa">
+      <div class="mock-nav" style="background:#e5e7eb;color:#374151">Edit Connection · Codex</div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <input class="mock-input" value="Account 1 (Pro)" style="flex:1">
+        <input class="mock-input" value="Priority: 1" style="width:80px">
+      </div>
+      <div style="margin-top:8px;height:80px;background:#fff;border:1px dashed #d1d5db;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:11px">[API key / default model / test buttons]</div>
+      <details style="margin-top:8px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:6px 10px" open>
+        <summary style="cursor:pointer;font-size:12px;font-weight:600">▾ Allowed models (2)</summary>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">
+          <span style="background:#dbeafe;padding:3px 8px;border-radius:10px;font-size:11px">gpt-5.5 ✕</span>
+          <span style="background:#dbeafe;padding:3px 8px;border-radius:10px;font-size:11px">gpt-5.4 ✕</span>
+          <span style="background:#f3f4f6;padding:3px 8px;border-radius:10px;font-size:11px;color:#6b7280">+ add</span>
+        </div>
+      </details>
+    </div>
+  </div>
+</div>
+
+<div class="mockup" style="margin-top:16px">
+  <div class="mockup-header">Option C — Separate tab (sidebar nav)</div>
+  <div class="mockup-body" style="padding:12px;background:#fafafa;display:flex;gap:8px;min-height:200px">
+    <div style="width:90px;background:#fff;border-right:1px solid #e5e7eb;padding:8px;font-size:11px">
+      <div style="padding:4px 0;color:#6b7280">General</div>
+      <div style="padding:4px 0;color:#6b7280">Auth</div>
+      <div style="padding:4px 0;color:#6b7280">Proxy</div>
+      <div style="padding:4px 0;background:#dbeafe;border-radius:4px;color:#1e40af;font-weight:600">▸ Models</div>
+    </div>
+    <div style="flex:1;padding:8px">
+      <div class="label">Allowed models for this account</div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">
+        <span style="background:#dbeafe;padding:3px 8px;border-radius:10px;font-size:11px">gpt-5.5 ✕</span>
+        <span style="background:#dbeafe;padding:3px 8px;border-radius:10px;font-size:11px">gpt-5.4 ✕</span>
+        <span style="background:#f3f4f6;padding:3px 8px;border-radius:10px;font-size:11px;color:#6b7280">+ add</span>
+      </div>
+      <p class="subtitle" style="margin-top:8px;font-size:10px">Empty = all models allowed</p>
+    </div>
+  </div>
+</div>
+
+<div class="cards" style="margin-top:16px">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-body">
+      <h3>A — Always visible</h3>
+      <p>Hiện ngay dưới tên + priority. Pros: dễ thấy, ít click. Cons: tăng chiều cao modal, dễ gây rối khi user chỉ muốn sửa tên.</p>
+    </div>
+  </div>
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-body">
+      <h3>B — Collapsible</h3>
+      <p>Mặc định đóng, click để mở. Cân bằng giữa visibility và clutter. Phù hợp với user thỉnh thoảng mới cấu hình.</p>
+    </div>
+  </div>
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-body">
+      <h3>C — Tab riêng</h3>
+      <p>Tách hẳn thành tab "Models" trong form nhiều tab. Pros: scale tốt nếu sau này thêm field khác (quota, region...). Cons: thêm click, phức tạp hơn cho account đơn giản.</p>
+    </div>
+  </div>
+</div>
