@@ -48,6 +48,41 @@ describe("toOpenAIUsage", () => {
     expect(u.total_tokens).toBe(15);
   });
 
+  it("kiro: metadata tokenUsage maps native cache read/write fields", () => {
+    const u = toOpenAIUsage(
+      {
+        metadataEvent: {
+          tokenUsage: {
+            uncachedInputTokens: 100,
+            outputTokens: 20,
+            totalTokens: 150,
+            cacheReadInputTokens: 25,
+            cacheWriteInputTokens: 5,
+          },
+        },
+      },
+      "kiro"
+    );
+    expect(u.prompt_tokens).toBe(100);
+    expect(u.completion_tokens).toBe(20);
+    expect(u.total_tokens).toBe(120);
+    expect(u.prompt_tokens_details.cached_tokens).toBe(25);
+    expect(u.prompt_tokens_details.cache_creation_tokens).toBe(5);
+    expect(u.cache_read_input_tokens).toBe(25);
+    expect(u.cache_creation_input_tokens).toBe(5);
+  });
+
+  it("kiro: metrics cacheWriteInputTokens maps to cache creation", () => {
+    const u = toOpenAIUsage(
+      { metricsEvent: { inputTokens: 40, outputTokens: 6, cacheWriteInputTokens: 10 } },
+      "kiro"
+    );
+    expect(u.prompt_tokens).toBe(40);
+    expect(u.completion_tokens).toBe(6);
+    expect(u.cache_creation_input_tokens).toBe(10);
+    expect(u.prompt_tokens_details.cache_creation_tokens).toBe(10);
+  });
+
   it("ollama: prompt_eval_count/eval_count", () => {
     const u = toOpenAIUsage({ prompt_eval_count: 7, eval_count: 4 }, "ollama");
     expect(u.prompt_tokens).toBe(7);

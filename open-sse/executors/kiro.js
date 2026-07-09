@@ -384,33 +384,12 @@ export class KiroExecutor extends BaseExecutor {
             state.hasMeteringEvent = true;
           }
 
-          // Handle metricsEvent for token usage
-          if (eventType === "metricsEvent") {
-            // Extract usage data from metricsEvent payload
-            const metrics = event.payload?.metricsEvent || event.payload;
-            if (metrics && typeof metrics === 'object') {
-              const inputTokens = metrics.inputTokens || 0;
-              const outputTokens = metrics.outputTokens || 0;
-              // ponytail: Amazon Q upstream does not expose cache fields today,
-              // but pick up cache_read_input_tokens / cache_creation_input_tokens
-              // if the event shape grows them so cost tracking stays accurate.
-              const cachedTokens = metrics.cacheReadInputTokens || metrics.cache_read_input_tokens || 0;
-              const cacheCreationInputTokens = metrics.cacheCreationInputTokens || metrics.cache_creation_input_tokens || 0;
-
-              if (inputTokens > 0 || outputTokens > 0) {
-                state.usage = {
-                  prompt_tokens: inputTokens,
-                  completion_tokens: outputTokens,
-                  total_tokens: inputTokens + outputTokens
-                };
-                // Kiro is Claude-backed: inputTokens EXCLUDES cache (Claude convention),
-                // not inclusive like OpenAI's cached_tokens. Emit cache_read_input_tokens
-                // (not cached_tokens) so canonicalizeUsage takes the Claude fold path and
-                // correctly adds cache back into prompt_tokens instead of undercharging.
-                if (cachedTokens > 0) state.usage.cache_read_input_tokens = cachedTokens;
-                if (cacheCreationInputTokens > 0) state.usage.cache_creation_input_tokens = cacheCreationInputTokens;
-              }
-            }
+          // Handle Kiro token usage. Current CodeWhisperer surfaces can send
+          // metricsEvent fields directly; newer Kiro/Amazon Q schemas carry
+          // usage under metadataEvent.tokenUsage.
+          if (eventType === "metricsEvent" || eventType === "metadataEvent") {
+            const usage = extractKiroUsageFromEvent(eventType, event.payload);
+            if (usage) state.usage = usage;
           }
 
           // Emit final chunk only after receiving BOTH meteringEvent AND contextUsageEvent
@@ -587,6 +566,68 @@ function parseEventFrame(data) {
   } catch {
     return null;
   }
+}
+
+function firstNumber(...values) {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+  }
+  return 0;
+}
+
+function toKiroUsage(raw) {
+  if (!raw || typeof raw !== "object") return null;
+
+  const inputTokens = firstNumber(
+    raw.uncachedInputTokens,
+    raw.inputTokens,
+    raw.input_tokens,
+    raw.prompt_tokens
+  );
+  const outputTokens = firstNumber(
+    raw.outputTokens,
+    raw.output_tokens,
+    raw.completion_tokens
+  );
+  const cachedTokens = firstNumber(
+    raw.cacheReadInputTokens,
+    raw.cache_read_input_tokens,
+    raw.cachedTokens,
+    raw.cached_tokens
+  );
+  const cacheCreationInputTokens = firstNumber(
+    raw.cacheWriteInputTokens,
+    raw.cacheCreationInputTokens,
+    raw.cache_creation_input_tokens
+  );
+
+  if (inputTokens <= 0 && outputTokens <= 0 && cachedTokens <= 0 && cacheCreationInputTokens <= 0) {
+    return null;
+  }
+
+  const usage = {
+    prompt_tokens: inputTokens,
+    completion_tokens: outputTokens,
+    total_tokens: inputTokens + outputTokens
+  };
+  // Kiro native usage follows Claude cache accounting: uncachedInputTokens /
+  // inputTokens exclude cache reads and cache writes. Keep the cache fields
+  // separate so canonicalizeUsage folds them into stored prompt_tokens once.
+  if (cachedTokens > 0) usage.cache_read_input_tokens = cachedTokens;
+  if (cacheCreationInputTokens > 0) usage.cache_creation_input_tokens = cacheCreationInputTokens;
+  return usage;
+}
+
+function extractKiroUsageFromEvent(eventType, payload) {
+  if (!payload || typeof payload !== "object") return null;
+
+  if (eventType === "metadataEvent") {
+    const metadata = payload.metadataEvent || payload;
+    return toKiroUsage(metadata?.tokenUsage);
+  }
+
+  const metrics = payload.metricsEvent || payload;
+  return toKiroUsage(metrics?.tokenUsage || metrics);
 }
 
 export default KiroExecutor;

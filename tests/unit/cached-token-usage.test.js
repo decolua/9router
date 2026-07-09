@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { canonicalizeUsage, extractUsage, mergeUsage } from "../../open-sse/utils/usageTracking.js";
 import { calculateCostFromTokens } from "../../open-sse/providers/pricing.js";
 import { toOpenAIUsage } from "../../open-sse/translator/concerns/usage.js";
+import { KiroExecutor } from "../../open-sse/executors/kiro.js";
 
 // Canonical convention (single source of truth for storage + cost):
 //   prompt_tokens             = total input INCLUDING cache read + cache creation
@@ -10,6 +11,62 @@ import { toOpenAIUsage } from "../../open-sse/translator/concerns/usage.js";
 //   completion_tokens         = output
 // Discriminator: Claude reports cache separately (prompt EXCLUDES cache);
 // OpenAI/Gemini report prompt INCLUDING cached_tokens.
+
+function createKiroMockFrame(eventType, payloadObj = {}) {
+  const payloadStr = JSON.stringify(payloadObj);
+  const payloadBytes = new TextEncoder().encode(payloadStr);
+  const headerName = ":event-type";
+  const headerNameBytes = new TextEncoder().encode(headerName);
+  const headerValueBytes = new TextEncoder().encode(eventType);
+  const headerLength = 1 + headerNameBytes.length + 1 + 2 + headerValueBytes.length;
+  const totalLength = 12 + headerLength + payloadBytes.length + 4;
+  const buffer = new Uint8Array(totalLength);
+  const view = new DataView(buffer.buffer);
+
+  view.setUint32(0, totalLength, false);
+  view.setUint32(4, headerLength, false);
+
+  let offset = 12;
+  buffer[offset++] = headerNameBytes.length;
+  buffer.set(headerNameBytes, offset);
+  offset += headerNameBytes.length;
+  buffer[offset++] = 7;
+  view.setUint16(offset, headerValueBytes.length, false);
+  offset += 2;
+  buffer.set(headerValueBytes, offset);
+  offset += headerValueBytes.length;
+  buffer.set(payloadBytes, offset);
+  return buffer;
+}
+
+async function readKiroSSEObjects(frames) {
+  const executor = new KiroExecutor();
+  const readableStream = new ReadableStream({
+    start(controller) {
+      for (const frame of frames) controller.enqueue(frame);
+      controller.close();
+    },
+  });
+  const transformedResponse = executor.transformEventStreamToSSE(
+    { body: readableStream },
+    "claude-test"
+  );
+  const reader = transformedResponse.body.getReader();
+  const decoder = new TextDecoder();
+  let output = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    output += decoder.decode(value, { stream: true });
+  }
+
+  return output
+    .split("\n")
+    .filter((line) => line.startsWith("data: ") && !line.includes("[DONE]"))
+    .map((line) => JSON.parse(line.slice(6)));
+}
+
 describe("canonicalizeUsage", () => {
   it("folds Claude exclusive cache into an inclusive prompt count", () => {
     // Claude: input_tokens excludes cache; cache_read + cache_creation are separate
@@ -184,5 +241,93 @@ describe("Kiro usage pass-through", () => {
     expect(out.prompt_tokens_details).toBeDefined();
     expect(out.prompt_tokens_details.cached_tokens).toBe(200);
     expect(out.prompt_tokens_details.cache_creation_tokens).toBe(50);
+  });
+
+  it("canonicalizes native Kiro cache read/write tokenUsage fields", () => {
+    const out = toOpenAIUsage(
+      {
+        uncachedInputTokens: 500,
+        outputTokens: 100,
+        cacheReadInputTokens: 200,
+        cacheWriteInputTokens: 50,
+      },
+      "kiro"
+    );
+
+    expect(out.prompt_tokens).toBe(500);
+    expect(out.cache_read_input_tokens).toBe(200);
+    expect(out.cache_creation_input_tokens).toBe(50);
+
+    const canonical = canonicalizeUsage(out);
+    expect(canonical.prompt_tokens).toBe(750);
+    expect(canonical.completion_tokens).toBe(100);
+    expect(canonical.cached_tokens).toBe(200);
+    expect(canonical.cache_creation_input_tokens).toBe(50);
+    expect(canonical.total_tokens).toBe(850);
+  });
+});
+
+describe("Kiro EventStream native cache usage", () => {
+  it("extracts metadataEvent.tokenUsage and preserves cache fields for canonical storage", async () => {
+    const objects = await readKiroSSEObjects([
+      createKiroMockFrame("metadataEvent", {
+        metadataEvent: {
+          tokenUsage: {
+            uncachedInputTokens: 500,
+            outputTokens: 100,
+            totalTokens: 850,
+            cacheReadInputTokens: 200,
+            cacheWriteInputTokens: 50,
+          },
+        },
+      }),
+      createKiroMockFrame("meteringEvent", {}),
+      createKiroMockFrame("contextUsageEvent", { contextUsagePercentage: 1 }),
+    ]);
+    const finalChunk = objects.find((obj) => obj.choices?.[0]?.finish_reason);
+
+    expect(finalChunk.usage).toMatchObject({
+      prompt_tokens: 500,
+      completion_tokens: 100,
+      total_tokens: 600,
+      cache_read_input_tokens: 200,
+      cache_creation_input_tokens: 50,
+    });
+
+    const extracted = extractUsage(finalChunk);
+    expect(extracted.cache_read_input_tokens).toBe(200);
+    expect(extracted.cache_creation_input_tokens).toBe(50);
+
+    const canonical = canonicalizeUsage(extracted);
+    expect(canonical.prompt_tokens).toBe(750);
+    expect(canonical.cached_tokens).toBe(200);
+    expect(canonical.cache_creation_input_tokens).toBe(50);
+    expect(canonical.total_tokens).toBe(850);
+  });
+
+  it("extracts metricsEvent cacheWriteInputTokens as cache creation", async () => {
+    const objects = await readKiroSSEObjects([
+      createKiroMockFrame("metricsEvent", {
+        metricsEvent: {
+          inputTokens: 120,
+          outputTokens: 30,
+          cacheWriteInputTokens: 40,
+        },
+      }),
+      createKiroMockFrame("meteringEvent", {}),
+      createKiroMockFrame("contextUsageEvent", { contextUsagePercentage: 1 }),
+    ]);
+    const finalChunk = objects.find((obj) => obj.choices?.[0]?.finish_reason);
+
+    expect(finalChunk.usage).toMatchObject({
+      prompt_tokens: 120,
+      completion_tokens: 30,
+      cache_creation_input_tokens: 40,
+    });
+
+    const canonical = canonicalizeUsage(extractUsage(finalChunk));
+    expect(canonical.prompt_tokens).toBe(160);
+    expect(canonical.cache_creation_input_tokens).toBe(40);
+    expect(canonical.total_tokens).toBe(190);
   });
 });

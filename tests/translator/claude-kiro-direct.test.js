@@ -426,6 +426,42 @@ describe("Kiro → Claude (direct route, OpenAI-shaped chunks from executor)", (
     expect(events.some((e) => e.type === "message_stop")).toBe(true);
   });
 
+  it("finish chunk reports native Kiro cache read/write usage to Claude clients", () => {
+    const state = {};
+    R(
+      {
+        id: "chatcmpl-1",
+        object: "chat.completion.chunk",
+        model: "m",
+        choices: [{ index: 0, delta: { content: "x" }, finish_reason: null }],
+      },
+      state
+    );
+    const events = R(
+      {
+        id: "chatcmpl-1",
+        object: "chat.completion.chunk",
+        model: "m",
+        choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+        usage: {
+          prompt_tokens: 500,
+          completion_tokens: 100,
+          cache_read_input_tokens: 200,
+          cache_creation_input_tokens: 50,
+        },
+      },
+      state
+    );
+    const md = events.find((e) => e.type === "message_delta");
+
+    expect(md.usage).toEqual({
+      input_tokens: 500,
+      output_tokens: 100,
+      cache_read_input_tokens: 200,
+      cache_creation_input_tokens: 50,
+    });
+  });
+
   it("reasoning_content maps to a thinking block", () => {
     const state = {};
     const events = R(

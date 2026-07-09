@@ -42,6 +42,10 @@ function convertFinishReason(reason) {
   }
 }
 
+function finiteNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
 /**
  * Convert one OpenAI-format chunk (from KiroExecutor) into Claude SSE events.
  * Returns an array of Claude events, or null when the chunk yields nothing.
@@ -69,12 +73,25 @@ export function kiroToClaudeResponse(chunk, state) {
   // Track usage if present on the chunk.
   if (data.usage && typeof data.usage === "object") {
     const promptTokens =
-      typeof data.usage.prompt_tokens === "number" ? data.usage.prompt_tokens : 0;
+      finiteNumber(data.usage.prompt_tokens);
     const outputTokens =
-      typeof data.usage.completion_tokens === "number"
-        ? data.usage.completion_tokens
-        : 0;
-    state.usage = { input_tokens: promptTokens, output_tokens: outputTokens };
+      finiteNumber(data.usage.completion_tokens);
+    const cacheReadTokens =
+      finiteNumber(data.usage.cache_read_input_tokens) ||
+      finiteNumber(data.usage.prompt_tokens_details?.cached_tokens);
+    const cacheCreationTokens =
+      finiteNumber(data.usage.cache_creation_input_tokens) ||
+      finiteNumber(data.usage.prompt_tokens_details?.cache_creation_tokens);
+    const hasExclusiveCacheFields =
+      data.usage.cache_read_input_tokens !== undefined ||
+      data.usage.cache_creation_input_tokens !== undefined;
+    const inputTokens = hasExclusiveCacheFields
+      ? promptTokens
+      : Math.max(0, promptTokens - cacheReadTokens - cacheCreationTokens);
+
+    state.usage = { input_tokens: inputTokens, output_tokens: outputTokens };
+    if (cacheReadTokens > 0) state.usage.cache_read_input_tokens = cacheReadTokens;
+    if (cacheCreationTokens > 0) state.usage.cache_creation_input_tokens = cacheCreationTokens;
   }
 
   // First chunk → emit message_start.
