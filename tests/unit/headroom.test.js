@@ -56,6 +56,7 @@ describe("compressWithHeadroom", () => {
         messages: [
           { role: "user", content: "compressed earlier user" },
           { role: "assistant", content: "compressed assistant", tool_calls: [{ id: "tool_1", type: "function", function: { name: "read_file", arguments: "{\"path\":\"a.js\"}" } }] },
+          { role: "system", content: "compressed system instruction" },
           { role: "user", content: "compressed current user" },
           { role: "tool", content: [{ type: "text", text: "compressed tool output" }], tool_call_id: "tool_1" },
         ],
@@ -93,6 +94,7 @@ describe("compressWithHeadroom", () => {
           userInputMessage: {
             content: "current user",
             modelId: "claude-sonnet-4.5",
+            systemInstruction: "native system instruction",
             userInputMessageContext: {
               tools: [{ toolSpecification: { name: "read_file" } }],
               toolResults: [
@@ -133,12 +135,14 @@ describe("compressWithHeadroom", () => {
             },
           ],
         },
+        { role: "system", content: "native system instruction" },
         { role: "user", content: "current user" },
         { role: "tool", content: "long tool output", tool_call_id: "tool_1" },
       ],
     });
     expect(body.conversationState.history[0].userInputMessage.content).toBe("compressed earlier user");
     expect(body.conversationState.history[1].assistantResponseMessage.content).toBe("compressed assistant");
+    expect(body.conversationState.currentMessage.userInputMessage.systemInstruction).toBe("compressed system instruction");
     expect(body.conversationState.currentMessage.userInputMessage.content).toBe("compressed current user");
     expect(body.conversationState.currentMessage.userInputMessage.userInputMessageContext.toolResults[0].content[0].text)
       .toBe("compressed tool output");

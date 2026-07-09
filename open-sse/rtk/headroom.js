@@ -112,6 +112,7 @@ function collectKiroHeadroomMessages(body) {
   const visit = (item) => {
     const user = item?.userInputMessage;
     if (user) {
+      addTextTarget("system", user.systemInstruction, { object: user, key: "systemInstruction" });
       addTextTarget("user", user.content, { object: user, key: "content" });
 
       const toolResults = user.userInputMessageContext?.toolResults;
