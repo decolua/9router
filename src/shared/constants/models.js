@@ -36,3 +36,12 @@ export function isValidModel(aliasOrId, modelId) {
 export const AI_MODELS = Object.entries(MODELS).flatMap(([alias, models]) =>
   models.map(m => ({ provider: alias, model: m.id, name: m.name }))
 );
+
+export const getModelKind = (m, fallback = null) => m?.kind || m?.type || fallback;
+
+// Capacity metadata for UI badges — icon + label + color per capability.
+export const CAPACITY_META = {
+  vision: { icon: "visibility", label: "Vision", desc: "Supports image input", color: "text-blue-500" },
+  // search: temporarily hidden (feature not wired yet)
+  reasoning: { icon: "neurology", label: "Reasoning", desc: "Supports reasoning / thinking", color: "text-amber-500" },
+};

@@ -4,6 +4,7 @@ import { describe, it, expect } from "vitest";
 import { autoDetectFilter } from "../../open-sse/rtk/autodetect.js";
 import { buildOutput } from "../../open-sse/rtk/filters/buildOutput.js";
 import { gitDiff } from "../../open-sse/rtk/filters/gitDiff.js";
+import { gitLog } from "../../open-sse/rtk/filters/gitLog.js";
 import { gitStatus } from "../../open-sse/rtk/filters/gitStatus.js";
 import { safeApply } from "../../open-sse/rtk/applyFilter.js";
 import { compressMessages } from "../../open-sse/rtk/index.js";
@@ -276,6 +277,41 @@ describe("PR #1175 - integration with compressMessages", () => {
     const stats = compressMessages(body, true);
     expect(stats.hits.length).toBe(0);
     expect(body.messages[0].content[0].content).toBe(text);
+  });
+});
+
+// ============================================================
+// 6.5. GIT-LOG PRIORITY
+// ============================================================
+describe("git-log priority", () => {
+  it("git-log chosen over build-output when commit header present in first window", () => {
+    const input = [
+      "commit abc1234def5678abc1234def5678abc1234def5",
+      "Author: Dev One <dev1@example.com>",
+      "Date:   Sun Jul 6 10:00:00 2026 +0700",
+      "",
+      "    Add auth middleware",
+      "",
+      "diff --git a/src/auth.js b/src/auth.js",
+      "index abc..def 100644",
+      "--- a/src/auth.js",
+      "+++ b/src/auth.js",
+      "@@ -1 +1 @@",
+      "+new line"
+    ].join("\n");
+    expect(autoDetectFilter(input)).toBe(gitLog);
+  });
+
+  it("pure git diff still stays git-diff", () => {
+    const input = [
+      "diff --git a/src/auth.js b/src/auth.js",
+      "index abc..def 100644",
+      "--- a/src/auth.js",
+      "+++ b/src/auth.js",
+      "@@ -1 +1 @@",
+      "+new line"
+    ].join("\n");
+    expect(autoDetectFilter(input)).toBe(gitDiff);
   });
 });
 
