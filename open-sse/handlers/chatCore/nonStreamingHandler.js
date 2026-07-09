@@ -254,7 +254,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   }
 
   // Ensure OpenAI-required fields
-  if (!isClaudeMessageResponse) {
+  if (!isClaudeMessageResponse && !isResponsesPassthrough) {
     if (!translatedResponse.object) translatedResponse.object = "chat.completion";
     if (!translatedResponse.created) translatedResponse.created = Math.floor(Date.now() / 1000);
   }

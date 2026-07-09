@@ -1,4 +1,6 @@
 export default {
+  id: "xai",
+  alias: "xai",
   hasOAuth: true,
   transport: {
     baseUrl: "https://api.x.ai/v1/chat/completions",
