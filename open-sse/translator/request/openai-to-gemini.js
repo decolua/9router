@@ -296,15 +296,15 @@ function wrapInCloudCodeEnvelope(model, geminiCLI, credentials = null, isAntigra
       envelope.request.systemInstruction = { role: GEMINI_ROLE.USER, parts: systemParts };
     }
 
-    // Add toolConfig for Antigravity
-    if (geminiCLI.tools?.length > 0) {
-      envelope.request.toolConfig = {
-        functionCallingConfig: { mode: "VALIDATED" }
-      };
-    }
   } else {
     // Keep safetySettings for Gemini CLI
     envelope.request.safetySettings = geminiCLI.safetySettings;
+  }
+
+  if (geminiCLI.tools?.length > 0) {
+    envelope.request.toolConfig = {
+      functionCallingConfig: { mode: "VALIDATED" }
+    };
   }
 
   return envelope;
@@ -463,4 +463,3 @@ export function openaiToAntigravityRequest(model, body, stream, credentials = nu
 register(FORMATS.OPENAI, FORMATS.GEMINI, openaiToGeminiRequest, null);
 register(FORMATS.OPENAI, FORMATS.GEMINI_CLI, (model, body, stream, credentials) => wrapInCloudCodeEnvelope(model, openaiToGeminiCLIRequest(model, body, stream), credentials), null);
 register(FORMATS.OPENAI, FORMATS.ANTIGRAVITY, openaiToAntigravityRequest, null);
-
