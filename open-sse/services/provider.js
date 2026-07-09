@@ -142,8 +142,14 @@ export function getTargetFormat(provider) {
 export function resolveTransport(provider, sourceFormat) {
   const config = PROVIDERS[provider];
   const transports = config?.transports;
-  if (!Array.isArray(transports) || !transports.length) return null;
-  return transports.find(t => t.format === sourceFormat) || null;
+  if (Array.isArray(transports) && transports.length) {
+    const match = transports.find(t => t.format === sourceFormat);
+    if (match) return match;
+  }
+  if (sourceFormat === "openai-responses" && config?.responsesUrl) {
+    return { format: "openai-responses", baseUrl: config.responsesUrl };
+  }
+  return null;
 }
 
 // Check if last message is from user
