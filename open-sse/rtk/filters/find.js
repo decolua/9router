@@ -31,16 +31,15 @@ export function find(input) {
   const showDirs = dirs.slice(0, FIND_TOTAL_DIR_MAX);
   for (const dir of showDirs) {
     const files = byDir.get(dir);
-    out += `${dir}/ (${files.length}):\n`;
+    out += `${dir}/  (${files.length})\n`;
     const showFiles = files.slice(0, FIND_PER_DIR_MAX);
     for (const f of showFiles) out += `  ${f}\n`;
     if (files.length > FIND_PER_DIR_MAX) {
       out += `  +${files.length - FIND_PER_DIR_MAX}\n`;
     }
-    out += "\n";
   }
   if (dirs.length > FIND_TOTAL_DIR_MAX) {
-    out += `+${dirs.length - FIND_TOTAL_DIR_MAX} more dirs\n`;
+    out += `\n+${dirs.length - FIND_TOTAL_DIR_MAX} more dirs\n`;
   }
 
   return out;

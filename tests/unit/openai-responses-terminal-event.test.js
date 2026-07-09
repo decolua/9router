@@ -67,6 +67,19 @@ describe("OpenAI Responses streaming termination", () => {
     expect(output).toContain("data: [DONE]");
   });
 
+  it("does not add response.failed when a Responses stream sends response.done", async () => {
+    const output = await runTransform([
+      `event: response.done`,
+      `data: ${JSON.stringify({ type: "response.done", response: { id: "resp_test" } })}`,
+      "",
+    ].join("\n"));
+
+    expect(output).toContain("event: response.done");
+    expect(output).not.toContain("event: response.failed");
+    expect(output).not.toContain("data: null");
+    expect(output).toContain("data: [DONE]");
+  });
+
   it("emits response.failed before DONE when a Responses stream sends DONE without a terminal event", async () => {
     const output = await runTransform([
       `event: response.created`,

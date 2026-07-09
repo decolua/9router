@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Card, Button, Modal } from "@/shared/components";
-import { getModelsByProviderId } from "@/shared/constants/models";
+import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { getProviderAlias } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
@@ -206,14 +206,14 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
   const builtInModels = kindFilter
     ? allBuiltIn.filter((m) => {
         if (m.kinds) return m.kinds.includes(kindFilter);
-        return (m.type || "llm") === kindFilter;
+        return getModelKind(m, "llm") === kindFilter;
       })
     : allBuiltIn;
 
   // Custom models for this provider + kind, dedupe vs built-in
   const myCustomModels = customModels.filter(
     (m) => m.providerAlias === providerAlias
-      && (m.type || "llm") === effectiveType
+      && getModelKind(m, "llm") === effectiveType
       && !builtInModels.some((b) => b.id === m.id)
   );
 
