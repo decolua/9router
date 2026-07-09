@@ -1,5 +1,6 @@
 import { detectFormat, getTargetFormat, resolveTransport } from "../services/provider.js";
 import { translateRequest } from "../translator/index.js";
+import { stripThinkingSuffix } from "../translator/concerns/thinkingUnified.js";
 import { FORMATS } from "../translator/formats.js";
 import { normalizeClaudePassthrough } from "../translator/formats/claude.js";
 import { COLORS } from "../utils/stream.js";
@@ -123,9 +124,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   let toolNameMap;
   if (passthrough) {
     log?.debug?.("PASSTHROUGH", `${clientTool} → ${provider} | native lossless`);
-    translatedBody = { ...body, model: upstreamModel };
+    translatedBody = { ...body, model: stripThinkingSuffix(upstreamModel) };
     // Normalize newer Cowork/CC beta shapes (adaptive thinking, mid-conversation system) the API rejects
-    if (clientTool === "claude") normalizeClaudePassthrough(translatedBody, upstreamModel);
+    if (clientTool === "claude") normalizeClaudePassthrough(translatedBody, translatedBody.model);
   } else {
     translatedBody = translateRequest(sourceFormat, targetFormat, upstreamModel, body, stream, credentials, provider, reqLogger, stripList, connectionId, clientTool);
     if (!translatedBody) {
@@ -134,7 +135,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     }
     toolNameMap = translatedBody._toolNameMap;
     delete translatedBody._toolNameMap;
-    translatedBody.model = upstreamModel;
+    translatedBody.model = stripThinkingSuffix(upstreamModel);
   }
 
   // Dedupe duplicate built-in tools when equivalent MCP tools are present (Claude clients only).
