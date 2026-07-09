@@ -777,6 +777,9 @@ const PROVIDERS = {
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
       expiresIn: tokens.expires_in,
+      name: extra?.userInfo?.login || extra?.userInfo?.name,
+      displayName: extra?.userInfo?.name || extra?.userInfo?.login,
+      email: extra?.userInfo?.email || null,
       providerSpecificData: {
         copilotToken: extra?.copilotToken?.token,
         copilotTokenExpiresAt: extra?.copilotToken?.expires_at,

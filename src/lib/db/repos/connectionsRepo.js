@@ -56,6 +56,17 @@ function upsert(db, c) {
   );
 }
 
+function deriveConnectionName(data, fallbackName) {
+  if (data.provider === "github") {
+    return data.providerSpecificData?.githubLogin
+      || data.providerSpecificData?.githubEmail
+      || data.email
+      || data.providerSpecificData?.githubName
+      || fallbackName;
+  }
+  return fallbackName;
+}
+
 export async function getProviderConnections(filter = {}) {
   const db = await getAdapter();
   const where = [];
@@ -133,7 +144,7 @@ export async function createProviderConnection(data) {
 
     let connectionName = data.name || null;
     if (!connectionName && (data.authType === "oauth" || data.authType === "access_token")) {
-      connectionName = data.email || `Account ${all.length + 1}`;
+      connectionName = deriveConnectionName(data, data.email || `Account ${all.length + 1}`);
     }
     let connectionPriority = data.priority;
     if (!connectionPriority) {
