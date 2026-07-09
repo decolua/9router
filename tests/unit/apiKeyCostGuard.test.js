@@ -36,7 +36,7 @@ describe("apiKeyCostGuard", () => {
         provider: "openai",
         settings: { apiKeyDailyCostLimits: { "claude-opus-4-8": 200 } },
       });
-      expect(result).toEqual({ blocked: false });
+      expect(result).toEqual({ blocked: false, limit: 0, cost: 0 });
     });
 
     it("allows when cost is strictly under limit", async () => {
@@ -47,7 +47,7 @@ describe("apiKeyCostGuard", () => {
         provider: "anthropic",
         settings: { apiKeyDailyCostLimits: { "claude-opus-4-8": 200 } },
       });
-      expect(result).toEqual({ blocked: false });
+      expect(result).toEqual({ blocked: false, limit: 200, cost: 199.99 });
     });
 
     it("blocks when cost exactly equals limit", async () => {
@@ -82,7 +82,7 @@ describe("apiKeyCostGuard", () => {
         provider: "anthropic",
         settings: { apiKeyDailyCostLimits: { "claude-opus-4-8": 0 } },
       });
-      expect(result).toEqual({ blocked: false });
+      expect(result).toEqual({ blocked: false, limit: 0, cost: 0 });
     });
 
     it("allows when settings missing apiKeyDailyCostLimits", async () => {
@@ -92,7 +92,7 @@ describe("apiKeyCostGuard", () => {
         provider: "anthropic",
         settings: {},
       });
-      expect(result).toEqual({ blocked: false });
+      expect(result).toEqual({ blocked: false, limit: 0, cost: 0 });
     });
 
     it("calls getDailyKeyModelCost with normalized apiKey, model, provider", async () => {

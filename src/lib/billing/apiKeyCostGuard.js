@@ -10,12 +10,12 @@ export async function checkApiKeyDailyCost({ apiKey, model, provider, settings }
   const limits = settings?.apiKeyDailyCostLimits || {};
   const limit = limits[model];
   if (typeof limit !== "number" || limit <= 0) {
-    return { blocked: false };
+    return { blocked: false, limit: 0, cost: 0 };
   }
 
   const cost = await getDailyKeyModelCost({ apiKey, model, provider });
   if (cost >= limit) {
-    return { blocked: true, retryAfterSeconds: secondsUntilLocalMidnight() };
+    return { blocked: true, retryAfterSeconds: secondsUntilLocalMidnight(), limit, cost };
   }
-  return { blocked: false };
+  return { blocked: false, limit, cost };
 }

@@ -21,6 +21,35 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import { getApiKeys } from "@/lib/db/repos/apiKeysRepo.js";
+
+// Log threshold for "approaching limit" early signal (fraction of limit).
+const RATE_LIMIT_NEAR_THRESHOLD = 0.8;
+
+// Look up the human-readable name for an API key value. Cheap scan; only called
+// on the rate-limit path, not every request.
+async function resolveApiKeyName(apiKeyValue) {
+  try {
+    const keys = await getApiKeys();
+    const found = keys.find((k) => k.key === apiKeyValue);
+    return found?.name || (apiKeyValue ? apiKeyValue.slice(0, 8) + "…" : "local");
+  } catch {
+    return apiKeyValue ? apiKeyValue.slice(0, 8) + "…" : "local";
+  }
+}
+
+// Capture daily-cost guard state for future limit tuning. Fires on block and
+// when usage crosses RATE_LIMIT_NEAR_THRESHOLD. One structured line per event
+// so pm2 logs stay grep-able: grep "RATE_LIMIT" ~/.pm2/logs/9router-out.log
+async function logDailyCostCheck({ apiKey, model, provider, blocked, limit, cost }) {
+  const ratio = limit > 0 ? cost / limit : 0;
+  if (!blocked && ratio < RATE_LIMIT_NEAR_THRESHOLD) return;
+
+  const keyName = await resolveApiKeyName(apiKey);
+  const tag = blocked ? "RATE_LIMIT" : "RATE_LIMIT_NEAR";
+  const pct = (ratio * 100).toFixed(1);
+  log.warn(tag, `model=${model} provider=${provider} key=${keyName} cost=$${cost.toFixed(4)} limit=$${limit} (${pct}%)`);
+}
 
 /**
  * Handle chat completion request
@@ -192,6 +221,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   // Check per-key daily cost limit before using upstream accounts
   if (apiKey) {
     const costCheck = await checkApiKeyDailyCost({ apiKey, model, provider, settings });
+    if (costCheck.limit > 0) {
+      await logDailyCostCheck({ apiKey, model, provider, ...costCheck });
+    }
     if (costCheck.blocked) {
       return unavailableResponse(
         HTTP_STATUS.RATE_LIMITED,
