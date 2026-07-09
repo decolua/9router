@@ -1,5 +1,14 @@
 import { deriveModelName } from "./namePatterns.js";
 
+// Normalize version separators in a model id: hyphen between two digits becomes a dot.
+// Registry ids use dots for versions ("claude-sonnet-4.5") but clients (CLIs, aliases)
+// often send them with dashes ("claude-sonnet-4-5"). Only digit-digit hyphens are
+// touched, so word/suffix hyphens stay intact ("-thinking", "-agentic", "qwen3-coder-next").
+export function normalizeModelId(modelId) {
+  if (typeof modelId !== "string") return modelId;
+  return modelId.replace(/(\d)-(\d)/g, "$1.$2");
+}
+
 // Model defaults centralized (was scattered as `m.kind || "llm"`, `quotaFamily || "normal"`, etc.)
 export const MODEL_DEFAULTS = {
   kind: "llm",

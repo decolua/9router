@@ -145,14 +145,14 @@ describe("compatible provider connections API", () => {
     });
   });
 
-  it("allows multiple API-key connections on the same compatible node (key pool)", async () => {
+  it("allows multiple connections on the same compatible node", async () => {
     const ctx = await setupTestContext({
-      id: "openai-compatible-multikey-test",
+      id: "openai-compatible-multiple-test",
       type: "openai-compatible",
-      name: "Multi Key Node",
-      prefix: "multi",
+      name: "Multiple Connections Node",
+      prefix: "mul",
       apiType: "chat",
-      baseUrl: "https://multi-key.test/v1",
+      baseUrl: "https://multiple-connections.test/v1",
     });
     cleanup = ctx.cleanup;
 

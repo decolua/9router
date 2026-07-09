@@ -9,7 +9,7 @@ const { execSync } = require("child_process");
 const { log, err, dumpRequest, createResponseDumper, clearDumpDir } = require("./logger");
 const { IS_DEV, LSOF_BIN, TARGET_HOSTS, URL_PATTERNS, MODEL_SYNONYMS, MODEL_PATTERNS, MODEL_NO_MAP, getToolForHost } = require("./config");
 const { DATA_DIR, MITM_DIR } = require("./paths");
-const { getCertForDomain } = require("./cert/generate");
+const { generateCert, getCertForDomain } = require("./cert/generate");
 const { getMitmAlias } = require("./dbReader");
 const { applyAntigravityIdeVersionOverride } = require("./antigravityIdeVersion");
 const LOCAL_PORT = 443;
@@ -57,6 +57,11 @@ function sniCallback(servername, cb) {
 
 let sslOptions;
 try {
+  if (!fs.existsSync(path.join(MITM_DIR, "rootCA.key")) || !fs.existsSync(path.join(MITM_DIR, "rootCA.crt"))) {
+    log("Root CA missing, generating...");
+    generateCert();
+  }
+
   const rootKey = fs.readFileSync(path.join(MITM_DIR, "rootCA.key"));
   const rootCert = fs.readFileSync(path.join(MITM_DIR, "rootCA.crt"));
   rootCAPem = rootCert.toString("utf8");

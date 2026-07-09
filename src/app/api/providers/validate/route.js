@@ -380,10 +380,13 @@ export async function POST(request) {
           };
           const headers = {};
           if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-          const res = await fetch(endpoints[provider], { headers });
+          const res = await fetch(endpoints[provider], { headers, signal: AbortSignal.timeout(8000) });
           // xai returns 400 for bad key, 403 for valid-but-no-credit. Other providers use 401.
           if (provider === "xai") {
             isValid = res.status === 200 || res.status === 403;
+          } else if (provider === "xiaomi-tokenplan") {
+            // /models returns 403 for valid keys lacking list permission; only 401 means invalid
+            isValid = res.status !== 401;
           } else {
             isValid = res.ok;
           }

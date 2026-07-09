@@ -56,6 +56,7 @@ export const MITM_TOOLS = {
     configType: "mitm",
     mitmDomain: "q.us-east-1.amazonaws.com",
     defaultModels: [
+      { id: "claude-sonnet-5", name: "Claude Sonnet 5", alias: "claude-sonnet-5" },
       { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5", alias: "claude-sonnet-4.5" },
       { id: "claude-sonnet-4", name: "Claude Sonnet 4", alias: "claude-sonnet-4" },
       { id: "claude-haiku-4.5", name: "Claude Haiku 4.5", alias: "claude-haiku-4.5" },
@@ -94,13 +95,15 @@ export const CLI_TOOLS = {
       model: "ANTHROPIC_MODEL",
       opusModel: "ANTHROPIC_DEFAULT_OPUS_MODEL",
       sonnetModel: "ANTHROPIC_DEFAULT_SONNET_MODEL",
+      fableModel: "ANTHROPIC_DEFAULT_FABLE_MODEL",
       haikuModel: "ANTHROPIC_DEFAULT_HAIKU_MODEL",
     },
-    modelAliases: ["default", "sonnet", "opus", "haiku", "opusplan"],
+    modelAliases: ["default", "sonnet", "opus", "fable", "haiku", "opusplan"],
     settingsFile: "~/.claude/settings.json",
     defaultModels: [
-      { id: "opus", name: "Claude Opus", alias: "opus", envKey: "ANTHROPIC_DEFAULT_OPUS_MODEL", defaultValue: "cc/claude-opus-4-6" },
-      { id: "sonnet", name: "Claude Sonnet", alias: "sonnet", envKey: "ANTHROPIC_DEFAULT_SONNET_MODEL", defaultValue: "cc/claude-sonnet-4-6" },
+      { id: "opus", name: "Claude Opus", alias: "opus", envKey: "ANTHROPIC_DEFAULT_OPUS_MODEL", defaultValue: "cc/claude-opus-4-8" },
+      { id: "sonnet", name: "Claude Sonnet", alias: "sonnet", envKey: "ANTHROPIC_DEFAULT_SONNET_MODEL", defaultValue: "cc/claude-sonnet-5" },
+      { id: "fable", name: "Claude Fable", alias: "fable", envKey: "ANTHROPIC_DEFAULT_FABLE_MODEL", defaultValue: "cc/claude-fable-5" },
       { id: "haiku", name: "Claude Haiku", alias: "haiku", envKey: "ANTHROPIC_DEFAULT_HAIKU_MODEL", defaultValue: "cc/claude-haiku-4-5-20251001" },
     ],
   },
@@ -391,4 +394,3 @@ export const getProviderModelsForMapping = (providers) => {
   });
   return result;
 };
-

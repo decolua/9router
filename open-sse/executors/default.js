@@ -226,6 +226,7 @@ export class DefaultExecutor extends BaseExecutor {
       gemini: () => this.refreshFromGrant(credentials, proxyOptions),
       kiro: () => this.refreshKiro(credentials.refreshToken, proxyOptions),
       cline: () => this.refreshCline(credentials.refreshToken, proxyOptions),
+      clinepass: () => this.refreshCline(credentials.refreshToken, proxyOptions),
       "kimi-coding": () => this.refreshKimiCoding(credentials.refreshToken, proxyOptions),
       kilocode: () => this.refreshKilocode(credentials.refreshToken, proxyOptions)
     };
@@ -299,7 +300,11 @@ export class DefaultExecutor extends BaseExecutor {
     const data = payload?.data || payload;
     const expiresAtIso = data?.expiresAt;
     const expiresIn = expiresAtIso ? Math.max(1, Math.floor((new Date(expiresAtIso).getTime() - Date.now()) / 1000)) : undefined;
-    return { accessToken: data?.accessToken, refreshToken: data?.refreshToken || refreshToken, expiresIn };
+    let accessToken = data?.accessToken;
+    if (accessToken && !accessToken.startsWith("workos:")) {
+      accessToken = `workos:${accessToken}`;
+    }
+    return { accessToken, refreshToken: data?.refreshToken || refreshToken, expiresIn };
   }
 
   async refreshKimiCoding(refreshToken, proxyOptions = null) {
