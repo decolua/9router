@@ -9,7 +9,7 @@
 !.yarn/plugins
 !.yarn/releases
 !.yarn/versions
-
+.investtal/logs/
 # testing
 /coverage
 
@@ -85,3 +85,4 @@ backup.json
 .serena
 /dist/
 .vinext/
+.worktrees
