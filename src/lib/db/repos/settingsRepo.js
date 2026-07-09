@@ -42,6 +42,14 @@ const DEFAULT_SETTINGS = {
   cavemanLevel: "full",
   ponytailEnabled: false,
   ponytailLevel: "full",
+  apiKeyDailyCostLimits: (() => {
+    try {
+      const raw = process.env.API_KEY_DAILY_COST_LIMITS;
+      return raw ? JSON.parse(raw) : { "claude-opus-4-8": 200 };
+    } catch {
+      return { "claude-opus-4-8": 200 };
+    }
+  })(),
 };
 
 async function readRaw() {
