@@ -1,5 +1,6 @@
 import "open-sse/index.js";
 
+import { checkApiKeyDailyCost } from "../../lib/billing/apiKeyCostGuard.js";
 import {
   getProviderCredentials,
   markAccountUnavailable,
@@ -188,6 +189,20 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   }
 
   const { provider, model } = modelInfo;
+
+  // Check per-key daily cost limit before using upstream accounts
+  if (apiKey) {
+    const chatSettings = await getSettings();
+    const costCheck = await checkApiKeyDailyCost({ apiKey, model, provider, settings: chatSettings });
+    if (costCheck.blocked) {
+      return unavailableResponse(
+        HTTP_STATUS.RATE_LIMITED,
+        `Daily cost limit reached for ${model}`,
+        new Date(Date.now() + costCheck.retryAfterSeconds * 1000).toISOString(),
+        `reset after ${costCheck.retryAfterSeconds}s`
+      );
+    }
+  }
 
   // Log model routing (alias → actual model)
   if (modelStr !== `${provider}/${model}`) {
