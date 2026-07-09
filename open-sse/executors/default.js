@@ -112,6 +112,137 @@ async function _maybeUnrecoverableRefresh(response) {
   return null;
 }
 
+const XAI_RESPONSES_TOOL_TYPES = new Set([
+  "function",
+  "web_search",
+  "x_search",
+  "collections_search",
+  "file_search",
+  "code_execution",
+  "code_interpreter",
+  "mcp",
+  "shell",
+]);
+
+const XAI_FREEFORM_TOOL_PARAMETERS = {
+  type: "object",
+  properties: {
+    input: { type: "string", description: "Freeform tool input." },
+  },
+  required: ["input"],
+};
+
+function getToolName(tool) {
+  const name = tool?.name || tool?.function?.name;
+  return typeof name === "string" && name.trim() ? name.trim() : null;
+}
+
+function normalizeFunctionParameters(parameters) {
+  if (!parameters) return { type: "object", properties: {} };
+  if (parameters.type === "object" && !parameters.properties) return { ...parameters, properties: {} };
+  return parameters;
+}
+
+function toXaiFunctionTool(tool, parameters = null) {
+  const name = getToolName(tool);
+  if (!name) return null;
+  return {
+    type: "function",
+    name,
+    description: String(tool.description || tool.function?.description || ""),
+    parameters: normalizeFunctionParameters(parameters || tool.parameters || tool.function?.parameters),
+  };
+}
+
+function normalizeXaiHostedTool(tool) {
+  if (tool.external_web_access === undefined) return tool;
+  const { external_web_access, ...next } = tool;
+  return next;
+}
+
+function normalizeXaiResponsesTool(tool) {
+  if (!tool || typeof tool !== "object") return null;
+  if (tool.type === "local_shell") return null;
+  if (tool.type === "custom") return toXaiFunctionTool(tool, XAI_FREEFORM_TOOL_PARAMETERS);
+  if (!XAI_RESPONSES_TOOL_TYPES.has(tool.type)) return toXaiFunctionTool(tool);
+  if (tool.type === "function") return toXaiFunctionTool(tool);
+  return normalizeXaiHostedTool(tool);
+}
+
+export function normalizeXaiResponsesTools(body) {
+  if (!Array.isArray(body?.tools)) return body;
+
+  let changed = false;
+  const tools = [];
+  for (const tool of body.tools) {
+    const normalized = normalizeXaiResponsesTool(tool);
+    if (!normalized) {
+      changed = true;
+      continue;
+    }
+    if (normalized !== tool) changed = true;
+    tools.push(normalized);
+  }
+
+  if (!changed) return body;
+  const next = { ...body };
+  if (tools.length > 0) next.tools = tools;
+  else delete next.tools;
+  return next;
+}
+
+function stripEncryptedContent(value) {
+  if (Array.isArray(value)) {
+    let changed = false;
+    const items = value.map((item) => {
+      const next = stripEncryptedContent(item);
+      if (next !== item) changed = true;
+      return next;
+    });
+    return changed ? items : value;
+  }
+  if (!value || typeof value !== "object") return value;
+
+  let changed = false;
+  const next = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (key === "encrypted_content") {
+      changed = true;
+      continue;
+    }
+    const stripped = stripEncryptedContent(child);
+    if (stripped !== child) changed = true;
+    next[key] = stripped;
+  }
+  return changed ? next : value;
+}
+
+function hasReasoningText(item) {
+  if (typeof item?.text === "string" && item.text.trim()) return true;
+  if (Array.isArray(item?.summary) && item.summary.some((s) => typeof s?.text === "string" && s.text.trim())) return true;
+  if (Array.isArray(item?.content) && item.content.some((c) => typeof c?.text === "string" && c.text.trim())) return true;
+  return false;
+}
+
+export function normalizeXaiResponsesPayload(body) {
+  let transformed = stripEncryptedContent(body);
+
+  if (Array.isArray(transformed?.include) && transformed.include.includes("reasoning.encrypted_content")) {
+    transformed = {
+      ...transformed,
+      include: transformed.include.filter((item) => item !== "reasoning.encrypted_content"),
+    };
+    if (transformed.include.length === 0) delete transformed.include;
+  }
+
+  if (Array.isArray(transformed?.input)) {
+    const input = transformed.input.filter((item) => item?.type !== "reasoning" || hasReasoningText(item));
+    if (input.length !== transformed.input.length) transformed = { ...transformed, input };
+  }
+
+  return transformed;
+}
+
 export class DefaultExecutor extends BaseExecutor {
   constructor(provider) {
     super(provider, PROVIDERS[provider] || PROVIDERS.openai);
