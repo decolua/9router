@@ -53,6 +53,7 @@ describe("Claude → Kiro (direct route)", () => {
     const out = C2K({ messages: [{ role: "user", content: "hello" }] });
     expect(out.conversationState).toBeTruthy();
     expect(out.conversationState.currentMessage.userInputMessage.content).toContain("hello");
+    expect(out.conversationState.currentMessage.userInputMessage.cachePoint).toBeUndefined();
   });
 
   it("keeps the same conversationId for the same client session header", () => {
@@ -140,7 +141,53 @@ describe("Claude → Kiro (direct route)", () => {
     );
 
     expect(first.conversationState.conversationId).toBe(second.conversationState.conversationId);
+    expect(first.conversationState.currentMessage.userInputMessage.cachePoint).toEqual({
+      type: "default",
+    });
     expect(JSON.stringify(first)).not.toContain("cache_control");
+  });
+
+  it("maps message content cache_control to a Kiro cachePoint", () => {
+    const out = C2K({
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Stable user prefix", cache_control: { type: "ephemeral" } },
+            { type: "text", text: "Dynamic tail" },
+          ],
+        },
+      ],
+    });
+    const current = out.conversationState.currentMessage.userInputMessage;
+    const serialized = JSON.stringify(out);
+
+    expect(current.cachePoint).toEqual({ type: "default" });
+    expect(current.content).toContain("Stable user prefix");
+    expect(current.content).toContain("Dynamic tail");
+    expect(serialized).not.toContain("cache_control");
+    expect(serialized).not.toContain("ephemeral");
+  });
+
+  it("maps tool cache_control to the current Kiro cachePoint", () => {
+    const out = C2K({
+      tools: [
+        {
+          name: "lookup_context",
+          description: "Lookup stable project context",
+          input_schema: { type: "object", properties: {} },
+          cache_control: { type: "ephemeral" },
+        },
+      ],
+      messages: [{ role: "user", content: "Use the stable tool prefix." }],
+    });
+    const current = out.conversationState.currentMessage.userInputMessage;
+    const serialized = JSON.stringify(out);
+
+    expect(current.cachePoint).toEqual({ type: "default" });
+    expect(current.userInputMessageContext?.tools).toHaveLength(1);
+    expect(serialized).not.toContain("cache_control");
+    expect(serialized).not.toContain("ephemeral");
   });
 
   it("uses system cache_control prefix before x-session-id for Anthropic messages requests", () => {
@@ -168,7 +215,15 @@ describe("Claude → Kiro (direct route)", () => {
 
     expect(first.conversationState.conversationId).toBe(second.conversationState.conversationId);
     expect(first.conversationState.conversationId).not.toBe(sessionId);
+    expect(first.conversationState.currentMessage.userInputMessage.cachePoint).toEqual({
+      type: "default",
+    });
+    expect(second.conversationState.currentMessage.userInputMessage.cachePoint).toEqual({
+      type: "default",
+    });
     expect(JSON.stringify(first)).not.toContain("cache_control");
+    expect(JSON.stringify(first)).not.toContain("ephemeral");
+    expect(JSON.stringify(first)).not.toContain("clientCacheConfig");
   });
 
   it("uses different Kiro conversationIds for different cache_control prefixes", () => {

@@ -43,6 +43,7 @@ const SLACK_TS_RE = "\\d{10}(?:\\.\\d{1,6})?|\\d{16}";
 const SLACK_TS_URL_RE = "\\d{10}(?:(?:\\.|%2E)\\d{1,6})?|\\d{16}";
 const FIRST_USER_ANCHOR_MAX = 2048;
 const CACHE_CONTROL_KEY = "cache_control";
+const KIRO_DEFAULT_CACHE_POINT = { type: "default" };
 
 function withoutVolatileSessionHeaders(headers) {
   if (!headers || typeof headers !== "object") return headers;
@@ -99,6 +100,7 @@ function collectCacheControlAnchorSegments(body) {
   const segments = [];
   const pushSegment = (kind, value, cacheControlBearing = false) => {
     segments.push({
+      kind,
       cacheControlBearing,
       value: stableAnchorJson([kind, value]),
     });
@@ -156,6 +158,25 @@ function findClaudeCacheControlAnchor(body) {
     .map((segment) => segment.value)
     .join("\n");
   return `cache-control:${prefix}`;
+}
+
+function findLastClaudeCacheControlKind(body) {
+  const segments = collectCacheControlAnchorSegments(body);
+  for (let i = segments.length - 1; i >= 0; i--) {
+    if (segments[i].cacheControlBearing) return segments[i].kind;
+  }
+  return null;
+}
+
+function cachePointBelongsOnCurrentMessage(body) {
+  const kind = findLastClaudeCacheControlKind(body);
+  return kind === "tool" || kind?.startsWith("system:");
+}
+
+function applyDefaultKiroCachePoint(userInputMessage) {
+  if (userInputMessage) {
+    userInputMessage.cachePoint = { ...KIRO_DEFAULT_CACHE_POINT };
+  }
 }
 
 function normalizeSlackTs(value) {
@@ -342,7 +363,11 @@ function flattenClaudeToolInteractions(messages) {
     if (msg.role === ROLE.USER && Array.isArray(msg.content)) {
       const newContent = msg.content.map((block) =>
         block.type === CLAUDE_BLOCK.TOOL_RESULT
-          ? { type: CLAUDE_BLOCK.TEXT, text: toolResultBlockToText(block.content) }
+          ? {
+              type: CLAUDE_BLOCK.TEXT,
+              text: toolResultBlockToText(block.content),
+              ...(hasCacheControl(block) && { [CACHE_CONTROL_KEY]: block[CACHE_CONTROL_KEY] }),
+            }
           : block
       );
       out.push({ ...msg, content: newContent });
@@ -367,6 +392,8 @@ function convertClaudeMessagesToKiro(messages, tools, model) {
   let pendingAssistantContent = [];
   let pendingToolResults = [];
   let pendingImages = [];
+  let pendingUserCachePoint = false;
+  let pendingCachePointForNextUser = false;
   let currentRole = null;
   let toolsInjected = false;
 
@@ -398,6 +425,10 @@ function convertClaudeMessagesToKiro(messages, tools, model) {
       if (pendingImages.length > 0) {
         userMsg.userInputMessage.images = pendingImages;
       }
+      if (pendingUserCachePoint || pendingCachePointForNextUser) {
+        applyDefaultKiroCachePoint(userMsg.userInputMessage);
+        pendingCachePointForNextUser = false;
+      }
       if (pendingToolResults.length > 0) {
         userMsg.userInputMessage.userInputMessageContext = {
           toolResults: pendingToolResults,
@@ -417,6 +448,7 @@ function convertClaudeMessagesToKiro(messages, tools, model) {
       pendingUserContent = [];
       pendingToolResults = [];
       pendingImages = [];
+      pendingUserCachePoint = false;
     } else if (currentRole === ROLE.ASSISTANT) {
       const content = pendingAssistantContent.join("\n\n").trim() || "...";
       history.push({ assistantResponseMessage: { content } });
@@ -434,6 +466,7 @@ function convertClaudeMessagesToKiro(messages, tools, model) {
         pendingUserContent.push(msg.content);
       } else if (Array.isArray(msg.content)) {
         for (const block of msg.content) {
+          if (hasCacheControl(block)) pendingUserCachePoint = true;
           if (block.type === CLAUDE_BLOCK.TEXT) {
             pendingUserContent.push(block.text);
           } else if (block.type === CLAUDE_BLOCK.IMAGE && block.source?.type === "base64") {
@@ -468,6 +501,7 @@ function convertClaudeMessagesToKiro(messages, tools, model) {
         textContent = msg.content;
       } else if (Array.isArray(msg.content)) {
         for (const block of msg.content) {
+          if (hasCacheControl(block)) pendingCachePointForNextUser = true;
           if (block.type === CLAUDE_BLOCK.TEXT) {
             textContent += block.text;
           } else if (block.type === CLAUDE_BLOCK.TOOL_USE) {
@@ -527,6 +561,9 @@ function convertClaudeMessagesToKiro(messages, tools, model) {
     const prev = mergedHistory[mergedHistory.length - 1];
     if (current.userInputMessage && prev?.userInputMessage) {
       prev.userInputMessage.content += "\n\n" + current.userInputMessage.content;
+      if (current.userInputMessage.cachePoint) {
+        applyDefaultKiroCachePoint(prev.userInputMessage);
+      }
       const prevCtx = prev.userInputMessage.userInputMessageContext;
       const curCtx = current.userInputMessage.userInputMessageContext;
       if (curCtx) {
@@ -638,6 +675,10 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
     upstreamModel
   );
 
+  if (cachePointBelongsOnCurrentMessage(body)) {
+    applyDefaultKiroCachePoint(currentMessage?.userInputMessage);
+  }
+
   // Guard 2: tools present → reconcile dangling tool_results.
   if (clientProvidedTools) {
     reconcileOrphanedToolResults(history, currentMessage);
@@ -689,6 +730,9 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
     }),
     ...(currentMessage?.userInputMessage?.images && {
       images: currentMessage.userInputMessage.images,
+    }),
+    ...(currentMessage?.userInputMessage?.cachePoint && {
+      cachePoint: currentMessage.userInputMessage.cachePoint,
     }),
   };
 
