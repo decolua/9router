@@ -9,6 +9,16 @@ import { FORMATS } from "../../open-sse/translator/formats.js";
 const C2K = (body, credentials = null) =>
   translateRequest(FORMATS.CLAUDE, FORMATS.KIRO, "claude-sonnet-4.5", body, true, credentials, "kiro");
 
+const userInputMessages = (payload) => [
+  ...payload.conversationState.history
+    .map((item) => item.userInputMessage)
+    .filter(Boolean),
+  payload.conversationState.currentMessage.userInputMessage,
+];
+
+const cachePointMessages = (payload) =>
+  userInputMessages(payload).filter((message) => message.cachePoint);
+
 const cacheControlledBody = ({
   systemText = "Stable system instructions",
   toolDescription = "Lookup stable project context",
@@ -141,9 +151,7 @@ describe("Claude → Kiro (direct route)", () => {
     );
 
     expect(first.conversationState.conversationId).toBe(second.conversationState.conversationId);
-    expect(first.conversationState.currentMessage.userInputMessage.cachePoint).toEqual({
-      type: "default",
-    });
+    expect(cachePointMessages(first).length).toBeGreaterThan(0);
     expect(JSON.stringify(first)).not.toContain("cache_control");
   });
 
@@ -160,10 +168,20 @@ describe("Claude → Kiro (direct route)", () => {
       ],
     });
     const current = out.conversationState.currentMessage.userInputMessage;
+    const cached = cachePointMessages(out);
     const serialized = JSON.stringify(out);
 
-    expect(current.cachePoint).toEqual({ type: "default" });
-    expect(current.content).toContain("Stable user prefix");
+    expect(cached).toHaveLength(1);
+    expect(out.conversationState.history).toContainEqual({
+      userInputMessage: expect.objectContaining({
+        content: "Stable user prefix",
+        cachePoint: { type: "default" },
+      }),
+    });
+    expect(cached[0].content).toContain("Stable user prefix");
+    expect(cached[0].content).not.toContain("Dynamic tail");
+    expect(current.cachePoint).toBeUndefined();
+    expect(current.content).not.toContain("Stable user prefix");
     expect(current.content).toContain("Dynamic tail");
     expect(serialized).not.toContain("cache_control");
     expect(serialized).not.toContain("ephemeral");
@@ -192,8 +210,10 @@ describe("Claude → Kiro (direct route)", () => {
 
   it("uses system cache_control prefix before x-session-id for Anthropic messages requests", () => {
     const sessionId = "ruby-cache-control-probe-20260709";
+    const firstTail = "Probe call one: summarize the cached prefix.";
+    const secondTail = "Probe call two: answer a different trailing question.";
     const first = C2K(
-      systemCacheControlledBody("Probe call one: summarize the cached prefix."),
+      systemCacheControlledBody(firstTail),
       {
         rawHeaders: {
           "x-session-id": sessionId,
@@ -203,7 +223,7 @@ describe("Claude → Kiro (direct route)", () => {
       }
     );
     const second = C2K(
-      systemCacheControlledBody("Probe call two: answer a different trailing question."),
+      systemCacheControlledBody(secondTail),
       {
         rawHeaders: {
           "x-session-id": sessionId,
@@ -215,12 +235,26 @@ describe("Claude → Kiro (direct route)", () => {
 
     expect(first.conversationState.conversationId).toBe(second.conversationState.conversationId);
     expect(first.conversationState.conversationId).not.toBe(sessionId);
-    expect(first.conversationState.currentMessage.userInputMessage.cachePoint).toEqual({
-      type: "default",
+    expect(first.conversationState.currentMessage.userInputMessage.cachePoint).toBeUndefined();
+    expect(second.conversationState.currentMessage.userInputMessage.cachePoint).toBeUndefined();
+    expect(first.conversationState.currentMessage.userInputMessage.content).toContain(firstTail);
+    expect(second.conversationState.currentMessage.userInputMessage.content).toContain(secondTail);
+
+    const firstCached = cachePointMessages(first);
+    const secondCached = cachePointMessages(second);
+    expect(firstCached).toHaveLength(1);
+    expect(secondCached).toHaveLength(1);
+    expect(first.conversationState.history).toContainEqual({
+      userInputMessage: expect.objectContaining({
+        cachePoint: { type: "default" },
+      }),
     });
-    expect(second.conversationState.currentMessage.userInputMessage.cachePoint).toEqual({
-      type: "default",
-    });
+    expect(firstCached[0].content).toContain("Large stable Claude system prefix");
+    expect(firstCached[0].content).not.toContain("[Context: Current time is");
+    expect(JSON.stringify(firstCached[0])).not.toContain(firstTail);
+    expect(JSON.stringify(firstCached[0])).not.toContain(secondTail);
+    expect(JSON.stringify(secondCached[0])).not.toContain(firstTail);
+    expect(JSON.stringify(secondCached[0])).not.toContain(secondTail);
     expect(JSON.stringify(first)).not.toContain("cache_control");
     expect(JSON.stringify(first)).not.toContain("ephemeral");
     expect(JSON.stringify(first)).not.toContain("clientCacheConfig");

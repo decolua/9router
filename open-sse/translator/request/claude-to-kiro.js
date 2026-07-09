@@ -170,13 +170,70 @@ function findLastClaudeCacheControlKind(body) {
 
 function cachePointBelongsOnCurrentMessage(body) {
   const kind = findLastClaudeCacheControlKind(body);
-  return kind === "tool" || kind?.startsWith("system:");
+  return kind === "tool";
 }
 
 function applyDefaultKiroCachePoint(userInputMessage) {
   if (userInputMessage) {
     userInputMessage.cachePoint = { ...KIRO_DEFAULT_CACHE_POINT };
   }
+}
+
+function systemPartText(part) {
+  if (typeof part === "string") return part;
+  if (!part || typeof part !== "object") return "";
+  if (typeof part.text === "string") return part.text;
+  return "";
+}
+
+function splitSystemCacheControl(system) {
+  if (!system) return { fullText: "", cachedText: "", uncachedText: "" };
+
+  const parts = Array.isArray(system) ? system : [system];
+  const texts = parts.map(systemPartText);
+  const fullText = texts.filter(Boolean).join("\n");
+  let lastCacheControlIndex = -1;
+  for (let i = parts.length - 1; i >= 0; i--) {
+    if (hasCacheControl(parts[i])) {
+      lastCacheControlIndex = i;
+      break;
+    }
+  }
+
+  if (lastCacheControlIndex === -1) {
+    return { fullText, cachedText: "", uncachedText: fullText };
+  }
+
+  return {
+    fullText,
+    cachedText: texts.slice(0, lastCacheControlIndex + 1).filter(Boolean).join("\n"),
+    uncachedText: texts.slice(lastCacheControlIndex + 1).filter(Boolean).join("\n"),
+  };
+}
+
+function renderInstructions(text) {
+  return `<instructions>\n${text}\n</instructions>`;
+}
+
+function buildCachedSystemPrefix(systemText, thinkingBudget, agentic) {
+  const prefixParts = [];
+  if (thinkingBudget !== null) prefixParts.push(buildThinkingSystemPrefix(thinkingBudget));
+  if (agentic) prefixParts.push(KIRO_AGENTIC_SYSTEM_PROMPT);
+  if (systemText) prefixParts.push(renderInstructions(systemText));
+  return prefixParts.filter(Boolean).join("\n\n");
+}
+
+function isRenderableUserBlock(block) {
+  if (typeof block === "string") return block.trim().length > 0;
+  if (!block || typeof block !== "object") return false;
+  if (block.type === CLAUDE_BLOCK.TEXT) return Boolean(block.text);
+  if (block.type === CLAUDE_BLOCK.IMAGE && block.source?.type === "base64") return true;
+  if (block.type === CLAUDE_BLOCK.TOOL_RESULT) return true;
+  return false;
+}
+
+function hasRenderableUserBlockAfter(blocks, startIndex) {
+  return blocks.slice(startIndex).some(isRenderableUserBlock);
 }
 
 function normalizeSlackTs(value) {
@@ -398,6 +455,10 @@ function convertClaudeMessagesToKiro(messages, tools, model) {
   let toolsInjected = false;
 
   const clientProvidedTools = Array.isArray(tools) && tools.length > 0;
+  const lastUserMessageIndex = messages.reduce(
+    (lastIndex, message, index) => (message?.role === ROLE.USER ? index : lastIndex),
+    -1
+  );
 
   const buildToolSpecs = () =>
     tools.map((t) => {
@@ -456,7 +517,8 @@ function convertClaudeMessagesToKiro(messages, tools, model) {
     }
   };
 
-  for (const msg of messages) {
+  for (let messageIndex = 0; messageIndex < messages.length; messageIndex++) {
+    const msg = messages[messageIndex];
     const role = msg.role;
     if (role !== currentRole && currentRole !== null) flushPending();
     currentRole = role;
@@ -465,9 +527,15 @@ function convertClaudeMessagesToKiro(messages, tools, model) {
       if (typeof msg.content === "string") {
         pendingUserContent.push(msg.content);
       } else if (Array.isArray(msg.content)) {
-        for (const block of msg.content) {
-          if (hasCacheControl(block)) pendingUserCachePoint = true;
-          if (block.type === CLAUDE_BLOCK.TEXT) {
+        const canSplitCurrentUserCache = messageIndex === lastUserMessageIndex;
+        for (let blockIndex = 0; blockIndex < msg.content.length; blockIndex++) {
+          const block = msg.content[blockIndex];
+          const blockHasCacheControl = hasCacheControl(block);
+          if (blockHasCacheControl) pendingUserCachePoint = true;
+
+          if (typeof block === "string") {
+            pendingUserContent.push(block);
+          } else if (block.type === CLAUDE_BLOCK.TEXT) {
             pendingUserContent.push(block.text);
           } else if (block.type === CLAUDE_BLOCK.IMAGE && block.source?.type === "base64") {
             const mediaType = block.source.media_type || DEFAULT_IMAGE_MIME;
@@ -491,6 +559,14 @@ function convertClaudeMessagesToKiro(messages, tools, model) {
               status: "success",
               content: [{ text: resultContent }],
             });
+          }
+
+          if (
+            canSplitCurrentUserCache &&
+            blockHasCacheControl &&
+            hasRenderableUserBlockAfter(msg.content, blockIndex + 1)
+          ) {
+            flushPending();
           }
         }
       }
@@ -663,6 +739,8 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
 
   const { upstream: upstreamModel, agentic } = resolveKiroModel(model);
   const thinkingBudget = resolveKiroThinkingBudget(body, credentials?.rawHeaders, model);
+  const systemCache = splitSystemCacheControl(body.system);
+  const hasCachedSystemPrefix = Boolean(systemCache.cachedText);
 
   // Guard 1: no client tools → flatten all tool interactions to text.
   if (!clientProvidedTools) {
@@ -695,30 +773,48 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
 
   let finalContent = currentMessage?.userInputMessage?.content || "";
 
-  // System prompt: pass via native systemInstruction field (Kiro/Q API supports it)
-  // and also prepend as <instructions> in user content as fallback for upstreams
-  // that don't support the native field.
+  // Uncached system prompts keep the existing native systemInstruction + content
+  // fallback. Cached system prompts move into a history message so the cache
+  // point lands before the volatile timestamp and current user text.
   let systemInstruction = undefined;
-  if (body.system) {
-    let systemText = "";
-    if (typeof body.system === "string") {
-      systemText = body.system;
-    } else if (Array.isArray(body.system)) {
-      systemText = body.system.map((s) => s.text || "").join("\n");
-    }
-    if (systemText) {
-      systemInstruction = systemText;
-      finalContent = `<instructions>\n${systemText}\n</instructions>\n\n${finalContent}`;
+  if (systemCache.fullText) {
+    if (hasCachedSystemPrefix) {
+      if (systemCache.uncachedText) {
+        finalContent = `${renderInstructions(systemCache.uncachedText)}\n\n${finalContent}`;
+      }
+    } else {
+      systemInstruction = systemCache.fullText;
+      finalContent = `${renderInstructions(systemCache.fullText)}\n\n${finalContent}`;
     }
   }
 
-  // Prefix order: thinking_mode tag, timestamp marker, then agentic prompt.
+  // Prefix order without cached system: thinking_mode tag, timestamp marker,
+  // then agentic prompt. With cached system, stable thinking/agentic/system text
+  // lives before the cache point; the volatile timestamp stays current.
   const timestamp = new Date().toISOString();
-  const prefixParts = [];
-  if (thinkingBudget !== null) prefixParts.push(buildThinkingSystemPrefix(thinkingBudget));
-  prefixParts.push(`[Context: Current time is ${timestamp}]`);
-  if (agentic) prefixParts.push(KIRO_AGENTIC_SYSTEM_PROMPT);
-  finalContent = `${prefixParts.join("\n\n")}\n\n${finalContent}`;
+  if (hasCachedSystemPrefix) {
+    const cachedPrefixContent = buildCachedSystemPrefix(
+      systemCache.cachedText,
+      thinkingBudget,
+      agentic
+    );
+    if (cachedPrefixContent) {
+      history.unshift({
+        userInputMessage: {
+          content: cachedPrefixContent,
+          modelId: upstreamModel,
+          cachePoint: { ...KIRO_DEFAULT_CACHE_POINT },
+        },
+      });
+    }
+    finalContent = `[Context: Current time is ${timestamp}]\n\n${finalContent}`;
+  } else {
+    const prefixParts = [];
+    if (thinkingBudget !== null) prefixParts.push(buildThinkingSystemPrefix(thinkingBudget));
+    prefixParts.push(`[Context: Current time is ${timestamp}]`);
+    if (agentic) prefixParts.push(KIRO_AGENTIC_SYSTEM_PROMPT);
+    finalContent = `${prefixParts.join("\n\n")}\n\n${finalContent}`;
+  }
 
   const userInputMessage = {
     content: finalContent,
