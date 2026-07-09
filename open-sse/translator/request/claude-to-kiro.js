@@ -44,6 +44,8 @@ const SLACK_TS_URL_RE = "\\d{10}(?:(?:\\.|%2E)\\d{1,6})?|\\d{16}";
 const FIRST_USER_ANCHOR_MAX = 2048;
 const CACHE_CONTROL_KEY = "cache_control";
 const KIRO_DEFAULT_CACHE_POINT = { type: "default" };
+const KIRO_CONTEXT_ASSISTANT_ACK =
+  "I will fully incorporate this information when generating my responses, and explicitly acknowledge relevant parts of the summary when answering questions.";
 
 function withoutVolatileSessionHeaders(headers) {
   if (!headers || typeof headers !== "object") return headers;
@@ -177,6 +179,40 @@ function applyDefaultKiroCachePoint(userInputMessage) {
   if (userInputMessage) {
     userInputMessage.cachePoint = { ...KIRO_DEFAULT_CACHE_POINT };
   }
+}
+
+function closeHistoryUserCachePointBoundaries(history) {
+  const normalized = [];
+
+  for (let i = 0; i < history.length; i++) {
+    const item = history[i];
+    const userInputMessage = item.userInputMessage;
+    const cachePoint = userInputMessage?.cachePoint;
+    if (!cachePoint) {
+      normalized.push(item);
+      continue;
+    }
+
+    delete userInputMessage.cachePoint;
+    normalized.push(item);
+
+    const next = history[i + 1];
+    if (next?.assistantResponseMessage) {
+      if (!next.assistantResponseMessage.cachePoint) {
+        next.assistantResponseMessage.cachePoint = { ...cachePoint };
+      }
+      continue;
+    }
+
+    normalized.push({
+      assistantResponseMessage: {
+        content: KIRO_CONTEXT_ASSISTANT_ACK,
+        cachePoint: { ...cachePoint },
+      },
+    });
+  }
+
+  return normalized;
 }
 
 function systemPartText(part) {
@@ -747,7 +783,7 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
     messages = flattenClaudeToolInteractions(messages);
   }
 
-  const { history, currentMessage } = convertClaudeMessagesToKiro(
+  let { history, currentMessage } = convertClaudeMessagesToKiro(
     messages,
     tools,
     upstreamModel
@@ -799,13 +835,20 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
       agentic
     );
     if (cachedPrefixContent) {
-      history.unshift({
-        userInputMessage: {
-          content: cachedPrefixContent,
-          modelId: upstreamModel,
-          cachePoint: { ...KIRO_DEFAULT_CACHE_POINT },
+      history.unshift(
+        {
+          userInputMessage: {
+            content: cachedPrefixContent,
+            modelId: upstreamModel,
+          },
         },
-      });
+        {
+          assistantResponseMessage: {
+            content: KIRO_CONTEXT_ASSISTANT_ACK,
+            cachePoint: { ...KIRO_DEFAULT_CACHE_POINT },
+          },
+        }
+      );
     }
     finalContent = `[Context: Current time is ${timestamp}]\n\n${finalContent}`;
   } else {
@@ -815,6 +858,8 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
     if (agentic) prefixParts.push(KIRO_AGENTIC_SYSTEM_PROMPT);
     finalContent = `${prefixParts.join("\n\n")}\n\n${finalContent}`;
   }
+
+  history = closeHistoryUserCachePointBoundaries(history);
 
   const userInputMessage = {
     content: finalContent,
