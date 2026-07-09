@@ -1,6 +1,7 @@
 export default {
   id: "xai",
   alias: "xai",
+  category: "oauth",
   display: { name: "xAI (API)", icon: "auto_awesome", color: "#FFFFFF", textIcon: "X", website: "https://console.x.ai" },
   hasOAuth: true,
   transport: {
@@ -25,6 +26,7 @@ export default {
   ],
   models: [
     { id: "grok-4.5", name: "Grok 4.5" },
+    { id: "grok-4.5-high", name: "Grok 4.5 High (Reasoning)" },
     { id: "grok-build-0.1", name: "Grok Build 0.1" },
     { id: "grok-4.3", name: "Grok 4.3" },
     { id: "grok-4.3-high", name: "Grok 4.3 High (Reasoning)" },

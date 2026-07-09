@@ -27,6 +27,7 @@ describe("Grok Build routing", () => {
   it("exposes Grok Build in the xAI model catalog", () => {
     expect(PROVIDER_MODELS.xai.map((model) => model.id)).toEqual(expect.arrayContaining([
       "grok-4.5",
+      "grok-4.5-high",
       "grok-build-0.1",
       "grok-4.3",
       "grok-4.3-high",

@@ -32,8 +32,9 @@ const DEEPSEEK_V4_PRO_ALIASES = {
 // upstream model `grok-4.3` with reasoning_effort=high. xAI has no separate
 // reasoning model name — effort is a request parameter.
 const GROK_43 = "grok-4.3";
-const GROK_43_REASONING_ALIASES = {
-  [`${GROK_43}-high`]: "high"
+const XAI_REASONING_ALIASES = {
+  "grok-4.5-high": { base: "grok-4.5", effort: "high" },
+  [`${GROK_43}-high`]: { base: "grok-4.3", effort: "high" }
 };
 
 function shouldInject(message, scope) {
@@ -77,13 +78,13 @@ function applyDeepSeekV4ProAlias({ provider, model, body }) {
   return nextBody;
 }
 
-function applyGrok43ReasoningAlias({ provider, model, body }) {
-  const effort = GROK_43_REASONING_ALIASES[model];
-  if (provider !== "xai" || !effort || !body) return body;
+function applyXaiReasoningAlias({ provider, model, body }) {
+  const alias = XAI_REASONING_ALIASES[model];
+  if (provider !== "xai" || !alias || !body) return body;
   return {
     ...body,
-    model: GROK_43,
-    reasoning_effort: effort
+    model: alias.base,
+    reasoning_effort: alias.effort
   };
 }
 
@@ -92,6 +93,6 @@ export function injectReasoningContent({ provider, model, body }) {
   const modelRule = MODEL_RULES.find(r => r.match(model));
   const rule = providerRule || modelRule;
   let nextBody = applyDeepSeekV4ProAlias({ provider, model, body });
-  nextBody = applyGrok43ReasoningAlias({ provider, model, body: nextBody });
+  nextBody = applyXaiReasoningAlias({ provider, model, body: nextBody });
   return applyRule(nextBody, rule);
 }
