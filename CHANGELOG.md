@@ -1,3 +1,12 @@
+# v0.6.0 (2026-07-09)
+
+## Features
+- **Billing**: log per-api-key daily cost guard events (RATE_LIMIT on block, RATE_LIMIT_NEAR at >=80% of limit) with api key name, cost, model, provider — for future limit tuning IVT-0606
+- **Debug**: inject app version + short git commit into `<html>` attributes and `<meta>` tags for production debugging
+
+## Fixes
+- **Billing**: deploy per-api-key daily cost limit guard to production (feature shipped after v0.5.18; v0.6.0 is the first release containing it)
+
 # v0.5.18 (2026-07-03)
 
 ## Features
