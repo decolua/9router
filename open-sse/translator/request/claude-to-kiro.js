@@ -247,6 +247,19 @@ function bodyHasExplicitSessionId(body) {
   });
 }
 
+function explicitBodySessionId(body) {
+  for (const key of EXPLICIT_SESSION_BODY_KEYS) {
+    const value = body?.[key];
+    if (typeof value === "string") {
+      const normalized = value.trim();
+      if (normalized) return normalized;
+    } else if (value !== undefined && value !== null) {
+      return String(value);
+    }
+  }
+  return null;
+}
+
 function bodyWithKiroPromptCacheKey(body, connectionId) {
   if (bodyHasExplicitSessionId(body)) return body;
 
@@ -258,6 +271,12 @@ function bodyWithKiroPromptCacheKey(body, connectionId) {
 }
 
 function resolveKiroConversationId(body, credentials) {
+  const explicitSessionId = explicitBodySessionId(body);
+  if (explicitSessionId) return explicitSessionId;
+
+  const cacheControlAnchor = findClaudeCacheControlAnchor(body);
+  if (cacheControlAnchor) return deterministicUuid(`kiro:${cacheControlAnchor}`);
+
   return resolveSessionId({
     headers: withoutVolatileSessionHeaders(credentials?.rawHeaders),
     body: bodyWithKiroPromptCacheKey(body, credentials?.connectionId),

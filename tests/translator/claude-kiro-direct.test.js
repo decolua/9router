@@ -35,6 +35,19 @@ const cacheControlledBody = ({
   ],
 });
 
+const systemCacheControlledBody = (trailingUserText) => ({
+  model: "kr/claude-opus-4.8",
+  max_tokens: 64,
+  system: [
+    {
+      type: "text",
+      text: "Large stable Claude system prefix\n" + "cache me\n".repeat(100),
+      cache_control: { type: "ephemeral" },
+    },
+  ],
+  messages: [{ role: "user", content: trailingUserText }],
+});
+
 describe("Claude → Kiro (direct route)", () => {
   it("produces a Kiro conversationState payload", () => {
     const out = C2K({ messages: [{ role: "user", content: "hello" }] });
@@ -130,6 +143,34 @@ describe("Claude → Kiro (direct route)", () => {
     expect(JSON.stringify(first)).not.toContain("cache_control");
   });
 
+  it("uses system cache_control prefix before x-session-id for Anthropic messages requests", () => {
+    const sessionId = "ruby-cache-control-probe-20260709";
+    const first = C2K(
+      systemCacheControlledBody("Probe call one: summarize the cached prefix."),
+      {
+        rawHeaders: {
+          "x-session-id": sessionId,
+          "x-client-request-id": "volatile-request-a",
+        },
+        connectionId: "kiro-conn",
+      }
+    );
+    const second = C2K(
+      systemCacheControlledBody("Probe call two: answer a different trailing question."),
+      {
+        rawHeaders: {
+          "x-session-id": sessionId,
+          "x-client-request-id": "volatile-request-b",
+        },
+        connectionId: "kiro-conn",
+      }
+    );
+
+    expect(first.conversationState.conversationId).toBe(second.conversationState.conversationId);
+    expect(first.conversationState.conversationId).not.toBe(sessionId);
+    expect(JSON.stringify(first)).not.toContain("cache_control");
+  });
+
   it("uses different Kiro conversationIds for different cache_control prefixes", () => {
     const first = C2K(cacheControlledBody({ cachedUserText: "Cached thread context A" }));
     const second = C2K(cacheControlledBody({ cachedUserText: "Cached thread context B" }));
@@ -158,7 +199,10 @@ describe("Claude → Kiro (direct route)", () => {
         messages: [{ role: "user", content: "summarize this thread" }],
       },
       {
-        rawHeaders: { "x-client-request-id": "volatile-request-id" },
+        rawHeaders: {
+          "x-session-id": "header-session-should-not-win",
+          "x-client-request-id": "volatile-request-id",
+        },
         connectionId: "kiro-conn",
       }
     );
@@ -177,7 +221,10 @@ describe("Claude → Kiro (direct route)", () => {
         [key]: value,
       },
       {
-        rawHeaders: { "x-client-request-id": "volatile-request-id" },
+        rawHeaders: {
+          "x-session-id": "header-session-should-not-win",
+          "x-client-request-id": "volatile-request-id",
+        },
         connectionId: "kiro-conn",
       }
     );
