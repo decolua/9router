@@ -46,6 +46,97 @@ describe("Claude → Kiro (direct route)", () => {
     expect(second.conversationState.conversationId).toBe("client-session-b");
   });
 
+  it("keeps the same Kiro conversationId for the same Slack thread despite volatile request ids", () => {
+    const metadataAnchor = {
+      metadata: { slack_thread: "C0130M8P4HK:1783546858.709689" },
+      messages: [{ role: "user", content: "summarize this thread" }],
+    };
+    const systemPermalink = {
+      system:
+        "Slack thread: https://example.slack.com/archives/C0130M8P4HK/p1783546858709689?thread_ts=1783546858%2E709689&cid=C0130M8P4HK",
+      messages: [{ role: "user", content: "summarize this thread" }],
+    };
+    const userSlashAnchor = {
+      messages: [{ role: "user", content: "Follow up on C0130M8P4HK/1783546858.709689" }],
+    };
+
+    const first = C2K(metadataAnchor, {
+      rawHeaders: { "x-client-request-id": "req-a" },
+      connectionId: "kiro-conn",
+    });
+    const second = C2K(systemPermalink, {
+      rawHeaders: { "x-client-request-id": "req-b" },
+      connectionId: "kiro-conn",
+    });
+    const third = C2K(userSlashAnchor, {
+      rawHeaders: { "x-client-request-id": "req-c" },
+      connectionId: "kiro-conn",
+    });
+
+    expect(first.conversationState.conversationId).toBe(second.conversationState.conversationId);
+    expect(second.conversationState.conversationId).toBe(third.conversationState.conversationId);
+  });
+
+  it("uses different Kiro conversationIds for different Slack thread anchors", () => {
+    const first = C2K({
+      metadata: { slack_thread: "C0130M8P4HK:1783546858.709689" },
+      messages: [{ role: "user", content: "summarize this thread" }],
+    });
+    const second = C2K({
+      metadata: { slack_thread: "C0130M8P4HK:1783546859.709689" },
+      messages: [{ role: "user", content: "summarize this thread" }],
+    });
+
+    expect(first.conversationState.conversationId).not.toBe(second.conversationState.conversationId);
+  });
+
+  it.each([
+    ["prompt_cache_key", "explicit-cache-key"],
+    ["session_id", "explicit-session-id"],
+    ["conversation_id", "explicit-conversation-id"],
+  ])("respects explicit %s and does not replace it with a Kiro prompt cache key", (key, value) => {
+    const out = C2K(
+      {
+        [key]: value,
+        metadata: { slack_thread: "C0130M8P4HK:1783546858.709689" },
+        messages: [{ role: "user", content: "summarize this thread" }],
+      },
+      {
+        rawHeaders: { "x-client-request-id": "volatile-request-id" },
+        connectionId: "kiro-conn",
+      }
+    );
+
+    expect(out.conversationState.conversationId).toBe(value);
+  });
+
+  it("keeps non-Slack fallback conversationIds deterministic across volatile request ids", () => {
+    const body = {
+      metadata: { user_id: "slack-user-without-thread-anchor" },
+      messages: [{ role: "user", content: "plain non Slack request" }],
+    };
+    const changedUserContent = {
+      metadata: { user_id: "slack-user-without-thread-anchor" },
+      messages: [{ role: "user", content: "different plain non Slack request" }],
+    };
+
+    const first = C2K(body, {
+      rawHeaders: { "x-client-request-id": "req-a" },
+      connectionId: "kiro-conn",
+    });
+    const second = C2K(body, {
+      rawHeaders: { "x-client-request-id": "req-b" },
+      connectionId: "kiro-conn",
+    });
+    const different = C2K(changedUserContent, {
+      rawHeaders: { "x-client-request-id": "req-c" },
+      connectionId: "kiro-conn",
+    });
+
+    expect(first.conversationState.conversationId).toBe(second.conversationState.conversationId);
+    expect(first.conversationState.conversationId).not.toBe(different.conversationState.conversationId);
+  });
+
   it("guard 1: with no tools, a dangling tool_result is flattened to text (no structured ref)", () => {
     // Client omitted `tools` but kept a tool_result after compaction.
     const out = C2K({

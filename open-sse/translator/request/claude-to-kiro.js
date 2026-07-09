@@ -22,6 +22,7 @@
  * the `<thinking_mode>enabled</thinking_mode>` reasoning trigger, matching
  * buildKiroPayload.
  */
+import crypto from "crypto";
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { resolveSessionId } from "../../utils/sessionManager.js";
@@ -34,6 +35,151 @@ import {
 } from "../../config/kiroConstants.js";
 import { DEFAULT_IMAGE_MIME } from "../schema/index.js";
 import { ROLE, CLAUDE_BLOCK } from "../schema/index.js";
+
+const VOLATILE_SESSION_HEADER_KEYS = new Set(["x-client-request-id"]);
+const EXPLICIT_SESSION_BODY_KEYS = ["prompt_cache_key", "session_id", "conversation_id"];
+const SLACK_CHANNEL_RE = "[CGD][A-Z0-9]{8,}";
+const SLACK_TS_RE = "\\d{10}(?:\\.\\d{1,6})?|\\d{16}";
+const SLACK_TS_URL_RE = "\\d{10}(?:(?:\\.|%2E)\\d{1,6})?|\\d{16}";
+const FIRST_USER_ANCHOR_MAX = 2048;
+
+function withoutVolatileSessionHeaders(headers) {
+  if (!headers || typeof headers !== "object") return headers;
+
+  const stableHeaders = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (VOLATILE_SESSION_HEADER_KEYS.has(String(key).toLowerCase())) continue;
+    stableHeaders[key] = value;
+  }
+  return stableHeaders;
+}
+
+function deterministicUuid(value) {
+  const bytes = crypto.createHash("sha256").update(String(value)).digest().subarray(0, 16);
+  bytes[6] = (bytes[6] & 0x0f) | 0x50;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function normalizeAnchorText(value) {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value.replace(/\s+/g, " ").trim();
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  try {
+    return JSON.stringify(value).replace(/\s+/g, " ").trim();
+  } catch {
+    return "";
+  }
+}
+
+function normalizeSlackTs(value) {
+  if (!value) return null;
+  const ts = String(value).replace(/%2E/gi, ".").replace(/_/g, ".");
+  if (/^\d{16}$/.test(ts)) return `${ts.slice(0, 10)}.${ts.slice(10)}`;
+  if (/^\d{10}\.\d{1,6}$/.test(ts)) return ts;
+  return null;
+}
+
+function extractSlackThreadAnchor(text) {
+  const normalized = normalizeAnchorText(text);
+  if (!normalized) return null;
+
+  const permalinkRe = new RegExp(
+    `/archives/(${SLACK_CHANNEL_RE})/[^\\s<>)]*?[?&]thread_ts=(${SLACK_TS_URL_RE})`,
+    "i"
+  );
+  const permalink = normalized.match(permalinkRe);
+  if (permalink) {
+    const ts = normalizeSlackTs(permalink[2]);
+    if (ts) return `slack:${permalink[1].toUpperCase()}:${ts}`;
+  }
+
+  const anchorRe = new RegExp(`\\b(${SLACK_CHANNEL_RE})[:/](${SLACK_TS_RE})\\b`, "i");
+  const anchor = normalized.match(anchorRe);
+  if (anchor) {
+    const ts = normalizeSlackTs(anchor[2]);
+    if (ts) return `slack:${anchor[1].toUpperCase()}:${ts}`;
+  }
+
+  return null;
+}
+
+function claudeContentToText(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return normalizeAnchorText(content);
+
+  return content
+    .map((block) => {
+      if (typeof block === "string") return block;
+      if (block?.type === CLAUDE_BLOCK.TEXT || typeof block?.text === "string") {
+        return block.text || "";
+      }
+      if (block?.type === CLAUDE_BLOCK.TOOL_RESULT) {
+        return claudeContentToText(block.content);
+      }
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function systemToText(system) {
+  if (typeof system === "string") return system;
+  if (!Array.isArray(system)) return "";
+  return system
+    .map((part) => (typeof part === "string" ? part : part?.text || ""))
+    .filter(Boolean)
+    .join("\n");
+}
+
+function findKiroStableAnchor(body, connectionId) {
+  const metadataAnchor = extractSlackThreadAnchor(body?.metadata);
+  if (metadataAnchor) return metadataAnchor;
+
+  const systemAnchor = extractSlackThreadAnchor(systemToText(body?.system));
+  if (systemAnchor) return systemAnchor;
+
+  const firstUser = Array.isArray(body?.messages)
+    ? body.messages.find((message) => message?.role === ROLE.USER)
+    : null;
+  const firstUserText = claudeContentToText(firstUser?.content);
+  const userAnchor = extractSlackThreadAnchor(firstUserText);
+  if (userAnchor) return userAnchor;
+
+  return [
+    "fallback",
+    normalizeAnchorText(connectionId),
+    normalizeAnchorText(body?.metadata?.user_id),
+    normalizeAnchorText(firstUserText).slice(0, FIRST_USER_ANCHOR_MAX),
+  ].join(":");
+}
+
+function bodyHasExplicitSessionId(body) {
+  return EXPLICIT_SESSION_BODY_KEYS.some((key) => {
+    const value = body?.[key];
+    return typeof value === "string" ? value.trim() : value !== undefined && value !== null;
+  });
+}
+
+function bodyWithKiroPromptCacheKey(body, connectionId) {
+  if (bodyHasExplicitSessionId(body)) return body;
+
+  const anchor = findKiroStableAnchor(body, connectionId);
+  return {
+    ...body,
+    prompt_cache_key: deterministicUuid(`kiro:${anchor}`),
+  };
+}
+
+function resolveKiroConversationId(body, credentials) {
+  return resolveSessionId({
+    headers: withoutVolatileSessionHeaders(credentials?.rawHeaders),
+    body: bodyWithKiroPromptCacheKey(body, credentials?.connectionId),
+    connectionId: credentials?.connectionId,
+    scope: "kiro",
+  });
+}
 
 /** Stringify a tool_use input as a readable line. */
 function toolUseToText(name, input) {
@@ -449,7 +595,7 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
   const payload = {
     conversationState: {
       chatTriggerType: "MANUAL",
-      conversationId: resolveSessionId({ headers: credentials?.rawHeaders, body, connectionId: credentials?.connectionId, scope: "kiro" }),
+      conversationId: resolveKiroConversationId(body, credentials),
       currentMessage: {
         userInputMessage,
       },
