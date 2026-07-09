@@ -110,7 +110,7 @@ export async function handleChat(request, clientRawRequest = null) {
             const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
             cleanRawReq = { ...clientRawRequest, body: cleanBody };
           }
-          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, settings);
         },
         log,
         comboName: modelStr,
@@ -124,7 +124,7 @@ export async function handleChat(request, clientRawRequest = null) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, settings),
       log,
       comboName: modelStr,
       comboStrategy,
@@ -133,24 +133,23 @@ export async function handleChat(request, clientRawRequest = null) {
   }
 
   // Single model request
-  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey);
+  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey, settings);
 }
 
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, settings = null) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
   if (!modelInfo.provider) {
     const comboModels = await getComboModels(modelStr);
     if (comboModels) {
-      const chatSettings = await getSettings();
       // Check for combo-specific strategy first, fallback to global
-      const comboStrategies = chatSettings.comboStrategies || {};
+      const comboStrategies = settings?.comboStrategies || {};
       const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
-      const comboStrategy = comboSpecificStrategy || chatSettings.comboStrategy || "fallback";
+      const comboStrategy = comboSpecificStrategy || settings?.comboStrategy || "fallback";
 
       if (comboStrategy === "fusion") {
         log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
@@ -163,7 +162,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
               const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
               cleanRawReq = { ...clientRawRequest, body: cleanBody };
             }
-            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, settings);
           },
           log,
           comboName: modelStr,
@@ -172,12 +171,12 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         });
       }
 
-      const comboStickyLimit = chatSettings.comboStickyRoundRobinLimit;
+      const comboStickyLimit = settings?.comboStickyRoundRobinLimit;
       log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
       return handleComboChat({
         body,
         models: comboModels,
-        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, settings),
         log,
         comboName: modelStr,
         comboStrategy,
@@ -192,8 +191,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
   // Check per-key daily cost limit before using upstream accounts
   if (apiKey) {
-    const chatSettings = await getSettings();
-    const costCheck = await checkApiKeyDailyCost({ apiKey, model, provider, settings: chatSettings });
+    const costCheck = await checkApiKeyDailyCost({ apiKey, model, provider, settings });
     if (costCheck.blocked) {
       return unavailableResponse(
         HTTP_STATUS.RATE_LIMITED,
@@ -254,8 +252,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     }
 
     // Use shared chatCore
-    const chatSettings = await getSettings();
-    const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
+    const providerThinking = (settings.providerThinking || {})[provider] || null;
     const result = await handleChatCore({
       body: { ...body, model: `${provider}/${model}` },
       modelInfo: { provider, model },
@@ -265,15 +262,15 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       connectionId: credentials.connectionId,
       userAgent,
       apiKey,
-      ccFilterNaming: !!chatSettings.ccFilterNaming,
-      rtkEnabled: !!chatSettings.rtkEnabled,
-      headroomEnabled: !!chatSettings.headroomEnabled,
-      headroomUrl: chatSettings.headroomUrl || DEFAULT_HEADROOM_URL,
-      headroomCompressUserMessages: !!chatSettings.headroomCompressUserMessages,
-      cavemanEnabled: !!chatSettings.cavemanEnabled,
-      cavemanLevel: chatSettings.cavemanLevel || "full",
-      ponytailEnabled: !!chatSettings.ponytailEnabled,
-      ponytailLevel: chatSettings.ponytailLevel || "full",
+      ccFilterNaming: !!settings.ccFilterNaming,
+      rtkEnabled: !!settings.rtkEnabled,
+      headroomEnabled: !!settings.headroomEnabled,
+      headroomUrl: settings.headroomUrl || DEFAULT_HEADROOM_URL,
+      headroomCompressUserMessages: !!settings.headroomCompressUserMessages,
+      cavemanEnabled: !!settings.cavemanEnabled,
+      cavemanLevel: settings.cavemanLevel || "full",
+      ponytailEnabled: !!settings.ponytailEnabled,
+      ponytailLevel: settings.ponytailLevel || "full",
       providerThinking,
       // Detect source format by endpoint + body
       sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
