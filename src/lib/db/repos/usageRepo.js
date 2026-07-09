@@ -314,6 +314,17 @@ export async function saveRequestUsage(entry) {
   }
 }
 
+export async function getDailyKeyModelCost({ apiKey, model, provider }) {
+  const db = await getAdapter();
+  const key = getLocalDateKey();
+  const row = db.get(`SELECT data FROM usageDaily WHERE dateKey = ?`, [key]);
+  if (!row) return 0;
+  const day = parseJson(row.data, {});
+  const apiKeyVal = apiKey && typeof apiKey === "string" ? apiKey : "local-no-key";
+  const counter = day.byApiKey?.[`${apiKeyVal}|${model}|${provider || "unknown"}`];
+  return counter?.cost || 0;
+}
+
 export async function getUsageHistory(filter = {}) {
   const db = await getAdapter();
   const conds = [];
