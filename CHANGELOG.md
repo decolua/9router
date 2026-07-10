@@ -1,4 +1,4 @@
-# v0.5.29 (2026-07-10)
+# v0.5.30 (2026-07-10)
 
 ## Features
 - **Perplexity**: add Agent API provider (#2492)
