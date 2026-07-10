@@ -5,6 +5,8 @@ import {
   sanitizeMinimaxDelta,
   flushMinimaxThinkingStreamState,
   isMinimaxThinkingProvider,
+  shouldOmitStreamReasoning,
+  stripClientReasoningDelta,
 } from "../../open-sse/utils/minimaxThinkingStream.js";
 
 describe("minimaxThinkingStream", () => {
@@ -69,5 +71,13 @@ describe("minimaxThinkingStream", () => {
     const flushed = flushMinimaxThinkingStreamState(state);
     expect(flushed).toEqual({ content: "", reasoning: "tail" });
     expect(state.carry).toBe("");
+  });
+
+  it("omits stream reasoning when openai transport requests it", () => {
+    expect(shouldOmitStreamReasoning("minimax")).toBe(true);
+    expect(shouldOmitStreamReasoning("openai")).toBe(false);
+    const delta = { content: "hi", reasoning_content: "secret", reasoning_details: [{ text: "x" }] };
+    expect(stripClientReasoningDelta(delta)).toBe(true);
+    expect(delta).toEqual({ content: "hi" });
   });
 });

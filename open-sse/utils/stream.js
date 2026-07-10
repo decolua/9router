@@ -10,6 +10,8 @@ import {
   flushMinimaxThinkingStreamState,
   isMinimaxThinkingProvider,
   sanitizeMinimaxDelta,
+  shouldOmitStreamReasoning,
+  stripClientReasoningDelta,
 } from "./minimaxThinkingStream.js";
 
 import { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER } from "./sseConstants.js";
@@ -82,6 +84,7 @@ export function createSSEStream(options = {}) {
   const minimaxThinkingState = isMinimaxThinkingProvider(provider)
     ? createMinimaxThinkingStreamState()
     : null;
+  const omitStreamReasoning = shouldOmitStreamReasoning(provider);
 
   return new TransformStream({
     transform(chunk, controller) {
@@ -160,10 +163,6 @@ export function createSSEStream(options = {}) {
                 }
               }
 
-              if (!hasValuableContent(parsed, FORMATS.OPENAI)) {
-                continue;
-              }
-
               const delta = parsed.choices?.[0]?.delta;
               const content = delta?.content;
               const reasoning = delta?.reasoning_content;
@@ -174,6 +173,16 @@ export function createSSEStream(options = {}) {
               if (reasoning && typeof reasoning === "string") {
                 totalContentLength += reasoning.length;
                 accumulatedThinking += reasoning;
+              }
+
+              if (omitStreamReasoning && delta) {
+                if (stripClientReasoningDelta(delta)) {
+                  fieldsInjected = true;
+                }
+              }
+
+              if (!hasValuableContent(parsed, FORMATS.OPENAI)) {
+                continue;
               }
 
               const extracted = extractUsage(parsed);
@@ -362,29 +371,31 @@ export function createSSEStream(options = {}) {
           if (minimaxThinkingState) {
             const tail = flushMinimaxThinkingStreamState(minimaxThinkingState);
             if (tail.content || tail.reasoning) {
-              const flushed = {
-                object: "chat.completion.chunk",
-                created: Math.floor(Date.now() / 1000),
-                model: model || "unknown",
-                choices: [{
-                  index: 0,
-                  delta: {
-                    ...(tail.content ? { content: tail.content } : {}),
-                    ...(tail.reasoning ? { reasoning_content: tail.reasoning } : {}),
-                  },
-                }],
-              };
-              if (tail.content) {
-                totalContentLength += tail.content.length;
-                accumulatedContent += tail.content;
-              }
               if (tail.reasoning) {
                 totalContentLength += tail.reasoning.length;
                 accumulatedThinking += tail.reasoning;
               }
+              if (tail.content) {
+                totalContentLength += tail.content.length;
+                accumulatedContent += tail.content;
+              }
+              const flushedDelta = {
+                ...(tail.content ? { content: tail.content } : {}),
+                ...(!omitStreamReasoning && tail.reasoning ? { reasoning_content: tail.reasoning } : {}),
+              };
+              if (Object.keys(flushedDelta).length === 0) {
+                // carry was only reasoning stripped for client
+              } else {
+              const flushed = {
+                object: "chat.completion.chunk",
+                created: Math.floor(Date.now() / 1000),
+                model: model || "unknown",
+                choices: [{ index: 0, delta: flushedDelta }],
+              };
               const flushedOutput = `data: ${JSON.stringify(flushed)}\n`;
               reqLogger?.appendConvertedChunk?.(flushedOutput);
               controller.enqueue(sharedEncoder.encode(flushedOutput));
+              }
             }
           }
 

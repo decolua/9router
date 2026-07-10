@@ -1,6 +1,8 @@
 // MiniMax M3 streaming can leak thinking markers into delta.content even with
 // reasoning_split. Peel markers into reasoning_content for OpenAI clients.
 
+import { PROVIDERS } from "../config/providers.js";
+
 const START_MARKERS = ["<think>", "<mm:think>"];
 const END_MARKERS = ["</think>", "</mm:think>"];
 
@@ -8,6 +10,24 @@ const MINIMAX_THINKING_PROVIDERS = new Set(["minimax", "minimax-cn"]);
 
 export function isMinimaxThinkingProvider(provider) {
   return MINIMAX_THINKING_PROVIDERS.has(provider);
+}
+
+export function shouldOmitStreamReasoning(provider) {
+  const transports = PROVIDERS[provider]?.transports;
+  if (!Array.isArray(transports)) return false;
+  return transports.some((t) => t.format === "openai" && t.omitStreamReasoning === true);
+}
+
+export function stripClientReasoningDelta(delta) {
+  if (!delta || typeof delta !== "object") return false;
+  let changed = false;
+  for (const key of ["reasoning_content", "reasoning", "reasoning_details"]) {
+    if (delta[key] !== undefined) {
+      delete delta[key];
+      changed = true;
+    }
+  }
+  return changed;
 }
 
 export function createMinimaxThinkingStreamState() {
@@ -110,7 +130,10 @@ export function sanitizeMinimaxDelta(delta, state) {
 
   const fromDetails = extractReasoningDetails(delta.reasoning_details);
   if (fromDetails) {
-    delta.reasoning_content = `${delta.reasoning_content || ""}${fromDetails}`;
+    const existing = typeof delta.reasoning_content === "string" ? delta.reasoning_content : "";
+    if (!existing.includes(fromDetails)) {
+      delta.reasoning_content = `${existing}${fromDetails}`;
+    }
     changed = true;
   }
 

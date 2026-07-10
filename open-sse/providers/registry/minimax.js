@@ -46,6 +46,8 @@ export default {
       auth: { combined: true, header: "Authorization", scheme: "bearer" },
       // MiniMax OpenAI API: split thinking into reasoning_details (vendor-recommended for OpenAI clients).
       requestDefaults: { reasoning_split: true },
+      // Upstream still reasons; don't forward thinking fields to OpenAI clients (OpenCode shows them).
+      omitStreamReasoning: true,
     },
     {
       format: "claude",
