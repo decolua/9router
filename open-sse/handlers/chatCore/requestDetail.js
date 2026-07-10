@@ -75,7 +75,25 @@ export function buildRequestDetail(base, overrides = {}) {
   };
 }
 
-export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, endpoint, label = "USAGE" }) {
+// Build the "done" summary: duration, ttft, in/out tokens with cache breakdown
+export function formatDoneLine({ usage, latency }) {
+  const u = usage || {};
+  const inTok = u.prompt_tokens ?? u.input_tokens ?? 0;
+  const outTok = u.completion_tokens ?? u.output_tokens ?? 0;
+  const cacheRead = u.cache_read_input_tokens ?? u.cached_tokens ?? u.prompt_tokens_details?.cached_tokens ?? 0;
+  const cacheCreate = u.cache_creation_input_tokens ?? 0;
+  let inStr = `IN ${inTok}`;
+  if (cacheRead || cacheCreate) {
+    const parts = [];
+    if (cacheRead) parts.push(`↻${cacheRead}`);
+    if (cacheCreate) parts.push(`+${cacheCreate}`);
+    inStr += ` (CACHE ${parts.join(" ")})`;
+  }
+  const ttftStr = latency?.ttft ? ` · TTFT ${latency.ttft}ms` : "";
+  return `DONE ${latency?.total ?? 0}ms${ttftStr} · ${inStr} · OUT ${outTok}`;
+}
+
+export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, endpoint, label = "USAGE", silent = false }) {
   if (!tokens || typeof tokens !== "object") return;
 
   const inTokens = tokens.input_tokens ?? tokens.prompt_tokens ?? 0;
@@ -83,9 +101,11 @@ export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, 
 
   if (inTokens === 0 && outTokens === 0) return;
 
-  const time = new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  const accountSuffix = connectionId ? ` | account=${connectionId.slice(0, 8)}...` : "";
-  console.log(`${COLORS.green}[${time}] 📊 [${label}] ${provider.toUpperCase()} | in=${inTokens} | out=${outTokens}${accountSuffix}${COLORS.reset}`);
+  if (!silent) {
+    const time = new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    const accountSuffix = connectionId ? ` | account=${connectionId.slice(0, 8)}...` : "";
+    console.log(`${COLORS.green}[${time}] 📊 [${label}] ${provider.toUpperCase()} | in=${inTokens} | out=${outTokens}${accountSuffix}${COLORS.reset}`);
+  }
 
   // Canonicalize to one storage convention (prompt_tokens cache-inclusive) so
   // cached/cache-creation tokens survive to cost calc + stats. See canonicalizeUsage.
