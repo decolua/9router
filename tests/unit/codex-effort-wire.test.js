@@ -97,4 +97,12 @@ describe("Codex effort wire encoding (official Ultra→Max)", () => {
     expect(body.model).toBe("gpt-5.6-sol");
     expect(body.reasoning.effort).toBe("max");
   });
+
+  it("does not promote an uppercase unknown effort through the wire alias", async () => {
+    await executeWithEffort("gpt-5.5", { reasoning: { effort: "ULTRA" } });
+
+    const body = parsePostedBody();
+    expect(body.reasoning.effort).toBe("ULTRA");
+    expect(body.reasoning.effort).not.toBe("max");
+  });
 });

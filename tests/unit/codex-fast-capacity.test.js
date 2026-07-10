@@ -36,6 +36,8 @@ describe("Codex fast tier and capacity handling", () => {
     ["gpt-5.6-luna", "ultra", "max"],
     ["gpt-5.5", "max", "xhigh"],
     ["gpt-5.5", "ultra", "xhigh"],
+    ["gpt-5.5", "ULTRA", "ULTRA"],
+    ["gpt-5.5", "Ultra", "Ultra"],
     ["gpt-5.6-sol", "xhigh", "xhigh"],
     ["gpt-5.6-sol", "high", "high"],
   ])("normalizes nested reasoning.effort for %s: %s → %s", (model, requested, expected) => {
@@ -56,6 +58,7 @@ describe("Codex fast tier and capacity handling", () => {
     ["gpt-5.6-sol", "max", "max"],
     ["gpt-5.6-luna", "ultra", "max"],
     ["gpt-5.5", "ultra", "xhigh"],
+    ["gpt-5.5", "ULTRA", "ULTRA"],
   ])("normalizes legacy reasoning_effort for %s: %s → %s", (model, requested, expected) => {
     const executor = new CodexExecutor();
     const body = executor.transformRequest(model, {

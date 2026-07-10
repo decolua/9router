@@ -50,8 +50,7 @@ const RESPONSES_API_ALLOWLIST = new Set([
 function resolveCodexWireEffort(effort, config) {
   const aliases = config?.quirks?.reasoningEffortAliases;
   if (!aliases || effort == null) return effort;
-  const key = String(effort).toLowerCase();
-  return aliases[key] ?? effort;
+  return aliases[effort] ?? effort;
 }
 
 // Convert role=system → role=developer in body.input (keeps content in cacheable prefix)
