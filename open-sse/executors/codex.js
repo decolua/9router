@@ -7,6 +7,7 @@ import {
 } from "../services/oauthCredentialManager.js";
 import { normalizeResponsesInput } from "../translator/formats/responsesApi.js";
 import { fetchImageAsBase64 } from "../translator/concerns/image.js";
+import { resolveOpenAiEffort } from "../translator/concerns/thinkingUnified.js";
 import { getModelUpstreamId } from "../config/providerModels.js";
 import { DEFAULT_RETRY_CONFIG, HTTP_STATUS, resolveRetryEntry } from "../config/runtimeConfig.js";
 import { dbg } from "../utils/debugLog.js";
@@ -122,10 +123,6 @@ function resolveCacheSessionId(body, credentials) {
     workspaceId: credentials?.providerSpecificData?.workspaceId,
     scope: "codex"
   });
-}
-
-function normalizeReasoningEffort(value) {
-  return value === "max" ? "xhigh" : value;
 }
 
 function findNestedMessage(value, depth = 0) {
@@ -427,7 +424,7 @@ export class CodexExecutor extends BaseExecutor {
 
     // Extract thinking level from model name suffix
     // e.g., gpt-5.3-codex-high → high, gpt-5.3-codex → medium (default)
-    const effortLevels = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
+    const effortLevels = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
     let modelEffort = null;
     for (const level of effortLevels) {
       if (body.model.endsWith(`-${level}`)) {
@@ -438,12 +435,12 @@ export class CodexExecutor extends BaseExecutor {
       }
     }
 
-    // Priority: explicit reasoning.effort > reasoning_effort param > model suffix > default (medium)
+    // Priority: explicit reasoning.effort > reasoning_effort param > model suffix > default (low)
     if (!body.reasoning) {
-      const effort = normalizeReasoningEffort(body.reasoning_effort || modelEffort || 'low');
+      const effort = resolveOpenAiEffort(body.reasoning_effort || modelEffort || 'low', "codex", body.model);
       body.reasoning = { effort, summary: "auto" };
     } else {
-      body.reasoning.effort = normalizeReasoningEffort(body.reasoning.effort);
+      body.reasoning.effort = resolveOpenAiEffort(body.reasoning.effort, "codex", body.model);
       if (!body.reasoning.summary) body.reasoning.summary = "auto";
     }
     delete body.reasoning_effort;

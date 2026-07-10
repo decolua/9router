@@ -216,8 +216,9 @@ function stripAll(body) {
 // Map requested OpenAI effort to a level the model accepts.
 // Preserve when listed in getThinkingLevels; else nearest high-end sibling.
 // Unknown/empty metadata keeps legacy safe max/ultra → xhigh clamp.
-function resolveOpenAiEffort(level, allowed) {
+export function resolveOpenAiEffort(level, provider, model) {
   if (!level) return level;
+  const allowed = getThinkingLevels(provider, model);
   if (Array.isArray(allowed) && allowed.includes(level)) return level;
   if (level === "ultra") {
     if (Array.isArray(allowed) && allowed.includes("max")) return "max";
@@ -239,7 +240,7 @@ function applyFormat(fmt, body, cfg, caps, model = null, provider = null) {
       if (none && canDisable) { body.reasoning_effort = "none"; break; }
       const level = toLevel(eff);
       // Config-driven: preserve supported effort; nearest sibling otherwise.
-      if (level) body.reasoning_effort = resolveOpenAiEffort(level, getThinkingLevels(provider, model));
+      if (level) body.reasoning_effort = resolveOpenAiEffort(level, provider, model);
       break;
     }
     case "claude-adaptive": {

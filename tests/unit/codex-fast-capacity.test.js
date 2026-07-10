@@ -12,7 +12,7 @@ function streamFromText(text) {
 }
 
 describe("Codex fast tier and capacity handling", () => {
-  it("maps Codex fast tier to priority and max reasoning to xhigh", () => {
+  it("maps Codex fast tier to priority and unsupported max reasoning to xhigh", () => {
     const executor = new CodexExecutor();
     const body = executor.transformRequest("gpt-5.5", {
       model: "gpt-5.5",
@@ -23,6 +23,37 @@ describe("Codex fast tier and capacity handling", () => {
 
     expect(body.service_tier).toBe("priority");
     expect(body.reasoning.effort).toBe("xhigh");
+  });
+
+  it.each([
+    ["gpt-5.6-sol", "max", "max"],
+    ["gpt-5.6-sol", "ultra", "ultra"],
+    ["gpt-5.6-terra", "max", "max"],
+    ["gpt-5.6-terra", "ultra", "ultra"],
+    ["gpt-5.6-luna", "max", "max"],
+    ["gpt-5.6-luna", "ultra", "max"],
+    ["gpt-5.5", "ultra", "xhigh"],
+  ])("normalizes %s reasoning effort %s to %s", (model, requested, expected) => {
+    const executor = new CodexExecutor();
+    const body = executor.transformRequest(model, {
+      model,
+      input: "hi",
+      reasoning: { effort: requested },
+    }, true, {});
+
+    expect(body.reasoning.effort).toBe(expected);
+  });
+
+  it.each([
+    ["gpt-5.6-sol-ultra", "gpt-5.6-sol", "ultra"],
+    ["gpt-5.6-terra-max", "gpt-5.6-terra", "max"],
+    ["gpt-5.6-luna-ultra", "gpt-5.6-luna", "max"],
+  ])("normalizes effort suffix %s", (model, expectedModel, expectedEffort) => {
+    const executor = new CodexExecutor();
+    const body = executor.transformRequest(model, { model, input: "hi" }, true, {});
+
+    expect(body.model).toBe(expectedModel);
+    expect(body.reasoning.effort).toBe(expectedEffort);
   });
 
   it("uses ChatGPT workspace header fallback", () => {
