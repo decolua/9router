@@ -87,6 +87,82 @@ export function reorderByCapabilities(models, required) {
  */
 const comboRotationState = new Map();
 
+/**
+ * Smart Scoring: health score (0-100) per model per combo.
+ * Persists only in memory (resets on server restart — intentional).
+ * @type {Map<string, Map<string, { score: number, lastSuccessMs: number|null, lastErrorMs: number|null }>>}
+ */
+const comboScoringState = new Map();
+
+const SCORE_CFG = {
+  initial: 100,
+  max: 100,
+  min: 10,
+  onSuccess: 5,
+  onTransient: -10,   // 5xx / timeout
+  onQuota: -30,       // 429
+  onForbidden: -50,   // 403 / 401 (banned / suspended)
+  recoveryPerMinute: 3, // passive recovery after errors
+};
+
+/** Get current effective score for a model (includes passive recovery). */
+function _getScore(comboName, modelStr) {
+  const state = comboScoringState.get(comboName)?.get(modelStr);
+  if (!state) return SCORE_CFG.initial;
+  if (state.lastErrorMs) {
+    const elapsedMin = (Date.now() - state.lastErrorMs) / 60000;
+    const recovered = state.score + elapsedMin * SCORE_CFG.recoveryPerMinute;
+    return Math.min(Math.max(recovered, SCORE_CFG.min), SCORE_CFG.max);
+  }
+  return state.score;
+}
+
+/** Update a model's score after a request attempt. */
+function _updateScore(comboName, modelStr, success, httpStatus) {
+  if (!comboScoringState.has(comboName)) comboScoringState.set(comboName, new Map());
+  const scores = comboScoringState.get(comboName);
+  const current = _getScore(comboName, modelStr);
+  const existing = scores.get(modelStr);
+  const now = Date.now();
+  let delta;
+  if (success) {
+    delta = SCORE_CFG.onSuccess;
+  } else if (httpStatus === 403 || httpStatus === 401) {
+    delta = SCORE_CFG.onForbidden;
+  } else if (httpStatus === 429 || httpStatus === 402) {
+    delta = SCORE_CFG.onQuota;
+  } else {
+    delta = SCORE_CFG.onTransient;
+  }
+  scores.set(modelStr, {
+    score: Math.min(Math.max(current + delta, SCORE_CFG.min), SCORE_CFG.max),
+    lastSuccessMs: success ? now : (existing?.lastSuccessMs ?? null),
+    lastErrorMs: success ? (existing?.lastErrorMs ?? null) : now,
+  });
+}
+
+/**
+ * Return models sorted for Smart Scoring:
+ * - Primary: score descending (healthier models first)
+ * - Tie-break: LRU (least recently succeeded first) → natural round-robin when all healthy
+ */
+export function getSmartScoredModels(models, comboName) {
+  if (!models || models.length <= 1) return models;
+  const scores = comboScoringState.get(comboName);
+  return [...models]
+    .map((m) => ({
+      m,
+      score: _getScore(comboName, m),
+      lastSuccessMs: scores?.get(m)?.lastSuccessMs ?? 0,
+    }))
+    .sort((a, b) => {
+      const diff = b.score - a.score;
+      if (Math.abs(diff) >= 5) return diff; // significant score gap → sort by score
+      return a.lastSuccessMs - b.lastSuccessMs; // equal scores → LRU (round-robin)
+    })
+    .map((x) => x.m);
+}
+
 // Trailing run of items after the last assistant/model turn = the current user
 // turn. It may span several messages (e.g. text + image split across blocks),
 // so we return all of them. History media (older turns) must not pin the combo
@@ -195,6 +271,15 @@ export function resetComboRotation(comboName) {
 }
 
 /**
+ * Reset Smart Scoring state when combo/settings change
+ * @param {string} [comboName] - Combo name to reset; omit to clear all
+ */
+export function resetComboScoring(comboName) {
+  if (comboName) comboScoringState.delete(comboName);
+  else comboScoringState.clear();
+}
+
+/**
  * Get combo models from combos data
  * @param {string} modelStr - Model string to check
  * @param {Array|Object} combosData - Array of combos or object with combos
@@ -227,8 +312,13 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @returns {Promise<Response>}
  */
 export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true }) {
-  // Apply rotation strategy if enabled
-  let rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
+  // Apply rotation/scoring strategy
+  let rotatedModels;
+  if (comboStrategy === "smart-scoring") {
+    rotatedModels = getSmartScoredModels(models, comboName);
+  } else {
+    rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
+  }
 
   // Auto-switch: float models that satisfy the request's required capabilities to the front.
   if (autoSwitch) {
@@ -255,6 +345,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       
       // Success (2xx) - return response
       if (result.ok) {
+        if (comboStrategy === "smart-scoring") _updateScore(comboName, modelStr, true, null);
         log.info("COMBO", `Model ${modelStr} succeeded`);
         return result;
       }
@@ -284,9 +375,12 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
 
       if (!shouldFallback) {
+        if (comboStrategy === "smart-scoring") _updateScore(comboName, modelStr, false, result.status);
         log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
         return result;
       }
+
+      if (comboStrategy === "smart-scoring") _updateScore(comboName, modelStr, false, result.status);
 
       // For transient errors (503/502/504), wait for cooldown before falling through
       // so a briefly-overloaded provider gets a chance to recover rather than being
