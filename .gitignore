@@ -79,3 +79,4 @@ open-sse.old/
 .9router
 .graphifyignore
 graphify-out/*
+.next-analyze/*

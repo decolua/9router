@@ -43,6 +43,10 @@ const DEFAULT_SETTINGS = {
   ponytailEnabled: false,
   ponytailLevel: "full",
   chinaFilterEnabled: false,
+  pxpipeEnabled: false,
+  pxpipeAutoInstall: true,
+  pxpipeMinChars: 25000,
+  pxpipeTimeoutMs: 15000,
 };
 
 async function readRaw() {

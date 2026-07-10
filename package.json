@@ -1,12 +1,13 @@
 {
   "name": "9router-app",
-  "version": "0.5.20",
+  "version": "0.5.29",
   "description": "9Router web dashboard",
   "private": true,
   "scripts": {
-    "dev": "next dev --webpack --port 20127",
+    "dev": "next dev --port 20127",
+    "dev:webpack": "next dev --webpack --port 20127",
     "build": "next build --webpack",
-    "start": "next start",
+    "start": "next start --port 20127",
     "dev:bun": "bun --bun next dev --webpack --port 20127",
     "build:bun": "bun --bun next build --webpack",
     "start:bun": "bun ./.next/standalone/server.js",
