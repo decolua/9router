@@ -475,10 +475,24 @@ export async function OPTIONS() {
  * GET /v1/models - OpenAI compatible models list (LLM/chat models only by default).
  * For other capabilities use /v1/models/{kind} (image, tts, stt, embedding, image-to-text, web).
  */
-export async function GET() {
+export function isCodexModelsRequest(request) {
+  if (!request?.url || typeof request.headers?.get !== "function") return false;
+  const clientVersion = new URL(request.url).searchParams.get("client_version");
+  const userAgent = request.headers.get("user-agent") || "";
+  return Boolean(clientVersion) && /\bcodex(?:[_ -](?:desktop|cli_rs|cli|exec))?\b/i.test(userAgent);
+}
+
+export function buildCompatibleModelsResponse(data, { includeCodexCatalog = false } = {}) {
+  const response = { object: "list", data };
+  if (includeCodexCatalog) response.models = [];
+  return response;
+}
+export async function GET(request) {
   try {
     const data = await buildModelsList([LLM_KIND]);
-    return Response.json({ object: "list", data }, {
+    return Response.json(buildCompatibleModelsResponse(data, {
+      includeCodexCatalog: isCodexModelsRequest(request),
+    }), {
       headers: { "Access-Control-Allow-Origin": "*" },
     });
   } catch (error) {
