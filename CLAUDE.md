@@ -10,7 +10,7 @@ Two published artifacts live in this one repo:
 - The **dashboard + gateway** (root `package.json`, `9router-app`) — the Next.js server that does the actual routing.
 - The **CLI launcher** (`cli/`, published to npm as `9router`) — a separate package that installs/starts the server and manages the tray. It has its own `package.json`, version, and build.
 
-The code lives in `src/` (Next.js app + dashboard/compat APIs), `open-sse/` (the provider-agnostic routing/translation engine), `cli/` (the launcher package), and `tests/`.
+Note: many files in the repo *root* (`lux_*`, `AUH-*`, `agl-*`, `*.pptx`, `build_deck.py`, `render/`, etc.) are the maintainer's unrelated personal work artifacts, gitignored and **not** part of this codebase. Ignore them. The real code is in `src/`, `open-sse/`, `cli/`, `tests/`.
 
 ## Commands
 
@@ -89,3 +89,8 @@ Pre-translate hooks that compress `tool_result` content in-place to cut tokens. 
 - Security-sensitive env: `JWT_SECRET` (session cookie), `INITIAL_PASSWORD` (default `123456` — must override), `API_KEY_SECRET`, `MACHINE_ID_SALT`. Full env contract in `.env.example` and ARCHITECTURE.md's env matrix.
 - Binary/protobuf upstreams (kiro EventStream, cursor protobuf, commandcode NDJSON) don't round-trip through OpenAI — they're handled inside their own executor, not the translator.
 - Versioning: root and `cli/` are versioned independently; changes are logged in `CHANGELOG.md`. Commit style is Conventional Commits (`fix(translator): …`, `feat(...)`).
+
+## Cloud routines / scheduled agents (ops note)
+
+When building a Claude Code **cloud routine** (scheduled agent) that needs data from the internet, use the **`WebFetch`** tool — **not** `Bash`/`curl`. The cloud sandbox blocks direct network egress: `curl`/Bash to any internet host returns `403 "access not enabled for this session"`, and the session is repo-scoped to its source's owner (cross-owner repo/API access is refused). `WebFetch` routes through an allowed fetch path and works. Set `allowed_tools` to `["WebFetch"]` and state the constraint explicitly in the agent prompt, or the agent will default to `curl` and the run fails.
+Working example: the "Monitor PR #2354" routine polls the public GitHub REST API for PR status via `WebFetch`.

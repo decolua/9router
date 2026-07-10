@@ -1,0 +1,46 @@
+name: Claude PR Review
+
+# Claude reviews every pull request. Requires (see setup notes):
+#   1. The Claude GitHub App installed on this repo
+#   2. A repo secret for auth — this file uses ANTHROPIC_API_KEY (billed per
+#      use; create one at console.anthropic.com). Alternative:
+#      CLAUDE_CODE_OAUTH_TOKEN (uses your Claude subscription; run
+#      `claude setup-token` locally) — swap the `with:` line below to use it.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Alternative: claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          allowed_bots: railway-app
+          track_progress: true
+          prompt: |
+            Review this pull request for the 9Router codebase (Next.js LLM
+            routing gateway). Focus, in priority order:
+
+            1. Correctness bugs in the request/translation path
+               (src/sse, open-sse/handlers, open-sse/translator, executors).
+            2. Security: leaked secrets/tokens, auth bypasses, the client-IP /
+               X-Forwarded-For handling in custom-server.js, provider credential
+               handling.
+            3. Translator/streaming regressions — self-registration in
+               open-sse/translator/index.js, fail-open behavior in open-sse/rtk.
+            4. Reuse / simplicity / obvious inefficiencies.
+
+            Leave inline comments for specific issues; a short top-level summary
+            for overall assessment. Be concise; skip nits unless they matter.

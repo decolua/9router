@@ -8,7 +8,7 @@ FROM base AS builder
 RUN apk --no-cache upgrade && apk --no-cache add python3 make g++ linux-headers
 
 COPY package.json ./
-RUN --mount=type=cache,target=/root/.npm \
+RUN --mount=type=cache,id=s/431443cd-9a5a-42e4-9c05-88e84551a5b4-/root/.npm,target=/root/.npm \
   npm install
 
 COPY . ./
