@@ -343,21 +343,25 @@ export class CodexExecutor extends BaseExecutor {
       body.prompt_cache_key = this._currentSessionId;
     }
 
-    // Map virtual Codex review models to the upstream Codex model before suffix parsing.
+    // Resolve aliases/review variants first, then strip thinking suffix, then re-resolve.
+    // Order matters for alias models like gpt-5.6-max → effort=max + upstream gpt-5.6-sol.
     body.model = getModelUpstreamId("cx", body.model || model);
 
     // Extract thinking level from model name suffix
-    // e.g., gpt-5.3-codex-high → high, gpt-5.3-codex → medium (default)
-    const effortLevels = ['none', 'low', 'medium', 'high', 'xhigh'];
+    // e.g., gpt-5.3-codex-high → high, gpt-5.6-sol-max → max
+    const effortLevels = ['none', 'low', 'medium', 'high', 'xhigh', 'max'];
     let modelEffort = null;
     for (const level of effortLevels) {
       if (body.model.endsWith(`-${level}`)) {
         modelEffort = level;
         // Strip suffix from model name for actual API call
-        body.model = body.model.replace(`-${level}`, '');
+        body.model = body.model.slice(0, -(level.length + 1));
         break;
       }
     }
+
+    // Re-map after suffix strip so aliases like gpt-5.6 → gpt-5.6-sol still resolve.
+    body.model = getModelUpstreamId("cx", body.model);
 
     // Priority: explicit reasoning.effort > reasoning_effort param > model suffix > default (medium)
     if (!body.reasoning) {

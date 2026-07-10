@@ -31,14 +31,24 @@ const FORMAT_LEVELS = {
 };
 
 // Model-name pattern overrides (glob, first match wins) — more precise than format default.
+// Note: matchPattern is model-name only (not provider id). GPT-5.6 family ids do not
+// contain "codex", so they need explicit patterns / provider override.
+const CODEX_EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"]; // Codex cannot disable thinking
 const PATTERN_THINKING = [
-  { pattern: "*codex*", levels: ["low", "medium", "high", "xhigh"] }, // codex cannot disable thinking
+  { pattern: "*codex*", levels: CODEX_EFFORT_LEVELS },
+  // Trailing-star alone can be fragile with dotted ids; cover exact + hyphen families.
+  { pattern: "gpt-5.6", levels: CODEX_EFFORT_LEVELS },
+  { pattern: "gpt-5.6-*", levels: CODEX_EFFORT_LEVELS },
 ];
 
 // Returns valid thinking levels for a model, or null when the model has no reasoning.
 export function getThinkingLevels(provider, model) {
   const caps = getCapabilitiesForModel(provider, model);
   if (!caps.reasoning) return null;
+  // Codex provider always uses Responses effort levels for GPT-5.x routing.
+  if (provider === "codex" || provider === "cx") {
+    return CODEX_EFFORT_LEVELS.slice();
+  }
   const hit = PATTERN_THINKING.find((p) => matchPattern(p.pattern, model));
   let levels = hit?.levels || FORMAT_LEVELS[caps.thinkingFormat] || L.base;
   if (caps.thinkingCanDisable === false) levels = levels.filter((l) => l !== "none");
