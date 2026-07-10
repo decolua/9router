@@ -92,6 +92,9 @@ importers:
       selfsigned:
         specifier: ^5.5.0
         version: 5.5.0
+      socks:
+        specifier: ^2.8.9
+        version: 2.8.9
       socks-proxy-agent:
         specifier: ^8.0.5
         version: 8.0.5
