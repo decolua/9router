@@ -48,6 +48,7 @@ const ALWAYS_PROTECTED = [
 const PROTECTED_API_PATHS = [
   "/api/settings",
   "/api/keys",
+  "/api/dashboard",
   "/api/providers",
   "/api/provider-nodes",
   "/api/proxy-pools",
@@ -63,6 +64,7 @@ const PROTECTED_API_PATHS = [
   "/api/mcp",
   "/api/translator",
   "/api/tunnel",
+
 ];
 
 // Routes that spawn child processes or read host secrets — restrict to localhost.

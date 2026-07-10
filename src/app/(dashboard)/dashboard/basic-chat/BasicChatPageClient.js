@@ -2,13 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge, Button } from "@/shared/components";
-import { getModelsByProviderId } from "@/shared/constants/models";
-import { isAnthropicCompatibleProvider, isOpenAICompatibleProvider } from "@/shared/constants/providers";
 
 const STORAGE_KEYS = {
   sessions: "basic-chat.sessions",
   activeSessionId: "basic-chat.activeSessionId",
-  activeProviderId: "basic-chat.activeProviderId",
+  selectedProvider: "basic-chat.selectedProvider",
+  selectedModelId: "basic-chat.selectedModelId",
+  selectedApiKey: "basic-chat.selectedApiKey",
   draft: "basic-chat.draft",
 };
 
@@ -109,67 +109,31 @@ function cloneSession(session) {
   };
 }
 
-function getProviderLabel(connection) {
-  return connection?.name || humanize(connection?.provider || connection?.id || "provider");
-}
-
-function normalizeStaticModel(model, connection) {
-  if (!model?.id) return null;
-  return {
-    id: `${connection.provider}/${model.id}`,
-    requestModel: `${connection.provider}/${model.id}`,
-    name: model.name || model.id,
-    providerId: connection.provider,
-    providerName: getProviderLabel(connection),
-    source: "static",
-  };
-}
-
-function normalizeLiveModel(model, connection) {
-  const rawId = typeof model === "string" ? model : model?.id || model?.name || model?.model || "";
-  if (!rawId) return null;
-
-  const displayName = typeof model === "string"
-    ? model
-    : model?.name || model?.displayName || rawId;
-
-  let requestModel = rawId;
-  const isCompatible = isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider);
-  if (isCompatible && !rawId.includes("/")) {
-    requestModel = `${connection.provider}/${rawId}`;
-  }
-
-  return {
-    id: requestModel,
-    requestModel,
-    name: displayName,
-    providerId: connection.provider,
-    providerName: getProviderLabel(connection),
-    source: "live",
-  };
-}
-
-function parseProviderModelsPayload(data) {
-  if (Array.isArray(data?.models)) return data.models;
-  if (Array.isArray(data?.data)) return data.data;
-  if (Array.isArray(data?.results)) return data.results;
-  if (Array.isArray(data)) return data;
-  return [];
-}
-
-function dedupeModels(models) {
-  const map = new Map();
-  for (const model of models) {
-    if (!model?.id) continue;
-    if (!map.has(model.id)) map.set(model.id, model);
-  }
-  return Array.from(map.values());
-}
-
 export default function BasicChatPageClient() {
+  // ---- Model & Provider State ----
   const [providerGroups, setProviderGroups] = useState([]);
+  const [allModels, setAllModels] = useState([]);
   const [loadingData, setLoadingData] = useState(true);
   const [loadError, setLoadError] = useState("");
+
+  // ---- API Key State ----
+  const [apiKeys, setApiKeys] = useState([]);
+  const [selectedApiKey, setSelectedApiKey] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return globalThis.localStorage.getItem(STORAGE_KEYS.selectedApiKey) || "";
+  });
+
+  // ---- Selection State ----
+  const [selectedProvider, setSelectedProvider] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return globalThis.localStorage.getItem(STORAGE_KEYS.selectedProvider) || "";
+  });
+  const [selectedModelId, setSelectedModelId] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return globalThis.localStorage.getItem(STORAGE_KEYS.selectedModelId) || "";
+  });
+
+  // ---- Chat State ----
   const [sessions, setSessions] = useState(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -184,11 +148,6 @@ export default function BasicChatPageClient() {
     if (typeof window === "undefined") return "";
     return globalThis.localStorage.getItem(STORAGE_KEYS.activeSessionId) || "";
   });
-  const [activeProviderId, setActiveProviderId] = useState(() => {
-    if (typeof window === "undefined") return "";
-    return globalThis.localStorage.getItem(STORAGE_KEYS.activeProviderId) || "";
-  });
-  const [activeModelId, setActiveModelId] = useState("");
   const [draft, setDraft] = useState(() => {
     if (typeof window === "undefined") return "";
     return globalThis.localStorage.getItem(STORAGE_KEYS.draft) || "";
@@ -210,6 +169,7 @@ export default function BasicChatPageClient() {
     setIsHydrated(true);
   }, []);
 
+  // ---- Load Models & API Keys ----
   useEffect(() => {
     let cancelled = false;
 
@@ -218,92 +178,79 @@ export default function BasicChatPageClient() {
       setLoadError("");
 
       try {
-        const providersRes = await fetch("/api/providers", { cache: "no-store" });
-        const providersData = await providersRes.json().catch(() => ({}));
-        const connections = Array.isArray(providersData.connections)
-          ? providersData.connections.filter((connection) => connection?.isActive !== false)
-          : [];
+        // Load models from dashboard API (JWT protected, internally calls buildModelsList)
+        const modelsRes = await fetch("/api/dashboard/models", { cache: "no-store" });
+        const modelsData = await modelsRes.json().catch(() => ({}));
+        const models = Array.isArray(modelsData.data) ? modelsData.data : [];
 
-        if (connections.length === 0) {
+        if (models.length === 0) {
           if (!cancelled) {
             setProviderGroups([]);
-            setLoadError("No providers connected yet.");
+            setLoadError("No models available. Connect a provider first.");
           }
           return;
         }
 
-        const providerMap = new Map();
-
-        for (const connection of connections) {
-          const providerId = connection.provider || connection.id;
-          const providerName = getProviderLabel(connection);
-          const providerType = isOpenAICompatibleProvider(providerId)
-            ? "openai-compatible"
-            : isAnthropicCompatibleProvider(providerId)
-              ? "anthropic-compatible"
-              : providerId;
-
-          if (!providerMap.has(providerId)) {
-            providerMap.set(providerId, {
-              providerId,
-              providerName,
-              providerType,
-              connections: [],
+        // Group models by owned_by (provider alias)
+        const groupMap = new Map();
+        for (const model of models) {
+          if (!model?.id) continue;
+          const provider = model.owned_by || model.id.split("/")[0] || "unknown";
+          if (!groupMap.has(provider)) {
+            groupMap.set(provider, {
+              providerId: provider,
+              providerName: humanize(provider),
               models: [],
             });
           }
-
-          const group = providerMap.get(providerId);
-          group.providerName = group.providerName || providerName;
-          group.providerType = group.providerType || providerType;
-          group.connections.push(connection);
-
-          const staticModels = getModelsByProviderId(providerId)
-            .map((model) => normalizeStaticModel(model, connection))
-            .filter(Boolean);
-          group.models.push(...staticModels);
+          groupMap.get(provider).models.push({
+            id: model.id,
+            name: model.id.split("/").pop() || model.id,
+            fullId: model.id,
+          });
         }
 
-        const liveResults = await Promise.all(
-          connections.map(async (connection) => {
-            try {
-              const response = await fetch(`/api/providers/${connection.id}/models`, { cache: "no-store" });
-              const data = await response.json().catch(() => ({}));
-              if (!response.ok) return { connection, models: [] };
-              const models = parseProviderModelsPayload(data)
-                .map((model) => normalizeLiveModel(model, connection))
-                .filter(Boolean);
-              return { connection, models };
-            } catch {
-              return { connection, models: [] };
-            }
-          })
-        );
-
-        for (const result of liveResults) {
-          const providerId = result.connection.provider || result.connection.id;
-          const group = providerMap.get(providerId);
-          if (!group) continue;
-          group.models.push(...result.models);
-        }
-
-        const normalized = Array.from(providerMap.values())
-          .map((group) => ({
-            ...group,
-            models: dedupeModels(group.models).sort((a, b) => a.name.localeCompare(b.name)),
+        const groups = Array.from(groupMap.values())
+          .map((g) => ({
+            ...g,
+            models: g.models.sort((a, b) => a.name.localeCompare(b.name)),
           }))
-          .filter((group) => group.models.length > 0)
           .sort((a, b) => a.providerName.localeCompare(b.providerName));
 
+        // Load API keys
+        let keys = [];
+        try {
+          const keysRes = await fetch("/api/keys", { cache: "no-store" });
+          const keysData = await keysRes.json().catch(() => ({}));
+          keys = Array.isArray(keysData.keys) ? keysData.keys : [];
+        } catch {
+          // Ignore API key fetch errors
+        }
+
         if (!cancelled) {
-          setProviderGroups(normalized);
-          if (normalized.length === 0) {
-            setLoadError("Providers connected but no models available.");
+          setProviderGroups(groups);
+          setAllModels(models);
+          setApiKeys(keys);
+
+          // Restore or default selections
+          const savedProvider = groups.find((g) => g.providerId === selectedProvider);
+          const defaultProvider = savedProvider || groups[0];
+          const defaultModel = defaultProvider.models.find((m) => m.id === selectedModelId)
+            || defaultProvider.models[0];
+
+          if (!selectedProvider && defaultProvider) {
+            setSelectedProvider(defaultProvider.providerId);
+          }
+          if (!selectedModelId && defaultModel) {
+            setSelectedModelId(defaultModel.id);
+          }
+          if (!selectedApiKey && keys.length > 0) {
+            setSelectedApiKey(keys[0].key);
           }
         }
       } catch (error) {
         if (!cancelled) {
-          setLoadError(textValue(error?.message) || "Failed to load providers/models.");
+          setLoadError(textValue(error?.message) || "Failed to load models.");
           setProviderGroups([]);
         }
       } finally {
@@ -312,11 +259,10 @@ export default function BasicChatPageClient() {
     }
 
     loadData();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
 
+  // ---- Click outside handlers ----
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (modelMenuRef.current && !modelMenuRef.current.contains(event.target)) {
@@ -326,95 +272,63 @@ export default function BasicChatPageClient() {
         setHistoryOpen(false);
       }
     };
-
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const modelIndex = useMemo(() => {
-    const map = new Map();
-    for (const group of providerGroups) {
-      for (const model of group.models) {
-        map.set(model.id, {
-          ...model,
-          providerId: group.providerId,
-          providerName: group.providerName,
-        });
-      }
-    }
-    return map;
-  }, [providerGroups]);
-
-  const activeProviderGroup = useMemo(() => {
-    return providerGroups.find((group) => group.providerId === activeProviderId) || providerGroups[0] || null;
-  }, [providerGroups, activeProviderId]);
-
-  const activeModel = useMemo(() => {
-    if (activeModelId && modelIndex.has(activeModelId)) return modelIndex.get(activeModelId);
-    if (activeSessionId) {
-      const session = sessions.find((item) => item.id === activeSessionId);
-      if (session?.modelId && modelIndex.has(session.modelId)) return modelIndex.get(session.modelId);
-    }
-    return activeProviderGroup?.models?.[0] || null;
-  }, [activeModelId, modelIndex, activeProviderGroup, sessions, activeSessionId]);
-
-  const currentSession = useMemo(() => sessions.find((session) => session.id === activeSessionId) || null, [sessions, activeSessionId]);
-  const currentMessages = currentSession?.messages || [];
-  const sessionItems = useMemo(() => [...sessions].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()), [sessions]);
-  const canSend = !isSending && !!activeModel && (draft.trim().length > 0 || attachments.length > 0);
-
+  // ---- Persist to localStorage ----
   useEffect(() => {
     if (!isHydrated) return;
     try {
       globalThis.localStorage.setItem(STORAGE_KEYS.sessions, JSON.stringify(sessions));
       globalThis.localStorage.setItem(STORAGE_KEYS.activeSessionId, activeSessionId);
-      globalThis.localStorage.setItem(STORAGE_KEYS.activeProviderId, activeProviderId);
+      globalThis.localStorage.setItem(STORAGE_KEYS.selectedProvider, selectedProvider);
+      globalThis.localStorage.setItem(STORAGE_KEYS.selectedModelId, selectedModelId);
+      globalThis.localStorage.setItem(STORAGE_KEYS.selectedApiKey, selectedApiKey);
       globalThis.localStorage.setItem(STORAGE_KEYS.draft, draft);
     } catch {
-      // Ignore storage errors.
+      // Ignore storage errors
     }
-  }, [isHydrated, sessions, activeSessionId, activeProviderId, draft]);
+  }, [isHydrated, sessions, activeSessionId, selectedProvider, selectedModelId, selectedApiKey, draft]);
 
+  // ---- Computed ----
+  const currentProvider = useMemo(() => {
+    return providerGroups.find((g) => g.providerId === selectedProvider) || providerGroups[0] || null;
+  }, [providerGroups, selectedProvider]);
+
+  const currentModel = useMemo(() => {
+    if (!currentProvider) return null;
+    return currentProvider.models.find((m) => m.id === selectedModelId) || currentProvider.models[0] || null;
+  }, [currentProvider, selectedModelId]);
+
+  const currentSession = useMemo(() => sessions.find((s) => s.id === activeSessionId) || null, [sessions, activeSessionId]);
+  const currentMessages = currentSession?.messages || [];
+  const sessionItems = useMemo(() => [...sessions].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()), [sessions]);
+  const canSend = !isSending && !!currentModel && !!selectedApiKey && (draft.trim().length > 0 || attachments.length > 0);
+
+  // ---- Initialize session ----
   useEffect(() => {
     if (!isHydrated || loadingData || initializedRef.current) return;
-    if (providerGroups.length === 0) return;
-
-    const savedProvider = providerGroups.find((group) => group.providerId === activeProviderId) || providerGroups[0];
-    const savedModel = activeModelId && modelIndex.has(activeModelId)
-      ? modelIndex.get(activeModelId)
-      : savedProvider.models[0];
-
-    if (sessions.length > 0) {
-      const session = sessions.find((item) => item.id === activeSessionId) || sessions[0];
-      const sessionModel = session?.modelId && modelIndex.has(session.modelId)
-        ? modelIndex.get(session.modelId)
-        : savedModel;
-      initializedRef.current = true;
-      setActiveSessionId(session.id);
-      setActiveProviderId(sessionModel?.providerId || savedProvider.providerId);
-      setActiveModelId(sessionModel?.id || savedModel.id);
-      return;
-    }
-
-    const session = {
-      id: createId(),
-      title: "New chat",
-      providerId: savedProvider.providerId,
-      providerName: savedProvider.providerName,
-      modelId: savedModel.id,
-      modelName: savedModel.name,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      messages: [],
-    };
+    if (!currentModel) return;
 
     initializedRef.current = true;
-    setSessions([session]);
-    setActiveSessionId(session.id);
-    setActiveProviderId(savedProvider.providerId);
-    setActiveModelId(savedModel.id);
-  }, [isHydrated, loadingData, providerGroups, modelIndex, sessions, activeSessionId, activeProviderId, activeModelId]);
 
+    if (sessions.length === 0) {
+      const session = {
+        id: createId(),
+        title: "New chat",
+        modelId: currentModel.id,
+        modelName: currentModel.name,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        messages: [],
+      };
+      setSessions([session]);
+      setActiveSessionId(session.id);
+    }
+  }, [isHydrated, loadingData, currentModel, sessions]);
+
+  // ---- Session helpers ----
   const updateSession = (sessionId, updater) => {
     setSessions((prev) => prev.map((session) => (session.id === sessionId ? updater(cloneSession(session)) : session)));
   };
@@ -424,8 +338,6 @@ export default function BasicChatPageClient() {
     return {
       id: createId(),
       title: "New chat",
-      providerId: model.providerId,
-      providerName: model.providerName,
       modelId: model.id,
       modelName: model.name,
       createdAt: new Date().toISOString(),
@@ -435,13 +347,11 @@ export default function BasicChatPageClient() {
   };
 
   const handleNewChat = () => {
-    if (!activeModel) return;
-    const session = ensureSessionForModel(activeModel);
+    if (!currentModel) return;
+    const session = ensureSessionForModel(currentModel);
     if (!session) return;
     setSessions((prev) => [session, ...prev]);
     setActiveSessionId(session.id);
-    setActiveProviderId(session.providerId);
-    setActiveModelId(session.modelId);
     setDraft("");
     setAttachments([]);
     setStreamingMessageId("");
@@ -452,8 +362,6 @@ export default function BasicChatPageClient() {
     const session = sessions.find((item) => item.id === sessionId);
     if (!session) return;
     setActiveSessionId(sessionId);
-    setActiveProviderId(session.providerId || activeProviderId);
-    setActiveModelId(session.modelId || activeModelId);
     setHistoryOpen(false);
   };
 
@@ -464,83 +372,80 @@ export default function BasicChatPageClient() {
     setSessions(nextSessions);
     if (fallback) {
       setActiveSessionId(fallback.id);
-      setActiveProviderId(fallback.providerId);
-      setActiveModelId(fallback.modelId);
     } else {
       setActiveSessionId("");
-      setActiveProviderId("");
-      setActiveModelId("");
+      const newSession = currentModel ? ensureSessionForModel(currentModel) : null;
+      if (newSession) {
+        setSessions([newSession]);
+        setActiveSessionId(newSession.id);
+      }
     }
   };
 
-  const handleSelectProvider = (providerId) => {
-    const group = providerGroups.find((item) => item.providerId === providerId);
-    if (!group || group.models.length === 0) return;
-    const nextModel = group.models[0];
+  const handleDeleteSession = (sessionId, event) => {
+    event.stopPropagation(); // Prevent selection
+    const nextSessions = sessions.filter((s) => s.id !== sessionId);
+    setSessions(nextSessions);
+    if (sessionId === activeSessionId) {
+      const fallback = nextSessions[0] || null;
+      if (fallback) {
+        setActiveSessionId(fallback.id);
+      } else {
+        setActiveSessionId("");
+        const newSession = currentModel ? ensureSessionForModel(currentModel) : null;
+        if (newSession) {
+          setSessions([newSession]);
+          setActiveSessionId(newSession.id);
+        }
+      }
+    }
+  };
 
-    const current = sessions.find((session) => session.id === activeSessionId);
-    if (current && current.messages.length > 0) {
-      const session = ensureSessionForModel(nextModel);
-      if (!session) return;
+  // ---- Provider & Model Selection ----
+  const handleSelectProvider = (providerId) => {
+    const group = providerGroups.find((g) => g.providerId === providerId);
+    if (!group || group.models.length === 0) return;
+
+    setSelectedProvider(providerId);
+    setSelectedModelId(group.models[0].id);
+
+    // Create new session for new provider
+    const session = ensureSessionForModel(group.models[0]);
+    if (session) {
       setSessions((prev) => [session, ...prev]);
       setActiveSessionId(session.id);
-    } else if (current) {
-      setSessions((prev) => prev.map((item) => (item.id === current.id ? {
-        ...item,
-        providerId: group.providerId,
-        providerName: group.providerName,
-        modelId: nextModel.id,
-        modelName: nextModel.name,
-      } : item)));
-      setActiveSessionId(current.id);
     }
-
-    setActiveProviderId(group.providerId);
-    setActiveModelId(nextModel.id);
     setModelMenuOpen(false);
   };
 
   const handleSelectModel = (modelId) => {
-    const model = modelIndex.get(modelId);
+    const model = currentProvider?.models.find((m) => m.id === modelId);
     if (!model) return;
 
-    const current = sessions.find((session) => session.id === activeSessionId);
+    setSelectedModelId(modelId);
+
+    const current = sessions.find((s) => s.id === activeSessionId);
     if (current && current.messages.length > 0) {
       const session = ensureSessionForModel(model);
-      if (!session) return;
-      setSessions((prev) => [session, ...prev]);
-      setActiveSessionId(session.id);
+      if (session) {
+        setSessions((prev) => [session, ...prev]);
+        setActiveSessionId(session.id);
+      }
     } else if (current) {
-      setSessions((prev) => prev.map((item) => (item.id === current.id ? {
-        ...item,
-        providerId: model.providerId,
-        providerName: model.providerName,
-        modelId: model.id,
-        modelName: model.name,
-      } : item)));
-      setActiveSessionId(current.id);
-    } else {
-      const session = ensureSessionForModel(model);
-      if (!session) return;
-      setSessions((prev) => [session, ...prev]);
-      setActiveSessionId(session.id);
+      setSessions((prev) => prev.map((s) => (s.id === current.id ? { ...s, modelId: model.id, modelName: model.name } : s)));
     }
-
-    setActiveProviderId(model.providerId);
-    setActiveModelId(model.id);
     setModelMenuOpen(false);
   };
 
+  // ---- Attachments ----
   const handleAttachFiles = async (event) => {
     const files = Array.from(event.target.files || []);
     if (files.length === 0) return;
-
     const images = files.filter((file) => file.type.startsWith("image/"));
     if (images.length === 0) {
       event.target.value = "";
       return;
     }
-
     const converted = await Promise.all(images.map(async (file) => ({
       id: createId(),
       name: file.name,
@@ -548,37 +453,32 @@ export default function BasicChatPageClient() {
       size: file.size,
       dataUrl: await fileToDataUrl(file),
     })));
-
     setAttachments((prev) => [...prev, ...converted]);
     event.target.value = "";
   };
 
   const removeAttachment = (attachmentId) => {
-    setAttachments((prev) => prev.filter((attachment) => attachment.id !== attachmentId));
+    setAttachments((prev) => prev.filter((a) => a.id !== attachmentId));
   };
 
   const handleStop = () => {
     abortRef.current?.abort();
   };
 
-  const finalizeSessionTitle = (sessionId, titleSeed) => {
-    const title = makeSessionTitle(titleSeed);
-    updateSession(sessionId, (session) => ({
-      ...session,
-      title: session.title === "New chat" ? title : session.title,
-      updatedAt: new Date().toISOString(),
-    }));
-  };
-
+  // ---- Send Message ----
   const sendMessage = async () => {
-    const model = activeModel || activeProviderGroup?.models?.[0] || null;
+    const model = currentModel;
     if (!model) return;
+    if (!selectedApiKey) {
+      setLoadError("Please select an API key");
+      return;
+    }
 
     const userText = draft.trim();
     if (!userText && attachments.length === 0) return;
 
     let sessionId = activeSessionId;
-    let session = sessions.find((item) => item.id === sessionId);
+    let session = sessions.find((s) => s.id === sessionId);
     if (!session) {
       session = ensureSessionForModel(model);
       if (!session) return;
@@ -591,12 +491,7 @@ export default function BasicChatPageClient() {
       id: createId(),
       role: "user",
       content: userText,
-      attachments: attachments.map((attachment) => ({
-        id: attachment.id,
-        name: attachment.name,
-        type: attachment.type,
-        dataUrl: attachment.dataUrl,
-      })),
+      attachments: attachments.map((a) => ({ id: a.id, name: a.name, type: a.type, dataUrl: a.dataUrl })),
       createdAt: new Date().toISOString(),
     };
 
@@ -610,16 +505,14 @@ export default function BasicChatPageClient() {
     };
 
     const nextMessages = [...(session.messages || []), userMessage, assistantMessage];
-    setSessions((prev) => prev.map((item) => (item.id === sessionId ? {
-      ...item,
-      providerId: model.providerId,
-      providerName: model.providerName,
+    setSessions((prev) => prev.map((s) => (s.id === sessionId ? {
+      ...s,
       modelId: model.id,
       modelName: model.name,
       messages: nextMessages,
       updatedAt: new Date().toISOString(),
-      title: item.title === "New chat" ? makeSessionTitle(userText) : item.title,
-    } : item)));
+      title: s.title === "New chat" ? makeSessionTitle(userText) : s.title,
+    } : s)));
     setDraft("");
     setAttachments([]);
     setIsSending(true);
@@ -629,21 +522,22 @@ export default function BasicChatPageClient() {
     abortRef.current = new AbortController();
 
     const requestMessages = nextMessages
-      .filter((message) => !(message.role === "assistant" && message.id === assistantMessageId))
-      .map((message) => ({
-        role: message.role,
-        content: message.role === "user" ? buildUserContent(message) : message.content,
+      .filter((m) => !(m.role === "assistant" && m.id === assistantMessageId))
+      .map((m) => ({
+        role: m.role,
+        content: m.role === "user" ? buildUserContent(m) : m.content,
       }));
 
     try {
-      const response = await fetch("/api/dashboard/chat/completions", {
+      const response = await fetch("/api/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Accept: "text/event-stream",
+          Authorization: `Bearer ${selectedApiKey}`,
         },
         body: JSON.stringify({
-          model: model.requestModel || model.id,
+          model: model.id,
           messages: requestMessages,
           stream: true,
         }),
@@ -659,9 +553,9 @@ export default function BasicChatPageClient() {
       if (!reader) {
         const data = await response.json().catch(() => ({}));
         const fallbackText = textValue(data?.choices?.[0]?.message?.content || data?.output_text || data?.error || data?.message || "");
-        updateSession(sessionId, (currentSession) => ({
-          ...currentSession,
-          messages: currentSession.messages.map((message) => (message.id === assistantMessageId ? { ...message, content: fallbackText, status: "done" } : message)),
+        updateSession(sessionId, (s) => ({
+          ...s,
+          messages: s.messages.map((m) => (m.id === assistantMessageId ? { ...m, content: fallbackText, status: "done" } : m)),
           updatedAt: new Date().toISOString(),
         }));
         return;
@@ -693,29 +587,28 @@ export default function BasicChatPageClient() {
 
             assistantText += text;
             setStreamingText(assistantText);
-            updateSession(sessionId, (currentSession) => ({
-              ...currentSession,
-              messages: currentSession.messages.map((message) => (message.id === assistantMessageId ? { ...message, content: assistantText, status: "streaming" } : message)),
+            updateSession(sessionId, (s) => ({
+              ...s,
+              messages: s.messages.map((m) => (m.id === assistantMessageId ? { ...m, content: assistantText, status: "streaming" } : m)),
               updatedAt: new Date().toISOString(),
             }));
           } catch {
-            // Ignore malformed chunks.
+            // Ignore malformed chunks
           }
         }
       }
 
-      updateSession(sessionId, (currentSession) => ({
-        ...currentSession,
-        messages: currentSession.messages.map((message) => (message.id === assistantMessageId ? { ...message, content: assistantText || message.content, status: "done" } : message)),
+      updateSession(sessionId, (s) => ({
+        ...s,
+        messages: s.messages.map((m) => (m.id === assistantMessageId ? { ...m, content: assistantText || m.content, status: "done" } : m)),
         updatedAt: new Date().toISOString(),
       }));
-      finalizeSessionTitle(sessionId, userText);
     } catch (error) {
       if (error.name !== "AbortError") {
         const errorText = textValue(error?.message || error);
-        updateSession(sessionId, (currentSession) => ({
-          ...currentSession,
-          messages: currentSession.messages.map((message) => (message.id === assistantMessageId ? { ...message, content: message.content || `Error: ${errorText}`, status: "error" } : message)),
+        updateSession(sessionId, (s) => ({
+          ...s,
+          messages: s.messages.map((m) => (m.id === assistantMessageId ? { ...m, content: m.content || `Error: ${errorText}`, status: "error" } : m)),
           updatedAt: new Date().toISOString(),
         }));
         setLoadError(errorText || "Failed to send message.");
@@ -735,74 +628,81 @@ export default function BasicChatPageClient() {
     }
   };
 
-  const modelLabel = activeModel ? `${activeModel.name}` : "Select model";
-  const modelSubLabel = activeModel ? activeModel.requestModel : "Choose from connected providers";
+  const modelLabel = currentModel ? currentModel.name : "Select model";
+  const modelSubLabel = currentModel ? currentModel.id : "";
 
   return (
-    <div className="relative flex-1 flex flex-col h-full min-h-0 min-w-0 bg-[#212121] text-white overflow-hidden">
+    <div className="relative flex-1 flex flex-col h-full min-h-0 min-w-0 bg-surface-1 text-text-main overflow-hidden">
       <div className="relative mx-auto flex flex-1 h-full min-h-0 w-full max-w-4xl flex-col">
+        {/* Header: Provider + Model + API Key selectors */}
         <div className="flex shrink-0 items-center justify-between gap-3 px-4 py-3 lg:px-6">
-          <div ref={modelMenuRef} className="relative">
-            <button
-              type="button"
-              onClick={() => setModelMenuOpen((value) => !value)}
-              className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left transition hover:bg-white/8"
-            >
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-white">{modelLabel}</span>
-                  <span className="material-symbols-outlined text-[18px] text-white/70">expand_more</span>
-                </div>
-                <p className="truncate text-xs text-white/55">{modelSubLabel}</p>
-              </div>
-            </button>
-
-            {modelMenuOpen ? (
-              <div className="absolute left-0 top-[calc(100%+10px)] z-30 w-[min(520px,calc(100vw-2rem))] overflow-hidden rounded-[20px] border border-white/10 bg-[#262626] shadow-2xl shadow-black/50">
-                <div className="border-b border-white/10 px-4 py-3">
-                  <p className="text-xs uppercase tracking-[0.22em] text-white/45">Models</p>
-                  <p className="text-sm text-white/75">Only from connected providers</p>
-                </div>
-                <div className="max-h-[60vh] overflow-y-auto p-2 custom-scrollbar">
+          <div ref={modelMenuRef} className="relative flex items-center gap-3">
+            {/* Provider selector */}
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-text-muted">Provider</span>
+              {currentProvider ? (
+                <select
+                  value={selectedProvider}
+                  onChange={(e) => handleSelectProvider(e.target.value)}
+                  className="rounded-xl border border-border-subtle bg-surface-2 px-3 py-2 text-sm text-text-main outline-none cursor-pointer hover:bg-surface-3"
+                >
                   {providerGroups.map((group) => (
-                    <div key={group.providerId} className="mb-2 rounded-[16px] border border-white/10 bg-black/20 p-2">
-                      <div className="flex items-center justify-between px-2 py-2">
-                        <p className="text-sm font-semibold text-white">{group.providerName}</p>
-                        <Badge size="sm" variant="default">{group.models.length}</Badge>
-                      </div>
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        {group.models.map((model) => {
-                          const isActive = model.id === activeModelId;
-                          return (
-                            <button
-                              key={model.id}
-                              type="button"
-                              onClick={() => handleSelectModel(model.id)}
-                              className={`rounded-[14px] border px-3 py-3 text-left transition ${isActive ? "border-blue-400/40 bg-blue-500/15" : "border-white/10 bg-white/5 hover:bg-white/8"}`}
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                  <p className="truncate text-sm font-medium text-white">{model.name}</p>
-                                  <p className="truncate text-[11px] text-white/45">{model.requestModel}</p>
-                                </div>
-                                {isActive ? <span className="material-symbols-outlined text-[18px] text-blue-300">check_circle</span> : null}
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
+                    <option key={group.providerId} value={group.providerId} className="bg-surface-2 text-text-main">
+                      {group.providerName} ({group.models.length})
+                    </option>
                   ))}
-                </div>
-              </div>
-            ) : null}
+                </select>
+              ) : (
+                <span className="text-sm text-text-muted">Loading...</span>
+              )}
+            </div>
+
+            {/* Model selector */}
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-text-muted">Model</span>
+              {currentProvider ? (
+                <select
+                  value={selectedModelId}
+                  onChange={(e) => handleSelectModel(e.target.value)}
+                  className="rounded-xl border border-border-subtle bg-surface-2 px-3 py-2 text-sm text-text-main outline-none cursor-pointer hover:bg-surface-3 min-w-[140px]"
+                >
+                  {currentProvider.models.map((model) => (
+                    <option key={model.id} value={model.id} className="bg-surface-2 text-text-main">
+                      {model.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className="text-sm text-text-muted">-</span>
+              )}
+            </div>
+
+            {/* API Key selector */}
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-text-muted">API Key</span>
+              {apiKeys.length > 0 ? (
+                <select
+                  value={selectedApiKey}
+                  onChange={(e) => setSelectedApiKey(e.target.value)}
+                  className="rounded-xl border border-border-subtle bg-surface-2 px-3 py-2 text-sm text-text-main outline-none cursor-pointer hover:bg-surface-3 min-w-[100px]"
+                >
+                  {apiKeys.map((key) => (
+                    <option key={key.id} value={key.key} className="bg-surface-2 text-text-main">
+                      {key.name || `sk-...${key.key.slice(-4)}`}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className="text-sm text-amber-400">Create a key first</span>
+              )}
+            </div>
           </div>
 
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setHistoryOpen((value) => !value)}
-              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80 transition hover:bg-white/8"
+              onClick={() => setHistoryOpen((v) => !v)}
+              className="rounded-2xl border border-border-subtle bg-surface-2 px-4 py-3 text-sm text-text-secondary transition hover:bg-surface-3"
             >
               History
             </button>
@@ -812,40 +712,54 @@ export default function BasicChatPageClient() {
           </div>
         </div>
 
+        {/* History panel */}
         {historyOpen ? (
-          <div ref={historyMenuRef} className="absolute right-4 top-[72px] z-20 w-[min(360px,calc(100vw-2rem))] rounded-[20px] border border-white/10 bg-[#262626] p-2 shadow-2xl shadow-black/50 lg:right-6">
+          <div ref={historyMenuRef} className="absolute right-4 top-[72px] z-20 w-[min(360px,calc(100vw-2rem))] rounded-[20px] border border-border-subtle bg-surface-2 p-2 shadow-2xl shadow-black/50 lg:right-6">
             <div className="px-3 py-2">
-              <p className="text-xs uppercase tracking-[0.22em] text-white/45">Recent chats</p>
+              <p className="text-xs uppercase tracking-[0.22em] text-text-muted">Recent chats</p>
             </div>
             <div className="max-h-[48vh] space-y-2 overflow-y-auto p-1 custom-scrollbar">
               {sessionItems.length === 0 ? (
-                <div className="rounded-[16px] border border-dashed border-white/10 bg-white/5 p-4 text-sm text-white/55">
+                <div className="rounded-[16px] border border-dashed border-border-subtle bg-surface-2 p-4 text-sm text-text-muted">
                   No conversations yet.
                 </div>
               ) : sessionItems.map((session) => {
                 const isActive = session.id === activeSessionId;
-                const latestMessage = [...(session.messages || [])].reverse().find((message) => message.role === "user") || session.messages?.[0];
+                const latestMessage = [...(session.messages || [])].reverse().find((m) => m.role === "user") || session.messages?.[0];
                 return (
-                  <button
+                  <div
                     key={session.id}
-                    type="button"
-                    onClick={() => handleSelectSession(session.id)}
-                    className={`w-full rounded-[16px] border px-3 py-3 text-left transition ${isActive ? "border-blue-400/40 bg-blue-500/15" : "border-white/10 bg-white/5 hover:bg-white/8"}`}
+                    className={`w-full rounded-[16px] border px-3 py-3 transition ${isActive ? "border-blue-400/40 bg-blue-500/15" : "border-border-subtle bg-surface-2 hover:bg-surface-3"}`}
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-white">{session.title}</p>
-                        <p className="mt-1 truncate text-xs text-white/50">{textValue(latestMessage?.content) || "Empty chat"}</p>
+                      <button
+                        type="button"
+                        onClick={() => handleSelectSession(session.id)}
+                        className="min-w-0 flex-1 text-left"
+                      >
+                        <p className="truncate text-sm font-medium text-text-main">{session.title}</p>
+                        <p className="mt-1 truncate text-xs text-text-muted">{textValue(latestMessage?.content) || "Empty chat"}</p>
+                      </button>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[10px] text-text-muted">{formatRelativeTime(session.updatedAt)}</span>
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteSession(session.id, e)}
+                          className="p-1 text-text-muted hover:text-red-400 transition"
+                          title="Delete"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">delete</span>
+                        </button>
                       </div>
-                      <span className="text-[10px] text-white/40 shrink-0">{formatRelativeTime(session.updatedAt)}</span>
                     </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>
           </div>
         ) : null}
 
+        {/* Error display */}
         {loadError ? (
           <div className="mt-4 rounded-[18px] border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-rose-100">
             <div className="flex items-start gap-3">
@@ -855,18 +769,19 @@ export default function BasicChatPageClient() {
           </div>
         ) : null}
 
+        {/* Messages area */}
         <div className="flex flex-1 flex-col min-h-0">
           <div className="flex-1 overflow-y-auto py-4 custom-scrollbar">
             {currentMessages.length === 0 ? (
               <div className="flex min-h-[50vh] items-center justify-center px-4 text-center">
                 <div className="max-w-xl space-y-4">
-                  <div className="mx-auto flex size-16 items-center justify-center rounded-[20px] border border-white/10 bg-white/5 text-white/80">
+                  <div className="mx-auto flex size-16 items-center justify-center rounded-[20px] border border-border-subtle bg-surface-2 text-text-secondary">
                     <span className="material-symbols-outlined text-[30px]">chat</span>
                   </div>
                   <div className="space-y-2">
-                    <h2 className="text-2xl font-semibold text-white">Start a conversation</h2>
-                    <p className="text-sm leading-6 text-white/60">
-                      Simple chat interface to interact with any AI model from connected providers. Select a model and start chatting!
+                    <h2 className="text-2xl font-semibold text-text-main">Test Your Models</h2>
+                    <p className="text-sm leading-6 text-text-muted">
+                      Select a provider, model, and API key to test. Models come from /v1/models endpoint.
                     </p>
                   </div>
                 </div>
@@ -882,15 +797,15 @@ export default function BasicChatPageClient() {
 
                 return (
                   <div key={message.id} className={`flex w-full ${isUser ? "justify-end" : "justify-start"} mb-6`}>
-                    <div className={`max-w-[min(88%,42rem)] ${isUser ? "rounded-3xl bg-[#2f2f2f] px-5 py-3.5 text-white" : "text-white/90"}`}>
+                    <div className={`max-w-[min(88%,42rem)] ${isUser ? "rounded-3xl bg-surface-2 px-5 py-3.5 text-text-main" : "text-text-secondary"}`}>
                       <div className="mb-1 flex items-center justify-between gap-3">
-                        <span className="text-xs font-semibold">{isUser ? "You" : activeModel?.name || "Assistant"}</span>
+                        <span className="text-xs font-semibold">{isUser ? "You" : currentModel?.name || "Assistant"}</span>
                       </div>
 
                       {message.attachments?.length ? (
                         <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3 mt-2">
                           {message.attachments.map((attachment) => (
-                            <a key={attachment.id} href={attachment.dataUrl} target="_blank" rel="noreferrer" className="overflow-hidden rounded-[18px] border border-white/10 bg-black/20">
+                            <a key={attachment.id} href={attachment.dataUrl} target="_blank" rel="noreferrer" className="overflow-hidden rounded-[18px] border border-border-subtle bg-surface-3">
                               <img src={attachment.dataUrl} alt={attachment.name} className="h-28 w-full object-cover" />
                             </a>
                           ))}
@@ -908,13 +823,14 @@ export default function BasicChatPageClient() {
             </div>
           </div>
 
+          {/* Input area */}
           <div className="shrink-0 pt-2">
             {attachments.length > 0 ? (
               <div className="mx-auto mb-3 flex w-full max-w-3xl flex-wrap gap-2 px-4">
                 {attachments.map((attachment) => (
-                  <div key={attachment.id} className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2">
-                    <span className="text-xs text-white/80 max-w-[12rem] truncate">{attachment.name}</span>
-                    <button type="button" onClick={() => removeAttachment(attachment.id)} className="text-white/55 hover:text-white" aria-label="Remove attachment">
+                  <div key={attachment.id} className="flex items-center gap-2 rounded-full border border-border-subtle bg-surface-2 px-3 py-2">
+                    <span className="text-xs text-text-secondary max-w-[12rem] truncate">{attachment.name}</span>
+                    <button type="button" onClick={() => removeAttachment(attachment.id)} className="text-text-muted hover:text-text-main" aria-label="Remove attachment">
                       <span className="material-symbols-outlined text-[18px]">close</span>
                     </button>
                   </div>
@@ -923,32 +839,32 @@ export default function BasicChatPageClient() {
             ) : null}
 
             <div className="mx-auto w-full max-w-3xl px-4 pb-2">
-              <div className="rounded-[26px] bg-[#2f2f2f] px-3 pt-3 pb-2 shadow-[0_0_15px_rgba(0,0,0,0.10)] ring-1 ring-white/5">
+              <div className="rounded-[26px] bg-surface-2 px-3 pt-3 pb-2 shadow-[0_0_15px_rgba(0,0,0,0.10)] ring-1 ring-white/5">
                 <textarea
                   value={draft}
-                  onChange={(event) => setDraft(event.target.value)}
+                  onChange={(e) => setDraft(e.target.value)}
                   onKeyDown={handleKeyDown}
                   placeholder="Message AI"
                   rows={1}
-                  className="w-full resize-none bg-transparent px-2 text-[15px] leading-6 text-white outline-none placeholder:text-white/40 custom-scrollbar max-h-[25vh] overflow-y-auto"
+                  className="w-full resize-none bg-transparent px-2 text-[15px] leading-6 text-text-main outline-none placeholder:text-text-muted custom-scrollbar max-h-[25vh] overflow-y-auto"
                 />
 
                 <div className="mt-2 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
-                    <button type="button" onClick={() => fileInputRef.current?.click()} disabled={!activeModel || loadingData} className="p-2 text-white/50 hover:text-white transition rounded-full hover:bg-white/5">
+                    <button type="button" onClick={() => fileInputRef.current?.click()} disabled={!currentModel || loadingData} className="p-2 text-text-muted hover:text-text-main transition rounded-full hover:bg-surface-2">
                       <span className="material-symbols-outlined text-[20px]">attach_file</span>
                     </button>
                     <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleAttachFiles} />
-                    <span className="text-xs font-medium text-white/30 truncate max-w-[120px]">{activeModel ? activeModel.name : "No model"}</span>
+                    <span className="text-xs font-medium text-text-muted truncate max-w-[120px]">{currentModel ? currentModel.id : "No model"}</span>
                   </div>
 
                   <div className="flex items-center gap-2">
                     {isSending ? (
-                      <button type="button" onClick={handleStop} className="p-2 text-white bg-white/10 hover:bg-white/20 transition rounded-full h-8 w-8 flex items-center justify-center">
+                      <button type="button" onClick={handleStop} className="p-2 text-text-main bg-surface-3 hover:bg-surface-4 transition rounded-full h-8 w-8 flex items-center justify-center">
                         <span className="material-symbols-outlined text-[16px]">stop</span>
                       </button>
                     ) : null}
-                    <button onClick={sendMessage} disabled={!canSend} className={`h-8 w-8 rounded-full flex items-center justify-center transition ${canSend ? 'bg-white text-black hover:opacity-90' : 'bg-white/10 text-white/30 cursor-not-allowed'}`}>
+                    <button onClick={sendMessage} disabled={!canSend} className={`h-8 w-8 rounded-full flex items-center justify-center transition ${canSend ? 'bg-white text-black hover:opacity-90' : 'bg-surface-3 text-text-muted cursor-not-allowed'}`}>
                       <span className="material-symbols-outlined text-[16px]">arrow_upward</span>
                     </button>
                   </div>
@@ -957,8 +873,8 @@ export default function BasicChatPageClient() {
             </div>
           </div>
 
-          <p className="mx-auto mt-2 max-w-3xl px-4 pb-4 text-center text-[11px] text-white/30">
-            Model list is filtered from connected providers.
+          <p className="mx-auto mt-2 max-w-3xl px-4 pb-4 text-center text-[11px] text-text-muted">
+            Models from providers & combos • API key required for testing
           </p>
         </div>
       </div>
