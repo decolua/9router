@@ -44,6 +44,21 @@ const RESPONSES_API_ALLOWLIST = new Set([
   "text"
 ]);
 
+export function stripRejectedCodexInputNamespaces(body) {
+  if (!Array.isArray(body?.input)) return false;
+  let stripped = false;
+  for (const item of body.input) {
+    if (!item || typeof item !== "object" || Array.isArray(item) || !("namespace" in item)) continue;
+    delete item.namespace;
+    stripped = true;
+  }
+  return stripped;
+}
+
+function isRejectedCodexInputNamespace(status, errorText) {
+  return Number(status) === 400
+    && /unknown parameter:\s*['"]input\[\d+\]\.namespace['"]/i.test(String(errorText || ""));
+}
 // Convert role=system → role=developer in body.input (keeps content in cacheable prefix)
 function convertSystemToDeveloperRole(body) {
   if (!Array.isArray(body.input)) return;
@@ -267,8 +282,18 @@ export class CodexExecutor extends BaseExecutor {
     const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...this.config.retry };
     const { attempts, delayMs } = resolveRetryEntry(retryConfig[503]);
     let attempt = 0;
+    let namespaceSchemaRetried = false;
     while (true) {
       const result = await super.execute(args);
+      if (!namespaceSchemaRetried && result.response?.status === 400) {
+        const errorText = await result.response.clone().text();
+        if (isRejectedCodexInputNamespace(result.response.status, errorText)
+            && stripRejectedCodexInputNamespaces(args.body)) {
+          namespaceSchemaRetried = true;
+          args.log?.warn?.("CODEX", "Upstream rejected input namespace; retrying once without history namespace fields");
+          continue;
+        }
+      }
       const peek = await this._peekSseTransientError(result.response);
       if (!peek.matched) {
         // Replace body with re-assembled stream (prefix bytes already read + rest)
