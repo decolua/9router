@@ -8,6 +8,8 @@ import { isValidClaudeSignature } from "../../utils/claudeSignature.js";
 import { PROVIDERS } from "../../providers/index.js";
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 import { DEFAULT_MAX_TOKENS } from "../../config/runtimeConfig.js";
+import { parseModel } from "../../services/model.js";
+import { getModelUpstreamId, PROVIDER_ID_TO_ALIAS } from "../../config/providerModels.js";
 
 // Check if message has valid non-empty content
 export function hasValidContent(msg) {
@@ -174,6 +176,16 @@ export function normalizeClaudePassthrough(body, model = "") {
       if (thinkingEnabled && !hasKeptThinking && hasToolUse) {
         msg.content.unshift(buildThinkingPlaceholder("claude"));
       }
+    }
+  }
+
+  if (Array.isArray(body.tools)) {
+    for (const tool of body.tools) {
+      if (typeof tool.model !== "string") continue;
+      const { provider: toolProvider, model: toolModel } = parseModel(tool.model);
+      if (!toolProvider) continue;
+      const alias = PROVIDER_ID_TO_ALIAS[toolProvider] || toolProvider;
+      tool.model = getModelUpstreamId(alias, toolModel);
     }
   }
 
