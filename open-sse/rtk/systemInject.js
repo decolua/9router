@@ -22,12 +22,12 @@ export function injectSystemPrompt(body, format, prompt) {
       return;
     default:
       // OpenAI and OpenAI-shaped formats (responses/codex/cursor/kiro/ollama)
-      injectMessagesSystem(body, prompt);
+      injectMessagesSystem(body, format, prompt);
   }
 }
 
 // OpenAI-shaped: messages[] (chat) or input[] (responses) or instructions (responses string)
-function injectMessagesSystem(body, prompt) {
+function injectMessagesSystem(body, format, prompt) {
   // OpenAI Responses API: top-level string field
   if (typeof body.instructions === "string") {
     body.instructions = body.instructions
@@ -41,22 +41,37 @@ function injectMessagesSystem(body, prompt) {
     : null;
   if (!arr) return;
 
+  // Responses API requires {type:"message"} items with typed content arrays;
+  // Chat Completions uses bare {role, content:string}.
+  const isResponses = format === FORMATS.OPENAI_RESPONSES || Array.isArray(body.input);
+
   const idx = arr.findIndex(m => m && (m.role === "system" || m.role === "developer"));
   if (idx >= 0) {
-    appendToOpenAIMessage(arr[idx], prompt);
+    appendToOpenAIMessage(arr[idx], prompt, isResponses);
+  } else if (isResponses) {
+    arr.unshift({ type: "message", role: "system", content: [{ type: "input_text", text: prompt }] });
   } else {
     arr.unshift({ role: "system", content: prompt });
   }
 }
 
-function appendToOpenAIMessage(msg, prompt) {
+function appendToOpenAIMessage(msg, prompt, isResponses) {
   if (typeof msg.content === "string") {
-    msg.content = `${msg.content}${SEP}${prompt}`;
+    if (isResponses) {
+      msg.content = [{ type: "input_text", text: `${msg.content}${SEP}${prompt}` }];
+    } else {
+      msg.content = `${msg.content}${SEP}${prompt}`;
+    }
   } else if (Array.isArray(msg.content)) {
     // Responses-style array of parts {type:"input_text"|"text", text}
     msg.content.push({ type: "input_text", text: prompt });
+  } else if (isResponses) {
+    msg.content = [{ type: "input_text", text: prompt }];
   } else {
     msg.content = prompt;
+  }
+  if (isResponses && !msg.type) {
+    msg.type = "message";
   }
 }
 

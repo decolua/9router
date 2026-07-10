@@ -59,6 +59,24 @@ function stripStoredItemReferences(body) {
   });
 }
 
+// Sanitize input items so the Codex Responses backend never sees malformed shapes:
+// - Items with a role but no type → add type:"message"
+// - Message content as bare string → convert to typed array [{type:"input_text", text}]
+// This catches items injected by caveman/ponytail and any client-side anomalies.
+function sanitizeCodexInput(body) {
+  if (!Array.isArray(body.input)) return;
+  for (const item of body.input) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    if (item.role && !item.type) {
+      item.type = "message";
+    }
+    if (item.type === "message" && typeof item.content === "string") {
+      const partType = item.role === "assistant" ? "output_text" : "input_text";
+      item.content = [{ type: partType, text: item.content }];
+    }
+  }
+}
+
 // Flatten Chat-Completions tool shape into Responses flat format + filter unsupported tools
 function normalizeCodexTools(body) {
   if (!Array.isArray(body.tools)) return;
@@ -321,6 +339,8 @@ export class CodexExecutor extends BaseExecutor {
 
     // Keep system prompts in body.input as role=developer so they stay in the cacheable prefix
     convertSystemToDeveloperRole(body);
+    // Sanitize input items: ensure type:"message" + typed content arrays (fixes caveman/ponytail injections)
+    sanitizeCodexInput(body);
     // Strip server-generated item IDs (rs_/fc_/resp_/msg_) — Codex /responses can't resolve when store=false
     stripStoredItemReferences(body);
     // Flatten function tools + drop unsupported types
