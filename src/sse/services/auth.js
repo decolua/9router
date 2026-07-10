@@ -198,6 +198,22 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
 }
 
 /**
+ * Best-effort stringification of a non-string error value (Error without a
+ * usable .message, plain object, etc.) so the real cause can still be logged
+ * instead of silently collapsing to a generic placeholder.
+ * @param {*} err
+ * @returns {string}
+ */
+function safeStringifyError(err) {
+  if (err === null || err === undefined) return "";
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
+}
+
+/**
  * Mark account+model as unavailable — locks modelLock_${model} in DB.
  * All errors (429, 401, 5xx, etc.) lock per model, not per account.
  * @param {string} connectionId
@@ -224,7 +240,14 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   }
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
 
-  const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
+  // errorText is usually a string, but callers can pass an Error (or omit it
+  // entirely, e.g. when a caught exception isn't a string). Falling straight
+  // back to a generic "Provider error" without ever logging the real value
+  // hides the actual cause server-side (no status, no trace). Extract the
+  // best available message before giving up, and always log the raw cause.
+  const reason = typeof errorText === "string"
+    ? errorText.slice(0, 100)
+    : (errorText?.message || safeStringifyError(errorText) || "Provider error");
   const lockUpdate = buildModelLockUpdate(model, cooldownMs);
 
   await updateProviderConnection(connectionId, {
@@ -240,8 +263,11 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
   log.warn("AUTH", `${connName} locked ${lockKey} for ${Math.round(cooldownMs / 1000)}s [${status}]`);
 
-  if (provider && status && reason) {
-    console.error(`❌ ${provider} [${status}]: ${reason}`);
+  // Log the real cause even when there's no numeric HTTP status (e.g. a stream
+  // parsing crash rather than an upstream HTTP error) — a status-only gate here
+  // means non-HTTP failures never surface a usable server-side trace.
+  if (provider && reason) {
+    console.error(`❌ ${provider} [${status ?? "no-status"}]: ${reason}`);
   }
 
   return { shouldFallback: true, cooldownMs };
