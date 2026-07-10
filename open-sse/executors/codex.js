@@ -45,6 +45,15 @@ const RESPONSES_API_ALLOWLIST = new Set([
   "text"
 ]);
 
+// Apply Codex transport-level effort aliases after model-aware semantic resolution.
+// Official openai/codex serializes semantic Ultra as Max for requests; other efforts identity-map.
+function resolveCodexWireEffort(effort, config) {
+  const aliases = config?.quirks?.reasoningEffortAliases;
+  if (!aliases || effort == null) return effort;
+  const key = String(effort).toLowerCase();
+  return aliases[key] ?? effort;
+}
+
 // Convert role=system → role=developer in body.input (keeps content in cacheable prefix)
 function convertSystemToDeveloperRole(body) {
   if (!Array.isArray(body.input)) return;
@@ -423,7 +432,7 @@ export class CodexExecutor extends BaseExecutor {
     body.model = getModelUpstreamId("cx", body.model || model);
 
     // Extract thinking level from model name suffix
-    // e.g., gpt-5.3-codex-high → high, gpt-5.3-codex → medium (default)
+    // e.g., gpt-5.3-codex-high → high, gpt-5.3-codex → low (default)
     const effortLevels = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
     let modelEffort = null;
     for (const level of effortLevels) {
@@ -436,11 +445,14 @@ export class CodexExecutor extends BaseExecutor {
     }
 
     // Priority: explicit reasoning.effort > reasoning_effort param > model suffix > default (low)
+    // resolveOpenAiEffort keeps model-aware semantic support; resolveCodexWireEffort maps Ultra→Max for wire.
     if (!body.reasoning) {
-      const effort = resolveOpenAiEffort(body.reasoning_effort || modelEffort || 'low', "codex", body.model);
+      const semantic = resolveOpenAiEffort(body.reasoning_effort || modelEffort || 'low', "codex", body.model);
+      const effort = resolveCodexWireEffort(semantic, this.config);
       body.reasoning = { effort, summary: "auto" };
     } else {
-      body.reasoning.effort = resolveOpenAiEffort(body.reasoning.effort, "codex", body.model);
+      const semantic = resolveOpenAiEffort(body.reasoning.effort, "codex", body.model);
+      body.reasoning.effort = resolveCodexWireEffort(semantic, this.config);
       if (!body.reasoning.summary) body.reasoning.summary = "auto";
     }
     delete body.reasoning_effort;

@@ -25,15 +25,20 @@ describe("Codex fast tier and capacity handling", () => {
     expect(body.reasoning.effort).toBe("xhigh");
   });
 
+  // Official openai/codex serializes semantic Ultra as Max for requests.
+  // Sol/Terra keep semantic ultra via resolveOpenAiEffort; Codex wire alias maps ultra→max.
   it.each([
     ["gpt-5.6-sol", "max", "max"],
-    ["gpt-5.6-sol", "ultra", "ultra"],
+    ["gpt-5.6-sol", "ultra", "max"],
     ["gpt-5.6-terra", "max", "max"],
-    ["gpt-5.6-terra", "ultra", "ultra"],
+    ["gpt-5.6-terra", "ultra", "max"],
     ["gpt-5.6-luna", "max", "max"],
     ["gpt-5.6-luna", "ultra", "max"],
+    ["gpt-5.5", "max", "xhigh"],
     ["gpt-5.5", "ultra", "xhigh"],
-  ])("normalizes %s reasoning effort %s to %s", (model, requested, expected) => {
+    ["gpt-5.6-sol", "xhigh", "xhigh"],
+    ["gpt-5.6-sol", "high", "high"],
+  ])("normalizes nested reasoning.effort for %s: %s → %s", (model, requested, expected) => {
     const executor = new CodexExecutor();
     const body = executor.transformRequest(model, {
       model,
@@ -44,11 +49,31 @@ describe("Codex fast tier and capacity handling", () => {
     expect(body.reasoning.effort).toBe(expected);
   });
 
+  // Legacy reasoning_effort also converges through the same semantic→wire path.
   it.each([
-    ["gpt-5.6-sol-ultra", "gpt-5.6-sol", "ultra"],
+    ["gpt-5.6-sol", "ultra", "max"],
+    ["gpt-5.6-terra", "ultra", "max"],
+    ["gpt-5.6-sol", "max", "max"],
+    ["gpt-5.6-luna", "ultra", "max"],
+    ["gpt-5.5", "ultra", "xhigh"],
+  ])("normalizes legacy reasoning_effort for %s: %s → %s", (model, requested, expected) => {
+    const executor = new CodexExecutor();
+    const body = executor.transformRequest(model, {
+      model,
+      input: "hi",
+      reasoning_effort: requested,
+    }, true, {});
+
+    expect(body.reasoning.effort).toBe(expected);
+    expect(body.reasoning_effort).toBeUndefined();
+  });
+
+  it.each([
+    ["gpt-5.6-sol-ultra", "gpt-5.6-sol", "max"],
+    ["gpt-5.6-terra-ultra", "gpt-5.6-terra", "max"],
     ["gpt-5.6-terra-max", "gpt-5.6-terra", "max"],
     ["gpt-5.6-luna-ultra", "gpt-5.6-luna", "max"],
-  ])("normalizes effort suffix %s", (model, expectedModel, expectedEffort) => {
+  ])("normalizes effort suffix %s → model %s effort %s", (model, expectedModel, expectedEffort) => {
     const executor = new CodexExecutor();
     const body = executor.transformRequest(model, { model, input: "hi" }, true, {});
 
