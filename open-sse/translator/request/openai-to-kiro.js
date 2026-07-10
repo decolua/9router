@@ -270,6 +270,7 @@ function convertMessages(messages, tools, model) {
     let role = msg.role;
 
     // Normalize: system/tool -> user
+    const wasSystem = role === ROLE.SYSTEM;
     if (role === ROLE.SYSTEM || role === ROLE.TOOL) {
       role = ROLE.USER;
     }
@@ -338,7 +339,10 @@ function convertMessages(messages, tools, model) {
           content: [{ text: toolContent }]
         });
       } else if (content) {
-        pendingUserContent.push(content);
+        // <instructions> tags: Claude models treat these as authoritative directives.
+        pendingUserContent.push(
+          wasSystem ? `<instructions>\n${content}\n</instructions>` : content
+        );
       }
     } else if (role === ROLE.ASSISTANT) {
       // Extract text content and tool uses

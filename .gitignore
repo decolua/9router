@@ -124,3 +124,6 @@ graphify-out/*
 
 # stray local log
 /debug.log
+
+# Next.js bundle analyzer output (upstream)
+.next-analyze/*
