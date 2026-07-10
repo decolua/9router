@@ -3,6 +3,7 @@
 // never hardcoded per-model here. See .docs/thinking/plan.md MATRIX VI-A.
 
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
+import { getThinkingLevels } from "../../providers/thinkingLevels.js";
 import { PROVIDERS } from "../../providers/index.js";
 import { LEVEL_TO_BUDGET, budgetToLevel, effortToBudget, effortToThinkingLevel } from "./thinking.js";
 
@@ -212,8 +213,22 @@ function stripAll(body) {
   if (body.request?.generationConfig) delete body.request.generationConfig.thinkingConfig;
 }
 
+// Map requested OpenAI effort to a level the model accepts.
+// Preserve when listed in getThinkingLevels; else nearest high-end sibling.
+// Unknown/empty metadata keeps legacy safe max/ultra → xhigh clamp.
+function resolveOpenAiEffort(level, allowed) {
+  if (!level) return level;
+  if (Array.isArray(allowed) && allowed.includes(level)) return level;
+  if (level === "ultra") {
+    if (Array.isArray(allowed) && allowed.includes("max")) return "max";
+    return "xhigh";
+  }
+  if (level === "max") return "xhigh";
+  return level;
+}
+
 // Apply unified thinking config to body in the resolved provider-native format.
-function applyFormat(fmt, body, cfg, caps) {
+function applyFormat(fmt, body, cfg, caps, model = null, provider = null) {
   const none = cfg.mode === "none";
   const canDisable = caps.thinkingCanDisable !== false;
   // Model cannot disable thinking → clamp "none" to minimal effort instead.
@@ -223,8 +238,8 @@ function applyFormat(fmt, body, cfg, caps) {
     case "openai": {
       if (none && canDisable) { body.reasoning_effort = "none"; break; }
       const level = toLevel(eff);
-      // OpenAI reasoning_effort enum caps at "xhigh" (no "max"); clamp Claude Code's "max".
-      if (level) body.reasoning_effort = level === "max" ? "xhigh" : level;
+      // Config-driven: preserve supported effort; nearest sibling otherwise.
+      if (level) body.reasoning_effort = resolveOpenAiEffort(level, getThinkingLevels(provider, model));
       break;
     }
     case "claude-adaptive": {
@@ -324,6 +339,6 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
 
   const fmt = resolveFormat(targetFormat, cleanModel, provider);
   stripAll(body);
-  applyFormat(fmt, body, cfg, caps);
+  applyFormat(fmt, body, cfg, caps, cleanModel, provider);
   return body;
 }
