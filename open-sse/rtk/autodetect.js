@@ -84,6 +84,11 @@ function isGrepLine(line) {
 function isPathLike(line) {
   const t = line.trim();
   if (t.length === 0) return false;
+  // A drive-letter prefix (e.g. "C:\Users\me" or "C:/Users/me") marks a
+  // Windows absolute path, so treat the whole line as path-like. Trailing
+  // colons (e.g. "C:\path\file.js:10") are tolerated, matching grep-style
+  // suffixes on Windows dumps.
+  if (/^[A-Za-z]:[\\/]/.test(t)) return true;
   if (t.includes(":")) return false;
   return t.startsWith(".") || t.startsWith("/") || t.includes("/");
 }

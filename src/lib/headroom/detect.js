@@ -9,7 +9,7 @@ export const HEADROOM_COMPRESSION_EXTRAS = ["code", "ml"];
 
 // Marker packages that each extra pulls in. Detected from `pip list --format=json`
 // so one call can answer both the installed version and active extras.
-const EXTRA_MARKERS = {
+export const EXTRA_MARKERS = {
   code: ["tree-sitter", "tree-sitter-language-pack"],
   ml: ["torch", "huggingface-hub"],
 };
@@ -64,11 +64,33 @@ export function findHeadroomBinary() {
 }
 
 // Find a Python interpreter >= 3.10 (headroom-ai requires it). Returns null if none.
-// On Windows, `python3` and `python` can point at different envs. Prefer the
-// first candidate that can also see the installed `headroom-ai` package so the
+// `python3`, `python3.13`, `python` can point at different envs on any OS. Prefer
+// the interpreter that can also see the installed `headroom-ai` package so the
 // dashboard probes and install action operate on the same interpreter as the CLI.
+// Falls back to the first version-eligible candidate when headroom-ai is not yet
+// installed anywhere (needed for the initial install).
+// Interpreters to probe, most specific first: the python next to the headroom
+// binary (guaranteed to have headroom-ai), then full paths from EXTRA_BINS, then
+// bare names resolved via PATH.
+function pythonCandidates() {
+  const list = [];
+  const bin = findHeadroomBinary();
+  if (bin) {
+    const dir = path.dirname(bin);
+    const names = IS_WIN ? ["python.exe", "python3.exe"] : ["python3", "python3.13", "python"];
+    for (const n of names) list.push(path.join(dir, n));
+  }
+  for (const dir of EXTRA_BINS) {
+    if (!dir) continue;
+    for (const n of PYTHON_CANDIDATES) list.push(path.join(dir, IS_WIN ? `${n}.exe` : n));
+  }
+  list.push(...PYTHON_CANDIDATES);
+  return list;
+}
+
 export function findPython310() {
-  for (const candidate of PYTHON_CANDIDATES) {
+  let fallback = null;
+  for (const candidate of pythonCandidates()) {
     try {
       const ver = execSync(`${candidate} --version`, {
         stdio: ["ignore", "pipe", "ignore"],
@@ -79,7 +101,7 @@ export function findPython310() {
       if (!match) continue;
       const [major, minor] = [parseInt(match[1], 10), parseInt(match[2], 10)];
       if (!(major > MIN_VERSION[0] || (major === MIN_VERSION[0] && minor >= MIN_VERSION[1]))) continue;
-      if (!IS_WIN) return candidate;
+      if (!fallback) fallback = candidate;
       try {
         execFileSync(candidate, ["-m", "pip", "show", "headroom-ai"], {
           stdio: ["ignore", "pipe", "ignore"],
@@ -89,13 +111,13 @@ export function findPython310() {
         });
         return candidate;
       } catch {
-        // Keep scanning on Windows until an interpreter sees headroom-ai.
+        // Keep scanning until an interpreter that sees headroom-ai is found.
       }
     } catch {
       // candidate not present, try next
     }
   }
-  return null;
+  return fallback;
 }
 
 // Probe whether a Headroom proxy is reachable at the given URL by hitting /health.
