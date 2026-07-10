@@ -27,6 +27,7 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           # Alternative: claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          allowed_bots: railway-app
           track_progress: true
           prompt: |
             Review this pull request for the 9Router codebase (Next.js LLM
