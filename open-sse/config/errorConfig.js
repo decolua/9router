@@ -28,6 +28,14 @@ export const DEFAULT_ERROR_MESSAGES = {
   504: "Gateway timeout"
 };
 
+export const CODEX_REQUEST_SCHEMA_ERROR_CODES = new Set([
+  "invalid_request_error",
+  "unknown_parameter",
+  "unsupported_value",
+]);
+
+export const CODEX_REQUEST_SCHEMA_ERROR_PATTERN =
+  /unknown[_ ]parameter|unsupported[_ ]value|(?:invalid|unsupported)[_ ]?(?:parameter|schema)|(?:parameter|schema).*(?:invalid|unsupported)/i;
 // Exponential backoff config for rate limits
 export const BACKOFF_CONFIG = {
   base: 2000,

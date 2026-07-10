@@ -1,4 +1,5 @@
 import "open-sse/index.js";
+import { isCodexRequestSchemaError } from "open-sse/services/accountFallback.js";
 
 import {
   getProviderCredentials,
@@ -270,6 +271,11 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     });
 
     if (result.success) return result.response;
+
+    if (isCodexRequestSchemaError(provider, result.status, result.error)) {
+      log.warn("REQUEST", `Non-retryable Codex request schema error (${result.status})`);
+      return result.response;
+    }
 
     // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);
