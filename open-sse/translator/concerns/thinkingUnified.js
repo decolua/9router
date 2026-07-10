@@ -228,9 +228,14 @@ function applyFormat(fmt, body, cfg, caps) {
       break;
     }
     case "claude-adaptive": {
+      // disabled must NOT carry display (Anthropic rejects display on type:"disabled").
       if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
       const level = toLevel(eff);
       body.output_config = { effort: level === "xhigh" ? "high" : level };
+      // Opus 4.7/4.8/Sonnet5/Fable5/Mythos5 default thinking.display to "omitted",
+      // so explicitly request summarized to keep reasoning summary flowing to clients.
+      // Harmless on 4.6/Sonnet4.6 where "summarized" is already the default.
+      body.thinking = { type: "adaptive", display: "summarized" };
       break;
     }
     case "claude-budget": {
