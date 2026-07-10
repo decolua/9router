@@ -2,6 +2,7 @@
 import "open-sse/index.js";
 
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
+import { getUsageHistory } from "@/lib/db/repos/usageRepo.js";
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
@@ -167,6 +168,11 @@ export async function GET(request, { params }) {
       }
     }
 
+    // xAI has no public quota API; aggregate from local usageHistory
+    if (connection.provider === 'xai') {
+      return Response.json(await aggregateXaiUsage(connection));
+    }
+
     // Fetch usage from provider API
     let usage = await getUsageForProvider(connection, proxyOptions);
 
@@ -189,3 +195,79 @@ export async function GET(request, { params }) {
     return Response.json({ error: error.message }, { status: 500 });
   }
 }
+
+/**
+ * Aggregate xAI usage from local usageHistory.
+ * xAI does not expose a public per-account quota endpoint (the
+ * billing console at console.x.ai requires a session cookie, not an
+ * API key), so we surface real spend and token usage from 9router's
+ * own request log over the last 30 days, grouped per model.
+ */
+async function aggregateXaiUsage(connection) {
+  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const rows = await getUsageHistory({ provider: 'xai', startDate: since });
+  const filtered = rows.filter((r) => !connection.id || r.connectionId === connection.id);
+
+  if (!filtered.length) {
+    return {
+      message: 'xAI connected. No requests recorded in the last 30 days.',
+      quotas: {},
+      displayMessage: 'xAI connected. No usage yet.',
+    };
+  }
+
+  const totals = filtered.reduce(
+    (acc, r) => {
+      const t = r.tokens || {};
+      acc.prompt += Number(t.prompt_tokens || t.promptTokens || 0);
+      acc.completion += Number(t.completion_tokens || t.completionTokens || 0);
+      acc.cost += Number(r.cost) || 0;
+      acc.requests += 1;
+      return acc;
+    },
+    { prompt: 0, completion: 0, cost: 0, requests: 0 }
+  );
+
+  const byModel = {};
+  for (const r of filtered) {
+    const t = r.tokens || {};
+    const used = (Number(t.prompt_tokens || t.promptTokens || 0)) + (Number(t.completion_tokens || t.completionTokens || 0));
+    if (!byModel[r.model]) byModel[r.model] = 0;
+    byModel[r.model] += used;
+  }
+
+  // Cumulative aggregates have no cap, so the progress bar is meaningless.
+  // Mark them as unlimited + remaining: 100 so the dashboard renders the
+  // green "🟢 100%" badge and hides the bar instead of "🔴 0%".
+  const unlimited = { remaining: 100, resetAt: null, unlimited: true };
+
+  const quotas = {
+    'Total spend (30d)': {
+      used: Number(totals.cost.toFixed(4)),
+      total: 0,
+      unit: 'usd',
+      ...unlimited,
+    },
+    'Total tokens (30d)': {
+      used: totals.prompt + totals.completion,
+      total: 0,
+      ...unlimited,
+    },
+  };
+
+  for (const [model, used] of Object.entries(byModel)) {
+    quotas[model + ' (30d)'] = {
+      used,
+      total: 0,
+      unit: 'tokens',
+      ...unlimited,
+    };
+  }
+
+  return {
+    plan: 'xAI / Grok Build',
+    displayMessage: 'xAI connected. ' + totals.requests + ' requests in the last 30 days.',
+    quotas,
+  };
+}
+

@@ -35,6 +35,9 @@ export default {
   ],
   serviceKinds: ["llm","imageToText","webSearch","image"],
   imageConfig: { baseUrl: "https://api.x.ai/v1/images/generations", bodyFields: ["model","prompt","n","response_format"] },
+  features: {
+    usage: true,
+  },
   searchViaChat: {
     defaultModel: "grok-4.20-reasoning",
     endpoint: "https://api.x.ai/v1/responses",
