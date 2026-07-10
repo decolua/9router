@@ -41,6 +41,10 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
   const [saving, setSaving] = useState(false);
+  const bulkPlaceholder = isCloudflareAi
+    ? `name1|sk-key1|acc123456\nname2|sk-key2|def789012\nsk-key-only-auto-named`
+    : BULK_PLACEHOLDER;
+
   const [mode, setMode] = useState("single"); // "single" | "bulk"
   const [bulkText, setBulkText] = useState("");
   const [bulkResult, setBulkResult] = useState(null); // { success, failed }
@@ -135,14 +139,31 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     let failed = 0;
     for (let i = 0; i < lines.length; i++) {
       const parts = lines[i].split("|");
-      const apiKey = parts.length >= 2 ? parts.slice(1).join("|").trim() : parts[0].trim();
       const baseName = parts.length >= 2 ? parts[0].trim() : "Key";
       const name = `${baseName} ${i + 1}`;
+
+      let apiKey;
+      let providerSpecificData;
+      if (isCloudflareAi && parts.length >= 3) {
+        // Format: name|apiKey|accountId
+        apiKey = parts.slice(1, -1).join("|").trim();
+        providerSpecificData = { accountId: parts[parts.length - 1].trim() };
+      } else {
+        apiKey = parts.length >= 2 ? parts.slice(1).join("|").trim() : parts[0].trim();
+      }
+
       try {
         const res = await fetch("/api/providers", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ provider, apiKey, name, priority: 1, testStatus: "unknown" }),
+          body: JSON.stringify({
+            provider,
+            apiKey,
+            name,
+            priority: 1,
+            testStatus: "unknown",
+            ...(providerSpecificData ? { providerSpecificData } : {}),
+          }),
         });
         if (res.ok) success++;
         else failed++;
@@ -168,10 +189,15 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
 
         {mode === "bulk" && (
           <div className="flex flex-col gap-3">
-            <p className="text-xs text-text-muted">One key per line. Format: <code>name|apiKey</code> or just <code>apiKey</code> (auto-named by index).</p>
+            <p className="text-xs text-text-muted">
+              {isCloudflareAi
+                ? <>One key per line. Format: <code>name|apiKey|accountId</code> or just <code>apiKey</code> (auto-named by index).</>
+                : <>One key per line. Format: <code>name|apiKey</code> or just <code>apiKey</code> (auto-named by index).</>
+              }
+            </p>
             <textarea
               className="w-full rounded border border-accent/30 bg-sidebar p-2 text-sm font-mono resize-y min-h-[140px] focus:outline-none focus:ring-1 focus:ring-primary"
-              placeholder={BULK_PLACEHOLDER}
+              placeholder={bulkPlaceholder}
               value={bulkText}
               onChange={(e) => setBulkText(e.target.value)}
             />
