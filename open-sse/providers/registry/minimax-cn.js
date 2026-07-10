@@ -44,6 +44,8 @@ export default {
       format: "openai",
       baseUrl: "https://api.minimaxi.com/v1/chat/completions",
       auth: { combined: true, header: "Authorization", scheme: "bearer" },
+      requestDefaults: { reasoning_split: true },
+      omitStreamReasoning: true,
     },
     {
       format: "claude",

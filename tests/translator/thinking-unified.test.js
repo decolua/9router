@@ -5,6 +5,7 @@ import {
   parseSuffix,
   extractThinking,
   applyThinking,
+  applyTransportRequestDefaults,
 } from "../../open-sse/translator/concerns/thinkingUnified.js";
 import { extractReasoningText } from "../../open-sse/translator/concerns/reasoning.js";
 
@@ -152,6 +153,29 @@ describe("applyThinking per provider format", () => {
   it("openai keeps xhigh for reasoning models", () => {
     const out = apply("openai", "gpt-5.3-codex", { reasoning_effort: "xhigh" }, "codex");
     expect(out.reasoning_effort).toBe("xhigh");
+  });
+});
+
+describe("applyTransportRequestDefaults", () => {
+  const defaults = (targetFormat, body, provider) => {
+    const b = JSON.parse(JSON.stringify(body));
+    applyTransportRequestDefaults(targetFormat, b, provider);
+    return b;
+  };
+
+  it("applies openai transport requestDefaults for MiniMax", () => {
+    const out = defaults("openai", { messages: [{ role: "user", content: "hi" }] }, "minimax");
+    expect(out.reasoning_split).toBe(true);
+  });
+
+  it("skips defaults for non-matching transport format", () => {
+    const out = defaults("claude", { messages: [{ role: "user", content: "hi" }] }, "minimax");
+    expect(out.reasoning_split).toBeUndefined();
+  });
+
+  it("respects explicit client override", () => {
+    const out = defaults("openai", { reasoning_split: false, messages: [] }, "minimax");
+    expect(out.reasoning_split).toBe(false);
   });
 });
 
