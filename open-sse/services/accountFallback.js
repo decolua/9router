@@ -1,4 +1,29 @@
-import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS } from "../config/errorConfig.js";
+import {
+  ERROR_RULES,
+  BACKOFF_CONFIG,
+  TRANSIENT_COOLDOWN_MS,
+  CODEX_REQUEST_SCHEMA_ERROR_CODES,
+  CODEX_REQUEST_SCHEMA_ERROR_PATTERN,
+} from "../config/errorConfig.js";
+
+function parseErrorPayload(errorText) {
+  if (errorText && typeof errorText === "object") return errorText;
+  if (typeof errorText !== "string") return {};
+  try { return JSON.parse(errorText); } catch { return { message: errorText }; }
+}
+
+export function isCodexRequestSchemaError(provider, status, errorText = "") {
+  if (provider !== "codex" || Number(status) !== 400) return false;
+  const payload = parseErrorPayload(errorText);
+  const error = payload?.error && typeof payload.error === "object" ? payload.error : payload;
+  const message = String(error?.message || errorText || "");
+  const code = String(error?.code || "").toLowerCase();
+  const type = String(error?.type || "").toLowerCase();
+  const recognizedMetadata = !code && !type
+    || CODEX_REQUEST_SCHEMA_ERROR_CODES.has(code)
+    || CODEX_REQUEST_SCHEMA_ERROR_CODES.has(type);
+  return recognizedMetadata && CODEX_REQUEST_SCHEMA_ERROR_PATTERN.test(message || code || type);
+}
 
 /**
  * Calculate exponential backoff cooldown for rate limits (429)
