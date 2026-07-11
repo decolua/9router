@@ -1612,9 +1612,12 @@ export async function pollForToken(providerName, deviceCode, codeVerifier, extra
         extra = await provider.postExchange(result.data);
       }
       const tokens = provider.mapTokens(result.data, extra);
-      // Kiro IDC/Builder-ID tokens lack profileArn; resolve it to avoid 403
+      // Kiro IDC/Builder-ID tokens lack profileArn; resolve it to avoid 403.
+      // Use the same region the token was issued in so IDC accounts in
+      // eu-west-1 / ap-southeast-1 hit their regional CodeWhisperer endpoint.
       if (providerName === "kiro" && !tokens.providerSpecificData?.profileArn) {
-        const profileArn = await fetchKiroProfileArn(tokens.accessToken);
+        const region = tokens.providerSpecificData?.region || "us-east-1";
+        const profileArn = await fetchKiroProfileArn(tokens.accessToken, region);
         if (profileArn) tokens.providerSpecificData.profileArn = profileArn;
       }
       return { success: true, tokens };

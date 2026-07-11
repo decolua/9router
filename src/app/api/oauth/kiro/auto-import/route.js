@@ -91,8 +91,11 @@ export async function GET() {
     }
 
     // Read profileArn from Kiro IDE's profile.json.
-    // Important: the runtime gateway requires us-east-1 in the ARN regardless
-    // of the IDC region, so we normalize the region in the ARN to us-east-1.
+    // Preserve the ARN's region exactly as issued by Kiro IDE: IDC users in
+    // eu-west-1 / ap-southeast-1 / etc must keep their regional ARN so
+    // ListAvailableProfiles / GetUsageLimits / generateAssistantResponse hit
+    // the same CodeWhisperer regional endpoint. Rewriting to us-east-1 here
+    // silently 403s any non-us-east-1 IDC connection.
     let profileArn = null;
     const kiroProfilePaths = [
       join(process.env.APPDATA || join(homedir(), "AppData", "Roaming"), "Kiro", "User", "globalStorage", "kiro.kiroagent", "profile.json"),
@@ -103,8 +106,7 @@ export async function GET() {
         const profileContent = await readFile(profilePath, "utf-8");
         const profileData = JSON.parse(profileContent);
         if (profileData.arn) {
-          // Normalize region to us-east-1 for the runtime gateway
-          profileArn = profileData.arn.replace(/arn:aws:codewhisperer:[^:]+:/, "arn:aws:codewhisperer:us-east-1:");
+          profileArn = profileData.arn;
           break;
         }
       } catch (error) {

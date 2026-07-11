@@ -1,3 +1,5 @@
+import { assertValidAwsRegion } from "./constants/oauth";
+
 const BASE64_BLOCK_SIZE = 4;
 
 function validateXaiOAuthEndpoint(rawUrl, field) {
@@ -50,13 +52,23 @@ function extractEmailFromAccessToken(accessToken) {
   return payload.email || payload.preferred_username || payload.sub || undefined;
 }
 
-export async function fetchKiroProfileArn(accessToken) {
+export async function fetchKiroProfileArn(accessToken, region = "us-east-1") {
   if (!accessToken) return null;
+  let safeRegion = "us-east-1";
+  if (typeof region === "string" && region.trim()) {
+    try {
+      safeRegion = assertValidAwsRegion(region.trim());
+    } catch {
+      safeRegion = "us-east-1";
+    }
+  }
+  const endpoint = `https://codewhisperer.${safeRegion}.amazonaws.com`;
   try {
-    const response = await fetch("https://codewhisperer.us-east-1.amazonaws.com/ListAvailableProfiles", {
+    const response = await fetch(endpoint, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
+        "Content-Type": "application/x-amz-json-1.0",
+        "x-amz-target": "AmazonCodeWhispererService.ListAvailableProfiles",
         Accept: "application/json",
         Authorization: `Bearer ${accessToken}`,
       },
@@ -64,7 +76,12 @@ export async function fetchKiroProfileArn(accessToken) {
     });
     if (!response.ok) return null;
     const data = await response.json();
-    return data.profiles?.find((p) => p.arn?.trim())?.arn?.trim() || null;
+    const profiles = Array.isArray(data?.profiles) ? data.profiles : [];
+    // Prefer a profile whose ARN region matches the caller's region — IDC users
+    // in eu-west-1 / ap-southeast-1 must not be pinned to a us-east-1 profile.
+    const arnOf = (p) => (p?.arn || p?.profileArn || "").trim() || null;
+    const inRegion = profiles.find((p) => arnOf(p)?.split(":")[3] === safeRegion);
+    return arnOf(inRegion) || arnOf(profiles[0]) || null;
   } catch {
     return null;
   }
