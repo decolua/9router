@@ -202,6 +202,22 @@ describe("compressWithHeadroom", () => {
     expect(stats).toBeNull();
     expect(global.fetch).not.toHaveBeenCalled();
   });
+
+  it("uses a 15s default timeout so large prompt compression can finish", async () => {
+    global.fetch = vi.fn(async () => new Response(JSON.stringify({
+      messages: [{ role: "user", content: "short" }],
+      tokens_before: 100,
+      tokens_after: 20,
+      tokens_saved: 80,
+    }), { status: 200 }));
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockImplementation(() => new AbortController().signal);
+    const body = { messages: [{ role: "user", content: "long" }] };
+
+    const stats = await compressWithHeadroom(body, { enabled: true, url: "http://localhost:8787" });
+
+    expect(stats.tokens_saved).toBe(80);
+    expect(timeoutSpy).toHaveBeenCalledWith(15000);
+  });
 });
 
 describe("formatHeadroomLog", () => {
