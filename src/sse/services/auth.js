@@ -207,7 +207,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
 function safeStringifyError(err) {
   if (err === null || err === undefined) return "";
   try {
-    return JSON.stringify(err);
+    const json = JSON.stringify(err);
+    return typeof json === "string" ? json : String(err);
   } catch {
     return String(err);
   }
@@ -245,9 +246,10 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   // back to a generic "Provider error" without ever logging the real value
   // hides the actual cause server-side (no status, no trace). Extract the
   // best available message before giving up, and always log the raw cause.
-  const reason = typeof errorText === "string"
-    ? errorText.slice(0, 100)
+  const reasonRaw = typeof errorText === "string"
+    ? errorText
     : (errorText?.message || safeStringifyError(errorText) || "Provider error");
+  const reason = String(reasonRaw).slice(0, 100);
   const lockUpdate = buildModelLockUpdate(model, cooldownMs);
 
   await updateProviderConnection(connectionId, {
@@ -261,7 +263,7 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
 
   const lockKey = Object.keys(lockUpdate)[0];
   const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
-  log.warn("AUTH", `${connName} locked ${lockKey} for ${Math.round(cooldownMs / 1000)}s [${status}]`);
+  log.warn("AUTH", `${connName} locked ${lockKey} for ${Math.round(cooldownMs / 1000)}s [${status ?? "no-status"}]`);
 
   // Log the real cause even when there's no numeric HTTP status (e.g. a stream
   // parsing crash rather than an upstream HTTP error) — a status-only gate here
