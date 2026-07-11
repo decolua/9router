@@ -278,7 +278,9 @@ continue",
     "history": [
       {
         "userInputMessage": {
-          "content": "You are helpful.
+          "content": "<instructions>
+You are helpful.
+</instructions>
 
 What's in this image?",
           "images": [

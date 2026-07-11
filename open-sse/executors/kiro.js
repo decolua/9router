@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from "uuid";
 import { refreshKiroToken } from "../services/tokenRefresh.js";
 import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
+import { splitInlineThinking, flushPendingThinking } from "./kiroThinking.js";
 
 /**
  * KiroExecutor - Executor for Kiro AI (AWS CodeWhisperer)
@@ -255,21 +256,11 @@ export class KiroExecutor extends BaseExecutor {
             const content = event.payload.content;
             state.totalContentLength += content.length;
 
-            const chunk = {
-              id: responseId,
-              object: "chat.completion.chunk",
-              created,
-              model,
-              choices: [{
-                index: 0,
-                delta: chunkIndex === 0
-                  ? { role: "assistant", content }
-                  : { content },
-                finish_reason: null
-              }]
-            };
-            chunkIndex++;
-            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\n`));
+            if (thinkingExpected) {
+              runSplitter(controller, content);
+            } else {
+              emitContent(controller, content);
+            }
           }
 
           // Handle reasoningContentEvent (Kiro thinking / reasoning)
