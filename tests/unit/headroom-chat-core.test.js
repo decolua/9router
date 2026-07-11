@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { executeMock } = vi.hoisted(() => ({
+const { executeMock, recordTokenSaverEventMock } = vi.hoisted(() => ({
   executeMock: vi.fn(),
+  recordTokenSaverEventMock: vi.fn(),
 }));
 
 vi.mock("../../open-sse/executors/index.js", () => ({
@@ -31,6 +32,7 @@ vi.mock("@/lib/usageDb.js", () => ({
   trackPendingRequest: vi.fn(),
   appendRequestLog: vi.fn(async () => {}),
   saveRequestDetail: vi.fn(async () => {}),
+  recordTokenSaverEvent: recordTokenSaverEventMock,
 }));
 
 const { handleChatCore } = await import("../../open-sse/handlers/chatCore.js");
@@ -207,6 +209,34 @@ describe("handleChatCore Headroom diagnostics", () => {
     const logs = JSON.stringify([...log.info.mock.calls, ...log.warn.mock.calls]);
     expect(logs).not.toContain("saved");
     expect(logs).not.toContain(original);
+  });
+
+  it("invokes onTokenSaverEvent callback with aggregate-safe data without blocking provider dispatch", async () => {
+    const onTokenSaverEvent = vi.fn();
+    onTokenSaverEvent.mockImplementation(() => { throw new Error("telemetry failed"); });
+
+    await handleChatCore({
+      body: { model: "gpt-4o", stream: false, messages: [{ role: "user", content: "hello" }] },
+      modelInfo: { provider: "openai", model: "gpt-4o" },
+      credentials: { apiKey: "test-key", providerSpecificData: {} },
+      log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
+      connectionId: "test-conn",
+      headroomEnabled: true,
+      headroomUrl: "http://localhost:8787",
+      headroomCompressUserMessages: false,
+      rtkEnabled: false,
+      cavemanEnabled: false,
+      ponytailEnabled: false,
+      clientRawRequest: { endpoint: "/v1/chat/completions", body: {}, headers: { accept: "application/json" } },
+      onTokenSaverEvent,
+    });
+
+    expect(onTokenSaverEvent).toHaveBeenCalledWith(expect.objectContaining({
+      requestsObserved: 1,
+      headroomState: "skipped",
+      headroomDiagnostic: "other-skip",
+    }));
+    expect(executeMock).toHaveBeenCalled();
   });
 
   it("warns when Headroom reports savings but outbound body barely shrinks", async () => {

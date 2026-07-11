@@ -71,6 +71,12 @@ describe("TokenSaver repository", () => {
     expect(stats.headroom.messageBytesAfter).toBe(80);
     // actualBytesSaved = rtk.bytesSaved + (bodyBytesBefore - bodyBytesAfter)
     expect(stats.totals.actualBytesSaved).toBe(400 + (2000 - 1500));
+    expect(stats.dailyPoints).toEqual([expect.objectContaining({
+      actualBytesSaved: 900,
+      rtkBytesSaved: 400,
+      headroomBytesSaved: 500,
+      headroomCompressed: 1,
+    })]);
   });
 
   it("accumulates two events on same day", async () => {

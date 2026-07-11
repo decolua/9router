@@ -8,6 +8,7 @@ import { convertResponsesApiFormat } from "../translator/formats/responsesApi.js
 import { createResponsesApiTransformStream } from "../transformer/responsesTransformer.js";
 import { convertResponsesStreamToJson } from "../transformer/streamToJsonConverter.js";
 import { SSE_HEADERS_CORS } from "../utils/sseConstants.js";
+import { recordTokenSaverEvent } from "@/lib/usageDb.js";
 
 /**
  * Handle /v1/responses request
@@ -34,6 +35,7 @@ export async function handleResponsesCore({ body, modelInfo, credentials, log, o
   }
 
   // Call chat core handler — force sourceFormat so streaming path knows this is a Responses API client
+  let lastTokenSaverEvent = null;
   const result = await handleChatCore({
     body: convertedBody,
     modelInfo,
@@ -43,8 +45,13 @@ export async function handleResponsesCore({ body, modelInfo, credentials, log, o
     onRequestSuccess,
     onDisconnect,
     connectionId,
-    sourceFormatOverride: "openai-responses"
+    sourceFormatOverride: "openai-responses",
+    onTokenSaverEvent: (evt) => { lastTokenSaverEvent = evt; }
   });
+
+  if (lastTokenSaverEvent) {
+    try { Promise.resolve(recordTokenSaverEvent(lastTokenSaverEvent)).catch(() => {}); } catch { /* observability must not break requests */ }
+  }
 
   if (!result.success || !result.response) {
     return result;

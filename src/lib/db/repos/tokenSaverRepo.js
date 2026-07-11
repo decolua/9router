@@ -6,6 +6,16 @@
 // into the request path.
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { statsEmitter } from "./usageRepo.js";
+
+function scheduleTokenSaverStatsEvent() {
+  if (global._tokenSaverStatsTimer) return;
+  global._tokenSaverStatsTimer = setTimeout(() => {
+    global._tokenSaverStatsTimer = null;
+    statsEmitter.emit("token-saver");
+  }, 150);
+  global._tokenSaverStatsTimer.unref?.();
+}
 
 const HEADROOM_STATES = new Set(["disabled", "compressed", "skipped"]);
 
@@ -104,13 +114,8 @@ function normalizeEvent(event) {
   const headroomPhantomSavings = isCompression ? normalizeNonNegativeNum(event.headroomPhantomSavings) : 0;
 
   // Diagnostic category — mapped to a safe enum, never persisted raw.
-  const diag = mapDiagnostic(event.headroomDiagnostic);
-  let skipReasonKey = null;
-  if (diag && diag !== "disabled" && diag !== "other-skip") {
-    skipReasonKey = diag;
-  } else if (diag === "other-skip") {
-    skipReasonKey = "other-skip";
-  }
+  const diag = state === "skipped" ? mapDiagnostic(event.headroomDiagnostic) : null;
+  const skipReasonKey = diag && diag !== "disabled" ? diag : null;
 
   return {
     state,
@@ -164,9 +169,11 @@ function applyToDay(day, norm) {
     h.skipReasons[k] = (h.skipReasons[k] || 0) + 1;
   }
 
-  // actualBytesSaved = rtk.bytesSaved + (bodyBytesBefore - bodyBytesAfter)
-  day.totals.actualBytesSaved =
-    day.rtk.bytesSaved + (day.headroom.bodyBytesBefore - day.headroom.bodyBytesAfter);
+  // actualBytesSaved = RTK bytes plus a non-negative Headroom body reduction.
+  // Guard against NaN from sparse/corrupt data.
+  const rtkSaved = day.rtk.bytesSaved || 0;
+  const bodyDelta = Math.max(0, (day.headroom.bodyBytesBefore || 0) - (day.headroom.bodyBytesAfter || 0));
+  day.totals.actualBytesSaved = rtkSaved + bodyDelta;
   return day;
 }
 
@@ -198,6 +205,7 @@ export async function recordTokenSaverEvent(event) {
       );
       pruneOldDays(db);
     });
+    scheduleTokenSaverStatsEvent();
   } catch {
     // Fail-open: never let telemetry break the caller.
   }
@@ -256,11 +264,26 @@ export async function getTokenSaverStats(period = "7d") {
     }
   }
 
-  // Same body shape from repository
+  const daysByKey = Object.fromEntries(rows.map((r) => [r.dateKey, parseJson(r.data, emptyDay())]));
+  const dailyPoints = Array.from({ length: dayCount }, (_, i) => {
+    const date = new Date();
+    date.setHours(0, 0, 0, 0);
+    date.setDate(date.getDate() - (dayCount - 1 - i));
+    const day = daysByKey[localDateKey(date)] || emptyDay();
+    return {
+      dateKey: localDateKey(date),
+      actualBytesSaved: Math.max(0, (day.rtk?.bytesSaved || 0) + ((day.headroom?.bodyBytesBefore || 0) - (day.headroom?.bodyBytesAfter || 0))),
+      rtkBytesSaved: day.rtk?.bytesSaved || 0,
+      headroomBytesSaved: Math.max(0, (day.headroom?.bodyBytesBefore || 0) - (day.headroom?.bodyBytesAfter || 0)),
+      headroomCompressed: day.headroom?.compressed || 0,
+    };
+  });
+
   return {
     requestsObserved: agg.requestsObserved,
     rtk: agg.rtk,
     headroom: agg.headroom,
     totals: agg.totals,
+    dailyPoints,
   };
 }

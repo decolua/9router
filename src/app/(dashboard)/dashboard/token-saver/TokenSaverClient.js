@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Card, Button, Input, Modal, Toggle, ConfirmModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import TokenSaverOverview from "./components/TokenSaverOverview";
 import { getCurrentLocale, onLocaleChange } from "@/i18n/runtime";
 import {
   WENYAN_LOCALES,
@@ -11,6 +12,7 @@ import {
 } from "../endpoint/endpointConstants";
 
 export default function TokenSaverClient() {
+  const [tab, setTab] = useState("overview");
   const [rtkEnabled, setRtkEnabledState] = useState(true);
   const [headroomEnabled, setHeadroomEnabled] = useState(false);
   const [headroomUrl, setHeadroomUrl] = useState("http://localhost:8787");
@@ -466,6 +468,22 @@ export default function TokenSaverClient() {
 
   return (
     <div className="space-y-6 p-6">
+      <div className="flex w-fit rounded-lg border border-border bg-surface-2 p-1">
+        <button
+          onClick={() => setTab("overview")}
+          className={`rounded-md px-4 py-1.5 text-sm font-medium ${tab === "overview" ? "bg-primary text-white" : "text-text-muted hover:text-text"}`}
+        >
+          Overview
+        </button>
+        <button
+          onClick={() => setTab("settings")}
+          className={`rounded-md px-4 py-1.5 text-sm font-medium ${tab === "settings" ? "bg-primary text-white" : "text-text-muted hover:text-text"}`}
+        >
+          Settings
+        </button>
+      </div>
+
+      {tab === "overview" ? <TokenSaverOverview /> : <>
       <Card id="rtk">
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -1010,6 +1028,7 @@ export default function TokenSaverClient() {
         confirmText={extrasConfirm?.confirmText}
         variant={extrasConfirm?.variant}
       />
+      </>}
     </div>
   );
 }
