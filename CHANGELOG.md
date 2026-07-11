@@ -13,6 +13,7 @@
 
 ## Fixes
 - **xAI**: strip `reasoning_effort` for `grok-composer` models (upstream rejects any reasoningEffort); honor provider thinking mode `none` — Joseph Yaksich
+- **grok-cli**: guard `transformRequest()` with capabilities (no reasoning on composer/build); cap tools at 200 for cli-chat-proxy — folded from #2539 / @hameduc
 - **Cloudflare-AI**: support accountId in bulk key import (#2449)
 - **DB**: backup on schema change, MCP child cleanup, codex models, usage providers OOM
 - **Codex**: avoid bare-email OAuth dedup (#2477)
