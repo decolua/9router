@@ -98,6 +98,7 @@ describe("createSocksConnector", () => {
     expect(tlsConnect).toHaveBeenCalledWith({
       socket: expect.objectContaining({ kind: "plain-socket" }),
       servername: "api.x.ai",
+      rejectUnauthorized: true,
       ALPNProtocols: ["http/1.1"],
     });
     expect(callback).toHaveBeenCalledWith(null, tlsSocket);

@@ -1,12 +1,16 @@
 import { Readable } from "stream";
-import { connect as tlsConnect } from "node:tls";
 import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
 import { dbg } from "./debugLog.js";
+import {
+  createProxyDispatcher,
+  createSocksConnector,
+  disposeProxyDispatcher as disposeDispatcher,
+  isSocksProxyUrl,
+  normalizeProxyUrl,
+} from "../../src/lib/network/proxyDispatcher.js";
 
 const originalFetch = globalThis.fetch;
 const proxyDispatchers = new Map();
-const SOCKS_PROXY_SCHEMES = new Set(["socks5:", "socks5h:", "socks4:", "socks4a:"]);
-
 // ─── TLS fingerprinting via got-scraping (browser-like JA3) ───────────────
 // Used for api.anthropic.com to bypass Cloudflare TLS fingerprint blocks.
 let _gotScraping = null;
@@ -193,23 +197,6 @@ function getEnvProxyUrl(targetUrl) {
     process.env.ALL_PROXY || process.env.all_proxy;
 }
 
-/**
- * Normalize proxy URL (allow host:port)
- */
-function normalizeProxyUrl(proxyUrl) {
-  const normalizedInput = normalizeString(proxyUrl);
-  if (!normalizedInput) return null;
-
-  try {
-
-    new URL(normalizedInput);
-    return normalizedInput;
-  } catch {
-    // Allow "127.0.0.1:7890" style values
-    return `http://${normalizedInput}`;
-  }
-}
-
 function resolveConnectionProxyUrl(targetUrl, proxyOptions) {
   const enabled = proxyOptions?.enabled === true || proxyOptions?.connectionProxyEnabled === true;
   if (!enabled) return null;
@@ -221,89 +208,6 @@ function resolveConnectionProxyUrl(targetUrl, proxyOptions) {
   if (noProxy && shouldBypassByNoProxy(targetUrl, noProxy)) return null;
 
   return normalizeProxyUrl(proxyUrlRaw);
-}
-
-function isSocksProxyUrl(proxyUrl) {
-  try {
-    return SOCKS_PROXY_SCHEMES.has(new URL(proxyUrl).protocol);
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Build an undici connect() callback that tunnels via a SOCKS proxy.
- * socks5h/socks4a keep remote DNS by passing the hostname through the proxy.
- * socks5/socks4 also pass the hostname; local resolve is left to the SOCKS client
- * when the proxy implementation requires it.
- */
-function createSocksConnector(proxyUrl) {
-  const proxy = new URL(proxyUrl);
-  const type = proxy.protocol.startsWith("socks4") ? 4 : 5;
-  const proxyPort = Number(proxy.port || 1080);
-  const proxyAuth = proxy.username
-    ? {
-        userId: decodeURIComponent(proxy.username),
-        password: decodeURIComponent(proxy.password || ""),
-      }
-    : undefined;
-
-  return async function socksConnect(options, callback) {
-    try {
-      const { SocksClient } = await import("socks");
-      const protocol = options.protocol || "https:";
-      const hostname = options.hostname;
-      const destPort = Number(options.port || (protocol === "https:" ? HTTPS_PORT : 80));
-
-      const { socket } = await SocksClient.createConnection({
-        proxy: {
-          host: proxy.hostname,
-          port: proxyPort,
-          type,
-          ...(proxyAuth || {}),
-        },
-        command: "connect",
-        destination: {
-          host: hostname,
-          port: destPort,
-        },
-      });
-
-      if (protocol !== "https:") {
-        callback(null, socket);
-        return;
-      }
-
-      const tlsSocket = tlsConnect({
-        socket,
-        servername: options.servername || hostname,
-        ALPNProtocols: ["http/1.1"],
-      });
-      tlsSocket.once("secureConnect", () => callback(null, tlsSocket));
-      tlsSocket.once("error", (error) => callback(error, null));
-    } catch (error) {
-      callback(error, null);
-    }
-  };
-}
-
-/**
- * Create proxy dispatcher lazily (undici-compatible).
- * HTTP(S) proxies use undici ProxyAgent; SOCKS proxies use undici Agent + socks tunnel.
- */
-function disposeDispatcher(dispatcher) {
-  if (!dispatcher || typeof dispatcher !== "object") return;
-  try {
-    if (typeof dispatcher.destroy === "function") {
-      Promise.resolve(dispatcher.destroy()).catch(() => {});
-      return;
-    }
-    if (typeof dispatcher.close === "function") {
-      Promise.resolve(dispatcher.close()).catch(() => {});
-    }
-  } catch {
-    // Best-effort disposal; never block request path.
-  }
 }
 
 async function getDispatcher(proxyUrl) {
@@ -319,13 +223,7 @@ async function getDispatcher(proxyUrl) {
       disposeDispatcher(oldest);
     }
 
-    if (isSocksProxyUrl(normalized)) {
-      const { Agent } = await import("undici");
-      proxyDispatchers.set(normalized, new Agent({ connect: createSocksConnector(normalized) }));
-    } else {
-      const { ProxyAgent } = await import("undici");
-      proxyDispatchers.set(normalized, new ProxyAgent({ uri: normalized }));
-    }
+    proxyDispatchers.set(normalized, await createProxyDispatcher(normalized));
   }
 
   return proxyDispatchers.get(normalized);
