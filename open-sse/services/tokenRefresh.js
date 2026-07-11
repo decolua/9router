@@ -11,6 +11,7 @@ import {
   refreshIflowToken,
   refreshGitHubToken,
   refreshCopilotToken,
+  refreshCodebuddyToken,
   classifyOAuthRefreshError,
 } from "./tokenRefresh/providers.js";
 
@@ -25,6 +26,7 @@ export {
   refreshIflowToken,
   refreshGitHubToken,
   refreshCopilotToken,
+  refreshCodebuddyToken,
   classifyOAuthRefreshError,
 };
 
@@ -127,6 +129,10 @@ const REFRESH_HANDLERS = {
   github: (c, log) => refreshGitHubToken(c.refreshToken, log),
   kiro: (c, log) => refreshKiroToken(c.refreshToken, c.providerSpecificData, log),
   xai: (c, log) => refreshXaiToken(c.refreshToken, log),
+  // Grok CLI shares xAI OAuth client + token endpoint (device-code tokens refresh the same way)
+  "grok-cli": (c, log) => refreshXaiToken(c.refreshToken, log),
+  gcli: (c, log) => refreshXaiToken(c.refreshToken, log),
+  "codebuddy-cn": (c, log) => refreshCodebuddyToken(c.refreshToken, log),
   vertex: vertexRefreshHandler,
   "vertex-partner": vertexRefreshHandler
 };
@@ -184,6 +190,7 @@ export function formatProviderCredentials(provider, credentials, log) {
     case "openai":
     case "openrouter":
     case "xai":
+    case "grok-cli":
       return {
         apiKey: credentials.apiKey,
         accessToken: credentials.accessToken

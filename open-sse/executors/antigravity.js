@@ -1,11 +1,12 @@
 import crypto from "crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
-import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, INTERNAL_REQUEST_HEADER, AG_DEFAULT_TOOLS, AG_TOOL_SUFFIX } from "../config/appConstants.js";
+import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, AG_DEFAULT_TOOLS, AG_TOOL_SUFFIX } from "../config/appConstants.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { cleanJSONSchemaForAntigravity } from "../translator/formats/gemini.js";
+import { DEFAULT_THINKING_AG_SIGNATURE } from "../config/defaultThinkingSignature.js";
 
 // Sanitize function name: Gemini requires [a-zA-Z_][a-zA-Z0-9_.:\-]{0,63}
 function sanitizeFunctionName(name) {
@@ -16,10 +17,97 @@ function sanitizeFunctionName(name) {
 }
 
 const MAX_RETRY_AFTER_MS = 10000;
-const MAX_ANTIGRAVITY_OUTPUT_TOKENS = 16384;
+const ANTIGRAVITY_TRANSIENT_RETRY_MAX_MS = 15000;
+const MAX_ANTIGRAVITY_OUTPUT_TOKENS = 64000;
+const ANTIGRAVITY_IDE_REQUEST_ID_RE = /^agent\/[^/]+\/\d+\/[^/]+\/\d+$/;
 
-// Fields Google generateContent rejects (e.g. Claude adaptive output_config) — stripped from antigravity request envelope
-const ANTIGRAVITY_REQUEST_BLACKLIST = ["output_config"];
+const ANTIGRAVITY_TRANSIENT_ERROR_PATTERNS = [
+  /high\s+traffic/i,
+  /agent\s+(execution\s+)?terminated\s+due\s+to\s+error/i,
+  /capacity/i,
+  /temporarily\s+unavailable/i,
+  /timeout/i,
+  /stream\s+(ended|closed|terminated|interrupted)/i,
+  /empty\s+response/i,
+];
+
+const ANTIGRAVITY_TRANSIENT_STATUSES = new Set([
+  HTTP_STATUS.SERVER_ERROR,
+  HTTP_STATUS.BAD_GATEWAY,
+  HTTP_STATUS.SERVICE_UNAVAILABLE,
+  HTTP_STATUS.GATEWAY_TIMEOUT,
+]);
+
+// Fields Google generateContent rejects (Claude/OpenAI/Qwen thinking fields set at body root by thinkingUnified.js)
+const ANTIGRAVITY_REQUEST_BLACKLIST = [
+  "output_config",
+  "thinking",
+  "reasoning_effort",
+  "reasoning",
+  "enable_thinking",
+  "thinking_budget",
+  "thinkingConfig",
+];
+
+// Strip blacklisted fields from an object (used for both body.request and top-level body)
+const stripBlacklisted = obj => {
+  for (const key of ANTIGRAVITY_REQUEST_BLACKLIST) delete obj[key];
+};
+
+// Image generation model name patterns
+const IMAGE_MODEL_PATTERNS = [
+  /image/i,
+  /imagen/i,
+  /image-generation/i,
+];
+
+// Detect if a model is an image generation model
+function isImageModel(model) {
+  if (!model) return false;
+  return IMAGE_MODEL_PATTERNS.some(p => p.test(model));
+}
+
+// Parse aspect ratio / resolution from model name suffixes
+// e.g. "gemini-3.1-flash-image-16x9" -> { aspectRatio: "16:9" }
+// e.g. "gemini-3.1-flash-image-1024x768" -> { aspectRatio: "4:3" }
+function parseImageConfig(model) {
+  const config = { aspectRatio: "1:1" };
+  const resMatch = model.match(/(\d+)x(\d+)$/);
+  if (resMatch) {
+    const w = parseInt(resMatch[1]);
+    const h = parseInt(resMatch[2]);
+    if (w <= 16 && h <= 16) {
+      config.aspectRatio = `${w}:${h}`;
+    } else {
+      // Resolution like 1024x768 — derive aspect ratio
+      const gcd = (a, b) => b ? gcd(b, a % b) : a;
+      const d = gcd(w, h);
+      config.aspectRatio = `${w/d}:${h/d}`;
+    }
+  }
+  return config;
+}
+
+function uuidFromSeed(seed) {
+  const bytes = crypto.createHash("sha256").update(String(seed || "antigravity")).digest().subarray(0, 16);
+  bytes[6] = (bytes[6] & 0x0f) | 0x50;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function buildIdeRequestId({ body, request, credentials, model, requestType }) {
+  if (ANTIGRAVITY_IDE_REQUEST_ID_RE.test(body?.requestId || "")) {
+    return body.requestId;
+  }
+
+  const sessionId = request?.sessionId || body?.request?.sessionId || credentials?._clientSessionId || credentials?.connectionId || credentials?.email || "anonymous";
+  const conversationId = uuidFromSeed(`antigravity:conversation:${sessionId}`);
+  const trajectoryId = uuidFromSeed(`antigravity:trajectory:${sessionId}:${model}:${requestType}`);
+  const contentCount = Array.isArray(request?.contents) ? request.contents.length : 1;
+  const step = Math.max(1, contentCount * 2 - 1);
+  return `agent/${conversationId}/${Date.now()}/${trajectoryId}/${step}`;
+}
 
 export class AntigravityExecutor extends BaseExecutor {
   constructor() {
@@ -29,27 +117,73 @@ export class AntigravityExecutor extends BaseExecutor {
   buildUrl(model, stream, urlIndex = 0) {
     const baseUrls = this.getBaseUrls();
     const baseUrl = baseUrls[urlIndex] || baseUrls[0];
-    const action = stream ? "streamGenerateContent?alt=sse" : "generateContent";
+    // Image generation MUST use non-streaming generateContent
+    const forceNonStream = isImageModel(model);
+    const action = (stream && !forceNonStream) ? "streamGenerateContent?alt=sse" : "generateContent";
     return `${baseUrl}/v1internal:${action}`;
   }
 
   // sessionId comes from transformRequest output; base.execute runs transformRequest before
   // buildHeaders, so we read it from instance state cached there (fallback: explicit arg).
   buildHeaders(credentials, stream = true, sessionId = null) {
-    const sid = sessionId || this._lastSessionId;
     return {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${credentials.accessToken}`,
       "User-Agent": this.config.headers?.["User-Agent"] || ANTIGRAVITY_HEADERS["User-Agent"],
-      [INTERNAL_REQUEST_HEADER.name]: INTERNAL_REQUEST_HEADER.value,
-      ...(sid && { "X-Machine-Session-Id": sid }),
-      "Accept": stream ? "text/event-stream" : "application/json"
     };
   }
 
   transformRequest(model, body, stream, credentials) {
     const projectId = credentials?.projectId || this.generateProjectId();
 
+    // ─── Image generation: completely different request structure ───
+    if (isImageModel(model)) {
+      const imageConfig = parseImageConfig(model);
+      // Strip model name suffixes for the actual API model name
+      const cleanModel = model.replace(/-(\d+)x(\d+)$/, "");
+
+      // Build simplified contents — text-only, merge all user messages
+      const contents = [];
+      const srcContents = body.request?.contents || body.contents || [];
+      for (const c of srcContents) {
+        const textParts = (c.parts || []).filter(p => p.text !== undefined).map(p => ({ text: p.text }));
+        if (textParts.length > 0) {
+          contents.push({ role: c.role || "user", parts: textParts });
+        }
+      }
+
+      const sessionId = resolveSessionId({
+        headers: credentials?.rawHeaders,
+        body,
+        connectionId: credentials?.email || credentials?.connectionId,
+        scope: "antigravity",
+      });
+
+      this._lastSessionId = sessionId;
+      const request = {
+        contents,
+        generationConfig: {
+          temperature: 1.0,
+          topP: 0.95,
+          topK: 40,
+          maxOutputTokens: 8192,
+          imageConfig,
+        },
+        sessionId,
+        // No tools, no systemInstruction, no safetySettings for image gen
+      };
+
+      return {
+        project: projectId,
+        model: cleanModel,
+        userAgent: "antigravity",
+        requestType: "image_gen",
+        requestId: buildIdeRequestId({ body, request, credentials, model: cleanModel, requestType: "image_gen" }),
+        request,
+      };
+    }
+
+    // ─── Standard (non-image) request ───
     // Fix contents for Claude models via Antigravity
     const contents = body.request?.contents?.map(c => {
       let role = c.role;
@@ -63,8 +197,19 @@ export class AntigravityExecutor extends BaseExecutor {
         if (p.thoughtSignature && !p.functionCall && !p.text) return false;
         return true;
       });
-      if (role !== c.role || parts?.length !== c.parts?.length) {
-        return { ...c, role, parts };
+      // Gemini 3+ rejects functionCall parts without thoughtSignature. Clients (Claude Code, IDE)
+      // don't persist thoughtSignature in their history, so backfill the default signature on any
+      // functionCall part that arrives without one.
+      const needsBackfill = parts?.some(p => p.functionCall && !p.thoughtSignature) ?? false;
+      if (role !== c.role || parts?.length !== c.parts?.length || needsBackfill) {
+        return {
+          ...c, role,
+          parts: needsBackfill
+            ? parts.map(p => (p.functionCall && !p.thoughtSignature)
+                ? { ...p, thoughtSignature: DEFAULT_THINKING_AG_SIGNATURE }
+                : p)
+            : parts,
+        };
       }
       return c;
     });
@@ -74,21 +219,28 @@ export class AntigravityExecutor extends BaseExecutor {
 
     if (tools && tools.length > 0) {
       // Merge all groups into a single functionDeclarations group (Gemini expects 1 group)
-      const allDeclarations = tools.flatMap(group =>
-        (group.functionDeclarations || []).map(fn => ({
-          ...fn,
-          name: sanitizeFunctionName(fn.name),
-          parameters: fn.parameters
-            ? cleanJSONSchemaForAntigravity(structuredClone(fn.parameters))
-            : { type: "object", properties: { reason: { type: "string", description: "Brief explanation" } }, required: ["reason"] }
-        }))
-      );
+      const seenToolNames = new Set();
+      const allDeclarations = [];
+      for (const group of tools) {
+        for (const fn of group.functionDeclarations || []) {
+          const name = sanitizeFunctionName(fn.name);
+          if (seenToolNames.has(name)) continue;
+          seenToolNames.add(name);
+          allDeclarations.push({
+            ...fn,
+            name,
+            parameters: fn.parameters
+              ? cleanJSONSchemaForAntigravity(structuredClone(fn.parameters))
+              : { type: "object", properties: { reason: { type: "string", description: "Brief explanation" } }, required: ["reason"] }
+          });
+        }
+      }
       tools = allDeclarations.length > 0 ? [{ functionDeclarations: allDeclarations }] : [];
     }
 
     // Strip tools/toolConfig (handled separately) and blacklisted fields that Google rejects
     const { tools: _originalTools, toolConfig: _originalToolConfig, ...requestWithoutTools } = body.request || {};
-    for (const key of ANTIGRAVITY_REQUEST_BLACKLIST) delete requestWithoutTools[key];
+    stripBlacklisted(requestWithoutTools);
     const generationConfig = { ...(requestWithoutTools.generationConfig || {}) };
     if (generationConfig.maxOutputTokens > MAX_ANTIGRAVITY_OUTPUT_TOKENS) {
       generationConfig.maxOutputTokens = MAX_ANTIGRAVITY_OUTPUT_TOKENS;
@@ -104,6 +256,9 @@ export class AntigravityExecutor extends BaseExecutor {
       ...(tools?.length > 0 && { toolConfig: { functionCallingConfig: { mode: "VALIDATED" } } })
     };
 
+    // Strip blacklisted thinking fields from top-level body (set by thinkingUnified.js at root, not body.request)
+    stripBlacklisted(body);
+
     this._lastSessionId = transformedRequest.sessionId; // cached for buildHeaders (base.execute order)
 
     return {
@@ -112,7 +267,7 @@ export class AntigravityExecutor extends BaseExecutor {
       model: model,
       userAgent: "antigravity",
       requestType: "agent",
-      requestId: `agent-${crypto.randomUUID()}`,
+      requestId: buildIdeRequestId({ body, request: transformedRequest, credentials, model, requestType: "agent" }),
       request: transformedRequest
     };
   }
@@ -206,23 +361,49 @@ export class AntigravityExecutor extends BaseExecutor {
     return totalMs > 0 ? totalMs : null;
   }
 
+  extractErrorMessage(errorJson, bodyText = "") {
+    return [
+      errorJson?.error?.message,
+      errorJson?.message,
+      errorJson?.error,
+      bodyText,
+    ].filter(Boolean).map(v => typeof v === "string" ? v : JSON.stringify(v)).join("\n");
+  }
+
+  isTransientAntigravityError(status, message) {
+    if (status === HTTP_STATUS.RATE_LIMITED) return true;
+    if (ANTIGRAVITY_TRANSIENT_STATUSES.has(status)) return true;
+    return ANTIGRAVITY_TRANSIENT_ERROR_PATTERNS.some(pattern => pattern.test(message || ""));
+  }
+
   // Hook called by BaseExecutor.tryRetry: derive delay from Retry-After (header → body),
-  // cap at MAX_RETRY_AFTER_MS, else exponential backoff for 429. Return false to veto (fallback URL).
+  // cap at MAX_RETRY_AFTER_MS, else retry transient Antigravity failures with backoff.
+  // Return false to veto (fallback URL / final error).
   async computeRetryDelay(response, attempt) {
+    let bodyText = "";
+    let errorJson = null;
     let retryMs = this.parseRetryHeaders(response.headers);
+
+    try {
+      bodyText = await response.clone().text();
+      errorJson = bodyText ? JSON.parse(bodyText) : null;
+    } catch {
+      // ignore parse errors → fall through to status/message based retry
+    }
+
+    const errorMessage = this.extractErrorMessage(errorJson, bodyText);
+
     if (!retryMs) {
-      try {
-        const errorJson = JSON.parse(await response.clone().text());
-        retryMs = this.parseRetryFromErrorMessage(errorJson?.error?.message || errorJson?.message || "");
-      } catch {
-        // ignore parse errors → fall through to backoff
-      }
+      retryMs = this.parseRetryFromErrorMessage(errorMessage);
     }
     if (retryMs) return retryMs <= MAX_RETRY_AFTER_MS ? retryMs : false;
-    if (response.status === HTTP_STATUS.RATE_LIMITED) {
-      return Math.min(1000 * (2 ** attempt), MAX_RETRY_AFTER_MS); // exponential backoff
-    }
-    return false;
+
+    if (!this.isTransientAntigravityError(response.status, errorMessage)) return false;
+
+    const cap = response.status === HTTP_STATUS.RATE_LIMITED
+      ? MAX_RETRY_AFTER_MS
+      : ANTIGRAVITY_TRANSIENT_RETRY_MAX_MS;
+    return Math.min(1000 * (2 ** attempt), cap); // exponential backoff
   }
 
   /**

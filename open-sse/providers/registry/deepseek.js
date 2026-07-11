@@ -1,3 +1,5 @@
+import { CLAUDE_API_HEADERS } from "../shared.js";
+
 export default {
   id: "deepseek",
   priority: 110,
@@ -24,6 +26,20 @@ export default {
       scope: "all",
     },
   },
+  // Multi-endpoint: pick the transport matching client sourceFormat to skip translation.
+  transports: [
+    {
+      format: "openai",
+      baseUrl: "https://api.deepseek.com/chat/completions",
+      auth: { combined: true, header: "Authorization", scheme: "bearer" },
+    },
+    {
+      format: "claude",
+      baseUrl: "https://api.deepseek.com/anthropic/v1/messages",
+      headers: { ...CLAUDE_API_HEADERS },
+      auth: { combined: true, header: "x-api-key", scheme: "raw" },
+    },
+  ],
   models: [
     { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro" },
     { id: "deepseek-v4-pro-max", name: "DeepSeek V4 Pro Max", upstreamModelId: "deepseek-v4-pro" },
