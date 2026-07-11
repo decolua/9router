@@ -210,6 +210,37 @@ function resolveConnectionProxyUrl(targetUrl, proxyOptions) {
   return normalizeProxyUrl(proxyUrlRaw);
 }
 
+/**
+ * Caller aborts/timeouts are not proxy transport failures.
+ * Prefer signal.aborted because AbortController.abort(reason) may surface
+ * custom Error objects rather than AbortError/TimeoutError names.
+ */
+function isCallerAbort(error, signal) {
+  if (signal?.aborted === true) return true;
+  const name = error?.name;
+  return name === "AbortError" || name === "TimeoutError";
+}
+
+function rethrowStrictProxyFailure(proxyError) {
+  throw new Error(
+    `[ProxyFetch] Proxy required but failed (strictProxy=true): ${proxyError.message}`,
+    { cause: proxyError },
+  );
+}
+
+function handleProxyRequestError(proxyError, options, proxyOptions, fallbackLabel) {
+  if (isCallerAbort(proxyError, options?.signal)) {
+    throw proxyError;
+  }
+
+  if (proxyOptions?.strictProxy === true) {
+    rethrowStrictProxyFailure(proxyError);
+  }
+
+  console.warn(`[ProxyFetch] Proxy failed, falling back to ${fallbackLabel}: ${proxyError.message}`);
+  return null;
+}
+
 async function getDispatcher(proxyUrl) {
   const normalized = normalizeProxyUrl(proxyUrl);
   if (!normalized) return null;
@@ -326,10 +357,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
         const dispatcher = await getDispatcher(proxyUrl);
         return await originalFetch(url, { ...options, dispatcher });
       } catch (proxyError) {
-        if (proxyOptions?.strictProxy === true) {
-          throw new Error(`[ProxyFetch] Proxy required but failed (strictProxy=true): ${proxyError.message}`);
-        }
-        console.warn(`[ProxyFetch] Proxy failed, falling back to direct bypass: ${proxyError.message}`);
+        handleProxyRequestError(proxyError, options, proxyOptions, "direct bypass");
       }
     }
     // No proxy — manually resolve real IP to bypass DNS spoof
@@ -347,11 +375,9 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
       const dispatcher = await getDispatcher(proxyUrl);
       return await originalFetch(url, { ...options, dispatcher });
     } catch (proxyError) {
-      // If strictProxy is enabled, fail hard instead of falling back to direct
-      if (proxyOptions?.strictProxy === true) {
-        throw new Error(`[ProxyFetch] Proxy required but failed (strictProxy=true): ${proxyError.message}`);
-      }
-      console.warn(`[ProxyFetch] Proxy failed, falling back to direct: ${proxyError.message}`);
+      // Caller abort/timeout must propagate. Only genuine proxy transport
+      // failures may fall back to direct (unless strictProxy=true).
+      handleProxyRequestError(proxyError, options, proxyOptions, "direct");
       return originalFetch(url, options);
     }
   }

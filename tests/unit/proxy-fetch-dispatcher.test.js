@@ -86,4 +86,93 @@ describe("proxyAwareFetch dispatcher selection", () => {
     expect(warn).not.toHaveBeenCalledWith(expect.stringContaining("falling back to direct"));
     warn.mockRestore();
   });
+
+  it.each([
+    ["caller timeout", new DOMException("The operation was aborted due to timeout", "TimeoutError")],
+    ["caller abort", new DOMException("This operation was aborted", "AbortError")],
+    ["custom abort reason", new Error("fetch connect timeout")],
+  ])("propagates %s without direct fallback", async (_label, abortReason) => {
+    const controller = new AbortController();
+    controller.abort(abortReason);
+    originalFetch.mockRejectedValueOnce(abortReason);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { proxyAwareFetch } = await import("../../open-sse/utils/proxyFetch.js");
+
+    await expect(proxyAwareFetch("https://example.com/test", {
+      signal: controller.signal,
+    }, {
+      enabled: true,
+      url: "http://127.0.0.1:8080",
+    })).rejects.toBe(abortReason);
+
+    expect(originalFetch).toHaveBeenCalledTimes(1);
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining("Proxy failed"));
+    warn.mockRestore();
+  });
+
+  it("propagates caller abort under strictProxy without rewriting as proxy failure", async () => {
+    const abortReason = new DOMException("This operation was aborted", "AbortError");
+    const controller = new AbortController();
+    controller.abort(abortReason);
+    originalFetch.mockRejectedValueOnce(abortReason);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { proxyAwareFetch } = await import("../../open-sse/utils/proxyFetch.js");
+
+    await expect(proxyAwareFetch("https://example.com/test", {
+      signal: controller.signal,
+    }, {
+      enabled: true,
+      url: "http://127.0.0.1:8080",
+      strictProxy: true,
+    })).rejects.toBe(abortReason);
+
+    expect(originalFetch).toHaveBeenCalledTimes(1);
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("falls back directly for a genuine proxy transport failure when non-strict", async () => {
+    const proxyError = Object.assign(new Error("proxy refused"), { code: "ECONNREFUSED" });
+    const directResponse = { ok: true, status: 200 };
+    const controller = new AbortController();
+    originalFetch.mockRejectedValueOnce(proxyError).mockResolvedValueOnce(directResponse);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { proxyAwareFetch } = await import("../../open-sse/utils/proxyFetch.js");
+
+    await expect(proxyAwareFetch("https://example.com/test", {
+      signal: controller.signal,
+    }, {
+      enabled: true,
+      url: "http://127.0.0.1:8080",
+    })).resolves.toBe(directResponse);
+
+    expect(controller.signal.aborted).toBe(false);
+    expect(originalFetch).toHaveBeenCalledTimes(2);
+    expect(originalFetch.mock.calls[1]).toEqual([
+      "https://example.com/test",
+      { signal: controller.signal },
+    ]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("falling back to direct"));
+    warn.mockRestore();
+  });
+
+  it("propagates caller abort from the MITM bypass path without direct bypass", async () => {
+    const abortReason = new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    const controller = new AbortController();
+    controller.abort(abortReason);
+    originalFetch.mockRejectedValueOnce(abortReason);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { proxyAwareFetch } = await import("../../open-sse/utils/proxyFetch.js");
+
+    await expect(proxyAwareFetch("https://cloudcode-pa.googleapis.com/test", {
+      signal: controller.signal,
+    }, {
+      enabled: true,
+      url: "http://127.0.0.1:8080",
+    })).rejects.toBe(abortReason);
+
+    expect(originalFetch).toHaveBeenCalledTimes(1);
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining("Proxy failed"));
+    warn.mockRestore();
+  });
 });
