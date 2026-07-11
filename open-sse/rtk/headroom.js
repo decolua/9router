@@ -273,7 +273,10 @@ export async function compressWithHeadroom(body, { enabled, url, model, format, 
         return null;
       }
       const oai = openaiResponsesToOpenAIRequest(model, body, false);
-      if (!Array.isArray(oai?.messages)) return null;
+      if (!Array.isArray(oai?.messages)) {
+        setDiagnostic(diagnostics, "Responses request did not translate to messages[]");
+        return null;
+      }
       const data = await callCompress(url, oai.messages, model, timeoutMs, compressUserMessages, diagnostics || {});
       if (!data) return null;
       // input: undefined so the translator rebuilds input from the compressed
@@ -321,6 +324,22 @@ export async function compressWithHeadroom(body, { enabled, url, model, format, 
     setDiagnostic(diagnostics, `unexpected error: ${error?.message || String(error)}`);
     return null;
   }
+}
+
+export function classifyHeadroomDiagnostic(diagnostics, stats, enabled) {
+  if (stats) return "compressed";
+  if (!enabled) return "disabled";
+
+  const reason = String(diagnostics?.reason || "").toLowerCase();
+  if (reason.includes("missing proxy url")) return "missing-proxy-url";
+  if (reason.includes("timeout") || reason.includes("abort")) return "timeout";
+  if (reason.includes("proxy returned http")) return "http-error";
+  if (reason.includes("openai-responses tool/reasoning")) return "unsafe-responses-input";
+  if (reason.includes("did not translate") || reason.includes("translate to messages")) return "translation-failed";
+  if (reason.includes("unsupported") || reason.includes("did not project")) return "unsupported-shape";
+  if (reason.includes("proxy response")) return "invalid-proxy-response";
+  if (reason.includes("unexpected error")) return "unexpected-error";
+  return "other-skip";
 }
 
 export function formatHeadroomLog(stats) {

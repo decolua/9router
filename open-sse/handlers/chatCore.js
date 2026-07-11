@@ -23,7 +23,7 @@ import { dedupeTools } from "../utils/toolDeduper.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { injectPonytail } from "../rtk/ponytail.js";
 import { compressMessages } from "../rtk/index.js";
-import { compressWithHeadroom, formatHeadroomSizeLog, isHeadroomPhantomSavings } from "../rtk/headroom.js";
+import { classifyHeadroomDiagnostic, compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, isHeadroomPhantomSavings } from "../rtk/headroom.js";
 import { compressWithPxpipe } from "../rtk/pxpipe.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
@@ -38,7 +38,7 @@ import { resolveSessionId } from "../utils/sessionManager.js";
  * @param {object} options.credentials - Provider credentials
  * @param {string} options.sourceFormatOverride - Override detected source format (e.g. "openai-responses")
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, onTokenSaverEvent, sourceFormatOverride, providerThinking }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
   // Stable per-session color so all lines of one CLI conversation share a tag
@@ -219,6 +219,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     const delta = headroomStats.tokens_saved || 0;
     const pct = before > 0 ? ((delta / before) * 100).toFixed(1) : "0";
     xf.push(`HEADROOM −${delta}tok(${pct}%)`);
+    log?.info?.("HEADROOM", `${formatHeadroomLog(headroomStats)} | ${formatHeadroomSizeLog(headroomDiagnostics)}`);
     if (isHeadroomPhantomSavings(headroomStats, headroomDiagnostics)) {
       log?.warn?.("HEADROOM", `reported token delta, but outbound JSON shrank <5%; provider may bill near-original payload | ${formatHeadroomSizeLog(headroomDiagnostics)}`);
     }
@@ -252,6 +253,35 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   }
 
   if (xf.length && log?.line) log.line(reqTag, "⚙", xf.join(" · "));
+
+  const headroomState = headroomStats ? "compressed" : headroomEnabled ? "skipped" : "disabled";
+  const headroomPhantomSavings = isHeadroomPhantomSavings(headroomStats, headroomDiagnostics);
+
+  // Hand the telemetry payload to the caller. The caller decides when to persist
+  // it — chat.js fires exactly once after the final routing attempt so account
+  // fallback retries don't double-count. Fail-open: never break the request path.
+  if (onTokenSaverEvent) {
+    try {
+      onTokenSaverEvent({
+        requestsObserved: 1,
+        rtkRequestsWithHits: rtkStats?.hits?.length ? 1 : 0,
+        rtkHits: rtkStats?.hits?.length || 0,
+        rtkBytesBefore: rtkStats?.bytesBefore || 0,
+        rtkBytesAfter: rtkStats?.bytesAfter || 0,
+        rtkBytesSaved: Math.max(0, (rtkStats?.bytesBefore || 0) - (rtkStats?.bytesAfter || 0)),
+        headroomState,
+        headroomDiagnostic: headroomState === "skipped" ? classifyHeadroomDiagnostic(headroomDiagnostics, null, true) : null,
+        headroomTokensBefore: headroomStats?.tokens_before || 0,
+        headroomTokensAfter: headroomStats?.tokens_after || 0,
+        headroomTokensSaved: headroomStats?.tokens_saved || 0,
+        headroomBodyBytesBefore: headroomDiagnostics.before?.bodyBytes || 0,
+        headroomBodyBytesAfter: headroomDiagnostics.after?.bodyBytes || 0,
+        headroomMessageBytesBefore: headroomDiagnostics.before?.messageBytes || 0,
+        headroomMessageBytesAfter: headroomDiagnostics.after?.messageBytes || 0,
+        headroomPhantomSavings: headroomPhantomSavings ? 1 : 0,
+      });
+    } catch { /* observability must not break requests */ }
+  }
 
   const executor = getExecutor(provider);
   trackPendingRequest(model, provider, connectionId, true);
