@@ -4,6 +4,7 @@ import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLock
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import { CONNECTION_STATUS } from "@/shared/constants/connectionStatus.js";
+import { resolveStrictProxyFlag } from "@/lib/network/strictProxyPolicy.js";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
@@ -182,7 +183,12 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         connectionNoProxy: resolvedProxy.connectionNoProxy,
         connectionProxyPoolId: resolvedProxy.proxyPoolId || null,
         vercelRelayUrl: resolvedProxy.vercelRelayUrl || "",
-        strictProxy: resolvedProxy.strictProxy === true,
+        strictProxy: resolveStrictProxyFlag({
+          providerId,
+          connectionStrictProxy: connection.strictProxy,
+          nestedStrictProxy: connection.providerSpecificData?.strictProxy,
+          resolvedStrictProxy: resolvedProxy.strictProxy,
+        }),
       },
       connectionId: connection.id,
       // Include current status for optimization check

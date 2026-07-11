@@ -291,6 +291,21 @@ function createSocksConnector(proxyUrl) {
  * Create proxy dispatcher lazily (undici-compatible).
  * HTTP(S) proxies use undici ProxyAgent; SOCKS proxies use undici Agent + socks tunnel.
  */
+function disposeDispatcher(dispatcher) {
+  if (!dispatcher || typeof dispatcher !== "object") return;
+  try {
+    if (typeof dispatcher.destroy === "function") {
+      Promise.resolve(dispatcher.destroy()).catch(() => {});
+      return;
+    }
+    if (typeof dispatcher.close === "function") {
+      Promise.resolve(dispatcher.close()).catch(() => {});
+    }
+  } catch {
+    // Best-effort disposal; never block request path.
+  }
+}
+
 async function getDispatcher(proxyUrl) {
   const normalized = normalizeProxyUrl(proxyUrl);
   if (!normalized) return null;
@@ -298,7 +313,10 @@ async function getDispatcher(proxyUrl) {
   if (!proxyDispatchers.has(normalized)) {
     // Evict oldest entry if max size reached
     if (proxyDispatchers.size >= MEMORY_CONFIG.proxyDispatchersMaxSize) {
-      proxyDispatchers.delete(proxyDispatchers.keys().next().value);
+      const oldestKey = proxyDispatchers.keys().next().value;
+      const oldest = proxyDispatchers.get(oldestKey);
+      proxyDispatchers.delete(oldestKey);
+      disposeDispatcher(oldest);
     }
 
     if (isSocksProxyUrl(normalized)) {
@@ -315,8 +333,14 @@ async function getDispatcher(proxyUrl) {
 
 /** Reset cached proxy dispatchers (test helper). */
 export function __resetProxyDispatchers() {
+  for (const dispatcher of proxyDispatchers.values()) {
+    disposeDispatcher(dispatcher);
+  }
   proxyDispatchers.clear();
 }
+
+/** Exported for connector-level unit tests. */
+export { createSocksConnector };
 
 /**
  * Create HTTPS request with manual socket connection (bypass DNS)

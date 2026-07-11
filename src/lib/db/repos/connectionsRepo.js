@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { CONNECTION_STATUS } from "../../../shared/constants/connectionStatus.js";
+import { withStrictProxyEnforced } from "../../network/strictProxyPolicy.js";
 
 const OPTIONAL_FIELDS = [
   "displayName", "email", "globalPriority", "defaultModel",
@@ -91,6 +92,7 @@ function reorderInTx(db, providerId) {
 }
 
 export async function createProviderConnection(data) {
+  data = withStrictProxyEnforced(data);
   const db = await getAdapter();
   const now = new Date().toISOString();
   let result;
@@ -127,7 +129,7 @@ export async function createProviderConnection(data) {
     // access_token: never dedup — user manages duplicates manually
 
     if (existing) {
-      const merged = { ...existing, ...data, updatedAt: now };
+      const merged = withStrictProxyEnforced({ ...existing, ...data, updatedAt: now });
       // A successful re-import / re-login should clear any stale failure state
       // (e.g. needs_relogin after Auth0 refresh-token family revoke, or stale
       // 401s on Cursor / GitLab PAT re-imports). The narrower OAuth-only check
@@ -188,7 +190,7 @@ export async function updateProviderConnection(id, data) {
     const row = db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
     if (!row) { result = null; return; }
     const existing = rowToConn(row);
-    const merged = { ...existing, ...data, updatedAt: new Date().toISOString() };
+    const merged = withStrictProxyEnforced({ ...existing, ...data, updatedAt: new Date().toISOString() });
     upsert(db, merged);
     if (data.priority !== undefined) reorderInTx(db, existing.provider);
     result = merged;
