@@ -1,7 +1,7 @@
 /**
  * Unit tests verifying MiniMax-M3 is registered as a first-class
  * built-in model for both the `minimax` (international) and
- * `minimax-cn` (China) providers, with `targetFormat: "claude"`.
+ * `minimax-cn` (China) providers, with `targetFormat: "openai"`.
  *
  * Run: cd tests && NODE_PATH=/tmp/node_modules /tmp/node_modules/.bin/vitest run tests/unit/provider-models-minimax-m3.test.js --reporter=verbose
  */
@@ -17,7 +17,7 @@ describe("MiniMax-M3 model registration", () => {
     expect(m3).toMatchObject({
       id: "MiniMax-M3",
       name: "MiniMax M3",
-      targetFormat: "claude",
+      targetFormat: "openai",
     });
   });
 
@@ -28,7 +28,7 @@ describe("MiniMax-M3 model registration", () => {
     expect(m3).toMatchObject({
       id: "MiniMax-M3",
       name: "MiniMax M3",
-      targetFormat: "claude",
+      targetFormat: "openai",
     });
   });
 
