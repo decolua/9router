@@ -136,8 +136,23 @@ export default function OrchestratorPage() {
   const [autoConfigResult, setAutoConfigResult] = useState(null);
   const [autoConfigLoading, setAutoConfigLoading] = useState(false);
 
+  // Сканер моделей (AI-бенчмарки)
+  const [scanResults, setScanResults] = useState(null);
+  const [scanLoading, setScanLoading] = useState(false);
+  const [scanError, setScanError] = useState(null);
+
   // Ссылка на страницу usage
   const [usageLinkCopied, setUsageLinkCopied] = useState(false);
+
+  // Автоматический дискавер (background scanner)
+  const [discoveryStatus, setDiscoveryStatus] = useState(null);
+  const [discoveryLoading, setDiscoveryLoading] = useState(false);
+  const [cacheResult, setCacheResult] = useState(null);
+  const [cacheLoading, setCacheLoading] = useState(false);
+
+  // Очистка битых моделей
+  const [cleanupResult, setCleanupResult] = useState(null);
+  const [cleanupLoading, setCleanupLoading] = useState(false);
 
   const toggleSection = (key) => setExpandedSections(prev => ({ ...prev, [key]: !prev[key] }));
   const toggleGroup = (key) => setExpandedSections(prev => ({ ...prev, groups: { ...prev.groups, [key]: !prev.groups?.[key] } }));
@@ -149,6 +164,7 @@ export default function OrchestratorPage() {
       const data = await res.json();
       setStatus(data);
       if (data.lastPingResults) setPingResults(data.lastPingResults);
+      if (data.lastScanResults) setScanResults(data.lastScanResults);
       const cfg = data.modelRouter?.config || {};
       // НЕ затираем формы, которые сейчас в режиме редактирования
       if (!editingSwitching) setSwitchingForm(cfg.switching || {});
@@ -356,6 +372,95 @@ export default function OrchestratorPage() {
     }
   };
 
+  /* --- Сканер моделей (AI-бенчмарки) --- */
+  const handleScan = async () => {
+    if (scanLoading) return;
+    setScanLoading(true);
+    setScanResults(null);
+    setScanError(null);
+    try {
+      const res = await fetch('/api/orchestrator/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      setScanResults(data);
+      setSaveMessage('✅ Сканер завершён — ModelRouter настроен по результатам');
+      setSaveMsgType('success');
+      setTimeout(fetchStatus, 500);
+    } catch (err) {
+      setScanError(err.message);
+    } finally {
+      setScanLoading(false);
+    }
+  };
+
+  /* --- Автоматический дискавер (фоновое сканирование) --- */
+  const handleDiscoveryAction = async (action) => {
+    setDiscoveryLoading(true);
+    if (action !== 'status') setDiscoveryStatus(null);
+    try {
+      const res = await fetch('/api/orchestrator/background-scanner', {
+        method: action === 'status' ? 'GET' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: action === 'status' ? undefined : JSON.stringify({ action })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      setDiscoveryStatus(data);
+      if (action === 'stop' || action === 'start' || action === 'status') {
+        setSaveMessage(`✅ ${action === 'start' ? 'Автодискавер запущен' : action === 'stop' ? 'Автодискавер остановлен' : 'Статус получен'}`);
+        setSaveMsgType('success');
+        setTimeout(fetchStatus, 300);
+      }
+    } catch (err) {
+      if (action === 'start' || action === 'stop') {
+        setSaveMessage(`❌ ${err.message}`);
+        setSaveMsgType('error');
+      }
+    } finally {
+      setDiscoveryLoading(false);
+    }
+  };
+
+  /* --- Очистка битых моделей --- */
+  const handleCleanupBroken = async () => {
+    setCleanupLoading(true);
+    setCleanupResult(null);
+    try {
+      const res = await fetch('/api/orchestrator/cleanup-broken', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      setCleanupResult(data);
+      setSaveMessage(`✅ Отключено ${data.disabled.length} битых моделей`);
+      setSaveMsgType('success');
+      setTimeout(fetchStatus, 500);
+    } catch (err) {
+      setSaveMessage(`❌ ${err.message}`);
+      setSaveMsgType('error');
+    } finally {
+      setCleanupLoading(false);
+    }
+  };
+
+  /* --- Кэш сканера --- */
+  const handleCheckCache = async () => {
+    setCacheLoading(true);
+    setCacheResult(null);
+    try {
+      const res = await fetch('/api/orchestrator/scan');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      setCacheResult(data);
+    } catch (err) {
+      setSaveMessage(`❌ ${err.message}`);
+      setSaveMsgType('error');
+    } finally {
+      setCacheLoading(false);
+    }
+  };
+
   /* --- Утилиты --- */
   const routerConfig = status?.modelRouter?.config || {};
   const routerStats = status?.modelRouter?.stats || {};
@@ -406,7 +511,12 @@ export default function OrchestratorPage() {
     );
   }
 
-  const modelStats = routerStats.models || [];
+  // Compute model list from config groups (for active models count)
+  const allConfiguredModels = Object.values(routerConfig.modelGroups || {}).flatMap(g => g.models || []);
+  const modelStats = allConfiguredModels.map(m => ({
+    id: m.id,
+    available: health[m.id]?.available !== false && !health[m.id]?.inCooldown
+  }));
   const history = routerStats.rotationHistory || [];
   const health = routerStats.modelHealth || {};
   const activeTimeRule = getActiveTimeRule();
@@ -468,7 +578,7 @@ export default function OrchestratorPage() {
           { id: 'simulation', label: '🧪 Симуляция', icon: null },
           { id: 'groups', label: '📦 Группы моделей', icon: null },
           { id: 'history', label: '📜 История ротаций', icon: null },
-          { id: 'health', label: '❤️ Health Check', icon: null },
+          { id: 'health', label: '🏆 Рейтинг моделей', icon: null },
         ].map(tab => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
             className={`px-3 py-2 text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap ${
@@ -511,11 +621,15 @@ export default function OrchestratorPage() {
 
       {activeTab === 'history' && renderHistoryTab(history, fmtTime, fmtDate, routerStats, Icons)}
 
-      {activeTab === 'health' && renderHealthTab(health, routerConfig, Icons, fmtNum, fmtTime)}
+      {activeTab === 'health' && renderHealthTab(health, routerConfig, routerStats, Icons, fmtNum, fmtTime, fmtCostFull)}
 
       {activeTab === 'ping' && renderPingTab(
         pingResults, pingLoading, pingError, handlePingAll,
-        autoConfigResult, autoConfigLoading, handleAutoConfig, Icons
+        autoConfigResult, autoConfigLoading, handleAutoConfig, Icons,
+        scanResults, scanLoading, scanError, handleScan,
+        discoveryStatus, discoveryLoading, handleDiscoveryAction,
+        cacheResult, cacheLoading, handleCheckCache,
+        cleanupResult, cleanupLoading, handleCleanupBroken
       )}
 
       {/* Быстрый доступ к странице Usage */}
@@ -976,11 +1090,33 @@ function renderSettingsTab(
 function renderSimulationTab(simParams, setSimParams, simLoading, simResult, simError, handleSimulate, routerConfig, Icons) {
   return (
     <div className="space-y-4">
+      {/* Explanation card */}
+      <div className="rounded-xl bg-gradient-to-r from-blue-500/5 to-purple-500/5 border border-border p-4">
+        <div className="flex items-start gap-3">
+          <div className="flex items-center justify-center size-10 rounded-lg bg-gradient-to-br from-blue-500/20 to-purple-500/20 text-blue-400 shrink-0">
+            <Icons.Route />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-text-main">🧪 Симуляция выбора модели</h3>
+            <p className="text-xs text-text-muted mt-1 leading-relaxed">
+              Проверяет логику маршрутизатора: как ModelRouter выбирает модель для заданного типа задачи.
+              Учитываются стратегии (round-robin, priority, cost-optimized, conditional), приоритеты, cooldown,
+              лимиты стоимости и доступность моделей. Результат показывает, какая модель будет выбрана в каждом раунде.
+            </p>
+            <div className="flex flex-wrap gap-2 mt-2">
+              <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 text-[10px]">🔄 Round-Robin</span>
+              <span className="px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 text-[10px]">⭐ Priority</span>
+              <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 text-[10px]">💰 Cost-Optimized</span>
+              <span className="px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 text-[10px]">🧠 Conditional</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className="rounded-xl bg-bg-card border border-border overflow-hidden">
         <div className="px-4 py-3 border-b border-border flex items-center gap-2">
-          <Icons.Route />
-          <h3 className="text-sm font-semibold">Симуляция выбора модели</h3>
-          <span className="text-[10px] text-text-muted">Проверьте логику router: round-robin, priority, cost-optimized, conditional</span>
+          <Icons.Settings />
+          <h3 className="text-sm font-semibold">Параметры симуляции</h3>
         </div>
         <div className="p-4 space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
@@ -1016,10 +1152,16 @@ function renderSimulationTab(simParams, setSimParams, simLoading, simResult, sim
             </div>
           </div>
           <button onClick={handleSimulate} disabled={simLoading}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              simLoading ? 'bg-bg-hover text-text-muted cursor-wait' : 'bg-accent-main text-white hover:bg-accent-hover'
+            className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all inline-flex items-center gap-2 ${
+              simLoading
+                ? 'bg-bg-hover text-text-muted cursor-wait'
+                : 'bg-accent-main text-white hover:bg-accent-hover shadow-sm hover:shadow-md active:scale-[0.98]'
             }`}>
-            {simLoading ? 'Симуляция...' : '▶ Запустить симуляцию'}
+            {simLoading ? (
+              <><span className="animate-spin size-4 border-2 border-current border-t-transparent rounded-full" /> Симуляция...</>
+            ) : (
+              <><Icons.Play /> Запустить симуляцию</>
+            )}
           </button>
         </div>
       </div>
@@ -1378,46 +1520,225 @@ function renderHistoryTab(history, fmtTime, fmtDate, routerStats, Icons) {
 }
 
 /* ================================================================
-   Вкладка: Health Check
-   ================================================================ */
-function renderHealthTab(health, routerConfig, Icons, fmtNum, fmtTime) {
-  const healthEntries = Object.entries(health);
+   Вкладка: Рейтинг моделей (глобальный лидерборд)
+    ================================================================ */
+function renderHealthTab(health, routerConfig, routerStats, Icons, fmtNum, fmtTime, fmtCostFull) {
+  // Build unified model list from all groups
+  const usage = routerStats.dailyUsage || {};
+  const allModels = [];
+  const groups = routerConfig.modelGroups || {};
+  for (const [groupType, group] of Object.entries(groups)) {
+    for (const m of (group.models || [])) {
+      const h = health[m.id] || {};
+      const tokensUsed = usage.tokens?.[m.id] || 0;
+      const requestsUsed = usage.requests?.[m.id] || 0;
+      const costUsed = usage.costs?.[m.id] || 0;
+      const errorsUsed = usage.errors?.[m.id] || 0;
+      const errorRate = requestsUsed > 0 ? ((errorsUsed / requestsUsed) * 100).toFixed(1) : '—';
+
+      // Composite score: lower priority = better, lower cost = better, more usage = proven
+      const score = Math.max(0, 100
+        - (m.priority - 1) * 10       // priority factor (1→0pts, 5→40pts penalty)
+        - Math.min(30, (m.costPer1K || 0) * 10000) // cost penalty
+        + Math.min(20, tokensUsed / 10000)         // usage bonus
+        - (h.available === false ? 30 : h.inCooldown ? 15 : 0) // status penalty
+        - Math.min(20, errorsUsed * 5)              // error penalty
+      );
+
+      allModels.push({
+        id: m.id,
+        provider: m.provider,
+        group: groupType,
+        priority: m.priority,
+        costPer1K: m.costPer1K,
+        maxTokens: m.maxTokens,
+        rateLimit: m.rateLimit,
+        cooldownMinutes: m.cooldownMinutes,
+        score: Math.round(score),
+        available: h.available !== false,
+        inCooldown: !!h.inCooldown,
+        cooldownRemainingSec: h.cooldownRemainingSec || 0,
+        lastUsed: h.lastUsed,
+        lastError: h.lastError,
+        errorCount: h.errorCount || errorsUsed,
+        tokensUsed,
+        requestsUsed,
+        costUsed,
+        errorRate,
+      });
+    }
+  }
+
+  // Sort by score descending
+  allModels.sort((a, b) => b.score - a.score);
+
+  const totalTokens = allModels.reduce((s, m) => s + m.tokensUsed, 0);
+  const totalRequests = allModels.reduce((s, m) => s + m.requestsUsed, 0);
+  const totalCost = allModels.reduce((s, m) => s + m.costUsed, 0);
 
   return (
-    <div className="rounded-xl bg-bg-card border border-border overflow-hidden">
-      <div className="px-4 py-3 border-b border-border flex items-center gap-2">
-        <Icons.Heart />
-        <h3 className="text-sm font-semibold">Health Check моделей</h3>
-        <span className="text-[10px] text-text-muted">{healthEntries.length} моделей в статусе</span>
+    <div className="space-y-4">
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="px-4 py-3 rounded-xl bg-bg-card border border-border">
+          <span className="text-[10px] text-text-muted uppercase font-semibold">Моделей</span>
+          <div className="text-lg font-bold">{allModels.length}</div>
+        </div>
+        <div className="px-4 py-3 rounded-xl bg-bg-card border border-border">
+          <span className="text-[10px] text-text-muted uppercase font-semibold">Всего токенов</span>
+          <div className="text-lg font-bold">{Intl.NumberFormat().format(totalTokens)}</div>
+        </div>
+        <div className="px-4 py-3 rounded-xl bg-bg-card border border-border">
+          <span className="text-[10px] text-text-muted uppercase font-semibold">Запросов</span>
+          <div className="text-lg font-bold">{Intl.NumberFormat().format(totalRequests)}</div>
+        </div>
+        <div className="px-4 py-3 rounded-xl bg-bg-card border border-border">
+          <span className="text-[10px] text-text-muted uppercase font-semibold">Общая стоимость</span>
+          <div className="text-lg font-bold">{fmtCostFull(totalCost)}</div>
+        </div>
       </div>
-      {healthEntries.length === 0 ? (
-        <div className="px-4 py-8 text-center text-text-muted text-sm">
-          Нет данных health check. Статусы появятся после использования моделей.
-        </div>
-      ) : (
-        <div className="divide-y divide-border">
-          {healthEntries.map(([modelId, status]) => (
-            <div key={modelId} className="px-4 py-2.5 flex items-center gap-3 text-xs hover:bg-bg-hover transition-colors">
-              <span className={`size-2 rounded-full ${status.available && !status.inCooldown ? 'bg-green-400' : status.inCooldown ? 'bg-yellow-400' : 'bg-red-400'}`} />
-              <span className="font-mono flex-1 truncate">{modelId}</span>
-              <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${status.available && !status.inCooldown ? 'bg-green-500/10 text-green-400' : status.inCooldown ? 'bg-yellow-500/10 text-yellow-400' : 'bg-red-500/10 text-red-400'}`}>
-                {status.available && !status.inCooldown ? '🟢 OK' : status.inCooldown ? `🟡 Cooldown ${status.cooldownRemainingSec}s` : '🔴 Unavailable'}
-              </span>
-              {status.lastUsed && <span className="text-text-muted">used: {fmtTime(status.lastUsed)}</span>}
-              {status.lastError && <span className="text-red-400 truncate max-w-[150px]" title={status.lastError}>err: {status.lastError}</span>}
-              {status.errorCount > 0 && <span className="text-red-400">⚠ {status.errorCount}</span>}
-              {status.requestsThisMinute > 0 && <span className="text-text-muted">{status.requestsThisMinute}/min</span>}
-            </div>
-          ))}
-        </div>
-      )}
-      {healthEntries.length === 0 && routerConfig.modelGroups && (
-        <div className="px-4 py-3 border-t border-border bg-bg-subtle">
-          <div className="text-[10px] text-text-muted">
-            Доступные модели из конфига: {Object.values(routerConfig.modelGroups).flatMap(g => g.models || []).map(m => m.id).join(', ')}
+
+      {/* Leaderboard table */}
+      <div className="rounded-xl bg-bg-card border border-border overflow-hidden">
+        <div className="px-4 py-3 border-b border-border flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <Icons.BarChart />
+            <h3 className="text-sm font-semibold">🏆 Глобальный рейтинг моделей</h3>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-text-muted hidden sm:inline">Ранг по качеству, стоимости и использованию</span>
+            <button onClick={() => exportRatingJSON(allModels)}
+              className="px-2 py-1 text-[10px] bg-bg-hover rounded hover:bg-bg-subtle transition-colors inline-flex items-center gap-1"
+              title="Скачать JSON">
+              <Icons.Download /> JSON
+            </button>
+            <button onClick={() => exportRatingCSV(allModels)}
+              className="px-2 py-1 text-[10px] bg-bg-hover rounded hover:bg-bg-subtle transition-colors inline-flex items-center gap-1"
+              title="Скачать CSV">
+              <Icons.Download /> CSV
+            </button>
           </div>
         </div>
-      )}
+        {allModels.length === 0 ? (
+          <div className="px-4 py-8 text-center text-text-muted text-sm">
+            Нет моделей в конфигурации. Добавьте модели в группы настроек.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-border bg-bg-subtle">
+                  <th className="px-3 py-2 text-left w-8">#</th>
+                  <th className="px-3 py-2 text-left">Модель</th>
+                  <th className="px-3 py-2 text-left">Провайдер</th>
+                  <th className="px-3 py-2 text-left">Группа</th>
+                  <th className="px-3 py-2 text-center">Статус</th>
+                  <th className="px-3 py-2 text-right">Рейтинг</th>
+                  <th className="px-3 py-2 text-right">Приоритет</th>
+                  <th className="px-3 py-2 text-right">Cost/1K</th>
+                  <th className="px-3 py-2 text-right">Токены</th>
+                  <th className="px-3 py-2 text-right">Запросы</th>
+                  <th className="px-3 py-2 text-right">Стоимость</th>
+                  <th className="px-3 py-2 text-right">Ошибки</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {allModels.map((m, i) => {
+                  const rankColor = i === 0 ? 'text-amber-400' : i === 1 ? 'text-gray-400' : i === 2 ? 'text-amber-700' : 'text-text-muted';
+                  const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '';
+                  return (
+                    <tr key={m.id} className={`hover:bg-bg-hover transition-colors ${i < 3 ? 'bg-amber-500/[0.02]' : ''}`}>
+                      <td className={`px-3 py-2 font-mono ${rankColor}`}>{medal || (i + 1)}</td>
+                      <td className="px-3 py-2 font-mono">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`size-1.5 rounded-full ${m.available && !m.inCooldown ? 'bg-green-400' : m.inCooldown ? 'bg-yellow-400' : 'bg-red-400'}`} />
+                          <span className={m.costPer1K === 0 ? 'text-green-400' : ''}>{m.id}</span>
+                          {m.costPer1K === 0 && <span className="text-[9px] text-green-400">FREE</span>}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-text-muted">{m.provider}</td>
+                      <td className="px-3 py-2">
+                        <span className="px-1.5 py-0.5 rounded bg-bg-subtle text-[10px]">{m.group}</span>
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] ${
+                          m.available && !m.inCooldown ? 'bg-green-500/10 text-green-400' :
+                          m.inCooldown ? 'bg-yellow-500/10 text-yellow-400' : 'bg-red-500/10 text-red-400'
+                        }`}>
+                          {m.available && !m.inCooldown ? '🟢' : m.inCooldown ? `🟡 ${m.cooldownRemainingSec}s` : '🔴'}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <div className="w-12 h-1.5 rounded-full bg-bg-subtle overflow-hidden">
+                            <div className={`h-full rounded-full transition-all ${
+                              m.score >= 80 ? 'bg-green-400' : m.score >= 50 ? 'bg-yellow-400' : 'bg-red-400'
+                            }`} style={{ width: `${Math.min(100, m.score)}%` }} />
+                          </div>
+                          <span className="font-mono w-7 text-right">{m.score}</span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono">{m.priority}</td>
+                      <td className="px-3 py-2 text-right font-mono">
+                        <span className={m.costPer1K === 0 ? 'text-green-400' : ''}>
+                          {m.costPer1K === 0 ? 'FREE' : `$${m.costPer1K}`}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono text-text-muted">{Intl.NumberFormat().format(m.tokensUsed)}</td>
+                      <td className="px-3 py-2 text-right font-mono text-text-muted">{Intl.NumberFormat().format(m.requestsUsed)}</td>
+                      <td className="px-3 py-2 text-right font-mono text-text-muted">{fmtCostFull(m.costUsed)}</td>
+                      <td className="px-3 py-2 text-right">
+                        {m.errorCount > 0 ? (
+                          <span className="text-red-400 font-mono" title={m.lastError || ''}>
+                            {m.errorCount}{m.errorRate !== '—' ? ` (${m.errorRate}%)` : ''}
+                          </span>
+                        ) : (
+                          <span className="text-text-muted">0</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {allModels.length > 0 && (
+          <div className="px-4 py-2 border-t border-border bg-bg-subtle flex items-center gap-4 text-[10px] text-text-muted">
+            <span>⭐ Приоритет (1 = лучший)</span>
+            <span>💰 FREE = бесплатная модель</span>
+            <span>🏆 Рейтинг = качество + использование − стоимость − ошибки</span>
+          </div>
+        )}
+      </div>
+
+      {/* Model health details (collapsed) */}
+      <details className="rounded-xl bg-bg-card border border-border overflow-hidden">
+        <summary className="px-4 py-3 text-sm font-semibold cursor-pointer hover:bg-bg-hover transition-colors flex items-center gap-2">
+          <Icons.Heart />
+          <span>Детальный статус моделей (Health Check)</span>
+          <span className="text-[10px] text-text-muted font-normal">нажмите для раскрытия</span>
+        </summary>
+        <div className="divide-y divide-border max-h-[400px] overflow-y-auto">
+          {allModels.length === 0 ? (
+            <div className="px-4 py-6 text-center text-text-muted text-sm">Нет данных</div>
+          ) : (
+            allModels.map(m => (
+              <div key={m.id} className="px-4 py-2.5 flex items-center gap-3 text-xs hover:bg-bg-hover transition-colors">
+                <span className={`size-2 rounded-full ${m.available && !m.inCooldown ? 'bg-green-400' : m.inCooldown ? 'bg-yellow-400' : 'bg-red-400'}`} />
+                <span className="font-mono flex-1 truncate">{m.id}</span>
+                <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${m.available && !m.inCooldown ? 'bg-green-500/10 text-green-400' : m.inCooldown ? 'bg-yellow-500/10 text-yellow-400' : 'bg-red-500/10 text-red-400'}`}>
+                  {m.available && !m.inCooldown ? '🟢 OK' : m.inCooldown ? `🟡 Cooldown ${m.cooldownRemainingSec}s` : '🔴 Unavailable'}
+                </span>
+                {m.lastUsed && <span className="text-text-muted">used: {fmtTime(m.lastUsed)}</span>}
+                {m.lastError && <span className="text-red-400 truncate max-w-[150px]" title={m.lastError}>err: {m.lastError}</span>}
+                {m.errorCount > 0 && <span className="text-red-400">⚠ {m.errorCount}</span>}
+                <span className="text-text-muted">{m.tokensUsed > 0 ? `${Intl.NumberFormat().format(m.tokensUsed)} tok` : ''}</span>
+              </div>
+            ))
+          )}
+        </div>
+      </details>
     </div>
   );
 }
@@ -1509,7 +1830,11 @@ function ViewItem({ label, value }) {
    ============================================================ */
 function renderPingTab(
   pingResults, pingLoading, pingError, handlePingAll,
-  autoConfigResult, autoConfigLoading, handleAutoConfig, Icons
+  autoConfigResult, autoConfigLoading, handleAutoConfig, Icons,
+  scanResults, scanLoading, scanError, handleScan,
+  discoveryStatus, discoveryLoading, handleDiscoveryAction,
+  cacheResult, cacheLoading, handleCheckCache,
+  cleanupResult, cleanupLoading, handleCleanupBroken
 ) {
   return (
     <div className="space-y-4">
@@ -1521,49 +1846,127 @@ function renderPingTab(
             Прозвонить все провайдеры и бесплатные модели. Результаты попадут в статистику.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-1.5 flex-wrap">
           <button
             onClick={handlePingAll}
             disabled={pingLoading}
             style={{
-              padding: '8px 20px',
-              borderRadius: '10px',
+              padding: '6px 14px',
+              borderRadius: '8px',
               fontWeight: 600,
-              fontSize: '14px',
+              fontSize: '12px',
               color: '#fff',
               background: pingLoading
                 ? 'linear-gradient(135deg, #6b7280, #9ca3af)'
                 : 'linear-gradient(135deg, #E56A4A, #cc5236)',
               border: 'none',
               cursor: pingLoading ? 'wait' : 'pointer',
-              transition: 'all 0.2s',
-              boxShadow: pingLoading ? 'none' : '0 4px 12px rgba(229, 106, 74, 0.3)',
+              whiteSpace: 'nowrap',
             }}
           >
-            {pingLoading ? '⏳ Тестирую...' : '🔔 Прозвонить всех'}
+            {pingLoading ? '⏳' : '🔔 Прозвон'}
           </button>
           {pingResults?.workingModels?.length > 0 && (
             <button
               onClick={handleAutoConfig}
               disabled={autoConfigLoading}
               style={{
-                padding: '8px 20px',
-                borderRadius: '10px',
+                padding: '6px 14px',
+                borderRadius: '8px',
                 fontWeight: 600,
-                fontSize: '14px',
+                fontSize: '12px',
                 color: '#fff',
                 background: autoConfigLoading
                   ? 'linear-gradient(135deg, #6b7280, #9ca3af)'
                   : 'linear-gradient(135deg, #10b981, #059669)',
                 border: 'none',
                 cursor: autoConfigLoading ? 'wait' : 'pointer',
-                transition: 'all 0.2s',
-                boxShadow: autoConfigLoading ? 'none' : '0 4px 12px rgba(16, 185, 129, 0.3)',
+                whiteSpace: 'nowrap',
               }}
             >
-              {autoConfigLoading ? '⏳ Настраиваю...' : '⚡ Автонастройка'}
+              {autoConfigLoading ? '⏳' : '⚡ Автонастройка'}
             </button>
           )}
+          <button
+            onClick={handleScan}
+            disabled={scanLoading}
+            title="AI-бенчмарки всех моделей"
+            style={{
+              padding: '6px 14px',
+              borderRadius: '8px',
+              fontWeight: 600,
+              fontSize: '12px',
+              color: '#fff',
+              background: scanLoading
+                ? 'linear-gradient(135deg, #6b7280, #9ca3af)'
+                : 'linear-gradient(135deg, #8b5cf6, #6d28d9)',
+              border: 'none',
+              cursor: scanLoading ? 'wait' : 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {scanLoading ? '⏳' : '🔬 Сканер AI'}
+          </button>
+          <button
+            onClick={() => handleDiscoveryAction(discoveryStatus?.scanner?.scheduled ? 'stop' : 'start')}
+            disabled={discoveryLoading}
+            title={discoveryStatus?.scanner?.scheduled ? 'Остановить автодискавер' : 'Запустить автодискавер'}
+            style={{
+              padding: '6px 14px',
+              borderRadius: '8px',
+              fontWeight: 600,
+              fontSize: '12px',
+              color: '#fff',
+              background: discoveryLoading
+                ? 'linear-gradient(135deg, #6b7280, #9ca3af)'
+                : discoveryStatus?.scanner?.scheduled
+                  ? 'linear-gradient(135deg, #ef4444, #dc2626)'
+                  : 'linear-gradient(135deg, #06b6d4, #0891b2)',
+              border: 'none',
+              cursor: discoveryLoading ? 'wait' : 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {discoveryLoading ? '⏳' : discoveryStatus?.scanner?.scheduled ? '⏹ Дискавер' : '▶ Дискавер'}
+          </button>
+          <button
+            onClick={handleCheckCache}
+            disabled={cacheLoading}
+            title="Кэш результатов сканера"
+            style={{
+              padding: '6px 10px',
+              borderRadius: '8px',
+              fontWeight: 600,
+              fontSize: '12px',
+              color: 'var(--color-text-main)',
+              background: 'var(--color-surface-2)',
+              border: '1px solid var(--color-border)',
+              cursor: cacheLoading ? 'wait' : 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {cacheLoading ? '⏳' : '📦'}
+          </button>
+          <button
+            onClick={handleCleanupBroken}
+            disabled={cleanupLoading}
+            title="Отключить модели стабильно не отвечающие (3+ ошибки)"
+            style={{
+              padding: '6px 14px',
+              borderRadius: '8px',
+              fontWeight: 600,
+              fontSize: '12px',
+              color: '#fff',
+              background: cleanupLoading
+                ? 'linear-gradient(135deg, #6b7280, #9ca3af)'
+                : 'linear-gradient(135deg, #f59e0b, #d97706)',
+              border: 'none',
+              cursor: cleanupLoading ? 'wait' : 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {cleanupLoading ? '⏳' : '🧹 Битые'}
+          </button>
         </div>
       </div>
 
@@ -1588,6 +1991,106 @@ function renderPingTab(
           fontSize: '14px',
         }}>
           ❌ {pingError}
+        </div>
+      )}
+
+      {/* Scan loading spinner */}
+      {scanLoading && (
+        <div className="flex items-center justify-center py-12">
+          <div className="flex flex-col items-center gap-3">
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2" style={{ borderColor: '#8b5cf6' }}></div>
+            <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>AI-бенчмарки всех моделей (до 5 мин)...</span>
+          </div>
+        </div>
+      )}
+
+      {/* Scan error */}
+      {scanError && (
+        <div style={{
+          padding: '12px 16px',
+          borderRadius: '10px',
+          background: 'rgba(239, 68, 68, 0.1)',
+          border: '1px solid rgba(239, 68, 68, 0.3)',
+          color: '#ef4444',
+          fontSize: '14px',
+        }}>
+          ❌ Ошибка сканера: {scanError}
+        </div>
+      )}
+
+      {/* Discovery status */}
+      {discoveryStatus && (
+        <div style={{
+          padding: '12px 16px',
+          borderRadius: '10px',
+          background: 'rgba(6, 182, 212, 0.08)',
+          border: '1px solid rgba(6, 182, 212, 0.2)',
+          fontSize: '13px',
+        }}>
+          <strong style={{ color: 'var(--color-text-main)' }}>
+            {discoveryStatus.message || 'Статус автодискавера'}
+          </strong>
+          {discoveryStatus.scanner && (
+            <div style={{ marginTop: '6px', color: 'var(--color-text-muted)', fontSize: '12px' }}>
+              {discoveryStatus.scanner.scheduled ? '🟢 Активен' : '🔴 Остановлен'}
+              {discoveryStatus.scanner.running ? ' (выполняется сканирование)' : ''}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Cache result */}
+      {cacheResult && (
+        <div style={{
+          padding: '12px 16px',
+          borderRadius: '10px',
+          background: 'rgba(139, 92, 246, 0.08)',
+          border: '1px solid rgba(139, 92, 246, 0.2)',
+          fontSize: '13px',
+        }}>
+          <strong style={{ color: 'var(--color-text-main)' }}>📦 Кэш сканера</strong>
+          <pre style={{ marginTop: '6px', fontSize: '11px', color: 'var(--color-text-muted)', overflowX: 'auto', whiteSpace: 'pre-wrap' }}>
+            {JSON.stringify(cacheResult, null, 2)}
+          </pre>
+        </div>
+      )}
+
+      {/* Cleanup result — список отключённых моделей */}
+      {cleanupResult && cleanupResult.disabled?.length > 0 && (
+        <div style={{
+          padding: '12px 16px',
+          borderRadius: '10px',
+          background: 'rgba(245, 158, 11, 0.08)',
+          border: '1px solid rgba(245, 158, 11, 0.2)',
+          fontSize: '13px',
+        }}>
+          <strong style={{ color: 'var(--color-warning)' }}>🧹 Отключено {cleanupResult.disabled.length} битых моделей:</strong>
+          <div style={{ marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+            {cleanupResult.disabled.map((m, i) => (
+              <span key={i} style={{
+                padding: '2px 8px',
+                borderRadius: '6px',
+                background: 'var(--color-surface-2)',
+                border: '1px solid var(--color-border)',
+                fontSize: '11px',
+                color: 'var(--color-text-muted)',
+              }}>
+                {m}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      {cleanupResult && cleanupResult.disabled?.length === 0 && (
+        <div style={{
+          padding: '12px 16px',
+          borderRadius: '10px',
+          background: 'rgba(16, 185, 129, 0.08)',
+          border: '1px solid rgba(16, 185, 129, 0.2)',
+          fontSize: '13px',
+          color: 'var(--color-success)',
+        }}>
+          ✅ Нет моделей для отключения — все стабильно работают
         </div>
       )}
 
@@ -1689,6 +2192,102 @@ function renderPingTab(
           )}
         </div>
       )}
+
+      {/* Scan results */}
+      {scanResults && (
+        <div className="space-y-3">
+          <div style={{ padding: '16px', borderRadius: '12px', background: 'rgba(139, 92, 246, 0.08)', border: '1px solid rgba(139, 92, 246, 0.2)' }}>
+            <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '8px', color: 'var(--color-text-main)' }}>
+              🔬 Сканер моделей — результаты
+            </h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px', marginBottom: '12px' }}>
+              <SummaryCard label="Всего моделей" value={scanResults.summary.total} color="#8b5cf6" />
+              <SummaryCard label="Работает" value={scanResults.summary.ok} color="var(--color-success)" />
+              <SummaryCard label="Ошибки" value={scanResults.summary.failed} color="var(--color-danger)" />
+              <SummaryCard label="Топ модель" value={scanResults.summary.topModel || '—'} color="var(--color-warning)" />
+              <SummaryCard label="Топ оценка" value={scanResults.summary.topScore ? `${(scanResults.summary.topScore * 100).toFixed(0)}%` : '—'} color="var(--color-info)" />
+            </div>
+
+            {/* Ranking table */}
+            {scanResults.ranking?.length > 0 && (
+              <>
+                <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'var(--color-text-main)' }}>
+                  🏆 Рейтинг моделей
+                </h4>
+                <div className="rounded-xl border border-border overflow-hidden">
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                    <thead>
+                      <tr style={{ background: 'var(--color-surface-2)' }}>
+                        <th style={thStyle}>#</th>
+                        <th style={thStyle}>Модель</th>
+                        <th style={thStyle}>Провайдер</th>
+                        <th style={thStyle}>Оценка</th>
+                        <th style={thStyle}>Задержка</th>
+                        <th style={thStyle}>Тир</th>
+                        <th style={thStyle}>Способности</th>
+                        <th style={thStyle}>Стоимость</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {scanResults.ranking.map((m, i) => (
+                        <tr key={i} style={{
+                          borderTop: '1px solid var(--color-border)',
+                          background: m.tier === 'free' ? 'rgba(16, 185, 129, 0.05)' : 'rgba(59, 130, 246, 0.05)',
+                        }}>
+                          <td style={tdStyle}>{i + 1}</td>
+                          <td style={tdStyle}><strong>{m.model}</strong></td>
+                          <td style={tdStyle}>{m.provider}</td>
+                          <td style={tdStyle}>
+                            <span style={{
+                              display: 'inline-block',
+                              padding: '1px 8px',
+                              borderRadius: '6px',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              background: m.avgScore >= 0.7 ? 'rgba(16, 185, 129, 0.15)' : m.avgScore >= 0.4 ? 'rgba(245, 158, 11, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                              color: m.avgScore >= 0.7 ? 'var(--color-success)' : m.avgScore >= 0.4 ? 'var(--color-warning)' : '#ef4444',
+                            }}>
+                              {(m.avgScore * 100).toFixed(0)}%
+                            </span>
+                          </td>
+                          <td style={tdStyle}>{m.latencyMs}ms</td>
+                          <td style={tdStyle}>
+                            <span style={{
+                              padding: '1px 6px',
+                              borderRadius: '4px',
+                              fontSize: '10px',
+                              fontWeight: 600,
+                              background: m.tier === 'free' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                              color: m.tier === 'free' ? 'var(--color-success)' : 'var(--color-warning)',
+                            }}>
+                              {m.tier === 'free' ? 'FREE' : 'PAID'}
+                            </span>
+                          </td>
+                          <td style={tdStyle}>{(m.capabilities || []).join(', ')}</td>
+                          <td style={tdStyle}>{m.costPer1K > 0 ? `$${m.costPer1K}/1K` : 'free'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+
+            {/* Applied config summary */}
+            {scanResults.config && (
+              <div style={{ marginTop: '12px', padding: '12px', borderRadius: '8px', background: 'var(--color-surface-2)', fontSize: '12px' }}>
+                <strong style={{ color: 'var(--color-text-main)' }}>⚙️ Конфигурация применена:</strong>
+                <div style={{ marginTop: '4px', color: 'var(--color-text-muted)', lineHeight: '1.8' }}>
+                  Стратегия: <code style={{ padding: '1px 4px', borderRadius: '3px', background: 'var(--color-surface)' }}>{scanResults.config.strategy}</code>
+                  {' | '}Free first: <strong>{scanResults.config.preferFreeModels ? '✅' : '❌'}</strong>
+                  {' | '}Групп: <strong>{Object.keys(scanResults.config.groups || {}).length}</strong>
+                  {' | '}Supervisor: <code style={{ padding: '1px 4px', borderRadius: '3px', background: 'var(--color-surface)' }}>{scanResults.config.supervisor?.model || '—'}</code>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1752,4 +2351,59 @@ function LatencyBar({ ms }) {
       </span>
     </div>
   );
+}
+
+/* ============================================================
+   Экспорт рейтинга в JSON / CSV
+   ============================================================ */
+function exportRatingJSON(models) {
+  const data = models.map((m, i) => ({
+    rank: i + 1,
+    model: m.id,
+    provider: m.provider,
+    group: m.group,
+    rating: m.score,
+    priority: m.priority,
+    costPer1K: m.costPer1K,
+    status: m.available && !m.inCooldown ? 'ok' : m.inCooldown ? 'cooldown' : 'unavailable',
+    tokensUsed: m.tokensUsed,
+    requestsUsed: m.requestsUsed,
+    totalCost: m.costUsed,
+    errors: m.errorCount,
+    lastError: m.lastError || '',
+  }));
+  downloadBlob(JSON.stringify(data, null, 2), 'model-rating.json', 'application/json');
+}
+
+function exportRatingCSV(models) {
+  const headers = ['Rank','Model','Provider','Group','Rating','Priority','Cost/1K','Status','Tokens','Requests','Total Cost','Errors','Last Error'];
+  const rows = models.map((m, i) => [
+    i + 1,
+    m.id,
+    m.provider,
+    m.group,
+    m.score,
+    m.priority,
+    m.costPer1K,
+    m.available && !m.inCooldown ? 'ok' : m.inCooldown ? 'cooldown' : 'unavailable',
+    m.tokensUsed,
+    m.requestsUsed,
+    m.costUsed,
+    m.errorCount,
+    (m.lastError || '').replace(/"/g, '""'),
+  ]);
+  const csv = [headers.join(','), ...rows.map(r => r.map(v => typeof v === 'string' && v.includes(',') ? `"${v}"` : v).join(','))].join('\n');
+  downloadBlob('\uFEFF' + csv, 'model-rating.csv', 'text/csv;charset=utf-8');
+}
+
+function downloadBlob(content, filename, mimeType) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }

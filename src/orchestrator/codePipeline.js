@@ -86,7 +86,7 @@ class CodePipeline {
     const response = await agent.execute({
       type: 'code',
       description: prompt,
-      preferredProvider: 'anthropic' // Claude лучше пишет код
+      preferredProvider: taskDef.preferredProvider || 'opencode' // сначала OpenCode (free/go), потом Claude
     });
 
     // Парсим результат

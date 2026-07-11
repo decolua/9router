@@ -27,6 +27,10 @@ export default {
     { id: "minimax-m2.5", name: "MiniMax M2.5" },
     { id: "glm-4.7-flash", name: "GLM 4.7 Flash" },
     { id: "qwen3.5", name: "Qwen3.5" },
+    { id: "glm-5.2:cloud", name: "GLM 5.2 Cloud" },
+    { id: "kimi-k2.7-code:cloud", name: "Kimi K2.7 Code Cloud" },
+    { id: "minimax-m3:cloud", name: "MiniMax M3 Cloud" },
+    { id: "nemotron-3-super:cloud", name: "Nemotron 3 Super Cloud" },
   ],
   serviceKinds: ["llm"],
   features: {

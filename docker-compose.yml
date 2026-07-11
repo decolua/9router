@@ -15,8 +15,8 @@ services:
       - NEXT_TELEMETRY_DISABLED=1
       # Ollama на хост-машине — доступ из контейнера
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
-      # Memory limit для Node
-      - NODE_OPTIONS=--max-old-space-size=2048 --enable-source-maps
+      # Memory limit для Node (4GB контейнер → 3.2GB куча)
+      - NODE_OPTIONS=--max-old-space-size=3276 --enable-source-maps
     env_file:
       # Ключи провайдеров из .env файла (если есть)
       - path: .env
@@ -25,9 +25,8 @@ services:
       # Для Linux: host.docker.internal → хост-машина
       - "host.docker.internal:host-gateway"
     volumes:
-      # Данные провайдеров, БД — персистентность между перезапусками
-      - 9router-data:/app/.next/standalone/data-home
-      - 9router-logs:/app/.9router/logs
+      # Данные БД (укажите свой путь или используйте именованный volume)
+      - 9router-data:/app/data
     restart: unless-stopped
     stop_grace_period: 30s
     healthcheck:
@@ -39,8 +38,8 @@ services:
     deploy:
       resources:
         limits:
-          memory: 2G
-          cpus: "2"
+          memory: 4G
+          cpus: "4"
         reservations:
           memory: 512M
           cpus: "1"

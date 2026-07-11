@@ -1,0 +1,38 @@
+export default {
+  id: "scaleway",
+  priority: 80,
+  hasFree: true,
+  alias: "scaleway",
+  display: {
+    name: "Scaleway GenAI",
+    icon: "cloud",
+    color: "#4F0599",
+    textIcon: "SW",
+    website: "https://console.scaleway.com/generative-api/models",
+    notice: {
+      signupUrl: "https://console.scaleway.com/generative-api/models",
+    },
+  },
+  category: "apikey",
+  transport: {
+    baseUrl: "https://api.scaleway.ai/v1/chat/completions",
+    validateUrl: "https://api.scaleway.ai/v1/models",
+  },
+  models: [
+    { id: "gemma-3-27b-it", name: "Gemma 3 27B" },
+    { id: "llama-3.3-70b-instruct", name: "Llama 3.3 70B" },
+    { id: "deepseek-v3.2", name: "DeepSeek V3.2" },
+    { id: "devstral-2-123b-instruct-2512", name: "Devstral 2 123B" },
+    { id: "gemma-4-26b-a4b-it", name: "Gemma 4 26B" },
+    { id: "glm-5.2", name: "GLM 5.2" },
+    { id: "gpt-oss-120b", name: "GPT OSS 120B" },
+    { id: "holo2-30b-a3b", name: "Holo2 30B" },
+    { id: "mistral-medium-3.5-128b", name: "Mistral Medium 3.5" },
+    { id: "mistral-small-3.2-24b-instruct-2506", name: "Mistral Small 3.2" },
+    { id: "qwen3-235b-a22b-instruct-2507", name: "Qwen3 235B" },
+    { id: "qwen3-coder-30b-a3b-instruct", name: "Qwen3 Coder 30B" },
+    { id: "qwen3.5-397b-a17b", name: "Qwen3.5 397B" },
+    { id: "qwen3.6-35b-a3b", name: "Qwen3.6 35B" },
+    { id: "voxtral-small-24b-2507", name: "Voxtral Small 24B" },
+  ],
+};

@@ -340,9 +340,9 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
     const modelsBase = connection.providerSpecificData?.baseUrl;
     if (!modelsBase) return { valid: false, error: "Missing base URL" };
     try {
-      const res = await fetchWithConnectionProxy(`${modelsBase.replace(/\/$/, "")}/models`, {
-        headers: { "Authorization": `Bearer ${connection.apiKey}` },
-      }, effectiveProxy);
+      const headers = {};
+      if (connection.apiKey) headers["Authorization"] = `Bearer ${connection.apiKey}`;
+      const res = await fetchWithConnectionProxy(`${modelsBase.replace(/\/$/, "")}/models`, { headers }, effectiveProxy);
       return { valid: res.ok, error: res.ok ? null : "Invalid API key or base URL" };
     } catch (err) {
       return { valid: false, error: err.message };
@@ -611,6 +611,22 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const res = await fetchWithConnectionProxy(`${baseUrls[connection.provider]}/models`, {
           headers: { Authorization: `Bearer ${connection.apiKey}` },
         }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+      }
+      case "sambanova": {
+        const res = await fetchWithConnectionProxy("https://api.sambanova.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+      }
+      case "scaleway": {
+        const res = await fetchWithConnectionProxy("https://api.scaleway.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+      }
+      case "ai21": {
+        const res = await fetchWithConnectionProxy("https://api.ai21.com/studio/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+      }
+      case "upstage": {
+        const res = await fetchWithConnectionProxy("https://api.upstage.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       default:

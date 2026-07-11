@@ -6,10 +6,61 @@ import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
+import { classifyTask, getTaskCategory } from "./taskClassifier.js";
+import { getSessionId, getOrInitSession, recordError, recordSuccess } from "./sessionRouter.js";
+import { estimateInputTokens } from "../utils/usageTracking.js";
 
-// Hard capabilities = input modalities; missing one drops request data (e.g. image
-// stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
 const HARD_CAPS = new Set(["vision", "pdf", "audioInput", "videoInput"]);
+
+function filterModelsByContext(models, neededTokens) {
+  if (!models || models.length === 0) return [null, []];
+  const withCaps = models.map(m => {
+    const str = typeof m === 'string' ? m : (m.model || m);
+    const caps = getCapabilitiesForModel(str.split('/')[0], str.split('/')[1] || '');
+    const ctx = caps?.contextWindow || 0;
+    const urgency = Math.max(0, 1 - neededTokens / Math.max(1, ctx * 0.8));
+    return { model: m, contextWindow: ctx, urgency, score: urgency * 0.7 + (Math.random() * 0.3) };
+  });
+
+  const sorted = withCaps.sort((a, b) => {
+    if (b.contextWindow !== a.contextWindow) return b.contextWindow - a.contextWindow;
+    return b.score - a.score;
+  });
+
+  const best = sorted[0].model;
+  const rest = sorted.slice(1).map(x => x.model);
+  return [best, rest];
+}
+
+function isContextOverflow(errorText, status) {
+  if (typeof errorText !== 'string') return false;
+  const lower = errorText.toLowerCase();
+  const codes = ['context', 'token', 'window', 'too long', 'exceed', 'length'];
+  const statusBad = [400, 413, 414];
+  return statusBad.includes(status) || codes.some(c => lower.includes(c)) || /context.*too.*large|token.*limit|window.*size|length.*limit/i.test(lower);
+}
+
+function boostByTaskFit(models, task, log) {
+  if (task === 'code' || task === 'refactoring') {
+    return models.sort((a, b) => {
+      const sa = (b.model || b).toString().toLowerCase();
+      const sb = (a.model || a).toString().toLowerCase();
+      const codePriority = ['coder', 'code', 'kimi', 'deepseek-coder', 'qwen-coder'].some(k => sa.includes(k));
+      const codeBoostB = ['coder', 'code', 'kimi', 'deepseek-coder', 'qwen-coder'].some(k => sb.includes(k));
+      return codePriority === codeBoostB ? 0 : (codePriority ? -1 : 1);
+    });
+  }
+  if (task === 'reasoning') {
+    return models.sort((a, b) => {
+      const sa = (b.model || b).toString().toLowerCase();
+      const sb = (a.model || a).toString().toLowerCase();
+      const reasonPriority = ['reasoning', 'deepseek-r', 'qwq', 'kimi-reasoning'].some(k => sa.includes(k));
+      const reasonBoostB = ['reasoning', 'deepseek-r', 'qwq', 'kimi-reasoning'].some(k => sb.includes(k));
+      return reasonPriority === reasonBoostB ? 0 : (reasonPriority ? -1 : 1);
+    });
+  }
+  return models;
+}
 
 // Prefixes used when flattening tool turns into plain prose for panel models.
 const TOOL_CALL_PREFIX = "[Called tools: ";
@@ -224,11 +275,45 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @param {string} [options.comboName] - Name of the combo (for round-robin tracking)
  * @param {string} [options.comboStrategy] - Strategy: "fallback" or "round-robin"
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
+ * @param {Object} [options.request] - Raw request object (for session detection)
  * @returns {Promise<Response>}
  */
-export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true }) {
-  // Apply rotation strategy if enabled
-  let rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
+export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true, request = null }) {
+  // ── Session-aware task classification ──
+  const task = classifyTask(body.messages || body.input || body.contents);
+  const taskCat = getTaskCategory(task);
+  const sessionId = request ? getSessionId(request) : null;
+  let sessionState = null;
+
+  if (sessionId) {
+    sessionState = getOrInitSession(sessionId, taskCat, models);
+    if (sessionState) {
+      log.info("COMBO", `session=${sessionId.slice(0, 12)} task=${taskCat} sticky=${sessionState.stickyModel} req#=${sessionState.requestCount}`);
+    }
+  }
+
+  // ── Context check: if > 70% of max context, try to switch to larger model ──
+  let contextAwareModels = [...models];
+  const estimatedTokens = estimateInputTokens(body);
+  if (estimatedTokens > 0) {
+    const [bestFit, allFit] = filterModelsByContext(contextAwareModels, estimatedTokens);
+    if (bestFit && bestFit !== contextAwareModels[0]) {
+      log.info("COMBO", `context ~${estimatedTokens}t, switching from ${contextAwareModels[0]} to ${bestFit} (larger window)`);
+      contextAwareModels = [bestFit, ...allFit.filter(m => m !== bestFit)];
+    }
+  }
+
+  // ── Apply task-based reordering ──
+  let rotatedModels = contextAwareModels;
+  if (sessionState?.stickyModel) {
+    const stickyIdx = rotatedModels.indexOf(sessionState.stickyModel);
+    if (stickyIdx > 0) {
+      const reordered = [rotatedModels[stickyIdx], ...rotatedModels.filter((_, i) => i !== stickyIdx)];
+      rotatedModels = reordered;
+    }
+  }
+
+  rotatedModels = getRotatedModels(rotatedModels, comboName, comboStrategy, comboStickyLimit);
 
   // Auto-switch: float models that satisfy the request's required capabilities to the front.
   if (autoSwitch) {
@@ -241,7 +326,12 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       rotatedModels = reordered;
     }
   }
-  
+
+  // ── Boost model score based on task type (code task → prefer coder models) ──
+  if (taskCat !== 'chat') {
+    rotatedModels = boostByTaskFit(rotatedModels, taskCat, log);
+  }
+
   let lastError = null;
   let earliestRetryAfter = null;
   let lastStatus = null;
@@ -252,10 +342,11 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
 
     try {
       const result = await handleSingleModel(body, modelStr);
-      
+
       // Success (2xx) - return response
       if (result.ok) {
         log.info("COMBO", `Model ${modelStr} succeeded`);
+        if (sessionId) recordSuccess(sessionId);
         return result;
       }
 
@@ -280,17 +371,23 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
       }
 
+      // ── Context overflow: immediately try next model instead of failing ──
+      if (isContextOverflow(errorText, result.status)) {
+        log.warn("COMBO", `Model ${modelStr} context overflow (~${estimatedTokens}t), trying next with larger window`);
+        if (sessionId) recordError(sessionId);
+        continue;
+      }
+
       // Check if should fallback to next model
       const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
 
       if (!shouldFallback) {
         log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
+        if (sessionId) recordError(sessionId);
         return result;
       }
 
       // For transient errors (503/502/504), wait for cooldown before falling through
-      // so a briefly-overloaded provider gets a chance to recover rather than being
-      // skipped immediately (fixes: combo falls through on transient 503)
       if (cooldownMs && cooldownMs > 0 && cooldownMs <= 5000 &&
           (result.status === 503 || result.status === 502 || result.status === 504)) {
         log.info("COMBO", `Model ${modelStr} transient ${result.status}, waiting ${cooldownMs}ms before next`);
@@ -301,18 +398,17 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       lastError = errorText || String(result.status);
       if (!lastStatus) lastStatus = result.status;
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
+      if (sessionId) recordError(sessionId);
     } catch (error) {
       // Catch unexpected exceptions to ensure fallback continues
       lastError = error.message || String(error);
       if (!lastStatus) lastStatus = 500;
       log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
+      if (sessionId) recordError(sessionId);
     }
   }
 
   // All models failed
-  // Use 503 (Service Unavailable) rather than 406 (Not Acceptable) — 406 implies
-  // the request itself is invalid, but here the providers are simply unavailable
-  // or have no active credentials. 503 is more accurate and retryable by clients.
   const allDisabled = lastError && lastError.toLowerCase().includes("no credentials");
   const status = allDisabled ? 503 : (lastStatus || 503);
   const msg = lastError || "All combo models unavailable";

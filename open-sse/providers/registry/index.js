@@ -94,6 +94,10 @@ import p91 from "./xiaomi-mimo.js";
 import p92 from "./xiaomi-tokenplan.js";
 import p93 from "./youcom.js";
 import p94 from "./routerai.js";
+import p95 from "./sambanova.js";
+import p96 from "./scaleway.js";
+import p97 from "./ai21.js";
+import p98 from "./upstage.js";
 
 export default [
   p0, p1, p2, p3, p4, p5, p6, p7, p8, p9,
@@ -105,5 +109,5 @@ export default [
   p60, p61, p62, p63, p64, p65, p66, p67, p68, p69,
   p70, p71, p72, p73, p74, p75, p76, p77, p78, p79,
   p80, p81, p82, p83, p84, p85, p86, p87, p88, p89,
-  p90, p91, p92, p93, p94
+  p90, p91, p92, p93, p94, p95, p96, p97, p98
 ];

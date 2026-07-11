@@ -91,6 +91,12 @@ class AgentPool {
   async _executeViaSSE(taskDef) {
     const { type, description, preferredProvider } = taskDef;
 
+    // Определяем есть ли изображения — если да, принудительно vision-модель
+    const hasImages = /https?:\/\/\S+\.(png|jpg|jpeg|gif|webp)/i.test(description || '') ||
+                     /data:image\/[a-z]+;base64/.test(description || '');
+    const effectiveProvider = hasImages ? 'opencode:minimax-m3' : (preferredProvider || 'auto');
+    if (hasImages) console.log(`[AgentPool] Images detected, using vision model ${effectiveProvider}`);
+
     // Определяем SSE endpoint по типу задачи
     let endpoint;
     switch (type) {
@@ -114,11 +120,13 @@ class AgentPool {
 
     // Строим запрос к внутреннему API
     const payload = {
-      model: preferredProvider || 'auto',
+      model: effectiveProvider,
       messages: [
         {
           role: 'user',
-          content: description
+          content: hasImages && !description.match(/data:image/) 
+            ? [{ type: 'text', text: description }]
+            : description
         }
       ],
       stream: false,

@@ -12,6 +12,13 @@ import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/sha
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
 
+// Normalize a model entry (string or object) to a displayable model string
+function normalizeModel(m) {
+  if (typeof m === "string") return m;
+  if (typeof m === "object" && m.model) return m.provider ? `${m.provider}/${m.model}` : m.model;
+  return String(m);
+}
+
 export default function CombosPage() {
   const [combos, setCombos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -259,12 +266,15 @@ function ComboCard({ combo, modelCaps = {}, activeProviders = [], copied, onCopy
               {combo.models.length === 0 ? (
                 <span className="text-xs text-text-muted italic">No models</span>
               ) : (
-                combo.models.slice(0, 3).map((model, index) => (
-                  <code key={index} className="inline-flex items-center gap-1 rounded bg-black/5 px-1.5 py-0.5 font-mono text-xs text-text-muted dark:bg-white/5">
-                    <span>{model}</span>
-                    <CapacityBadges caps={modelCaps[model]} />
-                  </code>
-                ))
+                combo.models.slice(0, 3).map((model, index) => {
+                  const modelStr = normalizeModel(model);
+                  return (
+                    <code key={index} className="inline-flex items-center gap-1 rounded bg-black/5 px-1.5 py-0.5 font-mono text-xs text-text-muted dark:bg-white/5">
+                      <span>{modelStr}</span>
+                      <CapacityBadges caps={modelCaps[modelStr]} />
+                    </code>
+                  );
+                })
               )}
               {combo.models.length > 3 && (
                 <span className="text-[10px] text-text-muted">+{combo.models.length - 3} more</span>
@@ -454,7 +464,7 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
 function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindFilter = null }) {
   // Initialize state with combo values - key prop on parent handles reset on remount
   const [name, setName] = useState(combo?.name || "");
-  const [models, setModels] = useState(combo?.models || []);
+  const [models, setModels] = useState((combo?.models || []).map(m => normalizeModel(m)));
   const [showModelSelect, setShowModelSelect] = useState(false);
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");

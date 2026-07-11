@@ -75,3 +75,13 @@ gitbook/README.md
 
 # Refactor backup reference (do not bundle/lint)
 open-sse.old/
+
+# Kilo
+.kilo/
+
+# Temp scripts
+_*.js
+_*.py
+
+# Docker data volume
+/data-home/

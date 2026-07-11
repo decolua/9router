@@ -36,14 +36,19 @@ class TaskRouter {
    * Главный метод — зароутить задачу с выбором модели через ModelRouter
    */
   async route(taskDef, agent) {
-    const { type } = taskDef;
+    const { type, description } = taskDef;
     const strategy = this._getStrategy(type);
+
+    // Определяем есть ли изображения в задаче
+    const hasImages = /https?:\/\/\S+\.(png|jpg|jpeg|gif|webp)/i.test(description || '') ||
+                     /data:image\/[a-z]+;base64/.test(description || '');
 
     // Выбираем модель через ModelRouter
     const selectedModel = await modelRouter.selectModel(type, {
       priority: taskDef.priority,
       estimatedTokens: taskDef.estimatedTokens,
-      modelHint: taskDef.model_hint
+      modelHint: taskDef.model_hint,
+      hasImages,
     });
 
     if (selectedModel) {

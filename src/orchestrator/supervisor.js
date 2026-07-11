@@ -25,6 +25,15 @@ import { agentPool } from './agentPool.js';
 import { modelRouter } from './modelRouter.js';
 import { getSettings, updateSettings } from '@/lib/db/repos/settingsRepo.js';
 import { fetchWithTimeout } from '@/shared/utils/fetchWithTimeout.js';
+import {
+  hasOpenCodeGoKey,
+  getRecommendedModel,
+  getEndpoint,
+  getHeaders,
+  callOpenCodeModel,
+} from './opencodeConnect.js';
+import { getAdapter } from '@/lib/db/driver.js';
+import { stringifyJson, parseJson } from '@/lib/db/helpers/jsonCol.js';
 
 /**
  * Получить Ollama base URL из env
@@ -118,6 +127,32 @@ class Supervisor {
         orchSettings.reviewEndpoint = getOllamaBaseUrl();
         orchSettings.reviewModel = 'auto';
       }
+
+      // Динамический выбор бесплатной модели, если supervisorModel == 'auto'
+      // или если в настройках есть модель, но это платная, а есть free
+      if (orchSettings.supervisorModel === 'auto' || orchSettings.supervisorModel === 'deepseek/deepseek-v4-flash') {
+        const bestFree = modelRouter.getBestFreeModel('chat');
+        if (bestFree) {
+          orchSettings.supervisorProvider = bestFree.provider || 'opencode';
+          orchSettings.supervisorModel = bestFree.id;
+          orchSettings.supervisorApiKey = '';
+          orchSettings.supervisorEndpoint = orchSettings.supervisorEndpoint || 'https://opencode.ai/zen/v1';
+          console.log(`[Supervisor] Auto-selected free supervisor model: ${bestFree.provider}/${bestFree.id}`);
+        }
+      }
+
+      // То же для review модели
+      if (orchSettings.reviewModel === 'auto' || orchSettings.reviewModel === 'deepseek/deepseek-v4-flash') {
+        const bestFreeReview = modelRouter.getBestFreeModel('code_review') || modelRouter.getBestFreeModel('chat');
+        if (bestFreeReview) {
+          orchSettings.reviewProvider = bestFreeReview.provider || 'opencode';
+          orchSettings.reviewModel = bestFreeReview.id;
+          orchSettings.reviewApiKey = '';
+          orchSettings.reviewEndpoint = orchSettings.reviewEndpoint || 'https://opencode.ai/zen/v1';
+          console.log(`[Supervisor] Auto-selected free review model: ${bestFreeReview.provider}/${bestFreeReview.id}`);
+        }
+      }
+
       this._settingsCache = orchSettings;
       this._settingsCacheTime = Date.now();
       return orchSettings;
@@ -254,16 +289,27 @@ ${options.context ? `Дополнительный контекст: ${options.co
   }
 
   /**
-   * Вызывает старшую модель через Ollama или OpenAI-совместимый API
+   * Вызывает старшую модель через Ollama, OpenCode или OpenAI-совместимый API
    */
   async _callSupervisor(prompt) {
     const settings = await this._getSettings();
+    const hasOpenCodeGoKey = process.env.PROVIDER_OPENCODE_KEY && process.env.PROVIDER_OPENCODE_KEY.trim();
+    
     const isOllama = settings.supervisorProvider === 'ollama' || !settings.supervisorApiKey;
     const endpoint = (settings.supervisorEndpoint || DEFAULT_ORCHESTRATOR_SETTINGS.supervisorEndpoint).replace(/\/$/, '');
     const apiKey = settings.supervisorApiKey;
     let model = settings.supervisorModel || DEFAULT_ORCHESTRATOR_SETTINGS.supervisorModel;
     const maxTokens = settings.supervisorMaxTokens || DEFAULT_ORCHESTRATOR_SETTINGS.supervisorMaxTokens;
     const temperature = settings.supervisorTemperature ?? DEFAULT_ORCHESTRATOR_SETTINGS.supervisorTemperature;
+
+    // OpenCode Go предпочтительнее Ollama для Supervisor (если есть ключ)
+    if (!isOllama && model === 'auto' && hasOpenCodeGoKey) {
+      const recommended = getRecommendedModel('chat', { complexity: 'high', requiresQuality: true }, true);
+      if (recommended) {
+        model = recommended.model;
+        console.log(`[Supervisor] Auto-selected OpenCode Go model: ${model}`);
+      }
+    }
 
     // Ollama + auto → первая доступная модель
     if (isOllama && (model === 'auto' || !model)) {
@@ -276,7 +322,26 @@ ${options.context ? `Дополнительный контекст: ${options.co
       }
     }
 
+    // Если модель OpenCode — используем OpenCodeConnect
+    const modelIsOpenCode = model && !isOllama && settings.supervisorProvider !== 'openrouter' && (
+      model.includes('north-mini') || model.includes('deepseek') ||
+      model.includes('glm') || model.includes('kimi') ||
+      model.includes('minimax') || model.includes('qwen') ||
+      model.includes('mimo') || model.includes('nemotron') ||
+      model.includes('big-pickle')
+    );
+
     try {
+      if (modelIsOpenCode) {
+        const isFreeModel = model.endsWith('-free') || model === 'big-pickle' || model === 'north-mini-code-free';
+        const provider = isFreeModel ? 'opencode' : (hasOpenCodeGoKey ? 'opencode-go' : 'opencode');
+        console.log(`[Supervisor] Using OpenCode ${provider}/${model}`);
+        return await callOpenCodeModel(provider, model, [
+          { role: 'system', content: 'Ты — Supervisor Agent. Отвечай строго в JSON формате.' },
+          { role: 'user', content: prompt }
+        ], { maxTokens, temperature, timeoutMs: this.SUPERVISOR_TIMEOUT_MS });
+      }
+
       if (isOllama) {
         const ollamaUrl = endpoint || getOllamaBaseUrl();
         const response = await fetchWithTimeout(`${ollamaUrl}/api/chat`, {

@@ -12,6 +12,7 @@
 
 import { getSettings } from '@/lib/db/repos/settingsRepo.js';
 import { fetchWithTimeout } from '@/shared/utils/fetchWithTimeout.js';
+import { modelRouter } from './modelRouter.js';
 
 function getOllamaBaseUrl() {
   return (process.env.OLLAMA_BASE_URL || 'http://localhost:11434').replace(/\/$/, '');

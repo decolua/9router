@@ -12,6 +12,10 @@ import { supervisor } from '@/orchestrator/supervisor.js';
 import { modelRouter } from '@/orchestrator/modelRouter.js';
 import { updateSettings, getSettings } from '@/lib/localDb.js';
 import { getAdapter } from '@/lib/db/driver.js';
+import { startBackgroundScanner, getScannerStatus } from '@/orchestrator/backgroundScanner.js';
+import { modelScanner } from '@/orchestrator/modelScanner.js';
+import { getComboByName, updateCombo } from '@/lib/localDb.js';
+import { getCapabilitiesForModel } from 'open-sse/providers/capabilities.js';
 
 /**
  * POST /api/orchestrator
@@ -76,6 +80,51 @@ export async function POST(request) {
  */
 export async function GET() {
   try {
+    // Auto-start background scanner if not running (lazy init on first dashboard load)
+    try {
+      const bgStatus = getScannerStatus();
+      if (!bgStatus.scheduled && !bgStatus.running) {
+        startBackgroundScanner({
+          intervalMs: 10 * 60 * 1000,
+          log: console,
+          immediate: false,
+          onScan: async () => {
+            const { models, config } = await modelScanner.scanAll();
+            const ok = models.filter(m => m.status === 'ok');
+
+            if (config.modelGroups) {
+              try { await updateSettings({ modelScannerConfig: { ...config, timestamp: new Date().toISOString() } }); } catch {}
+            }
+
+            try {
+              const freeMix = await getComboByName('free-mix');
+              if (freeMix) {
+                const comboModels = ok
+                  .sort((a, b) => {
+                    if (a.tier !== b.tier) return a.tier === 'free' ? -1 : 1;
+                    return (b.avgScore || 0) - (a.avgScore || 0);
+                  })
+                  .map(m => {
+                    const caps = getCapabilitiesForModel(m.provider, m.model);
+                    return {
+                      provider: m.provider, connectionId: m.connectionId, model: m.model,
+                      priority: Math.round((1 - (m.avgScore || 0)) * 10) + 1,
+                      contextWindow: caps?.contextWindow || 0,
+                      taskScore: { code: (m.scores?.code || 0), chat: (m.scores?.chat || 0), reasoning: (m.scores?.reasoning || 0) },
+                    };
+                  });
+                await updateCombo(freeMix.id, { models: comboModels, kind: 'llm' });
+              }
+            } catch {}
+            return { ok: ok.length, total: models.length };
+          },
+        });
+        console.log('[orchestrator] Background scanner auto-started');
+      }
+    } catch (e) {
+      console.warn('[orchestrator] Background scanner init skipped:', e.message);
+    }
+
     const settings = await supervisor.getEffectiveSettings();
     const activeWorkflows = supervisor.getActiveWorkflows();
     const allWorkflows = supervisor.getAllWorkflows();
@@ -90,6 +139,43 @@ export async function GET() {
       // не фатально — используем дефолты
     }
 
+    // Восстанавливаем полную конфигурацию ModelRouter после сканирования
+    try {
+      const dbSettings = await getSettings();
+      if (dbSettings.modelScannerConfig && typeof dbSettings.modelScannerConfig === 'object') {
+        const saved = dbSettings.modelScannerConfig;
+        if (saved.modelGroups) {
+          modelRouter.updateConfig({
+            strategy: saved.strategy,
+            modelGroups: saved.modelGroups,
+            switching: saved.switching,
+          });
+
+          // Populate _scannerCache so getBestFreeModel works immediately
+          const allModels = [];
+          for (const group of Object.values(saved.modelGroups)) {
+            for (const m of (group.models || [])) {
+              allModels.push({
+                model: m.id, provider: m.provider,
+                tier: m.tier || (m.costPer1K === 0 ? 'free' : 'paid'),
+                avgScore: m.priority ? Math.max(0, 1 - (m.priority - 1) / 10) : 0.5,
+                costPer1K: m.costPer1K || 0,
+              });
+            }
+          }
+          if (allModels.length > 0) {
+            modelRouter.setScannerResults(allModels.map(m => ({
+              ...m, status: 'ok',
+              scores: { chat: m.avgScore },
+              capabilities: ['chat'],
+            })));
+          }
+        }
+      }
+    } catch (e) {
+      // не фатально
+    }
+
     const modelConfig = modelRouter.getConfig();
 
     // Load last ping results from SQLite
@@ -99,6 +185,37 @@ export async function GET() {
       if (typeof db.get === 'function') {
         const row = db.get("SELECT value FROM kv WHERE scope=? AND key=?", ['orchestrator', 'pingLastResults']);
         if (row) lastPingResults = JSON.parse(row.value);
+      }
+    } catch { /* not fatal */ }
+
+    // Load last scan results from SQLite
+    let lastScanResults = null;
+    try {
+      const db = await getAdapter();
+      if (typeof db.get === 'function') {
+        const row = db.get("SELECT value FROM kv WHERE scope=? AND key=?", ['orchestrator', 'scanLastResults']);
+        if (row) {
+          const raw = JSON.parse(row.value);
+          // Normalize old format (models array) to new format (summary/ranking)
+          if (raw.models && !raw.summary) {
+            raw.summary = {
+              total: raw.models?.length || 0,
+              ok: raw.models?.filter(m => m.status === 'ok')?.length || 0,
+              failed: raw.models?.filter(m => m.status !== 'ok')?.length || 0,
+              topModel: raw.config?.supervisor?.model || null,
+              topScore: raw.config?.supervisor?.score || 0,
+            };
+            raw.ranking = (raw.models || [])
+              .filter(m => m.status === 'ok')
+              .map(m => ({
+                model: m.model, provider: m.provider,
+                avgScore: m.avgScore, latencyMs: m.latencyMs,
+                tier: m.tier, capabilities: m.capabilities,
+                scores: m.scores, costPer1K: m.costPer1K,
+              }));
+          }
+          lastScanResults = raw;
+        }
       }
     } catch { /* not fatal */ }
 
@@ -125,6 +242,7 @@ export async function GET() {
       activeWorkflows: activeWorkflows.length,
       totalWorkflows: allWorkflows.length,
       lastPingResults,
+      lastScanResults,
       supervisorModel: settings.supervisorModel,
       supervisorEndpoint: settings.supervisorEndpoint,
       settings: {

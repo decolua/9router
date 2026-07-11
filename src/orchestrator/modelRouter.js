@@ -17,6 +17,12 @@
  */
 
 import { fetchWithTimeout } from '@/shared/utils/fetchWithTimeout.js';
+import {
+  OPENCODE_GO_MODELS,
+  discoverOpenCodeFreeModels,
+  hasOpenCodeGoKey,
+  setFreeModelsCache,
+} from './opencodeConnect.js';
 
 // Состояние round-robin счётчиков для каждой группы
 const roundRobinCounters = new Map();
@@ -46,7 +52,7 @@ function classifyModel(modelName) {
   }
 
   // Vision-модели
-  if (name.includes('vision') || name.includes('llava') || name.includes('bakllava') || name.includes('moondream')) {
+  if (name.includes('vision') || name.includes('llava') || name.includes('bakllava') || name.includes('moondream') || name.includes('vl')) {
     groups.push('vision');
   }
 
@@ -198,7 +204,7 @@ class ModelRouter {
         manageFreeModels: true,
         includeOllama: true,
         freeModelTimeout: 90000,
-        maxFreeModelsPerGroup: 5,
+        maxFreeModelsPerGroup: 20,
         freeModelCooldownSeconds: 5,
         autoEnableAfterError: true
       },
@@ -243,6 +249,10 @@ class ModelRouter {
 
     // Флаг: были ли модели уже обнаружены
     this._discoveryDone = false;
+
+    // OpenCode модели (статичные + будут обновлены при discovery)
+    this._opencodeFreeModels = [];
+    this._opencodeGoAvailable = !!(process.env.PROVIDER_OPENCODE_KEY || '').trim();
 
     // Автодискавери при старте (не блокирующий)
     this._scheduleInitialDiscovery();
@@ -309,7 +319,165 @@ class ModelRouter {
     }
 
     this._discoveryDone = true;
-    this._log('info', `Discovery complete: ${discovered.length} models found, distributed across groups`);
+    this._log('info', `Discovery complete: ${discovered.length} Ollama models found, distributed across groups`);
+
+    // После Ollama discovery — заполняем OpenCode модели
+    await this._discoverAndPopulateOpenCode();
+
+    // LM Studio discovery
+    const lmStudioModels = await this.discoverLMStudioModels();
+    for (const model of lmStudioModels) {
+      const groups = model.groups;
+      for (const groupName of groups) {
+        const group = this.config.modelGroups[groupName];
+        if (!group) continue;
+        const exists = group.models.some(m => m.id === model.id && m.provider === model.provider);
+        if (!exists) {
+          group.models.push(model);
+          this._log('info', `Auto-added LM Studio model ${model.id} to group "${groupName}"`);
+        }
+      }
+    }
+    if (lmStudioModels.length > 0) {
+      this._log('info', `LM Studio: ${lmStudioModels.length} models added`);
+    }
+
+    // OpenRouter discovery (только топ-модели, чтобы не засорять)
+    const orModels = await this.discoverOpenRouterModels();
+    const topORModels = orModels.filter(m =>
+      m.id.includes('gpt-4o') || m.id.includes('claude-sonnet-4') ||
+      m.id.includes('gemini-2.5') || m.id.includes('deepseek') ||
+      m.id.includes('qwen') || m.id.includes('llama-4')
+    ).slice(0, 20);
+    for (const model of topORModels) {
+      const groups = classifyModel(model.id);
+      for (const groupName of groups) {
+        const group = this.config.modelGroups[groupName];
+        if (!group) continue;
+        const exists = group.models.some(m => m.id === model.id && m.provider === model.provider);
+        if (!exists) {
+          group.models.push(model);
+        }
+      }
+    }
+    if (topORModels.length > 0) {
+      this._log('info', `OpenRouter: ${topORModels.length} top models added`);
+    }
+  }
+
+  /**
+   * Обнаружить модели LM Studio
+   */
+  async discoverLMStudioModels() {
+    const all = [];
+    const urls = ['http://127.0.0.1:1234', 'http://host.docker.internal:1234'];
+    for (const baseUrl of urls) {
+      try {
+        const res = await fetch(`${baseUrl}/v1/models`, { signal: AbortSignal.timeout(3000) });
+        if (res.ok) {
+          const data = await res.json();
+          const models = data.data || data.models || [];
+          for (const m of models) {
+            const modelId = m.id || m.name || m.model;
+            if (!modelId) continue;
+            all.push({
+              id: modelId,
+              name: modelId,
+              provider: 'lm-studio',
+              source: 'local',
+              priority: 3,
+              costPer1K: 0,
+              tier: 'free',
+              maxTokens: 16384,
+              rateLimit: 0,
+              groups: classifyModel(modelId),
+            });
+          }
+          this._log('info', `LM Studio: discovered ${models.length} models from ${baseUrl}`);
+        }
+      } catch (err) {
+        this._log('info', `LM Studio not reachable at ${baseUrl}: ${err.message}`);
+      }
+    }
+    return all;
+  }
+
+  /**
+   * Обнаружить модели OpenRouter
+   */
+  async discoverOpenRouterModels() {
+    const all = [];
+    try {
+      const res = await fetch('https://openrouter.ai/api/v1/models', { signal: AbortSignal.timeout(5000) });
+      if (res.ok) {
+        const data = await res.json();
+        const models = data.data || data.models || [];
+        for (const m of models) {
+          const modelId = m.id;
+          if (!modelId) continue;
+          all.push({
+            id: modelId,
+            name: m.name || modelId,
+            provider: 'openrouter',
+            source: 'cloud',
+            priority: 3,
+            costPer1K: 0.001,
+            tier: 'paid',
+            maxTokens: m.context_length || 32768,
+            rateLimit: 30,
+            groups: classifyModel(modelId),
+          });
+        }
+        this._log('info', `OpenRouter: discovered ${all.length} models`);
+      }
+    } catch (err) {
+      this._log('info', `OpenRouter not reachable: ${err.message}`);
+    }
+    return all;
+  }
+
+  /**
+   * Обнаружить модели OpenCode и добавить в группы
+   */
+  async _discoverAndPopulateOpenCode() {
+    // OpenCode Free — динамический список + fallback на известные
+    const freeModels = await discoverOpenCodeFreeModels();
+    setFreeModelsCache(freeModels);
+    this._opencodeFreeModels = freeModels;
+
+    const allModels = [...freeModels];
+
+    // OpenCode Go — только если есть ключ
+    if (this._opencodeGoAvailable) {
+      allModels.push(...OPENCODE_GO_MODELS);
+    }
+
+    if (allModels.length === 0) return;
+
+    let added = 0;
+    for (const model of allModels) {
+      const groups = model.groups || classifyModel(model.id);
+      for (const groupName of groups) {
+        const group = this.config.modelGroups[groupName];
+        if (!group) continue;
+
+        const exists = group.models.some(m => m.id === model.id && m.provider === model.provider);
+        if (!exists) {
+          group.models.push(model);
+          added++;
+        }
+      }
+    }
+
+    // Обновить fallback, если модели появились
+    for (const group of Object.values(this.config.modelGroups)) {
+      if (group.models.length > 0 && !group.fallbackModel) {
+        const sorted = [...group.models].sort((a, b) => a.priority - b.priority);
+        group.fallbackModel = sorted[0].id;
+      }
+    }
+
+    this._log('info', `OpenCode: added ${added} models (${freeModels.length} free)`);
   }
 
   /**
@@ -332,6 +500,99 @@ class ModelRouter {
   }
 
   /**
+   * Полный сброс всей статистики ModelRouter
+   */
+  resetAll() {
+    this.dailyUsage = {
+      date: new Date().toDateString(),
+      costs: {},
+      tokens: {},
+      requests: {},
+      errors: {},
+      totalCost: 0,
+      totalTokens: 0,
+      totalRequests: 0,
+      totalErrors: 0
+    };
+    this.hourlyUsage = {
+      currentHour: new Date().getHours(),
+      costs: {},
+      totalCost: 0
+    };
+    this.modelStatus = new Map();
+    this.rotationHistory = [];
+    this.requestTimestamps = [];
+    this.consecutiveFreeRequests = 0;
+    this.lastRotationTime = Date.now();
+    roundRobinCounters.clear();
+    this._log('info', 'All stats reset');
+  }
+
+  /**
+   * Проверить смену дня — сбросить dailyUsage если начался новый день
+   */
+  _checkDailyRollover() {
+    const today = new Date().toDateString();
+    if (this.dailyUsage.date !== today) {
+      this._log('info', `Daily rollover: ${this.dailyUsage.date} → ${today}`);
+    this.dailyUsage = {
+      date: new Date().toDateString(),
+      costs: {},
+      tokens: {},
+      requests: {},
+      errors: {},
+      totalCost: 0,
+      totalTokens: 0,
+      totalRequests: 0,
+      totalErrors: 0
+    };
+    }
+  }
+
+  /**
+   * Проверить смену часа — сбросить hourlyUsage
+   */
+  _checkHourlyRollover() {
+    const currentHour = new Date().getHours();
+    if (this.hourlyUsage.currentHour !== currentHour) {
+      this.hourlyUsage = {
+        currentHour,
+        costs: {},
+        totalCost: 0
+      };
+    }
+  }
+
+  /**
+   * Проверить глобальные лимиты стоимости и токенов
+   */
+  _checkGlobalLimits() {
+    const costLimit = this.config.globalCostLimitPerDay;
+    const tokenLimit = this.config.globalTokenLimitPerDay;
+
+    if (costLimit > 0 && this.dailyUsage.totalCost >= costLimit) {
+      return { allowed: false, reason: `Daily cost limit $${costLimit} reached ($${this.dailyUsage.totalCost.toFixed(4)})` };
+    }
+    if (tokenLimit > 0 && this.dailyUsage.totalTokens >= tokenLimit) {
+      return { allowed: false, reason: `Daily token limit ${Intl.NumberFormat().format(tokenLimit)} reached (${Intl.NumberFormat().format(this.dailyUsage.totalTokens)})` };
+    }
+
+    return { allowed: true };
+  }
+
+  /**
+   * Проверить rate limiting (глобальный RPM)
+   */
+  _isRateLimited() {
+    const rl = this.config.rateLimiting;
+    if (!rl?.enabled) return false;
+
+    const oneMinuteAgo = Date.now() - 60000;
+    this.requestTimestamps = this.requestTimestamps.filter(ts => ts > oneMinuteAgo);
+    return this.requestTimestamps.length >= (rl.globalRequestsPerMinute || 100);
+  }
+
+  /**
    * Получить следующую модель для указанной группы
    */
   getNextModel(groupType, context = {}) {
@@ -339,6 +600,48 @@ class ModelRouter {
     if (!group || !group.enabled) {
       this._log('warn', `Group ${groupType} not found or disabled`);
       return null;
+    }
+
+    // Check daily rollover and global limits
+    this._checkDailyRollover();
+    this._checkHourlyRollover();
+    const limitCheck = this._checkGlobalLimits();
+    if (!limitCheck.allowed) {
+      this._log('warn', `Global limit reached: ${limitCheck.reason}`);
+      return null;
+    }
+
+    // Check rate limiting
+    if (this._isRateLimited()) {
+      this._log('warn', `Rate limit exceeded (${this.requestTimestamps.length}/${this.config.rateLimiting.globalRequestsPerMinute} RPM)`);
+      return null;
+    }
+
+    // Check max consecutive free requests
+    const maxFree = this.config.switching?.maxConsecutiveFreeRequests ?? 10;
+    if (this.consecutiveFreeRequests >= maxFree) {
+      this._log('info', `Max consecutive free requests (${maxFree}) reached, forcing paid model`);
+      const paid = group.models.filter(m => m.costPer1K > 0 && this._isModelAvailable(m.id));
+      if (paid.length > 0) {
+        this.consecutiveFreeRequests = 0;
+        const model = paid.sort((a, b) => a.priority - b.priority)[0];
+        this._log('info', `Selected paid model ${model.id} after free streak`);
+        return model;
+      }
+    }
+
+    // Если есть изображения — принудительно vision-модель
+    const hasImages = context.images || context.hasImages;
+    if (hasImages) {
+      const visionGroup = this.config.modelGroups.vision;
+      if (visionGroup && visionGroup.enabled) {
+        const visionModels = visionGroup.models.filter(m => this._isModelAvailable(m.id));
+        if (visionModels.length > 0) {
+          const sorted = visionModels.sort((a, b) => a.priority - b.priority);
+          this._log('info', `Images detected → forced vision model: ${sorted[0].id}`);
+          return sorted[0];
+        }
+      }
     }
 
     // Фильтруем доступные модели
@@ -381,6 +684,31 @@ class ModelRouter {
     }
 
     this._log('info', `Selected model ${model.id} for ${groupType} (strategy: ${strategy})`);
+
+    // Track consecutive free requests
+    if (model.costPer1K === 0) {
+      this.consecutiveFreeRequests++;
+    } else {
+      this.consecutiveFreeRequests = 0;
+    }
+
+    // Track request timestamp for rate limiting
+    this.requestTimestamps.push(Date.now());
+    // Keep only last minute of timestamps
+    const oneMinuteAgo = Date.now() - 60000;
+    this.requestTimestamps = this.requestTimestamps.filter(ts => ts > oneMinuteAgo);
+
+    // Record rotation history
+    this.rotationHistory.push({
+      modelId: model.id,
+      provider: model.provider,
+      group: groupType,
+      strategy,
+      costPer1K: model.costPer1K,
+      priority: model.priority,
+      timestamp: Date.now()
+    });
+
     return model;
   }
 
@@ -515,11 +843,29 @@ class ModelRouter {
    * Записать использование модели
    */
   recordUsage(modelId, tokens, cost = 0) {
+    this._checkDailyRollover();
+    this._checkHourlyRollover();
+
     this.dailyUsage.requests[modelId] = (this.dailyUsage.requests[modelId] || 0) + 1;
+    this.dailyUsage.totalRequests++;
     this.dailyUsage.tokens[modelId] = (this.dailyUsage.tokens[modelId] || 0) + tokens;
     this.dailyUsage.totalTokens += tokens;
     this.dailyUsage.costs[modelId] = (this.dailyUsage.costs[modelId] || 0) + cost;
     this.dailyUsage.totalCost += cost;
+
+    // Track hourly costs
+    this.hourlyUsage.costs[modelId] = (this.hourlyUsage.costs[modelId] || 0) + cost;
+    this.hourlyUsage.totalCost += cost;
+
+    // Track request timestamp for rate limiting
+    this.requestTimestamps.push(Date.now());
+
+    // Track consecutive free requests
+    if (cost === 0) {
+      this.consecutiveFreeRequests++;
+    } else {
+      this.consecutiveFreeRequests = 0;
+    }
     
     // Сброс ошибок при успешном использовании
     const status = this.modelStatus.get(modelId);
@@ -530,6 +876,20 @@ class ModelRouter {
     } else {
       this.modelStatus.set(modelId, { available: true, lastUsed: Date.now() });
     }
+  }
+
+  /**
+   * Сообщить о качестве ответа модели.
+   * Если кракозяблы — модель уходит в cooldown и доступна следующая.
+   * Возвращает true если текст битый.
+   */
+  reportResponseQuality(modelId, responseText) {
+    if (!responseText || !modelId) return false;
+    const isBad = this.checkResponseQuality(modelId, responseText);
+    if (isBad) {
+      this._log('info', `[Quality] ${modelId} → blocked (gibberish), selecting fallback`);
+    }
+    return isBad;
   }
 
   /**
@@ -550,16 +910,29 @@ class ModelRouter {
    * Получить статистику
    */
   getStats() {
-    return {
+    const stats = {
       dailyUsage: this.dailyUsage,
+      hourlyUsage: this.hourlyUsage,
       modelStatus: Object.fromEntries(this.modelStatus),
       rotationHistory: this.rotationHistory.slice(-50),
       lastRoulette: this.lastRouletteResults ? {
         time: this.lastRouletteTime,
         results: this.lastRouletteResults
       } : null,
-      config: this.config
+      config: this.config,
+      totalRequests: this.dailyUsage.totalRequests || Object.values(this.dailyUsage.requests).reduce((a, b) => a + b, 0),
+      totalTokens: this.dailyUsage.totalTokens,
+      totalCost: this.dailyUsage.totalCost,
+      totalErrors: this.dailyUsage.totalErrors,
+      rateLimitActive: this.config.rateLimiting?.enabled,
+      rpmCurrent: this.requestTimestamps.filter(ts => ts > Date.now() - 60000).length,
+      consecutiveFreeRequests: this.consecutiveFreeRequests
     };
+
+    // Map modelStatus → modelHealth for dashboard compatibility
+    stats.modelHealth = stats.modelStatus;
+
+    return stats;
   }
 
   /**
@@ -588,21 +961,24 @@ class ModelRouter {
     // Тестовый промпт — короткий, чтобы быстро получить ответ
     const testPrompt = 'Respond with only the word "ok".';
 
-    // Пингуем все модели параллельно, но с лимитом (3 одновременно)
+    // Пингуем только Ollama-модели через Ollama API.
+    // Остальные провайдеры пропускаем — для них нужны отдельные эндпоинты.
+    const ollamaModels = modelList.filter(m => m.provider === 'ollama');
+
+    // Конкурентность: 3 Ollama модели одновременно
     const concurrencyLimit = 3;
     const chunks = [];
-    for (let i = 0; i < modelList.length; i += concurrencyLimit) {
-      chunks.push(modelList.slice(i, i + concurrencyLimit));
+    for (let i = 0; i < ollamaModels.length; i += concurrencyLimit) {
+      chunks.push(ollamaModels.slice(i, i + concurrencyLimit));
     }
 
     for (const chunk of chunks) {
-      const promises = chunk.map(model => this._pingModel(model, testPrompt));
+      const promises = chunk.map(model => this._pingOllamaModel(model, testPrompt));
       const chunkResults = await Promise.allSettled(promises);
       
       for (const result of chunkResults) {
         if (result.status === 'fulfilled') {
           results.push(result.value);
-          // Обновляем статус модели
           if (result.value.success) {
             this.markModelAvailable(result.value.modelId);
           } else {
@@ -616,6 +992,21 @@ class ModelRouter {
             latency: 0
           });
         }
+      }
+    }
+
+    // Для не-Ollama моделей добавляем запись "skipped"
+    for (const model of modelList) {
+      if (model.provider !== 'ollama') {
+        results.push({
+          modelId: model.id,
+          groups: model.groups,
+          provider: model.provider,
+          success: false,
+          latency: 0,
+          status: 0,
+          error: `Skipped — not an Ollama model (provider: ${model.provider})`,
+        });
       }
     }
 
@@ -641,27 +1032,30 @@ class ModelRouter {
   }
 
   /**
-   * Пинг одной модели через Ollama API
+   * Пинг одной Ollama-модели через Ollama API
    */
-  async _pingModel(model, testPrompt) {
+  async _pingOllamaModel(model, testPrompt) {
     const startTime = Date.now();
     const modelId = model.id;
-    const ollamaUrl = this.config.ollama?.baseUrl || getOllamaBaseUrl();
+    const isCloud = modelId.includes(':cloud') || modelId.includes('-cloud');
+    const cleanModelId = modelId.replace(/:(cloud|-cloud)$/i, '');
+    const ollamaUrl = isCloud
+      ? (process.env.OLLAMA_CLOUD_URL || 'https://ollama.com')
+      : (this.config.ollama?.baseUrl || getOllamaBaseUrl());
     
     try {
-      // Формируем запрос к Ollama API (локальный) с таймаутом
       const response = await fetchWithTimeout(`${ollamaUrl}/api/chat`, {
         timeoutMs: 20000,
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: modelId,
+          model: cleanModelId,
           messages: [
             { role: 'user', content: testPrompt }
           ],
           stream: false,
           options: {
-            num_predict: 10, // минимум токенов для быстрого ответа
+            num_predict: 10,
             temperature: 0
           }
         })
@@ -715,39 +1109,67 @@ class ModelRouter {
   /**
    * Авто-обнаружение моделей в Ollama
    */
-  async discoverOllamaModels() {
-    const ollamaUrl = this.config.ollama?.baseUrl || getOllamaBaseUrl();
+async discoverOllamaModels() {
+    const all = [];
+    // Discover local models
     try {
-      const response = await fetchWithTimeout(`${ollamaUrl}/api/tags`, {
-        timeoutMs: 10000
-      });
-      
-      if (!response.ok) {
-        this._log('warn', `Ollama discovery failed: HTTP ${response.status}`);
-        return [];
+      const baseUrl = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
+      const res = await fetch(`${baseUrl}/api/tags`, { signal: AbortSignal.timeout(5000) });
+      if (res.ok) {
+        const data = await res.json();
+        for (const m of (data.models || [])) {
+          const source = m.name.endsWith('-cloud') ? 'cloud' : 'local';
+          const priority = inferPriority(m.name);
+          const maxTokens = inferMaxTokens(m.name);
+          const rateLimit = inferRateLimit(m.name);
+          const groups = classifyModel(m.name);
+          all.push({
+            id: m.name,
+            name: m.name,
+            provider: 'ollama',
+            source,
+            priority,
+            costPer1K: 0,
+            tier: 'free',
+            maxTokens,
+            rateLimit,
+            groups,
+          });
+        }
       }
+    } catch { /* ignore */ }
 
-      const data = await response.json();
-      const models = (data.models || []).map(m => ({
-        id: m.name,
-        provider: 'ollama-local',
-        priority: inferPriority(m.name),
-        costPer1K: 0.0,
-        maxTokens: inferMaxTokens(m.name, m.details),
-        rateLimit: inferRateLimit(m.name),
-        cooldownMinutes: 0
-      }));
-
-      if (models.length > 0) {
-        this.config.ollama.lastDiscovery = Date.now();
-        this._log('info', `Ollama discovery: found ${models.length} models: ${models.map(m => m.id).join(', ')}`);
+    // Discover cloud models from Ollama Cloud API
+    try {
+      const cloudUrl = 'https://ollama.com/api/tags';
+      const cloudRes = await fetch(cloudUrl, { signal: AbortSignal.timeout(5000) });
+      if (cloudRes.ok) {
+        const data = await cloudRes.json();
+        for (const m of (data.models || [])) {
+          const name = (m.name || m.id || m.model);
+          if (!name) continue;
+          const modelId = name.includes(':cloud') ? name : `${name}:cloud`;
+          const priority = inferPriority(modelId);
+          const maxTokens = inferMaxTokens(modelId);
+          const rateLimit = inferRateLimit(modelId);
+          const groups = classifyModel(name);
+          all.push({
+            id: modelId,
+            name: modelId,
+            provider: 'ollama',
+            source: 'cloud',
+            priority,
+            costPer1K: 0,
+            tier: 'free',
+            maxTokens,
+            rateLimit,
+            groups,
+          });
+        }
       }
+    } catch { /* ignore */ }
 
-      return models;
-    } catch (err) {
-      this._log('warn', `Ollama discovery failed: ${err.message}`);
-      return [];
-    }
+    return all;
   }
 
   /**
@@ -765,6 +1187,59 @@ class ModelRouter {
       return chatGroup.models[0];
     }
     return null;
+  }
+
+  /**
+   * Детект кракозяблов в тексте ответа модели.
+   * Если доля нечитаемых Unicode-символов выше порога — текст битый.
+   */
+  _hasGibberish(text) {
+    if (!text || text.length < 5) return false;
+    const badRanges = [
+      [0x0600, 0x06FF], // Arabic
+      [0x0400, 0x04FF], // Cyrillic supplementary
+      [0x0E00, 0x0E7F], // Thai
+      [0x0F00, 0x0FFF], // Tibetan
+      [0x2000, 0x206F], // General Punctuation
+      [0xFFF0, 0xFFFF], // Specials
+    ];
+    let bad = 0;
+    for (const ch of text) {
+      const code = ch.charCodeAt(0);
+      for (const [lo, hi] of badRanges) {
+        if (code >= lo && code <= hi) { bad++; break; }
+      }
+    }
+    return bad > 0 && (bad / text.length) > 0.15;
+  }
+
+  /**
+   * Проверить ответ модели на кракозяблы и временно заблокировать её если битая.
+   * Возвращает true — если текст битый и модель ушла в cooldown.
+   */
+  checkResponseQuality(modelId, responseText) {
+    if (!responseText || !modelId) return false;
+    if (!this._hasGibberish(responseText)) return false;
+
+    const status = this.modelStatus.get(modelId) || {};
+    const now = Date.now();
+    status.gibberishCount = (status.gibberishCount || 0) + 1;
+    status.lastGibberish = now;
+    status.lastError = 'gibberish output detected';
+    status.lastErrorTime = now;
+
+    // После 2-х кракозяблов подряд — cooldown 5 минут
+    if (status.gibberishCount >= 2) {
+      status.available = false;
+      status.cooldownUntil = now + 300000;
+      this.modelStatus.set(modelId, status);
+      this._log('warn', `Model ${modelId} blacklisted (gibberish x${status.gibberishCount}), cooldown 5min`);
+      return true;
+    }
+
+    this.modelStatus.set(modelId, status);
+    this._log('warn', `Model ${modelId} produced gibberish (x${status.gibberishCount})`);
+    return false;
   }
 
   /**
@@ -832,6 +1307,135 @@ class ModelRouter {
     } catch (err) {
       this._log('warn', `restoreFromSettings failed: ${err.message}`);
     }
+  }
+
+  /**
+   * Получить лучшую модель для задачи с приоритетом free
+   */
+  getBestModelForTask(taskType, options) {
+    const opts = options || {};
+    const preferFree = opts.preferFree !== false;
+    const group = this.config.modelGroups[taskType];
+    if (!group || !group.enabled || group.models.length === 0) return null;
+
+    const available = group.models.filter(m => this._isModelAvailable(m.id));
+    if (available.length === 0) {
+      if (group.fallbackModel) return this._getModelById(group.fallbackModel, taskType);
+      return group.models[0] || null;
+    }
+
+    const sorted = [...available].sort((a, b) => {
+      if (preferFree) {
+        const aFree = a.tier === 'free' || a.costPer1K === 0;
+        const bFree = b.tier === 'free' || b.costPer1K === 0;
+        if (aFree && !bFree) return -1;
+        if (!aFree && bFree) return 1;
+      }
+      return a.priority - b.priority;
+    });
+
+    return sorted[0];
+  }
+
+  /**
+   * Сохранить результаты сканера моделей, обновить конфиг и группы
+   */
+  setScannerResults(scoredModels) {
+    if (!scoredModels || scoredModels.length === 0) return;
+
+    const working = scoredModels.filter(m => m.status === 'ok' && m.avgScore > 0);
+
+    this._scannerCache = {
+      timestamp: Date.now(),
+      models: scoredModels,
+      total: scoredModels.length,
+      working: working.length,
+      bestFree: working
+        .filter(m => m.tier === 'free' || m.costPer1K === 0)
+        .sort((a, b) => (b.avgScore || 0) - (a.avgScore || 0))[0] || null,
+      bestPaid: working
+        .filter(m => m.tier !== 'free' && m.costPer1K > 0)
+        .sort((a, b) => (b.avgScore || 0) - (a.avgScore || 0))[0] || null
+    };
+
+    // Обновление групп моделей в конфиге ModelRouter
+    const groups = { chat: [], code: [], code_review: [], vision: [], web_search: [], embeddings: [] };
+    for (const m of working) {
+      const modelEntry = {
+        id: m.model,
+        provider: m.provider || 'opencode',
+        priority: Math.round((1 - (m.avgScore || 0)) * 10) + 1,
+        costPer1K: m.costPer1K || 0,
+        tier: m.tier || (m.costPer1K === 0 ? 'free' : 'paid'),
+      };
+      const caps = m.capabilities || ['chat'];
+      for (const cap of caps) {
+        if (groups[cap]) {
+          const exists = groups[cap].some(e => e.id === modelEntry.id && e.provider === modelEntry.provider);
+          if (!exists) groups[cap].push(modelEntry);
+        }
+      }
+      if (!caps.includes('vision') && !caps.includes('embeddings')) {
+        const exists = groups.web_search.some(e => e.id === modelEntry.id && e.provider === modelEntry.provider);
+        if (!exists) groups.web_search.push(modelEntry);
+      }
+    }
+
+    for (const [name, models] of Object.entries(groups)) {
+      const sorted = models
+        .filter((m, i, arr) => arr.findIndex(x => x.id === m.id && x.provider === m.provider) === i)
+        .sort((a, b) => {
+          if (a.tier !== b.tier) return a.tier === 'free' ? -1 : 1;
+          return a.priority - b.priority;
+        });
+
+      if (this.config.modelGroups[name]) {
+        this.config.modelGroups[name].models = sorted;
+        this.config.modelGroups[name].fallbackModel = sorted[0]?.id || null;
+        this.config.modelGroups[name].enabled = sorted.length > 0;
+      }
+    }
+
+    this._log('info', `Scanner results applied: ${working.length} working models in ${Object.keys(groups).length} groups`);
+  }
+
+  /**
+   * Получить кеш результатов сканера
+   */
+  getScannerCache() {
+    return this._scannerCache || null;
+  }
+
+  /**
+   * Получить лучшую бесплатную модель для задачи
+   */
+  getBestFreeModel(taskType) {
+    if (!taskType) taskType = 'chat';
+    const model = this.getBestModelForTask(taskType, { preferFree: true });
+    if (model && (model.tier === 'free' || model.costPer1K === 0)) return model;
+    if (this._scannerCache?.bestFree) {
+      const best = this._scannerCache.bestFree;
+      return { id: best.model, provider: best.provider, tier: 'free' };
+    }
+    // Fallback: scan ALL groups for any free model
+    for (const [name, group] of Object.entries(this.config.modelGroups)) {
+      if (!group.enabled || !group.models.length) continue;
+      const freeModel = group.models.find(m => m.tier === 'free' || m.costPer1K === 0);
+      if (freeModel) return freeModel;
+    }
+    return null;
+  }
+
+  /**
+   * Сообщить о качестве ответа модели. Если кракозяблы — cooldown.
+   */
+  reportResponseQuality(modelId, responseText) {
+    if (!responseText || !modelId) return false;
+    const isBad = this.checkResponseQuality(modelId, responseText);
+    if (isBad) {
+      this._log('info', `[Quality] ${modelId} → blocked (gibberish), selecting fallback`);
+    }
+    return isBad;
   }
 }
 

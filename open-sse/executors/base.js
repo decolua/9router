@@ -97,6 +97,8 @@ export class BaseExecutor {
   }
 
   async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
+    // Strip internal routing suffixes before upstream API call
+    const cleanModel = model.replace(/:(cloud|-cloud)$/i, '');
     const fallbackCount = this.getFallbackCount();
     let lastError = null;
     let lastStatus = 0;
@@ -124,8 +126,8 @@ export class BaseExecutor {
     };
 
     for (let urlIndex = 0; urlIndex < fallbackCount; urlIndex++) {
-      const url = this.buildUrl(model, stream, urlIndex, credentials);
-      const transformedBody = this.transformRequest(model, body, stream, credentials);
+      const url = this.buildUrl(cleanModel, stream, urlIndex, credentials);
+      const transformedBody = this.transformRequest(cleanModel, body, stream, credentials);
       const headers = this.buildHeaders(credentials, stream);
 
       if (!retryAttemptsByUrl[urlIndex]) retryAttemptsByUrl[urlIndex] = 0;

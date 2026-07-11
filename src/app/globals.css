@@ -38,6 +38,7 @@
   /* Borders */
   --color-border: #e5e7eb;
   --color-border-subtle: #f1f1f3;
+  --color-bg-hover: rgba(0, 0, 0, 0.04);
 
   /* Text */
   --color-text: #0a0a0a;
@@ -94,6 +95,7 @@
 
   --color-border: #333333;
   --color-border-subtle: #2a2a2a;
+  --color-bg-hover: rgba(255, 255, 255, 0.05);
 
   --color-text: #ededed;
   --color-text-main: #ededed;
@@ -164,6 +166,12 @@ select {
   --color-text-muted: var(--color-text-muted);
   --color-text-subtle: var(--color-text-subtle);
   --color-accent: var(--color-brand-500);
+  --color-accent-main: var(--color-brand-500);
+  --color-accent-hover: var(--color-brand-600);
+  --color-bg-main: var(--color-bg);
+  --color-bg-hover: var(--color-bg-hover);
+  --color-bg-subtle: var(--color-bg-alt);
+  --color-bg-card: var(--color-surface);
   --color-danger: var(--color-danger);
   --color-success: var(--color-success);
   --color-warning: var(--color-warning);

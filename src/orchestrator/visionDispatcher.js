@@ -18,7 +18,7 @@ import { fetchWithTimeout } from '@/shared/utils/fetchWithTimeout.js';
 
 class VisionDispatcher {
   constructor() {
-    this.supportedProviders = ['openai', 'anthropic', 'google'];
+    this.supportedProviders = ['opencode', 'ollama', 'openai', 'anthropic', 'google'];
     this.confidenceThreshold = 0.5;
   }
 
@@ -42,13 +42,15 @@ class VisionDispatcher {
     }
 
     // Определяем какие модели использовать
-    const modelsToUse = this._selectModels(taskDef);
+    const modelsToUse = this._selectModels(taskDef, images);
     
     // Отправляем на анализ параллельно разным моделям
     const results = await Promise.allSettled(
-      modelsToUse.map(model => 
-        this._analyzeWithModel(model, images, description)
-      )
+      modelsToUse.map(model => {
+        if (model.provider === 'ollama') return this._analyzeWithOllama(model, images, description);
+        if (model.provider === 'opencode') return this._analyzeWithOpenCode(model, images, description);
+        return this._analyzeWithModel(model, images, description);
+      })
     );
 
     // Собираем успешные результаты
@@ -115,15 +117,31 @@ class VisionDispatcher {
   /**
    * Выбрать модели для анализа
    */
-  _selectModels(taskDef) {
+  _selectModels(taskDef, images = []) {
     const models = [];
 
     if (taskDef.preferredProvider && taskDef.preferredProvider !== 'auto') {
       models.push({ provider: taskDef.preferredProvider, model: this._getModelForProvider(taskDef.preferredProvider) });
     } else {
-      // Используем все доступные vision-модели
+      // Если есть изображения — впервую очередь OpenCode vision-модели
+      if (images.length > 0) {
+        const key = process.env.PROVIDER_OPENCODE_KEY || '';
+        if (key.trim()) {
+          // minimax-m3 поддерживает vision
+          models.push({ provider: 'opencode', model: 'minimax-m3', format: 'claude' });
+        }
+      }
+
+      // Локальная Ollama vision-модель всегда доступна
+      if (images.length > 0) {
+        models.push({ provider: 'ollama', model: 'qwen2.5vl:7b' });
+      }
+
+      // Остальные провайдеры
       for (const provider of this.supportedProviders) {
-        models.push({ provider, model: this._getModelForProvider(provider) });
+        if (provider !== 'opencode' && provider !== 'ollama') {
+          models.push({ provider, model: this._getModelForProvider(provider) });
+        }
       }
     }
 
@@ -137,9 +155,75 @@ class VisionDispatcher {
     const modelMap = {
       openai: 'gpt-4o',
       anthropic: 'claude-3-5-sonnet-20241022',
-      google: 'gemini-2.5-pro'
+      google: 'gemini-2.5-pro',
+      ollama: 'qwen2.5vl:7b',
     };
     return modelMap[provider] || 'gpt-4o';
+  }
+
+  /**
+   * Отправить изображения на анализ через Ollama (локальная vision-модель)
+   */
+  async _analyzeWithOllama(modelConfig, images, prompt) {
+    const { model } = modelConfig;
+    const ollamaUrl = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
+
+    const base64Images = images
+      .filter(img => img.type === 'base64')
+      .map(img => img.data.replace(/^data:image\/\w+;base64,/, ''));
+
+    // Формируем сообщение для Ollama (передаём URL изображения или base64)
+    const userContent = { role: 'user', content: prompt };
+    const messages = [userContent];
+
+    // Ollama поддерживает изображения через поле images
+    const body = {
+      model,
+      messages,
+      stream: false,
+      options: { temperature: 0.3, num_predict: 1024 },
+    };
+
+    // Если есть URL изображения — скачиваем, если base64 — передаём напрямую
+    const urlImage = images.find(img => img.type === 'url');
+    if (urlImage) {
+      try {
+        const imgRes = await fetch(urlImage.url, { signal: AbortSignal.timeout(10000) });
+        if (imgRes.ok) {
+          const buf = await imgRes.arrayBuffer();
+          const b64 = Buffer.from(buf).toString('base64');
+          body.images = [b64];
+        }
+      } catch { /* fallback: пробуем без изображения */ }
+    } else if (base64Images.length > 0) {
+      body.images = base64Images;
+    }
+
+    try {
+      const response = await fetchWithTimeout(`${ollamaUrl}/api/chat`, {
+        method: 'POST',
+        timeoutMs: 60_000,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text().catch(() => '');
+        throw new Error(`Ollama vision (${model}): HTTP ${response.status} ${errText.substring(0, 200)}`);
+      }
+
+      const data = await response.json();
+
+      return {
+        provider: 'ollama',
+        model,
+        analysis: data.message?.content || JSON.stringify(data),
+        confidence: 0.6,
+        tokensUsed: data.eval_count || 0,
+      };
+    } catch (err) {
+      throw new Error(`Ollama vision (${model}): ${err.message}`);
+    }
   }
 
   /**

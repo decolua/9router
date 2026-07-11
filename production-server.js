@@ -30,6 +30,14 @@ if (!fs.existsSync(serverScript)) {
 }
 
 try {
+  // Ensure static files exist in standalone
+  const staticSrc = path.join(__dirname, '.next', 'static');
+  const staticDst = path.join(standaloneDir, '.next', 'static');
+  if (fs.existsSync(staticSrc) && !fs.existsSync(staticDst)) {
+    fs.cpSync(staticSrc, staticDst, { recursive: true, force: true });
+    console.log('[production-server] Static files copied to standalone');
+  }
+
   // Меняем рабочую директорию на .next/standalone
   process.chdir(standaloneDir);
   console.log('[production-server] Changed working directory to: ' + standaloneDir);

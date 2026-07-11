@@ -50,13 +50,8 @@ if (process[GUARD_MARKER]) {
     const ts = new Date().toISOString();
     const stack = err?.stack || err?.message || String(err);
     const line = `[${ts}] [${level}] [${origin}]\n${stack}\n---\n`;
-    try {
-      fs.appendFileSync(LOG_FILE, line, 'utf8');
-    } catch {
-      // ignore
-    }
-    // Also stderr so user sees in terminal
-    process.stderr.write(`\n[ProcessGuard] ${level} (${origin}): ${err?.message || err}\n`);
+    try { fs.appendFileSync(LOG_FILE, line, 'utf8'); } catch {}
+    try { process.stderr.write(`\n[ProcessGuard] ${level} (${origin}): ${err?.message || err}\n`); } catch {}
   }
 
   process.on('unhandledRejection', (reason, promise) => {
@@ -75,9 +70,9 @@ if (process[GUARD_MARKER]) {
     const promiseInfo = promise ? '[Promise detected]' : '[No promise reference]';
     writeCrashLog('UNHANDLED_REJECTION', reason, `unhandledRejection ${promiseInfo}`);
 
-    // Don't exit вЂ” process continues to serve other requests
+    // Don't exit — process continues to serve other requests
     // Log to stderr so PM2 captures it
-    process.stderr.write(`[ProcessGuard] unhandledRejection suppressed. Use pm2 logs to inspect.\n`);
+    try { process.stderr.write(`[ProcessGuard] unhandledRejection suppressed. Use pm2 logs to inspect.\n`); } catch {}
   });
 
   process.on('uncaughtException', (err) => {
@@ -93,25 +88,24 @@ if (process[GUARD_MARKER]) {
 
     writeCrashLog('UNCAUGHT_EXCEPTION', err, 'uncaughtException');
 
-    // UncaughtException в†’ РїСЂРѕС†РµСЃСЃ РІ РЅРµСЃС‚Р°Р±РёР»СЊРЅРѕРј СЃРѕСЃС‚РѕСЏРЅРёРё.
-    // Р”Р°С‘Рј PM2 РІСЂРµРјСЏ Р·Р°Р»РѕРіРёСЂРѕРІР°С‚СЊ, РїРѕС‚РѕРј РІС‹С…РѕРґРёРј
-    process.stderr.write(`[ProcessGuard] FATAL: ${err.message}\n`);
-    process.stderr.write(`[ProcessGuard] PM2 will auto-restart. Waiting 2s for log flush...\n`);
+    if (err?.code === 'EPIPE') {
+      return;
+    }
+
+    try { process.stderr.write(`[ProcessGuard] FATAL: ${err.message}\n`); } catch {}
+    try { process.stderr.write(`[ProcessGuard] PM2 will auto-restart. Waiting 2s for log flush...\n`); } catch {}
 
     setTimeout(() => {
       process.exit(1);
     }, 2000).unref();
   });
 
-  // Graceful shutdown handler вЂ” PM2 sends SIGINT on stop/restart
   process.on('SIGINT', () => {
-    process.stderr.write('[ProcessGuard] SIGINT received вЂ” graceful shutdown\n');
-    // PM2 will forcefully kill after kill_timeout (10s), so we let existing requests complete
-    // Don't setImmediate/process.exit here вЂ” let Next.js handle cleanup
+    try { process.stderr.write('[ProcessGuard] SIGINT received — graceful shutdown\n'); } catch {}
   });
 
   process.on('SIGTERM', () => {
-    process.stderr.write('[ProcessGuard] SIGTERM received вЂ” graceful shutdown\n');
+    try { process.stderr.write('[ProcessGuard] SIGTERM received — graceful shutdown\n'); } catch {}
   });
 
   // Expose stats globally for debugging

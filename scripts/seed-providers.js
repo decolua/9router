@@ -72,6 +72,10 @@ const providers = [
   { provider: 'cloudflare-ai',name: 'Cloudflare',key: env.PROVIDER_CLOUDFLARE_KEY, key2: env.PROVIDER_CLOUDFLARE_KEY2 },
   { provider: '9router',   name: '9Router',   key: env.PROVIDER_9ROUTER_KEY },
   { provider: 'vercel-ai-gateway',name: 'Vercel',key: env.PROVIDER_VERCEL_KEY },
+  { provider: 'xai',       name: 'xAI (Grok)', key: env.PROVIDER_XAI_KEY },
+  { provider: 'groq',      name: 'Groq',       key: env.PROVIDER_GROQ_KEY },
+  { provider: 'ai21',      name: 'AI21 Jamba', key: env.PROVIDER_AI21_KEY },
+  { provider: 'upstage',   name: 'Upstage',    key: env.PROVIDER_UPSTAGE_KEY },
 ].filter(p => p.key);
 
 if (providers.length === 0) {

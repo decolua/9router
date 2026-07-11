@@ -20,7 +20,7 @@ module.exports = {
     cwd: __dirname,
 
     // Режим production
-    env: {
+    env_production: {
       NODE_ENV: 'production',
       PORT: 20128,
       HOSTNAME: '0.0.0.0',
@@ -32,7 +32,7 @@ module.exports = {
     interpreter_args: [
       '--max-old-space-size=2048',
       '--enable-source-maps',
-    ].join(' '),
+    ],
 
     // Авторестарты
     autorestart: true,

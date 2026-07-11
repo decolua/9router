@@ -129,7 +129,8 @@ export async function handleChat(request, clientRawRequest = null) {
       comboName: modelStr,
       comboStrategy,
       comboStickyLimit,
-      ruBypassEnabled: settings.ruBypassEnabled === true
+      ruBypassEnabled: settings.ruBypassEnabled === true,
+      request,
     });
   }
 
@@ -182,7 +183,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         log,
         comboName: modelStr,
         comboStrategy,
-        comboStickyLimit
+        comboStickyLimit,
+        request,
       });
     }
     log.warn("CHAT", "Invalid model format", { model: modelStr });

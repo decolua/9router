@@ -7,7 +7,7 @@
  */
 
 import { NextResponse } from 'next/server';
-import { getProviderConnections } from '@/lib/localDb';
+import { getProviderConnections, getProviderNodes } from '@/lib/localDb';
 import { getAdapter } from '@/lib/db/driver.js';
 
 export const dynamic = 'force-dynamic';
@@ -20,6 +20,7 @@ const PROVIDER_ENDPOINTS = {
   cloudflare: 'https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1',
   '9router': `http://localhost:${process.env.PORT || 20128}/api/v1`,
   ollama: 'https://api.ollama.com',
+  'ollama-cloud': 'https://ollama.com',
   'ollama-local': 'http://localhost:11434',
   openrouter: 'https://openrouter.ai/api/v1',
 };
@@ -44,10 +45,10 @@ function normalizeProvider(name) {
   for (const p of knownProviders) {
     if (lower === p || lower.startsWith(p + '-') || lower.startsWith(p + '_')) return p;
   }
+  if (lower.startsWith('opencode-go')) return 'opencode-go';
   
-  // Try to extract base provider from openai-compatible-chat-xxx
-  const openaiMatch = lower.match(/^(openai-compatible-chat)/);
-  if (openaiMatch) return 'openai';
+  // OpenAI-compatible узлы не маппим в 'openai' — реальный провайдер определяется по endpoint
+  if (lower.startsWith('openai-compatible')) return lower;
   
   // Fallback: take first part before hyphens/underscores
   const base = lower.split(/[-_]/)[0];
@@ -63,7 +64,7 @@ const PROVIDER_API_PATTERNS = {
   google: 'https://generativelanguage.googleapis.com/v1beta',
 };
 
-// Free models to test per provider — ТОЛЬКО БЕСПЛАТНЫЕ
+// Free models to test per provider — динамически расширяется
 const TEST_MODELS = {
   routerai: [
     'deepseek/deepseek-v4-flash',
@@ -71,39 +72,31 @@ const TEST_MODELS = {
   opencode: [
     'north-mini-code-free',
     'deepseek-v4-flash-free',
+    'big-pickle',
+    'mimo-v2.5-free',
     'nemotron-3-ultra-free',
+    'qwen3.6-plus',
+    'minimax-m3',
   ],
-  cloudflare: [
-    '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
-    '@cf/meta/llama-3.1-8b-instruct-fp8-fast',
-    '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',
-    '@cf/qwen/qwen2.5-coder-32b-instruct',
+  'opencode-go': [
+    'deepseek-v4-flash',
+    'deepseek-v4-pro',
+    'kimi-k2.7-code',
+    'glm-5.2',
+    'minimax-m3',
+    'qwen3.7-max',
+    'mimo-v2.5',
   ],
   '9router': [
     'routerai/deepseek/deepseek-v4-flash',
   ],
-  'lm-studio': [
-    'gemma-4-12b-coder-fable5-composer2.5-v1:2',
-    'google/gemma-4-e4b',
-    'llama-3.2-3b-instruct',
-  ],
   ollama: [], // will be discovered dynamically (local + cloud)
-  kiro: [
-    'claude-sonnet-4.5',
-    'glm-5',
-    'MiniMax-M2.5',
-  ],
-  vertex: [
-    'gemini-3.1-pro-preview',
-    'gemini-3-flash-preview',
-  ],
   openrouter: [],
 };
 
 // Default test models for free-only providers
 const DEFAULT_TEST_MODELS = {
-  openai: ['gpt-4o-mini-free'],
-  openrouter: ['openai/gpt-4o-mini', 'deepseek/deepseek-chat', 'meta-llama/llama-3.3-70b-instruct'],
+  openrouter: ['openai/gpt-4o-mini', 'deepseek/deepseek-chat', 'meta-llama/llama-3.3-70b-instruct', 'qwen/qwq-32b'],
   groq: ['llama-3.3-70b-versatile', 'mixtral-8x7b-32768'],
   google: ['gemini-2.0-flash', 'gemini-2.5-flash-preview'],
 };
@@ -111,13 +104,14 @@ const DEFAULT_TEST_MODELS = {
 const TEST_PROMPT = 'Ответь одним словом: работаю';
 
 // Free providers priority chain (free first, paid fallback last)
-const FREE_PRIORITY_CHAIN = ['opencode', 'ollama', 'openai', 'routerai'];
+const FREE_PRIORITY_CHAIN = ['opencode', 'ollama', 'openai', 'routerai', 'openai-compatible'];
 
 // Persistent failure tracking — survives module reloads via global
 if (!global._pingFailureCount) global._pingFailureCount = new Map();
 const failureCount = global._pingFailureCount;
 
 function shouldSkipModel(modelId) {
+  if (!modelId) return true;
   const failCount = failureCount.get(modelId) || 0;
   return failCount >= 3; // skip after 3 consecutive failures
 }
@@ -144,14 +138,32 @@ async function discoverOllamaModels() {
       for (const m of (data.models || [])) all.push({ name: m.name, source: 'local' });
     }
   } catch { /* ignore */ }
-  const CLOUD = [
-    'minimax-m3:cloud', 'nemotron-3-super:cloud', 'gemma4:31b-cloud',
-    'gpt-oss:120b:cloud', 'minimax-m2.5:cloud',
-  ];
-  for (const m of CLOUD) {
-    if (!all.find(x => x.name === m)) all.push({ name: m, source: 'cloud' });
-  }
+  try {
+    const cloudRes = await fetch('https://ollama.com/api/tags', { signal: AbortSignal.timeout(5000) });
+    if (cloudRes.ok) {
+      const data = await cloudRes.json();
+      for (const m of (data.models || [])) {
+        const name = m.name || m.id || m.model;
+        if (name) all.push({ name: name.includes(':cloud') ? name : `${name}:cloud`, source: 'cloud' });
+      }
+    }
+  } catch { /* ignore */ }
   return all;
+}
+
+async function discoverOpenAIModels(baseUrl) {
+  try {
+    const url = `${baseUrl.replace(/\/+$/, '')}/models`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (res.ok) {
+      const data = await res.json();
+      const models = data.data || data.models || [];
+      if (Array.isArray(models)) {
+        return models.map(m => m.id || m.name || m.model).filter(Boolean);
+      }
+    }
+  } catch { /* ignore */ }
+  return [];
 }
 
 async function pingProvider(provider, apiKey, endpoint, model) {
@@ -162,11 +174,18 @@ async function pingProvider(provider, apiKey, endpoint, model) {
     let url, headers, body;
 
     if (provider === 'ollama') {
-      // Ollama uses its own API
-      const baseUrl = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
+      // Ollama uses its own API — local vs cloud endpoint
+      const isCloud = model.includes(':cloud') || model.includes('-cloud');
+      const baseUrl = isCloud
+        ? (process.env.OLLAMA_CLOUD_URL || 'https://ollama.com')
+        : (process.env.OLLAMA_BASE_URL || 'http://localhost:11434');
       url = `${baseUrl}/api/generate`;
       headers = { 'Content-Type': 'application/json' };
-      body = JSON.stringify({ model, prompt: TEST_PROMPT, stream: false, options: { num_predict: 20 } });
+      if (isCloud) {
+        const cloudKey = apiKey || process.env.PROVIDER_OLLAMA_KEY || '';
+        if (cloudKey) headers['Authorization'] = `Bearer ${cloudKey}`;
+      }
+      body = JSON.stringify({ model: model.replace(/:(cloud|-cloud)$/i, ''), prompt: TEST_PROMPT, stream: false, options: { num_predict: 20 } });
     } else {
       // OpenAI-compatible
       const base = endpoint || PROVIDER_ENDPOINTS[provider] || '';
@@ -177,7 +196,7 @@ async function pingProvider(provider, apiKey, endpoint, model) {
       url = `${base}/chat/completions`;
       headers = {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
+        ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}),
       };
       body = JSON.stringify({
         model,
@@ -259,6 +278,63 @@ export async function POST() {
     // Discover Ollama models
     const ollamaModels = await discoverOllamaModels();
 
+    // Discover models from providerNodes (LM Studio, OpenAI-compatible, etc.)
+    // Если endpoint ноды совпадает с существующим connection — используем его TEST_MODELS,
+    // а не полный discovery (чтобы не тестить 500 моделей с 401).
+    const selfBaseUrl = `http://localhost:${process.env.PORT || 20128}`;
+    const nodes = await getProviderNodes();
+    const nodeModels = [];
+    for (const node of nodes) {
+      if (node.type === 'openai-compatible' || node.type === 'anthropic-compatible') {
+        const baseUrl = (node.baseUrl || '').replace(/\/+$/, '');
+        if (!baseUrl) continue;
+
+        // Пропускаем селф-тест самой 9Router
+        if (baseUrl === selfBaseUrl || baseUrl === `${selfBaseUrl}/api/v1`) {
+          console.log(`[ping-all] ⏭ Skipping self-test node "${node.name}"`);
+          continue;
+        }
+
+        // Ищем matching connection по endpoint
+        const matchingConn = connections.find(c => {
+          const ep = (c.endpoint || c.providerSpecificData?.baseUrl || c.baseUrl || '').replace(/\/+$/, '');
+          return ep === baseUrl;
+        });
+
+        let discovered;
+        if (matchingConn) {
+          const normProvider = normalizeProvider(matchingConn.provider);
+          discovered = TEST_MODELS[matchingConn.provider] || TEST_MODELS[normProvider] || [];
+          if (discovered.length === 0) {
+            // Для кастомных openai-compatible нод (LM Studio) не используем DEFAULT_TEST_MODELS
+            // а делаем полный discovery реальных моделей из /models эндпоинта
+            if (matchingConn.provider && matchingConn.provider.startsWith('openai-compatible')) {
+              console.log(`[ping-all] ℹ️  Custom OpenAI-compatible node "${node.name}" — doing full discovery from /models`);
+              discovered = await discoverOpenAIModels(baseUrl);
+            } else {
+              discovered = DEFAULT_TEST_MODELS[normProvider] || [];
+            }
+          }
+          console.log(`[ping-all] ℹ️  ProviderNode "${node.name}" matches connection "${matchingConn.provider}" — using ${discovered.length} models`);
+        } else {
+          // Незнакомый endpoint — полное discovery (LM Studio, etc.)
+          discovered = await discoverOpenAIModels(baseUrl);
+        }
+
+        for (const model of discovered) {
+          nodeModels.push({
+            provider: node.type,
+            providerDisplay: node.name || baseUrl,
+            connectionId: node.id,
+            connectionName: node.name || baseUrl,
+            apiKey: node.apiKey || '',
+            endpoint: baseUrl,
+            model,
+          });
+        }
+      }
+    }
+
     // Build test list
     const tests = [];
 
@@ -276,6 +352,20 @@ export async function POST() {
 
       // Get models: specific test models for known providers, or default models
       let models = TEST_MODELS[conn.provider] || TEST_MODELS[normalizedProvider];
+      if (!models || models.length === 0) {
+        // Для OpenCode Go, если нет specific моделей, пробуем наши
+        if (normalizedProvider === 'opencode' || normalizedProvider === 'ocg') {
+          models = TEST_MODELS[normalizedProvider] || [];
+          if (models.length === 0) {
+            // Fallback to known good models
+            if (normalizedProvider === 'opencode') {
+              models = ['north-mini-code-free', 'deepseek-v4-flash-free'];
+            } else if (normalizedProvider === 'ocg') {
+              models = ['deepseek-v4-flash', 'deepseek-v4-pro'];
+            }
+          }
+        }
+      }
       // Match custom nodes by connection name
       if (!models || models.length === 0) {
         const nameKey = (conn.name || '').toLowerCase().replace(/[\s_-]+/g, '-');
@@ -317,7 +407,7 @@ export async function POST() {
 
       for (const model of models) {
         tests.push({
-          provider: normalizedProvider, // используем нормализованное имя для отправки запроса
+          provider: normalizedProvider,
           connectionId: conn.id,
           connectionName: conn.name,
           apiKey,
@@ -325,9 +415,32 @@ export async function POST() {
           model,
         });
       }
+
+      // OpenCode Go: если есть ключ, добавляем платные модели
+      if (normalizedProvider === 'opencode' && (process.env.PROVIDER_OPENCODE_KEY || '').trim()) {
+        const goModels = TEST_MODELS['opencode-go'] || [];
+        const goEndpoint = 'https://opencode.ai/zen/go/v1';
+        const goKey = process.env.PROVIDER_OPENCODE_KEY.trim();
+        for (const model of goModels) {
+          tests.push({
+            provider: 'opencode-go',
+            connectionId: conn.id,
+            connectionName: conn.name,
+            apiKey: goKey,
+            endpoint: goEndpoint,
+            model,
+          });
+        }
+      }
     }
 
     // Add Ollama tests (skip models with 3+ consecutive failures)
+    // Find Ollama connection's API key from DB connections
+    const ollamaConn = connections.find(c => {
+      const norm = normalizeProvider(c.provider);
+      return norm === 'ollama' || norm === 'ollama-local';
+    });
+    const ollamaApiKey = ollamaConn?.apiKey || process.env.PROVIDER_OLLAMA_KEY || '';
     for (const m of ollamaModels) {
       if (shouldSkipModel(m.name)) {
         console.log(`[ping-all] ⏭ Skipping ${m.name} (${failureCount.get(m.name)} consecutive failures)`);
@@ -347,9 +460,22 @@ export async function POST() {
         provider: 'ollama',
         connectionId: 'ollama-' + m.source,
         connectionName: m.source === 'cloud' ? 'Ollama Cloud' : 'Ollama Local',
-        apiKey: '',
+        apiKey: m.source === 'cloud' ? ollamaApiKey : '',
         endpoint: '',
         model: m.name,
+      });
+    }
+
+    // Add providerNode tests (LM Studio, etc.)
+    for (const nm of nodeModels) {
+      if (shouldSkipModel(nm.model)) continue;
+      tests.push({
+        provider: nm.provider,
+        connectionId: nm.connectionId,
+        connectionName: nm.connectionName,
+        apiKey: nm.apiKey,
+        endpoint: nm.endpoint,
+        model: nm.model,
       });
     }
 
