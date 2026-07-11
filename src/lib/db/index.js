@@ -67,6 +67,11 @@ export {
   saveRequestDetail, getRequestDetails, getRequestDetailById, getDistinctProviders,
 } from "./repos/requestDetailsRepo.js";
 
+// Token Saver telemetry
+export {
+  recordTokenSaverEvent, getTokenSaverStats,
+} from "./repos/tokenSaverRepo.js";
+
 // Export/import full DB
 export async function exportDb() {
   const db = await getAdapter();
