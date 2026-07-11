@@ -38,6 +38,46 @@ export function resolveDefaultProfileArn(authMethod) {
   return social ? KIRO_DEFAULT_PROFILE_ARNS.social : KIRO_DEFAULT_PROFILE_ARNS["builder-id"];
 }
 
+// ─── Regional CodeWhisperer endpoints ───────────────────────────────────────
+// Kiro historically assumed us-east-1 everywhere. IAM Identity Center (IdC)
+// accounts can be homed in another region (e.g. eu-central-1); their token is
+// rejected with 403 "bearer token invalid" by the us-east-1 endpoints, and
+// their CodeWhisperer profile is only visible from the regional Amazon Q host.
+// These helpers thread `providerSpecificData.region` through, defaulting to
+// us-east-1 so existing Builder ID / social accounts are unaffected.
+
+export const KIRO_DEFAULT_REGION = "us-east-1";
+
+/** Normalize a Kiro region, falling back to us-east-1. */
+export function resolveKiroRegion(region) {
+  const r = typeof region === "string" ? region.trim() : "";
+  return r || KIRO_DEFAULT_REGION;
+}
+
+/**
+ * Data-plane (generateAssistantResponse) URL for a region.
+ * Returns null for us-east-1 so callers keep the historical registry baseUrls
+ * (runtime.kiro.dev → codewhisperer → q). Other regions use the regional
+ * Amazon Q endpoint, the only host that resolves + accepts their token.
+ */
+export function resolveKiroDataPlaneUrl(region) {
+  const r = resolveKiroRegion(region);
+  if (r === KIRO_DEFAULT_REGION) return null;
+  return `https://q.${r}.amazonaws.com/generateAssistantResponse`;
+}
+
+/**
+ * Control-plane host (ListAvailableProfiles / GetUsageLimits) for a region.
+ * us-east-1 keeps the historical codewhisperer host; other regions use the
+ * regional Amazon Q host.
+ */
+export function resolveKiroControlPlaneHost(region) {
+  const r = resolveKiroRegion(region);
+  return r === KIRO_DEFAULT_REGION
+    ? "https://codewhisperer.us-east-1.amazonaws.com"
+    : `https://q.${r}.amazonaws.com`;
+}
+
 export const KIRO_THINKING_BUDGET_DEFAULT = 16000;
 
 export const KIRO_AGENTIC_SYSTEM_PROMPT = `
