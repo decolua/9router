@@ -172,7 +172,7 @@ export default function HermesToolCard({
       : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
 
     const yamlContent = `model:\n  default: "${selectedModel || "provider/model-id"}"\n  provider: "custom"\n  base_url: "${getEffectiveBaseUrl()}"\n`;
-    const envContent = `OPENAI_API_KEY=${keyToUse}\n`;
+    
 
     return [
       { filename: "~/.hermes/config.yaml", content: yamlContent },
