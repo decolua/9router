@@ -52,4 +52,20 @@ describe("stripUnsupportedParams", () => {
 
     expect(body.max_tokens).toBe(64000);
   });
+
+  it("strips reasoning params for xAI grok-composer models", () => {
+    const body = {
+      reasoning_effort: "medium",
+      reasoning: { effort: "medium" },
+      thinking: { type: "enabled", budget_tokens: 8192 },
+      messages: [{ role: "user", content: "hi" }],
+    };
+
+    stripUnsupportedParams("xai", "grok-composer-2.5-fast", body);
+
+    expect(body.reasoning_effort).toBeUndefined();
+    expect(body.reasoning).toBeUndefined();
+    expect(body.thinking).toBeUndefined();
+    expect(body.messages).toHaveLength(1);
+  });
 });
