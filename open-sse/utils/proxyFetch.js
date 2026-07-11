@@ -125,6 +125,7 @@ const GOOGLE_DNS_SERVERS = ["8.8.8.8", "8.8.4.4"];
 const HTTPS_PORT = 443;
 const HTTP_SUCCESS_MIN = 200;
 const HTTP_SUCCESS_MAX = 300;
+const DEFAULT_PROXY_ATTEMPT_TIMEOUT_MS = 8000;
 
 function normalizeString(value) {
   if (value === undefined || value === null) return "";
@@ -241,6 +242,30 @@ function handleProxyRequestError(proxyError, options, proxyOptions, fallbackLabe
   return null;
 }
 
+function resolveProxyAttemptTimeoutMs(proxyOptions) {
+  const configured = Number(proxyOptions?.proxyAttemptTimeoutMs);
+  return Number.isFinite(configured) && configured > 0
+    ? configured
+    : DEFAULT_PROXY_ATTEMPT_TIMEOUT_MS;
+}
+
+async function fetchThroughProxy(url, options, dispatcher, proxyOptions) {
+  const timeoutMs = resolveProxyAttemptTimeoutMs(proxyOptions);
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  const signal = options?.signal
+    ? AbortSignal.any([options.signal, timeoutSignal])
+    : timeoutSignal;
+
+  try {
+    return await originalFetch(url, { ...options, signal, dispatcher });
+  } catch (error) {
+    if (timeoutSignal.aborted && options?.signal?.aborted !== true) {
+      throw new Error(`Proxy attempt timed out after ${timeoutMs}ms`, { cause: error });
+    }
+    throw error;
+  }
+}
+
 async function getDispatcher(proxyUrl) {
   const normalized = normalizeProxyUrl(proxyUrl);
   if (!normalized) return null;
@@ -355,7 +380,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
       // Proxy resolves DNS externally (not affected by /etc/hosts) — use proxy directly
       try {
         const dispatcher = await getDispatcher(proxyUrl);
-        return await originalFetch(url, { ...options, dispatcher });
+        return await fetchThroughProxy(url, options, dispatcher, proxyOptions);
       } catch (proxyError) {
         handleProxyRequestError(proxyError, options, proxyOptions, "direct bypass");
       }
@@ -373,7 +398,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   if (proxyUrl) {
     try {
       const dispatcher = await getDispatcher(proxyUrl);
-      return await originalFetch(url, { ...options, dispatcher });
+      return await fetchThroughProxy(url, options, dispatcher, proxyOptions);
     } catch (proxyError) {
       // Caller abort/timeout must propagate. Only genuine proxy transport
       // failures may fall back to direct (unless strictProxy=true).
