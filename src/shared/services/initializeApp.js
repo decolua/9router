@@ -3,7 +3,8 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { existsSync } from "fs";
 import { logger } from "@/lib/logger";
-import { cleanupProviderConnections, getSettings, updateSettings, getApiKeys } from "@/lib/localDb";
+import { cleanupProviderConnections, getSettings, updateSettings, getApiKeys, getProviderConnections, updateProviderConnection } from "@/lib/localDb";
+import { reconcileStrictProxyConnections } from "@/lib/network/strictProxyReconciliation";
 import {
   enableTunnel, enableTailscale,
   isTunnelManuallyDisabled, isTunnelReconnecting, isTailscaleReconnecting,
@@ -50,6 +51,11 @@ const g = global.__appSingleton ??= {
 export async function initializeApp() {
   try {
     await cleanupProviderConnections();
+    await reconcileStrictProxyConnections({
+      listConnections: getProviderConnections,
+      updateConnection: updateProviderConnection,
+      log: logger,
+    });
     const settings = await getSettings();
 
     // Auto-resume tunnel (once per process)
