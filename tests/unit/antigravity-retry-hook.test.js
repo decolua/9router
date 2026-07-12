@@ -1,6 +1,7 @@
 // Guards D3: antigravity 429/503 retry merged into base via computeRetryDelay hook.
 import { describe, it, expect } from "vitest";
 import { AntigravityExecutor } from "../../open-sse/executors/antigravity.js";
+import antigravity from "../../open-sse/providers/registry/antigravity.js";
 
 const MAX = 10000;
 function res(status, headers = {}, body = null) {
@@ -66,9 +67,35 @@ describe("antigravity computeRetryDelay hook (D3)", () => {
     expect(out.request.tools[0].functionDeclarations.map(fn => fn.name)).toEqual(["read_file"]);
   });
 
-  it("buildHeaders includes cached session id after transformRequest", () => {
+  it("registry uses the official IDE cloudcode host and user agent", () => {
+    expect(antigravity.transport.baseUrls).toEqual(["https://cloudcode-pa.googleapis.com"]);
+    expect(antigravity.transport.headers["User-Agent"]).toBe("antigravity/ide/2.1.1 darwin/arm64");
+  });
+
+  it("buildHeaders matches official IDE stream headers", () => {
     ag._lastSessionId = "sess-123";
     const h = ag.buildHeaders({ accessToken: "tok" }, true);
-    expect(h["X-Machine-Session-Id"]).toBe("sess-123");
+    expect(h["User-Agent"]).toBe("antigravity/ide/2.1.1 darwin/arm64");
+    expect(h["Content-Type"]).toBe("application/json");
+    expect(h["Authorization"]).toBe("Bearer tok");
+    expect(h).not.toHaveProperty("X-Machine-Session-Id");
+    expect(h).not.toHaveProperty("x-request-source");
+    expect(h).not.toHaveProperty("Accept");
+  });
+
+  it("transforms chat requests with official IDE requestId shape and 64000 token cap", () => {
+    const out = ag.transformRequest("claude-opus-4-6-thinking", {
+      request: {
+        contents: [
+          { role: "user", parts: [{ text: "hi" }] },
+          { role: "model", parts: [{ text: "hello" }] },
+        ],
+        generationConfig: { maxOutputTokens: 90000 },
+        sessionId: "-3750763034362895579",
+      },
+    }, true, { projectId: "project-1", connectionId: "conn-1" });
+
+    expect(out.requestId).toMatch(/^agent\/[0-9a-f-]{36}\/\d{13}\/[0-9a-f-]{36}\/\d+$/);
+    expect(out.request.generationConfig.maxOutputTokens).toBe(64000);
   });
 });

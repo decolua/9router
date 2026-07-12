@@ -1,3 +1,78 @@
+# v0.5.30 (2026-07-10)
+
+## Features
+- **Perplexity**: add Agent API provider (#2492)
+- **Grok CLI**: add Grok CLI / Grok Build provider with OAuth device-code flow (#2502)
+- **Featherless**: add OpenAI-compatible provider presets
+- **SearXNG**: configure endpoint via SEARXNG_URL env (#2499)
+- **Providers**: add max thinking level for gpt-5.6-sol (#2500)
+- **Headroom**: add extras detection and install UI (#2403)
+- **Headroom**: activate/uninstall extras + fix interpreter detection
+- **PXPipe**: PXPIPE token saver — multimodal prompt compression (#2465)
+- **Proxy-Pools**: auto-rotate strategy for no-auth providers (#2409)
+
+## Fixes
+- **Cloudflare-AI**: support accountId in bulk key import (#2449)
+- **DB**: backup on schema change, MCP child cleanup, codex models, usage providers OOM
+- **Codex**: avoid bare-email OAuth dedup (#2477)
+- **CLI**: allow staged app bundle builds (#2479)
+- **Headroom**: compress Kiro conversation state (#2488)
+- **Gemini-CLI**: raise output floor for thinking and add validated toolConfig (#2486)
+- **GitHub**: label Copilot profiles by account identity (#2498)
+- **OpenAI-to-Claude**: unwrap bare {function:{…}} tools without parent type (#2473)
+- **Translator**: clamp thinking effort max->xhigh for OpenAI format (#2466)
+- **RTK/find**: detect and group Windows backslash-style find output (#2448)
+- **Codex**: handle fast tier and capacity SSE (#2452)
+- **Volcengine-ark**: clamp Kimi max_tokens to 32768 endpoint cap
+- **Antigravity**: align provider fingerprint with IDE Desktop 2.1.1 (#2389)
+- **Pricing**: update Claude/Codex model rates and add new models
+
+## Improvements
+- **i18n(zh-CN)**: complete Chinese translations for all UI strings (#2436)
+- **API**: caching for tunnel and version status endpoints
+- **Perf**: faster dev startup and lighter bundle
+
+# v0.5.20 (2026-07-07)
+
+## Features
+- **Thinking**: per-model thinking level picker on provider page — appends `(level)` suffix to copied model names for forced reasoning effort across all formats (openai, claude, gemini, deepseek, kimi, qwen, zai, minimax, hunyuan, step)
+- **RTK**: add JS-native git-log filter (#2423)
+- **Caveman**: add targeted upstream-aligned style rules (#2424)
+- **i18n**: add Farsi (fa) language support (#2385)
+
+## Fixes
+- **Thinking**: strip `(level)` suffix from upstream `body.model` so providers no longer reject requests
+- **Translator**: preserve developer instructions in openai-responses conversion (#2434)
+- **count_tokens**: count structured Anthropic blocks (#2419)
+- **Volcengine-ark**: clamp GLM-5 max_tokens to model output ceiling (#2428)
+- **Kimi**: normalize reasoning_effort to backend enum (#2427)
+- **Claude**: reconcile max_tokens vs thinking budget and lift per-model ceiling (#2381)
+- **Kiro**: deliver system prompt natively, add Opus 4.5/4.7/4.8, tolerate dash version ids (#2366)
+- **Headroom**: proxy dashboard through app (#2372)
+- **MITM**: recover from stale lock file on server start
+
+# v0.5.18 (2026-07-03)
+
+## Features
+- **Usage**: track cached tokens + correct input/output/cache cost (#2209) — hodtien
+- **Codex**: show reset credit expiry details (#2290) — Rafli Ahmad Zulfikar
+- **NVIDIA**: add new models and capabilities — decolua
+- **ClinePass**: add provider support — sternelee
+
+## Fixes
+- **Usage**: dedupe streaming request-details log entries — Qin Li
+- **Claude**: drop foreign thinking signatures in passthrough — decolua
+- Prevent non-SSE stream pipe crash and cross-IdP account overwrites (#2244) — KunN-21
+- **Kiro**: route IdC auth to regional CodeWhisperer surface (#2297) — Volodymyr Saakian
+- **Kiro**: add Claude Sonnet 5 model support (#2264) — Edison42
+- **Xiaomi-tokenplan**: region selector, key validation, multi-connection (#2251) — MiQieR
+- **Translator**: strict Anthropic content block compliance (#2225) — Sahrul Ramadhan Hardiansyah
+- **Kimchi**: strip reasoning_content echo to bound multi-turn input tokens — KunN-21
+- **Kimchi**: bump User-Agent to kimchi/0.1.40 (#2256) — Ansh7473
+- **Codebuddy-cn**: strip empty tool_calls arrays to preserve reasoning — zmf
+- **Antigravity**: preserve Claude tool delta index (#2223) — Sutarto Jordan Chrisfivo
+- **MITM**: generate root CA on server startup (#2228) — Sutarto Jordan Chrisfivo
+
 # v0.5.15 (2026-06-29)
 
 ## Features
@@ -303,43 +378,3 @@
 
 ## Breaking Changes
 - Tunnel public URL changed — old tunnel links no longer work, please reconnect to get the new URL
-
-# v0.4.44 (2026-05-15)
-
-## Features
-- Add Blackbox provider with `bb` alias (#1143)
-- Add Xiaomi token plan provider
-- Enhance model select modal UX + modal traffic lights (#1111)
-- Default Usage dashboard period to Today (#1141)
-
-## Fixes
-- Fix Cowork model selection and Windows CLI packaging (#1129)
-- Update provider name retrieval for compatibility provider (#1135)
-- Update JWT_SECRET handling
-
-# v0.4.41 (2026-05-14)
-
-## Features
-- Add jcode CLI tool integration with auto-configuration (#1047)
-- Redesign CLI Tools dashboard: grid layout (1/2/3 cols) + dedicated detail page per tool
-- Add drag-and-drop reordering for combo models (#1108)
-- Add Today period option to Usage & Analytics (#1063)
-- Add DeepSeek V4 Pro effort aliases (#950)
-
-## Fixes
-- fix(autostart): work on nvm + npm 9/10, actually register with launchctl (#1104, fixes #1082)
-- Fix Ollama usage not tracked/shown in UI (#1102)
-- fix(opencode): preserve DeepSeek reasoning content (#1099, fixes #1093)
-- Fix TUI input lag (replace enquirer with native readline, persistent raw mode)
-- fix(ui): show API key row actions on mobile (#1112)
-
-## Improvements
-- Sync DeepSeek TUI card style with other CLI tools (badges, layout, manual config modal)
-- Add official logos for Amp CLI, jcode, Qwen Code (replace generic icons)
-- Resize deepseek-tui icon 1024→128 with padding for visual consistency
-
-# v0.4.39 (2026-05-14)
-
-## Fixes
-- fix(docker): restore `/app/server.js` (v0.4.38 regression)
-

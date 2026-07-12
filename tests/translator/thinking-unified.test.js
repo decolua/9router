@@ -78,10 +78,26 @@ describe("applyThinking per provider format", () => {
     const out = apply("gemini", "gemini-3-pro", { reasoning_effort: "auto" }, "gemini");
     expect(out.generationConfig.thinkingConfig.thinkingLevel).toBe("high");
   });
+  it("gemini-3 high thinking raises too-small maxOutputTokens", () => {
+    const out = apply("gemini-cli", "gemini-3.1-pro-preview", {
+      request: { generationConfig: { maxOutputTokens: 128 } },
+      reasoning_effort: "high",
+    }, "gemini-cli");
+    expect(out.request.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "high", includeThoughts: true });
+    expect(out.request.generationConfig.maxOutputTokens).toBe(65535);
+  });
   it("gemini-2.5 → thinkingBudget", () => {
     const out = apply("gemini", "gemini-2.5-flash", { reasoning_effort: "high" }, "gemini");
     expect(out.generationConfig.thinkingConfig.thinkingBudget).toBe(24576);
     expect(out.generationConfig.thinkingConfig.thinkingLevel).toBeUndefined();
+  });
+  it("gemini-2.5 budget thinking keeps enough room for answer tokens", () => {
+    const out = apply("gemini-cli", "gemini-2.5-pro", {
+      request: { generationConfig: { maxOutputTokens: 1024 } },
+      reasoning_effort: "high",
+    }, "gemini-cli");
+    expect(out.request.generationConfig.thinkingConfig).toEqual({ thinkingBudget: 24576, includeThoughts: true });
+    expect(out.request.generationConfig.maxOutputTokens).toBe(32768);
   });
   it("GLM off → enable_thinking:false (not thinking.disabled)", () => {
     const out = apply("openai", "glm-4.6", { reasoning_effort: "none" }, "glm");
@@ -105,6 +121,16 @@ describe("applyThinking per provider format", () => {
   it("Kimi on → reasoning_effort", () => {
     const out = apply("openai", "kimi-k2.6", { reasoning_effort: "high" }, "kimi");
     expect(out.reasoning_effort).toBe("high");
+  });
+  it("Kimi auto → supported reasoning_effort", () => {
+    const out = apply("openai", "kimi-k2.7", { reasoning_effort: "auto" }, "kimchi");
+    expect(out.reasoning_effort).toBe("high");
+  });
+  it("Kimi unsupported OpenAI levels → supported reasoning_effort", () => {
+    const minimal = apply("openai", "kimi-k2.7", { reasoning_effort: "minimal" }, "kimchi");
+    const xhigh = apply("openai", "kimi-k2.7", { reasoning_effort: "xhigh" }, "kimchi");
+    expect(minimal.reasoning_effort).toBe("low");
+    expect(xhigh.reasoning_effort).toBe("max");
   });
   it("MiniMax M3 → adaptive", () => {
     const out = apply("claude", "MiniMax-M3", { reasoning_effort: "high" }, "minimax");
