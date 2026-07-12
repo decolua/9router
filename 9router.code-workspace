@@ -1,7 +1,14 @@
 {
-    "folders": [
-        {
-            "path": "../groxy"
-        }
-    ]
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../groxy"
+		},
+		{
+			"path": "../OmniRoute"
+		}
+	],
+	"settings": {}
 }
