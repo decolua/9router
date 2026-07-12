@@ -7,7 +7,7 @@ const OPTIONAL_FIELDS = [
   "accessToken", "refreshToken", "expiresAt", "tokenType",
   "scope", "projectId", "apiKey", "testStatus",
   "lastTested", "lastError", "lastErrorAt", "rateLimitedUntil", "expiresIn", "errorCode",
-  "consecutiveUseCount", "idToken", "lastRefreshAt",
+  "consecutiveUseCount", "allowedModels", "idToken", "lastRefreshAt",
 ];
 
 function rowToConn(row) {
@@ -237,6 +237,7 @@ export async function cleanupProviderConnections() {
     "scope", "projectId", "apiKey", "testStatus",
     "lastTested", "lastError", "lastErrorAt", "rateLimitedUntil", "expiresIn",
     "consecutiveUseCount",
+    "allowedModels",
   ];
   let cleaned = 0;
   db.transaction(() => {

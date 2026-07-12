@@ -6,7 +6,8 @@ import Modal from "@/shared/components/Modal";
 import Input from "@/shared/components/Input";
 import Button from "@/shared/components/Button";
 import Badge from "@/shared/components/Badge";
-import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
+import ModelSelectModal from "@/shared/components/ModelSelectModal";
+import { getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import Select from "@/shared/components/Select";
 
 export default function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
@@ -28,36 +29,59 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [allowedModels, setAllowedModels] = useState([]);
+  const [showAllowedModelsPicker, setShowAllowedModelsPicker] = useState(false);
+  const [modelAliases, setModelAliases] = useState({});
+  const [activeProviders, setActiveProviders] = useState([]);
 
   useEffect(() => {
-    if (connection) {
-      setFormData({
-        name: connection.name || "",
-        priority: connection.priority || 1,
-        apiKey: "",
+    if (!connection) return;
+    setFormData({
+      name: connection.name || "",
+      priority: connection.priority || 1,
+      apiKey: "",
+    });
+    if (connection.provider === "azure" && connection.providerSpecificData) {
+      setAzureData({
+        azureEndpoint: connection.providerSpecificData.azureEndpoint || "",
+        apiVersion: connection.providerSpecificData.apiVersion || "2024-10-01-preview",
+        deployment: connection.providerSpecificData.deployment || "",
+        organization: connection.providerSpecificData.organization || "",
       });
-      // Load Azure-specific data if present
-      if (connection.provider === "azure" && connection.providerSpecificData) {
-        setAzureData({
-          azureEndpoint: connection.providerSpecificData.azureEndpoint || "",
-          apiVersion: connection.providerSpecificData.apiVersion || "2024-10-01-preview",
-          deployment: connection.providerSpecificData.deployment || "",
-          organization: connection.providerSpecificData.organization || "",
-        });
-      }
-      if (connection.provider === "cloudflare-ai" && connection.providerSpecificData) {
-        setCloudflareData({ accountId: connection.providerSpecificData.accountId || "" });
-      }
-      // Load region for providers that support it (e.g. xiaomi-tokenplan)
-      const providerCfg = AI_PROVIDERS?.[connection.provider];
-      if (providerCfg?.regions) {
-        const savedRegion = connection.providerSpecificData?.region || providerCfg.defaultRegion || providerCfg.regions[0]?.id || "";
-        setRegion(savedRegion);
-      }
-      setTestResult(null);
-      setValidationResult(null);
     }
+    if (connection.provider === "cloudflare-ai" && connection.providerSpecificData) {
+      setCloudflareData({ accountId: connection.providerSpecificData.accountId || "" });
+    }
+    setAllowedModels(Array.isArray(connection.allowedModels) ? connection.allowedModels : []);
+    setTestResult(null);
+    setValidationResult(null);
   }, [connection]);
+
+  useEffect(() => {
+    if (!isOpen || !connection) return;
+    let cancelled = false;
+    const fetchAlias = fetch("/api/models/alias")
+      .then((r) => (r.ok ? r.json() : { aliases: {} }))
+      .then((d) => d.aliases || {})
+      .catch(() => ({}));
+    Promise.all([
+      fetchAlias,
+      fetch("/api/provider-nodes").then((r) => (r.ok ? r.json() : { nodes: [] })).catch(() => ({ nodes: [] })),
+    ]).then(([aliases, nodesRes]) => {
+      if (cancelled) return;
+      setModelAliases(aliases || {});
+      const node = (nodesRes.nodes || []).find((n) => n.id === connection.provider);
+      const displayPrefix = node?.prefix || connection.providerSpecificData?.prefix || getProviderAlias(connection.provider);
+      setActiveProviders([
+        {
+          provider: connection.provider,
+          name: node?.name || connection.provider,
+          providerSpecificData: { ...(connection.providerSpecificData || {}), prefix: displayPrefix },
+        },
+      ]);
+    });
+    return () => { cancelled = true; };
+  }, [isOpen, connection?.id, connection?.provider, connection?.providerSpecificData?.prefix]);
 
   const isOAuth = connection?.authType === "oauth";
   const isAzure = connection?.provider === "azure";
@@ -120,6 +144,9 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       const updates = {
         name: formData.name,
         priority: formData.priority,
+        // Always send an array. The PUT route normalizes an empty list to
+        // `null` server-side, and rejects a literal `null` with 400.
+        allowedModels,
       };
       if (!isOAuth && formData.apiKey) {
         updates.apiKey = formData.apiKey;
@@ -177,6 +204,8 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       setSaving(false);
     }
   };
+
+  const displayModelAlias = (modelValue) => modelAliases[modelValue] || modelValue.split("/").pop();
 
   if (!connection) return null;
 
@@ -286,6 +315,107 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           </div>
         )}
 
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold">Allowed Models</h3>
+            {allowedModels.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setAllowedModels([])}
+                className="text-xs text-text-muted hover:text-text-main"
+              >
+                Clear all
+              </button>
+            )}
+          </div>
+
+          {allowedModels.length === 0 ? (
+            <div className="bg-sidebar/50 p-3 rounded-lg flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-text-main">All models allowed</p>
+                <p className="text-xs text-text-muted">Restrict this account to a subset of provider models.</p>
+              </div>
+              <Button
+                size="sm"
+                variant="secondary"
+                icon="tune"
+                onClick={() => setShowAllowedModelsPicker(true)}
+              >
+                Configure Models
+              </Button>
+            </div>
+          ) : (
+            <>
+              <div
+                className="flex flex-col gap-1 max-h-[200px] overflow-y-auto rounded-lg border border-border p-2"
+                style={{ background: "var(--color-surface-2, #303030)" }}
+              >
+                {allowedModels.map((modelValue) => {
+                  const alias = displayModelAlias(modelValue);
+                  return (
+                    <div
+                      key={modelValue}
+                      className="flex items-center gap-2 px-2 py-1 rounded hover:bg-surface-3/40"
+                    >
+                      <span
+                        className="flex-1 font-mono text-xs text-text-main truncate"
+                        title={modelValue}
+                      >
+                        {alias}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setAllowedModels((current) => current.filter((m) => m !== modelValue))
+                        }
+                        className="text-text-muted hover:text-text-main"
+                        aria-label={`Remove ${alias}`}
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: "14px" }}>close</span>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+              <Button
+                size="sm"
+                variant="secondary"
+                icon="add"
+                onClick={() => setShowAllowedModelsPicker(true)}
+              >
+                Add Model
+              </Button>
+              <p className="text-xs text-text-muted flex items-center gap-1">
+                <span className="material-symbols-outlined" style={{ fontSize: "12px" }}>info</span>
+                Empty = all models allowed.
+              </p>
+            </>
+          )}
+        </div>
+
+        {showAllowedModelsPicker && (
+          <ModelSelectModal
+            isOpen
+            onClose={() => setShowAllowedModelsPicker(false)}
+            onSelect={(model) =>
+              setAllowedModels((current) =>
+                current.includes(model.value) ? current : [...current, model.value]
+              )
+            }
+            onDeselect={(model) =>
+              setAllowedModels((current) => current.filter((m) => m !== model.value))
+            }
+            addedModelValues={allowedModels}
+            closeOnSelect={false}
+            hideCombos
+            onlyActiveProviders
+            activeProviders={activeProviders}
+            modelAliases={modelAliases}
+            title="Allow Models for this Account"
+            kindFilter={null}
+          />
+        )}
+
         <div className="flex gap-2">
           <Button onClick={handleSubmit} fullWidth disabled={saving}>{saving ? "Saving..." : "Save"}</Button>
           <Button onClick={onClose} variant="ghost" fullWidth>Cancel</Button>
@@ -305,6 +435,7 @@ EditConnectionModal.propTypes = {
     authType: PropTypes.string,
     provider: PropTypes.string,
     providerSpecificData: PropTypes.object,
+    allowedModels: PropTypes.arrayOf(PropTypes.string),
   }),
   proxyPools: PropTypes.arrayOf(PropTypes.shape({
     id: PropTypes.string,

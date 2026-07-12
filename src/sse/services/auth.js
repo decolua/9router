@@ -5,6 +5,30 @@ import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import * as log from "../utils/logger.js";
 
+/**
+ * Returns true when the connection can serve the requested model.
+ * A connection is eligible when:
+ *  - it has no `allowedModels` field
+ *  - it has an empty `allowedModels` array
+ *  - its `allowedModels` array contains `model` or `${provider}/${model}` (case-sensitive)
+ *
+ * The model argument is the canonical model identifier used at routing time.
+ * When model is null/undefined, the filter is a no-op (returns true) because
+ * no comparison can be made.
+ *
+ * @param {object} connection
+ * @param {string|null|undefined} model
+ * @param {string|null|undefined} provider
+ * @returns {boolean}
+ */
+export function isConnectionAllowedForModel(connection, model, provider = null) {
+  if (!model) return true;
+  const list = connection?.allowedModels;
+  if (!Array.isArray(list) || list.length === 0) return true;
+  const providerModel = provider ? `${provider}/${model}` : null;
+  return list.some((allowedModel) => allowedModel === model || allowedModel === providerModel);
+}
+
 // Mutex to prevent race conditions during account selection
 let selectionMutex = Promise.resolve();
 
@@ -21,6 +45,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     ? excludeConnectionIds
     : (excludeConnectionIds ? new Set([excludeConnectionIds]) : new Set());
   const preferredConnectionId = options?.preferredConnectionId || null;
+  const bypassModelWhitelist = options?.bypassModelWhitelist === true;
   // Acquire mutex to prevent race conditions
   const currentMutex = selectionMutex;
   let resolveMutex;
@@ -67,10 +92,11 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return null;
     }
 
-    // Filter out model-locked and excluded connections
+    // Filter out excluded, model-locked, and whitelist-mismatched connections
     const availableConnections = connections.filter(c => {
       if (excludeSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
+      if (!bypassModelWhitelist && !isConnectionAllowedForModel(c, model, providerId)) return false;
       return true;
     });
 
@@ -78,9 +104,10 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     connections.forEach(c => {
       const excluded = excludeSet.has(c.id);
       const locked = isModelLockActive(c, model);
-      if (excluded || locked) {
+      const notWhitelisted = !bypassModelWhitelist && !isConnectionAllowedForModel(c, model, providerId);
+      if (excluded || locked || notWhitelisted) {
         const lockUntil = getEarliestModelLockUntil(c);
-        log.debug("AUTH", `  → ${c.id?.slice(0, 8)} | ${excluded ? "excluded" : ""} ${locked ? `modelLocked(${model}) until ${lockUntil}` : ""}`);
+        log.debug("AUTH", `  → ${c.id?.slice(0, 8)} | ${excluded ? "excluded" : ""} ${locked ? `modelLocked(${model}) until ${lockUntil}` : ""} ${notWhitelisted ? `whitelist-miss(${model})` : ""}`);
       }
     });
 

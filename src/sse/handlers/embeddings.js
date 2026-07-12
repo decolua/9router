@@ -12,6 +12,7 @@ import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
+import { hasDiagnosticModelTestBypass } from "@/shared/utils/modelDiagnosticBypass";
 
 /**
  * Handle embeddings request for the SSE/Next.js server.
@@ -72,6 +73,7 @@ export async function handleEmbeddings(request) {
   }
 
   const { provider, model } = modelInfo;
+  const bypassModelWhitelist = await hasDiagnosticModelTestBypass(request);
 
   if (modelStr !== `${provider}/${model}`) {
     log.info("ROUTING", `${modelStr} → ${provider}/${model}`);
@@ -85,7 +87,7 @@ export async function handleEmbeddings(request) {
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { bypassModelWhitelist });
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {

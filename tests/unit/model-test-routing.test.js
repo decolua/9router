@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   getApiKeys: vi.fn(),
   getConsistentMachineId: vi.fn(),
+  createModelWhitelistBypassNonce: vi.fn(),
 }));
 
 vi.mock("@/lib/localDb", () => ({
@@ -11,6 +12,17 @@ vi.mock("@/lib/localDb", () => ({
 
 vi.mock("@/shared/utils/machineId", () => ({
   getConsistentMachineId: mocks.getConsistentMachineId,
+}));
+
+vi.mock("@/shared/constants/config", () => ({
+  UPDATER_CONFIG: { appPort: 20128 },
+}));
+
+vi.mock("@/shared/utils/modelDiagnosticBypass", () => ({
+  MODEL_WHITELIST_BYPASS_HEADER: "x-9r-bypass-model-whitelist",
+  MODEL_WHITELIST_BYPASS_NONCE_HEADER: "x-9r-bypass-model-whitelist-nonce",
+  MODEL_WHITELIST_BYPASS_VALUE: "diagnostic-model-test",
+  createModelWhitelistBypassNonce: mocks.createModelWhitelistBypassNonce,
 }));
 
 vi.mock("next/server", () => ({
@@ -31,6 +43,7 @@ describe("model test route kind routing", () => {
     vi.clearAllMocks();
     mocks.getApiKeys.mockResolvedValue([{ key: "sk-internal", isActive: true }]);
     mocks.getConsistentMachineId.mockResolvedValue("cli-token");
+    mocks.createModelWhitelistBypassNonce.mockReturnValue("diagnostic-nonce");
     global.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       created: 1,
       data: [{ b64_json: "abc" }],

@@ -1,6 +1,12 @@
 import { getApiKeys } from "@/lib/localDb";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
+import {
+  MODEL_WHITELIST_BYPASS_HEADER,
+  MODEL_WHITELIST_BYPASS_NONCE_HEADER,
+  MODEL_WHITELIST_BYPASS_VALUE,
+  createModelWhitelistBypassNonce,
+} from "@/shared/utils/modelDiagnosticBypass";
 
 const CLI_TOKEN_SALT = "9r-cli-auth";
 
@@ -47,6 +53,8 @@ async function getInternalHeaders() {
   const headers = { "Content-Type": "application/json" };
   if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
   headers["x-9r-cli-token"] = await getConsistentMachineId(CLI_TOKEN_SALT);
+  headers[MODEL_WHITELIST_BYPASS_HEADER] = MODEL_WHITELIST_BYPASS_VALUE;
+  headers[MODEL_WHITELIST_BYPASS_NONCE_HEADER] = createModelWhitelistBypassNonce();
   return headers;
 }
 

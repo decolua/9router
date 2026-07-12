@@ -23,6 +23,26 @@ import { clientWantsStream, createKeepaliveSseResponse } from "open-sse/utils/ea
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import {
+  hasDiagnosticModelTestBypass,
+  CLI_TOKEN_HEADER,
+  MODEL_WHITELIST_BYPASS_HEADER,
+  MODEL_WHITELIST_BYPASS_NONCE_HEADER,
+} from "@/shared/utils/modelDiagnosticBypass";
+
+// Internal-only headers used to gate the diagnostic model-test bypass. They must
+// never reach request logging or the upstream provider — strip before forwarding.
+const INTERNAL_BYPASS_HEADERS = new Set([
+  CLI_TOKEN_HEADER,
+  MODEL_WHITELIST_BYPASS_HEADER,
+  MODEL_WHITELIST_BYPASS_NONCE_HEADER,
+]);
+
+function headersWithoutInternalBypass(headers) {
+  return Object.fromEntries(
+    [...headers.entries()].filter(([key]) => !INTERNAL_BYPASS_HEADERS.has(key.toLowerCase()))
+  );
+}
 
 /**
  * Handle chat completion request
@@ -44,7 +64,7 @@ export async function handleChat(request, clientRawRequest = null) {
     clientRawRequest = {
       endpoint: url.pathname,
       body,
-      headers: Object.fromEntries(request.headers.entries())
+      headers: headersWithoutInternalBypass(request.headers)
     };
   }
   cacheClaudeHeaders(clientRawRequest.headers);
@@ -216,6 +236,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
   // Extract userAgent from request
   const userAgent = request?.headers?.get("user-agent") || "";
+  const bypassModelWhitelist = await hasDiagnosticModelTestBypass(request);
 
   // Streaming path (top-level only): open SSE immediately + keepalive while waiting
   // for upstream. Prevents Cloudflare origin_gateway_timeout (~100s first-byte).
@@ -252,7 +273,7 @@ async function runAccountLoop({ provider, model, body, clientRawRequest, request
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { bypassModelWhitelist });
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
