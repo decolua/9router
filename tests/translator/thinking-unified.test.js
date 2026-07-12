@@ -78,10 +78,26 @@ describe("applyThinking per provider format", () => {
     const out = apply("gemini", "gemini-3-pro", { reasoning_effort: "auto" }, "gemini");
     expect(out.generationConfig.thinkingConfig.thinkingLevel).toBe("high");
   });
+  it("gemini-3 high thinking raises too-small maxOutputTokens", () => {
+    const out = apply("gemini-cli", "gemini-3.1-pro-preview", {
+      request: { generationConfig: { maxOutputTokens: 128 } },
+      reasoning_effort: "high",
+    }, "gemini-cli");
+    expect(out.request.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "high", includeThoughts: true });
+    expect(out.request.generationConfig.maxOutputTokens).toBe(65535);
+  });
   it("gemini-2.5 → thinkingBudget", () => {
     const out = apply("gemini", "gemini-2.5-flash", { reasoning_effort: "high" }, "gemini");
     expect(out.generationConfig.thinkingConfig.thinkingBudget).toBe(24576);
     expect(out.generationConfig.thinkingConfig.thinkingLevel).toBeUndefined();
+  });
+  it("gemini-2.5 budget thinking keeps enough room for answer tokens", () => {
+    const out = apply("gemini-cli", "gemini-2.5-pro", {
+      request: { generationConfig: { maxOutputTokens: 1024 } },
+      reasoning_effort: "high",
+    }, "gemini-cli");
+    expect(out.request.generationConfig.thinkingConfig).toEqual({ thinkingBudget: 24576, includeThoughts: true });
+    expect(out.request.generationConfig.maxOutputTokens).toBe(32768);
   });
   it("GLM off → enable_thinking:false (not thinking.disabled)", () => {
     const out = apply("openai", "glm-4.6", { reasoning_effort: "none" }, "glm");
