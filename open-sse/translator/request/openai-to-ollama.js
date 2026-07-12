@@ -22,7 +22,7 @@ export function openaiToOllamaRequest(model, body, stream) {
   const result = {
     model: model,
     messages: normalizeMessages(body.messages),
-    stream: stream
+    stream: false
   };
 
   // Temperature

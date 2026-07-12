@@ -9,6 +9,14 @@ export class OllamaLocalExecutor extends DefaultExecutor {
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
     return `${resolveOllamaLocalHost(credentials)}/api/chat`;
   }
+
+  transformRequest(model, body, stream) {
+    return {
+      ...body,
+      model,
+      stream
+    };
+  }
 }
 
 export default OllamaLocalExecutor;
