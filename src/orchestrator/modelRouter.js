@@ -17,6 +17,7 @@
  */
 
 import { fetchWithTimeout } from '@/shared/utils/fetchWithTimeout.js';
+import { getSettings, updateSettings } from '@/lib/localDb.js';
 import {
   OPENCODE_GO_MODELS,
   discoverOpenCodeFreeModels,
@@ -230,6 +231,9 @@ class ModelRouter {
       totalTokens: 0,
       totalErrors: 0
     };
+
+    this._persistTimer = null;
+    this._restoreStats();
 
     this.hourlyUsage = {
       currentHour: new Date().getHours(),
@@ -876,6 +880,26 @@ class ModelRouter {
     } else {
       this.modelStatus.set(modelId, { available: true, lastUsed: Date.now() });
     }
+
+    this._schedulePersist();
+  }
+
+  async _restoreStats() {
+    try {
+      const settings = await getSettings();
+      const saved = settings.modelRouterStats;
+      if (saved && saved.date === new Date().toDateString()) {
+        this.dailyUsage = saved;
+        console.log('[ModelRouter] Stats restored from DB');
+      }
+    } catch {}
+  }
+
+  _schedulePersist() {
+    if (this._persistTimer) clearTimeout(this._persistTimer);
+    this._persistTimer = setTimeout(() => {
+      updateSettings({ modelRouterStats: this.dailyUsage }).catch(() => {});
+    }, 5000);
   }
 
   /**

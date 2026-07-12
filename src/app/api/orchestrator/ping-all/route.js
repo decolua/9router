@@ -110,6 +110,10 @@ const FREE_PRIORITY_CHAIN = ['opencode', 'ollama', 'openai', 'routerai', 'openai
 if (!global._pingFailureCount) global._pingFailureCount = new Map();
 const failureCount = global._pingFailureCount;
 
+// Progress tracking for client-side progress bar
+if (!global._pingProgress) global._pingProgress = { total: 0, completed: 0, current: "", status: "idle" };
+const pingProgress = global._pingProgress;
+
 function shouldSkipModel(modelId) {
   if (!modelId) return true;
   const failCount = failureCount.get(modelId) || 0;
@@ -480,6 +484,9 @@ export async function POST() {
     }
 
     console.log(`[ping-all] Testing ${tests.length} model endpoints...`);
+    pingProgress.total = tests.length;
+    pingProgress.completed = 0;
+    pingProgress.status = "running";
 
     // Run all tests in parallel (with concurrency limit of 5)
     const CONCURRENCY = 5;
@@ -493,6 +500,8 @@ export async function POST() {
         batchResults[j].connectionId = batch[j].connectionId;
         batchResults[j].connectionName = batch[j].connectionName;
         results.push(batchResults[j]);
+        pingProgress.completed++;
+        pingProgress.current = `${batch[j].provider}/${batch[j].model}`;
         // Log each result
         if (batchResults[j].status === 'ok') {
           console.log(`[ping-all] ✅ ${batch[j].provider}/${batch[j].model}: OK (${batchResults[j].latencyMs}ms)`);
@@ -501,6 +510,8 @@ export async function POST() {
         }
       }
     }
+
+    pingProgress.status = "done";
 
     // Record in usage history
     try {

@@ -38,11 +38,13 @@ export async function resolveModelAlias(alias) {
 export async function getModelInfo(modelStr) {
   const parsed = parseModel(modelStr);
 
-  // Always check combo FIRST, before any provider/alias resolution.
-  // This allows prefixed models like "9router/free-mix" to trigger combo routing.
-  const combo = await getComboByName(parsed.model);
-  if (combo) {
-    return { provider: null, model: parsed.model };
+  // Only check combo for unprefixed model names (not provider/model format)
+  // This avoids circular combo resolution when combo models use prefixed names
+  if (!modelStr.includes("/")) {
+    const combo = await getComboByName(parsed.model);
+    if (combo) {
+      return { provider: null, model: parsed.model };
+    }
   }
 
   if (!parsed.isAlias) {

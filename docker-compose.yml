@@ -30,7 +30,7 @@ services:
     restart: unless-stopped
     stop_grace_period: 30s
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:20128/api/health"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:20128/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3

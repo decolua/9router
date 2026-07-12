@@ -133,6 +133,8 @@ export default function OrchestratorPage() {
   const [pingResults, setPingResults] = useState(null);
   const [pingLoading, setPingLoading] = useState(false);
   const [pingError, setPingError] = useState(null);
+  const [pingProgress, setPingProgress] = useState(null);
+  const pingProgressRef = useRef(null);
   const [autoConfigResult, setAutoConfigResult] = useState(null);
   const [autoConfigLoading, setAutoConfigLoading] = useState(false);
 
@@ -336,14 +338,32 @@ export default function OrchestratorPage() {
     setPingLoading(true);
     setPingError(null);
     setAutoConfigResult(null);
+    setPingProgress({ total: 0, completed: 0, current: "", status: "starting" });
+
+    const pollProgress = async () => {
+      try {
+        const res = await fetch('/api/orchestrator/ping-all/progress');
+        if (res.ok) {
+          const data = await res.json();
+          setPingProgress(data);
+        }
+      } catch {}
+    };
+
+    const interval = setInterval(pollProgress, 500);
+    pingProgressRef.current = interval;
+
     try {
       const res = await fetch('/api/orchestrator/ping-all', { method: 'POST' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       setPingResults(data);
+      setPingProgress({ total: data.results?.length || 0, completed: data.results?.length || 0, current: "", status: "done" });
     } catch (err) {
       setPingError(err.message);
     } finally {
+      clearInterval(interval);
+      pingProgressRef.current = null;
       setPingLoading(false);
     }
   };
@@ -512,13 +532,13 @@ export default function OrchestratorPage() {
   }
 
   // Compute model list from config groups (for active models count)
+  const health = routerStats.modelHealth || {};
   const allConfiguredModels = Object.values(routerConfig.modelGroups || {}).flatMap(g => g.models || []);
   const modelStats = allConfiguredModels.map(m => ({
     id: m.id,
     available: health[m.id]?.available !== false && !health[m.id]?.inCooldown
   }));
   const history = routerStats.rotationHistory || [];
-  const health = routerStats.modelHealth || {};
   const activeTimeRule = getActiveTimeRule();
   const totalCostToday = routerStats.totalCost || 0;
   const totalTokensToday = routerStats.totalTokens || 0;
@@ -624,7 +644,7 @@ export default function OrchestratorPage() {
       {activeTab === 'health' && renderHealthTab(health, routerConfig, routerStats, Icons, fmtNum, fmtTime, fmtCostFull)}
 
       {activeTab === 'ping' && renderPingTab(
-        pingResults, pingLoading, pingError, handlePingAll,
+        pingResults, pingLoading, pingError, handlePingAll, pingProgress,
         autoConfigResult, autoConfigLoading, handleAutoConfig, Icons,
         scanResults, scanLoading, scanError, handleScan,
         discoveryStatus, discoveryLoading, handleDiscoveryAction,
@@ -1829,7 +1849,7 @@ function ViewItem({ label, value }) {
    TAB: Тест провайдеров (Ping All)
    ============================================================ */
 function renderPingTab(
-  pingResults, pingLoading, pingError, handlePingAll,
+  pingResults, pingLoading, pingError, handlePingAll, pingProgress,
   autoConfigResult, autoConfigLoading, handleAutoConfig, Icons,
   scanResults, scanLoading, scanError, handleScan,
   discoveryStatus, discoveryLoading, handleDiscoveryAction,
@@ -1970,8 +1990,31 @@ function renderPingTab(
         </div>
       </div>
 
-      {/* Loading spinner */}
-      {pingLoading && (
+      {/* Progress bar */}
+      {pingLoading && pingProgress && pingProgress.total > 0 && pingProgress.status === "running" && (
+        <div className="px-4 py-3 rounded-xl" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-xs font-medium" style={{ color: 'var(--color-text-main)' }}>
+              {pingProgress.current ? `📡 ${pingProgress.current}` : 'Тестирую модели...'}
+            </span>
+            <span className="text-xs font-mono" style={{ color: 'var(--color-text-muted)' }}>
+              {pingProgress.completed}/{pingProgress.total}
+            </span>
+          </div>
+          <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: 'var(--color-surface-3)' }}>
+            <div
+              className="h-full rounded-full transition-all duration-300 ease-out"
+              style={{
+                width: `${Math.round((pingProgress.completed / pingProgress.total) * 100)}%`,
+                background: 'linear-gradient(90deg, var(--color-primary), var(--color-brand-300))',
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Loading spinner (initial, before progress data arrives) */}
+      {pingLoading && (!pingProgress || pingProgress.total === 0) && (
         <div className="flex items-center justify-center py-12">
           <div className="flex flex-col items-center gap-3">
             <div className="animate-spin rounded-full h-10 w-10 border-b-2" style={{ borderColor: 'var(--color-primary)' }}></div>

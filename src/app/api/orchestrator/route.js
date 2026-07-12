@@ -20,12 +20,48 @@ import { getCapabilitiesForModel } from 'open-sse/providers/capabilities.js';
 /**
  * POST /api/orchestrator
  * Запуск нового workflow с таймаутом 5 минут
+ * Или action: scan-quick | scan-full | hide-broken | unhide | unhide-all
  */
 export async function POST(request) {
-  const REQUEST_TIMEOUT_MS = 5 * 60 * 1000; // 5 min
-
   try {
     const body = await request.json();
+    const { action } = body;
+
+    // Orchestrator actions (без запуска workflow)
+    if (action === 'scan-quick') {
+      const result = await modelScanner.scanQuick();
+      return NextResponse.json({ status: 'ok', action, models: result.models.length, config: result.config });
+    }
+    if (action === 'scan-full') {
+      const result = await modelScanner.scanAll(false);
+      return NextResponse.json({ status: 'ok', action, models: result.models.length, config: result.config });
+    }
+    if (action === 'hide-broken') {
+      const hidden = await modelScanner.hideBrokenModels();
+      const count = Object.keys(hidden).length;
+      return NextResponse.json({ status: 'ok', action, hidden: count });
+    }
+    if (action === 'unhide-all') {
+      await modelScanner.unhideAll();
+      return NextResponse.json({ status: 'ok', action });
+    }
+    if (action === 'unhide') {
+      const { provider, model } = body;
+      if (!provider) return NextResponse.json({ error: 'provider required' }, { status: 400 });
+      await modelScanner.unhideModel(provider, model || '');
+      return NextResponse.json({ status: 'ok', action });
+    }
+    if (action === 'autodiscover') {
+      const result = await modelScanner.autodiscoverOnce();
+      return NextResponse.json({ status: 'ok', action, ...result });
+    }
+    if (action === 'hidden-models') {
+      const hidden = await modelScanner.getHiddenModels();
+      return NextResponse.json({ status: 'ok', hidden });
+    }
+
+    // Original workflow logic
+    const REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
     const { userRequest, options = {} } = body;
 
     if (!userRequest || typeof userRequest !== 'string' || !userRequest.trim()) {
@@ -89,7 +125,7 @@ export async function GET() {
           log: console,
           immediate: false,
           onScan: async () => {
-            const { models, config } = await modelScanner.scanAll();
+            const { models, config } = await modelScanner.scanAll(true);
             const ok = models.filter(m => m.status === 'ok');
 
             if (config.modelGroups) {
@@ -117,6 +153,9 @@ export async function GET() {
               }
             } catch {}
             return { ok: ok.length, total: models.length };
+          },
+          onAutodiscover: async () => {
+            return await modelScanner.autodiscoverOnce();
           },
         });
         console.log('[orchestrator] Background scanner auto-started');
@@ -237,12 +276,16 @@ export async function GET() {
     // Map modelStatus → modelHealth for dashboard compatibility
     const modelHealth = modelStats.modelStatus || {};
 
+    const hiddenModels = await modelScanner.getHiddenModels();
+
     return NextResponse.json({
       status: 'enabled',
       activeWorkflows: activeWorkflows.length,
       totalWorkflows: allWorkflows.length,
       lastPingResults,
       lastScanResults,
+      hiddenModels: Object.keys(hiddenModels).length,
+      autodiscoverRunning: getScannerStatus().autodiscoverRunning,
       supervisorModel: settings.supervisorModel,
       supervisorEndpoint: settings.supervisorEndpoint,
       settings: {
