@@ -48,6 +48,7 @@ export default function ModelSelectModal({
   const [providerNodes, setProviderNodes] = useState([]);
   const [customModels, setCustomModels] = useState([]);
   const [disabledModels, setDisabledModels] = useState({});
+  const [fetchedModels, setFetchedModels] = useState({});
 
   const fetchCombos = async () => {
     try {
@@ -96,6 +97,53 @@ export default function ModelSelectModal({
   useEffect(() => {
     if (isOpen) fetchCustomModels();
   }, [isOpen]);
+
+  // Fetch models dynamically from custom provider endpoints
+  const fetchProviderModels = async (providerId) => {
+    try {
+      // Find the connection ID for this provider
+      const connection = activeProviders.find(p => p.provider === providerId);
+      if (!connection?.id) return null;
+
+      const res = await fetch(`/api/providers/${connection.id}/models`);
+      if (!res.ok) {
+        console.log(`Failed to fetch models for ${providerId}:`, res.status);
+        return null;
+      }
+      const data = await res.json();
+      return data.models || [];
+    } catch (error) {
+      console.error(`Error fetching models for ${providerId}:`, error);
+      return null;
+    }
+  };
+
+  // Fetch models for all custom providers when modal opens
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const loadCustomProviderModels = async () => {
+      const customProviderIds = activeProviders
+        .filter(p => isOpenAICompatibleProvider(p.provider) || isAnthropicCompatibleProvider(p.provider))
+        .map(p => p.provider);
+
+      if (customProviderIds.length === 0) return;
+
+      const fetched = {};
+      await Promise.all(
+        customProviderIds.map(async (providerId) => {
+          const models = await fetchProviderModels(providerId);
+          if (models && models.length > 1) {
+            fetched[providerId] = models;
+          }
+        })
+      );
+
+      setFetchedModels(fetched);
+    };
+
+    loadCustomProviderModels();
+  }, [isOpen, activeProviders]);
 
   const fetchDisabledModels = async () => {
     try {
@@ -249,6 +297,15 @@ export default function ModelSelectModal({
             value: `${nodePrefix}/${fullModel.replace(`${providerId}/`, "")}`,
           }));
 
+        // Fetch models dynamically from the provider's upstream API
+        const dynamicModels = fetchedModels[providerId] || [];
+        const dynamicModelEntries = dynamicModels.map((m) => ({
+          id: m.id || m.slug || m.model || m.name,
+          name: m.name || m.displayName || m.id,
+          value: `${nodePrefix}/${m.id || m.slug || m.model || m.name}`,
+          isFetched: true,
+        }));
+
         // Merge custom models registered via /api/models/custom for this provider
         // providerAlias in DB uses the raw providerId, not the display prefix
         const registeredCustom = customModels
@@ -259,11 +316,24 @@ export default function ModelSelectModal({
             value: `${nodePrefix}/${m.id}`,
             isCustom: true,
           }));
-        const seen = new Set(nodeModels.map((m) => m.value));
-        const mergedModels = [...nodeModels, ...registeredCustom.filter((m) => !seen.has(m.value))];
 
-        // Always show compatible providers that are connected, even with no aliases.
-        // When no aliases exist, show a placeholder so users know it's available.
+        const seenValues = new Set(nodeModels.map(m => m.value));
+        const mergedCustom = registeredCustom.filter(m => {
+          if (seenValues.has(m.value)) return false;
+          seenValues.add(m.value);
+          return true;
+        });
+        
+        const mergedDynamic = dynamicModelEntries.filter(m => {
+          if (seenValues.has(m.value)) return false;
+          seenValues.add(m.value);
+          return true;
+        });
+
+        const mergedModels = [...nodeModels, ...mergedCustom, ...mergedDynamic];
+
+        // Always show compatible providers that are connected, even with no aliases or fetched models.
+        // When no models exist, show a placeholder so users know it's available.
         const modelsToShow = mergedModels.length > 0 ? mergedModels : [{
           id: `__placeholder__${providerId}`,
           name: `${nodePrefix}/model-id`,
@@ -349,7 +419,7 @@ export default function ModelSelectModal({
     });
 
     return groups;
-  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, activeProviders]);
+  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, activeProviders, fetchedModels]);
 
   // Filter combos by search query (and hide combos when kindFilter is set — combos are LLM-only by design)
   const filteredCombos = useMemo(() => {
@@ -533,6 +603,12 @@ export default function ModelSelectModal({
                         <>
                           {model.name}
                           <span className="text-[9px] opacity-60 font-normal">custom</span>
+                          <CapacityBadges caps={getCaps(model.value)} />
+                        </>
+                      ) : model.isFetched ? (
+                        <>
+                          {model.name}
+                          <span className="text-[9px] opacity-60 font-normal">auto</span>
                           <CapacityBadges caps={getCaps(model.value)} />
                         </>
                       ) : (
