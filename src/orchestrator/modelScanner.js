@@ -1,4 +1,4 @@
-import { getProviderConnections, getProviderNodes } from '@/lib/localDb.js';
+import { getProviderConnections, getProviderNodes, getSettings, updateSettings } from '@/lib/localDb.js';
 import { getAdapter } from '@/lib/db/driver.js';
 import { getCapabilitiesForModel } from 'open-sse/providers/capabilities.js';
 
@@ -22,7 +22,8 @@ const PROVIDER_ENDPOINTS = {
   ai21: 'https://api.ai21.com/studio/v1',
   upstage: 'https://api.upstage.ai/v1/solar',
   google: 'https://generativelanguage.googleapis.com/v1beta',
-  openai: '', // will be overridden by provider node's baseUrl
+  openai: '',
+  huggingface: 'https://router.huggingface.co/v1',
 };
 
 export class ModelScanner {
@@ -36,7 +37,112 @@ export class ModelScanner {
     return [...(this._progress || [])];
   }
 
-  async scanAll() {
+  async getHiddenModels() {
+    try {
+      const settings = await getSettings();
+      return settings.hiddenModels || {};
+    } catch { return {}; }
+  }
+
+  async hideBrokenModels() {
+    const hidden = await this.getHiddenModels();
+    const now = Date.now();
+    for (const r of this.results) {
+      if (r.status !== 'ok') {
+        const key = `${r.provider}/${r.model}`;
+        if (!hidden[key]) {
+          hidden[key] = {
+            hiddenAt: now,
+            nextCheckAt: now + 3600000,
+            failures: 1,
+            lastError: r.error,
+            model: r.model,
+            provider: r.provider,
+          };
+        } else {
+          hidden[key].lastError = r.error;
+          hidden[key].failures = (hidden[key].failures || 0) + 1;
+        }
+      }
+    }
+    try { await updateSettings({ hiddenModels: hidden }); } catch {}
+    return hidden;
+  }
+
+  async unhideModel(provider, model) {
+    const hidden = await this.getHiddenModels();
+    const key = `${provider}/${model}`;
+    if (hidden[key]) {
+      delete hidden[key];
+      try { await updateSettings({ hiddenModels: hidden }); } catch {}
+    }
+    return hidden;
+  }
+
+  async unhideAll() {
+    try { await updateSettings({ hiddenModels: {} }); } catch {}
+    return {};
+  }
+
+  async scanQuick() {
+    const hidden = await this.getHiddenModels();
+    const hiddenKeys = new Set(Object.keys(hidden));
+    const all = await this.scanAll();
+    all.models = all.models.filter(m => !hiddenKeys.has(`${m.provider}/${m.model}`));
+    all.config = this._generateConfig(all.models);
+    return all;
+  }
+
+  async autodiscoverOnce() {
+    const hidden = await this.getHiddenModels();
+    const now = Date.now();
+    const due = [];
+    const nextBackoff = { 1: 3, 2: 6, 3: 24 };
+
+    for (const [key, h] of Object.entries(hidden)) {
+      if (now >= (h.nextCheckAt || 0)) {
+        due.push({ key, ...h });
+      }
+    }
+
+    if (due.length === 0) {
+      return { checked: [], hidden: Object.keys(hidden).length };
+    }
+
+    const connections = await getProviderConnections();
+    const results = [];
+    for (const d of due) {
+      const conn = connections.find(c =>
+        this._normalizeProvider(c.provider) === d.provider
+      );
+      if (!conn) continue;
+      try {
+        const endpoint = conn.endpoint || PROVIDER_ENDPOINTS[d.provider];
+        if (!endpoint) continue;
+        const r = await this._callModel(
+          endpoint,
+          { 'Content-Type': 'application/json', ...(conn.apiKey ? { 'Authorization': `Bearer ${conn.apiKey}` } : {}) },
+          d.model, 'Ответь одним словом: работаю.'
+        );
+        hidden[d.key].failures = 0;
+        hidden[d.key].nextCheckAt = now + 86400000;
+        delete hidden[d.key].lastError;
+        results.push({ model: d.model, provider: d.provider, status: 'ok' });
+      } catch (err) {
+        const f = (hidden[d.key].failures || 0) + 1;
+        hidden[d.key].failures = f;
+        hidden[d.key].lastError = err.message;
+        const backoffHours = nextBackoff[f] || 24;
+        hidden[d.key].nextCheckAt = now + backoffHours * 3600000;
+        results.push({ model: d.model, provider: d.provider, status: 'error', error: err.message });
+      }
+    }
+
+    try { await updateSettings({ hiddenModels: hidden }); } catch {}
+    return { checked: results, hidden: Object.keys(hidden).length };
+  }
+
+  async scanAll(skipHidden = false) {
     if (this._scanInProgress) {
       console.log('[ModelScanner] scan already in progress, skipping');
       return { models: this.results, config: this._generateConfig(this.results) };
@@ -46,6 +152,8 @@ export class ModelScanner {
     this._progress = [];
     const connections = await getProviderConnections();
     const allTests = [];
+    const hidden = skipHidden ? await this.getHiddenModels() : {};
+    const hiddenKeys = new Set(Object.keys(hidden));
 
     for (const conn of connections) {
       if (!conn.isActive) continue;
@@ -92,6 +200,7 @@ export class ModelScanner {
       if (models.length === 0) models = this._getFallbackModels(provider);
 
       for (const model of models) {
+        if (skipHidden && hiddenKeys.has(`${provider}/${model}`)) continue;
         allTests.push({ connection: conn, provider, endpoint, model, apiKey: conn.apiKey || '' });
       }
     }
@@ -189,6 +298,8 @@ export class ModelScanner {
       console.log('[ModelScanner] Failed to import ModelRouter:', e.message);
     }
 
+    await this._recordScanUsage();
+
     return { models: scored, config };
     } finally {
       this._scanInProgress = false;
@@ -212,7 +323,7 @@ export class ModelScanner {
       const discovered = await this._discoverOpenAIModels(conn.endpoint);
       if (discovered.length > 0) return discovered;
     }
-    if (provider === 'groq' || provider === 'xai' || provider === 'sambanova' || provider === 'scaleway' || provider === 'ai21' || provider === 'upstage') {
+    if (provider === 'groq' || provider === 'xai' || provider === 'sambanova' || provider === 'scaleway' || provider === 'ai21' || provider === 'upstage' || provider === 'huggingface') {
       const endpoint = PROVIDER_ENDPOINTS[provider];
       if (endpoint) {
         const discovered = await this._discoverOpenAIModels(endpoint);
@@ -312,6 +423,7 @@ export class ModelScanner {
       scaleway: ['gemma-3-27b-it', 'llama-3.3-70b-instruct', 'deepseek-v3.2', 'gpt-oss-120b', 'qwen3.6-35b-a3b'],
       ai21: ['jamba-large', 'jamba-mini', 'jamba-1.5-large', 'jamba-1.5-mini'],
       upstage: ['solar-pro', 'solar-mini'],
+      huggingface: ['Qwen/Qwen2.5-72B-Instruct', 'meta-llama/Llama-3.3-70B-Instruct'],
       openai: [],
     };
     return fallback[provider] || [];
@@ -391,6 +503,36 @@ export class ModelScanner {
     result.tier = result.costPer1K > 0 ? 'paid' : 'free';
 
     return result;
+  }
+
+  async _recordScanUsage() {
+    try {
+      const { getAdapter } = await import('@/lib/db/driver.js');
+      const db = await getAdapter();
+      const now = new Date().toISOString();
+      const insert = typeof db.prepare === 'function'
+        ? db.prepare(`INSERT INTO usageHistory(provider, model, connectionId, status, cost, promptTokens, completionTokens, meta, timestamp)
+                       VALUES(?, ?, ?, ?, 0, 0, 0, ?, ?)`)
+        : null;
+      if (!insert) return;
+
+      for (const r of this.results) {
+        if (!r.connectionId) continue;
+        const meta = JSON.stringify({
+          latencyMs: r.latencyMs,
+          error: r.error || null,
+          scores: r.scores,
+          avgScore: r.avgScore,
+          source: 'modelScanner',
+        });
+        try {
+          insert.run(r.provider || 'unknown', r.model, r.connectionId, r.status, meta, now);
+        } catch { /* ignore duplicate */ }
+      }
+      console.log(`[ModelScanner] Recorded ${this.results.filter(r => r.connectionId).length} test results in usageHistory`);
+    } catch (err) {
+      console.warn('[ModelScanner] Failed to record usage:', err.message);
+    }
   }
 
   async _callModel(base, headers, model, prompt, isOpenCode) {
