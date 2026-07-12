@@ -1,0 +1,313 @@
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined&display=block">
+
+<style>
+  /* === Re-define 9router tokens inline (matches globals.css .dark) === */
+  :root {
+    --color-brand-500: #E56A4A;
+    --color-brand-600: #cc5236;
+    --color-bg: #1a1a1a;
+    --color-bg-alt: #1F1F1E;
+    --color-surface: #262626;
+    --color-surface-2: #303030;
+    --color-surface-3: #3a3a3a;
+    --color-sidebar: rgba(30, 30, 30, 0.85);
+    --color-border: #333333;
+    --color-border-subtle: #2a2a2a;
+    --color-text-main: #ededed;
+    --color-text-muted: #9ca3af;
+    --color-text-subtle: #6b7280;
+  }
+  body { background: #0f0f0f; color: var(--color-text-main); }
+  .rs-surface { background: var(--color-surface); border: 1px solid var(--color-border-subtle); }
+  .rs-input { background: var(--color-surface-2); color: var(--color-text-main); border: 1px solid transparent; }
+  .rs-section { background: var(--color-bg-alt); border: 1px solid var(--color-border-subtle); }
+  .rs-email-box { background: var(--color-sidebar); }
+  .rs-save { background: var(--color-brand-500); color: #fff; }
+  .rs-save:hover { background: var(--color-brand-600); }
+  .rs-pill { background: rgba(229,106,74,0.10); color: #ee8d6a; }
+  .rs-test { background: var(--color-surface-2); color: var(--color-text-main); border: 1px solid var(--color-border); }
+  .rs-test:hover { background: var(--color-surface-3); }
+  .rs-model-row { background: rgba(255,255,255,0.02); }
+  .rs-model-row:hover { background: rgba(255,255,255,0.04); }
+  .rs-add-btn { border: 1px dashed var(--color-border); color: var(--color-text-muted); }
+  .rs-add-btn:hover { border-color: var(--color-brand-500); color: var(--color-brand-500); background: rgba(229,106,74,0.05); }
+  /* === Exact replication of ModelSelectModal pill styles === */
+  .rs-pill-model {
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-text-main);
+    transition: all 0.15s;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .rs-pill-model:hover { border-color: rgba(229,106,74,0.5); background: rgba(229,106,74,0.05); }
+  .rs-pill-model.selected {
+    background: var(--color-brand-500);
+    color: #fff;
+    border-color: var(--color-brand-500);
+  }
+  .rs-pill-model.selected:hover { background: var(--color-brand-600); }
+  /* === Replicate info callout from ModelSelectModal === */
+  .rs-info {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 10px;
+    background: rgba(229,106,74,0.08);
+    border: 1px solid rgba(229,106,74,0.20);
+    border-radius: 8px;
+    font-size: 11px;
+    color: var(--color-text-muted);
+  }
+  .rs-info .material-symbols-outlined { color: var(--color-brand-500); font-size: 14px; }
+  /* Provider section header — replicates the sticky bg-surface + provider icon + name + count */
+  .rs-provider-header {
+    display: flex; align-items: center; gap: 6px;
+    margin-bottom: 6px;
+    padding: 2px 0;
+  }
+  .rs-provider-icon {
+    width: 14px; height: 14px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: #10a37f; color: #fff; font-size: 8px; font-weight: 700;
+  }
+  .rs-provider-name { font-size: 11px; font-weight: 500; color: var(--color-brand-500); }
+  .rs-provider-count { font-size: 10px; color: var(--color-text-muted); }
+  /* Search input — replicates ModelSelectModal's bg-surface border-border */
+  .rs-search {
+    position: relative;
+  }
+  .rs-search input {
+    width: 100%;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-main);
+    border-radius: 6px;
+    padding: 6px 10px 6px 32px;
+    font-size: 11px;
+    outline: none;
+  }
+  .rs-search input:focus { border-color: rgba(229,106,74,0.5); }
+  .rs-search .material-symbols-outlined {
+    position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+    color: var(--color-text-muted); font-size: 16px;
+  }
+  /* Re-emphasize the .material-symbols-outlined defaults from Google Fonts */
+  .material-symbols-outlined {
+    font-family: 'Material Symbols Outlined';
+    font-weight: normal; font-style: normal;
+    font-size: 18px; line-height: 1;
+    letter-spacing: normal; text-transform: none;
+    display: inline-block; white-space: nowrap; word-wrap: normal; direction: ltr;
+    -webkit-font-smoothing: antialiased;
+  }
+  .check-xs { font-size: 10px !important; line-height: 1; vertical-align: middle; }
+  .check-sm { font-size: 14px !important; line-height: 1; vertical-align: middle; }
+</style>
+
+<h2>v7 — Whitelist là tập không thứ tự (bỏ drag/index/up-down)</h2>
+<p class="subtitle">Fix: whitelist per-account là SET chứ không phải LIST có thứ tự. Bỏ drag handle, index, up/down arrow; chỉ giữ tên model + nút X để xóa. Hint rút gọn còn "Empty = all models allowed".</p>
+
+<div class="mockup" style="max-width:480px;margin:0 auto">
+  <!-- Outer page bg -->
+  <div style="background:var(--color-bg);padding:24px;border-radius:14px">
+
+    <!-- Modal size="md" surface -->
+    <div class="rs-surface" style="border-radius:14px;overflow:hidden">
+
+      <!-- Header: traffic lights + title (same as ModelSelectModal via Modal component) -->
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px;border-bottom:1px solid var(--color-border-subtle)">
+        <div style="display:flex;align-items:center">
+          <div style="display:flex;align-items:center;gap:8px;margin-right:16px;margin-left:8px">
+            <div style="width:16px;height:16px;border-radius:50%;background:#FF5F56"></div>
+            <div style="width:16px;height:16px;border-radius:50%;background:rgba(255,255,255,0.15)"></div>
+            <div style="width:16px;height:16px;border-radius:50%;background:rgba(255,255,255,0.15)"></div>
+          </div>
+          <h2 style="font-size:18px;font-weight:600;color:var(--color-text-main);margin:0">Edit Connection</h2>
+        </div>
+      </div>
+
+      <!-- Body — flex flex-col gap-4 p-5 -->
+      <div style="display:flex;flex-direction:column;gap:16px;padding:20px">
+
+        <!-- Name field — <Input label="Name" /> -->
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <label style="font-size:14px;font-weight:500;color:var(--color-text-main)">Name</label>
+          <input class="rs-input" value="kakarlorc@gmail.com" style="width:100%;padding:10px 12px;font-size:14px;border-radius:10px;outline:none">
+        </div>
+
+        <!-- Email block — isOAuth && connection.email (bg-sidebar/50 p-3 rounded-lg) -->
+        <div class="rs-email-box" style="padding:12px;border-radius:8px">
+          <p style="font-size:14px;color:var(--color-text-muted);margin:0 0 4px">Email</p>
+          <p style="font-weight:500;color:var(--color-text-main);margin:0">kakarlorc@gmail.com</p>
+        </div>
+
+        <!-- Priority — <Input type="number" label="Priority" /> -->
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <label style="font-size:14px;font-weight:500;color:var(--color-text-main)">Priority</label>
+          <input class="rs-input" type="number" value="4" style="width:100%;padding:10px 12px;font-size:14px;border-radius:10px;outline:none">
+        </div>
+
+        <!-- Test Connection — <Button variant="secondary" /> -->
+        <div>
+          <button class="rs-test" style="padding:8px 12px;font-size:14px;font-weight:500;border-radius:10px;cursor:pointer">
+            Test Connection
+          </button>
+        </div>
+
+        <!-- ★ NEW: Allowed Models (collapsible section) -->
+        <div>
+          <label style="font-size:14px;font-weight:500;color:var(--color-text-main);display:block;margin-bottom:6px">
+            Allowed Models
+          </label>
+
+          <!-- Whitelist = unordered set. Rows: name + X (remove) only -->
+          <div style="display:flex;flex-direction:column;gap:4px;max-height:200px;overflow-y:auto">
+            <div class="rs-model-row" style="display:flex;align-items:center;gap:6px;padding:4px 8px;border-radius:6px">
+              <span style="flex:1;font-family:ui-monospace,monospace;font-size:12px;color:var(--color-text-main);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">gpt-5.5</span>
+              <button title="Remove" style="padding:2px;border:none;background:transparent;cursor:pointer;color:var(--color-text-muted)">
+                <span class="material-symbols-outlined" style="font-size:12px">close</span>
+              </button>
+            </div>
+            <div class="rs-model-row" style="display:flex;align-items:center;gap:6px;padding:4px 8px;border-radius:6px">
+              <span style="flex:1;font-family:ui-monospace,monospace;font-size:12px;color:var(--color-text-main);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">gpt-5.4</span>
+              <button title="Remove" style="padding:2px;border:none;background:transparent;cursor:pointer;color:var(--color-text-muted)">
+                <span class="material-symbols-outlined" style="font-size:12px">close</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Add button — replicates "Add Model" button from ComboFormModal:line 153 -->
+          <button class="rs-add-btn" style="width:100%;margin-top:8px;padding:8px;border-radius:8px;font-size:12px;font-weight:500;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px;transition:all 0.15s">
+            <span class="material-symbols-outlined" style="font-size:16px">add</span>
+            Add Model
+          </button>
+
+          <!-- Hint -->
+          <p style="font-size:11px;color:var(--color-text-muted);margin:6px 0 0;display:flex;align-items:center;gap:4px">
+            <span class="material-symbols-outlined" style="font-size:12px">info</span>
+            Empty = all models allowed.
+          </p>
+        </div>
+
+        <!-- Save / Cancel — replicates Modal footer with Button variant=ghost + primary -->
+        <div style="display:flex;gap:8px;padding-top:4px">
+          <button class="rs-save" style="flex:1;padding:10px;font-size:14px;font-weight:500;border:none;border-radius:10px;cursor:pointer;transition:background 0.15s">Save</button>
+          <button style="flex:1;padding:10px;font-size:14px;font-weight:500;background:transparent;border:none;border-radius:10px;cursor:pointer;color:var(--color-text-muted)">Cancel</button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ★ Picker popover (REUSES ModelSelectModal) — opens when user clicks "Add Model" -->
+<div class="mockup" style="max-width:520px;margin:32px auto 0">
+  <div style="background:var(--color-bg);padding:24px;border-radius:14px">
+    <div class="rs-surface" style="border-radius:14px;overflow:hidden">
+      <!-- Header -->
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px;border-bottom:1px solid var(--color-border-subtle)">
+        <div style="display:flex;align-items:center">
+          <div style="display:flex;align-items:center;gap:8px;margin-right:16px;margin-left:8px">
+            <div style="width:16px;height:16px;border-radius:50%;background:#FF5F56"></div>
+            <div style="width:16px;height:16px;border-radius:50%;background:rgba(255,255,255,0.15)"></div>
+            <div style="width:16px;height:16px;border-radius:50%;background:rgba(255,255,255,0.15)"></div>
+          </div>
+          <h2 style="font-size:18px;font-weight:600;color:var(--color-text-main);margin:0">Add Model to Account</h2>
+        </div>
+      </div>
+      <!-- Body — p-4 (ModelSelectModal passes className="p-4!") -->
+      <div style="padding:16px;display:flex;flex-direction:column;gap:12px">
+
+        <!-- Info callout — replicates ModelSelectModal:382-385 -->
+        <div class="rs-info">
+          <span class="material-symbols-outlined">info</span>
+          <span>Click to add, click again to remove. Changes are saved automatically.</span>
+        </div>
+
+        <!-- Search input — replicates ModelSelectModal:388-401 -->
+        <div class="rs-search">
+          <span class="material-symbols-outlined">search</span>
+          <input placeholder="Search...">
+        </div>
+
+        <!-- Models list — replicates grouped layout (ModelSelectModal:442-505) -->
+        <div style="max-height:360px;overflow-y:auto;display:flex;flex-direction:column;gap:12px">
+
+          <!-- OpenAI Codex section (current provider) -->
+          <div>
+            <div class="rs-provider-header">
+              <span class="rs-provider-icon">OA</span>
+              <span class="rs-provider-name">OpenAI Codex</span>
+              <span class="rs-provider-count">(5)</span>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px">
+              <button class="rs-pill-model selected">
+                <span class="material-symbols-outlined check-xs">check</span>
+                GPT 5.4 Mini
+              </button>
+              <button class="rs-pill-model selected">
+                <span class="material-symbols-outlined check-xs">check</span>
+                GPT 5.3 Codex
+              </button>
+              <button class="rs-pill-model">
+                GPT 5.3 Codex (High)
+              </button>
+              <button class="rs-pill-model">
+                GPT 5.3 Codex (Low)
+              </button>
+              <button class="rs-pill-model">
+                GPT 5.3 Codex (None)
+              </button>
+            </div>
+          </div>
+
+          <!-- Combos section removed: combos are multi-provider aggregates, don't belong in per-account whitelist context -->
+        </div>
+
+        <!-- Footer note (no Apply button — auto-save per ModelSelectModal:363-366) -->
+        <p style="font-size:11px;color:var(--color-text-muted);margin:4px 0 0;display:flex;align-items:center;gap:4px">
+          <span class="material-symbols-outlined" style="font-size:12px">close</span>
+          Press <kbd style="padding:1px 4px;background:var(--color-surface-2);border-radius:3px;font-size:10px">Esc</kbd> to close. Click outside also closes.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:24px">
+  <h3>Đối chiếu code thật (lần 4 — v7)</h3>
+  <ul style="font-size:13px;line-height:1.8;color:#d4d4d8">
+    <li><b>Whitelist = SET, không có order:</b> chỉ là tập model được phép. Không cần drag/index/up-down arrow. Mỗi row = tên model + nút X. Hint: "Empty = all models allowed."</li>
+    <li><b>Picker modal:</b> Tái sử dụng <code>ModelSelectModal</code> với prop <code>activeProviders=[codexAccount]</code> + <code>kindFilter='llm'</code> → chỉ list Codex LLM models</li>
+    <li><b>Bỏ Combos section:</b> Combos là multi-provider aggregate (vd: <code>coder = [codex/gpt-5.4, anthropic/claude-opus]</code>) — gán vào whitelist 1 Codex account sẽ ambiguous. Picker chỉ hiển thị <b>raw models của provider đó</b>.</li>
+    <li><b>Info callout:</b> class <code>flex items-center gap-2 mb-3 px-2.5 py-2 bg-primary/8 border border-primary/20 rounded-lg text-xs text-text-muted</code> từ <code>ModelSelectModal.js:382-385</code></li>
+    <li><b>Search input:</b> class <code>w-full pl-8 pr-3 py-1.5 bg-surface border border-border rounded text-xs</code> từ <code>ModelSelectModal.js:398</code></li>
+    <li><b>Pill style (selected):</b> <code>bg-primary text-white border-primary</code> + icon <code>check</code> 10px từ <code>ModelSelectModal.js:474-485</code></li>
+    <li><b>Pill style (unselected):</b> <code>bg-surface border-border text-text-main hover:border-primary/50 hover:bg-primary/5</code></li>
+    <li><b>Provider header:</b> <code>ProviderIcon</code> + tên + <code>(count)</code> giống <code>ModelSelectModal.js:445-459</code></li>
+    <li><b>Add button:</b> class <code>w-full mt-2 py-2 border border-dashed border-black/10 dark:border-white/10 rounded-lg text-xs text-primary font-medium hover:border-primary/50</code> từ <code>ComboFormModal.js:153-157</code></li>
+    <li><b>Auto-save:</b> Picker <b>không có Apply/Cancel</b> — click pill = thêm/xóa ngay (giống <code>ModelSelectModal</code> với <code>closeOnSelect=false</code>)</li>
+  </ul>
+</div>
+
+<div class="cards" style="margin-top:16px">
+  <div class="card" data-choice="ok" onclick="toggleSelect(this)">
+    <div class="card-body">
+      <h3>✓ Đúng pattern rồi, hỏi tiếp</h3>
+      <p>Picker reuse ModelSelectModal, list reuse ModelItem, tokens y nguyên codebase. Sang câu conceptual tiếp theo.</p>
+    </div>
+  </div>
+  <div class="card" data-choice="revise" onclick="toggleSelect(this)">
+    <div class="card-body">
+      <h3>↻ Vẫn cần chỉnh</h3>
+      <p>Mô tả trong terminal — vị trí section, kích thước pill/list, hay cách click outside.</p>
+    </div>
+  </div>
+</div>

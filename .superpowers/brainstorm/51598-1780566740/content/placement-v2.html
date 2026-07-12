@@ -1,0 +1,110 @@
+<h2>Option B v2 — Dark theme match + expanded model section</h2>
+<p class="subtitle">Recreate đúng style modal hiện tại, thêm collapsible "Allowed models" bên dưới Test Connection</p>
+
+<div class="mockup" style="max-width:420px;margin:0 auto">
+  <div class="mockup-body" style="padding:0;background:#1f1f1f;color:#e5e5e5;border-radius:12px;overflow:hidden;box-shadow:0 25px 50px -12px rgba(0,0,0,0.5)">
+    <!-- Header -->
+    <div style="display:flex;align-items:center;gap:8px;padding:18px 20px 14px;border-bottom:1px solid #2a2a2a">
+      <div style="display:flex;gap:6px">
+        <span style="width:12px;height:12px;border-radius:50%;background:#ef4444"></span>
+        <span style="width:12px;height:12px;border-radius:50%;background:#3f3f46"></span>
+        <span style="width:12px;height:12px;border-radius:50%;background:#3f3f46"></span>
+      </div>
+      <div style="flex:1;text-align:center;font-size:17px;font-weight:600;margin-right:60px">Edit Connection</div>
+    </div>
+
+    <!-- Body -->
+    <div style="padding:20px;display:flex;flex-direction:column;gap:18px">
+      <!-- Name -->
+      <div>
+        <div style="font-size:14px;margin-bottom:8px;color:#e5e5e5">Name</div>
+        <input class="mock-input" value="kakarlorc@gmail.com" style="width:100%;background:#0f0f0f;border:1px solid #2a2a2a;color:#9ca3af;padding:12px 14px;border-radius:8px">
+      </div>
+
+      <!-- Email -->
+      <div>
+        <input class="mock-input" placeholder="Email" value="kakarlorc@gmail.com" style="width:100%;background:#0f0f0f;border:1px solid #2a2a2a;color:#e5e5e5;padding:12px 14px;border-radius:8px">
+      </div>
+
+      <!-- Priority -->
+      <div>
+        <div style="font-size:14px;margin-bottom:8px;color:#e5e5e5">Priority</div>
+        <input class="mock-input" value="4" style="width:100%;background:#0f0f0f;border:1px solid #2a2a2a;color:#e5e5e5;padding:12px 14px;border-radius:8px">
+      </div>
+
+      <!-- Test Connection -->
+      <button class="mock-button" style="background:#2a2a2a;color:#e5e5e5;border:1px solid #3f3f46;padding:11px 18px;border-radius:8px;font-size:14px;align-self:flex-start">Test Connection</button>
+
+      <!-- NEW: Collapsible Allowed Models -->
+      <details open style="background:#181818;border:1px solid #2a2a2a;border-radius:8px;overflow:hidden">
+        <summary style="cursor:pointer;padding:12px 14px;font-size:14px;font-weight:500;list-style:none;display:flex;align-items:center;justify-content:space-between">
+          <span>▾ Allowed models <span style="color:#6b7280;font-weight:400">(2)</span></span>
+          <span style="font-size:11px;color:#6b7280">empty = all models</span>
+        </summary>
+        <div style="padding:0 14px 14px;border-top:1px solid #2a2a2a">
+          <div style="display:flex;flex-wrap:wrap;gap:6px;padding-top:12px">
+            <span style="background:#1e3a8a;color:#93c5fd;padding:4px 10px;border-radius:6px;font-size:12px;display:inline-flex;align-items:center;gap:6px">gpt-5.5 <span style="cursor:pointer;opacity:0.6">✕</span></span>
+            <span style="background:#1e3a8a;color:#93c5fd;padding:4px 10px;border-radius:6px;font-size:12px;display:inline-flex;align-items:center;gap:6px">gpt-5.4 <span style="cursor:pointer;opacity:0.6">✕</span></span>
+            <span style="background:#2a2a2a;color:#9ca3af;padding:4px 10px;border-radius:6px;font-size:12px;cursor:pointer">+ Add model</span>
+          </div>
+        </div>
+      </details>
+
+      <!-- Save / Cancel -->
+      <div style="display:flex;align-items:center;gap:12px;padding-top:8px">
+        <button class="mock-button" style="background:#f97316;color:#fff;padding:11px 32px;border-radius:8px;font-size:14px;font-weight:500;flex:1">Save</button>
+        <button class="mock-button" style="background:transparent;color:#9ca3af;padding:11px 32px;font-size:14px">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="mockup" style="margin-top:20px;max-width:420px;margin-left:auto;margin-right:auto">
+  <div class="mockup-header" style="background:#27272a;color:#e5e5e5">+ Add model — picker mở ra thế này?</div>
+  <div class="mockup-body" style="padding:14px;background:#181818;border-radius:0 0 8px 8px;border:1px solid #2a2a2a;border-top:none">
+    <input class="mock-input" placeholder="Search models…" style="width:100%;background:#0f0f0f;border:1px solid #2a2a2a;color:#e5e5e5;padding:10px 12px;border-radius:6px;margin-bottom:10px">
+    <div style="display:flex;flex-direction:column;gap:4px;max-height:200px;overflow-y:auto">
+      <div style="padding:8px 10px;background:#1e3a8a;border-radius:6px;font-size:13px;display:flex;align-items:center;gap:8px">
+        <span style="width:16px;text-align:center;color:#93c5fd">✓</span> gpt-5.5
+      </div>
+      <div style="padding:8px 10px;background:#1e3a8a;border-radius:6px;font-size:13px;display:flex;align-items:center;gap:8px">
+        <span style="width:16px;text-align:center;color:#93c5fd">✓</span> gpt-5.4
+      </div>
+      <div style="padding:8px 10px;background:#0f0f0f;border-radius:6px;font-size:13px;display:flex;align-items:center;gap:8px">
+        <span style="width:16px;text-align:center;color:#4b5563">○</span> gpt-5.3
+      </div>
+      <div style="padding:8px 10px;background:#0f0f0f;border-radius:6px;font-size:13px;display:flex;align-items:center;gap:8px">
+        <span style="width:16px;text-align:center;color:#4b5563">○</span> o1-preview
+      </div>
+      <div style="padding:8px 10px;background:#0f0f0f;border-radius:6px;font-size:13px;display:flex;align-items:center;gap:8px">
+        <span style="width:16px;text-align:center;color:#4b5563">○</span> o1-mini
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:24px">
+  <h3>Layout notes</h3>
+  <ul style="font-size:14px;line-height:1.7;color:#d4d4d8">
+    <li><b>Modal width:</b> 420px (giữ nguyên như ảnh, không phá layout các modal khác)</li>
+    <li><b>Section "Allowed models":</b> collapsible, mặc định <i>đóng</i> khi account chưa có whitelist, <i>mở</i> khi đã có ≥1 model</li>
+    <li><b>Visual hint:</b> dòng "empty = all models" cho user biết không cấu hình = dùng tất cả</li>
+    <li><b>Add model UX:</b> click "+ Add model" → mở popover/dropdown search-and-multi-select (xem mock dưới)</li>
+    <li><b>Tags:</b> pill shape, nền xanh dương đậm + text xanh nhạt (theo accent hiện tại của app), ✕ để remove</li>
+  </ul>
+</div>
+
+<div class="cards" style="margin-top:16px">
+  <div class="card" data-choice="ok" onclick="toggleSelect(this)">
+    <div class="card-body">
+      <h3>✓ Layout OK, hỏi tiếp</h3>
+      <p>Bố cục + dark theme + picker pattern ổn, chuyển sang câu hỏi kế tiếp (cách lấy danh sách model, tương tác với disabledModels provider-level, v.v.)</p>
+    </div>
+  </div>
+  <div class="card" data-choice="revise" onclick="toggleSelect(this)">
+    <div class="card-body">
+      <h3>↻ Chỉnh thêm</h3>
+      <p>Có chỗ cần sửa — mô tả trong terminal (vd: picker dạng khác, đổi màu, đổi vị trí)</p>
+    </div>
+  </div>
+</div>

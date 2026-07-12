@@ -1,0 +1,92 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e4]:
+      - link "hub 9Router Proxy v0.5.12" [ref=e10] [cursor=pointer]:
+        - /url: /dashboard
+        - generic [ref=e12]: hub
+        - generic [ref=e13]:
+          - heading "9Router Proxy" [level=1] [ref=e14]
+          - generic [ref=e15]: v0.5.12
+      - navigation [ref=e16]:
+        - link "api Endpoint & Key" [ref=e17] [cursor=pointer]:
+          - /url: /dashboard/endpoint
+          - generic [ref=e18]: api
+          - generic [ref=e19]: Endpoint & Key
+        - link "dns Providers" [ref=e20] [cursor=pointer]:
+          - /url: /dashboard/providers
+          - generic [ref=e21]: dns
+          - generic [ref=e22]: Providers
+        - link "layers Combos" [ref=e23] [cursor=pointer]:
+          - /url: /dashboard/combos
+          - generic [ref=e24]: layers
+          - generic [ref=e25]: Combos
+        - link "bar_chart Usage" [ref=e26] [cursor=pointer]:
+          - /url: /dashboard/usage
+          - generic [ref=e27]: bar_chart
+          - generic [ref=e28]: Usage
+        - link "data_usage Quota Tracker" [ref=e29] [cursor=pointer]:
+          - /url: /dashboard/quota
+          - generic [ref=e30]: data_usage
+          - generic [ref=e31]: Quota Tracker
+        - link "savings Token Saver" [ref=e32] [cursor=pointer]:
+          - /url: /dashboard/token-saver
+          - generic [ref=e33]: savings
+          - generic [ref=e34]: Token Saver
+        - link "terminal CLI Tools" [ref=e35] [cursor=pointer]:
+          - /url: /dashboard/cli-tools
+          - generic [ref=e36]: terminal
+          - generic [ref=e37]: CLI Tools
+        - generic [ref=e38]:
+          - paragraph [ref=e39]: System
+          - button "perm_media Media Providers expand_more" [ref=e40] [cursor=pointer]:
+            - generic [ref=e41]: perm_media
+            - generic [ref=e42]: Media Providers
+            - generic [ref=e43]: expand_more
+          - link "lan Proxy Pools" [ref=e44] [cursor=pointer]:
+            - /url: /dashboard/proxy-pools
+            - generic [ref=e45]: lan
+            - generic [ref=e46]: Proxy Pools
+          - link "extension Skills" [ref=e47] [cursor=pointer]:
+            - /url: /dashboard/skills
+            - generic [ref=e48]: extension
+            - generic [ref=e49]: Skills
+          - link "terminal Console Log" [ref=e50] [cursor=pointer]:
+            - /url: /dashboard/console-log
+            - generic [ref=e51]: terminal
+            - generic [ref=e52]: Console Log
+          - button "computer Remote" [ref=e53] [cursor=pointer]:
+            - generic [ref=e54]: computer
+            - generic [ref=e55]: Remote
+          - link "settings Settings" [ref=e56] [cursor=pointer]:
+            - /url: /dashboard/profile
+            - generic [ref=e57]: settings
+            - generic [ref=e58]: Settings
+    - main [ref=e59]:
+      - generic [ref=e60]:
+        - generic [ref=e62]:
+          - generic [ref=e63]:
+            - generic [ref=e64]: api
+            - heading "Endpoint" [level=1] [ref=e65]
+          - paragraph [ref=e66]: API endpoint configuration
+        - generic [ref=e67]:
+          - button "Donate" [ref=e68] [cursor=pointer]:
+            - generic [ref=e69]: volunteer_activism
+            - generic [ref=e70]: Donate
+          - button "Switch to dark mode" [ref=e71] [cursor=pointer]:
+            - generic [ref=e72]: dark_mode
+          - button "🇺🇸" [ref=e73] [cursor=pointer]:
+            - generic [ref=e74]: 🇺🇸
+          - button "grid_view" [ref=e76] [cursor=pointer]:
+            - generic [ref=e77]: grid_view
+  - generic [ref=e97] [cursor=pointer]:
+    - button "Open Next.js Dev Tools" [ref=e98]:
+      - img [ref=e99]
+    - generic [ref=e102]:
+      - button "Open issues overlay" [ref=e103]:
+        - generic [ref=e104]:
+          - generic [ref=e105]: "0"
+          - generic [ref=e106]: "1"
+        - generic [ref=e107]: Issue
+      - button "Collapse issues badge" [ref=e108]:
+        - img [ref=e109]
+  - alert [ref=e111]

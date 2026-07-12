@@ -1,0 +1,222 @@
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=block" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+<h2>v5 — Render lại từ code thật (CSS vars + components + Material Symbols font)</h2>
+<p class="subtitle">Fix: thêm Google Fonts link cho <code>Material Symbols Outlined</code> (giống <code>src/app/layout.js</code>). Dùng đúng dark theme tokens từ <code>globals.css</code> + JSX pattern từ <code>EditConnectionModal.js</code></p>
+
+<!-- Define CSS variables to match the real dark theme -->
+<style>
+  :root {
+    --c-brand-500: #E56A4A;
+    --c-brand-600: #cc5236;
+    --c-bg: #1a1a1a;
+    --c-bg-alt: #1F1F1E;
+    --c-surface: #262626;
+    --c-surface-2: #303030;
+    --c-surface-3: #3a3a3a;
+    --c-sidebar: rgba(30, 30, 30, 0.85);
+    --c-border: #333333;
+    --c-border-subtle: #2a2a2a;
+    --c-text-main: #ededed;
+    --c-text-muted: #9ca3af;
+    --c-text-subtle: #6b7280;
+  }
+  .rs-surface { background: var(--c-surface); border: 1px solid var(--c-border-subtle); }
+  .rs-input { background: var(--c-surface-2); color: var(--c-text-main); border: 1px solid transparent; }
+  .rs-input-muted { color: var(--c-text-muted); }
+  .rs-label { color: var(--c-text-main); }
+  .rs-section { background: var(--c-bg-alt); border: 1px solid var(--c-border-subtle); }
+  .rs-pill { background: rgba(229,106,74,0.10); color: #ee8d6a; } /* brand-500/10 + brand-300 text */
+  .rs-add-btn { background: var(--c-surface-2); color: var(--c-text-muted); border: 1px dashed var(--c-border); }
+  .rs-add-btn:hover { border-color: var(--c-brand-500); color: var(--c-text-main); }
+  .rs-save { background: var(--c-brand-500); color: #fff; }
+  .rs-save:hover { background: var(--c-brand-600); }
+  .rs-cancel { color: var(--c-text-muted); }
+  .rs-cancel:hover { color: var(--c-text-main); background: var(--c-surface-2); }
+  .rs-test { background: var(--c-surface-2); color: var(--c-text-main); border: 1px solid var(--c-border); }
+  .rs-test:hover { background: var(--c-surface-3); }
+  .rs-email-box { background: var(--c-sidebar); }
+  .rs-material { font-family: 'Material Symbols Outlined'; font-weight: normal; font-style: normal; font-size: 18px; line-height: 1; user-select: none; vertical-align: middle; }
+</style>
+
+<div class="mockup" style="max-width:480px;margin:0 auto">
+  <!-- Outer page bg matches the dashboard's --color-bg -->
+  <div style="background:var(--c-bg);padding:24px;border-radius:14px">
+
+    <!-- <Modal size="md"> renders: relative w-full bg-surface border border-border-subtle rounded-[14px] -->
+    <div class="rs-surface" style="border-radius:14px;overflow:hidden;box-shadow:var(--shadow-elev, 0 16px 48px -8px rgba(0,0,0,0.55))">
+
+      <!-- Header — Modal's traffic lights + title (p-2 border-b border-border-subtle) -->
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px;border-bottom:1px solid var(--c-border-subtle)">
+        <div style="display:flex;align-items:center">
+          <div style="display:flex;align-items:center;gap:8px;margin-right:16px;margin-left:8px">
+            <div style="width:16px;height:16px;border-radius:50%;background:#FF5F56"></div>
+            <div style="width:16px;height:16px;border-radius:50%;background:rgba(255,255,255,0.15)"></div>
+            <div style="width:16px;height:16px;border-radius:50%;background:rgba(255,255,255,0.15)"></div>
+          </div>
+          <h2 style="font-size:18px;font-weight:600;color:var(--c-text-main);margin:0">Edit Connection</h2>
+        </div>
+      </div>
+
+      <!-- Body — flex flex-col gap-4 p-5 -->
+      <div style="display:flex;flex-direction:column;gap:16px;padding:20px">
+
+        <!-- Name field — <Input label="Name" /> -->
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <label class="rs-label" style="font-size:14px;font-weight:500">Name</label>
+          <input class="rs-input" value="kakarlorc@gmail.com" style="width:100%;padding:10px 12px;font-size:14px;border-radius:10px;outline:none">
+        </div>
+
+        <!-- Email box — isOAuth && connection.email (bg-sidebar/50 p-3 rounded-lg) -->
+        <div class="rs-email-box" style="padding:12px;border-radius:8px">
+          <p style="font-size:14px;color:var(--c-text-muted);margin:0 0 4px">Email</p>
+          <p style="font-weight:500;color:var(--c-text-main);margin:0">kakarlorc@gmail.com</p>
+        </div>
+
+        <!-- Priority — <Input type="number" label="Priority" /> -->
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <label class="rs-label" style="font-size:14px;font-weight:500">Priority</label>
+          <input class="rs-input" type="number" value="4" style="width:100%;padding:10px 12px;font-size:14px;border-radius:10px;outline:none">
+        </div>
+
+        <!-- Test Connection — <Button variant="secondary" /> + Badge -->
+        <div style="display:flex;align-items:center;gap:12px">
+          <button class="rs-test" style="padding:8px 12px;font-size:14px;font-weight:500;border-radius:10px;cursor:pointer">Test Connection</button>
+        </div>
+
+        <!-- ★ NEW: Collapsible "Allowed models" -->
+        <div class="rs-section" style="border-radius:10px;overflow:hidden">
+          <button style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:transparent;border:none;cursor:pointer;color:var(--c-text-main);font-size:14px;font-weight:500" onclick="this.nextElementSibling.classList.toggle('hidden'); this.querySelector('.chev').classList.toggle('rot')">
+            <span style="display:flex;align-items:center;gap:8px">
+              <span class="rs-material" style="color:var(--c-text-muted)">tune</span>
+              Allowed models
+              <span class="rs-pill" style="display:inline-flex;align-items:center;padding:2px 8px;font-size:10px;font-weight:600;border-radius:9999px;margin-left:4px">2</span>
+            </span>
+            <span style="display:flex;align-items:center;gap:6px">
+              <span style="font-size:11px;color:var(--c-text-muted);font-weight:400">empty = all models</span>
+              <span class="rs-material chev" style="color:var(--c-text-muted);transition:transform 0.15s">expand_more</span>
+            </span>
+          </button>
+          <!-- Pills row (pt-2 pb-3 px-3 border-t border-border-subtle) -->
+          <div style="padding:8px 12px 12px;border-top:1px solid var(--c-border-subtle)">
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">
+              <span class="rs-pill" style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;font-size:12px;font-weight:600;border-radius:9999px">
+                gpt-5.5
+                <button style="background:none;border:none;cursor:pointer;color:inherit;padding:0;opacity:0.6;line-height:1" title="Remove">
+                  <span class="rs-material" style="font-size:14px">close</span>
+                </button>
+              </span>
+              <span class="rs-pill" style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;font-size:12px;font-weight:600;border-radius:9999px">
+                gpt-5.4
+                <button style="background:none;border:none;cursor:pointer;color:inherit;padding:0;opacity:0.6;line-height:1" title="Remove">
+                  <span class="rs-material" style="font-size:14px">close</span>
+                </button>
+              </span>
+              <button class="rs-add-btn" style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;font-size:12px;font-weight:500;border-radius:9999px;cursor:pointer">
+                <span class="rs-material" style="font-size:14px">add</span>
+                Add model
+              </button>
+            </div>
+            <p style="font-size:11px;color:var(--c-text-muted);margin:8px 0 0;display:flex;align-items:center;gap:4px">
+              <span class="rs-material" style="font-size:12px">info</span>
+              Only selected models will be routed to this account.
+            </p>
+          </div>
+        </div>
+
+        <!-- Footer — flex gap-2 with Save (fullWidth) + Cancel (variant="ghost" fullWidth) -->
+        <div style="display:flex;gap:8px">
+          <button class="rs-save" style="flex:1;padding:10px;font-size:14px;font-weight:500;border:none;border-radius:10px;cursor:pointer;transition:background 0.15s">Save</button>
+          <button class="rs-cancel" style="flex:1;padding:10px;font-size:14px;font-weight:500;background:transparent;border:none;border-radius:10px;cursor:pointer;transition:all 0.15s">Cancel</button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Picker popover (Modal size="sm") — opens when user clicks "Add model" -->
+<div class="mockup" style="max-width:380px;margin:32px auto 0">
+  <div style="background:var(--c-bg);padding:24px;border-radius:14px">
+    <div class="rs-surface" style="border-radius:14px;overflow:hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px;border-bottom:1px solid var(--c-border-subtle)">
+        <div style="display:flex;align-items:center">
+          <div style="display:flex;align-items:center;gap:8px;margin-right:16px;margin-left:8px">
+            <div style="width:16px;height:16px;border-radius:50%;background:#FF5F56"></div>
+            <div style="width:16px;height:16px;border-radius:50%;background:rgba(255,255,255,0.15)"></div>
+            <div style="width:16px;height:16px;border-radius:50%;background:rgba(255,255,255,0.15)"></div>
+          </div>
+          <h2 style="font-size:18px;font-weight:600;color:var(--c-text-main);margin:0">Select Models</h2>
+        </div>
+      </div>
+      <div style="padding:16px;display:flex;flex-direction:column;gap:12px">
+        <!-- Search input — uses Input with icon="search" -->
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <div style="position:relative">
+            <span class="rs-material" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--c-text-muted);font-size:20px;pointer-events:none">search</span>
+            <input class="rs-input" placeholder="Search models…" style="width:100%;padding:10px 12px 10px 40px;font-size:14px;border-radius:10px;outline:none">
+          </div>
+        </div>
+        <!-- Selected (already whitelisted) shown disabled / checkmark -->
+        <div style="display:flex;flex-direction:column;gap:2px;max-height:260px;overflow-y:auto">
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;background:rgba(229,106,74,0.10);cursor:pointer">
+            <span class="rs-material" style="color:var(--c-brand-500);font-size:18px">check_box</span>
+            <span style="font-size:14px;color:var(--c-text-main);font-weight:500">gpt-5.5</span>
+            <span style="margin-left:auto;font-size:10px;color:var(--c-brand-500);font-weight:600;text-transform:uppercase;letter-spacing:0.5px">Selected</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;background:rgba(229,106,74,0.10);cursor:pointer">
+            <span class="rs-material" style="color:var(--c-brand-500);font-size:18px">check_box</span>
+            <span style="font-size:14px;color:var(--c-text-main);font-weight:500">gpt-5.4</span>
+            <span style="margin-left:auto;font-size:10px;color:var(--c-brand-500);font-weight:600;text-transform:uppercase;letter-spacing:0.5px">Selected</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background 0.1s" onmouseover="this.style.background='var(--c-surface-2)'" onmouseout="this.style.background='transparent'">
+            <span class="rs-material" style="color:var(--c-text-muted);font-size:18px">check_box_outline_blank</span>
+            <span style="font-size:14px;color:var(--c-text-main)">gpt-5.3</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer" onmouseover="this.style.background='var(--c-surface-2)'" onmouseout="this.style.background='transparent'">
+            <span class="rs-material" style="color:var(--c-text-muted);font-size:18px">check_box_outline_blank</span>
+            <span style="font-size:14px;color:var(--c-text-main)">o1-preview</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer" onmouseover="this.style.background='var(--c-surface-2)'" onmouseout="this.style.background='transparent'">
+            <span class="rs-material" style="color:var(--c-text-muted);font-size:18px">check_box_outline_blank</span>
+            <span style="font-size:14px;color:var(--c-text-main)">o1-mini</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;padding-top:4px">
+          <button class="rs-save" style="flex:1;padding:10px;font-size:14px;font-weight:500;border:none;border-radius:10px;cursor:pointer">Apply</button>
+          <button class="rs-cancel" style="flex:1;padding:10px;font-size:14px;font-weight:500;background:transparent;border:none;border-radius:10px;cursor:pointer">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:24px">
+  <h3>Đối chiếu code thật</h3>
+  <ul style="font-size:13px;line-height:1.8;color:#d4d4d8">
+    <li><b>Modal surface:</b> <code>bg-surface</code> = <code>#262626</code> (không phải <code>#1f1f1f</code> như mockup trước)</li>
+    <li><b>Input bg:</b> <code>bg-surface-2</code> = <code>#303030</code></li>
+    <li><b>Email block:</b> <code>bg-sidebar/50</code> = <code>rgba(30,30,30,0.85)</code> ở dark</li>
+    <li><b>Save button:</b> dùng <code>brand-500</code> = <code>#E56A4A</code> (không phải <code>#f97316</code> Tailwind orange)</li>
+    <li><b>Pill:</b> <code>Badge variant="primary"</code> = <code>bg-brand-500/10</code> + <code>text-brand-300</code> = <code>rgba(229,106,74,0.10)</code> + <code>#ee8d6a</code></li>
+    <li><b>Layout body:</b> <code>flex flex-col gap-4 p-5</code> (16px gap, 20px padding)</li>
+    <li><b>Section card:</b> <code>bg-surface-2 border border-border-subtle rounded-[10px]</code></li>
+    <li><b>Icon font:</b> <code>material-symbols-outlined</code> với size <code>text-[14px]/[18px]/[20px]</code></li>
+  </ul>
+</div>
+
+<div class="cards" style="margin-top:16px">
+  <div class="card" data-choice="ok" onclick="toggleSelect(this)">
+    <div class="card-body">
+      <h3>✓ Bám sát code rồi, hỏi tiếp</h3>
+      <p>Tokens + components + JSX pattern đều khớp với codebase. Sang câu hỏi kế tiếp.</p>
+    </div>
+  </div>
+  <div class="card" data-choice="revise" onclick="toggleSelect(this)">
+    <div class="card-body">
+      <h3>↻ Vẫn lệch chỗ nào đó</h3>
+      <p>Mô tả cụ thể trong terminal (size, spacing, vị trí, màu, icon nào).</p>
+    </div>
+  </div>
+</div>
