@@ -32,6 +32,10 @@ export {
   getApiKeys, getApiKeyById, createApiKey, updateApiKey, deleteApiKey, validateApiKey,
 } from "./repos/apiKeysRepo.js";
 
+export {
+  recordApiKeyClientRequest, getApiKeyClientActivity,
+} from "./repos/apiKeyClientsRepo.js";
+
 // Combos
 export {
   getCombos, getComboById, getComboByName,
@@ -105,6 +109,7 @@ export async function importDb(payload) {
     db.run(`DELETE FROM providerConnections`);
     db.run(`DELETE FROM providerNodes`);
     db.run(`DELETE FROM proxyPools`);
+    db.run(`DELETE FROM apiKeyClients`);
     db.run(`DELETE FROM apiKeys`);
     db.run(`DELETE FROM combos`);
     db.run(`DELETE FROM kv WHERE scope IN ('modelAliases', 'customModels', 'mitmAlias', 'pricing')`);

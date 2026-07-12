@@ -63,7 +63,11 @@ export async function updateApiKey(id, data) {
 
 export async function deleteApiKey(id) {
   const db = await getAdapter();
-  const res = db.run(`DELETE FROM apiKeys WHERE id = ?`, [id]);
+  let res;
+  db.transaction(() => {
+    db.run(`DELETE FROM apiKeyClients WHERE apiKeyId = ?`, [id]);
+    res = db.run(`DELETE FROM apiKeys WHERE id = ?`, [id]);
+  });
   return (res?.changes ?? 0) > 0;
 }
 

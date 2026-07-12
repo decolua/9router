@@ -8,7 +8,8 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
-import { getSettings } from "@/lib/localDb";
+import { getSettings, recordApiKeyClientRequest } from "@/lib/localDb";
+import { getApiKeyClientIdentity } from "@/lib/apiKeyClientIdentity";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
@@ -73,6 +74,20 @@ export async function handleChat(request, clientRawRequest = null) {
     if (!valid) {
       log.warn("AUTH", "Invalid API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
+    }
+  }
+
+  if (apiKey) {
+    try {
+      const identity = await getApiKeyClientIdentity(request, body);
+      const trackedClient = await recordApiKeyClientRequest(
+        apiKey,
+        identity,
+        clientRawRequest?.endpoint,
+      );
+      if (trackedClient && clientRawRequest) clientRawRequest.apiKeyClient = trackedClient;
+    } catch (error) {
+      log.warn("AUTH", `Failed to record API key client: ${error.message}`);
     }
   }
 
