@@ -102,6 +102,9 @@ export const KILOCODE_CONFIG = { ...PROVIDER_OAUTH["kilocode"] };
 // Cline OAuth Configuration (Local Callback Flow via app.cline.bot)
 export const CLINE_CONFIG = { ...PROVIDER_OAUTH["cline"] };
 
+// ClinePass OAuth Configuration (shares Cline's OAuth endpoints)
+export const CLINEPASS_CONFIG = { ...PROVIDER_OAUTH["clinepass"] };
+
 // GitLab Duo OAuth Configuration (Authorization Code Flow with PKCE)
 export const GITLAB_CONFIG = { ...PROVIDER_OAUTH["gitlab"] };
 
@@ -110,6 +113,10 @@ export const CODEBUDDY_CONFIG = { ...PROVIDER_OAUTH["codebuddy-cn"] };
 
 // Kimchi OAuth Configuration (Browser token callback flow)
 export const KIMCHI_CONFIG = { ...PROVIDER_OAUTH["kimchi"] };
+
+// Grok CLI / Grok Build OAuth Configuration (Device Code Flow)
+// Endpoint: cli-chat-proxy.grok.com — same client_id as xai, different flow + scopes
+export const GROK_CLI_CONFIG = { ...PROVIDER_OAUTH["grok-cli"] };
 
 // OAuth timeout (5 minutes)
 export const OAUTH_TIMEOUT = 300000;
@@ -130,7 +137,9 @@ export const PROVIDERS = {
   KIMI_CODING: "kimi-coding",
   KILOCODE: "kilocode",
   CLINE: "cline",
+  CLINEPASS: "clinepass",
   GITLAB: "gitlab",
   CODEBUDDY: "codebuddy-cn",
   KIMCHI: "kimchi",
+  GROK_CLI: "grok-cli",
 };

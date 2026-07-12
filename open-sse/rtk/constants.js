@@ -4,6 +4,7 @@ export const MIN_COMPRESS_SIZE = 500;          // bytes; skip tiny blobs
 export const DETECT_WINDOW = 1024;             // autodetect peeks first N chars
 export const GIT_DIFF_HUNK_MAX_LINES = 100;    // per-hunk line cap
 export const GIT_DIFF_CONTEXT_KEEP = 3;        // context lines around changes
+export const GIT_LOG_MAX_LINES = 200;          // gitLog line cap
 export const DEDUP_LINE_MAX = 2000;            // dedupLog truncation cap
 
 // Rust pipe_cmd.rs parity caps

@@ -38,14 +38,14 @@ async function setupTestContext(nodeData) {
   };
 }
 
-function makeRequest(provider) {
+function makeRequest(provider, name = "Test Connection") {
   return new Request("https://9router.local/api/providers", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       provider,
       apiKey: "test-key",
-      name: "Test Connection",
+      name,
       defaultModel: "test-model",
     }),
   });
@@ -192,5 +192,27 @@ describe("compatible provider connections API", () => {
     const stored = await ctx.getProviderConnections({ provider: ctx.node.id });
     expect(stored).toHaveLength(2);
     expect(stored.map((c) => c.name).sort()).toEqual(["Key One", "Key Two"]);
+  });
+
+  it("allows multiple connections on the same compatible node", async () => {
+    const ctx = await setupTestContext({
+      id: "openai-compatible-multiple-test",
+      type: "openai-compatible",
+      name: "Multiple Connections Node",
+      prefix: "mul",
+      apiType: "chat",
+      baseUrl: "https://multiple-connections.test/v1",
+    });
+    cleanup = ctx.cleanup;
+
+    const firstResponse = await ctx.POST(makeRequest(ctx.node.id, "Key A"));
+    const secondResponse = await ctx.POST(makeRequest(ctx.node.id, "Key B"));
+    const storedConnections = await ctx.getProviderConnections({ provider: ctx.node.id });
+
+    expect(firstResponse.status).toBe(201);
+    expect(secondResponse.status).toBe(201);
+    expect(storedConnections).toHaveLength(2);
+    expectCompatibleConnection(storedConnections[0], ctx.node, { apiType: "chat" });
+    expectCompatibleConnection(storedConnections[1], ctx.node, { apiType: "chat" });
   });
 });

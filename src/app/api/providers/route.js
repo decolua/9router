@@ -126,8 +126,8 @@ export async function POST(request) {
 
     let providerSpecificData = normalizeProviderSpecificData(provider, body, body.providerSpecificData);
 
-    // Custom embedding nodes allow exactly one connection. OpenAI/Anthropic compatible
-    // nodes allow multiple API-key connections (one providerConnection per key).
+    // Compatible LLM nodes support multiple API-key connections (key pool); runtime
+    // rotates/fails over via getProviderCredentials. Embedding nodes stay single-connection.
     if (isOpenAICompatibleProvider(provider)) {
       const node = await getProviderNodeById(provider);
       if (!node) {
@@ -162,10 +162,6 @@ export async function POST(request) {
       const node = await getProviderNodeById(provider);
       if (!node) {
         return NextResponse.json({ error: "Custom Embedding node not found" }, { status: 404 });
-      }
-      const existingConnections = await getProviderConnections({ provider });
-      if (existingConnections.length > 0) {
-        return NextResponse.json({ error: "Only one connection is allowed for this Custom Embedding node" }, { status: 400 });
       }
       providerSpecificData = {
         prefix: node.prefix,
