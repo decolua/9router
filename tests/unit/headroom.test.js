@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { compressWithHeadroom, formatHeadroomLog } from "../../open-sse/rtk/headroom.js";
+import { classifyHeadroomDiagnostic, compressWithHeadroom, formatHeadroomLog } from "../../open-sse/rtk/headroom.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -201,6 +201,21 @@ describe("compressWithHeadroom", () => {
 
     expect(stats).toBeNull();
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("classifyHeadroomDiagnostic", () => {
+  it("maps diagnostics to aggregate-safe categories", () => {
+    expect(classifyHeadroomDiagnostic({}, { tokens_saved: 1 }, true)).toBe("compressed");
+    expect(classifyHeadroomDiagnostic({}, null, false)).toBe("disabled");
+    expect(classifyHeadroomDiagnostic({ reason: "missing proxy URL" }, null, true)).toBe("missing-proxy-url");
+    expect(classifyHeadroomDiagnostic({ reason: "request failed: AbortError" }, null, true)).toBe("timeout");
+    expect(classifyHeadroomDiagnostic({ reason: "proxy returned HTTP 503" }, null, true)).toBe("http-error");
+    expect(classifyHeadroomDiagnostic({ reason: "skipped: openai-responses tool/reasoning input is not safe to compress" }, null, true)).toBe("unsafe-responses-input");
+    expect(classifyHeadroomDiagnostic({ reason: "unsupported gemini request shape" }, null, true)).toBe("unsupported-shape");
+    expect(classifyHeadroomDiagnostic({ reason: "proxy response missing messages[]" }, null, true)).toBe("invalid-proxy-response");
+    expect(classifyHeadroomDiagnostic({ reason: "unexpected error: secret" }, null, true)).toBe("unexpected-error");
+    expect(classifyHeadroomDiagnostic({ reason: "request failed: ECONNREFUSED http://secret.example" }, null, true)).toBe("other-skip");
   });
 });
 
