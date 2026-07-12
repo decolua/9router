@@ -137,16 +137,12 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
     // missing/null (e.g. M3 with max_tokens:1 spends the budget on thinking
     // and returns `content: null`). Returning the raw body would leave the
     // OpenAI client without a `choices` array and surface as a UI test error.
-<<<<<<< HEAD
-    if (responseBody.content && !Array.isArray(responseBody.content)) return responseBody;
-=======
     // Early return if the response is already in OpenAI format (has choices array)
     // or if it has content as a non-array value (likely a different non-Claude format).
     // Some providers (e.g. xiaomi-tokenplan) return OpenAI-format responses even when
     // the request was translated to Claude format — the targetFormat is Claude but the
     // actual response is OpenAI-native and needs no further translation.
     if (responseBody.choices || (responseBody.content && !Array.isArray(responseBody.content))) return responseBody;
->>>>>>> master
 
     let textContent = "", thinkingContent = "";
     const toolCalls = [];
