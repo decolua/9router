@@ -6,6 +6,7 @@ import { safeParseJSON } from "../concerns/json.js";
 import { parseDataUri } from "../concerns/image.js";
 import { extractTextContent } from "../formats/gemini.js";
 import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
+import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 
 // Empty prefix matches real Claude Code behavior (no tool name prefix).
 // Previously "proxy_" was used but this is a detectable fingerprint difference.
@@ -15,9 +16,13 @@ const CLAUDE_OAUTH_TOOL_PREFIX = "";
 export function openaiToClaudeRequest(model, body, stream) {
   // Tool name mapping for Claude OAuth (capitalizedName → originalName)
   const toolNameMap = new Map();
+  // Cap max_tokens at the model's real output ceiling (e.g. Opus 4.8 = 128000),
+  // not the conservative 64000 default — otherwise a high-output model is
+  // pre-clamped here before prepareClaudeRequest's model-aware step runs.
+  const modelCeiling = getCapabilitiesForModel(null, model).maxOutput || undefined;
   const result = {
     model: model,
-    max_tokens: adjustMaxTokens(body),
+    max_tokens: adjustMaxTokens(body, modelCeiling),
     stream: stream
   };
 
@@ -148,7 +153,15 @@ Respond ONLY with the JSON object, no other text.`);
         continue;
       }
 
-      const toolData = toolType === OPENAI_BLOCK.FUNCTION && tool.function ? tool.function : tool;
+      // Function-shaped tools arrive in two flavors from real clients:
+      //   (a) openai-spec: { type: "function", function: { name, ... } }
+      //   (b) legacy/loose: { function: { name, ... } }   (no parent `type`)
+      // Both must yield toolData.name = "echo". Treat the bare-function shape
+      // as a function tool too — Anthropic-compatible gateways (notably
+      // MiniMax M3 at api.minimaxi.com) reject payloads where this branch
+      // falls through with `toolData.name === undefined`, returning their
+      // upstream code (2013) "invalid tool type". See #2435.
+      const toolData = tool.function ?? tool;
       const originalName = toolData.name;
 
       // Claude OAuth requires prefixed tool names to avoid conflicts
