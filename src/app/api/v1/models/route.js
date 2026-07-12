@@ -12,6 +12,7 @@ import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { resolveCopilotModels } from "open-sse/services/copilotModels.js";
 import { resolveClinepassModels } from "open-sse/services/clinepassModels.js";
+import { resolveCursorModels } from "open-sse/services/cursorModels.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { capabilitiesFromServiceKind } from "open-sse/providers/capabilities.js";
 
@@ -70,6 +71,13 @@ const LIVE_MODEL_RESOLVERS = {
       accessToken: conn.accessToken,
       apiKey: conn.apiKey,
     });
+    return result?.models?.length ? { models: result.models } : null;
+  },
+  cursor: async (conn) => {
+    const result = await resolveCursorModels({
+      accessToken: conn.accessToken,
+      providerSpecificData: conn.providerSpecificData || {},
+    }, { log: console });
     return result?.models?.length ? { models: result.models } : null;
   }
 };

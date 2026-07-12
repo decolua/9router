@@ -66,6 +66,7 @@ export default function ProviderDetailPage() {
   const [thinkingMode, setThinkingMode] = useState("auto");
   const [autoPing, setAutoPing] = useState({ enabled: false, connections: {} });
   const [suggestedModels, setSuggestedModels] = useState([]);
+  const [liveModels, setLiveModels] = useState([]);
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
   const [disabledModelIds, setDisabledModelIds] = useState([]);
   const [confirmState, setConfirmState] = useState(null);
@@ -141,7 +142,10 @@ export default function ProviderDetailPage() {
   const isOAuth = !!OAUTH_PROVIDERS[providerId] || !!FREE_PROVIDERS[providerId] || authModes.includes("oauth");
   const supportsApiKeyAuth = !!APIKEY_PROVIDERS[providerId] || authModes.includes("apikey");
   const isFreeNoAuth = !!FREE_PROVIDERS[providerId]?.noAuth;
-  const models = getModelsByProviderId(providerId);
+  const staticModels = getModelsByProviderId(providerId);
+  const models = providerId === "cursor" && liveModels.length > 0
+    ? liveModels
+    : staticModels;
   const providerAlias = getProviderAlias(providerId);
   
   const isOpenAICompatible = isOpenAICompatibleProvider(providerId);
@@ -447,6 +451,34 @@ export default function ProviderDetailPage() {
     fetchCustomModels();
     fetchDisabledModels();
   }, [fetchConnections, fetchAliases, fetchCustomModels, fetchDisabledModels]);
+
+  // Cursor's model availability is account-specific and changes frequently.
+  // Load the active account's live catalog for the dashboard; the static
+  // registry remains the fallback while the request is pending or unavailable.
+  useEffect(() => {
+    if (providerId !== "cursor") {
+      setLiveModels([]);
+      return;
+    }
+
+    const connection = connections.find((item) => item.isActive !== false);
+    if (!connection?.id) {
+      setLiveModels([]);
+      return;
+    }
+
+    let cancelled = false;
+    fetch(`/api/providers/${connection.id}/models`, { cache: "no-store" })
+      .then(async (res) => ({ ok: res.ok, data: await res.json() }))
+      .then(({ ok, data }) => {
+        if (!cancelled && ok && Array.isArray(data.models) && data.models.length > 0) {
+          setLiveModels(data.models);
+        }
+      })
+      .catch(() => {});
+
+    return () => { cancelled = true; };
+  }, [providerId, connections]);
 
   // Fetch suggested models from provider's public API (if configured)
   useEffect(() => {
