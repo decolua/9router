@@ -396,6 +396,42 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
     } catch (e) { console.log("update connection error:", e); }
   };
 
+  const handleReorderByStatus = async () => {
+    const getEffectiveStatus = (conn) => {
+      const isCooldown = Object.entries(conn).some(
+        ([k, v]) => k.startsWith("modelLock_") && v && new Date(v).getTime() > Date.now()
+      );
+      return conn.testStatus === "unavailable" && !isCooldown ? "active" : conn.testStatus;
+    };
+
+    const sorted = [...connections].sort((a, b) => {
+      const statusA = getEffectiveStatus(a);
+      const statusB = getEffectiveStatus(b);
+      const availableA = statusA === "active" || statusA === "success";
+      const availableB = statusB === "active" || statusB === "success";
+
+      if (availableA && !availableB) return -1;
+      if (!availableA && availableB) return 1;
+      return 0;
+    });
+
+    setConnections(sorted);
+
+    try {
+      await Promise.all(
+        sorted.map((conn, idx) =>
+          fetch(`/api/providers/${conn.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ priority: idx }),
+          })
+        )
+      );
+    } catch {
+      await fetch_();
+    }
+  };
+
   if (loading) return <Card><div className="h-20 animate-pulse bg-black/5 rounded-lg" /></Card>;
 
   return (
@@ -404,6 +440,17 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
           <h2 className="text-lg font-semibold">Connections</h2>
           <div className="flex flex-wrap items-center gap-2">
+            {connections.length > 1 && (
+              <Button
+                size="sm"
+                variant="secondary"
+                icon="swap_vert"
+                onClick={handleReorderByStatus}
+                title="Reorder by availability status"
+              >
+                Reorder
+              </Button>
+            )}
             <span className="text-xs text-text-muted font-medium">Round Robin</span>
             <Toggle
               checked={providerStrategy === "round-robin"}
