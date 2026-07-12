@@ -7,7 +7,7 @@ vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
   proxyAwareFetch: (...args) => fetchMock(...args),
 }));
 
-const { BaseExecutor } = await import("../../open-sse/executors/base.js");
+const { BaseExecutor, TimeoutError } = await import("../../open-sse/executors/base.js");
 
 function res(status) {
   return { status, headers: { get: () => "" } };
@@ -103,5 +103,57 @@ describe("BaseExecutor.execute — computeRetryDelay hook veto", () => {
     // hook vetoes retry → no fallback url → returns the 429 response as-is
     expect(out.response.status).toBe(429);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("TimeoutError class", () => {
+  it("has name TimeoutError and preserves message", () => {
+    const err = new TimeoutError("custom timeout");
+    expect(err.name).toBe("TimeoutError");
+    expect(err.message).toBe("custom timeout");
+    expect(err).toBeInstanceOf(Error);
+  });
+});
+
+describe("BaseExecutor.execute — body timeout (withBodyTimeout)", () => {
+  it("passes non-stream response through without timeout wrapping", async () => {
+    const ex = makeExec({ baseUrl: "https://x/api" });
+    ex.withBodyTimeout = vi.fn((r) => r);
+    fetchMock.mockResolvedValue(res(200));
+    const out = await ex.execute({ model: "m", body: {}, stream: false, credentials: creds });
+    // Non-stream → skip withBodyTimeout
+    expect(out.response.status).toBe(200);
+  });
+});
+
+describe("BaseExecutor.execute — connect timeout → TimeoutError → 502 retry", () => {
+  it("retries connect timeout like a network error", async () => {
+    const ex = makeExec({ baseUrl: "https://x/api", retry: { 502: { attempts: 1, delayMs: 0 } } });
+    let call = 0;
+    fetchMock.mockImplementation(async () => {
+      call++;
+      if (call === 1) {
+        // Simulate connect time-out by throwing TimeoutError (as AbortController with TimeoutError would)
+        throw new TimeoutError("Fetch connect timeout after 60000ms");
+      }
+      return res(200);
+    });
+    const out = await ex.execute({ model: "m", body: {}, stream: false, credentials: creds });
+    expect(out.response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("propagates non-timeout AbortError (client disconnect) unmodified", async () => {
+    const ex = makeExec({ baseUrl: "https://x/api", retry: { 502: { attempts: 3, delayMs: 0 } } });
+    fetchMock.mockRejectedValueOnce(Object.assign(new Error("The signal was aborted"), { name: "AbortError" }));
+    let thrown = null;
+    try {
+      await ex.execute({ model: "m", body: {}, stream: false, credentials: creds });
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown?.name).toBe("AbortError");
+    expect(thrown?.message).toBe("The signal was aborted");
+    expect(fetchMock).toHaveBeenCalledTimes(1); // No retry on client disconnect
   });
 });

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { deleteProviderConnectionsByProvider, deleteProviderNode, getProviderConnections, getProviderNodeById, updateProviderConnection, updateProviderNode } from "@/models";
+import { normalizeTimeoutMs } from "@/shared/utils/timeoutMs";
 
 // PUT /api/provider-nodes/[id] - Update provider node
 export async function PUT(request, { params }) {
@@ -7,6 +8,7 @@ export async function PUT(request, { params }) {
     const { id } = await params;
     const body = await request.json();
     const { name, prefix, apiType, baseUrl } = body;
+    const timeoutMs = normalizeTimeoutMs(body);
     const node = await getProviderNodeById(id);
 
     if (!node) {
@@ -31,7 +33,7 @@ export async function PUT(request, { params }) {
     }
 
     let sanitizedBaseUrl = baseUrl.trim();
-    
+
     // Sanitize Base URL for Anthropic Compatible
     if (node.type === "anthropic-compatible") {
       sanitizedBaseUrl = sanitizedBaseUrl.replace(/\/$/, "");
@@ -65,21 +67,28 @@ export async function PUT(request, { params }) {
       }
     }
 
+    // Endpoint-level connect timeout (null clears override).
+    if (timeoutMs !== undefined) {
+      updates.timeoutMs = timeoutMs;
+    }
+
     const updated = await updateProviderNode(id, updates);
 
     const connections = await getProviderConnections({ provider: id });
-    await Promise.all(connections.map((connection) => (
-      updateProviderConnection(connection.id, {
-        providerSpecificData: {
-          ...(connection.providerSpecificData || {}),
-          prefix: prefix.trim(),
-          apiType: node.type === "openai-compatible" ? apiType : undefined,
-          baseUrl: sanitizedBaseUrl,
-          nodeName: updated.name,
-          useChatCompletions: node.type === "anthropic-compatible" ? (updates.useChatCompletions ?? node.useChatCompletions) : undefined,
-        }
-      })
-    )));
+    await Promise.all(connections.map((connection) => {
+      const psd = {
+        ...(connection.providerSpecificData || {}),
+        prefix: prefix.trim(),
+        apiType: node.type === "openai-compatible" ? apiType : undefined,
+        baseUrl: sanitizedBaseUrl,
+        nodeName: updated.name,
+        useChatCompletions: node.type === "anthropic-compatible" ? (updates.useChatCompletions ?? node.useChatCompletions) : undefined,
+      };
+      // Sync timeoutMs from node → connection credentials (executor reads PSD).
+      if (updated.timeoutMs != null) psd.timeoutMs = updated.timeoutMs;
+      else delete psd.timeoutMs;
+      return updateProviderConnection(connection.id, { providerSpecificData: psd });
+    }));
 
     return NextResponse.json({ node: updated });
   } catch (error) {

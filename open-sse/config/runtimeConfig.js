@@ -49,6 +49,16 @@ export const STREAM_FIRST_CHUNK_TIMEOUT_MS = envMs("STREAM_FIRST_CHUNK_TIMEOUT_M
 // Fetch connect timeout: abort if upstream doesn't return response headers within this duration
 export const FETCH_CONNECT_TIMEOUT_MS = envMs("FETCH_CONNECT_TIMEOUT_MS", 60 * 1000);
 
+// Cloudflare Free/Pro origin first-byte budget is ~100s. When the client request
+// arrives via CF (cf-ray header), cap connect timeout so connect + a retry still
+// fit under that window. Env: CF_SAFE_CONNECT_TIMEOUT_MS.
+export const CF_SAFE_CONNECT_TIMEOUT_MS = envMs("CF_SAFE_CONNECT_TIMEOUT_MS", 45 * 1000);
+
+// Fetch body timeout: abort individual body chunk reads that stall after response headers received.
+// Env: FETCH_BODY_TIMEOUT_MS. Default 120s (2× connect timeout gives time for slow first chunks).
+// Stream stall after the first chunk is handled by STREAM_STALL_TIMEOUT_MS.
+export const FETCH_BODY_TIMEOUT_MS = envMs("FETCH_BODY_TIMEOUT_MS", 120 * 1000);
+
 // Gemini native TTS fetch timeout: abort if Google does not return response headers in time.
 export const GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS = envMs("GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS", 45 * 1000);
 

@@ -268,6 +268,52 @@ exports[`GOLDEN buildHeaders (default executor providers) > cline → headers (a
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > clinepass → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+    "HTTP-Referer": "https://cline.bot",
+    "User-Agent": "9Router/0.5.18",
+    "X-CLIENT-TYPE": "9router",
+    "X-CLIENT-VERSION": "0.5.18",
+    "X-CORE-VERSION": "0.5.18",
+    "X-IS-MULTIROOT": "false",
+    "X-PLATFORM": "darwin",
+    "X-PLATFORM-VERSION": "v25.3.0",
+    "X-Title": "Cline",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+    "HTTP-Referer": "https://cline.bot",
+    "User-Agent": "9Router/0.5.18",
+    "X-CLIENT-TYPE": "9router",
+    "X-CLIENT-VERSION": "0.5.18",
+    "X-CORE-VERSION": "0.5.18",
+    "X-IS-MULTIROOT": "false",
+    "X-PLATFORM": "darwin",
+    "X-PLATFORM-VERSION": "v25.3.0",
+    "X-Title": "Cline",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+    "HTTP-Referer": "https://cline.bot",
+    "User-Agent": "9Router/0.5.18",
+    "X-CLIENT-TYPE": "9router",
+    "X-CLIENT-VERSION": "0.5.18",
+    "X-CORE-VERSION": "0.5.18",
+    "X-IS-MULTIROOT": "false",
+    "X-PLATFORM": "darwin",
+    "X-PLATFORM-VERSION": "v25.3.0",
+    "X-Title": "Cline",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > cloudflare-ai → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -1047,6 +1093,13 @@ exports[`GOLDEN buildUrl (default executor providers) > claude → url (stream +
 `;
 
 exports[`GOLDEN buildUrl (default executor providers) > cline → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://api.cline.bot/api/v1/chat/completions",
+  "stream": "https://api.cline.bot/api/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > clinepass → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://api.cline.bot/api/v1/chat/completions",
   "stream": "https://api.cline.bot/api/v1/chat/completions",

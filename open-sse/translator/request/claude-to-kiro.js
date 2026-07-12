@@ -414,16 +414,11 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
     if (typeof body.system === "string") {
       systemText = body.system;
     } else if (Array.isArray(body.system)) {
-      systemText = body.system.map((s) => s.text || "").join("
-");
+      systemText = body.system.map((s) => s.text || "").join("\n");
     }
     if (systemText) {
       systemInstruction = systemText;
-      finalContent = `<instructions>
-${systemText}
-</instructions>
-
-${finalContent}`;
+      finalContent = `<instructions>\n${systemText}\n</instructions>\n\n${finalContent}`;
     }
   }
 

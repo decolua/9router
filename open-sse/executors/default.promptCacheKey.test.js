@@ -5,7 +5,13 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DefaultExecutor, injectPromptCacheKey, normalizePromptCacheKey } from "./default.js";
+import {
+  DefaultExecutor,
+  injectPromptCacheKey,
+  normalizePromptCacheKey,
+  shouldInjectPromptCacheKey,
+  resolvePromptCacheKey,
+} from "./default.js";
 
 const PROVIDER = "openai-compatible-responses-custom";
 
@@ -107,6 +113,52 @@ test("transformRequest does NOT inject when flag missing", () => {
     _clientSessionId: "claude:conv-9",
   });
   assert.equal(out.prompt_cache_key, undefined);
+});
+
+// ---------- xAI prompt caching (always-on sticky routing) ----------
+
+test("shouldInjectPromptCacheKey is true for xai without opt-in flag", () => {
+  assert.equal(shouldInjectPromptCacheKey("xai", {}), true);
+  assert.equal(shouldInjectPromptCacheKey("xai", { providerSpecificData: {} }), true);
+});
+
+test("shouldInjectPromptCacheKey stays opt-in for openai-compatible", () => {
+  assert.equal(shouldInjectPromptCacheKey(PROVIDER, {}), false);
+  assert.equal(
+    shouldInjectPromptCacheKey(PROVIDER, { providerSpecificData: { enablePromptCacheKey: true } }),
+    true,
+  );
+});
+
+test("xai injects prompt_cache_key without enablePromptCacheKey flag", () => {
+  const body = { model: "grok-4", messages: [] };
+  injectPromptCacheKey("xai", body, {
+    _clientSessionId: "claude:xai-session-1",
+  });
+  assert.equal(body.prompt_cache_key, normalizePromptCacheKey("xai", "claude:xai-session-1"));
+});
+
+test("xai transformRequest injects prompt_cache_key by default", () => {
+  const ex = new DefaultExecutor("xai");
+  const body = { model: "grok-4", messages: [{ role: "user", content: "hi" }] };
+  const out = ex.transformRequest("grok-4", body, true, {
+    _clientSessionId: "claude:xai-conv",
+  });
+  assert.equal(out.prompt_cache_key, normalizePromptCacheKey("xai", "claude:xai-conv"));
+});
+
+test("xai buildHeaders sets x-grok-conv-id sticky cache header", () => {
+  const ex = new DefaultExecutor("xai");
+  const credentials = { _clientSessionId: "claude:xai-header" };
+  // Mirror execute() order: transform first so credentials._promptCacheKey is set.
+  ex.transformRequest("grok-4", { model: "grok-4", messages: [] }, true, credentials);
+  const headers = ex.buildHeaders(credentials, true);
+  assert.equal(headers["x-grok-conv-id"], normalizePromptCacheKey("xai", "claude:xai-header"));
+});
+
+test("resolvePromptCacheKey reuses existing body key", () => {
+  const key = resolvePromptCacheKey("xai", { prompt_cache_key: "explicit" }, {});
+  assert.equal(key, "explicit");
 });
 
 // ---------- DefaultExecutor.buildUrl (apiType override) ----------

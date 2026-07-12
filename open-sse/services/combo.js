@@ -3,6 +3,7 @@
  */
 
 import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
+import { HTTP_STATUS, STREAM_FIRST_CHUNK_TIMEOUT_MS } from "../config/runtimeConfig.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
@@ -146,6 +147,48 @@ function rotateModelsFromIndex(models, currentIndex) {
   return rotatedModels;
 }
 
+async function responseWithFirstChunkTimeout(response, timeoutMs) {
+  if (!response?.ok || !response.body || timeoutMs <= 0) return response;
+
+  const reader = response.body.getReader();
+  let timer;
+  const firstRead = Promise.race([
+    reader.read(),
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error("stream first chunk timeout")), timeoutMs);
+    }),
+  ]);
+
+  try {
+    const first = await firstRead;
+    clearTimeout(timer);
+    let sentFirst = first.done;
+    const stream = new ReadableStream({
+      async pull(controller) {
+        if (!sentFirst) {
+          sentFirst = true;
+          controller.enqueue(first.value);
+          return;
+        }
+        const { done, value } = await reader.read();
+        if (done) controller.close();
+        else controller.enqueue(value);
+      },
+      cancel(reason) {
+        return reader.cancel(reason);
+      },
+    });
+    return new Response(stream, { status: response.status, statusText: response.statusText, headers: response.headers });
+  } catch (error) {
+    clearTimeout(timer);
+    await reader.cancel(error).catch(() => {});
+    return new Response(JSON.stringify({ error: { message: error.message } }), {
+      status: HTTP_STATUS.GATEWAY_TIMEOUT,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+}
+
 /**
  * Get rotated model list based on strategy
  * @param {string[]} models - Array of model strings
@@ -226,7 +269,7 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
  * @returns {Promise<Response>}
  */
-export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch }) {
+export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch, firstChunkTimeoutMs = STREAM_FIRST_CHUNK_TIMEOUT_MS }) {
   // Apply rotation strategy if enabled
   let rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
 
@@ -257,8 +300,11 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
 
     try {
-      const result = await handleSingleModel(body, modelStr);
-      
+      const result = await responseWithFirstChunkTimeout(
+        await handleSingleModel(body, modelStr),
+        body?.stream ? firstChunkTimeoutMs : 0
+      );
+
       // Success (2xx) - return response
       if (result.ok) {
         log.info("COMBO", `Model ${modelStr} succeeded`);

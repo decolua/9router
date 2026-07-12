@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createProviderNode, getProviderNodes } from "@/models";
 import { OPENAI_COMPATIBLE_PREFIX, ANTHROPIC_COMPATIBLE_PREFIX, CUSTOM_EMBEDDING_PREFIX } from "@/shared/constants/providers";
 import { generateId } from "@/shared/utils";
+import { normalizeTimeoutMs } from "@/shared/utils/timeoutMs";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +58,7 @@ export async function POST(request) {
   try {
     const body = await request.json();
     const { name, prefix, apiType, baseUrl, type } = body;
+    const timeoutMs = normalizeTimeoutMs(body);
 
     if (!name?.trim()) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
@@ -68,6 +70,7 @@ export async function POST(request) {
 
     // Determine type
     const nodeType = type || "openai-compatible";
+    const timeoutFields = timeoutMs != null ? { timeoutMs } : {};
 
     if (nodeType === "openai-compatible") {
       if (!apiType || !["chat", "responses"].includes(apiType)) {
@@ -81,6 +84,7 @@ export async function POST(request) {
         apiType,
         baseUrl: (baseUrl || OPENAI_COMPATIBLE_DEFAULTS.baseUrl).trim(),
         name: name.trim(),
+        ...timeoutFields,
       });
       return NextResponse.json({ node }, { status: 201 });
     }
@@ -98,6 +102,7 @@ export async function POST(request) {
         prefix: prefix.trim(),
         baseUrl: sanitizedBaseUrl,
         name: name.trim(),
+        ...timeoutFields,
       });
       return NextResponse.json({ node }, { status: 201 });
     }
@@ -129,6 +134,7 @@ export async function POST(request) {
         baseUrl: sanitizedBaseUrl,
         useChatCompletions,
         name: name.trim(),
+        ...timeoutFields,
       });
       return NextResponse.json({ node }, { status: 201 });
     }

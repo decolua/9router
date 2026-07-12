@@ -1,8 +1,20 @@
-import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG, resolveRetryEntry, FETCH_CONNECT_TIMEOUT_MS } from "../config/runtimeConfig.js";
 import { shouldRefreshCredentials } from "../services/oauthCredentialManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { dbg } from "../utils/debugLog.js";
 import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE } from "../providers/shared.js";
+import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG, resolveRetryEntry, FETCH_CONNECT_TIMEOUT_MS, FETCH_BODY_TIMEOUT_MS, CF_SAFE_CONNECT_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import { isCloudflareRequest } from "../utils/earlySse.js";
+
+/**
+ * TimeoutError — discriminated from plain AbortError so the caller (chatCore.js)
+ * can return 504 GATEWAY_TIMEOUT instead of 499 Client Closed Request.
+ */
+export class TimeoutError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "TimeoutError";
+  }
+}
 
 /**
  * BaseExecutor - Base class for provider executors
@@ -96,6 +108,49 @@ export class BaseExecutor {
     return { status: response.status, message: bodyText || `HTTP ${response.status}` };
   }
 
+  getTimeoutMs(credentials = null) {
+    // Priority: providerSpecificData.timeoutMs → config.timeoutMs → connect timeout default
+    const specific = credentials?.providerSpecificData?.timeoutMs;
+    let ms;
+    if (specific != null && Number.isFinite(specific) && specific > 0) ms = specific;
+    else ms = this.config?.timeoutMs ?? FETCH_CONNECT_TIMEOUT_MS;
+
+    // Behind Cloudflare: cap so connect (+ one retry) stays under CF's ~100s first-byte budget.
+    // Explicit per-connection timeoutMs is still honored (operator override).
+    if (specific == null && isCloudflareRequest(credentials?.rawHeaders) && ms > CF_SAFE_CONNECT_TIMEOUT_MS) {
+      return CF_SAFE_CONNECT_TIMEOUT_MS;
+    }
+    return ms;
+  }
+
+  // Wraps a Response's body stream so each chunk read has a per-chunk timeout.
+  // Non-stream responses (single-chunk body) are effectively free — the timeout
+  // only matters when the body arrives slowly or stalls mid-read.
+  // On timeout, throws TimeoutError (not AbortError) for proper status mapping.
+  async withBodyTimeout(response, bodyTimeoutMs) {
+    if (!response?.body || bodyTimeoutMs <= 0) return response;
+    const reader = response.body.getReader();
+    const stream = new ReadableStream({
+      async pull(controller) {
+        let timer;
+        try {
+          const result = await Promise.race([
+            reader.read(),
+            new Promise((_, reject) => {
+              timer = setTimeout(() => reject(new TimeoutError(`Body read timeout after ${bodyTimeoutMs}ms`)), bodyTimeoutMs);
+            }),
+          ]);
+          if (result.done) controller.close();
+          else controller.enqueue(result.value);
+        } finally {
+          clearTimeout(timer);
+        }
+      },
+      cancel(reason) { return reader.cancel(reason).catch(() => {}); },
+    });
+    return new Response(stream, { status: response.status, statusText: response.statusText, headers: response.headers });
+  }
+
   async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
     const fallbackCount = this.getFallbackCount();
     let lastError = null;
@@ -132,24 +187,29 @@ export class BaseExecutor {
 
       // Abort if upstream doesn't return response headers within connection timeout
       const connectCtrl = new AbortController();
-      const timeoutMs = this.config?.timeoutMs || FETCH_CONNECT_TIMEOUT_MS;
-      const connectTimer = setTimeout(() => connectCtrl.abort(new Error("fetch connect timeout")), timeoutMs);
+      const timeoutMs = this.getTimeoutMs(credentials);
+      const connectTimer = setTimeout(() => connectCtrl.abort(new TimeoutError(`Fetch connect timeout after ${timeoutMs}ms`)), timeoutMs);
       const mergedSignal = signal ? AbortSignal.any([signal, connectCtrl.signal]) : connectCtrl.signal;
 
       try {
         const bodyStr = JSON.stringify(transformedBody);
         const fetchT0 = Date.now();
         dbg("FETCH", `${this.provider.toUpperCase()} → ${url} | body=${bodyStr.length}B | connectTimeout=${timeoutMs}ms`);
-        const response = await proxyAwareFetch(url, {
+        const rawResponse = await proxyAwareFetch(url, {
           method: "POST",
           headers,
           body: bodyStr,
           signal: mergedSignal
         }, proxyOptions);
         clearTimeout(connectTimer);
-        const ct = response.headers?.get?.("content-type") || "";
-        const cl = response.headers?.get?.("content-length") || "?";
-        dbg("FETCH", `${this.provider.toUpperCase()} ← ${response.status} | ttft=${Date.now() - fetchT0}ms | ct=${ct} | cl=${cl}`);
+        const ct = rawResponse.headers?.get?.("content-type") || "";
+        const cl = rawResponse.headers?.get?.("content-length") || "?";
+        dbg("FETCH", `${this.provider.toUpperCase()} ← ${rawResponse.status} | ttft=${Date.now() - fetchT0}ms | ct=${ct} | cl=${cl + (stream ? " [stream]" : " [body]")}`);
+
+        // Apply per-chunk body timeout for non-ok responses too (body might
+        // stall even on error). Stream bodies get the timeout; for non-stream,
+        // the body is consumed by the caller and the timeout protects each chunk.
+        const response = stream ? await this.withBodyTimeout(rawResponse, FETCH_BODY_TIMEOUT_MS) : rawResponse;
 
         if (await tryRetry(urlIndex, response.status, `status ${response.status}`, response)) { urlIndex--; continue; }
 
@@ -163,12 +223,13 @@ export class BaseExecutor {
       } catch (error) {
         clearTimeout(connectTimer);
         lastError = error;
-        const isConnectTimeout = connectCtrl.signal.aborted && error.name === "AbortError";
+        const isConnectTimeout = connectCtrl.signal.aborted && error.name === "TimeoutError";
         dbg("FETCH", `${this.provider.toUpperCase()} ✖ ${error.name}: ${error.message}${isConnectTimeout ? " (connect timeout)" : ""}`);
-        // Connect timeout is internal — convert to retryable network error, don't propagate AbortError
-        if (error.name === "AbortError" && !isConnectTimeout) throw error;
+        // Connect timeout is internal — retryable; TimeoutError from body also retryable.
+        // Propagate non-timeout AbortError (client disconnect) unmodified.
+        if (error.name === "AbortError") throw error;
 
-        // Map network/fetch exceptions to 502 retry config
+        // Map timeout responses up as retryable network errors (502 retry config)
         if (await tryRetry(urlIndex, HTTP_STATUS.BAD_GATEWAY, `network "${error.message}"`)) { urlIndex--; continue; }
 
         if (urlIndex + 1 < fallbackCount) {

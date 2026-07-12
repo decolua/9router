@@ -21,12 +21,68 @@ export const QUOTA_SORT_OPTIONS = [
   { value: "remaining-desc", label: "% quota: high to low" },
 ];
 
+const AUTH_TYPE_LABELS = {
+  api_key: "API Key",
+  apikey: "API Key",
+  oauth: "OAuth",
+};
+
+const ACCOUNT_METHOD_LABELS = {
+  "builder-id": "AWS Builder ID",
+  idc: "IAM Identity Center",
+  google: "Google",
+  github: "GitHub",
+  imported: "Imported Token",
+  api_key: "API Key",
+  apikey: "API Key",
+  oauth: "OAuth",
+  device: "Device Login",
+  browser_token: "Browser Token",
+  external_idp: "External IdP",
+  social: "Social Login",
+};
+
+const PLAN_LABELS = {
+  plus: "Plus",
+  pro: "Pro",
+  team: "Team",
+  go: "Go",
+  k12: "K-12",
+  k_12: "K-12",
+  max: "Max",
+  max_5x: "Max x5",
+  max_x5: "Max x5",
+  max_20x: "Max x20",
+  max_x20: "Max x20",
+  business: "Business",
+  enterprise: "Enterprise",
+};
+
 // ─── Pure helpers ─────────────────────────────────────────────────────────────
 export function getConnectionLabel(connection) {
   return connection.name?.trim()
     || connection.email?.trim()
     || connection.displayName?.trim()
     || null;
+}
+
+function humanizePlan(value) {
+  return String(value)
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+export function getAccountTypeLabel(connection) {
+  const method = connection.providerSpecificData?.authMethod
+    || connection.providerSpecificData?.authKind
+    || connection.authType;
+  return ACCOUNT_METHOD_LABELS[method] || AUTH_TYPE_LABELS[connection.authType] || method || "Unknown";
+}
+
+export function getPlanLabel(plan) {
+  const key = String(plan || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (!key || key === "unknown") return null;
+  return PLAN_LABELS[key] || humanizePlan(plan);
 }
 
 export function getConnectionQuotaRemaining(connection, quotaData) {

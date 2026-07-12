@@ -65,6 +65,10 @@ export async function createProviderNode(data) {
     // Per-node transport override for anthropic-compatible gateways that only
     // expose OpenAI-shape /v1/chat/completions (default: false → use /v1/messages).
     useChatCompletions: data.useChatCompletions === true,
+    // Per-endpoint connect timeout (ms). null/undefined → executor default.
+    ...(data.timeoutMs != null && Number.isFinite(data.timeoutMs) && data.timeoutMs > 0
+      ? { timeoutMs: Math.round(data.timeoutMs) }
+      : {}),
     createdAt: now,
     updatedAt: now,
   };
@@ -82,6 +86,15 @@ export async function updateProviderNode(id, data) {
     // Normalize: preserve the boolean flag explicitly so false is persisted, not dropped.
     if (data.useChatCompletions !== undefined) {
       merged.useChatCompletions = data.useChatCompletions === true;
+    }
+    // null/empty clears the override; positive number persists.
+    if (data.timeoutMs !== undefined) {
+      const n = Number(data.timeoutMs);
+      if (data.timeoutMs == null || data.timeoutMs === "" || !Number.isFinite(n) || n <= 0) {
+        delete merged.timeoutMs;
+      } else {
+        merged.timeoutMs = Math.round(n);
+      }
     }
     upsert(db, merged);
     result = merged;

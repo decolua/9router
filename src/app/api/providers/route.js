@@ -141,6 +141,7 @@ export async function POST(request) {
         apiType: node.apiType,
         baseUrl: node.baseUrl,
         nodeName: node.name,
+        ...(node.timeoutMs != null ? { timeoutMs: node.timeoutMs } : {}),
       };
     } else if (isAnthropicCompatibleProvider(provider)) {
       const node = await getProviderNodeById(provider);
@@ -157,6 +158,7 @@ export async function POST(request) {
         // Inherit the node-level transport override so the executor picks
         // /v1/chat/completions for OpenAI-shape Anthropic-compatible gateways.
         useChatCompletions: node.useChatCompletions === true,
+        ...(node.timeoutMs != null ? { timeoutMs: node.timeoutMs } : {}),
       };
     } else if (isCustomEmbeddingProvider(provider)) {
       const node = await getProviderNodeById(provider);
@@ -167,6 +169,7 @@ export async function POST(request) {
         prefix: node.prefix,
         baseUrl: node.baseUrl,
         nodeName: node.name,
+        ...(node.timeoutMs != null ? { timeoutMs: node.timeoutMs } : {}),
       };
     }
 

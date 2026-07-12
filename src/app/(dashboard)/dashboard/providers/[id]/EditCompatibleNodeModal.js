@@ -3,6 +3,11 @@
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Button, Badge, Input, Modal, Select } from "@/shared/components";
+import {
+  DEFAULT_CONNECT_TIMEOUT_SECONDS,
+  parseTimeoutSeconds,
+  timeoutMsToSeconds,
+} from "@/shared/utils/timeoutMs";
 
 export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose, isAnthropic }) {
   const [formData, setFormData] = useState({
@@ -10,6 +15,7 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
     prefix: "",
     apiType: "chat",
     baseUrl: "https://api.openai.com/v1",
+    timeoutSeconds: "",
   });
   const [saving, setSaving] = useState(false);
   const [checkKey, setCheckKey] = useState("");
@@ -24,6 +30,7 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
         prefix: node.prefix || "",
         apiType: node.apiType || "chat",
         baseUrl: node.baseUrl || (isAnthropic ? "https://api.anthropic.com/v1" : "https://api.openai.com/v1"),
+        timeoutSeconds: timeoutMsToSeconds(node.timeoutMs),
       });
     }
   }, [node, isAnthropic]);
@@ -41,6 +48,8 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
         name: formData.name,
         prefix: formData.prefix,
         baseUrl: formData.baseUrl,
+        // null clears a previously saved endpoint override
+        timeoutMs: parseTimeoutSeconds(formData.timeoutSeconds),
       };
       if (!isAnthropic) {
         payload.apiType = formData.apiType;
@@ -107,6 +116,15 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
           placeholder={isAnthropic ? "https://api.anthropic.com/v1" : "https://api.openai.com/v1"}
           hint={`Use the base URL (ending in /v1) for your ${isAnthropic ? "Anthropic" : "OpenAI"}-compatible API.`}
         />
+        <Input
+          label="Request timeout (seconds)"
+          type="number"
+          min={1}
+          value={formData.timeoutSeconds}
+          onChange={(e) => setFormData({ ...formData, timeoutSeconds: e.target.value })}
+          placeholder={String(DEFAULT_CONNECT_TIMEOUT_SECONDS)}
+          hint={`Connect timeout before headers for this endpoint. Empty = default ${DEFAULT_CONNECT_TIMEOUT_SECONDS}s.`}
+        />
         <div className="flex gap-2">
           <Input
             label="API Key (for Check)"
@@ -154,6 +172,7 @@ EditCompatibleNodeModal.propTypes = {
     prefix: PropTypes.string,
     apiType: PropTypes.string,
     baseUrl: PropTypes.string,
+    timeoutMs: PropTypes.number,
   }),
   onSave: PropTypes.func.isRequired,
   onClose: PropTypes.func.isRequired,

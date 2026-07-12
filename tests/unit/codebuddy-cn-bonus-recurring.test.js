@@ -3,7 +3,11 @@
 // shows "Expires in" instead of implying a monthly refill. The usage handler
 // tags the flag and parseQuotaData must forward it.
 import { describe, it, expect } from "vitest";
-import { parseQuotaData } from "@/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js";
+import {
+  getAccountTypeLabel,
+  getPlanLabel,
+  parseQuotaData,
+} from "@/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js";
 
 describe("parseQuotaData codebuddy-cn recurring flag", () => {
   it("forwards recurring:false for bonus packs and true for refill packs", () => {
@@ -26,5 +30,46 @@ describe("parseQuotaData codebuddy-cn recurring flag", () => {
     const data = { quotas: { Monthly: { used: 0, total: 100, resetAt: null } } };
     const out = parseQuotaData("codebuddy-cn", data);
     expect(out[0].recurring).toBe(true);
+  });
+});
+
+describe("getPlanLabel", () => {
+  it("formats known Codex and Claude plan names", () => {
+    expect(getPlanLabel("plus")).toBe("Plus");
+    expect(getPlanLabel("team")).toBe("Team");
+    expect(getPlanLabel("k12")).toBe("K-12");
+    expect(getPlanLabel("max_5x")).toBe("Max x5");
+    expect(getPlanLabel("max_20x")).toBe("Max x20");
+  });
+
+  it("returns null for unknown empty plan values", () => {
+    expect(getPlanLabel("unknown")).toBeNull();
+    expect(getPlanLabel("Unknown")).toBeNull();
+    expect(getPlanLabel(null)).toBeNull();
+  });
+});
+
+describe("getAccountTypeLabel", () => {
+  it("uses provider-specific auth method labels when present", () => {
+    expect(getAccountTypeLabel({
+      authType: "oauth",
+      providerSpecificData: { authMethod: "builder-id" },
+    })).toBe("AWS Builder ID");
+  });
+
+  it("falls back to normalized auth type labels", () => {
+    expect(getAccountTypeLabel({ authType: "api_key" })).toBe("API Key");
+    expect(getAccountTypeLabel({ authType: "oauth" })).toBe("OAuth");
+  });
+
+  it("labels non-Kiro provider auth methods", () => {
+    expect(getAccountTypeLabel({
+      authType: "oauth",
+      providerSpecificData: { authMethod: "external_idp" },
+    })).toBe("External IdP");
+    expect(getAccountTypeLabel({
+      authType: "oauth",
+      providerSpecificData: { authMethod: "browser_token" },
+    })).toBe("Browser Token");
   });
 });

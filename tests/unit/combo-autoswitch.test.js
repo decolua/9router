@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { detectRequiredCapabilities, reorderByCapabilities } from "../../open-sse/services/combo.js";
+import { describe, it, expect, vi } from "vitest";
+import { detectRequiredCapabilities, handleComboChat, reorderByCapabilities } from "../../open-sse/services/combo.js";
 
 describe("detectRequiredCapabilities", () => {
   it("text-only -> empty", () => {
@@ -35,11 +35,11 @@ describe("detectRequiredCapabilities", () => {
     expect(r.has("vision")).toBe(true);
   });
 
-  it("web_search tool -> search", () => {
+  it("ignores web_search while auto-switch search is disabled", () => {
     const r = detectRequiredCapabilities({ messages: [{ role: "user", content: "q" }], tools: [
       { type: "web_search" },
     ] });
-    expect(r.has("search")).toBe(true);
+    expect(r.has("search")).toBe(false);
   });
 
   it("responses input_image -> vision", () => {
@@ -68,11 +68,37 @@ describe("reorderByCapabilities", () => {
   it("keeps order when no model matches", () => {
     const models = ["deepseek/deepseek-chat", "deepseek/deepseek-reasoner"];
     const out = reorderByCapabilities(models, new Set(["vision"]));
-    expect(out).toBe(models);
+    expect(out).toEqual(models);
   });
 
   it("single model -> unchanged", () => {
     const models = ["a/x"];
     expect(reorderByCapabilities(models, new Set(["vision"]))).toBe(models);
+  });
+});
+
+describe("handleComboChat stream fallback", () => {
+  it("tries the next model when a streaming model never sends a first chunk", async () => {
+    const stalledStream = new ReadableStream({ start() {} });
+    const fallbackStream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("data: ok\n\n"));
+        controller.close();
+      },
+    });
+    const handleSingleModel = vi.fn()
+      .mockResolvedValueOnce(new Response(stalledStream, { status: 200, headers: { "Content-Type": "text/event-stream" } }))
+      .mockResolvedValueOnce(new Response(fallbackStream, { status: 200, headers: { "Content-Type": "text/event-stream" } }));
+
+    const response = await handleComboChat({
+      body: { stream: true },
+      models: ["slow/model", "fast/model"],
+      handleSingleModel,
+      log: { info: vi.fn(), warn: vi.fn() },
+      firstChunkTimeoutMs: 1,
+    });
+
+    expect(handleSingleModel).toHaveBeenCalledTimes(2);
+    expect(await response.text()).toBe("data: ok\n\n");
   });
 });

@@ -3,6 +3,10 @@
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Badge, Button, Input, Modal, Select } from "@/shared/components";
+import {
+  DEFAULT_CONNECT_TIMEOUT_SECONDS,
+  parseTimeoutSeconds,
+} from "@/shared/utils/timeoutMs";
 
 const VARIANT_CONFIG = {
   openai: {
@@ -41,6 +45,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
     prefix: "",
     ...(config.hasApiType ? { apiType: "chat" } : {}),
     baseUrl: config.defaultBaseUrl,
+    timeoutSeconds: "",
   });
 
   const [formData, setFormData] = useState(initialFormData);
@@ -65,6 +70,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
     if (!formData.name.trim() || !formData.prefix.trim() || !formData.baseUrl.trim()) return;
     setSubmitting(true);
     try {
+      const timeoutMs = parseTimeoutSeconds(formData.timeoutSeconds);
       const res = await fetch("/api/provider-nodes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -74,6 +80,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           ...(config.hasApiType ? { apiType: formData.apiType } : {}),
           baseUrl: formData.baseUrl,
           type: config.type,
+          ...(timeoutMs != null ? { timeoutMs } : {}),
         }),
       });
       const data = await res.json();
@@ -164,6 +171,15 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           onChange={(e) => setFormData({ ...formData, baseUrl: e.target.value })}
           placeholder={config.defaultBaseUrl}
           hint={config.baseUrlHint}
+        />
+        <Input
+          label="Request timeout (seconds)"
+          type="number"
+          min={1}
+          value={formData.timeoutSeconds}
+          onChange={(e) => setFormData({ ...formData, timeoutSeconds: e.target.value })}
+          placeholder={String(DEFAULT_CONNECT_TIMEOUT_SECONDS)}
+          hint={`Connect timeout before headers for this endpoint. Empty = default ${DEFAULT_CONNECT_TIMEOUT_SECONDS}s.`}
         />
         <Input
           label="API Key (for Check)"
