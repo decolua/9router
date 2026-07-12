@@ -56,6 +56,17 @@ function upsert(db, c) {
   );
 }
 
+function deriveConnectionName(data, fallbackName) {
+  if (data.provider === "github") {
+    return data.providerSpecificData?.githubLogin
+      || data.providerSpecificData?.githubEmail
+      || data.email
+      || data.providerSpecificData?.githubName
+      || fallbackName;
+  }
+  return fallbackName;
+}
+
 export async function getProviderConnections(filter = {}) {
   const db = await getAdapter();
   const where = [];
@@ -102,7 +113,18 @@ export async function createProviderConnection(data) {
       const incomingWs = data.providerSpecificData?.chatgptAccountId;
       existing = all.find(c => {
         if (c.authType !== "oauth" || c.email !== data.email) return false;
-        // Workspace providers (Codex) use workspace ID when both sides have it
+
+        // Codex/OpenAI can issue multiple OAuth grants for the same email.
+        // Refresh tokens are rotated single-use; collapsing a new login onto an
+        // existing bare-email row overwrites the first account's token pair and
+        // makes it look "invalid" after adding a second account. Only update an
+        // existing Codex row when both rows expose the same ChatGPT account ID.
+        if (data.provider === "codex") {
+          const existingWs = c.providerSpecificData?.chatgptAccountId;
+          return !!incomingWs && !!existingWs && incomingWs === existingWs;
+        }
+
+        // Workspace providers use workspace ID when both sides have it
         const existingWs = c.providerSpecificData?.chatgptAccountId;
         if (incomingWs && existingWs) return incomingWs === existingWs;
         if (incomingWs && !existingWs) return false;
@@ -133,7 +155,7 @@ export async function createProviderConnection(data) {
 
     let connectionName = data.name || null;
     if (!connectionName && (data.authType === "oauth" || data.authType === "access_token")) {
-      connectionName = data.email || `Account ${all.length + 1}`;
+      connectionName = deriveConnectionName(data, data.email || `Account ${all.length + 1}`);
     }
     let connectionPriority = data.priority;
     if (!connectionPriority) {

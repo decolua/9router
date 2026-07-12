@@ -2,15 +2,15 @@
  * Google usage handlers (Gemini CLI + Antigravity)
  */
 
-import { CLIENT_METADATA, getPlatformUserAgent } from "../../config/appConstants.js";
-import { ANTIGRAVITY_OAUTH_CLIENT } from "../../providers/shared.js";
+import { CLIENT_METADATA } from "../../config/appConstants.js";
+import { ANTIGRAVITY_IDE_USER_AGENT, ANTIGRAVITY_IDE_VERSION, ANTIGRAVITY_OAUTH_CLIENT } from "../../providers/shared.js";
 import { U, parseResetTime, normalizeCloudCodeProjectId, fetchWithTimeout } from "./shared.js";
 
 // Antigravity API config (from Quotio) — urls from registry, oauth client + dynamic UA kept here
 const ANTIGRAVITY_CONFIG = {
   ...U("antigravity"),
   ...ANTIGRAVITY_OAUTH_CLIENT,
-  userAgent: getPlatformUserAgent(),
+  userAgent: ANTIGRAVITY_IDE_USER_AGENT,
 };
 
 /**
@@ -129,8 +129,7 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
         "User-Agent": ANTIGRAVITY_CONFIG.userAgent,
         "Content-Type": "application/json",
         "X-Client-Name": "antigravity",
-        "X-Client-Version": "1.107.0",
-        "x-request-source": "local", // MITM bypass
+        "X-Client-Version": ANTIGRAVITY_IDE_VERSION,
       },
       body: JSON.stringify({
         ...(projectId ? { project: projectId } : {})
@@ -229,7 +228,6 @@ async function getAntigravitySubscriptionInfo(accessToken, proxyOptions = null) 
         "Authorization": `Bearer ${accessToken}`,
         "User-Agent": ANTIGRAVITY_CONFIG.userAgent,
         "Content-Type": "application/json",
-        "x-request-source": "local", // MITM bypass
       },
       body: JSON.stringify({ metadata: CLIENT_METADATA, mode: 1 }),
     }, 10000, proxyOptions);

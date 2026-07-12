@@ -15,6 +15,12 @@ const STRIP_RULES = [
   // Cloudflare Workers AI: content must be plain string, rejects OpenAI content-part array (#1926)
   { provider: "cloudflare-ai", flattenContent: true },
   { provider: "volcengine-ark", match: /glm-5/i, clampToModelMaxOutput: true },
+  // VolcEngine Ark caps the Kimi family at max_tokens <= 32768, but the model's
+  // advertised ceiling is far higher (Kimi-K2.7-Code resolves to maxOutput 262144),
+  // so clampToModelMaxOutput alone leaves it uncapped and the request 400s with
+  // "integer above maximum value, expected <= 32768". Pin an explicit endpoint cap;
+  // min() with the model ceiling still applies if a variant's own limit is lower.
+  { provider: "volcengine-ark", match: /kimi/i, maxOutputCap: 32768, clampToModelMaxOutput: true },
 ];
 
 // Test a rule's match (regex or predicate) against the model id.
@@ -48,9 +54,17 @@ export function stripUnsupportedParams(provider, model, body) {
         }
       }
     }
-    if (rule.clampToModelMaxOutput) {
-      const ceiling = getCapabilitiesForModel(provider, model).maxOutput;
-      if (Number.isFinite(ceiling) && ceiling > 0) {
+    if (rule.clampToModelMaxOutput || Number.isFinite(rule.maxOutputCap)) {
+      const modelCeiling = getCapabilitiesForModel(provider, model).maxOutput;
+      const candidates = [];
+      if (rule.clampToModelMaxOutput && Number.isFinite(modelCeiling) && modelCeiling > 0) {
+        candidates.push(modelCeiling);
+      }
+      if (Number.isFinite(rule.maxOutputCap) && rule.maxOutputCap > 0) {
+        candidates.push(rule.maxOutputCap);
+      }
+      if (candidates.length > 0) {
+        const ceiling = Math.min(...candidates);
         clampNumber(body, "max_tokens", ceiling);
         clampNumber(body, "max_completion_tokens", ceiling);
         clampNumber(body, "max_output_tokens", ceiling);
