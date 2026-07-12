@@ -405,15 +405,11 @@ export class KiroExecutor extends BaseExecutor {
                   completion_tokens: outputTokens,
                   total_tokens: inputTokens + outputTokens
                 };
-<<<<<<< HEAD
-                if (cachedTokens > 0) state.usage.cached_tokens = cachedTokens;
-=======
                 // Kiro is Claude-backed: inputTokens EXCLUDES cache (Claude convention),
                 // not inclusive like OpenAI's cached_tokens. Emit cache_read_input_tokens
                 // (not cached_tokens) so canonicalizeUsage takes the Claude fold path and
                 // correctly adds cache back into prompt_tokens instead of undercharging.
                 if (cachedTokens > 0) state.usage.cache_read_input_tokens = cachedTokens;
->>>>>>> master
                 if (cacheCreationInputTokens > 0) state.usage.cache_creation_input_tokens = cacheCreationInputTokens;
               }
             }

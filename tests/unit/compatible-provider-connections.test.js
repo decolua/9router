@@ -153,16 +153,6 @@ describe("compatible provider connections API", () => {
     });
   });
 
-<<<<<<< HEAD
-  it("allows multiple API-key connections on the same compatible node (key pool)", async () => {
-    const ctx = await setupTestContext({
-      id: "openai-compatible-keypool-test",
-      type: "openai-compatible",
-      name: "Multi Key Node",
-      prefix: "multi",
-      apiType: "chat",
-      baseUrl: "https://multi-key.test/v1",
-=======
   it("allows multiple connections on the same compatible node", async () => {
     const ctx = await setupTestContext({
       id: "openai-compatible-multiple-test",
@@ -171,7 +161,6 @@ describe("compatible provider connections API", () => {
       prefix: "mul",
       apiType: "chat",
       baseUrl: "https://multiple-connections.test/v1",
->>>>>>> master
     });
     cleanup = ctx.cleanup;
 
@@ -182,8 +171,8 @@ describe("compatible provider connections API", () => {
     expect(firstResponse.status).toBe(201);
     expect(secondResponse.status).toBe(201);
     expect(storedConnections).toHaveLength(2);
-<<<<<<< HEAD
-    storedConnections.forEach((conn) => expectCompatibleConnection(conn, ctx.node, { apiType: "chat" }));
+    expectCompatibleConnection(storedConnections[0], ctx.node, { apiType: "chat" });
+    expectCompatibleConnection(storedConnections[1], ctx.node, { apiType: "chat" });
   });
 
   it("rejects an OpenAI-compatible id whose node type is anthropic-compatible", async () => {
@@ -225,9 +214,5 @@ describe("compatible provider connections API", () => {
     const stored = await ctx.getProviderConnections({ provider: ctx.node.id });
     expect(stored).toHaveLength(2);
     expect(stored.map((c) => c.name).sort()).toEqual(["Key One", "Key Two"]);
-=======
-    expectCompatibleConnection(storedConnections[0], ctx.node, { apiType: "chat" });
-    expectCompatibleConnection(storedConnections[1], ctx.node, { apiType: "chat" });
->>>>>>> master
   });
 });

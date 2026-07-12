@@ -138,43 +138,11 @@ async function calculateCost(provider, model, tokens) {
     const pricing = await getPricingForModel(provider, model);
     if (!pricing) return 0;
 
-<<<<<<< HEAD
-    let cost = 0;
-    const inputTokens = tokens.prompt_tokens || tokens.input_tokens || 0;
-    const cachedTokens = tokens.cached_tokens || tokens.cache_read_input_tokens || 0;
-    const cacheCreationTokens = tokens.cache_creation_input_tokens || 0;
-    // prompt_tokens is cache-inclusive (see canonicalizeUsage): cached + cache_creation
-    // are subsets, so subtract both to avoid charging them at the full input rate.
-    const nonCachedInput = Math.max(0, inputTokens - cachedTokens - cacheCreationTokens);
-    cost += nonCachedInput * (pricing.input / 1000000);
-
-    if (cachedTokens > 0) {
-      const cachedRate = pricing.cached || pricing.input;
-      cost += cachedTokens * (cachedRate / 1000000);
-    }
-
-    const outputTokens = tokens.completion_tokens || tokens.output_tokens || 0;
-    cost += outputTokens * (pricing.output / 1000000);
-
-    const reasoningTokens = tokens.reasoning_tokens || 0;
-    if (reasoningTokens > 0) {
-      const rate = pricing.reasoning || pricing.output;
-      cost += reasoningTokens * (rate / 1000000);
-    }
-
-    if (cacheCreationTokens > 0) {
-      const rate = pricing.cache_creation || pricing.input;
-      cost += cacheCreationTokens * (rate / 1000000);
-    }
-
-    return cost;
-=======
     // Delegate the actual math to the single source of truth (avoids the two
     // copies drifting apart — see open-sse/providers/pricing.js for the
     // cache-inclusive prompt_tokens convention this assumes).
     const { calculateCostFromTokens } = await import("open-sse/providers/pricing.js");
     return calculateCostFromTokens(tokens, pricing);
->>>>>>> master
   } catch (e) {
     console.error("Error calculating cost:", e);
     return 0;
@@ -221,8 +189,7 @@ export function trackPendingRequest(model, provider, connectionId, started, erro
     lastErrorProvider.ts = Date.now();
   }
 
-  const t = new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  console.log(`[${t}] [PENDING] ${started ? "START" : "END"}${error ? " (ERROR)" : ""} | provider=${provider} | model=${model}`);
+  // [PENDING] console line removed; lifecycle is visible via "▶" and "📊 done" lines
   scheduleStatsEvent("pending");
 }
 
@@ -412,11 +379,7 @@ export async function getUsageStats(period = "all") {
         timestamp: r.timestamp, model: r.model, provider: r.provider || "",
         promptTokens: t.prompt_tokens || t.input_tokens || 0,
         completionTokens: t.completion_tokens || t.output_tokens || 0,
-<<<<<<< HEAD
-        cachedTokens: (t.cached_tokens || t.cache_read_input_tokens || 0) + (t.cache_creation_input_tokens || 0),
-=======
         cachedTokens: t.cached_tokens || t.cache_read_input_tokens || 0,
->>>>>>> master
         status: r.status || "ok",
       };
     })

@@ -1,10 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
-import { LEGACY_FILES, DB_DIR, DATA_FILE } from "./paths.js";
-import { TABLES, buildCreateTableSql } from "./schema.js";
+import { LEGACY_FILES, DB_DIR } from "./paths.js";
+import { TABLES, buildCreateTableSql, SCHEMA_VERSION } from "./schema.js";
 import { MIGRATIONS, latestVersion } from "./migrations/index.js";
 import { getMetaSync, setMetaSync } from "./helpers/metaStore.js";
-import { makeBackupDir, backupFile, pruneOldBackups } from "./backup.js";
+import { makeBackupDir, backupFile, backupDbLite, pruneOldBackups } from "./backup.js";
 import { getAppVersion } from "./version.js";
 import { stringifyJson } from "./helpers/jsonCol.js";
 
@@ -221,11 +221,36 @@ export async function runMigrationOnce(adapter) {
   // a brand-new DB as non-fresh once schemaVersion is written).
   const fresh = isFreshDb(adapter);
 
+  // Prune stale backups every boot so old oversized backups shrink to KEEP.
+  pruneOldBackups();
+
+  // Bootstrap _meta so we can read the stored backup schema version below
+  // (runVersionedMigrations also ensures this, but we need it earlier here).
+  adapter.exec(buildCreateTableSql("_meta", TABLES._meta));
+
+  // Detect a pending schema change via the central SCHEMA_VERSION const.
+  // A lightweight backup is taken BEFORE any schema mutation below.
+  const storedSchemaVer = parseInt(getMetaSync(adapter, "backupSchemaVersion", "0"), 10) || 0;
+  const schemaChanging = !fresh && storedSchemaVer < SCHEMA_VERSION;
+  if (schemaChanging) {
+    try {
+      const backupDir = makeBackupDir(`schema-${storedSchemaVer}-to-${SCHEMA_VERSION}`);
+      backupDbLite(adapter, backupDir);
+      pruneOldBackups();
+      console.log(`[DB][migrate] pre-schema backup ${storedSchemaVer} → ${SCHEMA_VERSION}: ${backupDir}`);
+    } catch (e) {
+      console.warn(`[DB][migrate] pre-schema backup failed (continuing): ${e.message}`);
+    }
+  }
+
   // 1. Always run versioned migrations chain (skip-version safe)
   const migInfo = runVersionedMigrations(adapter);
 
   // 2. Additive sync (auto add missing columns/indexes declared in TABLES)
   syncSchemaFromTables(adapter);
+
+  // Stamp the schema version we just reached so future boots skip re-backup.
+  setMetaSync(adapter, "backupSchemaVersion", SCHEMA_VERSION);
 
   // 3. One-time legacy JSON import (only if DB was fresh on entry)
   const alreadyImported = fs.existsSync(MIGRATED_MARKER);
@@ -247,6 +272,7 @@ export async function runMigrationOnce(adapter) {
         importLegacyDisabled(adapter, legacyDisabled);
         importLegacyDetails(adapter, legacyDetails);
         setMetaSync(adapter, "appVersion", getAppVersion());
+        setMetaSync(adapter, "backupSchemaVersion", SCHEMA_VERSION);
         setMetaSync(adapter, "migratedAt", new Date().toISOString());
       });
     } catch (err) {
@@ -263,24 +289,9 @@ export async function runMigrationOnce(adapter) {
     return;
   }
 
-  if (fresh) {
-    setMetaSync(adapter, "appVersion", getAppVersion());
-    return;
-  }
-
-  // 4. App version bump → backup data.sqlite (safety net before user-side upgrade)
-  const oldVer = getMetaSync(adapter, "appVersion", null);
+  // Track app version for informational purposes only. App version bumps no
+  // longer trigger a DB backup — only real schema changes (SCHEMA_VERSION) do.
   const newVer = getAppVersion();
-  if (oldVer && oldVer !== newVer) {
-    const backupDir = makeBackupDir(`upgrade-${oldVer}-to-${newVer}`);
-    try { backupFile(DATA_FILE, backupDir); } catch {}
-    setMetaSync(adapter, "appVersion", newVer);
-    pruneOldBackups();
-    console.log(`[DB][migrate] App ${oldVer} → ${newVer} | schema ${migInfo.from} → ${migInfo.to} | backup: ${backupDir}`);
-  } else if (migInfo.applied > 0) {
-    // Schema upgrade without app version bump — still backup
-    const backupDir = makeBackupDir(`schema-${migInfo.from}-to-${migInfo.to}`);
-    try { backupFile(DATA_FILE, backupDir); } catch {}
-    pruneOldBackups();
-  }
+  const oldVer = getMetaSync(adapter, "appVersion", null);
+  if (oldVer !== newVer) setMetaSync(adapter, "appVersion", newVer);
 }

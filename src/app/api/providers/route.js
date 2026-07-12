@@ -133,12 +133,9 @@ export async function POST(request) {
       if (!node) {
         return NextResponse.json({ error: "OpenAI Compatible node not found" }, { status: 404 });
       }
-<<<<<<< HEAD
       if (node.type !== "openai-compatible") {
         return NextResponse.json({ error: "Provider node type does not match OpenAI Compatible prefix" }, { status: 400 });
       }
-=======
->>>>>>> master
       providerSpecificData = {
         prefix: node.prefix,
         apiType: node.apiType,
@@ -150,12 +147,9 @@ export async function POST(request) {
       if (!node) {
         return NextResponse.json({ error: "Anthropic Compatible node not found" }, { status: 404 });
       }
-<<<<<<< HEAD
       if (node.type !== "anthropic-compatible") {
         return NextResponse.json({ error: "Provider node type does not match Anthropic Compatible prefix" }, { status: 400 });
       }
-=======
->>>>>>> master
       providerSpecificData = {
         prefix: node.prefix,
         baseUrl: node.baseUrl,

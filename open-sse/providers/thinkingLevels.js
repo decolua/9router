@@ -32,6 +32,8 @@ const FORMAT_LEVELS = {
 
 // Model-name pattern overrides (glob, first match wins) — more precise than format default.
 const PATTERN_THINKING = [
+  // gpt-5.6-sol accepts max (maps to xhigh on wire); live probe rejected ultra.
+  { pattern: "*gpt-5.6-sol*", levels: ["none", "minimal", "low", "medium", "high", "xhigh", "max"] },
   { pattern: "*codex*", levels: ["low", "medium", "high", "xhigh"] }, // codex cannot disable thinking
 ];
 
