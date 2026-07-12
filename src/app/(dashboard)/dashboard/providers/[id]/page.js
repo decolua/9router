@@ -804,6 +804,43 @@ export default function ProviderDetailPage() {
     }
   };
 
+  const handleReorderByStatus = async () => {
+    const getEffectiveStatus = (conn) => {
+      const isCooldown = Object.entries(conn).some(
+        ([k, v]) => k.startsWith("modelLock_") && v && new Date(v).getTime() > Date.now()
+      );
+      return conn.testStatus === "unavailable" && !isCooldown ? "active" : conn.testStatus;
+    };
+
+    const sorted = [...connections].sort((a, b) => {
+      const statusA = getEffectiveStatus(a);
+      const statusB = getEffectiveStatus(b);
+      const availableA = statusA === "active" || statusA === "success";
+      const availableB = statusB === "active" || statusB === "success";
+
+      if (availableA && !availableB) return -1;
+      if (!availableA && availableB) return 1;
+      return 0;
+    });
+
+    setConnections(sorted);
+
+    try {
+      await Promise.all(
+        sorted.map((conn, idx) =>
+          fetch(`/api/providers/${conn.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ priority: idx }),
+          })
+        )
+      );
+    } catch (error) {
+      console.log("Error reordering by status:", error);
+      await fetchConnections();
+    }
+  };
+
   const selectedConnections = connections.filter((conn) => selectedConnectionIds.includes(conn.id));
   const allSelected = connections.length > 0 && selectedConnectionIds.length === connections.length;
 
@@ -1424,6 +1461,17 @@ export default function ProviderDetailPage() {
                     </Button>
                   )}
                 </>
+              )}
+              {connections.length > 1 && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  icon="swap_vert"
+                  onClick={handleReorderByStatus}
+                  title="Reorder by availability status"
+                >
+                  Reorder
+                </Button>
               )}
               {/* Round Robin toggle */}
               <div className="flex flex-wrap items-center gap-2">
