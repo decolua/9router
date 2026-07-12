@@ -150,8 +150,16 @@ export async function GET(request, { params }) {
           }
         : undefined;
       
-      // Providers that don't use PKCE for device code
-      const noPkceDeviceProviders = ["github", "kiro", "kimi-coding", "kilocode", "codebuddy-cn", "qoder"];
+      // Providers that don't use PKCE for device code (Grok CLI HAR: plain device_code, no challenge)
+      const noPkceDeviceProviders = [
+        "github",
+        "kiro",
+        "kimi-coding",
+        "kilocode",
+        "codebuddy-cn",
+        "qoder",
+        "grok-cli",
+      ];
       let deviceData;
       if (noPkceDeviceProviders.includes(provider)) {
         deviceData = await requestDeviceCode(provider, undefined, deviceOptions);
@@ -232,8 +240,8 @@ export async function POST(request, { params }) {
         });
       }
 
-      // Cline uses authorization_code without PKCE. Kimchi returns a browser token.
-      const noPkceExchangeProviders = ["cline", "kimchi"];
+      // Cline and ClinePass use authorization_code without PKCE. Kimchi returns a browser token.
+      const noPkceExchangeProviders = ["cline", "clinepass", "kimchi"];
       if (!code || !redirectUri || (!codeVerifier && !noPkceExchangeProviders.includes(provider))) {
         return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
       }

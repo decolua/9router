@@ -31,11 +31,12 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   let currentAssistantMsg = null;
   let pendingToolResults = [];
   let pendingReasoning = "";
+  let pendingReasoningEncrypted = "";
 
   const inputItems = normalizeResponsesInput(body.input);
   if (!inputItems) return body;
 
-  // Extract reasoning text from summary[].text or encrypted_content fallback
+  // Extract reasoning text from summary[].text (encrypted_content is continuity-only)
   const extractReasoningText = (item) => {
     if (Array.isArray(item.summary)) {
       const txt = item.summary.map(s => s?.text || "").filter(Boolean).join("\n");
@@ -46,6 +47,13 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       if (txt) return txt;
     }
     return "";
+  };
+
+  const attachPendingReasoning = (msg) => {
+    if (pendingReasoning) msg.reasoning_content = pendingReasoning;
+    if (pendingReasoningEncrypted) msg.encrypted_content = pendingReasoningEncrypted;
+    pendingReasoning = "";
+    pendingReasoningEncrypted = "";
   };
 
   for (const item of inputItems) {
@@ -80,11 +88,12 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
         })
         : item.content;
       const msg = { role: item.role, content };
-      // Attach buffered reasoning to assistant turn (required by xiaomi-mimo thinking mode)
-      if (item.role === ROLE.ASSISTANT && pendingReasoning) {
-        msg.reasoning_content = pendingReasoning;
+      // Attach buffered reasoning to assistant turn (required by xiaomi-mimo + store=false continuity)
+      if (item.role === ROLE.ASSISTANT) attachPendingReasoning(msg);
+      else {
+        pendingReasoning = "";
+        pendingReasoningEncrypted = "";
       }
-      pendingReasoning = "";
       result.messages.push(msg);
     }
     else if (itemType === RESPONSES_ITEM.FUNCTION_CALL) {
@@ -95,10 +104,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
           content: null,
           tool_calls: []
         };
-        if (pendingReasoning) {
-          currentAssistantMsg.reasoning_content = pendingReasoning;
-          pendingReasoning = "";
-        }
+        attachPendingReasoning(currentAssistantMsg);
       }
       // Skip items with empty/missing name — Codex/OpenAI reject nameless tool calls (#444)
       if (!item.name || typeof item.name !== "string" || item.name.trim() === "") continue;
@@ -132,9 +138,15 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       });
     }
     else if (itemType === RESPONSES_ITEM.REASONING) {
-      // Buffer reasoning text; attached to next assistant message/function_call
+      // Buffer reasoning text; attached to next assistant message/function_call.
+      // Also stash encrypted_content so a later openai→responses hop can restore
+      // the store=false continuity blob (Grok CLI / Codex multi-turn).
       const txt = extractReasoningText(item);
       if (txt) pendingReasoning = pendingReasoning ? `${pendingReasoning}\n${txt}` : txt;
+      if (typeof item.encrypted_content === "string" && item.encrypted_content) {
+        // Prefer attaching to the next assistant message we create
+        pendingReasoningEncrypted = item.encrypted_content;
+      }
       continue;
     }
   }
@@ -203,6 +215,43 @@ function normalizeToolParameters(params) {
 }
 
 /**
+ * Build a Responses `reasoning` input item from Chat Completions assistant fields.
+ * Preserves encrypted blobs needed by store=false multi-turn (Grok CLI / Codex).
+ * Returns null when the message has nothing useful to re-send.
+ */
+function buildReasoningInputItem(msg) {
+  if (!msg || typeof msg !== "object") return null;
+
+  const encrypted =
+    (typeof msg.encrypted_content === "string" && msg.encrypted_content) ||
+    (typeof msg.reasoning_encrypted_content === "string" && msg.reasoning_encrypted_content) ||
+    (typeof msg.reasoning?.encrypted_content === "string" && msg.reasoning.encrypted_content) ||
+    "";
+
+  let summaryText = "";
+  if (typeof msg.reasoning_content === "string" && msg.reasoning_content.trim()) {
+    summaryText = msg.reasoning_content;
+  } else if (typeof msg.reasoning === "string" && msg.reasoning.trim()) {
+    summaryText = msg.reasoning;
+  } else if (Array.isArray(msg.reasoning_details)) {
+    summaryText = msg.reasoning_details
+      .map((d) => (typeof d?.text === "string" ? d.text : typeof d?.content === "string" ? d.content : ""))
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  if (!encrypted && !summaryText) return null;
+
+  const item = { type: RESPONSES_ITEM.REASONING };
+  if (summaryText) {
+    item.summary = [{ type: RESPONSES_ITEM.SUMMARY_TEXT, text: summaryText }];
+  }
+  // encrypted_content is the continuity token for store=false backends
+  if (encrypted) item.encrypted_content = encrypted;
+  return item;
+}
+
+/**
  * Convert OpenAI Chat Completions to OpenAI Responses API format
  */
 export function openaiToOpenAIResponsesRequest(model, body, stream, credentials) {
@@ -221,17 +270,26 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
   const messages = body.messages || [];
 
   for (const msg of messages) {
-    if (msg.role === ROLE.SYSTEM) {
-      // Use first system message as instructions
+    if (msg.role === ROLE.SYSTEM || msg.role === ROLE.DEVELOPER) {
+      // Use the first instruction-bearing message as instructions.
+      // OpenAI recommends role="developer" for GPT-5/Codex as the system-level prompt.
       if (!hasSystemMessage) {
         result.instructions = typeof msg.content === "string" ? msg.content : "";
         hasSystemMessage = true;
       }
-      continue; // Skip system messages in input
+      continue; // Skip instruction messages in input
     }
 
     // Convert user/assistant messages to input items
     if (msg.role === ROLE.USER || msg.role === ROLE.ASSISTANT) {
+      // Multi-turn continuity for store=false Responses backends (Codex / Grok CLI):
+      // re-emit a reasoning item before the assistant message when the chat-format
+      // history carried reasoning text and/or encrypted_content from a prior turn.
+      if (msg.role === ROLE.ASSISTANT) {
+        const reasoningItem = buildReasoningInputItem(msg);
+        if (reasoningItem) result.input.push(reasoningItem);
+      }
+
       const contentType = msg.role === ROLE.USER ? RESPONSES_ITEM.INPUT_TEXT : RESPONSES_ITEM.OUTPUT_TEXT;
       const content = typeof msg.content === "string"
         ? [{ type: contentType, text: msg.content }]

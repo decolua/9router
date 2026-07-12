@@ -101,6 +101,19 @@ describe("DB SQLite layer — public API parity", () => {
     expect(back.providerSpecificData).toEqual({ foo: "bar" });
   });
 
+  it("providerConnections: GitHub OAuth uses account identity as fallback name", async () => {
+    const c = await sqliteDb.createProviderConnection({
+      provider: "github",
+      authType: "oauth",
+      accessToken: "tok",
+      providerSpecificData: { githubLogin: "octocat" },
+    });
+
+    expect(c.name).toBe("octocat");
+    const back = await sqliteDb.getProviderConnectionById(c.id);
+    expect(back.name).toBe("octocat");
+  });
+
   it("providerNodes: CRUD", async () => {
     const n = await sqliteDb.createProviderNode({ type: "openai", name: "Test", baseUrl: "https://api.test", apiType: "openai" });
     expect(n.id).toBeDefined();
