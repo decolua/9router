@@ -1,5 +1,6 @@
 import { platform, arch } from "os";
 import { PROVIDERS, PROVIDER_OAUTH } from "./providers.js";
+import { ANTIGRAVITY_IDE_USER_AGENT } from "../providers/shared.js";
 
 // === Gemini CLI === derive từ registry gemini-cli.transport
 export const GEMINI_CLI_VERSION = PROVIDERS["gemini-cli"]?.cliVersion;
@@ -59,7 +60,7 @@ export function getPlatformEnum() {
 }
 
 export function getPlatformUserAgent() {
-  return `antigravity/1.104.0 ${platform()}/${arch()}`;
+  return ANTIGRAVITY_IDE_USER_AGENT;
 }
 
 export const CLIENT_METADATA = {
@@ -129,7 +130,7 @@ export const AG_DEFAULT_TOOLS = new Set([
 
 // Antigravity chat/stream headers
 export const ANTIGRAVITY_HEADERS = {
-  "User-Agent": `antigravity/1.107.0 ${platform()}/${arch()}`
+  "User-Agent": ANTIGRAVITY_IDE_USER_AGENT
 };
 
 // Cloud Code Assist API

@@ -153,7 +153,15 @@ Respond ONLY with the JSON object, no other text.`);
         continue;
       }
 
-      const toolData = toolType === OPENAI_BLOCK.FUNCTION && tool.function ? tool.function : tool;
+      // Function-shaped tools arrive in two flavors from real clients:
+      //   (a) openai-spec: { type: "function", function: { name, ... } }
+      //   (b) legacy/loose: { function: { name, ... } }   (no parent `type`)
+      // Both must yield toolData.name = "echo". Treat the bare-function shape
+      // as a function tool too — Anthropic-compatible gateways (notably
+      // MiniMax M3 at api.minimaxi.com) reject payloads where this branch
+      // falls through with `toolData.name === undefined`, returning their
+      // upstream code (2013) "invalid tool type". See #2435.
+      const toolData = tool.function ?? tool;
       const originalName = toolData.name;
 
       // Claude OAuth requires prefixed tool names to avoid conflicts
