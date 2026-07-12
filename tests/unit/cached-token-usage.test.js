@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { canonicalizeUsage } from "../../open-sse/utils/usageTracking.js";
+import { canonicalizeUsage, extractUsage, mergeUsage } from "../../open-sse/utils/usageTracking.js";
 import { calculateCostFromTokens } from "../../open-sse/providers/pricing.js";
 import { toOpenAIUsage } from "../../open-sse/translator/concerns/usage.js";
 
@@ -74,6 +74,20 @@ describe("canonicalizeUsage", () => {
     expect(canonicalizeUsage(null)).toBeNull();
     expect(canonicalizeUsage(undefined)).toBeNull();
   });
+
+  it("folds a Claude cache-miss first write (cache_creation only, no cache_read yet)", () => {
+    // Cache-miss on first write: upstream emits cache_creation_input_tokens but
+    // no cache_read_input_tokens at all (not even 0). Must still fold into prompt
+    // instead of falling through to the OpenAI passthrough branch.
+    const out = canonicalizeUsage({
+      prompt_tokens: 100,
+      completion_tokens: 20,
+      cache_creation_input_tokens: 500,
+    });
+    expect(out.prompt_tokens).toBe(600); // 100 + 0 (no read) + 500
+    expect(out.cached_tokens).toBe(0);
+    expect(out.cache_creation_input_tokens).toBe(500);
+  });
 });
 
 describe("calculateCostFromTokens (canonical inclusive convention)", () => {
@@ -103,6 +117,50 @@ describe("calculateCostFromTokens (canonical inclusive convention)", () => {
   it("matches plain input pricing when no cache present", () => {
     const cost = calculateCostFromTokens({ prompt_tokens: 100, completion_tokens: 50 }, pricing);
     expect(cost).toBeCloseTo((100 * 3 + 50 * 15) / 1_000_000, 12);
+  });
+});
+
+describe("Anthropic streaming usage (message_start carries cache, message_delta output-only)", () => {
+  it("extractUsage reads input + cache from message_start", () => {
+    const u = extractUsage({
+      type: "message_start",
+      message: { usage: { input_tokens: 100, output_tokens: 1, cache_read_input_tokens: 200, cache_creation_input_tokens: 30 } },
+    });
+    expect(u.prompt_tokens).toBe(100);
+    expect(u.cache_read_input_tokens).toBe(200);
+    expect(u.cache_creation_input_tokens).toBe(30);
+  });
+
+  it("merges message_start cache with message_delta output without clobbering", () => {
+    // Real Anthropic SSE: cache only in message_start, real output only in message_delta.
+    const start = extractUsage({
+      type: "message_start",
+      message: { usage: { input_tokens: 100, output_tokens: 1, cache_read_input_tokens: 200, cache_creation_input_tokens: 30 } },
+    });
+    const delta = extractUsage({ type: "message_delta", usage: { output_tokens: 50 } });
+    const merged = mergeUsage(start, delta);
+    expect(merged.prompt_tokens).toBe(100);
+    expect(merged.cache_read_input_tokens).toBe(200);
+    expect(merged.cache_creation_input_tokens).toBe(30);
+    expect(merged.completion_tokens).toBe(50);
+
+    // And it canonicalizes to a cache-inclusive prompt for storage/cost.
+    const canon = canonicalizeUsage(merged);
+    expect(canon.prompt_tokens).toBe(330); // 100 + 200 + 30
+    expect(canon.cached_tokens).toBe(200);
+    expect(canon.cache_creation_input_tokens).toBe(30);
+    expect(canon.completion_tokens).toBe(50);
+  });
+
+  it("does not let a NaN field poison the running max-merge", () => {
+    // typeof NaN === "number", so a naive Math.max(prev, NaN) is NaN — one
+    // malformed chunk must not wipe out an already-accumulated good value.
+    const prev = { prompt_tokens: 100, cache_read_input_tokens: 200 };
+    const bad = { prompt_tokens: NaN, completion_tokens: 50 };
+    const merged = mergeUsage(prev, bad);
+    expect(merged.prompt_tokens).toBe(100);
+    expect(merged.cache_read_input_tokens).toBe(200);
+    expect(merged.completion_tokens).toBe(50);
   });
 });
 

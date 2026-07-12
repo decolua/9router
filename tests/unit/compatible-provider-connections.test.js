@@ -145,14 +145,14 @@ describe("compatible provider connections API", () => {
     });
   });
 
-  it("allows multiple API-key connections on the same compatible node (key pool)", async () => {
+  it("allows multiple connections on the same compatible node", async () => {
     const ctx = await setupTestContext({
-      id: "openai-compatible-multikey-test",
+      id: "openai-compatible-multiple-test",
       type: "openai-compatible",
-      name: "Multi Key Node",
-      prefix: "multi",
+      name: "Multiple Connections Node",
+      prefix: "mul",
       apiType: "chat",
-      baseUrl: "https://multi-key.test/v1",
+      baseUrl: "https://multiple-connections.test/v1",
     });
     cleanup = ctx.cleanup;
 
@@ -163,6 +163,7 @@ describe("compatible provider connections API", () => {
     expect(firstResponse.status).toBe(201);
     expect(secondResponse.status).toBe(201);
     expect(storedConnections).toHaveLength(2);
-    storedConnections.forEach((conn) => expectCompatibleConnection(conn, ctx.node, { apiType: "chat" }));
+    expectCompatibleConnection(storedConnections[0], ctx.node, { apiType: "chat" });
+    expectCompatibleConnection(storedConnections[1], ctx.node, { apiType: "chat" });
   });
 });

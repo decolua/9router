@@ -69,9 +69,22 @@ export class KiroExecutor extends BaseExecutor {
   getOrderedBaseUrls(credentials) {
     const baseUrls = this.getBaseUrls();
     const authMethod = credentials?.providerSpecificData?.authMethod;
-    const isCodeWhispererSurface = authMethod === "api_key" || authMethod === "external_idp";
+    // IAM Identity Center (idc) tokens are AWS SSO access tokens — the same
+    // family as external_idp/api_key. The kiro.dev gateway rejects them with
+    // 403 "bearer token invalid", so they must hit the CodeWhisperer
+    // *.amazonaws.com surface, and in the region the token was minted in
+    // (the baseUrls are hardcoded us-east-1).
+    const isCodeWhispererSurface =
+      authMethod === "api_key" || authMethod === "external_idp" || authMethod === "idc";
     if (!isCodeWhispererSurface) return baseUrls;
-    const amazon = baseUrls.filter((u) => u.includes("amazonaws.com"));
+
+    const region = (credentials?.providerSpecificData?.region || "us-east-1").trim();
+    const regionalize = (u) =>
+      region && region !== "us-east-1" && u.includes("amazonaws.com")
+        ? u.replace(/([a-z]+)\.[a-z0-9-]+\.amazonaws\.com/, `$1.${region}.amazonaws.com`)
+        : u;
+
+    const amazon = baseUrls.filter((u) => u.includes("amazonaws.com")).map(regionalize);
     const others = baseUrls.filter((u) => !u.includes("amazonaws.com"));
     return amazon.length > 0 ? [...amazon, ...others] : baseUrls;
   }
@@ -395,7 +408,11 @@ export class KiroExecutor extends BaseExecutor {
                   completion_tokens: outputTokens,
                   total_tokens: inputTokens + outputTokens
                 };
-                if (cachedTokens > 0) state.usage.cached_tokens = cachedTokens;
+                // Kiro is Claude-backed: inputTokens EXCLUDES cache (Claude convention),
+                // not inclusive like OpenAI's cached_tokens. Emit cache_read_input_tokens
+                // (not cached_tokens) so canonicalizeUsage takes the Claude fold path and
+                // correctly adds cache back into prompt_tokens instead of undercharging.
+                if (cachedTokens > 0) state.usage.cache_read_input_tokens = cachedTokens;
                 if (cacheCreationInputTokens > 0) state.usage.cache_creation_input_tokens = cacheCreationInputTokens;
               }
             }
