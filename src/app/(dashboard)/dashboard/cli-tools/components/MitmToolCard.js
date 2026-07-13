@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import { Card, Button, Badge, Input, ModelSelectModal } from "@/shared/components";
 import { TOOL_HOSTS } from "@/shared/constants/mitmToolHosts";
 import Image from "next/image";
+import MitmModelMappingRow from "./MitmModelMappingRow";
+import { updateMappingEntry } from "@/mitm/mappingState";
 
 /**
  * Per-tool MITM card — shows DNS status + model mappings.
@@ -41,35 +43,45 @@ export default function MitmToolCard({
   const canRunWithoutPassword = isWin || hasCachedPassword || needsSudoPassword === false;
 
   useEffect(() => {
-    if (isExpanded) loadSavedMappings();
-  }, [isExpanded]);
-
-  const loadSavedMappings = async () => {
-    try {
-      const res = await fetch(`/api/cli-tools/antigravity-mitm/alias?tool=${tool.id}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (Object.keys(data.aliases || {}).length > 0) setModelMappings(data.aliases);
-      }
-    } catch { /* ignore */ }
-  };
+    if (!isExpanded) return;
+    let cancelled = false;
+    fetch(`/api/cli-tools/antigravity-mitm/alias?tool=${tool.id}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && data) setModelMappings(data.aliases || {});
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isExpanded, tool.id]);
 
   const saveMappings = useCallback(async (mappings) => {
     try {
-      await fetch("/api/cli-tools/antigravity-mitm/alias", {
+      const res = await fetch("/api/cli-tools/antigravity-mitm/alias", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tool: tool.id, mappings }),
       });
-    } catch { /* ignore */ }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setWarning(data.error || "Failed to save model mappings");
+      }
+    } catch {
+      setWarning("Failed to save model mappings");
+    }
   }, [tool.id]);
 
-  const handleMappingBlur = (alias, value) => {
-    saveMappings({ ...modelMappings, [alias]: value });
+  const getMappingEntry = (alias) => modelMappings[alias] || {};
+
+  const updateMapping = (alias, patch, shouldSave = false) => {
+    const updated = updateMappingEntry(modelMappings, alias, patch);
+    setModelMappings(updated);
+    if (shouldSave) saveMappings(updated);
   };
 
-  const handleModelMappingChange = (alias, value) => {
-    setModelMappings(prev => ({ ...prev, [alias]: value }));
+  const handleMappingBlur = (alias, value) => {
+    updateMapping(alias, { model: value.trim() }, true);
   };
 
   const openModelSelector = (alias) => {
@@ -79,9 +91,7 @@ export default function MitmToolCard({
 
   const handleModelSelect = (model) => {
     if (!currentEditingAlias || model.isPlaceholder) return;
-    const updated = { ...modelMappings, [currentEditingAlias]: model.value };
-    setModelMappings(updated);
-    saveMappings(updated);
+    updateMapping(currentEditingAlias, { model: model.value }, true);
   };
 
   const handleDnsToggle = () => {
@@ -166,7 +176,6 @@ export default function MitmToolCard({
 
         {isExpanded && (
           <div className="mt-4 pt-4 border-t border-border flex flex-col gap-4">
-            {/* Hosts */}
             {mitmHosts.length > 0 && (
               <div className="mt-2 rounded-md border border-border bg-surface/50 px-2 py-1.5">
                 <p className="text-[10px] font-medium tracking-wide text-text-main/80 mb-1">
@@ -179,7 +188,7 @@ export default function MitmToolCard({
                 </ul>
               </div>
             )}
-            {/* Info */}
+
             <div className="flex flex-col gap-0.5 text-[11px] text-text-muted px-1">
               <p>Toggle DNS to redirect {tool.name} traffic through 9Router via MITM.</p>
               {!dnsActive && (
@@ -189,44 +198,30 @@ export default function MitmToolCard({
               )}
             </div>
 
-            {/* Model Mappings */}
             {tool.defaultModels?.length > 0 && (
               <div className="flex flex-col gap-2">
-                {tool.defaultModels.map((model) => (
-                  <div key={model.alias} className="grid grid-cols-1 gap-1.5 sm:grid-cols-[9rem_auto_1fr_auto] sm:items-center sm:gap-2">
-                    <span className="text-xs font-semibold text-text-main sm:text-right">{model.name}</span>
-                    <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
-                    <div className="relative w-full min-w-0">
-                      <input
-                        type="text"
-                        value={modelMappings[model.alias] || ""}
-                        onChange={(e) => handleModelMappingChange(model.alias, e.target.value)}
-                        onBlur={(e) => handleMappingBlur(model.alias, e.target.value)}
-                        placeholder="provider/model-id"
-                        disabled={!dnsActive}
-                        className={`w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5 ${!dnsActive ? "opacity-50 cursor-not-allowed" : ""}`}
-                      />
-                      {modelMappings[model.alias] && (
-                        <button
-                          onClick={() => {
-                            handleModelMappingChange(model.alias, "");
-                            saveMappings({ ...modelMappings, [model.alias]: "" });
-                          }}
-                          className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-red-500 rounded transition-colors"
-                          title="Clear"
-                        >
-                          <span className="material-symbols-outlined text-[14px]">close</span>
-                        </button>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => openModelSelector(model.alias)}
-                      disabled={!hasActiveProviders || !dnsActive}
-                      className={`rounded border px-2 py-2 text-xs transition-colors sm:py-1.5 ${hasActiveProviders && dnsActive ? "bg-surface border-border hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}
-                    >
-                      Select
-                    </button>
+                {tool.id === "antigravity" && (
+                  <div className="hidden grid-cols-[9rem_minmax(12rem,1fr)_8rem_auto] gap-2 px-2.5 text-[10px] font-medium uppercase tracking-wide text-text-muted sm:grid">
+                    <span />
+                    <span>Destination model</span>
+                    <span>Reasoning</span>
+                    <span />
                   </div>
+                )}
+                {tool.defaultModels.map((model) => (
+                  <MitmModelMappingRow
+                    key={model.alias}
+                    model={model}
+                    entry={getMappingEntry(model.alias)}
+                    disabled={!dnsActive}
+                    canSelectModel={hasActiveProviders}
+                    showReasoning={tool.id === "antigravity"}
+                    onModelChange={(value) => updateMapping(model.alias, { model: value })}
+                    onModelBlur={(value) => handleMappingBlur(model.alias, value)}
+                    onModelClear={() => updateMapping(model.alias, { model: "" }, true)}
+                    onModelSelect={() => openModelSelector(model.alias)}
+                    onReasoningChange={(value) => updateMapping(model.alias, { reasoningEffort: value }, true)}
+                  />
                 ))}
               </div>
             )}
@@ -235,7 +230,6 @@ export default function MitmToolCard({
               <p className="text-xs text-text-muted px-1">Model mappings will be available soon.</p>
             )}
 
-            {/* Start / Stop DNS button */}
             <div className="flex flex-col gap-2 sm:items-start">
               {dnsActive ? (
                 <button
@@ -257,7 +251,6 @@ export default function MitmToolCard({
                 </button>
               )}
 
-              {/* Warning below button */}
               {warning && (
                 <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs text-amber-500">
                   <span className="material-symbols-outlined text-[14px]">warning</span>
@@ -269,7 +262,6 @@ export default function MitmToolCard({
         )}
       </Card>
 
-      {/* Password Modal */}
       {showPasswordModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="mx-4 flex w-full max-w-sm flex-col gap-4 rounded-xl border border-border bg-surface p-5 shadow-xl sm:p-6">
@@ -303,12 +295,11 @@ export default function MitmToolCard({
         </div>
       )}
 
-      {/* Model Select Modal */}
       <ModelSelectModal
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
         onSelect={handleModelSelect}
-        selectedModel={currentEditingAlias ? modelMappings[currentEditingAlias] : null}
+        selectedModel={currentEditingAlias ? getMappingEntry(currentEditingAlias).model || null : null}
         activeProviders={activeProviders}
         modelAliases={modelAliases}
         title={`Select model for ${currentEditingAlias}`}
