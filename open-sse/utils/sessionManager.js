@@ -180,6 +180,17 @@ function firstUserText(messages) {
     return "";
 }
 
+function collectMessageTexts(messages, { includeUser = false } = {}) {
+    const texts = [];
+    for (const item of messages || []) {
+        if (item?.role === "system" || item?.role === "developer" || (includeUser && item?.role === "user")) {
+            const text = messageContentText(item.content);
+            if (text) texts.push(text);
+        }
+    }
+    return texts;
+}
+
 function stableHermesContextLines(text) {
     const start = text.indexOf(HERMES_CONTEXT_MARKER);
     if (start < 0) return [];
@@ -263,13 +274,10 @@ function extractHermesPayloadSession(body, scope, connectionId) {
     const messages = requestMessages(body);
     if (!messages.length) return null;
     let contextLines = [];
-    const systemTexts = [];
-    if (body?.system) systemTexts.push(messageContentText(body.system));
-    for (const item of messages) {
-        if (item?.role !== "system" && item?.role !== "developer") continue;
-        systemTexts.push(messageContentText(item.content));
-    }
-    for (const text of systemTexts) {
+    const contextTexts = [];
+    if (body?.system) contextTexts.push(messageContentText(body.system));
+    contextTexts.push(...collectMessageTexts(messages, { includeUser: true }));
+    for (const text of contextTexts) {
         contextLines = stableHermesContextLines(text);
         if (contextLines.length) break;
     }

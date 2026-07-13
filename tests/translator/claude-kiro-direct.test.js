@@ -67,6 +67,20 @@ describe("Claude → Kiro (direct route)", () => {
     expect(second.conversationState.agentContinuationId).toBe(first.conversationState.agentContinuationId);
   });
 
+  it("derives stable Kiro session state when Hermes context is embedded in a user message", () => {
+    const credentials = { connectionId: "kiro-account-1" };
+    const first = C2K({
+      messages: [{ role: "user", content: `${hermesSystem(THREAD_1)}\n\nfirst prompt` }],
+    }, credentials);
+    const second = C2K({
+      messages: [{ role: "user", content: `${hermesSystem(THREAD_1)}\n\nfollow up` }],
+    }, credentials);
+
+    expect(first.conversationState.conversationId).toMatch(/^hermes:/);
+    expect(second.conversationState.conversationId).toBe(first.conversationState.conversationId);
+    expect(second.conversationState.agentContinuationId).toBe(first.conversationState.agentContinuationId);
+  });
+
   it("guard 1: with no tools, a dangling tool_result is flattened to text (no structured ref)", () => {
     // Client omitted `tools` but kept a tool_result after compaction.
     const out = C2K({
