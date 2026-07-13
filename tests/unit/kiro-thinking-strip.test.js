@@ -174,11 +174,65 @@ describe("KiroExecutor thinking tag stripping", () => {
 
     const finalChunk = objects.find(obj => obj.usage?.kiro_credits !== undefined);
     expect(finalChunk.usage).toMatchObject({
-      prompt_tokens: 0,
-      completion_tokens: 0,
-      total_tokens: 0,
       kiro_credits: 0.0042,
       kiro_credit_unit: "credit",
     });
+    expect(finalChunk.usage.prompt_tokens).toBeUndefined();
+    expect(finalChunk.usage.completion_tokens).toBeUndefined();
+    expect(finalChunk.usage.total_tokens).toBeUndefined();
+  });
+
+  it("keeps Kiro metering when context usage arrives before metering", async () => {
+    const executor = new KiroExecutor();
+
+    const f1 = createMockFrame("assistantResponseEvent", { content: "OK" });
+    const f2 = createMockFrame("contextUsageEvent", { contextUsagePercentage: 1 });
+    const f3 = createMockFrame("meteringEvent", { usage: 0.0088, unit: "credit", unitPlural: "credits" });
+
+    const readableStream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(f1);
+        controller.enqueue(f2);
+        controller.enqueue(f3);
+        controller.close();
+      }
+    });
+
+    const transformedResponse = executor.transformEventStreamToSSE({ body: readableStream }, "claude-test");
+    const output = await readAllSSE(transformedResponse.body);
+    const objects = output
+      .split("\n")
+      .filter(line => line.startsWith("data: ") && !line.includes("[DONE]"))
+      .map(line => JSON.parse(line.slice(6)));
+
+    const finalChunk = objects.find(obj => obj.usage?.kiro_credits !== undefined);
+    expect(finalChunk.usage.kiro_credits).toBe(0.0088);
+  });
+
+  it("keeps Kiro metering when messageStop arrives before metering", async () => {
+    const executor = new KiroExecutor();
+
+    const f1 = createMockFrame("assistantResponseEvent", { content: "OK" });
+    const f2 = createMockFrame("messageStopEvent", {});
+    const f3 = createMockFrame("meteringEvent", { usage: 0.0061, unit: "credit", unitPlural: "credits" });
+
+    const readableStream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(f1);
+        controller.enqueue(f2);
+        controller.enqueue(f3);
+        controller.close();
+      }
+    });
+
+    const transformedResponse = executor.transformEventStreamToSSE({ body: readableStream }, "claude-test");
+    const output = await readAllSSE(transformedResponse.body);
+    const objects = output
+      .split("\n")
+      .filter(line => line.startsWith("data: ") && !line.includes("[DONE]"))
+      .map(line => JSON.parse(line.slice(6)));
+
+    const finalChunk = objects.find(obj => obj.choices?.[0]?.finish_reason === "stop");
+    expect(finalChunk.usage.kiro_credits).toBe(0.0061);
   });
 });

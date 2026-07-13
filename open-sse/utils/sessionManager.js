@@ -215,8 +215,13 @@ function durableHermesContextLines(lines) {
     ));
 }
 
+function hermesPayloadSessionEnabled() {
+    return ["1", "true", "yes", "on"].includes(String(process.env.NINE_ROUTER_KIRO_HERMES_PAYLOAD_SESSION || "").toLowerCase());
+}
+
 function extractHermesPayloadSession(body, scope, connectionId) {
     if (scope !== "kiro") return null;
+    if (!connectionId || !hermesPayloadSessionEnabled()) return null;
     const messages = requestMessages(body);
     if (!messages.length) return null;
     let contextLines = [];
@@ -233,9 +238,7 @@ function extractHermesPayloadSession(body, scope, connectionId) {
     if (!contextLines.length) return null;
     const durableLines = durableHermesContextLines(contextLines);
     if (!durableLines.length) return null;
-    const user = firstUserText(messages);
-    if (!user) return null;
-    return `hermes:${sha16(`${connectionId || ""}\n---\n${durableLines.join("\n")}\n---\n${user.slice(0, 4096)}`)}`;
+    return `hermes:${sha16(`${connectionId}\n---\n${durableLines.join("\n")}`)}`;
 }
 
 // Accumulate assistant text from OpenAI/Responses-style input/messages (cap-limited)

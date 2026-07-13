@@ -1,5 +1,5 @@
 // A2: locks resolveSessionId priority/stickiness (codex/kiro/antigravity centralization).
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { resolveContinuationId, resolveSessionId, deriveSessionId, clearSessionStore } from "../../open-sse/utils/sessionManager.js";
 
 // Assistant text must reach ASSISTANT_MIN_LEN (80) to use assistant anchor; else first user message.
@@ -31,7 +31,14 @@ const hermesClaudeBody = (threadId, user = "first prompt") => ({
   messages: [{ role: "user", content: user }],
 });
 
-beforeEach(() => clearSessionStore());
+beforeEach(() => {
+  process.env.NINE_ROUTER_KIRO_HERMES_PAYLOAD_SESSION = "1";
+  clearSessionStore();
+});
+
+afterEach(() => {
+  delete process.env.NINE_ROUTER_KIRO_HERMES_PAYLOAD_SESSION;
+});
 
 describe("resolveSessionId", () => {
   it("stickiness: same body+connectionId+scope -> same id", () => {
@@ -119,6 +126,13 @@ describe("resolveSessionId", () => {
     expect(first).toMatch(/^hermes:/);
   });
 
+  it("keeps Hermes-derived session stable when compacted history drops the opening prompt", () => {
+    const first = resolveSessionId({ body: hermesBody("thread-1", "first prompt"), connectionId: "conn1", scope: "kiro" });
+    const compacted = resolveSessionId({ body: hermesBody("thread-1", "latest compacted turn"), connectionId: "conn1", scope: "kiro" });
+
+    expect(compacted).toBe(first);
+  });
+
   it("isolates different Hermes gateway threads", () => {
     const a = resolveSessionId({ body: hermesBody("thread-1"), connectionId: "conn1", scope: "kiro" });
     const b = resolveSessionId({ body: hermesBody("thread-2"), connectionId: "conn1", scope: "kiro" });
@@ -148,6 +162,15 @@ describe("resolveSessionId", () => {
     };
 
     expect(resolveSessionId({ body: labelOnlyBody, connectionId: "conn1", scope: "kiro" })).not.toMatch(/^hermes:/);
+  });
+
+  it("does not infer Hermes sessions unless the env gate is enabled", () => {
+    process.env.NINE_ROUTER_KIRO_HERMES_PAYLOAD_SESSION = "0";
+    expect(resolveSessionId({ body: hermesBody("thread-1"), connectionId: "conn1", scope: "kiro" })).not.toMatch(/^hermes:/);
+  });
+
+  it("does not infer Hermes sessions without a connection scope", () => {
+    expect(resolveSessionId({ body: hermesBody("thread-1"), scope: "kiro" })).not.toMatch(/^hermes:/);
   });
 });
 

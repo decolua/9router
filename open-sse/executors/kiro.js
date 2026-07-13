@@ -136,7 +136,8 @@ export class KiroExecutor extends BaseExecutor {
       reasoningChunkCount: 0,
       toolCallIndex: 0,
       seenToolIds: new Map(),
-      inThinking: false
+      inThinking: false,
+      finishReason: "stop"
     };
 
     const transformStream = new TransformStream({
@@ -357,19 +358,8 @@ export class KiroExecutor extends BaseExecutor {
 
           // Handle messageStopEvent
           if (eventType === "messageStopEvent") {
-            const chunk = {
-              id: responseId,
-              object: "chat.completion.chunk",
-              created,
-              model,
-              choices: [{
-                index: 0,
-                delta: {},
-                finish_reason: state.hasToolCalls ? "tool_calls" : "stop"
-              }]
-            };
-            state.finishEmitted = true;
-            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\n`));
+            state.stopReceived = true;
+            state.finishReason = state.hasToolCalls ? "tool_calls" : "stop";
           }
 
           // Handle contextUsageEvent to extract contextUsagePercentage
@@ -452,17 +442,13 @@ export class KiroExecutor extends BaseExecutor {
               choices: [{
                 index: 0,
                 delta: {},
-                finish_reason: state.hasToolCalls ? "tool_calls" : "stop"
+                finish_reason: state.finishReason
               }]
             };
 
             // Include usage in final chunk if available
             if (!state.usage && state.metering) {
-              state.usage = {
-                prompt_tokens: 0,
-                completion_tokens: 0,
-                total_tokens: 0
-              };
+              state.usage = {};
             }
             if (state.usage) {
               if (state.metering) {
@@ -499,12 +485,12 @@ export class KiroExecutor extends BaseExecutor {
             choices: [{
               index: 0,
               delta: {},
-              finish_reason: state.hasToolCalls ? "tool_calls" : "stop"
+              finish_reason: state.finishReason
             }]
           };
           if (state.metering) {
             finishChunk.usage = {
-              ...(state.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }),
+              ...(state.usage || {}),
               kiro_credits: state.metering.usage,
               kiro_credit_unit: state.metering.unit
             };

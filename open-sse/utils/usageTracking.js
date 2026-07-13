@@ -276,8 +276,10 @@ export function extractUsage(chunk) {
     });
   }
 
-  // OpenAI format (also covers DeepSeek which uses prompt_cache_hit_tokens)
-  if (chunk.usage && typeof chunk.usage === "object" && chunk.usage.prompt_tokens !== undefined) {
+  // OpenAI format (also covers DeepSeek which uses prompt_cache_hit_tokens).
+  // Kiro's internal executor may attach credit-only usage without token counts.
+  if (chunk.usage && typeof chunk.usage === "object" &&
+      (chunk.usage.prompt_tokens !== undefined || chunk.usage.kiro_credits !== undefined)) {
     return normalizeUsage({
       prompt_tokens: chunk.usage.prompt_tokens,
       completion_tokens: chunk.usage.completion_tokens || 0,
