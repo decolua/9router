@@ -1,4 +1,5 @@
-import { Readable } from "stream";
+import { Readable } from "node:stream";
+import { Buffer } from "node:buffer";
 import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
 import { dbg } from "./debugLog.js";
 
