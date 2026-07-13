@@ -44,7 +44,11 @@ export function geminiToOpenAIRequest(model, body, stream) {
     for (const content of body.contents) {
       const converted = convertGeminiContent(content);
       if (converted) {
-        result.messages.push(converted);
+        if (Array.isArray(converted)) {
+          result.messages.push(...converted);
+        } else {
+          result.messages.push(converted);
+        }
       }
     }
   }
@@ -80,6 +84,7 @@ function convertGeminiContent(content) {
   }
 
   const parts = [];
+  const toolResults = [];
   const toolCalls = [];
 
   for (const part of content.parts) {
@@ -110,11 +115,11 @@ function convertGeminiContent(content) {
     }
 
     if (part.functionResponse) {
-      return {
+      toolResults.push({
         role: ROLE.TOOL,
         tool_call_id: part.functionResponse.id || `call_${part.functionResponse.name}`,
         content: JSON.stringify(part.functionResponse.response?.result || part.functionResponse.response || {})
-      };
+      });
     }
   }
 
@@ -124,16 +129,19 @@ function convertGeminiContent(content) {
       result.content = parts.length === 1 ? parts[0].text : parts;
     }
     result.tool_calls = toolCalls;
-    return result;
+    return toolResults.length > 0 ? [...toolResults, result] : result;
   }
 
   if (parts.length > 0) {
-    return {
+    const result = {
       role,
       content: collapseTextParts(parts)
     };
+    return toolResults.length > 0 ? [...toolResults, result] : result;
   }
 
+  if (toolResults.length === 1) return toolResults[0];
+  if (toolResults.length > 1) return toolResults;
   return null;
 }
 
