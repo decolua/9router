@@ -3,6 +3,7 @@
 ## Features
 - **Perplexity**: add Agent API provider (#2492)
 - **Grok CLI**: add Grok CLI / Grok Build provider with OAuth device-code flow (#2502)
+- **CLI tools**: add Grok Build setup — writes `[model.9router]` custom model to `~/.grok/config.toml`
 - **Featherless**: add OpenAI-compatible provider presets
 - **SearXNG**: configure endpoint via SEARXNG_URL env (#2499)
 - **Providers**: add max thinking level for gpt-5.6-sol (#2500)
