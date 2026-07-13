@@ -10,6 +10,7 @@ import { getModelUpstreamId } from "../config/providerModels.js";
 import {
   GROK_CLI_CLIENT_IDENTIFIER,
   GROK_CLI_VERSION,
+  supportsGrokCliReasoningEffort,
 } from "../config/grokCli.js";
 import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
@@ -121,11 +122,7 @@ export function normalizeGrokCliEffort(value) {
   return "high";
 }
 
-export function supportsGrokCliReasoningEffort(model) {
-  // ponytail: unknown models omit effort until live metadata is available here;
-  // add proven model families when their backend advertises reasoning_efforts.
-  return /^grok-4\.5(?:$|-)/.test(String(model || ""));
-}
+export { supportsGrokCliReasoningEffort } from "../config/grokCli.js";
 
 export function resolveGrokCliSessionId(credentials, body) {
   // ponytail: clients without stable thread metadata share one connection session;
