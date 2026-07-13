@@ -12,6 +12,7 @@ export { default as ThemeToggle } from "./ThemeToggle";
 export { ThemeProvider } from "./ThemeProvider";
 export { default as Sidebar } from "./Sidebar";
 export { default as UpdatePanel } from "./UpdatePanel";
+export { default as PostUpdateBanner } from "./PostUpdateBanner";
 export { default as Header } from "./Header";
 export { default as Footer } from "./Footer";
 export { default as OAuthModal } from "./OAuthModal";

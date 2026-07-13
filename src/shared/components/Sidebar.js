@@ -303,6 +303,7 @@ export default function Sidebar({ onClose }) {
       {isUpdating && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-6">
           <UpdatePanel
+            currentVersion={updateInfo?.currentVersion || APP_CONFIG.version}
             latestVersion={updateInfo?.latestVersion}
             installCmd={INSTALL_CMD}
             onClose={() => setIsUpdating(false)}

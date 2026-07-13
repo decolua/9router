@@ -3,7 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import Button from "./Button";
-import { UPDATER_CONFIG } from "@/shared/constants/config";
+import ChangelogModal from "./ChangelogModal";
+import { GITHUB_CONFIG, UPDATER_CONFIG } from "@/shared/constants/config";
+import {
+  collectChangelogHighlights,
+  getChangelogSectionsBetween,
+  markUpdateStarting,
+  parseChangelogSections,
+} from "@/shared/utils/changelog";
 import {
   getUpdaterPhaseLabel,
   getUpdaterProgressPercent,
@@ -18,6 +25,7 @@ import {
  * - manual: copy install cmd + optional shutdown (fallback / user choice)
  */
 export default function UpdatePanel({
+  currentVersion,
   latestVersion,
   installCmd,
   onClose,
@@ -29,6 +37,8 @@ export default function UpdatePanel({
   const [copied, setCopied] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const [isDisconnected, setIsDisconnected] = useState(false);
+  const [whatsNew, setWhatsNew] = useState({ bullets: [], truncated: false, loading: true, error: null, versions: [] });
+  const [changelogOpen, setChangelogOpen] = useState(false);
   const pollRef = useRef(null);
   const reloadRef = useRef(null);
   const cancelledRef = useRef(false);
@@ -48,6 +58,53 @@ export default function UpdatePanel({
     cancelledRef.current = true;
     clearTimers();
   }, [clearTimers]);
+
+  // Prefetch release notes for the upgrade range (current → latest)
+  useEffect(() => {
+    let cancelled = false;
+    setWhatsNew((prev) => ({ ...prev, loading: true, error: null }));
+    fetch(GITHUB_CONFIG.changelogUrl, { cache: "no-store" })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.text();
+      })
+      .then((md) => {
+        if (cancelled) return;
+        let sections = getChangelogSectionsBetween(md, currentVersion, latestVersion);
+        // Changelog on master may lag npm latest — fall back to newest published section
+        if (sections.length === 0 && latestVersion) {
+          sections = getChangelogSectionsBetween(md, null, latestVersion);
+        }
+        if (sections.length === 0 && currentVersion) {
+          sections = getChangelogSectionsBetween(md, currentVersion, null).slice(0, 2);
+        }
+        if (sections.length === 0) {
+          const all = parseChangelogSections(md);
+          if (all.length > 0) sections = [all[0]];
+        }
+        const { bullets, truncated, versions } = collectChangelogHighlights(sections, {
+          maxBullets: 10,
+        });
+        setWhatsNew({ bullets, truncated, loading: false, error: null, versions });
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setWhatsNew({
+          bullets: [],
+          truncated: false,
+          loading: false,
+          error: err.message || "Failed to load release notes",
+          versions: [],
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentVersion, latestVersion]);
+
+  const rememberUpdateFrom = useCallback(() => {
+    markUpdateStarting(currentVersion);
+  }, [currentVersion]);
 
   const startStatusPoll = useCallback(() => {
     clearTimers();
@@ -100,6 +157,7 @@ export default function UpdatePanel({
     setStatus(null);
     setPhase("starting");
     cancelledRef.current = false;
+    rememberUpdateFrom();
 
     try {
       const res = await fetch("/api/version/update", { method: "POST" });
@@ -125,9 +183,10 @@ export default function UpdatePanel({
         setError(null);
       }
     }
-  }, [startStatusPoll]);
+  }, [startStatusPoll, rememberUpdateFrom]);
 
   const handleCopyAndShutdown = async () => {
+    rememberUpdateFrom();
     try {
       await navigator.clipboard.writeText(installCmd);
     } catch { /* clipboard blocked */ }
@@ -159,10 +218,63 @@ export default function UpdatePanel({
   const busy = phase === "starting" || phase === "running" || phase === "success";
   const title = `Update 9Router${latestVersion ? ` to v${latestVersion}` : ""}`;
 
+  const whatsNewBlock = (
+    <div className="mb-4 rounded-lg border border-white/10 bg-white/5 p-3">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <p className="text-xs font-semibold text-white/90">
+          What&apos;s new
+          {latestVersion ? (
+            <span className="font-normal text-white/50">
+              {" "}
+              {currentVersion ? `v${currentVersion} → ` : ""}v{latestVersion}
+            </span>
+          ) : null}
+        </p>
+        <button
+          type="button"
+          onClick={() => setChangelogOpen(true)}
+          className="text-[10px] text-white/50 hover:text-white/80 transition-colors shrink-0"
+        >
+          Full changelog
+        </button>
+      </div>
+      {whatsNew.loading && (
+        <p className="text-[11px] text-white/50 flex items-center gap-1.5">
+          <span className="material-symbols-outlined text-[14px] animate-spin">progress_activity</span>
+          Loading release notes…
+        </p>
+      )}
+      {!whatsNew.loading && whatsNew.error && (
+        <p className="text-[11px] text-white/50">
+          Couldn&apos;t load release notes ({whatsNew.error}). You can still update.
+        </p>
+      )}
+      {!whatsNew.loading && !whatsNew.error && whatsNew.bullets.length === 0 && (
+        <p className="text-[11px] text-white/50">
+          No release notes found for this range yet. Check the full changelog after updating.
+        </p>
+      )}
+      {!whatsNew.loading && whatsNew.bullets.length > 0 && (
+        <ul className="max-h-40 overflow-y-auto space-y-1 text-[11px] text-white/75 list-disc list-inside">
+          {whatsNew.bullets.map((b, i) => (
+            <li key={`${b.version}-${i}`} className="leading-snug" title={b.text}>
+              <span className="text-white/40 mr-1">v{b.version}</span>
+              {b.text}
+            </li>
+          ))}
+          {whatsNew.truncated && (
+            <li className="list-none text-white/40 pl-0">…more in full changelog</li>
+          )}
+        </ul>
+      )}
+    </div>
+  );
+
   // ── Auto mode (default) ──────────────────────────────────────────────────
   if (mode === "auto") {
     return (
-      <div className="w-full max-w-lg rounded-xl bg-neutral-900/95 border border-white/10 p-6 text-white">
+      <>
+      <div className="w-full max-w-xl rounded-xl bg-neutral-900/95 border border-white/10 p-6 text-white">
         <div className="flex items-center gap-3 mb-4">
           <div className="flex items-center justify-center size-11 rounded-full bg-green-500/20 text-green-400">
             <span className="material-symbols-outlined text-[24px]">
@@ -179,6 +291,7 @@ export default function UpdatePanel({
 
         {phase === "idle" && (
           <>
+            {whatsNewBlock}
             <ul className="text-xs text-white/70 space-y-1.5 list-disc list-inside mb-4">
               <li>Works with the production <code className="px-1 rounded bg-white/10">9router</code> CLI install</li>
               <li>Takes about 1–2 minutes (npm global install + restart)</li>
@@ -262,13 +375,16 @@ export default function UpdatePanel({
           </>
         )}
       </div>
+      <ChangelogModal isOpen={changelogOpen} onClose={() => setChangelogOpen(false)} />
+      </>
     );
   }
 
   // ── Manual fallback ──────────────────────────────────────────────────────
   const isCountingDown = countdown > 0;
   return (
-    <div className="w-full max-w-lg rounded-xl bg-neutral-900/95 border border-white/10 p-6 text-white">
+    <>
+    <div className="w-full max-w-xl rounded-xl bg-neutral-900/95 border border-white/10 p-6 text-white">
       <div className="flex items-center gap-3 mb-4">
         <div className="flex items-center justify-center size-11 rounded-full bg-amber-500/20 text-amber-400">
           <span className="material-symbols-outlined text-[24px]">content_copy</span>
@@ -286,6 +402,8 @@ export default function UpdatePanel({
           </p>
         </div>
       </div>
+
+      {!isDisconnected && !isCountingDown && whatsNewBlock}
 
       {error && (
         <div className="mb-3 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
@@ -341,10 +459,13 @@ export default function UpdatePanel({
         </button>
       )}
     </div>
+    <ChangelogModal isOpen={changelogOpen} onClose={() => setChangelogOpen(false)} />
+    </>
   );
 }
 
 UpdatePanel.propTypes = {
+  currentVersion: PropTypes.string,
   latestVersion: PropTypes.string,
   installCmd: PropTypes.string.isRequired,
   onClose: PropTypes.func.isRequired,
