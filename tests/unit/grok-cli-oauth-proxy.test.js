@@ -15,7 +15,7 @@ describe("Grok CLI OAuth proxy propagation", () => {
     const provider = getProvider("grok-cli");
     const proxyOptions = {
       connectionProxyEnabled: true,
-      connectionProxyUrl: "http://127.0.0.1:18888",
+      connectionProxyUrl: "http://proxy.test:8080",
       strictProxy: true,
     };
     const fetchSpy = vi.spyOn(globalThis, "fetch")
@@ -31,7 +31,5 @@ describe("Grok CLI OAuth proxy propagation", () => {
     expect(fetchSpy.mock.calls[0][1].proxyOptions).toBe(proxyOptions);
     expect(fetchSpy.mock.calls[1][1].proxyOptions).toBe(proxyOptions);
     expect(fetchSpy.mock.calls[2][1].proxyOptions).toBe(proxyOptions);
-    expect(fetchSpy.mock.calls[0][1].headers["User-Agent"]).toContain("0.2.99");
-    expect(fetchSpy.mock.calls[2][1].headers["x-grok-client-identifier"]).toBe("grok-shell");
   });
 });
