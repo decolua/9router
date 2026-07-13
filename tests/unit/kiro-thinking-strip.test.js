@@ -235,4 +235,27 @@ describe("KiroExecutor thinking tag stripping", () => {
     const finalChunk = objects.find(obj => obj.choices?.[0]?.finish_reason === "stop");
     expect(finalChunk.usage.kiro_credits).toBe(0.0061);
   });
+
+  it("uses tool_calls finish reason for tool streams without messageStop", async () => {
+    const executor = new KiroExecutor();
+
+    const f1 = createMockFrame("toolUseEvent", { toolUseId: "tool-1", name: "read_file", input: { path: "a.txt" } });
+
+    const readableStream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(f1);
+        controller.close();
+      }
+    });
+
+    const transformedResponse = executor.transformEventStreamToSSE({ body: readableStream }, "claude-test");
+    const output = await readAllSSE(transformedResponse.body);
+    const objects = output
+      .split("\n")
+      .filter(line => line.startsWith("data: ") && !line.includes("[DONE]"))
+      .map(line => JSON.parse(line.slice(6)));
+
+    const finalChunk = objects.at(-1);
+    expect(finalChunk.choices[0].finish_reason).toBe("tool_calls");
+  });
 });

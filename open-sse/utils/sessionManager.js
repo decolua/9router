@@ -208,10 +208,10 @@ function stableHermesContextLines(text) {
 
 function durableHermesContextLines(lines) {
     return lines.filter((line) => (
-        line.startsWith("**Matrix Room ID:**") ||
-        line.startsWith("**Matrix Thread:**") ||
-        /^\s*-\s*(Guild|Parent channel|Thread|Channel):\s*`[^`]+`/.test(line) ||
-        /\b(?:channel|thread):\s*(?:[A-Z][A-Z0-9]{7,}|[0-9]{8,})\b/i.test(line)
+        /^\*\*Matrix Room ID:\*\*\s*![^\s:]+:[^\s]+$/.test(line) ||
+        /^\*\*Matrix Thread:\*\*\s*(?:[0-9]{15,20}|[A-Z][A-Z0-9]{8,})$/.test(line) ||
+        /^\s*-\s*(Guild|Parent channel|Thread|Channel):\s*`(?:[0-9]{15,20}|[A-Z][A-Z0-9]{8,})`/.test(line) ||
+        /\b(?:channel|thread):\s*(?:[CDG][A-Z0-9]{8,}|[0-9]{15,20})\b/.test(line)
     ));
 }
 
@@ -292,10 +292,11 @@ export function resolveSessionId({ headers, body, connectionId, workspaceId, sco
     if (client) return client;
     const hermes = extractHermesPayloadSession(body, scope, connectionId);
     if (hermes) return hermes;
-    const fromAssistant = assistantTextSessionId(`${scope}:${connectionId || ""}`, body);
+    const fromAssistant = scope === "kiro" ? null : assistantTextSessionId(`${scope}:${connectionId || ""}`, body);
     if (fromAssistant) return fromAssistant;
     const ws = normalizeSessionId(workspaceId);
     if (ws) return ws;
+    if (scope === "kiro") return generateBinaryStyleId();
     return deriveSessionId(connectionId);
 }
 

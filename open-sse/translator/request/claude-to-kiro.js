@@ -423,14 +423,12 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
   const timestamp = new Date().toISOString();
   const systemPromptParts = [];
   if (thinkingBudget !== null) systemPromptParts.push(buildThinkingSystemPrefix(thinkingBudget));
-  systemPromptParts.push(`[Context: Current time is ${timestamp}]`);
   if (agentic) systemPromptParts.push(KIRO_AGENTIC_SYSTEM_PROMPT);
   const systemInstruction = extractClaudeSystemText(body.system);
   if (systemInstruction) systemPromptParts.push(systemInstruction);
   const systemPrompt = systemPromptParts.filter(Boolean).join("\n\n");
-  if (systemPrompt) {
-    finalContent = `${systemPrompt}\n\n${finalContent}`;
-  }
+  const contentPrefix = [systemPrompt, `[Context: Current time is ${timestamp}]`].filter(Boolean).join("\n\n");
+  finalContent = `${contentPrefix}\n\n${finalContent}`;
 
   const userInputMessage = {
     content: finalContent,

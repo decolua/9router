@@ -137,7 +137,7 @@ export class KiroExecutor extends BaseExecutor {
       toolCallIndex: 0,
       seenToolIds: new Map(),
       inThinking: false,
-      finishReason: "stop"
+      finishReason: null
     };
 
     const transformStream = new TransformStream({
@@ -442,7 +442,7 @@ export class KiroExecutor extends BaseExecutor {
               choices: [{
                 index: 0,
                 delta: {},
-                finish_reason: state.finishReason
+                finish_reason: state.finishReason || (state.hasToolCalls ? "tool_calls" : "stop")
               }]
             };
 
@@ -485,7 +485,7 @@ export class KiroExecutor extends BaseExecutor {
             choices: [{
               index: 0,
               delta: {},
-              finish_reason: state.finishReason
+              finish_reason: state.finishReason || (state.hasToolCalls ? "tool_calls" : "stop")
             }]
           };
           if (state.metering) {

@@ -282,7 +282,7 @@ export function extractUsage(chunk) {
       (chunk.usage.prompt_tokens !== undefined || chunk.usage.kiro_credits !== undefined)) {
     return normalizeUsage({
       prompt_tokens: chunk.usage.prompt_tokens,
-      completion_tokens: chunk.usage.completion_tokens || 0,
+      completion_tokens: chunk.usage.completion_tokens,
       cached_tokens: chunk.usage.prompt_tokens_details?.cached_tokens || chunk.usage.prompt_cache_hit_tokens,
       reasoning_tokens: chunk.usage.completion_tokens_details?.reasoning_tokens,
       prompt_tokens_details: chunk.usage.prompt_tokens_details,

@@ -164,6 +164,34 @@ describe("resolveSessionId", () => {
     expect(resolveSessionId({ body: labelOnlyBody, connectionId: "conn1", scope: "kiro" })).not.toMatch(/^hermes:/);
   });
 
+  it("does not treat alphabetic channel labels as durable Hermes ids", () => {
+    const labelOnlyBody = {
+      messages: [
+        {
+          role: "system",
+          content: hermesSystem("generalchat").replace("C0B3580EJ67", "generalchat"),
+        },
+        { role: "user", content: "first prompt" },
+      ],
+    };
+
+    expect(resolveSessionId({ body: labelOnlyBody, connectionId: "conn1", scope: "kiro" })).not.toMatch(/^hermes:/);
+  });
+
+  it("does not treat empty Matrix ids as durable Hermes ids", () => {
+    const matrixBody = {
+      messages: [
+        {
+          role: "system",
+          content: `## Current Session Context\n\n**Matrix Room ID:** \n**Matrix Thread:** unknown`,
+        },
+        { role: "user", content: "first prompt" },
+      ],
+    };
+
+    expect(resolveSessionId({ body: matrixBody, connectionId: "conn1", scope: "kiro" })).not.toMatch(/^hermes:/);
+  });
+
   it("does not infer Hermes sessions unless the env gate is enabled", () => {
     process.env.NINE_ROUTER_KIRO_HERMES_PAYLOAD_SESSION = "0";
     expect(resolveSessionId({ body: hermesBody("thread-1"), connectionId: "conn1", scope: "kiro" })).not.toMatch(/^hermes:/);
@@ -171,6 +199,19 @@ describe("resolveSessionId", () => {
 
   it("does not infer Hermes sessions without a connection scope", () => {
     expect(resolveSessionId({ body: hermesBody("thread-1"), scope: "kiro" })).not.toMatch(/^hermes:/);
+  });
+
+  it("uses fresh Kiro sessions for unrelated headerless requests on the same connection", () => {
+    const a = resolveSessionId({ body: bodyWithUserOnly, connectionId: "conn1", scope: "kiro" });
+    const b = resolveSessionId({ body: bodyWithUserOnly, connectionId: "conn1", scope: "kiro" });
+    expect(a).not.toBe(b);
+  });
+
+  it("does not switch Kiro headerless requests to assistant-text session ids mid-conversation", () => {
+    const withAssistant = { messages: [{ role: "user", content: "same user" }, { role: "assistant", content: "y".repeat(80) }] };
+    const a = resolveSessionId({ body: withAssistant, connectionId: "conn1", scope: "kiro" });
+    const b = resolveSessionId({ body: withAssistant, connectionId: "conn1", scope: "kiro" });
+    expect(a).not.toBe(b);
   });
 });
 

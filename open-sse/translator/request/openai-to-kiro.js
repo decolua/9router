@@ -558,14 +558,12 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
   if (thinkingBudget !== null) {
     systemPromptParts.push(buildThinkingSystemPrefix(thinkingBudget));
   }
-  systemPromptParts.push(`[Context: Current time is ${timestamp}]`);
   if (agentic) {
     systemPromptParts.push(KIRO_AGENTIC_SYSTEM_PROMPT);
   }
   const systemPrompt = systemPromptParts.filter(Boolean).join("\n\n");
-  if (systemPrompt) {
-    finalContent = `${systemPrompt}\n\n${finalContent}`;
-  }
+  const contentPrefix = [systemPrompt, `[Context: Current time is ${timestamp}]`].filter(Boolean).join("\n\n");
+  finalContent = `${contentPrefix}\n\n${finalContent}`;
 
   const conversationId = resolveSessionId({ headers: credentials?.rawHeaders, body, connectionId: credentials?.connectionId, scope: "kiro" });
   const continuationId = resolveContinuationId({

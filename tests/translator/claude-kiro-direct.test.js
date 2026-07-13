@@ -154,6 +154,21 @@ describe("Claude → Kiro (direct route)", () => {
     expect(out.systemPrompt).toContain("system-only instruction");
     expect(out.conversationState.currentMessage.userInputMessage.content).toContain("system-only instruction");
   });
+
+  it("keeps top-level systemPrompt stable across turns", () => {
+    const first = C2K({
+      system: "stable instruction",
+      messages: [{ role: "user", content: "first" }],
+    });
+    const second = C2K({
+      system: "stable instruction",
+      messages: [{ role: "user", content: "second" }],
+    });
+
+    expect(first.systemPrompt).toBe(second.systemPrompt);
+    expect(first.systemPrompt).not.toContain("Current time");
+    expect(first.conversationState.currentMessage.userInputMessage.content).toContain("Current time");
+  });
 });
 
 describe("Kiro → Claude (direct route, OpenAI-shaped chunks from executor)", () => {
