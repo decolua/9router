@@ -47,7 +47,7 @@ describe("Grok CLI live models", () => {
     const onCredentialsRefreshed = vi.fn();
     const proxyOptions = {
       connectionProxyEnabled: true,
-      connectionProxyUrl: "http://127.0.0.1:18888",
+      connectionProxyUrl: "http://proxy.test:8080",
       strictProxy: true,
     };
     refreshProviderCredentials.mockResolvedValue({ accessToken: "new-token" });
@@ -78,4 +78,3 @@ describe("Grok CLI live models", () => {
     expect(fetchFn.mock.calls[1][1].headers["x-grok-client-version"]).toBe("0.2.99");
   });
 });
-
