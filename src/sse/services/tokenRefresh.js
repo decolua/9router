@@ -184,6 +184,22 @@ export async function updateProviderCredentials(connectionId, newCredentials) {
         ...newCredentials.providerSpecificData,
       };
     }
+    // Mirror refreshToken into providerSpecificData.refreshToken so
+    // _resolveRefreshToken in GrokCliExecutor can find it even when the
+    // top-level column was lost during migration or re-serialisation.
+    // Only apply when we have a PSD base to merge into — the caller or the
+    // preceding PSD block must provide one; otherwise we would clobber the
+    // existing PSD stored in the DB (a bare { refreshToken } would erase
+    // email, userId, authMethod, etc. on write).
+    if (newCredentials.refreshToken) {
+      const psdBase = updates.providerSpecificData || newCredentials.existingProviderSpecificData;
+      if (psdBase) {
+        updates.providerSpecificData = {
+          ...psdBase,
+          refreshToken: newCredentials.refreshToken,
+        };
+      }
+    }
     if (newCredentials.copilotToken || newCredentials.copilotTokenExpiresAt) {
       updates.providerSpecificData = {
         ...(updates.providerSpecificData || newCredentials.existingProviderSpecificData || {}),
@@ -214,18 +230,27 @@ export async function updateProviderCredentials(connectionId, newCredentials) {
  * Check whether the provider token (and, for GitHub, the Copilot token) is
  * about to expire and refresh it proactively.
  *
+ * Uses the executor's needsRefresh when available so that provider-specific
+ * heuristics (e.g. Grok CLI's 50-min createdAt fallback) are respected even
+ * when expiresAt is missing from the stored credentials.
+ *
  * @param {string} provider
  * @param {object} credentials
+ * @param {object} [executor] - Optional executor instance (calls executor.needsRefresh if given)
  * @returns {Promise<object>} updated credentials object
  */
-export async function checkAndRefreshToken(provider, credentials) {
+export async function checkAndRefreshToken(provider, credentials, executor = null) {
   let creds = { ...credentials };
   if (!creds.connectionId && creds.id) {
     creds.connectionId = creds.id;
   }
 
   // ── 1. Regular access-token expiry ────────────────────────────────────────
-  if (_shouldRefreshCredentials(provider, creds)) {
+  const needsRefresh = executor
+    ? executor.needsRefresh(creds)
+    : _shouldRefreshCredentials(provider, creds);
+
+  if (needsRefresh) {
     const expiresAt = creds.expiresAt ? new Date(creds.expiresAt).getTime() : null;
     const remaining = expiresAt ? expiresAt - Date.now() : null;
     const refreshLead = _getRefreshLeadMs(provider);
@@ -237,7 +262,14 @@ export async function checkAndRefreshToken(provider, credentials) {
       lastRefreshAt: creds.lastRefreshAt || null,
     });
 
+    // Always use the generic refresh provider rather than delegating to the
+    // executor.  The generic layer (refreshProviderCredentials) has the
+    // withCredentialRefreshLock dedup, mergeRefreshedCredentials for field
+    // preservation, and — as of the PSD bridge in refreshTokenByProvider —
+    // handles the providerSpecificData.refreshToken fallback that used to be
+    // executor-only in GrokCliExecutor.
     const newCreds = await _refreshProviderCredentials(provider, creds, log);
+
     if (newCreds?.accessToken || newCreds?.apiKey || newCreds?.copilotToken) {
       const mergedCreds = {
         ...newCreds,

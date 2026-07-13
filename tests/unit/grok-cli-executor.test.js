@@ -285,4 +285,53 @@ describe("GrokCliExecutor", () => {
     expect(err.code).toBe("personal-team-blocked:spending-limit");
     expect(err.message).toMatch(/credits/i);
   });
+  });
+
+  describe("token refresh", () => {
+    it("refreshCredentials returns null when no refresh token", async () => {
+      const result = await executor.refreshCredentials({ accessToken: "tok" }, null);
+      expect(result).toBeNull();
+    });
+
+    it("needsRefresh returns true when expiresAt is missing and createdAt is old", () => {
+      const old = new Date(Date.now() - 55 * 60 * 1000).toISOString();
+      const creds = {
+        refreshToken: "rt",
+        createdAt: old,
+      };
+      expect(executor.needsRefresh(creds)).toBe(true);
+    });
+
+    it("needsRefresh returns false when expiresAt is missing and createdAt is recent", () => {
+      const recent = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      const creds = {
+        refreshToken: "rt",
+        createdAt: recent,
+      };
+      expect(executor.needsRefresh(creds)).toBe(false);
+    });
+
+    it("needsRefresh returns false when no refresh token exists", () => {
+      expect(executor.needsRefresh({})).toBe(false);
+      expect(executor.needsRefresh(null)).toBe(false);
+    });
+
+    it("needsRefresh uses standard expiresAt check when present", () => {
+      const future = new Date(Date.now() + 3600_000).toISOString();
+      expect(executor.needsRefresh({ expiresAt: future, refreshToken: "rt" })).toBe(false);
+
+      const aboutToExpire = new Date(Date.now() + 60_000).toISOString();
+      expect(executor.needsRefresh({ expiresAt: aboutToExpire, refreshToken: "rt" })).toBe(true);
+    });
+
+    it("needsRefresh uses psd refreshToken fallback when top-level missing", () => {
+      const old = new Date(Date.now() - 55 * 60 * 1000).toISOString();
+      const creds = { createdAt: old, providerSpecificData: { refreshToken: "psd_rt" } };
+      expect(executor.needsRefresh(creds)).toBe(true);
+
+      const recent = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      const creds2 = { createdAt: recent, providerSpecificData: { refreshToken: "psd_rt" } };
+      expect(executor.needsRefresh(creds2)).toBe(false);
+    });
+  });
 });

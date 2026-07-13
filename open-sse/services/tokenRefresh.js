@@ -158,9 +158,19 @@ async function _getAccessTokenInternal(provider, credentials, log) {
 }
 
 export async function refreshTokenByProvider(provider, credentials, log) {
-  if (!credentials.refreshToken) return null;
+  // Bridge: check top-level refreshToken first, then fall back to
+  // providerSpecificData.refreshToken.  Some providers (grok-cli) store
+  // the token in both places as a defensive measure against data loss
+  // during migration or re-serialisation.
+  const rt = credentials.refreshToken || credentials.providerSpecificData?.refreshToken;
+  if (!rt) return null;
+  // Use the resolved token for the downstream handler, making a copy so the
+  // original object is not mutated (the handler may read other fields too).
+  const bridged = rt !== credentials.refreshToken
+    ? { ...credentials, refreshToken: rt }
+    : credentials;
   const handler = REFRESH_HANDLERS[provider];
-  return handler ? handler(credentials, log) : refreshAccessToken(provider, credentials.refreshToken, credentials, log);
+  return handler ? handler(bridged, log) : refreshAccessToken(provider, rt, bridged, log);
 }
 
 export function formatProviderCredentials(provider, credentials, log) {

@@ -5,6 +5,7 @@ import {
   refreshProviderCredentials,
   shouldRefreshCredentials,
 } from "../services/oauthCredentialManager.js";
+import { TOKEN_EXPIRY_BUFFER_MS } from "../services/tokenRefresh.js";
 import { normalizeResponsesInput } from "../translator/formats/responsesApi.js";
 import { getModelUpstreamId } from "../config/providerModels.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
@@ -12,6 +13,12 @@ import { getConsistentMachineId } from "../shared/machineId.js";
 
 // Server-generated item id prefixes that /responses cannot resolve when store=false
 const SERVER_ID_PATTERN = /^(rs|fc|resp|msg)_/;
+
+// xAI device-code tokens live ~40-45 minutes.  When the stored credentials lack
+// an expiresAt field, this is the age threshold (45 min typical max minus the
+// standard 5 min lead buffer) at which the fallback considers them expired.
+const XAI_TOKEN_FALLBACK_AGE_MS = 45 * 60 * 1000 - TOKEN_EXPIRY_BUFFER_MS;
+
 
 // Hosted tool types executed server-side by Grok CLI backend
 const HOSTED_TOOL_TYPES = new Set([
@@ -198,7 +205,25 @@ export class GrokCliExecutor extends BaseExecutor {
   }
 
   needsRefresh(credentials) {
-    return shouldRefreshCredentials("grok-cli", credentials);
+    // Fast path: standard expiry check (expiresAt based)
+    if (shouldRefreshCredentials("grok-cli", credentials)) return true;
+
+    // Fallback: xAI device-code tokens live ~40-45 min.  When the stored
+    // credentials lack an expiresAt field, trigger a proactive refresh once
+    // the credential is at least 40 min old (45 min max minus 5 min lead).
+    const refreshToken = credentials?.refreshToken || credentials?.providerSpecificData?.refreshToken;
+    if (refreshToken) {
+      const expiresAt = credentials.expiresAt;
+      if (!expiresAt) {
+        const created = credentials.createdAt || credentials.updatedAt;
+        if (created) {
+          const age = Date.now() - new Date(created).getTime();
+          if (age > XAI_TOKEN_FALLBACK_AGE_MS) return true;
+        }
+      }
+    }
+
+    return false;
   }
 
   buildHeaders(credentials, stream = true) {

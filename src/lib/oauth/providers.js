@@ -350,19 +350,22 @@ const PROVIDERS = {
         .join(" ")
         .trim() || null;
 
+      // Mirror identity into providerSpecificData so GrokCliExecutor can set
+      // x-email / x-userid without depending on top-level credential shape.
+      const rt = tokens.refresh_token || null;
+
       return {
         accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token || null,
+        refreshToken: rt,
         expiresIn: tokens.expires_in,
         scope: tokens.scope,
         // Top-level for dashboard connection cards
         email: email || undefined,
         displayName: displayName || undefined,
-        // Mirror identity into providerSpecificData so GrokCliExecutor can set
-        // x-email / x-userid without depending on top-level credential shape.
         providerSpecificData: {
           authMethod: "device_code",
           idToken: tokens.id_token || null,
+          refreshToken: rt,
           email: email || null,
           userId,
           hasGrokCodeAccess: extra?.user?.hasGrokCodeAccess ?? null,

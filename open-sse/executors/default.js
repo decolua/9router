@@ -225,10 +225,12 @@ export class DefaultExecutor extends BaseExecutor {
       iflow: () => this.refreshIflow(credentials.refreshToken, proxyOptions),
       gemini: () => this.refreshFromGrant(credentials, proxyOptions),
       kiro: () => this.refreshKiro(credentials.refreshToken, proxyOptions),
+      xai: () => this.refreshFromGrant(credentials, proxyOptions),
       cline: () => this.refreshCline(credentials.refreshToken, proxyOptions),
       clinepass: () => this.refreshCline(credentials.refreshToken, proxyOptions),
       "kimi-coding": () => this.refreshKimiCoding(credentials.refreshToken, proxyOptions),
-      kilocode: () => this.refreshKilocode(credentials.refreshToken, proxyOptions)
+      kilocode: () => this.refreshKilocode(credentials.refreshToken, proxyOptions),
+      "codebuddy-cn": () => this.refreshCodebuddy(credentials.refreshToken, proxyOptions),
     };
 
     const refresher = refreshers[this.provider];
@@ -326,6 +328,37 @@ export class DefaultExecutor extends BaseExecutor {
   async refreshKilocode(refreshToken, proxyOptions = null) {
     // Kilocode uses device code flow, no refresh token support
     return null;
+  }
+
+  async refreshCodebuddy(refreshToken, proxyOptions = null) {
+    if (!refreshToken) return null;
+    const oauth = PROVIDER_OAUTH["codebuddy-cn"] || {};
+    try {
+      const response = await proxyAwareFetch(oauth.refreshUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "User-Agent": oauth.userAgent,
+          "X-Requested-With": "XMLHttpRequest",
+          "X-Domain": "copilot.tencent.com",
+          "X-Refresh-Token": refreshToken,
+          "X-Auth-Refresh-Source": "plugin",
+          "X-Product": "SaaS",
+        },
+        body: "{}",
+      }, proxyOptions);
+      if (!response.ok) return null;
+      const data = await response.json();
+      if (data.code !== 0 || !data.data?.accessToken) return null;
+      return {
+        accessToken: data.data.accessToken,
+        refreshToken: data.data.refreshToken || refreshToken,
+        expiresIn: data.data.expiresIn,
+      };
+    } catch {
+      return null;
+    }
   }
 }
 
