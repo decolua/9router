@@ -205,7 +205,7 @@ function stableHermesContextLines(text) {
     return keep;
 }
 
-function extractHermesPayloadSession(body, scope) {
+function extractHermesPayloadSession(body, scope, connectionId) {
     if (scope !== "kiro") return null;
     const messages = requestMessages(body);
     if (!messages.length) return null;
@@ -218,7 +218,7 @@ function extractHermesPayloadSession(body, scope) {
     if (!contextLines.length) return null;
     const user = firstUserText(messages);
     if (!user) return null;
-    return `hermes:${sha16(`${contextLines.join("\n")}\n---\n${user.slice(0, 4096)}`)}`;
+    return `hermes:${sha16(`${connectionId || ""}\n---\n${contextLines.join("\n")}\n---\n${user.slice(0, 4096)}`)}`;
 }
 
 // Accumulate assistant text from OpenAI/Responses-style input/messages (cap-limited)
@@ -270,7 +270,7 @@ function assistantTextSessionId(scope, body) {
 export function resolveSessionId({ headers, body, connectionId, workspaceId, scope = "" } = {}) {
     const client = extractClientSessionId(headers, body);
     if (client) return client;
-    const hermes = extractHermesPayloadSession(body, scope);
+    const hermes = extractHermesPayloadSession(body, scope, connectionId);
     if (hermes) return hermes;
     const fromAssistant = assistantTextSessionId(`${scope}:${connectionId || ""}`, body);
     if (fromAssistant) return fromAssistant;

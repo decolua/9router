@@ -103,6 +103,12 @@ describe("resolveSessionId", () => {
     expect(a).not.toBe(b);
   });
 
+  it("isolates Hermes fallback sessions by connection", () => {
+    const a = resolveSessionId({ body: hermesBody("thread-1"), connectionId: "conn1", scope: "kiro" });
+    const b = resolveSessionId({ body: hermesBody("thread-1"), connectionId: "conn2", scope: "kiro" });
+    expect(a).not.toBe(b);
+  });
+
   it("does not use Hermes payload parsing outside Kiro scope", () => {
     const a = resolveSessionId({ body: hermesBody("thread-1"), connectionId: "conn1", scope: "codex" });
     expect(a).not.toMatch(/^hermes:/);
