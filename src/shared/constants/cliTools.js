@@ -360,6 +360,45 @@ amp --model "{{model}}"
       { id: "gemini-3.1-pro", name: "Gemini 3.1 Pro", alias: "gemini", defaultValue: "gemini/gemini-3.1-pro" },
     ],
   },
+  crush: {
+    id: "crush",
+    name: "Crush",
+    image: "/providers/crush.png",
+    color: "#F97316",
+    description: "Charmbracelet Crush coding agent CLI",
+    docsUrl: "https://github.com/charmbracelet/crush",
+    configType: "guide",
+    defaultCommand: "crush",
+    notes: [
+      { type: "info", text: "Crush can use an OpenAI-compatible endpoint, so it works with 9Router." },
+      { type: "info", text: "Config path: Windows %LOCALAPPDATA%\\crush\\crush.json • Linux/macOS $HOME/.local/share/crush/crush.json" },
+      { type: "warning", text: "Install Crush first: https://github.com/charmbracelet/crush" },
+    ],
+    guideSteps: [
+      { step: 1, title: "Install Crush", desc: "Follow the official install steps from the Crush GitHub repository." },
+      { step: 2, title: "API Key", type: "apiKeySelector" },
+      { step: 3, title: "Base URL", value: "{{baseUrl}}", copyable: true },
+      { step: 4, title: "Select Model", type: "modelSelector" },
+      { step: 5, title: "Save Config", desc: "Use this minimal template in your Crush config file." },
+      { step: 6, title: "Apply", desc: "Save file, restart Crush, then select your custom provider/model in the app." },
+    ],
+    codeBlock: {
+      language: "json",
+      code: `{
+  "$schema": "https://charm.land/crush.json",
+  "providers": {
+    "your-custom-provider": {
+      "type": "openai",
+      "base_url": "{{baseUrl}}",
+      "api_key": "{{apiKey}}",
+      "models": [
+        { "id": "{{model}}", "name": "{{model}}", "context_window": 128000, "default_max_tokens": 4096 }
+      ]
+    }
+  }
+}`,
+    },
+  },
   // HIDDEN: gemini-cli
   // "gemini-cli": {
   //   id: "gemini-cli",
