@@ -93,6 +93,51 @@ describe("resolveSessionId", () => {
     expect(first).not.toBe(second);
   });
 
+  it("does not treat raw metadata.user_id as a Kiro conversation session", () => {
+    const first = resolveSessionId({
+      body: {
+        metadata: { user_id: "user-123" },
+        messages: [{ role: "user", content: "new chat about invoices" }],
+      },
+      connectionId: "conn1",
+      scope: "kiro",
+    });
+    const second = resolveSessionId({
+      body: {
+        metadata: { user_id: "user-123" },
+        messages: [{ role: "user", content: "unrelated new chat about refunds" }],
+      },
+      connectionId: "conn1",
+      scope: "kiro",
+    });
+
+    expect(first).not.toBe("user-123");
+    expect(second).not.toBe("user-123");
+    expect(first).not.toBe(second);
+  });
+
+  it("keeps Claude Code session_id metadata as a Kiro conversation session", () => {
+    const body = {
+      metadata: { user_id: JSON.stringify({ session_id: "claude-code-session-123" }) },
+      messages: [{ role: "user", content: "same Claude Code session" }],
+    };
+
+    expect(resolveSessionId({ body, connectionId: "conn1", scope: "kiro" })).toBe("claude:claude-code-session-123");
+  });
+
+  it("keeps raw metadata.user_id as a non-Kiro session fallback", () => {
+    const got = resolveSessionId({
+      body: {
+        metadata: { user_id: "user-123" },
+        messages: [{ role: "user", content: "non-Kiro provider" }],
+      },
+      connectionId: "conn1",
+      scope: "codex",
+    });
+
+    expect(got).toBe("user-123");
+  });
+
   it("keeps x-client-request-id as a session override outside Kiro scope", () => {
     const got = resolveSessionId({
       headers: { "x-client-request-id": "req-1" },

@@ -149,7 +149,7 @@ function extractClientSessionId(headers, body, scope = "") {
         normalizeSessionId(body?.prompt_cache_key) ||
         normalizeSessionId(body?.session_id) ||
         normalizeSessionId(body?.conversation_id) ||
-        normalizeSessionId(body?.metadata?.user_id);
+        (scope === "kiro" ? null : normalizeSessionId(body?.metadata?.user_id));
     return fromBody || null;
 }
 
