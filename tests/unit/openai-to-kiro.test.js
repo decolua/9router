@@ -316,16 +316,30 @@ describe("openaiToKiroRequest", () => {
       });
     });
 
-    it("does not send additionalModelRequestFields for near-match unsupported Kiro model ids", () => {
+    it("does not send additionalModelRequestFields for legacy Kiro model ids", () => {
       const body = {
         reasoning_effort: "high",
-        messages: [{ role: "user", content: "Near-match model id should not get adaptive fields" }]
+        messages: [{ role: "user", content: "Legacy model id should not get adaptive fields" }]
+      };
+
+      const result = openaiToKiroRequest("claude-sonnet-4.5", body, true, {});
+
+      expect(systemPromptOf(result)).toContain("<max_thinking_length>24576</max_thinking_length>");
+      expect(result.additionalModelRequestFields).toBeUndefined();
+    });
+
+    it("defaults future Kiro model ids to additionalModelRequestFields support", () => {
+      const body = {
+        reasoning_effort: "high",
+        messages: [{ role: "user", content: "Future model id should get adaptive fields" }]
       };
 
       const result = openaiToKiroRequest("claude-sonnet-4.60", body, true, {});
 
-      expect(systemPromptOf(result)).toContain("<max_thinking_length>24576</max_thinking_length>");
-      expect(result.additionalModelRequestFields).toBeUndefined();
+      expect(result.additionalModelRequestFields).toEqual({
+        thinking: { type: "adaptive", display: "summarized" },
+        output_config: { effort: "high" },
+      });
     });
 
     it("clamps reasoning_effort max to Kiro max_thinking_length 32000", () => {

@@ -155,15 +155,17 @@ export function buildKiroAdditionalModelRequestFields(body) {
 }
 
 export function supportsKiroAdditionalModelRequestFields(model) {
-  if (typeof model !== "string") return false;
+  if (typeof model !== "string") return true;
   const normalized = model.toLowerCase().replace(/-/g, ".");
-  const match = normalized.match(/(?:^|[/.])claude\.(opus|sonnet)\.(\d+)(?:\.(\d+))?(?:[/.]|$)/);
-  if (!match) return false;
-  const [, family, majorText, minorText] = match;
+  const match = normalized.match(/(?:^|[/.])claude\.([a-z]+)\.(\d+)(?:\.(\d+))?(?:[/.]|$)/);
+  if (!match) return true;
+  const [, , majorText, minorText] = match;
   const major = Number(majorText);
   const minor = minorText === undefined ? null : Number(minorText);
-  if (family === "sonnet" && major === 5) return true;
-  return major === 4 && [6, 7, 8].includes(minor);
+  // Kiro rejected additionalModelRequestFields on legacy 4.5 models in live smoke.
+  // Default future Claude/Kiro models to supported so new model releases do not
+  // need a code allowlist update.
+  return !(major === 4 && (minor === null || minor <= 5));
 }
 
 export function buildKiroAdditionalModelRequestFieldsForModel(body, model) {
