@@ -457,15 +457,19 @@ export class KiroExecutor extends BaseExecutor {
             };
 
             // Include usage in final chunk if available
+            if (!state.usage && state.metering) {
+              state.usage = {
+                prompt_tokens: 0,
+                completion_tokens: 0,
+                total_tokens: 0
+              };
+            }
             if (state.usage) {
               if (state.metering) {
                 state.usage.kiro_credits = state.metering.usage;
                 state.usage.kiro_credit_unit = state.metering.unit;
               }
               finishChunk.usage = state.usage;
-            }
-            if (state.metering) {
-              finishChunk.kiro_metering = state.metering;
             }
 
             controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(finishChunk)}\n\n`));
@@ -498,6 +502,13 @@ export class KiroExecutor extends BaseExecutor {
               finish_reason: state.hasToolCalls ? "tool_calls" : "stop"
             }]
           };
+          if (state.metering) {
+            finishChunk.usage = {
+              ...(state.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }),
+              kiro_credits: state.metering.usage,
+              kiro_credit_unit: state.metering.unit
+            };
+          }
           controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(finishChunk)}\n\n`));
         }
 

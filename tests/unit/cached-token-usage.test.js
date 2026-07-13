@@ -186,7 +186,7 @@ describe("Kiro usage pass-through", () => {
     expect(out.prompt_tokens_details.cache_creation_tokens).toBe(50);
   });
 
-  it("preserves Kiro credit metering fields through OpenAI-shaped usage", () => {
+  it("preserves Kiro credit metering internally without exposing it to OpenAI clients", () => {
     const usage = extractUsage({
       usage: {
         prompt_tokens: 100,
@@ -199,6 +199,6 @@ describe("Kiro usage pass-through", () => {
 
     expect(usage.kiro_credits).toBe(0.003);
     expect(usage.kiro_credit_unit).toBe("credit");
-    expect(filterUsageForFormat(usage, "openai").kiro_credits).toBe(0.003);
+    expect(filterUsageForFormat(usage, "openai").kiro_credits).toBeUndefined();
   });
 });

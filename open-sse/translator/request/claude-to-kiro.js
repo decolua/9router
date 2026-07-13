@@ -468,7 +468,7 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
       },
       history,
     },
-    agentMode: credentials?.providerSpecificData?.agentMode || "vibe",
+    agentMode: "vibe",
   };
 
   if (profileArn) payload.profileArn = profileArn;

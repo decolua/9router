@@ -157,14 +157,13 @@ export function buildKiroAdditionalModelRequestFields(body) {
 export function supportsKiroAdditionalModelRequestFields(model) {
   if (typeof model !== "string") return false;
   const normalized = model.toLowerCase().replace(/-/g, ".");
-  return (
-    normalized.includes("claude.opus.4.6") ||
-    normalized.includes("claude.opus.4.7") ||
-    normalized.includes("claude.opus.4.8") ||
-    normalized.includes("claude.sonnet.4.6") ||
-    normalized.includes("claude.sonnet.4.7") ||
-    normalized.includes("claude.sonnet.5")
-  );
+  const match = normalized.match(/(?:^|[/.])claude\.(opus|sonnet)\.(\d+)(?:\.(\d+))?(?:[/.]|$)/);
+  if (!match) return false;
+  const [, family, majorText, minorText] = match;
+  const major = Number(majorText);
+  const minor = minorText === undefined ? null : Number(minorText);
+  if (family === "sonnet" && major === 5) return true;
+  return major === 4 && [6, 7, 8].includes(minor);
 }
 
 export function buildKiroAdditionalModelRequestFieldsForModel(body, model) {

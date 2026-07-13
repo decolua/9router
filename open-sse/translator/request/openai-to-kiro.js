@@ -595,7 +595,7 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
       },
       history: history
     },
-    agentMode: credentials?.providerSpecificData?.agentMode || "vibe",
+    agentMode: "vibe",
   };
 
   if (profileArn) {

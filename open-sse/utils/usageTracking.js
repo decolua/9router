@@ -92,7 +92,6 @@ export function filterUsageForFormat(usage, targetFormat) {
       'prompt_tokens', 'completion_tokens', 'total_tokens',
       'cached_tokens', 'reasoning_tokens',
       'prompt_tokens_details', 'completion_tokens_details',
-      'kiro_credits', 'kiro_credit_unit',
       'estimated'
     ]
   };

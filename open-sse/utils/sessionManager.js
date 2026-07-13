@@ -89,6 +89,7 @@ const assistantSessionStore = new Map();
 const ASSISTANT_MIN_LEN = 50;
 const ASSISTANT_CAP_LEN = 50;
 const MAX_ASSISTANT_SESSIONS = 5000;
+const MAX_CONTINUATION_SESSIONS = 5000;
 
 // Client headers/body fields that carry an upstream session id (priority order)
 const SESSION_HEADER_KEYS = ["x-session-id", "session-id", "session_id", "x-amp-thread-id", "x-client-request-id"];
@@ -205,6 +206,15 @@ function stableHermesContextLines(text) {
     return keep;
 }
 
+function durableHermesContextLines(lines) {
+    return lines.filter((line) => (
+        line.startsWith("**Matrix Room ID:**") ||
+        line.startsWith("**Matrix Thread:**") ||
+        /^\s*-\s*(Guild|Parent channel|Thread|Channel):\s*`[^`]+`/.test(line) ||
+        /\b(?:channel|thread):\s*(?:[A-Z][A-Z0-9]{7,}|[0-9]{8,})\b/i.test(line)
+    ));
+}
+
 function extractHermesPayloadSession(body, scope, connectionId) {
     if (scope !== "kiro") return null;
     const messages = requestMessages(body);
@@ -221,9 +231,11 @@ function extractHermesPayloadSession(body, scope, connectionId) {
         if (contextLines.length) break;
     }
     if (!contextLines.length) return null;
+    const durableLines = durableHermesContextLines(contextLines);
+    if (!durableLines.length) return null;
     const user = firstUserText(messages);
     if (!user) return null;
-    return `hermes:${sha16(`${connectionId || ""}\n---\n${contextLines.join("\n")}\n---\n${user.slice(0, 4096)}`)}`;
+    return `hermes:${sha16(`${connectionId || ""}\n---\n${durableLines.join("\n")}\n---\n${user.slice(0, 4096)}`)}`;
 }
 
 // Accumulate assistant text from OpenAI/Responses-style input/messages (cap-limited)
@@ -292,6 +304,9 @@ export function resolveContinuationId({ sessionId, connectionId, scope = "" } = 
         return existing.continuationId;
     }
     const continuationId = crypto.randomUUID();
+    if (continuationStore.size >= MAX_CONTINUATION_SESSIONS) {
+        continuationStore.delete(continuationStore.keys().next().value);
+    }
     continuationStore.set(key, { continuationId, lastUsed: Date.now() });
     return continuationId;
 }

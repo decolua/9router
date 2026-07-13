@@ -145,13 +145,40 @@ describe("KiroExecutor thinking tag stripping", () => {
       .filter(line => line.startsWith("data: ") && !line.includes("[DONE]"))
       .map(line => JSON.parse(line.slice(6)));
 
-    const finalChunk = objects.find(obj => obj.kiro_metering);
-    expect(finalChunk.kiro_metering).toEqual({
-      usage: 0.0097,
-      unit: "credit",
-      unit_plural: "credits",
-    });
+    const finalChunk = objects.find(obj => obj.usage?.kiro_credits !== undefined);
     expect(finalChunk.usage.kiro_credits).toBe(0.0097);
     expect(finalChunk.usage.kiro_credit_unit).toBe("credit");
+    expect(finalChunk.kiro_metering).toBeUndefined();
+  });
+
+  it("surfaces Kiro metering usage even without token metrics or context usage", async () => {
+    const executor = new KiroExecutor();
+
+    const f1 = createMockFrame("assistantResponseEvent", { content: "OK" });
+    const f2 = createMockFrame("meteringEvent", { usage: 0.0042, unit: "credit", unitPlural: "credits" });
+
+    const readableStream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(f1);
+        controller.enqueue(f2);
+        controller.close();
+      }
+    });
+
+    const transformedResponse = executor.transformEventStreamToSSE({ body: readableStream }, "claude-test");
+    const output = await readAllSSE(transformedResponse.body);
+    const objects = output
+      .split("\n")
+      .filter(line => line.startsWith("data: ") && !line.includes("[DONE]"))
+      .map(line => JSON.parse(line.slice(6)));
+
+    const finalChunk = objects.find(obj => obj.usage?.kiro_credits !== undefined);
+    expect(finalChunk.usage).toMatchObject({
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      total_tokens: 0,
+      kiro_credits: 0.0042,
+      kiro_credit_unit: "credit",
+    });
   });
 });
