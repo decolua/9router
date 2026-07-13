@@ -24,7 +24,7 @@
  */
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
-import { resolveContinuationId, resolveSessionId } from "../../utils/sessionManager.js";
+import { logKiroSessionState, resolveContinuationId, resolveSessionId } from "../../utils/sessionManager.js";
 import {
   resolveKiroModel,
   resolveKiroThinkingBudget,
@@ -453,6 +453,13 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
     sessionId: conversationId,
     connectionId: credentials?.connectionId,
     scope: "kiro",
+  });
+  logKiroSessionState({
+    route: "claude-to-kiro",
+    model: upstreamModel,
+    conversationId,
+    agentContinuationId: continuationId,
+    historyLength: history.length,
   });
 
   const payload = {

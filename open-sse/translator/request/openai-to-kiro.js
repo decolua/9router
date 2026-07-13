@@ -5,7 +5,7 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { v4 as uuidv4 } from "uuid";
-import { resolveContinuationId, resolveSessionId } from "../../utils/sessionManager.js";
+import { logKiroSessionState, resolveContinuationId, resolveSessionId } from "../../utils/sessionManager.js";
 import {
   resolveKiroModel,
   resolveKiroThinkingBudget,
@@ -570,6 +570,13 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
     sessionId: conversationId,
     connectionId: credentials?.connectionId,
     scope: "kiro",
+  });
+  logKiroSessionState({
+    route: "openai-to-kiro",
+    model: upstreamModel,
+    conversationId,
+    agentContinuationId: continuationId,
+    historyLength: history.length,
   });
 
   const payload = {

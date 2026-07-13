@@ -94,7 +94,6 @@ const MAX_CONTINUATION_SESSIONS = 5000;
 // Client headers/body fields that carry an upstream session id (priority order)
 const SESSION_HEADER_KEYS = ["x-session-id", "session-id", "session_id", "x-amp-thread-id"];
 const CLAUDE_CODE_SESSION_RE = /_session_([a-f0-9-]+)$/;
-const HERMES_CONTEXT_MARKER = "## Current Session Context";
 
 function sha16(text) {
     return crypto.createHash("sha256").update(text).digest("hex").slice(0, 16);
@@ -154,138 +153,10 @@ function extractClientSessionId(headers, body, scope = "") {
     return fromBody || null;
 }
 
-function messageContentText(content) {
-    if (typeof content === "string") return content;
-    if (Array.isArray(content)) {
-        return content.map((part) => {
-            if (typeof part === "string") return part;
-            return part?.text || part?.content || part?.input || part?.output || "";
-        }).filter(Boolean).join("\n");
-    }
-    return "";
-}
-
 function requestMessages(body) {
     if (Array.isArray(body?.messages)) return body.messages;
     if (Array.isArray(body?.input)) return body.input;
     return [];
-}
-
-function firstUserText(messages) {
-    for (const item of messages) {
-        if (item?.role !== "user") continue;
-        const text = messageContentText(item.content);
-        if (text) return text;
-    }
-    return "";
-}
-
-function collectMessageTexts(messages, { includeUser = false } = {}) {
-    const texts = [];
-    for (const item of messages || []) {
-        if (item?.role === "system" || item?.role === "developer" || (includeUser && item?.role === "user")) {
-            const text = messageContentText(item.content);
-            if (text) texts.push(text);
-        }
-    }
-    return texts;
-}
-
-function stableHermesContextLines(text) {
-    const start = text.indexOf(HERMES_CONTEXT_MARKER);
-    if (start < 0) return [];
-    const rest = text.slice(start);
-    const nextSection = rest.slice(HERMES_CONTEXT_MARKER.length).search(/\n##\s+/);
-    const section = nextSection >= 0
-        ? rest.slice(0, HERMES_CONTEXT_MARKER.length + nextSection)
-        : rest;
-    const keep = [];
-    for (const raw of section.split(/\r?\n/)) {
-        const line = raw.trim();
-        if (
-            line.startsWith("**Source:**") ||
-            line.startsWith("**Session type:**") ||
-            line.startsWith("**User ID:**") ||
-            line.startsWith("**Matrix Room ID:**") ||
-            line.startsWith("**Matrix Thread:**") ||
-            line.startsWith("- Guild:") ||
-            line.startsWith("- Parent channel:") ||
-            line.startsWith("- Thread:") ||
-            line.startsWith("- Channel:")
-        ) {
-            if (!line.includes("Triggering message")) keep.push(line);
-        }
-    }
-    return keep;
-}
-
-function extractDurableHermesContextIds(lines) {
-    const ids = [];
-    const slackThreadTs = "[0-9]{10}\\.[0-9]{6}";
-    const durableThreadId = `(?:[0-9]{15,20})|(?:[A-Z][A-Z0-9]{8,})|(?:${slackThreadTs})|(?:\\$[^\\s:]+:[^\\s]+)`;
-    const durableChannelId = "(?:[0-9]{15,20})|(?:[A-Z][A-Z0-9]{8,})";
-    const sourceIdRe = new RegExp(`\\b(channel):\\s*(${durableChannelId})|\\b(thread):\\s*(${durableThreadId})`, "g");
-    let hasThreadLabel = false;
-    let hasDurableThread = false;
-
-    for (const line of lines) {
-        const source = line.match(/^\*\*Source:\*\*\s*([A-Za-z][A-Za-z0-9_-]*)/);
-        if (source) ids.push(`source-platform:${source[1].toLowerCase()}`);
-
-        const matrixRoom = line.match(/^\*\*Matrix Room ID:\*\*\s*(![^\s:]+:[^\s]+)$/);
-        if (matrixRoom) ids.push(`matrix-room:${matrixRoom[1]}`);
-
-        const matrixThread = line.match(new RegExp(`^\\*\\*Matrix Thread:\\*\\*\\s*(${durableThreadId})$`));
-        if (matrixThread) {
-            ids.push(`matrix-thread:${matrixThread[1]}`);
-            hasDurableThread = true;
-        }
-
-        const discordId = line.match(new RegExp("^\\s*-\\s*(Guild|Parent channel|Thread|Channel):\\s*`(" + durableThreadId + "|" + durableChannelId + ")`"));
-        if (discordId) {
-            const kind = discordId[1].toLowerCase();
-            ids.push(`${kind}:${discordId[2]}`);
-            if (kind === "thread") hasDurableThread = true;
-        }
-
-        if (/\bthread:\s*/i.test(line) || /^\s*-\s*Thread:/.test(line) || line.startsWith("**Matrix Thread:**")) {
-            hasThreadLabel = true;
-        }
-        for (const match of line.matchAll(sourceIdRe)) {
-            const kind = (match[1] || match[3]).toLowerCase();
-            const id = match[2] || match[4];
-            ids.push(`source-${kind}:${id}`);
-            if (kind === "thread") hasDurableThread = true;
-        }
-    }
-
-    if (hasThreadLabel && !hasDurableThread) return [];
-    return [...new Set(ids)].sort();
-}
-
-function hermesPayloadSessionEnabled() {
-    const value = String(process.env.NINE_ROUTER_KIRO_HERMES_PAYLOAD_SESSION ?? "1").toLowerCase();
-    return !["0", "false", "no", "off"].includes(value);
-}
-
-function extractHermesPayloadSession(body, scope, connectionId) {
-    if (scope !== "kiro") return null;
-    if (!connectionId || !hermesPayloadSessionEnabled()) return null;
-    const messages = requestMessages(body);
-    if (!messages.length) return null;
-    let contextLines = [];
-    const contextTexts = [];
-    if (body?.system) contextTexts.push(messageContentText(body.system));
-    contextTexts.push(...collectMessageTexts(messages, { includeUser: true }));
-    for (const text of contextTexts) {
-        contextLines = stableHermesContextLines(text);
-        if (contextLines.length) break;
-    }
-    if (!contextLines.length) return null;
-    const durableIds = extractDurableHermesContextIds(contextLines);
-    if (!durableIds.length) return null;
-    const runtimeSalt = deriveSessionId(`hermes:${connectionId}`);
-    return `hermes:${sha16(`${runtimeSalt}\n---\n${durableIds.join("\n")}`)}`;
 }
 
 // Accumulate assistant text from OpenAI/Responses-style input/messages (cap-limited)
@@ -337,8 +208,6 @@ function assistantTextSessionId(scope, body) {
 export function resolveSessionId({ headers, body, connectionId, workspaceId, scope = "" } = {}) {
     const client = extractClientSessionId(headers, body, scope);
     if (client) return client;
-    const hermes = extractHermesPayloadSession(body, scope, connectionId);
-    if (hermes) return hermes;
     const fromAssistant = scope === "kiro" ? null : assistantTextSessionId(`${scope}:${connectionId || ""}`, body);
     if (fromAssistant) return fromAssistant;
     const ws = normalizeSessionId(workspaceId);
@@ -362,6 +231,22 @@ export function resolveContinuationId({ sessionId, connectionId, scope = "" } = 
     }
     continuationStore.set(key, { continuationId, lastUsed: Date.now() });
     return continuationId;
+}
+
+function envEnabled(value) {
+    return ["1", "true", "yes", "on"].includes(String(value || "").toLowerCase());
+}
+
+export function logKiroSessionState({ route, model, conversationId, agentContinuationId, historyLength } = {}) {
+    if (!envEnabled(process.env.NINE_ROUTER_KIRO_SESSION_LOG)) return;
+    console.log(JSON.stringify({
+        event: "kiro.session",
+        route,
+        model,
+        conversationId,
+        agentContinuationId,
+        historyLength,
+    }));
 }
 
 // Capture session id from request body + credentials (envelope still intact here)
