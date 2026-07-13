@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { KiroExecutor } from "../../open-sse/executors/kiro.js";
+import { translateResponse } from "../../open-sse/translator/index.js";
+import { FORMATS } from "../../open-sse/translator/formats.js";
+import { extractUsage, mergeUsage } from "../../open-sse/utils/usageTracking.js";
+import "../translator/registerAll.js";
 
 function createMockFrame(eventType, payloadObj) {
   const payloadStr = JSON.stringify(payloadObj);
@@ -45,6 +49,13 @@ async function readAllSSE(stream) {
     result += decoder.decode(value, { stream: true });
   }
   return result;
+}
+
+async function readNextWithTimeout(reader) {
+  return Promise.race([
+    reader.read(),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("timed out waiting for SSE chunk")), 100)),
+  ]);
 }
 
 describe("KiroExecutor thinking tag stripping", () => {
@@ -149,6 +160,9 @@ describe("KiroExecutor thinking tag stripping", () => {
     expect(finalChunk.usage.kiro_credits).toBe(0.0097);
     expect(finalChunk.usage.kiro_credit_unit).toBe("credit");
     expect(finalChunk.kiro_metering).toBeUndefined();
+
+    const clientChunk = translateResponse(FORMATS.KIRO, FORMATS.OPENAI, finalChunk, {});
+    expect(clientChunk.usage).toBeUndefined();
   });
 
   it("surfaces Kiro metering usage even without token metrics or context usage", async () => {
@@ -215,12 +229,14 @@ describe("KiroExecutor thinking tag stripping", () => {
     const f1 = createMockFrame("assistantResponseEvent", { content: "OK" });
     const f2 = createMockFrame("messageStopEvent", {});
     const f3 = createMockFrame("meteringEvent", { usage: 0.0061, unit: "credit", unitPlural: "credits" });
+    const f4 = createMockFrame("metricsEvent", { inputTokens: 12, outputTokens: 3 });
 
     const readableStream = new ReadableStream({
       start(controller) {
         controller.enqueue(f1);
         controller.enqueue(f2);
         controller.enqueue(f3);
+        controller.enqueue(f4);
         controller.close();
       }
     });
@@ -233,7 +249,65 @@ describe("KiroExecutor thinking tag stripping", () => {
       .map(line => JSON.parse(line.slice(6)));
 
     const finalChunk = objects.find(obj => obj.choices?.[0]?.finish_reason === "stop");
-    expect(finalChunk.usage.kiro_credits).toBe(0.0061);
+    expect(finalChunk.usage).toBeUndefined();
+    const usageChunk = objects.find(obj => obj.usage?.kiro_credits !== undefined);
+    expect(usageChunk.usage.kiro_credits).toBe(0.0061);
+
+    let usage = null;
+    for (const obj of objects) {
+      usage = mergeUsage(usage, extractUsage(obj));
+    }
+    expect(usage.kiro_credits).toBe(0.0061);
+    expect(usage.prompt_tokens).toBe(12);
+    expect(usage.completion_tokens).toBe(3);
+  });
+
+  it("does not forward duplicate public token usage after a final OpenAI chunk already carried it", () => {
+    const state = {};
+    const [finishChunk] = translateResponse(FORMATS.KIRO, FORMATS.OPENAI, {
+      id: "chatcmpl-1",
+      object: "chat.completion.chunk",
+      model: "m",
+      choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+      usage: { prompt_tokens: 12, completion_tokens: 3, total_tokens: 15 },
+    }, state);
+    expect(finishChunk.usage).toEqual({ prompt_tokens: 12, completion_tokens: 3, total_tokens: 15 });
+
+    const [lateUsageChunk] = translateResponse(FORMATS.KIRO, FORMATS.OPENAI, {
+      id: "chatcmpl-1",
+      object: "chat.completion.chunk",
+      model: "m",
+      choices: [],
+      usage: { prompt_tokens: 12, completion_tokens: 3, total_tokens: 15, kiro_credits: 0.1, kiro_credit_unit: "credit" },
+    }, state);
+
+    expect(lateUsageChunk.usage).toBeUndefined();
+  });
+
+  it("emits a terminal chunk at messageStop before the upstream stream closes", async () => {
+    const executor = new KiroExecutor();
+
+    const f1 = createMockFrame("assistantResponseEvent", { content: "OK" });
+    const f2 = createMockFrame("messageStopEvent", {});
+
+    const readableStream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(f1);
+        controller.enqueue(f2);
+      }
+    });
+
+    const transformedResponse = executor.transformEventStreamToSSE({ body: readableStream }, "claude-test");
+    const reader = transformedResponse.body.getReader();
+    const decoder = new TextDecoder();
+    let output = "";
+    for (let i = 0; i < 4 && !output.includes("\"finish_reason\":\"stop\""); i++) {
+      const { value } = await readNextWithTimeout(reader);
+      output += decoder.decode(value, { stream: true });
+    }
+    await reader.cancel();
+
+    expect(output).toContain("\"finish_reason\":\"stop\"");
   });
 
   it("uses tool_calls finish reason for tool streams without messageStop", async () => {

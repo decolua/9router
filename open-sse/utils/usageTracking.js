@@ -280,9 +280,10 @@ export function extractUsage(chunk) {
   // Kiro's internal executor may attach credit-only usage without token counts.
   if (chunk.usage && typeof chunk.usage === "object" &&
       (chunk.usage.prompt_tokens !== undefined || chunk.usage.kiro_credits !== undefined)) {
+    const hasPromptTokens = chunk.usage.prompt_tokens !== undefined;
     return normalizeUsage({
       prompt_tokens: chunk.usage.prompt_tokens,
-      completion_tokens: chunk.usage.completion_tokens,
+      completion_tokens: hasPromptTokens ? (chunk.usage.completion_tokens || 0) : chunk.usage.completion_tokens,
       cached_tokens: chunk.usage.prompt_tokens_details?.cached_tokens || chunk.usage.prompt_cache_hit_tokens,
       reasoning_tokens: chunk.usage.completion_tokens_details?.reasoning_tokens,
       prompt_tokens_details: chunk.usage.prompt_tokens_details,

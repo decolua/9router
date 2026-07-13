@@ -92,7 +92,7 @@ const MAX_ASSISTANT_SESSIONS = 5000;
 const MAX_CONTINUATION_SESSIONS = 5000;
 
 // Client headers/body fields that carry an upstream session id (priority order)
-const SESSION_HEADER_KEYS = ["x-session-id", "session-id", "session_id", "x-amp-thread-id", "x-client-request-id"];
+const SESSION_HEADER_KEYS = ["x-session-id", "session-id", "session_id", "x-amp-thread-id"];
 const CLAUDE_CODE_SESSION_RE = /_session_([a-f0-9-]+)$/;
 const HERMES_CONTEXT_MARKER = "## Current Session Context";
 
@@ -135,7 +135,7 @@ function extractAntigravitySession(body) {
     return m ? normalizeSessionId(m[1]) : null;
 }
 
-function extractClientSessionId(headers, body) {
+function extractClientSessionId(headers, body, scope = "") {
     const claude = extractClaudeCodeSession(body?.metadata?.user_id);
     if (claude) return `claude:${claude}`;
     const antigravity = extractAntigravitySession(body);
@@ -144,6 +144,8 @@ function extractClientSessionId(headers, body) {
         const v = headerValue(headers, key);
         if (v) return v;
     }
+    const requestId = scope === "kiro" ? null : headerValue(headers, "x-client-request-id");
+    if (requestId) return requestId;
     const fromBody =
         normalizeSessionId(body?.prompt_cache_key) ||
         normalizeSessionId(body?.session_id) ||
@@ -206,13 +208,48 @@ function stableHermesContextLines(text) {
     return keep;
 }
 
-function durableHermesContextLines(lines) {
-    return lines.filter((line) => (
-        /^\*\*Matrix Room ID:\*\*\s*![^\s:]+:[^\s]+$/.test(line) ||
-        /^\*\*Matrix Thread:\*\*\s*(?:[0-9]{15,20}|[A-Z][A-Z0-9]{8,})$/.test(line) ||
-        /^\s*-\s*(Guild|Parent channel|Thread|Channel):\s*`(?:[0-9]{15,20}|[A-Z][A-Z0-9]{8,})`/.test(line) ||
-        /\b(?:channel|thread):\s*(?:[CDG][A-Z0-9]{8,}|[0-9]{15,20})\b/.test(line)
-    ));
+function extractDurableHermesContextIds(lines) {
+    const ids = [];
+    const slackThreadTs = "[0-9]{10}\\.[0-9]{6}";
+    const durableThreadId = `(?:[0-9]{15,20})|(?:[A-Z][A-Z0-9]{8,})|(?:${slackThreadTs})|(?:\\$[^\\s:]+:[^\\s]+)`;
+    const durableChannelId = "(?:[0-9]{15,20})|(?:[A-Z][A-Z0-9]{8,})";
+    const sourceIdRe = new RegExp(`\\b(channel):\\s*(${durableChannelId})|\\b(thread):\\s*(${durableThreadId})`, "g");
+    let hasThreadLabel = false;
+    let hasDurableThread = false;
+
+    for (const line of lines) {
+        const source = line.match(/^\*\*Source:\*\*\s*([A-Za-z][A-Za-z0-9_-]*)/);
+        if (source) ids.push(`source-platform:${source[1].toLowerCase()}`);
+
+        const matrixRoom = line.match(/^\*\*Matrix Room ID:\*\*\s*(![^\s:]+:[^\s]+)$/);
+        if (matrixRoom) ids.push(`matrix-room:${matrixRoom[1]}`);
+
+        const matrixThread = line.match(new RegExp(`^\\*\\*Matrix Thread:\\*\\*\\s*(${durableThreadId})$`));
+        if (matrixThread) {
+            ids.push(`matrix-thread:${matrixThread[1]}`);
+            hasDurableThread = true;
+        }
+
+        const discordId = line.match(new RegExp("^\\s*-\\s*(Guild|Parent channel|Thread|Channel):\\s*`(" + durableThreadId + "|" + durableChannelId + ")`"));
+        if (discordId) {
+            const kind = discordId[1].toLowerCase();
+            ids.push(`${kind}:${discordId[2]}`);
+            if (kind === "thread") hasDurableThread = true;
+        }
+
+        if (/\bthread:\s*/i.test(line) || /^\s*-\s*Thread:/.test(line) || line.startsWith("**Matrix Thread:**")) {
+            hasThreadLabel = true;
+        }
+        for (const match of line.matchAll(sourceIdRe)) {
+            const kind = (match[1] || match[3]).toLowerCase();
+            const id = match[2] || match[4];
+            ids.push(`source-${kind}:${id}`);
+            if (kind === "thread") hasDurableThread = true;
+        }
+    }
+
+    if (hasThreadLabel && !hasDurableThread) return [];
+    return [...new Set(ids)].sort();
 }
 
 function hermesPayloadSessionEnabled() {
@@ -236,9 +273,10 @@ function extractHermesPayloadSession(body, scope, connectionId) {
         if (contextLines.length) break;
     }
     if (!contextLines.length) return null;
-    const durableLines = durableHermesContextLines(contextLines);
-    if (!durableLines.length) return null;
-    return `hermes:${sha16(`${connectionId}\n---\n${durableLines.join("\n")}`)}`;
+    const durableIds = extractDurableHermesContextIds(contextLines);
+    if (!durableIds.length) return null;
+    const runtimeSalt = deriveSessionId(`hermes:${connectionId}`);
+    return `hermes:${sha16(`${runtimeSalt}\n---\n${durableIds.join("\n")}`)}`;
 }
 
 // Accumulate assistant text from OpenAI/Responses-style input/messages (cap-limited)
@@ -288,7 +326,7 @@ function assistantTextSessionId(scope, body) {
  * @returns {string} A stable session id
  */
 export function resolveSessionId({ headers, body, connectionId, workspaceId, scope = "" } = {}) {
-    const client = extractClientSessionId(headers, body);
+    const client = extractClientSessionId(headers, body, scope);
     if (client) return client;
     const hermes = extractHermesPayloadSession(body, scope, connectionId);
     if (hermes) return hermes;
@@ -305,6 +343,8 @@ export function resolveContinuationId({ sessionId, connectionId, scope = "" } = 
     const existing = continuationStore.get(key);
     if (existing) {
         existing.lastUsed = Date.now();
+        continuationStore.delete(key);
+        continuationStore.set(key, existing);
         return existing.continuationId;
     }
     const continuationId = crypto.randomUUID();

@@ -15,6 +15,7 @@
  */
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
+import { stripKiroPrivateUsage } from "./kiroUsage.js";
 
 function stopThinkingBlock(state, results) {
   if (!state.thinkingBlockStarted) return;
@@ -60,14 +61,8 @@ export function kiroToClaudeResponse(chunk, state) {
     }
   }
 
-  if (!data || !data.choices?.[0]) return null;
-
-  const results = [];
-  const choice = data.choices[0];
-  const delta = choice.delta || {};
-
-  // Track usage if present on the chunk.
-  if (data.usage && typeof data.usage === "object") {
+  data = stripKiroPrivateUsage(data);
+  if (data?.usage && typeof data.usage === "object") {
     const promptTokens =
       typeof data.usage.prompt_tokens === "number" ? data.usage.prompt_tokens : 0;
     const outputTokens =
@@ -76,6 +71,11 @@ export function kiroToClaudeResponse(chunk, state) {
         : 0;
     state.usage = { input_tokens: promptTokens, output_tokens: outputTokens };
   }
+  if (!data || !data.choices?.[0]) return null;
+
+  const results = [];
+  const choice = data.choices[0];
+  const delta = choice.delta || {};
 
   // First chunk → emit message_start.
   if (!state.messageStartSent) {

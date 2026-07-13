@@ -6,6 +6,8 @@ import { resolveContinuationId, resolveSessionId, deriveSessionId, clearSessionS
 const longAssistant = "x".repeat(80);
 const bodyWithAssistant = { messages: [{ role: "assistant", content: longAssistant }] };
 const bodyWithUserOnly = { messages: [{ role: "user", content: "hello from first user message anchor" }] };
+const THREAD_1 = "1524306091889135718";
+const THREAD_2 = "1524306091889135719";
 const hermesSystem = (threadId) => `System prefix
 
 ## Current Session Context
@@ -86,17 +88,63 @@ describe("resolveSessionId", () => {
     expect(got).toBe("client-sess-123");
   });
 
+  it("does not treat request-scoped x-client-request-id as a session override", () => {
+    const first = resolveSessionId({
+      headers: { "x-client-request-id": "req-1" },
+      body: hermesBody(THREAD_1),
+      connectionId: "conn1",
+      scope: "kiro",
+    });
+    const second = resolveSessionId({
+      headers: { "x-client-request-id": "req-2" },
+      body: hermesBody(THREAD_1),
+      connectionId: "conn1",
+      scope: "kiro",
+    });
+
+    expect(first).toBe(second);
+    expect(first).toMatch(/^hermes:/);
+  });
+
+  it("does not treat request-scoped previous_response_id as a Kiro session override", () => {
+    const first = resolveSessionId({
+      body: { ...hermesBody(THREAD_1), previous_response_id: "resp-1" },
+      connectionId: "conn1",
+      scope: "kiro",
+    });
+    const second = resolveSessionId({
+      body: { ...hermesBody(THREAD_1), previous_response_id: "resp-2" },
+      connectionId: "conn1",
+      scope: "kiro",
+    });
+
+    expect(first).toBe(second);
+    expect(first).toMatch(/^hermes:/);
+  });
+
+  it("keeps x-client-request-id as a session override outside Kiro scope", () => {
+    const got = resolveSessionId({
+      headers: { "x-client-request-id": "req-1" },
+      body: bodyWithAssistant,
+      connectionId: "conn1",
+      scope: "codex",
+    });
+
+    expect(got).toBe("req-1");
+  });
+
+
   it("workspaceId path: empty body + workspaceId set -> normalized workspaceId", () => {
     const got = resolveSessionId({ body: {}, connectionId: "conn1", workspaceId: "ws-abc" });
     expect(got).toBe("ws-abc");
   });
 
   it("derives a stable Kiro session from Hermes gateway context and first user payload", () => {
-    const first = resolveSessionId({ body: hermesBody("thread-1"), connectionId: "conn1", scope: "kiro" });
+    const first = resolveSessionId({ body: hermesBody(THREAD_1), connectionId: "conn1", scope: "kiro" });
     const second = resolveSessionId({
       body: {
         messages: [
-          ...hermesBody("thread-1").messages,
+          ...hermesBody(THREAD_1).messages,
           { role: "assistant", content: "assistant reply".repeat(10) },
           { role: "user", content: "follow up" },
         ],
@@ -109,10 +157,10 @@ describe("resolveSessionId", () => {
   });
 
   it("derives a stable Kiro session from Claude top-level Hermes system context", () => {
-    const first = resolveSessionId({ body: hermesClaudeBody("thread-1"), connectionId: "conn1", scope: "kiro" });
+    const first = resolveSessionId({ body: hermesClaudeBody(THREAD_1), connectionId: "conn1", scope: "kiro" });
     const second = resolveSessionId({
       body: {
-        system: hermesSystem("thread-1"),
+        system: hermesSystem(THREAD_1),
         messages: [
           { role: "user", content: "first prompt" },
           { role: "assistant", content: "assistant reply".repeat(10) },
@@ -126,27 +174,70 @@ describe("resolveSessionId", () => {
     expect(first).toMatch(/^hermes:/);
   });
 
+  it("accepts Slack thread timestamps as durable Hermes thread ids", () => {
+    const first = resolveSessionId({ body: hermesBody("1720857600.123456"), connectionId: "conn1", scope: "kiro" });
+    const second = resolveSessionId({ body: hermesBody("1720857600.123456", "follow up"), connectionId: "conn1", scope: "kiro" });
+
+    expect(first).toBe(second);
+    expect(first).toMatch(/^hermes:/);
+  });
+
+  it("accepts Matrix event ids as durable Hermes thread ids", () => {
+    const matrixBody = {
+      messages: [
+        {
+          role: "system",
+          content: `## Current Session Context\n\n**Matrix Room ID:** !roomid:matrix.org\n**Matrix Thread:** $eventid:matrix.org`,
+        },
+        { role: "user", content: "first prompt" },
+      ],
+    };
+
+    expect(resolveSessionId({ body: matrixBody, connectionId: "conn1", scope: "kiro" })).toMatch(/^hermes:/);
+  });
+
   it("keeps Hermes-derived session stable when compacted history drops the opening prompt", () => {
-    const first = resolveSessionId({ body: hermesBody("thread-1", "first prompt"), connectionId: "conn1", scope: "kiro" });
-    const compacted = resolveSessionId({ body: hermesBody("thread-1", "latest compacted turn"), connectionId: "conn1", scope: "kiro" });
+    const first = resolveSessionId({ body: hermesBody(THREAD_1, "first prompt"), connectionId: "conn1", scope: "kiro" });
+    const compacted = resolveSessionId({ body: hermesBody(THREAD_1, "latest compacted turn"), connectionId: "conn1", scope: "kiro" });
 
     expect(compacted).toBe(first);
   });
 
+  it("rotates Hermes-derived sessions after runtime session reset", () => {
+    const first = resolveSessionId({ body: hermesBody(THREAD_1, "first prompt"), connectionId: "conn1", scope: "kiro" });
+    clearSessionStore();
+    const afterReset = resolveSessionId({ body: hermesBody(THREAD_1, "first prompt"), connectionId: "conn1", scope: "kiro" });
+
+    expect(afterReset).not.toBe(first);
+  });
+
   it("isolates different Hermes gateway threads", () => {
-    const a = resolveSessionId({ body: hermesBody("thread-1"), connectionId: "conn1", scope: "kiro" });
-    const b = resolveSessionId({ body: hermesBody("thread-2"), connectionId: "conn1", scope: "kiro" });
+    const a = resolveSessionId({ body: hermesBody(THREAD_1), connectionId: "conn1", scope: "kiro" });
+    const b = resolveSessionId({ body: hermesBody(THREAD_2), connectionId: "conn1", scope: "kiro" });
     expect(a).not.toBe(b);
   });
 
+  it("isolates identical Hermes ids from different source platforms", () => {
+    const discord = resolveSessionId({ body: hermesBody(THREAD_1), connectionId: "conn1", scope: "kiro" });
+    const slackBody = {
+      messages: [
+        { role: "system", content: hermesSystem(THREAD_1).replace("**Source:** Discord", "**Source:** Slack") },
+        { role: "user", content: "first prompt" },
+      ],
+    };
+    const slack = resolveSessionId({ body: slackBody, connectionId: "conn1", scope: "kiro" });
+
+    expect(slack).not.toBe(discord);
+  });
+
   it("isolates Hermes fallback sessions by connection", () => {
-    const a = resolveSessionId({ body: hermesBody("thread-1"), connectionId: "conn1", scope: "kiro" });
-    const b = resolveSessionId({ body: hermesBody("thread-1"), connectionId: "conn2", scope: "kiro" });
+    const a = resolveSessionId({ body: hermesBody(THREAD_1), connectionId: "conn1", scope: "kiro" });
+    const b = resolveSessionId({ body: hermesBody(THREAD_1), connectionId: "conn2", scope: "kiro" });
     expect(a).not.toBe(b);
   });
 
   it("does not use Hermes payload parsing outside Kiro scope", () => {
-    const a = resolveSessionId({ body: hermesBody("thread-1"), connectionId: "conn1", scope: "codex" });
+    const a = resolveSessionId({ body: hermesBody(THREAD_1), connectionId: "conn1", scope: "codex" });
     expect(a).not.toMatch(/^hermes:/);
   });
 
@@ -194,11 +285,11 @@ describe("resolveSessionId", () => {
 
   it("does not infer Hermes sessions unless the env gate is enabled", () => {
     process.env.NINE_ROUTER_KIRO_HERMES_PAYLOAD_SESSION = "0";
-    expect(resolveSessionId({ body: hermesBody("thread-1"), connectionId: "conn1", scope: "kiro" })).not.toMatch(/^hermes:/);
+    expect(resolveSessionId({ body: hermesBody(THREAD_1), connectionId: "conn1", scope: "kiro" })).not.toMatch(/^hermes:/);
   });
 
   it("does not infer Hermes sessions without a connection scope", () => {
-    expect(resolveSessionId({ body: hermesBody("thread-1"), scope: "kiro" })).not.toMatch(/^hermes:/);
+    expect(resolveSessionId({ body: hermesBody(THREAD_1), scope: "kiro" })).not.toMatch(/^hermes:/);
   });
 
   it("uses fresh Kiro sessions for unrelated headerless requests on the same connection", () => {
@@ -225,6 +316,17 @@ describe("resolveContinuationId", () => {
     const a = resolveContinuationId({ sessionId: "kiro-session-1", connectionId: "conn1", scope: "kiro" });
     const b = resolveContinuationId({ sessionId: "kiro-session-2", connectionId: "conn1", scope: "kiro" });
     expect(a).not.toBe(b);
+  });
+
+  it("does not evict a recently used continuation id when the store exceeds its cap", () => {
+    const first = resolveContinuationId({ sessionId: "kiro-session-0", connectionId: "conn1", scope: "kiro" });
+    for (let i = 1; i < 5000; i++) {
+      resolveContinuationId({ sessionId: `kiro-session-${i}`, connectionId: "conn1", scope: "kiro" });
+    }
+    expect(resolveContinuationId({ sessionId: "kiro-session-0", connectionId: "conn1", scope: "kiro" })).toBe(first);
+    resolveContinuationId({ sessionId: "kiro-session-5000", connectionId: "conn1", scope: "kiro" });
+
+    expect(resolveContinuationId({ sessionId: "kiro-session-0", connectionId: "conn1", scope: "kiro" })).toBe(first);
   });
 
   it("evicts old continuation ids when the store exceeds its cap", () => {

@@ -199,4 +199,14 @@ describe("Kiro usage pass-through", () => {
     expect(usage.prompt_tokens).toBeUndefined();
     expect(filterUsageForFormat(usage, "openai").kiro_credits).toBeUndefined();
   });
+
+  it("keeps prompt-only OpenAI usage complete while credit-only Kiro usage stays tokenless", () => {
+    const promptOnly = extractUsage({ usage: { prompt_tokens: 123 } });
+    expect(promptOnly.prompt_tokens).toBe(123);
+    expect(promptOnly.completion_tokens).toBe(0);
+
+    const creditOnly = extractUsage({ usage: { kiro_credits: 0.001, kiro_credit_unit: "credit" } });
+    expect(creditOnly.kiro_credits).toBe(0.001);
+    expect(creditOnly.completion_tokens).toBeUndefined();
+  });
 });

@@ -107,7 +107,10 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   // Kiro's GenerateAssistantResponse request does not accept the generic top-level
   // `thinking` field; its translators map thinking intent to KAS-compatible
   // systemPrompt/additionalModelRequestFields instead.
-  if (targetFormat !== FORMATS.KIRO) {
+  const kiroThinkingMappedByTranslator =
+    targetFormat === FORMATS.KIRO &&
+    (sourceFormat === FORMATS.OPENAI || sourceFormat === FORMATS.CLAUDE);
+  if (!kiroThinkingMappedByTranslator) {
     applyThinking(targetFormat, model, result, provider, thinkingIntent);
   }
 
