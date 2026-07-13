@@ -189,8 +189,7 @@ export function trackPendingRequest(model, provider, connectionId, started, erro
     lastErrorProvider.ts = Date.now();
   }
 
-  const t = new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  console.log(`[${t}] [PENDING] ${started ? "START" : "END"}${error ? " (ERROR)" : ""} | provider=${provider} | model=${model}`);
+  // [PENDING] console line removed; lifecycle is visible via "▶" and "📊 done" lines
   scheduleStatsEvent("pending");
 }
 

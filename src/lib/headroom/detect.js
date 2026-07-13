@@ -1,5 +1,20 @@
-import { execSync } from "child_process";
+import { execFileSync, execSync } from "child_process";
 import path from "path";
+
+// Extras that improve headroom compression quality. `proxy` is the base;
+// `code` adds tree-sitter AST compression; `ml` adds Kompress-v2 HF model.
+// Other `[all]` extras (image, voice, otel, reports, evals, ...) are not
+// useful for the 9router proxy use case, so we don't track them here.
+export const HEADROOM_COMPRESSION_EXTRAS = ["code", "ml"];
+
+// Marker packages that each extra pulls in. Detected from `pip list --format=json`
+// so one call can answer both the installed version and active extras.
+export const EXTRA_MARKERS = {
+  code: ["tree-sitter", "tree-sitter-language-pack"],
+  ml: ["torch", "huggingface-hub"],
+};
+
+const HEADROOM_PIP_TIMEOUT_MS = 8000;
 
 const IS_WIN = process.platform === "win32";
 const WHICH_CMD = IS_WIN ? "where" : "which";
@@ -49,8 +64,33 @@ export function findHeadroomBinary() {
 }
 
 // Find a Python interpreter >= 3.10 (headroom-ai requires it). Returns null if none.
+// `python3`, `python3.13`, `python` can point at different envs on any OS. Prefer
+// the interpreter that can also see the installed `headroom-ai` package so the
+// dashboard probes and install action operate on the same interpreter as the CLI.
+// Falls back to the first version-eligible candidate when headroom-ai is not yet
+// installed anywhere (needed for the initial install).
+// Interpreters to probe, most specific first: the python next to the headroom
+// binary (guaranteed to have headroom-ai), then full paths from EXTRA_BINS, then
+// bare names resolved via PATH.
+function pythonCandidates() {
+  const list = [];
+  const bin = findHeadroomBinary();
+  if (bin) {
+    const dir = path.dirname(bin);
+    const names = IS_WIN ? ["python.exe", "python3.exe"] : ["python3", "python3.13", "python"];
+    for (const n of names) list.push(path.join(dir, n));
+  }
+  for (const dir of EXTRA_BINS) {
+    if (!dir) continue;
+    for (const n of PYTHON_CANDIDATES) list.push(path.join(dir, IS_WIN ? `${n}.exe` : n));
+  }
+  list.push(...PYTHON_CANDIDATES);
+  return list;
+}
+
 export function findPython310() {
-  for (const candidate of PYTHON_CANDIDATES) {
+  let fallback = null;
+  for (const candidate of pythonCandidates()) {
     try {
       const ver = execSync(`${candidate} --version`, {
         stdio: ["ignore", "pipe", "ignore"],
@@ -60,14 +100,24 @@ export function findPython310() {
       const match = ver.match(/(\d+)\.(\d+)/);
       if (!match) continue;
       const [major, minor] = [parseInt(match[1], 10), parseInt(match[2], 10)];
-      if (major > MIN_VERSION[0] || (major === MIN_VERSION[0] && minor >= MIN_VERSION[1])) {
+      if (!(major > MIN_VERSION[0] || (major === MIN_VERSION[0] && minor >= MIN_VERSION[1]))) continue;
+      if (!fallback) fallback = candidate;
+      try {
+        execFileSync(candidate, ["-m", "pip", "show", "headroom-ai"], {
+          stdio: ["ignore", "pipe", "ignore"],
+          windowsHide: true,
+          timeout: HEADROOM_PIP_TIMEOUT_MS,
+          env: { ...process.env, PATH: EXTENDED_PATH },
+        });
         return candidate;
+      } catch {
+        // Keep scanning until an interpreter that sees headroom-ai is found.
       }
     } catch {
       // candidate not present, try next
     }
   }
-  return null;
+  return fallback;
 }
 
 // Probe whether a Headroom proxy is reachable at the given URL by hitting /health.
@@ -98,5 +148,45 @@ export async function getHeadroomStatus(url) {
   const installed = Boolean(path);
   const running = await probeProxyRunning(url);
   const localUrl = isLoopbackHeadroomUrl(url);
-  return { installed, path, running, python, localUrl, canStart: installed && localUrl };
+  const extrasStatus = installed ? getInstalledHeadroomExtras(python) : { installed: false, version: null, extras: { code: false, ml: false } };
+  return {
+    installed,
+    path,
+    running,
+    python,
+    localUrl,
+    canStart: installed && localUrl,
+    version: extrasStatus.version,
+    extras: extrasStatus.extras,
+  };
+}
+
+// Parse installed headroom-ai version + which compression extras are
+// actually installed (detected via marker package presence). One `pip list`
+// call is enough to answer both questions.
+//
+// Returns: { installed: bool, version: string|null, extras: { code, ml } }
+export function getInstalledHeadroomExtras(python) {
+  const py = python || findPython310();
+  if (!py) return { installed: false, version: null, extras: { code: false, ml: false } };
+  try {
+    const out = execFileSync(py, ["-m", "pip", "list", "--format=json", "--disable-pip-version-check"], {
+      stdio: ["ignore", "pipe", "ignore"],
+      windowsHide: true,
+      timeout: HEADROOM_PIP_TIMEOUT_MS,
+      env: { ...process.env, PATH: EXTENDED_PATH },
+    }).toString();
+    const packages = JSON.parse(out);
+    const names = new Set(packages.map((p) => String(p.name || "").toLowerCase()));
+    const installed = names.has("headroom-ai");
+    if (!installed) return { installed: false, version: null, extras: { code: false, ml: false } };
+    const version = packages.find((p) => p.name?.toLowerCase() === "headroom-ai")?.version || null;
+    const extras = {};
+    for (const extra of HEADROOM_COMPRESSION_EXTRAS) {
+      extras[extra] = EXTRA_MARKERS[extra].some((m) => names.has(m));
+    }
+    return { installed: true, version, extras };
+  } catch {
+    return { installed: false, version: null, extras: { code: false, ml: false } };
+  }
 }

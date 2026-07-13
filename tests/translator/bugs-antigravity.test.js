@@ -4,6 +4,8 @@ import "./registerAll.js";
 import { translateRequest, translateResponse, initState } from "../../open-sse/translator/index.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
 import { AntigravityExecutor } from "../../open-sse/executors/antigravity.js";
+import { openaiToAntigravityRequest } from "../../open-sse/translator/request/openai-to-gemini.js";
+import { ANTIGRAVITY_DEFAULT_SYSTEM } from "../../open-sse/config/appConstants.js";
 
 const AG2O = (req) =>
   translateRequest(FORMATS.ANTIGRAVITY, FORMATS.OPENAI, "m", { request: req }, true, null, null);
@@ -105,5 +107,33 @@ describe("Antigravity executor", () => {
 
     const query = out.request.tools[0].functionDeclarations[0].parameters.properties.query;
     expect(query).toEqual({ type: "string", description: "Search query" });
+  });
+
+  it("does not inject the legacy Antigravity default system prompt for Gemini-backed models", () => {
+    const out = openaiToAntigravityRequest("gemini-3.5-flash-low", {
+      messages: [
+        { role: "system", content: "USER_SYSTEM_PROMPT" },
+        { role: "user", content: "hello" },
+      ],
+    }, true, { projectId: "project-1", connectionId: "conn-1" });
+
+    const system = JSON.stringify(out.request.systemInstruction);
+    expect(system).toContain("USER_SYSTEM_PROMPT");
+    expect(system).not.toContain(ANTIGRAVITY_DEFAULT_SYSTEM);
+    expect(system).not.toContain("Please ignore the following [ignore]");
+  });
+
+  it("does not inject the legacy Antigravity default system prompt for Claude-backed models", () => {
+    const out = openaiToAntigravityRequest("claude-opus-4-6-thinking", {
+      messages: [
+        { role: "system", content: "USER_SYSTEM_PROMPT" },
+        { role: "user", content: "hello" },
+      ],
+    }, true, { projectId: "project-1", connectionId: "conn-1" });
+
+    const system = JSON.stringify(out.request.systemInstruction);
+    expect(system).toContain("USER_SYSTEM_PROMPT");
+    expect(system).not.toContain(ANTIGRAVITY_DEFAULT_SYSTEM);
+    expect(system).not.toContain("Please ignore the following [ignore]");
   });
 });

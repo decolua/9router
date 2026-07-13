@@ -1,12 +1,51 @@
+# v0.5.30 (2026-07-10)
+
+## Features
+
+- **Perplexity**: add Agent API provider (#2492)
+- **Grok CLI**: add Grok CLI / Grok Build provider with OAuth device-code flow (#2502)
+- **Featherless**: add OpenAI-compatible provider presets
+- **SearXNG**: configure endpoint via SEARXNG_URL env (#2499)
+- **Providers**: add max thinking level for gpt-5.6-sol (#2500)
+- **Headroom**: add extras detection and install UI (#2403)
+- **Headroom**: activate/uninstall extras + fix interpreter detection
+- **PXPipe**: PXPIPE token saver — multimodal prompt compression (#2465)
+- **Proxy-Pools**: auto-rotate strategy for no-auth providers (#2409)
+
+## Fixes
+
+- **Cloudflare-AI**: support accountId in bulk key import (#2449)
+- **DB**: backup on schema change, MCP child cleanup, codex models, usage providers OOM
+- **Codex**: avoid bare-email OAuth dedup (#2477)
+- **CLI**: allow staged app bundle builds (#2479)
+- **Headroom**: compress Kiro conversation state (#2488)
+- **Gemini-CLI**: raise output floor for thinking and add validated toolConfig (#2486)
+- **GitHub**: label Copilot profiles by account identity (#2498)
+- **OpenAI-to-Claude**: unwrap bare {function:{…}} tools without parent type (#2473)
+- **Translator**: clamp thinking effort max->xhigh for OpenAI format (#2466)
+- **RTK/find**: detect and group Windows backslash-style find output (#2448)
+- **Codex**: handle fast tier and capacity SSE (#2452)
+- **Volcengine-ark**: clamp Kimi max_tokens to 32768 endpoint cap
+- **Antigravity**: align provider fingerprint with IDE Desktop 2.1.1 (#2389)
+- **Pricing**: update Claude/Codex model rates and add new models
+
+## Improvements
+
+- **i18n(zh-CN)**: complete Chinese translations for all UI strings (#2436)
+- **API**: caching for tunnel and version status endpoints
+- **Perf**: faster dev startup and lighter bundle
+
 # v0.5.20 (2026-07-07)
 
 ## Features
+
 - **Thinking**: per-model thinking level picker on provider page — appends `(level)` suffix to copied model names for forced reasoning effort across all formats (openai, claude, gemini, deepseek, kimi, qwen, zai, minimax, hunyuan, step)
 - **RTK**: add JS-native git-log filter (#2423)
 - **Caveman**: add targeted upstream-aligned style rules (#2424)
 - **i18n**: add Farsi (fa) language support (#2385)
 
 ## Fixes
+
 - **Thinking**: strip `(level)` suffix from upstream `body.model` so providers no longer reject requests
 - **Translator**: preserve developer instructions in openai-responses conversion (#2434)
 - **count_tokens**: count structured Anthropic blocks (#2419)
@@ -20,12 +59,14 @@
 # v0.5.18 (2026-07-03)
 
 ## Features
+
 - **Usage**: track cached tokens + correct input/output/cache cost (#2209) — hodtien
 - **Codex**: show reset credit expiry details (#2290) — Rafli Ahmad Zulfikar
 - **NVIDIA**: add new models and capabilities — decolua
 - **ClinePass**: add provider support — sternelee
 
 ## Fixes
+
 - **Usage**: dedupe streaming request-details log entries — Qin Li
 - **Claude**: drop foreign thinking signatures in passthrough — decolua
 - Prevent non-SSE stream pipe crash and cross-IdP account overwrites (#2244) — KunN-21
@@ -42,11 +83,13 @@
 # v0.5.15 (2026-06-29)
 
 ## Features
+
 - Add Kimchi OAuth provider — Nant361
 - Refine Qwen vision/video + thinking model patterns — decolua
 - Opt-in Codex auto-ping quota keep-alive — Emirhan
 
 ## Fixes
+
 - **Responses**: handle response.done terminal events (#2142) — rifuki
 - **Headroom**: skip unsafe responses tool history (#2132) — Sutarto Jordan Chrisfivo
 - **Translator**: map mid-conversation system message to user (claude→openai) — decolua
@@ -63,6 +106,7 @@
 # v0.5.12 (2026-06-26)
 
 ## Features
+
 - Add token-saver dashboard page — decolua
 - Add bulk delete for provider connections — teddytkz
 - Resolve GitHub Copilot model catalog from upstream — caiqinzhou
@@ -71,6 +115,7 @@
 - Overhaul Blackbox provider catalog + WebUI test support — suryacagur
 
 ## Fixes
+
 - Provider thinking compatibility (DeepSeek/Gemini) — Mink Nguyen
 - Stop double-counting streaming usage at source — decolua
 - Usage logging dedupe to reduce stats churn — Mink Nguyen
@@ -237,6 +282,7 @@
 # v0.4.66 (2026-05-29)
 
 ## Features
+
 - Add new models: Claude Opus 4.8 (Claude Code), GPT 5.4 Mini (Codex)
 
 ## Fixes
@@ -375,6 +421,7 @@
 # v0.4.46 (2026-05-15)
 
 ## Breaking Changes
+
 - Tunnel public URL changed — old tunnel links no longer work, please reconnect to get the new URL
 
 # v0.4.44 (2026-05-15)

@@ -6,6 +6,33 @@ function normalizeString(value) {
   return String(value).trim();
 }
 
+// ─── Proxy pool rotation state (in-memory) ─────────────────────────
+const rotateState = new Map(); // providerId → { index }
+
+/**
+ * Pick one proxy pool ID from a list based on strategy.
+ * round-robin: cycle sequentially (in-memory, resets on restart)
+ * random:      uniform random pick
+ * none/single: return first entry
+ */
+export function pickProxyPoolId(poolIds, strategy, providerId) {
+  if (!poolIds || poolIds.length === 0) return null;
+  if (poolIds.length === 1) return poolIds[0];
+
+  if (strategy === "round-robin") {
+    const state = rotateState.get(providerId) || { index: -1 };
+    state.index = (state.index + 1) % poolIds.length;
+    rotateState.set(providerId, state);
+    return poolIds[state.index];
+  }
+
+  if (strategy === "random") {
+    return poolIds[Math.floor(Math.random() * poolIds.length)];
+  }
+
+  return poolIds[0]; // "none" or unknown
+}
+
 /**
  * Normalize legacy proxy configuration.
  */
