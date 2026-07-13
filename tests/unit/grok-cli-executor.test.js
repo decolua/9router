@@ -6,6 +6,7 @@ import {
   _resetGrokCliTurnStore,
   _getGrokCliTurnStoreSize,
   normalizeGrokCliEffort,
+  supportsGrokCliReasoningEffort,
 } from "../../open-sse/executors/grok-cli.js";
 import { getExecutor, hasSpecializedExecutor } from "../../open-sse/executors/index.js";
 import { PROVIDERS, PROVIDER_OAUTH, PROVIDER_MODELS } from "../../open-sse/providers/index.js";
@@ -206,12 +207,28 @@ describe("GrokCliExecutor", () => {
     expect(normalizeGrokCliEffort("xhigh")).toBe("xhigh");
     expect(normalizeGrokCliEffort("ultra")).toBe("high");
 
-    const out = executor.transformRequest("grok-build", {
-      model: "grok-build",
+    const out = executor.transformRequest("grok-4.5", {
+      model: "grok-4.5",
       input: "hi",
       reasoning: { effort: "max", summary: "detailed" },
     }, true, { connectionId: "effort-conn" });
     expect(out.reasoning).toEqual({ effort: "xhigh", summary: "detailed" });
+  });
+
+  it("omits reasoning effort for models that reject it", () => {
+    expect(supportsGrokCliReasoningEffort("grok-4.5")).toBe(true);
+    expect(supportsGrokCliReasoningEffort("grok-build")).toBe(false);
+    expect(supportsGrokCliReasoningEffort("grok-composer-2.5-fast")).toBe(false);
+
+    for (const model of ["grok-build", "grok-composer-2.5-fast"]) {
+      const out = executor.transformRequest(model, {
+        model,
+        input: "hi",
+        reasoning: { effort: "max" },
+      }, true, { connectionId: `effort-${model}` });
+      expect(out.reasoning).toEqual({ summary: "concise" });
+      expect(out.include).toContain("reasoning.encrypted_content");
+    }
   });
 
   it("drops stale tool_choice and normalizes converted custom choices", () => {

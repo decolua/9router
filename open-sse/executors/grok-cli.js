@@ -121,6 +121,12 @@ export function normalizeGrokCliEffort(value) {
   return "high";
 }
 
+export function supportsGrokCliReasoningEffort(model) {
+  // ponytail: unknown models omit effort until live metadata is available here;
+  // add proven model families when their backend advertises reasoning_efforts.
+  return /^grok-4\.5(?:$|-)/.test(String(model || ""));
+}
+
 export function resolveGrokCliSessionId(credentials, body) {
   // ponytail: clients without stable thread metadata share one connection session;
   // split further when their wire format exposes a durable conversation id.
@@ -385,20 +391,28 @@ export class GrokCliExecutor extends BaseExecutor {
     body.model = resolvedModel;
     this._currentModel = resolvedModel;
 
-    // Reasoning effort priority: explicit > reasoning_effort > model suffix > default high
+    // Reasoning effort priority: explicit > reasoning_effort > model suffix > default high.
+    // grok-build and Composer reject reasoningEffort but still accept summary/encrypted continuity.
+    const supportsReasoningEffort = supportsGrokCliReasoningEffort(resolvedModel);
     if (!body.reasoning || typeof body.reasoning !== "object") {
-      const effort = normalizeGrokCliEffort(body.reasoning_effort || modelEffort);
-      body.reasoning = { effort, summary: "concise" };
+      body.reasoning = { summary: "concise" };
+      if (supportsReasoningEffort) {
+        body.reasoning.effort = normalizeGrokCliEffort(body.reasoning_effort || modelEffort);
+      }
     } else {
-      body.reasoning.effort = normalizeGrokCliEffort(
-        body.reasoning.effort || body.reasoning_effort || modelEffort,
-      );
+      if (supportsReasoningEffort) {
+        body.reasoning.effort = normalizeGrokCliEffort(
+          body.reasoning.effort || body.reasoning_effort || modelEffort,
+        );
+      } else {
+        delete body.reasoning.effort;
+      }
       if (!body.reasoning.summary) body.reasoning.summary = "concise";
     }
     delete body.reasoning_effort;
 
     // Encrypted reasoning for multi-turn continuity (CLI always requests this)
-    if (body.reasoning?.effort && body.reasoning.effort !== "none") {
+    if (body.reasoning && body.reasoning.effort !== "none") {
       const include = Array.isArray(body.include) ? body.include : [];
       if (!include.includes("reasoning.encrypted_content")) {
         include.push("reasoning.encrypted_content");
