@@ -146,11 +146,23 @@ export async function withCredentialRefreshLock(provider, credentials, refreshFn
   return pending;
 }
 
-export async function refreshProviderCredentials(provider, credentials, log) {
+export async function refreshProviderCredentials(provider, credentials, log, proxyOptions = null) {
   if (!credentials) return null;
+  const psd = credentials.providerSpecificData || {};
+  const effectiveProxyOptions = proxyOptions || (
+    psd.connectionProxyEnabled || psd.vercelRelayUrl
+      ? {
+          connectionProxyEnabled: psd.connectionProxyEnabled === true,
+          connectionProxyUrl: psd.connectionProxyUrl || "",
+          connectionNoProxy: psd.connectionNoProxy || "",
+          vercelRelayUrl: psd.vercelRelayUrl || "",
+          strictProxy: psd.strictProxy === true,
+        }
+      : null
+  );
 
   return withCredentialRefreshLock(provider, credentials, async () => {
-    const refreshed = await refreshTokenByProvider(provider, credentials, log);
+    const refreshed = await refreshTokenByProvider(provider, credentials, log, effectiveProxyOptions);
     return mergeRefreshedCredentials(provider, credentials, refreshed);
   });
 }

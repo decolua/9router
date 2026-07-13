@@ -6,6 +6,11 @@
 // Ensure outbound fetch respects HTTP(S)_PROXY/ALL_PROXY in Node runtime
 import "open-sse/index.js";
 import crypto from "crypto";
+import {
+  GROK_CLI_CLIENT_IDENTIFIER,
+  GROK_CLI_USER_AGENT,
+  GROK_CLI_VERSION,
+} from "open-sse/config/grokCli.js";
 
 import { generatePKCE, generateState } from "./utils/pkce";
 import {
@@ -274,7 +279,7 @@ const PROVIDERS = {
   "grok-cli": {
     config: GROK_CLI_CONFIG,
     flowType: "device_code",
-    requestDeviceCode: async (config) => {
+    requestDeviceCode: async (config, _codeChallenge, _options, proxyOptions) => {
       const body = new URLSearchParams({
         client_id: config.clientId,
         scope: config.scope,
@@ -287,9 +292,10 @@ const PROVIDERS = {
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
           Accept: "application/json",
-          "User-Agent": "grok-pager/0.2.93 grok-shell/0.2.93 (linux; x86_64)",
+          "User-Agent": GROK_CLI_USER_AGENT,
         },
         body,
+        proxyOptions,
       });
 
       if (!response.ok) {
@@ -299,19 +305,20 @@ const PROVIDERS = {
 
       return await response.json();
     },
-    pollToken: async (config, deviceCode) => {
+    pollToken: async (config, deviceCode, _codeVerifier, _extraData, proxyOptions) => {
       const response = await fetch(config.tokenUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
           Accept: "application/json",
-          "User-Agent": "grok-pager/0.2.93 grok-shell/0.2.93 (linux; x86_64)",
+          "User-Agent": GROK_CLI_USER_AGENT,
         },
         body: new URLSearchParams({
           grant_type: "urn:ietf:params:oauth:grant-type:device_code",
           device_code: deviceCode,
           client_id: config.clientId,
         }),
+        proxyOptions,
       });
 
       let data;
@@ -331,17 +338,20 @@ const PROVIDERS = {
         data,
       };
     },
-    postExchange: async (tokens) => {
+    postExchange: async (tokens, proxyOptions) => {
       // Best-effort user profile from cli-chat-proxy (non-fatal)
       try {
         const res = await fetch("https://cli-chat-proxy.grok.com/v1/user", {
           headers: {
             Authorization: `Bearer ${tokens.access_token}`,
             Accept: "application/json",
-            "User-Agent": "grok-pager/0.2.93 grok-shell/0.2.93 (linux; x86_64)",
+            "User-Agent": GROK_CLI_USER_AGENT,
             "x-xai-token-auth": "xai-grok-cli",
-            "x-grok-client-version": "0.2.93",
+            "x-grok-client-version": GROK_CLI_VERSION,
+            "x-grok-client-identifier": GROK_CLI_CLIENT_IDENTIFIER,
+            "x-grok-client-mode": "headless",
           },
+          proxyOptions,
         });
         if (res.ok) return { user: await res.json() };
       } catch {

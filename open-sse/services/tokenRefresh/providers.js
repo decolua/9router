@@ -5,7 +5,7 @@ import { dedupRefresh } from "./dedup.js";
 import { buildExternalIdpRefreshParams } from "../../../src/lib/oauth/kiroExternalIdp.js";
 
 let _xaiServiceSingleton = null;
-export async function refreshXaiToken(refreshToken, log) {
+export async function refreshXaiToken(refreshToken, log, proxyOptions = null) {
   if (!refreshToken) return null;
   return dedupRefresh("xai", refreshToken, async () => {
     try {
@@ -13,7 +13,7 @@ export async function refreshXaiToken(refreshToken, log) {
         const mod = await import("../../../src/lib/oauth/services/xai.js");
         _xaiServiceSingleton = new mod.XaiService();
       }
-      const tokens = await _xaiServiceSingleton.refreshAccessToken(refreshToken);
+      const tokens = await _xaiServiceSingleton.refreshAccessToken(refreshToken, proxyOptions);
       return {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token || refreshToken,
@@ -31,7 +31,7 @@ export async function refreshXaiToken(refreshToken, log) {
   }, log);
 }
 
-export async function refreshAccessToken(provider, refreshToken, credentials, log) {
+export async function refreshAccessToken(provider, refreshToken, credentials, log, proxyOptions = null) {
   const config = PROVIDERS[provider];
 
   if (!config || !config.refreshUrl) {
@@ -58,6 +58,7 @@ export async function refreshAccessToken(provider, refreshToken, credentials, lo
         client_id: config.clientId,
         client_secret: config.clientSecret,
       }),
+      proxyOptions,
     });
 
     if (!response.ok) {

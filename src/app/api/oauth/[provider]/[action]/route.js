@@ -329,7 +329,7 @@ export async function POST(request, { params }) {
       }
 
       // Providers that don't use PKCE for device code
-      const noPkceProviders = ["github", "kimi", "kimi-coding", "kilocode", "codebuddy-cn"];
+      const noPkceProviders = ["github", "kimi", "kimi-coding", "kilocode", "codebuddy-cn", "grok-cli"];
       const proxyOptions = await proxyOptionsForPool(proxyPoolId);
       let result;
       if (noPkceProviders.includes(provider)) {
