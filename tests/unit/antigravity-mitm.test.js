@@ -5,6 +5,11 @@ import { MITM_TOOLS } from "../../src/shared/constants/cliTools.js";
 // config.js is the CJS MITM bundle module (dependency-isolated for the runtime copy).
 const require = createRequire(import.meta.url);
 const { MODEL_NO_MAP } = require("../../src/mitm/config.js");
+const {
+  normalizeAliasMappings,
+  hasInvalidReasoningEffort,
+} = require("../../src/mitm/aliasConfig.js");
+const { applyRequestOverrides } = require("../../src/mitm/handlers/antigravity.js");
 
 // All assertions below are grounded in a live MITM dump capture of Antigravity's
 // streamGenerateContent requests (see AI_JOURNAL): the agent loop sends
@@ -36,5 +41,62 @@ describe("Antigravity MITM model handling", () => {
     for (const id of ["gemini-3.5-flash-low", "gemini-3-flash-agent", "claude-sonnet-4-6"]) {
       expect((MODEL_NO_MAP.antigravity || []).some((re) => re.test(id))).toBe(false);
     }
+  });
+});
+
+describe("Antigravity MITM alias configuration", () => {
+  it("normalizes legacy string mappings without a migration", () => {
+    expect(normalizeAliasMappings({ flash: " cx/gpt-5.6-sol " })).toEqual({
+      flash: { model: "cx/gpt-5.6-sol" },
+    });
+  });
+
+  it("keeps a reasoning-only override and canonicalizes its value", () => {
+    expect(normalizeAliasMappings({ flash: { reasoningEffort: " HIGH " } })).toEqual({
+      flash: { reasoningEffort: "high" },
+    });
+  });
+
+  it("detects unsupported reasoning effort values", () => {
+    expect(hasInvalidReasoningEffort({ flash: { model: "p/m", reasoningEffort: "extreme" } })).toBe(true);
+    expect(hasInvalidReasoningEffort({ flash: { model: "p/m", reasoningEffort: "xhigh" } })).toBe(false);
+  });
+});
+
+describe("Antigravity MITM request overrides", () => {
+  it("overrides model and conflicting native thinking intent", () => {
+    const body = {
+      model: "gemini-3-flash-agent",
+      thinkingConfig: { thinkingBudget: 512 },
+      generationConfig: { thinkingConfig: { thinkingBudget: 1024 } },
+      request: { generationConfig: { thinkingConfig: { thinkingBudget: 8192 } } },
+    };
+
+    expect(applyRequestOverrides(body, { model: "cx/gpt-5.6-sol", reasoningEffort: "high" })).toEqual({
+      model: "cx/gpt-5.6-sol",
+      reasoning_effort: "high",
+      generationConfig: {},
+      request: { generationConfig: {} },
+    });
+  });
+
+  it("preserves native reasoning intent when effort is Default", () => {
+    const body = {
+      model: "gemini-3-flash-agent",
+      request: { generationConfig: { thinkingConfig: { thinkingBudget: 8192 } } },
+    };
+
+    expect(applyRequestOverrides(body, { model: "cx/gpt-5.6-sol" })).toEqual({
+      model: "cx/gpt-5.6-sol",
+      request: { generationConfig: { thinkingConfig: { thinkingBudget: 8192 } } },
+    });
+  });
+
+  it("can override reasoning without changing the source model", () => {
+    const body = { model: "gemini-3-flash-agent", request: {} };
+    expect(applyRequestOverrides(body, { reasoningEffort: "none" })).toMatchObject({
+      model: "gemini-3-flash-agent",
+      reasoning_effort: "none",
+    });
   });
 });

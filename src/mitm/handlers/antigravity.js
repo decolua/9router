@@ -2,17 +2,27 @@ const { err, createResponseDumper } = require("../logger");
 const { IS_DEV } = require("../config");
 const { fetchRouter, pipeSSE } = require("./base");
 
+function applyRequestOverrides(body, override = {}) {
+  if (override.model) body.model = override.model;
+  if (override.reasoningEffort) {
+    body.reasoning_effort = override.reasoningEffort;
+    delete body.thinkingConfig;
+    if (body.generationConfig) delete body.generationConfig.thinkingConfig;
+    if (body.request?.generationConfig) delete body.request.generationConfig.thinkingConfig;
+  }
+  return body;
+}
+
 /**
  * Intercept Antigravity request — forward Gemini body as-is to /v1/chat/completions.
  * Router auto-detects format via body.userAgent==="antigravity" + body.request.contents,
  * runs antigravity→openai→provider→openai→antigravity translators internally.
  */
-async function intercept(req, res, bodyBuffer, mappedModel) {
+async function intercept(req, res, bodyBuffer, override) {
   const dumper = IS_DEV ? createResponseDumper(req, "intercept-antigravity") : null;
   const isStream = req.url.includes(":streamGenerateContent");
   try {
-    const body = JSON.parse(bodyBuffer.toString());
-    if (body.model) body.model = mappedModel;
+    const body = applyRequestOverrides(JSON.parse(bodyBuffer.toString()), override);
 
     const routerRes = await fetchRouter(body, "/v1/chat/completions", req.headers);
     await pipeSSE(routerRes, res, dumper);
@@ -30,4 +40,4 @@ async function intercept(req, res, bodyBuffer, mappedModel) {
   }
 }
 
-module.exports = { intercept };
+module.exports = { intercept, applyRequestOverrides };

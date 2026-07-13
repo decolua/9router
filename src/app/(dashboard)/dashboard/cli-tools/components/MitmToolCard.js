@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Card, Button, Badge, Input, ModelSelectModal } from "@/shared/components";
 import { TOOL_HOSTS } from "@/shared/constants/mitmToolHosts";
 import Image from "next/image";
+import MitmModelMappingRow from "./MitmModelMappingRow";
 
 /**
  * Per-tool MITM card — shows DNS status + model mappings.
@@ -41,18 +42,16 @@ export default function MitmToolCard({
   const canRunWithoutPassword = isWin || hasCachedPassword || needsSudoPassword === false;
 
   useEffect(() => {
-    if (isExpanded) loadSavedMappings();
-  }, [isExpanded]);
-
-  const loadSavedMappings = async () => {
-    try {
-      const res = await fetch(`/api/cli-tools/antigravity-mitm/alias?tool=${tool.id}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (Object.keys(data.aliases || {}).length > 0) setModelMappings(data.aliases);
-      }
-    } catch { /* ignore */ }
-  };
+    if (!isExpanded) return;
+    let cancelled = false;
+    fetch(`/api/cli-tools/antigravity-mitm/alias?tool=${tool.id}`)
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (!cancelled && data) setModelMappings(data.aliases || {});
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [isExpanded, tool.id]);
 
   const saveMappings = useCallback(async (mappings) => {
     try {
@@ -64,12 +63,19 @@ export default function MitmToolCard({
     } catch { /* ignore */ }
   }, [tool.id]);
 
-  const handleMappingBlur = (alias, value) => {
-    saveMappings({ ...modelMappings, [alias]: value });
+  const getMappingEntry = (alias) => modelMappings[alias] || {};
+
+  const updateMapping = (alias, patch, shouldSave = false) => {
+    const updatedEntry = { ...getMappingEntry(alias), ...patch };
+    const updated = { ...modelMappings };
+    if (updatedEntry.model || updatedEntry.reasoningEffort) updated[alias] = updatedEntry;
+    else delete updated[alias];
+    setModelMappings(updated);
+    if (shouldSave) saveMappings(updated);
   };
 
-  const handleModelMappingChange = (alias, value) => {
-    setModelMappings(prev => ({ ...prev, [alias]: value }));
+  const handleMappingBlur = (alias, value) => {
+    updateMapping(alias, { model: value.trim() }, true);
   };
 
   const openModelSelector = (alias) => {
@@ -79,9 +85,7 @@ export default function MitmToolCard({
 
   const handleModelSelect = (model) => {
     if (!currentEditingAlias || model.isPlaceholder) return;
-    const updated = { ...modelMappings, [currentEditingAlias]: model.value };
-    setModelMappings(updated);
-    saveMappings(updated);
+    updateMapping(currentEditingAlias, { model: model.value }, true);
   };
 
   const handleDnsToggle = () => {
@@ -192,41 +196,28 @@ export default function MitmToolCard({
             {/* Model Mappings */}
             {tool.defaultModels?.length > 0 && (
               <div className="flex flex-col gap-2">
-                {tool.defaultModels.map((model) => (
-                  <div key={model.alias} className="grid grid-cols-1 gap-1.5 sm:grid-cols-[9rem_auto_1fr_auto] sm:items-center sm:gap-2">
-                    <span className="text-xs font-semibold text-text-main sm:text-right">{model.name}</span>
-                    <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
-                    <div className="relative w-full min-w-0">
-                      <input
-                        type="text"
-                        value={modelMappings[model.alias] || ""}
-                        onChange={(e) => handleModelMappingChange(model.alias, e.target.value)}
-                        onBlur={(e) => handleMappingBlur(model.alias, e.target.value)}
-                        placeholder="provider/model-id"
-                        disabled={!dnsActive}
-                        className={`w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5 ${!dnsActive ? "opacity-50 cursor-not-allowed" : ""}`}
-                      />
-                      {modelMappings[model.alias] && (
-                        <button
-                          onClick={() => {
-                            handleModelMappingChange(model.alias, "");
-                            saveMappings({ ...modelMappings, [model.alias]: "" });
-                          }}
-                          className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-red-500 rounded transition-colors"
-                          title="Clear"
-                        >
-                          <span className="material-symbols-outlined text-[14px]">close</span>
-                        </button>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => openModelSelector(model.alias)}
-                      disabled={!hasActiveProviders || !dnsActive}
-                      className={`rounded border px-2 py-2 text-xs transition-colors sm:py-1.5 ${hasActiveProviders && dnsActive ? "bg-surface border-border hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}
-                    >
-                      Select
-                    </button>
+                {tool.id === "antigravity" && (
+                  <div className="hidden grid-cols-[9rem_minmax(12rem,1fr)_8rem_auto] gap-2 px-2.5 text-[10px] font-medium uppercase tracking-wide text-text-muted sm:grid">
+                    <span />
+                    <span>Destination model</span>
+                    <span>Reasoning</span>
+                    <span />
                   </div>
+                )}
+                {tool.defaultModels.map((model) => (
+                  <MitmModelMappingRow
+                    key={model.alias}
+                    model={model}
+                    entry={getMappingEntry(model.alias)}
+                    disabled={!dnsActive}
+                    canSelectModel={hasActiveProviders}
+                    showReasoning={tool.id === "antigravity"}
+                    onModelChange={(value) => updateMapping(model.alias, { model: value })}
+                    onModelBlur={(value) => handleMappingBlur(model.alias, value)}
+                    onModelClear={() => updateMapping(model.alias, { model: "" }, true)}
+                    onModelSelect={() => openModelSelector(model.alias)}
+                    onReasoningChange={(value) => updateMapping(model.alias, { reasoningEffort: value }, true)}
+                  />
                 ))}
               </div>
             )}
@@ -308,7 +299,7 @@ export default function MitmToolCard({
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
         onSelect={handleModelSelect}
-        selectedModel={currentEditingAlias ? modelMappings[currentEditingAlias] : null}
+        selectedModel={currentEditingAlias ? getMappingEntry(currentEditingAlias).model || null : null}
         activeProviders={activeProviders}
         modelAliases={modelAliases}
         title={`Select model for ${currentEditingAlias}`}
