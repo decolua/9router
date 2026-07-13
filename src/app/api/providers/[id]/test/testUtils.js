@@ -126,6 +126,16 @@ const OAUTH_TEST_CONFIG = {
       402: "Connected, but Grok Build credits are exhausted (spending limit). Add credits or upgrade SuperGrok.",
     },
   },
+  xai: {
+    url: PROVIDERS.xai?.validateUrl || "https://api.x.ai/v1/models",
+    method: "GET",
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    refreshable: true,
+    // xAI reports an expired/revoked OAuth token as 403 instead of 401.
+    refreshOn403BadCredentials: true,
+    errorFromBody: true,
+  },
 };
 
 /**
@@ -140,7 +150,12 @@ export function classifyOAuthProbeResult(res, config, bodyText = "") {
   const accepted = res.ok || (config?.acceptStatuses && config.acceptStatuses.includes(status));
   if (!accepted) {
     if (status === 401) return { valid: false, error: "Token invalid or revoked", soft: false };
-    if (status === 403) return { valid: false, error: "Access denied", soft: false };
+    if (status === 403) {
+      const error = config?.errorFromBody
+        ? parseProviderErrorMessage(bodyText, "Access denied")
+        : "Access denied";
+      return { valid: false, error, soft: false };
+    }
     return { valid: false, error: `API returned ${status}`, soft: false };
   }
 
@@ -156,6 +171,12 @@ export function classifyOAuthProbeResult(res, config, bodyText = "") {
   }
 
   return { valid: true, error: null, soft: false };
+}
+
+export function isOAuthAuthenticationFailure(res, config, bodyText = "") {
+  if (res?.status === 401) return true;
+  if (res?.status !== 403 || !config?.refreshOn403BadCredentials) return false;
+  return /bad[-_ ]credentials|invalid[_ ]?token|token could not be validated/i.test(bodyText);
 }
 
 async function probeClineAccessToken(accessToken) {
@@ -334,8 +355,15 @@ function isTokenExpired(connection) {
 }
 
 async function testOAuthConnection(connection, effectiveProxy = null) {
-  const config = OAUTH_TEST_CONFIG[connection.provider];
-  if (!config) return { valid: false, error: "Provider test not supported", refreshed: false };
+  const registryValidateUrl = PROVIDERS[connection.provider]?.validateUrl;
+  const config = OAUTH_TEST_CONFIG[connection.provider] || (registryValidateUrl
+    ? {
+        url: registryValidateUrl,
+        method: "GET",
+        authHeader: "Authorization",
+        authPrefix: "Bearer ",
+      }
+    : { checkExpiry: true });
   if (!connection.accessToken) return { valid: false, error: "No access token", refreshed: false };
 
   // Cursor uses protobuf API - can only verify token exists, not test endpoint
@@ -429,7 +457,7 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
       };
     }
 
-    if (res.status === 401 && config.refreshable && !refreshed && connection.refreshToken) {
+    if (isOAuthAuthenticationFailure(res, config, bodyText) && config.refreshable && !refreshed && connection.refreshToken) {
       const tokens = await refreshOAuthToken(connection);
       if (tokens) {
         const retryUrl = config.buildUrl ? config.buildUrl(tokens.accessToken) : testUrl;
@@ -781,8 +809,23 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
-      default:
-        return { valid: false, error: "Provider test not supported" };
+      default: {
+        const validateUrl = PROVIDERS[connection.provider]?.validateUrl;
+        if (validateUrl) {
+          const res = await fetchWithConnectionProxy(validateUrl, {
+            headers: { Authorization: `Bearer ${connection.apiKey}` },
+          }, effectiveProxy);
+          return { valid: res.ok, error: res.ok ? null : `API returned ${res.status}` };
+        }
+
+        // Providers without a lightweight validation endpoint are verified by
+        // the per-auth Test Chat action. Do not report an unsupported feature.
+        const valid = typeof connection.apiKey === "string" && connection.apiKey.trim().length > 0;
+        return {
+          valid,
+          error: valid ? null : "Missing API key or cookie",
+        };
+      }
     }
   } catch (err) {
     return { valid: false, error: err.message };

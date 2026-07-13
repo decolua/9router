@@ -81,8 +81,10 @@ export default function ProviderDetailPage() {
   const [connectionStatusFilter, setConnectionStatusFilter] = useState("all");
   const [chatTestModel, setChatTestModel] = useState("");
   const [chatTestConnection, setChatTestConnection] = useState(null);
+  const [chatTestDiscoveredModels, setChatTestDiscoveredModels] = useState([]);
   const [chatTestRunning, setChatTestRunning] = useState(false);
   const [chatTestResult, setChatTestResult] = useState(null);
+  const chatTestDiscoveryRef = useRef(0);
   const { copied, copy } = useCopyToClipboard();
 
   const AG_RISK_STORAGE_KEY = "ag_risk_confirmed";
@@ -190,11 +192,20 @@ export default function ProviderDetailPage() {
     ? (providerNode?.prefix || providerId)
     : providerAlias;
 
-  const llmModels = models.filter((model) => {
+  const chatTestModels = [
+    ...models,
+    ...kiloFreeModels,
+    ...chatTestDiscoveredModels,
+    ...customModels
+      .filter((model) => model.providerAlias === providerStorageAlias)
+      .map((model) => ({ id: model.id, name: model.name || model.id, kind: model.kind || model.type })),
+  ].filter((model, index, all) => {
     const kind = getModelKind(model);
-    return (!kind || kind === "llm") && !disabledModelIds.includes(model.id);
+    return (!kind || kind === "llm")
+      && !disabledModelIds.includes(model.id)
+      && all.findIndex((item) => item.id === model.id) === index;
   });
-  const effectiveChatTestModel = chatTestModel || llmModels[0]?.id || "";
+  const effectiveChatTestModel = chatTestModel || chatTestModels[0]?.id || "";
   const activeConnectionsCount = connections.filter((connection) => connection.isActive !== false).length;
 
   const filteredConnections = connections.filter((connection) => {
@@ -210,7 +221,7 @@ export default function ProviderDetailPage() {
   });
 
   const handleTestChat = async () => {
-    if (!effectiveChatTestModel || !chatTestConnection?.id || chatTestRunning) return;
+    if (!chatTestConnection?.id || chatTestRunning) return;
     setChatTestRunning(true);
     setChatTestResult(null);
 
@@ -229,8 +240,8 @@ export default function ProviderDetailPage() {
         content: data ? JSON.stringify(data, null, 2) : `HTTP ${response.status}`,
       };
       setChatTestResult(result);
-      if (response.ok) console.log("[Kiro chat test]", chatTestConnection.id, data);
-      else console.error("[Kiro chat test error]", chatTestConnection.id, data);
+      if (response.ok) console.log("[Provider chat test]", chatTestConnection.id, data);
+      else console.error("[Provider chat test error]", chatTestConnection.id, data);
       if (response.status === 403 && JSON.stringify(data || {}).includes("TEMPORARILY_SUSPENDED")) {
         await fetchConnections();
       }
@@ -241,16 +252,33 @@ export default function ProviderDetailPage() {
         content: error.message || "Network error",
       };
       setChatTestResult(result);
-      console.error("[Kiro chat test error]", chatTestConnection.id, error);
+      console.error("[Provider chat test error]", chatTestConnection.id, error);
     } finally {
       setChatTestRunning(false);
     }
   };
 
-  const openChatTest = (connection) => {
+  const openChatTest = async (connection) => {
+    const discoveryId = ++chatTestDiscoveryRef.current;
     setChatTestConnection(connection);
     setChatTestModel("");
+    setChatTestDiscoveredModels([]);
     setChatTestResult(null);
+
+    try {
+      const response = await fetch(`/api/providers/${connection.id}/models`, { cache: "no-store" });
+      const data = await response.json().catch(() => null);
+      if (chatTestDiscoveryRef.current !== discoveryId || !response.ok || !Array.isArray(data?.models)) return;
+      setChatTestDiscoveredModels(data.models
+        .map((model) => ({
+          id: model?.id || model?.model || model?.name,
+          name: model?.name || model?.id || model?.model,
+          kind: model?.kind || model?.type,
+        }))
+        .filter((model) => model.id));
+    } catch {
+      // The registry/default model remains available when live model discovery fails.
+    }
   };
 
   const fetchDisabledModels = useCallback(async () => {
@@ -1029,7 +1057,7 @@ export default function ProviderDetailPage() {
                   setSelectedConnection(conn);
                   setShowEditModal(true);
                 }}
-                onTestChat={providerId === "kiro" ? () => openChatTest(conn) : null}
+                onTestChat={() => openChatTest(conn)}
                 onDelete={() => handleDelete(conn.id)}
                 oneByOneStatus={oneByOneResults[conn.id] || null}
               />
@@ -1745,6 +1773,7 @@ export default function ProviderDetailPage() {
         isOpen={!!chatTestConnection}
         onClose={() => {
           if (chatTestRunning) return;
+          chatTestDiscoveryRef.current += 1;
           setChatTestConnection(null);
           setChatTestResult(null);
         }}
@@ -1759,24 +1788,30 @@ export default function ProviderDetailPage() {
           </div>
           <label className="flex flex-col gap-1.5">
             <span className="text-xs font-medium text-text-muted">Model</span>
-            <select
-              value={effectiveChatTestModel}
-              onChange={(event) => {
-                setChatTestModel(event.target.value);
-                setChatTestResult(null);
-              }}
-              className="h-10 rounded-lg border border-border bg-background px-3 text-sm focus:border-primary focus:outline-none"
-            >
-              {llmModels.map((model) => (
-                <option key={model.id} value={model.id}>{model.name || model.id}</option>
-              ))}
-            </select>
+            {chatTestModels.length > 0 ? (
+              <select
+                value={effectiveChatTestModel}
+                onChange={(event) => {
+                  setChatTestModel(event.target.value);
+                  setChatTestResult(null);
+                }}
+                className="h-10 rounded-lg border border-border bg-background px-3 text-sm focus:border-primary focus:outline-none"
+              >
+                {chatTestModels.map((model) => (
+                  <option key={model.id} value={model.id}>{model.name || model.id}</option>
+                ))}
+              </select>
+            ) : (
+              <div className="flex h-10 items-center rounded-lg border border-border bg-black/[0.02] px-3 text-sm text-text-muted dark:bg-white/[0.03]">
+                Automatic provider default
+              </div>
+            )}
           </label>
           <p className="text-xs text-text-muted">Prompt: <code className="rounded bg-black/5 px-1.5 py-0.5 dark:bg-white/5">hi</code></p>
           <Button
             icon="send"
             onClick={handleTestChat}
-            disabled={chatTestRunning || !effectiveChatTestModel}
+            disabled={chatTestRunning}
             fullWidth
           >
             {chatTestRunning ? "Testing..." : "Run Test"}

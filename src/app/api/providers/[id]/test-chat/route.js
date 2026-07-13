@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { getProviderConnectionById } from "@/lib/db/index.js";
+import { getProviderConnectionById, getProviderNodeById, getCustomModels } from "@/lib/db/index.js";
 import { handleChat } from "@/sse/handlers/chat.js";
 import { initTranslators } from "open-sse/translator/index.js";
+import { getDefaultModel, PROVIDER_ID_TO_ALIAS } from "open-sse/config/providerModels.js";
 
 let initialized = false;
 
@@ -17,17 +18,26 @@ export async function POST(request, { params }) {
   try {
     const { id } = await params;
     const connection = await getProviderConnectionById(id);
-    if (!connection || connection.provider !== "kiro") {
-      return NextResponse.json({ error: { message: "Kiro auth not found" } }, { status: 404 });
+    if (!connection) {
+      return NextResponse.json({ error: { message: "Connection not found" } }, { status: 404 });
     }
     if (connection.isActive === false) {
-      return NextResponse.json({ error: { message: "Kiro auth is disabled" } }, { status: 409 });
+      return NextResponse.json({ error: { message: "Connection is disabled" } }, { status: 409 });
     }
 
     const payload = await request.json().catch(() => ({}));
-    const model = typeof payload.model === "string" ? payload.model.trim() : "";
+    const providerNode = await getProviderNodeById(connection.provider);
+    const providerAlias = providerNode?.prefix || PROVIDER_ID_TO_ALIAS[connection.provider] || connection.provider;
+    const customModels = await getCustomModels();
+    const fallbackCustomModel = customModels.find((item) =>
+      item.providerAlias === providerAlias && (item.kind || item.type || "llm") === "llm"
+    )?.id;
+    const model = (typeof payload.model === "string" ? payload.model.trim() : "")
+      || getDefaultModel(providerAlias)
+      || fallbackCustomModel
+      || "";
     if (!model) {
-      return NextResponse.json({ error: { message: "Model is required" } }, { status: 400 });
+      return NextResponse.json({ error: { message: "No chat model is configured for this provider" } }, { status: 400 });
     }
 
     await ensureInitialized();
@@ -39,7 +49,7 @@ export async function POST(request, { params }) {
       method: "POST",
       headers,
       body: JSON.stringify({
-        model: `kiro/${model}`,
+        model: `${providerAlias}/${model}`,
         messages: [{ role: "user", content: "hi" }],
         stream: false,
       }),
@@ -50,7 +60,7 @@ export async function POST(request, { params }) {
       skipApiKeyValidation: true,
     });
   } catch (error) {
-    console.error("Kiro chat test failed:", error);
+    console.error("Provider chat test failed:", error);
     return NextResponse.json({ error: { message: error.message || "Chat test failed" } }, { status: 500 });
   }
 }
