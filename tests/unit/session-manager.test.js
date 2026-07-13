@@ -26,6 +26,10 @@ const hermesBody = (threadId, user = "first prompt") => ({
     { role: "user", content: user },
   ],
 });
+const hermesClaudeBody = (threadId, user = "first prompt") => ({
+  system: hermesSystem(threadId),
+  messages: [{ role: "user", content: user }],
+});
 
 beforeEach(() => clearSessionStore());
 
@@ -86,6 +90,24 @@ describe("resolveSessionId", () => {
       body: {
         messages: [
           ...hermesBody("thread-1").messages,
+          { role: "assistant", content: "assistant reply".repeat(10) },
+          { role: "user", content: "follow up" },
+        ],
+      },
+      connectionId: "conn1",
+      scope: "kiro",
+    });
+    expect(first).toBe(second);
+    expect(first).toMatch(/^hermes:/);
+  });
+
+  it("derives a stable Kiro session from Claude top-level Hermes system context", () => {
+    const first = resolveSessionId({ body: hermesClaudeBody("thread-1"), connectionId: "conn1", scope: "kiro" });
+    const second = resolveSessionId({
+      body: {
+        system: hermesSystem("thread-1"),
+        messages: [
+          { role: "user", content: "first prompt" },
           { role: "assistant", content: "assistant reply".repeat(10) },
           { role: "user", content: "follow up" },
         ],

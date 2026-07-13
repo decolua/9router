@@ -210,9 +210,14 @@ function extractHermesPayloadSession(body, scope, connectionId) {
     const messages = requestMessages(body);
     if (!messages.length) return null;
     let contextLines = [];
+    const systemTexts = [];
+    if (body?.system) systemTexts.push(messageContentText(body.system));
     for (const item of messages) {
         if (item?.role !== "system" && item?.role !== "developer") continue;
-        contextLines = stableHermesContextLines(messageContentText(item.content));
+        systemTexts.push(messageContentText(item.content));
+    }
+    for (const text of systemTexts) {
+        contextLines = stableHermesContextLines(text);
         if (contextLines.length) break;
     }
     if (!contextLines.length) return null;
