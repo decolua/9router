@@ -65,7 +65,11 @@ function openAICompletionToClaudeMessage(responseBody) {
  */
 export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat) {
   if (targetFormat === sourceFormat) return responseBody;
-  if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.CLAUDE) {
+  // After upstream translation, if client sent Claude format and the response
+  // is in OpenAI shape (choices[] array), convert back to Claude message format.
+  // This must catch all non-Claude target formats (combo routing picks Gemini,
+  // Antigravity, etc.) — not just FORMATS.OPENAI.
+  if (sourceFormat === FORMATS.CLAUDE && responseBody?.choices) {
     return openAICompletionToClaudeMessage(responseBody);
   }
   if (targetFormat === FORMATS.OPENAI) return responseBody;
