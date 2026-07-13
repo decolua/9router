@@ -8,13 +8,21 @@ import {
 import { normalizeResponsesInput } from "../translator/formats/responsesApi.js";
 import { fetchImageAsBase64 } from "../translator/concerns/image.js";
 import { getModelUpstreamId } from "../config/providerModels.js";
-import { DEFAULT_RETRY_CONFIG, resolveRetryEntry } from "../config/runtimeConfig.js";
+import { DEFAULT_RETRY_CONFIG, HTTP_STATUS, resolveRetryEntry } from "../config/runtimeConfig.js";
 import { dbg } from "../utils/debugLog.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 
-// SSE error patterns inside 200-OK body that should trigger retry as if 503
-const CODEX_SSE_OVERLOADED_PATTERNS = ["server_is_overloaded", "service_unavailable_error"];
-const CODEX_SSE_PEEK_BYTES = 4096;
+// SSE error patterns inside 200-OK bodies. Some retry same account first; capacity rotates accounts.
+const CODEX_SSE_RETRY_PATTERNS = ["server_is_overloaded", "service_unavailable_error"];
+const CODEX_SSE_ACCOUNT_FALLBACK_PATTERNS = ["selected model is at capacity", "model_at_capacity"];
+const CODEX_SSE_USER_OUTPUT_PATTERNS = [
+  "event: response.output_text.delta",
+  "event: response.function_call_arguments.delta",
+  '"type":"response.output_text.delta"',
+  '"type":"response.function_call_arguments.delta"',
+];
+const CODEX_SSE_PEEK_BYTES = 256 * 1024;
+const CODEX_MODEL_CAPACITY_MESSAGE = "Selected model is at capacity. Please try a different model.";
 
 // Server-generated item id prefixes that Codex /responses cannot resolve when store=false
 const SERVER_ID_PATTERN = /^(rs|fc|resp|msg)_/;
@@ -116,6 +124,62 @@ function resolveCacheSessionId(body, credentials) {
   });
 }
 
+function normalizeReasoningEffort(value) {
+  return value === "max" ? "xhigh" : value;
+}
+
+function findNestedMessage(value, depth = 0) {
+  if (!value || depth > 6 || typeof value === "string") return null;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findNestedMessage(item, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (typeof value !== "object") return null;
+  if (typeof value.message === "string" && value.message.trim()) return value.message;
+  if (typeof value.error?.message === "string" && value.error.message.trim()) return value.error.message;
+  if (typeof value.response?.error?.message === "string" && value.response.error.message.trim()) return value.response.error.message;
+  for (const child of Object.values(value)) {
+    const found = findNestedMessage(child, depth + 1);
+    if (found) return found;
+  }
+  return null;
+}
+
+function extractSseErrorMessage(text, fallback) {
+  const exact = text?.match(/Selected model is at capacity\. Please try a different model\./i)?.[0];
+  if (exact) return exact;
+
+  for (const line of String(text || "").split(/\r?\n/)) {
+    if (!line.startsWith("data:")) continue;
+    const data = line.slice(5).trim();
+    if (!data || data === "[DONE]") continue;
+    try {
+      const message = findNestedMessage(JSON.parse(data));
+      if (message) return message;
+    } catch {
+      // Ignore non-JSON SSE data lines.
+    }
+  }
+
+  return fallback || CODEX_MODEL_CAPACITY_MESSAGE;
+}
+
+function codexSseErrorResponse(status, message) {
+  return new Response(JSON.stringify({
+    error: {
+      message,
+      type: status >= 500 ? "server_error" : "invalid_request_error",
+      code: status === HTTP_STATUS.SERVICE_UNAVAILABLE ? "service_unavailable" : "upstream_error",
+    }
+  }), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 /**
  * Codex Executor - handles OpenAI Codex API (Responses API format)
  * Automatically injects default instructions if missing
@@ -135,10 +199,17 @@ export class CodexExecutor extends BaseExecutor {
     headers["session_id"] = this._currentSessionId || credentials?.connectionId || "default";
     // Identify client type to Codex backend (matches official codex CLI)
     if (!headers["originator"]) headers["originator"] = "codex_cli_rs";
-    // Workspace binding header — improves account scope + cache affinity
-    const workspaceId = credentials?.providerSpecificData?.workspaceId;
-    if (typeof workspaceId === "string" && workspaceId && !headers["chatgpt-account-id"]) {
-      headers["chatgpt-account-id"] = workspaceId;
+    // Account/workspace binding header — required when multiple Codex accounts
+    // are configured. OAuth import stores ChatGPT account ID as chatgptAccountId;
+    // older/custom rows may use workspaceId/accountId. Prefer explicit workspaceId
+    // but fall back to chatgptAccountId so requests don't cross-bind to the wrong
+    // OpenAI account and surface as token_invalid after adding another account.
+    const accountId =
+      credentials?.providerSpecificData?.workspaceId ||
+      credentials?.providerSpecificData?.chatgptAccountId ||
+      credentials?.providerSpecificData?.accountId;
+    if (typeof accountId === "string" && accountId && !headers["ChatGPT-Account-ID"]) {
+      headers["ChatGPT-Account-ID"] = accountId;
     }
     return headers;
   }
@@ -198,7 +269,7 @@ export class CodexExecutor extends BaseExecutor {
     let attempt = 0;
     while (true) {
       const result = await super.execute(args);
-      const peek = await this._peekSseOverloaded(result.response);
+      const peek = await this._peekSseTransientError(result.response);
       if (!peek.matched) {
         // Replace body with re-assembled stream (prefix bytes already read + rest)
         if (peek.replacementBody) {
@@ -210,48 +281,57 @@ export class CodexExecutor extends BaseExecutor {
         }
         return result;
       }
+      if (peek.accountFallback) {
+        args.log?.warn?.("RETRY", `CODEX | SSE account fallback "${peek.message}"`);
+        result.response = codexSseErrorResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, peek.message || CODEX_MODEL_CAPACITY_MESSAGE);
+        return result;
+      }
       if (attempt >= attempts) {
         args.log?.warn?.("RETRY", `CODEX | SSE overloaded "${peek.matched}" — retries exhausted (${attempt}/${attempts})`);
-        // Out of retries → return with replacement body so client gets the error
-        if (peek.replacementBody) {
-          result.response = new Response(peek.replacementBody, {
-            status: result.response.status,
-            statusText: result.response.statusText,
-            headers: result.response.headers,
-          });
-        }
+        result.response = codexSseErrorResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, peek.message || peek.matched);
         return result;
       }
       attempt++;
       args.log?.debug?.("RETRY", `CODEX | SSE "${peek.matched}" retry ${attempt}/${attempts} after ${delayMs / 1000}s`);
       dbg("CODEX", `SSE overloaded "${peek.matched}" → retry ${attempt}/${attempts} in ${delayMs}ms`);
-      try { await result.response.body?.cancel?.(); } catch { /* noop */ }
       await new Promise(r => setTimeout(r, delayMs));
     }
   }
 
-  // Peek first N bytes of SSE body to detect upstream "overloaded" errors.
-  // Returns { matched: string|null, replacementBody: ReadableStream|null }.
-  // Caller MUST use replacementBody (original body has been read).
-  async _peekSseOverloaded(response) {
-    if (!response || !response.ok || !response.body) return { matched: null, replacementBody: null };
+  // Peek first N bytes of SSE body to detect upstream transient errors.
+  // Returns { matched: string|null, message: string|null, accountFallback: boolean, replacementBody: ReadableStream|null }.
+  // Caller must use replacementBody when no error matched (original body has been read).
+  async _peekSseTransientError(response) {
+    if (!response || !response.ok || !response.body) return { matched: null, message: null, accountFallback: false, replacementBody: null };
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     const chunks = [];
     let text = "";
     let matched = null;
+    let accountFallback = false;
     try {
       while (text.length < CODEX_SSE_PEEK_BYTES) {
         const { done, value } = await reader.read();
         if (done) break;
         chunks.push(value);
         text += decoder.decode(value, { stream: true });
-        const hit = CODEX_SSE_OVERLOADED_PATTERNS.find(p => text.includes(p));
-        if (hit) { matched = hit; break; }
+        const lowerText = text.toLowerCase();
+        const accountHit = CODEX_SSE_ACCOUNT_FALLBACK_PATTERNS.find(p => lowerText.includes(p));
+        if (accountHit) { matched = accountHit; accountFallback = true; break; }
+        const retryHit = CODEX_SSE_RETRY_PATTERNS.find(p => lowerText.includes(p));
+        if (retryHit) { matched = retryHit; break; }
+        if (CODEX_SSE_USER_OUTPUT_PATTERNS.some(p => lowerText.includes(p))) break;
       }
     } catch (e) {
       dbg("CODEX", `peek read error: ${e.message}`);
     }
+
+    if (matched) {
+      try { await reader.cancel(); } catch { /* noop */ }
+      try { reader.releaseLock(); } catch { /* noop */ }
+      return { matched, message: extractSseErrorMessage(text, matched), accountFallback, replacementBody: null };
+    }
+
     reader.releaseLock();
 
     // Re-assemble stream: prefix chunks + remaining upstream body
@@ -273,7 +353,7 @@ export class CodexExecutor extends BaseExecutor {
         try { upstreamReader?.cancel(reason); } catch { /* noop */ }
       },
     });
-    return { matched, replacementBody };
+    return { matched: null, message: null, accountFallback: false, replacementBody };
   }
 
   // Parse Codex usage_limit_reached to extract precise resetsAtMs; fallback to default otherwise
@@ -347,7 +427,7 @@ export class CodexExecutor extends BaseExecutor {
 
     // Extract thinking level from model name suffix
     // e.g., gpt-5.3-codex-high → high, gpt-5.3-codex → medium (default)
-    const effortLevels = ['none', 'low', 'medium', 'high', 'xhigh'];
+    const effortLevels = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
     let modelEffort = null;
     for (const level of effortLevels) {
       if (body.model.endsWith(`-${level}`)) {
@@ -360,10 +440,11 @@ export class CodexExecutor extends BaseExecutor {
 
     // Priority: explicit reasoning.effort > reasoning_effort param > model suffix > default (medium)
     if (!body.reasoning) {
-      const effort = body.reasoning_effort || modelEffort || 'low';
+      const effort = normalizeReasoningEffort(body.reasoning_effort || modelEffort || 'low');
       body.reasoning = { effort, summary: "auto" };
-    } else if (!body.reasoning.summary) {
-      body.reasoning.summary = "auto";
+    } else {
+      body.reasoning.effort = normalizeReasoningEffort(body.reasoning.effort);
+      if (!body.reasoning.summary) body.reasoning.summary = "auto";
     }
     delete body.reasoning_effort;
 
@@ -390,6 +471,9 @@ export class CodexExecutor extends BaseExecutor {
     delete body.stream_options; // Cursor sends this but Codex doesn't support it
     delete body.safety_identifier; // Droid CLI sends this but Codex doesn't support it
     delete body.previous_response_id; // store=false → backend can't resolve previous resp; avoid 404
+
+    if (body.service_tier === "fast") body.service_tier = "priority";
+    if (body.service_tier && body.service_tier !== "priority") delete body.service_tier;
 
     // Final allowlist filter — strip any unknown field that could trigger upstream "routing_unsupported"
     for (const k of Object.keys(body)) {
