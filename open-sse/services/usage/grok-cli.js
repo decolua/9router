@@ -61,14 +61,18 @@ function buildGrokCliHeaders(accessToken, providerSpecificData = {}) {
   return headers;
 }
 
-function resolvePlan(user, config) {
+function subscriptionTier(user, config) {
   const rawTier =
     user?.subscriptionTier ??
     user?.subscription_tier ??
     user?.subscription?.tier ??
     config?.subscriptionTier ??
     config?.subscription_tier;
-  const tier = typeof rawTier === "string" ? rawTier.trim() : "";
+  return typeof rawTier === "string" ? rawTier.trim() : "";
+}
+
+function resolvePlan(user, config) {
+  const tier = subscriptionTier(user, config);
   if (tier) {
     return tier
       .replace(/[_-]+/g, " ")
@@ -126,6 +130,8 @@ export function parseGrokCliBilling(billing, user = null) {
     null;
 
   const quotas = {};
+  const tier = subscriptionTier(user, config);
+  const subscriptionAccess = Boolean(tier) && !/^(free|none|null)$/i.test(tier);
 
   // Current Grok Build responses expose included monthly usage at top level.
   const monthlyLimit = unwrapVal(
@@ -162,7 +168,12 @@ export function parseGrokCliBilling(billing, user = null) {
       total: onDemandCap,
       resetAt: periodEnd,
     });
-  } else if (Number.isFinite(onDemandCap) && onDemandCap === 0 && Number.isFinite(onDemandUsed)) {
+  } else if (
+    !subscriptionAccess &&
+    Number.isFinite(onDemandCap) &&
+    onDemandCap === 0 &&
+    Number.isFinite(onDemandUsed)
+  ) {
     // Cap 0 is the exhausted free/promo state (chat returns 402 spending-limit).
     // UI treats total===0 as unlimited, so use a synthetic 1/1 depleted row.
     quotas["On-demand"] = {
@@ -240,6 +251,7 @@ export function parseGrokCliBilling(billing, user = null) {
     quotas,
     periodEnd,
     exhausted,
+    subscriptionAccess,
     rawConfig: config,
   };
 }
@@ -296,8 +308,9 @@ export async function getGrokCliUsage(accessToken, providerSpecificData = null, 
     if (!parsed.quotas || Object.keys(parsed.quotas).length === 0) {
       return {
         plan: parsed.plan,
-        message:
-          "Grok Build connected, but no credit allotment was returned. Free promo may be exhausted — upgrade at https://grok.com/supergrok or add credits at https://grok.com/?_s=usage.",
+        message: parsed.subscriptionAccess
+          ? "Subscription access is active; Grok does not expose a numeric included quota."
+          : "Grok Build connected, but no credit allotment was returned. Free promo may be exhausted.",
         quotas: {},
       };
     }

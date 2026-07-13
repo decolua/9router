@@ -102,6 +102,17 @@ describe("parseGrokCliBilling", () => {
     expect(parsed.plan).toBe("Super Grok");
   });
 
+  it("does not report paid subscription access as depleted on-demand credit", () => {
+    const parsed = parseGrokCliBilling(EXHAUSTED_BILLING, {
+      ...USER_PROFILE,
+      subscriptionTier: "XPremiumPlus",
+    });
+    expect(parsed.plan).toBe("XPremiumPlus");
+    expect(parsed.subscriptionAccess).toBe(true);
+    expect(parsed.quotas).toEqual({});
+    expect(parsed.exhausted).toBe(false);
+  });
+
   it("maps current monthly fields and snake-case subscription tier", () => {
     const parsed = parseGrokCliBilling({
       monthlyLimit: { val: 1000 },
@@ -193,6 +204,24 @@ describe("getUsageForProvider(grok-cli)", () => {
     expect(usage.message).toBeUndefined();
     expect(usage.quotas["On-demand"].remainingPercentage).toBe(0);
     expect(usage.quotas["On-demand"].total).toBe(1);
+  });
+
+  it("reports active paid access when provider exposes no numeric quota", async () => {
+    proxyAwareFetch
+      .mockResolvedValueOnce(jsonResponse(EXHAUSTED_BILLING))
+      .mockResolvedValueOnce(jsonResponse({
+        ...USER_PROFILE,
+        subscriptionTier: "XPremiumPlus",
+      }));
+
+    const usage = await getUsageForProvider({
+      provider: "grok-cli",
+      accessToken: "test-token",
+    });
+
+    expect(usage.plan).toBe("XPremiumPlus");
+    expect(usage.message).toMatch(/active.*numeric included quota/i);
+    expect(usage.quotas).toEqual({});
   });
 });
 
