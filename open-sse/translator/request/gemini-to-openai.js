@@ -45,7 +45,7 @@ export function geminiToOpenAIRequest(model, body, stream) {
   // one element and the next turn 400s on unpaired tool calls.
   if (body.contents && Array.isArray(body.contents)) {
     for (const content of body.contents) {
-      appendConvertedMessages(result.messages, convertGeminiContent(content));
+      appendConvertedMessages(result.messages, convertGeminiContentWithReasoning(content));
     }
   }
 
@@ -146,6 +146,41 @@ function convertGeminiContent(content) {
   return null;
 }
 
+function convertGeminiContentWithReasoning(content) {
+  if (!Array.isArray(content?.parts)) return convertGeminiContent(content);
+
+  let reasoningContent = "";
+  const visibleParts = [];
+  for (const part of content.parts) {
+    if (part?.thought === true) {
+      if (part.text !== undefined) reasoningContent += part.text;
+    } else {
+      visibleParts.push(part);
+    }
+  }
+
+  if (!reasoningContent) return convertGeminiContent(content);
+
+  const converted = convertGeminiContent({ ...content, parts: visibleParts });
+  const messages = Array.isArray(converted) ? [...converted] : (converted ? [converted] : []);
+  let targetIndex = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.role !== ROLE.TOOL) {
+      targetIndex = i;
+      break;
+    }
+  }
+
+  if (targetIndex >= 0) {
+    messages[targetIndex] = { ...messages[targetIndex], reasoning_content: reasoningContent };
+  } else {
+    const role = content.role === GEMINI_ROLE.USER ? ROLE.USER : ROLE.ASSISTANT;
+    messages.push({ role, reasoning_content: reasoningContent });
+  }
+
+  return Array.isArray(converted) ? messages : messages[0];
+}
+
 // Extract text from Gemini content
 function extractGeminiText(content) {
   if (typeof content === "string") return content;
@@ -158,4 +193,3 @@ function extractGeminiText(content) {
 // Register
 register(FORMATS.GEMINI, FORMATS.OPENAI, geminiToOpenAIRequest, null);
 register(FORMATS.GEMINI_CLI, FORMATS.OPENAI, geminiToOpenAIRequest, null);
-
