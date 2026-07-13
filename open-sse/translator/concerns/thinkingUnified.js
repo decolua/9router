@@ -20,6 +20,13 @@ const FORMAT_TO_NATIVE = {
   kiro: "kiro",
 };
 
+// Strip a trailing thinking suffix "model(value)" → "model" (no-op when absent).
+export function stripThinkingSuffix(model) {
+  if (typeof model !== "string") return model;
+  const m = model.match(/^(.*)\([^()]+\)\s*$/);
+  return m ? m[1].trim() : model;
+}
+
 // Parse model-name suffix "model(value)" → { cleanModel, override }.
 // value: level name (high) | number (8192) | auto | none. null override when absent.
 export function parseSuffix(model) {
@@ -132,16 +139,64 @@ function toGeminiThinkingLevel(cfg) {
   return effortToThinkingLevel(raw);
 }
 
+function toKimiReasoningEffort(cfg) {
+  const level = toLevel(cfg);
+  if (level === "auto") return "high";
+  if (level === "minimal") return "low";
+  if (level === "xhigh") return "max";
+  if (["low", "medium", "high", "max"].includes(level)) return level;
+  return null;
+}
+
+const GEMINI_LEVEL_OUTPUT_FLOOR = {
+  minimal: 4096,
+  low: 8192,
+  medium: 16384,
+  high: 65535,
+};
+
+function geminiBudgetOutputFloor(budget) {
+  if (budget === -1) return 32768;
+  if (!Number.isFinite(budget)) return 32768;
+  if (budget <= 1024) return 8192;
+  if (budget <= 8192) return 16384;
+  if (budget <= 24576) return 32768;
+  return 65535;
+}
+
+function geminiLevelOutputFloor(level) {
+  return GEMINI_LEVEL_OUTPUT_FLOOR[level] || GEMINI_LEVEL_OUTPUT_FLOOR.high;
+}
+
 // Gemini nests thinkingConfig under generationConfig. gemini-cli / antigravity wrap
 // the whole request in a { request: { generationConfig } } envelope — target the
 // envelope's generationConfig when present, else the top-level one.
+function getGeminiGenerationConfig(body) {
+  if (body.request && typeof body.request === "object") {
+    if (!body.request.generationConfig || typeof body.request.generationConfig !== "object") {
+      body.request.generationConfig = {};
+    }
+    return body.request.generationConfig;
+  }
+  if (!body.generationConfig || typeof body.generationConfig !== "object") {
+    body.generationConfig = {};
+  }
+  return body.generationConfig;
+}
+
 function setGeminiThinking(body, tc) {
-  const gc = body.request?.generationConfig
-    ? body.request.generationConfig
-    : (body.generationConfig && typeof body.generationConfig === "object"
-        ? body.generationConfig
-        : (body.generationConfig = {}));
+  const gc = getGeminiGenerationConfig(body);
   gc.thinkingConfig = tc;
+}
+
+function ensureGeminiOutputFloor(body, floor, caps) {
+  const cap = Number.isFinite(caps?.maxOutput) ? caps.maxOutput : floor;
+  const target = Math.min(floor, cap);
+  const gc = getGeminiGenerationConfig(body);
+  const current = Number(gc.maxOutputTokens);
+  if (!Number.isFinite(current) || current < target) {
+    gc.maxOutputTokens = target;
+  }
 }
 
 // Strip every known thinking field from a body (used before re-applying / when unsupported).
@@ -168,7 +223,8 @@ function applyFormat(fmt, body, cfg, caps) {
     case "openai": {
       if (none && canDisable) { body.reasoning_effort = "none"; break; }
       const level = toLevel(eff);
-      if (level) body.reasoning_effort = level;
+      // OpenAI reasoning_effort enum caps at "xhigh" (no "max"); clamp Claude Code's "max".
+      if (level) body.reasoning_effort = level === "max" ? "xhigh" : level;
       break;
     }
     case "claude-adaptive": {
@@ -186,12 +242,14 @@ function applyFormat(fmt, body, cfg, caps) {
     case "gemini-level": {
       const level = none ? "minimal" : toGeminiThinkingLevel(eff);
       setGeminiThinking(body, { thinkingLevel: level, includeThoughts: level !== "minimal" });
+      ensureGeminiOutputFloor(body, geminiLevelOutputFloor(level), caps);
       break;
     }
     case "gemini-budget": {
       if (none && canDisable) { setGeminiThinking(body, { thinkingBudget: 0, includeThoughts: false }); break; }
       const budget = toBudget(eff, caps.thinkingRange);
       setGeminiThinking(body, { thinkingBudget: budget ?? -1, includeThoughts: true });
+      ensureGeminiOutputFloor(body, geminiBudgetOutputFloor(budget ?? -1), caps);
       break;
     }
     case "zai": {
@@ -217,8 +275,8 @@ function applyFormat(fmt, body, cfg, caps) {
     }
     case "kimi": {
       if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
-      const level = toLevel(eff);
-      if (level) body.reasoning_effort = level === "max" ? "high" : level;
+      const effort = toKimiReasoningEffort(eff);
+      if (effort) body.reasoning_effort = effort;
       break;
     }
     case "minimax": {

@@ -353,6 +353,15 @@ export function isRunning(name) {
   return !!(entry?.proc && !entry.proc.killed && entry.proc.exitCode === null);
 }
 
+/** Kill all spawned MCP children — called on app shutdown to prevent orphans. */
+export function killAllBridges() {
+  const store = getStore();
+  for (const [name, entry] of store) {
+    try { entry.proc?.kill(); } catch { /* best effort */ }
+    store.delete(name);
+  }
+}
+
 /** Snapshot of every running bridge child. Used by the status endpoint. */
 export function getStatus() {
   const store = getStore();
