@@ -49,6 +49,13 @@ export const STREAM_FIRST_CHUNK_TIMEOUT_MS = envMs("STREAM_FIRST_CHUNK_TIMEOUT_M
 // Fetch connect timeout: abort if upstream doesn't return response headers within this duration
 export const FETCH_CONNECT_TIMEOUT_MS = envMs("FETCH_CONNECT_TIMEOUT_MS", 60 * 1000);
 
+// Client-facing keepalive heartbeat. Emits an SSE comment (": ka\n\n", ignored
+// by every SSE parser per spec) on this interval while upstream is silent, so
+// the client's stream-read watchdog doesn't fire "Response stalled mid-stream"
+// during slow TTFT on huge contexts (e.g. sub-agent output returned to main
+// agent). Env: STREAM_CLIENT_KEEPALIVE_MS.
+export const STREAM_CLIENT_KEEPALIVE_MS = envMs("STREAM_CLIENT_KEEPALIVE_MS", 15 * 1000);
+
 // Gemini native TTS fetch timeout: abort if Google does not return response headers in time.
 export const GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS = envMs("GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS", 45 * 1000);
 

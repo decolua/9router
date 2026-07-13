@@ -1,5 +1,5 @@
 // Stream handler with disconnect detection - shared for all providers
-import { STREAM_STALL_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import { STREAM_STALL_TIMEOUT_MS, STREAM_CLIENT_KEEPALIVE_MS } from "../config/runtimeConfig.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
 // Get HH:MM:SS timestamp
@@ -187,13 +187,47 @@ export function createDisconnectAwareStream(transformStream, streamController, o
  * @param {TransformStream} transformStream - Transform stream for SSE
  * @param {object} streamController - Stream controller from createStreamController
  */
-export function pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal = null, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS) {
+/**
+ * Client-facing keepalive injector. Emits an SSE comment (": ka\n\n") on a
+ * timer while the transform output is silent, so client stream-read watchdogs
+ * don't fire "Response stalled mid-stream" during slow upstream TTFT (huge
+ * contexts, reasoning prefill). Comment lines are ignored by every SSE
+ * parser per the spec. Any real chunk re-arms the timer. 0 disables.
+ *
+ * Lives AFTER the translate transform so it measures client-visible silence
+ * (empty chunks filtered out by hasValuableContent count as silence here —
+ * that's exactly when the client needs a heartbeat).
+ */
+function createKeepaliveStream(keepaliveMs) {
+  const encoder = new TextEncoder();
+  if (!keepaliveMs || keepaliveMs <= 0) return new TransformStream();
+  let timer = null;
+  let ctrl = null;
+  const clear = () => { if (timer) { clearTimeout(timer); timer = null; } };
+  const arm = () => {
+    clear();
+    timer = setTimeout(() => {
+      try { ctrl?.enqueue(encoder.encode(": ka\n\n")); }
+      catch { /* stream closed/errored */ clear(); }
+    }, keepaliveMs);
+    if (typeof timer.unref === "function") timer.unref();
+  };
+  return new TransformStream({
+    start(controller) { ctrl = controller; arm(); },
+    transform(chunk, controller) { controller.enqueue(chunk); arm(); },
+    flush() { clear(); ctrl = null; },
+    cancel() { clear(); ctrl = null; }
+  });
+}
+
+export function pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal = null, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS, options = {}) {
   let stallTimer = null;
   let chunkCount = 0;
   let totalBytes = 0;
   let lastChunkAt = Date.now();
   const t0 = Date.now();
   const tag = "STREAM";
+  const clientKeepaliveMs = options?.clientKeepaliveMs ?? STREAM_CLIENT_KEEPALIVE_MS;
   const clearStall = () => {
     if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
   };
@@ -221,7 +255,7 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
   };
 
   armStall();
-  dbg(tag, `pipe start | stallTimeout=${stallTimeoutMs}ms`);
+  dbg(tag, `pipe start | stallTimeout=${stallTimeoutMs}ms | keepalive=${clientKeepaliveMs}ms`);
 
   const upstreamTap = new TransformStream({
     transform(chunk, controller) {
@@ -242,7 +276,8 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
 
   const transformedBody = providerResponse.body
     .pipeThrough(upstreamTap)
-    .pipeThrough(transformStream);
+    .pipeThrough(transformStream)
+    .pipeThrough(createKeepaliveStream(clientKeepaliveMs));
 
   return createDisconnectAwareStream(
     { readable: transformedBody, writable: { getWriter: () => ({ abort: () => Promise.resolve() }) } },
