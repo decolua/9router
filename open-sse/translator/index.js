@@ -276,6 +276,7 @@ import "./response/claude-to-openai.js";
 import "./response/openai-to-claude.js";
 import "./response/gemini-to-openai.js";
 import "./response/openai-to-antigravity.js";
+import "./response/openai-to-gemini.js";
 import "./response/openai-responses.js";
 import "./response/kiro-to-openai.js";
 import "./response/cursor-to-openai.js";
