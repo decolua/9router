@@ -379,9 +379,17 @@ export class KiroExecutor extends BaseExecutor {
             state.hasContextUsage = true;
           }
 
-          // Handle meteringEvent - mark that we received it
+          // Handle meteringEvent - Kiro reports billable credit usage here.
           if (eventType === "meteringEvent") {
             state.hasMeteringEvent = true;
+            const metering = event.payload?.meteringEvent || event.payload || {};
+            if (typeof metering.usage === "number") {
+              state.metering = {
+                usage: metering.usage,
+                unit: typeof metering.unit === "string" ? metering.unit : "credit",
+                unit_plural: typeof metering.unitPlural === "string" ? metering.unitPlural : "credits"
+              };
+            }
           }
 
           // Handle metricsEvent for token usage
@@ -450,7 +458,14 @@ export class KiroExecutor extends BaseExecutor {
 
             // Include usage in final chunk if available
             if (state.usage) {
+              if (state.metering) {
+                state.usage.kiro_credits = state.metering.usage;
+                state.usage.kiro_credit_unit = state.metering.unit;
+              }
               finishChunk.usage = state.usage;
+            }
+            if (state.metering) {
+              finishChunk.kiro_metering = state.metering;
             }
 
             controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(finishChunk)}\n\n`));

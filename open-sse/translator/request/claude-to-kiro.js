@@ -24,13 +24,14 @@
  */
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
-import { v4 as uuidv4 } from "uuid";
+import { resolveContinuationId, resolveSessionId } from "../../utils/sessionManager.js";
 import {
   resolveKiroModel,
   resolveKiroThinkingBudget,
   buildThinkingSystemPrefix,
   KIRO_AGENTIC_SYSTEM_PROMPT,
   resolveDefaultProfileArn,
+  buildKiroAdditionalModelRequestFieldsForModel,
 } from "../../config/kiroConstants.js";
 import { DEFAULT_IMAGE_MIME } from "../schema/index.js";
 import { ROLE, CLAUDE_BLOCK } from "../schema/index.js";
@@ -363,6 +364,18 @@ function reconcileOrphanedToolResults(history, currentMessage) {
   }
 }
 
+function extractClaudeSystemText(system) {
+  if (!system) return "";
+  if (typeof system === "string") return system;
+  if (Array.isArray(system)) {
+    return system.map((s) => {
+      if (typeof s === "string") return s;
+      return s?.text || "";
+    }).filter(Boolean).join("\n");
+  }
+  return "";
+}
+
 /**
  * Build a Kiro payload directly from a Claude Messages API request body.
  */
@@ -404,30 +417,20 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
 
   let finalContent = currentMessage?.userInputMessage?.content || "";
 
-  // System prompt: pass via native systemInstruction field (Kiro/Q API supports it)
-  // and also prepend as <instructions> in user content as fallback for upstreams
-  // that don't support the native field.
-  let systemInstruction = undefined;
-  if (body.system) {
-    let systemText = "";
-    if (typeof body.system === "string") {
-      systemText = body.system;
-    } else if (Array.isArray(body.system)) {
-      systemText = body.system.map((s) => s.text || "").join("\n");
-    }
-    if (systemText) {
-      systemInstruction = systemText;
-      finalContent = `<instructions>\n${systemText}\n</instructions>\n\n${finalContent}`;
-    }
-  }
-
-  // Prefix order: thinking_mode tag, timestamp marker, then agentic prompt.
+  // Kiro CLI/KAS sends system prompt as top-level `systemPrompt`. Keep a
+  // content fallback too because the CodeWhisperer surface does not always
+  // enforce top-level systemPrompt for direct calls.
   const timestamp = new Date().toISOString();
-  const prefixParts = [];
-  if (thinkingBudget !== null) prefixParts.push(buildThinkingSystemPrefix(thinkingBudget));
-  prefixParts.push(`[Context: Current time is ${timestamp}]`);
-  if (agentic) prefixParts.push(KIRO_AGENTIC_SYSTEM_PROMPT);
-  finalContent = `${prefixParts.join("\n\n")}\n\n${finalContent}`;
+  const systemPromptParts = [];
+  if (thinkingBudget !== null) systemPromptParts.push(buildThinkingSystemPrefix(thinkingBudget));
+  systemPromptParts.push(`[Context: Current time is ${timestamp}]`);
+  if (agentic) systemPromptParts.push(KIRO_AGENTIC_SYSTEM_PROMPT);
+  const systemInstruction = extractClaudeSystemText(body.system);
+  if (systemInstruction) systemPromptParts.push(systemInstruction);
+  const systemPrompt = systemPromptParts.filter(Boolean).join("\n\n");
+  if (systemPrompt) {
+    finalContent = `${systemPrompt}\n\n${finalContent}`;
+  }
 
   const userInputMessage = {
     content: finalContent,
@@ -442,22 +445,38 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
     }),
   };
 
-  if (systemInstruction) {
-    userInputMessage.systemInstruction = systemInstruction;
-  }
+  const conversationId = resolveSessionId({
+    headers: credentials?.rawHeaders,
+    body,
+    connectionId: credentials?.connectionId,
+    scope: "kiro",
+  });
+  const continuationId = resolveContinuationId({
+    sessionId: conversationId,
+    connectionId: credentials?.connectionId,
+    scope: "kiro",
+  });
 
   const payload = {
     conversationState: {
       chatTriggerType: "MANUAL",
-      conversationId: uuidv4(),
+      conversationId,
+      agentContinuationId: continuationId,
+      agentTaskType: "vibe",
       currentMessage: {
         userInputMessage,
       },
       history,
     },
+    agentMode: credentials?.providerSpecificData?.agentMode || "vibe",
   };
 
   if (profileArn) payload.profileArn = profileArn;
+  if (systemPrompt) payload.systemPrompt = systemPrompt;
+  const additionalModelRequestFields = buildKiroAdditionalModelRequestFieldsForModel(body, upstreamModel);
+  if (additionalModelRequestFields) {
+    payload.additionalModelRequestFields = additionalModelRequestFields;
+  }
 
   if (maxTokens || temperature !== undefined || topP !== undefined) {
     payload.inferenceConfig = {};

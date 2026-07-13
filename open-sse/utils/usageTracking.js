@@ -92,6 +92,7 @@ export function filterUsageForFormat(usage, targetFormat) {
       'prompt_tokens', 'completion_tokens', 'total_tokens',
       'cached_tokens', 'reasoning_tokens',
       'prompt_tokens_details', 'completion_tokens_details',
+      'kiro_credits', 'kiro_credit_unit',
       'estimated'
     ]
   };
@@ -131,6 +132,10 @@ export function normalizeUsage(usage) {
   assignNumber("cache_creation_input_tokens", usage?.cache_creation_input_tokens);
   assignNumber("cached_tokens", usage?.cached_tokens);
   assignNumber("reasoning_tokens", usage?.reasoning_tokens);
+  assignNumber("kiro_credits", usage?.kiro_credits);
+  if (typeof usage?.kiro_credit_unit === "string") {
+    normalized.kiro_credit_unit = usage.kiro_credit_unit;
+  }
 
   // Preserve nested details objects for OpenAI format forwarding
   if (usage?.prompt_tokens_details && typeof usage.prompt_tokens_details === "object") {
@@ -280,7 +285,9 @@ export function extractUsage(chunk) {
       cached_tokens: chunk.usage.prompt_tokens_details?.cached_tokens || chunk.usage.prompt_cache_hit_tokens,
       reasoning_tokens: chunk.usage.completion_tokens_details?.reasoning_tokens,
       prompt_tokens_details: chunk.usage.prompt_tokens_details,
-      completion_tokens_details: chunk.usage.completion_tokens_details
+      completion_tokens_details: chunk.usage.completion_tokens_details,
+      kiro_credits: chunk.usage.kiro_credits,
+      kiro_credit_unit: chunk.usage.kiro_credit_unit
     });
   }
 

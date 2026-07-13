@@ -13,6 +13,7 @@ import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
 
 // Runtime storage: Key = connectionId, Value = { sessionId, lastUsed }
 const runtimeSessionStore = new Map();
+const continuationStore = new Map();
 
 // Periodically evict entries that haven't been used within TTL
 const cleanupInterval = setInterval(() => {
@@ -80,6 +81,7 @@ export function generateBinaryStyleId() {
 export function clearSessionStore() {
     runtimeSessionStore.clear();
     assistantSessionStore.clear();
+    continuationStore.clear();
 }
 
 // Conversation-stable session store: Key = hash(scope+assistant text), Value = { sessionId, lastUsed }
@@ -91,6 +93,7 @@ const MAX_ASSISTANT_SESSIONS = 5000;
 // Client headers/body fields that carry an upstream session id (priority order)
 const SESSION_HEADER_KEYS = ["x-session-id", "session-id", "session_id", "x-amp-thread-id", "x-client-request-id"];
 const CLAUDE_CODE_SESSION_RE = /_session_([a-f0-9-]+)$/;
+const HERMES_CONTEXT_MARKER = "## Current Session Context";
 
 function sha16(text) {
     return crypto.createHash("sha256").update(text).digest("hex").slice(0, 16);
@@ -148,10 +151,79 @@ function extractClientSessionId(headers, body) {
     return fromBody || null;
 }
 
+function messageContentText(content) {
+    if (typeof content === "string") return content;
+    if (Array.isArray(content)) {
+        return content.map((part) => {
+            if (typeof part === "string") return part;
+            return part?.text || part?.content || part?.input || part?.output || "";
+        }).filter(Boolean).join("\n");
+    }
+    return "";
+}
+
+function requestMessages(body) {
+    if (Array.isArray(body?.messages)) return body.messages;
+    if (Array.isArray(body?.input)) return body.input;
+    return [];
+}
+
+function firstUserText(messages) {
+    for (const item of messages) {
+        if (item?.role !== "user") continue;
+        const text = messageContentText(item.content);
+        if (text) return text;
+    }
+    return "";
+}
+
+function stableHermesContextLines(text) {
+    const start = text.indexOf(HERMES_CONTEXT_MARKER);
+    if (start < 0) return [];
+    const rest = text.slice(start);
+    const nextSection = rest.slice(HERMES_CONTEXT_MARKER.length).search(/\n##\s+/);
+    const section = nextSection >= 0
+        ? rest.slice(0, HERMES_CONTEXT_MARKER.length + nextSection)
+        : rest;
+    const keep = [];
+    for (const raw of section.split(/\r?\n/)) {
+        const line = raw.trim();
+        if (
+            line.startsWith("**Source:**") ||
+            line.startsWith("**Session type:**") ||
+            line.startsWith("**User ID:**") ||
+            line.startsWith("**Matrix Room ID:**") ||
+            line.startsWith("**Matrix Thread:**") ||
+            line.startsWith("- Guild:") ||
+            line.startsWith("- Parent channel:") ||
+            line.startsWith("- Thread:") ||
+            line.startsWith("- Channel:")
+        ) {
+            if (!line.includes("Triggering message")) keep.push(line);
+        }
+    }
+    return keep;
+}
+
+function extractHermesPayloadSession(body, scope) {
+    if (scope !== "kiro") return null;
+    const messages = requestMessages(body);
+    if (!messages.length) return null;
+    let contextLines = [];
+    for (const item of messages) {
+        if (item?.role !== "system" && item?.role !== "developer") continue;
+        contextLines = stableHermesContextLines(messageContentText(item.content));
+        if (contextLines.length) break;
+    }
+    if (!contextLines.length) return null;
+    const user = firstUserText(messages);
+    if (!user) return null;
+    return `hermes:${sha16(`${contextLines.join("\n")}\n---\n${user.slice(0, 4096)}`)}`;
+}
+
 // Accumulate assistant text from OpenAI/Responses-style input/messages (cap-limited)
 function accumulateAssistantText(body) {
-    const items = Array.isArray(body?.input) ? body.input
-        : Array.isArray(body?.messages) ? body.messages : null;
+    const items = requestMessages(body);
     if (!items) return "";
     let text = "";
     for (const item of items) {
@@ -198,11 +270,25 @@ function assistantTextSessionId(scope, body) {
 export function resolveSessionId({ headers, body, connectionId, workspaceId, scope = "" } = {}) {
     const client = extractClientSessionId(headers, body);
     if (client) return client;
+    const hermes = extractHermesPayloadSession(body, scope);
+    if (hermes) return hermes;
     const fromAssistant = assistantTextSessionId(`${scope}:${connectionId || ""}`, body);
     if (fromAssistant) return fromAssistant;
     const ws = normalizeSessionId(workspaceId);
     if (ws) return ws;
     return deriveSessionId(connectionId);
+}
+
+export function resolveContinuationId({ sessionId, connectionId, scope = "" } = {}) {
+    const key = `${scope}:${connectionId || ""}:${sessionId || ""}`;
+    const existing = continuationStore.get(key);
+    if (existing) {
+        existing.lastUsed = Date.now();
+        return existing.continuationId;
+    }
+    const continuationId = crypto.randomUUID();
+    continuationStore.set(key, { continuationId, lastUsed: Date.now() });
+    return continuationId;
 }
 
 // Capture session id from request body + credentials (envelope still intact here)
@@ -226,6 +312,9 @@ const assistantCleanup = setInterval(() => {
     const now = Date.now();
     for (const [key, entry] of assistantSessionStore) {
         if (now - entry.lastUsed > MEMORY_CONFIG.sessionTtlMs) assistantSessionStore.delete(key);
+    }
+    for (const [key, entry] of continuationStore) {
+        if (now - entry.lastUsed > MEMORY_CONFIG.sessionTtlMs) continuationStore.delete(key);
     }
 }, MEMORY_CONFIG.sessionCleanupIntervalMs);
 if (assistantCleanup.unref) assistantCleanup.unref();

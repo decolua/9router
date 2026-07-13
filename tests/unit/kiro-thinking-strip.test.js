@@ -121,4 +121,37 @@ describe("KiroExecutor thinking tag stripping", () => {
     const contentChunks = objects.filter(obj => obj.choices[0].delta.content !== undefined);
     expect(contentChunks.length).toBe(0);
   });
+
+  it("surfaces Kiro meteringEvent credit usage on the final chunk", async () => {
+    const executor = new KiroExecutor();
+
+    const f1 = createMockFrame("assistantResponseEvent", { content: "OK" });
+    const f2 = createMockFrame("meteringEvent", { usage: 0.0097, unit: "credit", unitPlural: "credits" });
+    const f3 = createMockFrame("contextUsageEvent", { contextUsagePercentage: 1 });
+
+    const readableStream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(f1);
+        controller.enqueue(f2);
+        controller.enqueue(f3);
+        controller.close();
+      }
+    });
+
+    const transformedResponse = executor.transformEventStreamToSSE({ body: readableStream }, "claude-test");
+    const output = await readAllSSE(transformedResponse.body);
+    const objects = output
+      .split("\n")
+      .filter(line => line.startsWith("data: ") && !line.includes("[DONE]"))
+      .map(line => JSON.parse(line.slice(6)));
+
+    const finalChunk = objects.find(obj => obj.kiro_metering);
+    expect(finalChunk.kiro_metering).toEqual({
+      usage: 0.0097,
+      unit: "credit",
+      unit_plural: "credits",
+    });
+    expect(finalChunk.usage.kiro_credits).toBe(0.0097);
+    expect(finalChunk.usage.kiro_credit_unit).toBe("credit");
+  });
 });

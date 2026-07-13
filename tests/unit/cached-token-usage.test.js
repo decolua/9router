@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { canonicalizeUsage, extractUsage, mergeUsage } from "../../open-sse/utils/usageTracking.js";
+import { canonicalizeUsage, extractUsage, filterUsageForFormat, mergeUsage } from "../../open-sse/utils/usageTracking.js";
 import { calculateCostFromTokens } from "../../open-sse/providers/pricing.js";
 import { toOpenAIUsage } from "../../open-sse/translator/concerns/usage.js";
 
@@ -184,5 +184,21 @@ describe("Kiro usage pass-through", () => {
     expect(out.prompt_tokens_details).toBeDefined();
     expect(out.prompt_tokens_details.cached_tokens).toBe(200);
     expect(out.prompt_tokens_details.cache_creation_tokens).toBe(50);
+  });
+
+  it("preserves Kiro credit metering fields through OpenAI-shaped usage", () => {
+    const usage = extractUsage({
+      usage: {
+        prompt_tokens: 100,
+        completion_tokens: 1,
+        total_tokens: 101,
+        kiro_credits: 0.003,
+        kiro_credit_unit: "credit",
+      },
+    });
+
+    expect(usage.kiro_credits).toBe(0.003);
+    expect(usage.kiro_credit_unit).toBe("credit");
+    expect(filterUsageForFormat(usage, "openai").kiro_credits).toBe(0.003);
   });
 });

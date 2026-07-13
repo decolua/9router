@@ -5,13 +5,14 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { v4 as uuidv4 } from "uuid";
-import { resolveSessionId } from "../../utils/sessionManager.js";
+import { resolveContinuationId, resolveSessionId } from "../../utils/sessionManager.js";
 import {
   resolveKiroModel,
   resolveKiroThinkingBudget,
   buildThinkingSystemPrefix,
   KIRO_AGENTIC_SYSTEM_PROMPT,
-  resolveDefaultProfileArn
+  resolveDefaultProfileArn,
+  buildKiroAdditionalModelRequestFieldsForModel
 } from "../../config/kiroConstants.js";
 import { parseDataUri } from "../concerns/image.js";
 import { DEFAULT_IMAGE_MIME } from "../schema/index.js";
@@ -550,23 +551,35 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
 
   const timestamp = new Date().toISOString();
 
-  // Build the system-prompt prefix that goes ABOVE the user message body.
-  // Order: thinking_mode tag first (so Kiro sees it before any user text),
-  // then context/timestamp marker, then optional agentic chunked-write prompt.
-  const prefixParts = [];
+  // Kiro CLI/KAS sends these as top-level systemPrompt. Keep a content fallback
+  // too because the CodeWhisperer surface does not always enforce top-level
+  // systemPrompt for direct calls.
+  const systemPromptParts = [];
   if (thinkingBudget !== null) {
-    prefixParts.push(buildThinkingSystemPrefix(thinkingBudget));
+    systemPromptParts.push(buildThinkingSystemPrefix(thinkingBudget));
   }
-  prefixParts.push(`[Context: Current time is ${timestamp}]`);
+  systemPromptParts.push(`[Context: Current time is ${timestamp}]`);
   if (agentic) {
-    prefixParts.push(KIRO_AGENTIC_SYSTEM_PROMPT);
+    systemPromptParts.push(KIRO_AGENTIC_SYSTEM_PROMPT);
   }
-  finalContent = `${prefixParts.join("\n\n")}\n\n${finalContent}`;
+  const systemPrompt = systemPromptParts.filter(Boolean).join("\n\n");
+  if (systemPrompt) {
+    finalContent = `${systemPrompt}\n\n${finalContent}`;
+  }
+
+  const conversationId = resolveSessionId({ headers: credentials?.rawHeaders, body, connectionId: credentials?.connectionId, scope: "kiro" });
+  const continuationId = resolveContinuationId({
+    sessionId: conversationId,
+    connectionId: credentials?.connectionId,
+    scope: "kiro",
+  });
 
   const payload = {
     conversationState: {
       chatTriggerType: "MANUAL",
-      conversationId: resolveSessionId({ headers: credentials?.rawHeaders, body, connectionId: credentials?.connectionId, scope: "kiro" }),
+      conversationId,
+      agentContinuationId: continuationId,
+      agentTaskType: "vibe",
       currentMessage: {
         userInputMessage: {
           content: finalContent,
@@ -581,11 +594,17 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
         }
       },
       history: history
-    }
+    },
+    agentMode: credentials?.providerSpecificData?.agentMode || "vibe",
   };
 
   if (profileArn) {
     payload.profileArn = profileArn;
+  }
+  if (systemPrompt) payload.systemPrompt = systemPrompt;
+  const additionalModelRequestFields = buildKiroAdditionalModelRequestFieldsForModel(body, upstreamModel);
+  if (additionalModelRequestFields) {
+    payload.additionalModelRequestFields = additionalModelRequestFields;
   }
 
   if (maxTokens || temperature !== undefined || topP !== undefined) {

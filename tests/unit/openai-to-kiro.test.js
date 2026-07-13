@@ -11,6 +11,7 @@ import { openaiToKiroRequest } from "../../open-sse/translator/request/openai-to
 
 const contentOf = (result) =>
   result.conversationState.currentMessage.userInputMessage.content;
+const systemPromptOf = (result) => result.systemPrompt || "";
 
 describe("openaiToKiroRequest", () => {
   describe("basic message conversion", () => {
@@ -293,7 +294,11 @@ describe("openaiToKiroRequest", () => {
 
       const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
 
-      expect(contentOf(result)).toContain("<max_thinking_length>1024</max_thinking_length>");
+      expect(systemPromptOf(result)).toContain("<max_thinking_length>1024</max_thinking_length>");
+      expect(result.additionalModelRequestFields).toEqual({
+        thinking: { type: "adaptive", display: "summarized" },
+        output_config: { effort: "low" },
+      });
     });
 
     it("maps reasoning_effort high to max_thinking_length 24576", () => {
@@ -304,7 +309,11 @@ describe("openaiToKiroRequest", () => {
 
       const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
 
-      expect(contentOf(result)).toContain("<max_thinking_length>24576</max_thinking_length>");
+      expect(systemPromptOf(result)).toContain("<max_thinking_length>24576</max_thinking_length>");
+      expect(result.additionalModelRequestFields).toEqual({
+        thinking: { type: "adaptive", display: "summarized" },
+        output_config: { effort: "high" },
+      });
     });
 
     it("clamps reasoning_effort max to Kiro max_thinking_length 32000", () => {
@@ -315,7 +324,8 @@ describe("openaiToKiroRequest", () => {
 
       const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
 
-      expect(contentOf(result)).toContain("<max_thinking_length>32000</max_thinking_length>");
+      expect(systemPromptOf(result)).toContain("<max_thinking_length>32000</max_thinking_length>");
+      expect(result.additionalModelRequestFields?.output_config?.effort).toBe("high");
     });
 
     it("clamps OpenAI Responses reasoning.effort xhigh to max_thinking_length 32000", () => {
@@ -326,7 +336,8 @@ describe("openaiToKiroRequest", () => {
 
       const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
 
-      expect(contentOf(result)).toContain("<max_thinking_length>32000</max_thinking_length>");
+      expect(systemPromptOf(result)).toContain("<max_thinking_length>32000</max_thinking_length>");
+      expect(result.additionalModelRequestFields?.output_config?.effort).toBe("high");
     });
 
     it("uses Claude thinking.budget_tokens as max_thinking_length", () => {
@@ -337,7 +348,7 @@ describe("openaiToKiroRequest", () => {
 
       const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
 
-      expect(contentOf(result)).toContain("<max_thinking_length>4096</max_thinking_length>");
+      expect(systemPromptOf(result)).toContain("<max_thinking_length>4096</max_thinking_length>");
     });
 
     it("uses the default budget for synthetic -thinking models with no explicit config", () => {
@@ -347,7 +358,7 @@ describe("openaiToKiroRequest", () => {
 
       const result = openaiToKiroRequest("claude-sonnet-4.6-thinking", body, true, {});
 
-      expect(contentOf(result)).toContain("<max_thinking_length>16000</max_thinking_length>");
+      expect(systemPromptOf(result)).toContain("<max_thinking_length>16000</max_thinking_length>");
     });
 
     it("does not inject thinking prefix for reasoning_effort none", () => {
@@ -358,8 +369,9 @@ describe("openaiToKiroRequest", () => {
 
       const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
 
-      expect(contentOf(result)).not.toContain("<thinking_mode>enabled</thinking_mode>");
-      expect(contentOf(result)).not.toContain("<max_thinking_length>");
+      expect(systemPromptOf(result)).not.toContain("<thinking_mode>enabled</thinking_mode>");
+      expect(systemPromptOf(result)).not.toContain("<max_thinking_length>");
+      expect(result.additionalModelRequestFields).toBeUndefined();
     });
   });
 });

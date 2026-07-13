@@ -131,6 +131,47 @@ export function resolveKiroThinkingBudget(body, headers, model) {
   return null;
 }
 
+export function extractKiroEffortLevel(body) {
+  const effort =
+    body?.output_config?.effort ??
+    body?.reasoning_effort ??
+    (typeof body?.reasoning === "object" ? body.reasoning?.effort : null);
+  if (typeof effort !== "string") return null;
+  const normalized = effort.toLowerCase();
+  if (normalized === "none" || normalized === "off" || normalized === "disabled") return null;
+  if (normalized === "xhigh" || normalized === "max") return "high";
+  if (["low", "medium", "high"].includes(normalized)) return normalized;
+  return null;
+}
+
+export function buildKiroAdditionalModelRequestFields(body) {
+  const effort = extractKiroEffortLevel(body);
+  if (!effort) return undefined;
+  // Mirrors Kiro CLI/KAS buildEffortRequestFields("output_config").
+  return {
+    thinking: { type: "adaptive", display: "summarized" },
+    output_config: { effort },
+  };
+}
+
+export function supportsKiroAdditionalModelRequestFields(model) {
+  if (typeof model !== "string") return false;
+  const normalized = model.toLowerCase().replace(/-/g, ".");
+  return (
+    normalized.includes("claude.opus.4.6") ||
+    normalized.includes("claude.opus.4.7") ||
+    normalized.includes("claude.opus.4.8") ||
+    normalized.includes("claude.sonnet.4.6") ||
+    normalized.includes("claude.sonnet.4.7") ||
+    normalized.includes("claude.sonnet.5")
+  );
+}
+
+export function buildKiroAdditionalModelRequestFieldsForModel(body, model) {
+  if (!supportsKiroAdditionalModelRequestFields(model)) return undefined;
+  return buildKiroAdditionalModelRequestFields(body);
+}
+
 /**
  * Detect whether an inbound request is asking for reasoning / thinking output.
  * Thin wrapper over resolveKiroThinkingBudget (single source of truth).
