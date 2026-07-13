@@ -4,6 +4,12 @@ import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLock
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import * as log from "../utils/logger.js";
+import {
+  KIRO_SUSPENSION_REASON,
+  KIRO_SUSPENSION_RETRY_MS,
+  isTemporaryKiroSuspension,
+  recoverScheduledConnections,
+} from "@/lib/connectionRecovery.js";
 
 // Mutex to prevent race conditions during account selection
 let selectionMutex = Promise.resolve();
@@ -21,6 +27,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     ? excludeConnectionIds
     : (excludeConnectionIds ? new Set([excludeConnectionIds]) : new Set());
   const preferredConnectionId = options?.preferredConnectionId || null;
+  const strictPreferredConnection = options?.strictPreferredConnection === true;
   // Acquire mutex to prevent race conditions
   const currentMutex = selectionMutex;
   let resolveMutex;
@@ -31,6 +38,10 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
 
     // Resolve alias to provider ID (e.g., "kc" -> "kilocode")
     const providerId = resolveProviderId(provider);
+
+    // Re-enable Kiro accounts whose automatic suspension retry window elapsed.
+    // The request that follows becomes the actual re-test.
+    await recoverScheduledConnections(providerId);
 
     // Inject a virtual connection for no-auth free providers (with optional proxy pool from settings)
     if (FREE_PROVIDERS[providerId]?.noAuth) {
@@ -115,6 +126,9 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       connection = availableConnections.find((c) => c.id === preferredConnectionId);
       if (connection) {
         log.info("AUTH", `${provider} | pinned to ${connection.id?.slice(0, 8)} (${connection.name || connection.email || "unnamed"})`);
+      } else if (strictPreferredConnection) {
+        log.warn("AUTH", `${provider} | requested pinned connection is unavailable: ${preferredConnectionId.slice(0, 8)}`);
+        return null;
       }
     }
     if (connection) {
@@ -212,6 +226,23 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   const connections = await getProviderConnections({ provider });
   const conn = connections.find(c => c.id === connectionId);
   const backoffLevel = conn?.backoffLevel || 0;
+
+  if (isTemporaryKiroSuspension(provider, status, errorText)) {
+    const retryAt = new Date(Date.now() + KIRO_SUSPENSION_RETRY_MS).toISOString();
+    const reason = typeof errorText === "string" ? errorText.slice(0, 500) : KIRO_SUSPENSION_REASON;
+    await updateProviderConnection(connectionId, {
+      isActive: false,
+      testStatus: "unavailable",
+      lastError: reason,
+      errorCode: status,
+      lastErrorAt: new Date().toISOString(),
+      autoRetryAt: retryAt,
+      autoRetryReason: KIRO_SUSPENSION_REASON,
+      backoffLevel: 0,
+    });
+    log.warn("AUTH", `${conn?.name || conn?.email || connectionId} suspended by Kiro; disabled until ${retryAt}`);
+    return { shouldFallback: true, cooldownMs: KIRO_SUSPENSION_RETRY_MS };
+  }
 
   // Provider-specific precise cooldown (e.g. codex usage_limit_reached resets_at) overrides backoff
   let shouldFallback, cooldownMs, newBackoffLevel;

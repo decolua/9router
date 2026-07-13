@@ -77,6 +77,12 @@ export default function ProviderDetailPage() {
   const [oneByOneSummary, setOneByOneSummary] = useState(null);
   const stopOneByOneRef = useRef(false);
   const [importingQoderModels, setImportingQoderModels] = useState(false);
+  const [connectionSearch, setConnectionSearch] = useState("");
+  const [connectionStatusFilter, setConnectionStatusFilter] = useState("all");
+  const [chatTestModel, setChatTestModel] = useState("");
+  const [chatTestConnection, setChatTestConnection] = useState(null);
+  const [chatTestRunning, setChatTestRunning] = useState(false);
+  const [chatTestResult, setChatTestResult] = useState(null);
   const { copied, copy } = useCopyToClipboard();
 
   const AG_RISK_STORAGE_KEY = "ag_risk_confirmed";
@@ -183,6 +189,69 @@ export default function ProviderDetailPage() {
   const providerDisplayAlias = isCompatible
     ? (providerNode?.prefix || providerId)
     : providerAlias;
+
+  const llmModels = models.filter((model) => {
+    const kind = getModelKind(model);
+    return (!kind || kind === "llm") && !disabledModelIds.includes(model.id);
+  });
+  const effectiveChatTestModel = chatTestModel || llmModels[0]?.id || "";
+  const activeConnectionsCount = connections.filter((connection) => connection.isActive !== false).length;
+
+  const filteredConnections = connections.filter((connection) => {
+    const isActiveConnection = connection.isActive !== false;
+    if (connectionStatusFilter === "active" && !isActiveConnection) return false;
+    if (connectionStatusFilter === "disabled" && isActiveConnection) return false;
+
+    const query = connectionSearch.trim().toLowerCase();
+    if (!query) return true;
+    return [connection.name, connection.email, connection.id, connection.authType]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(query));
+  });
+
+  const handleTestChat = async () => {
+    if (!effectiveChatTestModel || !chatTestConnection?.id || chatTestRunning) return;
+    setChatTestRunning(true);
+    setChatTestResult(null);
+
+    try {
+      const response = await fetch(`/api/providers/${chatTestConnection.id}/test-chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: effectiveChatTestModel,
+        }),
+      });
+      const data = await response.json().catch(() => null);
+      const result = {
+        ok: response.ok,
+        status: response.status,
+        content: data ? JSON.stringify(data, null, 2) : `HTTP ${response.status}`,
+      };
+      setChatTestResult(result);
+      if (response.ok) console.log("[Kiro chat test]", chatTestConnection.id, data);
+      else console.error("[Kiro chat test error]", chatTestConnection.id, data);
+      if (response.status === 403 && JSON.stringify(data || {}).includes("TEMPORARILY_SUSPENDED")) {
+        await fetchConnections();
+      }
+    } catch (error) {
+      const result = {
+        ok: false,
+        status: null,
+        content: error.message || "Network error",
+      };
+      setChatTestResult(result);
+      console.error("[Kiro chat test error]", chatTestConnection.id, error);
+    } finally {
+      setChatTestRunning(false);
+    }
+  };
+
+  const openChatTest = (connection) => {
+    setChatTestConnection(connection);
+    setChatTestModel("");
+    setChatTestResult(null);
+  };
 
   const fetchDisabledModels = useCallback(async () => {
     try {
@@ -805,7 +874,8 @@ export default function ProviderDetailPage() {
   };
 
   const selectedConnections = connections.filter((conn) => selectedConnectionIds.includes(conn.id));
-  const allSelected = connections.length > 0 && selectedConnectionIds.length === connections.length;
+  const allVisibleSelected = filteredConnections.length > 0
+    && filteredConnections.every((connection) => selectedConnectionIds.includes(connection.id));
 
   const toggleSelectConnection = (connectionId) => {
     setSelectedConnectionIds((prev) => (
@@ -816,11 +886,12 @@ export default function ProviderDetailPage() {
   };
 
   const toggleSelectAllConnections = () => {
-    if (allSelected) {
-      setSelectedConnectionIds([]);
+    const visibleIds = filteredConnections.map((connection) => connection.id);
+    if (allVisibleSelected) {
+      setSelectedConnectionIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
       return;
     }
-    setSelectedConnectionIds(connections.map((conn) => conn.id));
+    setSelectedConnectionIds((prev) => [...new Set([...prev, ...visibleIds])]);
   };
 
   const clearSelection = () => {
@@ -904,8 +975,14 @@ export default function ProviderDetailPage() {
 
   const connectionsList = (
     <div className="flex min-w-0 flex-col divide-y divide-black/[0.03] dark:divide-white/[0.03]">
-      {connections
-        .map((conn, index) => (
+      {filteredConnections.length === 0 ? (
+        <div className="px-3 py-8 text-center text-sm text-text-muted">
+          No connections match the current search and status filter.
+        </div>
+      ) : filteredConnections
+        .map((conn) => {
+          const connectionIndex = connections.findIndex((item) => item.id === conn.id);
+          return (
           <div key={conn.id} className="flex min-w-0 items-stretch">
             <div className="flex shrink-0 items-center pl-1 sm:pl-2">
               <input
@@ -920,10 +997,10 @@ export default function ProviderDetailPage() {
                 connection={conn}
                 proxyPools={proxyPools}
                 isOAuth={isOAuth}
-                isFirst={index === 0}
-                isLast={index === connections.length - 1}
-                onMoveUp={() => handleSwapPriority(index, index - 1)}
-                onMoveDown={() => handleSwapPriority(index, index + 1)}
+                isFirst={connectionIndex === 0}
+                isLast={connectionIndex === connections.length - 1}
+                onMoveUp={() => handleSwapPriority(connectionIndex, connectionIndex - 1)}
+                onMoveDown={() => handleSwapPriority(connectionIndex, connectionIndex + 1)}
                 onToggleActive={(isActive) => handleUpdateConnectionStatus(conn.id, isActive)}
                 autoPing={AUTO_PING_SETTINGS_KEYS[providerId] && conn.authType === "oauth" ? {
                   on: autoPing.connections[conn.id] === true,
@@ -952,12 +1029,13 @@ export default function ProviderDetailPage() {
                   setSelectedConnection(conn);
                   setShowEditModal(true);
                 }}
+                onTestChat={providerId === "kiro" ? () => openChatTest(conn) : null}
                 onDelete={() => handleDelete(conn.id)}
                 oneByOneStatus={oneByOneResults[conn.id] || null}
               />
             </div>
           </div>
-        ))}
+        );})}
     </div>
   );
 
@@ -1282,7 +1360,7 @@ export default function ProviderDetailPage() {
               )}
             </div>
             <p className="text-text-muted">
-              {connections.length} connection{connections.length === 1 ? "" : "s"}
+              {activeConnectionsCount} active connection{activeConnectionsCount === 1 ? "" : "s"}
             </p>
           </div>
         </div>
@@ -1499,6 +1577,29 @@ export default function ProviderDetailPage() {
             </div>
           ) : (
             <>
+              {providerId === "kiro" && (
+                <div className="mb-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_180px]">
+                  <div className="relative min-w-0">
+                    <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-text-muted">search</span>
+                    <input
+                      type="search"
+                      value={connectionSearch}
+                      onChange={(event) => setConnectionSearch(event.target.value)}
+                      placeholder="Search by name, email, ID or auth type..."
+                      className="h-10 w-full rounded-lg border border-border bg-background pl-10 pr-3 text-sm focus:border-primary focus:outline-none"
+                    />
+                  </div>
+                  <select
+                    value={connectionStatusFilter}
+                    onChange={(event) => setConnectionStatusFilter(event.target.value)}
+                    className="h-10 rounded-lg border border-border bg-background px-3 text-sm focus:border-primary focus:outline-none"
+                  >
+                    <option value="all">All statuses ({connections.length})</option>
+                    <option value="active">Active ({connections.filter((connection) => connection.isActive !== false).length})</option>
+                    <option value="disabled">Disabled ({connections.filter((connection) => connection.isActive === false).length})</option>
+                  </select>
+                </div>
+              )}
               {oneByOneSummary && (
                 <div className="mb-4 rounded-lg border border-black/10 bg-black/[0.02] px-3 py-2 text-xs text-text-muted dark:border-white/10 dark:bg-white/[0.03]">
                   <div className="flex flex-wrap items-center gap-3">
@@ -1520,7 +1621,7 @@ export default function ProviderDetailPage() {
                   <label className="flex cursor-pointer items-center gap-1.5 text-xs text-text-muted hover:text-primary">
                     <input
                       type="checkbox"
-                      checked={allSelected}
+                      checked={allVisibleSelected}
                       onChange={toggleSelectAllConnections}
                       className="h-3.5 w-3.5 rounded border-gray-300 text-primary focus:ring-primary"
                     />
@@ -1639,6 +1740,58 @@ export default function ProviderDetailPage() {
         )}
         {renderModelsSection()}
       </Card>
+
+      <Modal
+        isOpen={!!chatTestConnection}
+        onClose={() => {
+          if (chatTestRunning) return;
+          setChatTestConnection(null);
+          setChatTestResult(null);
+        }}
+        title="Test Chat"
+      >
+        <div className="flex flex-col gap-4">
+          <div className="rounded-lg border border-border bg-black/[0.02] px-3 py-2 dark:bg-white/[0.03]">
+            <p className="text-xs text-text-muted">Auth</p>
+            <p className="truncate text-sm font-medium">
+              {chatTestConnection?.name || chatTestConnection?.email || chatTestConnection?.id}
+            </p>
+          </div>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-text-muted">Model</span>
+            <select
+              value={effectiveChatTestModel}
+              onChange={(event) => {
+                setChatTestModel(event.target.value);
+                setChatTestResult(null);
+              }}
+              className="h-10 rounded-lg border border-border bg-background px-3 text-sm focus:border-primary focus:outline-none"
+            >
+              {llmModels.map((model) => (
+                <option key={model.id} value={model.id}>{model.name || model.id}</option>
+              ))}
+            </select>
+          </label>
+          <p className="text-xs text-text-muted">Prompt: <code className="rounded bg-black/5 px-1.5 py-0.5 dark:bg-white/5">hi</code></p>
+          <Button
+            icon="send"
+            onClick={handleTestChat}
+            disabled={chatTestRunning || !effectiveChatTestModel}
+            fullWidth
+          >
+            {chatTestRunning ? "Testing..." : "Run Test"}
+          </Button>
+          {chatTestResult && (
+            <div className={`overflow-hidden rounded-lg border ${chatTestResult.ok ? "border-green-500/30 bg-green-500/5" : "border-red-500/30 bg-red-500/5"}`}>
+              <div className="flex flex-wrap items-center gap-3 border-b border-inherit px-3 py-2 text-xs">
+                <Badge variant={chatTestResult.ok ? "success" : "error"}>{chatTestResult.ok ? "Success" : "Error"}</Badge>
+                {chatTestResult.status && <span className="text-text-muted">HTTP {chatTestResult.status}</span>}
+              </div>
+              <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words px-3 py-3 text-xs leading-relaxed text-text-main">{chatTestResult.content}</pre>
+            </div>
+          )}
+        </div>
+      </Modal>
 
       {bulkActionModal}
 
