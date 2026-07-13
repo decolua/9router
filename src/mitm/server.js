@@ -11,6 +11,7 @@ const { IS_DEV, LSOF_BIN, TARGET_HOSTS, URL_PATTERNS, MODEL_SYNONYMS, MODEL_PATT
 const { DATA_DIR, MITM_DIR } = require("./paths");
 const { generateCert, getCertForDomain } = require("./cert/generate");
 const { getMitmAlias } = require("./dbReader");
+const { findMappedOverride } = require("./aliasLookup");
 const { applyAntigravityIdeVersionOverride } = require("./antigravityIdeVersion");
 const LOCAL_PORT = 443;
 const IS_WIN = process.platform === "win32";
@@ -132,25 +133,18 @@ function isBinaryData(buffer) {
   return (nonPrintable / sample.length) > 0.3;
 }
 
-function getMappedModel(tool, model) {
-  if (!model) return null;
+function getMappedOverride(tool, model) {
   try {
-    const aliases = getMitmAlias(tool);
-    if (!aliases) return null;
-    // Normalize via synonym map (e.g., public AG names -> backend model ids)
-    const normalizedModel = String(model).replace(/^models\//, "");
-    const lookup = MODEL_SYNONYMS?.[tool]?.[normalizedModel] || normalizedModel;
-    if (aliases[lookup]) return aliases[lookup];
-    // Prefix match fallback
-    const prefixKey = Object.keys(aliases).find(k => k && aliases[k] && (lookup.startsWith(k) || k.startsWith(lookup)));
-    if (prefixKey) return aliases[prefixKey];
-    // Pattern fallback: catches AG renamed variants (e.g. deprecated pro IDs → gemini-pro-agent)
-    const patterns = MODEL_PATTERNS?.[tool] || [];
-    for (const { match, alias } of patterns) {
-      if (match.test(lookup) && aliases[alias]) return aliases[alias];
-    }
+    return findMappedOverride({
+      tool,
+      model,
+      aliases: getMitmAlias(tool),
+      synonyms: MODEL_SYNONYMS,
+      patterns: MODEL_PATTERNS,
+    });
+  } catch {
     return null;
-  } catch { return null; }
+  }
 }
 
 /**
@@ -366,12 +360,16 @@ const server = https.createServer(sslOptions, async (req, res) => {
       return passthrough(req, res, bodyBuffer);
     }
 
-    const mappedModel = getMappedModel(tool, model);
-    if (!mappedModel) {
+    const mappedOverride = getMappedOverride(tool, model);
+    if (!mappedOverride) {
       return passthrough(req, res, bodyBuffer);
     }
 
-    return handlers[tool].intercept(req, res, bodyBuffer, mappedModel, passthrough);
+    if (tool === "antigravity") {
+      return handlers[tool].intercept(req, res, bodyBuffer, mappedOverride, passthrough);
+    }
+    if (!mappedOverride.model) return passthrough(req, res, bodyBuffer);
+    return handlers[tool].intercept(req, res, bodyBuffer, mappedOverride.model, passthrough);
   } catch (e) {
     err(`Unhandled error: ${e.message}`);
     if (!res.headersSent) res.writeHead(500, { "Content-Type": "application/json" });

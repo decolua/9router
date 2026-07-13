@@ -2,17 +2,58 @@ const { err, createResponseDumper } = require("../logger");
 const { IS_DEV } = require("../config");
 const { fetchRouter, pipeSSE } = require("./base");
 
+function withoutThinkingConfig(config) {
+  if (!config || typeof config !== "object") return config;
+  const { thinkingConfig: _thinkingConfig, ...rest } = config;
+  return rest;
+}
+
+function applyRequestOverrides(body, override = {}) {
+  if (!override.model && !override.reasoningEffort) return body;
+
+  const next = {
+    ...body,
+    ...(override.model ? { model: override.model } : {}),
+  };
+
+  if (!override.reasoningEffort) return next;
+
+  const {
+    thinkingConfig: _thinkingConfig,
+    generationConfig,
+    request,
+    ...rest
+  } = next;
+
+  return {
+    ...rest,
+    reasoning_effort: override.reasoningEffort,
+    ...(generationConfig
+      ? { generationConfig: withoutThinkingConfig(generationConfig) }
+      : {}),
+    ...(request
+      ? {
+          request: {
+            ...request,
+            ...(request.generationConfig
+              ? { generationConfig: withoutThinkingConfig(request.generationConfig) }
+              : {}),
+          },
+        }
+      : {}),
+  };
+}
+
 /**
  * Intercept Antigravity request — forward Gemini body as-is to /v1/chat/completions.
  * Router auto-detects format via body.userAgent==="antigravity" + body.request.contents,
  * runs antigravity→openai→provider→openai→antigravity translators internally.
  */
-async function intercept(req, res, bodyBuffer, mappedModel) {
+async function intercept(req, res, bodyBuffer, override) {
   const dumper = IS_DEV ? createResponseDumper(req, "intercept-antigravity") : null;
   const isStream = req.url.includes(":streamGenerateContent");
   try {
-    const body = JSON.parse(bodyBuffer.toString());
-    if (body.model) body.model = mappedModel;
+    const body = applyRequestOverrides(JSON.parse(bodyBuffer.toString()), override);
 
     const routerRes = await fetchRouter(body, "/v1/chat/completions", req.headers);
     await pipeSSE(routerRes, res, dumper);
@@ -30,4 +71,4 @@ async function intercept(req, res, bodyBuffer, mappedModel) {
   }
 }
 
-module.exports = { intercept };
+module.exports = { intercept, applyRequestOverrides };
