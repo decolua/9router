@@ -12,6 +12,7 @@
 - **Proxy-Pools**: auto-rotate strategy for no-auth providers (#2409)
 
 ## Fixes
+- **Grok CLI**: parse SuperGrok `creditUsagePercent` / `productUsage` for quota tracker (stop treating `onDemandCap=0` as exhausted)
 - **Cloudflare-AI**: support accountId in bulk key import (#2449)
 - **DB**: backup on schema change, MCP child cleanup, codex models, usage providers OOM
 - **Codex**: avoid bare-email OAuth dedup (#2477)

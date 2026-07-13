@@ -2,24 +2,28 @@
  * Grok CLI / Grok Build usage handler
  *
  * Source of truth: official grok-shell/grok-pager traffic to cli-chat-proxy.grok.com
- *   GET /v1/billing?format=credits
+ *   GET /v1/billing?format=credits   — weekly credit window (percent-based for SuperGrok)
+ *   GET /v1/billing                 — monthly absolute limit/used (when present)
  *   GET /v1/user?include=subscription
  *
- * Observed billing shape (protobuf-json style `{ val: number }`):
+ * Unified billing accounts (isUnifiedBillingUser / SuperGrok / X Premium+) return:
  * {
  *   config: {
- *     currentPeriod: { type: "USAGE_PERIOD_TYPE_WEEKLY", start, end },
- *     onDemandCap: { val },
- *     onDemandUsed: { val },
- *     prepaidBalance: { val },
+ *     creditUsagePercent: 55,                 // overall weekly credit burn %
+ *     productUsage: [                         // per-product split
+ *       { product: "GrokBuild", usagePercent: 45 },
+ *       { product: "GrokChat", usagePercent: 10 }
+ *     ],
+ *     onDemandCap: { val: 0 },                // often 0 even with remaining credits
+ *     onDemandUsed: { val: 0 },
+ *     prepaidBalance: { val: 0 },
  *     isUnifiedBillingUser: true,
  *     billingPeriodStart, billingPeriodEnd
  *   }
  * }
  *
- * Exhausted free/promo accounts return cap=0/used=0/prepaid=0 and chat 402s with
- * personal-team-blocked:spending-limit. Paid/sub accounts surface non-zero cap
- * or prepaidBalance; richer credit fields are parsed opportunistically if present.
+ * Older / promo accounts may still surface absolute onDemandCap/Used or prepaidBalance.
+ * Plain /v1/billing adds monthlyLimit + used for absolute monthly bars.
  */
 
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
@@ -28,6 +32,11 @@ import { U, parseResetTime, toFiniteNumber } from "./shared.js";
 const USAGE = U("grok-cli");
 const BILLING_URL = USAGE.url || "https://cli-chat-proxy.grok.com/v1/billing?format=credits";
 const USER_URL = USAGE.userUrl || "https://cli-chat-proxy.grok.com/v1/user?include=subscription";
+// Absolute monthly window lives on the unformatted billing endpoint.
+const PLAIN_BILLING_URL =
+  (typeof BILLING_URL === "string" && BILLING_URL.includes("?"))
+    ? BILLING_URL.replace(/\?.*$/, "")
+    : "https://cli-chat-proxy.grok.com/v1/billing";
 
 /** Unwrap protobuf-json `{ val: n }` or plain numbers/strings. */
 function unwrapVal(value, fallback = 0) {
@@ -36,6 +45,19 @@ function unwrapVal(value, fallback = 0) {
     return toFiniteNumber(value.val, fallback);
   }
   return toFiniteNumber(value, fallback);
+}
+
+/** "GrokBuild" → "Grok Build", "XPremiumPlus" → "X Premium Plus", "super_grok" → "Super Grok" */
+function humanizeIdentifier(value) {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const spaced = value
+    .trim()
+    .replace(/[_-]+/g, " ")
+    .replace(/([a-z\d])([A-Z])/g, "$1 $2")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+    .replace(/\s+/g, " ")
+    .trim();
+  return spaced.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function buildGrokCliHeaders(accessToken, providerSpecificData = {}) {
@@ -57,11 +79,7 @@ function buildGrokCliHeaders(accessToken, providerSpecificData = {}) {
 
 function resolvePlan(user, config) {
   const tier = typeof user?.subscriptionTier === "string" ? user.subscriptionTier.trim() : "";
-  if (tier) {
-    return tier
-      .replace(/[_-]+/g, " ")
-      .replace(/\b\w/g, (c) => c.toUpperCase());
-  }
+  if (tier) return humanizeIdentifier(tier) || tier;
   if (user?.hasGrokCodeAccess === true) return "Grok Code";
   if (config?.isUnifiedBillingUser === true) return "Grok Build";
   return "Grok Build";
@@ -92,16 +110,35 @@ function makeQuota({ used, total, resetAt, unlimited = false }) {
   };
 }
 
-/**
- * Map billing JSON → normalized quotas object for the dashboard.
- * Returns { quotas, periodEnd, exhaustedHint } or empty quotas when nothing usable.
- */
-export function parseGrokCliBilling(billing, user = null) {
+/** Percent-used (0–100) → quota row with total 100 so the bar/label match. */
+function makePercentQuota(usagePercent, resetAt) {
+  const used = Math.min(100, Math.max(0, toFiniteNumber(usagePercent, 0)));
+  return {
+    used,
+    total: 100,
+    remainingPercentage: Math.max(0, 100 - used),
+    resetAt: resetAt || null,
+    unlimited: false,
+  };
+}
+
+function extractConfig(billing) {
   const root = billing && typeof billing === "object" ? billing : {};
   const config =
     root.config && typeof root.config === "object" && !Array.isArray(root.config)
       ? root.config
       : root;
+  return { root, config };
+}
+
+/**
+ * Map billing JSON → normalized quotas object for the dashboard.
+ * @param {object|null} billing - /v1/billing?format=credits body
+ * @param {object|null} user - /v1/user?include=subscription body
+ * @param {object|null} plainBilling - optional /v1/billing (no format) body
+ */
+export function parseGrokCliBilling(billing, user = null, plainBilling = null) {
+  const { root, config } = extractConfig(billing);
 
   const periodEnd =
     parseResetTime(config.billingPeriodEnd) ||
@@ -111,7 +148,41 @@ export function parseGrokCliBilling(billing, user = null) {
 
   const quotas = {};
 
-  // Primary: on-demand spending window (subscription / promo credits)
+  // ── 1. Unified / SuperGrok: percent-based weekly credits ─────────────────
+  // Live SuperGrok accounts return creditUsagePercent + productUsage while
+  // onDemandCap stays 0 — that must NOT be treated as exhausted.
+  const productUsage = Array.isArray(config.productUsage)
+    ? config.productUsage
+    : Array.isArray(root.productUsage)
+      ? root.productUsage
+      : [];
+
+  let hasPercentQuota = false;
+
+  if (productUsage.length > 0) {
+    for (const item of productUsage) {
+      if (!item || typeof item !== "object") continue;
+      const pct = unwrapVal(item.usagePercent, NaN);
+      if (!Number.isFinite(pct)) continue;
+      const name = humanizeIdentifier(item.product) || "Usage";
+      // Avoid clobbering if the same product appears twice
+      if (quotas[name]) continue;
+      quotas[name] = makePercentQuota(pct, periodEnd);
+      hasPercentQuota = true;
+    }
+  }
+
+  const creditUsagePercent = unwrapVal(
+    config.creditUsagePercent ?? root.creditUsagePercent,
+    NaN,
+  );
+  // Overall credits bar when no per-product rows (or as single summary when only overall exists)
+  if (!hasPercentQuota && Number.isFinite(creditUsagePercent)) {
+    quotas.Credits = makePercentQuota(creditUsagePercent, periodEnd);
+    hasPercentQuota = true;
+  }
+
+  // ── 2. Absolute on-demand window (promo / older account types) ───────────
   const onDemandCap = unwrapVal(config.onDemandCap ?? root.onDemandCap, NaN);
   const onDemandUsed = unwrapVal(config.onDemandUsed ?? root.onDemandUsed, NaN);
   if (Number.isFinite(onDemandCap) && onDemandCap > 0) {
@@ -121,9 +192,14 @@ export function parseGrokCliBilling(billing, user = null) {
       total: onDemandCap,
       resetAt: periodEnd,
     });
-  } else if (Number.isFinite(onDemandCap) && onDemandCap === 0 && Number.isFinite(onDemandUsed)) {
-    // Cap 0 is the exhausted free/promo state (chat returns 402 spending-limit).
-    // UI treats total===0 as unlimited, so use a synthetic 1/1 depleted row.
+  } else if (
+    // Only synthesize depleted On-demand when we have nothing better to show.
+    // Unified accounts keep onDemandCap=0 even with remaining weekly credits.
+    !hasPercentQuota &&
+    Number.isFinite(onDemandCap) &&
+    onDemandCap === 0 &&
+    Number.isFinite(onDemandUsed)
+  ) {
     quotas["On-demand"] = {
       used: 1,
       total: 1,
@@ -133,11 +209,10 @@ export function parseGrokCliBilling(billing, user = null) {
     };
   }
 
-  // Prepaid top-up balance (remaining credits; no fixed allotment known)
+  // ── 3. Prepaid top-up balance (remaining pot; no allotment known) ────────
   const prepaid = unwrapVal(config.prepaidBalance ?? root.prepaidBalance, NaN);
   if (Number.isFinite(prepaid) && prepaid > 0) {
-    // Show full bar against the current balance (0 spent of this remaining pot).
-    quotas["Prepaid"] = {
+    quotas.Prepaid = {
       used: 0,
       total: prepaid,
       remainingPercentage: 100,
@@ -146,7 +221,7 @@ export function parseGrokCliBilling(billing, user = null) {
     };
   }
 
-  // Opportunistic richer credit envelopes (future / other account types)
+  // ── 4. Opportunistic richer credit envelopes ─────────────────────────────
   const creditBags = [
     root.credits,
     root.creditBalance,
@@ -187,6 +262,22 @@ export function parseGrokCliBilling(billing, user = null) {
     }
   }
 
+  // ── 5. Plain /v1/billing monthly absolute window ─────────────────────────
+  if (plainBilling && typeof plainBilling === "object") {
+    const { config: plainConfig } = extractConfig(plainBilling);
+    const monthlyLimit = unwrapVal(plainConfig.monthlyLimit, NaN);
+    const monthlyUsed = unwrapVal(plainConfig.used, NaN);
+    const monthlyReset = parseResetTime(plainConfig.billingPeriodEnd) || null;
+
+    if (Number.isFinite(monthlyLimit) && monthlyLimit > 0) {
+      quotas.Monthly = makeQuota({
+        used: Number.isFinite(monthlyUsed) ? Math.max(0, monthlyUsed) : 0,
+        total: monthlyLimit,
+        resetAt: monthlyReset,
+      });
+    }
+  }
+
   // Exhausted when every finite quota bar is at 0% remaining
   const exhausted =
     Object.keys(quotas).length > 0 &&
@@ -216,13 +307,18 @@ export async function getGrokCliUsage(accessToken, providerSpecificData = null, 
   const headers = buildGrokCliHeaders(accessToken, providerSpecificData);
 
   try {
-    // Fetch billing + user profile in parallel (same pattern as official CLI startup)
-    const [billingRes, userRes] = await Promise.all([
+    // Credits (weekly %) + plain monthly + user profile — same startup pattern as CLI
+    const [billingRes, plainRes, userRes] = await Promise.all([
       proxyAwareFetch(
         BILLING_URL,
         { method: "GET", headers },
         proxyOptions,
       ),
+      proxyAwareFetch(
+        PLAIN_BILLING_URL,
+        { method: "GET", headers },
+        proxyOptions,
+      ).catch(() => null),
       proxyAwareFetch(
         USER_URL,
         { method: "GET", headers },
@@ -245,12 +341,17 @@ export async function getGrokCliUsage(accessToken, providerSpecificData = null, 
       return { message: "Grok CLI billing response was not JSON." };
     }
 
+    let plainBilling = null;
+    if (plainRes?.ok) {
+      plainBilling = await plainRes.json().catch(() => null);
+    }
+
     let user = null;
     if (userRes?.ok) {
       user = await userRes.json().catch(() => null);
     }
 
-    const parsed = parseGrokCliBilling(billing, user);
+    const parsed = parseGrokCliBilling(billing, user, plainBilling);
 
     if (!parsed.quotas || Object.keys(parsed.quotas).length === 0) {
       return {
@@ -263,7 +364,7 @@ export async function getGrokCliUsage(accessToken, providerSpecificData = null, 
 
     // Dashboard hides QuotaTable whenever `message` is set, so only attach a
     // message when there are no quota rows to render. Depleted accounts keep
-    // the 0% On-demand bar without a blocking message.
+    // their 0% bars without a blocking message.
     return {
       plan: parsed.plan,
       quotas: parsed.quotas,
