@@ -5,6 +5,8 @@ import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBu
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
+import { createToolCallTraceAccumulator, logToolSemantics } from "./toolSemanticsTrace.js";
+import { createSseDoneTracker } from "./sseDoneTracker.js";
 
 import { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER } from "./sseConstants.js";
 
@@ -49,7 +51,9 @@ export function createSSEStream(options = {}) {
     connectionId = null,
     body = null,
     onStreamComplete = null,
-    apiKey = null
+    apiKey = null,
+    translatedBody = null,
+    log = null
   } = options;
 
   let buffer = "";
@@ -75,6 +79,11 @@ export function createSSEStream(options = {}) {
   let openAIResponsesTerminalSeen = false;
   let openAIResponsesDoneSent = false;
   let streamDoneSent = false;  // track duplicate [DONE] across transform + flush
+
+  const passthroughDoneTracker = createSseDoneTracker();
+
+  // Tool semantics trace accumulator — counts and HMAC digests only, never raw content
+  const toolTrace = createToolCallTraceAccumulator();
 
   return new TransformStream({
     transform(chunk, controller) {
@@ -103,12 +112,16 @@ export function createSSEStream(options = {}) {
 
         // Passthrough mode: normalize and forward
         if (mode === STREAM_MODE.PASSTHROUGH) {
+          if (!passthroughDoneTracker.shouldForward(trimmed)) continue;
+          if (passthroughDoneTracker.hasSeenDone()) streamDoneSent = true;
+
           let output;
           let injectedUsage = false;
 
           if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
             try {
               const parsed = JSON.parse(trimmed.slice(5).trim());
+              toolTrace.push(parsed);
 
               const idFixed = fixInvalidId(parsed);
 
@@ -299,6 +312,7 @@ export function createSSEStream(options = {}) {
 
         // Translate: targetFormat -> openai -> sourceFormat
         const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
+        toolTrace.push(parsed);
 
         // Log OpenAI intermediate chunks (if available)
         if (translated?._openaiIntermediate) {
@@ -383,6 +397,7 @@ export function createSSEStream(options = {}) {
               thinking: accumulatedThinking
             }, usage, ttftAt);
           }
+          logToolSemantics(log, { source: sourceFormat, target: targetFormat, mode: "stream-passthrough", requestBody: body, translatedBody, providerBody: null, clientBody: null, providerToolCalls: toolTrace.summary() });
           return;
         }
 
@@ -460,6 +475,7 @@ export function createSSEStream(options = {}) {
             thinking: accumulatedThinking
           }, state?.usage, ttftAt);
         }
+        logToolSemantics(log, { source: sourceFormat, target: targetFormat, mode: "stream-translate", requestBody: body, translatedBody, providerBody: null, clientBody: null, providerToolCalls: toolTrace.summary() });
       } catch (error) {
         console.log("Error in flush:", error);
       }
@@ -480,7 +496,9 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
     connectionId,
     body,
     onStreamComplete,
-    apiKey
+    apiKey,
+    translatedBody: reqLogger?.toolSemanticsContext?.translatedBody,
+    log: reqLogger?.toolSemanticsContext?.log
   });
 }
 
@@ -493,6 +511,10 @@ export function createPassthroughStreamWithLogger(provider = null, reqLogger = n
     connectionId,
     body,
     onStreamComplete,
-    apiKey
+    apiKey,
+    sourceFormat: reqLogger?.toolSemanticsContext?.sourceFormat,
+    targetFormat: reqLogger?.toolSemanticsContext?.targetFormat,
+    translatedBody: reqLogger?.toolSemanticsContext?.translatedBody,
+    log: reqLogger?.toolSemanticsContext?.log
   });
 }
