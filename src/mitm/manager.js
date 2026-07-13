@@ -1,4 +1,4 @@
-const { exec, spawn, execSync } = require("child_process");
+const { exec, execFile, spawn, execSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
@@ -399,6 +399,10 @@ async function getMitmStatus() {
   return { running, pid, certExists, certTrusted, dnsStatus };
 }
 
+function shouldScheduleMitmRestart() {
+  return false;
+}
+
 async function scheduleMitmRestart(apiKey) {
   if (mitmIsRestarting) return;
   // Set guard synchronously before any await to prevent concurrent calls
@@ -468,7 +472,7 @@ async function killPort443Owner(owner, sudoPassword) {
   await new Promise(r => setTimeout(r, 800));
 }
 
-async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
+async function startServerCore(apiKey, sudoPassword, forceKillPort443 = false) {
   if (!serverProcess || serverProcess.killed) {
     try {
       if (fs.existsSync(PID_FILE)) {
@@ -702,8 +706,10 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
       serverPid = null;
       try { fs.unlinkSync(PID_FILE); } catch { /* ignore */ }
       try { fs.unlinkSync(LOCK_FILE); } catch { /* ignore */ }
-      // Auto-restart on unexpected exit
-      if (code !== 0 && !mitmIsRestarting) scheduleMitmRestart(apiKey);
+      // Coupled lifecycle owns failure handling; never restart MITM independently.
+      if (shouldScheduleMitmRestart({ exitCode: code, intentionalStop: mitmIsRestarting })) {
+        scheduleMitmRestart(apiKey);
+      }
     });
   }
 
@@ -743,7 +749,7 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
 /**
  * Stop MITM server — removes ALL tool DNS entries first, then kills server
  */
-async function stopServer(sudoPassword) {
+async function stopServerCore(sudoPassword) {
   // Prevent auto-restart from triggering on intentional stop
   mitmIsRestarting = true;
   mitmRestartCount = 0;
@@ -857,11 +863,112 @@ async function trustCert(sudoPassword) {
   if (password) setCachedPassword(password);
 }
 
+const {
+  rollbackPreservingError,
+  createPm2CliAdapter,
+  waitForTcpPort,
+  watchProcessExit,
+  watchPm2ProcessIdentity,
+  createMitmWireproxyLifecycle,
+  createWireproxyProcessManager,
+} = require("../lib/network/wireproxyLifecycle");
+
+function createDefaultWireproxyDeps({
+  homeDir = os.homedir(),
+  dataDir = DATA_DIR,
+  runPm2 = createPm2CliAdapter({ execFile }).runPm2,
+  waitForPort = waitForTcpPort,
+  watchExit = watchProcessExit,
+  accessFile = fs.promises.access,
+} = {}) {
+  const config = {
+    processName: "wireproxy",
+    binaryPath: path.join(homeDir, ".local", "bin", "wireproxy"),
+    configPath: path.join(dataDir, "warp", "wireproxy.conf"),
+    host: "127.0.0.1",
+    port: 40000,
+  };
+  const processManager = createWireproxyProcessManager({ runPm2, waitForPort, ...config });
+  async function requireFile(filePath, label, mode) {
+    try {
+      await accessFile(filePath, mode);
+    } catch {
+      throw new Error(`wireproxy ${label} is unavailable: ${filePath}`);
+    }
+  }
+  async function ensure() {
+    await requireFile(config.binaryPath, "binary", fs.constants.X_OK);
+    await requireFile(config.configPath, "config", fs.constants.R_OK);
+    return processManager.ensure();
+  }
+  return {
+    ensure,
+    stop: processManager.stop,
+    watchExit,
+    watchIdentity: (pid, handler) => watchPm2ProcessIdentity(config.processName, pid, handler, { runPm2 }),
+    config,
+  };
+}
+
+let wireproxyLifecycleDeps = createDefaultWireproxyDeps();
+
+function setWireproxyLifecycleDeps(deps = {}) {
+  const defaults = createDefaultWireproxyDeps();
+  wireproxyLifecycleDeps = {
+    ensure: deps.ensure || defaults.ensure,
+    stop: deps.stop || defaults.stop,
+    watchExit: deps.watchExit || defaults.watchExit,
+    watchIdentity: deps.watchIdentity || defaults.watchIdentity,
+    config: deps.config || defaults.config,
+  };
+}
+
+function getWireproxyLifecycleDeps() {
+  return wireproxyLifecycleDeps;
+}
+
+let mitmProcessActions = {
+  start: startServerCore,
+  stop: stopServerCore,
+};
+let coupledLifecycle;
+
+function rebuildCoupledLifecycle() {
+  coupledLifecycle = createMitmWireproxyLifecycle({
+    ensureWireproxy: () => wireproxyLifecycleDeps.ensure(),
+    stopWireproxy: () => wireproxyLifecycleDeps.stop(),
+    startMitmProcess: (...args) => mitmProcessActions.start(...args),
+    stopMitmProcess: (...args) => mitmProcessActions.stop(...args),
+    watchMitmExit: (pid, handler) => wireproxyLifecycleDeps.watchExit(pid, handler),
+    watchWireproxyExit: (pid, handler) => wireproxyLifecycleDeps.watchIdentity(pid, handler),
+  });
+}
+
+rebuildCoupledLifecycle();
+
+function setMitmProcessActions(actions = {}) {
+  mitmProcessActions = {
+    start: actions.start || startServerCore,
+    stop: actions.stop || stopServerCore,
+  };
+  rebuildCoupledLifecycle();
+}
+
+async function startServer(...args) {
+  const result = await coupledLifecycle.start(...args);
+  return result?.mitm;
+}
+
+async function stopServer(...args) {
+  return coupledLifecycle.stop(...args);
+}
+
 // Legacy aliases for backward compatibility
 const startMitm = startServer;
 const stopMitm = stopServer;
 
 module.exports = {
+  shouldScheduleMitmRestart,
   getMitmStatus,
   startServer,
   stopServer,
@@ -871,6 +978,12 @@ module.exports = {
   // Legacy
   startMitm,
   stopMitm,
+  createMitmWireproxyLifecycle,
+  createWireproxyProcessManager,
+  createDefaultWireproxyDeps,
+  setWireproxyLifecycleDeps,
+  getWireproxyLifecycleDeps,
+  setMitmProcessActions,
   getCachedPassword,
   setCachedPassword,
   loadEncryptedPassword,
