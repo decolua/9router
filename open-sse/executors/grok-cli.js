@@ -7,6 +7,11 @@ import {
 } from "../services/oauthCredentialManager.js";
 import { normalizeResponsesInput } from "../translator/formats/responsesApi.js";
 import { getModelUpstreamId } from "../config/providerModels.js";
+import {
+  GROK_CLI_CLIENT_IDENTIFIER,
+  GROK_CLI_VERSION,
+} from "../config/grokCli.js";
+import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { getConsistentMachineId } from "../shared/machineId.js";
 
@@ -45,10 +50,12 @@ const RESPONSES_API_ALLOWLIST = new Set([
   "prompt_cache_key",
 ]);
 
-const EFFORT_LEVELS = ["low", "medium", "high"];
+const EFFORT_LEVELS = ["low", "medium", "high", "xhigh"];
+const GROK_CLI_TURN_STORE_MAX = 5000;
 
 // Per-session last turn index so multi-turn headers never go backwards within this process
 const sessionTurnStore = new Map();
+let requestTurnStore = new WeakMap();
 
 /**
  * Count user turns in a Responses `input` array.
@@ -72,18 +79,64 @@ export function countGrokCliUserTurns(input) {
  * Prefers user-message count from the payload (full history clients), but never
  * decreases vs the last index observed for the same sessionId in this process.
  */
-export function resolveGrokCliTurnIdx(sessionId, input) {
+export function resolveGrokCliTurnIdx(sessionId, input, requestKey = null) {
   const fromInput = countGrokCliUserTurns(input);
   if (!sessionId) return fromInput;
-  const prev = sessionTurnStore.get(sessionId) || 0;
-  const turn = Math.max(fromInput, prev);
-  sessionTurnStore.set(sessionId, turn);
+
+  if (requestKey && requestTurnStore.has(requestKey)) {
+    return requestTurnStore.get(requestKey);
+  }
+
+  const now = Date.now();
+  const existing = sessionTurnStore.get(sessionId);
+  const prev = existing && now - existing.lastUsed <= MEMORY_CONFIG.sessionTtlMs
+    ? existing.turn
+    : 0;
+  if (existing) sessionTurnStore.delete(sessionId);
+
+  // A new delta-style request advances the turn; retries reuse requestKey.
+  const turn = prev > 0 ? Math.max(fromInput, prev + (requestKey ? 1 : 0)) : fromInput;
+  while (sessionTurnStore.size >= GROK_CLI_TURN_STORE_MAX) {
+    sessionTurnStore.delete(sessionTurnStore.keys().next().value);
+  }
+  sessionTurnStore.set(sessionId, { turn, lastUsed: now });
+  if (requestKey) requestTurnStore.set(requestKey, turn);
   return turn;
 }
 
 /** Test helper — clear in-memory turn counters */
 export function _resetGrokCliTurnStore() {
   sessionTurnStore.clear();
+  requestTurnStore = new WeakMap();
+}
+
+export function _getGrokCliTurnStoreSize() {
+  return sessionTurnStore.size;
+}
+
+export function normalizeGrokCliEffort(value) {
+  const effort = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (effort === "max") return "xhigh";
+  if (EFFORT_LEVELS.includes(effort)) return effort;
+  return "high";
+}
+
+export function resolveGrokCliSessionId(credentials, body) {
+  // ponytail: clients without stable thread metadata share one connection session;
+  // split further when their wire format exposes a durable conversation id.
+  const explicitSessionBody = {
+    prompt_cache_key: body?.prompt_cache_key,
+    session_id: body?.session_id,
+    conversation_id: body?.conversation_id,
+    metadata: body?.metadata,
+  };
+  return resolveSessionId({
+    headers: credentials?.rawHeaders,
+    body: explicitSessionBody,
+    connectionId: credentials?.connectionId || credentials?.id,
+    workspaceId: credentials?.providerSpecificData?.workspaceId,
+    scope: "grok-cli",
+  });
 }
 
 function stripStoredItemReferences(body) {
@@ -103,15 +156,23 @@ function stripStoredItemReferences(body) {
  * Keep hosted tools (web_search / x_search) passthrough.
  */
 function normalizeGrokCliTools(body) {
-  if (!Array.isArray(body.tools)) return;
+  if (!Array.isArray(body.tools) || body.tools.length === 0) {
+    delete body.tools;
+    delete body.tool_choice;
+    return;
+  }
   const validNames = new Set();
+  const hostedTypes = new Set();
   body.tools = body.tools.filter((tool) => {
     if (!tool || typeof tool !== "object" || Array.isArray(tool)) return false;
     const type = typeof tool.type === "string" ? tool.type : "";
 
     if (type !== "function") {
       // Hosted tools: { type: "web_search" } / { type: "x_search" }
-      if (HOSTED_TOOL_TYPES.has(type)) return true;
+      if (HOSTED_TOOL_TYPES.has(type)) {
+        hostedTypes.add(type);
+        return true;
+      }
       // Nested function shape without type
       if (!type && tool.function) {
         // fall through to function flatten below
@@ -155,14 +216,25 @@ function normalizeGrokCliTools(body) {
     tool.name = name.slice(0, 128);
     if (description) tool.description = description;
     tool.parameters = parameters;
-    validNames.add(name);
+    validNames.add(tool.name);
     return true;
   });
 
+  if (body.tools.length === 0) {
+    delete body.tools;
+    delete body.tool_choice;
+    return;
+  }
+
   if (body.tool_choice && typeof body.tool_choice === "object" && !Array.isArray(body.tool_choice)) {
-    if (body.tool_choice.type === "function") {
-      const n = typeof body.tool_choice.name === "string" ? body.tool_choice.name.trim() : "";
-      if (!n || !validNames.has(n)) delete body.tool_choice;
+    const choiceType = typeof body.tool_choice.type === "string" ? body.tool_choice.type : "";
+    if (choiceType === "function" || choiceType === "custom") {
+      const rawName = body.tool_choice.name ?? body.tool_choice.function?.name;
+      const name = typeof rawName === "string" ? rawName.trim().slice(0, 128) : "";
+      if (!name || !validNames.has(name)) delete body.tool_choice;
+      else body.tool_choice = { type: "function", name };
+    } else if (!hostedTypes.has(choiceType)) {
+      delete body.tool_choice;
     }
   }
 }
@@ -192,9 +264,9 @@ export class GrokCliExecutor extends BaseExecutor {
     return this.config.baseUrl;
   }
 
-  async refreshCredentials(credentials, log) {
+  async refreshCredentials(credentials, log, proxyOptions = null) {
     if (!credentials?.refreshToken) return null;
-    return refreshProviderCredentials("grok-cli", credentials, log);
+    return refreshProviderCredentials("grok-cli", credentials, log, proxyOptions);
   }
 
   needsRefresh(credentials) {
@@ -210,13 +282,10 @@ export class GrokCliExecutor extends BaseExecutor {
       if (v != null && headers[k] === undefined) headers[k] = v;
     }
 
-    // Ensure token-auth marker is present even if headers map was overridden
-    headers["x-xai-token-auth"] = this.config.tokenAuth || "xai-grok-cli";
     headers["x-grok-client-identifier"] =
-      this.config.clientIdentifier || headers["x-grok-client-identifier"] || "grok-pager";
+      this.config.clientIdentifier || headers["x-grok-client-identifier"] || GROK_CLI_CLIENT_IDENTIFIER;
     headers["x-grok-client-version"] =
-      this.config.clientVersion || headers["x-grok-client-version"] || "0.2.93";
-    headers["x-authenticateresponse"] = "authenticate-response";
+      this.config.clientVersion || headers["x-grok-client-version"] || GROK_CLI_VERSION;
 
     const sessionId = this._currentSessionId || credentials?.connectionId || crypto.randomUUID();
     const reqId = this._currentReqId || crypto.randomUUID();
@@ -230,10 +299,6 @@ export class GrokCliExecutor extends BaseExecutor {
 
     // Surface model override (CLI always sets this)
     if (this._currentModel) headers["x-grok-model-override"] = this._currentModel;
-
-    if (this.config.compactionAt) {
-      headers["x-compaction-at"] = String(this.config.compactionAt);
-    }
 
     // Identity: mapTokens stores email top-level AND in providerSpecificData;
     // fall back either way so OAuth connections always fingerprint like the CLI.
@@ -267,13 +332,8 @@ export class GrokCliExecutor extends BaseExecutor {
 
   transformRequest(model, body, stream, credentials) {
     // Session / request ids for headers — stable per client conversation when possible
-    this._currentSessionId = resolveSessionId({
-      headers: credentials?.rawHeaders,
-      body,
-      connectionId: credentials?.connectionId || credentials?.id,
-      workspaceId: credentials?.providerSpecificData?.workspaceId,
-      scope: "grok-cli",
-    });
+    const requestKey = body;
+    this._currentSessionId = resolveGrokCliSessionId(credentials, body);
     this._currentReqId = crypto.randomUUID();
     this._agentId =
       credentials?.providerSpecificData?.deviceId ||
@@ -306,7 +366,7 @@ export class GrokCliExecutor extends BaseExecutor {
     normalizeGrokCliTools(body);
 
     // Turn index after input is finalized (user-message count, monotonic per session)
-    this._currentTurnIdx = resolveGrokCliTurnIdx(this._currentSessionId, body.input);
+    this._currentTurnIdx = resolveGrokCliTurnIdx(this._currentSessionId, body.input, requestKey);
 
     body.stream = true;
     body.store = false;
@@ -327,12 +387,12 @@ export class GrokCliExecutor extends BaseExecutor {
 
     // Reasoning effort priority: explicit > reasoning_effort > model suffix > default high
     if (!body.reasoning || typeof body.reasoning !== "object") {
-      const effort = body.reasoning_effort || modelEffort || "high";
+      const effort = normalizeGrokCliEffort(body.reasoning_effort || modelEffort);
       body.reasoning = { effort, summary: "concise" };
     } else {
-      if (!body.reasoning.effort) {
-        body.reasoning.effort = body.reasoning_effort || modelEffort || "high";
-      }
+      body.reasoning.effort = normalizeGrokCliEffort(
+        body.reasoning.effort || body.reasoning_effort || modelEffort,
+      );
       if (!body.reasoning.summary) body.reasoning.summary = "concise";
     }
     delete body.reasoning_effort;
