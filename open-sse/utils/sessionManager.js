@@ -253,7 +253,8 @@ function extractDurableHermesContextIds(lines) {
 }
 
 function hermesPayloadSessionEnabled() {
-    return ["1", "true", "yes", "on"].includes(String(process.env.NINE_ROUTER_KIRO_HERMES_PAYLOAD_SESSION || "").toLowerCase());
+    const value = String(process.env.NINE_ROUTER_KIRO_HERMES_PAYLOAD_SESSION ?? "1").toLowerCase();
+    return !["0", "false", "no", "off"].includes(value);
 }
 
 function extractHermesPayloadSession(body, scope, connectionId) {

@@ -34,7 +34,6 @@ const hermesClaudeBody = (threadId, user = "first prompt") => ({
 });
 
 beforeEach(() => {
-  process.env.NINE_ROUTER_KIRO_HERMES_PAYLOAD_SESSION = "1";
   clearSessionStore();
 });
 
@@ -283,7 +282,10 @@ describe("resolveSessionId", () => {
     expect(resolveSessionId({ body: matrixBody, connectionId: "conn1", scope: "kiro" })).not.toMatch(/^hermes:/);
   });
 
-  it("does not infer Hermes sessions unless the env gate is enabled", () => {
+  it("infers Hermes sessions by default unless the env gate is disabled", () => {
+    delete process.env.NINE_ROUTER_KIRO_HERMES_PAYLOAD_SESSION;
+    expect(resolveSessionId({ body: hermesBody(THREAD_1), connectionId: "conn1", scope: "kiro" })).toMatch(/^hermes:/);
+
     process.env.NINE_ROUTER_KIRO_HERMES_PAYLOAD_SESSION = "0";
     expect(resolveSessionId({ body: hermesBody(THREAD_1), connectionId: "conn1", scope: "kiro" })).not.toMatch(/^hermes:/);
   });
