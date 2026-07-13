@@ -151,6 +151,35 @@ function killProcess(pid, force = false, sudoPassword = null) {
   }
 }
 
+function resolveMitmStopTargets({ isWin, processPid, pidFilePid, serverPath }) {
+  const pids = [...new Set([processPid, pidFilePid].filter(Boolean))];
+  return {
+    pids,
+    serverPathPattern: !isWin && serverPath ? serverPath : null,
+  };
+}
+
+async function killMitmTargets({ pids, serverPathPattern }, sudoPassword) {
+  for (const pid of pids) {
+    if (!isProcessAlive(pid)) continue;
+    log(`Killing server (PID: ${pid})...`);
+    killProcess(pid, false, sudoPassword);
+  }
+  await new Promise(r => setTimeout(r, 1000));
+  for (const pid of pids) {
+    if (isProcessAlive(pid)) killProcess(pid, true, sudoPassword);
+  }
+  if (!serverPathPattern) return;
+  const escaped = serverPathPattern.replace(/'/g, "'\\''");
+  const command = `pkill -SIGTERM -f '${escaped}' 2>/dev/null || true; sleep 1; pkill -SIGKILL -f '${escaped}' 2>/dev/null || true`;
+  if (sudoPassword || isSudoAvailable()) {
+    const { execWithPassword } = require("./dns/dnsConfig");
+    await execWithPassword(command, sudoPassword || "").catch(() => { });
+  } else {
+    await new Promise(resolve => exec(command, { windowsHide: true }, () => resolve()));
+  }
+}
+
 function deriveKey() {
   try {
     const { machineIdSync } = require("node-machine-id");
@@ -757,16 +786,17 @@ async function stopServerCore(sudoPassword) {
 
   // Kill server process
   const proc = serverProcess;
-  const pidToKill = proc && !proc.killed
-    ? proc.pid
-    : (() => { try { return parseInt(fs.readFileSync(PID_FILE, "utf-8").trim(), 10); } catch { return null; } })();
-
-  if (pidToKill && isProcessAlive(pidToKill)) {
-    log(`Killing server (PID: ${pidToKill})...`);
-    killProcess(pidToKill, false, sudoPassword);
-    await new Promise(r => setTimeout(r, 1000));
-    if (isProcessAlive(pidToKill)) killProcess(pidToKill, true, sudoPassword);
-  }
+  const processPid = proc && !proc.killed ? proc.pid : null;
+  const pidFilePid = (() => {
+    try { return parseInt(fs.readFileSync(PID_FILE, "utf-8").trim(), 10); }
+    catch { return null; }
+  })();
+  await killMitmTargets(resolveMitmStopTargets({
+    isWin: IS_WIN,
+    processPid,
+    pidFilePid,
+    serverPath: SERVER_PATH,
+  }), sudoPassword);
   serverProcess = null;
   serverPid = null;
 
@@ -969,6 +999,7 @@ const stopMitm = stopServer;
 
 module.exports = {
   shouldScheduleMitmRestart,
+  resolveMitmStopTargets,
   getMitmStatus,
   startServer,
   stopServer,
