@@ -233,22 +233,6 @@ export function resolveContinuationId({ sessionId, connectionId, scope = "" } = 
     return continuationId;
 }
 
-function envEnabled(value) {
-    return ["1", "true", "yes", "on"].includes(String(value || "").toLowerCase());
-}
-
-export function logKiroSessionState({ route, model, conversationId, agentContinuationId, historyLength } = {}) {
-    if (!envEnabled(process.env.NINE_ROUTER_KIRO_SESSION_LOG)) return;
-    console.log(JSON.stringify({
-        event: "kiro.session",
-        route,
-        model,
-        conversationId,
-        agentContinuationId,
-        historyLength,
-    }));
-}
-
 // Capture session id from request body + credentials (envelope still intact here)
 export function captureSessionId(body, credentials, connectionId, scope = "") {
     return resolveSessionId({ headers: credentials?.rawHeaders, body, connectionId, scope });
