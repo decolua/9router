@@ -1,6 +1,6 @@
 // A2: locks resolveSessionId priority/stickiness (codex/kiro/antigravity centralization).
 import { describe, it, expect, beforeEach } from "vitest";
-import { resolveContinuationId, resolveSessionId, deriveSessionId, clearSessionStore } from "../../open-sse/utils/sessionManager.js";
+import { resolveContinuationId, resolveSessionId, resolveSessionIdentity, deriveSessionId, clearSessionStore } from "../../open-sse/utils/sessionManager.js";
 
 // Assistant text must reach ASSISTANT_MIN_LEN (80) to use assistant anchor; else first user message.
 const longAssistant = "x".repeat(80);
@@ -161,6 +161,19 @@ describe("resolveSessionId", () => {
     expect(a).not.toBe(b);
   });
 
+  it("marks generated headerless Kiro sessions as ephemeral", () => {
+    const generated = resolveSessionIdentity({ body: bodyWithUserOnly, connectionId: "conn1", scope: "kiro" });
+    const explicit = resolveSessionIdentity({
+      headers: { "x-session-id": "client-sess-123" },
+      body: bodyWithUserOnly,
+      connectionId: "conn1",
+      scope: "kiro",
+    });
+
+    expect(generated.ephemeral).toBe(true);
+    expect(explicit).toEqual({ sessionId: "client-sess-123", ephemeral: false });
+  });
+
   it("does not switch Kiro headerless requests to assistant-text session ids mid-conversation", () => {
     const withAssistant = { messages: [{ role: "user", content: "same user" }, { role: "assistant", content: "y".repeat(80) }] };
     const a = resolveSessionId({ body: withAssistant, connectionId: "conn1", scope: "kiro" });
@@ -200,5 +213,14 @@ describe("resolveContinuationId", () => {
 
     const afterEviction = resolveContinuationId({ sessionId: "kiro-session-0", connectionId: "conn1", scope: "kiro" });
     expect(afterEviction).not.toBe(first);
+  });
+
+  it("does not let ephemeral Kiro continuations evict explicit session continuations", () => {
+    const stable = resolveContinuationId({ sessionId: "explicit-session", connectionId: "conn1", scope: "kiro" });
+    for (let i = 0; i <= 5000; i++) {
+      resolveContinuationId({ sessionId: `ephemeral-session-${i}`, connectionId: "conn1", scope: "kiro", ephemeral: true });
+    }
+
+    expect(resolveContinuationId({ sessionId: "explicit-session", connectionId: "conn1", scope: "kiro" })).toBe(stable);
   });
 });

@@ -203,20 +203,25 @@ function assistantTextSessionId(scope, body) {
  * @param {string} [opts.connectionId] - Connection identifier (fallback scope)
  * @param {string} [opts.workspaceId] - Provider workspace id (account-wide fallback)
  * @param {string} [opts.scope] - Provider scope to isolate cache keys across providers
- * @returns {string} A stable session id
+ * @returns {{sessionId: string, ephemeral: boolean}} A session id plus whether it is one-shot
  */
-export function resolveSessionId({ headers, body, connectionId, workspaceId, scope = "" } = {}) {
+export function resolveSessionIdentity({ headers, body, connectionId, workspaceId, scope = "" } = {}) {
     const client = extractClientSessionId(headers, body, scope);
-    if (client) return client;
+    if (client) return { sessionId: client, ephemeral: false };
     const fromAssistant = scope === "kiro" ? null : assistantTextSessionId(`${scope}:${connectionId || ""}`, body);
-    if (fromAssistant) return fromAssistant;
+    if (fromAssistant) return { sessionId: fromAssistant, ephemeral: false };
     const ws = normalizeSessionId(workspaceId);
-    if (ws) return ws;
-    if (scope === "kiro") return generateBinaryStyleId();
-    return deriveSessionId(connectionId);
+    if (ws) return { sessionId: ws, ephemeral: false };
+    if (scope === "kiro") return { sessionId: generateBinaryStyleId(), ephemeral: true };
+    return { sessionId: deriveSessionId(connectionId), ephemeral: false };
 }
 
-export function resolveContinuationId({ sessionId, connectionId, scope = "" } = {}) {
+export function resolveSessionId(opts = {}) {
+    return resolveSessionIdentity(opts).sessionId;
+}
+
+export function resolveContinuationId({ sessionId, connectionId, scope = "", ephemeral = false } = {}) {
+    if (ephemeral) return crypto.randomUUID();
     const key = `${scope}:${connectionId || ""}:${sessionId || ""}`;
     const existing = continuationStore.get(key);
     if (existing) {

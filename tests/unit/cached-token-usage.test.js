@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { canonicalizeUsage, extractUsage, filterUsageForFormat, mergeUsage } from "../../open-sse/utils/usageTracking.js";
+import { canonicalizeUsage, extractUsage, filterUsageForFormat, hasValidUsage, mergeUsage } from "../../open-sse/utils/usageTracking.js";
 import { calculateCostFromTokens } from "../../open-sse/providers/pricing.js";
 import { toOpenAIUsage } from "../../open-sse/translator/concerns/usage.js";
 
@@ -197,6 +197,8 @@ describe("Kiro usage pass-through", () => {
     expect(usage.kiro_credits).toBe(0.003);
     expect(usage.kiro_credit_unit).toBe("credit");
     expect(usage.prompt_tokens).toBeUndefined();
+    expect(hasValidUsage(usage)).toBe(true);
+    expect(canonicalizeUsage(usage).kiro_credits).toBe(0.003);
     expect(filterUsageForFormat(usage, "openai").kiro_credits).toBeUndefined();
   });
 

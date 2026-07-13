@@ -207,6 +207,12 @@ export function canonicalizeUsage(usage) {
     cache_creation_input_tokens: cacheCreation,
   };
   if (reasoning > 0) result.reasoning_tokens = reasoning;
+  if (typeof usage.kiro_credits === "number" && Number.isFinite(usage.kiro_credits)) {
+    result.kiro_credits = usage.kiro_credits;
+  }
+  if (typeof usage.kiro_credit_unit === "string") {
+    result.kiro_credit_unit = usage.kiro_credit_unit;
+  }
   return result;
 }
 
@@ -229,6 +235,10 @@ export function hasValidUsage(usage) {
     if (typeof usage[field] === "number" && usage[field] > 0) {
       return true;
     }
+  }
+
+  if (typeof usage.kiro_credits === "number" && usage.kiro_credits > 0) {
+    return true;
   }
 
   return false;

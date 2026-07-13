@@ -5,7 +5,7 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { v4 as uuidv4 } from "uuid";
-import { resolveContinuationId, resolveSessionId } from "../../utils/sessionManager.js";
+import { resolveContinuationId, resolveSessionIdentity } from "../../utils/sessionManager.js";
 import {
   resolveKiroModel,
   resolveKiroThinkingBudget,
@@ -565,11 +565,13 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
   const contentPrefix = [systemPrompt, `[Context: Current time is ${timestamp}]`].filter(Boolean).join("\n\n");
   finalContent = `${contentPrefix}\n\n${finalContent}`;
 
-  const conversationId = resolveSessionId({ headers: credentials?.rawHeaders, body, connectionId: credentials?.connectionId, scope: "kiro" });
+  const sessionIdentity = resolveSessionIdentity({ headers: credentials?.rawHeaders, body, connectionId: credentials?.connectionId, scope: "kiro" });
+  const conversationId = sessionIdentity.sessionId;
   const continuationId = resolveContinuationId({
     sessionId: conversationId,
     connectionId: credentials?.connectionId,
     scope: "kiro",
+    ephemeral: sessionIdentity.ephemeral,
   });
 
   const payload = {
