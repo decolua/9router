@@ -13,7 +13,7 @@ import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { resolveCopilotModels } from "open-sse/services/copilotModels.js";
 import { resolveClinepassModels } from "open-sse/services/clinepassModels.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
-import { capabilitiesFromServiceKind } from "open-sse/providers/capabilities.js";
+import { capabilitiesFromServiceKind, getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
@@ -421,7 +421,13 @@ export async function buildModelsList(kindFilter) {
           object: "model",
           owned_by: outputAlias,
         };
-        const caps = liveCapabilitiesById.get(modelId) || capabilitiesFromServiceKind(customKind || liveKind);
+        // Live-catalog resolvers (kiro/qoder/github/clinepass) mostly only return
+        // { id, name } — no per-model capability data. Fall back to the same
+        // pattern-matched capabilities the dashboard uses (useModelCaps.js) so
+        // dynamically-discovered LLM models still surface vision/reasoning/search/tools.
+        const caps = liveCapabilitiesById.get(modelId)
+          || capabilitiesFromServiceKind(customKind || liveKind)
+          || (kind === LLM_KIND ? getCapabilitiesForModel(providerId, modelId) : null);
         if (caps) model.capabilities = caps;
         models.push(model);
       }
