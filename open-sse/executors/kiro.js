@@ -174,32 +174,47 @@ export class KiroExecutor extends BaseExecutor {
           // Handle assistantResponseEvent
           if (eventType === "assistantResponseEvent" && event.payload?.content) {
             let content = event.payload.content;
+            const originalLength = content.length;
 
             // Kiro Claude models can leak <thinking> blocks into the content stream.
             // We strip these literal tags to prevent duplication, as the reasoning 
             // is already routed correctly via reasoningContentEvent.
+            
+            // Handle continuation of thinking block from previous chunk
             if (state.inThinking) {
               if (content.includes("</thinking>")) {
+                // Found the closing tag - extract content after it
                 state.inThinking = false;
-                const after = content.split("</thinking>").slice(1).join("</thinking>");
-                content = after.startsWith("\n") ? after.substring(1) : after;
+                const closingIndex = content.indexOf("</thinking>");
+                content = content.substring(closingIndex + "</thinking>".length);
+                // Strip leading newline after closing tag
+                if (content.startsWith("\n")) {
+                  content = content.substring(1);
+                }
               } else {
-                content = ""; // Drop entirely while inside thinking block
+                // Still inside thinking block - drop entire chunk
+                content = "";
               }
-            } else if (content.includes("<thinking>")) {
-              state.inThinking = true;
-              if (content.includes("</thinking>")) {
-                state.inThinking = false;
-                const before = content.split("<thinking>")[0];
-                const after = content.split("</thinking>").slice(1).join("</thinking>");
-                content = before + (after.startsWith("\n") ? after.substring(1) : after);
-              } else {
-                content = content.split("<thinking>")[0];
+            }
+            
+            // Strip all complete thinking blocks (handles multiple blocks in one chunk)
+            // Use regex to remove all <thinking>...</thinking> pairs
+            if (!state.inThinking && content.includes("<thinking>")) {
+              const thinkingRegex = /<thinking>[\s\S]*?<\/thinking>\n?/g;
+              content = content.replace(thinkingRegex, "");
+              
+              // Check if there's an unclosed thinking tag (thinking block continues to next chunk)
+              if (content.includes("<thinking>")) {
+                state.inThinking = true;
+                // Keep content before the opening tag
+                const openingIndex = content.lastIndexOf("<thinking>");
+                content = content.substring(0, openingIndex);
               }
             }
 
-            if (!content && state.hasReasoningContent) {
-              // If we stripped everything, skip emitting an empty content chunk
+            // Skip emitting empty content chunks, especially after stripping thinking blocks
+            const wasStripped = content.length < originalLength;
+            if (!content || (wasStripped && !content.trim())) {
               continue;
             }
 
