@@ -40,6 +40,9 @@ describe("kiro API-key auth (KiroService.validateApiKey)", () => {
     expect(init.headers["x-amz-target"]).toBe(
       "AmazonCodeWhispererService.ListAvailableProfiles"
     );
+    // ListAvailableProfiles rejects tokentype:API_KEY with 403
+    expect(init.headers.tokentype).toBeUndefined();
+    expect(init.headers.TokenType).toBeUndefined();
   });
 
   it("rejects an empty API key without a network call", async () => {

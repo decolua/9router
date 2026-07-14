@@ -265,10 +265,23 @@ export class KiroService {
    * it must be fetched separately — the same call works for API-key auth.
    * Accepts both `arn` and `profileArn` response field names (the API-key
    * JSON-1.0 surface returns `arn`).
+   *
+   * options.authMethod:
+   * - "external_idp" → send tokentype:EXTERNAL_IDP (required by upstream)
+   * - "api_key" / default → do NOT send tokentype:API_KEY. ListAvailableProfiles
+   *   returns 403 "API key authentication is not supported for this operation"
+   *   when that header is present. Chat/usage paths still send tokentype:API_KEY.
    */
-  async listAvailableProfiles(accessToken, region = "us-east-1") {
+  async listAvailableProfiles(accessToken, region = "us-east-1", options = {}) {
     assertValidAwsRegion(region);
     const endpoint = `https://codewhisperer.${region}.amazonaws.com`;
+    // EXTERNAL_IDP needs a token-type tag; API keys must NOT send tokentype:API_KEY
+    // here — CodeWhisperer returns 403 "API key authentication is not supported
+    // for this operation" on ListAvailableProfiles when that header is present.
+    // (Chat/usage paths still send tokentype:API_KEY; this listing op does not.)
+    const tokenTypeHeaders = options.authMethod === "external_idp"
+      ? { tokentype: "EXTERNAL_IDP" }
+      : {};
 
     const response = await fetch(endpoint, {
       method: "POST",
@@ -277,6 +290,7 @@ export class KiroService {
         "x-amz-target": "AmazonCodeWhispererService.ListAvailableProfiles",
         "Authorization": `Bearer ${accessToken}`,
         "Accept": "application/json",
+        ...tokenTypeHeaders,
       },
       body: JSON.stringify({ maxResults: 10 }),
     });
@@ -307,7 +321,9 @@ export class KiroService {
 
     let profileArn = null;
     try {
-      profileArn = await this.listAvailableProfiles(trimmed, region);
+      // Pass authMethod for clarity; listAvailableProfiles intentionally does
+      // NOT attach tokentype:API_KEY for this operation (upstream 403s it).
+      profileArn = await this.listAvailableProfiles(trimmed, region, { authMethod: "api_key" });
     } catch (error) {
       throw new Error(`API key validation failed: ${error.message}`);
     }
