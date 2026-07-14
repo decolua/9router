@@ -594,13 +594,23 @@ function startServer(updatePromise) {
   function spawnServer() {
     serverStartTime = Date.now();
     crashLog = [];
+    // Bundled standalone has node_modules under cli/app/. Next.js standalone
+    // runtime (instrumentation hook + lazy chunks) requires NODE_PATH to find
+    // bundled deps like pino-std-serializers from non-cwd require paths.
+    const baseEnv = buildEnvWithRuntime(process.env);
+    const bundledNodeModules = path.join(standaloneDir, "node_modules");
+    const sep = process.platform === "win32" ? ";" : ":";
+    const nodePath = baseEnv.NODE_PATH
+      ? `${bundledNodeModules}${sep}${baseEnv.NODE_PATH}`
+      : bundledNodeModules;
     const child = spawn(RUNTIME, ["--max-old-space-size=6144", serverPath], {
       cwd: standaloneDir,
       stdio: showLog ? "inherit" : ["ignore", "ignore", "pipe"],
       detached: true,
       windowsHide: true,
       env: {
-        ...buildEnvWithRuntime(process.env),
+        ...baseEnv,
+        NODE_PATH: nodePath,
         PORT: port.toString(),
         HOSTNAME: host
       }

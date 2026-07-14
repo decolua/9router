@@ -1,10 +1,21 @@
 // Stream handler with disconnect detection - shared for all providers
-import { STREAM_STALL_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import { STREAM_STALL_TIMEOUT_MS, STREAM_FIRST_CHUNK_TIMEOUT_MS } from "../config/runtimeConfig.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
 // Get HH:MM:SS timestamp
 function getTimeString() {
   return new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+/**
+ * Detect whether a request qualifies for xAI reasoning timeout override.
+ * Matches: reasoning_effort present, or model name contains "reasoning" / ends with "-high".
+ */
+export function isXaiReasoningRequest(provider, model, body) {
+  if (provider !== "xai") return false;
+  if (body?.reasoning_effort) return true;
+  if (typeof model === "string" && /reasoning|-high$/.test(model)) return true;
+  return false;
 }
 
 /**
@@ -14,15 +25,18 @@ function getTimeString() {
  * @param {object} options.log - Logger instance
  * @param {string} options.provider - Provider name
  * @param {string} options.model - Model name
+ * @param {number} [options.firstChunkTimeoutMs] - Optional override for first-chunk timeout
+ * @param {number} [options.stallTimeoutMs] - Optional override for stall timeout
  */
-export function createStreamController({ onDisconnect, onError, log, provider, model, reqTag = "" } = {}) {
+export function createStreamController({ onDisconnect, onError, log, provider, model, firstChunkTimeoutMs, stallTimeoutMs, reqTag = "" } = {}) {
   const abortController = new AbortController();
   const startTime = Date.now();
   let disconnected = false;
   let abortTimeout = null;
 
-  // Only abnormal terminations are logged; normal completion is covered by "📊 done".
-  // isError uses errorLine (always shown, ignores LOG_LEVEL) so failures survive quiet levels.
+  const resolvedFirstChunkTimeoutMs = firstChunkTimeoutMs || STREAM_FIRST_CHUNK_TIMEOUT_MS;
+  const resolvedStallTimeoutMs = stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
+
   const logStream = (symbol, status, isError = false) => {
     const duration = Date.now() - startTime;
     const emit = isError ? log?.errorLine : log?.line;
@@ -33,6 +47,11 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
   return {
     signal: abortController.signal,
     startTime,
+
+    // Timeout budget for the stall watchdog in pipeWithDisconnect. Defaults to
+    // module constants; xAI reasoning requests pass longer overrides.
+    firstChunkTimeoutMs: resolvedFirstChunkTimeoutMs,
+    stallTimeoutMs: resolvedStallTimeoutMs,
 
     isConnected: () => !disconnected,
 
@@ -78,7 +97,8 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
         return;
       }
 
-      logStream("✗", `ERROR: ${error.message}${error.stack ? `\n    ${error.stack}` : ""}`, true);
+      logStream("✗", `ERROR: ${error.message}${error.stack ? `
+    ${error.stack}` : ""}`, true);
       onError?.(error);
     },
 
@@ -198,8 +218,13 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
   const clearStall = () => {
     if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
   };
+  // Generous TTFT timeout while the prompt prefills, then the stall timeout.
+  // Stream controller may carry per-request overrides (e.g. xAI reasoning).
   const armStall = () => {
     clearStall();
+    const fc = streamController.firstChunkTimeoutMs || STREAM_FIRST_CHUNK_TIMEOUT_MS;
+    const st = streamController.stallTimeoutMs || providerStallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
+    const timeout = chunkCount === 0 ? fc : st;
     stallTimer = setTimeout(() => {
       stallTimer = null;
       dbg(tag, `STALL TIMEOUT ${stallTimeoutMs}ms | chunks=${chunkCount} | bytes=${totalBytes} | sinceLast=${Date.now() - lastChunkAt}ms`);

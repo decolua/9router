@@ -34,8 +34,10 @@ function sanitizeReadArgs(args) {
   }
   if (typeof args.offset === "number" && args.offset < 0) args.offset = 0;
 
-  if ("pages" in args && !isValidPdfPagesArg(args.file_path, args.pages)) {
-    delete args.pages;
+  if ("pages" in args) {
+    if (!isValidPdfPagesArg(args.file_path, args.pages)) {
+      delete args.pages;
+    }
   }
 }
 
@@ -213,9 +215,14 @@ export function openaiToClaudeResponse(chunk, state) {
       if (tc.function?.arguments) {
         const toolInfo = state.toolCalls.get(idx);
         if (toolInfo) {
-          // Buffer args instead of streaming — sanitize at finish to fix bad params
           if (!state.toolArgBuffers) state.toolArgBuffers = new Map();
-          state.toolArgBuffers.set(idx, (state.toolArgBuffers.get(idx) || "") + tc.function.arguments);
+          const sanitized = sanitizeToolArgs(toolInfo.name, tc.function.arguments);
+          state.toolArgBuffers.set(idx, (state.toolArgBuffers.get(idx) || "") + sanitized);
+          results.push({
+            type: "content_block_delta",
+            index: toolInfo.blockIndex,
+            delta: { type: "input_json_delta", partial_json: sanitized }
+          });
         }
       }
     }
@@ -227,16 +234,6 @@ export function openaiToClaudeResponse(chunk, state) {
     stopTextBlock(state, results);
 
     for (const [idx, toolInfo] of state.toolCalls) {
-      // Emit buffered + sanitized args as single delta before stop
-      const buffered = state.toolArgBuffers?.get(idx);
-      if (buffered) {
-        const sanitized = sanitizeToolArgs(toolInfo.name, buffered);
-        results.push({
-          type: "content_block_delta",
-          index: toolInfo.blockIndex,
-          delta: { type: "input_json_delta", partial_json: sanitized }
-        });
-      }
       results.push({
         type: "content_block_stop",
         index: toolInfo.blockIndex

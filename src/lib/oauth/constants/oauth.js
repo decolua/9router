@@ -67,6 +67,11 @@ export const GITHUB_CONFIG = { ...PROVIDER_OAUTH["github"] };
 // Kiro OAuth Configuration (multi-method: AWS Builder ID / IDC / Social / Import Token)
 export const KIRO_CONFIG = { ...PROVIDER_OAUTH["kiro"] };
 
+const AWS_REGION_RE = /^[a-z]{2}(?:-[a-z]+){1,2}-\d{1,2}$/;
+export function sanitizeAwsRegion(region, fallback = "us-east-1") {
+  return typeof region === "string" && AWS_REGION_RE.test(region) ? region : fallback;
+}
+
 // AWS region allowlist pattern — prevents SSRF via region injection into upstream URLs (GHSA-6mwv-4mrm-5p3m)
 export const AWS_REGION_PATTERN = /^[a-z]{2}-[a-z]+-\d{1,2}$/;
 
@@ -117,6 +122,13 @@ export const KIMCHI_CONFIG = { ...PROVIDER_OAUTH["kimchi"] };
 // Grok CLI / Grok Build OAuth Configuration (Device Code Flow)
 // Endpoint: cli-chat-proxy.grok.com — same client_id as xai, different flow + scopes
 export const GROK_CLI_CONFIG = { ...PROVIDER_OAUTH["grok-cli"] };
+
+// Freebuff OAuth Configuration (Custom Device/Browser Polling Flow)
+export const FREEBUFF_CONFIG = {
+  codeUrl: "https://freebuff.com/api/auth/cli/code",
+  statusUrl: "https://freebuff.com/api/auth/cli/status",
+  verifyUrl: "https://www.codebuff.com/api/v1/freebuff/session",
+};
 
 // OAuth timeout (5 minutes)
 export const OAUTH_TIMEOUT = 300000;

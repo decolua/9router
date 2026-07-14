@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createProxyPool } from "@/models";
+import { testRelay } from "@/lib/network/relayTest";
 
 // Relay worker source code deployed to Cloudflare
 const RELAY_WORKER_CODE = `
@@ -127,6 +128,20 @@ export async function POST(request) {
       );
     }
 
+    // Verify relay is functional before marking active. workers.dev propagation
+    // can lag a few seconds, so retry briefly before giving up.
+    let verification = await testRelay(deployUrl);
+    if (!verification.ok) {
+      await new Promise((r) => setTimeout(r, 4000));
+      verification = await testRelay(deployUrl);
+    }
+    if (!verification.ok) {
+      return NextResponse.json(
+        { error: `Relay verification failed (${verification.status}): ${verification.error}` },
+        { status: 502 }
+      );
+    }
+
     // Create proxy pool entry with type cloudflare
     const proxyPool = await createProxyPool({
       name: projectName,
@@ -135,6 +150,9 @@ export async function POST(request) {
       noProxy: "",
       isActive: true,
       strictProxy: false,
+      testStatus: "active",
+      lastTestedAt: new Date().toISOString(),
+      lastError: null,
     });
 
     return NextResponse.json({ proxyPool, deployUrl }, { status: 201 });

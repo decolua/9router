@@ -15,7 +15,7 @@ export default {
   },
   category: "webCookie",
   authType: "cookie",
-  authHint: "Paste your sso= cookie value from grok.com",
+  authHint: "Paste your sso= or session_paste cookie value from grok.com",
   transport: {
     baseUrl: "https://grok.com/rest/app-chat/conversations/new",
     format: "grok-web",

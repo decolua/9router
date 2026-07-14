@@ -6,7 +6,6 @@ import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
 import {
   refreshProviderCredentials,
-  shouldRefreshCredentials,
 } from "open-sse/services/oauthCredentialManager.js";
 import {
   GEMINI_CONFIG,
@@ -18,22 +17,21 @@ import {
   KILOCODE_CONFIG,
   KIMCHI_CONFIG,
 } from "@/lib/oauth/constants/oauth";
+import { XAI_CONFIG } from "@/lib/oauth/constants/xai";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
 
 // OAuth provider test endpoints
 const OAUTH_TEST_CONFIG = {
   claude: { checkExpiry: true, refreshable: true },
   codex: {
-    url: "https://chatgpt.com/backend-api/codex/responses",
-    method: "POST",
+    url: "https://chatgpt.com/backend-api/codex/models?client_version=1.0.0",
+    method: "GET",
     authHeader: "Authorization",
     authPrefix: "Bearer ",
-    extraHeaders: { "Content-Type": "application/json", "originator": "codex_cli_rs", "User-Agent": "codex_cli_rs/0.136.0" },
-    // Minimal invalid body — triggers fast 400 without consuming quota
-    body: JSON.stringify({ model: "gpt-5.3-codex", input: [], stream: false, store: false }),
-    // 400 (bad request) means auth succeeded; only 401/403 means token is bad
-    acceptStatuses: [400],
+    extraHeaders: { "Accept": "application/json", "originator": "codex_cli_rs", "User-Agent": "codex_cli_rs/0.136.0" },
+    timeoutMs: 15000,
     refreshable: true,
+    jwtIpBlockFallback: true,
   },
   "gemini-cli": {
     url: "https://www.googleapis.com/oauth2/v1/userinfo?alt=json",
@@ -55,6 +53,13 @@ const OAUTH_TEST_CONFIG = {
     authHeader: "Authorization",
     authPrefix: "Bearer ",
     extraHeaders: { "User-Agent": "9Router", "Accept": "application/vnd.github+json" },
+  },
+  xai: {
+    url: "https://api.x.ai/v1/models",
+    method: "GET",
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    refreshable: true,
   },
   iflow: {
     // iFlow getUserInfo requires accessToken as query param, not header
@@ -239,7 +244,7 @@ async function refreshOAuthToken(connection) {
       return { accessToken: data.access_token, expiresIn: data.expires_in, refreshToken: data.refresh_token || refreshToken };
     }
 
-    if (provider === "codex" || provider === "grok-cli" || provider === "xai") {
+    if (provider === "codex" || provider === "grok-cli") {
       return await refreshProviderCredentials(provider, connection, console);
     }
 
@@ -299,6 +304,21 @@ async function refreshOAuthToken(connection) {
       return { accessToken: data.access_token, expiresIn: data.expires_in, refreshToken: data.refresh_token || refreshToken };
     }
 
+    if (provider === "xai") {
+      const response = await fetch(XAI_CONFIG.tokenUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          client_id: XAI_CONFIG.clientId,
+          refresh_token: refreshToken,
+        }),
+      });
+      if (!response.ok) return null;
+      const data = await response.json();
+      return { accessToken: data.access_token, expiresIn: data.expires_in, refreshToken: data.refresh_token || refreshToken };
+    }
+
     if (provider === "cline") {
       const response = await fetch(CLINE_CONFIG.refreshUrl, {
         method: "POST",
@@ -330,7 +350,16 @@ async function refreshOAuthToken(connection) {
 }
 
 function isTokenExpired(connection) {
-  return shouldRefreshCredentials(connection.provider, connection);
+  if (!connection.expiresAt) return false;
+  const expiresAt = new Date(connection.expiresAt).getTime();
+  const buffer = 5 * 60 * 1000;
+  return expiresAt <= Date.now() + buffer;
+}
+
+function isJwtStillValid(accessToken) {
+  const payload = decodeJwtPayloadSafe(accessToken);
+  if (!payload || !payload.exp) return false;
+  return payload.exp * 1000 > Date.now();
 }
 
 async function testOAuthConnection(connection, effectiveProxy = null) {
@@ -414,8 +443,9 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
       : { [config.authHeader]: `${config.authPrefix}${accessToken}`, ...config.extraHeaders };
     const fetchOpts = { method: config.method, headers };
     if (config.body) fetchOpts.body = config.body;
+    if (config.timeoutMs) fetchOpts.signal = AbortSignal.timeout(config.timeoutMs);
     const res = await fetchWithConnectionProxy(testUrl, fetchOpts, effectiveProxy);
-    const bodyText = !res.ok ? await res.text().catch(() => "") : "";
+    const bodyText = !res.ok && typeof res.text === "function" ? await res.text().catch(() => "") : "";
 
     const classified = classifyOAuthProbeResult(res, config, bodyText);
     if (classified.valid) {
@@ -438,8 +468,9 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
           : { [config.authHeader]: `${config.authPrefix}${tokens.accessToken}`, ...config.extraHeaders };
         const retryOpts = { method: config.method, headers: retryHeaders };
         if (config.body) retryOpts.body = config.body;
+        if (config.timeoutMs) retryOpts.signal = AbortSignal.timeout(config.timeoutMs);
         const retryRes = await fetchWithConnectionProxy(retryUrl, retryOpts, effectiveProxy);
-        const retryBody = !retryRes.ok ? await retryRes.text().catch(() => "") : "";
+        const retryBody = !retryRes.ok && typeof retryRes.text === "function" ? await retryRes.text().catch(() => "") : "";
         const retryClassified = classifyOAuthProbeResult(retryRes, config, retryBody);
         if (retryClassified.valid) {
           return {
@@ -450,10 +481,20 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
             newTokens: tokens,
           };
         }
+        // If even after refresh the endpoint returns 401/403, but the new JWT
+        // is decodable + not expired, treat as IP-block (refresh proves the
+        // refresh_token is good; the 401 is likely datacenter IP filtering).
+        if (config.jwtIpBlockFallback && (retryRes.status === 401 || retryRes.status === 403) && isJwtStillValid(tokens.accessToken)) {
+          return { valid: true, error: null, refreshed: true, newTokens: tokens };
+        }
       }
       return { valid: false, error: "Token invalid or revoked", refreshed: false };
     }
 
+    if ((res.status === 401 || res.status === 403) && config.jwtIpBlockFallback && isJwtStillValid(accessToken)) {
+      // No refresh token available, but JWT is still valid — assume IP block.
+      return { valid: true, error: null, refreshed, newTokens };
+    }
     return { valid: false, error: classified.error, refreshed };
   } catch (err) {
     return { valid: false, error: err.message, refreshed };
@@ -478,6 +519,7 @@ async function fetchWithConnectionProxy(url, options = {}, effectiveProxy = null
     connectionProxyEnabled: true,
     connectionProxyUrl: effectiveProxy.connectionProxyUrl,
     connectionNoProxy: effectiveProxy.connectionNoProxy || "",
+    strictProxy: effectiveProxy.strictProxy === true,
   });
 }
 

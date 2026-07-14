@@ -1,17 +1,18 @@
 import { NextResponse } from "next/server";
 import { KiroService } from "@/lib/oauth/services/kiro";
+import { consumeSocialOAuthState } from "@/lib/oauth/socialStateStore";
 import { createProviderConnection } from "@/models";
 
 /**
  * POST /api/oauth/kiro/social-exchange
- * Exchange authorization code for tokens (Google/GitHub social login)
- * Callback URL will be in format: kiro://kiro.kiroAgent/authenticate-success?code=XXX&state=YYY
+ * Exchange Google/GitHub social authorization code for Kiro tokens
+ * and persist them as a Kiro connection.
  */
 export async function POST(request) {
   try {
-    const { code, codeVerifier, provider } = await request.json();
+    const { code, state, provider } = await request.json();
 
-    if (!code || !codeVerifier) {
+    if (!code || !state) {
       return NextResponse.json(
         { error: "Missing required fields" },
         { status: 400 }
@@ -25,28 +26,33 @@ export async function POST(request) {
       );
     }
 
-    const kiroService = new KiroService();
+    const storedState = consumeSocialOAuthState(state, { provider });
+    if (!storedState) {
+      return NextResponse.json(
+        { error: "Invalid or expired OAuth state" },
+        { status: 400 }
+      );
+    }
 
-    // Exchange code for tokens (redirect_uri handled internally)
+    const kiroService = new KiroService();
     const tokenData = await kiroService.exchangeSocialCode(
       code,
-      codeVerifier
+      storedState.codeVerifier,
+      provider
     );
-
-    // Extract email from JWT if available
     const email = kiroService.extractEmailFromJWT(tokenData.accessToken);
 
-    // Save to database
     const connection = await createProviderConnection({
       provider: "kiro",
       authType: "oauth",
       accessToken: tokenData.accessToken,
       refreshToken: tokenData.refreshToken,
-      expiresAt: new Date(Date.now() + tokenData.expiresIn * 1000).toISOString(),
+      expiresAt: new Date(Date.now() + (tokenData.expiresIn || 3600) * 1000).toISOString(),
       email: email || null,
       providerSpecificData: {
         profileArn: tokenData.profileArn,
-        authMethod: provider, // "google" or "github"
+        authMethod: "social",
+        socialProvider: provider,
         provider: provider.charAt(0).toUpperCase() + provider.slice(1),
       },
       testStatus: "active",
@@ -61,7 +67,7 @@ export async function POST(request) {
       },
     });
   } catch (error) {
-    console.log("Kiro social exchange error:", error);
+    console.error("Kiro social exchange error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

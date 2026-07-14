@@ -2,7 +2,9 @@ import os from "os";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { existsSync } from "fs";
-import { cleanupProviderConnections, getSettings, updateSettings, getApiKeys } from "@/lib/localDb";
+import { logger } from "@/lib/logger";
+import { cleanupProviderConnections, getSettings, updateSettings, getApiKeys, getProviderConnections, updateProviderConnection } from "@/lib/localDb";
+import { reconcileStrictProxyConnections } from "@/lib/network/strictProxyReconciliation";
 import {
   enableTunnel, enableTailscale,
   isTunnelManuallyDisabled, isTunnelReconnecting, isTailscaleReconnecting,
@@ -17,6 +19,7 @@ import { getMitmStatus, startMitm, loadEncryptedPassword, initDbHooks, restoreTo
 import { startQuotaAutoPing } from "@/shared/services/quotaAutoPing";
 import { syncToJson as syncMitmAliasCache } from "@/lib/mitmAliasCache";
 import { killAllBridges } from "@/lib/mcp/stdioSseBridge";
+import { startTokenRefreshWorker } from "@/sse/services/tokenRefreshWorker";
 
 // Inject correct paths and DB hooks into manager.js (CJS) from ESM context
 (function bootstrapMitm() {
@@ -33,10 +36,6 @@ import { killAllBridges } from "@/lib/mcp/stdioSseBridge";
 
 process.setMaxListeners(20);
 
-// Defer heavy startup work so the first HTTP request (login → dashboard) isn't
-// starved by DB cleanup, cloudflared download, lsof/DNS probes and OAuth pings.
-const STARTUP_DEFER_MS = 3000;
-
 // Survive Next.js hot reload
 const g = global.__appSingleton ??= {
   signalHandlersRegistered: false,
@@ -52,8 +51,28 @@ const g = global.__appSingleton ??= {
 
 export async function initializeApp() {
   try {
-    // Register cleanup + exit-respawn callback immediately so signals and
-    // unexpected cloudflared exits are handled even during the deferred window.
+    await cleanupProviderConnections();
+    await reconcileStrictProxyConnections({
+      listConnections: getProviderConnections,
+      updateConnection: updateProviderConnection,
+      log: logger,
+    });
+    const settings = await getSettings();
+
+    // Auto-resume tunnel (once per process)
+    if (settings.tunnelEnabled && !g.tunnelAutoResumed) {
+      g.tunnelAutoResumed = true;
+      logger.info("[InitApp] Tunnel was enabled, auto-resuming...");
+      safeRestartTunnel("startup").catch((e) => logger.warn({ err: e }, "[InitApp] Tunnel resume failed"));
+    }
+
+    // Auto-resume tailscale (once per process)
+    if (settings.tailscaleEnabled && !g.tailscaleAutoResumed) {
+      g.tailscaleAutoResumed = true;
+      logger.info("[InitApp] Tailscale was enabled, auto-resuming...");
+      safeRestartTailscale("startup").catch((e) => logger.warn({ err: e }, "[InitApp] Tailscale resume failed"));
+    }
+
     if (!g.signalHandlersRegistered) {
       const cleanup = () => {
         try { removeAllDNSEntriesSync(); } catch { /* best effort */ }
@@ -67,46 +86,24 @@ export async function initializeApp() {
       g.signalHandlersRegistered = true;
     }
 
+    ensureCloudflared().catch(() => {});
+
+    // Sync mitmAlias DB → JSON cache so standalone MITM server can read it
+    syncMitmAliasCache().catch(() => {});
+
+    // Auto-respawn tunnel when cloudflared exits unexpectedly (e.g. network change drop)
     setTunnelUnexpectedExitCallback(() => {
       safeRestartTunnel("unexpected-exit").catch(() => {});
     });
 
-    // Defer the heavy work — nothing here blocks incoming requests.
-    setTimeout(() => {
-      runHeavyStartup().catch((e) => console.error("[InitApp] deferred startup failed:", e.message));
-    }, STARTUP_DEFER_MS);
+    startWatchdog();
+    startNetworkMonitor();
+    startTokenRefreshWorker();
+    autoStartMitm();
+    startQuotaAutoPing();
   } catch (error) {
-    console.error("[InitApp] Error:", error);
+    logger.error({ err: error }, "[InitApp] initialization error");
   }
-}
-
-async function runHeavyStartup() {
-  await cleanupProviderConnections();
-  const settings = await getSettings();
-
-  // Auto-resume tunnel (once per process)
-  if (settings.tunnelEnabled && !g.tunnelAutoResumed) {
-    g.tunnelAutoResumed = true;
-    console.log("[InitApp] Tunnel was enabled, auto-resuming...");
-    safeRestartTunnel("startup").catch((e) => console.log("[InitApp] Tunnel resume failed:", e.message));
-  }
-
-  // Auto-resume tailscale (once per process)
-  if (settings.tailscaleEnabled && !g.tailscaleAutoResumed) {
-    g.tailscaleAutoResumed = true;
-    console.log("[InitApp] Tailscale was enabled, auto-resuming...");
-    safeRestartTailscale("startup").catch((e) => console.log("[InitApp] Tailscale resume failed:", e.message));
-  }
-
-  ensureCloudflared().catch(() => {});
-
-  // Sync mitmAlias DB → JSON cache so standalone MITM server can read it
-  syncMitmAliasCache().catch(() => {});
-
-  startWatchdog();
-  startNetworkMonitor();
-  autoStartMitm();
-  startQuotaAutoPing();
 }
 
 async function autoStartMitm() {
@@ -120,24 +117,24 @@ async function autoStartMitm() {
 
     const password = await loadEncryptedPassword();
     if (!password && process.platform !== "win32") {
-      console.log("[InitApp] MITM was enabled but no saved password found, skipping auto-start");
+      logger.warn("[InitApp] MITM was enabled but no saved password found, skipping auto-start");
       return;
     }
 
     const keys = await getApiKeys();
     const activeKey = keys.find(k => k.isActive !== false);
 
-    console.log("[InitApp] MITM was enabled, auto-starting...");
+    logger.info("[InitApp] MITM was enabled, auto-starting...");
     await startMitm(activeKey?.key || "sk_9router", password);
-    console.log("[InitApp] MITM auto-started");
+    logger.info("[InitApp] MITM auto-started");
     try {
       await restoreToolDNS(password);
-      console.log("[InitApp] DNS restored from saved state");
+      logger.info("[InitApp] DNS restored from saved state");
     } catch (e) {
-      console.log("[InitApp] DNS restore failed:", e.message);
+      logger.warn({ err: e }, "[InitApp] DNS restore failed");
     }
   } catch (err) {
-    console.log("[InitApp] MITM auto-start failed:", err.message);
+    logger.error({ err }, "[InitApp] MITM auto-start failed");
   } finally {
     g.mitmStartInProgress = false;
   }
@@ -163,16 +160,16 @@ async function safeRestartTunnel(reason) {
   if (isCloudflaredRunning()) return;
 
   if (!force && Date.now() - svc.lastRestartAt < RESTART_COOLDOWN_MS) {
-    console.log(`[Tunnel] degraded but cooldown active, skip (${reason})`);
+    logger.debug(`[Tunnel] degraded but cooldown active, skip (${reason})`);
     return;
   }
   if (!await checkInternet()) return;
 
-  console.log(`[Tunnel] safeRestart (${reason}) — tunnel unreachable${force ? " [force]" : ""}`);
+  logger.info(`[Tunnel] safeRestart (${reason}) — tunnel unreachable${force ? " [force]" : ""}`);
   try {
     await enableTunnel();
     svc.lastRestartAt = Date.now();
-    console.log("[Tunnel] restart success");
+    logger.info("[Tunnel] restart success");
   } catch (err) {
     if (!/cloudflared killed|tunnel cancelled/.test(err.message)) {
       console.log("[Tunnel] restart failed:", err.message);
@@ -206,7 +203,7 @@ async function safeRestartTailscale(reason) {
 
   const force = FORCE_RESTART_REASONS.test(reason);
   if (!force && Date.now() - svc.lastRestartAt < RESTART_COOLDOWN_MS) {
-    console.log(`[Tailscale] degraded but cooldown active, skip (${reason})`);
+    logger.debug(`[Tailscale] degraded but cooldown active, skip (${reason})`);
     return;
   }
   if (!await checkInternet()) return;
@@ -215,9 +212,9 @@ async function safeRestartTailscale(reason) {
   try {
     await enableTailscale();
     svc.lastRestartAt = Date.now();
-    console.log("[Tailscale] restart success");
+    logger.info("[Tailscale] restart success");
   } catch (err) {
-    console.log("[Tailscale] restart failed:", err.message);
+    logger.error({ err }, "[Tailscale] restart failed");
   }
 }
 
@@ -286,7 +283,7 @@ function startNetworkMonitor() {
       safeRestartTunnel(reason).catch(() => {});
       safeRestartTailscale(reason).catch(() => {});
     } catch (err) {
-      console.log("[NetworkMonitor] error:", err.message);
+      logger.warn({ err }, "[NetworkMonitor] error");
     }
   }, NETWORK_CHECK_INTERVAL_MS);
 

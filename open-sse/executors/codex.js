@@ -9,6 +9,7 @@ import { normalizeResponsesInput } from "../translator/formats/responsesApi.js";
 import { fetchImageAsBase64 } from "../translator/concerns/image.js";
 import { getModelUpstreamId } from "../config/providerModels.js";
 import { DEFAULT_RETRY_CONFIG, HTTP_STATUS, resolveRetryEntry } from "../config/runtimeConfig.js";
+import { refreshCodexToken } from "../services/tokenRefresh.js";
 import { dbg } from "../utils/debugLog.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 
@@ -122,10 +123,6 @@ function resolveCacheSessionId(body, credentials) {
     workspaceId: credentials?.providerSpecificData?.workspaceId,
     scope: "codex"
   });
-}
-
-function normalizeReasoningEffort(value) {
-  return value === "max" ? "xhigh" : value;
 }
 
 function findNestedMessage(value, depth = 0) {
@@ -427,23 +424,30 @@ export class CodexExecutor extends BaseExecutor {
 
     // Extract thinking level from model name suffix
     // e.g., gpt-5.3-codex-high → high, gpt-5.3-codex → medium (default)
-    const effortLevels = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
+    const effortLevels = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
     let modelEffort = null;
     for (const level of effortLevels) {
       if (body.model.endsWith(`-${level}`)) {
         modelEffort = level;
         // Strip suffix from model name for actual API call
-        body.model = body.model.replace(`-${level}`, '');
+        body.model = body.model.slice(0, -(level.length + 1));
         break;
       }
     }
 
+    // Re-map after suffix stripping so aliases/review variants resolve correctly.
+    body.model = getModelUpstreamId("cx", body.model);
+
     // Priority: explicit reasoning.effort > reasoning_effort param > model suffix > default (medium)
     if (!body.reasoning) {
-      const effort = normalizeReasoningEffort(body.reasoning_effort || modelEffort || 'low');
+      let effort = body.reasoning_effort || modelEffort || 'low';
+      // Only gpt-5.6-sol accepts the new max effort; older Codex models use xhigh.
+      if (effort === "max" && body.model !== "gpt-5.6-sol") effort = "xhigh";
       body.reasoning = { effort, summary: "auto" };
     } else {
-      body.reasoning.effort = normalizeReasoningEffort(body.reasoning.effort);
+      if (body.reasoning.effort === "max" && body.model !== "gpt-5.6-sol") {
+        body.reasoning.effort = "xhigh";
+      }
       if (!body.reasoning.summary) body.reasoning.summary = "auto";
     }
     delete body.reasoning_effort;

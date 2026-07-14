@@ -1,4 +1,5 @@
-import { ProxyAgent, fetch as undiciFetch } from "undici";
+import { fetch as undiciFetch } from "undici";
+import { createProxyDispatcher, disposeProxyDispatcher } from "@/lib/network/proxyDispatcher";
 
 const DEFAULT_TEST_URL = "https://google.com/";
 const DEFAULT_TIMEOUT_MS = 8000;
@@ -42,12 +43,14 @@ export async function testProxyUrl({ proxyUrl, testUrl, timeoutMs } = {}) {
 
   try {
     try {
-      dispatcher = new ProxyAgent({ uri: normalizedProxyUrl });
+      dispatcher = await createProxyDispatcher(normalizedProxyUrl);
     } catch (err) {
       return {
         ok: false,
         status: 400,
-        error: `Invalid proxy URL: ${err?.message || String(err)}`,
+        error: err?.message?.includes("Unsupported proxy protocol")
+          ? err.message
+          : `Invalid proxy URL: ${err?.message || String(err)}`,
       };
     }
 
@@ -82,10 +85,10 @@ export async function testProxyUrl({ proxyUrl, testUrl, timeoutMs } = {}) {
       clearTimeout(timer);
     }
   } finally {
-    try {
-      await dispatcher?.close?.();
-    } catch {
-      // ignore
-    }
+    // Tear down forcefully instead of awaiting a graceful close().
+    // For dead/aborted proxies (common during a bulk health scan),
+    // awaiting close can hang on in-flight sockets. Shared dispose
+    // prefers destroy() and never blocks the caller.
+    if (dispatcher) disposeProxyDispatcher(dispatcher);
   }
 }

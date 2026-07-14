@@ -233,7 +233,7 @@ export function classifyOAuthRefreshError(errorText = "", status = 0) {
   return { status, code, description, permanent };
 }
 
-export async function refreshCodexToken(refreshToken, log) {
+export async function refreshCodexToken(refreshToken, log, currentIdToken = null) {
   if (!refreshToken) return null;
   return dedupRefresh("codex", refreshToken, async () => {
     try {
@@ -282,7 +282,7 @@ export async function refreshCodexToken(refreshToken, log) {
       return {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token || refreshToken,
-        idToken: tokens.id_token,
+        idToken: tokens.id_token || currentIdToken || null,
         expiresIn: tokens.expires_in,
       };
     } catch (error) {
@@ -394,6 +394,51 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
       refreshToken: tokens.refreshToken || refreshToken,
       expiresIn: tokens.expiresIn,
       ...(await resolveKiroProfileArnPatch(providerSpecificData, tokens.accessToken, tokens.profileArn)),
+    };
+  }
+
+  if (authMethod === "social") {
+    const kiroOAuth = PROVIDER_OAUTH.kiro || {};
+    const response = await proxyAwareFetch(`https://${kiroOAuth.cognitoDomain}/oauth2/token`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+      },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        client_id: kiroOAuth.cognitoClientId,
+        refresh_token: refreshToken,
+      }).toString(),
+    }, proxyOptions);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      if (response.status === 400 && errorText.includes("invalid_grant")) {
+        log?.error?.("TOKEN_REFRESH", "Kiro social refresh token is invalid or revoked", {
+          status: response.status,
+        });
+        return { error: "invalid_grant", code: "social_invalid_grant" };
+      }
+      log?.error?.("TOKEN_REFRESH", "Failed to refresh Kiro social token", {
+        status: response.status,
+        error: errorText,
+      });
+      return null;
+    }
+
+    const tokens = await response.json();
+
+    log?.info?.("TOKEN_REFRESH", "Successfully refreshed Kiro social token", {
+      hasNewAccessToken: !!tokens.access_token,
+      expiresIn: tokens.expires_in,
+    });
+
+    return {
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token || refreshToken,
+      ...(tokens.id_token ? { idToken: tokens.id_token } : {}),
+      expiresIn: tokens.expires_in,
     };
   }
 

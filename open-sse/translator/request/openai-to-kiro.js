@@ -159,6 +159,8 @@ function reconcileOrphanedToolResults(history, currentMessage) {
   }
 }
 
+
+
 /**
  * Safely parse JSON string, returning fallback on failure.
  */

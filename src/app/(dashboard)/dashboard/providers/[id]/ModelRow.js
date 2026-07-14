@@ -1,8 +1,8 @@
 import PropTypes from "prop-types";
 import { CapacityBadges } from "@/shared/components";
 
-export default function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting, onDisable, caps, thinkingSuffix }) {
-  const displayModel = thinkingSuffix ? `${fullModel}(${thinkingSuffix})` : fullModel;
+export default function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting, onSpeedTest, isSpeedTesting, speedTestData, onDisable, caps, thinkingSuffix }) {
+  const displayModel = thinkingSuffix ? `()` : fullModel;
   const borderColor = testStatus === "ok"
     ? "border-green-500/40"
     : testStatus === "error"
@@ -14,6 +14,35 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
     : testStatus === "error"
     ? "#ef4444"
     : undefined;
+
+  const getSpeedStyle = () => {
+    if (!speedTestData) return null;
+    const { latencyMs, tps } = speedTestData;
+    // Poor (Red) - Latency > 15s or TPS < 5
+    if (latencyMs > 15000 || tps < 5) {
+      return {
+        bg: "bg-red-500/10 dark:bg-red-500/15 border border-red-500/20",
+        text: "text-red-500 dark:text-red-400",
+        glow: "shadow-[0_0_8px_rgba(239,68,68,0.35)]",
+      };
+    }
+    // Moderate (Yellow/Orange) - Latency > 10s or TPS < 10
+    if (latencyMs > 10000 || tps < 10) {
+      return {
+        bg: "bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/20",
+        text: "text-amber-600 dark:text-amber-400",
+        glow: "shadow-[0_0_8px_rgba(245,158,11,0.3)]",
+      };
+    }
+    // Excellent (Green) - Latency <= 10s and TPS >= 10
+    return {
+      bg: "bg-green-500/10 dark:bg-green-500/15 border border-green-500/20",
+      text: "text-green-600 dark:text-green-400",
+      glow: "shadow-[0_0_8px_rgba(34,197,94,0.4)]",
+    };
+  };
+
+  const speedStyle = getSpeedStyle();
 
   return (
     <div className={`group min-w-0 max-w-full rounded-lg border px-3 py-2 ${borderColor} hover:bg-sidebar/50`}>
@@ -44,6 +73,22 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
             </button>
             <span className="pointer-events-none absolute mt-1 top-5 left-1/2 -translate-x-1/2 text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
               {isTesting ? "Testing..." : "Test"}
+            </span>
+          </div>
+        )}
+        {onSpeedTest && (
+          <div className="relative shrink-0 group/btn">
+            <button
+              onClick={onSpeedTest}
+              disabled={isSpeedTesting}
+              className={`rounded p-0.5 text-text-muted transition-opacity hover:bg-sidebar hover:text-primary ${isSpeedTesting ? "opacity-100" : "opacity-100 sm:opacity-0 sm:group-hover:opacity-100"}`}
+            >
+              <span className="material-symbols-outlined text-sm" style={isSpeedTesting ? { animation: "spin 1s linear infinite" } : undefined}>
+                {isSpeedTesting ? "progress_activity" : "speed"}
+              </span>
+            </button>
+            <span className="pointer-events-none absolute mt-1 top-5 left-1/2 -translate-x-1/2 text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
+              {isSpeedTesting ? "Measuring speed..." : "Check Latency & TPS"}
             </span>
           </div>
         )}
@@ -96,6 +141,12 @@ ModelRow.propTypes = {
   onDeleteAlias: PropTypes.func,
   onTest: PropTypes.func,
   isTesting: PropTypes.bool,
+  onSpeedTest: PropTypes.func,
+  isSpeedTesting: PropTypes.bool,
+  speedTestData: PropTypes.shape({
+    latencyMs: PropTypes.number,
+    tps: PropTypes.number,
+  }),
   onDisable: PropTypes.func,
   caps: PropTypes.object,
   thinkingSuffix: PropTypes.string,

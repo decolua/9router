@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from "uuid";
 import { refreshKiroToken } from "../services/tokenRefresh.js";
 import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
+import { splitInlineThinking, flushPendingThinking } from "./kiroThinking.js";
 
 /**
  * KiroExecutor - Executor for Kiro AI (AWS CodeWhisperer)
@@ -64,22 +65,9 @@ export class KiroExecutor extends BaseExecutor {
   getOrderedBaseUrls(credentials) {
     const baseUrls = this.getBaseUrls();
     const authMethod = credentials?.providerSpecificData?.authMethod;
-    // IAM Identity Center (idc) tokens are AWS SSO access tokens — the same
-    // family as external_idp/api_key. The kiro.dev gateway rejects them with
-    // 403 "bearer token invalid", so they must hit the CodeWhisperer
-    // *.amazonaws.com surface, and in the region the token was minted in
-    // (the baseUrls are hardcoded us-east-1).
-    const isCodeWhispererSurface =
-      authMethod === "api_key" || authMethod === "external_idp" || authMethod === "idc";
+    const isCodeWhispererSurface = authMethod === "api_key" || authMethod === "external_idp";
     if (!isCodeWhispererSurface) return baseUrls;
-
-    const region = (credentials?.providerSpecificData?.region || "us-east-1").trim();
-    const regionalize = (u) =>
-      region && region !== "us-east-1" && u.includes("amazonaws.com")
-        ? u.replace(/([a-z]+)\.[a-z0-9-]+\.amazonaws\.com/, `$1.${region}.amazonaws.com`)
-        : u;
-
-    const amazon = baseUrls.filter((u) => u.includes("amazonaws.com")).map(regionalize);
+    const amazon = baseUrls.filter((u) => u.includes("amazonaws.com"));
     const others = baseUrls.filter((u) => !u.includes("amazonaws.com"));
     return amazon.length > 0 ? [...amazon, ...others] : baseUrls;
   }
@@ -120,8 +108,19 @@ export class KiroExecutor extends BaseExecutor {
   /**
    * Transform AWS EventStream binary response to SSE text stream
    * Using TransformStream instead of ReadableStream.pull() to avoid Workers timeout
+   *
+   * @param {Response} response  Upstream raw fetch response (binary EventStream).
+   * @param {string}   model     Logical model id (kept in OpenAI chunks for clients).
+   * @param {object}   [opts]
+   * @param {boolean}  [opts.thinkingExpected=false]
+   *   When true, scan inbound `assistantResponseEvent.content` for inline
+   *   thinking blocks and split them out into the OpenAI
+   *   `delta.reasoning_content` channel. Required for Claude on Kiro because
+   *   it streams reasoning inline (not as `reasoningContentEvent`) when
+   *   thinking mode is enabled in the system prompt.
    */
-  transformEventStreamToSSE(response, model) {
+  transformEventStreamToSSE(response, model, opts = {}) {
+    const thinkingExpected = !!opts.thinkingExpected;
     let buffer = new Uint8Array(0);
     let chunkIndex = 0;
     const responseId = `chatcmpl-${Date.now()}`;
@@ -136,7 +135,88 @@ export class KiroExecutor extends BaseExecutor {
       reasoningChunkCount: 0,
       toolCallIndex: 0,
       seenToolIds: new Map(),
-      inThinking: false
+      // Inline-thinking splitter state. `thinkingMode === true` means we are
+      // currently inside a thinking block, so subsequent text
+      // should be routed to `delta.reasoning_content`. `pendingTag` carries
+      // an unfinished tag fragment (e.g. `<thi`) across frames.
+      thinkingMode: false,
+      pendingTag: ""
+    };
+
+    // ---- Helpers ----------------------------------------------------------
+    // Local closures so the TransformStream's `transform`/`flush` can call
+    // them directly. They mutate `state.thinkingMode`, `state.pendingTag`,
+    // and emit OpenAI-shaped chunks via the supplied controller.
+    /**
+     * Emit a content delta. Sends `role: "assistant"` on the very first chunk
+     * of any kind (matching OpenAI's wire format).
+     */
+    const emitContent = (controller, content) => {
+      if (!content) return;
+      const chunkOut = {
+        id: responseId,
+        object: "chat.completion.chunk",
+        created,
+        model,
+        choices: [{
+          index: 0,
+          delta: chunkIndex === 0
+            ? { role: "assistant", content }
+            : { content },
+          finish_reason: null
+        }]
+      };
+      chunkIndex++;
+      controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunkOut)}\n\n`));
+    };
+
+    /**
+     * Emit a reasoning delta. Behaves like emitContent but writes the text to
+     * `delta.reasoning_content` so downstream translators (Anthropic /
+     * thinking_blocks, Claude SSE, etc.) can re-wrap it correctly.
+     */
+    const emitReasoning = (controller, reasoning) => {
+      if (!reasoning) return;
+      state.hasReasoningContent = true;
+      const reasoningDelta =
+        state.reasoningChunkCount === 0 && chunkIndex === 0
+          ? { role: "assistant", reasoning_content: reasoning }
+          : { reasoning_content: reasoning };
+      const chunkOut = {
+        id: responseId,
+        object: "chat.completion.chunk",
+        created,
+        model,
+        choices: [{
+          index: 0,
+          delta: reasoningDelta,
+          finish_reason: null
+        }]
+      };
+      chunkIndex++;
+      state.reasoningChunkCount++;
+      controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunkOut)}\n\n`));
+    };
+
+    /**
+     * Stream-safe inline-thinking splitter wrapper.
+     *
+     * Walks one `assistantResponseEvent.content` slice at a time and emits
+     * either content or reasoning chunks based on the current mode. It carries
+     * a `pendingTag` buffer across slices so a tag split between frames
+     * is still recognised.
+     *
+     * The splitter is only engaged when `thinkingExpected === true`. For
+     * non-thinking requests we keep the original passthrough path so any
+     * literal thinking text the user asked for is left alone.
+     */
+    const runSplitter = (controller, raw) => {
+      splitInlineThinking(
+        state,
+        raw,
+        (s) => emitContent(controller, s),
+        (s) => emitReasoning(controller, s)
+      );
     };
 
     const transformStream = new TransformStream({
@@ -173,53 +253,14 @@ export class KiroExecutor extends BaseExecutor {
 
           // Handle assistantResponseEvent
           if (eventType === "assistantResponseEvent" && event.payload?.content) {
-            let content = event.payload.content;
-
-            // Kiro Claude models can leak <thinking> blocks into the content stream.
-            // We strip these literal tags to prevent duplication, as the reasoning 
-            // is already routed correctly via reasoningContentEvent.
-            if (state.inThinking) {
-              if (content.includes("</thinking>")) {
-                state.inThinking = false;
-                const after = content.split("</thinking>").slice(1).join("</thinking>");
-                content = after.startsWith("\n") ? after.substring(1) : after;
-              } else {
-                content = ""; // Drop entirely while inside thinking block
-              }
-            } else if (content.includes("<thinking>")) {
-              state.inThinking = true;
-              if (content.includes("</thinking>")) {
-                state.inThinking = false;
-                const before = content.split("<thinking>")[0];
-                const after = content.split("</thinking>").slice(1).join("</thinking>");
-                content = before + (after.startsWith("\n") ? after.substring(1) : after);
-              } else {
-                content = content.split("<thinking>")[0];
-              }
-            }
-
-            if (!content && state.hasReasoningContent) {
-              // If we stripped everything, skip emitting an empty content chunk
-              continue;
-            }
-
+            const content = event.payload.content;
             state.totalContentLength += content.length;
 
-            const chunk = {
-              id: responseId,
-              object: "chat.completion.chunk",
-              created,
-              model,
-              choices: [{
-                index: 0,
-                delta: chunkIndex === 0
-                  ? { role: "assistant", content }
-                  : { content },
-                finish_reason: null
-              }]
-            };
-            chunkIndex++;
-            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\n`));
+            if (thinkingExpected) {
+              runSplitter(controller, content);
+            } else {
+              emitContent(controller, content);
+            }
           }
 
           // Handle reasoningContentEvent (Kiro thinking / reasoning)
@@ -391,11 +432,6 @@ export class KiroExecutor extends BaseExecutor {
             if (metrics && typeof metrics === 'object') {
               const inputTokens = metrics.inputTokens || 0;
               const outputTokens = metrics.outputTokens || 0;
-              // ponytail: Amazon Q upstream does not expose cache fields today,
-              // but pick up cache_read_input_tokens / cache_creation_input_tokens
-              // if the event shape grows them so cost tracking stays accurate.
-              const cachedTokens = metrics.cacheReadInputTokens || metrics.cache_read_input_tokens || 0;
-              const cacheCreationInputTokens = metrics.cacheCreationInputTokens || metrics.cache_creation_input_tokens || 0;
 
               if (inputTokens > 0 || outputTokens > 0) {
                 state.usage = {
@@ -403,12 +439,6 @@ export class KiroExecutor extends BaseExecutor {
                   completion_tokens: outputTokens,
                   total_tokens: inputTokens + outputTokens
                 };
-                // Kiro is Claude-backed: inputTokens EXCLUDES cache (Claude convention),
-                // not inclusive like OpenAI's cached_tokens. Emit cache_read_input_tokens
-                // (not cached_tokens) so canonicalizeUsage takes the Claude fold path and
-                // correctly adds cache back into prompt_tokens instead of undercharging.
-                if (cachedTokens > 0) state.usage.cache_read_input_tokens = cachedTokens;
-                if (cacheCreationInputTokens > 0) state.usage.cache_creation_input_tokens = cacheCreationInputTokens;
               }
             }
           }
@@ -469,6 +499,14 @@ export class KiroExecutor extends BaseExecutor {
       },
 
       flush(controller) {
+        // Drain any pending inline-thinking tag fragment so we don't drop
+        // trailing characters when the stream ends mid-tag (e.g. `<thi`).
+        flushPendingThinking(
+          state,
+          (s) => emitContent(controller, s),
+          (s) => emitReasoning(controller, s)
+        );
+
         // Emit finish chunk if not already sent
         if (!state.finishEmitted) {
           state.finishEmitted = true;
@@ -508,7 +546,7 @@ export class KiroExecutor extends BaseExecutor {
     if (!credentials.refreshToken) return null;
 
     try {
-      // Use centralized refreshKiroToken function (handles both AWS SSO OIDC and Social Auth)
+      // Use centralized refreshKiroToken function (handles AWS SSO OIDC and imported tokens)
       const result = await refreshKiroToken(
         credentials.refreshToken,
         credentials.providerSpecificData,
@@ -578,7 +616,10 @@ function parseEventFrame(data) {
         payload = JSON.parse(payloadStr);
       } catch (parseError) {
         // Log parse error for debugging
-        console.warn(`[Kiro] Failed to parse payload: ${parseError.message} | payload: ${payloadStr.substring(0, 100)}`);
+        rootLogger.warn(
+          { tag: "KIRO", err: parseError.message, payloadPreview: payloadStr.substring(0, 100) },
+          "Kiro: Failed to parse payload"
+        );
         payload = { raw: payloadStr };
       }
     }

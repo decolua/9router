@@ -3,15 +3,11 @@ import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMeta, setMeta } from "../helpers/metaStore.js";
 
-function maskApiKey(key) {
-  if (!key || typeof key !== "string") return null;
-  if (key.length <= 8) return key.charAt(0) + "***";
-  return key.slice(0, 8) + "***";
-}
 
 const PENDING_TIMEOUT_MS = 60 * 1000;
 const RING_CAP = 50;
 const CONN_CACHE_TTL_MS = 30 * 1000;
+const API_KEY_CACHE_TTL_MS = 30 * 1000;
 const PERIOD_MS = { "24h": 86400000, "7d": 604800000, "30d": 2592000000, "60d": 5184000000 };
 
 // In-memory state shared across Next.js modules
@@ -24,14 +20,18 @@ if (!global._statsEmitter) {
 if (!global._pendingTimers) global._pendingTimers = {};
 if (!global._recentRing) global._recentRing = { items: [], initialized: false };
 if (!global._connectionMapCache) global._connectionMapCache = { map: {}, ts: 0 };
+if (!global._apiKeyMapCache) global._apiKeyMapCache = { map: {}, ts: 0 };
 if (!global._statsEmitTimers) global._statsEmitTimers = { pending: null, update: null };
+if (!global._usageTimestampSeq) global._usageTimestampSeq = { lastMs: 0, offset: 0 };
 
 const pendingRequests = global._pendingRequests;
 const lastErrorProvider = global._lastErrorProvider;
 const pendingTimers = global._pendingTimers;
 const recentRing = global._recentRing;
 const connCache = global._connectionMapCache;
+const apiKeyCache = global._apiKeyMapCache;
 const statsEmitTimers = global._statsEmitTimers;
+const usageTimestampSeq = global._usageTimestampSeq;
 
 export const statsEmitter = global._statsEmitter;
 
@@ -45,6 +45,13 @@ function scheduleStatsEvent(event, delayMs = 150) {
   statsEmitTimers[key]?.unref?.();
 }
 
+function nextUsageTimestamp() {
+  const now = Date.now();
+  const next = Math.max(now, usageTimestampSeq.lastMs + 1);
+  usageTimestampSeq.lastMs = next;
+  return new Date(next).toISOString();
+}
+
 function getLocalDateKey(timestamp) {
   const d = timestamp ? new Date(timestamp) : new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -55,7 +62,6 @@ function addToCounter(target, key, values) {
   target[key].requests += values.requests || 1;
   target[key].promptTokens += values.promptTokens || 0;
   target[key].completionTokens += values.completionTokens || 0;
-  target[key].cachedTokens += values.cachedTokens || 0;
   target[key].cost += values.cost || 0;
   if (values.meta) Object.assign(target[key], values.meta);
 }
@@ -63,14 +69,12 @@ function addToCounter(target, key, values) {
 function aggregateEntryToDay(day, entry) {
   const promptTokens = entry.tokens?.prompt_tokens || entry.tokens?.input_tokens || 0;
   const completionTokens = entry.tokens?.completion_tokens || entry.tokens?.output_tokens || 0;
-  const cachedTokens = entry.tokens?.cached_tokens || entry.tokens?.cache_read_input_tokens || 0;
   const cost = entry.cost || 0;
-  const vals = { promptTokens, completionTokens, cachedTokens, cost };
+  const vals = { promptTokens, completionTokens, cost };
 
   day.requests = (day.requests || 0) + 1;
   day.promptTokens = (day.promptTokens || 0) + promptTokens;
   day.completionTokens = (day.completionTokens || 0) + completionTokens;
-  day.cachedTokens = (day.cachedTokens || 0) + cachedTokens;
   day.cost = (day.cost || 0) + cost;
 
   day.byProvider ||= {};
@@ -117,6 +121,86 @@ async function getConnectionMapCached() {
   return connCache.map;
 }
 
+async function getApiKeyMapCached() {
+  if (Date.now() - apiKeyCache.ts < API_KEY_CACHE_TTL_MS) return apiKeyCache.map;
+  try {
+    const { getApiKeys } = await import("./apiKeysRepo.js");
+    const all = await getApiKeys();
+    const map = {};
+    for (const k of all) map[k.key] = { name: k.name, id: k.id, createdAt: k.createdAt };
+    apiKeyCache.map = map;
+    apiKeyCache.ts = Date.now();
+  } catch {}
+  return apiKeyCache.map;
+}
+
+// Mask a secret API key for display: ••••last4 — never the full value. (#1258)
+function maskApiKey(apiKeyValue) {
+  if (!apiKeyValue || typeof apiKeyValue !== "string") return "••••";
+  return apiKeyValue.length <= 4 ? "••••" : `••••${apiKeyValue.slice(-4)}`;
+}
+
+// Resolve display metadata for the API key behind a request WITHOUT exposing the
+// secret. The plaintext key must never reach the client — the dashboard payload
+// is visible in DevTools/Network — so we return only the key's stable non-secret
+// id (used for dedup + identity) and a human label (configured name, else the
+// masked ••••last4 form). See #1258: surface *which* key was used, not its value.
+export function resolveRecentRequestApiKey(apiKey, apiKeyMap = {}) {
+  const apiKeyValue = typeof apiKey === "string" && apiKey ? apiKey : null;
+  if (!apiKeyValue) {
+    return { apiKeyId: "local-no-key", keyName: "Local" };
+  }
+
+  const info = apiKeyMap[apiKeyValue];
+  return {
+    apiKeyId: info?.id || maskApiKey(apiKeyValue),
+    keyName: info?.name || maskApiKey(apiKeyValue),
+  };
+}
+
+// Strip plaintext API keys from the byApiKey aggregate before it leaves the
+// server. Internally the plaintext key is used as the map key and stored in
+// `apiKey`/`apiKeyKey`, but the client only renders `keyName`. Re-key each entry
+// by the key's stable non-secret id (uuid for known keys, ••••last4 otherwise)
+// and drop the secret fields. Two distinct known keys keep distinct uuid ids, so
+// they stay distinct rows; only unknown keys sharing a ••••last4 fallback merge,
+// which is acceptable and no worse than the previous slice(0,8) label. (#1258)
+function sanitizeByApiKey(byApiKey, apiKeyMap = {}) {
+  const out = {};
+  for (const entry of Object.values(byApiKey || {})) {
+    const plain = typeof entry.apiKey === "string" && entry.apiKey ? entry.apiKey : null;
+    const info = plain ? apiKeyMap[plain] : null;
+    const apiKeyId = plain ? (info?.id || maskApiKey(plain)) : (entry.apiKeyId || "local-no-key");
+    const keyName = plain ? (info?.name || maskApiKey(plain)) : (entry.keyName || "Local (No API Key)");
+    const outKey = `${apiKeyId}|${entry.rawModel || ""}|${entry.provider || ""}`;
+    const { apiKey, apiKeyKey, ...rest } = entry; // eslint-disable-line no-unused-vars
+    if (!out[outKey]) {
+      out[outKey] = { ...rest, apiKeyId, keyName };
+    } else {
+      const o = out[outKey];
+      o.requests += rest.requests || 0;
+      o.promptTokens += rest.promptTokens || 0;
+      o.completionTokens += rest.completionTokens || 0;
+      o.cost += rest.cost || 0;
+      if ((rest.lastUsed || "") > (o.lastUsed || "")) o.lastUsed = rest.lastUsed;
+    }
+  }
+  return out;
+}
+
+export function formatRecentRequest(entry, apiKeyMap = {}) {
+  const t = entry.tokens || {};
+  return {
+    timestamp: entry.timestamp,
+    model: entry.model,
+    provider: entry.provider || "",
+    promptTokens: t.prompt_tokens || t.input_tokens || 0,
+    completionTokens: t.completion_tokens || t.output_tokens || 0,
+    status: entry.status || "ok",
+    ...resolveRecentRequestApiKey(entry.apiKey, apiKeyMap),
+  };
+}
+
 async function ensureRingInitialized() {
   if (recentRing.initialized) return;
   recentRing.initialized = true;
@@ -138,11 +222,33 @@ async function calculateCost(provider, model, tokens) {
     const pricing = await getPricingForModel(provider, model);
     if (!pricing) return 0;
 
-    // Delegate the actual math to the single source of truth (avoids the two
-    // copies drifting apart — see open-sse/providers/pricing.js for the
-    // cache-inclusive prompt_tokens convention this assumes).
-    const { calculateCostFromTokens } = await import("open-sse/providers/pricing.js");
-    return calculateCostFromTokens(tokens, pricing);
+    let cost = 0;
+    const inputTokens = tokens.prompt_tokens || tokens.input_tokens || 0;
+    const cachedTokens = tokens.cached_tokens || tokens.cache_read_input_tokens || 0;
+    const cacheCreationTokens = tokens.cache_creation_input_tokens || 0;
+    const nonCachedInput = Math.max(0, inputTokens - cachedTokens - cacheCreationTokens);
+    cost += nonCachedInput * (pricing.input / 1000000);
+
+    if (cachedTokens > 0) {
+      const cachedRate = pricing.cached || pricing.input;
+      cost += cachedTokens * (cachedRate / 1000000);
+    }
+
+    const outputTokens = tokens.completion_tokens || tokens.output_tokens || 0;
+    cost += outputTokens * (pricing.output / 1000000);
+
+    const reasoningTokens = tokens.reasoning_tokens || 0;
+    if (reasoningTokens > 0) {
+      const rate = pricing.reasoning || pricing.output;
+      cost += reasoningTokens * (rate / 1000000);
+    }
+
+    if (cacheCreationTokens > 0) {
+      const rate = pricing.cache_creation || pricing.input;
+      cost += cacheCreationTokens * (rate / 1000000);
+    }
+
+    return cost;
   } catch (e) {
     console.error("Error calculating cost:", e);
     return 0;
@@ -196,6 +302,7 @@ export function trackPendingRequest(model, provider, connectionId, started, erro
 export async function getActiveRequests() {
   const activeRequests = [];
   const connectionMap = await getConnectionMapCached();
+  const apiKeyMap = await getApiKeyMapCached();
 
   for (const [connectionId, models] of Object.entries(pendingRequests.byAccount)) {
     for (const [modelKey, count] of Object.entries(models)) {
@@ -215,19 +322,11 @@ export async function getActiveRequests() {
   const seen = new Set();
   const recentRequests = [...recentRing.items]
     .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-    .map((e) => {
-      const t = e.tokens || {};
-      return {
-        timestamp: e.timestamp, model: e.model, provider: e.provider || "",
-        promptTokens: t.prompt_tokens || t.input_tokens || 0,
-        completionTokens: t.completion_tokens || t.output_tokens || 0,
-        status: e.status || "ok",
-      };
-    })
+    .map((e) => formatRecentRequest(e, apiKeyMap))
     .filter((e) => {
       if (e.promptTokens === 0 && e.completionTokens === 0) return false;
       const minute = e.timestamp ? e.timestamp.slice(0, 16) : "";
-      const key = `${e.model}|${e.provider}|${e.promptTokens}|${e.completionTokens}|${minute}`;
+      const key = `${e.apiKeyId}|${e.model}|${e.provider}|${e.promptTokens}|${e.completionTokens}|${minute}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -242,7 +341,7 @@ export async function saveRequestUsage(entry) {
   try {
     const db = await getAdapter();
 
-    if (!entry.timestamp) entry.timestamp = new Date().toISOString();
+    if (!entry.timestamp) entry.timestamp = nextUsageTimestamp();
     entry.cost = await calculateCost(entry.provider, entry.model, entry.tokens);
 
     const tokens = entry.tokens || {};
@@ -291,7 +390,7 @@ export async function saveRequestUsage(entry) {
       const dateKey = getLocalDateKey(entry.timestamp);
       const row = db.get(`SELECT data FROM usageDaily WHERE dateKey = ?`, [dateKey]);
       const day = row ? parseJson(row.data, {}) : {
-        requests: 0, promptTokens: 0, completionTokens: 0, cost: 0,
+        requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0,
         byProvider: {}, byModel: {}, byAccount: {}, byApiKey: {}, byEndpoint: {},
       };
       aggregateEntryToDay(day, entry);
@@ -311,6 +410,39 @@ export async function saveRequestUsage(entry) {
   } catch (e) {
     console.error("Failed to save usage stats:", e);
   }
+}
+
+export async function getProviderUsageTotals({ provider, connectionId, since = null } = {}) {
+  const db = await getAdapter();
+  const where = [];
+  const params = [];
+  if (provider) {
+    where.push("provider = ?");
+    params.push(provider);
+  }
+  if (connectionId) {
+    where.push("connectionId = ?");
+    params.push(connectionId);
+  }
+  if (since) {
+    where.push("timestamp >= ?");
+    params.push(since);
+  }
+  const sql = `
+    SELECT
+      COUNT(*) AS requests,
+      COALESCE(SUM(promptTokens), 0) AS promptTokens,
+      COALESCE(SUM(completionTokens), 0) AS completionTokens
+    FROM usageHistory
+    ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+  `;
+  const row = db.get(sql, params) || {};
+  return {
+    requests: Number(row.requests || 0),
+    promptTokens: Number(row.promptTokens || 0),
+    completionTokens: Number(row.completionTokens || 0),
+    totalTokens: Number(row.promptTokens || 0) + Number(row.completionTokens || 0),
+  };
 }
 
 export async function getUsageHistory(filter = {}) {
@@ -369,23 +501,14 @@ export async function getUsageStats(period = "all") {
   for (const k of allApiKeys) apiKeyMap[k.key] = { name: k.name, id: k.id, createdAt: k.createdAt };
 
   // recentRequests from live history (last 100 entries enough for 20 deduped)
-  const recentRows = db.all(`SELECT timestamp, provider, model, tokens, status FROM usageHistory ORDER BY id DESC LIMIT 100`);
+  const recentRows = db.all(`SELECT timestamp, provider, model, apiKey, tokens, status FROM usageHistory ORDER BY id DESC LIMIT 100`);
   const seen = new Set();
   const recentRequests = recentRows
-    .map((r) => {
-      const t = parseJson(r.tokens, {}) || {};
-      return {
-        timestamp: r.timestamp, model: r.model, provider: r.provider || "",
-        promptTokens: t.prompt_tokens || t.input_tokens || 0,
-        completionTokens: t.completion_tokens || t.output_tokens || 0,
-        cachedTokens: t.cached_tokens || t.cache_read_input_tokens || 0,
-        status: r.status || "ok",
-      };
-    })
+    .map((r) => formatRecentRequest({ ...r, tokens: parseJson(r.tokens, {}) || {} }, apiKeyMap))
     .filter((e) => {
       if (e.promptTokens === 0 && e.completionTokens === 0) return false;
       const minute = e.timestamp ? e.timestamp.slice(0, 16) : "";
-      const key = `${e.model}|${e.provider}|${e.promptTokens}|${e.completionTokens}|${minute}`;
+      const key = `${e.apiKeyId}|${e.model}|${e.provider}|${e.promptTokens}|${e.completionTokens}|${minute}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -425,7 +548,7 @@ export async function getUsageStats(period = "all") {
   const bucketMap = {};
   for (let i = 0; i < 10; i++) {
     const ts = currentMinuteStart.getTime() - (9 - i) * 60 * 1000;
-    bucketMap[ts] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0 };
+    bucketMap[ts] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0 };
     stats.last10Minutes.push(bucketMap[ts]);
   }
   const recent10 = db.all(
@@ -508,9 +631,10 @@ export async function getUsageStats(period = "all") {
         const keyInfo = apiKeyVal ? apiKeyMap[apiKeyVal] : null;
         const keyName = keyInfo?.name || (apiKeyVal ? apiKeyVal.slice(0, 8) + "..." : "Local (No API Key)");
         const apiKeyMasked = maskApiKey(apiKeyVal);
-        const apiKeyKey = apiKeyMasked || "local-no-key";
+        const apiKeyId = apiKeyVal ? (keyInfo?.id || apiKeyMasked) : "local-no-key";
+        const apiKeyKey = apiKeyId;
         if (!stats.byApiKey[akKey]) {
-          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyKey, lastUsed: dateKey };
+          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel, provider: providerDisplayName, apiKeyId, apiKeyMasked, keyName, apiKeyKey, lastUsed: dateKey };
         }
         stats.byApiKey[akKey].requests += ak.requests || 0;
         stats.byApiKey[akKey].promptTokens += ak.promptTokens || 0;
@@ -555,7 +679,7 @@ export async function getUsageStats(period = "all") {
       }
 
       const apiKeyKey = (e.apiKey && typeof e.apiKey === "string")
-        ? `${e.apiKey}|${e.model}|${e.provider || "unknown"}`
+        ? `${maskApiKey(e.apiKey)}|${e.model}|${e.provider || "unknown"}`
         : "local-no-key";
       if (stats.byApiKey[apiKeyKey] && new Date(ts) > new Date(stats.byApiKey[apiKeyKey].lastUsed)) stats.byApiKey[apiKeyKey].lastUsed = ts;
 
@@ -627,9 +751,10 @@ export async function getUsageStats(period = "all") {
         const keyInfo = apiKeyMap[r.apiKey];
         const keyName = keyInfo?.name || r.apiKey.slice(0, 8) + "...";
         const apiKeyMasked = maskApiKey(r.apiKey);
+        const apiKeyId = keyInfo?.id || apiKeyMasked;
         const akKey = `${apiKeyMasked}|${r.model}|${r.provider || "unknown"}`;
         if (!stats.byApiKey[akKey]) {
-          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyKey: apiKeyMasked, lastUsed: r.timestamp };
+          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKeyId, apiKeyMasked, keyName, apiKeyKey: apiKeyMasked, lastUsed: r.timestamp };
         }
         const ake = stats.byApiKey[akKey];
         ake.requests++; ake.promptTokens += promptTokens; ake.completionTokens += completionTokens; ake.cachedTokens += cachedTokens; ake.cost += entryCost;
@@ -655,6 +780,9 @@ export async function getUsageStats(period = "all") {
   }
 
   stats.totalRequests = Object.values(stats.byProvider).reduce((sum, p) => sum + (p.requests || 0), 0);
+  // Security (#1258): the byApiKey aggregate uses the plaintext key as map key
+  // and stores it in apiKey/apiKeyKey; strip it before returning to the client.
+  stats.byApiKey = sanitizeByApiKey(stats.byApiKey, apiKeyMap);
   return stats;
 }
 

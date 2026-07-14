@@ -26,7 +26,7 @@ export default {
     },
     retry: {
       "429": {
-        attempts: 3,
+        attempts: 6,
       },
       "500": {
         attempts: 3,
@@ -73,7 +73,7 @@ export default {
     onboardUserEndpoint: "https://cloudcode-pa.googleapis.com/v1internal:onboardUser",
     loadCodeAssistUserAgent: "google-api-nodejs-client/9.15.1",
     loadCodeAssistApiClient: "google-cloud-sdk vscode_cloudshelleditor/0.1",
-    refreshLeadMs: 300000,
+    refreshLeadMs: 600000,
   },
   features: {
     usage: true,

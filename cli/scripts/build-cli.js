@@ -103,7 +103,9 @@ if (appPkg.version !== cliPkg.version) {
 // Step 1: Build app with Next.js (workspace tracing root → traced node_modules in standalone).
 console.log("1️⃣  Building Next.js app...");
 try {
-  execSync("npm run build", {
+  const nextBin = require("path").resolve(appDir, "node_modules/.bin/next");
+  execSync(`${nextBin} build --webpack`, {
+
     stdio: "inherit",
     cwd: appDir,
     env: {
@@ -135,26 +137,21 @@ console.log("✅ Cleaned\n");
 console.log("3️⃣  Copying Next.js standalone build to app/cli/app...");
 const standaloneRoot = path.join(appDir, ".next", "standalone");
 const standaloneRootResolved = path.join(buildDistDir, "standalone");
-let standaloneRootToUse = fs.existsSync(standaloneRootResolved) ? standaloneRootResolved : standaloneRoot;
-// Next.js 16 nests standalone output under the project name when NEXT_TRACING_ROOT_MODE=workspace
-// e.g. .next-cli-build/standalone/9router/server.js
-const pkgName = path.basename(appDir);
-const nestedRoot = path.join(standaloneRootToUse, pkgName);
-if (fs.existsSync(path.join(nestedRoot, "server.js")) && !fs.existsSync(path.join(standaloneRootToUse, "server.js"))) {
-  console.log(`ℹ️  Detected nested standalone output: ${pkgName}/`);
-  standaloneRootToUse = nestedRoot;
-}
-const standaloneApp = fs.existsSync(path.join(standaloneRootToUse, "server.js"))
-  ? standaloneRootToUse
-  : path.join(standaloneRootToUse, "app");
-if (!fs.existsSync(standaloneApp)) {
+const standaloneRootToUse = fs.existsSync(standaloneRootResolved) ? standaloneRootResolved : standaloneRoot;
+const standaloneCandidates = [
+  standaloneRootToUse,
+  path.join(standaloneRootToUse, "app"),
+  path.join(standaloneRootToUse, "9router"),
+];
+const standaloneApp = standaloneCandidates.find((candidate) => fs.existsSync(path.join(candidate, "server.js")));
+if (!standaloneApp) {
   console.error("❌ Next.js standalone build not found under .next/standalone");
-  console.error("Expected either .next/standalone/server.js or .next/standalone/app/");
+  console.error("Expected .next/standalone/server.js, .next/standalone/app/server.js, or .next/standalone/9router/server.js");
   process.exit(1);
 }
 copyRecursive(standaloneApp, cliAppDir);
 
-// Older nested-app layout stores traced node_modules at standalone root.
+// Nested standalone layouts store traced node_modules at standalone root.
 const standaloneNodeModules = path.join(standaloneRootToUse, "node_modules");
 if (standaloneApp !== standaloneRootToUse && fs.existsSync(standaloneNodeModules)) {
   copyRecursive(standaloneNodeModules, path.join(cliAppDir, "node_modules"));
@@ -174,27 +171,64 @@ if (fs.existsSync(customServerSrc)) {
 // Strip better-sqlite3 (native) — it lives in ~/.9router/runtime to avoid
 // Windows EBUSY during global CLI updates. node:sqlite (Node ≥22.5) is also
 // available as a no-install middle tier.
-console.log("3️⃣ b Configuring SQLite drivers...");
-function ensureModuleInBundle(pkg) {
+console.log("3️⃣ b Configuring standalone runtime modules...");
+function resolveModuleRoot(pkg) {
+  try {
+    return path.dirname(require.resolve(path.join(pkg, "package.json"), { paths: [appDir, rootDir] }));
+  } catch {}
+  // pnpm store fallback: look up node_modules/.pnpm/<encoded>@<ver>/node_modules/<pkg>
+  const encoded = pkg.replace("/", "+");
+  for (const base of [appDir, rootDir]) {
+    const pnpmDir = path.join(base, "node_modules", ".pnpm");
+    if (!fs.existsSync(pnpmDir)) continue;
+    const match = fs.readdirSync(pnpmDir).find((entry) => entry.startsWith(`${encoded}@`));
+    if (!match) continue;
+    const candidate = path.join(pnpmDir, match, "node_modules", pkg);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+function ensureModuleInBundle(pkg, { required = false } = {}) {
   const dest = path.join(cliAppDir, "node_modules", pkg);
   if (fs.existsSync(dest)) {
     console.log(`✅ ${pkg} already bundled`);
     return;
   }
   const candidates = [
+    resolveModuleRoot(pkg),
     path.join(appDir, "node_modules", pkg),
     path.join(rootDir, "node_modules", pkg),
-  ];
+  ].filter(Boolean);
   const src = candidates.find((p) => fs.existsSync(p));
   if (!src) {
-    console.warn(`⚠️  ${pkg} not found locally — bundle will rely on node:sqlite or runtime install`);
+    const message = `${pkg} not found locally — bundle will rely on node:sqlite or runtime install`;
+    if (required) {
+      throw new Error(message);
+    }
+    console.warn(`⚠️  ${message}`);
     return;
   }
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   copyRecursive(src, dest);
   console.log(`✅ Bundled ${pkg}`);
 }
+function ensurePackageDependencyTree(pkg, visited = new Set()) {
+  if (visited.has(pkg)) return;
+  visited.add(pkg);
+  ensureModuleInBundle(pkg, { required: true });
+
+  const pkgJsonPath = path.join(resolveModuleRoot(pkg), "package.json");
+  const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, "utf8"));
+  for (const dep of Object.keys(pkgJson.dependencies || {})) {
+    ensurePackageDependencyTree(dep, visited);
+  }
+}
+
 ensureModuleInBundle("sql.js");
+for (const pkg of ["@next/env", "@swc/helpers", "react", "react-dom", "pino"]) {
+  ensurePackageDependencyTree(pkg);
+}
 const betterDir = path.join(cliAppDir, "node_modules", "better-sqlite3");
 if (fs.existsSync(betterDir)) {
   fs.rmSync(betterDir, { recursive: true, force: true });

@@ -1,12 +1,9 @@
-// Logger utility for cloud
+// SSE logger — structured pino backend + session-colored request tags.
+// Kept tag-based API for backward compatibility with existing call sites.
 
-const LOG_LEVELS = {
-  DEBUG: 0,
-  INFO: 1,
-  WARN: 2,
-  ERROR: 3
-};
+import { logger } from "@/lib/logger";
 
+const LOG_LEVELS = { DEBUG: 10, INFO: 20, WARN: 30, ERROR: 40 };
 const LEVEL = LOG_LEVELS[process.env.LOG_LEVEL?.toUpperCase?.()] ?? LOG_LEVELS.INFO;
 
 function formatTime() {
@@ -17,14 +14,12 @@ function formatTime() {
 const REQ_TAGS = ["🟢", "🔵", "🟣", "🟡", "🟠", "🔴", "⚪", "🟤"];
 let tagCursor = 0;
 
-// Allocate next rotating tag (fallback when no session seed available)
 export function nextTag() {
   const tag = REQ_TAGS[tagCursor % REQ_TAGS.length];
   tagCursor++;
   return tag;
 }
 
-// Stable tag derived from a session/connection seed: same seed always maps to the same color
 export function tagForSession(seed) {
   if (!seed) return nextTag();
   let h = 0;
@@ -32,18 +27,15 @@ export function tagForSession(seed) {
   return REQ_TAGS[Math.abs(h) % REQ_TAGS.length];
 }
 
-// Print one correlated line: [time] tag symbol message
 export function line(tag, symbol, message) {
   if (LEVEL > LOG_LEVELS.INFO) return;
   console.log(`[${formatTime()}] ${tag} ${symbol} ${message}`);
 }
 
-// Like line() but always printed regardless of LOG_LEVEL (errors must never be hidden)
 export function errorLine(tag, symbol, message) {
   console.log(`[${formatTime()}] ${tag} ${symbol} ${message}`);
 }
 
-// Format thinking intent for the request line ("high(10k)" / "off" / "auto")
 export function fmtThink(intent) {
   if (!intent || !intent.mode) return null;
   if (intent.mode === "none") return "off";
@@ -56,61 +48,42 @@ export function fmtThink(intent) {
   return null;
 }
 
-function formatData(data) {
-  if (!data) return "";
-  if (typeof data === "string") return data;
-  try {
-    return JSON.stringify(data);
-  } catch {
-    return String(data);
-  }
+function spreadData(data) {
+  if (!data) return {};
+  if (typeof data === "string") return { detail: data };
+  if (typeof data === "object") return data;
+  return { detail: String(data) };
 }
 
 export function debug(tag, message, data) {
-  if (LEVEL <= LOG_LEVELS.DEBUG) {
-    const dataStr = data ? ` ${formatData(data)}` : "";
-    console.log(`[${formatTime()}] 🔍 [${tag}] ${message}${dataStr}`);
-  }
+  logger.debug({ tag, ...spreadData(data) }, message);
 }
 
 export function info(tag, message, data) {
-  if (LEVEL <= LOG_LEVELS.INFO) {
-    const dataStr = data ? ` ${formatData(data)}` : "";
-    console.log(`[${formatTime()}] ℹ️  [${tag}] ${message}${dataStr}`);
-  }
+  logger.info({ tag, ...spreadData(data) }, message);
 }
 
 export function warn(tag, message, data) {
-  if (LEVEL <= LOG_LEVELS.WARN) {
-    const dataStr = data ? ` ${formatData(data)}` : "";
-    console.warn(`[${formatTime()}] ⚠️  [${tag}] ${message}${dataStr}`);
-  }
+  logger.warn({ tag, ...spreadData(data) }, message);
 }
 
 export function error(tag, message, data) {
-  if (LEVEL <= LOG_LEVELS.ERROR) {
-    const dataStr = data ? ` ${formatData(data)}` : "";
-    console.log(`[${formatTime()}] ❌ [${tag}] ${message}${dataStr}`);
-  }
+  logger.error({ tag, ...spreadData(data) }, message);
 }
 
 export function request(method, path, extra) {
-  const dataStr = extra ? ` ${formatData(extra)}` : "";
-  console.log(`\x1b[36m[${formatTime()}] 📥 ${method} ${path}${dataStr}\x1b[0m`);
+  logger.info({ tag: "REQ", method, path, ...spreadData(extra) }, `${method} ${path}`);
 }
 
 export function response(status, duration, extra) {
-  const icon = status < 400 ? "📤" : "💥";
-  const dataStr = extra ? ` ${formatData(extra)}` : "";
-  console.log(`[${formatTime()}] ${icon} ${status} (${duration}ms)${dataStr}`);
+  const fn = status < 400 ? logger.info.bind(logger) : logger.warn.bind(logger);
+  fn({ tag: "RES", status, durationMs: duration, ...spreadData(extra) }, `${status} (${duration}ms)`);
 }
 
 export function stream(event, data) {
-  const dataStr = data ? ` ${formatData(data)}` : "";
-  console.log(`[${formatTime()}] 🌊 [STREAM] ${event}${dataStr}`);
+  logger.debug({ tag: "STREAM", event, ...spreadData(data) }, event);
 }
 
-// Mask sensitive data
 export function maskKey(key) {
   if (!key || key.length < 8) return "***";
   return `${key.slice(0, 4)}...${key.slice(-4)}`;

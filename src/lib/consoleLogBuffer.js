@@ -1,5 +1,6 @@
 import { EventEmitter } from "events";
 import { CONSOLE_LOG_CONFIG } from "@/shared/constants/config.js";
+import { redactSensitive } from "./redactSensitive.js";
 
 const consoleLevels = ["log", "info", "warn", "error", "debug"];
 
@@ -53,12 +54,12 @@ function stripAnsi(str) {
 }
 
 function formatArg(arg) {
-  if (typeof arg === "string") return stripAnsi(arg);
-  if (arg instanceof Error) return stripAnsi(arg.stack || arg.message || String(arg));
+  if (typeof arg === "string") return redactSensitive(stripAnsi(arg));
+  if (arg instanceof Error) return redactSensitive(stripAnsi(arg.stack || arg.message || String(arg)));
   try {
-    return stripAnsi(JSON.stringify(arg));
+    return redactSensitive(stripAnsi(JSON.stringify(arg)));
   } catch {
-    return stripAnsi(String(arg));
+    return redactSensitive(stripAnsi(String(arg)));
   }
 }
 

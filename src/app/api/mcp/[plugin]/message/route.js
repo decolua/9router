@@ -5,6 +5,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request, { params }) {
+  // Cowork disabled: MCP stdio bridge spawns arbitrary processes (RCE risk).
+  return NextResponse.json({ error: "Cowork is disabled" }, { status: 403 });
   const { plugin } = await params;
   if (!findPlugin(plugin)) {
     return NextResponse.json({ error: `Unknown plugin: ${plugin}` }, { status: 404 });

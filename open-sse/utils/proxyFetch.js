@@ -1,14 +1,18 @@
 import { Readable } from "stream";
 import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
 import { dbg } from "./debugLog.js";
+import {
+  createProxyDispatcher,
+  createSocksConnector,
+  disposeProxyDispatcher as disposeDispatcher,
+  isSocksProxyUrl,
+  normalizeProxyUrl,
+} from "../../src/lib/network/proxyDispatcher.js";
 
 const originalFetch = globalThis.fetch;
 const proxyDispatchers = new Map();
-
 // ─── TLS fingerprinting via got-scraping (browser-like JA3) ───────────────
-// Disabled: not in use. Kept commented for future re-enable.
-// Restore the original block to re-enable per-host JA3 spoofing.
-/*
+// Used for api.anthropic.com to bypass Cloudflare TLS fingerprint blocks.
 let _gotScraping = null;
 let _gotScrapingChecked = false;
 const _gotScrapingLoggedHosts = new Set();
@@ -27,6 +31,13 @@ async function getGotScraping() {
   return _gotScraping;
 }
 
+/** Reset cached got-scraping reference (test helper). */
+export function __resetGotScrapingCache() {
+  _gotScraping = null;
+  _gotScrapingChecked = false;
+  _gotScrapingLoggedHosts.clear();
+}
+
 async function gotScrapingFetch(url, options) {
   const gs = await getGotScraping();
   if (!gs) return null;
@@ -37,44 +48,36 @@ async function gotScrapingFetch(url, options) {
     ? Object.fromEntries(headersInit.entries())
     : { ...headersInit };
 
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const stream = gs.stream({
-      url,
-      method,
-      headers,
-      body: method === "GET" || method === "HEAD" ? undefined : options.body,
-      throwHttpErrors: false,
-      retry: { limit: 0 },
-      timeout: { request: undefined },
-      followRedirect: false,
-      decompress: true,
-    });
-
-    if (options.signal) {
-      const onAbort = () => { try { stream.destroy(new Error("aborted")); } catch { } };
-      if (options.signal.aborted) onAbort();
-      else options.signal.addEventListener("abort", onAbort, { once: true });
-    }
-
-    stream.once("response", (res) => {
-      if (settled) return;
-      settled = true;
-      const resHeaders = new Headers();
-      for (const [k, v] of Object.entries(res.headers || {})) {
-        if (Array.isArray(v)) v.forEach((x) => resHeaders.append(k, String(x)));
-        else if (v != null) resHeaders.set(k, String(v));
-      }
-      const body = Readable.toWeb(stream);
-      resolve(new Response(body, { status: res.statusCode, statusText: res.statusMessage || "", headers: resHeaders }));
-    });
-
-    stream.once("error", (err) => {
-      if (settled) return;
-      settled = true;
-      reject(err);
-    });
+  // Non-streaming: use the promise API so callers get a single response object.
+  const response = await gs({
+    url,
+    method,
+    headers,
+    body: method === "GET" || method === "HEAD" ? undefined : options.body,
+    throwHttpErrors: false,
+    retry: { limit: 0 },
+    timeout: { request: undefined },
+    followRedirect: false,
+    decompress: true,
   });
+
+  const resHeaders = new Headers();
+  for (const [k, v] of Object.entries(response.headers || {})) {
+    if (Array.isArray(v)) v.forEach((x) => resHeaders.append(k, String(x)));
+    else if (v != null) resHeaders.set(k, String(v));
+  }
+  const status = response.statusCode;
+  const ok = status >= HTTP_SUCCESS_MIN && status < HTTP_SUCCESS_MAX;
+  const rawBody = response.rawBody ?? Buffer.from(response.body || "");
+  return {
+    ok,
+    status,
+    statusText: response.statusMessage || "",
+    headers: resHeaders,
+    body: null,
+    text: async () => rawBody.toString("utf8"),
+    json: async () => JSON.parse(rawBody.toString("utf8")),
+  };
 }
 
 async function tryGotScrapingFetch(url, options) {
@@ -95,7 +98,18 @@ async function tryGotScrapingFetch(url, options) {
     return null;
   }
 }
-*/
+
+function shouldUseGotScraping(targetUrl, options) {
+  try {
+    const host = new URL(targetUrl).hostname;
+    if (host !== "api.anthropic.com") return false;
+  } catch {
+    return false;
+  }
+  // Streaming requests need readable body; non-streaming only.
+  const accept = options?.headers?.["Accept"] || options?.headers?.["accept"] || "";
+  return !String(accept).includes("text/event-stream");
+}
 
 // DNS cache — use Map to avoid prototype pollution via malformed hostnames
 const DNS_CACHE = new Map();
@@ -111,6 +125,7 @@ const GOOGLE_DNS_SERVERS = ["8.8.8.8", "8.8.4.4"];
 const HTTPS_PORT = 443;
 const HTTP_SUCCESS_MIN = 200;
 const HTTP_SUCCESS_MAX = 300;
+const DEFAULT_PROXY_ATTEMPT_TIMEOUT_MS = 8000;
 
 function normalizeString(value) {
   if (value === undefined || value === null) return "";
@@ -183,23 +198,6 @@ function getEnvProxyUrl(targetUrl) {
     process.env.ALL_PROXY || process.env.all_proxy;
 }
 
-/**
- * Normalize proxy URL (allow host:port)
- */
-function normalizeProxyUrl(proxyUrl) {
-  const normalizedInput = normalizeString(proxyUrl);
-  if (!normalizedInput) return null;
-
-  try {
-
-    new URL(normalizedInput);
-    return normalizedInput;
-  } catch {
-    // Allow "127.0.0.1:7890" style values
-    return `http://${normalizedInput}`;
-  }
-}
-
 function resolveConnectionProxyUrl(targetUrl, proxyOptions) {
   const enabled = proxyOptions?.enabled === true || proxyOptions?.connectionProxyEnabled === true;
   if (!enabled) return null;
@@ -214,8 +212,60 @@ function resolveConnectionProxyUrl(targetUrl, proxyOptions) {
 }
 
 /**
- * Create proxy dispatcher lazily (undici-compatible)
+ * Caller aborts/timeouts are not proxy transport failures.
+ * Prefer signal.aborted because AbortController.abort(reason) may surface
+ * custom Error objects rather than AbortError/TimeoutError names.
  */
+function isCallerAbort(error, signal) {
+  if (signal?.aborted === true) return true;
+  const name = error?.name;
+  return name === "AbortError" || name === "TimeoutError";
+}
+
+function rethrowStrictProxyFailure(proxyError) {
+  throw new Error(
+    `[ProxyFetch] Proxy required but failed (strictProxy=true): ${proxyError.message}`,
+    { cause: proxyError },
+  );
+}
+
+function handleProxyRequestError(proxyError, options, proxyOptions, fallbackLabel) {
+  if (isCallerAbort(proxyError, options?.signal)) {
+    throw proxyError;
+  }
+
+  if (proxyOptions?.strictProxy === true) {
+    rethrowStrictProxyFailure(proxyError);
+  }
+
+  console.warn(`[ProxyFetch] Proxy failed, falling back to ${fallbackLabel}: ${proxyError.message}`);
+  return null;
+}
+
+function resolveProxyAttemptTimeoutMs(proxyOptions) {
+  const configured = Number(proxyOptions?.proxyAttemptTimeoutMs);
+  return Number.isFinite(configured) && configured > 0
+    ? configured
+    : DEFAULT_PROXY_ATTEMPT_TIMEOUT_MS;
+}
+
+async function fetchThroughProxy(url, options, dispatcher, proxyOptions) {
+  const timeoutMs = resolveProxyAttemptTimeoutMs(proxyOptions);
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  const signal = options?.signal
+    ? AbortSignal.any([options.signal, timeoutSignal])
+    : timeoutSignal;
+
+  try {
+    return await originalFetch(url, { ...options, signal, dispatcher });
+  } catch (error) {
+    if (timeoutSignal.aborted && options?.signal?.aborted !== true) {
+      throw new Error(`Proxy attempt timed out after ${timeoutMs}ms`, { cause: error });
+    }
+    throw error;
+  }
+}
+
 async function getDispatcher(proxyUrl) {
   const normalized = normalizeProxyUrl(proxyUrl);
   if (!normalized) return null;
@@ -223,14 +273,28 @@ async function getDispatcher(proxyUrl) {
   if (!proxyDispatchers.has(normalized)) {
     // Evict oldest entry if max size reached
     if (proxyDispatchers.size >= MEMORY_CONFIG.proxyDispatchersMaxSize) {
-      proxyDispatchers.delete(proxyDispatchers.keys().next().value);
+      const oldestKey = proxyDispatchers.keys().next().value;
+      const oldest = proxyDispatchers.get(oldestKey);
+      proxyDispatchers.delete(oldestKey);
+      disposeDispatcher(oldest);
     }
-    const { ProxyAgent } = await import("undici");
-    proxyDispatchers.set(normalized, new ProxyAgent({ uri: normalized }));
+
+    proxyDispatchers.set(normalized, await createProxyDispatcher(normalized));
   }
 
   return proxyDispatchers.get(normalized);
 }
+
+/** Reset cached proxy dispatchers (test helper). */
+export function __resetProxyDispatchers() {
+  for (const dispatcher of proxyDispatchers.values()) {
+    disposeDispatcher(dispatcher);
+  }
+  proxyDispatchers.clear();
+}
+
+/** Exported for connector-level unit tests. */
+export { createSocksConnector };
 
 /**
  * Create HTTPS request with manual socket connection (bypass DNS)
@@ -316,12 +380,9 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
       // Proxy resolves DNS externally (not affected by /etc/hosts) — use proxy directly
       try {
         const dispatcher = await getDispatcher(proxyUrl);
-        return await originalFetch(url, { ...options, dispatcher });
+        return await fetchThroughProxy(url, options, dispatcher, proxyOptions);
       } catch (proxyError) {
-        if (proxyOptions?.strictProxy === true) {
-          throw new Error(`[ProxyFetch] Proxy required but failed (strictProxy=true): ${proxyError.message}`);
-        }
-        console.warn(`[ProxyFetch] Proxy failed, falling back to direct bypass: ${proxyError.message}`);
+        handleProxyRequestError(proxyError, options, proxyOptions, "direct bypass");
       }
     }
     // No proxy — manually resolve real IP to bypass DNS spoof
@@ -337,19 +398,22 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   if (proxyUrl) {
     try {
       const dispatcher = await getDispatcher(proxyUrl);
-      return await originalFetch(url, { ...options, dispatcher });
+      return await fetchThroughProxy(url, options, dispatcher, proxyOptions);
     } catch (proxyError) {
-      // If strictProxy is enabled, fail hard instead of falling back to direct
-      if (proxyOptions?.strictProxy === true) {
-        throw new Error(`[ProxyFetch] Proxy required but failed (strictProxy=true): ${proxyError.message}`);
-      }
-      console.warn(`[ProxyFetch] Proxy failed, falling back to direct: ${proxyError.message}`);
+      // Caller abort/timeout must propagate. Only genuine proxy transport
+      // failures may fall back to direct (unless strictProxy=true).
+      handleProxyRequestError(proxyError, options, proxyOptions, "direct");
       return originalFetch(url, options);
     }
   }
 
-  // got-scraping disabled — use native fetch directly
-  // (Re-enable per-host by wrapping with tryGotScrapingFetch when needed)
+  // got-scraping for api.anthropic.com non-streaming (Cloudflare JA3 bypass)
+  if (shouldUseGotScraping(targetUrl, options)) {
+    const res = await tryGotScrapingFetch(targetUrl, options);
+    if (res) return res;
+    // fall through to native fetch on failure
+  }
+
   return originalFetch(url, options);
 }
 

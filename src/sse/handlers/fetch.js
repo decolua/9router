@@ -113,7 +113,9 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
   const targetUrl = body.url;
   const format = body.format;
   const maxCharacters = body.max_characters;
-  const providerId = resolveProviderId(providerInput);
+  // Strip /fetch suffix — /v1/models/web advertises "firecrawl/fetch" but provider ID is "firecrawl"
+  const normalizedInput = providerInput.replace(/\/fetch$/, "");
+  const providerId = resolveProviderId(normalizedInput);
   const resolvedProvider = AI_PROVIDERS[providerId];
 
   if (!resolvedProvider) {

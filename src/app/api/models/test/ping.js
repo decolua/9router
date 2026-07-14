@@ -50,7 +50,12 @@ async function getInternalHeaders() {
   return headers;
 }
 
-export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:${process.env.PORT || UPDATER_CONFIG.appPort}`) {
+export async function pingModelByKind(
+  model,
+  kind,
+  baseUrl = `http://127.0.0.1:${process.env.PORT || UPDATER_CONFIG.appPort}`,
+  { speedTest = false } = {},
+) {
   const headers = await getInternalHeaders();
   const start = Date.now();
 
@@ -137,11 +142,16 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
       model,
       // Claude-on-Copilot returns empty choices at max_tokens:1 (budget is spent
       // before a content token emits), so a 1-token probe yields a false negative.
-      max_tokens: 16,
+      max_tokens: speedTest ? 300 : 16,
       stream: false,
-      messages: [{ role: "user", content: "hi" }],
+      messages: [{
+        role: "user",
+        content: speedTest
+          ? "Write a 200-word essay about the future of artificial intelligence."
+          : "hi",
+      }],
     }),
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(speedTest ? 60000 : 15000),
   });
   const latencyMs = Date.now() - start;
 
@@ -189,5 +199,18 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
     };
   }
 
-  return { ok: true, latencyMs, error: null, status: res.status };
+  const choiceContent = parsed?.choices?.[0]?.message?.content || "";
+  let completionTokens = parsed?.usage?.completion_tokens || 0;
+  if (completionTokens === 0) {
+    completionTokens = parsed?.usage?.completion_tokens_details?.reasoning_tokens || 0;
+  }
+  if (completionTokens === 0 && choiceContent.length > 0) {
+    completionTokens = Math.max(1, Math.ceil(choiceContent.length / 4));
+  }
+
+  const tps = speedTest && completionTokens > 0 && latencyMs > 0
+    ? Math.round((completionTokens / (latencyMs / 1000)) * 10) / 10
+    : 0;
+
+  return { ok: true, latencyMs, tps, completionTokens, error: null, status: res.status };
 }

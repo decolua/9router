@@ -1,6 +1,8 @@
 // Re-export from open-sse with local logger
 import * as log from "../utils/logger.js";
-import { updateProviderConnection } from "../../lib/localDb.js";
+import { updateProviderConnection, getProviderConnectionById } from "../../lib/localDb.js";
+import { resolveRotatedDbCredentials } from "./tokenRotationGuard.js";
+import { CONNECTION_STATUS } from "../../shared/constants/connectionStatus.js";
 import {
   getProjectIdForConnection,
   invalidateProjectId,
@@ -21,7 +23,8 @@ import {
   formatProviderCredentials as _formatProviderCredentials,
   getAllAccessTokens as _getAllAccessTokens,
   refreshKiroToken as _refreshKiroToken,
-  getRefreshLeadMs as _getRefreshLeadMs
+  getRefreshLeadMs as _getRefreshLeadMs,
+  isUnrecoverableRefreshError
 } from "open-sse/services/tokenRefresh.js";
 import {
   refreshProviderCredentials as _refreshProviderCredentials,
@@ -114,6 +117,28 @@ function normalizeExpiresAt(expiresAt) {
  */
 function needsProjectId(provider) {
   return provider === "antigravity" || provider === "gemini-cli";
+}
+
+/**
+ * Avoid using a stale one-time refresh token when another process already
+ * refreshed and persisted a rotated token.
+ *
+ * This is not a full distributed lock, but it closes the common stale-request
+ * path in multi-instance deployments: request A loaded credentials, request B
+ * refreshed first, then request A reaches the refresh point with the old token.
+ */
+async function refreshFromDbIfRotated(provider, creds) {
+  const dbConn = creds.connectionId
+    ? await getProviderConnectionById(creds.connectionId)
+    : null;
+  const result = resolveRotatedDbCredentials(provider, creds, dbConn);
+  if (result.wasRotated) {
+    log.info("TOKEN_REFRESH", "Using newer refresh token from DB; skipping stale OAuth refresh", {
+      provider,
+      connectionId: creds.connectionId,
+    });
+  }
+  return result;
 }
 
 /**
@@ -216,9 +241,13 @@ export async function updateProviderCredentials(connectionId, newCredentials) {
  *
  * @param {string} provider
  * @param {object} credentials
+ * @param {object} [options]
+ * @param {(outcome: { didRefresh: boolean, needsRelogin: boolean, copilotRefreshed: boolean }) => void} [options.onOutcome]
+ *   Optional sink for the actual refresh outcome. Lets callers (e.g. the
+ *   background worker) report accurate metrics without re-reading the DB.
  * @returns {Promise<object>} updated credentials object
  */
-export async function checkAndRefreshToken(provider, credentials) {
+export async function checkAndRefreshToken(provider, credentials, options = {}) {
   let creds = { ...credentials };
   if (!creds.connectionId && creds.id) {
     creds.connectionId = creds.id;
@@ -293,6 +322,14 @@ export async function checkAndRefreshToken(provider, credentials) {
         creds.providerSpecificData = updatedSpecific;
         creds.copilotToken = copilotTokenResult.token;
       }
+    }
+  }
+
+  if (typeof options.onOutcome === "function") {
+    try {
+      options.onOutcome({ didRefresh, needsRelogin, copilotRefreshed });
+    } catch (err) {
+      log.warn("TOKEN_REFRESH", "onOutcome callback threw", { error: err?.message ?? err });
     }
   }
 

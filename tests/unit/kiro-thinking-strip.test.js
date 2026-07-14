@@ -64,32 +64,30 @@ describe("KiroExecutor thinking tag stripping", () => {
     });
 
     const mockResponse = { body: readableStream };
-    const transformedResponse = executor.transformEventStreamToSSE(mockResponse, "claude-test");
+    const transformedResponse = executor.transformEventStreamToSSE(mockResponse, "claude-test", { thinkingExpected: true });
     
     const output = await readAllSSE(transformedResponse.body);
     
     // Check that we got chat.completion.chunk outputs
     expect(output).toContain("chat.completion.chunk");
-    // Ensure the thinking parts are gone
+    // Thinking tags must not leak into either output channel.
     expect(output).not.toContain("<thinking>");
-    expect(output).not.toContain("Let me think...");
-    expect(output).not.toContain("still thinking...");
     expect(output).not.toContain("</thinking>");
-    
-    // Check that the normal content is preserved
-    // Parse the data chunks
+
     const dataLines = output.split("\n").filter(line => line.startsWith("data: "));
-    const contents = dataLines.map(line => {
-      if (line.includes("[DONE]")) return "";
+    const deltas = dataLines.flatMap(line => {
+      if (line.includes("[DONE]")) return [];
       try {
-        return JSON.parse(line.slice(6)).choices[0].delta.content || "";
+        return [JSON.parse(line.slice(6)).choices[0].delta];
       } catch {
-        return "";
+        return [];
       }
     });
-    
-    const fullText = contents.join("");
-    expect(fullText).toBe("Here is my answer.  Yes, 42.");
+
+    expect(deltas.map(delta => delta.content || "").join(""))
+      .toBe("Here is my answer.  Yes, 42.");
+    expect(deltas.map(delta => delta.reasoning_content || "").join(""))
+      .toBe("Let me think...still thinking...");
   });
 
   it("handles empty content after stripping when hasReasoningContent is true", async () => {
@@ -107,7 +105,7 @@ describe("KiroExecutor thinking tag stripping", () => {
     });
 
     const mockResponse = { body: readableStream };
-    const transformedResponse = executor.transformEventStreamToSSE(mockResponse, "claude-test");
+    const transformedResponse = executor.transformEventStreamToSSE(mockResponse, "claude-test", { thinkingExpected: true });
     
     const output = await readAllSSE(transformedResponse.body);
     

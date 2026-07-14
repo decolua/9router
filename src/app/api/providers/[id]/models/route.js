@@ -384,6 +384,17 @@ const PROVIDER_MODELS_CONFIG = {
       const data = await response.json();
       return { models: parseOpenAIStyleModels(data) };
     }
+  },
+  freebuff: {
+    customResolver: async () => {
+      const models = [
+        { id: "base2-free", name: "Freebuff Minimax (base2-free)" },
+        { id: "base2-free-kimi", name: "Freebuff Kimi (base2-free-kimi)" },
+        { id: "base2-free-deepseek", name: "Freebuff DeepSeek Pro (base2-free-deepseek)" },
+        { id: "base2-free-deepseek-flash", name: "Freebuff DeepSeek Flash (base2-free-deepseek-flash)" }
+      ];
+      return { models };
+    }
   }
 };
 

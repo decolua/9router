@@ -5,7 +5,7 @@ import { KIRO_CONFIG, assertValidAwsRegion } from "../constants/oauth.js";
  * Supports multiple authentication methods:
  * 1. AWS Builder ID (Device Code Flow)
  * 2. AWS IAM Identity Center/IDC (Device Code Flow)
- * 3. Google/GitHub Social Login (Authorization Code Flow + Manual Callback)
+ * 3. Google/GitHub Social Login (Authorization Code Flow via AWS Cognito)
  * 4. Import Token (Manual refresh token paste)
  */
 
@@ -126,48 +126,51 @@ export class KiroService {
   }
 
   /**
-   * Build Google/GitHub social login URL
-   * Returns authorization URL for manual callback flow
-   * Uses kiro:// custom protocol as required by AWS Cognito whitelist
+   * Build Google/GitHub social login URL via Kiro desktop auth (AWS Cognito)
+   * Uses localhost:3128 callback (manual paste flow), matching Kiro CLI.
    */
   buildSocialLoginUrl(provider, codeChallenge, state) {
     const idp = provider === "google" ? "Google" : "Github";
-    // AWS Cognito only whitelists kiro:// protocol, not localhost
-    const redirectUri = "kiro://kiro.kiroAgent/authenticate-success";
-    return `${KIRO_AUTH_SERVICE}/login?idp=${idp}&redirect_uri=${encodeURIComponent(redirectUri)}&code_challenge=${codeChallenge}&code_challenge_method=S256&state=${state}&prompt=select_account`;
+    const redirectUri = `${KIRO_CONFIG.socialRedirectUri}?login_option=${provider}`;
+    const params = new URLSearchParams({
+      idp,
+      redirect_uri: redirectUri,
+      code_challenge: codeChallenge,
+      code_challenge_method: "S256",
+      state,
+      prompt: "select_account",
+    });
+    return `${KIRO_CONFIG.socialAuthBaseUrl}/login?${params.toString()}`;
   }
 
   /**
-   * Exchange authorization code for tokens (Social Login)
-   * Must use same redirect_uri as authorization request
+   * Exchange Google/GitHub social authorization code for tokens.
+   * Goes through Kiro's desktop auth backend service.
    */
-  async exchangeSocialCode(code, codeVerifier) {
-    // Must match the redirect_uri used in buildSocialLoginUrl
-    const redirectUri = "kiro://kiro.kiroAgent/authenticate-success";
-
-    const response = await fetch(`${KIRO_AUTH_SERVICE}/oauth/token`, {
+  async exchangeSocialCode(code, codeVerifier, provider = "google") {
+    const redirectUri = `${KIRO_CONFIG.socialRedirectUri}?login_option=${provider}`;
+    const response = await fetch(`${KIRO_CONFIG.socialAuthBaseUrl}/oauth/token`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         code,
         code_verifier: codeVerifier,
         redirect_uri: redirectUri,
       }),
     });
-
     if (!response.ok) {
       const error = await response.text();
-      throw new Error(`Token exchange failed: ${error}`);
+      throw new Error(`Social token exchange failed: ${error}`);
     }
-
     const data = await response.json();
     return {
-      accessToken: data.accessToken,
-      refreshToken: data.refreshToken,
+      accessToken: data.accessToken || data.access_token,
+      refreshToken: data.refreshToken || data.refresh_token,
+      idToken: data.idToken || data.id_token,
       profileArn: data.profileArn,
-      expiresIn: data.expiresIn || 3600,
+      expiresIn: data.expiresIn || data.expires_in || 3600,
+      authMethod: "social",
+      socialProvider: provider,
     };
   }
 
@@ -210,7 +213,34 @@ export class KiroService {
       };
     }
 
-    // Social auth refresh (Google/GitHub)
+    // Social auth refresh (Google/GitHub via AWS Cognito)
+    if (authMethod === "social") {
+      const response = await fetch(`https://${KIRO_CONFIG.cognitoDomain}/oauth2/token`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          client_id: KIRO_CONFIG.cognitoClientId,
+          refresh_token: refreshToken,
+        }).toString(),
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Token refresh failed: ${error}`);
+      }
+
+      const data = await response.json();
+      return {
+        accessToken: data.access_token,
+        refreshToken: data.refresh_token || refreshToken,
+        expiresIn: data.expires_in || 3600,
+      };
+    }
+
+    // Imported token refresh (default Kiro IDE flow)
     const response = await fetch(`${KIRO_AUTH_SERVICE}/refreshToken`, {
       method: "POST",
       headers: {

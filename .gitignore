@@ -77,4 +77,5 @@ gitbook/README.md
 open-sse.old/
 .graphifyignore
 graphify-out/*
+cli/.smoke-home/
 .next-analyze/*

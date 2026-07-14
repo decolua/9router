@@ -11,7 +11,8 @@ import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
  * - Remote: Manual paste callback URL
  */
 export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, onClose, oauthMeta, idcConfig }) {
-  const [step, setStep] = useState("waiting"); // waiting | input | success | error
+  const [freebuffMode, setFreebuffMode] = useState("freebuff"); // "freebuff" | "codebuff"
+  const [step, setStep] = useState(provider === "freebuff" ? "select_mode" : "waiting"); // select_mode | waiting | input | success | error
   const [authData, setAuthData] = useState(null);
   const [callbackUrl, setCallbackUrl] = useState("");
   const [error, setError] = useState(null);
@@ -178,6 +179,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
             deviceCodeUrl.searchParams.set("region", idcConfig.region);
           }
           deviceCodeUrl.searchParams.set("auth_method", "idc");
+        } else if (provider === "freebuff") {
+          deviceCodeUrl.searchParams.set("auth_method", freebuffMode);
         }
         const res = await fetch(deviceCodeUrl.toString());
         const data = await res.json();
@@ -326,7 +329,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setError(err.message);
       setStep("error");
     }
-  }, [provider, isLocalhost, startPolling, oauthMeta, idcConfig]);
+  }, [provider, isLocalhost, startPolling, oauthMeta, idcConfig, freebuffMode]);
 
   // Reset state and start OAuth when modal opens
   useEffect(() => {
@@ -341,7 +344,12 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setDeviceData(null);
       setPolling(false);
       pollingAbortRef.current = false;
-      startOAuthFlow();
+      if (provider === "freebuff") {
+        setStep("select_mode");
+      } else {
+        setStep("waiting");
+        startOAuthFlow();
+      }
     } else if (!isOpen) {
       // Abort polling and cleanup proxy when modal closes
       pollingAbortRef.current = true;
@@ -553,6 +561,70 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   return (
     <Modal isOpen={isOpen} title={modalTitle} onClose={handleClose} size="lg">
       <div className="flex flex-col gap-4">
+        {/* Freebuff / Codebuff Mode Selection */}
+        {step === "select_mode" && (
+          <div className="flex flex-col gap-6 py-2">
+            <div className="text-center">
+              <p className="text-sm text-text-muted">
+                Choose between the Free tier API or your personal Paid/Pro Codebuff subscription.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div
+                onClick={() => setFreebuffMode("freebuff")}
+                className={`flex flex-col items-center text-center p-5 border rounded-xl cursor-pointer transition-all duration-200 select-none ${
+                  freebuffMode === "freebuff"
+                    ? "border-primary bg-primary/5 shadow-md shadow-primary/5 scale-[1.02]"
+                    : "border-border bg-sidebar/50 hover:bg-sidebar hover:border-border-muted"
+                }`}
+              >
+                <div className="size-12 rounded-full bg-pink-100 dark:bg-pink-900/30 flex items-center justify-center text-2xl mb-3">
+                  🌸
+                </div>
+                <h4 className="font-semibold text-base mb-1">Freebuff (Free)</h4>
+                <p className="text-xs text-text-muted leading-relaxed">
+                  Terminal-based, ad-supported free provider. Access upstream models on the public free tier (please support the creator by using the official CLI so they earn through ads!).
+                </p>
+              </div>
+
+              <div
+                onClick={() => setFreebuffMode("codebuff")}
+                className={`flex flex-col items-center text-center p-5 border rounded-xl cursor-pointer transition-all duration-200 select-none ${
+                  freebuffMode === "codebuff"
+                    ? "border-primary bg-primary/5 shadow-md shadow-primary/5 scale-[1.02]"
+                    : "border-border bg-sidebar/50 hover:bg-sidebar hover:border-border-muted"
+                }`}
+              >
+                <div className="size-12 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-2xl mb-3">
+                  💻
+                </div>
+                <h4 className="font-semibold text-base mb-1">Codebuff (Paid/Pro)</h4>
+                <p className="text-xs text-text-muted leading-relaxed">
+                  High-speed priority access. Authenticates with your personal Codebuff subscription (Pro includes $5.00 credit signup bonus!).
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-2">
+              <Button
+                onClick={async () => {
+                  setStep("waiting");
+                  setTimeout(() => {
+                    startOAuthFlow();
+                  }, 0);
+                }}
+                fullWidth
+              >
+                Continue
+              </Button>
+              <Button onClick={onClose} variant="ghost" fullWidth>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Waiting + Manual Input combined (non-device-code) */}
         {(step === "waiting" || step === "input") && !isDeviceCode && (
           <>

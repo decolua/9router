@@ -1,6 +1,8 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { CONNECTION_STATUS } from "../../../shared/constants/connectionStatus.js";
+import { withStrictProxyEnforced } from "../../network/strictProxyPolicy.js";
 
 const OPTIONAL_FIELDS = [
   "displayName", "email", "globalPriority", "defaultModel",
@@ -73,6 +75,7 @@ export async function getProviderConnections(filter = {}) {
   const params = [];
   if (filter.provider) { where.push("provider = ?"); params.push(filter.provider); }
   if (filter.isActive !== undefined) { where.push("isActive = ?"); params.push(filter.isActive ? 1 : 0); }
+  if (filter.authType) { where.push("authType = ?"); params.push(filter.authType); }
   const sql = `SELECT * FROM providerConnections${where.length ? ` WHERE ${where.join(" AND ")}` : ""}`;
   const rows = db.all(sql, params);
   const list = rows.map(rowToConn);
@@ -100,6 +103,7 @@ function reorderInTx(db, providerId) {
 }
 
 export async function createProviderConnection(data) {
+  data = withStrictProxyEnforced(data);
   const db = await getAdapter();
   const now = new Date().toISOString();
   let result;
@@ -147,7 +151,19 @@ export async function createProviderConnection(data) {
     // access_token: never dedup — user manages duplicates manually
 
     if (existing) {
-      const merged = { ...existing, ...data, updatedAt: now };
+      const merged = withStrictProxyEnforced({ ...existing, ...data, updatedAt: now });
+      // A successful re-import / re-login should clear any stale failure state
+      // (e.g. needs_relogin after Auth0 refresh-token family revoke, or stale
+      // 401s on Cursor / GitLab PAT re-imports). The narrower OAuth-only check
+      // missed access_token / apikey re-imports.
+      if (data.testStatus === CONNECTION_STATUS.ACTIVE) {
+        Object.assign(merged, {
+          lastError: null,
+          errorCode: null,
+          lastErrorAt: null,
+          backoffLevel: 0,
+        });
+      }
       upsert(db, merged);
       result = merged;
       return;
@@ -196,7 +212,7 @@ export async function updateProviderConnection(id, data) {
     const row = db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
     if (!row) { result = null; return; }
     const existing = rowToConn(row);
-    const merged = { ...existing, ...data, updatedAt: new Date().toISOString() };
+    const merged = withStrictProxyEnforced({ ...existing, ...data, updatedAt: new Date().toISOString() });
     upsert(db, merged);
     if (data.priority !== undefined) reorderInTx(db, existing.provider);
     result = merged;

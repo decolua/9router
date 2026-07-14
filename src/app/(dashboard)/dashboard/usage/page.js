@@ -4,6 +4,7 @@ import { Suspense, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { UsageStats, RequestLogger, CardSkeleton, SegmentedControl } from "@/shared/components";
 import RequestDetailsTab from "./components/RequestDetailsTab";
+import TokenSaverTab from "./components/TokenSaverTab";
 
 const PERIODS = [
   { value: "today", label: "Today" },
@@ -28,7 +29,7 @@ function UsageContent() {
   const [period, setPeriod] = useState("today");
 
   const tabFromUrl = searchParams.get("tab");
-  const activeTab = tabFromUrl && ["overview", "logs", "details"].includes(tabFromUrl)
+  const activeTab = tabFromUrl && ["overview", "logs", "details", "token-saver"].includes(tabFromUrl)
     ? tabFromUrl
     : "overview";
 
@@ -47,12 +48,13 @@ function UsageContent() {
           options={[
             { value: "overview", label: "Overview" },
             { value: "details", label: "Details" },
+            { value: "token-saver", label: "Token Saver" },
           ]}
           value={activeTab}
           onChange={handleTabChange}
           className="w-full sm:w-auto"
         />
-        {activeTab === "overview" && (
+        {(activeTab === "overview" || activeTab === "token-saver") && (
           <SegmentedControl
             options={PERIODS}
             value={period}
@@ -70,6 +72,7 @@ function UsageContent() {
       )}
       {activeTab === "logs" && <RequestLogger />}
       {activeTab === "details" && <RequestDetailsTab />}
+      {activeTab === "token-saver" && <TokenSaverTab period={period} />}
     </div>
   );
 }

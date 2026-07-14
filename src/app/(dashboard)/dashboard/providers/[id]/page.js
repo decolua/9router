@@ -4,15 +4,16 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, IFlowCookieModal, GitLabAuthModal, Toggle, Select, EditConnectionModal, NoAuthProxyCard, ConfirmModal } from "@/shared/components";
-import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
-import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
+import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, CodexSessionImportModal, IFlowCookieModal, GitLabAuthModal, Toggle, Select, EditConnectionModal, NoAuthProxyCard, ConfirmModal } from "@/shared/components";
+import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS, THINKING_CONFIG } from "@/shared/constants/providers";
 import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
+import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { translate } from "@/i18n/runtime";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
+import { formatLatency } from "@/lib/proxyDisplay";
 import ModelRow from "./ModelRow";
 import PassthroughModelsSection from "./PassthroughModelsSection";
 import CompatibleModelsSection from "./CompatibleModelsSection";
@@ -23,11 +24,6 @@ import AddCustomModelModal from "./AddCustomModelModal";
 import BulkImportCodexModal from "./BulkImportCodexModal";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
-
-const AUTO_PING_SETTINGS_KEYS = {
-  claude: "claudeAutoPing",
-  codex: "codexAutoPing",
-};
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -43,6 +39,7 @@ export default function ProviderDetailPage() {
   const [providerNode, setProviderNode] = useState(null);
   const [proxyPools, setProxyPools] = useState([]);
   const [showOAuthModal, setShowOAuthModal] = useState(false);
+  const [showSessionImportModal, setShowSessionImportModal] = useState(false);
   const [showIFlowCookieModal, setShowIFlowCookieModal] = useState(false);
   const [showAddApiKeyModal, setShowAddApiKeyModal] = useState(false);
   const [addConnectionError, setAddConnectionError] = useState("");
@@ -55,6 +52,9 @@ export default function ProviderDetailPage() {
   const [customModels, setCustomModels] = useState([]);
   const [headerImgError, setHeaderImgError] = useState(false);
   const [modelTestResults, setModelTestResults] = useState({});
+  const [modelSpeedResults, setModelSpeedResults] = useState({});
+  const [speedTestingModelId, setSpeedTestingModelId] = useState(null);
+  const [bulkSpeedTesting, setBulkSpeedTesting] = useState(false);
   const [modelsTestError, setModelsTestError] = useState("");
   const [testingModelIds, setTestingModelIds] = useState(() => new Set());
   const [showAddCustomModel, setShowAddCustomModel] = useState(false);
@@ -148,11 +148,10 @@ export default function ProviderDetailPage() {
   const isAnthropicCompatible = isAnthropicCompatibleProvider(providerId);
   const isCompatible = isOpenAICompatible || isAnthropicCompatible;
   const hasDualAuthModes = !isCompatible && isOAuth && supportsApiKeyAuth;
-  const oauthConnectionLabel =
-    providerId === "xai" ? "Grok Build OAuth"
-    : providerId === "grok-cli" ? "Grok CLI Device Login"
-    : "OAuth";
+  const oauthConnectionLabel = providerId === "xai" ? "Grok Build OAuth" : "OAuth";
   const apiKeyConnectionLabel = providerId === "xai" ? "xAI API Key" : "API Key";
+  const thinkingConfig = AI_PROVIDERS[providerId]?.thinkingConfig || THINKING_CONFIG.extended;
+
   // Resolve suffix "(level)" for a model when a thinking level is picked and the model supports it.
   const resolveThinkingSuffix = (modelId) => {
     if (!thinkingMode || thinkingMode === "auto") return null;
@@ -306,8 +305,7 @@ export default function ProviderDetailPage() {
       // Load per-provider thinking config
       const thinkingCfg = (settingsData.providerThinking || {})[providerId] || {};
       setThinkingMode(thinkingCfg.mode || "auto");
-      const autoPingSettingsKey = AUTO_PING_SETTINGS_KEYS[providerId];
-      const apCfg = autoPingSettingsKey ? settingsData[autoPingSettingsKey] || {} : {};
+      const apCfg = settingsData.claudeAutoPing || {};
       setAutoPing({ enabled: apCfg.enabled === true, connections: apCfg.connections || {} });
       if (nodesRes.ok) {
         let node = (nodesData.nodes || []).find((entry) => entry.id === providerId) || null;
@@ -422,15 +420,12 @@ export default function ProviderDetailPage() {
   };
 
   const saveAutoPing = async (next) => {
-    const autoPingSettingsKey = AUTO_PING_SETTINGS_KEYS[providerId];
-    if (!autoPingSettingsKey) return;
-
     setAutoPing(next);
     try {
       await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [autoPingSettingsKey]: next }),
+        body: JSON.stringify({ claudeAutoPing: next }),
       });
     } catch (error) {
       console.log("Error saving auto-ping config:", error);
@@ -442,6 +437,7 @@ export default function ProviderDetailPage() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchConnections();
     fetchAliases();
     fetchCustomModels();
@@ -829,6 +825,7 @@ export default function ProviderDetailPage() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelectedConnectionIds((prev) => prev.filter((id) => connections.some((conn) => conn.id === id)));
   }, [connections]);
 
@@ -925,10 +922,9 @@ export default function ProviderDetailPage() {
                 onMoveUp={() => handleSwapPriority(index, index - 1)}
                 onMoveDown={() => handleSwapPriority(index, index + 1)}
                 onToggleActive={(isActive) => handleUpdateConnectionStatus(conn.id, isActive)}
-                autoPing={AUTO_PING_SETTINGS_KEYS[providerId] && conn.authType === "oauth" ? {
+                autoPing={providerId === "claude" && conn.authType === "oauth" ? {
                   on: autoPing.connections[conn.id] === true,
                   onToggle: (on) => handleAutoPingConnection(conn.id, on),
-                  provider: providerId,
                 } : null}
                 onUpdateProxy={async (proxyPoolId) => {
                   try {
@@ -987,20 +983,28 @@ export default function ProviderDetailPage() {
             <span className="material-symbols-outlined text-text-muted text-[18px]">link_off</span>
             <span className="text-sm text-text-main">None (unbind all)</span>
           </button>
-          {proxyPools.map((pool) => (
-            <button
-              key={pool.id}
-              onClick={() => handleApplySinglePool(pool.id)}
-              disabled={bulkUpdatingProxy || pool.isActive !== true}
-              className="flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <span className="material-symbols-outlined text-text-muted text-[18px]">lan</span>
-              <span className="truncate text-sm text-text-main">{pool.name}</span>
-              {pool.isActive !== true && (
-                <span className="text-[10px] text-text-muted">(inactive)</span>
-              )}
-            </button>
-          ))}
+          {proxyPools.map((pool) => {
+            const latency = formatLatency(pool.lastLatencyMs);
+            return (
+              <button
+                key={pool.id}
+                onClick={() => handleApplySinglePool(pool.id)}
+                disabled={bulkUpdatingProxy || pool.isActive !== true}
+                className="flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <span className="material-symbols-outlined text-text-muted text-[18px]">lan</span>
+                <span className="min-w-0 flex-1 truncate text-sm text-text-main">{pool.name}</span>
+                {latency && (
+                  <span className="inline-flex shrink-0 items-center gap-0.5 font-mono text-[11px] text-text-muted" title="Last test latency">
+                    <span className="material-symbols-outlined text-[14px]">bolt</span>{latency}
+                  </span>
+                )}
+                {pool.isActive !== true && (
+                  <span className="shrink-0 text-[10px] text-text-muted">(inactive)</span>
+                )}
+              </button>
+            );
+          })}
         </div>
 
         {bulkUpdatingProxy && <p className="text-xs text-text-muted">Applying...</p>}
@@ -1032,6 +1036,107 @@ export default function ProviderDetailPage() {
     }
   };
 
+  const hasSpeedTest = providerId !== "codex" && providerId !== "antigravity";
+
+  const handleSpeedTestModel = async (modelId) => {
+    if (!hasSpeedTest) {
+      alert(`Speed (Latency & TPS) check is not supported for ${providerId === "codex" ? "Codex" : "Antigravity"}.`);
+      return;
+    }
+    if (speedTestingModelId) return;
+    setSpeedTestingModelId(modelId);
+    try {
+      const res = await fetch("/api/models/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: `${providerStorageAlias}/${modelId}`, speedTest: true }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setModelSpeedResults((prev) => ({
+          ...prev,
+          [modelId]: { latencyMs: data.latencyMs, tps: data.tps },
+        }));
+        setModelsTestError("");
+      } else {
+        setModelsTestError(data.error || "Failed to check speed");
+      }
+    } catch {
+      setModelsTestError("Network error checking speed");
+    } finally {
+      setSpeedTestingModelId(null);
+    }
+  };
+
+  const handleSpeedTestAllModels = async () => {
+    if (!hasSpeedTest) {
+      alert(`Speed test is not supported for ${providerId === "codex" ? "Codex" : "Antigravity"}.`);
+      return;
+    }
+    if (bulkSpeedTesting || connections.length === 0) return;
+
+    setBulkSpeedTesting(true);
+
+    let activeModelIds = [];
+    if (isCompatible) {
+      const providerAliases = Object.entries(modelAliases).filter(
+        ([, model]) => model.startsWith(`${providerStorageAlias}/`),
+      );
+      activeModelIds = providerAliases.map(([, fullModel]) =>
+        fullModel.replace(`${providerStorageAlias}/`, ""),
+      );
+    } else {
+      const customModels = Object.entries(modelAliases)
+        .filter(([alias, fullModel]) => {
+          const prefix = `${providerStorageAlias}/`;
+          if (!fullModel.startsWith(prefix)) return false;
+          const modelId = fullModel.slice(prefix.length);
+          if (providerInfo?.passthroughModels) return !models.some((m) => m.id === modelId);
+          return !models.some((m) => m.id === modelId) && alias === modelId;
+        })
+        .map(([, fullModel]) => fullModel.slice(`${providerStorageAlias}/`.length));
+
+      const allIds = [
+        ...models,
+        ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
+      ].filter((m) => !m.type || m.type === "llm").map((m) => m.id);
+
+      const disabledSet = new Set(disabledModelIds);
+      const displayModelIds = allIds.filter((id) => !disabledSet.has(id));
+
+      activeModelIds = [...customModels, ...displayModelIds];
+    }
+
+    try {
+      for (const modelId of activeModelIds) {
+        setSpeedTestingModelId(modelId);
+        try {
+          const res = await fetch("/api/models/test", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model: `${providerStorageAlias}/${modelId}`, speedTest: true }),
+          });
+          const data = await res.json();
+          if (data.ok) {
+            setModelSpeedResults((prev) => ({
+              ...prev,
+              [modelId]: { latencyMs: data.latencyMs, tps: data.tps },
+            }));
+          }
+        } catch (err) {
+          console.error(`Failed to speed test ${modelId}:`, err);
+        }
+        await sleep(300);
+      }
+      setModelsTestError("");
+    } catch {
+      setModelsTestError("Failed during speed test of all models");
+    } finally {
+      setSpeedTestingModelId(null);
+      setBulkSpeedTesting(false);
+    }
+  };
+
   const renderModelsSection = () => {
     if (isCompatible) {
       return (
@@ -1048,6 +1153,9 @@ export default function ProviderDetailPage() {
           onDeleteCustomModel={(modelId) => handleDeleteCustomModel(modelId, "llm", providerStorageAlias)}
           connections={connections}
           isAnthropic={isAnthropicCompatible}
+          onSpeedTest={hasSpeedTest && (connections.length > 0 || isFreeNoAuth) ? handleSpeedTestModel : undefined}
+          speedTestingModelId={speedTestingModelId}
+          modelSpeedResults={modelSpeedResults}
         />
       );
     }
@@ -1090,10 +1198,12 @@ export default function ProviderDetailPage() {
             testStatus={modelTestResults[model.id]}
             onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
             isTesting={testingModelIds.has(model.id)}
+            onSpeedTest={hasSpeedTest && (connections.length > 0 || isFreeNoAuth) ? () => handleSpeedTestModel(model.id) : undefined}
+            isSpeedTesting={speedTestingModelId === model.id}
+            speedTestData={modelSpeedResults[model.id]}
             isCustom
             isFree={false}
             caps={getCaps(`${providerId}/${model.id}`)}
-            thinkingSuffix={resolveThinkingSuffix(model.id)}
           />
         ))}
 
@@ -1116,10 +1226,12 @@ export default function ProviderDetailPage() {
               testStatus={modelTestResults[model.id]}
               onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
               isTesting={testingModelIds.has(model.id)}
+              onSpeedTest={hasSpeedTest && (connections.length > 0 || isFreeNoAuth) ? () => handleSpeedTestModel(model.id) : undefined}
+              isSpeedTesting={speedTestingModelId === model.id}
+              speedTestData={modelSpeedResults[model.id]}
               isFree={model.isFree}
               onDisable={() => handleDisableModel(model.id)}
               caps={getCaps(`${providerId}/${model.id}`)}
-              thinkingSuffix={resolveThinkingSuffix(model.id)}
             />
           );
         })}
@@ -1425,6 +1537,32 @@ export default function ProviderDetailPage() {
                   )}
                 </>
               )}
+              {hasSpeedTest && connections.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  icon="speed"
+                  onClick={handleSpeedTestAllModels}
+                  disabled={bulkSpeedTesting || oneByOneRunning}
+                >
+                  {bulkSpeedTesting ? "Speed Testing All Models..." : "Speed Test All Models"}
+                </Button>
+              )}
+              {/* Thinking config */}
+              {/* {thinkingConfig && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-text-muted font-medium">Thinking</span>
+                  <select
+                    value={thinkingMode}
+                    onChange={(e) => handleThinkingModeChange(e.target.value)}
+                    className="text-xs px-2 py-1 border border-border rounded-md bg-background focus:outline-none focus:border-primary"
+                  >
+                    {thinkingConfig.options.map((opt) => (
+                      <option key={opt} value={opt}>{opt.charAt(0).toUpperCase() + opt.slice(1)}</option>
+                    ))}
+                  </select>
+                </div>
+              )} */}
               {/* Round Robin toggle */}
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs text-text-muted font-medium">Round Robin</span>
@@ -1494,6 +1632,11 @@ export default function ProviderDetailPage() {
                       {isCompatible ? "Add API Key" : (providerId === "iflow" ? "OAuth" : "Add Connection")}
                     </Button>
                   </>
+                )}
+                {!isCompatible && providerId === "codex" && (
+                  <Button size="sm" variant="secondary" onClick={() => setShowSessionImportModal(true)}>
+                    Import Session
+                  </Button>
                 )}
               </div>
             </div>
@@ -1595,23 +1738,9 @@ export default function ProviderDetailPage() {
       {/* Models */}
       <Card>
         <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <h2 className="text-lg font-semibold">
-              {"Available Models"}
-            </h2>
-            {providerThinkingLevels && (
-              <select
-                value={thinkingMode}
-                onChange={(e) => handleThinkingModeChange(e.target.value)}
-                title="Appends (level) suffix to copied model names"
-                className="rounded-md border border-border bg-background px-2 py-1 text-xs focus:border-primary focus:outline-none"
-              >
-                {providerThinkingLevels.map((opt) => (
-                  <option key={opt} value={opt}>{`Thinking: ${opt.charAt(0).toUpperCase() + opt.slice(1)}`}</option>
-                ))}
-              </select>
-            )}
-          </div>
+          <h2 className="text-lg font-semibold">
+            {"Available Models"}
+          </h2>
           {!isCompatible && (() => {
             const allIds = [
               ...models,
@@ -1677,6 +1806,13 @@ export default function ProviderDetailPage() {
           isOpen={showIFlowCookieModal}
           onSuccess={handleIFlowCookieSuccess}
           onClose={() => setShowIFlowCookieModal(false)}
+        />
+      )}
+      {providerId === "codex" && (
+        <CodexSessionImportModal
+          isOpen={showSessionImportModal}
+          onSuccess={handleOAuthSuccess}
+          onClose={() => setShowSessionImportModal(false)}
         />
       )}
       <AddApiKeyModal

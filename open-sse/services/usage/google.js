@@ -186,12 +186,23 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
           continue;
         }
 
-        const remainingFraction = info.quotaInfo.remainingFraction || 0;
-        const remainingPercentage = remainingFraction * 100;
+        // OmniRoute #6295/#6502 pattern: fetchAvailableModels may omit remainingFraction.
+        // Missing/null/undefined is UNKNOWN — do NOT coerce to 0 (false 100% used).
+        // Explicit 0 remains true exhausted. Align with Gemini CLI path above.
+        const rawFraction = info.quotaInfo.remainingFraction;
+        if (rawFraction == null) {
+          continue;
+        }
+        const remainingFraction = Number(rawFraction);
+        if (!Number.isFinite(remainingFraction)) {
+          continue;
+        }
+        const clampedFraction = Math.max(0, Math.min(1, remainingFraction));
+        const remainingPercentage = clampedFraction * 100;
 
         // Convert percentage to used/total for UI compatibility
         const total = 1000; // Normalized base
-        const remaining = Math.round(total * remainingFraction);
+        const remaining = Math.round(total * clampedFraction);
         const used = total - remaining;
 
         // Use modelKey as key (matches PROVIDER_MODELS id)

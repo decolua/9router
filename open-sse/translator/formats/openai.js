@@ -53,7 +53,17 @@ export function filterToOpenAIFormat(body, opts = {}) {
       if (filteredContent.length === 0) {
         filteredContent.push({ type: OPENAI_BLOCK.TEXT, text: "" });
       }
-      
+
+      // Flatten text-only arrays to a plain string so OpenAI-compatible
+      // endpoints (that don't accept Anthropic content arrays) stay happy.
+      if (
+        filteredContent.length > 0 &&
+        filteredContent.every(b => b.type === "text") &&
+        !filteredContent.some(b => b.cache_control)
+      ) {
+        return { ...msg, content: filteredContent.map(b => b.text || "").join("\n") };
+      }
+
       return { ...msg, content: filteredContent };
     }
     

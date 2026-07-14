@@ -8,6 +8,7 @@ import { convertResponsesApiFormat } from "../translator/formats/responsesApi.js
 import { createResponsesApiTransformStream } from "../transformer/responsesTransformer.js";
 import { convertResponsesStreamToJson } from "../transformer/streamToJsonConverter.js";
 import { SSE_HEADERS_CORS } from "../utils/sseConstants.js";
+import { PROVIDERS } from "../config/providers.js";
 
 /**
  * Handle /v1/responses request
@@ -23,8 +24,10 @@ import { SSE_HEADERS_CORS } from "../utils/sseConstants.js";
  * @returns {Promise<{success: boolean, response?: Response, status?: number, error?: string}>}
  */
 export async function handleResponsesCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, connectionId }) {
-  // Convert Responses API format to Chat Completions format
-  const convertedBody = convertResponsesApiFormat(body);
+  const nativeResponses = !!PROVIDERS[modelInfo?.provider]?.responsesUrl || (PROVIDERS[modelInfo?.provider]?.transports || []).some(t => t.format === "openai-responses");
+  // Providers with a native Responses endpoint should receive the original
+  // Responses body; others keep the legacy chat-completions bridge.
+  const convertedBody = nativeResponses ? { ...body } : convertResponsesApiFormat(body);
 
   // Preserve client's stream preference (matches OpenClaw behavior)
   // Default to false if omitted: Boolean(undefined) = false
@@ -49,6 +52,8 @@ export async function handleResponsesCore({ body, modelInfo, credentials, log, o
   if (!result.success || !result.response) {
     return result;
   }
+
+  if (nativeResponses) return result;
 
   const response = result.response;
   const contentType = response.headers.get("Content-Type") || "";

@@ -3,12 +3,36 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { Badge, Button, Card, CardSkeleton, Input, Modal, Toggle, ConfirmModal } from "@/shared/components";
 import { useNotificationStore } from "@/store/notificationStore";
+import {
+  maskProxyUrl,
+  proxyHost,
+  deriveProxyKind,
+  kindGroupLabel,
+  deriveDisplayName,
+  deriveHealth,
+  formatLatency,
+  formatRelativeTime,
+  PROXY_KIND_ORDER,
+} from "@/lib/proxyDisplay";
 
-function getStatusVariant(status) {
-  if (status === "active") return "success";
-  if (status === "error") return "error";
+function getHealthVariant(health) {
+  if (health === "healthy") return "success";
+  if (health === "error") return "error";
   return "default";
 }
+
+const HEALTH_FILTERS = [
+  { value: "all", label: "All" },
+  { value: "healthy", label: "Healthy" },
+  { value: "error", label: "Error" },
+  { value: "unknown", label: "Unknown" },
+];
+
+const BOUND_FILTERS = [
+  { value: "all", label: "All" },
+  { value: "bound", label: "Bound" },
+  { value: "unbound", label: "Unbound" },
+];
 
 function formatDateTime(value) {
   if (!value) return "Never";
@@ -51,6 +75,12 @@ export default function ProxyPoolsPage() {
   const [healthProgress, setHealthProgress] = useState({ current: 0, total: 0 });
   const [bulkBusy, setBulkBusy] = useState(false);
   const [confirmState, setConfirmState] = useState(null);
+  const [search, setSearch] = useState("");
+  const [healthFilter, setHealthFilter] = useState("all");
+  const [boundFilter, setBoundFilter] = useState("all");
+  const [hideInactive, setHideInactive] = useState(false);
+  const [revealedIds, setRevealedIds] = useState([]);
+  const [collapsedGroups, setCollapsedGroups] = useState([]);
   const relayMenuRef = useRef(null);
   const notify = useNotificationStore();
 
@@ -208,13 +238,22 @@ export default function ProxyPoolsPage() {
     }
   };
 
-  const allSelected = proxyPools.length > 0 && selectedIds.length === proxyPools.length;
   const toggleSelect = (id) => setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
-  const toggleSelectAll = () => setSelectedIds(allSelected ? [] : proxyPools.map((p) => p.id));
   const clearSelection = () => setSelectedIds([]);
+  const toggleReveal = (id) => setRevealedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+  const toggleGroup = (kind) => setCollapsedGroups((prev) => prev.includes(kind) ? prev.filter((x) => x !== kind) : [...prev, kind]);
+
+  const copyProxyUrl = async (pool) => {
+    try {
+      await navigator.clipboard.writeText(pool.proxyUrl || "");
+      notify.success("Proxy URL copied");
+    } catch {
+      notify.error("Failed to copy proxy URL");
+    }
+  };
 
   const bulkSetActive = async (isActive) => {
-    const targets = selectedIds.length > 0 ? selectedIds : proxyPools.map((p) => p.id);
+    const targets = selectedIds.length > 0 ? selectedIds : filteredPools.map((p) => p.id);
     if (targets.length === 0) return;
     setBulkBusy(true);
     try {
@@ -267,7 +306,7 @@ export default function ProxyPoolsPage() {
   const handleHealthCheck = async () => {
     const targets = selectedIds.length > 0
       ? proxyPools.filter((p) => selectedIds.includes(p.id))
-      : proxyPools;
+      : filteredPools;
     if (targets.length === 0) return;
     setHealthChecking(true);
     setHealthProgress({ current: 0, total: targets.length });
@@ -563,6 +602,55 @@ export default function ProxyPoolsPage() {
     [proxyPools]
   );
 
+  const filteredPools = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return proxyPools.filter((pool) => {
+      if (hideInactive && pool.isActive !== true) return false;
+
+      if (healthFilter !== "all" && deriveHealth(pool) !== healthFilter) return false;
+
+      const bound = pool.boundConnectionCount || 0;
+      if (boundFilter === "bound" && bound <= 0) return false;
+      if (boundFilter === "unbound" && bound > 0) return false;
+
+      if (q) {
+        const haystack = `${pool.name || ""} ${deriveDisplayName(pool)} ${proxyHost(pool)}`.toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [proxyPools, search, healthFilter, boundFilter, hideInactive]);
+
+  const groupedPools = useMemo(() => {
+    const map = new Map();
+    for (const pool of filteredPools) {
+      const kind = deriveProxyKind(pool);
+      if (!map.has(kind)) map.set(kind, []);
+      map.get(kind).push(pool);
+    }
+    const orderedKinds = [
+      ...PROXY_KIND_ORDER.filter((k) => map.has(k)),
+      ...[...map.keys()].filter((k) => !PROXY_KIND_ORDER.includes(k)),
+    ];
+    return orderedKinds.map((kind) => ({ kind, label: kindGroupLabel(kind), pools: map.get(kind) }));
+  }, [filteredPools]);
+
+  const hasActiveFilters = search.trim() !== "" || healthFilter !== "all" || boundFilter !== "all" || hideInactive;
+  const clearFilters = () => {
+    setSearch("");
+    setHealthFilter("all");
+    setBoundFilter("all");
+    setHideInactive(false);
+  };
+
+  const allSelected = filteredPools.length > 0 && filteredPools.every((p) => selectedIds.includes(p.id));
+  const toggleSelectAll = () => {
+    const visibleIds = filteredPools.map((p) => p.id);
+    setSelectedIds(allSelected
+      ? selectedIds.filter((id) => !visibleIds.includes(id))
+      : Array.from(new Set([...selectedIds, ...visibleIds])));
+  };
+
   if (loading) {
     return (
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-1 sm:gap-6 sm:px-0">
@@ -651,7 +739,67 @@ export default function ProxyPoolsPage() {
           )}
           <Badge variant="default">Total: {proxyPools.length}</Badge>
           <Badge variant="success">Active: {activeCount}</Badge>
+          {hasActiveFilters && (
+            <Badge variant="default">Showing: {filteredPools.length}</Badge>
+          )}
         </div>
+
+        {proxyPools.length > 0 && (
+          <div className="mb-4 flex flex-col gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <div className="relative flex-1 min-w-0">
+                <span className="material-symbols-outlined pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[18px] text-text-muted">search</span>
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search name or host…"
+                  className="w-full rounded-md border border-black/10 bg-white py-1.5 pl-8 pr-3 text-sm text-text-main transition-all focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/30 dark:border-white/10 dark:bg-white/5"
+                />
+              </div>
+              <label className="flex items-center gap-1.5 text-xs text-text-muted cursor-pointer whitespace-nowrap">
+                <input
+                  type="checkbox"
+                  checked={hideInactive}
+                  onChange={(e) => setHideInactive(e.target.checked)}
+                  className="size-4 rounded border-black/20 dark:border-white/20"
+                />
+                Hide inactive
+              </label>
+              {hasActiveFilters && (
+                <Button size="sm" variant="ghost" icon="filter_alt_off" onClick={clearFilters}>
+                  Clear filters
+                </Button>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-1">
+                <span className="text-[11px] uppercase tracking-wide text-text-muted">Health</span>
+                {HEALTH_FILTERS.map((f) => (
+                  <button
+                    key={f.value}
+                    onClick={() => setHealthFilter(f.value)}
+                    className={`rounded-full px-2.5 py-0.5 text-xs transition-colors ${healthFilter === f.value ? "bg-primary text-white" : "bg-black/5 text-text-muted hover:bg-black/10 dark:bg-white/5 dark:hover:bg-white/10"}`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-[11px] uppercase tracking-wide text-text-muted">Bound</span>
+                {BOUND_FILTERS.map((f) => (
+                  <button
+                    key={f.value}
+                    onClick={() => setBoundFilter(f.value)}
+                    className={`rounded-full px-2.5 py-0.5 text-xs transition-colors ${boundFilter === f.value ? "bg-primary text-white" : "bg-black/5 text-text-muted hover:bg-black/10 dark:bg-white/5 dark:hover:bg-white/10"}`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         {(selectedIds.length > 0 || healthChecking) && (
           <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
@@ -696,84 +844,154 @@ export default function ProxyPoolsPage() {
             </p>
             <Button icon="add" onClick={openCreateModal}>Add Proxy Pool</Button>
           </div>
+        ) : filteredPools.length === 0 ? (
+          <div className="text-center py-10">
+            <p className="text-text-main font-medium mb-1">No proxies match your filters</p>
+            <p className="text-sm text-text-muted mb-4">Try adjusting the search or filters.</p>
+            <Button variant="secondary" icon="filter_alt_off" onClick={clearFilters}>Clear filters</Button>
+          </div>
         ) : (
-          <div className="flex flex-col divide-y divide-black/[0.04] dark:divide-white/[0.05]">
-            {proxyPools.map((pool) => (
-              <div key={pool.id} className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-start gap-3 min-w-0 flex-1">
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.includes(pool.id)}
-                    onChange={() => toggleSelect(pool.id)}
-                    className="mt-1 size-4 shrink-0 rounded border-black/20 dark:border-white/20"
-                  />
-                  <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="min-w-0 max-w-full truncate text-sm font-medium sm:max-w-[18rem]">{pool.name}</p>
-                    <Badge variant={getStatusVariant(pool.testStatus)} size="sm" dot>
-                      {pool.testStatus || "unknown"}
-                    </Badge>
-                    <Badge variant={pool.isActive ? "success" : "default"} size="sm">
-                      {pool.isActive ? "active" : "inactive"}
-                    </Badge>
-                    {pool.type === "vercel" && (
-                      <Badge variant="default" size="sm">vercel relay</Badge>
-                    )}
-                    {pool.type === "cloudflare" && (
-                      <Badge variant="default" size="sm">cloudflare relay</Badge>
-                    )}
-                    <Badge variant="default" size="sm">
-                      {pool.boundConnectionCount || 0} bound
-                    </Badge>
-                  </div>
-                  <p className="text-xs text-text-muted truncate mt-1">{pool.proxyUrl}</p>
-                  {pool.noProxy ? (
-                    <p className="text-xs text-text-muted truncate">No proxy: {pool.noProxy}</p>
-                  ) : null}
-                  <p className="text-[11px] text-text-muted mt-1">
-                    Last tested: {formatDateTime(pool.lastTestedAt)}
-                    {pool.lastError ? ` · ${pool.lastError}` : ""}
-                  </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-end gap-1">
-                  <Toggle
-                    size="sm"
-                    checked={pool.isActive === true}
-                    onChange={() => handleToggleActive(pool)}
-                    title={pool.isActive ? "Disable" : "Enable"}
-                  />
+          <div className="flex flex-col gap-4">
+            {groupedPools.map((group) => {
+              const collapsed = collapsedGroups.includes(group.kind);
+              return (
+                <div key={group.kind} className="overflow-hidden rounded-lg border border-black/[0.06] dark:border-white/[0.08]">
                   <button
-                    onClick={() => handleTest(pool.id)}
-                    className="p-2 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary"
-                    title="Test proxy"
-                    disabled={testingId === pool.id}
+                    onClick={() => toggleGroup(group.kind)}
+                    className="flex w-full items-center gap-2 bg-black/[0.02] px-3 py-2 text-left transition-colors hover:bg-black/[0.04] dark:bg-white/[0.03] dark:hover:bg-white/[0.05]"
                   >
-                    <span
-                      className="material-symbols-outlined text-[18px]"
-                      style={testingId === pool.id ? { animation: "spin 1s linear infinite" } : undefined}
-                    >
-                      {testingId === pool.id ? "progress_activity" : "science"}
+                    <span className="material-symbols-outlined text-[18px] text-text-muted">
+                      {collapsed ? "chevron_right" : "expand_more"}
                     </span>
+                    <span className="text-sm font-semibold text-text-main">{group.label}</span>
+                    <Badge variant="default" size="sm">{group.pools.length}</Badge>
                   </button>
-                  <button
-                    onClick={() => openEditModal(pool)}
-                    className="p-2 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary"
-                    title="Edit"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">edit</span>
-                  </button>
-                  <button
-                    onClick={() => handleDelete(pool)}
-                    className="p-2 rounded hover:bg-red-500/10 text-red-500"
-                    title="Delete"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">delete</span>
-                  </button>
+
+                  {!collapsed && (
+                    <>
+                      <div className="hidden grid-cols-[auto_minmax(0,2.4fr)_auto_minmax(0,1fr)_auto_auto] items-center gap-3 border-b border-black/[0.06] px-3 py-2 text-[11px] uppercase tracking-wide text-text-muted dark:border-white/[0.08] lg:grid">
+                        <span />
+                        <span>Name / Endpoint</span>
+                        <span>Health</span>
+                        <span>Bound · Latency</span>
+                        <span>Last tested</span>
+                        <span className="text-right">Actions</span>
+                      </div>
+                      <div className="flex flex-col divide-y divide-black/[0.04] dark:divide-white/[0.05]">
+                        {group.pools.map((pool) => {
+                          const health = deriveHealth(pool);
+                          const revealed = revealedIds.includes(pool.id);
+                          const latency = formatLatency(pool.lastLatencyMs);
+                          const bound = pool.boundConnectionCount || 0;
+                          return (
+                            <div
+                              key={pool.id}
+                              className="grid grid-cols-1 gap-2 px-3 py-3 lg:grid-cols-[auto_minmax(0,2.4fr)_auto_minmax(0,1fr)_auto_auto] lg:items-center lg:gap-3"
+                            >
+                              <div className="flex items-start gap-3 lg:items-center">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedIds.includes(pool.id)}
+                                  onChange={() => toggleSelect(pool.id)}
+                                  className="mt-0.5 size-4 shrink-0 rounded border-black/20 dark:border-white/20 lg:mt-0"
+                                />
+                              </div>
+
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-medium text-text-main" title={pool.name}>
+                                  {deriveDisplayName(pool)}
+                                </p>
+                                <div className="mt-0.5 flex items-center gap-1.5">
+                                  <code className="truncate font-mono text-xs text-text-muted" title={revealed ? pool.proxyUrl : undefined}>
+                                    {revealed ? pool.proxyUrl : maskProxyUrl(pool.proxyUrl)}
+                                  </code>
+                                  <button
+                                    onClick={() => toggleReveal(pool.id)}
+                                    className="shrink-0 rounded p-0.5 text-text-muted transition-colors hover:text-primary"
+                                    title={revealed ? "Hide credentials" : "Reveal full URL"}
+                                  >
+                                    <span className="material-symbols-outlined text-[16px]">{revealed ? "visibility_off" : "visibility"}</span>
+                                  </button>
+                                  <button
+                                    onClick={() => copyProxyUrl(pool)}
+                                    className="shrink-0 rounded p-0.5 text-text-muted transition-colors hover:text-primary"
+                                    title="Copy full URL"
+                                  >
+                                    <span className="material-symbols-outlined text-[16px]">content_copy</span>
+                                  </button>
+                                </div>
+                                {pool.noProxy ? (
+                                  <p className="truncate text-[11px] text-text-muted">No proxy: {pool.noProxy}</p>
+                                ) : null}
+                                {health === "error" && pool.lastError ? (
+                                  <p className="truncate text-[11px] text-red-500" title={pool.lastError}>{pool.lastError}</p>
+                                ) : null}
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <Badge variant={getHealthVariant(health)} size="sm" dot>{health}</Badge>
+                                {!pool.isActive && (
+                                  <span className="text-[11px] text-text-muted lg:hidden">disabled</span>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-2 text-xs text-text-muted">
+                                <span title="Bound connections">{bound} bound</span>
+                                {latency ? (
+                                  <span className="inline-flex items-center gap-0.5" title="Last test latency">
+                                    <span className="material-symbols-outlined text-[14px]">bolt</span>{latency}
+                                  </span>
+                                ) : null}
+                              </div>
+
+                              <div className="text-[11px] text-text-muted" title={formatDateTime(pool.lastTestedAt)}>
+                                {formatRelativeTime(pool.lastTestedAt)}
+                              </div>
+
+                              <div className="flex items-center justify-end gap-1">
+                                <Toggle
+                                  size="sm"
+                                  checked={pool.isActive === true}
+                                  onChange={() => handleToggleActive(pool)}
+                                  title={pool.isActive ? "Disable" : "Enable"}
+                                />
+                                <button
+                                  onClick={() => handleTest(pool.id)}
+                                  className="p-2 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary"
+                                  title="Test proxy"
+                                  disabled={testingId === pool.id}
+                                >
+                                  <span
+                                    className="material-symbols-outlined text-[18px]"
+                                    style={testingId === pool.id ? { animation: "spin 1s linear infinite" } : undefined}
+                                  >
+                                    {testingId === pool.id ? "progress_activity" : "science"}
+                                  </span>
+                                </button>
+                                <button
+                                  onClick={() => openEditModal(pool)}
+                                  className="p-2 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary"
+                                  title="Edit"
+                                >
+                                  <span className="material-symbols-outlined text-[18px]">edit</span>
+                                </button>
+                                <button
+                                  onClick={() => handleDelete(pool)}
+                                  className="p-2 rounded hover:bg-red-500/10 text-red-500"
+                                  title="Delete"
+                                >
+                                  <span className="material-symbols-outlined text-[18px]">delete</span>
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </Card>

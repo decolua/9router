@@ -1,4 +1,4 @@
-const { exec, spawn, execSync } = require("child_process");
+const { exec, execFile, spawn, execSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
@@ -148,6 +148,35 @@ function killProcess(pid, force = false, sudoPassword = null) {
     } else {
       exec(cmd, { windowsHide: true }, () => { });
     }
+  }
+}
+
+function resolveMitmStopTargets({ isWin, processPid, pidFilePid, serverPath }) {
+  const pids = [...new Set([processPid, pidFilePid].filter(Boolean))];
+  return {
+    pids,
+    serverPathPattern: !isWin && serverPath ? serverPath : null,
+  };
+}
+
+async function killMitmTargets({ pids, serverPathPattern }, sudoPassword) {
+  for (const pid of pids) {
+    if (!isProcessAlive(pid)) continue;
+    log(`Killing server (PID: ${pid})...`);
+    killProcess(pid, false, sudoPassword);
+  }
+  await new Promise(r => setTimeout(r, 1000));
+  for (const pid of pids) {
+    if (isProcessAlive(pid)) killProcess(pid, true, sudoPassword);
+  }
+  if (!serverPathPattern) return;
+  const escaped = serverPathPattern.replace(/'/g, "'\\''");
+  const command = `pkill -SIGTERM -f '${escaped}' 2>/dev/null || true; sleep 1; pkill -SIGKILL -f '${escaped}' 2>/dev/null || true`;
+  if (sudoPassword || isSudoAvailable()) {
+    const { execWithPassword } = require("./dns/dnsConfig");
+    await execWithPassword(command, sudoPassword || "").catch(() => { });
+  } else {
+    await new Promise(resolve => exec(command, { windowsHide: true }, () => resolve()));
   }
 }
 
@@ -399,6 +428,10 @@ async function getMitmStatus() {
   return { running, pid, certExists, certTrusted, dnsStatus };
 }
 
+function shouldScheduleMitmRestart() {
+  return false;
+}
+
 async function scheduleMitmRestart(apiKey) {
   if (mitmIsRestarting) return;
   // Set guard synchronously before any await to prevent concurrent calls
@@ -468,7 +501,7 @@ async function killPort443Owner(owner, sudoPassword) {
   await new Promise(r => setTimeout(r, 800));
 }
 
-async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
+async function startServerCore(apiKey, sudoPassword, forceKillPort443 = false) {
   if (!serverProcess || serverProcess.killed) {
     try {
       if (fs.existsSync(PID_FILE)) {
@@ -702,8 +735,10 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
       serverPid = null;
       try { fs.unlinkSync(PID_FILE); } catch { /* ignore */ }
       try { fs.unlinkSync(LOCK_FILE); } catch { /* ignore */ }
-      // Auto-restart on unexpected exit
-      if (code !== 0 && !mitmIsRestarting) scheduleMitmRestart(apiKey);
+      // Coupled lifecycle owns failure handling; never restart MITM independently.
+      if (shouldScheduleMitmRestart({ exitCode: code, intentionalStop: mitmIsRestarting })) {
+        scheduleMitmRestart(apiKey);
+      }
     });
   }
 
@@ -743,7 +778,7 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
 /**
  * Stop MITM server — removes ALL tool DNS entries first, then kills server
  */
-async function stopServer(sudoPassword) {
+async function stopServerCore(sudoPassword) {
   // Prevent auto-restart from triggering on intentional stop
   mitmIsRestarting = true;
   mitmRestartCount = 0;
@@ -751,16 +786,17 @@ async function stopServer(sudoPassword) {
 
   // Kill server process
   const proc = serverProcess;
-  const pidToKill = proc && !proc.killed
-    ? proc.pid
-    : (() => { try { return parseInt(fs.readFileSync(PID_FILE, "utf-8").trim(), 10); } catch { return null; } })();
-
-  if (pidToKill && isProcessAlive(pidToKill)) {
-    log(`Killing server (PID: ${pidToKill})...`);
-    killProcess(pidToKill, false, sudoPassword);
-    await new Promise(r => setTimeout(r, 1000));
-    if (isProcessAlive(pidToKill)) killProcess(pidToKill, true, sudoPassword);
-  }
+  const processPid = proc && !proc.killed ? proc.pid : null;
+  const pidFilePid = (() => {
+    try { return parseInt(fs.readFileSync(PID_FILE, "utf-8").trim(), 10); }
+    catch { return null; }
+  })();
+  await killMitmTargets(resolveMitmStopTargets({
+    isWin: IS_WIN,
+    processPid,
+    pidFilePid,
+    serverPath: SERVER_PATH,
+  }), sudoPassword);
   serverProcess = null;
   serverPid = null;
 
@@ -857,11 +893,113 @@ async function trustCert(sudoPassword) {
   if (password) setCachedPassword(password);
 }
 
+const {
+  rollbackPreservingError,
+  createPm2CliAdapter,
+  waitForTcpPort,
+  watchProcessExit,
+  watchPm2ProcessIdentity,
+  createMitmWireproxyLifecycle,
+  createWireproxyProcessManager,
+} = require("../lib/network/wireproxyLifecycle");
+
+function createDefaultWireproxyDeps({
+  homeDir = os.homedir(),
+  dataDir = DATA_DIR,
+  runPm2 = createPm2CliAdapter({ execFile }).runPm2,
+  waitForPort = waitForTcpPort,
+  watchExit = watchProcessExit,
+  accessFile = fs.promises.access,
+} = {}) {
+  const config = {
+    processName: "wireproxy",
+    binaryPath: path.join(homeDir, ".local", "bin", "wireproxy"),
+    configPath: path.join(dataDir, "warp", "wireproxy.conf"),
+    host: "127.0.0.1",
+    port: 40000,
+  };
+  const processManager = createWireproxyProcessManager({ runPm2, waitForPort, ...config });
+  async function requireFile(filePath, label, mode) {
+    try {
+      await accessFile(filePath, mode);
+    } catch {
+      throw new Error(`wireproxy ${label} is unavailable: ${filePath}`);
+    }
+  }
+  async function ensure() {
+    await requireFile(config.binaryPath, "binary", fs.constants.X_OK);
+    await requireFile(config.configPath, "config", fs.constants.R_OK);
+    return processManager.ensure();
+  }
+  return {
+    ensure,
+    stop: processManager.stop,
+    watchExit,
+    watchIdentity: (pid, handler) => watchPm2ProcessIdentity(config.processName, pid, handler, { runPm2 }),
+    config,
+  };
+}
+
+let wireproxyLifecycleDeps = createDefaultWireproxyDeps();
+
+function setWireproxyLifecycleDeps(deps = {}) {
+  const defaults = createDefaultWireproxyDeps();
+  wireproxyLifecycleDeps = {
+    ensure: deps.ensure || defaults.ensure,
+    stop: deps.stop || defaults.stop,
+    watchExit: deps.watchExit || defaults.watchExit,
+    watchIdentity: deps.watchIdentity || defaults.watchIdentity,
+    config: deps.config || defaults.config,
+  };
+}
+
+function getWireproxyLifecycleDeps() {
+  return wireproxyLifecycleDeps;
+}
+
+let mitmProcessActions = {
+  start: startServerCore,
+  stop: stopServerCore,
+};
+let coupledLifecycle;
+
+function rebuildCoupledLifecycle() {
+  coupledLifecycle = createMitmWireproxyLifecycle({
+    ensureWireproxy: () => wireproxyLifecycleDeps.ensure(),
+    stopWireproxy: () => wireproxyLifecycleDeps.stop(),
+    startMitmProcess: (...args) => mitmProcessActions.start(...args),
+    stopMitmProcess: (...args) => mitmProcessActions.stop(...args),
+    watchMitmExit: (pid, handler) => wireproxyLifecycleDeps.watchExit(pid, handler),
+    watchWireproxyExit: (pid, handler) => wireproxyLifecycleDeps.watchIdentity(pid, handler),
+  });
+}
+
+rebuildCoupledLifecycle();
+
+function setMitmProcessActions(actions = {}) {
+  mitmProcessActions = {
+    start: actions.start || startServerCore,
+    stop: actions.stop || stopServerCore,
+  };
+  rebuildCoupledLifecycle();
+}
+
+async function startServer(...args) {
+  const result = await coupledLifecycle.start(...args);
+  return result?.mitm;
+}
+
+async function stopServer(...args) {
+  return coupledLifecycle.stop(...args);
+}
+
 // Legacy aliases for backward compatibility
 const startMitm = startServer;
 const stopMitm = stopServer;
 
 module.exports = {
+  shouldScheduleMitmRestart,
+  resolveMitmStopTargets,
   getMitmStatus,
   startServer,
   stopServer,
@@ -871,6 +1009,12 @@ module.exports = {
   // Legacy
   startMitm,
   stopMitm,
+  createMitmWireproxyLifecycle,
+  createWireproxyProcessManager,
+  createDefaultWireproxyDeps,
+  setWireproxyLifecycleDeps,
+  getWireproxyLifecycleDeps,
+  setMitmProcessActions,
   getCachedPassword,
   setCachedPassword,
   loadEncryptedPassword,

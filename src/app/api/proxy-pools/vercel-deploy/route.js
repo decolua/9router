@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createProxyPool } from "@/models";
+import { testRelay } from "@/lib/network/relayTest";
 
 const VERCEL_API = "https://api.vercel.com";
 
@@ -25,17 +26,23 @@ export default async function handler(req) {
   headers.delete("x-relay-path");
   headers.delete("host");
 
-  const response = await fetch(targetUrl, {
-    method: req.method,
-    headers,
-    body: req.method !== "GET" && req.method !== "HEAD" ? req.body : undefined,
-    duplex: "half",
-  });
-
-  return new Response(response.body, {
-    status: response.status,
-    headers: response.headers,
-  });
+  try {
+    const response = await fetch(targetUrl, {
+      method: req.method,
+      headers,
+      body: req.method !== "GET" && req.method !== "HEAD" ? req.body : undefined,
+      duplex: "half",
+    });
+    return new Response(response.body, {
+      status: response.status,
+      headers: response.headers,
+    });
+  } catch (error) {
+    return new Response(JSON.stringify({ error: error.message || "Relay fetch failed" }), {
+      status: 502,
+      headers: { "content-type": "application/json" },
+    });
+  }
 }
 `;
 
@@ -111,18 +118,34 @@ export async function POST(request) {
 
     // Disable deployment protection (Vercel Authentication)
     const projectId = deployment.projectId || projectName;
-    await fetch(`${VERCEL_API}/v9/projects/${projectId}`, {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${vercelToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ ssoProtection: null }),
-    });
+    try {
+      const protectRes = await fetch(`${VERCEL_API}/v9/projects/${projectId}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${vercelToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ ssoProtection: null }),
+      });
+      if (!protectRes.ok) {
+        console.warn("Vercel relay: failed to disable SSO protection:", protectRes.status);
+      }
+    } catch (e) {
+      console.warn("Vercel relay: SSO protection patch error:", e?.message);
+    }
 
     // Poll until deployment is ready
     const ready = await pollDeployment(deploymentId, vercelToken);
     const deployUrl = `https://${ready.url}`;
+
+    // Verify relay is functional before marking active
+    const verification = await testRelay(deployUrl);
+    if (!verification.ok) {
+      return NextResponse.json(
+        { error: `Relay verification failed (${verification.status}): ${verification.error}` },
+        { status: 502 }
+      );
+    }
 
     // Create proxy pool entry with type vercel
     const proxyPool = await createProxyPool({
@@ -132,6 +155,9 @@ export async function POST(request) {
       noProxy: "",
       isActive: true,
       strictProxy: false,
+      testStatus: "active",
+      lastTestedAt: new Date().toISOString(),
+      lastError: null,
     });
 
     return NextResponse.json({ proxyPool, deployUrl }, { status: 201 });

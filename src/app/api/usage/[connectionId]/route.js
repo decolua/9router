@@ -3,6 +3,7 @@ import "open-sse/index.js";
 
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
 import { getUsageForProvider } from "open-sse/services/usage.js";
+import { getProviderUsageTotals } from "@/lib/db";
 import { getExecutor } from "open-sse/executors/index.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
@@ -169,6 +170,50 @@ export async function GET(request, { params }) {
 
     // Fetch usage from provider API
     let usage = await getUsageForProvider(connection, proxyOptions);
+
+    // xAI exposes no cumulative usage endpoint and its x-ratelimit-* headers are
+    // a per-minute window that always reports full (used = limit - remaining = 0).
+    // That's why the tracker looked stuck at 0. Replace those window rows with the
+    // real consumption we already record locally in usageHistory, so the card moves.
+    if (connection.provider === "xai" && usage?.quotas) {
+      try {
+        const totals = await getProviderUsageTotals({
+          provider: "xai",
+          connectionId: connection.id,
+        });
+        const snap = connection.rateLimitSnapshot || {};
+        const quotas = {
+          "Requests (total)": {
+            total: 0, // no hard cap — xAI is per-minute rate limited, not quota capped
+            used: totals.requests || 0,
+            remaining: 100,
+            unit: "requests",
+            resetAt: null,
+          },
+          "Tokens (total)": {
+            total: 0,
+            used: totals.totalTokens || 0,
+            remaining: 100,
+            unit: "tokens",
+            resetAt: null,
+          },
+        };
+        // Keep the per-minute rate-limit window for throttle awareness (informational).
+        if (snap.limitRequests != null) {
+          const total = Number(snap.limitRequests) || 0;
+          const remaining = snap.remainingRequests != null ? Number(snap.remainingRequests) : total;
+          quotas["Rate limit (req/min)"] = {
+            total,
+            used: Math.max(0, total - remaining),
+            unit: "requests",
+            resetAt: null,
+          };
+        }
+        usage = { quotas, capturedAt: snap.capturedAt || null };
+      } catch (e) {
+        console.warn("[Usage] xAI usageHistory enrichment failed:", e?.message);
+      }
+    }
 
     // If provider returned an auth-expired message instead of throwing,
     // force-refresh token and retry once (OAuth only)

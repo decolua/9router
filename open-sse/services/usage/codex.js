@@ -94,7 +94,23 @@ export async function getCodexUsage(accessToken, proxyOptions = null) {
       return { message: `Codex connected. Usage API temporarily unavailable (${response.status}).` };
     }
 
-    const data = await response.json();
+    const contentType = response.headers?.get?.("content-type") || "";
+    if (contentType && !contentType.toLowerCase().includes("json")) {
+      return { message: "Codex usage relay returned non-JSON response (possible relay outage)." };
+    }
+
+    let data;
+    try {
+      if (typeof response.text === "function") {
+        const bodyText = await response.text();
+        data = bodyText ? JSON.parse(bodyText) : {};
+      } else {
+        data = await response.json();
+      }
+    } catch {
+      return { message: "Codex usage response was not valid JSON (possible relay outage)." };
+    }
+
     const normalRateLimit = data.rate_limit || data.rate_limits || data.rate_limits_by_limit_id?.codex || {};
     const reviewRateLimit = getCodexReviewRateLimit(data);
     const availableResetCredits = Math.max(0, toFiniteNumber(data.rate_limit_reset_credits?.available_count, 0));

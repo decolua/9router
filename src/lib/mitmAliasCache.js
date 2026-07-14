@@ -4,6 +4,9 @@
 import fs from "fs";
 import path from "path";
 import os from "os";
+import aliasConfig from "@/mitm/aliasConfig";
+
+const { normalizeAliasMappings } = aliasConfig;
 
 const DATA_DIR = process.env.DATA_DIR
   || (process.platform === "win32"
@@ -38,7 +41,7 @@ export function writeAliasForTool(tool, mappings) {
     if (fs.existsSync(CACHE_FILE)) {
       try { current = JSON.parse(fs.readFileSync(CACHE_FILE, "utf8")); } catch { /* corrupted → reset */ }
     }
-    current[tool] = mappings || {};
+    current[tool] = normalizeAliasMappings(mappings || {});
     writeAtomic(current);
   } catch (e) {
     console.log("[mitmAliasCache] write failed:", e.message);

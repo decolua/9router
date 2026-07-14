@@ -28,6 +28,7 @@ import {
   CODEBUDDY_CONFIG,
   KIMCHI_CONFIG,
   GROK_CLI_CONFIG,
+  FREEBUFF_CONFIG,
   getOAuthClientMetadata,
 } from "./constants/oauth";
 import { XAI_CONFIG, XAI_PKCE_VERIFIER_BYTES } from "./constants/xai";
@@ -1433,7 +1434,102 @@ const PROVIDERS = {
     }),
   },
 
-  kimchi: {
+  freebuff: {
+    config: FREEBUFF_CONFIG,
+    flowType: "device_code",
+    requestDeviceCode: async (config, codeChallenge, options = {}) => {
+      const authMethod = options.authMethod === "codebuff" ? "codebuff" : "freebuff";
+      const codeUrl = authMethod === "codebuff" ? "https://www.codebuff.com/api/auth/cli/code" : "https://freebuff.com/api/auth/cli/code";
+
+      const fingerprintId = `fb-${crypto.randomBytes(8).toString("hex")}`;
+      const response = await fetch(codeUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "User-Agent": "Bun/1.3.11",
+        },
+        body: JSON.stringify({ fingerprintId }),
+      });
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Freebuff/Codebuff code request failed: ${error}`);
+      }
+      const data = await response.json();
+      const loginUrl = data.loginUrl;
+      const fingerprintHash = data.fingerprintHash;
+      const expiresAt = data.expiresAt;
+
+      const now = Date.now();
+      const expires_in = expiresAt > now ? Math.ceil((expiresAt - now) / 1000) : 300;
+      const combinedCode = JSON.stringify({ fingerprintId, fingerprintHash, expiresAt, authMethod });
+
+      return {
+        device_code: combinedCode,
+        user_code: authMethod === "codebuff" ? "Codebuff CLI Authorization" : "Freebuff CLI Authorization",
+        verification_uri: loginUrl,
+        verification_uri_complete: loginUrl,
+        expires_in: expires_in,
+        interval: 2,
+      };
+    },
+    pollToken: async (config, deviceCode) => {
+      let params;
+      try {
+        params = JSON.parse(deviceCode);
+      } catch (e) {
+        return { ok: false, data: { error: "invalid_grant", error_description: "Failed to parse device code parameters" } };
+      }
+      const { fingerprintId, fingerprintHash, expiresAt, authMethod } = params;
+      const statusUrl = authMethod === "codebuff" ? "https://www.codebuff.com/api/auth/cli/status" : "https://freebuff.com/api/auth/cli/status";
+      const qs = new URLSearchParams({
+        fingerprintId,
+        fingerprintHash,
+        expiresAt: String(expiresAt),
+      });
+      const response = await fetch(`${statusUrl}?${qs.toString()}`, {
+        headers: {
+          "Accept": "application/json",
+          "User-Agent": "Bun/1.3.11",
+        },
+      });
+
+      if (response.status === 401) {
+        return { ok: true, data: { error: "authorization_pending" } };
+      }
+      if (!response.ok) {
+        return { ok: false, data: { error: "poll_failed", error_description: `Poll failed with HTTP ${response.status}` } };
+      }
+      const data = await response.json();
+      const user = data.user;
+      if (user && user.authToken) {
+        return {
+          ok: true,
+          data: {
+            access_token: user.authToken,
+            _userEmail: user.email || null,
+            _userId: user.id || null,
+            _userName: user.name || null,
+            _authMethod: authMethod || "freebuff",
+          },
+        };
+      }
+      return { ok: true, data: { error: "authorization_pending" } };
+    },
+    mapTokens: (tokens) => ({
+      accessToken: tokens.access_token,
+      refreshToken: null,
+      expiresIn: null,
+      email: tokens._userEmail,
+      providerSpecificData: {
+        userId: tokens._userId,
+        userName: tokens._userName,
+        authMethod: tokens._authMethod || "freebuff",
+      },
+    }),
+  },
+
+    kimchi: {
     config: KIMCHI_CONFIG,
     flowType: "browser_token",
     buildAuthUrl: (config, redirectUri, state) => {

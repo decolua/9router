@@ -266,6 +266,7 @@ export default function ProviderLimits() {
         quotas: parsedQuotas,
         plan: data.plan || null,
         message: data.message || null,
+        capturedAt: data.capturedAt || null,
         raw: data,
       };
 
@@ -1193,14 +1194,22 @@ export default function ProviderLimits() {
                     <p className="text-xs text-text-muted">{quota.message}</p>
                   </div>
                 ) : (
-                  <QuotaTable
-                    quotas={quota?.quotas}
-                    compact
-                    sortMode="default"
-                    showSortLabel={
-                      conn.provider === "codex" && quotaSortMode !== "default"
-                    }
-                  />
+                  <>
+                    <QuotaTable
+                      quotas={quota?.quotas}
+                      compact
+                      sortMode="default"
+                      showSortLabel={
+                        conn.provider === "codex" && quotaSortMode !== "default"
+                      }
+                    />
+                    {quota?.capturedAt && (
+                      <p className="px-1.5 pt-1 text-[10px] text-text-muted">
+                        Rate-limit window · captured{" "}
+                        {formatCapturedAt(quota.capturedAt)} · not monthly quota
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
             </Card>

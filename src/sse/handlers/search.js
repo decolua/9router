@@ -92,7 +92,9 @@ export async function handleSearch(request) {
 
 async function handleSingleProviderSearch(body, providerInput, request, apiKey, settings) {
   const query = body.query;
-  const providerId = resolveProviderId(providerInput);
+  // Strip /search suffix — /v1/models/web advertises "tavily/search" but provider ID is "tavily"
+  const normalizedInput = providerInput.replace(/\/search$/, "");
+  const providerId = resolveProviderId(normalizedInput);
   const resolvedProvider = AI_PROVIDERS[providerId];
 
   if (!resolvedProvider) {

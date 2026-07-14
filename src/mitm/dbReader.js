@@ -4,6 +4,7 @@
 const fs = require("fs");
 const path = require("path");
 const { DATA_DIR } = require("./paths");
+const { normalizeAliasMappings } = require("./aliasConfig");
 
 const CACHE_FILE = path.join(DATA_DIR, "mitm", "aliases.json");
 
@@ -16,7 +17,8 @@ function readCache() {
 
 function getMitmAlias(toolName) {
   const all = readCache();
-  return all?.[toolName] || null;
+  if (!all?.[toolName]) return null;
+  return normalizeAliasMappings(all[toolName]);
 }
 
 module.exports = { getMitmAlias };

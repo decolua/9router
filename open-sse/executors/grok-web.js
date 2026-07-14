@@ -43,6 +43,28 @@ function randomHex(bytes) {
   return Array.from(arr, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+function buildGrokCookieHeader(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+
+  const withoutHeaderPrefix = raw.replace(/^cookie:\s*/i, "").trim();
+  if (withoutHeaderPrefix.includes(";")) return withoutHeaderPrefix;
+  if (/^[A-Za-z0-9_.-]+=/.test(withoutHeaderPrefix)) return withoutHeaderPrefix;
+
+  if (withoutHeaderPrefix.startsWith("session_paste ")) {
+    const token = withoutHeaderPrefix.slice("session_paste ".length).trim();
+    return token ? `session_paste=${token}` : null;
+  }
+
+  if (withoutHeaderPrefix.startsWith("sso ")) {
+    const token = withoutHeaderPrefix.slice("sso ".length).trim();
+    return token ? `sso=${token}` : null;
+  }
+
+  if (withoutHeaderPrefix.startsWith("U2FsdGVk")) return `session_paste=${withoutHeaderPrefix}`;
+  return `sso=${withoutHeaderPrefix}`;
+}
+
 function parseOpenAIMessages(messages) {
   const extracted = [];
   for (const msg of messages) {
@@ -276,17 +298,15 @@ export class GrokWebExecutor extends BaseExecutor {
       "Sec-Fetch-Dest": "empty",
       "Sec-Fetch-Mode": "cors",
       "Sec-Fetch-Site": "same-origin",
-      "User-Agent": GROK_USER_AGENT,
+      "User-Agent": credentials?.providerSpecificData?.userAgent || GROK_USER_AGENT,
       "x-statsig-id": generateStatsigId(),
       "x-xai-request-id": crypto.randomUUID(),
       traceparent: `00-${traceId}-${spanId}-00`,
     };
 
-    // Strip "sso=" prefix if user pasted it
     if (credentials.apiKey) {
-      let token = credentials.apiKey;
-      if (token.startsWith("sso=")) token = token.slice(4);
-      headers["Cookie"] = `sso=${token}`;
+      const cookieHeader = buildGrokCookieHeader(credentials.apiKey);
+      if (cookieHeader) headers["Cookie"] = cookieHeader;
     }
 
     log?.info?.("GROK-WEB", `Query to ${model} (grok=${grokModel}, mode=${modelMode}), len=${message.length}`);

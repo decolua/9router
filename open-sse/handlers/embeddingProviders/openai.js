@@ -5,6 +5,7 @@ import { PROVIDER_MEDIA } from "../../providers/index.js";
 // media-only providers without a registry file keep URL here; rest derive from registry media.embeddingConfig.baseUrl
 const ENDPOINTS = {
   "jina-ai": "https://api.jina.ai/v1/embeddings",
+  "vercel-ai-gateway": "https://ai-gateway.vercel.sh/v1/embeddings",
 };
 
 const embedCfg = (id) => PROVIDER_MEDIA[id]?.embeddingConfig || {};
