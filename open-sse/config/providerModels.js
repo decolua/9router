@@ -23,16 +23,46 @@ export function getDefaultModel(aliasOrId) {
 // digit-hyphen-digit to digit-dot-digit before lookup. Other providers are left untouched.
 const DOT_VERSION_PROVIDERS = new Set(["kr", "kiro"]);
 
+// Fast lookup index: per-provider Map<modelId, modelEntry>, plus a secondary
+// Map for the normalized (dash/dot) ids used by DOT_VERSION_PROVIDERS.
+// Built once at module load from PROVIDER_MODELS. Replaces the per-request
+// linear `.find()` over a provider's model array (called up to 4× per request
+// via getModelTargetFormat/getModelStrip/getModelType/getModelUpstreamId),
+// turning model resolution from O(models-per-provider) into O(1).
+const _modelIndex = new Map();
+for (const [aliasOrId, models] of Object.entries(PROVIDER_MODELS)) {
+  if (!Array.isArray(models)) continue;
+  const exact = new Map();
+  const normalized = new Map();
+  for (const m of models) {
+    if (m?.id == null) continue;
+    exact.set(m.id, m);
+    if (DOT_VERSION_PROVIDERS.has(aliasOrId)) {
+      const n = normalizeModelId(m.id);
+      if (n !== m.id) normalized.set(n, m);
+    }
+  }
+  _modelIndex.set(aliasOrId, { exact, normalized });
+}
+
 // Find a registry entry by id. For Kiro models, tolerates dash/dot version separators
 // ("claude-sonnet-4-5" ~= "claude-sonnet-4.5"). Other providers use exact match only.
 function findModel(models, modelId, aliasOrId) {
   if (!models) return undefined;
-  const found = models.find(m => m.id === modelId);
+  const idx = _modelIndex.get(aliasOrId);
+  if (idx) {
+    const found = idx.exact.get(modelId);
+    if (found) return found;
+    if (idx.normalized.size) return idx.normalized.get(modelId);
+    return undefined;
+  }
+  // Fallback for callers passing a raw models array not yet indexed (defensive).
+  const found = models.find((m) => m.id === modelId);
   if (found) return found;
   if (!DOT_VERSION_PROVIDERS.has(aliasOrId)) return undefined;
   const normalized = normalizeModelId(modelId);
   if (normalized === modelId) return undefined;
-  return models.find(m => m.id === normalized);
+  return models.find((m) => m.id === normalized);
 }
 
 export function isValidModel(aliasOrId, modelId, passthroughProviders = new Set()) {

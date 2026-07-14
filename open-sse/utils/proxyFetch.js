@@ -6,9 +6,10 @@ const originalFetch = globalThis.fetch;
 const proxyDispatchers = new Map();
 
 // ─── TLS fingerprinting via got-scraping (browser-like JA3) ───────────────
-// Disabled: not in use. Kept commented for future re-enable.
-// Restore the original block to re-enable per-host JA3 spoofing.
-/*
+// Re-enabled per-host: api.anthropic.com (non-streaming) routes through
+// got-scraping for a browser-like JA3 fingerprint, failing open to native
+// fetch when got-scraping is unavailable or throws.
+
 let _gotScraping = null;
 let _gotScrapingChecked = false;
 const _gotScrapingLoggedHosts = new Set();
@@ -27,6 +28,24 @@ async function getGotScraping() {
   return _gotScraping;
 }
 
+// Convert got-scraping's response shape { statusCode, statusMessage, headers,
+// rawBody } into a web-standard Response (with ok/status/json).
+function gotScrapingResponseToWeb(res) {
+  const status = res?.statusCode || res?.status || 200;
+  const headers = new Headers();
+  if (res?.headers) {
+    for (const [k, v] of Object.entries(res.headers)) {
+      if (Array.isArray(v)) v.forEach((x) => headers.append(k, String(x)));
+      else if (v != null) headers.set(k, String(v));
+    }
+  }
+  let bodyBuf;
+  if (res?.rawBody instanceof Uint8Array) bodyBuf = res.rawBody;
+  else if (Buffer.isBuffer(res?.rawBody)) bodyBuf = res.rawBody;
+  else bodyBuf = Buffer.from(JSON.stringify(res?.body ?? {}));
+  return new Response(bodyBuf, { status, statusText: res?.statusMessage || "", headers });
+}
+
 async function gotScrapingFetch(url, options) {
   const gs = await getGotScraping();
   if (!gs) return null;
@@ -37,65 +56,37 @@ async function gotScrapingFetch(url, options) {
     ? Object.fromEntries(headersInit.entries())
     : { ...headersInit };
 
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const stream = gs.stream({
-      url,
-      method,
-      headers,
-      body: method === "GET" || method === "HEAD" ? undefined : options.body,
-      throwHttpErrors: false,
-      retry: { limit: 0 },
-      timeout: { request: undefined },
-      followRedirect: false,
-      decompress: true,
-    });
-
-    if (options.signal) {
-      const onAbort = () => { try { stream.destroy(new Error("aborted")); } catch { } };
-      if (options.signal.aborted) onAbort();
-      else options.signal.addEventListener("abort", onAbort, { once: true });
-    }
-
-    stream.once("response", (res) => {
-      if (settled) return;
-      settled = true;
-      const resHeaders = new Headers();
-      for (const [k, v] of Object.entries(res.headers || {})) {
-        if (Array.isArray(v)) v.forEach((x) => resHeaders.append(k, String(x)));
-        else if (v != null) resHeaders.set(k, String(v));
-      }
-      const body = Readable.toWeb(stream);
-      resolve(new Response(body, { status: res.statusCode, statusText: res.statusMessage || "", headers: resHeaders }));
-    });
-
-    stream.once("error", (err) => {
-      if (settled) return;
-      settled = true;
-      reject(err);
-    });
+  // Non-streaming: call got-scraping directly (the function form), then adapt
+  // the response. Streaming is not needed for the api.anthropic.com route here.
+  const res = await gs(url, {
+    method,
+    headers,
+    body: method === "GET" || method === "HEAD" ? undefined : options.body,
+    throwHttpErrors: false,
+    retry: { limit: 0 },
+    followRedirect: false,
+    decompress: true,
+    signal: options.signal,
   });
+
+  const host = (() => { try { return new URL(typeof url === "string" ? url : url.toString()).hostname; } catch { return ""; } })();
+  if (host && !_gotScrapingLoggedHosts.has(host)) {
+    _gotScrapingLoggedHosts.add(host);
+    dbg("TLS", `using got-scraping for ${host}`);
+  }
+
+  return gotScrapingResponseToWeb(res);
 }
 
 async function tryGotScrapingFetch(url, options) {
   try {
     const res = await gotScrapingFetch(url, options);
-    if (res) {
-      try {
-        const host = new URL(typeof url === "string" ? url : url.toString()).hostname;
-        if (!_gotScrapingLoggedHosts.has(host)) {
-          _gotScrapingLoggedHosts.add(host);
-          dbg("TLS", `using got-scraping for ${host}`);
-        }
-      } catch { }
-    }
     return res;
   } catch (e) {
     console.warn(`[ProxyFetch] got-scraping request failed, fallback to native fetch: ${e.message}`);
     return null;
   }
 }
-*/
 
 // DNS cache — use Map to avoid prototype pollution via malformed hostnames
 const DNS_CACHE = new Map();
@@ -348,8 +339,18 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
     }
   }
 
-  // got-scraping disabled — use native fetch directly
-  // (Re-enable per-host by wrapping with tryGotScrapingFetch when needed)
+  // api.anthropic.com (non-streaming) routes through got-scraping for a
+  // browser-like JA3 fingerprint; falls open to native fetch on any failure.
+  const wantsStream = !!(options.headers && (options.headers["Accept"] === "text/event-stream" || (options.headers instanceof Headers && options.headers.get("accept") === "text/event-stream")));
+  let host;
+  try { host = new URL(targetUrl).hostname; } catch { host = ""; }
+  if (host === "api.anthropic.com" && !wantsStream) {
+    const gsRes = await tryGotScrapingFetch(url, options);
+    if (gsRes) return gsRes;
+    return originalFetch(url, options);
+  }
+
+  // otherwise use native fetch directly
   return originalFetch(url, options);
 }
 

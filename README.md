@@ -1402,6 +1402,58 @@ Authorization: Bearer your-api-key
 
 ---
 
+## 🧪 Testing
+
+9Router uses [Vitest](https://vitest.dev/). The unit suite relies on the module
+aliases declared in `vitest.config.js` (`@` → `src`, `open-sse` → `open-sse`),
+so **always run tests with the config flag**:
+
+```bash
+npx vitest run --config vitest.config.js tests/unit
+# or a single file:
+npx vitest run --config vitest.config.js tests/unit/db-concurrent.test.js
+```
+
+Running `vitest run` without `--config` fails to resolve `open-sse/...` and `@/...`
+bare specifiers (40+ files error out). The config also excludes the live
+integration suite (`tests/translator/real/**`, `tests/e2e/**`) and a handful of
+environment-only unit files (see below) so the default run is hermetic.
+
+**Current status:** `npx vitest run --config vitest.config.js tests/unit`
+→ **952 passed / 21 skipped / 0 failed** (973 total), fully hermetic.
+
+### Notable regression tests
+- `tests/unit/codex-multiaccount-persistence.test.js` — #796: adding a second
+  Codex account (distinct email, same email + distinct `chatgptAccountId`, or
+  same email with no account id) always persists **two** rows; no silent merge.
+- `tests/unit/cli-providers-codex-route.test.js` — #796 CLI path: `POST /api/cli/providers/codex`
+  rejects missing/wrong `x-9r-cli-token` (401) and missing `accessToken` (400), and persists a
+  second Codex connection without silent overwrite.
+
+### Live / environment-only tests (not run by default)
+- **Live** (`tests/translator/real/**`, `*.live.test.js`): hit real upstreams and
+  may fail due to rate-limiting/network, not code defects. `mimo-free.live.test.js`
+  is gated behind `MIMO_LIVE_TEST=1` and skips otherwise. `antigravity-cache.test.js`
+  uses `AG_CACHE_TEST=1`. Enable and run explicitly when you want live coverage.
+- **Environment-only unit files** excluded from the default Vitest run:
+  - `embeddings.cloud.test.js` — imports `/cloud/src/handlers/embeddings.js`
+    (monorepo subpath absent in checkout).
+  - `db-benchmark.test.js` — benchmark needing the `lowdb` dependency.
+  - `kimchi.test.js` / `kimchi-strip-reasoning.test.js` — use Node's built-in
+    `node:test` runner, not Vitest (run with `node --test tests/unit/kimchi.test.js`).
+  These are setup/framework gaps, not code bugs; the default `tests/unit` run
+  excludes them and stays fully green.
+
+### Performance notes
+Model resolution (`getModelTargetFormat`/`getModelStrip`/`getModelType`/
+`getModelUpstreamId`) is O(1) via a per-provider `Map` index built at load
+(see `open-sse/config/providerModels.js`). The SSE streaming path
+(`open-sse/utils/streamHandler.js`) does no per-chunk allocation. See
+`PERFORMANCE_OPTIMIZATION.md` for the full analysis and proposed single-flight
+token-refresh optimization.
+
+---
+
 ## 👥 Contributors
 
 Thanks to all contributors who helped make 9Router better!

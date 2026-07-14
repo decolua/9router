@@ -40,8 +40,9 @@ async function resolvePinnedIps(hostname) {
   if (!hostname || BLOCKED_HOSTS.has(hostname.toLowerCase())) return null;
   try {
     const records = await lookup(hostname, { all: true });
-    if (!records.length || records.some((r) => isPrivateIp(r.address))) return null;
-    return records;
+    const list = Array.isArray(records) ? records : [records];
+    if (!list.length || list.some((r) => isPrivateIp(r.address))) return null;
+    return list;
   } catch {
     return null;
   }

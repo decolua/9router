@@ -54,7 +54,17 @@ export function filterToOpenAIFormat(body, opts = {}) {
         filteredContent.push({ type: OPENAI_BLOCK.TEXT, text: "" });
       }
       
-      return { ...msg, content: filteredContent };
+      // Flatten text-only content arrays into a single string while
+      // preserving multimodal (image/tool) arrays as-is. Never flatten when a
+      // text block carries cache_control — that marker is only meaningful in
+      // array form (alicode/DashScope preserveCacheControl quirk).
+      const onlyText = filteredContent.every(b => b.type === OPENAI_BLOCK.TEXT);
+      const hasCacheControl = filteredContent.some(b => b.cache_control);
+      const content = onlyText && !hasCacheControl
+        ? filteredContent.map(b => b.text).join("\n")
+        : filteredContent;
+
+      return { ...msg, content };
     }
     
     return msg;

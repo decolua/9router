@@ -26,7 +26,7 @@ export default {
     },
     retry: {
       "429": {
-        attempts: 3,
+        attempts: 6,
       },
       "500": {
         attempts: 3,
@@ -48,6 +48,8 @@ export default {
     { id: "gemini-3.5-flash-low", name: "Gemini 3.5 Flash (Medium)" },
     { id: "gemini-3.5-flash-extra-low", name: "Gemini 3.5 Flash (Low)" },
     { id: "gemini-pro-agent", name: "Gemini 3.1 Pro (High)" },
+    { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro Preview", upstreamModelId: "gemini-pro-agent" },
+    { id: "gemini-3.1-pro", name: "Gemini 3.1 Pro", upstreamModelId: "gemini-pro-agent" },
     { id: "gemini-3.1-pro-low", name: "Gemini 3.1 Pro (Low)" },
     { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6 (Thinking)" },
     { id: "claude-opus-4-6-thinking", name: "Claude Opus 4.6 (Thinking)" },

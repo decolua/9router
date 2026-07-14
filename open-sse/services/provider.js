@@ -143,7 +143,20 @@ export function resolveTransport(provider, sourceFormat) {
   const config = PROVIDERS[provider];
   const transports = config?.transports;
   if (!Array.isArray(transports) || !transports.length) return null;
-  return transports.find(t => t.format === sourceFormat) || null;
+  return transports.find((t) => t.format === sourceFormat) || null;
+}
+
+// Per-(provider, format) transport resolution is static, but resolveTransport is
+// called on every request. Cache the pure result to avoid re-scanning transports.
+const _transportCache = new Map();
+export function resolveTransportCached(provider, sourceFormat) {
+  const key = provider + "|" + sourceFormat;
+  let cached = _transportCache.get(key);
+  if (cached === undefined) {
+    cached = resolveTransport(provider, sourceFormat);
+    _transportCache.set(key, cached);
+  }
+  return cached;
 }
 
 // Check if last message is from user

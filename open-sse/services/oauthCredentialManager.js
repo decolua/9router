@@ -25,8 +25,32 @@ function toExpiresAt(expiresIn, nowMs = Date.now()) {
   return new Date(nowMs + expiresIn * 1000).toISOString();
 }
 
-export function getCredentialExpiryMs(credentials) {
-  return parseTimeMs(credentials?.expiresAt ?? credentials?.tokenExpiresAt);
+/**
+ * Resolve a credential's absolute expiry (ms).
+ *
+ * Prefers the explicit `expiresAt` / `tokenExpiresAt` fields (absolute ISO
+ * timestamps). If a provider only emitted `expiresIn` (relative seconds) and
+ * omitted `expiresAt`, derive the absolute expiry from `expiresIn` relative to
+ * `now`, so the proactive refresh path (`shouldRefreshCredentials`,
+ * `checkAndRefreshToken`) can still fire before the token lapses.
+ *
+ * Without this fallback, providers that map only `expiresIn` (e.g. grok-cli,
+ * gemini-cli) had `expiresAt === null`, so proactive refresh silently no-op'd
+ * and sessions died when the upstream token expired mid-session. See #2546.
+ *
+ * @param {object} credentials
+ * @param {number} [nowMs] injectable clock for tests
+ * @returns {number|null} expiry ms, or null if undeterminable
+ */
+export function getCredentialExpiryMs(credentials, nowMs = Date.now()) {
+  const explicit = parseTimeMs(credentials?.expiresAt ?? credentials?.tokenExpiresAt);
+  if (explicit !== null) return explicit;
+
+  const expiresInSec = credentials?.expiresIn;
+  if (typeof expiresInSec === "number" && expiresInSec > 0) {
+    return nowMs + expiresInSec * 1000;
+  }
+  return null;
 }
 
 export function getCredentialLastRefreshMs(credentials) {

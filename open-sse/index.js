@@ -28,11 +28,12 @@ export {
 } from "./translator/index.js";
 
 // Services
-export { 
-  detectFormat, 
-  getTargetFormat 
+export {
+  detectFormat,
+  getTargetFormat,
+  resolveTransport,
+  resolveTransportCached
 } from "./services/provider.js";
-
 export { parseModel, resolveModelAliasFromMap, getModelInfoCore } from "./services/model.js";
 
 export {

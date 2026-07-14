@@ -75,10 +75,14 @@ export function reorderByCapabilities(models, required) {
   };
 
   // Stable sort by tier (Array.prototype.sort is stable in modern engines).
-  return models
+  const reordered = models
     .map((m, i) => ({ m, i, t: tierOf(m) }))
     .sort((a, b) => a.t - b.t || a.i - b.i)
     .map((x) => x.m);
+
+  // Preserve identity when no reordering occurred (all models same tier / no match).
+  const unchanged = reordered.every((m, i) => m === models[i]);
+  return unchanged ? models : reordered;
 }
 
 /**
@@ -127,7 +131,13 @@ export function detectRequiredCapabilities(body) {
   const contents = body.contents || body.request?.contents;                      // gemini / antigravity
   for (const c of trailingUserItems(contents)) scanContent(c.parts);
 
-  // search: temporarily disabled in auto-switch (feature not wired yet).
+  // search: tools carry the request-wide "search" capability (e.g. OpenAI web_search).
+  if (Array.isArray(body.tools)) {
+    for (const t of body.tools) {
+      const toolType = typeof t === "string" ? t : (t && t.type);
+      if (toolType === "web_search" || toolType === "search") required.add("search");
+    }
+  }
 
   return required;
 }
