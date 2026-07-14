@@ -4,6 +4,19 @@ import { homedir } from "os";
 import { join } from "path";
 
 /**
+ * Check whether an AWS SSO cache entry looks like a Kiro token.
+ * Accepts Builder ID (aorAAAAAG prefix), external_idp (Microsoft Entra),
+ * and organization tokens with codewhisperer scopes.
+ */
+function isKiroToken(data) {
+  if (!data?.refreshToken) return false;
+  if (data.refreshToken.startsWith("aorAAAAAG")) return true;
+  if (data.authMethod === "external_idp") return true;
+  if (Array.isArray(data.scopes) && data.scopes.some(s => s.includes("codewhisperer"))) return true;
+  return false;
+}
+
+/**
  * GET /api/oauth/kiro/auto-import
  * Auto-detect and extract Kiro refresh token from AWS SSO cache.
  * For IDC (organization) tokens, also resolves clientId/clientSecret from the
@@ -33,7 +46,7 @@ export async function GET() {
       try {
         const content = await readFile(join(cachePath, kiroTokenFile), "utf-8");
         const data = JSON.parse(content);
-        if (data.refreshToken && data.refreshToken.startsWith("aorAAAAAG")) {
+        if (isKiroToken(data)) {
           refreshToken = data.refreshToken;
           foundFile = kiroTokenFile;
           tokenData = data;
@@ -50,7 +63,7 @@ export async function GET() {
         try {
           const content = await readFile(join(cachePath, file), "utf-8");
           const data = JSON.parse(content);
-          if (data.refreshToken && data.refreshToken.startsWith("aorAAAAAG")) {
+          if (isKiroToken(data)) {
             refreshToken = data.refreshToken;
             foundFile = file;
             tokenData = data;
@@ -112,6 +125,21 @@ export async function GET() {
       }
     }
 
+    // For external_idp tokens, build a minimal payload containing only the
+    // fields the import-cli-proxy normalizer needs — avoids leaking the full
+    // SSO cache (which may include clientSecret, clientIdHash, etc.).
+    const rawAuth = authMethod === "external_idp" ? {
+      auth_method: tokenData.authMethod,
+      access_token: tokenData.accessToken,
+      refresh_token: tokenData.refreshToken,
+      client_id: tokenData.clientId || clientId,
+      token_endpoint: tokenData.tokenEndpoint,
+      scopes: tokenData.scopes,
+      region: tokenData.region,
+      profile_arn: profileArn,
+      ...(tokenData.expiresAt ? { expired: tokenData.expiresAt } : {}),
+    } : undefined;
+
     return NextResponse.json({
       found: true,
       refreshToken,
@@ -121,6 +149,7 @@ export async function GET() {
       region,
       authMethod,
       profileArn,
+      ...(rawAuth ? { rawAuth } : {}),
     });
   } catch (error) {
     console.log("Kiro auto-import error:", error);

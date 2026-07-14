@@ -40,6 +40,14 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
           setRefreshToken(data.refreshToken);
           setAutoDetected(true);
           // Store IDC/organization credentials if present
+          if (data.authMethod === "external_idp" && data.rawAuth) {
+            // external_idp tokens must go through import-cli-proxy, not the
+            // generic import route (which hits the social endpoint and fails).
+            setCliProxyJson(JSON.stringify(data.rawAuth, null, 2));
+            setSelectedMethod("import-cli-proxy");
+            setAutoDetecting(false);
+            return;
+          }
           if (data.clientId && data.clientSecret) {
             setIdcCredentials({
               clientId: data.clientId,
