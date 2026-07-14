@@ -176,7 +176,7 @@ function openBrowser(url) {
   const platform = process.platform;
   const cmd = platform === "darwin" ? `open "${url}"`
     : platform === "win32" ? `start "" "${url}"`
-    : `xdg-open "${url}"`;
+      : `xdg-open "${url}"`;
   try { spawn(cmd, { shell: true, detached: true, stdio: "ignore" }).unref(); } catch { /* ignore */ }
 }
 
