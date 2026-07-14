@@ -176,27 +176,32 @@ export class KiroExecutor extends BaseExecutor {
             let content = event.payload.content;
 
             // Kiro Claude models can leak <thinking> blocks into the content stream.
-            // We strip these literal tags to prevent duplication, as the reasoning 
+            // We strip these literal tags to prevent duplication, as the reasoning
             // is already routed correctly via reasoningContentEvent.
+
+            // Handle partial block from previous chunk
             if (state.inThinking) {
               if (content.includes("</thinking>")) {
                 state.inThinking = false;
-                const after = content.split("</thinking>").slice(1).join("</thinking>");
-                content = after.startsWith("\n") ? after.substring(1) : after;
+                content = content.split("</thinking>").slice(1).join("</thinking>");
+                if (content.startsWith("\n")) content = content.substring(1);
               } else {
-                content = ""; // Drop entirely while inside thinking block
-              }
-            } else if (content.includes("<thinking>")) {
-              state.inThinking = true;
-              if (content.includes("</thinking>")) {
-                state.inThinking = false;
-                const before = content.split("<thinking>")[0];
-                const after = content.split("</thinking>").slice(1).join("</thinking>");
-                content = before + (after.startsWith("\n") ? after.substring(1) : after);
-              } else {
-                content = content.split("<thinking>")[0];
+                content = ""; // Still inside thinking block, drop entire chunk
               }
             }
+
+            // Strip ALL complete <thinking>...</thinking> blocks in this chunk
+            // Use non-greedy match to handle multiple blocks correctly
+            content = content.replace(/<thinking>[\s\S]*?<\/thinking>/g, "");
+
+            // Check if we're now starting a new unclosed thinking block
+            if (content.includes("<thinking>")) {
+              state.inThinking = true;
+              content = content.split("<thinking>")[0];
+            }
+
+            // Trim if only whitespace remains after stripping
+            if (content && !content.trim()) content = "";
 
             if (!content && state.hasReasoningContent) {
               // If we stripped everything, skip emitting an empty content chunk
