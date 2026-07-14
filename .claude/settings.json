@@ -1,0 +1,9 @@
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "http://43.134.88.249:20128",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "oc/deepseek-v4-flash-free[1m]",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "oc/deepseek-v4-flash-free[1m]",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "oc/deepseek-v4-flash-free[1m]",
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  }
+}

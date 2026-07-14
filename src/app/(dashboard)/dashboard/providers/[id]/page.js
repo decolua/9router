@@ -10,6 +10,7 @@ import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
+import { useNotificationStore } from "@/store/notificationStore";
 import { translate } from "@/i18n/runtime";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
@@ -682,31 +683,112 @@ export default function ProviderDetailPage() {
       }
     });
   };
-
   const handleBulkDelete = () => {
+
     const count = selectedConnectionIds.length;
+
     if (count === 0) return;
+
     setConfirmState({
+
       title: `Delete ${count} Connection${count > 1 ? "s" : ""}`,
+
       message: `Delete ${count} connection${count > 1 ? "s" : ""}? This cannot be undone.`,
+
       onConfirm: async () => {
+
         setConfirmState(null);
+
+        const total = count;
+
+        let ok = 0;
+
         let failed = 0;
+
         const idsToDelete = [...selectedConnectionIds];
-        for (const id of idsToDelete) {
+
+        const notify = useNotificationStore.getState();
+
+        let toastId = notify.addNotification({
+
+          type: "info",
+
+          message: `Deleting 0/${total} connections`,
+
+          dismissible: false,
+
+          duration: 0,
+
+        });
+
+        for (let i = 0; i < total; i++) {
+
+          const id = idsToDelete[i];
+
           try {
+
             const res = await fetch(`/api/providers/${id}`, { method: "DELETE" });
-            if (!res.ok) failed += 1;
+
+            if (res.ok) ok++;
+
+            else {
+
+              failed++;
+
+              console.log("Delete failed:", id, "status:", res.status);
+
+            }
+
           } catch (error) {
+
             console.log("Error deleting connection:", error);
-            failed += 1;
+
+            failed++;
+
           }
+
+          if (toastId !== null) notify.removeNotification(toastId);
+
+          toastId = notify.addNotification({
+
+            type: "info",
+
+            message: `Deleting ${i + 1}/${total} connections`,
+
+            dismissible: false,
+
+            duration: 0,
+
+          });
+
         }
+
+        const state = useNotificationStore.getState();
+
+        if (toastId !== null) state.removeNotification(toastId);
+
+        if (failed === 0) {
+
+          state.success(`Deleted ${ok} connection(s)`);
+
+        } else if (ok > 0) {
+
+          state.warning(`Deleted ${ok} connection(s), ${failed} failed`);
+
+        } else {
+
+          state.error(`Failed to delete ${failed} connection(s)`);
+
+        }
+
         setConnections(prev => prev.filter(c => !idsToDelete.includes(c.id)));
+
         setSelectedConnectionIds([]);
-        if (failed > 0) alert(`Deleted ${idsToDelete.length - failed} connection(s), ${failed} failed.`);
+
       }
+
     });
+
   };
 
   const handleOAuthSuccess = () => {
@@ -899,7 +981,6 @@ export default function ProviderDetailPage() {
     return applyProxyAssignments(targets);
   };
 
-
   const isSelected = (connectionId) => selectedConnectionIds.includes(connectionId);
 
   const connectionsList = (
@@ -1013,6 +1094,8 @@ export default function ProviderDetailPage() {
   );
 
   const handleTestModel = async (modelId) => {
+    console.log("[ID_PAGE Test] handleTestModel called modelId:", modelId, "providerStorageAlias:", providerStorageAlias);
+    console.log("[ID_PAGE Test] modelTestResults before:", modelTestResults);
     if (testingModelIds.has(modelId)) return;
     setTestingModelIds((prev) => new Set(prev).add(modelId));
     try {
@@ -1022,7 +1105,11 @@ export default function ProviderDetailPage() {
         body: JSON.stringify({ model: `${providerStorageAlias}/${modelId}` }),
       });
       const data = await res.json();
-      setModelTestResults((prev) => ({ ...prev, [modelId]: data.ok ? "ok" : "error" }));
+      setModelTestResults((prev) => {
+        const r = { ...prev, [modelId]: data.ok ? "ok" : "error" };
+        console.log("[ID_PAGE Test] setting modelTestResults:", modelId, "->", r[modelId], "full:", r);
+        return r;
+      });
       setModelsTestError(data.ok ? "" : (data.error || "Model not reachable"));
     } catch {
       setModelTestResults((prev) => ({ ...prev, [modelId]: "error" }));
@@ -1046,6 +1133,7 @@ export default function ProviderDetailPage() {
           onDeleteAlias={handleDeleteAlias}
           onAddCustomModel={(modelId) => handleAddCustomModel(modelId, "llm", providerStorageAlias)}
           onDeleteCustomModel={(modelId) => handleDeleteCustomModel(modelId, "llm", providerStorageAlias)}
+          onRefresh={() => Promise.all([fetchAliases(), fetchCustomModels()])}
           connections={connections}
           isAnthropic={isAnthropicCompatible}
         />

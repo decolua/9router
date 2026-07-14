@@ -8,6 +8,7 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
     : testStatus === "error"
     ? "border-red-500/40"
     : "border-border";
+  console.log(`[ID_ModelRow ${fullModel}] testStatus:`, testStatus, "borderColor:", borderColor);
 
   const iconColor = testStatus === "ok"
     ? "#22c55e"

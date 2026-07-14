@@ -40,6 +40,7 @@ export default function DashboardLayout({ children }) {
   return (
     <div className="flex h-screen w-full overflow-hidden bg-bg">
       <div className="fixed top-4 right-4 z-[80] flex w-[min(92vw,380px)] flex-col gap-2">
+        {console.log("[DashboardLayout] rendering with", notifications.length, "toasts")}
         {notifications.map((n) => {
           const style = getToastStyle(n.type);
           return (
