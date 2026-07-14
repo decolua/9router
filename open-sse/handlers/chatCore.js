@@ -7,6 +7,7 @@ import { COLORS } from "../utils/stream.js";
 import { createStreamController, isXaiReasoningRequest } from "../utils/streamHandler.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
+import { resolveSessionId } from "../utils/sessionManager.js";
 import { getModelTargetFormat, getModelStrip, getModelUpstreamId, getModelType, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { PROVIDERS } from "../config/providers.js";
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
@@ -23,6 +24,7 @@ import { dedupeTools } from "../utils/toolDeduper.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { injectPonytail } from "../rtk/ponytail.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
+import { compressWithPxpipe } from "../rtk/pxpipe.js";
 import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, isHeadroomPhantomSavings } from "../rtk/headroom.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
@@ -35,9 +37,18 @@ import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
  * @param {object} options.credentials - Provider credentials
  * @param {string} options.sourceFormatOverride - Override detected source format (e.g. "openai-responses")
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, sourceFormatOverride, providerThinking }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
+  // Stable per-session color so all lines of one CLI conversation share a tag
+  const sessionSeed = (() => {
+    try {
+      return resolveSessionId({ headers: clientRawRequest?.headers, body, connectionId, scope: provider });
+    } catch {
+      return connectionId || "";
+    }
+  })();
+  const reqTag = log?.tagForSession ? log.tagForSession(sessionSeed) : (log?.nextTag ? log.nextTag() : "");
 
   const sourceFormat = sourceFormatOverride || detectFormat(body);
 
@@ -206,6 +217,19 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     log?.debug?.("PONYTAIL", `${ponytailLevel} | ${finalFormat}`);
   }
 
+  // PXPIPE: image bulky context (Claude-format bodies only), last saver before dispatch
+  let pxpipeSummary = null;
+  if (pxpipeEnabled) {
+    const pxpipeResult = await compressWithPxpipe(translatedBody, {
+      enabled: true, format: finalFormat, model: upstreamModel,
+      minChars: pxpipeMinChars, timeoutMs: pxpipeTimeoutMs, transform: pxpipeTransform,
+    });
+    pxpipeSummary = pxpipeResult.summary;
+    if (pxpipeResult.body) translatedBody = pxpipeResult.body;
+    if (pxpipeSummary?.applied) log?.debug?.("PXPIPE", `${pxpipeSummary.imageCount}img`);
+    try { onPxpipeEvent?.({ provider, model, ...pxpipeSummary }); } catch { /* stats must not break requests */ }
+  }
+
   const executor = getExecutor(provider);
   trackPendingRequest(model, provider, connectionId, true);
   appendRequestLog({ model, provider, connectionId, status: "PENDING" }).catch(() => { });
@@ -220,12 +244,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     stallTimeoutMs: XAI_REASONING_STREAM_TIMEOUT_MS
   } : null;
   const streamController = createStreamController({
-    onDisconnect: (reason) => {
-      trackPendingRequest(model, provider, connectionId, false);
-      if (onDisconnect) onDisconnect(reason);
-    },
-    onError: () => trackPendingRequest(model, provider, connectionId, false),
-    log, provider, model,
+    log, provider, model, reqTag,
     ...(xaiReasoningTimeouts ? {
       firstChunkTimeoutMs: xaiReasoningTimeouts.firstChunkTimeoutMs,
       stallTimeoutMs: xaiReasoningTimeouts.stallTimeoutMs
@@ -285,6 +304,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       request: extractRequestConfig(body, stream),
       providerRequest: translatedBody || null,
       response: { error: error.message || String(error), status: error.name === "AbortError" ? 499 : 502, thinking: null },
+      pxpipe: pxpipeSummary,
       status: "error",
       tokenSaver
     })).catch(() => { });
@@ -294,7 +314,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       return createErrorResult(499, "Request aborted");
     }
     const errMsg = formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
-    log?.error?.("ERROR", errMsg);
+    if (log?.errorLine) {
+      log.errorLine(reqTag, "✗", `ERROR · ${provider}/${model} · ${Date.now() - requestStartTime}ms\n    ${errMsg}${error?.stack ? `\n    ${error.stack}` : ""}`);
+    } else {
+      log?.error?.("ERROR", errMsg);
+    }
     return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg);
   }
 
@@ -347,12 +371,17 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       request: extractRequestConfig(body, stream),
       providerRequest: finalBody || translatedBody || null,
       response: { error: message, status: statusCode, thinking: null },
+      pxpipe: pxpipeSummary,
       status: "error",
       tokenSaver
     })).catch(() => { });
 
     const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
-    log?.error?.("ERROR", errMsg);
+    if (log?.errorLine) {
+      log.errorLine(reqTag, "✗", `ERROR · ${provider}/${model} · ${Date.now() - requestStartTime}ms\n    ${errMsg}${error?.stack ? `\n    ${error.stack}` : ""}`);
+    } else {
+      log?.error?.("ERROR", errMsg);
+    }
     reqLogger.logError(new Error(message), finalBody || translatedBody);
     return createErrorResult(statusCode, errMsg, resetsAtMs);
   }
@@ -380,7 +409,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     }
   }
 
-  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, tokenSaver };
+  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, tokenSaver, pxpipe: pxpipeSummary, reqTag, log };
   const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
 

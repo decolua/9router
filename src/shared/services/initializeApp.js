@@ -18,6 +18,7 @@ import {
 import { getMitmStatus, startMitm, loadEncryptedPassword, initDbHooks, restoreToolDNS, removeAllDNSEntriesSync } from "@/mitm/manager";
 import { startQuotaAutoPing } from "@/shared/services/quotaAutoPing";
 import { syncToJson as syncMitmAliasCache } from "@/lib/mitmAliasCache";
+import { killAllBridges } from "@/lib/mcp/stdioSseBridge";
 import { startTokenRefreshWorker } from "@/sse/services/tokenRefreshWorker";
 
 // Inject correct paths and DB hooks into manager.js (CJS) from ESM context
@@ -75,6 +76,7 @@ export async function initializeApp() {
     if (!g.signalHandlersRegistered) {
       const cleanup = () => {
         try { removeAllDNSEntriesSync(); } catch { /* best effort */ }
+        try { killAllBridges(); } catch { /* best effort */ }
         killCloudflared();
         process.exit();
       };

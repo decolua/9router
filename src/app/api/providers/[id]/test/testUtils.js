@@ -6,7 +6,6 @@ import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
 import {
   refreshProviderCredentials,
-  shouldRefreshCredentials,
 } from "open-sse/services/oauthCredentialManager.js";
 import {
   GEMINI_CONFIG,
@@ -21,30 +20,6 @@ import {
 import { XAI_CONFIG } from "@/lib/oauth/constants/xai";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
 
-/**
- * Decode JWT payload without verification (claims only).
- * Used to validate codex/openai tokens when network probe is unreliable
- * (datacenter IP blocking returns 401 even for valid tokens).
- */
-function decodeJwtPayloadSafe(jwt) {
-  try {
-    if (!jwt || typeof jwt !== "string") return null;
-    const parts = jwt.split(".");
-    if (parts.length !== 3) return null;
-    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const padding = (4 - (base64.length % 4)) % 4;
-    return JSON.parse(Buffer.from(base64 + "=".repeat(padding), "base64").toString("utf8"));
-  } catch {
-    return null;
-  }
-}
-
-function isJwtStillValid(accessToken) {
-  const payload = decodeJwtPayloadSafe(accessToken);
-  if (!payload || !payload.exp) return false;
-  return payload.exp * 1000 > Date.now();
-}
-
 // OAuth provider test endpoints
 const OAUTH_TEST_CONFIG = {
   claude: { checkExpiry: true, refreshable: true },
@@ -56,9 +31,6 @@ const OAUTH_TEST_CONFIG = {
     extraHeaders: { "Accept": "application/json", "originator": "codex_cli_rs", "User-Agent": "codex_cli_rs/0.136.0" },
     timeoutMs: 15000,
     refreshable: true,
-    // ChatGPT backend returns 401/403 for datacenter IPs even with valid tokens.
-    // When the JWT itself is decodable and not expired, fall back to trusting
-    // the JWT claims rather than marking the connection as error.
     jwtIpBlockFallback: true,
   },
   "gemini-cli": {
@@ -83,9 +55,6 @@ const OAUTH_TEST_CONFIG = {
     extraHeaders: { "User-Agent": "9Router", "Accept": "application/vnd.github+json" },
   },
   xai: {
-    // Grok Build OAuth: probe the same inference host the model test uses
-    // (api.x.ai/v1/models). This surface is proven to accept the OAuth access
-    // token, avoiding any userinfo/audience mismatch. 401 triggers refresh+retry.
     url: "https://api.x.ai/v1/models",
     method: "GET",
     authHeader: "Authorization",
@@ -120,12 +89,6 @@ const OAUTH_TEST_CONFIG = {
     authPrefix: "Bearer ",
   },
   cline: { refreshable: true },
-  freebuff: {
-    url: "https://www.codebuff.com/api/v1/freebuff/session",
-    method: "GET",
-    authHeader: "Authorization",
-    authPrefix: "Bearer ",
-  },
   gitlab: {
     // Test by hitting the GitLab user API — requires api or read_user scope
     url: "https://gitlab.com/api/v4/user",
@@ -145,7 +108,60 @@ const OAUTH_TEST_CONFIG = {
     },
     refreshable: false,
   },
+  // Grok CLI / Grok Build — probe /v1/user (no inference quota). Headers mirror official CLI.
+  "grok-cli": {
+    url: PROVIDERS["grok-cli"]?.userUrl || "https://cli-chat-proxy.grok.com/v1/user",
+    method: "GET",
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    extraHeaders: {
+      Accept: "application/json",
+      ...(PROVIDERS["grok-cli"]?.headers || {
+        "User-Agent": "grok-pager/0.2.93 grok-shell/0.2.93 (linux; x86_64)",
+        "x-xai-token-auth": "xai-grok-cli",
+        "x-grok-client-identifier": "grok-pager",
+        "x-grok-client-version": "0.2.93",
+      }),
+    },
+    refreshable: true,
+    // Subscription spending-limit is not an auth failure — token is fine, credits aren't.
+    // Accept 402 so the connection stays "active" with a warning (same idea as Codex 400).
+    acceptStatuses: [402],
+    softFailMessage: {
+      402: "Connected, but Grok Build credits are exhausted (spending limit). Add credits or upgrade SuperGrok.",
+    },
+  },
 };
+
+/**
+ * Classify an OAuth probe response as success / soft-success / hard-fail.
+ * Soft success (e.g. 402 spending-limit on Grok CLI) means auth works but the
+ * account cannot spend — keep connection active and surface a warning.
+ * Exported for unit tests.
+ */
+export function classifyOAuthProbeResult(res, config, bodyText = "") {
+  if (!res) return { valid: false, error: "No response", soft: false };
+  const status = res.status;
+  const accepted = res.ok || (config?.acceptStatuses && config.acceptStatuses.includes(status));
+  if (!accepted) {
+    if (status === 401) return { valid: false, error: "Token invalid or revoked", soft: false };
+    if (status === 403) return { valid: false, error: "Access denied", soft: false };
+    return { valid: false, error: `API returned ${status}`, soft: false };
+  }
+
+  // Soft success only when the provider configured an explicit message for this
+  // status (e.g. Grok CLI 402 spending-limit). Codex-style acceptStatuses:[400]
+  // stays silent success — 400 there only proves auth, not a user-facing warning.
+  if (!res.ok && config?.acceptStatuses?.includes(status)) {
+    const softMap = config.softFailMessage || {};
+    if (softMap[status]) {
+      return { valid: true, error: softMap[status], soft: true };
+    }
+    return { valid: true, error: null, soft: false };
+  }
+
+  return { valid: true, error: null, soft: false };
+}
 
 async function probeClineAccessToken(accessToken) {
   const res = await fetch("https://api.cline.bot/api/v1/users/me", {
@@ -228,7 +244,7 @@ async function refreshOAuthToken(connection) {
       return { accessToken: data.access_token, expiresIn: data.expires_in, refreshToken: data.refresh_token || refreshToken };
     }
 
-    if (provider === "codex") {
+    if (provider === "codex" || provider === "grok-cli") {
       return await refreshProviderCredentials(provider, connection, console);
     }
 
@@ -289,7 +305,6 @@ async function refreshOAuthToken(connection) {
     }
 
     if (provider === "xai") {
-      // xAI is a public PKCE client — refresh with client_id, no secret.
       const response = await fetch(XAI_CONFIG.tokenUrl, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
@@ -334,25 +349,17 @@ async function refreshOAuthToken(connection) {
   }
 }
 
-function looksLikeGrokWebCookie(value) {
-  const raw = String(value || "").trim();
-  if (!raw) return false;
-  const normalized = raw.replace(/^cookie:\s*/i, "").trim();
-  return normalized.startsWith("sso=")
-    || normalized.startsWith("sso ")
-    || normalized.startsWith("session_paste=")
-    || normalized.startsWith("session_paste ")
-    || normalized.startsWith("U2FsdGVk")
-    || normalized.includes("sso=")
-    || normalized.includes("session_paste")
-    || normalized.includes("grok_device_id");
-}
-
 function isTokenExpired(connection) {
   if (!connection.expiresAt) return false;
   const expiresAt = new Date(connection.expiresAt).getTime();
   const buffer = 5 * 60 * 1000;
   return expiresAt <= Date.now() + buffer;
+}
+
+function isJwtStillValid(accessToken) {
+  const payload = decodeJwtPayloadSafe(accessToken);
+  if (!payload || !payload.exp) return false;
+  return payload.exp * 1000 > Date.now();
 }
 
 async function testOAuthConnection(connection, effectiveProxy = null) {
@@ -435,12 +442,22 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
       ? { ...config.extraHeaders }
       : { [config.authHeader]: `${config.authPrefix}${accessToken}`, ...config.extraHeaders };
     const fetchOpts = { method: config.method, headers };
-    if (config.timeoutMs) fetchOpts.signal = AbortSignal.timeout(config.timeoutMs);
     if (config.body) fetchOpts.body = config.body;
+    if (config.timeoutMs) fetchOpts.signal = AbortSignal.timeout(config.timeoutMs);
     const res = await fetchWithConnectionProxy(testUrl, fetchOpts, effectiveProxy);
+    const bodyText = !res.ok && typeof res.text === "function" ? await res.text().catch(() => "") : "";
 
-    const accepted = res.ok || (config.acceptStatuses && config.acceptStatuses.includes(res.status));
-    if (accepted) return { valid: true, error: null, refreshed, newTokens };
+    const classified = classifyOAuthProbeResult(res, config, bodyText);
+    if (classified.valid) {
+      return {
+        valid: true,
+        // soft success surfaces warning text without marking connection error
+        error: classified.soft ? classified.error : null,
+        warning: classified.soft ? classified.error : null,
+        refreshed,
+        newTokens,
+      };
+    }
 
     if (res.status === 401 && config.refreshable && !refreshed && connection.refreshToken) {
       const tokens = await refreshOAuthToken(connection);
@@ -450,24 +467,26 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
           ? { ...config.extraHeaders }
           : { [config.authHeader]: `${config.authPrefix}${tokens.accessToken}`, ...config.extraHeaders };
         const retryOpts = { method: config.method, headers: retryHeaders };
-        if (config.timeoutMs) retryOpts.signal = AbortSignal.timeout(config.timeoutMs);
         if (config.body) retryOpts.body = config.body;
+        if (config.timeoutMs) retryOpts.signal = AbortSignal.timeout(config.timeoutMs);
         const retryRes = await fetchWithConnectionProxy(retryUrl, retryOpts, effectiveProxy);
-        const retryAccepted = retryRes.ok || (config.acceptStatuses && config.acceptStatuses.includes(retryRes.status));
-        if (retryAccepted) return { valid: true, error: null, refreshed: true, newTokens: tokens };
+        const retryBody = !retryRes.ok && typeof retryRes.text === "function" ? await retryRes.text().catch(() => "") : "";
+        const retryClassified = classifyOAuthProbeResult(retryRes, config, retryBody);
+        if (retryClassified.valid) {
+          return {
+            valid: true,
+            error: retryClassified.soft ? retryClassified.error : null,
+            warning: retryClassified.soft ? retryClassified.error : null,
+            refreshed: true,
+            newTokens: tokens,
+          };
+        }
         // If even after refresh the endpoint returns 401/403, but the new JWT
         // is decodable + not expired, treat as IP-block (refresh proves the
         // refresh_token is good; the 401 is likely datacenter IP filtering).
         if (config.jwtIpBlockFallback && (retryRes.status === 401 || retryRes.status === 403) && isJwtStillValid(tokens.accessToken)) {
           return { valid: true, error: null, refreshed: true, newTokens: tokens };
         }
-      }
-      // No refresh token, refresh failed, or refresh produced an unusable result:
-      // last-resort JWT fallback for providers where the test endpoint blocks
-      // datacenter IPs (codex). Only when the original access token is still a
-      // valid, non-expired JWT.
-      if (config.jwtIpBlockFallback && isJwtStillValid(accessToken)) {
-        return { valid: true, error: null, refreshed: false, newTokens: null };
       }
       return { valid: false, error: "Token invalid or revoked", refreshed: false };
     }
@@ -476,10 +495,7 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
       // No refresh token available, but JWT is still valid — assume IP block.
       return { valid: true, error: null, refreshed, newTokens };
     }
-
-    if (res.status === 401) return { valid: false, error: "Token invalid or revoked", refreshed };
-    if (res.status === 403) return { valid: false, error: "Access denied", refreshed };
-    return { valid: false, error: `API returned ${res.status}`, refreshed };
+    return { valid: false, error: classified.error, refreshed };
   } catch (err) {
     return { valid: false, error: err.message, refreshed };
   }
@@ -681,12 +697,6 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "xai": {
-        if (looksLikeGrokWebCookie(connection.apiKey)) {
-          return {
-            valid: false,
-            error: "This is a Grok Web cookie, not an xAI API key. Add it under Grok Web (Subscription) / grok-web.",
-          };
-        }
         const res = await fetchWithConnectionProxy("https://api.x.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
@@ -757,23 +767,14 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "grok-web": {
-        const raw = String(connection.apiKey || "").trim();
-        let cookieStr = `sso=${raw}`;
-        const withoutHeaderPrefix = raw.replace(/^cookie:\s*/i, "").trim();
-        if (withoutHeaderPrefix.includes(";")) cookieStr = withoutHeaderPrefix;
-        else if (/^[A-Za-z0-9_.-]+=/.test(withoutHeaderPrefix)) cookieStr = withoutHeaderPrefix;
-        else if (withoutHeaderPrefix.startsWith("session_paste ")) cookieStr = `session_paste=${withoutHeaderPrefix.slice(14).trim()}`;
-        else if (withoutHeaderPrefix.startsWith("sso ")) cookieStr = `sso=${withoutHeaderPrefix.slice(4).trim()}`;
-        else if (withoutHeaderPrefix.startsWith("U2FsdGVk")) cookieStr = `session_paste=${withoutHeaderPrefix}`;
-        else cookieStr = `sso=${withoutHeaderPrefix}`;
-        
+        const token = connection.apiKey.startsWith("sso=") ? connection.apiKey.slice(4) : connection.apiKey;
         const randomHex = (n) => Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => b.toString(16).padStart(2, "0")).join("");
         const statsigId = Buffer.from("e:TypeError: Cannot read properties of null (reading 'children')").toString("base64");
         const res = await fetchWithConnectionProxy("https://grok.com/rest/app-chat/conversations/new", {
           method: "POST",
           headers: {
             Accept: "*/*", "Content-Type": "application/json",
-            Cookie: cookieStr, Origin: "https://grok.com", Referer: "https://grok.com/",
+            Cookie: `sso=${token}`, Origin: "https://grok.com", Referer: "https://grok.com/",
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
             "x-statsig-id": statsigId, "x-xai-request-id": crypto.randomUUID(),
             traceparent: `00-${randomHex(16)}-${randomHex(8)}-00`,
@@ -863,10 +864,18 @@ export async function testSingleConnection(id) {
 
   const latencyMs = Date.now() - start;
 
+  // Soft success (e.g. Grok CLI 402 spending-limit): credentials are good, account is
+  // out of credits. Keep testStatus active; surface the message as lastError so the
+  // dashboard can show a warning without marking the connection broken.
+  const softWarning = result.valid && (result.warning || result.error);
   const updateData = {
     testStatus: result.valid ? "active" : "error",
-    lastError: result.valid ? null : result.error,
-    lastErrorAt: result.valid ? null : new Date().toISOString(),
+    lastError: result.valid ? (softWarning || null) : result.error,
+    lastErrorAt: result.valid
+      ? softWarning
+        ? new Date().toISOString()
+        : null
+      : new Date().toISOString(),
   };
 
   if (result.refreshed && result.newTokens) {

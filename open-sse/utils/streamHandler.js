@@ -28,7 +28,7 @@ export function isXaiReasoningRequest(provider, model, body) {
  * @param {number} [options.firstChunkTimeoutMs] - Optional override for first-chunk timeout
  * @param {number} [options.stallTimeoutMs] - Optional override for stall timeout
  */
-export function createStreamController({ onDisconnect, onError, log, provider, model, firstChunkTimeoutMs, stallTimeoutMs } = {}) {
+export function createStreamController({ onDisconnect, onError, log, provider, model, firstChunkTimeoutMs, stallTimeoutMs, reqTag = "" } = {}) {
   const abortController = new AbortController();
   const startTime = Date.now();
   let disconnected = false;
@@ -37,10 +37,11 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
   const resolvedFirstChunkTimeoutMs = firstChunkTimeoutMs || STREAM_FIRST_CHUNK_TIMEOUT_MS;
   const resolvedStallTimeoutMs = stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
 
-  const logStream = (status) => {
+  const logStream = (symbol, status, isError = false) => {
     const duration = Date.now() - startTime;
-    const p = provider?.toUpperCase() || "UNKNOWN";
-    console.log(`[${getTimeString()}] 🌊 [STREAM] ${p} | ${model || "unknown"} | ${duration}ms | ${status}`);
+    const emit = isError ? log?.errorLine : log?.line;
+    if (emit) emit(reqTag, symbol, `${status} · ${provider}/${model} · ${duration}ms`);
+    else console.log(`[${getTimeString()}] ${symbol} ${provider}/${model} · ${status} · ${duration}ms`);
   };
 
   return {
@@ -59,7 +60,7 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
       if (disconnected) return;
       disconnected = true;
 
-      logStream(`disconnect: ${reason}`);
+      logStream("⚡", `DISCONNECT: ${reason}`);
       dbg("CTRL", `${provider}/${model} | disconnect=${reason} | dur=${Date.now() - startTime}ms`);
 
       // Delay abort to allow cleanup
@@ -70,12 +71,10 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
       onDisconnect?.({ reason, duration: Date.now() - startTime });
     },
 
-    // Call when stream completes normally
+    // Call when stream completes normally (no line here — "📊 done" is authoritative)
     handleComplete: () => {
       if (disconnected) return;
       disconnected = true;
-
-      logStream("complete");
 
       if (abortTimeout) {
         clearTimeout(abortTimeout);
@@ -94,11 +93,12 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
       }
 
       if (error.name === "AbortError") {
-        logStream("aborted");
+        logStream("⚡", "ABORTED");
         return;
       }
 
-      logStream(`error: ${error.message}`);
+      logStream("✗", `ERROR: ${error.message}${error.stack ? `
+    ${error.stack}` : ""}`, true);
       onError?.(error);
     },
 

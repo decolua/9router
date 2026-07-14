@@ -58,16 +58,6 @@ export function getOAuthClientMetadata() {
   return { ideType: 9, platform: getOAuthPlatformEnum(), pluginType: 2 };
 }
 
-// AWS region is interpolated into OIDC token endpoints (oidc.<region>.amazonaws.com).
-// An attacker-controlled region (e.g. "evil.com/x?") would rewrite the request host
-// and exfiltrate Kiro refresh tokens, so only accept well-formed AWS region ids and
-// otherwise fall back to the safe default. Covers standard + gov/iso partitions
-// (us-east-1, ap-southeast-2, us-gov-east-1, us-iso-east-1).
-const AWS_REGION_RE = /^[a-z]{2}(?:-[a-z]+){1,2}-\d{1,2}$/;
-export function sanitizeAwsRegion(region, fallback = "us-east-1") {
-  return typeof region === "string" && AWS_REGION_RE.test(region) ? region : fallback;
-}
-
 // OpenAI OAuth Configuration (Authorization Code Flow with PKCE)
 export const OPENAI_CONFIG = { ...PROVIDER_OAUTH["openai"] };
 
@@ -76,6 +66,11 @@ export const GITHUB_CONFIG = { ...PROVIDER_OAUTH["github"] };
 
 // Kiro OAuth Configuration (multi-method: AWS Builder ID / IDC / Social / Import Token)
 export const KIRO_CONFIG = { ...PROVIDER_OAUTH["kiro"] };
+
+const AWS_REGION_RE = /^[a-z]{2}(?:-[a-z]+){1,2}-\d{1,2}$/;
+export function sanitizeAwsRegion(region, fallback = "us-east-1") {
+  return typeof region === "string" && AWS_REGION_RE.test(region) ? region : fallback;
+}
 
 // AWS region allowlist pattern — prevents SSRF via region injection into upstream URLs (GHSA-6mwv-4mrm-5p3m)
 export const AWS_REGION_PATTERN = /^[a-z]{2}-[a-z]+-\d{1,2}$/;
@@ -112,6 +107,9 @@ export const KILOCODE_CONFIG = { ...PROVIDER_OAUTH["kilocode"] };
 // Cline OAuth Configuration (Local Callback Flow via app.cline.bot)
 export const CLINE_CONFIG = { ...PROVIDER_OAUTH["cline"] };
 
+// ClinePass OAuth Configuration (shares Cline's OAuth endpoints)
+export const CLINEPASS_CONFIG = { ...PROVIDER_OAUTH["clinepass"] };
+
 // GitLab Duo OAuth Configuration (Authorization Code Flow with PKCE)
 export const GITLAB_CONFIG = { ...PROVIDER_OAUTH["gitlab"] };
 
@@ -120,6 +118,10 @@ export const CODEBUDDY_CONFIG = { ...PROVIDER_OAUTH["codebuddy-cn"] };
 
 // Kimchi OAuth Configuration (Browser token callback flow)
 export const KIMCHI_CONFIG = { ...PROVIDER_OAUTH["kimchi"] };
+
+// Grok CLI / Grok Build OAuth Configuration (Device Code Flow)
+// Endpoint: cli-chat-proxy.grok.com — same client_id as xai, different flow + scopes
+export const GROK_CLI_CONFIG = { ...PROVIDER_OAUTH["grok-cli"] };
 
 // Freebuff OAuth Configuration (Custom Device/Browser Polling Flow)
 export const FREEBUFF_CONFIG = {
@@ -147,6 +149,9 @@ export const PROVIDERS = {
   KIMI_CODING: "kimi-coding",
   KILOCODE: "kilocode",
   CLINE: "cline",
+  CLINEPASS: "clinepass",
   GITLAB: "gitlab",
   CODEBUDDY: "codebuddy-cn",
+  KIMCHI: "kimchi",
+  GROK_CLI: "grok-cli",
 };

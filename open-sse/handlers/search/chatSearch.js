@@ -273,6 +273,53 @@ const CHAT_SEARCH_CONFIG = {
       const tokens = data?.usage?.total_tokens || 0;
       return { text, citations, tokens };
     }
+  },
+
+  "perplexity-agent": {
+    endpoint: () => searchEndpoint("perplexity-agent"),
+    buildBody: (query, model) => ({
+      model,
+      input: query,
+      tools: [{ type: "web_search" }]
+    }),
+    buildHeaders: (token) => ({
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`
+    }),
+    extractAnswer: (data) => {
+      const output = Array.isArray(data?.output) ? data.output : [];
+      let text = "";
+      const citations = [];
+      for (const item of output) {
+        const parts = Array.isArray(item?.content) ? item.content : [];
+        for (const p of parts) {
+          if (typeof p?.text === "string") text += p.text;
+          const anns = Array.isArray(p?.annotations) ? p.annotations : [];
+          for (const a of anns) {
+            const c = normalizeCitation(a?.url ? a : a?.url_citation);
+            if (c) citations.push(c);
+          }
+        }
+        const results = Array.isArray(item?.results) ? item.results : [];
+        for (const r of results) {
+          const url = r?.url || r?.link;
+          if (!url) continue;
+          citations.push({
+            url,
+            title: r?.title || "",
+            snippet: r?.snippet || ""
+          });
+        }
+      }
+      if (!citations.length && Array.isArray(data?.citations)) {
+        for (const c of data.citations) {
+          const n = normalizeCitation(c);
+          if (n) citations.push(n);
+        }
+      }
+      const tokens = data?.usage?.total_tokens || 0;
+      return { text, citations, tokens };
+    }
   }
 };
 
