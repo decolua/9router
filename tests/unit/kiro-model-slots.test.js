@@ -25,6 +25,15 @@ describe("Kiro MITM model slots", () => {
     expect(simpleTask).toBeTruthy();
     expect(simpleTask.alias).toBe("simple-task");
   });
+
+  it("offers mappable slots for GPT-5.6 family models", () => {
+    const ids = kiro.defaultModels.map((m) => m.id);
+    expect(ids).toEqual(expect.arrayContaining([
+      "gpt-5.6-sol",
+      "gpt-5.6-terra",
+      "gpt-5.6-luna",
+    ]));
+  });
 });
 
 describe("Kiro static provider models", () => {
@@ -35,6 +44,24 @@ describe("Kiro static provider models", () => {
       "claude-sonnet-5-thinking",
       "claude-sonnet-5-agentic",
       "claude-sonnet-5-thinking-agentic",
+    ]));
+  });
+
+  it("includes GPT-5.6 family and synthetic Kiro variants", () => {
+    const ids = (PROVIDER_MODELS.kr || []).map((model) => model.id);
+    expect(ids).toEqual(expect.arrayContaining([
+      "gpt-5.6-sol",
+      "gpt-5.6-sol-thinking",
+      "gpt-5.6-sol-agentic",
+      "gpt-5.6-sol-thinking-agentic",
+      "gpt-5.6-terra",
+      "gpt-5.6-terra-thinking",
+      "gpt-5.6-terra-agentic",
+      "gpt-5.6-terra-thinking-agentic",
+      "gpt-5.6-luna",
+      "gpt-5.6-luna-thinking",
+      "gpt-5.6-luna-agentic",
+      "gpt-5.6-luna-thinking-agentic",
     ]));
   });
 });
