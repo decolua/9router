@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { canonicalizeUsage, extractUsage, mergeUsage } from "../../open-sse/utils/usageTracking.js";
+import { canonicalizeUsage, extractUsage, hasValidUsage, mergeUsage } from "../../open-sse/utils/usageTracking.js";
 import { calculateCostFromTokens } from "../../open-sse/providers/pricing.js";
 import { toOpenAIUsage } from "../../open-sse/translator/concerns/usage.js";
 
@@ -88,6 +88,17 @@ describe("canonicalizeUsage", () => {
     expect(out.cached_tokens).toBe(0);
     expect(out.cache_creation_input_tokens).toBe(500);
   });
+
+  it("preserves Kiro credit metering alongside token counts", () => {
+    const out = canonicalizeUsage({
+      prompt_tokens: 100,
+      completion_tokens: 20,
+      kiro_credits: 0.0123,
+      kiro_credit_unit: "credit",
+    });
+    expect(out.kiro_credits).toBe(0.0123);
+    expect(out.kiro_credit_unit).toBe("credit");
+  });
 });
 
 describe("calculateCostFromTokens (canonical inclusive convention)", () => {
@@ -117,6 +128,40 @@ describe("calculateCostFromTokens (canonical inclusive convention)", () => {
   it("matches plain input pricing when no cache present", () => {
     const cost = calculateCostFromTokens({ prompt_tokens: 100, completion_tokens: 50 }, pricing);
     expect(cost).toBeCloseTo((100 * 3 + 50 * 15) / 1_000_000, 12);
+  });
+
+  it("uses Kiro credits as actual billable cost when present", () => {
+    const cost = calculateCostFromTokens(
+      { prompt_tokens: 1_000_000, completion_tokens: 50_000, kiro_credits: 0.42 },
+      pricing
+    );
+    expect(cost).toBe(0.42);
+  });
+});
+
+describe("Kiro credit metering", () => {
+  it("extracts credit-only Kiro usage for internal persistence", () => {
+    const usage = extractUsage({
+      usage: {
+        kiro_credits: 0.003,
+        kiro_credit_unit: "credit",
+      },
+    });
+
+    expect(usage.kiro_credits).toBe(0.003);
+    expect(usage.kiro_credit_unit).toBe("credit");
+    expect(usage.prompt_tokens).toBeUndefined();
+    expect(hasValidUsage(usage)).toBe(true);
+  });
+
+  it("keeps prompt-only OpenAI usage complete while credit-only Kiro usage stays tokenless", () => {
+    const promptOnly = extractUsage({ usage: { prompt_tokens: 123 } });
+    expect(promptOnly.prompt_tokens).toBe(123);
+    expect(promptOnly.completion_tokens).toBe(0);
+
+    const creditOnly = extractUsage({ usage: { kiro_credits: 0.001, kiro_credit_unit: "credit" } });
+    expect(creditOnly.kiro_credits).toBe(0.001);
+    expect(creditOnly.completion_tokens).toBeUndefined();
   });
 });
 

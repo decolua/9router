@@ -277,6 +277,11 @@ export function formatCost(cost) {
 export function calculateCostFromTokens(tokens, pricing) {
   if (!tokens || !pricing) return 0;
 
+  // Kiro reports actual billable usage as credits through metering events.
+  // Prefer that over token-list pricing so cost alerting reflects what was charged.
+  const kiroCredits = Number(tokens.kiro_credits);
+  if (Number.isFinite(kiroCredits) && kiroCredits >= 0) return kiroCredits;
+
   let cost = 0;
 
   const inputTokens = tokens.prompt_tokens || tokens.input_tokens || 0;
