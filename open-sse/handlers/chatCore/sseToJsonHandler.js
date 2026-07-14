@@ -3,7 +3,7 @@ import { createErrorResult } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { FORMATS } from "../../translator/formats.js";
 import { PROVIDERS } from "../../config/providers.js";
-import { extractUsage, filterUsageForFormat, mergeUsage } from "../../utils/usageTracking.js";
+import { estimateUsage, extractUsage, filterUsageForFormat, hasValidUsage, mergeUsage } from "../../utils/usageTracking.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
@@ -212,7 +212,13 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
 
     if (onRequestSuccess) await onRequestSuccess();
 
-    const usage = parsed._internalUsage || parsed.usage || {};
+    let usage = parsed._internalUsage || parsed.usage || {};
+    if (!hasValidUsage(usage)) {
+      const contentLength = parsed.choices?.[0]?.message?.content?.length || 0;
+      if (contentLength > 0) {
+        usage = mergeUsage(usage, estimateUsage(body, contentLength, sourceFormat));
+      }
+    }
     appendLog({ tokens: usage, status: "200 OK" });
     saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, silent: true });
     if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));

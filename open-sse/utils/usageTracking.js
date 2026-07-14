@@ -236,11 +236,6 @@ export function hasValidUsage(usage) {
     }
   }
 
-  const kiroCredits = Number(usage.kiro_credits);
-  if (Number.isFinite(kiroCredits) && kiroCredits >= 0) {
-    return true;
-  }
-
   return false;
 }
 

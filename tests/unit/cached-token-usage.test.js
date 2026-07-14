@@ -130,12 +130,12 @@ describe("calculateCostFromTokens (canonical inclusive convention)", () => {
     expect(cost).toBeCloseTo((100 * 3 + 50 * 15) / 1_000_000, 12);
   });
 
-  it("uses Kiro credits as actual billable cost when present", () => {
+  it("keeps Kiro credits separate from USD token cost", () => {
     const cost = calculateCostFromTokens(
       { prompt_tokens: 1_000_000, completion_tokens: 50_000, kiro_credits: 0.42 },
       pricing
     );
-    expect(cost).toBe(0.42);
+    expect(cost).toBeCloseTo((1_000_000 * 3 + 50_000 * 15) / 1_000_000, 12);
   });
 });
 
@@ -151,7 +151,7 @@ describe("Kiro credit metering", () => {
     expect(usage.kiro_credits).toBe(0.003);
     expect(usage.kiro_credit_unit).toBe("credit");
     expect(usage.prompt_tokens).toBeUndefined();
-    expect(hasValidUsage(usage)).toBe(true);
+    expect(hasValidUsage(usage)).toBe(false);
   });
 
   it("keeps prompt-only OpenAI usage complete while credit-only Kiro usage stays tokenless", () => {
