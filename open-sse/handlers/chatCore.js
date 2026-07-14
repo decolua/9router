@@ -9,7 +9,7 @@ import { createRequestLogger } from "../utils/requestLogger.js";
 import { getModelTargetFormat, getModelStrip, getModelUpstreamId, getModelType, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { PROVIDERS } from "../config/providers.js";
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
-import { HTTP_STATUS } from "../config/runtimeConfig.js";
+import { HTTP_STATUS, TOKEN_SAVER_HEADER } from "../config/runtimeConfig.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import { trackPendingRequest, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { getExecutor } from "../executors/index.js";
@@ -190,9 +190,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Token-saver summary parts, printed as one "⚙" line at the end (only active ones)
   const xf = [];
+  const tokenSaverEnabled = clientRawRequest?.headers?.[TOKEN_SAVER_HEADER]?.toLowerCase() !== "off";
 
   // RTK: compress tool_result content
-  const rtkStats = compressMessages(translatedBody, rtkEnabled);
+  const rtkStats = compressMessages(translatedBody, tokenSaverEnabled && rtkEnabled);
   if (rtkStats?.hits?.length) {
     const saved = rtkStats.bytesBefore - rtkStats.bytesAfter;
     const pct = rtkStats.bytesBefore > 0 ? ((saved / rtkStats.bytesBefore) * 100).toFixed(0) : "0";
@@ -201,7 +202,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Headroom: optional external proxy compression; fail open if proxy is absent.
   const headroomDiagnostics = {};
-  const headroomStats = await compressWithHeadroom(translatedBody, { enabled: headroomEnabled, url: headroomUrl, model: upstreamModel, format: finalFormat, compressUserMessages: headroomCompressUserMessages, diagnostics: headroomDiagnostics });
+  const headroomStats = await compressWithHeadroom(translatedBody, { enabled: tokenSaverEnabled && headroomEnabled, url: headroomUrl, model: upstreamModel, format: finalFormat, compressUserMessages: headroomCompressUserMessages, diagnostics: headroomDiagnostics });
   if (headroomStats) {
     const before = headroomStats.tokens_before || 0;
     const delta = headroomStats.tokens_saved || 0;
@@ -210,25 +211,25 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     if (isHeadroomPhantomSavings(headroomStats, headroomDiagnostics)) {
       log?.warn?.("HEADROOM", `reported token delta, but outbound JSON shrank <5%; provider may bill near-original payload | ${formatHeadroomSizeLog(headroomDiagnostics)}`);
     }
-  } else if (headroomEnabled) {
+  } else if (tokenSaverEnabled && headroomEnabled) {
     log?.warn?.("HEADROOM", `skipped: ${headroomDiagnostics.reason || "compression unavailable"}${headroomDiagnostics.endpoint ? ` (${headroomDiagnostics.endpoint})` : ""}`);
   }
 
   // Caveman: inject terse-style system prompt
-  if (cavemanEnabled && cavemanLevel) {
+  if (tokenSaverEnabled && cavemanEnabled && cavemanLevel) {
     injectCaveman(translatedBody, finalFormat, cavemanLevel);
     xf.push(`CAVEMAN:${cavemanLevel}`);
   }
 
   // Ponytail: inject lazy-senior-dev system prompt
-  if (ponytailEnabled && ponytailLevel) {
+  if (tokenSaverEnabled && ponytailEnabled && ponytailLevel) {
     injectPonytail(translatedBody, finalFormat, ponytailLevel);
     xf.push(`PONYTAIL:${ponytailLevel}`);
   }
 
   // PXPIPE: image bulky context (Claude-format bodies only), last saver before dispatch
   let pxpipeSummary = null;
-  if (pxpipeEnabled) {
+  if (tokenSaverEnabled && pxpipeEnabled) {
     const pxpipeResult = await compressWithPxpipe(translatedBody, {
       enabled: true, format: finalFormat, model: upstreamModel,
       minChars: pxpipeMinChars, timeoutMs: pxpipeTimeoutMs, transform: pxpipeTransform,

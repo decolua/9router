@@ -448,6 +448,8 @@ Default URLs:
 | 📊 **Usage Analytics**                                                            | Track tokens, cost, trends over time                                                     | Optimize spending                                 |
 | 🌐 **Deploy Anywhere**                                                            | Localhost, VPS, Docker, Cloudflare Workers                                               | Flexible deployment options                       |
 
+Set `X-9Router-Token-Saver: off` to bypass all token savers for one chat request.
+
 <details>
 <summary><b>📖 Feature Details</b></summary>
 
