@@ -193,6 +193,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   const routingSessionId = resolveClientSessionId({
     headers: clientRawRequest?.headers,
     body,
+    scope: provider,
   });
 
   // Try with available accounts (fallback on errors)

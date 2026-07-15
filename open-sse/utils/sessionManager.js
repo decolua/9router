@@ -89,7 +89,7 @@ const ASSISTANT_CAP_LEN = 50;
 const MAX_ASSISTANT_SESSIONS = 5000;
 
 // Client headers/body fields that carry an upstream session id (priority order)
-const SESSION_HEADER_KEYS = ["x-session-id", "session-id", "session_id", "x-amp-thread-id", "x-client-request-id"];
+const SESSION_HEADER_KEYS = ["x-session-id", "session-id", "session_id", "x-amp-thread-id"];
 const CLAUDE_CODE_SESSION_RE = /_session_([a-f0-9-]+)$/;
 
 function sha16(text) {
@@ -131,7 +131,7 @@ function extractAntigravitySession(body) {
     return m ? normalizeSessionId(m[1]) : null;
 }
 
-function extractClientSessionId(headers, body) {
+function extractClientSessionId(headers, body, scope = "") {
     const claude = extractClaudeCodeSession(body?.metadata?.user_id);
     if (claude) return `claude:${claude}`;
     const antigravity = extractAntigravitySession(body);
@@ -140,16 +140,18 @@ function extractClientSessionId(headers, body) {
         const v = headerValue(headers, key);
         if (v) return v;
     }
+    const requestId = scope === "kiro" ? null : headerValue(headers, "x-client-request-id");
+    if (requestId) return requestId;
     const fromBody =
         normalizeSessionId(body?.prompt_cache_key) ||
         normalizeSessionId(body?.session_id) ||
         normalizeSessionId(body?.conversation_id) ||
-        normalizeSessionId(body?.metadata?.user_id);
+        (scope === "kiro" ? null : normalizeSessionId(body?.metadata?.user_id));
     return fromBody || null;
 }
 
-export function resolveClientSessionId({ headers, body } = {}) {
-    return extractClientSessionId(headers, body);
+export function resolveClientSessionId({ headers, body, scope = "" } = {}) {
+    return extractClientSessionId(headers, body, scope);
 }
 
 // Accumulate assistant text from OpenAI/Responses-style input/messages (cap-limited)
@@ -200,7 +202,7 @@ function assistantTextSessionId(scope, body) {
  * @returns {string} A stable session id
  */
 export function resolveSessionId({ headers, body, connectionId, workspaceId, scope = "" } = {}) {
-    const client = extractClientSessionId(headers, body);
+    const client = extractClientSessionId(headers, body, scope);
     if (client) return client;
     const fromAssistant = assistantTextSessionId(`${scope}:${connectionId || ""}`, body);
     if (fromAssistant) return fromAssistant;

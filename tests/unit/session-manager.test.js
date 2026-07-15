@@ -1,6 +1,6 @@
 // A2: locks resolveSessionId priority/stickiness (codex/kiro/antigravity centralization).
 import { describe, it, expect, beforeEach } from "vitest";
-import { resolveSessionId, deriveSessionId, clearSessionStore } from "../../open-sse/utils/sessionManager.js";
+import { resolveClientSessionId, resolveSessionId, deriveSessionId, clearSessionStore } from "../../open-sse/utils/sessionManager.js";
 
 // Assistant text must reach ASSISTANT_MIN_LEN (80) to use assistant anchor; else first user message.
 const longAssistant = "x".repeat(80);
@@ -53,6 +53,26 @@ describe("resolveSessionId", () => {
       scope: "codex",
     });
     expect(got).toBe("client-sess-123");
+  });
+
+  it("does not use request-scoped x-client-request-id for provider account affinity in Kiro scope", () => {
+    const got = resolveClientSessionId({
+      headers: { "x-client-request-id": "req-1" },
+      body: bodyWithUserOnly,
+      scope: "kiro",
+    });
+
+    expect(got).toBeNull();
+  });
+
+  it("keeps x-client-request-id as a client session hint outside Kiro scope", () => {
+    const got = resolveClientSessionId({
+      headers: { "x-client-request-id": "req-1" },
+      body: bodyWithUserOnly,
+      scope: "openai",
+    });
+
+    expect(got).toBe("req-1");
   });
 
   it("workspaceId path: empty body + workspaceId set -> normalized workspaceId", () => {
