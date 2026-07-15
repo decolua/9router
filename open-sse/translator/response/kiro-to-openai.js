@@ -10,7 +10,6 @@ import { toOpenAIUsage } from "../concerns/usage.js";
 import { fallbackToolCallId } from "../concerns/toolCall.js";
 import { reasoningDelta } from "../concerns/reasoning.js";
 import { toOpenAIFinish } from "../concerns/finishReason.js";
-import { stripKiroPrivateUsage } from "./kiroUsage.js";
 
 // Build chunk meta for current kiro state
 function chunkMeta(state) {
@@ -27,18 +26,7 @@ export function kiroToOpenAIResponse(chunk, state) {
 
   // If chunk is already in OpenAI format (from executor transform), return as-is
   if (chunk.object === "chat.completion.chunk" && chunk.choices) {
-    const sanitized = stripKiroPrivateUsage(chunk);
-    if (sanitized?.choices?.[0]?.finish_reason && sanitized.usage) {
-      state.kiroPublicUsageEmitted = true;
-    }
-    if (sanitized?.choices?.length === 0 && sanitized.usage) {
-      if (state.kiroPublicUsageEmitted) {
-        const { usage: _duplicateUsage, ...withoutUsage } = sanitized;
-        return withoutUsage;
-      }
-      state.kiroPublicUsageEmitted = true;
-    }
-    return sanitized;
+    return chunk;
   }
   
   // Handle string chunk (raw SSE data)

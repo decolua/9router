@@ -5,6 +5,7 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { v4 as uuidv4 } from "uuid";
+import { applyKiroSessionReplay } from "../../utils/kiroSessionReplay.js";
 import { resolveContinuationId, resolveSessionIdentity } from "../../utils/sessionManager.js";
 import {
   resolveKiroModel,
@@ -547,8 +548,6 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
     ? (credentials?.providerSpecificData?.profileArn || "")
     : (credentials?.providerSpecificData?.profileArn || resolveDefaultProfileArn(authMethod));
 
-  let finalContent = currentMessage?.userInputMessage?.content || "";
-
   const timestamp = new Date().toISOString();
 
   // Kiro CLI/KAS sends these as top-level systemPrompt. Keep a content fallback
@@ -562,8 +561,8 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
     systemPromptParts.push(KIRO_AGENTIC_SYSTEM_PROMPT);
   }
   const systemPrompt = systemPromptParts.filter(Boolean).join("\n\n");
-  const contentPrefix = [systemPrompt, `[Context: Current time is ${timestamp}]`].filter(Boolean).join("\n\n");
-  finalContent = `${contentPrefix}\n\n${finalContent}`;
+  const currentTimeContext = `[Context: Current time is ${timestamp}]`;
+  const contentPrefix = [systemPrompt, currentTimeContext].filter(Boolean).join("\n\n");
 
   const sessionIdentity = resolveSessionIdentity({ headers: credentials?.rawHeaders, body, connectionId: credentials?.connectionId, scope: "kiro" });
   const conversationId = sessionIdentity.sessionId;
@@ -573,6 +572,17 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
     scope: "kiro",
     ephemeral: sessionIdentity.ephemeral,
   });
+  const replay = applyKiroSessionReplay({
+    conversationId,
+    connectionId: credentials?.connectionId,
+    modelId: upstreamModel,
+    systemPrompt,
+    contentPrefix,
+    currentContentPrefix: currentTimeContext,
+    history,
+    currentMessage,
+  });
+  const replayCurrent = replay.currentMessage?.userInputMessage || {};
 
   const payload = {
     conversationState: {
@@ -582,18 +592,18 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
       agentTaskType: "vibe",
       currentMessage: {
         userInputMessage: {
-          content: finalContent,
+          content: replayCurrent.content || "",
           modelId: upstreamModel,
           origin: "AI_EDITOR",
-          ...(currentMessage?.userInputMessage?.images?.length > 0 && {
-            images: currentMessage.userInputMessage.images
+          ...(replayCurrent.images?.length > 0 && {
+            images: replayCurrent.images
           }),
-          ...(currentMessage?.userInputMessage?.userInputMessageContext && {
-            userInputMessageContext: currentMessage.userInputMessage.userInputMessageContext
+          ...(replayCurrent.userInputMessageContext && {
+            userInputMessageContext: replayCurrent.userInputMessageContext
           })
         }
       },
-      history: history
+      history: replay.history
     },
     agentMode: "vibe",
   };

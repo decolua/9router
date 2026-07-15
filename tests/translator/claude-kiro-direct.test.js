@@ -16,19 +16,25 @@ describe("Claude → Kiro (direct route)", () => {
     expect(out.conversationState.currentMessage.userInputMessage.content).toContain("hello");
   });
 
-  it("keeps conversationId stable from client session headers", () => {
+  it("keeps conversationId stable from client session headers and replays frozen msg0", () => {
     const credentials = {
-      rawHeaders: { "x-session-id": "hermes-session-123" },
+      rawHeaders: { "x-session-id": "hermes-session-123-claude-replay" },
       connectionId: "kiro-account-1",
     };
     const first = C2K({ messages: [{ role: "user", content: "first" }] }, credentials);
     const second = C2K({ messages: [{ role: "user", content: "second" }] }, credentials);
 
-    expect(first.conversationState.conversationId).toBe("hermes-session-123");
-    expect(second.conversationState.conversationId).toBe("hermes-session-123");
+    expect(first.conversationState.conversationId).toBe("hermes-session-123-claude-replay");
+    expect(second.conversationState.conversationId).toBe("hermes-session-123-claude-replay");
     expect(first.conversationState.agentContinuationId).toBeTruthy();
     expect(second.conversationState.agentContinuationId).toBe(first.conversationState.agentContinuationId);
     expect(first.conversationState.agentTaskType).toBe("vibe");
+    expect(second.conversationState.history[0].userInputMessage.content).toBe(
+      first.conversationState.currentMessage.userInputMessage.content
+    );
+    expect(second.conversationState.history[0].userInputMessage.modelId).toBe("claude-sonnet-4.5");
+    expect(second.conversationState.currentMessage.userInputMessage.content).toContain("Current time");
+    expect(second.conversationState.currentMessage.userInputMessage.content).toContain("second");
   });
 
   it("guard 1: with no tools, a dangling tool_result is flattened to text (no structured ref)", () => {
@@ -181,74 +187,6 @@ describe("Kiro → Claude (direct route, OpenAI-shaped chunks from executor)", (
     expect(md.delta.stop_reason).toBe("end_turn");
     expect(md.usage).toEqual({ input_tokens: 5, output_tokens: 3 });
     expect(events.some((e) => e.type === "message_stop")).toBe(true);
-  });
-
-  it("does not expose private Kiro credit fields on the direct Claude route", () => {
-    const state = {};
-    R(
-      {
-        id: "chatcmpl-1",
-        object: "chat.completion.chunk",
-        model: "m",
-        choices: [{ index: 0, delta: { content: "x" }, finish_reason: null }],
-      },
-      state
-    );
-    const events = R(
-      {
-        id: "chatcmpl-1",
-        object: "chat.completion.chunk",
-        model: "m",
-        choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
-        usage: { kiro_credits: 0.1, kiro_credit_unit: "credit" },
-      },
-      state
-    );
-
-    const md = events.find((e) => e.type === "message_delta");
-    expect(md.usage).toEqual({ input_tokens: 0, output_tokens: 0 });
-  });
-
-  it("ignores Kiro credit-only usage chunks on the direct Claude route", () => {
-    const events = R(
-      {
-        id: "chatcmpl-1",
-        object: "chat.completion.chunk",
-        model: "m",
-        choices: [],
-        usage: { kiro_credits: 0.1, kiro_credit_unit: "credit" },
-      },
-      {}
-    );
-
-    expect(events).toEqual([]);
-  });
-
-  it("absorbs Kiro usage-only token chunks on the direct Claude route", () => {
-    const state = {};
-    const events = R(
-      {
-        id: "chatcmpl-1",
-        object: "chat.completion.chunk",
-        model: "m",
-        choices: [],
-        usage: { prompt_tokens: 12, completion_tokens: 3, kiro_credits: 0.1, kiro_credit_unit: "credit" },
-      },
-      state
-    );
-
-    expect(events).toEqual([]);
-    const stopEvents = R(
-      {
-        id: "chatcmpl-1",
-        object: "chat.completion.chunk",
-        model: "m",
-        choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
-      },
-      state
-    );
-    const md = stopEvents.find((e) => e.type === "message_delta");
-    expect(md.usage).toEqual({ input_tokens: 12, output_tokens: 3 });
   });
 
   it("reasoning_content maps to a thinking block", () => {

@@ -24,6 +24,7 @@
  */
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
+import { applyKiroSessionReplay } from "../../utils/kiroSessionReplay.js";
 import { resolveContinuationId, resolveSessionIdentity } from "../../utils/sessionManager.js";
 import {
   resolveKiroModel,
@@ -415,8 +416,6 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
     ? (credentials?.providerSpecificData?.profileArn || "")
     : (credentials?.providerSpecificData?.profileArn || resolveDefaultProfileArn(authMethod));
 
-  let finalContent = currentMessage?.userInputMessage?.content || "";
-
   // Kiro CLI/KAS sends system prompt as top-level `systemPrompt`. Keep a
   // content fallback too because the CodeWhisperer surface does not always
   // enforce top-level systemPrompt for direct calls.
@@ -427,21 +426,8 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
   const systemInstruction = extractClaudeSystemText(body.system);
   if (systemInstruction) systemPromptParts.push(systemInstruction);
   const systemPrompt = systemPromptParts.filter(Boolean).join("\n\n");
-  const contentPrefix = [systemPrompt, `[Context: Current time is ${timestamp}]`].filter(Boolean).join("\n\n");
-  finalContent = `${contentPrefix}\n\n${finalContent}`;
-
-  const userInputMessage = {
-    content: finalContent,
-    modelId: upstreamModel,
-    origin: "AI_EDITOR",
-    ...(currentMessage?.userInputMessage?.userInputMessageContext && {
-      userInputMessageContext:
-        currentMessage.userInputMessage.userInputMessageContext,
-    }),
-    ...(currentMessage?.userInputMessage?.images && {
-      images: currentMessage.userInputMessage.images,
-    }),
-  };
+  const currentTimeContext = `[Context: Current time is ${timestamp}]`;
+  const contentPrefix = [systemPrompt, currentTimeContext].filter(Boolean).join("\n\n");
 
   const sessionIdentity = resolveSessionIdentity({
     headers: credentials?.rawHeaders,
@@ -456,6 +442,28 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
     scope: "kiro",
     ephemeral: sessionIdentity.ephemeral,
   });
+  const replay = applyKiroSessionReplay({
+    conversationId,
+    connectionId: credentials?.connectionId,
+    modelId: upstreamModel,
+    systemPrompt,
+    contentPrefix,
+    currentContentPrefix: currentTimeContext,
+    history,
+    currentMessage,
+  });
+  const replayCurrent = replay.currentMessage?.userInputMessage || {};
+  const userInputMessage = {
+    content: replayCurrent.content || "",
+    modelId: upstreamModel,
+    origin: "AI_EDITOR",
+    ...(replayCurrent.userInputMessageContext && {
+      userInputMessageContext: replayCurrent.userInputMessageContext,
+    }),
+    ...(replayCurrent.images && {
+      images: replayCurrent.images,
+    }),
+  };
 
   const payload = {
     conversationState: {
@@ -466,7 +474,7 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
       currentMessage: {
         userInputMessage,
       },
-      history,
+      history: replay.history,
     },
     agentMode: "vibe",
   };

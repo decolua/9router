@@ -466,6 +466,34 @@ describe("openaiToKiroRequest", () => {
       expect(first.conversationState.currentMessage.userInputMessage.content).toContain("Current time");
     });
 
+    it("replays frozen msg0 for explicit Kiro sessions while keeping current time fresh", () => {
+      const credentials = {
+        connectionId: "kiro-account-openai-replay",
+        rawHeaders: { "x-session-id": "hermes-session-openai-replay" },
+      };
+      const first = openaiToKiroRequest(
+        "claude-sonnet-4.6",
+        { messages: [{ role: "user", content: "first turn" }] },
+        true,
+        credentials
+      );
+      const second = openaiToKiroRequest(
+        "claude-sonnet-4.6",
+        { messages: [{ role: "user", content: "second turn" }] },
+        true,
+        credentials
+      );
+
+      expect(second.conversationState.conversationId).toBe("hermes-session-openai-replay");
+      expect(second.conversationState.agentContinuationId).toBe(first.conversationState.agentContinuationId);
+      expect(second.conversationState.history[0].userInputMessage.content).toBe(
+        first.conversationState.currentMessage.userInputMessage.content
+      );
+      expect(second.conversationState.history[0].userInputMessage.modelId).toBe("claude-sonnet-4.6");
+      expect(second.conversationState.currentMessage.userInputMessage.content).toContain("Current time");
+      expect(second.conversationState.currentMessage.userInputMessage.content).toContain("second turn");
+    });
+
     it("does not inject thinking prefix for reasoning_effort none", () => {
       const body = {
         reasoning_effort: "none",
