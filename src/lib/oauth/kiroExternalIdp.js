@@ -127,9 +127,28 @@ export function normalizeKiroExternalIdpAuth(rawAuth) {
   };
 }
 
+function deriveMicrosoftTokenEndpoint(providerSpecificData = {}) {
+  const explicit = providerSpecificData.tokenEndpoint || providerSpecificData.token_endpoint;
+  if (explicit) return validateMicrosoftTokenEndpoint(explicit);
+
+  // Issuer is typically https://login.microsoftonline.com/{tenant}/v2.0
+  // Token endpoint is https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token
+  // (NOT issuer + "/oauth2/v2.0/token", which doubles /v2.0 and 404s).
+  const issuerUrl = normalizeString(providerSpecificData.issuerUrl || providerSpecificData.issuer_url);
+  if (!issuerUrl) throw new Error("token_endpoint is required");
+  const base = issuerUrl.replace(/\/$/, "").replace(/\/v2\.0$/i, "");
+  return validateMicrosoftTokenEndpoint(`${base}/oauth2/v2.0/token`);
+}
+
 export function buildExternalIdpRefreshParams(refreshToken, providerSpecificData = {}) {
-  const clientId = normalizeString(providerSpecificData.clientId || providerSpecificData.client_id);
-  const tokenEndpoint = validateMicrosoftTokenEndpoint(providerSpecificData.tokenEndpoint || providerSpecificData.token_endpoint);
+  // Kiro Account Manager exports use idpClientId; 9router/CLIProxyAPI use clientId.
+  const clientId = normalizeString(
+    providerSpecificData.clientId
+    || providerSpecificData.client_id
+    || providerSpecificData.idpClientId
+    || providerSpecificData.idp_client_id
+  );
+  const tokenEndpoint = deriveMicrosoftTokenEndpoint(providerSpecificData);
   const scope = normalizeScope(providerSpecificData.scope || providerSpecificData.scopes);
 
   if (!refreshToken) throw new Error("refresh token is required");

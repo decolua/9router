@@ -76,12 +76,20 @@ export class KiroExecutor extends BaseExecutor {
     if (!isCodeWhispererSurface) return baseUrls;
 
     const region = (credentials?.providerSpecificData?.region || "us-east-1").trim();
-    const regionalize = (u) =>
-      region && region !== "us-east-1" && u.includes("amazonaws.com")
-        ? u.replace(/([a-z]+)\.[a-z0-9-]+\.amazonaws\.com/, `$1.${region}.amazonaws.com`)
-        : u;
+    // Kiro-Go: non-us-east-1 has no codewhisperer.{region} host — both q.* and
+    // codewhisperer.us-east-1 collapse onto q.{region}.amazonaws.com.
+    const regionalize = (u) => {
+      if (!region || region === "us-east-1" || !u.includes("amazonaws.com")) return u;
+      const host = `q.${region}.amazonaws.com`;
+      return u
+        .replace("q.us-east-1.amazonaws.com", host)
+        .replace("codewhisperer.us-east-1.amazonaws.com", host);
+    };
 
-    const amazon = baseUrls.filter((u) => u.includes("amazonaws.com")).map(regionalize);
+    // For non-us-east-1, q.us-east-1 and codewhisperer.us-east-1 both collapse to
+    // the same q.{region} host — de-dup so we don't waste a failover attempt
+    // retrying the identical URL.
+    const amazon = [...new Set(baseUrls.filter((u) => u.includes("amazonaws.com")).map(regionalize))];
     const others = baseUrls.filter((u) => !u.includes("amazonaws.com"));
     return amazon.length > 0 ? [...amazon, ...others] : baseUrls;
   }

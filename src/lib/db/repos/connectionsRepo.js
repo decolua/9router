@@ -10,10 +10,84 @@ const OPTIONAL_FIELDS = [
   "consecutiveUseCount", "allowedModels", "idToken", "lastRefreshAt",
 ];
 
+/**
+ * Flatten Kiro Account Manager / backup export shape:
+ * { credentials: { accessToken, refreshToken, authMethod, region, ... }, idp, machineId }
+ * into 9router's flat connection fields. Without this, chat sends no Authorization
+ * ("Missing bearer token in the authorization header").
+ */
+function flattenNestedCredentials(conn) {
+  if (!conn || !conn.credentials || typeof conn.credentials !== "object") return conn;
+  if (conn.accessToken || conn.refreshToken || conn.apiKey) return conn;
+
+  const cred = conn.credentials;
+  const rawMethod = String(cred.authMethod || "").toLowerCase();
+  let authMethod = rawMethod;
+  if (rawMethod === "api_key" || String(cred.accessToken || "").startsWith("ksk_")) authMethod = "api_key";
+  else if (rawMethod === "external_idp" || conn.idp === "MicrosoftEntra") authMethod = "external_idp";
+  else if (rawMethod === "idc") authMethod = "idc";
+  else if (rawMethod === "device_code" || rawMethod === "device" || rawMethod === "builder-id" || rawMethod === "builder_id") authMethod = "builder-id";
+  else if (rawMethod === "oauth" || rawMethod === "social") authMethod = "social";
+  else if (conn.idp === "BuilderId") authMethod = "builder-id";
+
+  const providerSpecificData = {
+    ...(conn.providerSpecificData || {}),
+    authMethod: conn.providerSpecificData?.authMethod || authMethod || undefined,
+    region: conn.providerSpecificData?.region || cred.region || "us-east-1",
+    provider: conn.providerSpecificData?.provider || "kiro",
+  };
+  if (conn.idp) providerSpecificData.idp = providerSpecificData.idp || conn.idp;
+  if (conn.machineId) providerSpecificData.machineId = providerSpecificData.machineId || conn.machineId;
+  if (conn.userId) providerSpecificData.userId = providerSpecificData.userId || conn.userId;
+  if (cred.clientId) providerSpecificData.clientId = providerSpecificData.clientId || cred.clientId;
+  if (cred.clientSecret) providerSpecificData.clientSecret = providerSpecificData.clientSecret || cred.clientSecret;
+  if (cred.idpClientId) {
+    providerSpecificData.idpClientId = providerSpecificData.idpClientId || cred.idpClientId;
+    providerSpecificData.clientId = providerSpecificData.clientId || cred.idpClientId;
+  }
+  if (cred.issuerUrl) {
+    providerSpecificData.issuerUrl = providerSpecificData.issuerUrl || cred.issuerUrl;
+    if (!providerSpecificData.tokenEndpoint) {
+      const base = String(cred.issuerUrl).replace(/\/$/, "").replace(/\/v2\.0$/i, "");
+      providerSpecificData.tokenEndpoint = `${base}/oauth2/v2.0/token`;
+    }
+  }
+  if (cred.scopes) {
+    providerSpecificData.scopes = providerSpecificData.scopes || cred.scopes;
+    providerSpecificData.scope = providerSpecificData.scope
+      || (Array.isArray(cred.scopes) ? cred.scopes.join(" ") : cred.scopes);
+  }
+  if (cred.loginHint) providerSpecificData.loginHint = providerSpecificData.loginHint || cred.loginHint;
+  if (cred.profileArn) providerSpecificData.profileArn = providerSpecificData.profileArn || cred.profileArn;
+
+  let expiresAt = conn.expiresAt || cred.expiresAt || null;
+  if (typeof expiresAt === "number") {
+    expiresAt = new Date(expiresAt > 1e12 ? expiresAt : expiresAt * 1000).toISOString();
+  }
+
+  const authType = authMethod === "api_key" ? "api_key" : (conn.authType || "oauth");
+
+  // Drop the raw nested `credentials` blob so the flat shape is the single
+  // source of truth. Leaving it in place duplicates secret material (it would
+  // be re-persisted on updateProviderConnection and go stale after a token
+  // refresh) and can echo tokens back through /api/providers responses that
+  // only sanitize top-level token fields.
+  const { credentials: _nestedCredentials, ...rest } = conn;
+
+  return {
+    ...rest,
+    authType,
+    accessToken: cred.accessToken || null,
+    refreshToken: cred.refreshToken || null,
+    expiresAt,
+    providerSpecificData,
+  };
+}
+
 function rowToConn(row) {
   if (!row) return null;
   const extra = parseJson(row.data, {});
-  return {
+  const conn = {
     ...extra,
     id: row.id,
     provider: row.provider,
@@ -25,6 +99,9 @@ function rowToConn(row) {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+  // Only flatten Kiro nested-export shape; leave other providers untouched.
+  if (conn.provider === "kiro") return flattenNestedCredentials(conn);
+  return conn;
 }
 
 function connToRow(c) {
