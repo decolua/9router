@@ -2,11 +2,57 @@ import { getProviderConnections, validateApiKey, updateProviderConnection, getSe
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
+import { MEMORY_CONFIG } from "open-sse/config/runtimeConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
 let selectionMutex = Promise.resolve();
+const sessionAffinityState = new Map();
+const MAX_SESSION_AFFINITIES = 5000;
+
+function normalizeSessionAffinityId(value) {
+  if (typeof value !== "string") return null;
+  const v = value.trim();
+  if (!v || v.length > 256) return null;
+  return v;
+}
+
+function sessionAffinityKey(providerId, sessionId) {
+  return `${providerId}:${sessionId}`;
+}
+
+function rememberSessionAffinity(providerId, sessionId, connectionId) {
+  if (!providerId || !sessionId || !connectionId) return;
+  if (sessionAffinityState.size >= MAX_SESSION_AFFINITIES) {
+    sessionAffinityState.delete(sessionAffinityState.keys().next().value);
+  }
+  sessionAffinityState.set(sessionAffinityKey(providerId, sessionId), {
+    connectionId,
+    lastUsed: Date.now(),
+  });
+}
+
+function getSessionAffinity(providerId, sessionId) {
+  if (!providerId || !sessionId) return null;
+  const entry = sessionAffinityState.get(sessionAffinityKey(providerId, sessionId));
+  if (entry) entry.lastUsed = Date.now();
+  return entry?.connectionId || null;
+}
+
+export function resetProviderSessionAffinity() {
+  sessionAffinityState.clear();
+}
+
+const affinityCleanup = setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of sessionAffinityState) {
+    if (now - entry.lastUsed > MEMORY_CONFIG.sessionTtlMs) {
+      sessionAffinityState.delete(key);
+    }
+  }
+}, MEMORY_CONFIG.sessionCleanupIntervalMs);
+if (affinityCleanup.unref) affinityCleanup.unref();
 
 /**
  * Get provider credentials from localDb
@@ -21,6 +67,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     ? excludeConnectionIds
     : (excludeConnectionIds ? new Set([excludeConnectionIds]) : new Set());
   const preferredConnectionId = options?.preferredConnectionId || null;
+  const sessionId = normalizeSessionAffinityId(options?.sessionId);
   // Acquire mutex to prevent race conditions
   const currentMutex = selectionMutex;
   let resolveMutex;
@@ -118,45 +165,71 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       }
     }
     if (connection) {
+      if (strategy === "round-robin" && sessionId) {
+        rememberSessionAffinity(providerId, sessionId, connection.id);
+      }
       // skip strategy
     } else if (strategy === "round-robin") {
       const stickyLimit = providerOverride.stickyRoundRobinLimit || settings.stickyRoundRobinLimit || 3;
 
-      // Sort by lastUsed (most recent first) to find current candidate
-      const byRecency = [...availableConnections].sort((a, b) => {
-        if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
-        if (!a.lastUsedAt) return 1;
-        if (!b.lastUsedAt) return -1;
-        return new Date(b.lastUsedAt) - new Date(a.lastUsedAt);
-      });
-
-      const current = byRecency[0];
-      const currentCount = current?.consecutiveUseCount || 0;
-
-      if (current && current.lastUsedAt && currentCount < stickyLimit) {
-        // Stay with current account
-        connection = current;
-        // Update lastUsedAt and increment count (await to ensure persistence)
-        await updateProviderConnection(connection.id, {
-          lastUsedAt: new Date().toISOString(),
-          consecutiveUseCount: (connection.consecutiveUseCount || 0) + 1
-        });
-      } else {
-        // Pick the least recently used (excluding current if possible)
+      const pickOldest = () => {
         const sortedByOldest = [...availableConnections].sort((a, b) => {
           if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
           if (!a.lastUsedAt) return -1;
           if (!b.lastUsedAt) return 1;
           return new Date(a.lastUsedAt) - new Date(b.lastUsedAt);
         });
+        return sortedByOldest[0];
+      };
 
-        connection = sortedByOldest[0];
+      if (sessionId) {
+        const stickyConnectionId = getSessionAffinity(providerId, sessionId);
+        connection = stickyConnectionId
+          ? availableConnections.find((c) => c.id === stickyConnectionId)
+          : null;
 
-        // Update lastUsedAt and reset count to 1 (await to ensure persistence)
-        await updateProviderConnection(connection.id, {
-          lastUsedAt: new Date().toISOString(),
-          consecutiveUseCount: 1
+        if (connection) {
+          log.debug("AUTH", `${provider} | session-sticky ${sessionId.slice(0, 8)} → ${connection.id?.slice(0, 8)}`);
+          await updateProviderConnection(connection.id, {
+            lastUsedAt: new Date().toISOString()
+          });
+        } else {
+          connection = pickOldest();
+          rememberSessionAffinity(providerId, sessionId, connection.id);
+          await updateProviderConnection(connection.id, {
+            lastUsedAt: new Date().toISOString(),
+            consecutiveUseCount: 1
+          });
+        }
+      } else {
+        // Sort by lastUsed (most recent first) to find current candidate
+        const byRecency = [...availableConnections].sort((a, b) => {
+          if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
+          if (!a.lastUsedAt) return 1;
+          if (!b.lastUsedAt) return -1;
+          return new Date(b.lastUsedAt) - new Date(a.lastUsedAt);
         });
+
+        const current = byRecency[0];
+        const currentCount = current?.consecutiveUseCount || 0;
+
+        if (current && current.lastUsedAt && currentCount < stickyLimit) {
+          // Stay with current account
+          connection = current;
+          // Update lastUsedAt and increment count (await to ensure persistence)
+          await updateProviderConnection(connection.id, {
+            lastUsedAt: new Date().toISOString(),
+            consecutiveUseCount: (connection.consecutiveUseCount || 0) + 1
+          });
+        } else {
+          connection = pickOldest();
+
+          // Update lastUsedAt and reset count to 1 (await to ensure persistence)
+          await updateProviderConnection(connection.id, {
+            lastUsedAt: new Date().toISOString(),
+            consecutiveUseCount: 1
+          });
+        }
       }
     } else {
       // Default: fill-first (already sorted by priority in getProviderConnections)

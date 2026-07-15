@@ -148,6 +148,10 @@ function extractClientSessionId(headers, body) {
     return fromBody || null;
 }
 
+export function resolveClientSessionId({ headers, body } = {}) {
+    return extractClientSessionId(headers, body);
+}
+
 // Accumulate assistant text from OpenAI/Responses-style input/messages (cap-limited)
 function accumulateAssistantText(body) {
     const items = Array.isArray(body?.input) ? body.input
