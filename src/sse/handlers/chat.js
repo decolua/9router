@@ -243,7 +243,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   if (earlySse && clientWantsStream(body)) {
     return createKeepaliveSseResponse(async ({ writeError }) => {
       const outcome = await runAccountLoop({
-        provider, model, body, clientRawRequest, request, apiKey, userAgent,
+        provider, model, body, clientRawRequest, request, apiKey, userAgent, bypassModelWhitelist,
       });
       if (outcome.kind === "response") return outcome.response;
       // Terminal error after SSE already opened → write as SSE error event
@@ -253,7 +253,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   }
 
   const outcome = await runAccountLoop({
-    provider, model, body, clientRawRequest, request, apiKey, userAgent,
+    provider, model, body, clientRawRequest, request, apiKey, userAgent, bypassModelWhitelist,
   });
   if (outcome.kind === "response") return outcome.response;
   if (outcome.kind === "unavailable") {
@@ -267,7 +267,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
  * Returns { kind:"response", response } or { kind:"error"|"unavailable", ... }.
  * Does not throw for provider failures.
  */
-async function runAccountLoop({ provider, model, body, clientRawRequest, request, apiKey, userAgent }) {
+async function runAccountLoop({ provider, model, body, clientRawRequest, request, apiKey, userAgent, bypassModelWhitelist = false }) {
   const excludeConnectionIds = new Set();
   let lastError = null;
   let lastStatus = null;
