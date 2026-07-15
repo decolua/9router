@@ -46,8 +46,15 @@ export function filterToOpenAIFormat(body) {
       if (filteredContent.length === 0) {
         filteredContent.push({ type: "text", text: "" });
       }
-      
-      return { ...msg, content: filteredContent };
+
+      // Flatten text-only content arrays into a single string while
+      // preserving multimodal (image/tool) arrays as-is.
+      const onlyText = filteredContent.every(b => b.type === "text");
+      const content = onlyText
+        ? filteredContent.map(b => b.text).join("\n")
+        : filteredContent;
+
+      return { ...msg, content };
     }
     
     return msg;
