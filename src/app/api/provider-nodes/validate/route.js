@@ -55,7 +55,7 @@ const getChatErrorMessage = (status) => {
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { baseUrl, apiKey, type, modelId } = body;
+    const { baseUrl, apiKey, type, modelId, transparent } = body;
 
     if (!baseUrl || !apiKey) {
       return NextResponse.json({ error: "Base URL and API key required" }, { status: 400 });
@@ -121,6 +121,12 @@ export async function POST(request) {
           "Authorization": `Bearer ${apiKey}`
         }
       });
+
+      // These providers authenticate the real Claude Code identity headers,
+      // so a dashboard probe only confirms that the endpoint is reachable.
+      if (transparent === true) {
+        return NextResponse.json({ valid: true, method: "transparent", status: res.status });
+      }
 
       if (res.ok) return NextResponse.json({ valid: true });
 

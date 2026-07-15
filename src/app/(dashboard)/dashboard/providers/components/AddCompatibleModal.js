@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
-import { Badge, Button, Input, Modal, Select } from "@/shared/components";
+import { Badge, Button, Input, Modal, Select, Toggle } from "@/shared/components";
 
 const VARIANT_CONFIG = {
   openai: {
@@ -40,6 +40,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
     name: "",
     prefix: "",
     ...(config.hasApiType ? { apiType: "chat" } : {}),
+    ...(variant === "anthropic" ? { transparent: false } : {}),
     baseUrl: config.defaultBaseUrl,
   });
 
@@ -74,6 +75,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           ...(config.hasApiType ? { apiType: formData.apiType } : {}),
           baseUrl: formData.baseUrl,
           type: config.type,
+          ...(variant === "anthropic" ? { transparent: formData.transparent === true } : {}),
         }),
       });
       const data = await res.json();
@@ -101,6 +103,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           apiKey: checkKey,
           type: config.type,
           modelId: checkModelId.trim() || undefined,
+          ...(variant === "anthropic" ? { transparent: formData.transparent === true } : {}),
         }),
       });
       const data = await res.json();
@@ -121,6 +124,9 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           <Badge variant="success">Valid</Badge>
           {method === "chat" && (
             <span className="text-sm text-text-muted">(via inference test)</span>
+          )}
+          {method === "transparent" && (
+            <span className="text-sm text-text-muted">(requires Claude Code runtime verification)</span>
           )}
         </>
       );
@@ -165,6 +171,15 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           placeholder={config.defaultBaseUrl}
           hint={config.baseUrlHint}
         />
+        {variant === "anthropic" && (
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="text-sm font-medium text-text">Transparent proxy</div>
+              <div className="text-sm text-text-muted">Forward Claude Code requests and streams without translation or token tracking.</div>
+            </div>
+            <Toggle checked={formData.transparent === true} onChange={(transparent) => setFormData({ ...formData, transparent })} />
+          </div>
+        )}
         <Input
           label="API Key (for Check)"
           type="password"

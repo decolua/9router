@@ -298,8 +298,11 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   const vercelRelayUrl = normalizeString(proxyOptions?.vercelRelayUrl);
   if (vercelRelayUrl) {
     const parsed = new URL(targetUrl);
+    const originalHeaders = options.headers instanceof Headers
+      ? Object.fromEntries(options.headers.entries())
+      : (options.headers || {});
     const relayHeaders = {
-      ...options.headers,
+      ...originalHeaders,
       "x-relay-target": `${parsed.protocol}//${parsed.host}`,
       "x-relay-path": `${parsed.pathname}${parsed.search}`,
     };

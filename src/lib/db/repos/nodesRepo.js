@@ -62,6 +62,7 @@ export async function createProviderNode(data) {
     prefix: data.prefix,
     apiType: data.apiType,
     baseUrl: data.baseUrl,
+    transparent: data.transparent === true,
     createdAt: now,
     updatedAt: now,
   };

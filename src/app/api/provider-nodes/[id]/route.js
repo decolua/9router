@@ -6,7 +6,7 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { name, prefix, apiType, baseUrl } = body;
+    const { name, prefix, apiType, baseUrl, transparent } = body;
     const node = await getProviderNodeById(id);
 
     if (!node) {
@@ -57,6 +57,9 @@ export async function PUT(request, { params }) {
     if (node.type === "openai-compatible") {
       updates.apiType = apiType;
     }
+    if (node.type === "anthropic-compatible") {
+      updates.transparent = transparent === true;
+    }
 
     const updated = await updateProviderNode(id, updates);
 
@@ -69,6 +72,7 @@ export async function PUT(request, { params }) {
           apiType: node.type === "openai-compatible" ? apiType : undefined,
           baseUrl: sanitizedBaseUrl,
           nodeName: updated.name,
+          transparent: node.type === "anthropic-compatible" ? updated.transparent === true : undefined,
         }
       })
     )));

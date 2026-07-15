@@ -22,6 +22,7 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import { handleTransparentAnthropicProxy } from "open-sse/handlers/transparentProxy.js";
 
 /**
  * Handle chat completion request
@@ -29,26 +30,18 @@ import { getProjectIdForConnection } from "open-sse/services/projectId.js";
  * Format detection and translation handled by translator
  */
 export async function handleChat(request, clientRawRequest = null) {
-  let body;
+  let routingBody;
   try {
-    body = await request.json();
+    // The clone is consumed only for routing. The original stream remains
+    // available for a transparent Anthropic proxy request below.
+    routingBody = await request.clone().json();
   } catch {
     log.warn("CHAT", "Invalid JSON body");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid JSON body");
   }
 
-  // Build clientRawRequest for logging (if not provided)
-  if (!clientRawRequest) {
-    const url = new URL(request.url);
-    clientRawRequest = {
-      endpoint: url.pathname,
-      body,
-      headers: Object.fromEntries(request.headers.entries())
-    };
-  }
-  cacheClaudeHeaders(clientRawRequest.headers);
-
-  const modelStr = body.model;
+  cacheClaudeHeaders(Object.fromEntries(request.headers.entries()));
+  const modelStr = routingBody.model;
 
   // Request summary is emitted as the unified "▶" line in chatCore (has fmt/thinking/account)
 
@@ -79,6 +72,27 @@ export async function handleChat(request, clientRawRequest = null) {
   if (!modelStr) {
     log.warn("CHAT", "Missing model");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
+  }
+
+  const transparentResponse = await tryHandleTransparentAnthropicProxy(request, modelStr);
+  if (transparentResponse) return transparentResponse;
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    log.warn("CHAT", "Invalid JSON body");
+    return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid JSON body");
+  }
+
+  // Build clientRawRequest for logging (if not provided)
+  if (!clientRawRequest) {
+    const url = new URL(request.url);
+    clientRawRequest = {
+      endpoint: url.pathname,
+      body,
+      headers: Object.fromEntries(request.headers.entries())
+    };
   }
 
   // Bypass naming/warmup requests before combo rotation to avoid wasting rotation slots
@@ -129,6 +143,85 @@ export async function handleChat(request, clientRawRequest = null) {
 
   // Single model request
   return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey);
+}
+
+async function tryHandleTransparentAnthropicProxy(request, modelStr) {
+  const pathname = new URL(request.url).pathname;
+  if (!/^\/(?:api\/)?v1\/messages$/.test(pathname)) return null;
+
+  const modelInfo = await getModelInfo(modelStr);
+  const { provider, model } = modelInfo;
+  if (!provider?.startsWith("anthropic-compatible-")) return null;
+
+  const excludeConnectionIds = new Set();
+  let lastError = null;
+  let lastStatus = null;
+
+  while (true) {
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    if (!credentials || credentials.allRateLimited) {
+      if (credentials?.allRateLimited) {
+        const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
+        const error = lastError || credentials.lastError || "Unavailable";
+        return unavailableResponse(status, `[${provider}/${model}] ${error}`, credentials.retryAfter, credentials.retryAfterHuman);
+      }
+      return null;
+    }
+
+    if (credentials.providerSpecificData?.transparent !== true) return null;
+
+    try {
+      const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
+      const response = await handleTransparentAnthropicProxy({
+        request,
+        credentials: refreshedCredentials,
+        sourceModel: modelStr,
+        upstreamModel: model,
+      });
+      if (response.ok) {
+        await clearAccountError(credentials.connectionId, credentials, model);
+        log.info("TRANSPARENT", `${provider}/${model} -> ${credentials.connectionName} (tokens skipped)`);
+        return response;
+      }
+
+      // A 400 is a request/configuration error. Do not consume its body,
+      // translate it, or mark the account unavailable; return it unchanged.
+      if (response.status !== 401 && response.status !== 403 && response.status !== 429 && response.status < 500) {
+        log.warn("TRANSPARENT", `${provider}/${model} upstream returned ${response.status} (not retrying)`);
+        return response;
+      }
+
+      const error = `Upstream response ${response.status}`;
+      const { shouldFallback } = await markAccountUnavailable(
+        credentials.connectionId,
+        response.status,
+        error,
+        provider,
+        model
+      );
+      if (!shouldFallback) return response;
+
+      log.warn("FALLBACK", `TRANSPARENT ACC:${credentials.connectionName} UNAVAILABLE (${response.status}) -> NEXT ACCOUNT`);
+      excludeConnectionIds.add(credentials.connectionId);
+      lastError = error;
+      lastStatus = response.status;
+    } catch (error) {
+      const message = error?.message || "Transparent proxy request failed";
+      const { shouldFallback } = await markAccountUnavailable(
+        credentials.connectionId,
+        HTTP_STATUS.SERVICE_UNAVAILABLE,
+        message,
+        provider,
+        model
+      );
+      if (!shouldFallback) return errorResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, message);
+
+      log.warn("FALLBACK", `TRANSPARENT ACC:${credentials.connectionName} FAILED -> NEXT ACCOUNT`);
+      excludeConnectionIds.add(credentials.connectionId);
+      lastError = message;
+      lastStatus = HTTP_STATUS.SERVICE_UNAVAILABLE;
+    }
+  }
 }
 
 /**
