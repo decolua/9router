@@ -11,8 +11,11 @@ vi.mock("@/lib/network/connectionProxy", () => ({
   resolveConnectionProxyConfig: vi.fn(),
 }), { virtual: true });
 
+const UI_ALIASES = { kilocode: "kc", codex: "cx", claude: "cc", openai: "openai", openrouter: "openrouter" };
+
 vi.mock("@/shared/constants/providers.js", () => ({
   resolveProviderId: (provider) => provider,
+  getProviderAlias: (id) => UI_ALIASES[id] || id,
   FREE_PROVIDERS: {},
 }), { virtual: true });
 
@@ -102,6 +105,29 @@ describe("isConnectionAllowedForModel", () => {
   it("is case-sensitive (preserves caller casing)", () => {
     expect(isConnectionAllowedForModel({ allowedModels: ["GPT-5.5"] }, "gpt-5.5")).toBe(false);
   });
+
+  it("matches uiAlias-prefixed entries against the canonical provider id (alias !== id)", () => {
+    // UI stores the short display alias (kc) but routing resolves it to the canonical id (kilocode).
+    expect(isConnectionAllowedForModel({ allowedModels: ["kc/anthropic/claude-sonnet-4"] }, "anthropic/claude-sonnet-4", "kilocode")).toBe(true);
+    expect(isConnectionAllowedForModel({ allowedModels: ["cx/gpt-5.5"] }, "gpt-5.5", "codex")).toBe(true);
+    expect(isConnectionAllowedForModel({ allowedModels: ["cc/claude-sonnet-4"] }, "claude-sonnet-4", "claude")).toBe(true);
+  });
+
+  it("matches custom-provider display-prefix entries against the normalized node id", () => {
+    // Custom OpenAI-compatible connections store the user display prefix (zm) but routing
+    // normalizes the provider to openai-compatible-<uuid>.
+    const connection = { allowedModels: ["zm/glm-4.7"], providerSpecificData: { prefix: "zm" } };
+    expect(isConnectionAllowedForModel(connection, "glm-4.7", "openai-compatible-chat-abc")).toBe(true);
+  });
+
+  it("still blocks a whitelisted alias entry when the requested model differs", () => {
+    expect(isConnectionAllowedForModel({ allowedModels: ["kc/anthropic/claude-sonnet-4"] }, "anthropic/claude-opus-4", "kilocode")).toBe(false);
+  });
+
+  it("does not let a custom display prefix bypass the model comparison", () => {
+    const connection = { allowedModels: ["zm/glm-4.7"], providerSpecificData: { prefix: "zm" } };
+    expect(isConnectionAllowedForModel(connection, "glm-4.9", "openai-compatible-chat-abc")).toBe(false);
+  });
 });
 
 describe("getProviderCredentials model whitelist filtering", () => {
@@ -125,5 +151,17 @@ describe("getProviderCredentials model whitelist filtering", () => {
     const credentials = await getProviderCredentials("openai", null, "gpt-5.5", { bypassModelWhitelist: true });
 
     expectConnection(credentials, "conn-bypassed");
+  });
+
+  it("keeps an alias-prefixed whitelist connection eligible for a provider whose alias !== id", async () => {
+    // Regression: UI writes "kc/…" for kilocode; routing resolves the provider to "kilocode".
+    // Before the fix this connection was wrongly filtered out (whitelist-miss).
+    localDb.getProviderConnections.mockResolvedValue([
+      buildConnection({ id: "conn-kc", provider: "kilocode", allowedModels: ["kc/anthropic/claude-sonnet-4"] }),
+    ]);
+
+    const credentials = await getProviderCredentials("kilocode", null, "anthropic/claude-sonnet-4");
+
+    expectConnection(credentials, "conn-kc");
   });
 });

@@ -2,7 +2,7 @@ import { getProviderConnections, validateApiKey, updateProviderConnection, getSe
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
-import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
+import { resolveProviderId, getProviderAlias, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import * as log from "../utils/logger.js";
 
 /**
@@ -10,9 +10,18 @@ import * as log from "../utils/logger.js";
  * A connection is eligible when:
  *  - it has no `allowedModels` field
  *  - it has an empty `allowedModels` array
- *  - its `allowedModels` array contains `model` or `${provider}/${model}` (case-sensitive)
+ *  - its `allowedModels` array contains a bare `model`, or a prefixed
+ *    `${prefix}/${model}` entry whose prefix identifies this provider.
  *
- * The model argument is the canonical model identifier used at routing time.
+ * The model argument is the canonical model identifier used at routing time,
+ * and `provider` is the canonical provider id. The UI, however, persists
+ * whitelist entries with a *display* prefix, which can be any of:
+ *  - the canonical provider id      (e.g. "kilocode/…")
+ *  - the provider's uiAlias         (e.g. "kc/…", what ModelSelectModal writes)
+ *  - a custom connection prefix      (e.g. "zm/…" for openai/anthropic-compatible)
+ * so all three are accepted, case-sensitively, to keep old and new stored
+ * values working without a data migration.
+ *
  * When model is null/undefined, the filter is a no-op (returns true) because
  * no comparison can be made.
  *
@@ -25,8 +34,24 @@ export function isConnectionAllowedForModel(connection, model, provider = null) 
   if (!model) return true;
   const list = connection?.allowedModels;
   if (!Array.isArray(list) || list.length === 0) return true;
-  const providerModel = provider ? `${provider}/${model}` : null;
-  return list.some((allowedModel) => allowedModel === model || allowedModel === providerModel);
+
+  const acceptablePrefixes = new Set();
+  if (provider) {
+    acceptablePrefixes.add(provider);
+    const alias = getProviderAlias(provider);
+    if (alias) acceptablePrefixes.add(alias);
+  }
+  const customPrefix = connection?.providerSpecificData?.prefix;
+  if (customPrefix) acceptablePrefixes.add(customPrefix);
+
+  return list.some((allowedModel) => {
+    if (allowedModel === model) return true;
+    const slash = typeof allowedModel === "string" ? allowedModel.indexOf("/") : -1;
+    if (slash === -1) return false;
+    const prefix = allowedModel.slice(0, slash);
+    const remainder = allowedModel.slice(slash + 1);
+    return remainder === model && acceptablePrefixes.has(prefix);
+  });
 }
 
 // Mutex to prevent race conditions during account selection
