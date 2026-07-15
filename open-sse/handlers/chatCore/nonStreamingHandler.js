@@ -3,6 +3,7 @@ import { needsTranslation } from "../../translator/index.js";
 import { fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
 import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
+import { applyKiroCacheAccounting } from "../../utils/kiroCacheTracker.js";
 import { createErrorResult } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
@@ -257,7 +258,9 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   // Decloak tool_use names once on raw Claude body, before any translation (INPUT side)
   responseBody = decloakToolNames(responseBody, toolNameMap);
 
-  const usage = extractUsageFromResponse(responseBody);
+  // Kiro upstream emits no cache fields — reconstruct a local heuristic cache
+  // breakdown for Claude-source requests before persisting usage.
+  const usage = applyKiroCacheAccounting({ provider, sourceFormat, body, model, connectionId, usage: extractUsageFromResponse(responseBody) });
   appendLog({ tokens: usage, status: "200 OK" });
   saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, silent: true });
   if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));

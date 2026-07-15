@@ -4,6 +4,7 @@ import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { FORMATS } from "../../translator/formats.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
+import { applyKiroCacheAccounting } from "../../utils/kiroCacheTracker.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
@@ -199,7 +200,9 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
 
     if (onRequestSuccess) await onRequestSuccess();
 
-    const usage = parsed.usage || {};
+    // Kiro upstream emits no cache fields — reconstruct a local heuristic cache
+    // breakdown for Claude-source requests before persisting usage.
+    const usage = applyKiroCacheAccounting({ provider, sourceFormat, body, model, connectionId, usage: parsed.usage || {} });
     appendLog({ tokens: usage, status: "200 OK" });
     saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, silent: true });
     if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
