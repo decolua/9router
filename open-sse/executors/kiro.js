@@ -382,6 +382,27 @@ export class KiroExecutor extends BaseExecutor {
           // Handle meteringEvent - mark that we received it
           if (eventType === "meteringEvent") {
             state.hasMeteringEvent = true;
+            const metering = event.payload?.meteringEvent || event.payload || {};
+            const credits = Number(metering.usage);
+            if (Number.isFinite(credits)) {
+              state.usage = {
+                ...(state.usage || {}),
+                kiro_credits: credits,
+                kiro_credit_unit: typeof metering.unit === "string" ? metering.unit : "credit"
+              };
+
+              if (state.finishEmitted) {
+                const usageChunk = {
+                  id: responseId,
+                  object: "chat.completion.chunk",
+                  created,
+                  model,
+                  choices: [],
+                  usage: state.usage
+                };
+                controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(usageChunk)}\n\n`));
+              }
+            }
           }
 
           // Handle metricsEvent for token usage
@@ -399,6 +420,7 @@ export class KiroExecutor extends BaseExecutor {
 
               if (inputTokens > 0 || outputTokens > 0) {
                 state.usage = {
+                  ...(state.usage || {}),
                   prompt_tokens: inputTokens,
                   completion_tokens: outputTokens,
                   total_tokens: inputTokens + outputTokens
@@ -418,7 +440,9 @@ export class KiroExecutor extends BaseExecutor {
             state.finishEmitted = true;
 
             // Estimate tokens if not available from events
-            if (!state.usage) {
+            const hasTokenUsage = Number.isFinite(Number(state.usage?.prompt_tokens)) ||
+              Number.isFinite(Number(state.usage?.completion_tokens));
+            if (!hasTokenUsage) {
               // Estimate output tokens from content length
               const estimatedOutputTokens = state.totalContentLength > 0
                 ? Math.max(1, Math.floor(state.totalContentLength / 4))
@@ -430,6 +454,7 @@ export class KiroExecutor extends BaseExecutor {
                 : 0;
 
               state.usage = {
+                ...(state.usage || {}),
                 prompt_tokens: estimatedInputTokens,
                 completion_tokens: estimatedOutputTokens,
                 total_tokens: estimatedInputTokens + estimatedOutputTokens

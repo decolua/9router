@@ -47,6 +47,13 @@ async function readAllSSE(stream) {
   return result;
 }
 
+async function readNextWithTimeout(reader) {
+  return Promise.race([
+    reader.read(),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("timed out waiting for SSE chunk")), 100)),
+  ]);
+}
+
 describe("KiroExecutor thinking tag stripping", () => {
   it("strips <thinking> tags from assistantResponseEvent", async () => {
     const executor = new KiroExecutor();
@@ -120,5 +127,108 @@ describe("KiroExecutor thinking tag stripping", () => {
     // We shouldn't get an empty content chunk from f1 since it was entirely stripped and reasoning was present
     const contentChunks = objects.filter(obj => obj.choices[0].delta.content !== undefined);
     expect(contentChunks.length).toBe(0);
+  });
+
+  it("preserves Kiro meteringEvent usage on the final token-usage chunk", async () => {
+    const executor = new KiroExecutor();
+
+    const f1 = createMockFrame("assistantResponseEvent", { content: "OK" });
+    const f2 = createMockFrame("meteringEvent", { usage: 0.0097, unit: "credit", unitPlural: "credits" });
+    const f3 = createMockFrame("contextUsageEvent", { contextUsagePercentage: 1 });
+
+    const readableStream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(f1);
+        controller.enqueue(f2);
+        controller.enqueue(f3);
+        controller.close();
+      }
+    });
+
+    const output = await readAllSSE(executor.transformEventStreamToSSE({ body: readableStream }, "claude-test").body);
+    const objects = output
+      .split("\n")
+      .filter(line => line.startsWith("data: ") && !line.includes("[DONE]"))
+      .map(line => JSON.parse(line.slice(6)));
+
+    const usageChunk = objects.find(obj => obj.usage?.kiro_credits !== undefined);
+    expect(usageChunk.usage.kiro_credits).toBe(0.0097);
+    expect(usageChunk.usage.kiro_credit_unit).toBe("credit");
+    expect(usageChunk.usage.prompt_tokens).toBeGreaterThan(0);
+  });
+
+  it("emits Kiro metering usage even when messageStop arrives first", async () => {
+    const executor = new KiroExecutor();
+
+    const f1 = createMockFrame("assistantResponseEvent", { content: "OK" });
+    const f2 = createMockFrame("messageStopEvent", {});
+    const f3 = createMockFrame("meteringEvent", { usage: 0.0061, unit: "credit", unitPlural: "credits" });
+
+    const readableStream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(f1);
+        controller.enqueue(f2);
+        controller.enqueue(f3);
+        controller.close();
+      }
+    });
+
+    const output = await readAllSSE(executor.transformEventStreamToSSE({ body: readableStream }, "claude-test").body);
+    const objects = output
+      .split("\n")
+      .filter(line => line.startsWith("data: ") && !line.includes("[DONE]"))
+      .map(line => JSON.parse(line.slice(6)));
+
+    const usageChunk = objects.find(obj => obj.usage?.kiro_credits !== undefined);
+    expect(usageChunk.usage.kiro_credits).toBe(0.0061);
+  });
+
+  it("emits a terminal chunk at messageStop before the upstream stream closes", async () => {
+    const executor = new KiroExecutor();
+
+    const f1 = createMockFrame("assistantResponseEvent", { content: "OK" });
+    const f2 = createMockFrame("messageStopEvent", {});
+
+    const readableStream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(f1);
+        controller.enqueue(f2);
+      }
+    });
+
+    const transformedResponse = executor.transformEventStreamToSSE({ body: readableStream }, "claude-test");
+    const reader = transformedResponse.body.getReader();
+    const decoder = new TextDecoder();
+    let output = "";
+    for (let i = 0; i < 4 && !output.includes("\"finish_reason\":\"stop\""); i++) {
+      const { value } = await readNextWithTimeout(reader);
+      output += decoder.decode(value, { stream: true });
+    }
+    await reader.cancel();
+
+    expect(output).toContain("\"finish_reason\":\"stop\"");
+  });
+
+  it("uses tool_calls finish reason for tool streams without messageStop", async () => {
+    const executor = new KiroExecutor();
+
+    const f1 = createMockFrame("toolUseEvent", { toolUseId: "tool-1", name: "read_file", input: { path: "a.txt" } });
+
+    const readableStream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(f1);
+        controller.close();
+      }
+    });
+
+    const transformedResponse = executor.transformEventStreamToSSE({ body: readableStream }, "claude-test");
+    const output = await readAllSSE(transformedResponse.body);
+    const objects = output
+      .split("\n")
+      .filter(line => line.startsWith("data: ") && !line.includes("[DONE]"))
+      .map(line => JSON.parse(line.slice(6)));
+
+    const finalChunk = objects.at(-1);
+    expect(finalChunk.choices[0].finish_reason).toBe("tool_calls");
   });
 });

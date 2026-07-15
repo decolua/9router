@@ -98,8 +98,10 @@ export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, 
 
   const inTokens = tokens.input_tokens ?? tokens.prompt_tokens ?? 0;
   const outTokens = tokens.output_tokens ?? tokens.completion_tokens ?? 0;
+  const kiroCredits = Number(tokens.kiro_credits);
+  const hasKiroCreditUsage = Number.isFinite(kiroCredits) && kiroCredits >= 0;
 
-  if (inTokens === 0 && outTokens === 0) return;
+  if (inTokens === 0 && outTokens === 0 && !hasKiroCreditUsage) return;
 
   if (!silent) {
     const time = new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
