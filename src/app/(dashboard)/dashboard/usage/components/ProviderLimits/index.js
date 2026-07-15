@@ -9,6 +9,7 @@ import {
   parseQuotaData,
   calculatePercentage,
   getConnectionLabel,
+  maskAccountIdentity,
   getAccountTypeLabel,
   getPlanLabel,
   getConnectionQuotaRemaining,
@@ -31,6 +32,7 @@ import {
   CLAUDE_REFRESH_INTERVAL_MS,
   DEPLETED_QUOTA_THRESHOLD,
   AUTO_REFRESH_STORAGE_KEY,
+  HIDE_ACCOUNT_IDENTITY_STORAGE_KEY,
   CONNECTIONS_PAGE_SIZE,
   ACCOUNT_PAGE_SIZE_OPTIONS,
   ACCOUNT_PAGE_SIZE_MAX,
@@ -52,16 +54,15 @@ const AUTO_PING_TOOLTIPS = {
   codex: "Auto-starts the next 5h Codex window after reset by sending a tiny gpt-5.5 request. Consumes a small amount of quota.",
 };
 
-function getConnectionSecondaryLabel(connection) {
+function getConnectionSecondaryLabel(connection, options = {}) {
+  let label = null;
   if (connection.name?.trim() && connection.email?.trim() && connection.name.trim() !== connection.email.trim()) {
-    return connection.email.trim();
+    label = connection.email.trim();
+  } else if (connection.name?.trim() && connection.displayName?.trim() && connection.name.trim() !== connection.displayName.trim()) {
+    label = connection.displayName.trim();
   }
 
-  if (connection.name?.trim() && connection.displayName?.trim() && connection.name.trim() !== connection.displayName.trim()) {
-    return connection.displayName.trim();
-  }
-
-  return null;
+  return options.hideIdentity ? maskAccountIdentity(label) : label;
 }
 
 // Region is stored for builder-id/idc/api_key flows; social and imported flows
@@ -112,9 +113,11 @@ export default function ProviderLimits() {
   const [loading, setLoading] = useState({});
   const [errors, setErrors] = useState({});
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [hideAccountIdentity, setHideAccountIdentity] = useState(false);
   const [autoPingMaps, setAutoPingMaps] = useState({ claude: {}, codex: {} });
   const [lastUpdated, setLastUpdated] = useState(null);
   const [hasHydratedAutoRefresh, setHasHydratedAutoRefresh] = useState(false);
+  const [hasHydratedHideIdentity, setHasHydratedHideIdentity] = useState(false);
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [countdown, setCountdown] = useState(60);
   const [connectionsLoading, setConnectionsLoading] = useState(true);
@@ -515,6 +518,22 @@ export default function ProviderLimits() {
     if (typeof window === "undefined" || !hasHydratedAutoRefresh) return;
     window.localStorage.setItem(AUTO_REFRESH_STORAGE_KEY, String(autoRefresh));
   }, [autoRefresh, hasHydratedAutoRefresh]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setHideAccountIdentity(
+      window.localStorage.getItem(HIDE_ACCOUNT_IDENTITY_STORAGE_KEY) === "true",
+    );
+    setHasHydratedHideIdentity(true);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !hasHydratedHideIdentity) return;
+    window.localStorage.setItem(
+      HIDE_ACCOUNT_IDENTITY_STORAGE_KEY,
+      String(hideAccountIdentity),
+    );
+  }, [hideAccountIdentity, hasHydratedHideIdentity]);
 
   // Load auto-ping per-connection maps
   useEffect(() => {
@@ -919,6 +938,22 @@ export default function ProviderLimits() {
             )}
           </button>
 
+          {/* Account identity privacy toggle */}
+          <button
+            type="button"
+            onClick={() => setHideAccountIdentity((prev) => !prev)}
+            aria-pressed={hideAccountIdentity}
+            aria-label={hideAccountIdentity ? "Show account names and emails" : "Hide account names and emails"}
+            className={`flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2 text-xs transition-colors ${hideAccountIdentity ? "border-primary/40 bg-primary/10 text-primary" : "border-black/10 text-text-primary hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"}`}
+            title={hideAccountIdentity ? "Show account names and emails" : "Hide account names and emails"}
+          >
+            <span aria-hidden="true" className="material-symbols-outlined text-[14px]">
+              {hideAccountIdentity ? "visibility_off" : "visibility"}
+            </span>
+            <span className="hidden sm:inline">
+              {hideAccountIdentity ? "Show names" : "Hide names"}
+            </span>
+          </button>
 
           {/* Refresh all button */}
           <button
@@ -995,14 +1030,14 @@ export default function ProviderLimits() {
                           </span>
                         )}
                       </div>
-                      {getConnectionLabel(conn) ? (
+                      {getConnectionLabel(conn, { hideIdentity: hideAccountIdentity }) ? (
                         <p className="text-xs text-text-muted truncate">
-                          {getConnectionLabel(conn)}
+                          {getConnectionLabel(conn, { hideIdentity: hideAccountIdentity })}
                         </p>
                       ) : null}
-                      {getConnectionSecondaryLabel(conn) ? (
+                      {getConnectionSecondaryLabel(conn, { hideIdentity: hideAccountIdentity }) ? (
                         <p className="text-[11px] text-text-muted/80 truncate">
-                          {getConnectionSecondaryLabel(conn)}
+                          {getConnectionSecondaryLabel(conn, { hideIdentity: hideAccountIdentity })}
                         </p>
                       ) : null}
                       {(conn.provider === "kiro" && (kiroRegion(conn) || conn.providerSpecificData?.profileArn)) && (
@@ -1324,7 +1359,7 @@ export default function ProviderLimits() {
           setResetConfirmState(null);
         }}
         title="Reset Codex limit?"
-        message={`Use 1 Codex reset credit for ${getConnectionLabel(resetConfirmState?.connection || {}) || "this account"}. This cannot be undone. Remaining credits: ${resetConfirmState?.resetCreditCount ?? 0}.`}
+        message={`Use 1 Codex reset credit for ${getConnectionLabel(resetConfirmState?.connection || {}, { hideIdentity: hideAccountIdentity }) || "this account"}. This cannot be undone. Remaining credits: ${resetConfirmState?.resetCreditCount ?? 0}.`}
         confirmText="Reset limit"
         cancelText="Cancel"
         variant="danger"
@@ -1338,7 +1373,7 @@ export default function ProviderLimits() {
               <div className="min-w-0">
                 <h3 className="text-base font-semibold text-text-primary">Codex Reset Credit Expiry</h3>
                 <p className="mt-0.5 truncate text-xs text-text-muted">
-                  {getConnectionLabel(resetCreditsState.connection) || "Codex account"}
+                  {getConnectionLabel(resetCreditsState.connection, { hideIdentity: hideAccountIdentity }) || "Codex account"}
                 </p>
               </div>
               <button

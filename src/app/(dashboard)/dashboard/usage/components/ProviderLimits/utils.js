@@ -7,6 +7,7 @@ export const REFRESH_INTERVAL_MS = 60000;
 export const CLAUDE_REFRESH_INTERVAL_MS = 180000;
 export const DEPLETED_QUOTA_THRESHOLD = 5;
 export const AUTO_REFRESH_STORAGE_KEY = "quotaAutoRefresh";
+export const HIDE_ACCOUNT_IDENTITY_STORAGE_KEY = "quotaHideAccountIdentity";
 export const CONNECTIONS_PAGE_SIZE = 20;
 export const ACCOUNT_PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 export const ACCOUNT_PAGE_SIZE_MAX = 500;
@@ -59,11 +60,35 @@ const PLAN_LABELS = {
 };
 
 // ─── Pure helpers ─────────────────────────────────────────────────────────────
-export function getConnectionLabel(connection) {
-  return connection.name?.trim()
+/** Mask account name/email for privacy, e.g. johndoe@email.com → joh*****@****.com */
+export function maskAccountIdentity(value) {
+  if (value == null) return value;
+  if (typeof value !== "string") return value;
+  if (!value.trim()) return value;
+
+  const at = value.lastIndexOf("@");
+  if (at > 0 && at < value.length - 1 && !value.includes(" ")) {
+    const local = value.slice(0, at);
+    const domain = value.slice(at + 1);
+    const localKeep = Math.min(3, local.length);
+    const maskedLocal = `${local.slice(0, localKeep)}${"*".repeat(5)}`;
+    const dot = domain.lastIndexOf(".");
+    const tld = dot > 0 ? domain.slice(dot) : "";
+    return `${maskedLocal}@${"*".repeat(4)}${tld}`;
+  }
+
+  const keep = Math.min(3, value.length);
+  if (value.length <= 2) return "*".repeat(value.length);
+  return `${value.slice(0, keep)}${"*".repeat(5)}`;
+}
+
+export function getConnectionLabel(connection, options = {}) {
+  const label = connection.name?.trim()
     || connection.email?.trim()
     || connection.displayName?.trim()
     || null;
+  if (!label) return null;
+  return options.hideIdentity ? maskAccountIdentity(label) : label;
 }
 
 function humanizePlan(value) {
