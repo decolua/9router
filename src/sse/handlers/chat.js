@@ -8,6 +8,7 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { captureClaudeIdentity, isClaudeCodeClient } from "open-sse/utils/claudeIdentityManager.js";
+import { isLocalRequest } from "@/dashboardGuard";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
@@ -40,7 +41,6 @@ export async function handleChat(request, clientRawRequest = null) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid JSON body");
   }
 
-  captureClaudeIdentity(Object.fromEntries(request.headers.entries()), { path: new URL(request.url).pathname });
   const modelStr = routingBody.model;
 
   // Request summary is emitted as the unified "▶" line in chatCore (has fmt/thinking/account)
@@ -72,6 +72,19 @@ export async function handleChat(request, clientRawRequest = null) {
   if (!modelStr) {
     log.warn("CHAT", "Missing model");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
+  }
+
+  // Capture only after authentication has completed. Identity is scoped to the
+  // compatible provider node selected by this request, never shared globally.
+  const identityModelInfo = await getModelInfo(modelStr);
+  if (identityModelInfo.provider?.startsWith("anthropic-compatible-")) {
+    captureClaudeIdentity(request.headers, {
+      path: new URL(request.url).pathname,
+      body: routingBody,
+      authenticated: settings.requireApiKey === true,
+      local: isLocalRequest(request),
+      namespace: `anthropic-compatible:${identityModelInfo.provider}`,
+    });
   }
 
   const transparentResponse = await tryHandleTransparentAnthropicProxy(request, modelStr);

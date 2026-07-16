@@ -164,6 +164,13 @@ export class DefaultExecutor extends BaseExecutor {
   buildHeaders(credentials, stream = true) {
     const rt = credentials?.runtimeTransport;
     const headers = { "Content-Type": "application/json", ...(rt ? rt.headers : this.config.headers) };
+    const isAnthropicCompatible = this.provider?.startsWith?.("anthropic-compatible-");
+    // Some Claude gateways return Brotli/Zstd bytes without a usable decoding
+    // path for non-streaming JSON. This is not a client identity field, so
+    // request an uncompressed response unless the provider configured one.
+    if (isAnthropicCompatible && !Object.keys(headers).some((key) => key.toLowerCase() === "accept-encoding")) {
+      headers["Accept-Encoding"] = "identity";
+    }
     const desc = rt?.auth || AUTH_DESCRIPTORS[this.provider] || this.resolveAuthDescriptor();
     // Hooks run BEFORE auth so dynamic overlays (claude cached headers) can't clobber the token.
     for (const hook of desc.hooks || []) HEADER_HOOKS[hook]?.(headers, credentials);
@@ -171,14 +178,16 @@ export class DefaultExecutor extends BaseExecutor {
       credentials?.providerSpecificData?.injectClaudeIdentity === true;
     recordClaudeIdentityExecutorBuild({ provider: this.provider, injectClaudeIdentity });
     if (injectClaudeIdentity) {
-      const merged = mergeClaudeIdentityHeaders(headers).headers;
+      const merged = mergeClaudeIdentityHeaders(headers, {
+        namespace: `anthropic-compatible:${this.provider}`,
+      }).headers;
       for (const key of Object.keys(headers)) delete headers[key];
       Object.assign(headers, merged);
     }
     applyAuth(headers, desc, credentials);
 
     // Strip first-party Claude Code identity headers for non-Anthropic anthropic-compatible upstreams
-    if (this.provider?.startsWith?.("anthropic-compatible-")) {
+    if (isAnthropicCompatible) {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || "";
       const isOfficialAnthropic = baseUrl === "" || baseUrl.includes("api.anthropic.com");
       if (!isOfficialAnthropic && !injectClaudeIdentity) {
