@@ -58,6 +58,11 @@ export const STREAM_FIRST_CHUNK_TIMEOUT_MS = envMs("STREAM_FIRST_CHUNK_TIMEOUT_M
 // Fetch connect timeout: abort if upstream doesn't return response headers within this duration
 export const FETCH_CONNECT_TIMEOUT_MS = envMs("FETCH_CONNECT_TIMEOUT_MS", 60 * 1000);
 
+// Per-model timeout for combo fallback. When > 0, each model in a combo
+// gets at most this many ms before the combo falls to the next model.
+// 0 = disabled (use fetch connect timeout + retries). Env: COMBO_MODEL_TIMEOUT_MS.
+export const COMBO_MODEL_TIMEOUT_MS = envMs("COMBO_MODEL_TIMEOUT_MS", 0);
+
 // Gemini native TTS fetch timeout: abort if Google does not return response headers in time.
 export const GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS = envMs("GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS", 45 * 1000);
 
