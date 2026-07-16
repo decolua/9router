@@ -21,6 +21,7 @@ import AddApiKeyModal from "./AddApiKeyModal";
 import EditCompatibleNodeModal from "./EditCompatibleNodeModal";
 import AddCustomModelModal from "./AddCustomModelModal";
 import BulkImportCodexModal from "./BulkImportCodexModal";
+import ExportImportKeysModal from "./ExportImportKeysModal";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
 
@@ -47,6 +48,7 @@ export default function ProviderDetailPage() {
   const [showAddApiKeyModal, setShowAddApiKeyModal] = useState(false);
   const [addConnectionError, setAddConnectionError] = useState("");
   const [showBulkImportCodex, setShowBulkImportCodex] = useState(false);
+  const [showExportImportKeys, setShowExportImportKeys] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showEditNodeModal, setShowEditNodeModal] = useState(false);
   const [showBulkProxyModal, setShowBulkProxyModal] = useState(false);
@@ -148,6 +150,16 @@ export default function ProviderDetailPage() {
   const isAnthropicCompatible = isAnthropicCompatibleProvider(providerId);
   const isCompatible = isOpenAICompatible || isAnthropicCompatible;
   const hasDualAuthModes = !isCompatible && isOAuth && supportsApiKeyAuth;
+  const isWebCookieProvider = !!WEB_COOKIE_PROVIDERS[providerId];
+  // Export/import applies to API-key and cookie credentials (not OAuth tokens).
+  const canExportImportKeys =
+    !isFreeNoAuth &&
+    (supportsApiKeyAuth ||
+      isCompatible ||
+      isWebCookieProvider ||
+      !!FREE_TIER_PROVIDERS[providerId] ||
+      hasDualAuthModes ||
+      connections.some((c) => c.authType === "apikey" || c.authType === "cookie"));
   const oauthConnectionLabel =
     providerId === "xai" ? "Grok Build OAuth"
     : providerId === "grok-cli" ? "Grok CLI Device Login"
@@ -1381,6 +1393,17 @@ export default function ProviderDetailPage() {
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-lg font-semibold">Connections</h2>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+              {canExportImportKeys && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  icon="import_export"
+                  onClick={() => setShowExportImportKeys(true)}
+                  title={translate("Export or import API keys as JSON / TXT")}
+                >
+                  {translate("Export / Import")}
+                </Button>
+              )}
               {connections.length > 0 && proxyPools.length > 0 && (
                 <Button
                   size="sm"
@@ -1731,6 +1754,16 @@ export default function ProviderDetailPage() {
           isOpen={showBulkImportCodex}
           onClose={() => setShowBulkImportCodex(false)}
           onSuccess={fetchConnections}
+        />
+      )}
+
+      {canExportImportKeys && (
+        <ExportImportKeysModal
+          isOpen={showExportImportKeys}
+          providerId={providerId}
+          providerName={providerInfo?.name}
+          onClose={() => setShowExportImportKeys(false)}
+          onImportSuccess={fetchConnections}
         />
       )}
 

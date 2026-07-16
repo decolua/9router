@@ -38,6 +38,7 @@ const PUBLIC_PREFIXES = ["/v1", "/v1beta", "/api/v1", "/api/v1beta", "/codex"];
 const ALWAYS_PROTECTED = [
   "/api/shutdown",
   "/api/settings/database",
+  "/api/providers/keys/export",
   "/api/version/shutdown",
   "/api/version/update",
   "/api/oauth/cursor/auto-import",
