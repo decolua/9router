@@ -53,6 +53,12 @@ const RESPONSES_API_ALLOWLIST = new Set([
 
 const EFFORT_LEVELS = ["low", "medium", "high", "xhigh"];
 const GROK_CLI_TURN_STORE_MAX = 5000;
+const GROK_CLI_NATIVE_ITEM_ID = /^(?:rs|msg|fc)_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const GROK_CLI_FREEFORM_TOOL_PARAMETERS = {
+  type: "object",
+  properties: { input: { type: "string" } },
+  required: ["input"],
+};
 
 // Per-session last turn index so multi-turn headers never go backwards within this process
 const sessionTurnStore = new Map();
@@ -142,13 +148,89 @@ export function resolveGrokCliSessionId(credentials, body) {
   });
 }
 
+function stringifyGrokCliToolOutput(output) {
+  if (typeof output === "string") return output;
+  if (output === undefined) return "";
+  return JSON.stringify(output);
+}
+
+function isNativeGrokCliItemId(id) {
+  return typeof id === "string" && GROK_CLI_NATIVE_ITEM_ID.test(id);
+}
+
+function normalizeGrokCliInputItem(item) {
+  if (!item || typeof item !== "object" || Array.isArray(item)) return item;
+  const { internal_chat_message_metadata_passthrough: _metadata, ...clean } = item;
+
+  if (item.type === "reasoning") {
+    if (!isNativeGrokCliItemId(item.id) || typeof item.encrypted_content !== "string") return null;
+    return clean;
+  }
+
+  if (item.type === "custom_tool_call") {
+    const callId = item.call_id || item.id;
+    const name = typeof item.name === "string" ? item.name.trim() : "";
+    if (!callId || !name) return null;
+    return {
+      type: "function_call",
+      call_id: callId,
+      name,
+      arguments: JSON.stringify({ input: stringifyGrokCliToolOutput(item.input ?? item.arguments) }),
+    };
+  }
+
+  if (item.type === "custom_tool_call_output" || item.type === "function_call_output") {
+    const callId = item.call_id || item.id;
+    if (!callId) return null;
+    return {
+      type: "function_call_output",
+      call_id: callId,
+      output: stringifyGrokCliToolOutput(item.output),
+    };
+  }
+
+  if (item.type === "function_call") {
+    const callId = item.call_id || item.id;
+    const name = typeof item.name === "string" ? item.name.trim() : "";
+    if (!callId || !name) return null;
+    return {
+      type: "function_call",
+      ...(isNativeGrokCliItemId(item.id) ? { id: item.id } : {}),
+      call_id: callId,
+      name,
+      arguments: typeof item.arguments === "string" ? item.arguments : JSON.stringify(item.arguments ?? {}),
+      ...(typeof item.status === "string" ? { status: item.status } : {}),
+    };
+  }
+
+  return clean;
+}
+
+export function normalizeGrokCliInput(body) {
+  if (!Array.isArray(body?.input)) return body;
+  const normalized = body.input.map(normalizeGrokCliInputItem).filter(Boolean);
+  const callIds = new Set(
+    normalized
+      .filter((item) => item?.type === "function_call" && item.call_id)
+      .map((item) => item.call_id)
+  );
+  body.input = normalized.filter(
+    (item) => item?.type !== "function_call_output" || callIds.has(item.call_id)
+  );
+  return body;
+}
+
 function stripStoredItemReferences(body) {
   if (!Array.isArray(body.input)) return;
   body.input = body.input.filter((item) => {
     if (typeof item === "string" && SERVER_ID_PATTERN.test(item)) return false;
     if (item && typeof item === "object" && !Array.isArray(item)) {
       if (item.type === "item_reference") return false;
-      if (typeof item.id === "string" && SERVER_ID_PATTERN.test(item.id)) delete item.id;
+      if (
+        typeof item.id === "string" &&
+        SERVER_ID_PATTERN.test(item.id) &&
+        !isNativeGrokCliItemId(item.id)
+      ) delete item.id;
     }
     return true;
   });
@@ -207,8 +289,9 @@ function normalizeGrokCliTools(body) {
         : typeof fn?.description === "string"
           ? fn.description
           : "";
-    const parameters =
-      tool.parameters && typeof tool.parameters === "object" && !Array.isArray(tool.parameters)
+    const parameters = type === "custom"
+      ? GROK_CLI_FREEFORM_TOOL_PARAMETERS
+      : tool.parameters && typeof tool.parameters === "object" && !Array.isArray(tool.parameters)
         ? tool.parameters
         : fn?.parameters && typeof fn.parameters === "object" && !Array.isArray(fn.parameters)
           ? fn.parameters
@@ -365,6 +448,7 @@ export class GrokCliExecutor extends BaseExecutor {
 
     // Keep role:"system" as-is — official grok-pager HAR sends system, not developer
     // (Codex converts system→developer; Grok CLI does not).
+    normalizeGrokCliInput(body);
     stripStoredItemReferences(body);
     normalizeGrokCliTools(body);
 

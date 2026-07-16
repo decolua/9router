@@ -200,6 +200,113 @@ describe("GrokCliExecutor", () => {
     expect(out.reasoning.effort).toBe("medium");
   });
 
+  it("normalizes Codex cross-provider tool and reasoning history", () => {
+    const out = executor.transformRequest("grok-4.5", {
+      model: "grok-4.5",
+      input: [
+        { type: "message", role: "user", content: "continue" },
+        {
+          type: "reasoning",
+          id: "rs_07fe505b3114f180016a5698411c448191bdcdcba678464461",
+          encrypted_content: "openai-ciphertext",
+          summary: [],
+          internal_chat_message_metadata_passthrough: { turn_id: "turn-1" },
+        },
+        {
+          type: "custom_tool_call",
+          id: "ctc_openai",
+          call_id: "call-custom",
+          name: "exec",
+          input: "run this",
+          internal_chat_message_metadata_passthrough: { turn_id: "turn-1" },
+        },
+        {
+          type: "custom_tool_call_output",
+          call_id: "call-custom",
+          output: [{ type: "input_text", text: "first" }, { type: "input_text", text: "second" }],
+        },
+        {
+          type: "function_call_output",
+          call_id: "call-function",
+          output: [{ type: "input_text", text: "function result" }],
+        },
+      ],
+      tools: [{ type: "custom", name: "exec", description: "Run command" }],
+    }, true, { connectionId: "cross-provider" });
+
+    expect(out.input.some((item) => item.type === "reasoning")).toBe(false);
+    expect(out.input[1]).toEqual({
+      type: "function_call",
+      call_id: "call-custom",
+      name: "exec",
+      arguments: JSON.stringify({ input: "run this" }),
+    });
+    expect(out.input[2]).toEqual({
+      type: "function_call_output",
+      call_id: "call-custom",
+      output: JSON.stringify([{ type: "input_text", text: "first" }, { type: "input_text", text: "second" }]),
+    });
+    expect(out.input.some((item) => item.call_id === "call-function")).toBe(false);
+    expect(out.tools[0].parameters).toEqual({
+      type: "object",
+      properties: { input: { type: "string" } },
+      required: ["input"],
+    });
+  });
+
+  it("stringifies structured outputs and removes orphaned output items", () => {
+    const out = executor.transformRequest("grok-4.5", {
+      model: "grok-4.5",
+      input: [
+        { type: "function_call", call_id: "call-array", name: "array_tool", arguments: "{}" },
+        { type: "function_call_output", call_id: "call-array", output: [1, 2] },
+        { type: "function_call", call_id: "call-null", name: "null_tool", arguments: "{}" },
+        { type: "function_call_output", call_id: "call-null", output: null },
+        { type: "custom_tool_call", call_id: "call-invalid", input: "missing name" },
+        { type: "custom_tool_call_output", call_id: "call-invalid", output: "orphan" },
+      ],
+    }, true, { connectionId: "structured-output" });
+
+    const outputs = out.input.filter((item) => item.type === "function_call_output");
+    expect(outputs).toEqual([
+      { type: "function_call_output", call_id: "call-array", output: "[1,2]" },
+      { type: "function_call_output", call_id: "call-null", output: "null" },
+    ]);
+    expect(out.input.some((item) => item.call_id === "call-invalid")).toBe(false);
+  });
+
+  it("preserves native Grok encrypted reasoning and item ids", () => {
+    const reasoningId = "rs_3e3f6187-892a-96db-893b-904eff019e19";
+    const messageId = "msg_3e3f6187-892a-96db-893b-904eff019e19";
+    const functionId = "fc_3e3f6187-892a-96db-893b-904eff019e19";
+    const out = executor.transformRequest("grok-4.5", {
+      model: "grok-4.5",
+      input: [
+        {
+          type: "reasoning",
+          id: reasoningId,
+          status: "completed",
+          encrypted_content: "grok-ciphertext",
+          summary: [],
+          internal_chat_message_metadata_passthrough: { turn_id: "turn-2" },
+        },
+        { type: "message", id: messageId, role: "assistant", content: "done" },
+        { type: "function_call", id: functionId, call_id: "native-call", name: "wait", arguments: "{}" },
+        { type: "function_call_output", call_id: "native-call", output: "done" },
+        { type: "message", role: "user", content: "next" },
+      ],
+    }, true, { connectionId: "native-grok" });
+
+    expect(out.input[0]).toMatchObject({
+      type: "reasoning",
+      id: reasoningId,
+      encrypted_content: "grok-ciphertext",
+    });
+    expect(out.input[0].internal_chat_message_metadata_passthrough).toBeUndefined();
+    expect(out.input[1].id).toBe(messageId);
+    expect(out.input[2].id).toBe(functionId);
+  });
+
   it("normalizes official effort aliases", () => {
     expect(normalizeGrokCliEffort("none")).toBe("high");
     expect(normalizeGrokCliEffort("minimal")).toBe("high");
