@@ -18,3 +18,17 @@
 - 加入字段级刷新、降级捕获保护、stale 标记与 TTL（默认 24h / 6h）。
 - Anthropic-compatible 非透明请求默认协商未压缩响应，避免压缩 JSON 被误判为 502；日志显示 `content-encoding`。
 - 补充 Identity 安全、隔离、stale、TTL 与降级捕获回归测试。
+
+## 4. 本次提交 — Identity Review Remediation
+
+- 透明代理协商未压缩响应，并移除可能与解压后正文不一致的响应压缩元数据。
+- 可重放 Header 收紧为显式白名单；未知前缀 Header 仅观察，避免未来凭据类字段泄露或重放。
+- 恢复官方 `claude` provider 的独立身份缓存，不与 Anthropic-compatible 节点共享。
+- 降级捕获不再刷新 Identity TTL，避免稀疏请求无限延长旧身份的有效期。
+
+## 4. 本次提交 — Identity Review Remediation
+
+- 透明代理协商未压缩响应，并移除可能与解压后正文不一致的响应压缩元数据。
+- 可重放 Header 收紧为显式白名单；未知前缀 Header 仅观察，避免未来凭据类字段泄露或重放。
+- 恢复官方 `claude` provider 的独立身份缓存，不与 Anthropic-compatible 节点共享。
+- 降级捕获不再刷新 Identity TTL，避免稀疏请求无限延长旧身份的有效期。

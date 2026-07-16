@@ -12,6 +12,16 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
+const TRUSTED_CLAUDE_SOURCE = {
+  path: "/v1/messages",
+  body: { model: "claude-test", messages: [] },
+  local: true,
+};
+
+function cacheTrustedClaudeHeaders(cacheModule, headers) {
+  return cacheModule.cacheClaudeHeaders(headers, TRUSTED_CLAUDE_SOURCE);
+}
+
 // ─── claudeHeaderCache ────────────────────────────────────────────────────────
 
 describe("claudeHeaderCache", () => {
@@ -29,7 +39,7 @@ describe("claudeHeaderCache", () => {
   });
 
   it("caches headers when user-agent contains 'claude-code'", () => {
-    cacheModule.cacheClaudeHeaders({
+    cacheTrustedClaudeHeaders(cacheModule, {
       "user-agent": "claude-code/2.1.63 node/24.3.0",
       "anthropic-beta": "claude-code-20250219,oauth-2025-04-20",
       "anthropic-version": "2023-06-01",
@@ -54,11 +64,11 @@ describe("claudeHeaderCache", () => {
     expect(cached["anthropic-beta"]).toBe("claude-code-20250219,oauth-2025-04-20");
     expect(cached["x-app"]).toBe("cli");
     expect(cached["x-stainless-os"]).toBe("MacOS");
-    expect(cached["content-type"]).toBe("application/json");
+    expect(cached["content-type"]).toBeUndefined();
   });
 
   it("caches headers when user-agent contains 'claude-cli'", () => {
-    cacheModule.cacheClaudeHeaders({
+    cacheTrustedClaudeHeaders(cacheModule, {
       "user-agent": "claude-cli/1.0.0",
       "anthropic-version": "2023-06-01",
     });
@@ -67,7 +77,7 @@ describe("claudeHeaderCache", () => {
   });
 
   it("caches headers when x-app is 'cli' (regardless of user-agent)", () => {
-    cacheModule.cacheClaudeHeaders({
+    cacheTrustedClaudeHeaders(cacheModule, {
       "user-agent": "axios/1.7.0",
       "x-app": "cli",
       "anthropic-version": "2023-06-01",
@@ -76,7 +86,7 @@ describe("claudeHeaderCache", () => {
   });
 
   it("does NOT cache headers for non-Claude clients", () => {
-    cacheModule.cacheClaudeHeaders({
+    cacheTrustedClaudeHeaders(cacheModule, {
       "user-agent": "PostmanRuntime/7.43.0",
       "anthropic-version": "2023-06-01",
     });
@@ -84,11 +94,11 @@ describe("claudeHeaderCache", () => {
   });
 
   it("refreshes cache on each matching request", () => {
-    cacheModule.cacheClaudeHeaders({
+    cacheTrustedClaudeHeaders(cacheModule, {
       "user-agent": "claude-code/2.0.0",
       "x-stainless-package-version": "0.70.0",
     });
-    cacheModule.cacheClaudeHeaders({
+    cacheTrustedClaudeHeaders(cacheModule, {
       "user-agent": "claude-code/2.1.63",
       "x-stainless-package-version": "0.74.0",
     });
@@ -98,15 +108,16 @@ describe("claudeHeaderCache", () => {
   });
 
   it("ignores calls with null or non-object headers", () => {
-    cacheModule.cacheClaudeHeaders(null);
-    cacheModule.cacheClaudeHeaders(undefined);
-    cacheModule.cacheClaudeHeaders("string");
+    cacheTrustedClaudeHeaders(cacheModule, null);
+    cacheTrustedClaudeHeaders(cacheModule, undefined);
+    cacheTrustedClaudeHeaders(cacheModule, "string");
     expect(cacheModule.getCachedClaudeHeaders()).toBeNull();
   });
 
   it("only stores keys that are actually present in the headers object", () => {
-    cacheModule.cacheClaudeHeaders({
+    cacheTrustedClaudeHeaders(cacheModule, {
       "user-agent": "claude-code/2.1.63",
+      "x-app": "cli",
       // Most stainless headers absent
     });
     const cached = cacheModule.getCachedClaudeHeaders();
@@ -123,19 +134,19 @@ describe("claudeIdentityManager", () => {
     manager = await import("open-sse/utils/claudeIdentityManager.js");
   });
 
-  it("captures unknown end-to-end headers but excludes hop-by-hop headers", () => {
+  it("observes unknown end-to-end headers without replaying them", () => {
     manager.captureClaudeIdentity({
       "user-agent": "claude-code/2.1.63",
+      "x-app": "cli",
       "x-claude-new-header": "kept",
       connection: "keep-alive",
       "content-length": "42",
-    }, { path: "/v1/messages" });
+    }, { ...TRUSTED_CLAUDE_SOURCE, namespace: "anthropic-compatible:test" });
 
-    const identity = manager.getClaudeIdentity();
-    expect(identity.headers["x-claude-new-header"]).toBe("kept");
-    expect(identity.headers.connection).toBeUndefined();
-    expect(identity.headers["content-length"]).toBeUndefined();
-    expect(identity.source.path).toBe("/v1/messages");
+    const debug = manager.getClaudeIdentityDebug("anthropic-compatible:test");
+    expect(debug.headers.find((header) => header.name === "x-claude-new-header")).toMatchObject({ policy: "observeOnly" });
+    expect(debug.headers.find((header) => header.name === "connection")).toMatchObject({ policy: "neverReplay" });
+    expect(debug.headers.find((header) => header.name === "content-length")).toMatchObject({ policy: "neverReplay" });
   });
 
   it("keeps provider authentication and deduplicates anthropic beta flags", () => {
@@ -145,13 +156,13 @@ describe("claudeIdentityManager", () => {
       "x-api-key": "captured-key",
       "anthropic-beta": "from-client,shared",
       "x-app": "cli",
-    });
+    }, { ...TRUSTED_CLAUDE_SOURCE, namespace: "anthropic-compatible:test" });
 
     const result = manager.mergeClaudeIdentityHeaders({
       Authorization: "Bearer provider",
       "x-api-key": "provider-key",
       "anthropic-beta": "from-provider,shared",
-    });
+    }, { namespace: "anthropic-compatible:test" });
 
     expect(result.injected).toBe(true);
     expect(result.headers.Authorization).toBe("Bearer provider");
@@ -191,7 +202,7 @@ describe("DefaultExecutor.buildHeaders() — claude provider", () => {
     vi.resetModules();
     // Prime the cache with live client headers before importing executor
     const cache = await import("open-sse/utils/claudeHeaderCache.js");
-    cache.cacheClaudeHeaders({
+    cacheTrustedClaudeHeaders(cache, {
       "user-agent": "claude-code/2.1.63 node/24.3.0",
       "anthropic-beta": "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14",
       "anthropic-version": "2023-06-01",
@@ -395,7 +406,7 @@ describe("DefaultExecutor.buildHeaders() — anthropic-compatible stripping", ()
       "x-app": "cli",
       "anthropic-dangerous-direct-browser-access": "true",
       "anthropic-beta": "claude-code-20250219",
-    });
+    }, { ...TRUSTED_CLAUDE_SOURCE, namespace: "anthropic-compatible:anthropic-compatible-custom" });
 
     const executor = new DefaultExecutor("anthropic-compatible-custom");
     const headers = executor.buildHeaders({

@@ -8,6 +8,7 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { captureClaudeIdentity, isClaudeCodeClient } from "open-sse/utils/claudeIdentityManager.js";
+import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
 import { isLocalRequest } from "@/dashboardGuard";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
@@ -77,14 +78,19 @@ export async function handleChat(request, clientRawRequest = null) {
   // Capture only after authentication has completed. Identity is scoped to the
   // compatible provider node selected by this request, never shared globally.
   const identityModelInfo = await getModelInfo(modelStr);
+  const identitySource = {
+    path: new URL(request.url).pathname,
+    body: routingBody,
+    authenticated: settings.requireApiKey === true,
+    local: isLocalRequest(request),
+  };
   if (identityModelInfo.provider?.startsWith("anthropic-compatible-")) {
     captureClaudeIdentity(request.headers, {
-      path: new URL(request.url).pathname,
-      body: routingBody,
-      authenticated: settings.requireApiKey === true,
-      local: isLocalRequest(request),
+      ...identitySource,
       namespace: `anthropic-compatible:${identityModelInfo.provider}`,
     });
+  } else if (identityModelInfo.provider === "claude") {
+    cacheClaudeHeaders(request.headers, identitySource);
   }
 
   const transparentResponse = await tryHandleTransparentAnthropicProxy(request, modelStr);

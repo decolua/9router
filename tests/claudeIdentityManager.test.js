@@ -101,4 +101,24 @@ describe("Claude identity safety baseline", () => {
     expect(merged["user-agent"]).toBe("claude-cli/1.2.3");
     expect(getClaudeIdentityDebug(namespace, { now: 2_000 }).degradedCaptureCount).toBe(1);
   });
+
+  it("keeps unknown credential-shaped headers observe-only", () => {
+    captureClaudeIdentity({ ...headers, "x-client-secret": "must-not-replay" }, {
+      namespace, path: "/v1/messages", body, local: true,
+    });
+
+    expect(mergeClaudeIdentityHeaders({}, { namespace }).headers["x-client-secret"]).toBeUndefined();
+    expect(getClaudeIdentityDebug(namespace).headers.find((header) => header.name === "x-client-secret")).toMatchObject({
+      policy: "observeOnly",
+    });
+  });
+
+  it("does not extend the context TTL from a degraded capture", () => {
+    captureClaudeIdentity(headers, { namespace, path: "/v1/messages", body, local: true, now: 1_000 });
+    captureClaudeIdentity({ "user-agent": "claude-cli/9.9.9", "x-app": "cli" }, {
+      namespace, path: "/v1/messages", body, local: true, now: 2_000,
+    });
+
+    expect(getClaudeIdentityDebug(namespace, { now: 2_000 }).updatedAt).toBe(1_000);
+  });
 });

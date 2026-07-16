@@ -71,6 +71,13 @@ MVP 可以暂时不做完整 Identity Pool，但至少需要按 target provider/
 
 明确不在本次范围：⑥ Safe Persistence、⑧ Identity Diff、Identity Pool、Round Robin、Replay Mode 和 Gateway Adapter。
 
+### 审查后优化（第 4 次提交）
+
+- Transparent Proxy 请求上游使用 `Accept-Encoding: identity`；返回时移除可能与已解压正文不一致的 `Content-Encoding` 与 `Content-Length`。
+- `identityReplay` 使用显式 Header 白名单。未知的 `x-client-*`、`x-claude-*` 等字段保持 `observeOnly`，不保存原值也不注入。
+- 官方 `claude` provider 使用 `claude:official` 独立 namespace；不会与 Anthropic-compatible provider node 共用身份上下文。
+- 降级捕获只记录诊断信息，不刷新 context `updatedAt`，因此无法续期 TTL。
+
 ### ✅ Phase 1：Transparent Proxy（已完成）
 
 实现目标：
@@ -391,6 +398,9 @@ type HeaderPolicy =
 - 连续 N 次可信 Claude Code 请求中出现。
 - 值稳定，或变化模式明确属于版本/会话类身份字段。
 - Debug 中能看到它处于 `candidate` 状态，由测试或配置确认后再 replay。
+
+当前 MVP 的实现更保守：未知 Header 即使名称匹配上述前缀也只进入 `observeOnly`，不会自动晋级。
+需要新增重放字段时，必须加入显式白名单并补充测试，以避免未来凭据类 Header 被意外保存或注入。
 
 ## Replay 合并规则
 

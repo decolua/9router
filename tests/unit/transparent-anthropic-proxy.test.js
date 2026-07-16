@@ -63,6 +63,7 @@ describe("transparent Anthropic proxy", () => {
     expect(options.headers.get("x-claude-code-session-id")).toBe("session-1");
     expect(options.headers.get("x-client-trace")).toBe("trace-1");
     expect(options.headers.get("connection")).toBeNull();
+    expect(options.headers.get("accept-encoding")).toBe("identity");
   });
 
   it("forwards the original body stream without JSON serialization", async () => {
@@ -101,11 +102,14 @@ describe("transparent Anthropic proxy", () => {
     );
   });
 
-  it("returns the upstream SSE bytes and headers unchanged", async () => {
+  it("returns the upstream SSE body without stale compression metadata", async () => {
     const sse = "event: message_start\ndata: {\"type\":\"message_start\"}\n\nevent: custom_event\ndata: not-json\n\ndata:[DONE]\n\n";
     const { handleTransparentAnthropicProxy } = await loadHandler(async () => new Response(sse, {
       status: 200,
-      headers: { "content-type": "text/event-stream", "x-upstream": "exact" },
+      headers: {
+        "content-type": "text/event-stream", "content-encoding": "br",
+        "content-length": "999", "x-upstream": "exact",
+      },
     }));
     const request = new Request("http://router.test/api/v1/messages", { method: "POST", body: "{}" });
 
@@ -116,6 +120,8 @@ describe("transparent Anthropic proxy", () => {
 
     expect(response.headers.get("content-type")).toBe("text/event-stream");
     expect(response.headers.get("x-upstream")).toBe("exact");
+    expect(response.headers.get("content-encoding")).toBeNull();
+    expect(response.headers.get("content-length")).toBeNull();
     expect(await response.text()).toBe(sse);
   });
 });

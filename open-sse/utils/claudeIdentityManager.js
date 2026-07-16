@@ -10,6 +10,9 @@ const CLIENT_PREFERRED_HEADERS = new Set(["accept", "content-type", "accept-enco
 const IDENTITY_HEADER_NAMES = new Set([
   "user-agent", "anthropic-version", "anthropic-beta",
   "anthropic-dangerous-direct-browser-access", "x-app", "x-client-version",
+  "x-claude-code-session-id", "x-stainless-helper-method", "x-stainless-retry-count",
+  "x-stainless-runtime-version", "x-stainless-package-version", "x-stainless-runtime",
+  "x-stainless-lang", "x-stainless-arch", "x-stainless-os", "x-stainless-timeout",
 ]);
 const STATE_KEY = Symbol.for("9router.claudeIdentityManager.state");
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
@@ -66,11 +69,7 @@ export function classifyClaudeIdentityHeader(name) {
   if (isNeverReplayHeader(normalized)) return "neverReplay";
   if (SENSITIVE_HEADERS.has(normalized)) return "sensitiveClientPreferred";
   if (CLIENT_PREFERRED_HEADERS.has(normalized)) return "clientPreferred";
-  if (IDENTITY_HEADER_NAMES.has(normalized)
-    || normalized.startsWith("anthropic-")
-    || normalized.startsWith("x-stainless-")
-    || normalized.startsWith("x-claude-")
-    || normalized.startsWith("x-client-")) return "identityReplay";
+  if (IDENTITY_HEADER_NAMES.has(normalized)) return "identityReplay";
   return "observeOnly";
 }
 
@@ -164,7 +163,9 @@ export function captureClaudeIdentity(headers, source = {}) {
     headers: capturedHeaders,
     metadata: {
       createdAt: existing?.metadata?.createdAt || now,
-      updatedAt: now,
+      // A degraded capture records diagnostics but must not keep an old
+      // identity alive past its TTL.
+      updatedAt: degraded ? (existing?.metadata?.updatedAt || now) : now,
       lastUsedAt: existing?.metadata?.lastUsedAt,
       captureCount: (existing?.metadata?.captureCount || 0) + 1,
       sourceConfidence: source.authenticated === true ? "high" : "medium",

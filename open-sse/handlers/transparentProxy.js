@@ -12,12 +12,21 @@ const HOP_BY_HOP_HEADERS = new Set([
   "host",
   "content-length",
 ]);
+const DECODED_RESPONSE_HEADERS = new Set(["content-encoding", "content-length"]);
 
 function copyEndToEndHeaders(headers) {
   const result = new Headers();
   for (const [name, value] of headers.entries()) {
     if (!HOP_BY_HOP_HEADERS.has(name.toLowerCase())) result.set(name, value);
   }
+  return result;
+}
+
+function copyTransparentResponseHeaders(headers) {
+  const result = copyEndToEndHeaders(headers);
+  // Native fetch can decode compressed responses before exposing the stream.
+  // These upstream headers would then describe bytes the client never receives.
+  for (const name of DECODED_RESPONSE_HEADERS) result.delete(name);
   return result;
 }
 
@@ -73,6 +82,9 @@ export function buildTransparentUpstreamUrl(requestUrl, baseUrl) {
 
 export function buildTransparentRequestHeaders(requestHeaders, credentials = {}) {
   const headers = copyEndToEndHeaders(requestHeaders);
+  // Keep the forwarded body and response headers coherent even when an
+  // upstream gateway uses Brotli/Zstd inconsistently with native fetch.
+  headers.set("accept-encoding", "identity");
   if (credentials.apiKey) {
     headers.set("authorization", `Bearer ${credentials.apiKey}`);
     headers.set("x-api-key", credentials.apiKey);
@@ -108,6 +120,6 @@ export async function handleTransparentAnthropicProxy({ request, credentials, so
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
-    headers: copyEndToEndHeaders(response.headers),
+    headers: copyTransparentResponseHeaders(response.headers),
   });
 }
