@@ -1,5 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+describe("Claude Code identity detection", () => {
+  it("does not classify a generic Anthropic Messages client as Claude Code", async () => {
+    const { isClaudeCodeClient } = await import("open-sse/utils/claudeIdentityManager.js");
+
+    expect(isClaudeCodeClient({
+      "user-agent": "CherryStudio/1.0",
+      "anthropic-version": "2023-06-01",
+    })).toBe(false);
+  });
+});
+
 describe("transparent Anthropic proxy", () => {
   let originalFetch;
 

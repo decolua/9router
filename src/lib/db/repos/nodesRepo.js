@@ -63,6 +63,7 @@ export async function createProviderNode(data) {
     apiType: data.apiType,
     baseUrl: data.baseUrl,
     transparent: data.transparent === true,
+    injectClaudeIdentity: data.injectClaudeIdentity === true,
     createdAt: now,
     updatedAt: now,
   };

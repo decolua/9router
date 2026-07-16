@@ -4,6 +4,7 @@ import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE } from
 import { OAUTH_ENDPOINTS, buildKimiHeaders } from "../config/appConstants.js";
 import { buildClineHeaders } from "../shared/clineAuth.js";
 import { getCachedClaudeHeaders } from "../utils/claudeHeaderCache.js";
+import { mergeClaudeIdentityHeaders, recordClaudeIdentityExecutorBuild } from "../utils/claudeIdentityManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { stripUnsupportedParams } from "../translator/concerns/paramSupport.js";
@@ -166,13 +167,21 @@ export class DefaultExecutor extends BaseExecutor {
     const desc = rt?.auth || AUTH_DESCRIPTORS[this.provider] || this.resolveAuthDescriptor();
     // Hooks run BEFORE auth so dynamic overlays (claude cached headers) can't clobber the token.
     for (const hook of desc.hooks || []) HEADER_HOOKS[hook]?.(headers, credentials);
+    const injectClaudeIdentity = this.provider?.startsWith?.("anthropic-compatible-") &&
+      credentials?.providerSpecificData?.injectClaudeIdentity === true;
+    recordClaudeIdentityExecutorBuild({ provider: this.provider, injectClaudeIdentity });
+    if (injectClaudeIdentity) {
+      const merged = mergeClaudeIdentityHeaders(headers).headers;
+      for (const key of Object.keys(headers)) delete headers[key];
+      Object.assign(headers, merged);
+    }
     applyAuth(headers, desc, credentials);
 
     // Strip first-party Claude Code identity headers for non-Anthropic anthropic-compatible upstreams
     if (this.provider?.startsWith?.("anthropic-compatible-")) {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || "";
       const isOfficialAnthropic = baseUrl === "" || baseUrl.includes("api.anthropic.com");
-      if (!isOfficialAnthropic) {
+      if (!isOfficialAnthropic && !injectClaudeIdentity) {
         // Some third-party Anthropic-compatible gateways require Bearer auth in
         // addition to x-api-key. Send both (x-api-key already set above) so
         // gateways that read either header succeed.

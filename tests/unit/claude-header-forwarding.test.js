@@ -21,6 +21,7 @@ describe("claudeHeaderCache", () => {
     // Re-import fresh module each time to reset singleton state
     vi.resetModules();
     cacheModule = await import("open-sse/utils/claudeHeaderCache.js");
+    cacheModule.clearCachedClaudeHeaders();
   });
 
   it("returns null before any headers are cached (cold start)", () => {
@@ -43,7 +44,7 @@ describe("claudeHeaderCache", () => {
       "x-stainless-retry-count": "0",
       "x-stainless-timeout": "600",
       "anthropic-dangerous-direct-browser-access": "true",
-      // Non-identity header — should NOT be captured
+      // End-to-end request header captured for future Claude Code compatibility
       "content-type": "application/json",
     });
 
@@ -53,8 +54,7 @@ describe("claudeHeaderCache", () => {
     expect(cached["anthropic-beta"]).toBe("claude-code-20250219,oauth-2025-04-20");
     expect(cached["x-app"]).toBe("cli");
     expect(cached["x-stainless-os"]).toBe("MacOS");
-    // Non-identity header must not leak in
-    expect(cached["content-type"]).toBeUndefined();
+    expect(cached["content-type"]).toBe("application/json");
   });
 
   it("caches headers when user-agent contains 'claude-cli'", () => {
@@ -112,6 +112,73 @@ describe("claudeHeaderCache", () => {
     const cached = cacheModule.getCachedClaudeHeaders();
     expect(cached["x-stainless-os"]).toBeUndefined();
     expect(cached["user-agent"]).toBe("claude-code/2.1.63");
+  });
+});
+
+describe("claudeIdentityManager", () => {
+  let manager;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    manager = await import("open-sse/utils/claudeIdentityManager.js");
+  });
+
+  it("captures unknown end-to-end headers but excludes hop-by-hop headers", () => {
+    manager.captureClaudeIdentity({
+      "user-agent": "claude-code/2.1.63",
+      "x-claude-new-header": "kept",
+      connection: "keep-alive",
+      "content-length": "42",
+    }, { path: "/v1/messages" });
+
+    const identity = manager.getClaudeIdentity();
+    expect(identity.headers["x-claude-new-header"]).toBe("kept");
+    expect(identity.headers.connection).toBeUndefined();
+    expect(identity.headers["content-length"]).toBeUndefined();
+    expect(identity.source.path).toBe("/v1/messages");
+  });
+
+  it("keeps provider authentication and deduplicates anthropic beta flags", () => {
+    manager.captureClaudeIdentity({
+      "user-agent": "claude-code/2.1.63",
+      authorization: "Bearer captured",
+      "x-api-key": "captured-key",
+      "anthropic-beta": "from-client,shared",
+      "x-app": "cli",
+    });
+
+    const result = manager.mergeClaudeIdentityHeaders({
+      Authorization: "Bearer provider",
+      "x-api-key": "provider-key",
+      "anthropic-beta": "from-provider,shared",
+    });
+
+    expect(result.injected).toBe(true);
+    expect(result.headers.Authorization).toBe("Bearer provider");
+    expect(result.headers["x-api-key"]).toBe("provider-key");
+    expect(result.headers["anthropic-beta"].split(",")).toEqual(["from-provider", "shared", "from-client"]);
+    expect(result.headers["x-app"]).toBe("cli");
+  });
+
+  it("reports cold start without blocking a merge", () => {
+    const result = manager.mergeClaudeIdentityHeaders({ "Content-Type": "application/json" });
+    expect(result).toEqual({
+      headers: { "Content-Type": "application/json" },
+      injected: false,
+      skipped: "no-identity",
+    });
+  });
+
+  it("reports the provider and feature flag seen by the executor", () => {
+    manager.recordClaudeIdentityExecutorBuild({
+      provider: "anthropic-compatible-test",
+      injectClaudeIdentity: true,
+    });
+
+    expect(manager.getClaudeIdentityDebug().lastExecutorBuild).toMatchObject({
+      provider: "anthropic-compatible-test",
+      injectClaudeIdentity: true,
+    });
   });
 });
 
@@ -205,6 +272,8 @@ describe("DefaultExecutor.buildHeaders() — claude provider cold start (no cach
 
   beforeEach(async () => {
     vi.resetModules();
+    const manager = await import("open-sse/utils/claudeIdentityManager.js");
+    manager.clearClaudeIdentity();
     // Do NOT prime cache — simulate cold start
     const mod = await import("open-sse/executors/default.js");
     DefaultExecutor = mod.DefaultExecutor || mod.default;
@@ -317,6 +386,30 @@ describe("DefaultExecutor.buildHeaders() — anthropic-compatible stripping", ()
     const hasVersion =
       headers["Anthropic-Version"] || headers["anthropic-version"];
     expect(hasVersion).toBeDefined();
+  });
+
+  it("injects Claude identity and skips stripping when explicitly enabled", async () => {
+    const manager = await import("open-sse/utils/claudeIdentityManager.js");
+    manager.captureClaudeIdentity({
+      "user-agent": "claude-code/2.1.63",
+      "x-app": "cli",
+      "anthropic-dangerous-direct-browser-access": "true",
+      "anthropic-beta": "claude-code-20250219",
+    });
+
+    const executor = new DefaultExecutor("anthropic-compatible-custom");
+    const headers = executor.buildHeaders({
+      apiKey: "provider-key",
+      providerSpecificData: {
+        baseUrl: "https://myproxy.example.com/v1",
+        injectClaudeIdentity: true,
+      },
+    }, true);
+
+    expect(headers["x-app"]).toBe("cli");
+    expect(headers["anthropic-dangerous-direct-browser-access"]).toBe("true");
+    expect(headers["anthropic-beta"]).toContain("claude-code-20250219");
+    expect(headers["x-api-key"]).toBe("provider-key");
   });
 });
 

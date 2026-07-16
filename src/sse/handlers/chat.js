@@ -7,7 +7,7 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
-import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
+import { captureClaudeIdentity, isClaudeCodeClient } from "open-sse/utils/claudeIdentityManager.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
@@ -40,7 +40,7 @@ export async function handleChat(request, clientRawRequest = null) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid JSON body");
   }
 
-  cacheClaudeHeaders(Object.fromEntries(request.headers.entries()));
+  captureClaudeIdentity(Object.fromEntries(request.headers.entries()), { path: new URL(request.url).pathname });
   const modelStr = routingBody.model;
 
   // Request summary is emitted as the unified "▶" line in chatCore (has fmt/thinking/account)
@@ -148,6 +148,9 @@ export async function handleChat(request, clientRawRequest = null) {
 async function tryHandleTransparentAnthropicProxy(request, modelStr) {
   const pathname = new URL(request.url).pathname;
   if (!/^\/(?:api\/)?v1\/messages$/.test(pathname)) return null;
+  // Transparent mode is reserved for native Claude Code. Other Anthropic API
+  // clients must use the normal executor so optional identity injection runs.
+  if (!isClaudeCodeClient(request.headers)) return null;
 
   const modelInfo = await getModelInfo(modelStr);
   const { provider, model } = modelInfo;

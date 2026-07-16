@@ -40,7 +40,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
     name: "",
     prefix: "",
     ...(config.hasApiType ? { apiType: "chat" } : {}),
-    ...(variant === "anthropic" ? { transparent: false } : {}),
+    ...(variant === "anthropic" ? { transparent: false, injectClaudeIdentity: false } : {}),
     baseUrl: config.defaultBaseUrl,
   });
 
@@ -75,7 +75,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           ...(config.hasApiType ? { apiType: formData.apiType } : {}),
           baseUrl: formData.baseUrl,
           type: config.type,
-          ...(variant === "anthropic" ? { transparent: formData.transparent === true } : {}),
+          ...(variant === "anthropic" ? { transparent: formData.transparent === true, injectClaudeIdentity: formData.injectClaudeIdentity === true } : {}),
         }),
       });
       const data = await res.json();
@@ -172,13 +172,22 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           hint={config.baseUrlHint}
         />
         {variant === "anthropic" && (
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <div className="text-sm font-medium text-text">Transparent proxy</div>
-              <div className="text-sm text-text-muted">Forward Claude Code requests and streams without translation or token tracking.</div>
+          <>
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="text-sm font-medium text-text">Transparent proxy</div>
+                <div className="text-sm text-text-muted">Forward Claude Code requests and streams without translation or token tracking.</div>
+              </div>
+              <Toggle checked={formData.transparent === true} onChange={(transparent) => setFormData({ ...formData, transparent })} />
             </div>
-            <Toggle checked={formData.transparent === true} onChange={(transparent) => setFormData({ ...formData, transparent })} />
-          </div>
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="text-sm font-medium text-text">Claude identity injection</div>
+                <div className="text-sm text-text-muted">Add the most recently captured Claude Code identity to translated requests.</div>
+              </div>
+              <Toggle checked={formData.injectClaudeIdentity === true} onChange={(injectClaudeIdentity) => setFormData({ ...formData, injectClaudeIdentity })} />
+            </div>
+          </>
         )}
         <Input
           label="API Key (for Check)"

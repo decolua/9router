@@ -11,6 +11,7 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
     apiType: "chat",
     baseUrl: "https://api.openai.com/v1",
     transparent: false,
+    injectClaudeIdentity: false,
   });
   const [saving, setSaving] = useState(false);
   const [checkKey, setCheckKey] = useState("");
@@ -26,6 +27,7 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
         apiType: node.apiType || "chat",
         baseUrl: node.baseUrl || (isAnthropic ? "https://api.anthropic.com/v1" : "https://api.openai.com/v1"),
         transparent: node.transparent === true,
+        injectClaudeIdentity: node.injectClaudeIdentity === true,
       });
     }
   }, [node, isAnthropic]);
@@ -48,6 +50,7 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
         payload.apiType = formData.apiType;
       } else {
         payload.transparent = formData.transparent === true;
+        payload.injectClaudeIdentity = formData.injectClaudeIdentity === true;
       }
       await onSave(payload);
     } finally {
@@ -113,13 +116,22 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
           hint={`Use the base URL (ending in /v1) for your ${isAnthropic ? "Anthropic" : "OpenAI"}-compatible API.`}
         />
         {isAnthropic && (
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <div className="text-sm font-medium text-text">Transparent proxy</div>
-              <div className="text-sm text-text-muted">Forward Claude Code requests and streams without translation or token tracking.</div>
+          <>
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="text-sm font-medium text-text">Transparent proxy</div>
+                <div className="text-sm text-text-muted">Forward Claude Code requests and streams without translation or token tracking.</div>
+              </div>
+              <Toggle checked={formData.transparent === true} onChange={(transparent) => setFormData({ ...formData, transparent })} />
             </div>
-            <Toggle checked={formData.transparent === true} onChange={(transparent) => setFormData({ ...formData, transparent })} />
-          </div>
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="text-sm font-medium text-text">Claude identity injection</div>
+                <div className="text-sm text-text-muted">Add the most recently captured Claude Code identity to translated requests.</div>
+              </div>
+              <Toggle checked={formData.injectClaudeIdentity === true} onChange={(injectClaudeIdentity) => setFormData({ ...formData, injectClaudeIdentity })} />
+            </div>
+          </>
         )}
         <div className="flex gap-2">
           <Input
@@ -169,6 +181,7 @@ EditCompatibleNodeModal.propTypes = {
     apiType: PropTypes.string,
     baseUrl: PropTypes.string,
     transparent: PropTypes.bool,
+    injectClaudeIdentity: PropTypes.bool,
   }),
   onSave: PropTypes.func.isRequired,
   onClose: PropTypes.func.isRequired,

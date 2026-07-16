@@ -149,6 +149,7 @@ export async function POST(request) {
         baseUrl: node.baseUrl,
         nodeName: node.name,
         transparent: node.transparent === true,
+        injectClaudeIdentity: node.injectClaudeIdentity === true,
       };
     } else if (isCustomEmbeddingProvider(provider)) {
       const node = await getProviderNodeById(provider);

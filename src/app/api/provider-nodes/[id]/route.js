@@ -6,7 +6,7 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { name, prefix, apiType, baseUrl, transparent } = body;
+    const { name, prefix, apiType, baseUrl, transparent, injectClaudeIdentity } = body;
     const node = await getProviderNodeById(id);
 
     if (!node) {
@@ -59,6 +59,7 @@ export async function PUT(request, { params }) {
     }
     if (node.type === "anthropic-compatible") {
       updates.transparent = transparent === true;
+      updates.injectClaudeIdentity = injectClaudeIdentity === true;
     }
 
     const updated = await updateProviderNode(id, updates);
@@ -73,6 +74,7 @@ export async function PUT(request, { params }) {
           baseUrl: sanitizedBaseUrl,
           nodeName: updated.name,
           transparent: node.type === "anthropic-compatible" ? updated.transparent === true : undefined,
+          injectClaudeIdentity: node.type === "anthropic-compatible" ? updated.injectClaudeIdentity === true : undefined,
         }
       })
     )));
