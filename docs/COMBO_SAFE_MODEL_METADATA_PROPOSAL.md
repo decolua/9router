@@ -74,3 +74,7 @@ behavior. Its `it.fails` cases are executable evidence of current gaps; remove
 Offer the conservative rules and tests to #2242 first. Land ETag behavior as a
 small follow-up PR after the aggregation shape stabilizes, so the route does not
 carry two competing Combo projections.
+
+Provider catalog freshness is a separate source-of-truth concern. See
+`OPENAI_CODEX_REMOTE_CATALOG_ISSUE.md` for the non-duplicate OpenAI/Codex issue
+draft and its explicit Codex Desktop boundary.
