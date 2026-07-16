@@ -97,6 +97,7 @@ const APIKEY_INITIAL_VISIBLE = 20;
 export default function ProvidersPage() {
   const [connections, setConnections] = useState([]);
   const [providerNodes, setProviderNodes] = useState([]);
+  const [disabledProviders, setDisabledProviders] = useState({});
   const [loading, setLoading] = useState(true);
   const [showAllApikey, setShowAllApikey] = useState(false);
   const [showAddCompatibleModal, setShowAddCompatibleModal] = useState(false);
@@ -147,15 +148,18 @@ export default function ProvidersPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [connectionsRes, nodesRes] = await Promise.all([
+        const [connectionsRes, nodesRes, settingsRes] = await Promise.all([
           fetch("/api/providers"),
           fetch("/api/provider-nodes"),
+          fetch("/api/settings"),
         ]);
         const connectionsData = await connectionsRes.json();
         const nodesData = await nodesRes.json();
+        const settingsData = await settingsRes.json();
         if (connectionsRes.ok)
           setConnections(connectionsData.connections || []);
         if (nodesRes.ok) setProviderNodes(nodesData.nodes || []);
+        if (settingsRes.ok) setDisabledProviders(settingsData.disabledProviders || {});
       } catch (error) {
         console.log("Error fetching data:", error);
       } finally {
@@ -228,6 +232,23 @@ export default function ProvidersPage() {
         }),
       ),
     );
+  };
+
+  const handleToggleNoAuthProvider = async (providerId, newActive) => {
+    const previous = disabledProviders;
+    const updated = { ...previous };
+    if (newActive) delete updated[providerId];
+    else updated[providerId] = true;
+    setDisabledProviders(updated);
+    const res = await fetch("/api/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ disabledProviders: updated }),
+    });
+    if (!res.ok) {
+      setDisabledProviders(previous);
+      notify.error("Failed to update provider");
+    }
   };
 
   const handleBatchTest = async (mode, providerId = null) => {
@@ -471,15 +492,23 @@ export default function ProvidersPage() {
             // while generic apikey providers use "apikey" — include both spellings.
             const freeAuthTypes =
               key === "kiro" ? ["oauth", "apikey", "api_key"] : "oauth";
+            const stats = getProviderStats(key, freeAuthTypes);
             return (
               <ProviderCard
                 key={key}
                 providerId={key}
                 provider={info}
-                stats={getProviderStats(key, freeAuthTypes)}
+                stats={{
+                  ...stats,
+                  allDisabled: info.noAuth
+                    ? disabledProviders[key] === true
+                    : stats.allDisabled,
+                }}
                 authType="free"
                 onToggle={(active) =>
-                  handleToggleProvider(key, freeAuthTypes, active)
+                  info.noAuth
+                    ? handleToggleNoAuthProvider(key, active)
+                    : handleToggleProvider(key, freeAuthTypes, active)
                 }
               />
             );
@@ -687,7 +716,7 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {stats.total > 0 && (
+            {(stats.total > 0 || isNoAuth) && (
               <div
                 className="opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
                 onClick={(e) => {

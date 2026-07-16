@@ -123,6 +123,10 @@ export function resolveProviderId(aliasOrId) {
   return provider?.id || aliasOrId;
 }
 
+export function isProviderDisabled(settings, providerId) {
+  return settings?.disabledProviders?.[resolveProviderId(providerId)] === true;
+}
+
 // Helper: Get alias from provider ID
 export function getProviderAlias(providerId) {
   const provider = AI_PROVIDERS[providerId];
