@@ -13,6 +13,7 @@ import { GET as clineGet } from "../cline-settings/route";
 import { GET as kiloGet } from "../kilo-settings/route";
 import { GET as deepseekTuiGet } from "../deepseek-tui-settings/route";
 import { GET as jcodeGet } from "../jcode-settings/route";
+import { GET as piGet } from "../pi-settings/route";
 
 const STATUS_GETTERS = {
   claude: claudeGet,
@@ -27,6 +28,7 @@ const STATUS_GETTERS = {
   kilo: kiloGet,
   "deepseek-tui": deepseekTuiGet,
   jcode: jcodeGet,
+  pi: piGet,
 };
 
 // Batch endpoint: gather all CLI tool statuses in one round-trip

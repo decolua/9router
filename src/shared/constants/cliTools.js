@@ -131,6 +131,50 @@ export const CLI_TOOLS = {
     description: "OpenCode AI Terminal Assistant",
     configType: "custom",
   },
+  pi: {
+    id: "pi",
+    name: "Pi",
+    image: "/providers/pi.svg",
+    color: "#111111",
+    description: "Pi terminal coding harness via 9Router",
+    docsUrl: "https://pi.dev",
+    configType: "custom",
+    defaultCommand: "pi",
+    notes: [
+      { type: "info", text: "Pi reads custom OpenAI-compatible providers from ~/.pi/agent/models.json. Add 9Router there, then select the 9Router model from Pi's /model menu." },
+      { type: "warning", text: "Config path: Linux/macOS ~/.pi/agent/models.json • Windows %USERPROFILE%\\.pi\\agent\\models.json" },
+    ],
+    guideSteps: [
+      { step: 1, title: "Install Pi", desc: "npm install -g @earendil-works/pi-coding-agent" },
+      { step: 2, title: "API Key", type: "apiKeySelector" },
+      { step: 3, title: "Base URL", value: "{{baseUrl}}", copyable: true },
+      { step: 4, title: "Select Model", type: "modelSelector" },
+      { step: 5, title: "Save Config", desc: "Copy the JSON below to ~/.pi/agent/models.json, then run pi and choose the model with /model." },
+    ],
+    codeBlock: {
+      language: "json",
+      code: `{
+  "providers": {
+    "9router": {
+      "baseUrl": "{{baseUrl}}",
+      "api": "openai-completions",
+      "apiKey": "{{apiKey}}",
+      "authHeader": true,
+      "models": [
+        {
+          "id": "{{model}}",
+          "name": "{{model}} via 9Router",
+          "reasoning": true,
+          "input": ["text", "image"],
+          "contextWindow": 200000,
+          "maxTokens": 32000
+        }
+      ]
+    }
+  }
+}`,
+    },
+  },
   cowork: {
     id: "cowork",
     name: "Claude Cowork",
