@@ -112,9 +112,27 @@ export async function POST(request) {
 
     // Normalize ANTHROPIC_BASE_URL to ensure /v1 suffix
     if (env.ANTHROPIC_BASE_URL) {
-      env.ANTHROPIC_BASE_URL = env.ANTHROPIC_BASE_URL.endsWith("/v1") 
-        ? env.ANTHROPIC_BASE_URL 
+      env.ANTHROPIC_BASE_URL = env.ANTHROPIC_BASE_URL.endsWith("/v1")
+        ? env.ANTHROPIC_BASE_URL
         : `${env.ANTHROPIC_BASE_URL}/v1`;
+    }
+
+    // Strip the 9router provider prefix (e.g. "cc/") from the
+    // ANTHROPIC_DEFAULT_*_MODEL values. These vars are read by Claude Code and
+    // embedded verbatim into the Task tool / subagent schema's `model` field,
+    // which is forwarded straight to Anthropic. A "cc/claude-opus-4-8" value is
+    // rejected by Anthropic with a 400 (#2642). The bare model id
+    // ("claude-opus-4-8") still routes correctly through 9router, so the prefix
+    // must not be persisted into Claude Code's settings.
+    for (const key of [
+      "ANTHROPIC_DEFAULT_OPUS_MODEL",
+      "ANTHROPIC_DEFAULT_SONNET_MODEL",
+      "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+      "ANTHROPIC_DEFAULT_FABLE_MODEL",
+    ]) {
+      if (typeof env[key] === "string") {
+        env[key] = env[key].replace(/^[^/]+\//, "");
+      }
     }
 
     // Merge new env with existing settings

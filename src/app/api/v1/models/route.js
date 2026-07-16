@@ -319,7 +319,15 @@ export async function buildModelsList(kindFilter) {
           )
         : providerModels.map((model) => model.id);
 
-      if (isCompatibleProvider && rawModelIds.length === 0 && !UPSTREAM_CONNECTION_RE.test(providerId)) {
+      if (isCompatibleProvider && rawModelIds.length === 0) {
+        // Compatible providers (openai-compatible-*, anthropic-compatible-*) may
+        // carry a UUID-v4 suffix in their node ID, which would falsely match
+        // UPSTREAM_CONNECTION_RE and skip dynamic model discovery (#2626). Always
+        // attempt a live /models fetch for compatible providers.
+        rawModelIds = await fetchCompatibleModelIds(conn);
+      } else if (rawModelIds.length === 0 && !UPSTREAM_CONNECTION_RE.test(providerId)) {
+        // Non-compatible upstream/cross-instance connections keep the guard to
+        // avoid recursive /models fetches between 9router instances.
         rawModelIds = await fetchCompatibleModelIds(conn);
       }
 

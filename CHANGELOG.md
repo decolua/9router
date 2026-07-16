@@ -1,3 +1,9 @@
+# Unreleased
+
+## Fixes
+- **Models**: discover OpenAI/Anthropic-compatible provider models in `/v1/models` — `UPSTREAM_CONNECTION_RE` falsely matched the UUID-v4 suffix of compatible node IDs and skipped `fetchCompatibleModelIds` (#2626)
+- **Claude Code**: strip the `cc/` provider prefix from `ANTHROPIC_DEFAULT_*_MODEL` when writing Claude Code settings so the bare model id (e.g. `claude-opus-4-8`) routes through 9router instead of being rejected by Anthropic with a 400 on Task tool / subagent dispatch (#2642)
+
 # v0.5.30 (2026-07-10)
 
 ## Features
