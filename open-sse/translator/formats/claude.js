@@ -84,6 +84,21 @@ export function fixToolUseOrdering(messages) {
 // Models that reject thinking.type "adaptive" + output_config.effort (Opus 4.5+/Sonnet 4.6+ only)
 const ADAPTIVE_THINKING_UNSUPPORTED = /haiku/i;
 
+// 9router provider prefixes are valid for routing the top-level model, but
+// Anthropic server tools expect an upstream model ID in their nested `model`.
+const CLAUDE_PROVIDER_MODEL_PREFIXES = ["cc/", "claude/"];
+
+function normalizeClaudeServerToolModels(tools) {
+  if (!Array.isArray(tools)) return;
+
+  for (const tool of tools) {
+    if (!tool || typeof tool !== "object" || typeof tool.model !== "string") continue;
+
+    const prefix = CLAUDE_PROVIDER_MODEL_PREFIXES.find(candidate => tool.model.startsWith(candidate));
+    if (prefix) tool.model = tool.model.slice(prefix.length);
+  }
+}
+
 function handlesThinkingBlocks(provider) {
   return provider === "claude" || provider?.startsWith("anthropic-compatible") || provider === "deepseek";
 }
@@ -108,6 +123,7 @@ function buildThinkingPlaceholder(provider) {
 // 1. thinking.type "adaptive" → unsupported on Haiku
 // 2. output_config.effort → unsupported on Haiku
 // 3. role "system" messages (mid-conversation-system beta) → only top-level system is allowed
+// 4. server tool model IDs must not include 9router's Claude provider prefix
 export function normalizeClaudePassthrough(body, model = "") {
   if (!body || typeof body !== "object") return body;
 
@@ -122,7 +138,7 @@ export function normalizeClaudePassthrough(body, model = "") {
     if (Object.keys(body.output_config).length === 0) delete body.output_config;
   }
 
-  // 2. Hoist mid-conversation system messages into the top-level system field
+  // 3. Hoist mid-conversation system messages into the top-level system field
   if (Array.isArray(body.messages)) {
     const systemBlocks = [];
     const messages = [];
@@ -150,7 +166,10 @@ export function normalizeClaudePassthrough(body, model = "") {
     }
   }
 
-  // 3. Drop thinking blocks whose signature is not Claude's (combo mixes models,
+  // 4. Normalize nested server tool model IDs without changing the routing model
+  normalizeClaudeServerToolModels(body.tools);
+
+  // 5. Drop thinking blocks whose signature is not Claude's (combo mixes models,
   // so foreign signatures leak into history and Anthropic rejects them).
   const thinkingEnabled = body.thinking?.type === "enabled";
   if (Array.isArray(body.messages)) {
