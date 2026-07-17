@@ -22,6 +22,7 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import { parseJsonBody } from "@/shared/utils/parseJsonBody.js";
 
 /**
  * Handle chat completion request
@@ -31,9 +32,10 @@ import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 export async function handleChat(request, clientRawRequest = null) {
   let body;
   try {
-    body = await request.json();
-  } catch {
-    log.warn("CHAT", "Invalid JSON body");
+    // Codex OpenAI/ChatGPT mode may send zstd-compressed bodies (Content-Encoding: zstd)
+    body = await parseJsonBody(request);
+  } catch (err) {
+    log.warn("CHAT", "Invalid JSON body", { encoding: request.headers.get("content-encoding"), error: err?.message });
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid JSON body");
   }
 
