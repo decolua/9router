@@ -70,6 +70,18 @@ describe("grok-cli registry usage flag", () => {
   });
 });
 
+describe("xai registry usage flag", () => {
+  it("exposes Grok billing transport urls", () => {
+    const cfg = PROVIDERS.xai;
+    expect(cfg.usage?.url).toContain("/v1/billing");
+    expect(cfg.usage?.userUrl).toContain("/v1/user");
+  });
+
+  it("is listed in USAGE_SUPPORTED_PROVIDERS", () => {
+    expect(USAGE_SUPPORTED_PROVIDERS).toContain("xai");
+  });
+});
+
 describe("parseGrokCliBilling", () => {
   it("maps on-demand cap/used + prepaid balance", () => {
     const parsed = parseGrokCliBilling(ACTIVE_BILLING, USER_PROFILE);
@@ -225,6 +237,47 @@ describe("getUsageForProvider(grok-cli)", () => {
   });
 });
 
+describe("getUsageForProvider(xai)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("reuses Grok billing endpoints for xAI OAuth connections", async () => {
+    proxyAwareFetch
+      .mockResolvedValueOnce(jsonResponse(ACTIVE_BILLING))
+      .mockResolvedValueOnce(jsonResponse(USER_PROFILE));
+
+    const usage = await getUsageForProvider({
+      provider: "xai",
+      accessToken: "xai-oauth-token",
+    });
+
+    expect(usage.plan).toBe("Grok Code");
+    expect(usage.quotas["On-demand"]).toMatchObject({
+      used: 35,
+      total: 100,
+      remainingPercentage: 65,
+    });
+    expect(proxyAwareFetch.mock.calls[0][0]).toContain("/v1/billing");
+    expect(proxyAwareFetch.mock.calls[0][1].headers.Authorization).toBe(
+      "Bearer xai-oauth-token",
+    );
+  });
+
+  it("uses an xAI-specific reauthorization message", async () => {
+    proxyAwareFetch
+      .mockResolvedValueOnce(jsonResponse({ error: "unauthorized" }, 401))
+      .mockResolvedValueOnce(jsonResponse(USER_PROFILE));
+
+    const usage = await getUsageForProvider({
+      provider: "xai",
+      accessToken: "expired",
+    });
+
+    expect(usage.message).toMatch(/^xAI authentication expired/);
+  });
+});
+
 describe("parseQuotaData(grok-cli)", () => {
   it("forwards remainingPercentage for dashboard bars", () => {
     const rows = parseQuotaData("grok-cli", {
@@ -245,6 +298,25 @@ describe("parseQuotaData(grok-cli)", () => {
       name: "On-demand",
       used: 35,
       total: 100,
+      remainingPercentage: 65,
+    });
+  });
+
+  it("preserves remainingPercentage for xAI OAuth quotas", () => {
+    const rows = parseQuotaData("xai", {
+      quotas: {
+        "On-demand": {
+          used: 35,
+          total: 100,
+          remainingPercentage: 65,
+          resetAt: "2026-07-15T00:00:00.000Z",
+        },
+      },
+    });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      name: "On-demand",
       remainingPercentage: 65,
     });
   });

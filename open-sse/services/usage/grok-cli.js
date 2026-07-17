@@ -30,10 +30,6 @@ import {
   GROK_CLI_VERSION,
 } from "../../config/grokCli.js";
 
-const USAGE = U("grok-cli");
-const BILLING_URL = USAGE.url || "https://cli-chat-proxy.grok.com/v1/billing?format=credits";
-const USER_URL = USAGE.userUrl || "https://cli-chat-proxy.grok.com/v1/user?include=subscription";
-
 /** Unwrap protobuf-json `{ val: n }` or plain numbers/strings. */
 function unwrapVal(value, fallback = 0) {
   if (value == null) return fallback;
@@ -261,41 +257,50 @@ export function parseGrokCliBilling(billing, user = null) {
  * @param {object|null} providerSpecificData
  * @param {object|null} proxyOptions
  */
-export async function getGrokCliUsage(accessToken, providerSpecificData = null, proxyOptions = null) {
+async function getGrokUsage(
+  provider,
+  providerLabel,
+  accessToken,
+  providerSpecificData = null,
+  proxyOptions = null,
+) {
   if (!accessToken) {
-    return { message: "Grok CLI access token not available." };
+    return { message: `${providerLabel} access token not available.` };
   }
 
+  const usage = U(provider);
+  const billingUrl = usage.url || "https://cli-chat-proxy.grok.com/v1/billing?format=credits";
+  const userUrl = usage.userUrl || "https://cli-chat-proxy.grok.com/v1/user?include=subscription";
   const headers = buildGrokCliHeaders(accessToken, providerSpecificData);
 
   try {
     // Fetch billing + user profile in parallel (same pattern as official CLI startup)
     const [billingRes, userRes] = await Promise.all([
       proxyAwareFetch(
-        BILLING_URL,
+        billingUrl,
         { method: "GET", headers },
         proxyOptions,
       ),
       proxyAwareFetch(
-        USER_URL,
+        userUrl,
         { method: "GET", headers },
         proxyOptions,
       ).catch(() => null),
     ]);
 
     if (billingRes.status === 401 || billingRes.status === 403) {
-      return { message: "Grok CLI authentication expired. Please re-authorize." };
+      return { message: `${providerLabel} authentication expired. Please re-authorize.` };
     }
 
     if (!billingRes.ok) {
       const errText = await billingRes.text().catch(() => "");
       const trimmed = errText ? `: ${errText.slice(0, 200)}` : "";
-      return { message: `Grok CLI billing API error (${billingRes.status})${trimmed}` };
+      return { message: `${providerLabel} billing API error (${billingRes.status})${trimmed}` };
     }
 
     const billing = await billingRes.json().catch(() => null);
     if (!billing || typeof billing !== "object") {
-      return { message: "Grok CLI billing response was not JSON." };
+      return { message: `${providerLabel} billing response was not JSON.` };
     }
 
     let user = null;
@@ -323,6 +328,14 @@ export async function getGrokCliUsage(accessToken, providerSpecificData = null, 
       quotas: parsed.quotas,
     };
   } catch (error) {
-    return { message: `Grok CLI usage error: ${error.message}` };
+    return { message: `${providerLabel} usage error: ${error.message}` };
   }
+}
+
+export async function getGrokCliUsage(accessToken, providerSpecificData = null, proxyOptions = null) {
+  return getGrokUsage("grok-cli", "Grok CLI", accessToken, providerSpecificData, proxyOptions);
+}
+
+export async function getXaiUsage(accessToken, providerSpecificData = null, proxyOptions = null) {
+  return getGrokUsage("xai", "xAI", accessToken, providerSpecificData, proxyOptions);
 }
