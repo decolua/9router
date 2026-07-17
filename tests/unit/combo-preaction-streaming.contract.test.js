@@ -21,6 +21,37 @@ function actionEvent(text = "ready") {
   })}\n\n`;
 }
 
+const ACTION_FIXTURES = [
+  [
+    "visible refusal",
+    "event: response.refusal.delta\ndata: {\"type\":\"response.refusal.delta\",\"delta\":\"cannot comply\"}\n\n",
+  ],
+  [
+    "function call output",
+    "event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"function_call\",\"name\":\"lookup\",\"call_id\":\"call-a\"}}\n\n",
+  ],
+  [
+    "custom tool output",
+    "event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"custom_tool_call\",\"name\":\"shell\",\"call_id\":\"call-b\"}}\n\n",
+  ],
+];
+
+function trackReaderOwnership(response) {
+  const stats = { cloneCalls: 0, readerCalls: 0 };
+  const body = response.body;
+  const originalGetReader = body.getReader.bind(body);
+  body.getReader = (...args) => {
+    stats.readerCalls += 1;
+    return originalGetReader(...args);
+  };
+  const originalClone = response.clone.bind(response);
+  response.clone = () => {
+    stats.cloneCalls += 1;
+    return originalClone();
+  };
+  return stats;
+}
+
 async function runCombo(handleSingleModel) {
   return handleComboChat({
     body: {
@@ -81,6 +112,111 @@ describe("proposed Combo pre-action streaming contract", () => {
     const response = await responsePromise;
     expect(await response.text()).toBe(prefix + action);
   });
+
+  it.fails("acquires one reader before commit and never clones or tees the response", async () => {
+    let timer;
+    const prefix = ": preflight\n\n";
+    const action = actionEvent("owned");
+    const upstream = new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(prefix));
+        timer = setTimeout(() => {
+          controller.enqueue(encoder.encode(action));
+          controller.close();
+        }, 20);
+      },
+      cancel() {
+        clearTimeout(timer);
+      },
+    }), { headers: { "Content-Type": "text/event-stream" } });
+    const stats = trackReaderOwnership(upstream);
+
+    const responsePromise = runCombo(async () => upstream);
+    const early = await Promise.race([
+      responsePromise.then(() => "resolved"),
+      new Promise((resolve) => setTimeout(() => resolve("pending"), 5)),
+    ]);
+    const response = await responsePromise;
+    const readerStatsAtCommit = { ...stats };
+    const body = await response.text();
+
+    expect(early).toBe("pending");
+    expect(readerStatsAtCommit).toEqual({ cloneCalls: 0, readerCalls: 1 });
+    expect(stats).toEqual({ cloneCalls: 0, readerCalls: 1 });
+    expect(body).toBe(prefix + action);
+  });
+
+  it.fails("forwards downstream cancellation after commit to the same upstream reader", async () => {
+    let upstreamCancellations = 0;
+    const upstream = new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(actionEvent("committed")));
+      },
+      cancel(reason) {
+        if (reason === "client-stop") upstreamCancellations += 1;
+      },
+    }), { headers: { "Content-Type": "text/event-stream" } });
+    const stats = trackReaderOwnership(upstream);
+
+    const response = await runCombo(async () => upstream);
+    const cancelResult = await Promise.race([
+      response.body.cancel("client-stop").then(() => "cancelled"),
+      new Promise((resolve) => setTimeout(() => resolve("timeout"), 50)),
+    ]);
+
+    expect(cancelResult).toBe("cancelled");
+    expect(stats).toEqual({ cloneCalls: 0, readerCalls: 1 });
+    expect(upstreamCancellations).toBe(1);
+  });
+
+  it.fails("falls back when the upstream reader errors before an action", async () => {
+    const tried = [];
+    const response = await runCombo(async (_body, model) => {
+      tried.push(model);
+      if (model === "provider/model-b") return sseResponse([actionEvent("fallback")]);
+      return new Response(new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode(": preflight\n\n"));
+          controller.error(new Error("pre-action read failed"));
+        },
+      }), { headers: { "Content-Type": "text/event-stream" } });
+    });
+
+    expect(tried).toEqual(["provider/model-a", "provider/model-b"]);
+    expect(await response.text()).toContain("fallback");
+  });
+
+  it.fails.each(ACTION_FIXTURES)(
+    "treats %s as a commit point without clone/tee and replays its prefix exactly",
+    async (_label, action) => {
+      let timer;
+      const prefix = ": keep-alive\n\n";
+      const upstream = new Response(new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode(prefix));
+          timer = setTimeout(() => {
+            controller.enqueue(encoder.encode(action));
+            controller.close();
+          }, 20);
+        },
+        cancel() {
+          clearTimeout(timer);
+        },
+      }), { headers: { "Content-Type": "text/event-stream" } });
+      const stats = trackReaderOwnership(upstream);
+
+      const responsePromise = runCombo(async () => upstream);
+      const early = await Promise.race([
+        responsePromise.then(() => "resolved"),
+        new Promise((resolve) => setTimeout(() => resolve("pending"), 5)),
+      ]);
+      const response = await responsePromise;
+
+      expect(early).toBe("pending");
+      expect(stats).toEqual({ cloneCalls: 0, readerCalls: 1 });
+      expect(await response.text()).toBe(prefix + action);
+    },
+  );
 
   it.fails("bounds bytes buffered before the first action and falls back", async () => {
     process.env.COMBO_RESPONSE_PREFLIGHT_MAX_BYTES = "8";

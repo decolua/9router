@@ -23,14 +23,15 @@ active pull requests overlap the same control point.
 For a successful LLM response in a fallback Combo, 9Router should own exactly
 one reader until it sees the first client-visible action:
 
-1. Buffer a bounded prefix while parsing complete WHATWG SSE frames.
+1. Acquire one upstream reader without `Response.clone()`/tee, then buffer a
+   bounded prefix while parsing complete WHATWG SSE frames.
 2. Treat visible text, refusal, function/custom-tool input, or another typed
    output item as the commit point.
 3. On EOF, a first-action deadline, a byte cap, or an upstream read error before
    that point, cancel the reader and try the next member.
 4. At the commit point, return a backpressure-aware stream that replays every
    buffered byte exactly once and then continues from the same reader.
-5. Forward downstream cancellation to that reader.
+5. Forward downstream cancellation after commit to that same reader.
 6. Never fall back after committed bytes have been released; later errors belong
    to the selected stream.
 7. Leave non-LLM response types untouched.
@@ -46,8 +47,9 @@ one cancellation owner instead of layering `clone()` and `Promise.race` around
 the same stream.
 
 `tests/unit/combo-preaction-streaming.contract.test.js` records the desired
-behavior. The four `it.fails` cases are executable evidence of gaps on current
-`upstream/master`; remove `.fails` only when the production implementation lands.
+behavior, including pre-action read errors and text/refusal/function/custom-tool
+commit fixtures. The `it.fails` cases are executable evidence of gaps on current
+`upstream/master`; remove `.fails` only as each production behavior lands.
 
 ## Merge strategy
 
