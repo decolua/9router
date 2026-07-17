@@ -2,7 +2,7 @@ import { FORMATS } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
 import { fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
-import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
+import { addBufferToUsage, claudeUsageToOpenAI, filterUsageForFormat } from "../../utils/usageTracking.js";
 import { createErrorResult } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
@@ -178,11 +178,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
     };
 
     if (responseBody.usage) {
-      result.usage = {
-        prompt_tokens: responseBody.usage.input_tokens || 0,
-        completion_tokens: responseBody.usage.output_tokens || 0,
-        total_tokens: (responseBody.usage.input_tokens || 0) + (responseBody.usage.output_tokens || 0)
-      };
+      result.usage = claudeUsageToOpenAI(responseBody.usage);
     }
     return result;
   }
