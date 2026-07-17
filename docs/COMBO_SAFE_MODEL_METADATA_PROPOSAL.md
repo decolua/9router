@@ -65,6 +65,13 @@ never expose the membership input. This invalidates clients when routing order
 changes even if the conservative public aggregate is unchanged, without leaking
 physical member identities.
 
+Expose small pure helpers for tests: aggregation accepts a nested-Combo lookup
+and capability resolver, while validator creation accepts an explicit 32-byte
+revision key. Runtime supplies a random process-local key. Tests must prove that
+equivalent public ordering is byte/ETag stable, membership changes invalidate,
+and neither raw membership hashes nor a small model-name dictionary reproduce
+the HMAC-backed validator.
+
 `tests/unit/combo-safe-model-metadata.contract.test.js` records the desired
 behavior. Its `it.fails` cases are executable evidence of current gaps; remove
 `.fails` only after implementation.
