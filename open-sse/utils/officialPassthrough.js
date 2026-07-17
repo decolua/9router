@@ -4,14 +4,21 @@
  * Protects native Codex Desktop/CLI usage when base_url points at 9router:
  *   model_provider = "OpenAI", base_url = http://localhost:20128/v1
  *
- * Gates (ALL required):
- *   1. Client is Codex (see isCodexClient)
- *   2. Path is an official surface (/v1/responses, /v1/alpha/search, …)
- *   3. model is absent OR matches configurable modelPatterns (default gpt-*, codex-*)
- *      Prefixed ids (cx/*, minimax-cn/*, …) always → normal 9router routing
+ * Routing rule (path is NOT used as a gate — third-party harnesses also speak
+ * /v1/responses, and future Codex paths like imagegen should passthrough):
+ *
+ *   if NOT Codex client → always 9router route
+ *   if Codex client:
+ *     if body has model AND model does NOT match modelPatterns → 9router route
+ *     else → official passthrough (no model, or matches gpt-*, codex-*, or config)
+ *
+ * modelPatterns default: ["gpt-*", "codex-*"]. Prefixed ids (cx/gpt-…, minimax-cn/…)
+ * never match (contain "/").
  *
  * Outbound auth uses ~/.codex/auth.json (ChatGPT JWT). Client experimental_bearer
  * tokens (sk-9router) are NOT forwarded to chatgpt.com.
+ *
+ * Path is only used to map the upstream URL (/v1/foo → backend-api/codex/foo).
  *
  * Config: ~/.9router/official-passthrough.json
  *   {
@@ -233,22 +240,27 @@ export function isGptOfficialModel(modelStr, patterns = DEFAULT_MODEL_PATTERNS) 
 }
 
 /**
+ * Decide whether this request should reverse-proxy to ChatGPT codex backend.
+ *
  * @param {object} opts
  * @param {Headers|object} opts.headers
  * @param {object} [opts.body]
- * @param {string} opts.pathname
+ * @param {string} [opts.pathname] unused for gating (kept for call-site compat)
  * @param {object} [opts.config]
+ * @returns {boolean}
  */
-export function shouldOfficialPassthrough({ headers, body = {}, pathname, config = null } = {}) {
+export function shouldOfficialPassthrough({ headers, body = {}, pathname: _pathname, config = null } = {}) {
   const cfg = config || loadOfficialPassthroughConfig();
   if (!cfg.enabled) return false;
-  if (!isCodexClient(headers, body)) return false;
-  if (!isOfficialSurfacePath(pathname)) return false;
 
+  // Non-Codex harnesses (Claude Code, OpenCode, curl, …) always use 9router routing
+  if (!isCodexClient(headers, body)) return false;
+
+  // Codex client:
+  //   - has model AND not in modelPatterns (e.g. minimax-cn/…, cx/gpt-…) → route
+  //   - no model, or model matches gpt-*/codex-*/custom patterns → passthrough
   const modelCheck = isOfficialPassthroughModel(body?.model, cfg.modelPatterns);
-  // non-matching / prefixed → route via 9router
   if (modelCheck === false) return false;
-  // matched pattern or absent model on official surface → passthrough
   return true;
 }
 

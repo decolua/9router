@@ -87,8 +87,9 @@ export async function handleChat(request, clientRawRequest = null) {
     }
   }
 
-  // Codex official passthrough: Codex client + official surface path + modelPatterns (default gpt-*/codex-*)
-  // Prefixed models (cx/*, minimax-cn/*, …) and non-Codex harnesses never match.
+  // Codex official passthrough (path-agnostic):
+  //   non-Codex → always route; Codex + (no model | modelPatterns match) → passthrough;
+  //   Codex + model outside patterns (cx/*, minimax-cn/*, …) → route.
   // Wire: decompress only to inspect model, then forward original rawBody (zstd) to ChatGPT.
   if (shouldOfficialPassthrough({
     headers: clientRawRequest.headers,

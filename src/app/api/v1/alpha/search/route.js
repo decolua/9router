@@ -53,7 +53,7 @@ export async function POST(request) {
     });
     return errorResponse(
       HTTP_STATUS.NOT_FOUND,
-      "Codex webrun (/v1/alpha/search) requires Codex client + official modelPatterns (default gpt-*/codex-*)"
+      "Codex webrun (/v1/alpha/search) requires Codex client (and model must match official modelPatterns if present)"
     );
   }
 

@@ -6,5 +6,5 @@
     "gpt-*",
     "codex-*"
   ],
-  "_comment": "Codex official passthrough. modelPatterns: bare model globs (case-insensitive). Examples: gpt-*, codex-*, codex-auto-review. Prefixed models (cx/gpt-5.6-sol, minimax-cn/…) always use normal 9router routing. Non-Codex harnesses never passthrough."
+  "_comment": "Codex official passthrough. Gate: Codex client only; if model present and outside modelPatterns → 9router route; else passthrough. Path is not a gate. modelPatterns: bare globs (gpt-*, codex-*). Prefixed ids (cx/gpt-*) never match."
 }
