@@ -53,9 +53,12 @@ export async function writeStreamError(writer, statusCode, message) {
  * Parse upstream provider error response
  * @param {Response} response - Fetch response from provider
  * @param {object} [executor] - Optional executor with parseError() override for provider-specific parsing
+ * @param {object} [credentials] - Request credentials, passed through for parsers that need a follow-up
+ *   lookup (e.g. kiro confirming a credit-exhaustion reset time via the quota API)
+ * @param {object} [proxyOptions] - Proxy options to reuse for any such follow-up lookup
  * @returns {Promise<{statusCode: number, message: string, resetsAtMs?: number}>}
  */
-export async function parseUpstreamError(response, executor = null) {
+export async function parseUpstreamError(response, executor = null, credentials = null, proxyOptions = null) {
   let bodyText = "";
   try {
     bodyText = await response.text();
@@ -63,10 +66,12 @@ export async function parseUpstreamError(response, executor = null) {
     bodyText = "";
   }
 
-  // Let executor-specific parser extract provider-specific fields (e.g. codex resetsAtMs)
+  // Let executor-specific parser extract provider-specific fields (e.g. codex resetsAtMs).
+  // parseError may be sync (codex) or async (kiro, which may issue a follow-up quota lookup) —
+  // awaiting a plain value is a no-op, so both shapes work here.
   if (executor && typeof executor.parseError === "function") {
     try {
-      const parsed = executor.parseError(response, bodyText);
+      const parsed = await executor.parseError(response, bodyText, credentials, proxyOptions);
       if (parsed && typeof parsed === "object") {
         const msg = parsed.message || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
         return { statusCode: parsed.status || response.status, message: msg, resetsAtMs: parsed.resetsAtMs };
