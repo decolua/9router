@@ -62,6 +62,9 @@ export const MITM_TOOLS = {
       { id: "claude-haiku-4.5", name: "Claude Haiku 4.5", alias: "claude-haiku-4.5" },
       { id: "deepseek-3.2", name: "DeepSeek 3.2", alias: "deepseek-3.2" },
       { id: "minimax-m2.1", name: "MiniMax M2.1", alias: "minimax-m2.1" },
+      { id: "gpt-5.6-sol", name: "GPT 5.6 Sol", alias: "gpt-5.6-sol", contextLength: 272000, rateMultiplier: 2.4 },
+      { id: "gpt-5.6-terra", name: "GPT 5.6 Terra", alias: "gpt-5.6-terra", contextLength: 272000, rateMultiplier: 1.2 },
+      { id: "gpt-5.6-luna", name: "GPT 5.6 Luna", alias: "gpt-5.6-luna", contextLength: 272000, rateMultiplier: 0.6 },
       { id: "simple-task", name: "Qwen3 Coder Next", alias: "simple-task" },
     ],
   },
@@ -358,6 +361,30 @@ amp --model "{{model}}"
       { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", alias: "sonnet", defaultValue: "cc/claude-sonnet-4-6" },
       { id: "gpt-5.5", name: "GPT 5.5", alias: "gpt5", defaultValue: "cx/gpt-5.5" },
       { id: "gemini-3.1-pro", name: "Gemini 3.1 Pro", alias: "gemini", defaultValue: "gemini/gemini-3.1-pro" },
+    ],
+  },
+  "grok-build": {
+    id: "grok-build",
+    name: "Grok Build",
+    image: "/providers/grok-cli.png",
+    color: "#1DA1F2",
+    description: "xAI Grok Build TUI coding agent",
+    configType: "custom",
+    docsUrl: "https://x.ai/cli",
+    defaultCommand: "grok",
+    notes: [
+      {
+        type: "info",
+        text: "Grok Build uses ~/.grok/config.toml. 9Router writes a [model.9router] custom model and sets it as the default.",
+      },
+      {
+        type: "info",
+        text: "After Apply, run grok (or /model 9router) to use the routed model. Switch back anytime with /model grok-build.",
+      },
+      {
+        type: "warning",
+        text: "Config path: Linux/macOS ~/.grok/config.toml • Windows %USERPROFILE%\\.grok\\config.toml",
+      },
     ],
   },
   // HIDDEN: gemini-cli

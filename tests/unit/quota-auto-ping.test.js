@@ -72,6 +72,7 @@ vi.mock("open-sse/executors/index.js", () => ({
 
 describe("quota auto-ping", () => {
   let runQuotaAutoPingTick;
+  let configureQuotaAutoPing;
   let deps;
   let state;
   let getCodexUsage;
@@ -83,11 +84,12 @@ describe("quota auto-ping", () => {
     vi.resetModules();
     vi.clearAllMocks();
     vi.useRealTimers();
+    delete global.__quotaAutoPing;
 
     ({ getCodexUsage } = await import("open-sse/services/usage/codex.js"));
     ({ getClaudeUsage } = await import("open-sse/services/usage/claude.js"));
     ({ getExecutor } = await import("open-sse/executors/index.js"));
-    ({ runQuotaAutoPingTick } = await import("../../src/shared/services/quotaAutoPing.js"));
+    ({ runQuotaAutoPingTick, configureQuotaAutoPing } = await import("../../src/shared/services/quotaAutoPing.js"));
 
     deps = {
       getSettings: vi.fn(),
@@ -115,6 +117,25 @@ describe("quota auto-ping", () => {
 
     expect(deps.getProviderConnections).not.toHaveBeenCalled();
     expect(deps.proxyAwareFetch).not.toHaveBeenCalled();
+  });
+
+  it("starts the scheduler only when an account opts in", () => {
+    vi.useFakeTimers();
+
+    configureQuotaAutoPing({ codexAutoPing: { connections: {} } });
+    expect(vi.getTimerCount()).toBe(0);
+
+    configureQuotaAutoPing({ codexAutoPing: { connections: { "codex-1": true } } });
+    expect(vi.getTimerCount()).toBe(1);
+  });
+
+  it("stops the scheduler when the last account opts out", () => {
+    vi.useFakeTimers();
+    configureQuotaAutoPing({ claudeAutoPing: { connections: { "claude-1": true } } });
+
+    configureQuotaAutoPing({ claudeAutoPing: { connections: { "claude-1": false } } });
+
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("does not ping Codex on the first resetAt observation", async () => {
