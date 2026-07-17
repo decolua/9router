@@ -334,8 +334,8 @@ function isLikelyGatewayApiKey(authHeader) {
   return false;
 }
 
-// Request body is always re-serialized as plain JSON after parseJsonBody (zstd/gzip already
-// decompressed). Never forward content-encoding / content-length from the client.
+// Always drop hop-by-hop / length / gateway auth. content-encoding is handled separately
+// depending on whether we forward original wire bytes or re-serialized JSON.
 const STRIP_REQUEST_HEADERS = new Set([
   ...HOP_BY_HOP,
   "authorization",
@@ -347,8 +347,14 @@ const STRIP_REQUEST_HEADERS = new Set([
   "x-forwarded-proto",
 ]);
 
-/** @internal exported for unit tests */
-export function buildForwardHeaders(clientHeaders, { authHeader, accountId }) {
+/**
+ * Build upstream request headers.
+ * @param {Headers|object} clientHeaders
+ * @param {{ authHeader: string, accountId?: string|null, contentEncoding?: string|null }} opts
+ *   contentEncoding: if set, forward original compressed body (zstd/gzip/…) with this encoding.
+ *   if null/undefined, body is plain JSON and content-encoding is omitted.
+ */
+export function buildForwardHeaders(clientHeaders, { authHeader, accountId, contentEncoding = null } = {}) {
   const raw = normalizeHeaders(clientHeaders);
   const out = {};
   for (const [key, val] of Object.entries(raw)) {
@@ -369,8 +375,11 @@ export function buildForwardHeaders(clientHeaders, { authHeader, accountId }) {
     out["chatgpt-account-id"] = accountId;
   }
 
-  // Body is always plain JSON after decompression + re-serialize
   out["content-type"] = "application/json";
+  if (contentEncoding) {
+    // Transparent wire passthrough: same bytes Codex would send without base_url
+    out["content-encoding"] = contentEncoding;
+  }
 
   return out;
 }
@@ -387,13 +396,22 @@ function corsHeaders(extra = {}) {
 /**
  * Transparent reverse-proxy of the current request to ChatGPT codex backend.
  * @param {Request} request
- * @param {object} body - already-parsed JSON body
- * @param {{ log?: object, pathname?: string }} [options]
+ * @param {object} body - already-parsed JSON body (for model / logging)
+ * @param {{
+ *   log?: object,
+ *   pathname?: string,
+ *   rawBody?: Buffer|Uint8Array|null,
+ *   contentEncoding?: string|null,
+ * }} [options]
+ *   Prefer rawBody + contentEncoding so wire format matches native Codex→ChatGPT
+ *   (zstd in → zstd out). Falls back to JSON.stringify(body) if rawBody missing.
  * @returns {Promise<Response>}
  */
 export async function handleOfficialPassthrough(request, body, options = {}) {
   const log = options.log || null;
   const cfg = loadOfficialPassthroughConfig();
+  const rawBody = options.rawBody || null;
+  const contentEncoding = options.contentEncoding || null;
 
   let pathname = options.pathname || "/v1/responses";
   try {
@@ -444,15 +462,26 @@ export async function handleOfficialPassthrough(request, body, options = {}) {
   }
 
   const targetUrl = resolveOfficialPassthroughUrl(pathname);
+
+  // Prefer original wire bytes (zstd/gzip/plain) so we match no-base_url Codex behavior.
+  // Only fall back to re-serialized JSON when raw bytes were not retained.
+  const useRaw = rawBody && (rawBody.byteLength > 0 || rawBody.length > 0);
+  const forwardEncoding = useRaw ? contentEncoding : null;
   const forwardHeaders = buildForwardHeaders(request.headers, {
     authHeader: `Bearer ${accessToken}`,
     accountId,
+    contentEncoding: forwardEncoding,
   });
+
+  const upstreamBody = useRaw
+    ? rawBody
+    : JSON.stringify(body ?? {});
 
   const model = body?.model || "";
   log?.info?.(
     "PASSTHROUGH",
     `Codex → ${targetUrl} · model=${model || "(none)"} · auth=${authSource}`
+      + ` · wire=${forwardEncoding || "json"}`
   );
 
   let upstream;
@@ -460,7 +489,7 @@ export async function handleOfficialPassthrough(request, body, options = {}) {
     upstream = await proxyAwareFetch(targetUrl, {
       method: request.method || "POST",
       headers: forwardHeaders,
-      body: JSON.stringify(body ?? {}),
+      body: upstreamBody,
       signal: request.signal,
     });
   } catch (err) {

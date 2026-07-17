@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { brotliCompressSync, gzipSync, zstdCompressSync } from "node:zlib";
 
-import { decodeBody, parseJsonBody } from "../../src/shared/utils/parseJsonBody.js";
+import { decodeBody, parseJsonBody, parseJsonBodyDetailed } from "../../src/shared/utils/parseJsonBody.js";
 
 function makeRequest(body, { encoding } = {}) {
   const headers = { "content-type": "application/json" };
@@ -47,4 +47,16 @@ describe("parseJsonBody", () => {
     const compressed = zstdCompressSync(raw);
     expect(decodeBody(compressed, "zstd").toString("utf8")).toBe(json);
   });
+
+  it("parseJsonBodyDetailed retains original zstd bytes for wire passthrough", async () => {
+    if (typeof zstdCompressSync !== "function") return;
+    const compressed = zstdCompressSync(Buffer.from(json));
+    const detailed = await parseJsonBodyDetailed(
+      makeRequest(compressed, { encoding: "zstd" })
+    );
+    expect(detailed.body).toEqual(payload);
+    expect(detailed.contentEncoding).toBe("zstd");
+    expect(Buffer.compare(detailed.rawBody, compressed)).toBe(0);
+  });
 });
+

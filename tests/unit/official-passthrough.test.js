@@ -172,7 +172,7 @@ describe("official passthrough gates", () => {
     expect(cfg.modelPatterns).toEqual(expect.arrayContaining(["gpt-*", "codex-*"]));
   });
 
-  it("strips content-encoding when forwarding re-serialized JSON body", () => {
+  it("omits content-encoding for plain JSON re-serialize fallback", () => {
     const headers = buildForwardHeaders(
       {
         "user-agent": "codex-cli/0.145.0",
@@ -182,7 +182,7 @@ describe("official passthrough gates", () => {
         authorization: "Bearer sk-gateway",
         originator: "Codex Desktop",
       },
-      { authHeader: "Bearer eyJhbGciOi.test", accountId: "acct-1" }
+      { authHeader: "Bearer eyJhbGciOi.test", accountId: "acct-1", contentEncoding: null }
     );
     expect(headers["content-encoding"]).toBeUndefined();
     expect(headers["content-length"]).toBeUndefined();
@@ -191,6 +191,23 @@ describe("official passthrough gates", () => {
     expect(headers["content-type"]).toBe("application/json");
     expect(headers.originator).toBe("Codex Desktop");
   });
+
+  it("keeps content-encoding when forwarding original zstd wire bytes", () => {
+    const headers = buildForwardHeaders(
+      {
+        "user-agent": "codex-cli/0.145.0",
+        "content-encoding": "zstd",
+        "content-length": "99999",
+        authorization: "Bearer sk-gateway",
+        originator: "Codex Desktop",
+      },
+      { authHeader: "Bearer eyJhbGciOi.test", accountId: "acct-1", contentEncoding: "zstd" }
+    );
+    expect(headers["content-encoding"]).toBe("zstd");
+    expect(headers["content-length"]).toBeUndefined();
+    expect(headers.authorization).toBe("Bearer eyJhbGciOi.test");
+  });
 });
+
 
 

@@ -1,4 +1,4 @@
-import { parseJsonBody } from "@/shared/utils/parseJsonBody.js";
+import { parseJsonBodyDetailed } from "@/shared/utils/parseJsonBody.js";
 import {
   shouldOfficialPassthrough,
   handleOfficialPassthrough,
@@ -27,12 +27,17 @@ export async function OPTIONS() {
  * posts here. Official passthrough forwards to
  * https://chatgpt.com/backend-api/codex/alpha/search.
  *
- * Non-Codex clients or non-gpt models get a clear 404/400 JSON error (not HTML).
+ * Non-Codex clients or non-matching models get a clear JSON error (not HTML).
  */
 export async function POST(request) {
   let body;
+  let rawBody = null;
+  let contentEncoding = null;
   try {
-    body = await parseJsonBody(request);
+    const parsed = await parseJsonBodyDetailed(request);
+    body = parsed.body;
+    rawBody = parsed.rawBody;
+    contentEncoding = parsed.contentEncoding;
   } catch (err) {
     log.warn("ALPHA_SEARCH", "Invalid JSON body", { error: err?.message });
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid JSON body");
@@ -52,5 +57,10 @@ export async function POST(request) {
     );
   }
 
-  return handleOfficialPassthrough(request, body, { log, pathname });
+  return handleOfficialPassthrough(request, body, {
+    log,
+    pathname,
+    rawBody,
+    contentEncoding,
+  });
 }

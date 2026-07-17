@@ -12,19 +12,45 @@ import { gunzipSync, brotliDecompressSync, inflateSync, zstdDecompressSync } fro
  * @returns {Promise<any>}
  */
 export async function parseJsonBody(request) {
-  const encoding = (request.headers.get("content-encoding") || "").toLowerCase().trim();
-  // Fast path: no content encoding → native JSON parse
-  if (!encoding || encoding === "identity") {
-    return request.json();
-  }
+  const { body } = await parseJsonBodyDetailed(request);
+  return body;
+}
 
-  const raw = Buffer.from(await request.arrayBuffer());
-  if (raw.length === 0) {
+/**
+ * Parse JSON body and keep the original wire bytes for transparent passthrough.
+ *
+ * Flow for official passthrough:
+ *   zstd in → decompress → JSON.parse → decide model → forward original rawBody
+ *   (with original Content-Encoding) to chatgpt.com — same as no-base_url Codex.
+ *
+ * @param {Request} request
+ * @returns {Promise<{ body: any, rawBody: Buffer, contentEncoding: string|null }>}
+ */
+export async function parseJsonBodyDetailed(request) {
+  const encodingHeader = (request.headers.get("content-encoding") || "").toLowerCase().trim();
+  const primary = encodingHeader && encodingHeader !== "identity"
+    ? encodingHeader.split(",")[0].trim()
+    : null;
+
+  const rawBody = Buffer.from(await request.arrayBuffer());
+  if (rawBody.length === 0) {
     throw new SyntaxError("Unexpected end of JSON input");
   }
 
-  const decoded = decodeBody(raw, encoding);
-  return JSON.parse(decoded.toString("utf8"));
+  if (!primary) {
+    return {
+      body: JSON.parse(rawBody.toString("utf8")),
+      rawBody,
+      contentEncoding: null,
+    };
+  }
+
+  const decoded = decodeBody(rawBody, primary);
+  return {
+    body: JSON.parse(decoded.toString("utf8")),
+    rawBody,
+    contentEncoding: primary,
+  };
 }
 
 /**

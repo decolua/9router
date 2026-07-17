@@ -22,7 +22,7 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
-import { parseJsonBody } from "@/shared/utils/parseJsonBody.js";
+import { parseJsonBodyDetailed } from "@/shared/utils/parseJsonBody.js";
 import {
   shouldOfficialPassthrough,
   handleOfficialPassthrough,
@@ -35,9 +35,14 @@ import {
  */
 export async function handleChat(request, clientRawRequest = null) {
   let body;
+  let rawBody = null;
+  let contentEncoding = null;
   try {
-    // Codex OpenAI/ChatGPT mode may send zstd-compressed bodies (Content-Encoding: zstd)
-    body = await parseJsonBody(request);
+    // Keep wire bytes so official passthrough can re-send zstd as-is after model check
+    const parsed = await parseJsonBodyDetailed(request);
+    body = parsed.body;
+    rawBody = parsed.rawBody;
+    contentEncoding = parsed.contentEncoding;
   } catch (err) {
     log.warn("CHAT", "Invalid JSON body", { encoding: request.headers.get("content-encoding"), error: err?.message });
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid JSON body");
@@ -84,6 +89,7 @@ export async function handleChat(request, clientRawRequest = null) {
 
   // Codex official passthrough: Codex client + official surface path + modelPatterns (default gpt-*/codex-*)
   // Prefixed models (cx/*, minimax-cn/*, …) and non-Codex harnesses never match.
+  // Wire: decompress only to inspect model, then forward original rawBody (zstd) to ChatGPT.
   if (shouldOfficialPassthrough({
     headers: clientRawRequest.headers,
     body,
@@ -92,6 +98,8 @@ export async function handleChat(request, clientRawRequest = null) {
     return handleOfficialPassthrough(request, body, {
       log,
       pathname: clientRawRequest.endpoint,
+      rawBody,
+      contentEncoding,
     });
   }
 
