@@ -193,15 +193,16 @@ describe("proposed safe Combo /v1/models metadata contract", () => {
 
   it.fails("canonicalizes equivalent public model ordering to stable bytes and ETag", async () => {
     const first = await modelsResponse();
-    const firstPayload = await first.clone().json();
+    const firstBody = await first.text();
     const firstTag = first.headers.get("etag");
 
     state.connectionModels = ["model-b", "model-a"];
     const second = await modelsResponse();
-    const secondPayload = await second.clone().json();
+    const secondBody = await second.text();
     const secondTag = second.headers.get("etag");
 
-    expect(secondPayload).toEqual(firstPayload);
+    expect(secondBody).toBe(firstBody);
+    expect(JSON.parse(secondBody)).toEqual(JSON.parse(firstBody));
     expect(secondTag).toBe(firstTag);
     expect(secondTag).toMatch(/^"sha256:[a-f0-9]{64}"$/);
   });
