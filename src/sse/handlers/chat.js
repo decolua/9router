@@ -82,8 +82,8 @@ export async function handleChat(request, clientRawRequest = null) {
     }
   }
 
-  // Codex official passthrough: Codex client + official surface path + gpt-* model
-  // Non-gpt models (cx/*, minimax-cn/*, …) and non-Codex harnesses never match.
+  // Codex official passthrough: Codex client + official surface path + modelPatterns (default gpt-*/codex-*)
+  // Prefixed models (cx/*, minimax-cn/*, …) and non-Codex harnesses never match.
   if (shouldOfficialPassthrough({
     headers: clientRawRequest.headers,
     body,

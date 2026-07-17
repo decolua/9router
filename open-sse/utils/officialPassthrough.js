@@ -7,13 +7,19 @@
  * Gates (ALL required):
  *   1. Client is Codex (see isCodexClient)
  *   2. Path is an official surface (/v1/responses, /v1/alpha/search, …)
- *   3. model is absent OR matches /^gpt-/i  (cx/*, minimax-cn/*, … → normal routing)
+ *   3. model is absent OR matches configurable modelPatterns (default gpt-*, codex-*)
+ *      Prefixed ids (cx/*, minimax-cn/*, …) always → normal 9router routing
  *
  * Outbound auth uses ~/.codex/auth.json (ChatGPT JWT). Client experimental_bearer
  * tokens (sk-9router) are NOT forwarded to chatgpt.com.
  *
- * Config (optional kill-switch): ~/.9router/official-passthrough.json
- *   { "enabled": true, "fallbackCodexAuthJson": true, "codexAuthPath": null }
+ * Config: ~/.9router/official-passthrough.json
+ *   {
+ *     "enabled": true,
+ *     "fallbackCodexAuthJson": true,
+ *     "codexAuthPath": null,
+ *     "modelPatterns": ["gpt-*", "codex-*"]
+ *   }
  */
 
 import fs from "node:fs";
@@ -38,11 +44,20 @@ const HOP_BY_HOP = new Set([
 
 const CHATGPT_CODEX_BASE = "https://chatgpt.com/backend-api/codex";
 
+/** Default bare model globs for official ChatGPT/Codex models. */
+export const DEFAULT_MODEL_PATTERNS = ["gpt-*", "codex-*"];
+
 const DEFAULT_CONFIG = {
   enabled: true,
   fallbackCodexAuthJson: true,
   /** Optional absolute path to Codex auth.json (default: ~/.codex/auth.json) */
   codexAuthPath: null,
+  /**
+   * Glob patterns for bare model ids eligible for passthrough (case-insensitive).
+   * `*` = any chars. Prefixed models (with `/`) never match.
+   * Examples: "gpt-*", "codex-*", "codex-auto-review"
+   */
+  modelPatterns: [...DEFAULT_MODEL_PATTERNS],
 };
 
 let cachedConfig = null;
@@ -64,6 +79,32 @@ export function getOfficialPassthroughConfigPath() {
   return path.join(resolveDataDir(), "official-passthrough.json");
 }
 
+function normalizeModelPatterns(patterns) {
+  if (!Array.isArray(patterns)) return [...DEFAULT_MODEL_PATTERNS];
+  const out = [];
+  for (const p of patterns) {
+    if (typeof p !== "string") continue;
+    const s = p.trim();
+    if (!s) continue;
+    out.push(s);
+  }
+  // Empty array would match nothing; fall back to defaults so a broken edit is recoverable
+  return out.length > 0 ? out : [...DEFAULT_MODEL_PATTERNS];
+}
+
+/**
+ * Convert a simple glob (only * and ?) to a case-insensitive RegExp.
+ * @param {string} pattern
+ * @returns {RegExp}
+ */
+export function modelPatternToRegExp(pattern) {
+  const escaped = String(pattern)
+    .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+    .replace(/\*/g, ".*")
+    .replace(/\?/g, ".");
+  return new RegExp(`^${escaped}$`, "i");
+}
+
 function ensureConfigFile(configPath) {
   try {
     if (fs.existsSync(configPath)) return;
@@ -72,8 +113,11 @@ function ensureConfigFile(configPath) {
     fs.writeFileSync(
       configPath,
       `${JSON.stringify({
-        ...DEFAULT_CONFIG,
-        _comment: "Codex official passthrough. enabled=false disables all passthrough. Non-gpt-* models always route via 9router.",
+        enabled: DEFAULT_CONFIG.enabled,
+        fallbackCodexAuthJson: DEFAULT_CONFIG.fallbackCodexAuthJson,
+        codexAuthPath: DEFAULT_CONFIG.codexAuthPath,
+        modelPatterns: [...DEFAULT_MODEL_PATTERNS],
+        _comment: "Codex official passthrough. modelPatterns: bare model globs (gpt-*, codex-*). Prefixed models (cx/gpt-*) always use 9router routing. enabled=false disables passthrough.",
       }, null, 2)}\n`,
       "utf-8"
     );
@@ -83,7 +127,7 @@ function ensureConfigFile(configPath) {
 }
 
 /**
- * @returns {{ enabled: boolean, fallbackCodexAuthJson: boolean, codexAuthPath: string|null, path: string }}
+ * @returns {{ enabled: boolean, fallbackCodexAuthJson: boolean, codexAuthPath: string|null, modelPatterns: string[], path: string }}
  */
 export function loadOfficialPassthroughConfig({ forceReload = false } = {}) {
   const configPath = getOfficialPassthroughConfigPath();
@@ -105,17 +149,23 @@ export function loadOfficialPassthroughConfig({ forceReload = false } = {}) {
     return cachedConfig;
   }
 
-  let parsed = { ...DEFAULT_CONFIG };
+  let parsed = { ...DEFAULT_CONFIG, modelPatterns: [...DEFAULT_MODEL_PATTERNS] };
   try {
     if (mtimeMs != null) {
       const raw = fs.readFileSync(configPath, "utf-8");
       const json = JSON.parse(raw);
       if (json && typeof json === "object" && !Array.isArray(json)) {
-        parsed = { ...DEFAULT_CONFIG, ...json };
+        parsed = {
+          ...DEFAULT_CONFIG,
+          ...json,
+          modelPatterns: normalizeModelPatterns(
+            json.modelPatterns !== undefined ? json.modelPatterns : DEFAULT_MODEL_PATTERNS
+          ),
+        };
       }
     }
   } catch {
-    parsed = { ...DEFAULT_CONFIG };
+    parsed = { ...DEFAULT_CONFIG, modelPatterns: [...DEFAULT_MODEL_PATTERNS] };
   }
 
   cachedConfig = {
@@ -124,6 +174,7 @@ export function loadOfficialPassthroughConfig({ forceReload = false } = {}) {
     codexAuthPath: typeof parsed.codexAuthPath === "string" && parsed.codexAuthPath.trim()
       ? parsed.codexAuthPath.trim()
       : null,
+    modelPatterns: normalizeModelPatterns(parsed.modelPatterns),
     path: configPath,
   };
   cachedConfigPath = configPath;
@@ -160,17 +211,25 @@ export function isOfficialSurfacePath(pathname) {
 }
 
 /**
- * Official passthrough model rule: gpt-* only.
- * Prefixed ids (cx/gpt-5.6-sol, minimax-cn/…) are treated as 9router-routed.
+ * Whether a bare model id matches official passthrough patterns.
+ * @param {string|null|undefined} modelStr
+ * @param {string[]} [patterns] globs from config (default DEFAULT_MODEL_PATTERNS)
+ * @returns {true|false|null} true=match, false=no match, null=absent model
  */
-export function isGptOfficialModel(modelStr) {
+export function isOfficialPassthroughModel(modelStr, patterns = DEFAULT_MODEL_PATTERNS) {
   if (modelStr == null || modelStr === "") return null; // absent
   if (typeof modelStr !== "string") return false;
   const m = modelStr.trim();
   if (!m) return null;
-  // Must be bare gpt-* (no provider prefix)
+  // Prefixed provider/model ids always route via 9router
   if (m.includes("/")) return false;
-  return /^gpt-/i.test(m);
+  const list = normalizeModelPatterns(patterns);
+  return list.some((pat) => modelPatternToRegExp(pat).test(m));
+}
+
+/** @deprecated use isOfficialPassthroughModel */
+export function isGptOfficialModel(modelStr, patterns = DEFAULT_MODEL_PATTERNS) {
+  return isOfficialPassthroughModel(modelStr, patterns);
 }
 
 /**
@@ -186,10 +245,10 @@ export function shouldOfficialPassthrough({ headers, body = {}, pathname, config
   if (!isCodexClient(headers, body)) return false;
   if (!isOfficialSurfacePath(pathname)) return false;
 
-  const modelCheck = isGptOfficialModel(body?.model);
-  // non-gpt / prefixed → route via 9router
+  const modelCheck = isOfficialPassthroughModel(body?.model, cfg.modelPatterns);
+  // non-matching / prefixed → route via 9router
   if (modelCheck === false) return false;
-  // gpt-* or absent model on official surface → passthrough
+  // matched pattern or absent model on official surface → passthrough
   return true;
 }
 

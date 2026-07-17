@@ -2,10 +2,13 @@ import { describe, expect, it, beforeEach } from "vitest";
 
 import {
   isOfficialSurfacePath,
+  isOfficialPassthroughModel,
   isGptOfficialModel,
   shouldOfficialPassthrough,
   resolveOfficialPassthroughUrl,
   normalizeRequestPath,
+  modelPatternToRegExp,
+  DEFAULT_MODEL_PATTERNS,
   _resetOfficialPassthroughCache,
   loadOfficialPassthroughConfig,
 } from "../../open-sse/utils/officialPassthrough.js";
@@ -31,14 +34,33 @@ describe("official passthrough gates", () => {
     expect(isOfficialSurfacePath("/v1/search")).toBe(false);
   });
 
-  it("gpt-* bare ids are official; prefixed are not", () => {
+  it("default patterns match gpt-* and codex-*; prefixed are not", () => {
+    expect(isOfficialPassthroughModel("gpt-5.6-sol")).toBe(true);
+    expect(isOfficialPassthroughModel("GPT-5.4")).toBe(true);
+    expect(isOfficialPassthroughModel("codex-auto-review")).toBe(true);
+    expect(isOfficialPassthroughModel("codex-mini")).toBe(true);
+    expect(isOfficialPassthroughModel("cx/gpt-5.6-sol")).toBe(false);
+    expect(isOfficialPassthroughModel("minimax-cn/MiniMax-M3")).toBe(false);
+    expect(isOfficialPassthroughModel("gcli/grok-4.5")).toBe(false);
+    expect(isOfficialPassthroughModel(null)).toBe(null);
+    expect(isOfficialPassthroughModel("")).toBe(null);
+    // alias still works
     expect(isGptOfficialModel("gpt-5.6-sol")).toBe(true);
-    expect(isGptOfficialModel("GPT-5.4")).toBe(true);
-    expect(isGptOfficialModel("cx/gpt-5.6-sol")).toBe(false);
-    expect(isGptOfficialModel("minimax-cn/MiniMax-M3")).toBe(false);
-    expect(isGptOfficialModel("gcli/grok-4.5")).toBe(false);
-    expect(isGptOfficialModel(null)).toBe(null);
-    expect(isGptOfficialModel("")).toBe(null);
+  });
+
+  it("supports custom modelPatterns (exact + glob)", () => {
+    const patterns = ["gpt-*", "codex-*", "o3-*", "my-official-model"];
+    expect(isOfficialPassthroughModel("o3-mini", patterns)).toBe(true);
+    expect(isOfficialPassthroughModel("my-official-model", patterns)).toBe(true);
+    expect(isOfficialPassthroughModel("codex-auto-review", patterns)).toBe(true);
+    expect(isOfficialPassthroughModel("claude-opus", patterns)).toBe(false);
+  });
+
+  it("modelPatternToRegExp is case-insensitive glob", () => {
+    expect(modelPatternToRegExp("gpt-*").test("GPT-5.6-sol")).toBe(true);
+    expect(modelPatternToRegExp("codex-*").test("codex-auto-review")).toBe(true);
+    expect(modelPatternToRegExp("codex-auto-review").test("codex-auto-review")).toBe(true);
+    expect(modelPatternToRegExp("gpt-*").test("cx/gpt-5")).toBe(false);
   });
 
   it("maps paths to ChatGPT codex backend", () => {
@@ -56,8 +78,14 @@ describe("official passthrough gates", () => {
     );
   });
 
-  it("requires Codex client + surface path + gpt-* model", () => {
-    const cfg = { enabled: true, fallbackCodexAuthJson: true, codexAuthPath: null, path: "" };
+  it("requires Codex client + surface path + matching model pattern", () => {
+    const cfg = {
+      enabled: true,
+      fallbackCodexAuthJson: true,
+      codexAuthPath: null,
+      modelPatterns: [...DEFAULT_MODEL_PATTERNS],
+      path: "",
+    };
     const codexHeaders = { "user-agent": "codex-cli/0.145.0" };
 
     expect(shouldOfficialPassthrough({
@@ -69,12 +97,19 @@ describe("official passthrough gates", () => {
 
     expect(shouldOfficialPassthrough({
       headers: codexHeaders,
+      body: { model: "codex-auto-review" },
+      pathname: "/v1/responses",
+      config: cfg,
+    })).toBe(true);
+
+    expect(shouldOfficialPassthrough({
+      headers: codexHeaders,
       body: { model: "gpt-5.6-sol" },
       pathname: "/v1/alpha/search",
       config: cfg,
     })).toBe(true);
 
-    // non-gpt → route
+    // non-matching → route
     expect(shouldOfficialPassthrough({
       headers: codexHeaders,
       body: { model: "cx/gpt-5.6-sol" },
@@ -112,11 +147,27 @@ describe("official passthrough gates", () => {
       pathname: "/v1/responses",
       config: { ...cfg, enabled: false },
     })).toBe(false);
+
+    // custom patterns only
+    expect(shouldOfficialPassthrough({
+      headers: codexHeaders,
+      body: { model: "o3-mini" },
+      pathname: "/v1/responses",
+      config: { ...cfg, modelPatterns: ["o3-*"] },
+    })).toBe(true);
+
+    expect(shouldOfficialPassthrough({
+      headers: codexHeaders,
+      body: { model: "gpt-5.6-sol" },
+      pathname: "/v1/responses",
+      config: { ...cfg, modelPatterns: ["o3-*"] },
+    })).toBe(false);
   });
 
-  it("loadOfficialPassthroughConfig returns defaults", () => {
+  it("loadOfficialPassthroughConfig includes default modelPatterns", () => {
     const cfg = loadOfficialPassthroughConfig({ forceReload: true });
     expect(cfg.enabled).toBe(true);
     expect(cfg.fallbackCodexAuthJson).toBe(true);
+    expect(cfg.modelPatterns).toEqual(expect.arrayContaining(["gpt-*", "codex-*"]));
   });
 });
