@@ -23,6 +23,10 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { parseJsonBody } from "@/shared/utils/parseJsonBody.js";
+import {
+  shouldOfficialPassthrough,
+  handleOfficialPassthrough,
+} from "open-sse/utils/officialPassthrough.js";
 
 /**
  * Handle chat completion request
@@ -76,6 +80,19 @@ export async function handleChat(request, clientRawRequest = null) {
       log.warn("AUTH", "Invalid API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
     }
+  }
+
+  // Codex official passthrough: Codex client + official surface path + gpt-* model
+  // Non-gpt models (cx/*, minimax-cn/*, …) and non-Codex harnesses never match.
+  if (shouldOfficialPassthrough({
+    headers: clientRawRequest.headers,
+    body,
+    pathname: clientRawRequest.endpoint,
+  })) {
+    return handleOfficialPassthrough(request, body, {
+      log,
+      pathname: clientRawRequest.endpoint,
+    });
   }
 
   if (!modelStr) {

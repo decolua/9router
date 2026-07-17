@@ -1,0 +1,6 @@
+{
+  "enabled": true,
+  "fallbackCodexAuthJson": true,
+  "codexAuthPath": null,
+  "_comment": "Codex official passthrough kill-switch. When enabled, Codex clients hitting /v1/responses and /v1/alpha/search with bare gpt-* models are reverse-proxied to chatgpt.com/backend-api/codex/* using ~/.codex/auth.json. Non-gpt models (cx/*, minimax-cn/*, …) and non-Codex harnesses always use normal 9router routing."
+}
