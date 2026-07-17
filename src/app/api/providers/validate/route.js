@@ -5,6 +5,7 @@ import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { resolveOllamaLocalHost, resolveXiaomiTokenplanBaseUrl, PROVIDERS } from "open-sse/config/providers.js";
 import { openaiToCommandCodeRequest } from "open-sse/translator/request/openai-to-commandcode.js";
 import { normalizeProviderId } from "@/lib/providerNormalization";
+import { mergeClientIdentityHeaders } from "open-sse/shared/clientIdentityHeaders.js";
 
 // Probe a webSearch/webFetch provider using its searchConfig/fetchConfig.
 // Returns true if API key is accepted (status !== 401 && !== 403).
@@ -104,7 +105,14 @@ export async function POST(request) {
         }
         const modelsUrl = `${node.baseUrl?.replace(/\/$/, "")}/models`;
         const res = await fetch(modelsUrl, {
-          headers: { "Authorization": `Bearer ${apiKey}` },
+          headers: mergeClientIdentityHeaders(
+            { "Content-Type": "application/json" },
+            {
+              clientIdentityProfile: providerSpecificData?.clientIdentityProfile ?? node.clientIdentityProfile,
+              clientIdentityHeaders: providerSpecificData?.clientIdentityHeaders ?? node.clientIdentityHeaders,
+            },
+            { "Authorization": `Bearer ${apiKey}` },
+          ),
         });
         isValid = res.ok;
         return NextResponse.json({
@@ -154,18 +162,29 @@ export async function POST(request) {
         if (normalizedBase.endsWith("/messages")) {
           normalizedBase = normalizedBase.slice(0, -9); // remove /messages
         }
+        if (normalizedBase.endsWith("/v1")) {
+          normalizedBase = normalizedBase.slice(0, -3);
+        }
 
         const messagesUrl = `${normalizedBase}/v1/messages`;
-        const model = node.defaultModel || "claude-3-haiku-20240307";
+        const model = body.defaultModel || node.defaultModel || "claude-3-haiku-20240307";
 
         const res = await fetch(messagesUrl, {
           method: "POST",
-          headers: {
-            "x-api-key": apiKey,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-            "Authorization": `Bearer ${apiKey}`,
-          },
+          headers: mergeClientIdentityHeaders(
+            {
+              "content-type": "application/json",
+              "anthropic-version": "2023-06-01",
+            },
+            {
+              clientIdentityProfile: providerSpecificData?.clientIdentityProfile ?? node.clientIdentityProfile,
+              clientIdentityHeaders: providerSpecificData?.clientIdentityHeaders ?? node.clientIdentityHeaders,
+            },
+            {
+              "x-api-key": apiKey,
+              "Authorization": `Bearer ${apiKey}`,
+            },
+          ),
           body: JSON.stringify({
             model,
             max_tokens: 1,

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createProviderNode, getProviderNodes } from "@/models";
 import { OPENAI_COMPATIBLE_PREFIX, ANTHROPIC_COMPATIBLE_PREFIX, CUSTOM_EMBEDDING_PREFIX } from "@/shared/constants/providers";
 import { generateId } from "@/shared/utils";
+import { normalizeClientIdentityData } from "open-sse/shared/clientIdentityHeaders.js";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +47,7 @@ export async function POST(request) {
     const nodeType = type || "openai-compatible";
 
     if (nodeType === "openai-compatible") {
+      const identityData = normalizeClientIdentityData(body);
       if (!apiType || !["chat", "responses"].includes(apiType)) {
         return NextResponse.json({ error: "Invalid OpenAI compatible API type" }, { status: 400 });
       }
@@ -57,6 +59,7 @@ export async function POST(request) {
         apiType,
         baseUrl: (baseUrl || OPENAI_COMPATIBLE_DEFAULTS.baseUrl).trim(),
         name: name.trim(),
+        ...identityData,
       });
       return NextResponse.json({ node }, { status: 201 });
     }
@@ -79,6 +82,7 @@ export async function POST(request) {
     }
 
     if (nodeType === "anthropic-compatible") {
+      const identityData = normalizeClientIdentityData(body);
       // Sanitize Base URL: remove trailing slash, and remove trailing /messages if user added it
       // This prevents double-appending /messages at runtime
       let sanitizedBaseUrl = (baseUrl || ANTHROPIC_COMPATIBLE_DEFAULTS.baseUrl).trim().replace(/\/$/, "");
@@ -92,6 +96,7 @@ export async function POST(request) {
         prefix: prefix.trim(),
         baseUrl: sanitizedBaseUrl,
         name: name.trim(),
+        ...identityData,
       });
       return NextResponse.json({ node }, { status: 201 });
     }

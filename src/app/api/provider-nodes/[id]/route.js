@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { deleteProviderConnectionsByProvider, deleteProviderNode, getProviderConnections, getProviderNodeById, updateProviderConnection, updateProviderNode } from "@/models";
+import { normalizeClientIdentityData } from "open-sse/shared/clientIdentityHeaders.js";
 
 // PUT /api/provider-nodes/[id] - Update provider node
 export async function PUT(request, { params }) {
@@ -8,6 +9,15 @@ export async function PUT(request, { params }) {
     const body = await request.json();
     const { name, prefix, apiType, baseUrl } = body;
     const node = await getProviderNodeById(id);
+    const isCompatibleNode = node?.type === "openai-compatible" || node?.type === "anthropic-compatible";
+    const hasIdentityUpdate = Object.prototype.hasOwnProperty.call(body, "clientIdentityProfile") ||
+      Object.prototype.hasOwnProperty.call(body, "clientIdentityHeaders");
+    const identityData = isCompatibleNode
+      ? (hasIdentityUpdate ? normalizeClientIdentityData(body) : {
+          clientIdentityProfile: node.clientIdentityProfile || "default",
+          clientIdentityHeaders: node.clientIdentityHeaders || {},
+        })
+      : {};
 
     if (!node) {
       return NextResponse.json({ error: "Provider node not found" }, { status: 404 });
@@ -52,6 +62,7 @@ export async function PUT(request, { params }) {
       name: name.trim(),
       prefix: prefix.trim(),
       baseUrl: sanitizedBaseUrl,
+      ...identityData,
     };
 
     if (node.type === "openai-compatible") {
@@ -69,6 +80,7 @@ export async function PUT(request, { params }) {
           apiType: node.type === "openai-compatible" ? apiType : undefined,
           baseUrl: sanitizedBaseUrl,
           nodeName: updated.name,
+          ...identityData,
         }
       })
     )));
