@@ -1,9 +1,3 @@
-# Draft issue: reuse provider-scoped OpenAI and Codex catalogs in `/v1/models`
-
-Proposed title:
-
-> feat(models): reuse authenticated OpenAI/Codex catalogs in `/v1/models`
-
 ## Problem
 
 9Router already has two provider-scoped authoritative catalog paths in
