@@ -11,6 +11,7 @@ import {
   DEFAULT_MODEL_PATTERNS,
   _resetOfficialPassthroughCache,
   loadOfficialPassthroughConfig,
+  buildForwardHeaders,
 } from "../../open-sse/utils/officialPassthrough.js";
 
 describe("official passthrough gates", () => {
@@ -170,4 +171,26 @@ describe("official passthrough gates", () => {
     expect(cfg.fallbackCodexAuthJson).toBe(true);
     expect(cfg.modelPatterns).toEqual(expect.arrayContaining(["gpt-*", "codex-*"]));
   });
+
+  it("strips content-encoding when forwarding re-serialized JSON body", () => {
+    const headers = buildForwardHeaders(
+      {
+        "user-agent": "codex-cli/0.145.0",
+        "content-encoding": "zstd",
+        "content-length": "99999",
+        "content-type": "application/json",
+        authorization: "Bearer sk-gateway",
+        originator: "Codex Desktop",
+      },
+      { authHeader: "Bearer eyJhbGciOi.test", accountId: "acct-1" }
+    );
+    expect(headers["content-encoding"]).toBeUndefined();
+    expect(headers["content-length"]).toBeUndefined();
+    expect(headers.authorization).toBe("Bearer eyJhbGciOi.test");
+    expect(headers["chatgpt-account-id"]).toBe("acct-1");
+    expect(headers["content-type"]).toBe("application/json");
+    expect(headers.originator).toBe("Codex Desktop");
+  });
 });
+
+

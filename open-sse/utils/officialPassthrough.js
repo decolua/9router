@@ -334,15 +334,26 @@ function isLikelyGatewayApiKey(authHeader) {
   return false;
 }
 
-function buildForwardHeaders(clientHeaders, { authHeader, accountId }) {
+// Request body is always re-serialized as plain JSON after parseJsonBody (zstd/gzip already
+// decompressed). Never forward content-encoding / content-length from the client.
+const STRIP_REQUEST_HEADERS = new Set([
+  ...HOP_BY_HOP,
+  "authorization",
+  "content-encoding",
+  "content-length",
+  "transfer-encoding",
+  "x-forwarded-for",
+  "x-forwarded-host",
+  "x-forwarded-proto",
+]);
+
+/** @internal exported for unit tests */
+export function buildForwardHeaders(clientHeaders, { authHeader, accountId }) {
   const raw = normalizeHeaders(clientHeaders);
   const out = {};
   for (const [key, val] of Object.entries(raw)) {
-    if (HOP_BY_HOP.has(key)) continue;
+    if (STRIP_REQUEST_HEADERS.has(key)) continue;
     if (key.startsWith("x-9r-")) continue;
-    if (key === "x-forwarded-for" || key === "x-forwarded-host" || key === "x-forwarded-proto") continue;
-    // Drop gateway bearer; we set Authorization explicitly
-    if (key === "authorization") continue;
     if (val == null || val === "") continue;
     out[key] = val;
   }
@@ -353,13 +364,13 @@ function buildForwardHeaders(clientHeaders, { authHeader, accountId }) {
       : `Bearer ${authHeader}`;
   }
 
-  if (accountId && !out["chatgpt-account-id"]) {
+  // Prefer explicit account from auth.json over a possibly-missing client header
+  if (accountId) {
     out["chatgpt-account-id"] = accountId;
   }
 
-  if (!out["content-type"]) {
-    out["content-type"] = "application/json";
-  }
+  // Body is always plain JSON after decompression + re-serialize
+  out["content-type"] = "application/json";
 
   return out;
 }
