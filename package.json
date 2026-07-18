@@ -7,10 +7,11 @@
     "dev": "next dev --port 20128",
     "dev:webpack": "next dev --webpack --port 20128",
     "build": "next build --webpack",
-    "start": "next start --port 20128",
+    "start": "node custom-server.js",
+    "start:next": "next start --port 20128",
     "dev:bun": "bun --bun next dev --webpack --port 20128",
     "build:bun": "bun --bun next build --webpack",
-    "start:bun": "bun ./.next/standalone/server.js",
+    "start:bun": "bun custom-server.js",
     "cli:pack": "npm --prefix cli run pack:cli",
     "cli:publish": "npm --prefix cli run publish:cli"
   },

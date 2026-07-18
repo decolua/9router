@@ -1,9 +1,7 @@
 import { describe, expect, it, beforeEach } from "vitest";
 
 import {
-  isOfficialSurfacePath,
   isOfficialPassthroughModel,
-  isGptOfficialModel,
   shouldOfficialPassthrough,
   resolveOfficialPassthroughUrl,
   normalizeRequestPath,
@@ -13,6 +11,10 @@ import {
   loadOfficialPassthroughConfig,
   buildForwardHeaders,
 } from "../../open-sse/utils/officialPassthrough.js";
+import {
+  isOfficialPassthroughRequestPath,
+  peekBodyForGate,
+} from "../../open-sse/utils/officialCodexHttpPrehandler.js";
 
 describe("official passthrough gates", () => {
   beforeEach(() => {
@@ -22,12 +24,6 @@ describe("official passthrough gates", () => {
   it("normalizes /api/v1 paths", () => {
     expect(normalizeRequestPath("/api/v1/responses")).toBe("/v1/responses");
     expect(normalizeRequestPath("/v1/alpha/search/")).toBe("/v1/alpha/search");
-  });
-
-  it("isOfficialSurfacePath still maps known paths (URL mapping only, not a gate)", () => {
-    expect(isOfficialSurfacePath("/v1/responses")).toBe(true);
-    expect(isOfficialSurfacePath("/v1/alpha/search")).toBe(true);
-    expect(isOfficialSurfacePath("/v1/messages")).toBe(false);
   });
 
   it("default patterns match gpt-* and codex-*; prefixed are not", () => {
@@ -40,7 +36,6 @@ describe("official passthrough gates", () => {
     expect(isOfficialPassthroughModel("gcli/grok-4.5")).toBe(false);
     expect(isOfficialPassthroughModel(null)).toBe(null);
     expect(isOfficialPassthroughModel("")).toBe(null);
-    expect(isGptOfficialModel("gpt-5.6-sol")).toBe(true);
   });
 
   it("supports custom modelPatterns (exact + glob)", () => {
@@ -68,9 +63,20 @@ describe("official passthrough gates", () => {
     expect(resolveOfficialPassthroughUrl("/v1/alpha/search")).toBe(
       "https://chatgpt.com/backend-api/codex/alpha/search"
     );
-    // Future / unknown Codex paths: strip /v1 → backend-api/codex/*
     expect(resolveOfficialPassthroughUrl("/v1/images/generations")).toBe(
       "https://chatgpt.com/backend-api/codex/images/generations"
+    );
+    expect(resolveOfficialPassthroughUrl("/v1/images/edits")).toBe(
+      "https://chatgpt.com/backend-api/codex/images/edits"
+    );
+    expect(resolveOfficialPassthroughUrl("/v1/models")).toBe(
+      "https://chatgpt.com/backend-api/codex/models"
+    );
+    expect(resolveOfficialPassthroughUrl("/codex/responses")).toBe(
+      "https://chatgpt.com/backend-api/codex/responses"
+    );
+    expect(resolveOfficialPassthroughUrl("/responses")).toBe(
+      "https://chatgpt.com/backend-api/codex/responses"
     );
   });
 
@@ -84,55 +90,44 @@ describe("official passthrough gates", () => {
     };
     const codexHeaders = { "user-agent": "codex-cli/0.145.0" };
 
-    // matching models → passthrough (any path)
     expect(shouldOfficialPassthrough({
       headers: codexHeaders,
       body: { model: "gpt-5.6-sol" },
-      pathname: "/v1/responses",
       config: cfg,
     })).toBe(true);
 
     expect(shouldOfficialPassthrough({
       headers: codexHeaders,
       body: { model: "codex-auto-review" },
-      pathname: "/v1/anything-new",
       config: cfg,
     })).toBe(true);
 
-    // no model → passthrough (cannot exclude as third-party)
     expect(shouldOfficialPassthrough({
       headers: codexHeaders,
       body: {},
-      pathname: "/v1/alpha/search",
       config: cfg,
     })).toBe(true);
 
-    // present + non-matching → route
     expect(shouldOfficialPassthrough({
       headers: codexHeaders,
       body: { model: "cx/gpt-5.6-sol" },
-      pathname: "/v1/responses",
       config: cfg,
     })).toBe(false);
 
     expect(shouldOfficialPassthrough({
       headers: codexHeaders,
       body: { model: "minimax-cn/MiniMax-M3" },
-      pathname: "/v1/responses",
       config: cfg,
     })).toBe(false);
 
-    // /v1/messages is NOT a path gate — Codex+gpt would still passthrough
-    // (Codex rarely hits this; path only affects upstream URL mapping)
     expect(shouldOfficialPassthrough({
       headers: codexHeaders,
-      body: { model: "gpt-5.6-sol" },
-      pathname: "/v1/messages",
+      body: { model: "gpt-image-1" },
       config: cfg,
     })).toBe(true);
   });
 
-  it("non-Codex clients always route even with gpt-* on /v1/responses", () => {
+  it("non-Codex clients always route even with gpt-*", () => {
     const cfg = {
       enabled: true,
       fallbackCodexAuthJson: true,
@@ -144,21 +139,18 @@ describe("official passthrough gates", () => {
     expect(shouldOfficialPassthrough({
       headers: { "user-agent": "claude-cli/1.0" },
       body: { model: "gpt-5.6-sol" },
-      pathname: "/v1/responses",
       config: cfg,
     })).toBe(false);
 
     expect(shouldOfficialPassthrough({
       headers: { "user-agent": "opencode/1.0" },
       body: { model: "gpt-5.6-sol" },
-      pathname: "/v1/responses",
       config: cfg,
     })).toBe(false);
 
     expect(shouldOfficialPassthrough({
       headers: { "user-agent": "curl/8.0" },
       body: { model: "gpt-5.6-sol" },
-      pathname: "/v1/responses",
       config: cfg,
     })).toBe(false);
   });
@@ -176,21 +168,18 @@ describe("official passthrough gates", () => {
     expect(shouldOfficialPassthrough({
       headers: codexHeaders,
       body: { model: "gpt-5.6-sol" },
-      pathname: "/v1/responses",
       config: { ...cfg, enabled: false },
     })).toBe(false);
 
     expect(shouldOfficialPassthrough({
       headers: codexHeaders,
       body: { model: "o3-mini" },
-      pathname: "/v1/responses",
       config: { ...cfg, modelPatterns: ["o3-*"] },
     })).toBe(true);
 
     expect(shouldOfficialPassthrough({
       headers: codexHeaders,
       body: { model: "gpt-5.6-sol" },
-      pathname: "/v1/responses",
       config: { ...cfg, modelPatterns: ["o3-*"] },
     })).toBe(false);
   });
@@ -236,5 +225,47 @@ describe("official passthrough gates", () => {
     expect(headers["content-encoding"]).toBe("zstd");
     expect(headers["content-length"]).toBeUndefined();
     expect(headers.authorization).toBe("Bearer eyJhbGciOi.test");
+  });
+
+  it("preserves multipart content-type for image edits wire passthrough", () => {
+    const headers = buildForwardHeaders(
+      {
+        "user-agent": "codex-cli/0.145.0",
+        "content-type": "multipart/form-data; boundary=----x",
+        authorization: "Bearer sk-gateway",
+      },
+      { authHeader: "Bearer eyJhbGciOi.test", accountId: "acct-1", contentEncoding: null }
+    );
+    expect(headers["content-type"]).toBe("multipart/form-data; boundary=----x");
+  });
+});
+
+describe("unified Codex HTTP prehandler helpers", () => {
+  it("detects gateway paths eligible for official passthrough", () => {
+    expect(isOfficialPassthroughRequestPath("/v1/responses")).toBe(true);
+    expect(isOfficialPassthroughRequestPath("/v1/images/generations")).toBe(true);
+    expect(isOfficialPassthroughRequestPath("/v1/models?client_version=1")).toBe(true);
+    expect(isOfficialPassthroughRequestPath("/api/v1/alpha/search")).toBe(true);
+    expect(isOfficialPassthroughRequestPath("/responses")).toBe(true);
+    expect(isOfficialPassthroughRequestPath("/codex/responses")).toBe(true);
+    expect(isOfficialPassthroughRequestPath("/dashboard")).toBe(false);
+    expect(isOfficialPassthroughRequestPath("/api/auth/login")).toBe(false);
+  });
+
+  it("peekBodyForGate reads model from JSON and skips multipart", () => {
+    const json = Buffer.from(JSON.stringify({ model: "gpt-image-1", prompt: "x" }));
+    expect(peekBodyForGate(json, { "content-type": "application/json" }).body.model).toBe("gpt-image-1");
+
+    const multi = Buffer.from("------bound\r\nContent-Disposition: form-data\r\n\r\n");
+    expect(peekBodyForGate(multi, { "content-type": "multipart/form-data; boundary=----bound" }).body).toEqual({});
+
+    expect(peekBodyForGate(Buffer.alloc(0), {}).body).toEqual({});
+  });
+
+  it("Codex + gpt-image model is eligible for passthrough", () => {
+    expect(shouldOfficialPassthrough({
+      headers: { "user-agent": "codex_cli_rs/0.145.0", originator: "Codex Desktop" },
+      body: { model: "gpt-image-1", prompt: "hi" },
+    })).toBe(true);
   });
 });

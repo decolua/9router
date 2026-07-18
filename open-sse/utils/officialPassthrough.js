@@ -4,13 +4,15 @@
  * Protects native Codex Desktop/CLI usage when base_url points at 9router:
  *   model_provider = "OpenAI", base_url = http://localhost:20128/v1
  *
- * Routing rule (path is NOT used as a gate — third-party harnesses also speak
- * /v1/responses, and future Codex paths like imagegen should passthrough):
- *
+ * Gate (path is NOT a gate — only maps upstream URL):
  *   if NOT Codex client → always 9router route
  *   if Codex client:
  *     if body has model AND model does NOT match modelPatterns → 9router route
- *     else → official passthrough (no model, or matches gpt-*, codex-*, or config)
+ *     else → official passthrough (no model, or matches gpt-* or codex-* or config)
+ *
+ * Enforcement is unified at the Node HTTP pre-handler (custom-server.js):
+ *   /v1/<rest> → https://chatgpt.com/backend-api/codex/<rest>  (+ query string)
+ * Specialty handlers no longer call this gate individually.
  *
  * modelPatterns default: ["gpt-*", "codex-*"]. Prefixed ids (cx/gpt-…, minimax-cn/…)
  * never match (contain "/").
@@ -18,15 +20,7 @@
  * Outbound auth uses ~/.codex/auth.json (ChatGPT JWT). Client experimental_bearer
  * tokens (sk-9router) are NOT forwarded to chatgpt.com.
  *
- * Path is only used to map the upstream URL (/v1/foo → backend-api/codex/foo).
- *
  * Config: ~/.9router/official-passthrough.json
- *   {
- *     "enabled": true,
- *     "fallbackCodexAuthJson": true,
- *     "codexAuthPath": null,
- *     "modelPatterns": ["gpt-*", "codex-*"]
- *   }
  */
 
 import fs from "node:fs";
@@ -206,18 +200,6 @@ export function normalizeRequestPath(pathname) {
 }
 
 /**
- * Paths that belong to the official Codex surface when base_url ends with /v1.
- */
-export function isOfficialSurfacePath(pathname) {
-  const p = normalizeRequestPath(pathname);
-  if (p === "/v1/responses" || p === "/responses") return true;
-  if (p === "/v1/responses/compact" || p.endsWith("/responses/compact")) return true;
-  if (p === "/codex" || p.startsWith("/codex/")) return true;
-  if (p === "/v1/alpha/search" || p.startsWith("/v1/alpha/")) return true;
-  return false;
-}
-
-/**
  * Whether a bare model id matches official passthrough patterns.
  * @param {string|null|undefined} modelStr
  * @param {string[]} [patterns] globs from config (default DEFAULT_MODEL_PATTERNS)
@@ -234,22 +216,17 @@ export function isOfficialPassthroughModel(modelStr, patterns = DEFAULT_MODEL_PA
   return list.some((pat) => modelPatternToRegExp(pat).test(m));
 }
 
-/** @deprecated use isOfficialPassthroughModel */
-export function isGptOfficialModel(modelStr, patterns = DEFAULT_MODEL_PATTERNS) {
-  return isOfficialPassthroughModel(modelStr, patterns);
-}
-
 /**
  * Decide whether this request should reverse-proxy to ChatGPT codex backend.
+ * Path is not a gate (only used for upstream URL mapping elsewhere).
  *
  * @param {object} opts
  * @param {Headers|object} opts.headers
  * @param {object} [opts.body]
- * @param {string} [opts.pathname] unused for gating (kept for call-site compat)
  * @param {object} [opts.config]
  * @returns {boolean}
  */
-export function shouldOfficialPassthrough({ headers, body = {}, pathname: _pathname, config = null } = {}) {
+export function shouldOfficialPassthrough({ headers, body = {}, config = null } = {}) {
   const cfg = config || loadOfficialPassthroughConfig();
   if (!cfg.enabled) return false;
 
@@ -387,7 +364,10 @@ export function buildForwardHeaders(clientHeaders, { authHeader, accountId, cont
     out["chatgpt-account-id"] = accountId;
   }
 
-  out["content-type"] = "application/json";
+  // Keep client content-type (JSON / multipart edits / …). Default only if missing.
+  if (!out["content-type"]) {
+    out["content-type"] = "application/json";
+  }
   if (contentEncoding) {
     // Transparent wire passthrough: same bytes Codex would send without base_url
     out["content-encoding"] = contentEncoding;
@@ -412,11 +392,13 @@ function corsHeaders(extra = {}) {
  * @param {{
  *   log?: object,
  *   pathname?: string,
+ *   search?: string,
  *   rawBody?: Buffer|Uint8Array|null,
  *   contentEncoding?: string|null,
  * }} [options]
  *   Prefer rawBody + contentEncoding so wire format matches native Codex→ChatGPT
  *   (zstd in → zstd out). Falls back to JSON.stringify(body) if rawBody missing.
+ *   `search` preserves query string (e.g. /models?client_version=…).
  * @returns {Promise<Response>}
  */
 export async function handleOfficialPassthrough(request, body, options = {}) {
@@ -424,12 +406,16 @@ export async function handleOfficialPassthrough(request, body, options = {}) {
   const cfg = loadOfficialPassthroughConfig();
   const rawBody = options.rawBody || null;
   const contentEncoding = options.contentEncoding || null;
+  const startedAt = Date.now();
 
   let pathname = options.pathname || "/v1/responses";
+  let search = typeof options.search === "string" ? options.search : "";
   try {
-    pathname = options.pathname || new URL(request.url).pathname || pathname;
+    const u = new URL(request.url, "http://localhost");
+    pathname = options.pathname || u.pathname || pathname;
+    if (options.search == null) search = u.search || "";
   } catch {
-    // keep default
+    // keep defaults
   }
 
   const clientAuth = request.headers?.get?.("authorization") || getHeader(request.headers, "authorization");
@@ -473,11 +459,13 @@ export async function handleOfficialPassthrough(request, body, options = {}) {
     });
   }
 
-  const targetUrl = resolveOfficialPassthroughUrl(pathname);
+  if (search && !search.startsWith("?")) search = `?${search}`;
+  const targetUrl = `${resolveOfficialPassthroughUrl(pathname)}${search}`;
+  const method = (request.method || "POST").toUpperCase();
 
-  // Prefer original wire bytes (zstd/gzip/plain) so we match no-base_url Codex behavior.
+  // Prefer original wire bytes (zstd/gzip/plain/multipart) so we match no-base_url Codex.
   // Only fall back to re-serialized JSON when raw bytes were not retained.
-  const useRaw = rawBody && (rawBody.byteLength > 0 || rawBody.length > 0);
+  const useRaw = !!(rawBody && (rawBody.byteLength > 0 || rawBody.length > 0));
   const forwardEncoding = useRaw ? contentEncoding : null;
   const forwardHeaders = buildForwardHeaders(request.headers, {
     authHeader: `Bearer ${accessToken}`,
@@ -485,27 +473,26 @@ export async function handleOfficialPassthrough(request, body, options = {}) {
     contentEncoding: forwardEncoding,
   });
 
-  const upstreamBody = useRaw
-    ? rawBody
-    : JSON.stringify(body ?? {});
+  const canHaveBody = method !== "GET" && method !== "HEAD";
+  const upstreamBody = !canHaveBody
+    ? undefined
+    : useRaw
+      ? rawBody
+      : JSON.stringify(body ?? {});
 
   const model = body?.model || "";
-  log?.info?.(
-    "PASSTHROUGH",
-    `Codex → ${targetUrl} · model=${model || "(none)"} · auth=${authSource}`
-      + ` · wire=${forwardEncoding || "json"}`
-  );
 
   let upstream;
   try {
     upstream = await proxyAwareFetch(targetUrl, {
-      method: request.method || "POST",
+      method,
       headers: forwardHeaders,
       body: upstreamBody,
       signal: request.signal,
     });
   } catch (err) {
-    log?.error?.("PASSTHROUGH", `Upstream fetch failed: ${err?.message || err}`);
+    const ms = Date.now() - startedAt;
+    log?.error?.("PASSTHROUGH", `${method} ${pathname} → err ${ms}ms model=${model || "(none)"} ${err?.message || err}`);
     return new Response(JSON.stringify({
       error: {
         message: `Official passthrough upstream error: ${err?.message || err}`,
@@ -517,6 +504,13 @@ export async function handleOfficialPassthrough(request, body, options = {}) {
       headers: corsHeaders({ "Content-Type": "application/json" }),
     });
   }
+
+  const ms = Date.now() - startedAt;
+  // One-line observability (no dashboard usage write)
+  log?.info?.(
+    "PASSTHROUGH",
+    `${method} ${pathname}${search} → ${upstream.status} ${ms}ms model=${model || "(none)"} auth=${authSource}`
+  );
 
   // Stream body through; copy safe response headers
   const respHeaders = corsHeaders();

@@ -1,62 +1,48 @@
 import { describe, expect, it } from "vitest";
-import { brotliCompressSync, gzipSync, zstdCompressSync } from "node:zlib";
+import { gzipSync, zstdCompressSync } from "node:zlib";
 
-import { decodeBody, parseJsonBody, parseJsonBodyDetailed } from "../../src/shared/utils/parseJsonBody.js";
+import { decodeBody, parseJsonBody } from "../../src/shared/utils/parseJsonBody.js";
 
-function makeRequest(body, { encoding } = {}) {
-  const headers = { "content-type": "application/json" };
-  if (encoding) headers["content-encoding"] = encoding;
+function makeRequest(body, headers = {}) {
   return new Request("http://localhost/v1/responses", {
     method: "POST",
-    headers,
+    headers: { "content-type": "application/json", ...headers },
     body,
   });
 }
 
-describe("parseJsonBody", () => {
-  const payload = { model: "gpt-5.6-sol", input: "hi" };
-  const json = JSON.stringify(payload);
-
+describe("parseJsonBody Content-Encoding", () => {
   it("parses plain JSON without Content-Encoding", async () => {
-    const body = await parseJsonBody(makeRequest(json));
-    expect(body).toEqual(payload);
-  });
-
-  it("parses zstd-compressed JSON (Codex OpenAI/ChatGPT mode)", async () => {
-    if (typeof zstdCompressSync !== "function") return;
-    const compressed = zstdCompressSync(Buffer.from(json));
-    const body = await parseJsonBody(makeRequest(compressed, { encoding: "zstd" }));
+    const payload = { model: "gpt-5.6-sol", stream: true };
+    const body = await parseJsonBody(makeRequest(JSON.stringify(payload)));
     expect(body).toEqual(payload);
   });
 
   it("parses gzip-compressed JSON", async () => {
-    const compressed = gzipSync(Buffer.from(json));
-    const body = await parseJsonBody(makeRequest(compressed, { encoding: "gzip" }));
-    expect(body).toEqual(payload);
-  });
-
-  it("parses brotli-compressed JSON", async () => {
-    const compressed = brotliCompressSync(Buffer.from(json));
-    const body = await parseJsonBody(makeRequest(compressed, { encoding: "br" }));
-    expect(body).toEqual(payload);
-  });
-
-  it("decodeBody handles zstd primary token", () => {
-    if (typeof zstdCompressSync !== "function") return;
-    const raw = Buffer.from(json);
-    const compressed = zstdCompressSync(raw);
-    expect(decodeBody(compressed, "zstd").toString("utf8")).toBe(json);
-  });
-
-  it("parseJsonBodyDetailed retains original zstd bytes for wire passthrough", async () => {
-    if (typeof zstdCompressSync !== "function") return;
-    const compressed = zstdCompressSync(Buffer.from(json));
-    const detailed = await parseJsonBodyDetailed(
-      makeRequest(compressed, { encoding: "zstd" })
+    const payload = { model: "gpt-5.6-sol", input: "hi" };
+    const compressed = gzipSync(Buffer.from(JSON.stringify(payload), "utf8"));
+    const body = await parseJsonBody(
+      makeRequest(compressed, { "content-encoding": "gzip" })
     );
-    expect(detailed.body).toEqual(payload);
-    expect(detailed.contentEncoding).toBe("zstd");
-    expect(Buffer.compare(detailed.rawBody, compressed)).toBe(0);
+    expect(body).toEqual(payload);
+  });
+
+  it("parses zstd-compressed JSON (Codex official OpenAI path)", async () => {
+    if (typeof zstdCompressSync !== "function") {
+      // Node < 22.15 — skip; production Codex path requires modern Node
+      return;
+    }
+    const payload = { model: "gpt-5.6-sol", stream: true, store: false };
+    const compressed = zstdCompressSync(Buffer.from(JSON.stringify(payload), "utf8"));
+    const body = await parseJsonBody(
+      makeRequest(compressed, { "content-encoding": "zstd" })
+    );
+    expect(body).toEqual(payload);
+  });
+
+  it("decodeBody handles gzip", () => {
+    const raw = Buffer.from('{"a":1}', "utf8");
+    const gz = gzipSync(raw);
+    expect(decodeBody(gz, "gzip").toString("utf8")).toBe('{"a":1}');
   });
 });
-

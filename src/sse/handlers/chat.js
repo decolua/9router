@@ -22,27 +22,18 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
-import { parseJsonBodyDetailed } from "@/shared/utils/parseJsonBody.js";
-import {
-  shouldOfficialPassthrough,
-  handleOfficialPassthrough,
-} from "open-sse/utils/officialPassthrough.js";
+import { parseJsonBody } from "@/shared/utils/parseJsonBody.js";
 
 /**
  * Handle chat completion request
  * Supports: OpenAI, Claude, Gemini, OpenAI Responses API formats
  * Format detection and translation handled by translator
+ * (Codex official passthrough is handled in custom-server pre-handler.)
  */
 export async function handleChat(request, clientRawRequest = null) {
   let body;
-  let rawBody = null;
-  let contentEncoding = null;
   try {
-    // Keep wire bytes so official passthrough can re-send zstd as-is after model check
-    const parsed = await parseJsonBodyDetailed(request);
-    body = parsed.body;
-    rawBody = parsed.rawBody;
-    contentEncoding = parsed.contentEncoding;
+    body = await parseJsonBody(request);
   } catch (err) {
     log.warn("CHAT", "Invalid JSON body", { encoding: request.headers.get("content-encoding"), error: err?.message });
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid JSON body");
@@ -85,23 +76,6 @@ export async function handleChat(request, clientRawRequest = null) {
       log.warn("AUTH", "Invalid API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
     }
-  }
-
-  // Codex official passthrough (path-agnostic):
-  //   non-Codex → always route; Codex + (no model | modelPatterns match) → passthrough;
-  //   Codex + model outside patterns (cx/*, minimax-cn/*, …) → route.
-  // Wire: decompress only to inspect model, then forward original rawBody (zstd) to ChatGPT.
-  if (shouldOfficialPassthrough({
-    headers: clientRawRequest.headers,
-    body,
-    pathname: clientRawRequest.endpoint,
-  })) {
-    return handleOfficialPassthrough(request, body, {
-      log,
-      pathname: clientRawRequest.endpoint,
-      rawBody,
-      contentEncoding,
-    });
   }
 
   if (!modelStr) {
