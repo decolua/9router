@@ -65,7 +65,12 @@ export class AzureExecutor extends DefaultExecutor {
     }
 
     const transformed = { ...body };
-    transformed.max_completion_tokens = transformed.max_tokens;
+    // An explicit max_completion_tokens from the caller wins; max_tokens is
+    // only used as a fallback. Either way max_tokens must be stripped, or
+    // Azure 400s on it regardless of max_completion_tokens being present.
+    if (transformed.max_completion_tokens === undefined) {
+      transformed.max_completion_tokens = transformed.max_tokens;
+    }
     delete transformed.max_tokens;
     return transformed;
   }

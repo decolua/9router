@@ -60,4 +60,19 @@ describe("AzureExecutor.transformRequest", () => {
     expect(out).toBe(body);
     expect(out.max_completion_tokens).toBeUndefined();
   });
+
+  it("keeps an explicit max_completion_tokens and still deletes max_tokens", () => {
+    const body = {
+      messages: [{ role: "user", content: "hi" }],
+      max_tokens: 50,
+      max_completion_tokens: 200,
+    };
+    const out = executor.transformRequest("gpt-5.6-luna", body, true, {});
+
+    expect(out.max_completion_tokens).toBe(200);
+    expect(out.max_tokens).toBeUndefined();
+    // original body must not be mutated
+    expect(body.max_completion_tokens).toBe(200);
+    expect(body.max_tokens).toBe(50);
+  });
 });
