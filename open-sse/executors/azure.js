@@ -51,7 +51,22 @@ export class AzureExecutor extends DefaultExecutor {
     return headers;
   }
 
+  // Azure OpenAI reasoning-model deployments (gpt-5*, o1-/o3-/o4- series) reject
+  // the legacy `max_tokens` param with a 400 "Unsupported parameter" error and
+  // require `max_completion_tokens` instead. Same rule the "github" executor
+  // already applies for Copilot-hosted reasoning models.
+  requiresMaxCompletionTokens(model) {
+    return /gpt-5|o[134]-/i.test(model);
+  }
+
   transformRequest(model, body, stream, credentials) {
-    return body;
+    if (!this.requiresMaxCompletionTokens(model) || !body || typeof body !== "object" || body.max_tokens === undefined) {
+      return body;
+    }
+
+    const transformed = { ...body };
+    transformed.max_completion_tokens = transformed.max_tokens;
+    delete transformed.max_tokens;
+    return transformed;
   }
 }
