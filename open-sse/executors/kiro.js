@@ -49,6 +49,7 @@ function isKiroToolCallRepairEnabled(credentials) {
   const configValue = credentials?.providerSpecificData?.kiroToolCallRepair
     ?? credentials?.providerSpecificData?.enableKiroToolCallRepair
     ?? process.env?.[KIRO_TOOL_CALL_REPAIR_ENV];
+  if (configValue == null) return true;
   return isTruthyConfig(configValue);
 }
 

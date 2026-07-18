@@ -6,6 +6,7 @@ vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
 }));
 
 const { KiroExecutor } = await import("../../open-sse/executors/kiro.js");
+const { getExecutor } = await import("../../open-sse/executors/index.js");
 
 function encodeHeader(name, value) {
   const nameBytes = new TextEncoder().encode(name);
@@ -96,16 +97,53 @@ const credentials = {
 
 beforeEach(() => {
   fetchMock.mockReset();
+  delete process.env.KIRO_TOOL_CALL_REPAIR;
   delete process.env.KIRO_TOOL_CALL_REPAIR_BUFFER_MAX_BYTES;
 });
 
 afterEach(() => {
+  delete process.env.KIRO_TOOL_CALL_REPAIR;
   delete process.env.KIRO_TOOL_CALL_REPAIR_BUFFER_MAX_BYTES;
   delete process.env.KIRO_TOOL_CALL_REPAIR_TTFT_TIMEOUT_MS;
   delete process.env.KIRO_TOOL_CALL_REPAIR_STALL_TIMEOUT_MS;
 });
 
 describe("Kiro one-shot tool_call repair", () => {
+  it("repairs malformed wrapper output by default through the exported live executor", async () => {
+    fetchMock
+      .mockResolvedValueOnce(eventStreamResponse([
+        encodeEventFrame("toolUseEvent", {
+          toolUseId: "call_1",
+          name: "tool_call",
+          input: { arguments: { q: "router" } }
+        }),
+        encodeEventFrame("messageStopEvent", {})
+      ]))
+      .mockResolvedValueOnce(eventStreamResponse([
+        encodeEventFrame("toolUseEvent", {
+          toolUseId: "call_2",
+          name: "tool_call",
+          input: { name: "mcp_search", arguments: { q: "router" } }
+        }),
+        encodeEventFrame("messageStopEvent", {})
+      ]));
+
+    const result = await getExecutor("kiro").execute({
+      model: "kr/gpt-5.6-sol",
+      body: { systemPrompt: "base", conversationState: {} },
+      stream: true,
+      credentials: { accessToken: "test-token", providerSpecificData: {} }
+    });
+    const text = await collectText(result.response.body);
+    const chunks = collectDataChunks(text);
+    const toolChunks = chunks.flatMap((chunk) => chunk.choices?.[0]?.delta?.tool_calls || []);
+    const args = toolChunks.map((toolCall) => toolCall.function?.arguments || "").join("");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(text).not.toContain("invalid_kiro_tool_call");
+    expect(JSON.parse(args)).toEqual({ name: "mcp_search", arguments: { q: "router" } });
+  });
+
   it("preserves happy-path streaming and returns the first chunk before upstream completion", async () => {
     const executor = new KiroExecutor();
     const upstream = controlledEventStreamResponse([
@@ -285,7 +323,7 @@ describe("Kiro one-shot tool_call repair", () => {
     expect(await result.response.text()).toBe("rate limited");
   });
 
-  it("does not retry unless repair is explicitly enabled", async () => {
+  it("allows repair to be explicitly disabled", async () => {
     const executor = new KiroExecutor();
     fetchMock.mockResolvedValueOnce(eventStreamResponse([
       encodeEventFrame("toolUseEvent", {
@@ -300,7 +338,10 @@ describe("Kiro one-shot tool_call repair", () => {
       model: "kr/claude-opus-4.8",
       body: { conversationState: {} },
       stream: true,
-      credentials: { accessToken: "test-token", providerSpecificData: {} }
+      credentials: {
+        accessToken: "test-token",
+        providerSpecificData: { kiroToolCallRepair: false }
+      }
     });
     const text = await collectText(result.response.body);
 
