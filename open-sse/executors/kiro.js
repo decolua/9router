@@ -8,7 +8,6 @@ import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { STREAM_FIRST_CHUNK_TIMEOUT_MS } from "../config/runtimeConfig.js";
 
 const KIRO_TOOL_CALL_WRAPPER = "tool_call";
-const KIRO_TOOL_CALL_REPAIR_ENV = "KIRO_TOOL_CALL_REPAIR";
 const KIRO_TOOL_CALL_REPAIR_BUFFER_MAX_BYTES_ENV = "KIRO_TOOL_CALL_REPAIR_BUFFER_MAX_BYTES";
 const KIRO_TOOL_CALL_REPAIR_TIMEOUT_MS_ENV = "KIRO_TOOL_CALL_REPAIR_TIMEOUT_MS";
 const KIRO_TOOL_CALL_REPAIR_TTFT_TIMEOUT_MS_ENV = "KIRO_TOOL_CALL_REPAIR_TTFT_TIMEOUT_MS";
@@ -39,18 +38,6 @@ function envInt(name, fallback) {
   if (raw == null || raw === "") return fallback;
   const parsed = parseInt(raw, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-function isTruthyConfig(value) {
-  return value === true || value === "true" || value === "1" || value === 1;
-}
-
-function isKiroToolCallRepairEnabled(credentials) {
-  const configValue = credentials?.providerSpecificData?.kiroToolCallRepair
-    ?? credentials?.providerSpecificData?.enableKiroToolCallRepair
-    ?? process.env?.[KIRO_TOOL_CALL_REPAIR_ENV];
-  if (configValue == null) return true;
-  return isTruthyConfig(configValue);
 }
 
 function buildKiroToolCallRepairBody(body, invalidMessage) {
@@ -407,7 +394,7 @@ export class KiroExecutor extends BaseExecutor {
   async execute(args) {
     const result = await super.execute(args);
     if (result?.response?.ok) {
-      if (args.stream !== false && isKiroToolCallRepairEnabled(args.credentials)) {
+      if (args.stream !== false) {
         return this.createToolCallRepairResult(result, args);
       }
       result.response = this.transformEventStreamToSSE(result.response, args.model);

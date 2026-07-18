@@ -90,19 +90,15 @@ function collectDataChunks(text) {
 
 const credentials = {
   accessToken: "test-token",
-  providerSpecificData: {
-    kiroToolCallRepair: true
-  }
+  providerSpecificData: {}
 };
 
 beforeEach(() => {
   fetchMock.mockReset();
-  delete process.env.KIRO_TOOL_CALL_REPAIR;
   delete process.env.KIRO_TOOL_CALL_REPAIR_BUFFER_MAX_BYTES;
 });
 
 afterEach(() => {
-  delete process.env.KIRO_TOOL_CALL_REPAIR;
   delete process.env.KIRO_TOOL_CALL_REPAIR_BUFFER_MAX_BYTES;
   delete process.env.KIRO_TOOL_CALL_REPAIR_TTFT_TIMEOUT_MS;
   delete process.env.KIRO_TOOL_CALL_REPAIR_STALL_TIMEOUT_MS;
@@ -321,33 +317,6 @@ describe("Kiro one-shot tool_call repair", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(result.response.status).toBe(429);
     expect(await result.response.text()).toBe("rate limited");
-  });
-
-  it("allows repair to be explicitly disabled", async () => {
-    const executor = new KiroExecutor();
-    fetchMock.mockResolvedValueOnce(eventStreamResponse([
-      encodeEventFrame("toolUseEvent", {
-        toolUseId: "call_1",
-        name: "tool_call",
-        input: { arguments: { q: "router" } }
-      }),
-      encodeEventFrame("messageStopEvent", {})
-    ]));
-
-    const result = await executor.execute({
-      model: "kr/claude-opus-4.8",
-      body: { conversationState: {} },
-      stream: true,
-      credentials: {
-        accessToken: "test-token",
-        providerSpecificData: { kiroToolCallRepair: false }
-      }
-    });
-    const text = await collectText(result.response.body);
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(text).toContain("invalid_kiro_tool_call");
-    expect(text).not.toContain("\"tool_calls\"");
   });
 
   it("fails cleanly if the private repair gate buffer exceeds its configured cap", async () => {
