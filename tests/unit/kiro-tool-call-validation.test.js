@@ -46,6 +46,15 @@ async function collectText(stream) {
   return text + decoder.decode();
 }
 
+function collectDataChunks(text) {
+  return text
+    .split("\n")
+    .filter((line) => line.startsWith("data: "))
+    .map((line) => line.slice(6).trim())
+    .filter((data) => data && data !== "[DONE]")
+    .map((data) => JSON.parse(data));
+}
+
 describe("Kiro nested tool_call validation", () => {
   it("accepts a valid wrapper tool_call with nested name and arguments", () => {
     expect(() => validateKiroToolUse({
@@ -108,6 +117,108 @@ describe("Kiro nested tool_call validation", () => {
     const response = new Response(new ReadableStream({
       start(controller) {
         controller.enqueue(frame);
+        controller.close();
+      }
+    }), { status: 200, statusText: "OK" });
+
+    const transformed = executor.transformEventStreamToSSE(response, "kr/claude-opus-4.8");
+    const text = await collectText(transformed.body);
+
+    expect(text).toContain("invalid_kiro_tool_call");
+    expect(text).toContain("missing nested MCP tool name");
+    expect(text).not.toContain("\"tool_calls\"");
+    expect(text).toContain("data: [DONE]");
+  });
+
+  it("allows a wrapper init frame without input and validates after string fragments", async () => {
+    const executor = new KiroExecutor();
+    const frames = [
+      encodeEventFrame("toolUseEvent", {
+        toolUseId: "call_1",
+        name: "tool_call"
+      }),
+      encodeEventFrame("toolUseEvent", {
+        toolUseId: "call_1",
+        name: "tool_call",
+        input: "{\"name\":\"mcp_search\","
+      }),
+      encodeEventFrame("toolUseEvent", {
+        toolUseId: "call_1",
+        name: "tool_call",
+        input: "\"arguments\":{\"q\":\"router\"}}"
+      }),
+      encodeEventFrame("messageStopEvent", {})
+    ];
+    const response = new Response(new ReadableStream({
+      start(controller) {
+        for (const frame of frames) controller.enqueue(frame);
+        controller.close();
+      }
+    }), { status: 200, statusText: "OK" });
+
+    const transformed = executor.transformEventStreamToSSE(response, "kr/claude-opus-4.8");
+    const text = await collectText(transformed.body);
+    const chunks = collectDataChunks(text);
+    const toolChunks = chunks.flatMap((chunk) => chunk.choices?.[0]?.delta?.tool_calls || []);
+    const args = toolChunks.map((toolCall) => toolCall.function?.arguments || "").join("");
+
+    expect(text).not.toContain("invalid_kiro_tool_call");
+    expect(toolChunks[0].function.name).toBe("tool_call");
+    expect(JSON.parse(args)).toEqual({ name: "mcp_search", arguments: { q: "router" } });
+    expect(chunks.at(-1).choices[0].finish_reason).toBe("tool_calls");
+  });
+
+  it("waits for the final growing object payload before validating wrapper fields", async () => {
+    const executor = new KiroExecutor();
+    const frames = [
+      encodeEventFrame("toolUseEvent", {
+        toolUseId: "call_1",
+        name: "tool_call",
+        input: { arguments: { q: "router" } }
+      }),
+      encodeEventFrame("toolUseEvent", {
+        toolUseId: "call_1",
+        name: "tool_call",
+        input: { name: "mcp_search", arguments: { q: "router" } }
+      }),
+      encodeEventFrame("meteringEvent", {}),
+      encodeEventFrame("contextUsageEvent", { contextUsagePercentage: 1 })
+    ];
+    const response = new Response(new ReadableStream({
+      start(controller) {
+        for (const frame of frames) controller.enqueue(frame);
+        controller.close();
+      }
+    }), { status: 200, statusText: "OK" });
+
+    const transformed = executor.transformEventStreamToSSE(response, "kr/claude-opus-4.8");
+    const text = await collectText(transformed.body);
+    const chunks = collectDataChunks(text);
+    const toolChunks = chunks.flatMap((chunk) => chunk.choices?.[0]?.delta?.tool_calls || []);
+    const args = toolChunks.map((toolCall) => toolCall.function?.arguments || "").join("");
+
+    expect(text).not.toContain("invalid_kiro_tool_call");
+    expect(JSON.parse(args)).toEqual({ name: "mcp_search", arguments: { q: "router" } });
+    expect(chunks.at(-1).usage).toBeDefined();
+  });
+
+  it("fails malformed final wrapper payloads without emitting a legal tool_call", async () => {
+    const executor = new KiroExecutor();
+    const frames = [
+      encodeEventFrame("toolUseEvent", {
+        toolUseId: "call_1",
+        name: "tool_call"
+      }),
+      encodeEventFrame("toolUseEvent", {
+        toolUseId: "call_1",
+        name: "tool_call",
+        input: { arguments: { q: "router" } }
+      }),
+      encodeEventFrame("messageStopEvent", {})
+    ];
+    const response = new Response(new ReadableStream({
+      start(controller) {
+        for (const frame of frames) controller.enqueue(frame);
         controller.close();
       }
     }), { status: 200, statusText: "OK" });
