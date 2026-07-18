@@ -43,4 +43,19 @@ describe("getCapabilitiesForModel", () => {
     expect(getCapabilitiesForModel("kiro", "gpt-5.6-luna-agentic")).toMatchObject(kiroGpt56Expected);
     expect(getCapabilitiesForModel("kiro", "gpt-5.6-sol-thinking-agentic")).toMatchObject(kiroGpt56Expected);
   });
+
+  it("keeps Kimi K3 capabilities after its alias resolves to bare k3", () => {
+    const expected = {
+      vision: true,
+      videoInput: true,
+      reasoning: true,
+      thinkingFormat: "kimi",
+      contextWindow: 1048576,
+      maxOutput: 131072,
+    };
+
+    expect(getCapabilitiesForModel("kimi", "kimi-k3")).toMatchObject(expected);
+    expect(getCapabilitiesForModel("kimi", "k3")).toMatchObject(expected);
+    expect(getCapabilitiesForModel("kimi", "k3.5").reasoning).toBe(false);
+  });
 });

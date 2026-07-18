@@ -222,6 +222,9 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*qwen*",          caps: { reasoning: true, thinkingFormat: "qwen", contextWindow: 262144 } },
 
   // ── Kimi (enabled→reasoning_effort; K2.7-code cannot disable) ─────
+  // K3 routes through bare upstream id `k3`; keep this before generic Kimi.
+  { pattern: "*kimi*k3*",       caps: { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", contextWindow: 1048576, maxOutput: 131072 } },
+  { pattern: "k3",              caps: { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", contextWindow: 1048576, maxOutput: 131072 } },
   { pattern: "*kimi*k2.7*code*", caps: { vision: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 262144, maxOutput: 262144 } },
   { pattern: "*kimi*k2*",       caps: { vision: true, reasoning: true, thinkingFormat: "kimi", contextWindow: 262144, maxOutput: 262144 } },
   { pattern: "*kimi*",          caps: { reasoning: true, thinkingFormat: "kimi", contextWindow: 262144 } },
