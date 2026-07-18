@@ -140,7 +140,11 @@ function concatChunks(chunks, totalBytes) {
 
 function hasMeaningfulSSEData(chunk) {
   const text = sharedDecoder.decode(chunk);
-  return text.split("\n").some((line) => line.startsWith("data: ") && line.slice(6).trim() !== "");
+  return text.split("\n").some((line) => {
+    if (!line.startsWith("data: ")) return false;
+    const data = line.slice(6).trim();
+    return data !== "" && data !== "[DONE]";
+  });
 }
 
 function formatKiroToolCallRepairError(message, code = "kiro_tool_call_repair_failed") {
@@ -163,28 +167,36 @@ function once(fn) {
 }
 
 function prependChunkToReader(firstChunk, reader, { onCancel, onDone } = {}) {
+  let cancelled = false;
   const finish = once(onDone);
   return new ReadableStream({
     async start(controller) {
-      if (firstChunk?.byteLength) controller.enqueue(firstChunk);
       try {
-        while (true) {
+        if (firstChunk?.byteLength) controller.enqueue(firstChunk);
+        while (!cancelled) {
           const { done, value } = await reader.read();
           if (done) break;
-          controller.enqueue(value);
+          if (!cancelled) controller.enqueue(value);
         }
-        controller.close();
+        if (!cancelled) controller.close();
       } catch (error) {
-        controller.error(error);
+        if (!cancelled) controller.error(error);
       } finally {
         finish();
       }
     },
 
-    cancel(reason) {
-      onCancel?.(reason);
-      finish();
-      return reader.cancel(reason);
+    async cancel(reason) {
+      cancelled = true;
+      try {
+        onCancel?.(reason);
+      } finally {
+        try {
+          await reader.cancel(reason);
+        } finally {
+          finish();
+        }
+      }
     }
   });
 }
@@ -570,6 +582,11 @@ export class KiroExecutor extends BaseExecutor {
         }
 
         sawAnyChunk = true;
+        if (invalidToolCall) {
+          await reader.cancel("invalid_kiro_tool_call").catch(() => {});
+          return { kind: "invalid", invalidToolCall };
+        }
+
         totalBytes += value.byteLength;
         if (totalBytes > options.maxBufferBytes) {
           await reader.cancel("kiro_tool_call_repair_buffer_exceeded").catch(() => {});

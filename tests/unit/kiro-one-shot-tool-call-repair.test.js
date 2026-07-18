@@ -132,6 +132,35 @@ describe("Kiro one-shot tool_call repair", () => {
     await reader.cancel("test complete").catch(() => {});
   });
 
+  it("propagates client cancellation after the happy-path gate opens", async () => {
+    const executor = new KiroExecutor();
+    let cancelCount = 0;
+    let cancelReason;
+    fetchMock.mockResolvedValueOnce(new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(encodeEventFrame("assistantResponseEvent", { content: "hello" }));
+      },
+      cancel(reason) {
+        cancelCount++;
+        cancelReason = reason;
+      }
+    }), { status: 200, statusText: "OK" }));
+
+    const result = await executor.execute({
+      model: "kr/claude-opus-4.8",
+      body: { conversationState: {} },
+      stream: true,
+      credentials
+    });
+    const reader = result.response.body.getReader();
+    const firstRead = await reader.read();
+
+    expect(firstRead.done).toBe(false);
+    await reader.cancel("client cancelled");
+    await vi.waitFor(() => expect(cancelCount).toBe(1));
+    expect(cancelReason).toBe("client cancelled");
+  });
+
   it("retries once on pre-output malformed wrapper output and does not leak fake tool calls", async () => {
     const executor = new KiroExecutor();
     fetchMock
@@ -205,6 +234,31 @@ describe("Kiro one-shot tool_call repair", () => {
     expect(text).not.toContain("\"tool_calls\"");
   });
 
+  it("classifies invalid transformed output before treating its SSE error as stream data", async () => {
+    const executor = new KiroExecutor();
+    const gate = await executor.openToolCallRepairGate(eventStreamResponse([
+      encodeEventFrame("toolUseEvent", {
+        toolUseId: "call_1",
+        name: "tool_call",
+        input: { arguments: { q: "router" } }
+      }),
+      encodeEventFrame("messageStopEvent", {})
+    ]), {
+      model: "kr/claude-opus-4.8"
+    }, {
+      signal: undefined,
+      maxBufferBytes: 1024 * 1024,
+      ttftTimeoutMs: 1000,
+      stallTimeoutMs: 1000,
+      suppressInvalidToolCallError: false,
+      invalidToolCallErrorCode: "kiro_tool_call_repair_retry_failed"
+    });
+
+    expect(gate.kind).toBe("invalid");
+    expect(gate.invalidToolCall).toContain("missing nested MCP tool name");
+    expect(gate.firstChunk).toBeUndefined();
+  });
+
   it("propagates retry HTTP 429 instead of hiding it in a 200 SSE error", async () => {
     const executor = new KiroExecutor();
     executor.config = { ...executor.config, baseUrls: [executor.config.baseUrls[0]] };
@@ -259,8 +313,7 @@ describe("Kiro one-shot tool_call repair", () => {
     process.env.KIRO_TOOL_CALL_REPAIR_BUFFER_MAX_BYTES = "8";
     const executor = new KiroExecutor();
     fetchMock.mockResolvedValueOnce(eventStreamResponse([
-      encodeEventFrame("toolUseEvent", { toolUseId: "call_1", name: "tool_call" }),
-      encodeEventFrame("toolUseEvent", { toolUseId: "call_1", name: "tool_call" })
+      encodeEventFrame("assistantResponseEvent", { content: "hello" })
     ]));
 
     const result = await executor.execute({
