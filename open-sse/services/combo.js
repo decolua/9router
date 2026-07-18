@@ -215,6 +215,40 @@ export function getComboModelsFromData(modelStr, combosData) {
 }
 
 /**
+ * Check whether a successful (2xx) response has a meaningful body.
+ * Returns true when the body is empty, an empty object/array, or has
+ * choices/content/text that are all empty — patterns that indicate the
+ * model produced no useful output despite returning 200.
+ * Streaming/opaque responses that can't be read as text are trusted.
+ * @param {Response} response
+ * @returns {Promise<boolean>}
+ */
+async function isBodyEmpty(response) {
+  const clone = response.clone();
+  let bodyText = "";
+  try {
+    bodyText = await clone.text();
+  } catch {
+    // Streaming or opaque response — trust the transport layer.
+    return false;
+  }
+  return (
+    !bodyText ||
+    bodyText === "{}" ||
+    bodyText === "[]" ||
+    bodyText === '{"choices":[]}' ||
+    bodyText === '{"choices":""}' ||
+    bodyText === '{"choices":[{}]}' ||
+    bodyText === '{"choices":[{"delta":{},"finish_reason":null}]}' ||
+    bodyText === '{"choices":[{"message":{"content":""}}]}' ||
+    bodyText === '{"choices":[{"message":{}}]}' ||
+    bodyText === '{"content":""}' ||
+    bodyText === '{"content":[]}' ||
+    bodyText === '{"text":""}'
+  );
+}
+
+/**
  * Handle combo chat with fallback
  * @param {Object} options
  * @param {Object} options.body - Request body
@@ -255,8 +289,29 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       
       // Success (2xx) - return response
       if (result.ok) {
-        log.info("COMBO", `Model ${modelStr} succeeded`);
-        return result;
+        // Validate response body is not empty — some providers return 200
+        // with empty content when the model produces no meaningful output.
+        if (!(await isBodyEmpty(result))) {
+          log.info("COMBO", `Model ${modelStr} succeeded`);
+          return result;
+        }
+
+        // Body is empty on first attempt — retry the same model once before
+        // falling back. This catches transient empty responses from overloaded
+        // providers without immediately burning a combo slot.
+        log.warn("COMBO", `Model ${modelStr} returned 200 but empty body, retrying once`);
+        const retryResult = await handleSingleModel(body, modelStr);
+
+        if (retryResult.ok && !(await isBodyEmpty(retryResult))) {
+          log.info("COMBO", `Model ${modelStr} succeeded on retry`);
+          return retryResult;
+        }
+
+        // Retry also returned empty — fall through to next model.
+        // Do not set lastError so the final "all models failed" message
+        // reflects the most recent genuine failure, not the empty response.
+        log.warn("COMBO", `Model ${modelStr} still empty after retry, falling to next`);
+        continue;
       }
 
       // Extract error info from response
