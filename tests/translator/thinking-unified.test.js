@@ -126,6 +126,10 @@ describe("applyThinking per provider format", () => {
     const out = apply("openai", "kimi-k2.6", { reasoning_effort: "high" }, "kimi");
     expect(out.reasoning_effort).toBe("high");
   });
+  it("Kimi K3 keeps reasoning_effort after its alias resolves to bare k3", () => {
+    const out = apply("openai", "k3", { reasoning_effort: "high" }, "kimi");
+    expect(out.reasoning_effort).toBe("high");
+  });
   it("Kimi auto → supported reasoning_effort", () => {
     const out = apply("openai", "kimi-k2.7", { reasoning_effort: "auto" }, "kimchi");
     expect(out.reasoning_effort).toBe("high");
