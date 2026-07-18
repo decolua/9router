@@ -112,6 +112,17 @@ describe("Claude → Kiro (direct route)", () => {
     expect(out.systemPrompt).toContain("<max_thinking_length>24576</max_thinking_length>");
   });
 
+  it("maps Claude-format effort to GPT-5.6 Kiro CLI reasoning fields", () => {
+    const out = C2K({
+      output_config: { effort: "low" },
+      messages: [{ role: "user", content: "think lightly" }],
+    }, null, "gpt-5.6-sol");
+
+    expect(out.additionalModelRequestFields).toEqual({
+      reasoning: { effort: "low" },
+    });
+  });
+
   it("sends Claude system as top-level systemPrompt and keeps a user-content fallback", () => {
     const out = C2K({
       system: "system-only instruction",

@@ -144,9 +144,13 @@ export function extractKiroEffortLevel(body) {
   return null;
 }
 
-export function buildKiroAdditionalModelRequestFields(body) {
+export function buildKiroAdditionalModelRequestFields(body, effortPath = "output_config") {
   const effort = extractKiroEffortLevel(body);
   if (!effort) return undefined;
+  if (effortPath === "reasoning") {
+    // Mirrors Kiro CLI/KAS buildEffortRequestFields("reasoning") for GPT.
+    return { reasoning: { effort } };
+  }
   // Mirrors Kiro CLI/KAS buildEffortRequestFields("output_config").
   return {
     thinking: { type: "adaptive", display: "summarized" },
@@ -154,12 +158,15 @@ export function buildKiroAdditionalModelRequestFields(body) {
   };
 }
 
-export function supportsKiroAdditionalModelRequestFields(model) {
-  if (typeof model !== "string") return false;
+export function resolveKiroEffortPath(model) {
+  if (typeof model !== "string") return null;
   const normalized = model.toLowerCase().replace(/-/g, ".");
-  if (!normalized.includes("claude")) return false;
+  if (/(?:^|[/.])gpt[/.]5[/.]6(?:[/.]|$)/.test(normalized)) {
+    return "reasoning";
+  }
+  if (!normalized.includes("claude")) return null;
   const match = normalized.match(/(?:^|[/.])claude(?:[/.][a-z]+)*[/.](\d+)(?:[/.](\d+))?(?:[/.]|$)/);
-  if (!match) return false;
+  if (!match) return null;
   const [, majorText, minorText] = match;
   const major = Number(majorText);
   const minor = minorText === undefined ? null : Number(minorText);
@@ -167,12 +174,19 @@ export function supportsKiroAdditionalModelRequestFields(model) {
   // Kiro rejected additionalModelRequestFields on legacy 4.5 models in live smoke.
   // Default future Claude/Kiro models to supported so new model releases do not
   // need a code allowlist update.
-  return !(major < 4 || (major === 4 && (minor === null || minor <= 5 || dateSuffixMinor)));
+  return major < 4 || (major === 4 && (minor === null || minor <= 5 || dateSuffixMinor))
+    ? null
+    : "output_config";
+}
+
+export function supportsKiroAdditionalModelRequestFields(model) {
+  return resolveKiroEffortPath(model) !== null;
 }
 
 export function buildKiroAdditionalModelRequestFieldsForModel(body, model) {
-  if (!supportsKiroAdditionalModelRequestFields(model)) return undefined;
-  return buildKiroAdditionalModelRequestFields(body);
+  const effortPath = resolveKiroEffortPath(model);
+  if (!effortPath) return undefined;
+  return buildKiroAdditionalModelRequestFields(body, effortPath);
 }
 
 /**

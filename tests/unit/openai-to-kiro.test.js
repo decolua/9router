@@ -316,6 +316,44 @@ describe("openaiToKiroRequest", () => {
       });
     });
 
+    it("maps GPT-5.6 reasoning.effort high to Kiro CLI reasoning fields", () => {
+      const body = {
+        reasoning: { effort: "high" },
+        messages: [{ role: "user", content: "Think deeply" }]
+      };
+
+      const result = openaiToKiroRequest("gpt-5.6-sol", body, true, {});
+
+      expect(systemPromptOf(result)).toContain("<max_thinking_length>24576</max_thinking_length>");
+      expect(result.additionalModelRequestFields).toEqual({
+        reasoning: { effort: "high" },
+      });
+    });
+
+    it("maps prefixed GPT-5.6 reasoning_effort medium to Kiro CLI reasoning fields", () => {
+      const body = {
+        reasoning_effort: "medium",
+        messages: [{ role: "user", content: "Think normally" }]
+      };
+
+      const result = openaiToKiroRequest("kiro/gpt-5.6-terra", body, true, {});
+
+      expect(result.additionalModelRequestFields).toEqual({
+        reasoning: { effort: "medium" },
+      });
+    });
+
+    it("does not forward unsupported GPT-5.6 effort values", () => {
+      const body = {
+        reasoning: { effort: "ultra" },
+        messages: [{ role: "user", content: "Unknown effort" }]
+      };
+
+      const result = openaiToKiroRequest("gpt-5.6-luna", body, true, {});
+
+      expect(result.additionalModelRequestFields).toBeUndefined();
+    });
+
     it("does not send additionalModelRequestFields for legacy Kiro model ids", () => {
       const body = {
         reasoning_effort: "high",
