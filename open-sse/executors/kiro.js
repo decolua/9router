@@ -7,6 +7,20 @@ import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 
 const KIRO_TOOL_CALL_WRAPPER = "tool_call";
+const sharedEncoder = new TextEncoder();
+const sharedDecoder = new TextDecoder();
+
+function encodeSSE(value) {
+  return sharedEncoder.encode(value);
+}
+
+function closeSSEController(controller) {
+  if (typeof controller.terminate === "function") {
+    controller.terminate();
+  } else if (typeof controller.close === "function") {
+    controller.close();
+  }
+}
 
 function parseKiroToolInput(toolInput) {
   if (typeof toolInput === "string") {
@@ -74,6 +88,11 @@ function validateKiroToolCallWrapperInput(toolInput) {
   }
 }
 
+/**
+ * Validate a complete Kiro toolUseEvent payload. Streaming wrapper tool_call
+ * fragments must be buffered first; otherwise an init/delta fragment without
+ * the final nested input would be rejected as malformed.
+ */
 export function validateKiroToolUse(toolUse) {
   const toolName = validateKiroToolName(toolUse);
   if (toolName !== KIRO_TOOL_CALL_WRAPPER) {
@@ -94,8 +113,9 @@ function emitKiroToolCallValidationError(controller, state, message) {
   state.invalidToolCall = true;
   state.finishEmitted = true;
   state.doneSent = true;
-  controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(error)}\n\n`));
-  controller.enqueue(new TextEncoder().encode(SSE_DONE));
+  controller.enqueue(encodeSSE(`data: ${JSON.stringify(error)}\n\n`));
+  controller.enqueue(encodeSSE(SSE_DONE));
+  closeSSEController(controller);
 }
 
 /**
@@ -210,8 +230,9 @@ export class KiroExecutor extends BaseExecutor {
   }
 
   /**
-   * Transform AWS EventStream binary response to SSE text stream
-   * Using TransformStream instead of ReadableStream.pull() to avoid Workers timeout
+   * Transform AWS EventStream binary response to SSE text stream.
+   * This pumps the upstream reader directly so a malformed wrapper can emit a
+   * clean SSE error and then cancel the upstream HTTP body immediately.
    */
   transformEventStreamToSSE(response, model) {
     let buffer = new Uint8Array(0);
@@ -227,9 +248,27 @@ export class KiroExecutor extends BaseExecutor {
       hasReasoningContent: false,
       reasoningChunkCount: 0,
       toolCallIndex: 0,
+      generatedToolIdCounter: 0,
       seenToolIds: new Map(),
       pendingWrapperToolCalls: new Map(),
       inThinking: false
+    };
+
+    const getToolCallId = (toolUse) => {
+      if (typeof toolUse?.toolUseId === "string" && toolUse.toolUseId) {
+        return toolUse.toolUseId;
+      }
+      state.generatedToolIdCounter++;
+      return `call_${created}_${state.generatedToolIdCounter}`;
+    };
+
+    const getOrAssignToolIndex = (toolCallId) => {
+      if (state.seenToolIds.has(toolCallId)) {
+        return { toolIndex: state.seenToolIds.get(toolCallId), isNewTool: false };
+      }
+      const toolIndex = state.toolCallIndex++;
+      state.seenToolIds.set(toolCallId, toolIndex);
+      return { toolIndex, isNewTool: true };
     };
 
     const emitToolCallStart = (controller, toolCallId, toolName, toolIndex) => {
@@ -256,7 +295,7 @@ export class KiroExecutor extends BaseExecutor {
         }]
       };
       chunkIndex++;
-      controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(startChunk)}\n\n`));
+      controller.enqueue(encodeSSE(`data: ${JSON.stringify(startChunk)}\n\n`));
     };
 
     const emitToolCallArguments = (controller, toolIndex, argumentsStr) => {
@@ -279,7 +318,7 @@ export class KiroExecutor extends BaseExecutor {
         }]
       };
       chunkIndex++;
-      controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(argsChunk)}\n\n`));
+      controller.enqueue(encodeSSE(`data: ${JSON.stringify(argsChunk)}\n\n`));
     };
 
     const failInvalidToolCall = (controller, message) => {
@@ -299,10 +338,12 @@ export class KiroExecutor extends BaseExecutor {
           return false;
         }
 
+        const { toolIndex } = getOrAssignToolIndex(toolCall.toolCallId);
         const argumentsStr = typeof toolInput === "string" ? toolInput : JSON.stringify(toolInput);
-        emitToolCallStart(controller, toolCall.toolCallId, toolCall.toolName, toolCall.toolIndex);
+        toolCall.toolIndex = toolIndex;
+        emitToolCallStart(controller, toolCall.toolCallId, toolCall.toolName, toolIndex);
         if (argumentsStr) {
-          emitToolCallArguments(controller, toolCall.toolIndex, argumentsStr);
+          emitToolCallArguments(controller, toolIndex, argumentsStr);
         }
       }
 
@@ -310,8 +351,7 @@ export class KiroExecutor extends BaseExecutor {
       return true;
     };
 
-    const transformStream = new TransformStream({
-      async transform(chunk, controller) {
+    const transformChunk = async (chunk, controller) => {
         if (state.invalidToolCall) return;
         // Track output so we can emit a keepalive if this frame yields no chunk.
         const enqueueCountBefore = chunkIndex;
@@ -391,7 +431,7 @@ export class KiroExecutor extends BaseExecutor {
               }]
             };
             chunkIndex++;
-            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\n`));
+            controller.enqueue(encodeSSE(`data: ${JSON.stringify(chunk)}\n\n`));
           }
 
           // Handle reasoningContentEvent (Kiro thinking / reasoning)
@@ -425,7 +465,7 @@ export class KiroExecutor extends BaseExecutor {
               };
               chunkIndex++;
               state.reasoningChunkCount++;
-              controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\n`));
+              controller.enqueue(encodeSSE(`data: ${JSON.stringify(chunk)}\n\n`));
             }
           }
 
@@ -443,7 +483,7 @@ export class KiroExecutor extends BaseExecutor {
               }]
             };
             chunkIndex++;
-            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\n`));
+            controller.enqueue(encodeSSE(`data: ${JSON.stringify(chunk)}\n\n`));
           }
 
           // Handle toolUseEvent
@@ -461,23 +501,17 @@ export class KiroExecutor extends BaseExecutor {
                 return;
               }
 
-              const toolCallId = singleToolUse.toolUseId || `call_${Date.now()}`;
+              const toolCallId = getToolCallId(singleToolUse);
               const toolInput = singleToolUse.input;
-
-              let toolIndex;
-              const isNewTool = !state.seenToolIds.has(toolCallId);
-
-              if (isNewTool) {
-                toolIndex = state.toolCallIndex++;
-                state.seenToolIds.set(toolCallId, toolIndex);
-              } else {
-                toolIndex = state.seenToolIds.get(toolCallId);
-              }
 
               if (toolName === KIRO_TOOL_CALL_WRAPPER) {
                 let toolCall = state.pendingWrapperToolCalls.get(toolCallId);
                 if (!toolCall) {
-                  toolCall = { toolCallId, toolName, toolIndex };
+                  if (state.seenToolIds.has(toolCallId)) {
+                    failInvalidToolCall(controller, "Invalid Kiro tool_call payload: duplicate toolUseId reused by wrapper");
+                    return;
+                  }
+                  toolCall = { toolCallId, toolName };
                   state.pendingWrapperToolCalls.set(toolCallId, toolCall);
                 }
                 try {
@@ -489,6 +523,12 @@ export class KiroExecutor extends BaseExecutor {
                 continue;
               }
 
+              if (state.pendingWrapperToolCalls.has(toolCallId)) {
+                failInvalidToolCall(controller, "Invalid Kiro tool_call payload: mixed wrapper and direct tool fragments");
+                return;
+              }
+
+              const { toolIndex, isNewTool } = getOrAssignToolIndex(toolCallId);
               if (isNewTool) {
                 emitToolCallStart(controller, toolCallId, toolName, toolIndex);
               }
@@ -524,7 +564,7 @@ export class KiroExecutor extends BaseExecutor {
               }]
             };
             state.finishEmitted = true;
-            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\n`));
+            controller.enqueue(encodeSSE(`data: ${JSON.stringify(chunk)}\n\n`));
           }
 
           // Handle contextUsageEvent to extract contextUsagePercentage
@@ -609,7 +649,7 @@ export class KiroExecutor extends BaseExecutor {
               finishChunk.usage = state.usage;
             }
 
-            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(finishChunk)}\n\n`));
+            controller.enqueue(encodeSSE(`data: ${JSON.stringify(finishChunk)}\n\n`));
           }
         }
 
@@ -620,13 +660,13 @@ export class KiroExecutor extends BaseExecutor {
         // No client chunk produced this frame — emit an SSE comment keepalive
                 // so the stall watchdog sees upstream activity (ignored by parser/client).
                 if (chunkIndex === enqueueCountBefore && !state.finishEmitted) {
-                  controller.enqueue(new TextEncoder().encode(": ka\n\n"));
+                  controller.enqueue(encodeSSE(": ka\n\n"));
                 }
-      },
+      };
 
-      flush(controller) {
-        if (state.invalidToolCall) return;
-        if (!flushPendingWrapperToolCalls(controller)) return;
+      const flushOutput = (controller) => {
+        if (state.invalidToolCall) return false;
+        if (!flushPendingWrapperToolCalls(controller)) return false;
         // Emit finish chunk if not already sent
         if (!state.finishEmitted) {
           state.finishEmitted = true;
@@ -641,22 +681,49 @@ export class KiroExecutor extends BaseExecutor {
               finish_reason: state.hasToolCalls ? "tool_calls" : "stop"
             }]
           };
-          controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(finishChunk)}\n\n`));
+          controller.enqueue(encodeSSE(`data: ${JSON.stringify(finishChunk)}\n\n`));
         }
 
         // Send final done message
         if (!state.doneSent) {
           state.doneSent = true;
-          controller.enqueue(new TextEncoder().encode(SSE_DONE));
+          controller.enqueue(encodeSSE(SSE_DONE));
         }
-      }
-    });
+        return true;
+      };
 
-    // Pipe response body through transform stream
     if (!response.body) {
       return new Response(SSE_DONE, { status: response.status, headers: { "Content-Type": "text/event-stream" } });
     }
-    const transformedStream = response.body.pipeThrough(transformStream);
+    let reader;
+    const transformedStream = new ReadableStream({
+      async start(controller) {
+        reader = response.body.getReader();
+        try {
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+
+            await transformChunk(value, controller);
+            if (state.invalidToolCall) {
+              await reader.cancel("invalid_kiro_tool_call").catch(() => {});
+              return;
+            }
+          }
+
+          if (flushOutput(controller)) {
+            closeSSEController(controller);
+          }
+        } catch (error) {
+          if (state.invalidToolCall) return;
+          controller.error(error);
+        }
+      },
+
+      cancel(reason) {
+        return reader?.cancel(reason);
+      }
+    });
 
     return new Response(transformedStream, {
       status: response.status,
@@ -703,7 +770,7 @@ function parseEventFrame(data) {
       offset++;
       if (offset + nameLen > data.length) break;
 
-      const name = new TextDecoder().decode(data.slice(offset, offset + nameLen));
+      const name = sharedDecoder.decode(data.slice(offset, offset + nameLen));
       offset += nameLen;
 
       const headerType = data[offset];
@@ -714,7 +781,7 @@ function parseEventFrame(data) {
         offset += 2;
         if (offset + valueLen > data.length) break;
 
-        const value = new TextDecoder().decode(data.slice(offset, offset + valueLen));
+        const value = sharedDecoder.decode(data.slice(offset, offset + valueLen));
         offset += valueLen;
         headers[name] = value;
       } else {
@@ -728,7 +795,7 @@ function parseEventFrame(data) {
 
     let payload = null;
     if (payloadEnd > payloadStart) {
-      const payloadStr = new TextDecoder().decode(data.slice(payloadStart, payloadEnd));
+      const payloadStr = sharedDecoder.decode(data.slice(payloadStart, payloadEnd));
 
       // Skip empty or whitespace-only payloads
       if (!payloadStr || !payloadStr.trim()) {

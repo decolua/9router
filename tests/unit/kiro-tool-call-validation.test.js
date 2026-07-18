@@ -109,14 +109,17 @@ describe("Kiro nested tool_call validation", () => {
 
   it("emits an actionable stream error instead of a fake legal tool call", async () => {
     const executor = new KiroExecutor();
-    const frame = encodeEventFrame("toolUseEvent", {
-      toolUseId: "call_1",
-      name: "tool_call",
-      input: { arguments: { q: "router" } }
-    });
+    const frames = [
+      encodeEventFrame("toolUseEvent", {
+        toolUseId: "call_1",
+        name: "tool_call",
+        input: { arguments: { q: "router" } }
+      }),
+      encodeEventFrame("messageStopEvent", {})
+    ];
     const response = new Response(new ReadableStream({
       start(controller) {
-        controller.enqueue(frame);
+        for (const frame of frames) controller.enqueue(frame);
         controller.close();
       }
     }), { status: 200, statusText: "OK" });
@@ -202,6 +205,40 @@ describe("Kiro nested tool_call validation", () => {
     expect(chunks.at(-1).usage).toBeDefined();
   });
 
+  it("preserves monotonic emitted tool indices when a wrapper is buffered before a direct tool", async () => {
+    const executor = new KiroExecutor();
+    const frames = [
+      encodeEventFrame("toolUseEvent", {
+        toolUseId: "wrapper_1",
+        name: "tool_call",
+        input: { name: "mcp_search", arguments: { q: "router" } }
+      }),
+      encodeEventFrame("toolUseEvent", {
+        toolUseId: "direct_1",
+        name: "read_file",
+        input: { path: "README.md" }
+      }),
+      encodeEventFrame("messageStopEvent", {})
+    ];
+    const response = new Response(new ReadableStream({
+      start(controller) {
+        for (const frame of frames) controller.enqueue(frame);
+        controller.close();
+      }
+    }), { status: 200, statusText: "OK" });
+
+    const transformed = executor.transformEventStreamToSSE(response, "kr/claude-opus-4.8");
+    const text = await collectText(transformed.body);
+    const chunks = collectDataChunks(text);
+    const toolStarts = chunks
+      .flatMap((chunk) => chunk.choices?.[0]?.delta?.tool_calls || [])
+      .filter((toolCall) => toolCall.id);
+
+    expect(text).not.toContain("invalid_kiro_tool_call");
+    expect(toolStarts.map((toolCall) => toolCall.function.name)).toEqual(["read_file", "tool_call"]);
+    expect(toolStarts.map((toolCall) => toolCall.index)).toEqual([0, 1]);
+  });
+
   it("fails malformed final wrapper payloads without emitting a legal tool_call", async () => {
     const executor = new KiroExecutor();
     const frames = [
@@ -230,6 +267,41 @@ describe("Kiro nested tool_call validation", () => {
     expect(text).toContain("missing nested MCP tool name");
     expect(text).not.toContain("\"tool_calls\"");
     expect(text).toContain("data: [DONE]");
+  });
+
+  it("cancels the upstream response body after an invalid wrapper payload", async () => {
+    const executor = new KiroExecutor();
+    const frames = [
+      encodeEventFrame("toolUseEvent", {
+        toolUseId: "call_1",
+        name: "tool_call",
+        input: { arguments: { q: "router" } }
+      }),
+      encodeEventFrame("messageStopEvent", {})
+    ];
+    let cancelReason;
+    const cancelPromise = new Promise((resolve) => {
+      const response = new Response(new ReadableStream({
+        start(controller) {
+          for (const frame of frames) controller.enqueue(frame);
+        },
+        cancel(reason) {
+          cancelReason = reason;
+          resolve(reason);
+        }
+      }), { status: 200, statusText: "OK" });
+
+      const transformed = executor.transformEventStreamToSSE(response, "kr/claude-opus-4.8");
+      collectText(transformed.body).catch(resolve);
+    });
+
+    const result = await Promise.race([
+      cancelPromise,
+      new Promise((resolve) => setTimeout(() => resolve("timeout"), 250))
+    ]);
+
+    expect(result).not.toBe("timeout");
+    expect(cancelReason).toBeDefined();
   });
 
   it("translates Kiro stream errors into Responses response.failed events", async () => {
