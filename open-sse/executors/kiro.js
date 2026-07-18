@@ -5,8 +5,20 @@ import { v4 as uuidv4 } from "uuid";
 import { refreshKiroToken } from "../services/tokenRefresh.js";
 import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
+import { STREAM_FIRST_CHUNK_TIMEOUT_MS } from "../config/runtimeConfig.js";
 
 const KIRO_TOOL_CALL_WRAPPER = "tool_call";
+const KIRO_TOOL_CALL_REPAIR_ENV = "KIRO_TOOL_CALL_REPAIR";
+const KIRO_TOOL_CALL_REPAIR_BUFFER_MAX_BYTES_ENV = "KIRO_TOOL_CALL_REPAIR_BUFFER_MAX_BYTES";
+const KIRO_TOOL_CALL_REPAIR_TIMEOUT_MS_ENV = "KIRO_TOOL_CALL_REPAIR_TIMEOUT_MS";
+const KIRO_TOOL_CALL_REPAIR_TTFT_TIMEOUT_MS_ENV = "KIRO_TOOL_CALL_REPAIR_TTFT_TIMEOUT_MS";
+const KIRO_TOOL_CALL_REPAIR_STALL_TIMEOUT_MS_ENV = "KIRO_TOOL_CALL_REPAIR_STALL_TIMEOUT_MS";
+const KIRO_TOOL_CALL_REPAIR_BUFFER_MAX_BYTES = 8 * 1024 * 1024;
+const KIRO_TOOL_CALL_REPAIR_INSTRUCTION = [
+  "Retry the previous response because its Kiro tool_call wrapper was malformed.",
+  "If you use the wrapper tool named tool_call, its input must be a JSON object with a non-empty string name and an arguments field.",
+  "Do not emit a tool_call wrapper without input.name and input.arguments."
+].join(" ");
 const sharedEncoder = new TextEncoder();
 const sharedDecoder = new TextDecoder();
 
@@ -20,6 +32,161 @@ function closeSSEController(controller) {
   } else if (typeof controller.close === "function") {
     controller.close();
   }
+}
+
+function envInt(name, fallback) {
+  const raw = process.env?.[name];
+  if (raw == null || raw === "") return fallback;
+  const parsed = parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function isTruthyConfig(value) {
+  return value === true || value === "true" || value === "1" || value === 1;
+}
+
+function isKiroToolCallRepairEnabled(credentials) {
+  const configValue = credentials?.providerSpecificData?.kiroToolCallRepair
+    ?? credentials?.providerSpecificData?.enableKiroToolCallRepair
+    ?? process.env?.[KIRO_TOOL_CALL_REPAIR_ENV];
+  return isTruthyConfig(configValue);
+}
+
+function buildKiroToolCallRepairBody(body, invalidMessage) {
+  const repaired = JSON.parse(JSON.stringify(body || {}));
+  const reason = String(invalidMessage || "invalid tool_call payload").slice(0, 300);
+  const instruction = `${KIRO_TOOL_CALL_REPAIR_INSTRUCTION} Previous validation error: ${reason}`;
+  repaired.systemPrompt = repaired.systemPrompt
+    ? `${repaired.systemPrompt}\n\n${instruction}`
+    : instruction;
+  return repaired;
+}
+
+function makeAbortError(reason) {
+  const error = new Error(reason || "Request aborted");
+  error.name = "AbortError";
+  return error;
+}
+
+function combineAbortSignals(signals) {
+  const activeSignals = signals.filter(Boolean);
+  if (activeSignals.length === 0) return { signal: undefined, cleanup: () => {} };
+  if (activeSignals.length === 1) return { signal: activeSignals[0], cleanup: () => {} };
+
+  const controller = new AbortController();
+  const listeners = [];
+  const abortFrom = (signal) => {
+    if (!controller.signal.aborted) {
+      controller.abort(signal.reason || makeAbortError("Request aborted"));
+    }
+  };
+
+  for (const signal of activeSignals) {
+    if (signal.aborted) {
+      abortFrom(signal);
+      break;
+    }
+    const listener = () => abortFrom(signal);
+    signal.addEventListener("abort", listener, { once: true });
+    listeners.push([signal, listener]);
+  }
+
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      for (const [signal, listener] of listeners) {
+        signal.removeEventListener("abort", listener);
+      }
+    }
+  };
+}
+
+function throwIfAborted(signal) {
+  if (signal?.aborted) {
+    throw makeAbortError(signal.reason?.message || signal.reason || "Request aborted");
+  }
+}
+
+async function readWithTimeout(reader, signal, timeoutMs, timeoutMessage) {
+  throwIfAborted(signal);
+
+  let abortHandler;
+  let timeoutId;
+  const abortPromise = new Promise((_, reject) => {
+    abortHandler = () => reject(makeAbortError(signal?.reason?.message || signal?.reason || "Request aborted"));
+    signal?.addEventListener?.("abort", abortHandler, { once: true });
+  });
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([reader.read(), abortPromise, timeoutPromise]);
+  } finally {
+    if (abortHandler) signal?.removeEventListener?.("abort", abortHandler);
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
+function concatChunks(chunks, totalBytes) {
+  const out = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out;
+}
+
+function hasMeaningfulSSEData(chunk) {
+  const text = sharedDecoder.decode(chunk);
+  return text.split("\n").some((line) => line.startsWith("data: ") && line.slice(6).trim() !== "");
+}
+
+function formatKiroToolCallRepairError(message, code = "kiro_tool_call_repair_failed") {
+  return encodeSSE(`data: ${JSON.stringify({
+    error: {
+      message,
+      type: "invalid_request_error",
+      code
+    }
+  })}\n\ndata: [DONE]\n\n`);
+}
+
+function once(fn) {
+  let called = false;
+  return () => {
+    if (called) return;
+    called = true;
+    fn?.();
+  };
+}
+
+function prependChunkToReader(firstChunk, reader, { onCancel, onDone } = {}) {
+  const finish = once(onDone);
+  return new ReadableStream({
+    async start(controller) {
+      if (firstChunk?.byteLength) controller.enqueue(firstChunk);
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          controller.enqueue(value);
+        }
+        controller.close();
+      } catch (error) {
+        controller.error(error);
+      } finally {
+        finish();
+      }
+    },
+
+    cancel(reason) {
+      onCancel?.(reason);
+      finish();
+      return reader.cancel(reason);
+    }
+  });
 }
 
 function parseKiroToolInput(toolInput) {
@@ -102,19 +269,22 @@ export function validateKiroToolUse(toolUse) {
   validateKiroToolCallWrapperInput(toolUse.input);
 }
 
-function emitKiroToolCallValidationError(controller, state, message) {
+function emitKiroToolCallValidationError(controller, state, message, options = {}) {
   const error = {
     error: {
       message,
       type: "invalid_request_error",
-      code: "invalid_kiro_tool_call"
+      code: options.invalidToolCallErrorCode || "invalid_kiro_tool_call"
     }
   };
   state.invalidToolCall = true;
   state.finishEmitted = true;
   state.doneSent = true;
-  controller.enqueue(encodeSSE(`data: ${JSON.stringify(error)}\n\n`));
-  controller.enqueue(encodeSSE(SSE_DONE));
+  options.onInvalidToolCall?.(message);
+  if (!options.suppressInvalidToolCallError) {
+    controller.enqueue(encodeSSE(`data: ${JSON.stringify(error)}\n\n`));
+    controller.enqueue(encodeSSE(SSE_DONE));
+  }
   closeSSEController(controller);
 }
 
@@ -224,9 +394,198 @@ export class KiroExecutor extends BaseExecutor {
   async execute(args) {
     const result = await super.execute(args);
     if (result?.response?.ok) {
+      if (args.stream !== false && isKiroToolCallRepairEnabled(args.credentials)) {
+        return this.createToolCallRepairResult(result, args);
+      }
       result.response = this.transformEventStreamToSSE(result.response, args.model);
     }
     return result;
+  }
+
+  async createToolCallRepairResult(firstResult, args) {
+    const executeRaw = (nextArgs) => BaseExecutor.prototype.execute.call(this, nextArgs);
+    const repairController = new AbortController();
+    const combined = combineAbortSignals([args.signal, repairController.signal]);
+    let cleanupInFinally = true;
+    const maxBufferBytes = envInt(
+      KIRO_TOOL_CALL_REPAIR_BUFFER_MAX_BYTES_ENV,
+      KIRO_TOOL_CALL_REPAIR_BUFFER_MAX_BYTES
+    );
+    const legacyTimeoutMs = envInt(KIRO_TOOL_CALL_REPAIR_TIMEOUT_MS_ENV, STREAM_FIRST_CHUNK_TIMEOUT_MS);
+    const ttftTimeoutMs = envInt(KIRO_TOOL_CALL_REPAIR_TTFT_TIMEOUT_MS_ENV, legacyTimeoutMs);
+    const stallTimeoutMs = envInt(KIRO_TOOL_CALL_REPAIR_STALL_TIMEOUT_MS_ENV, legacyTimeoutMs);
+
+    // Repair is intentionally limited to the pre-output gate. Once a real data
+    // chunk is released, streaming TTFT wins and later invalid wrappers surface
+    // as validation errors instead of replaying behind already-visible output.
+    try {
+      const firstAttempt = await this.openToolCallRepairGate(firstResult.response, args, {
+        signal: combined.signal,
+        maxBufferBytes,
+        ttftTimeoutMs,
+        stallTimeoutMs,
+        suppressInvalidToolCallError: true
+      });
+
+      if (firstAttempt.kind === "stream") {
+        cleanupInFinally = false;
+        firstResult.response = new Response(
+          prependChunkToReader(firstAttempt.firstChunk, firstAttempt.reader, {
+            onCancel: (reason) => repairController.abort(reason || "cancelled"),
+            onDone: combined.cleanup
+          }),
+          {
+            status: firstResult.response.status,
+            statusText: firstResult.response.statusText,
+            headers: { ...SSE_HEADERS }
+          }
+        );
+        return firstResult;
+      }
+
+      if (firstAttempt.kind === "complete") {
+        firstResult.response = new Response(firstAttempt.bytes, {
+          status: firstResult.response.status,
+          statusText: firstResult.response.statusText,
+          headers: { ...SSE_HEADERS }
+        });
+        return firstResult;
+      }
+
+      if (firstAttempt.kind === "buffer_exceeded") {
+        firstResult.response = new Response(formatKiroToolCallRepairError(
+          `Kiro tool_call repair buffer exceeded ${maxBufferBytes} bytes`,
+          "kiro_tool_call_repair_buffer_exceeded"
+        ), {
+          status: firstResult.response.status,
+          statusText: firstResult.response.statusText,
+          headers: { ...SSE_HEADERS }
+        });
+        return firstResult;
+      }
+
+      const repairBody = buildKiroToolCallRepairBody(args.body, firstAttempt.invalidToolCall);
+      const retryResult = await executeRaw({
+        ...args,
+        body: repairBody,
+        signal: combined.signal
+      });
+
+      if (!retryResult?.response?.ok) {
+        return retryResult;
+      }
+
+      const retryAttempt = await this.openToolCallRepairGate(retryResult.response, args, {
+        signal: combined.signal,
+        maxBufferBytes,
+        ttftTimeoutMs,
+        stallTimeoutMs,
+        suppressInvalidToolCallError: false,
+        invalidToolCallErrorCode: "kiro_tool_call_repair_retry_failed"
+      });
+
+      if (retryAttempt.kind === "stream") {
+        cleanupInFinally = false;
+        retryResult.response = new Response(
+          prependChunkToReader(retryAttempt.firstChunk, retryAttempt.reader, {
+            onCancel: (reason) => repairController.abort(reason || "cancelled"),
+            onDone: combined.cleanup
+          }),
+          {
+            status: retryResult.response.status,
+            statusText: retryResult.response.statusText,
+            headers: { ...SSE_HEADERS }
+          }
+        );
+        return retryResult;
+      }
+
+      if (retryAttempt.kind === "complete") {
+        retryResult.response = new Response(retryAttempt.bytes, {
+          status: retryResult.response.status,
+          statusText: retryResult.response.statusText,
+          headers: { ...SSE_HEADERS }
+        });
+        return retryResult;
+      }
+
+      retryResult.response = new Response(formatKiroToolCallRepairError(
+        retryAttempt.kind === "buffer_exceeded"
+          ? `Kiro tool_call repair buffer exceeded ${maxBufferBytes} bytes`
+          : retryAttempt.invalidToolCall || "Kiro tool_call repair retry failed",
+        retryAttempt.kind === "buffer_exceeded"
+          ? "kiro_tool_call_repair_buffer_exceeded"
+          : "kiro_tool_call_repair_retry_failed"
+      ), {
+        status: retryResult.response.status,
+        statusText: retryResult.response.statusText,
+        headers: { ...SSE_HEADERS }
+      });
+      return retryResult;
+    } catch (error) {
+      if (error.name === "AbortError") throw error;
+      firstResult.response = new Response(formatKiroToolCallRepairError(
+        error.message || "Kiro tool_call repair failed"
+      ), {
+        status: firstResult.response.status,
+        statusText: firstResult.response.statusText,
+        headers: { ...SSE_HEADERS }
+      });
+      return firstResult;
+    } finally {
+      if (cleanupInFinally) combined.cleanup();
+    }
+  }
+
+  async openToolCallRepairGate(rawResponse, args, options) {
+    let invalidToolCall = null;
+    const transformed = this.transformEventStreamToSSE(rawResponse, args.model, {
+      onInvalidToolCall: (message) => {
+        invalidToolCall = message;
+      },
+      suppressInvalidToolCallError: options.suppressInvalidToolCallError,
+      invalidToolCallErrorCode: options.invalidToolCallErrorCode
+    });
+    const reader = transformed.body.getReader();
+    const bufferedChunks = [];
+    let totalBytes = 0;
+    let sawAnyChunk = false;
+
+    try {
+      while (true) {
+        const timeoutMs = sawAnyChunk ? options.stallTimeoutMs : options.ttftTimeoutMs;
+        const timeoutKind = sawAnyChunk ? "stalled" : "timed out before first chunk";
+        const { done, value } = await readWithTimeout(
+          reader,
+          options.signal,
+          timeoutMs,
+          `Kiro tool_call repair ${timeoutKind}`
+        );
+
+        if (done) {
+          if (invalidToolCall) {
+            return { kind: "invalid", invalidToolCall };
+          }
+          return { kind: "complete", bytes: concatChunks(bufferedChunks, totalBytes) };
+        }
+
+        sawAnyChunk = true;
+        totalBytes += value.byteLength;
+        if (totalBytes > options.maxBufferBytes) {
+          await reader.cancel("kiro_tool_call_repair_buffer_exceeded").catch(() => {});
+          return { kind: "buffer_exceeded" };
+        }
+
+        if (hasMeaningfulSSEData(value)) {
+          return { kind: "stream", firstChunk: value, reader };
+        }
+
+        bufferedChunks.push(value);
+      }
+    } catch (error) {
+      await reader.cancel(error.message || "kiro_tool_call_repair_failed").catch(() => {});
+      throw error;
+    }
   }
 
   /**
@@ -234,7 +593,7 @@ export class KiroExecutor extends BaseExecutor {
    * This pumps the upstream reader directly so a malformed wrapper can emit a
    * clean SSE error and then cancel the upstream HTTP body immediately.
    */
-  transformEventStreamToSSE(response, model) {
+  transformEventStreamToSSE(response, model, options = {}) {
     let buffer = new Uint8Array(0);
     let chunkIndex = 0;
     const responseId = `chatcmpl-${Date.now()}`;
@@ -322,7 +681,7 @@ export class KiroExecutor extends BaseExecutor {
     };
 
     const failInvalidToolCall = (controller, message) => {
-      emitKiroToolCallValidationError(controller, state, message);
+      emitKiroToolCallValidationError(controller, state, message, options);
       buffer = new Uint8Array(0);
     };
 
