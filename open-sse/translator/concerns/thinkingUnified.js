@@ -229,6 +229,12 @@ function applyFormat(fmt, body, cfg, caps) {
     }
     case "claude-adaptive": {
       if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
+      // output_config.effort alone does NOT turn thinking on: Anthropic requires
+      // an explicit thinking:{type:"adaptive"} on Opus 4.6/4.7/4.8 and Sonnet 4.6
+      // ("thinking is off unless you explicitly set it"), and Anthropic-compatible
+      // shims (e.g. GitHub Copilot /v1/messages) default thinking off even for
+      // Sonnet 5. Send both fields — the documented adaptive-thinking shape.
+      body.thinking = { type: "adaptive" };
       const level = toLevel(eff);
       body.output_config = { effort: level === "xhigh" ? "high" : level };
       break;

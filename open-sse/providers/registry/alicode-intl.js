@@ -14,7 +14,7 @@ export default {
   },
   category: "apikey",
   transport: {
-    baseUrl: "https://coding-intl.dashscope.aliyuncs.com/v1/chat/completions",
+    baseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",
     headers: {},
     quirks: { preserveCacheControl: true },
   },
