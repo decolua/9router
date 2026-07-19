@@ -41,6 +41,19 @@ export const TRANSIENT_COOLDOWN_MS = 30 * 1000;
 // Hard cap for provider-reported rate limit cooldown (e.g. codex resets_at can be 5-6h)
 export const MAX_RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
 
+// Confirmed Kiro credit exhaustion (monthly quota, `resetAt` from GetUsageLimits) can be
+// weeks away. Capping it at the generic 30-min rate-limit window would mean re-probing an
+// account we already know is exhausted every 30 minutes; instead cap it at a low-frequency
+// daily probe so the account is retried roughly once a day — enough to notice an early
+// reset (manual top-up, plan change) without hammering a known-dead account.
+export const KIRO_CREDIT_EXHAUSTION_PROBE_MS = 24 * 60 * 60 * 1000;
+
+// Per-provider override for the max resetsAtMs-derived cooldown (see markAccountUnavailable).
+// Any provider not listed here falls back to MAX_RATE_LIMIT_COOLDOWN_MS.
+export const RESET_COOLDOWN_CAP_MS = {
+  kiro: KIRO_CREDIT_EXHAUSTION_PROBE_MS,
+};
+
 // Cooldown durations (ms)
 const COOLDOWN = {
   long: 2 * 60 * 1000,
