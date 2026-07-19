@@ -9,7 +9,7 @@ import {
 } from "@/lib/oauth/providers";
 import { createProviderConnection } from "@/models";
 import { ensureOutboundProxyInitialized } from "@/lib/network/initOutboundProxy";
-import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { proxyOptionsForPool } from "@/lib/oauth/proxyOptions";
 import {
   startCodexProxy,
   stopCodexProxy,
@@ -19,24 +19,10 @@ import {
   startXaiProxy,
   stopXaiProxy,
   registerXaiSession,
+  getXaiSessionContext,
   getXaiSessionStatus,
   clearXaiSession,
 } from "@/lib/oauth/utils/server";
-
-async function proxyOptionsForPool(proxyPoolId) {
-  if (!proxyPoolId || proxyPoolId === "__none__") return { disableEnvProxy: true };
-  const proxyConfig = await resolveConnectionProxyConfig({ proxyPoolId });
-  if (!proxyConfig || proxyConfig.source === "none" || proxyConfig.source === "error") {
-    throw new Error(`Proxy pool ${proxyPoolId} is unavailable`);
-  }
-  return {
-    connectionProxyEnabled: proxyConfig.connectionProxyEnabled === true,
-    connectionProxyUrl: proxyConfig.connectionProxyUrl || "",
-    connectionNoProxy: proxyConfig.connectionNoProxy || "",
-    vercelRelayUrl: proxyConfig.vercelRelayUrl || "",
-    strictProxy: proxyConfig.strictProxy === true,
-  };
-}
 
 function withProxyPoolData(providerSpecificData, proxyPoolId) {
   return {
@@ -45,15 +31,13 @@ function withProxyPoolData(providerSpecificData, proxyPoolId) {
   };
 }
 
-async function completeXaiManualCode(code, state, proxyPoolId = null) {
-  const session = state ? getXaiSessionStatus(state) : null;
+async function completeXaiManualCode(code, state, session) {
   if (!session) {
     throw new Error("xAI OAuth session not found; restart the login flow and paste the code again");
   }
   if (!code) throw new Error("Missing xAI authorization code");
 
   try {
-    const selectedProxyPoolId = proxyPoolId || session.proxyPoolId;
     const tokenData = await exchangeTokens(
       "xai",
       code,
@@ -61,20 +45,20 @@ async function completeXaiManualCode(code, state, proxyPoolId = null) {
       session.codeVerifier,
       state,
       undefined,
-      await proxyOptionsForPool(selectedProxyPoolId)
+      session.proxyOptions
     );
     const connection = await createProviderConnection({
       provider: "xai",
       authType: "oauth",
       ...tokenData,
-      providerSpecificData: withProxyPoolData(tokenData.providerSpecificData, selectedProxyPoolId),
+      providerSpecificData: withProxyPoolData(tokenData.providerSpecificData, session.proxyPoolId),
       expiresAt: tokenData.expiresIn
         ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString()
         : null,
       testStatus: "active",
     });
     clearXaiSession(state);
-    stopXaiProxy();
+    await stopXaiProxy();
     return {
       id: connection.id,
       provider: connection.provider,
@@ -83,7 +67,7 @@ async function completeXaiManualCode(code, state, proxyPoolId = null) {
     };
   } catch (err) {
     clearXaiSession(state);
-    stopXaiProxy();
+    await stopXaiProxy();
     throw err;
   }
 }
@@ -414,7 +398,22 @@ export async function POST(request, { params }) {
         return NextResponse.json({ error: "Manual code only supported for xai" }, { status: 400 });
       }
       const { code, state, proxyPoolId } = body;
-      const connection = await completeXaiManualCode(String(code || "").trim(), String(state || "").trim(), proxyPoolId);
+      const sessionState = String(state || "").trim();
+      const session = getXaiSessionContext(sessionState);
+      const suppliedProxyPoolId = proxyPoolId && proxyPoolId !== "__none__" ? String(proxyPoolId) : null;
+      const sessionProxyPoolId = session?.proxyPoolId && session.proxyPoolId !== "__none__"
+        ? String(session.proxyPoolId)
+        : null;
+      if (proxyPoolId !== undefined && suppliedProxyPoolId !== sessionProxyPoolId) {
+        clearXaiSession(sessionState);
+        await stopXaiProxy();
+        return NextResponse.json({ error: "Proxy pool does not match xAI OAuth session" }, { status: 400 });
+      }
+      const connection = await completeXaiManualCode(
+        String(code || "").trim(),
+        sessionState,
+        session,
+      );
       return NextResponse.json({ success: true, connection });
     }
 

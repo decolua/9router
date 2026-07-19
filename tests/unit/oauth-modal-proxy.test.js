@@ -18,14 +18,6 @@ describe("OAuth modal proxy selection", () => {
     expect(openEffect).toContain('startOAuthFlow("")');
   });
 
-  it("waits for fixed-port proxy shutdown before restarting after a pool change", () => {
-    const handler = section("const handleProxyPoolChange", "// Fixed-port server-side mode");
-    const restartIndex = handler.indexOf("await startOAuthFlow(proxyPoolId)");
-
-    expect(handler).toContain("await stopFixedProxy()");
-    expect(handler.indexOf("await stopFixedProxy()")).toBeLessThan(restartIndex);
-  });
-
   it("tracks close shutdown and waits for it before any restart", () => {
     expect(source).toContain("proxyStopPromiseRef.current = pending");
     expect(source).toContain("await proxyStopPromiseRef.current");

@@ -104,7 +104,9 @@ import {
   getCodexSessionStatus,
   getXaiSessionStatus,
   registerCodexSession,
+  registerXaiSession,
   startCodexProxy,
+  startXaiProxy,
   stopCodexProxy,
   stopXaiProxy,
 } from "../../src/lib/oauth/utils/server.js";
@@ -147,13 +149,16 @@ describe("OAuth fixed-port callback proxy context", () => {
   });
 
   afterEach(async () => {
-    clearCodexSession("codex-state");
-    clearXaiSession("xai-state");
-    clearCodexSession("poll-state");
+    ["codex-state", "poll-state", "abandoned", "fresh", "first", "second", "stop-expired"]
+      .forEach(clearCodexSession);
+    ["xai-state", "abandoned", "fresh", "first", "second", "stop-expired"]
+      .forEach(clearXaiSession);
     httpMocks.deferClose = false;
     httpMocks.servers.forEach((server) => server.finishClose());
     await stopCodexProxy();
     await stopXaiProxy();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it("registers PKCE sessions only through POST JSON", async () => {
@@ -301,6 +306,57 @@ describe("OAuth fixed-port callback proxy context", () => {
     expect(getCodexSessionStatus("codex-state")).toBeNull();
   });
 
+  it("rejects xAI manual code proxy pool mismatch without exchanging tokens", async () => {
+    await startProxy("xai", {
+      appPort: 20127,
+      state: "xai-state",
+      codeVerifier: "secret-verifier",
+      redirectUri: "http://127.0.0.1:56121/callback",
+      proxyPoolId: "pool-1",
+    });
+    mocks.exchangeTokens.mockClear();
+
+    const response = await POST(new Request("http://localhost/api/oauth/xai/manual-code", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: "manual-code", state: "xai-state", proxyPoolId: "pool-2" }),
+    }), {
+      params: Promise.resolve({ provider: "xai", action: "manual-code" }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(mocks.exchangeTokens).not.toHaveBeenCalled();
+  });
+
+  it("uses state-bound xAI proxy options for manual code exchange", async () => {
+    await startProxy("xai", {
+      appPort: 20127,
+      state: "xai-state",
+      codeVerifier: "secret-verifier",
+      redirectUri: "http://127.0.0.1:56121/callback",
+      proxyPoolId: "pool-1",
+    });
+    mocks.resolveConnectionProxyConfig.mockRejectedValue(new Error("pool changed after authorization"));
+
+    const response = await POST(new Request("http://localhost/api/oauth/xai/manual-code", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: "manual-code", state: "xai-state", proxyPoolId: "pool-1" }),
+    }), {
+      params: Promise.resolve({ provider: "xai", action: "manual-code" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(mocks.resolveConnectionProxyConfig).toHaveBeenCalledTimes(1);
+    expect(mocks.exchangeTokens.mock.calls[0][6]).toEqual({
+      connectionProxyEnabled: true,
+      connectionProxyUrl: "http://proxy.test:8080",
+      connectionNoProxy: "",
+      vercelRelayUrl: "",
+      strictProxy: true,
+    });
+  });
+
   it("expires an unconsumed PKCE session after the proxy lifetime", () => {
     const now = 1_800_000_000_000;
     vi.spyOn(Date, "now").mockReturnValue(now);
@@ -312,6 +368,53 @@ describe("OAuth fixed-port callback proxy context", () => {
     vi.mocked(Date.now).mockReturnValue(now + 300_001);
 
     expect(getCodexSessionStatus("codex-state")).toBeNull();
+  });
+
+  it("prunes every expired session when registering another session", () => {
+    const now = 1_800_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    registerCodexSession({ state: "abandoned", codeVerifier: "secret", redirectUri: "http://codex" });
+    registerXaiSession({ state: "abandoned", codeVerifier: "secret", redirectUri: "http://xai" });
+
+    vi.mocked(Date.now).mockReturnValue(now + 300_001);
+    registerCodexSession({ state: "fresh", codeVerifier: "secret", redirectUri: "http://codex" });
+    registerXaiSession({ state: "fresh", codeVerifier: "secret", redirectUri: "http://xai" });
+    vi.mocked(Date.now).mockReturnValue(now);
+
+    expect(getCodexSessionStatus("abandoned")).toBeNull();
+    expect(getXaiSessionStatus("abandoned")).toBeNull();
+  });
+
+  it("prunes every expired session when reading another state", () => {
+    const now = 1_800_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    for (const state of ["first", "second"]) {
+      registerCodexSession({ state, codeVerifier: "secret", redirectUri: "http://codex" });
+      registerXaiSession({ state, codeVerifier: "secret", redirectUri: "http://xai" });
+    }
+
+    vi.mocked(Date.now).mockReturnValue(now + 300_001);
+    expect(getCodexSessionStatus("first")).toBeNull();
+    expect(getXaiSessionStatus("first")).toBeNull();
+    vi.mocked(Date.now).mockReturnValue(now);
+
+    expect(getCodexSessionStatus("second")).toBeNull();
+    expect(getXaiSessionStatus("second")).toBeNull();
+  });
+
+  it("prunes every expired session when stopping fixed-port proxies", async () => {
+    const now = 1_800_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    registerCodexSession({ state: "stop-expired", codeVerifier: "secret", redirectUri: "http://codex" });
+    registerXaiSession({ state: "stop-expired", codeVerifier: "secret", redirectUri: "http://xai" });
+
+    vi.mocked(Date.now).mockReturnValue(now + 300_001);
+    await stopCodexProxy();
+    await stopXaiProxy();
+    vi.mocked(Date.now).mockReturnValue(now);
+
+    expect(getCodexSessionStatus("stop-expired")).toBeNull();
+    expect(getXaiSessionStatus("stop-expired")).toBeNull();
   });
 
   it("does not start a replacement until the old fixed-port server closes", async () => {
@@ -352,6 +455,33 @@ describe("OAuth fixed-port callback proxy context", () => {
     expect(serverCountBeforeListen).toBe(1);
     expect(stopSettledBeforeListen).toBe(false);
     expect(httpMocks.servers[0].close).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["codex", startCodexProxy, stopCodexProxy],
+    ["xai", startXaiProxy, stopXaiProxy],
+  ])("does not let stale %s startup timeout close replacement server", async (_provider, start, stop) => {
+    vi.useFakeTimers();
+    httpMocks.deferListen = true;
+    try {
+      const starting = start(20127);
+      const stopping = stop();
+      const firstServer = httpMocks.servers[0];
+      firstServer.finishListen();
+      await Promise.all([starting, stopping]);
+
+      httpMocks.deferListen = false;
+      await vi.advanceTimersByTimeAsync(1_000);
+      await start(20128);
+      const replacementServer = httpMocks.servers.at(-1);
+
+      await vi.advanceTimersByTimeAsync(299_001);
+
+      expect(replacementServer.close).not.toHaveBeenCalled();
+    } finally {
+      httpMocks.deferListen = false;
+      await stop();
+    }
   });
 
   it("waits for server close before stop-proxy responds", async () => {

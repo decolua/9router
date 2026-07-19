@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { KiroService } from "@/lib/oauth/services/kiro";
 import { createProviderConnection } from "@/models";
+import { ensureOutboundProxyInitialized } from "@/lib/network/initOutboundProxy";
+import { proxyOptionsForPool } from "@/lib/oauth/proxyOptions";
 
 /**
  * POST /api/oauth/kiro/social-exchange
@@ -9,7 +11,7 @@ import { createProviderConnection } from "@/models";
  */
 export async function POST(request) {
   try {
-    const { code, codeVerifier, provider } = await request.json();
+    const { code, codeVerifier, provider, proxyPoolId } = await request.json();
 
     if (!code || !codeVerifier) {
       return NextResponse.json(
@@ -25,12 +27,15 @@ export async function POST(request) {
       );
     }
 
+    await ensureOutboundProxyInitialized();
+    const proxyOptions = await proxyOptionsForPool(proxyPoolId);
     const kiroService = new KiroService();
 
     // Exchange code for tokens (redirect_uri handled internally)
     const tokenData = await kiroService.exchangeSocialCode(
       code,
-      codeVerifier
+      codeVerifier,
+      proxyOptions,
     );
 
     // Extract email from JWT if available
@@ -48,6 +53,7 @@ export async function POST(request) {
         profileArn: tokenData.profileArn,
         authMethod: provider, // "google" or "github"
         provider: provider.charAt(0).toUpperCase() + provider.slice(1),
+        ...(proxyPoolId && proxyPoolId !== "__none__" ? { proxyPoolId } : {}),
       },
       testStatus: "active",
     });

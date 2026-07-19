@@ -4,36 +4,46 @@ import { useState, useEffect, useRef } from "react";
 import PropTypes from "prop-types";
 import { Modal, Button, Input } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import OAuthProxyPoolSelector from "./OAuthProxyPoolSelector";
 
 /**
  * Kiro Social OAuth Modal (Google/GitHub)
  * Handles manual callback URL flow for social login
  */
-export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onClose }) {
+export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onClose, proxyPools = [], proxyPoolsReady = true }) {
   const [step, setStep] = useState("loading"); // loading | input | success | error
   const [authUrl, setAuthUrl] = useState("");
   const [authData, setAuthData] = useState(null);
   const [callbackUrl, setCallbackUrl] = useState("");
   const [error, setError] = useState(null);
+  const [selectedProxyPoolId, setSelectedProxyPoolId] = useState("");
   const { copied, copy } = useCopyToClipboard();
   const openedRef = useRef(false);
 
   // Reset auto-open guard when modal closes so it can re-open next session.
   useEffect(() => {
-    if (!isOpen) openedRef.current = false;
+    if (!isOpen) {
+      openedRef.current = false;
+    }
   }, [isOpen]);
 
   // Initialize auth flow
   useEffect(() => {
     if (!isOpen || !provider) return;
+    if (!proxyPoolsReady) return;
+    let cancelled = false;
 
     const initAuth = async () => {
       try {
         setError(null);
         setStep("loading");
 
-        const res = await fetch(`/api/oauth/kiro/social-authorize?provider=${provider}`);
+        const authorizeUrl = new URL("/api/oauth/kiro/social-authorize", window.location.origin);
+        authorizeUrl.searchParams.set("provider", provider);
+        if (selectedProxyPoolId) authorizeUrl.searchParams.set("proxyPoolId", selectedProxyPoolId);
+        const res = await fetch(authorizeUrl.toString());
         const data = await res.json();
+        if (cancelled) return;
 
         if (!res.ok) {
           throw new Error(data.error);
@@ -49,13 +59,23 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
           window.open(data.authUrl, "_blank");
         }
       } catch (err) {
+        if (cancelled) return;
         setError(err.message);
         setStep("error");
       }
     };
 
     initAuth();
-  }, [isOpen, provider]);
+    return () => { cancelled = true; };
+  }, [isOpen, provider, proxyPoolsReady, selectedProxyPoolId]);
+
+  const handleProxyPoolChange = (event) => {
+    openedRef.current = false;
+    setAuthData(null);
+    setAuthUrl("");
+    setCallbackUrl("");
+    setSelectedProxyPoolId(event.target.value);
+  };
 
   const handleManualSubmit = async () => {
     try {
@@ -90,6 +110,7 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
           code,
           codeVerifier: authData.codeVerifier,
           provider,
+          proxyPoolId: selectedProxyPoolId,
         }),
       });
 
@@ -109,8 +130,16 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
   return (
     <Modal isOpen={isOpen} title={`Connect Kiro via ${providerName}`} onClose={onClose} size="lg">
       <div className="flex flex-col gap-4">
+        <OAuthProxyPoolSelector
+          value={selectedProxyPoolId}
+          onChange={handleProxyPoolChange}
+          proxyPools={proxyPools}
+          proxyPoolsReady={proxyPoolsReady}
+          visible={step === "loading" || step === "input"}
+        />
+
         {/* Loading */}
-        {step === "loading" && (
+        {step === "loading" && proxyPoolsReady && (
           <div className="text-center py-6">
             <div className="size-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
               <span className="material-symbols-outlined text-3xl text-primary animate-spin">
@@ -211,4 +240,6 @@ KiroSocialOAuthModal.propTypes = {
   provider: PropTypes.oneOf(["google", "github"]).isRequired,
   onSuccess: PropTypes.func,
   onClose: PropTypes.func.isRequired,
+  proxyPools: PropTypes.array,
+  proxyPoolsReady: PropTypes.bool,
 };

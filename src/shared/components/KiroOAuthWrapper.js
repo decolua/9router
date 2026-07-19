@@ -88,6 +88,8 @@ export default function KiroOAuthWrapper({ isOpen, providerInfo, onSuccess, onCl
         provider={socialProvider}
         onSuccess={handleSocialSuccess}
         onClose={handleBack}
+        proxyPools={proxyPools}
+        proxyPoolsReady={proxyPoolsReady}
       />
     );
   }

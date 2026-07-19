@@ -125,19 +125,20 @@ function vertexRefreshHandler(c, log) {
 }
 
 const REFRESH_HANDLERS = {
-  "gemini-cli": (c, log) => refreshGoogleToken(c.refreshToken, PROVIDERS["gemini-cli"].clientId, PROVIDERS["gemini-cli"].clientSecret, log),
-  antigravity: (c, log) => refreshGoogleToken(c.refreshToken, PROVIDERS.antigravity.clientId, PROVIDERS.antigravity.clientSecret, log),
-  claude: (c, log) => refreshClaudeOAuthToken(c.refreshToken, log),
+  gemini: (c, log, proxyOptions) => refreshGoogleToken(c.refreshToken, PROVIDERS.gemini.clientId, PROVIDERS.gemini.clientSecret, log, proxyOptions),
+  "gemini-cli": (c, log, proxyOptions) => refreshGoogleToken(c.refreshToken, PROVIDERS["gemini-cli"].clientId, PROVIDERS["gemini-cli"].clientSecret, log, proxyOptions),
+  antigravity: (c, log, proxyOptions) => refreshGoogleToken(c.refreshToken, PROVIDERS.antigravity.clientId, PROVIDERS.antigravity.clientSecret, log, proxyOptions),
+  claude: (c, log, proxyOptions) => refreshClaudeOAuthToken(c.refreshToken, log, proxyOptions),
   codex: (c, log, proxyOptions) => refreshCodexToken(c.refreshToken, log, proxyOptions),
-  qwen: (c, log) => refreshQwenToken(c.refreshToken, log),
-  iflow: (c, log) => refreshIflowToken(c.refreshToken, log),
-  github: (c, log) => refreshGitHubToken(c.refreshToken, log),
+  qwen: (c, log, proxyOptions) => refreshQwenToken(c.refreshToken, log, proxyOptions),
+  iflow: (c, log, proxyOptions) => refreshIflowToken(c.refreshToken, log, proxyOptions),
+  github: (c, log, proxyOptions) => refreshGitHubToken(c.refreshToken, log, proxyOptions),
   kiro: (c, log, proxyOptions) => refreshKiroToken(c.refreshToken, c.providerSpecificData, log, proxyOptions),
   xai: (c, log, proxyOptions) => refreshXaiToken(c.refreshToken, log, proxyOptions),
   // Grok CLI shares xAI OAuth client + token endpoint (device-code tokens refresh the same way)
   "grok-cli": (c, log, proxyOptions) => refreshXaiToken(c.refreshToken, log, proxyOptions),
   gcli: (c, log, proxyOptions) => refreshXaiToken(c.refreshToken, log, proxyOptions),
-  "codebuddy-cn": (c, log) => refreshCodebuddyToken(c.refreshToken, log),
+  "codebuddy-cn": (c, log, proxyOptions) => refreshCodebuddyToken(c.refreshToken, log, proxyOptions),
   // Kimi Code OAuth (merged into id `kimi`); legacy id still routes here
   kimi: (c, log, proxyOptions) => refreshKimiToken(c.refreshToken, c, log, proxyOptions),
   "kimi-coding": (c, log, proxyOptions) => refreshKimiToken(c.refreshToken, c, log, proxyOptions),
@@ -145,24 +146,24 @@ const REFRESH_HANDLERS = {
   "vertex-partner": vertexRefreshHandler
 };
 
-export async function getAccessToken(provider, credentials, log) {
+export async function getAccessToken(provider, credentials, log, proxyOptions = null) {
   if (!credentials || !credentials.refreshToken || typeof credentials.refreshToken !== "string") {
     log?.warn?.("TOKEN_REFRESH", `No valid refresh token available for provider: ${provider}`);
     return null;
   }
-  return _getAccessTokenInternal(provider, credentials, log);
+  return _getAccessTokenInternal(provider, credentials, log, proxyOptions);
 }
 
-async function _getAccessTokenInternal(provider, credentials, log) {
+async function _getAccessTokenInternal(provider, credentials, log, proxyOptions) {
   if (provider === "gemini") {
-    return refreshGoogleToken(credentials.refreshToken, PROVIDERS.gemini.clientId, PROVIDERS.gemini.clientSecret, log);
+    return refreshGoogleToken(credentials.refreshToken, PROVIDERS.gemini.clientId, PROVIDERS.gemini.clientSecret, log, proxyOptions);
   }
   const handler = REFRESH_HANDLERS[provider];
   if (!handler) {
     log?.warn?.("TOKEN_REFRESH", `Unsupported provider for token refresh: ${provider}`);
     return null;
   }
-  return handler(credentials, log);
+  return handler(credentials, log, proxyOptions);
 }
 
 export async function refreshTokenByProvider(provider, credentials, log, proxyOptions = null) {

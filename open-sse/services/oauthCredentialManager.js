@@ -146,10 +146,9 @@ export async function withCredentialRefreshLock(provider, credentials, refreshFn
   return pending;
 }
 
-export async function refreshProviderCredentials(provider, credentials, log, proxyOptions = null) {
-  if (!credentials) return null;
-  const psd = credentials.providerSpecificData || {};
-  const effectiveProxyOptions = proxyOptions || (
+export function resolveRefreshProxyOptions(credentials, proxyOptions = null) {
+  const psd = credentials?.providerSpecificData || {};
+  return proxyOptions || (
     psd.connectionProxyEnabled || psd.vercelRelayUrl
       ? {
           connectionProxyEnabled: psd.connectionProxyEnabled === true,
@@ -160,6 +159,11 @@ export async function refreshProviderCredentials(provider, credentials, log, pro
         }
       : null
   );
+}
+
+export async function refreshProviderCredentials(provider, credentials, log, proxyOptions = null) {
+  if (!credentials) return null;
+  const effectiveProxyOptions = resolveRefreshProxyOptions(credentials, proxyOptions);
 
   return withCredentialRefreshLock(provider, credentials, async () => {
     const refreshed = await refreshTokenByProvider(provider, credentials, log, effectiveProxyOptions);

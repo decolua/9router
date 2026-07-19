@@ -25,6 +25,7 @@ import {
 } from "open-sse/services/tokenRefresh.js";
 import {
   refreshProviderCredentials as _refreshProviderCredentials,
+  resolveRefreshProxyOptions as _resolveRefreshProxyOptions,
   shouldRefreshCredentials as _shouldRefreshCredentials,
 } from "open-sse/services/oauthCredentialManager.js";
 
@@ -32,38 +33,38 @@ export const TOKEN_EXPIRY_BUFFER_MS = BUFFER_MS;
 
 // ─── Re-exports wrapped with local logger ─────────────────────────────────────
 
-export const refreshAccessToken = (provider, refreshToken, credentials) =>
-  _refreshAccessToken(provider, refreshToken, credentials, log);
+export const refreshAccessToken = (provider, refreshToken, credentials, proxyOptions = null) =>
+  _refreshAccessToken(provider, refreshToken, credentials, log, proxyOptions);
 
-export const refreshClaudeOAuthToken = (refreshToken) =>
-  _refreshClaudeOAuthToken(refreshToken, log);
+export const refreshClaudeOAuthToken = (refreshToken, proxyOptions = null) =>
+  _refreshClaudeOAuthToken(refreshToken, log, proxyOptions);
 
-export const refreshGoogleToken = (refreshToken, clientId, clientSecret) =>
-  _refreshGoogleToken(refreshToken, clientId, clientSecret, log);
+export const refreshGoogleToken = (refreshToken, clientId, clientSecret, proxyOptions = null) =>
+  _refreshGoogleToken(refreshToken, clientId, clientSecret, log, proxyOptions);
 
-export const refreshQwenToken = (refreshToken) =>
-  _refreshQwenToken(refreshToken, log);
+export const refreshQwenToken = (refreshToken, proxyOptions = null) =>
+  _refreshQwenToken(refreshToken, log, proxyOptions);
 
-export const refreshCodexToken = (refreshToken) =>
-  _refreshCodexToken(refreshToken, log);
+export const refreshCodexToken = (refreshToken, proxyOptions = null) =>
+  _refreshCodexToken(refreshToken, log, proxyOptions);
 
-export const refreshIflowToken = (refreshToken) =>
-  _refreshIflowToken(refreshToken, log);
+export const refreshIflowToken = (refreshToken, proxyOptions = null) =>
+  _refreshIflowToken(refreshToken, log, proxyOptions);
 
-export const refreshGitHubToken = (refreshToken) =>
-  _refreshGitHubToken(refreshToken, log);
+export const refreshGitHubToken = (refreshToken, proxyOptions = null) =>
+  _refreshGitHubToken(refreshToken, log, proxyOptions);
 
-export const refreshCopilotToken = (githubAccessToken) =>
-  _refreshCopilotToken(githubAccessToken, log);
+export const refreshCopilotToken = (githubAccessToken, proxyOptions = null) =>
+  _refreshCopilotToken(githubAccessToken, log, proxyOptions);
 
-export const refreshKiroToken = (refreshToken, providerSpecificData) =>
-  _refreshKiroToken(refreshToken, providerSpecificData, log);
+export const refreshKiroToken = (refreshToken, providerSpecificData, proxyOptions = null) =>
+  _refreshKiroToken(refreshToken, providerSpecificData, log, proxyOptions);
 
-export const getAccessToken = (provider, credentials) =>
-  _getAccessToken(provider, credentials, log);
+export const getAccessToken = (provider, credentials, proxyOptions = null) =>
+  _getAccessToken(provider, credentials, log, proxyOptions);
 
-export const refreshTokenByProvider = (provider, credentials) =>
-  _refreshTokenByProvider(provider, credentials, log);
+export const refreshTokenByProvider = (provider, credentials, proxyOptions = null) =>
+  _refreshTokenByProvider(provider, credentials, log, proxyOptions);
 
 export const formatProviderCredentials = (provider, credentials) =>
   _formatProviderCredentials(provider, credentials, log);
@@ -218,11 +219,12 @@ export async function updateProviderCredentials(connectionId, newCredentials) {
  * @param {object} credentials
  * @returns {Promise<object>} updated credentials object
  */
-export async function checkAndRefreshToken(provider, credentials) {
+export async function checkAndRefreshToken(provider, credentials, proxyOptions = null) {
   let creds = { ...credentials };
   if (!creds.connectionId && creds.id) {
     creds.connectionId = creds.id;
   }
+  const refreshProxyOptions = _resolveRefreshProxyOptions(creds, proxyOptions);
 
   // ── 1. Regular access-token expiry ────────────────────────────────────────
   if (_shouldRefreshCredentials(provider, creds)) {
@@ -237,7 +239,7 @@ export async function checkAndRefreshToken(provider, credentials) {
       lastRefreshAt: creds.lastRefreshAt || null,
     });
 
-    const newCreds = await _refreshProviderCredentials(provider, creds, log);
+    const newCreds = await _refreshProviderCredentials(provider, creds, log, refreshProxyOptions);
     if (newCreds?.accessToken || newCreds?.apiKey || newCreds?.copilotToken) {
       const mergedCreds = {
         ...newCreds,
@@ -278,7 +280,7 @@ export async function checkAndRefreshToken(provider, credentials) {
         expiresIn: copilotToken ? Math.round(remaining / 1000) : "missing",
       });
 
-      const copilotTokenResult = await refreshCopilotToken(creds.accessToken);
+      const copilotTokenResult = await refreshCopilotToken(creds.accessToken, refreshProxyOptions);
       if (copilotTokenResult) {
         const updatedSpecific = {
           ...creds.providerSpecificData,
@@ -308,11 +310,11 @@ export async function checkAndRefreshToken(provider, credentials) {
  * @param {object} credentials  – must contain `refreshToken`
  * @returns {Promise<object|null>} merged credentials or the raw GitHub credentials on Copilot failure
  */
-export async function refreshGitHubAndCopilotTokens(credentials) {
-  const newGitHubCreds = await refreshGitHubToken(credentials.refreshToken);
+export async function refreshGitHubAndCopilotTokens(credentials, proxyOptions = null) {
+  const newGitHubCreds = await refreshGitHubToken(credentials.refreshToken, proxyOptions);
   if (!newGitHubCreds?.accessToken) return newGitHubCreds;
 
-  const copilotToken = await refreshCopilotToken(newGitHubCreds.accessToken);
+  const copilotToken = await refreshCopilotToken(newGitHubCreds.accessToken, proxyOptions);
   if (!copilotToken) return newGitHubCreds;
 
   return {

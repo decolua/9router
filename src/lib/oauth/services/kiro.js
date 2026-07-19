@@ -141,7 +141,7 @@ export class KiroService {
    * Exchange authorization code for tokens (Social Login)
    * Must use same redirect_uri as authorization request
    */
-  async exchangeSocialCode(code, codeVerifier) {
+  async exchangeSocialCode(code, codeVerifier, proxyOptions = null) {
     // Must match the redirect_uri used in buildSocialLoginUrl
     const redirectUri = "kiro://kiro.kiroAgent/authenticate-success";
 
@@ -155,6 +155,7 @@ export class KiroService {
         code_verifier: codeVerifier,
         redirect_uri: redirectUri,
       }),
+      proxyOptions,
     });
 
     if (!response.ok) {

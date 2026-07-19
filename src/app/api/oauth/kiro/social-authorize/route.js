@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { generatePKCE } from "@/lib/oauth/utils/pkce";
 import { KiroService } from "@/lib/oauth/services/kiro";
+import { ensureOutboundProxyInitialized } from "@/lib/network/initOutboundProxy";
+import { proxyOptionsForPool } from "@/lib/oauth/proxyOptions";
 
 /**
  * GET /api/oauth/kiro/social-authorize
@@ -11,6 +13,7 @@ export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
     const provider = searchParams.get("provider"); // "google" or "github"
+    const proxyPoolId = searchParams.get("proxyPoolId");
 
     if (!provider || !["google", "github"].includes(provider)) {
       return NextResponse.json(
@@ -18,6 +21,9 @@ export async function GET(request) {
         { status: 400 }
       );
     }
+
+    await ensureOutboundProxyInitialized();
+    await proxyOptionsForPool(proxyPoolId);
 
     // Generate PKCE for social auth
     const { codeVerifier, codeChallenge, state } = generatePKCE();
@@ -35,6 +41,7 @@ export async function GET(request) {
       codeVerifier,
       codeChallenge,
       provider,
+      proxyPoolId: proxyPoolId || "",
     });
   } catch (error) {
     console.log("Kiro social authorize error:", error);

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
 import { Modal, Button, Input } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import OAuthProxyPoolSelector from "./OAuthProxyPoolSelector";
 
 /**
  * OAuth Modal Component
@@ -20,9 +21,10 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const [polling, setPolling] = useState(false);
   const [selectedProxyPoolId, setSelectedProxyPoolId] = useState("");
   const popupRef = useRef(null);
-  const pollingAbortRef = useRef(false);
+  const flowGenerationRef = useRef(0);
   const openedRef = useRef(false);
   const proxyStopPromiseRef = useRef(Promise.resolve());
+  const poolChangePromiseRef = useRef(Promise.resolve());
   const { copied, copy } = useCopyToClipboard();
 
   // State for client-only values to avoid hydration mismatch
@@ -42,10 +44,12 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   // Detect if running on localhost (client-side only)
   useEffect(() => {
     if (typeof window !== "undefined") {
+      /* eslint-disable react-hooks/set-state-in-effect -- client-only values intentionally update after hydration */
       setIsLocalhost(
         window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
       );
       setPlaceholderUrl(`${window.location.origin}/callback?code=...`);
+      /* eslint-enable react-hooks/set-state-in-effect */
     }
   }, []);
 
@@ -99,8 +103,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   }, [authData, onSuccess, selectedProxyPoolId]);
 
   // Poll for device code token
-  const startPolling = useCallback(async (deviceCode, codeVerifier, interval, extraData, deadlineMs, proxyPoolId) => {
-    pollingAbortRef.current = false;
+  const startPolling = useCallback(async (deviceCode, codeVerifier, interval, extraData, deadlineMs, proxyPoolId, generation) => {
+    if (generation !== flowGenerationRef.current) return;
     setPolling(true);
     // Honor the upstream's expires_in when supplied (qoder sets 300s) so we
     // don't time out earlier than the device code itself. Default 120s
@@ -109,21 +113,11 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     const deadline = startedAt + (Number.isFinite(deadlineMs) && deadlineMs > 0 ? deadlineMs : 120_000);
 
     while (Date.now() < deadline) {
-      // Check if polling should be aborted
-      if (pollingAbortRef.current) {
-        console.log("[OAuthModal] Polling aborted");
-        setPolling(false);
-        return;
-      }
+      if (generation !== flowGenerationRef.current) return;
 
       await new Promise((r) => setTimeout(r, interval * 1000));
 
-      // Check again after sleep
-      if (pollingAbortRef.current) {
-        console.log("[OAuthModal] Polling aborted after sleep");
-        setPolling(false);
-        return;
-      }
+      if (generation !== flowGenerationRef.current) return;
 
       try {
         const res = await fetch(`/api/oauth/${provider}/poll`, {
@@ -133,9 +127,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         });
 
         const data = await res.json();
+        if (generation !== flowGenerationRef.current) return;
 
         if (data.success) {
-          pollingAbortRef.current = true; // Stop polling immediately
           setStep("success");
           setPolling(false);
           onSuccess?.();
@@ -150,6 +144,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
           interval = Math.min(interval + 5, 30);
         }
       } catch (err) {
+        if (generation !== flowGenerationRef.current) return;
         setError(err.message);
         setStep("error");
         setPolling(false);
@@ -157,16 +152,19 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       }
     }
 
+    if (generation !== flowGenerationRef.current) return;
     setError("Authorization timeout");
     setStep("error");
     setPolling(false);
   }, [provider, onSuccess]);
 
   // Start OAuth flow
-  const startOAuthFlow = useCallback(async (proxyPoolId = selectedProxyPoolId) => {
+  const startOAuthFlow = useCallback(async (proxyPoolId = selectedProxyPoolId, generation = ++flowGenerationRef.current) => {
     if (!provider) return;
+    const isStale = () => generation !== flowGenerationRef.current;
     try {
       await proxyStopPromiseRef.current;
+      if (isStale()) return;
       setError(null);
 
       // Device code flow providers (must match oauth providers with flowType: "device_code")
@@ -198,6 +196,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         }
         const res = await fetch(deviceCodeUrl.toString());
         const data = await res.json();
+        if (isStale()) return;
         if (!res.ok) throw new Error(data.error);
 
         setDeviceData(data);
@@ -237,6 +236,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
             ? data.expires_in * 1000
             : undefined,
           proxyPoolId,
+          generation,
         );
         return;
       }
@@ -263,6 +263,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       }
       const res = await fetch(authorizeUrl.toString());
       const data = await res.json();
+      if (isStale()) return;
       if (!res.ok) throw new Error(data.error);
       setAuthData({ ...data, redirectUri, codexServerSide: false, xaiServerSide: false });
 
@@ -277,6 +278,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
             body: JSON.stringify({ appPort, state: data.state, codeVerifier: data.codeVerifier, redirectUri, proxyPoolId }),
           });
           const proxyData = await proxyRes.json();
+          if (isStale()) return;
           codexProxyActive = proxyData.success;
           codexServerSide = !!proxyData.serverSide;
         } catch {
@@ -295,6 +297,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
             body: JSON.stringify({ appPort, state: data.state, codeVerifier: data.codeVerifier, redirectUri, proxyPoolId }),
           });
           const proxyData = await proxyRes.json();
+          if (isStale()) return;
           xaiProxyActive = proxyData.success;
           xaiServerSide = !!proxyData.serverSide;
           if (!xaiProxyActive && proxyData.reason === "port_busy") {
@@ -306,6 +309,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         }
       }
 
+      if (isStale()) return;
       setAuthData({ ...data, redirectUri, codexServerSide, xaiServerSide });
 
       // Guard: device_code providers return authUrl:null from /authorize. Never window.open(null)
@@ -345,6 +349,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         }
       }
     } catch (err) {
+      if (isStale()) return;
       setError(err.message);
       setStep("error");
     }
@@ -364,31 +369,35 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setDeviceData(null);
       setPolling(false);
       setSelectedProxyPoolId("");
-      pollingAbortRef.current = false;
       startOAuthFlow("");
     } else if (!isOpen) {
       // Abort polling and cleanup proxy when modal closes
-      pollingAbortRef.current = true;
+      flowGenerationRef.current += 1;
       openedRef.current = false;
       stopFixedProxy();
     }
   }, [isOpen, provider, startOAuthFlow, proxyPools, proxyPoolsReady, stopFixedProxy]);
 
-  const handleProxyPoolChange = async (event) => {
+  const handleProxyPoolChange = (event) => {
     const proxyPoolId = event.target.value;
+    const generation = ++flowGenerationRef.current;
     setSelectedProxyPoolId(proxyPoolId);
-    pollingAbortRef.current = true;
     setPolling(false);
 
-    await stopFixedProxy();
-
-    setAuthData(null);
-    setCallbackUrl("");
-    setError(null);
-    setIsDeviceCode(false);
-    setDeviceData(null);
-    pollingAbortRef.current = false;
-    await startOAuthFlow(proxyPoolId);
+    const transition = poolChangePromiseRef.current
+      .catch(() => {})
+      .then(async () => {
+        await stopFixedProxy();
+        if (generation !== flowGenerationRef.current) return;
+        setAuthData(null);
+        setCallbackUrl("");
+        setError(null);
+        setIsDeviceCode(false);
+        setDeviceData(null);
+        await startOAuthFlow(proxyPoolId, generation);
+      });
+    poolChangePromiseRef.current = transition;
+    return transition;
   };
 
   // Fixed-port server-side mode: poll status (proxy auto-exchanges + saves DB)
@@ -568,6 +577,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
   // Clear session on modal close + cleanup proxy
   const handleClose = useCallback(() => {
+    flowGenerationRef.current += 1;
     stopFixedProxy();
     onClose();
   }, [onClose, stopFixedProxy]);
@@ -586,34 +596,13 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   return (
     <Modal isOpen={isOpen} title={modalTitle} onClose={handleClose} size="lg">
       <div className="flex flex-col gap-4">
-        {proxyPools.length > 0 && (step === "waiting" || step === "input") && (
-          <div className="flex flex-col gap-1.5 p-3 border border-border rounded-lg bg-sidebar/30">
-            <label className="text-xs font-medium text-text-muted uppercase tracking-wider">
-              Routing Proxy Pool
-            </label>
-            <select
-              value={selectedProxyPoolId}
-              onChange={handleProxyPoolChange}
-              className="w-full bg-input text-sm border border-border rounded-lg px-3 py-2 outline-none focus:border-primary"
-            >
-              <option value="">Direct Connection</option>
-              {proxyPools.map((pool) => (
-                <option key={pool.id} value={pool.id}>
-                  {pool.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        {!proxyPoolsReady && (
-          <div className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg bg-sidebar/50">
-            <span className="material-symbols-outlined text-base text-primary animate-spin">
-              progress_activity
-            </span>
-            <span className="text-sm">Loading proxy pools…</span>
-          </div>
-        )}
+        <OAuthProxyPoolSelector
+          value={selectedProxyPoolId}
+          onChange={handleProxyPoolChange}
+          proxyPools={proxyPools}
+          proxyPoolsReady={proxyPoolsReady}
+          visible={step === "waiting" || step === "input"}
+        />
 
         {/* Waiting + Manual Input combined (non-device-code) */}
         {(step === "waiting" || step === "input") && !isDeviceCode && (
@@ -755,7 +744,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
             <h3 className="text-lg font-semibold mb-2">Connection Failed</h3>
             <p className="text-sm text-red-600 mb-4">{error}</p>
             <div className="flex gap-2">
-              <Button onClick={startOAuthFlow} variant="secondary" fullWidth>
+              <Button onClick={() => startOAuthFlow(selectedProxyPoolId)} variant="secondary" fullWidth>
                 Try Again
               </Button>
               <Button onClick={handleClose} variant="ghost" fullWidth>

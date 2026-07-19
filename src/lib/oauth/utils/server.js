@@ -151,13 +151,15 @@ function closeProxyServer(server) {
 // Pending exchange sessions keyed by state — used by server-side exchange mode
 const pendingExchanges = new Map();
 
-function getLiveSession(sessions, state) {
-  const session = state ? sessions.get(state) : null;
-  if (session && Date.now() - session.createdAt > OAUTH_SESSION_TTL_MS) {
-    sessions.delete(state);
-    return null;
+function pruneExpiredSessions(sessions, now = Date.now()) {
+  for (const [state, session] of sessions) {
+    if (now - session.createdAt > OAUTH_SESSION_TTL_MS) sessions.delete(state);
   }
-  return session;
+}
+
+function getLiveSession(sessions, state) {
+  pruneExpiredSessions(sessions);
+  return state ? sessions.get(state) || null : null;
 }
 
 function publicSessionStatus(session) {
@@ -173,6 +175,7 @@ function publicSessionStatus(session) {
  */
 export function registerCodexSession({ state, codeVerifier, redirectUri, proxyPoolId, proxyOptions }) {
   if (!state || !codeVerifier || !redirectUri) return false;
+  pruneExpiredSessions(pendingExchanges);
   pendingExchanges.set(state, {
     codeVerifier,
     redirectUri,
@@ -334,11 +337,16 @@ export async function startCodexProxy(appPort) {
  * Stop the Codex proxy server and cleanup
  */
 export async function stopCodexProxy() {
+  pruneExpiredSessions(pendingExchanges);
   if (codexProxyTimeout) {
     clearTimeout(codexProxyTimeout);
     codexProxyTimeout = null;
   }
   if (codexProxyStarting) await codexProxyStarting;
+  if (codexProxyTimeout) {
+    clearTimeout(codexProxyTimeout);
+    codexProxyTimeout = null;
+  }
   if (codexProxyClosing) return codexProxyClosing;
   if (!codexProxyServer) return Promise.resolve();
 
@@ -366,6 +374,7 @@ const xaiPendingExchanges = new Map();
 
 export function registerXaiSession({ state, codeVerifier, redirectUri, proxyPoolId, proxyOptions }) {
   if (!state || !codeVerifier || !redirectUri) return false;
+  pruneExpiredSessions(xaiPendingExchanges);
   xaiPendingExchanges.set(state, {
     codeVerifier,
     redirectUri,
@@ -379,6 +388,11 @@ export function registerXaiSession({ state, codeVerifier, redirectUri, proxyPool
 
 export function getXaiSessionStatus(state) {
   return publicSessionStatus(getLiveSession(xaiPendingExchanges, state));
+}
+
+export function getXaiSessionContext(state) {
+  const session = getLiveSession(xaiPendingExchanges, state);
+  return session ? { ...session } : null;
 }
 
 export function clearXaiSession(state) {
@@ -491,11 +505,16 @@ export async function startXaiProxy(appPort) {
 }
 
 export async function stopXaiProxy() {
+  pruneExpiredSessions(xaiPendingExchanges);
   if (xaiProxyTimeout) {
     clearTimeout(xaiProxyTimeout);
     xaiProxyTimeout = null;
   }
   if (xaiProxyStarting) await xaiProxyStarting;
+  if (xaiProxyTimeout) {
+    clearTimeout(xaiProxyTimeout);
+    xaiProxyTimeout = null;
+  }
   if (xaiProxyClosing) return xaiProxyClosing;
   if (!xaiProxyServer) return Promise.resolve();
 
