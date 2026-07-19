@@ -73,6 +73,27 @@ describe("account lock aggregation", () => {
     expect(getModelLockUntil({ modelLock___all: accountLock }, MODEL)).toBe(accountLock);
   });
 
+  it("uses an active account-wide lock when the requested model lock has expired", () => {
+    const accountLock = lockAt(45_000);
+    const connection = {
+      [`modelLock_${MODEL}`]: lockAt(-1_000),
+      modelLock___all: accountLock,
+    };
+
+    expect(getModelLockUntil(connection, MODEL)).toBe(accountLock);
+  });
+
+  it("waits for both model-specific and account-wide locks to expire", () => {
+    const modelLock = lockAt(45_000);
+    const accountLock = lockAt(60_000);
+    const connection = {
+      [`modelLock_${MODEL}`]: modelLock,
+      modelLock___all: accountLock,
+    };
+
+    expect(getModelLockUntil(connection, MODEL)).toBe(accountLock);
+  });
+
   it("keeps the earliest lock expiry, status, and error paired to one account", async () => {
     const quotaLock = lockAt(120_000);
     const transientLock = lockAt(30_000);

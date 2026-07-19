@@ -114,15 +114,18 @@ export function getModelLockKey(model) {
 }
 
 /**
- * Get the active lock expiry for a specific model on one connection.
+ * Get when one connection becomes available for a specific model.
+ * Both model-specific and account-wide locks apply, so the later active expiry wins.
  */
 export function getModelLockUntil(connection, model) {
   if (!connection) return null;
-  const key = getModelLockKey(model);
-  const expiry = connection[key] || connection[MODEL_LOCK_ALL];
-  const expiryMs = expiry ? new Date(expiry).getTime() : NaN;
-  if (!Number.isFinite(expiryMs) || expiryMs <= Date.now()) return null;
-  return new Date(expiryMs).toISOString();
+  const now = Date.now();
+  const lockKeys = model ? [getModelLockKey(model), MODEL_LOCK_ALL] : [MODEL_LOCK_ALL];
+  const activeExpiries = lockKeys
+    .map(key => new Date(connection[key]).getTime())
+    .filter(expiryMs => Number.isFinite(expiryMs) && expiryMs > now);
+  if (activeExpiries.length === 0) return null;
+  return new Date(Math.max(...activeExpiries)).toISOString();
 }
 
 /**
