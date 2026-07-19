@@ -22,12 +22,22 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const popupRef = useRef(null);
   const pollingAbortRef = useRef(false);
   const openedRef = useRef(false);
+  const proxyStopPromiseRef = useRef(Promise.resolve());
   const { copied, copy } = useCopyToClipboard();
 
   // State for client-only values to avoid hydration mismatch
   const [isLocalhost, setIsLocalhost] = useState(false);
   const [placeholderUrl, setPlaceholderUrl] = useState("/callback?code=...");
   const callbackProcessedRef = useRef(false);
+
+  const stopFixedProxy = useCallback(() => {
+    if (provider !== "codex" && provider !== "xai") return Promise.resolve();
+    const state = authData?.state;
+    const query = state ? `?state=${encodeURIComponent(state)}` : "";
+    const pending = fetch(`/api/oauth/${provider}/stop-proxy${query}`).catch(() => {});
+    proxyStopPromiseRef.current = pending;
+    return pending;
+  }, [authData?.state, provider]);
 
   // Detect if running on localhost (client-side only)
   useEffect(() => {
@@ -156,6 +166,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const startOAuthFlow = useCallback(async (proxyPoolId = selectedProxyPoolId) => {
     if (!provider) return;
     try {
+      await proxyStopPromiseRef.current;
       setError(null);
 
       // Device code flow providers (must match oauth providers with flowType: "device_code")
@@ -359,13 +370,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       // Abort polling and cleanup proxy when modal closes
       pollingAbortRef.current = true;
       openedRef.current = false;
-      if (provider === "codex") {
-        fetch("/api/oauth/codex/stop-proxy").catch(() => {});
-      } else if (provider === "xai") {
-        fetch("/api/oauth/xai/stop-proxy").catch(() => {});
-      }
+      stopFixedProxy();
     }
-  }, [isOpen, provider, startOAuthFlow, proxyPools, proxyPoolsReady]);
+  }, [isOpen, provider, startOAuthFlow, proxyPools, proxyPoolsReady, stopFixedProxy]);
 
   const handleProxyPoolChange = async (event) => {
     const proxyPoolId = event.target.value;
@@ -373,11 +380,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     pollingAbortRef.current = true;
     setPolling(false);
 
-    if (provider === "codex") {
-      await fetch("/api/oauth/codex/stop-proxy");
-    } else if (provider === "xai") {
-      await fetch("/api/oauth/xai/stop-proxy");
-    }
+    await stopFixedProxy();
 
     setAuthData(null);
     setCallbackUrl("");
@@ -565,13 +568,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
   // Clear session on modal close + cleanup proxy
   const handleClose = useCallback(() => {
-    if (provider === "codex") {
-      fetch("/api/oauth/codex/stop-proxy").catch(() => {});
-    } else if (provider === "xai") {
-      fetch("/api/oauth/xai/stop-proxy").catch(() => {});
-    }
+    stopFixedProxy();
     onClose();
-  }, [onClose, provider]);
+  }, [onClose, stopFixedProxy]);
 
   if (!provider || !providerInfo) return null;
   const isXaiProvider = provider === "xai";

@@ -22,10 +22,14 @@ describe("OAuth modal proxy selection", () => {
     const handler = section("const handleProxyPoolChange", "// Fixed-port server-side mode");
     const restartIndex = handler.indexOf("await startOAuthFlow(proxyPoolId)");
 
-    expect(handler).toContain('await fetch("/api/oauth/codex/stop-proxy")');
-    expect(handler).toContain('await fetch("/api/oauth/xai/stop-proxy")');
-    expect(handler.indexOf('await fetch("/api/oauth/codex/stop-proxy")')).toBeLessThan(restartIndex);
-    expect(handler.indexOf('await fetch("/api/oauth/xai/stop-proxy")')).toBeLessThan(restartIndex);
+    expect(handler).toContain("await stopFixedProxy()");
+    expect(handler.indexOf("await stopFixedProxy()")).toBeLessThan(restartIndex);
+  });
+
+  it("tracks close shutdown and waits for it before any restart", () => {
+    expect(source).toContain("proxyStopPromiseRef.current = pending");
+    expect(source).toContain("await proxyStopPromiseRef.current");
+    expect(source).toContain("state=${encodeURIComponent(state)}");
   });
 
   it("sends fixed-port PKCE sessions in POST bodies", () => {

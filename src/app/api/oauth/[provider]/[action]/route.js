@@ -145,8 +145,14 @@ export async function GET(request, { params }) {
       if (!["codex", "xai"].includes(provider)) {
         return NextResponse.json({ error: "Proxy only supported for codex/xai" }, { status: 400 });
       }
-      if (provider === "xai") await stopXaiProxy();
-      else await stopCodexProxy();
+      const state = searchParams.get("state");
+      if (provider === "xai") {
+        if (state) clearXaiSession(state);
+        await stopXaiProxy();
+      } else {
+        if (state) clearCodexSession(state);
+        await stopCodexProxy();
+      }
       return NextResponse.json({ success: true });
     }
 
@@ -209,6 +215,12 @@ export async function POST(request, { params }) {
   try {
     await ensureOutboundProxyInitialized();
     const { provider, action } = await params;
+    if (action === "start-proxy") {
+      const mediaType = (request.headers.get("content-type") || "").split(";", 1)[0].trim().toLowerCase();
+      if (mediaType !== "application/json" && !mediaType.endsWith("+json")) {
+        return NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 });
+      }
+    }
     let body;
     try {
       body = await request.json();
@@ -221,13 +233,21 @@ export async function POST(request, { params }) {
         return NextResponse.json({ error: "Proxy only supported for codex/xai" }, { status: 400 });
       }
       const { appPort, state, codeVerifier, redirectUri, proxyPoolId } = body;
-      if (!appPort) {
+      if (appPort === undefined || appPort === null || appPort === "") {
         return NextResponse.json({ error: "Missing app_port" }, { status: 400 });
+      }
+      const appPortNumber = typeof appPort === "number"
+        ? appPort
+        : typeof appPort === "string" && /^[0-9]+$/.test(appPort)
+          ? Number(appPort)
+          : Number.NaN;
+      if (!Number.isInteger(appPortNumber) || appPortNumber < 1 || appPortNumber > 65535) {
+        return NextResponse.json({ error: "Invalid app_port" }, { status: 400 });
       }
       const proxyOptions = await proxyOptionsForPool(proxyPoolId);
       const result = provider === "xai"
-        ? await startXaiProxy(Number(appPort))
-        : await startCodexProxy(Number(appPort));
+        ? await startXaiProxy(appPortNumber)
+        : await startCodexProxy(appPortNumber);
       let serverSide = false;
       if (result.success && state && codeVerifier && redirectUri) {
         serverSide = provider === "xai"

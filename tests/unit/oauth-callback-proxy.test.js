@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
 const httpMocks = vi.hoisted(() => {
   const state = {
     deferClose: false,
+    deferListen: false,
     servers: [],
   };
 
@@ -19,12 +20,14 @@ const httpMocks = vi.hoisted(() => {
       closeCallback: null,
       handler,
       listening: false,
+      listenCallback: null,
       port: null,
       address: () => ({ port: server.port }),
       close: vi.fn((callback) => {
         server.closeCallback = callback || null;
         if (!state.deferClose) queueMicrotask(() => server.finishClose());
       }),
+      closeAllConnections: vi.fn(() => server.finishClose()),
       finishClose() {
         server.listening = false;
         const callback = server.closeCallback;
@@ -33,10 +36,17 @@ const httpMocks = vi.hoisted(() => {
       },
       listen: vi.fn((port, _host, callback) => {
         server.port = port;
-        server.listening = true;
-        callback();
+        server.listenCallback = callback;
+        if (!state.deferListen) server.finishListen();
         return server;
       }),
+      finishListen() {
+        if (!server.listenCallback) return;
+        server.listening = true;
+        const callback = server.listenCallback;
+        server.listenCallback = null;
+        callback();
+      },
       on: vi.fn((event, callback) => {
         listeners.set(event, callback);
         return server;
@@ -113,6 +123,7 @@ describe("OAuth fixed-port callback proxy context", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     httpMocks.deferClose = false;
+    httpMocks.deferListen = false;
     httpMocks.servers.length = 0;
     mocks.ensureOutboundProxyInitialized.mockResolvedValue(true);
     mocks.resolveConnectionProxyConfig.mockResolvedValue({
@@ -167,6 +178,29 @@ describe("OAuth fixed-port callback proxy context", () => {
     expect(await postResponse.json()).toMatchObject({ success: true, serverSide: true });
     expect(httpMocks.servers).toHaveLength(1);
   });
+
+  it("rejects non-JSON start-proxy requests", async () => {
+    const response = await POST(new Request("http://localhost/api/oauth/codex/start-proxy", {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: JSON.stringify({ appPort: 20127 }),
+    }), {
+      params: Promise.resolve({ provider: "codex", action: "start-proxy" }),
+    });
+
+    expect(response.status).toBe(415);
+    expect(httpMocks.servers).toHaveLength(0);
+  });
+
+  it.each([0, -1, 65536, 20127.5, "not-a-port", true, false, [], [20127], {}])(
+    "rejects invalid callback app port %s",
+    async (appPort) => {
+      const response = await startProxy("codex", { appPort });
+
+      expect(response.status).toBe(400);
+      expect(httpMocks.servers).toHaveLength(0);
+    },
+  );
 
   it.each([
     ["codex", "codex-state", "http://localhost:1455/auth/callback"],
@@ -251,6 +285,35 @@ describe("OAuth fixed-port callback proxy context", () => {
     });
   });
 
+  it("clears the pending session named by stop-proxy", async () => {
+    await startProxy("codex", {
+      appPort: 20127,
+      state: "codex-state",
+      codeVerifier: "secret-verifier",
+      redirectUri: "http://localhost:1455/auth/callback",
+    });
+    expect(getCodexSessionStatus("codex-state")).not.toBeNull();
+
+    await GET(new Request("http://localhost/api/oauth/codex/stop-proxy?state=codex-state"), {
+      params: Promise.resolve({ provider: "codex", action: "stop-proxy" }),
+    });
+
+    expect(getCodexSessionStatus("codex-state")).toBeNull();
+  });
+
+  it("expires an unconsumed PKCE session after the proxy lifetime", () => {
+    const now = 1_800_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    registerCodexSession({
+      state: "codex-state",
+      codeVerifier: "secret-verifier",
+      redirectUri: "http://localhost:1455/auth/callback",
+    });
+    vi.mocked(Date.now).mockReturnValue(now + 300_001);
+
+    expect(getCodexSessionStatus("codex-state")).toBeNull();
+  });
+
   it("does not start a replacement until the old fixed-port server closes", async () => {
     await startCodexProxy(20127);
     const oldServer = httpMocks.servers[0];
@@ -270,6 +333,27 @@ describe("OAuth fixed-port callback proxy context", () => {
     expect(httpMocks.servers).toHaveLength(2);
   });
 
+  it("serializes concurrent starts and a stop during startup", async () => {
+    httpMocks.deferListen = true;
+    let stopSettled = false;
+
+    const firstStart = startCodexProxy(20127);
+    const secondStart = startCodexProxy(20128);
+    const stopping = stopCodexProxy().then(() => {
+      stopSettled = true;
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const serverCountBeforeListen = httpMocks.servers.length;
+    const stopSettledBeforeListen = stopSettled;
+    httpMocks.servers.forEach((server) => server.finishListen());
+    await Promise.all([firstStart, secondStart, stopping]);
+
+    expect(serverCountBeforeListen).toBe(1);
+    expect(stopSettledBeforeListen).toBe(false);
+    expect(httpMocks.servers[0].close).toHaveBeenCalledTimes(1);
+  });
+
   it("waits for server close before stop-proxy responds", async () => {
     await startCodexProxy(20127);
     const server = httpMocks.servers[0];
@@ -287,5 +371,25 @@ describe("OAuth fixed-port callback proxy context", () => {
     expect(settled).toBe(false);
     server.finishClose();
     expect(await (await responsePromise).json()).toEqual({ success: true });
+  });
+
+  it("bounds shutdown when an active callback never closes", async () => {
+    vi.useFakeTimers();
+    await startCodexProxy(20127);
+    const server = httpMocks.servers[0];
+    httpMocks.deferClose = true;
+    let settled = false;
+
+    const stopping = stopCodexProxy().then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(30_001);
+    const settledAtDeadline = settled;
+    if (!settled) server.finishClose();
+    await stopping;
+    vi.useRealTimers();
+
+    expect(settledAtDeadline).toBe(true);
+    expect(server.closeAllConnections).toHaveBeenCalledTimes(1);
   });
 });
