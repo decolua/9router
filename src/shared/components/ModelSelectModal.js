@@ -48,6 +48,7 @@ export default function ModelSelectModal({
   const [providerNodes, setProviderNodes] = useState([]);
   const [customModels, setCustomModels] = useState([]);
   const [disabledModels, setDisabledModels] = useState({});
+  const [disabledProviders, setDisabledProviders] = useState({});
 
   const fetchCombos = async () => {
     try {
@@ -113,6 +114,14 @@ export default function ModelSelectModal({
     if (isOpen) fetchDisabledModels();
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    fetch("/api/settings", { cache: "no-store" })
+      .then((res) => res.ok ? res.json() : {})
+      .then((data) => setDisabledProviders(data.disabledProviders || {}))
+      .catch(() => setDisabledProviders({}));
+  }, [isOpen]);
+
   const allProviders = useMemo(() => ({ ...OAUTH_PROVIDERS, ...FREE_PROVIDERS, ...FREE_TIER_PROVIDERS, ...APIKEY_PROVIDERS }), []);
 
   // Group models by provider with priority order
@@ -140,9 +149,10 @@ export default function ModelSelectModal({
     const activeConnectionIds = filteredActiveProviders.map(p => p.provider);
 
     // No-auth providers: filter by kindFilter as well
+    const enabledNoAuthIds = NO_AUTH_PROVIDER_IDS.filter((id) => disabledProviders[id] !== true);
     const noAuthIds = kindFilter
-      ? NO_AUTH_PROVIDER_IDS.filter((id) => (AI_PROVIDERS[id]?.serviceKinds || ["llm"]).includes(kindFilter))
-      : NO_AUTH_PROVIDER_IDS;
+      ? enabledNoAuthIds.filter((id) => (AI_PROVIDERS[id]?.serviceKinds || ["llm"]).includes(kindFilter))
+      : enabledNoAuthIds;
 
     // Only show connected providers (including both standard and custom)
     const providerIdsToShow = new Set([
@@ -349,7 +359,7 @@ export default function ModelSelectModal({
     });
 
     return groups;
-  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, activeProviders]);
+  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, disabledProviders, kindFilter, activeProviders]);
 
   // Filter combos by search query (and hide combos when kindFilter is set — combos are LLM-only by design)
   const filteredCombos = useMemo(() => {

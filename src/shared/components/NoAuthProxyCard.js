@@ -5,6 +5,7 @@ import PropTypes from "prop-types";
 import Card from "./Card";
 import Select from "./Select";
 import Badge from "./Badge";
+import Toggle from "./Toggle";
 
 const NONE_PROXY_POOL_VALUE = "__none__";
 const STRATEGIES = [
@@ -17,6 +18,7 @@ export default function NoAuthProxyCard({ providerId }) {
   const [proxyPools, setProxyPools] = useState([]);
   const [proxyPoolId, setProxyPoolId] = useState(NONE_PROXY_POOL_VALUE);
   const [rotateStrategy, setRotateStrategy] = useState("none");
+  const [enabled, setEnabled] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
 
@@ -31,9 +33,36 @@ export default function NoAuthProxyCard({ providerId }) {
       const override = (settingsData.providerStrategies || {})[providerId] || {};
       setProxyPoolId(override.proxyPoolId || NONE_PROXY_POOL_VALUE);
       setRotateStrategy(override.rotateStrategy || "none");
+      setEnabled(settingsData.disabledProviders?.[providerId] !== true);
     }).catch(() => {});
     return () => { cancelled = true; };
   }, [providerId]);
+
+  const handleEnabledChange = async (newEnabled) => {
+    const previous = enabled;
+    setEnabled(newEnabled);
+    setSaving(true);
+    try {
+      const res = await fetch("/api/settings", { cache: "no-store" });
+      const data = res.ok ? await res.json() : {};
+      const updated = { ...(data.disabledProviders || {}) };
+      if (newEnabled) delete updated[providerId];
+      else updated[providerId] = true;
+      const saveRes = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ disabledProviders: updated }),
+      });
+      if (!saveRes.ok) throw new Error("Failed to update provider");
+      setSavedFlash(true);
+      setTimeout(() => setSavedFlash(false), 1500);
+    } catch (e) {
+      setEnabled(previous);
+      console.log("Save provider status error:", e);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const save = useCallback(async (poolId, strategy) => {
     setSaving(true);
@@ -84,9 +113,10 @@ export default function NoAuthProxyCard({ providerId }) {
         </div>
         <div className="flex-1">
           <p className="text-sm font-medium">No authentication required</p>
-          <p className="text-xs text-text-muted">This provider is ready to use. Optionally route requests through a proxy pool to bypass IP-based limits.</p>
+          <p className="text-xs text-text-muted">{enabled ? "This provider is ready to use." : "This provider is disabled."} Optionally route requests through a proxy pool to bypass IP-based limits.</p>
         </div>
         {savedFlash && <Badge variant="success" size="sm">Saved</Badge>}
+        <Toggle checked={enabled} onChange={handleEnabledChange} disabled={saving} />
       </div>
 
       <Select
