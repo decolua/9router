@@ -34,4 +34,10 @@ describe("Kiro social OAuth proxy UI wiring", () => {
     expect(modalSource).toContain("flowGenerationRef");
     expect(modalSource).toContain("generation !== flowGenerationRef.current");
   });
+
+  it("rejects missing or mismatched callback state before exchange", () => {
+    expect(modalSource).toContain("!state || state !== authData.state");
+    expect(modalSource.indexOf("!state || state !== authData.state"))
+      .toBeLessThan(modalSource.indexOf('fetch("/api/oauth/kiro/social-exchange"'));
+  });
 });

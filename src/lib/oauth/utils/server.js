@@ -163,6 +163,13 @@ function getLiveSession(sessions, state) {
   return state ? sessions.get(state) || null : null;
 }
 
+function claimLiveSession(sessions, state) {
+  const session = getLiveSession(sessions, state);
+  if (!session || session.status !== "pending") return null;
+  session.status = "exchanging";
+  return session;
+}
+
 function publicSessionStatus(session) {
   if (!session) return null;
   return {
@@ -175,7 +182,35 @@ function publicSessionStatus(session) {
 
 function hasPendingSessions(sessions) {
   pruneExpiredSessions(sessions);
-  return [...sessions.values()].some((session) => session.status === "pending");
+  return [...sessions.values()].some((session) => ["pending", "exchanging"].includes(session.status));
+}
+
+function hasLiveSessions(sessions) {
+  pruneExpiredSessions(sessions);
+  return sessions.size > 0;
+}
+
+function latestPendingSessionDeadline(sessions) {
+  pruneExpiredSessions(sessions);
+  let deadline = 0;
+  for (const session of sessions.values()) {
+    if (["pending", "exchanging"].includes(session.status)) {
+      deadline = Math.max(deadline, session.createdAt + OAUTH_SESSION_TTL_MS);
+    }
+  }
+  return deadline;
+}
+
+function scheduleCodexProxyTimeout() {
+  if (codexProxyTimeout) clearTimeout(codexProxyTimeout);
+  codexProxyTimeout = null;
+  if (!codexProxyServer) return;
+
+  const server = codexProxyServer;
+  const deadline = latestPendingSessionDeadline(pendingExchanges) || Date.now() + CODEX_PROXY_TIMEOUT_MS;
+  codexProxyTimeout = setTimeout(() => {
+    if (codexProxyServer === server) stopCodexProxy({ force: true });
+  }, Math.max(0, deadline - Date.now()));
 }
 
 /**
@@ -193,6 +228,7 @@ export function registerCodexSession({ state, codeVerifier, redirectUri, proxyPo
     status: "pending",
     createdAt: Date.now(),
   });
+  scheduleCodexProxyTimeout();
   return true;
 }
 
@@ -208,10 +244,12 @@ export function getCodexSessionStatus(state) {
  */
 export function clearCodexSession(state) {
   pendingExchanges.delete(state);
+  scheduleCodexProxyTimeout();
 }
 
 export function clearCodexSessions() {
   pendingExchanges.clear();
+  scheduleCodexProxyTimeout();
 }
 
 function withProxyPoolData(providerSpecificData, proxyPoolId) {
@@ -267,7 +305,7 @@ export async function startCodexProxy(appPort) {
       const code = url.searchParams.get("code");
       const state = url.searchParams.get("state");
       const errorParam = url.searchParams.get("error");
-      const session = getLiveSession(pendingExchanges, state);
+      const session = claimLiveSession(pendingExchanges, state);
 
       // Mode A: server-side exchange (session registered)
       if (session) {
@@ -318,6 +356,12 @@ export async function startCodexProxy(appPort) {
         return;
       }
 
+      if (hasLiveSessions(pendingExchanges)) {
+        res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end("Invalid or already used OAuth state");
+        return;
+      }
+
       // Mode B: legacy channel fallback — 302 redirect to app /callback
       const redirectUrl = `http://localhost:${codexProxyAppPort}/callback${url.search}`;
       res.writeHead(302, { Location: redirectUrl });
@@ -327,7 +371,7 @@ export async function startCodexProxy(appPort) {
 
     server.listen(CODEX_PORT, "127.0.0.1", () => {
       codexProxyServer = server;
-      codexProxyTimeout = setTimeout(() => stopCodexProxy({ force: true }), CODEX_PROXY_TIMEOUT_MS);
+      scheduleCodexProxyTimeout();
       resolve({ success: true });
     });
 
@@ -352,7 +396,10 @@ export async function startCodexProxy(appPort) {
  */
 export async function stopCodexProxy({ force = false } = {}) {
   pruneExpiredSessions(pendingExchanges);
-  if (!force && hasPendingSessions(pendingExchanges)) return Promise.resolve();
+  if (!force && hasPendingSessions(pendingExchanges)) {
+    scheduleCodexProxyTimeout();
+    return Promise.resolve();
+  }
   if (codexProxyTimeout) {
     clearTimeout(codexProxyTimeout);
     codexProxyTimeout = null;
@@ -389,6 +436,18 @@ const XAI_PROXY_TIMEOUT_MS = 300000; // 5 minutes
 const XAI_PROXY_PORT = 56121;
 const xaiPendingExchanges = new Map();
 
+function scheduleXaiProxyTimeout() {
+  if (xaiProxyTimeout) clearTimeout(xaiProxyTimeout);
+  xaiProxyTimeout = null;
+  if (!xaiProxyServer) return;
+
+  const server = xaiProxyServer;
+  const deadline = latestPendingSessionDeadline(xaiPendingExchanges) || Date.now() + XAI_PROXY_TIMEOUT_MS;
+  xaiProxyTimeout = setTimeout(() => {
+    if (xaiProxyServer === server) stopXaiProxy({ force: true });
+  }, Math.max(0, deadline - Date.now()));
+}
+
 export function registerXaiSession({ state, codeVerifier, redirectUri, proxyPoolId, proxyOptions }) {
   if (!state || !codeVerifier || !redirectUri) return false;
   pruneExpiredSessions(xaiPendingExchanges);
@@ -400,6 +459,7 @@ export function registerXaiSession({ state, codeVerifier, redirectUri, proxyPool
     status: "pending",
     createdAt: Date.now(),
   });
+  scheduleXaiProxyTimeout();
   return true;
 }
 
@@ -412,12 +472,19 @@ export function getXaiSessionContext(state) {
   return session ? { ...session } : null;
 }
 
+export function claimXaiSession(state) {
+  const session = claimLiveSession(xaiPendingExchanges, state);
+  return session ? { ...session } : null;
+}
+
 export function clearXaiSession(state) {
   xaiPendingExchanges.delete(state);
+  scheduleXaiProxyTimeout();
 }
 
 export function clearXaiSessions() {
   xaiPendingExchanges.clear();
+  scheduleXaiProxyTimeout();
 }
 
 function renderXaiResultPage(success, message) {
@@ -447,7 +514,7 @@ export async function startXaiProxy(appPort) {
       const code = url.searchParams.get("code");
       const state = url.searchParams.get("state");
       const errorParam = url.searchParams.get("error");
-      const session = getLiveSession(xaiPendingExchanges, state);
+      const session = claimLiveSession(xaiPendingExchanges, state);
 
       // Mode A: server-side exchange
       if (session) {
@@ -497,6 +564,12 @@ export async function startXaiProxy(appPort) {
         return;
       }
 
+      if (hasLiveSessions(xaiPendingExchanges)) {
+        res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end("Invalid or already used OAuth state");
+        return;
+      }
+
       // Mode B: legacy fallback redirect
       const redirectUrl = `http://localhost:${xaiProxyAppPort}/callback${url.search}`;
       res.writeHead(302, { Location: redirectUrl });
@@ -506,7 +579,7 @@ export async function startXaiProxy(appPort) {
 
     server.listen(XAI_PROXY_PORT, "127.0.0.1", () => {
       xaiProxyServer = server;
-      xaiProxyTimeout = setTimeout(() => stopXaiProxy({ force: true }), XAI_PROXY_TIMEOUT_MS);
+      scheduleXaiProxyTimeout();
       resolve({ success: true });
     });
 
@@ -528,7 +601,10 @@ export async function startXaiProxy(appPort) {
 
 export async function stopXaiProxy({ force = false } = {}) {
   pruneExpiredSessions(xaiPendingExchanges);
-  if (!force && hasPendingSessions(xaiPendingExchanges)) return Promise.resolve();
+  if (!force && hasPendingSessions(xaiPendingExchanges)) {
+    scheduleXaiProxyTimeout();
+    return Promise.resolve();
+  }
   if (xaiProxyTimeout) {
     clearTimeout(xaiProxyTimeout);
     xaiProxyTimeout = null;

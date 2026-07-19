@@ -132,6 +132,9 @@ describe("OAuth modal flow coordination", () => {
 
   it("keeps an old sleeping device poll cancelled after pool restart", async () => {
     vi.useFakeTimers();
+    vi.spyOn(globalThis.crypto, "randomUUID")
+      .mockReturnValueOnce("old-flow")
+      .mockReturnValueOnce("new-flow");
     globalThis.fetch = vi.fn(async (url, options) => {
       const target = String(url);
       if (target.includes("/device-code")) {
@@ -146,6 +149,9 @@ describe("OAuth modal flow coordination", () => {
       if (target.includes("/poll")) {
         return response({ success: false, error: "authorization_pending" });
       }
+      if (target.includes("/cancel-poll")) {
+        return response({ success: true });
+      }
       throw new Error(`Unexpected request: ${target} ${options?.body || ""}`);
     });
     const tree = renderModal({ provider: "github" });
@@ -159,9 +165,49 @@ describe("OAuth modal flow coordination", () => {
     await vi.advanceTimersByTimeAsync(1_000);
 
     const polledDevices = globalThis.fetch.mock.calls
-      .filter(([url]) => String(url).includes("/poll"))
+      .filter(([url]) => String(url).endsWith("/poll"))
       .map(([, options]) => JSON.parse(options.body).deviceCode);
+    const cancelledFlows = globalThis.fetch.mock.calls
+      .filter(([url]) => String(url).includes("/cancel-poll"))
+      .map(([, options]) => JSON.parse(options.body).flowId);
+    const polledFlows = globalThis.fetch.mock.calls
+      .filter(([url]) => String(url).endsWith("/poll"))
+      .map(([, options]) => JSON.parse(options.body).flowId);
     expect(polledDevices).toEqual(["new-device"]);
+    expect(cancelledFlows).toEqual(["old-flow"]);
+    expect(polledFlows).toEqual(["new-flow"]);
+  });
+
+  it("does not start a new pool flow when device cancellation fails", async () => {
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue("old-flow");
+    globalThis.fetch = vi.fn(async (url) => {
+      const target = String(url);
+      if (target.includes("/device-code")) {
+        return response({
+          device_code: "old-device",
+          expires_in: 60,
+          interval: 30,
+          verification_uri: "https://auth.example/device",
+        });
+      }
+      if (target.includes("/cancel-poll")) {
+        return response({ error: "Cancellation failed" }, false);
+      }
+      throw new Error(`Unexpected request: ${target}`);
+    });
+    const tree = renderModal({ provider: "github" });
+    const openEffect = harness.effects[1];
+    const select = findElement(tree, (node) => node.type?.name === "OAuthProxyPoolSelector");
+
+    openEffect();
+    await flushPromises();
+    await select.props.onChange({ target: { value: "pool-1" } });
+    await flushPromises();
+
+    const deviceCodeRequests = globalThis.fetch.mock.calls
+      .map(([url]) => String(url))
+      .filter((url) => url.includes("/device-code"));
+    expect(deviceCodeRequests).toHaveLength(1);
   });
 
   it("serializes rapid pool changes and starts only latest flow", async () => {

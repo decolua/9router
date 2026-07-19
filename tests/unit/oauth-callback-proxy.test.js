@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   createProviderConnection: vi.fn(),
   ensureOutboundProxyInitialized: vi.fn(),
   exchangeTokens: vi.fn(),
+  pollForToken: vi.fn(),
   resolveConnectionProxyConfig: vi.fn(),
 }));
 
@@ -84,7 +85,7 @@ vi.mock("../../src/lib/oauth/providers.js", () => ({
   exchangeTokens: mocks.exchangeTokens,
   generateAuthData: vi.fn(),
   getProvider: vi.fn(),
-  pollForToken: vi.fn(),
+  pollForToken: mocks.pollForToken,
   requestDeviceCode: vi.fn(),
 }));
 vi.mock("@/models", () => ({
@@ -336,6 +337,101 @@ describe("OAuth fixed-port callback proxy context", () => {
   });
 
   it.each([
+    ["codex", startCodexProxy, registerCodexSession],
+    ["xai", startXaiProxy, registerXaiSession],
+  ])("extends reused %s callback server lifetime for a later session", async (_provider, start, register) => {
+    vi.useFakeTimers();
+    await start(20127);
+    register({ state: "first", codeVerifier: "first-secret", redirectUri: "http://callback" });
+    const server = httpMocks.servers.at(-1);
+
+    await vi.advanceTimersByTimeAsync(299_000);
+    register({ state: "second", codeVerifier: "second-secret", redirectUri: "http://callback" });
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    expect(server.close).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(298_001);
+    expect(server.close).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["codex", startCodexProxy, registerCodexSession],
+    ["xai", startXaiProxy, registerXaiSession],
+  ])("claims %s callback state before token exchange", async (_provider, start, register) => {
+    const releaseExchanges = [];
+    mocks.exchangeTokens.mockImplementation(() => new Promise((resolve) => {
+      releaseExchanges.push(() => resolve({
+        accessToken: "access-token",
+        refreshToken: "refresh-token",
+        email: "user@example.com",
+        providerSpecificData: { authMethod: "oauth" },
+      }));
+    }));
+    await start(20127);
+    register({ state: "first", codeVerifier: "secret", redirectUri: "http://callback" });
+    const server = httpMocks.servers.at(-1);
+
+    const first = server.request("/callback?code=first-code&state=first");
+    await vi.waitFor(() => expect(mocks.exchangeTokens).toHaveBeenCalledTimes(1));
+    const duplicate = server.request("/callback?code=second-code&state=first");
+    await new Promise((resolve) => setImmediate(resolve));
+    const exchangeCountBeforeRelease = mocks.exchangeTokens.mock.calls.length;
+    releaseExchanges.forEach((release) => release());
+    await Promise.all([first, duplicate]);
+
+    expect(exchangeCountBeforeRelease).toBe(1);
+    expect(mocks.createProviderConnection).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["codex", startCodexProxy, registerCodexSession],
+    ["xai", startXaiProxy, registerXaiSession],
+  ])("rejects unknown %s callback state while server-side session exists", async (_provider, start, register) => {
+    await start(20127);
+    register({ state: "first", codeVerifier: "secret", redirectUri: "http://callback" });
+
+    const response = await httpMocks.servers.at(-1).request("/callback?code=code&state=unknown");
+
+    expect(response.status).toBe(400);
+    expect(response.headers.Location).toBeUndefined();
+    expect(mocks.exchangeTokens).not.toHaveBeenCalled();
+  });
+
+  it("does not persist a device result after its flow is cancelled", async () => {
+    let releasePoll;
+    mocks.pollForToken.mockImplementation(() => new Promise((resolve) => {
+      releasePoll = resolve;
+    }));
+    const flowId = "cancelled-flow";
+    const pollResponse = POST(new Request("http://localhost/api/oauth/qwen/poll", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ deviceCode: "device-code", codeVerifier: "verifier", flowId }),
+    }), {
+      params: Promise.resolve({ provider: "qwen", action: "poll" }),
+    });
+    await vi.waitFor(() => expect(mocks.pollForToken).toHaveBeenCalledTimes(1));
+
+    const cancelResponse = await POST(new Request("http://localhost/api/oauth/qwen/cancel-poll", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ flowId }),
+    }), {
+      params: Promise.resolve({ provider: "qwen", action: "cancel-poll" }),
+    });
+    releasePoll({
+      success: true,
+      tokens: { accessToken: "stale-token", expiresIn: 3600 },
+    });
+    const result = await pollResponse;
+
+    expect(cancelResponse.status).toBe(200);
+    expect(await result.json()).toMatchObject({ success: false, cancelled: true });
+    expect(mocks.createProviderConnection).not.toHaveBeenCalled();
+  });
+
+  it.each([
     ["codex", startCodexProxy],
     ["xai", startXaiProxy],
   ])("updates the %s legacy fallback app port while reusing its server", async (_provider, start) => {
@@ -396,6 +492,43 @@ describe("OAuth fixed-port callback proxy context", () => {
       vercelRelayUrl: "",
       strictProxy: true,
     });
+  });
+
+  it("claims xAI manual-code state before token exchange", async () => {
+    await startProxy("xai", {
+      appPort: 20127,
+      state: "xai-state",
+      codeVerifier: "secret-verifier",
+      redirectUri: "http://127.0.0.1:56121/callback",
+      proxyPoolId: "pool-1",
+    });
+    const releaseExchanges = [];
+    mocks.exchangeTokens.mockImplementation(() => new Promise((resolve) => {
+      releaseExchanges.push(() => resolve({
+        accessToken: "access-token",
+        refreshToken: "refresh-token",
+        email: "user@example.com",
+        providerSpecificData: { authMethod: "oauth" },
+      }));
+    }));
+    const manualRequest = (code) => POST(new Request("http://localhost/api/oauth/xai/manual-code", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, state: "xai-state", proxyPoolId: "pool-1" }),
+    }), {
+      params: Promise.resolve({ provider: "xai", action: "manual-code" }),
+    });
+
+    const first = manualRequest("first-code");
+    await vi.waitFor(() => expect(mocks.exchangeTokens).toHaveBeenCalledTimes(1));
+    const duplicate = manualRequest("second-code");
+    await new Promise((resolve) => setImmediate(resolve));
+    const exchangeCountBeforeRelease = mocks.exchangeTokens.mock.calls.length;
+    releaseExchanges.forEach((release) => release());
+    await Promise.all([first, duplicate]);
+
+    expect(exchangeCountBeforeRelease).toBe(1);
+    expect(mocks.createProviderConnection).toHaveBeenCalledTimes(1);
   });
 
   it("expires an unconsumed PKCE session after the proxy lifetime", () => {

@@ -20,11 +20,44 @@ import {
   startXaiProxy,
   stopXaiProxy,
   registerXaiSession,
-  getXaiSessionContext,
+  claimXaiSession,
   getXaiSessionStatus,
   clearXaiSession,
   clearXaiSessions,
 } from "@/lib/oauth/utils/server";
+
+const DEVICE_POLL_CANCELLATION_TTL_MS = 15 * 60 * 1000;
+const cancelledDevicePolls = new Map();
+
+function normalizeFlowId(value) {
+  if (typeof value !== "string") return "";
+  const flowId = value.trim();
+  return flowId && flowId.length <= 128 ? flowId : "";
+}
+
+function pruneCancelledDevicePolls(now = Date.now()) {
+  for (const [key, expiresAt] of cancelledDevicePolls) {
+    if (expiresAt <= now) cancelledDevicePolls.delete(key);
+  }
+}
+
+function devicePollKey(provider, flowId) {
+  return `${provider}:${flowId}`;
+}
+
+function isDevicePollCancelled(provider, flowId) {
+  if (!flowId) return false;
+  pruneCancelledDevicePolls();
+  return cancelledDevicePolls.has(devicePollKey(provider, flowId));
+}
+
+function cancelledPollResponse() {
+  return NextResponse.json({
+    success: false,
+    error: "poll_cancelled",
+    cancelled: true,
+  }, { status: 409 });
+}
 
 function withProxyPoolData(providerSpecificData, proxyPoolId) {
   return {
@@ -216,6 +249,19 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: "Invalid or empty request body" }, { status: 400 });
     }
 
+    if (action === "cancel-poll") {
+      const flowId = normalizeFlowId(body.flowId);
+      if (!flowId) {
+        return NextResponse.json({ error: "Missing or invalid flow ID" }, { status: 400 });
+      }
+      pruneCancelledDevicePolls();
+      cancelledDevicePolls.set(
+        devicePollKey(provider, flowId),
+        Date.now() + DEVICE_POLL_CANCELLATION_TTL_MS,
+      );
+      return NextResponse.json({ success: true });
+    }
+
     if (action === "start-proxy") {
       if (!["codex", "xai"].includes(provider)) {
         return NextResponse.json({ error: "Proxy only supported for codex/xai" }, { status: 400 });
@@ -332,10 +378,15 @@ export async function POST(request, { params }) {
 
     if (action === "poll") {
       const { deviceCode, codeVerifier, extraData, proxyPoolId } = body;
+      const flowId = body.flowId === undefined ? "" : normalizeFlowId(body.flowId);
 
       if (!deviceCode) {
         return NextResponse.json({ error: "Missing device code" }, { status: 400 });
       }
+      if (body.flowId !== undefined && !flowId) {
+        return NextResponse.json({ error: "Invalid flow ID" }, { status: 400 });
+      }
+      if (isDevicePollCancelled(provider, flowId)) return cancelledPollResponse();
 
       // Providers that don't use PKCE for device code
       const noPkceProviders = ["github", "kimi", "kimi-coding", "kilocode", "codebuddy-cn", "grok-cli"];
@@ -362,6 +413,8 @@ export async function POST(request, { params }) {
         }
         result = await pollForToken(provider, deviceCode, codeVerifier, null, proxyOptions);
       }
+
+      if (isDevicePollCancelled(provider, flowId)) return cancelledPollResponse();
 
       if (result.success) {
         // Save to database (legacy kimi-coding OAuth → dual-auth kimi)
@@ -403,7 +456,7 @@ export async function POST(request, { params }) {
       }
       const { code, state, proxyPoolId } = body;
       const sessionState = String(state || "").trim();
-      const session = getXaiSessionContext(sessionState);
+      const session = claimXaiSession(sessionState);
       const suppliedProxyPoolId = proxyPoolId && proxyPoolId !== "__none__" ? String(proxyPoolId) : null;
       const sessionProxyPoolId = session?.proxyPoolId && session.proxyPoolId !== "__none__"
         ? String(session.proxyPoolId)
