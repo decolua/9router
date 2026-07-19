@@ -200,6 +200,9 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   delete result.include;
   delete result.prompt_cache_key;
   delete result.store;
+  if (typeof result.reasoning?.effort === "string") {
+    result.reasoning_effort = result.reasoning.effort;
+  }
   delete result.reasoning;
   delete result.client_metadata;
 

@@ -316,6 +316,83 @@ describe("openaiToKiroRequest", () => {
       });
     });
 
+    it.each([
+      ["high", "gpt-5.6-sol"],
+      ["medium", "kiro/gpt-5.6-terra"],
+      ["low", "gpt-5.6-luna"],
+    ])("maps GPT-5.6 reasoning.effort %s without legacy prompt tags", (effort, model) => {
+      const body = {
+        reasoning: { effort },
+        messages: [{ role: "user", content: "Use the requested effort" }]
+      };
+
+      const result = openaiToKiroRequest(model, body, true, {});
+
+      expect(result.additionalModelRequestFields).toEqual({
+        reasoning: { effort },
+      });
+      expect(systemPromptOf(result)).not.toContain("<thinking_mode>");
+      expect(systemPromptOf(result)).not.toContain("<max_thinking_length>");
+      expect(contentOf(result)).not.toContain("<thinking_mode>");
+      expect(contentOf(result)).not.toContain("<max_thinking_length>");
+    });
+
+    it.each([
+      ["xhigh", "gpt-5.6-terra", "xhigh"],
+      ["max", "gpt-5.6-sol", "xhigh"],
+    ])("preserves GPT-5.6 effort %s as supported wire effort %s", (effort, model, wireEffort) => {
+      const body = {
+        reasoning: { effort },
+        messages: [{ role: "user", content: "Use extended effort" }]
+      };
+
+      const result = openaiToKiroRequest(model, body, true, {});
+
+      expect(result.additionalModelRequestFields).toEqual({
+        reasoning: { effort: wireEffort },
+      });
+      expect(systemPromptOf(result)).not.toContain("<thinking_mode>");
+      expect(systemPromptOf(result)).not.toContain("<max_thinking_length>");
+    });
+
+    it("omits GPT-5.6 effort fields and legacy prompt tags when effort is absent", () => {
+      const body = {
+        messages: [{ role: "user", content: "No explicit reasoning effort" }]
+      };
+
+      const result = openaiToKiroRequest("gpt-5.6-sol", body, true, {});
+
+      expect(result.additionalModelRequestFields).toBeUndefined();
+      expect(systemPromptOf(result)).not.toContain("<thinking_mode>");
+      expect(systemPromptOf(result)).not.toContain("<max_thinking_length>");
+    });
+
+    it("does not forward unsupported GPT-5.6 effort values", () => {
+      const body = {
+        reasoning: { effort: "ultra" },
+        messages: [{ role: "user", content: "Unknown effort" }]
+      };
+
+      const result = openaiToKiroRequest("gpt-5.6-luna", body, true, {});
+
+      expect(result.additionalModelRequestFields).toBeUndefined();
+      expect(systemPromptOf(result)).not.toContain("<thinking_mode>");
+      expect(systemPromptOf(result)).not.toContain("<max_thinking_length>");
+    });
+
+    it("keeps the thinking-alias fallback when GPT effort is blank", () => {
+      const body = {
+        reasoning: { effort: "" },
+        messages: [{ role: "user", content: "Use the thinking alias" }]
+      };
+
+      const result = openaiToKiroRequest("gpt-5.6-sol-thinking", body, true, {});
+
+      expect(result.additionalModelRequestFields).toBeUndefined();
+      expect(systemPromptOf(result)).toContain("<thinking_mode>enabled</thinking_mode>");
+      expect(systemPromptOf(result)).toContain("<max_thinking_length>");
+    });
+
     it("does not send additionalModelRequestFields for legacy Kiro model ids", () => {
       const body = {
         reasoning_effort: "high",
