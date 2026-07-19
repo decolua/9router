@@ -12,6 +12,7 @@ vi.mock("react", () => ({
     harness.effects.push(effect);
   },
   useRef: (initialValue) => ({ current: initialValue }),
+  useId: () => "oauth-modal-test",
   useState: (initialValue) => {
     const index = harness.stateIndex++;
     const value = index < harness.stateValues.length

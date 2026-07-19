@@ -101,7 +101,9 @@ vi.mock("@/lib/network/connectionProxy", () => ({
 import { GET, POST } from "../../src/app/api/oauth/[provider]/[action]/route.js";
 import {
   clearCodexSession,
+  clearCodexSessions,
   clearXaiSession,
+  clearXaiSessions,
   getCodexSessionStatus,
   getXaiSessionStatus,
   registerCodexSession,
@@ -307,16 +309,40 @@ describe("OAuth fixed-port callback proxy context", () => {
   });
 
   it.each([
-    ["codex", registerCodexSession, getCodexSessionStatus],
-    ["xai", registerXaiSession, getXaiSessionStatus],
-  ])("clears all %s sessions when stop-proxy has no state", async (provider, register, getStatus) => {
+    ["codex", startCodexProxy, registerCodexSession, getCodexSessionStatus],
+    ["xai", startXaiProxy, registerXaiSession, getXaiSessionStatus],
+  ])("preserves active %s session when stop-proxy omits state", async (provider, start, register, getStatus) => {
+    await start(20127);
     register({ state: "orphan", codeVerifier: "secret", redirectUri: "http://callback" });
+    const server = httpMocks.servers.at(-1);
 
     await GET(new Request(`http://localhost/api/oauth/${provider}/stop-proxy`), {
       params: Promise.resolve({ provider, action: "stop-proxy" }),
     });
 
-    expect(getStatus("orphan")).toBeNull();
+    expect(getStatus("orphan")).toEqual({ status: "pending" });
+    expect(server.close).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["codex", registerCodexSession, getCodexSessionStatus, clearCodexSessions],
+    ["xai", registerXaiSession, getXaiSessionStatus, clearXaiSessions],
+  ])("bounds %s sessions and retains newer active state", (_provider, register, getStatus, clearSessions) => {
+    try {
+      for (let index = 0; index <= 128; index += 1) {
+        register({
+          state: `bounded-session-${index}`,
+          codeVerifier: `verifier-${index}`,
+          redirectUri: "http://callback",
+        });
+      }
+
+      expect(getStatus("bounded-session-0")).toBeNull();
+      expect(getStatus("bounded-session-1")).toEqual({ status: "pending" });
+      expect(getStatus("bounded-session-128")).toEqual({ status: "pending" });
+    } finally {
+      clearSessions();
+    }
   });
 
   it.each([
@@ -429,6 +455,120 @@ describe("OAuth fixed-port callback proxy context", () => {
     expect(cancelResponse.status).toBe(200);
     expect(await result.json()).toMatchObject({ success: false, cancelled: true });
     expect(mocks.createProviderConnection).not.toHaveBeenCalled();
+  });
+
+  it("bounds cancellation tombstones and retains newer cancellation", async () => {
+    mocks.pollForToken.mockResolvedValue({
+      success: false,
+      error: "authorization_pending",
+      pending: true,
+    });
+    for (let index = 0; index <= 256; index += 1) {
+      const response = await POST(new Request("http://localhost/api/oauth/qwen/cancel-poll", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ flowId: `bounded-flow-${index}` }),
+      }), {
+        params: Promise.resolve({ provider: "qwen", action: "cancel-poll" }),
+      });
+      expect(response.status).toBe(200);
+    }
+
+    const poll = (flowId) => POST(new Request("http://localhost/api/oauth/qwen/poll", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ deviceCode: "device-code", codeVerifier: "verifier", flowId }),
+    }), {
+      params: Promise.resolve({ provider: "qwen", action: "poll" }),
+    });
+    const oldest = await poll("bounded-flow-0");
+    const newest = await poll("bounded-flow-256");
+
+    expect(oldest.status).toBe(200);
+    expect(newest.status).toBe(409);
+    expect(mocks.pollForToken).toHaveBeenCalledTimes(1);
+  });
+
+  it("expires cancellation tombstones after their TTL", async () => {
+    const now = 1_800_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    await POST(new Request("http://localhost/api/oauth/qwen/cancel-poll", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ flowId: "expired-cancellation" }),
+    }), {
+      params: Promise.resolve({ provider: "qwen", action: "cancel-poll" }),
+    });
+    mocks.pollForToken.mockResolvedValue({
+      success: false,
+      error: "authorization_pending",
+      pending: true,
+    });
+    vi.mocked(Date.now).mockReturnValue(now + 15 * 60 * 1000 + 1);
+
+    const response = await POST(new Request("http://localhost/api/oauth/qwen/poll", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        deviceCode: "device-code",
+        codeVerifier: "verifier",
+        flowId: "expired-cancellation",
+      }),
+    }), {
+      params: Promise.resolve({ provider: "qwen", action: "poll" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(mocks.pollForToken).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["codex", "/auth/callback"],
+    ["xai", "/callback"],
+  ])("sanitizes public %s callback errors", async (provider, callbackPath) => {
+    const state = `public-error-${provider}`;
+    const secrets = [
+      "relay-user",
+      "relay-password",
+      "SECRET-AUTH-CODE",
+      "SECRET-ACCESS-TOKEN",
+      "SECRET-REFRESH-TOKEN",
+      "SECRET-PKCE-VERIFIER",
+      "SECRET-OAUTH-STATE",
+      "provider-body-secret",
+    ];
+    mocks.exchangeTokens.mockRejectedValue(new Error(
+      "exchange failed at https://relay-user:relay-password@relay.test/callback" +
+      "?code=SECRET-AUTH-CODE&access_token=SECRET-ACCESS-TOKEN" +
+      "&refresh_token=SECRET-REFRESH-TOKEN#SECRET-OAUTH-STATE " +
+      "code_verifier=SECRET-PKCE-VERIFIER body=provider-body-secret",
+    ));
+    await startProxy(provider, {
+      appPort: 20127,
+      state,
+      codeVerifier: "server-verifier",
+      redirectUri: provider === "codex"
+        ? "http://localhost:1455/auth/callback"
+        : "http://127.0.0.1:56121/callback",
+    });
+
+    const callback = await httpMocks.servers.at(-1).request(
+      `${callbackPath}?code=callback-code&state=${state}`,
+    );
+    const statusResponse = await GET(new Request(
+      `http://localhost/api/oauth/${provider}/poll-status?state=${state}`,
+    ), {
+      params: Promise.resolve({ provider, action: "poll-status" }),
+    });
+    const status = await statusResponse.json();
+
+    expect(status.status).toBe("error");
+    expect(status.error).toMatch(/restart sign-in/i);
+    expect(status.error.length).toBeLessThanOrEqual(240);
+    for (const secret of secrets) {
+      expect(callback.body).not.toContain(secret);
+      expect(status.error).not.toContain(secret);
+    }
   });
 
   it.each([

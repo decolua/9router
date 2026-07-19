@@ -1,3 +1,4 @@
+import { useId } from "react";
 import PropTypes from "prop-types";
 
 export default function OAuthProxyPoolSelector({
@@ -7,15 +8,17 @@ export default function OAuthProxyPoolSelector({
   proxyPoolsReady = true,
   visible = true,
 }) {
+  const selectId = `oauth-proxy-pool-${useId().replace(/:/g, "")}`;
+
   return (
     <>
       {visible && proxyPools.length > 0 && (
         <div className="flex flex-col gap-1.5 p-3 border border-border rounded-lg bg-sidebar/30">
-          <label htmlFor="oauth-proxy-pool" className="text-xs font-medium text-text-muted uppercase tracking-wider">
+          <label htmlFor={selectId} className="text-xs font-medium text-text-muted uppercase tracking-wider">
             Routing Proxy Pool
           </label>
           <select
-            id="oauth-proxy-pool"
+            id={selectId}
             value={value}
             onChange={onChange}
             className="w-full bg-input text-sm border border-border rounded-lg px-3 py-2 outline-none focus:border-primary"

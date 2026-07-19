@@ -126,6 +126,9 @@ const CODEX_PROXY_TIMEOUT_MS = 300000; // 5 minutes
 const CODEX_PORT = CODEX_CONFIG.fixedPort;
 const PROXY_CLOSE_GRACE_MS = 30000;
 const OAUTH_SESSION_TTL_MS = 300000;
+const OAUTH_SESSION_MAX_ENTRIES = 128;
+const PUBLIC_OAUTH_ERROR_MAX_LENGTH = 240;
+const GENERIC_PUBLIC_OAUTH_ERROR = "OAuth token exchange failed. Restart sign-in and try again.";
 
 function closeProxyServer(server) {
   return new Promise((resolve) => {
@@ -158,6 +161,34 @@ function pruneExpiredSessions(sessions, now = Date.now()) {
   }
 }
 
+function setBoundedSession(sessions, state, session) {
+  pruneExpiredSessions(sessions);
+  sessions.delete(state);
+  while (sessions.size >= OAUTH_SESSION_MAX_ENTRIES) {
+    sessions.delete(sessions.keys().next().value);
+  }
+  sessions.set(state, session);
+}
+
+function sanitizeOAuthPublicError(error) {
+  const raw = String(error?.message || error || "").trim();
+  let message = GENERIC_PUBLIC_OAUTH_ERROR;
+
+  if (/access[_ -]?denied|authorization (?:was )?denied/i.test(raw)) {
+    message = "Authorization was denied. Restart sign-in and try again.";
+  } else if (/no authorization code|missing authorization code/i.test(raw)) {
+    message = "No authorization code was received. Restart sign-in and try again.";
+  } else if (/proxy pool .* unavailable|selected proxy .* unavailable/i.test(raw)) {
+    message = "Selected proxy is unavailable. Choose another route and try again.";
+  } else if (/invalid_grant|expired_token|authorization .* expired|already (?:used|consumed)/i.test(raw)) {
+    message = "Authorization expired or was already used. Restart sign-in and try again.";
+  } else if (/authentication timeout|authorization timeout/i.test(raw)) {
+    message = "Authorization timed out. Restart sign-in and try again.";
+  }
+
+  return message.slice(0, PUBLIC_OAUTH_ERROR_MAX_LENGTH);
+}
+
 function getLiveSession(sessions, state) {
   pruneExpiredSessions(sessions);
   return state ? sessions.get(state) || null : null;
@@ -176,7 +207,7 @@ function publicSessionStatus(session) {
     status: session.status,
     ...(session.connectionId ? { connectionId: session.connectionId } : {}),
     ...(session.email ? { email: session.email } : {}),
-    ...(session.error ? { error: session.error } : {}),
+    ...(session.error ? { error: sanitizeOAuthPublicError(session.error) } : {}),
   };
 }
 
@@ -219,8 +250,7 @@ function scheduleCodexProxyTimeout() {
  */
 export function registerCodexSession({ state, codeVerifier, redirectUri, proxyPoolId, proxyOptions }) {
   if (!state || !codeVerifier || !redirectUri) return false;
-  pruneExpiredSessions(pendingExchanges);
-  pendingExchanges.set(state, {
+  setBoundedSession(pendingExchanges, state, {
     codeVerifier,
     redirectUri,
     proxyPoolId,
@@ -346,10 +376,11 @@ export async function startCodexProxy(appPort) {
           res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
           res.end(renderCodexResultPage(true, "You can close this window."));
         } catch (err) {
+          const publicError = sanitizeOAuthPublicError(err);
           session.status = "error";
-          session.error = err.message;
+          session.error = publicError;
           res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-          res.end(renderCodexResultPage(false, err.message));
+          res.end(renderCodexResultPage(false, publicError));
         } finally {
           stopCodexProxy();
         }
@@ -394,8 +425,9 @@ export async function startCodexProxy(appPort) {
 /**
  * Stop the Codex proxy server and cleanup
  */
-export async function stopCodexProxy({ force = false } = {}) {
+export async function stopCodexProxy({ force = false, orphanOnly = false } = {}) {
   pruneExpiredSessions(pendingExchanges);
+  if (orphanOnly && hasLiveSessions(pendingExchanges)) return Promise.resolve();
   if (!force && hasPendingSessions(pendingExchanges)) {
     scheduleCodexProxyTimeout();
     return Promise.resolve();
@@ -450,8 +482,7 @@ function scheduleXaiProxyTimeout() {
 
 export function registerXaiSession({ state, codeVerifier, redirectUri, proxyPoolId, proxyOptions }) {
   if (!state || !codeVerifier || !redirectUri) return false;
-  pruneExpiredSessions(xaiPendingExchanges);
-  xaiPendingExchanges.set(state, {
+  setBoundedSession(xaiPendingExchanges, state, {
     codeVerifier,
     redirectUri,
     proxyPoolId,
@@ -554,10 +585,11 @@ export async function startXaiProxy(appPort) {
           res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
           res.end(renderXaiResultPage(true, "You can close this window."));
         } catch (err) {
+          const publicError = sanitizeOAuthPublicError(err);
           session.status = "error";
-          session.error = err.message;
+          session.error = publicError;
           res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-          res.end(renderXaiResultPage(false, err.message));
+          res.end(renderXaiResultPage(false, publicError));
         } finally {
           stopXaiProxy();
         }
@@ -599,8 +631,9 @@ export async function startXaiProxy(appPort) {
   }
 }
 
-export async function stopXaiProxy({ force = false } = {}) {
+export async function stopXaiProxy({ force = false, orphanOnly = false } = {}) {
   pruneExpiredSessions(xaiPendingExchanges);
+  if (orphanOnly && hasLiveSessions(xaiPendingExchanges)) return Promise.resolve();
   if (!force && hasPendingSessions(xaiPendingExchanges)) {
     scheduleXaiProxyTimeout();
     return Promise.resolve();

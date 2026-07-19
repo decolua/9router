@@ -30,7 +30,7 @@ export async function refreshXaiToken(refreshToken, log, proxyOptions = null) {
       }
       return null;
     }
-  }, log);
+  }, log, proxyOptions);
 }
 
 export async function refreshAccessToken(provider, refreshToken, credentials, log, proxyOptions = null) {
@@ -93,7 +93,7 @@ export async function refreshAccessToken(provider, refreshToken, credentials, lo
     });
     return null;
   }
-  }, log);
+  }, log, proxyOptions);
 }
 
 // CLIProxyAPI DeviceFlowClient.RefreshToken: form body (no client_secret) + X-Msh-* headers
@@ -141,7 +141,7 @@ export async function refreshKimiToken(refreshToken, credentials, log, proxyOpti
       log?.error?.("TOKEN_REFRESH", `Error refreshing token for kimi`, { error: error.message });
       return null;
     }
-  }, log);
+  }, log, proxyOptions);
 }
 
 export async function refreshClaudeOAuthToken(refreshToken, log, proxyOptions = null) {
@@ -176,7 +176,7 @@ export async function refreshClaudeOAuthToken(refreshToken, log, proxyOptions = 
     log?.error?.("TOKEN_REFRESH", `Network error refreshing Claude token: ${error.message}`);
     return null;
   }
-  }, log);
+  }, log, proxyOptions);
 }
 
 export async function refreshGoogleToken(refreshToken, clientId, clientSecret, log, proxyOptions = null) {
@@ -212,7 +212,7 @@ export async function refreshGoogleToken(refreshToken, clientId, clientSecret, l
     log?.error?.("TOKEN_REFRESH", `Network error refreshing Google token: ${error.message}`);
     return null;
   }
-  }, log);
+  }, log, proxyOptions);
 }
 
 export async function refreshQwenToken(refreshToken, log, proxyOptions = null) {
@@ -268,7 +268,7 @@ export async function refreshQwenToken(refreshToken, log, proxyOptions = null) {
 
   log?.error?.("TOKEN_REFRESH", "Failed to refresh Qwen token");
   return null;
-  }, log);
+  }, log, proxyOptions);
 }
 
 export function classifyOAuthRefreshError(errorText = "", status = 0) {
@@ -350,7 +350,7 @@ export async function refreshCodexToken(refreshToken, log, proxyOptions = null) 
       log?.error?.("TOKEN_REFRESH", `Network error refreshing Codex token: ${error.message}`);
       return null;
     }
-  }, log);
+  }, log, proxyOptions);
 }
 
 async function resolveKiroProfileArnPatch(providerSpecificData, accessToken, refreshedArn, proxyOptions) {
@@ -493,7 +493,7 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
     expiresIn: tokens.expiresIn,
     ...(await resolveKiroProfileArnPatch(providerSpecificData, tokens.accessToken, tokens.profileArn, proxyOptions)),
   };
-  }, log);
+  }, log, proxyOptions);
 }
 
 export async function refreshIflowToken(refreshToken, log, proxyOptions = null) {
@@ -540,7 +540,7 @@ export async function refreshIflowToken(refreshToken, log, proxyOptions = null) 
     refreshToken: tokens.refresh_token || refreshToken,
     expiresIn: tokens.expires_in,
   };
-  }, log);
+  }, log, proxyOptions);
 }
 
 export async function refreshGitHubToken(refreshToken, log, proxyOptions = null) {
@@ -588,7 +588,7 @@ export async function refreshGitHubToken(refreshToken, log, proxyOptions = null)
     refreshToken: tokens.refresh_token || refreshToken,
     expiresIn: tokens.expires_in,
   };
-  }, log);
+  }, log, proxyOptions);
 }
 
 export async function refreshCopilotToken(githubAccessToken, log, proxyOptions = null) {
@@ -634,7 +634,7 @@ export async function refreshCopilotToken(githubAccessToken, log, proxyOptions =
     });
     return null;
   }
-  }, log);
+  }, log, proxyOptions);
 }
 
 // CodeBuddy (Tencent) refresh — POST /v2/plugin/auth/token/refresh with the
@@ -690,5 +690,5 @@ export async function refreshCodebuddyToken(refreshToken, log, proxyOptions = nu
       refreshToken: data.data.refreshToken || refreshToken,
       expiresIn: data.data.expiresIn,
     };
-  }, log);
+  }, log, proxyOptions);
 }

@@ -38,8 +38,9 @@ describe("OAuth modal proxy selection", () => {
   });
 
   it("associates proxy selector label with its select", () => {
-    expect(selectorSource).toContain('htmlFor="oauth-proxy-pool"');
-    expect(selectorSource).toContain('id="oauth-proxy-pool"');
+    expect(selectorSource).toContain("const selectId =");
+    expect(selectorSource).toContain("htmlFor={selectId}");
+    expect(selectorSource).toContain("id={selectId}");
   });
 
   it("rejects callback state that does not match the active authorization", () => {

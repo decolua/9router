@@ -16,17 +16,16 @@ import {
   registerCodexSession,
   getCodexSessionStatus,
   clearCodexSession,
-  clearCodexSessions,
   startXaiProxy,
   stopXaiProxy,
   registerXaiSession,
   claimXaiSession,
   getXaiSessionStatus,
   clearXaiSession,
-  clearXaiSessions,
 } from "@/lib/oauth/utils/server";
 
 const DEVICE_POLL_CANCELLATION_TTL_MS = 15 * 60 * 1000;
+const DEVICE_POLL_CANCELLATION_MAX_ENTRIES = 256;
 const cancelledDevicePolls = new Map();
 
 function normalizeFlowId(value) {
@@ -43,6 +42,16 @@ function pruneCancelledDevicePolls(now = Date.now()) {
 
 function devicePollKey(provider, flowId) {
   return `${provider}:${flowId}`;
+}
+
+function rememberCancelledDevicePoll(provider, flowId, now = Date.now()) {
+  pruneCancelledDevicePolls(now);
+  const key = devicePollKey(provider, flowId);
+  cancelledDevicePolls.delete(key);
+  while (cancelledDevicePolls.size >= DEVICE_POLL_CANCELLATION_MAX_ENTRIES) {
+    cancelledDevicePolls.delete(cancelledDevicePolls.keys().next().value);
+  }
+  cancelledDevicePolls.set(key, now + DEVICE_POLL_CANCELLATION_TTL_MS);
 }
 
 function isDevicePollCancelled(provider, flowId) {
@@ -167,12 +176,10 @@ export async function GET(request, { params }) {
       const state = searchParams.get("state");
       if (provider === "xai") {
         if (state) clearXaiSession(state);
-        else clearXaiSessions();
-        await stopXaiProxy();
+        await stopXaiProxy({ orphanOnly: !state });
       } else {
         if (state) clearCodexSession(state);
-        else clearCodexSessions();
-        await stopCodexProxy();
+        await stopCodexProxy({ orphanOnly: !state });
       }
       return NextResponse.json({ success: true });
     }
@@ -254,11 +261,7 @@ export async function POST(request, { params }) {
       if (!flowId) {
         return NextResponse.json({ error: "Missing or invalid flow ID" }, { status: 400 });
       }
-      pruneCancelledDevicePolls();
-      cancelledDevicePolls.set(
-        devicePollKey(provider, flowId),
-        Date.now() + DEVICE_POLL_CANCELLATION_TTL_MS,
-      );
+      rememberCancelledDevicePoll(provider, flowId);
       return NextResponse.json({ success: true });
     }
 
