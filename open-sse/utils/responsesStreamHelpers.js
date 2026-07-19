@@ -1,12 +1,18 @@
 // Helpers for OpenAI Responses API streaming termination + event framing
 import { FORMATS } from "../translator/formats.js";
+import {
+  createResponsesAccumulator,
+  finalizeResponsesAccumulator
+} from "../translator/concerns/responsesAccumulator.js";
 import { formatSSE } from "./streamHelpers.js";
 
 // Responses API events that signal the stream has reached a terminal state
 const OPENAI_RESPONSES_TERMINAL_EVENTS = new Set([
   "response.completed",
   "response.done",
+  "response.incomplete",
   "response.failed",
+  "response.error",
   "error"
 ]);
 
@@ -26,25 +32,35 @@ export function isOpenAIResponsesTerminalEvent(eventName, chunk) {
 const sharedEncoder = new TextEncoder();
 
 // Encoded response.failed + [DONE] payload for aborted/stalled Responses passthrough streams
-export function buildAbortedResponsesTerminalBytes() {
-  return sharedEncoder.encode(`${formatIncompleteOpenAIResponsesStreamFailure()}data: [DONE]\n\n`);
+export function buildAbortedResponsesTerminalBytes(accumulator = null) {
+  const terminal = formatIncompleteOpenAIResponsesStreamFailure(accumulator);
+  if (terminal) {
+    if (accumulator) accumulator.doneSent = true;
+    return sharedEncoder.encode(`${terminal}data: [DONE]\n\n`);
+  }
+  if (accumulator?.finalized && !accumulator.doneSent) {
+    accumulator.doneSent = true;
+    return sharedEncoder.encode("data: [DONE]\n\n");
+  }
+  return null;
 }
 
 // Synthesize a response.failed event for streams that close without a terminal event
-export function formatIncompleteOpenAIResponsesStreamFailure() {
+export function formatIncompleteOpenAIResponsesStreamFailure(accumulator = null) {
+  const state = accumulator || createResponsesAccumulator();
+  const terminal = finalizeResponsesAccumulator(state, {
+    error: {
+      type: "stream_error",
+      code: "stream_disconnected",
+      message: "stream closed before response.completed"
+    }
+  });
+  if (!terminal.accepted) return "";
   return formatSSE({
     event: "response.failed",
     data: {
       type: "response.failed",
-      response: {
-        id: `resp_${Date.now()}`,
-        status: "failed",
-        error: {
-          type: "stream_error",
-          code: "stream_disconnected",
-          message: "stream closed before response.completed"
-        }
-      }
+      response: terminal.response
     }
   }, FORMATS.OPENAI_RESPONSES);
 }

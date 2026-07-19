@@ -50,6 +50,7 @@ describe("OpenAI Responses streaming termination", () => {
 
     expect(output).toContain("event: response.failed");
     expect(output).toContain('"type":"response.failed"');
+    expect(output).toContain('"text":"partial"');
     expect(output).not.toContain("data: null");
     expect(output).toContain("data: [DONE]");
   });
@@ -65,6 +66,25 @@ describe("OpenAI Responses streaming termination", () => {
     expect(output).not.toContain("event: response.failed");
     expect(output).not.toContain("data: null");
     expect(output).toContain("data: [DONE]");
+  });
+
+  it("repairs a completed response whose output is missing and emits one terminal", async () => {
+    const output = await runTransform([
+      `event: response.output_text.delta`,
+      `data: ${JSON.stringify({ type: "response.output_text.delta", output_index: 0, item_id: "msg_1", delta: "repaired" })}`,
+      "",
+      `event: response.completed`,
+      `data: ${JSON.stringify({ type: "response.completed", response: { id: "resp_test", status: "completed", output: [], usage: { input_tokens: 2, output_tokens: 1, total_tokens: 3 } } })}`,
+      "",
+      `event: response.failed`,
+      `data: ${JSON.stringify({ type: "response.failed", response: { id: "resp_test", status: "failed" } })}`,
+      "",
+    ].join("\n"));
+
+    expect(output.match(/event: response\.completed/g)).toHaveLength(1);
+    expect(output).not.toContain("event: response.failed");
+    expect(output).toContain('"text":"repaired"');
+    expect(output).toContain('"total_tokens":3');
   });
 
   it("does not add response.failed when a Responses stream sends response.done", async () => {
