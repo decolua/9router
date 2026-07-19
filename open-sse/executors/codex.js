@@ -219,9 +219,9 @@ export class CodexExecutor extends BaseExecutor {
     return this._isCompact ? `${base}/compact` : base;
   }
 
-  async refreshCredentials(credentials, log) {
+  async refreshCredentials(credentials, log, proxyOptions = null) {
     if (!credentials?.refreshToken) return null;
-    return refreshProviderCredentials("codex", credentials, log);
+    return refreshProviderCredentials("codex", credentials, log, proxyOptions);
   }
 
   needsRefresh(credentials) {

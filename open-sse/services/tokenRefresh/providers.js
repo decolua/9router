@@ -281,7 +281,7 @@ export function classifyOAuthRefreshError(errorText = "", status = 0) {
   return { status, code, description, permanent };
 }
 
-export async function refreshCodexToken(refreshToken, log) {
+export async function refreshCodexToken(refreshToken, log, proxyOptions = null) {
   if (!refreshToken) return null;
   return dedupRefresh("codex", refreshToken, async () => {
     try {
@@ -296,9 +296,10 @@ export async function refreshCodexToken(refreshToken, log) {
           grant_type: "refresh_token",
           refresh_token: refreshToken,
         }),
-        // ponytail: Codex refresh has no per-connection proxy context here;
-        // pass proxyOptions through refreshTokenByProvider before honoring pools.
-        proxyOptions: { disableEnvProxy: true },
+        proxyOptions: proxyOptions?.connectionProxyEnabled === true ||
+          proxyOptions?.enabled === true || proxyOptions?.vercelRelayUrl
+          ? proxyOptions
+          : { disableEnvProxy: true },
       });
 
       if (!response.ok) {

@@ -128,6 +128,54 @@ describe("Codex Refresh Token", () => {
   });
 
   describe("CodexExecutor credential lifecycle", () => {
+    it("forwards selected chat proxy options through Codex token refresh", async () => {
+      const proxyOptions = {
+        connectionProxyEnabled: true,
+        connectionProxyUrl: "http://proxy.test:8080",
+        connectionNoProxy: "localhost",
+        vercelRelayUrl: "",
+        strictProxy: true,
+      };
+
+      const { CodexExecutor } = await import("../../open-sse/executors/codex.js");
+      const fetchMock = mockFetchWithJson({
+        access_token: "new-access",
+        refresh_token: "rotated-refresh-token",
+        expires_in: 3600,
+      });
+      const executor = new CodexExecutor();
+      await executor.refreshCredentials({
+        connectionId: "codex-proxied-refresh",
+        refreshToken: "proxied-refresh-token",
+      }, null, proxyOptions);
+
+      expect(fetchMock.mock.calls[0][1].proxyOptions).toBe(proxyOptions);
+    });
+
+    it("disables ambient env proxy when chat refresh has no selected proxy", async () => {
+      const proxyOptions = {
+        connectionProxyEnabled: false,
+        connectionProxyUrl: "",
+        connectionNoProxy: "",
+        vercelRelayUrl: "",
+        strictProxy: false,
+      };
+
+      const { CodexExecutor } = await import("../../open-sse/executors/codex.js");
+      const fetchMock = mockFetchWithJson({
+        access_token: "new-access",
+        refresh_token: "rotated-refresh-token",
+        expires_in: 3600,
+      });
+      const executor = new CodexExecutor();
+      await executor.refreshCredentials({
+        connectionId: "codex-direct-refresh",
+        refreshToken: "direct-refresh-token",
+      }, null, proxyOptions);
+
+      expect(fetchMock.mock.calls[0][1].proxyOptions).toEqual({ disableEnvProxy: true });
+    });
+
     it("should refresh Codex credentials and preserve omitted id_token", async () => {
       mockFetchWithJson({
           access_token: "new-access",
