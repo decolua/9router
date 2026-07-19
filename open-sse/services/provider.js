@@ -136,14 +136,25 @@ export function getTargetFormat(provider) {
   return config.format || "openai";
 }
 
-// Resolve which transport to use for a provider given the client sourceFormat.
-// Multi-endpoint providers (transport.transports[]) pick the entry matching sourceFormat
-// to avoid lossy translation; falls back to the default transport when no match.
-export function resolveTransport(provider, sourceFormat) {
+// Resolve one transport by wire format. Callers decide whether client source format
+// or a model's preferred target format is authoritative for the request.
+export function resolveTransport(provider, format) {
   const config = PROVIDERS[provider];
   const transports = config?.transports;
   if (!Array.isArray(transports) || !transports.length) return null;
-  return transports.find(t => t.format === sourceFormat) || null;
+  return transports.find(t => t.format === format) || null;
+}
+
+// Keep selected URL and translated request body on the same protocol. A model-level
+// targetFormat is authoritative (for example MiniMax-M3 prefers Claude); otherwise
+// use an exact client-format transport to avoid unnecessary translation.
+export function resolveRequestTransport(provider, sourceFormat, modelTargetFormat = null) {
+  const requestedFormat = modelTargetFormat || sourceFormat;
+  const runtimeTransport = resolveTransport(provider, requestedFormat);
+  return {
+    runtimeTransport,
+    targetFormat: runtimeTransport?.format || modelTargetFormat || getTargetFormat(provider),
+  };
 }
 
 // Check if last message is from user

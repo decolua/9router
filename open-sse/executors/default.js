@@ -81,7 +81,7 @@ export class DefaultExecutor extends BaseExecutor {
     super(provider, PROVIDERS[provider] || PROVIDERS.openai);
   }
 
-  transformRequest(model, body) {
+  transformRequest(model, body, _stream, credentials) {
     const transformed = this.applyJsonSchemaFallback(body);
 
     if (transformed && typeof transformed === "object") {
@@ -92,6 +92,9 @@ export class DefaultExecutor extends BaseExecutor {
       stripUnsupportedParams(this.provider, model, transformed);
     }
 
+    // reasoning_content is an OpenAI compatibility field. Anthropic Messages
+    // transports preserve thinking blocks directly and may reject this extra key.
+    if (credentials?.runtimeTransport?.format === "claude") return transformed;
     return injectReasoningContent({ provider: this.provider, model, body: transformed });
   }
 
