@@ -139,8 +139,8 @@ const REFRESH_HANDLERS = {
   gcli: (c, log, proxyOptions) => refreshXaiToken(c.refreshToken, log, proxyOptions),
   "codebuddy-cn": (c, log) => refreshCodebuddyToken(c.refreshToken, log),
   // Kimi Code OAuth (merged into id `kimi`); legacy id still routes here
-  kimi: (c, log) => refreshKimiToken(c.refreshToken, c, log),
-  "kimi-coding": (c, log) => refreshKimiToken(c.refreshToken, c, log),
+  kimi: (c, log, proxyOptions) => refreshKimiToken(c.refreshToken, c, log, proxyOptions),
+  "kimi-coding": (c, log, proxyOptions) => refreshKimiToken(c.refreshToken, c, log, proxyOptions),
   vertex: vertexRefreshHandler,
   "vertex-partner": vertexRefreshHandler
 };

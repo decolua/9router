@@ -166,7 +166,10 @@ const PROVIDERS = {
       let response = await fetch(config.tokenUrl, buildRequest(proxyOptions));
       if (!response.ok) {
         const error = await response.text();
-        if (isCloudflareHtmlBadRequest(response.status, error) && proxyOptions?.disableEnvProxy !== true) {
+        const explicitProxySelected = proxyOptions?.connectionProxyEnabled === true ||
+          proxyOptions?.enabled === true || !!proxyOptions?.vercelRelayUrl;
+        if (isCloudflareHtmlBadRequest(response.status, error) &&
+          !explicitProxySelected && proxyOptions?.disableEnvProxy !== true) {
           response = await fetch(config.tokenUrl, buildRequest({ disableEnvProxy: true }));
           if (response.ok) return await response.json();
           const directError = await response.text();

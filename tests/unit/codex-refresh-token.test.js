@@ -76,6 +76,57 @@ describe("Codex Refresh Token", () => {
     });
   });
 
+  describe("Codex token exchange proxy fallback", () => {
+    it("does not bypass an explicitly selected proxy after a Cloudflare response", async () => {
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce(new Response("<html>Cloudflare bad request</html>", { status: 400 }))
+        .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: "direct-token" }), { status: 200 }));
+      global.fetch = fetchMock;
+
+      const { getProvider } = await import("../../src/lib/oauth/providers.js");
+      const provider = getProvider("codex");
+
+      await expect(provider.exchangeToken(
+        provider.config,
+        "code",
+        "http://localhost:1455/auth/callback",
+        "verifier",
+        "state",
+        {},
+        {
+          connectionProxyEnabled: true,
+          connectionProxyUrl: "http://proxy.test:8080",
+          strictProxy: true,
+        },
+      )).rejects.toThrow("Token exchange failed");
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("retries an environment-proxy Cloudflare response with env bypass", async () => {
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce(new Response("<html>Cloudflare bad request</html>", { status: 400 }))
+        .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: "direct-token" }), { status: 200 }));
+      global.fetch = fetchMock;
+
+      const { getProvider } = await import("../../src/lib/oauth/providers.js");
+      const provider = getProvider("codex");
+      const proxyFetchSpy = vi.spyOn(globalThis, "fetch");
+      const tokens = await provider.exchangeToken(
+        provider.config,
+        "code",
+        "http://localhost:1455/auth/callback",
+        "verifier",
+        "state",
+        {},
+        null,
+      );
+
+      expect(tokens.access_token).toBe("direct-token");
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(proxyFetchSpy.mock.calls[1][1].proxyOptions).toEqual({ disableEnvProxy: true });
+    });
+  });
+
   describe("CodexExecutor credential lifecycle", () => {
     it("should refresh Codex credentials and preserve omitted id_token", async () => {
       mockFetchWithJson({

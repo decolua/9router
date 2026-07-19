@@ -93,7 +93,7 @@ export async function refreshAccessToken(provider, refreshToken, credentials, lo
 }
 
 // CLIProxyAPI DeviceFlowClient.RefreshToken: form body (no client_secret) + X-Msh-* headers
-export async function refreshKimiToken(refreshToken, credentials, log) {
+export async function refreshKimiToken(refreshToken, credentials, log, proxyOptions = null) {
   const config = PROVIDERS.kimi;
   if (!config?.refreshUrl || !config?.clientId) {
     log?.warn?.("TOKEN_REFRESH", "No Kimi refresh URL/clientId configured");
@@ -116,6 +116,7 @@ export async function refreshKimiToken(refreshToken, credentials, log) {
           refresh_token: refreshToken,
           client_id: config.clientId,
         }),
+        proxyOptions,
       });
       if (!response.ok) {
         const errorText = await response.text();

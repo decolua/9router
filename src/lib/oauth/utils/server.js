@@ -125,15 +125,24 @@ const CODEX_PORT = CODEX_CONFIG.fixedPort;
 // Pending exchange sessions keyed by state — used by server-side exchange mode
 const pendingExchanges = new Map();
 
+function publicSessionStatus(session) {
+  if (!session) return null;
+  const status = { ...session };
+  delete status.proxyOptions;
+  return status;
+}
+
 /**
  * Register a pending exchange session for server-side mode.
  * Modal client calls this before opening popup.
  */
-export function registerCodexSession({ state, codeVerifier, redirectUri }) {
+export function registerCodexSession({ state, codeVerifier, redirectUri, proxyPoolId, proxyOptions }) {
   if (!state || !codeVerifier || !redirectUri) return false;
   pendingExchanges.set(state, {
     codeVerifier,
     redirectUri,
+    proxyPoolId,
+    proxyOptions,
     status: "pending",
     createdAt: Date.now(),
   });
@@ -144,7 +153,7 @@ export function registerCodexSession({ state, codeVerifier, redirectUri }) {
  * Read session status (modal polls this).
  */
 export function getCodexSessionStatus(state) {
-  return pendingExchanges.get(state) || null;
+  return publicSessionStatus(pendingExchanges.get(state));
 }
 
 /**
@@ -152,6 +161,13 @@ export function getCodexSessionStatus(state) {
  */
 export function clearCodexSession(state) {
   pendingExchanges.delete(state);
+}
+
+function withProxyPoolData(providerSpecificData, proxyPoolId) {
+  return {
+    ...(providerSpecificData || {}),
+    ...(proxyPoolId && proxyPoolId !== "__none__" ? { proxyPoolId } : {}),
+  };
 }
 
 function escapeHtml(str) {
@@ -219,12 +235,15 @@ export function startCodexProxy(appPort) {
             code,
             session.redirectUri,
             session.codeVerifier,
-            state
+            state,
+            undefined,
+            session.proxyOptions
           );
           const connection = await createProviderConnection({
             provider: "codex",
             authType: "oauth",
             ...tokenData,
+            providerSpecificData: withProxyPoolData(tokenData.providerSpecificData, session.proxyPoolId),
             expiresAt: tokenData.expiresIn
               ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString()
               : null,
@@ -297,11 +316,13 @@ const XAI_PROXY_TIMEOUT_MS = 300000; // 5 minutes
 const XAI_PROXY_PORT = 56121;
 const xaiPendingExchanges = new Map();
 
-export function registerXaiSession({ state, codeVerifier, redirectUri }) {
+export function registerXaiSession({ state, codeVerifier, redirectUri, proxyPoolId, proxyOptions }) {
   if (!state || !codeVerifier || !redirectUri) return false;
   xaiPendingExchanges.set(state, {
     codeVerifier,
     redirectUri,
+    proxyPoolId,
+    proxyOptions,
     status: "pending",
     createdAt: Date.now(),
   });
@@ -309,7 +330,7 @@ export function registerXaiSession({ state, codeVerifier, redirectUri }) {
 }
 
 export function getXaiSessionStatus(state) {
-  return xaiPendingExchanges.get(state) || null;
+  return publicSessionStatus(xaiPendingExchanges.get(state));
 }
 
 export function clearXaiSession(state) {
@@ -361,12 +382,15 @@ export function startXaiProxy(appPort) {
             code,
             session.redirectUri,
             session.codeVerifier,
-            state
+            state,
+            undefined,
+            session.proxyOptions
           );
           const connection = await createProviderConnection({
             provider: "xai",
             authType: "oauth",
             ...tokenData,
+            providerSpecificData: withProxyPoolData(tokenData.providerSpecificData, session.proxyPoolId),
             expiresAt: tokenData.expiresIn
               ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString()
               : null,
@@ -423,4 +447,3 @@ export function stopXaiProxy() {
     xaiProxyServer = null;
   }
 }
-

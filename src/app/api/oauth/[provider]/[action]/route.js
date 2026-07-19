@@ -129,14 +129,15 @@ export async function GET(request, { params }) {
       const codeVerifier = searchParams.get("code_verifier");
       const redirectUri = searchParams.get("redirect_uri");
       const proxyPoolId = searchParams.get("proxyPoolId");
+      const proxyOptions = await proxyOptionsForPool(proxyPoolId);
       const result = provider === "xai"
         ? await startXaiProxy(Number(appPort))
         : await startCodexProxy(Number(appPort));
       let serverSide = false;
       if (result.success && state && codeVerifier && redirectUri) {
         serverSide = provider === "xai"
-          ? registerXaiSession({ state, codeVerifier, redirectUri, proxyPoolId })
-          : registerCodexSession({ state, codeVerifier, redirectUri, proxyPoolId });
+          ? registerXaiSession({ state, codeVerifier, redirectUri, proxyPoolId, proxyOptions })
+          : registerCodexSession({ state, codeVerifier, redirectUri, proxyPoolId, proxyOptions });
       }
       return NextResponse.json({ ...result, serverSide });
     }
