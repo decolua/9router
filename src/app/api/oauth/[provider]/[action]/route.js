@@ -117,31 +117,6 @@ export async function GET(request, { params }) {
       return NextResponse.json(authData);
     }
 
-    if (action === "start-proxy") {
-      if (!["codex", "xai"].includes(provider)) {
-        return NextResponse.json({ error: "Proxy only supported for codex/xai" }, { status: 400 });
-      }
-      const appPort = searchParams.get("app_port");
-      if (!appPort) {
-        return NextResponse.json({ error: "Missing app_port" }, { status: 400 });
-      }
-      const state = searchParams.get("state");
-      const codeVerifier = searchParams.get("code_verifier");
-      const redirectUri = searchParams.get("redirect_uri");
-      const proxyPoolId = searchParams.get("proxyPoolId");
-      const proxyOptions = await proxyOptionsForPool(proxyPoolId);
-      const result = provider === "xai"
-        ? await startXaiProxy(Number(appPort))
-        : await startCodexProxy(Number(appPort));
-      let serverSide = false;
-      if (result.success && state && codeVerifier && redirectUri) {
-        serverSide = provider === "xai"
-          ? registerXaiSession({ state, codeVerifier, redirectUri, proxyPoolId, proxyOptions })
-          : registerCodexSession({ state, codeVerifier, redirectUri, proxyPoolId, proxyOptions });
-      }
-      return NextResponse.json({ ...result, serverSide });
-    }
-
     if (action === "poll-status") {
       if (!["codex", "xai"].includes(provider)) {
         return NextResponse.json({ error: "Poll only supported for codex/xai" }, { status: 400 });
@@ -153,7 +128,12 @@ export async function GET(request, { params }) {
       const session = provider === "xai" ? getXaiSessionStatus(state) : getCodexSessionStatus(state);
       if (!session) return NextResponse.json({ status: "unknown" });
       if (session.status === "done" || session.status === "error") {
-        const payload = { ...session };
+        const payload = {
+          status: session.status,
+          ...(session.connectionId ? { connectionId: session.connectionId } : {}),
+          ...(session.email ? { email: session.email } : {}),
+          ...(session.error ? { error: session.error } : {}),
+        };
         if (provider === "xai") clearXaiSession(state);
         else clearCodexSession(state);
         return NextResponse.json(payload);
@@ -165,8 +145,8 @@ export async function GET(request, { params }) {
       if (!["codex", "xai"].includes(provider)) {
         return NextResponse.json({ error: "Proxy only supported for codex/xai" }, { status: 400 });
       }
-      if (provider === "xai") stopXaiProxy();
-      else stopCodexProxy();
+      if (provider === "xai") await stopXaiProxy();
+      else await stopCodexProxy();
       return NextResponse.json({ success: true });
     }
 
@@ -224,8 +204,7 @@ export async function GET(request, { params }) {
   }
 }
 
-// POST /api/oauth/[provider]/exchange - Exchange code for tokens and save
-// POST /api/oauth/[provider]/poll - Poll for token (device_code flow)
+// POST actions: start-proxy, exchange, poll, manual-code
 export async function POST(request, { params }) {
   try {
     await ensureOutboundProxyInitialized();
@@ -235,6 +214,27 @@ export async function POST(request, { params }) {
       body = await request.json();
     } catch {
       return NextResponse.json({ error: "Invalid or empty request body" }, { status: 400 });
+    }
+
+    if (action === "start-proxy") {
+      if (!["codex", "xai"].includes(provider)) {
+        return NextResponse.json({ error: "Proxy only supported for codex/xai" }, { status: 400 });
+      }
+      const { appPort, state, codeVerifier, redirectUri, proxyPoolId } = body;
+      if (!appPort) {
+        return NextResponse.json({ error: "Missing app_port" }, { status: 400 });
+      }
+      const proxyOptions = await proxyOptionsForPool(proxyPoolId);
+      const result = provider === "xai"
+        ? await startXaiProxy(Number(appPort))
+        : await startCodexProxy(Number(appPort));
+      let serverSide = false;
+      if (result.success && state && codeVerifier && redirectUri) {
+        serverSide = provider === "xai"
+          ? registerXaiSession({ state, codeVerifier, redirectUri, proxyPoolId, proxyOptions })
+          : registerCodexSession({ state, codeVerifier, redirectUri, proxyPoolId, proxyOptions });
+      }
+      return NextResponse.json({ ...result, serverSide });
     }
 
     if (action === "exchange") {

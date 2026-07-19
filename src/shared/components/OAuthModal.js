@@ -260,15 +260,11 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       let codexServerSide = false;
       if (provider === "codex") {
         try {
-          const proxyUrl = new URL(`/api/oauth/codex/start-proxy`, window.location.origin);
-          proxyUrl.searchParams.set("app_port", appPort);
-          proxyUrl.searchParams.set("state", data.state);
-          proxyUrl.searchParams.set("code_verifier", data.codeVerifier);
-          proxyUrl.searchParams.set("redirect_uri", redirectUri);
-          if (proxyPoolId) {
-            proxyUrl.searchParams.set("proxyPoolId", proxyPoolId);
-          }
-          const proxyRes = await fetch(proxyUrl.toString());
+          const proxyRes = await fetch(`/api/oauth/codex/start-proxy`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ appPort, state: data.state, codeVerifier: data.codeVerifier, redirectUri, proxyPoolId }),
+          });
           const proxyData = await proxyRes.json();
           codexProxyActive = proxyData.success;
           codexServerSide = !!proxyData.serverSide;
@@ -282,15 +278,11 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       let xaiServerSide = false;
       if (provider === "xai") {
         try {
-          const proxyUrl = new URL(`/api/oauth/xai/start-proxy`, window.location.origin);
-          proxyUrl.searchParams.set("app_port", appPort);
-          proxyUrl.searchParams.set("state", data.state);
-          proxyUrl.searchParams.set("code_verifier", data.codeVerifier);
-          proxyUrl.searchParams.set("redirect_uri", redirectUri);
-          if (proxyPoolId) {
-            proxyUrl.searchParams.set("proxyPoolId", proxyPoolId);
-          }
-          const proxyRes = await fetch(proxyUrl.toString());
+          const proxyRes = await fetch(`/api/oauth/xai/start-proxy`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ appPort, state: data.state, codeVerifier: data.codeVerifier, redirectUri, proxyPoolId }),
+          });
           const proxyData = await proxyRes.json();
           xaiProxyActive = proxyData.success;
           xaiServerSide = !!proxyData.serverSide;
@@ -360,10 +352,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setIsDeviceCode(false);
       setDeviceData(null);
       setPolling(false);
-      const initialProxyPoolId = proxyPools.find((pool) => pool.isActive === true)?.id || "";
-      setSelectedProxyPoolId(initialProxyPoolId);
+      setSelectedProxyPoolId("");
       pollingAbortRef.current = false;
-      startOAuthFlow(initialProxyPoolId);
+      startOAuthFlow("");
     } else if (!isOpen) {
       // Abort polling and cleanup proxy when modal closes
       pollingAbortRef.current = true;
@@ -383,9 +374,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     setPolling(false);
 
     if (provider === "codex") {
-      fetch("/api/oauth/codex/stop-proxy").catch(() => {});
+      await fetch("/api/oauth/codex/stop-proxy");
     } else if (provider === "xai") {
-      fetch("/api/oauth/xai/stop-proxy").catch(() => {});
+      await fetch("/api/oauth/xai/stop-proxy");
     }
 
     setAuthData(null);

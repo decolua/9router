@@ -344,12 +344,12 @@ export async function refreshCodexToken(refreshToken, log, proxyOptions = null) 
   }, log);
 }
 
-async function resolveKiroProfileArnPatch(providerSpecificData, accessToken, refreshedArn) {
+async function resolveKiroProfileArnPatch(providerSpecificData, accessToken, refreshedArn, proxyOptions) {
   if (providerSpecificData?.profileArn) return {};
   let profileArn = refreshedArn?.trim?.() || null;
   if (!profileArn) {
     const { fetchKiroProfileArn } = await import("../../../src/lib/oauth/providers.js");
-    profileArn = await fetchKiroProfileArn(accessToken);
+    profileArn = await fetchKiroProfileArn(accessToken, proxyOptions);
   }
   return profileArn ? { providerSpecificData: { profileArn } } : {};
 }
@@ -445,7 +445,7 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken || refreshToken,
       expiresIn: tokens.expiresIn,
-      ...(await resolveKiroProfileArnPatch(providerSpecificData, tokens.accessToken, tokens.profileArn)),
+      ...(await resolveKiroProfileArnPatch(providerSpecificData, tokens.accessToken, tokens.profileArn, proxyOptions)),
     };
   }
 
@@ -481,7 +481,7 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
     accessToken: tokens.accessToken,
     refreshToken: tokens.refreshToken || refreshToken,
     expiresIn: tokens.expiresIn,
-    ...(await resolveKiroProfileArnPatch(providerSpecificData, tokens.accessToken, tokens.profileArn)),
+    ...(await resolveKiroProfileArnPatch(providerSpecificData, tokens.accessToken, tokens.profileArn, proxyOptions)),
   };
   }, log);
 }

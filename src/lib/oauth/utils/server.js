@@ -118,6 +118,7 @@ export function waitForCallback(timeoutMs = 300000) {
 // Singleton proxy server for Codex OAuth callback on fixed port
 let codexProxyServer = null;
 let codexProxyTimeout = null;
+let codexProxyClosing = null;
 
 const CODEX_PROXY_TIMEOUT_MS = 300000; // 5 minutes
 const CODEX_PORT = CODEX_CONFIG.fixedPort;
@@ -197,7 +198,8 @@ function renderCodexResultPage(success, message) {
  * Mode A (server-side): if any session was registered, proxy auto-exchanges + saves DB.
  * Mode B (channel fallback): if no session, proxy 302 redirects to app port for legacy channel-based flow.
  */
-export function startCodexProxy(appPort) {
+export async function startCodexProxy(appPort) {
+  if (codexProxyClosing) await codexProxyClosing;
   return new Promise((resolve) => {
     if (codexProxyServer) {
       resolve({ success: true });
@@ -298,10 +300,18 @@ export function stopCodexProxy() {
     clearTimeout(codexProxyTimeout);
     codexProxyTimeout = null;
   }
-  if (codexProxyServer) {
-    codexProxyServer.close();
-    codexProxyServer = null;
-  }
+  if (codexProxyClosing) return codexProxyClosing;
+  if (!codexProxyServer) return Promise.resolve();
+
+  const server = codexProxyServer;
+  codexProxyClosing = new Promise((resolve) => {
+    server.close(() => {
+      if (codexProxyServer === server) codexProxyServer = null;
+      codexProxyClosing = null;
+      resolve();
+    });
+  });
+  return codexProxyClosing;
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -312,6 +322,7 @@ export function stopCodexProxy() {
 
 let xaiProxyServer = null;
 let xaiProxyTimeout = null;
+let xaiProxyClosing = null;
 const XAI_PROXY_TIMEOUT_MS = 300000; // 5 minutes
 const XAI_PROXY_PORT = 56121;
 const xaiPendingExchanges = new Map();
@@ -346,7 +357,8 @@ function renderXaiResultPage(success, message) {
  * Mode A (server-side): if any session was registered, proxy auto-exchanges + saves DB.
  * Mode B (channel fallback): if no session, proxy 302 redirects to app port.
  */
-export function startXaiProxy(appPort) {
+export async function startXaiProxy(appPort) {
+  if (xaiProxyClosing) await xaiProxyClosing;
   return new Promise((resolve) => {
     if (xaiProxyServer) {
       resolve({ success: true });
@@ -442,8 +454,16 @@ export function stopXaiProxy() {
     clearTimeout(xaiProxyTimeout);
     xaiProxyTimeout = null;
   }
-  if (xaiProxyServer) {
-    xaiProxyServer.close();
-    xaiProxyServer = null;
-  }
+  if (xaiProxyClosing) return xaiProxyClosing;
+  if (!xaiProxyServer) return Promise.resolve();
+
+  const server = xaiProxyServer;
+  xaiProxyClosing = new Promise((resolve) => {
+    server.close(() => {
+      if (xaiProxyServer === server) xaiProxyServer = null;
+      xaiProxyClosing = null;
+      resolve();
+    });
+  });
+  return xaiProxyClosing;
 }

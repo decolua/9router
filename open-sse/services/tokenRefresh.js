@@ -132,7 +132,7 @@ const REFRESH_HANDLERS = {
   qwen: (c, log) => refreshQwenToken(c.refreshToken, log),
   iflow: (c, log) => refreshIflowToken(c.refreshToken, log),
   github: (c, log) => refreshGitHubToken(c.refreshToken, log),
-  kiro: (c, log) => refreshKiroToken(c.refreshToken, c.providerSpecificData, log),
+  kiro: (c, log, proxyOptions) => refreshKiroToken(c.refreshToken, c.providerSpecificData, log, proxyOptions),
   xai: (c, log, proxyOptions) => refreshXaiToken(c.refreshToken, log, proxyOptions),
   // Grok CLI shares xAI OAuth client + token endpoint (device-code tokens refresh the same way)
   "grok-cli": (c, log, proxyOptions) => refreshXaiToken(c.refreshToken, log, proxyOptions),
