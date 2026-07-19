@@ -6,6 +6,118 @@ import { refreshKiroToken } from "../services/tokenRefresh.js";
 import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 
+const KIRO_TOOL_CALL_WRAPPER = "tool_call";
+const sharedEncoder = new TextEncoder();
+const sharedDecoder = new TextDecoder();
+
+function encodeSSE(value) {
+  return sharedEncoder.encode(value);
+}
+
+function closeSSEController(controller) {
+  if (typeof controller.terminate === "function") {
+    controller.terminate();
+  } else if (typeof controller.close === "function") {
+    controller.close();
+  }
+}
+
+function parseKiroToolInput(toolInput) {
+  if (typeof toolInput === "string") {
+    try {
+      return JSON.parse(toolInput);
+    } catch (error) {
+      throw new Error(`Invalid Kiro tool_call payload: input must be valid JSON (${error.message})`);
+    }
+  }
+  return toolInput;
+}
+
+function validateKiroToolName(toolUse) {
+  const toolName = typeof toolUse?.name === "string" ? toolUse.name.trim() : "";
+  if (!toolName) {
+    throw new Error("Invalid Kiro toolUseEvent: missing tool name");
+  }
+
+  return toolName;
+}
+
+function getBufferedKiroToolInput(toolCall) {
+  if (toolCall.inputKind === "string") return toolCall.inputText || "";
+  return toolCall.inputObject;
+}
+
+function appendBufferedKiroToolInput(toolCall, toolInput) {
+  if (toolInput === undefined) return;
+
+  if (typeof toolInput === "string") {
+    if (toolCall.inputKind && toolCall.inputKind !== "string") {
+      throw new Error("Invalid Kiro tool_call payload: mixed input fragment types");
+    }
+    toolCall.inputKind = "string";
+    toolCall.inputText = `${toolCall.inputText || ""}${toolInput}`;
+    return;
+  }
+
+  if (toolInput && typeof toolInput === "object" && !Array.isArray(toolInput)) {
+    if (toolCall.inputKind && toolCall.inputKind !== "object") {
+      throw new Error("Invalid Kiro tool_call payload: mixed input fragment types");
+    }
+    toolCall.inputKind = "object";
+    toolCall.inputObject = toolInput;
+  }
+}
+
+function validateKiroToolCallWrapperInput(toolInput) {
+  if (toolInput === undefined) {
+    throw new Error("Invalid Kiro tool_call payload: missing input");
+  }
+
+  const input = parseKiroToolInput(toolInput);
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new Error("Invalid Kiro tool_call payload: input must be an object with name and arguments");
+  }
+
+  const nestedName = typeof input.name === "string" ? input.name.trim() : "";
+  if (!nestedName) {
+    throw new Error("Invalid Kiro tool_call payload: missing nested MCP tool name at input.name");
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(input, "arguments")) {
+    throw new Error("Invalid Kiro tool_call payload: missing nested MCP tool arguments at input.arguments");
+  }
+}
+
+/**
+ * Validate a complete Kiro toolUseEvent payload. Streaming wrapper tool_call
+ * fragments must be buffered first; otherwise an init/delta fragment without
+ * the final nested input would be rejected as malformed.
+ */
+export function validateKiroToolUse(toolUse) {
+  const toolName = validateKiroToolName(toolUse);
+  if (toolName !== KIRO_TOOL_CALL_WRAPPER) {
+    return;
+  }
+
+  validateKiroToolCallWrapperInput(toolUse.input);
+}
+
+function emitKiroToolCallValidationError(controller, state, message) {
+  const error = {
+    error: {
+      message,
+      type: "invalid_request_error",
+      code: "invalid_kiro_tool_call"
+    }
+  };
+  state.invalidToolCall = true;
+  state.finishEmitted = true;
+  state.doneSent = true;
+  controller.enqueue(encodeSSE(`data: ${JSON.stringify(error)}\n\n`));
+  controller.enqueue(encodeSSE(SSE_DONE));
+  closeSSEController(controller);
+}
+
 /**
  * KiroExecutor - Executor for Kiro AI (AWS CodeWhisperer)
  * Uses AWS CodeWhisperer streaming API with AWS EventStream binary format
@@ -118,8 +230,9 @@ export class KiroExecutor extends BaseExecutor {
   }
 
   /**
-   * Transform AWS EventStream binary response to SSE text stream
-   * Using TransformStream instead of ReadableStream.pull() to avoid Workers timeout
+   * Transform AWS EventStream binary response to SSE text stream.
+   * This pumps the upstream reader directly so a malformed wrapper can emit a
+   * clean SSE error and then cancel the upstream HTTP body immediately.
    */
   transformEventStreamToSSE(response, model) {
     let buffer = new Uint8Array(0);
@@ -135,13 +248,112 @@ export class KiroExecutor extends BaseExecutor {
       hasReasoningContent: false,
       reasoningChunkCount: 0,
       toolCallIndex: 0,
+      generatedToolIdCounter: 0,
       seenToolIds: new Map(),
+      pendingWrapperToolCalls: new Map(),
       inThinking: false
     };
 
-    const transformStream = new TransformStream({
-      async transform(chunk, controller) {
-             // Track output so we can emit a keepalive if this frame yields no chunk.
+    const getToolCallId = (toolUse) => {
+      if (typeof toolUse?.toolUseId === "string" && toolUse.toolUseId) {
+        return toolUse.toolUseId;
+      }
+      state.generatedToolIdCounter++;
+      return `call_${created}_${state.generatedToolIdCounter}`;
+    };
+
+    const getOrAssignToolIndex = (toolCallId) => {
+      if (state.seenToolIds.has(toolCallId)) {
+        return { toolIndex: state.seenToolIds.get(toolCallId), isNewTool: false };
+      }
+      const toolIndex = state.toolCallIndex++;
+      state.seenToolIds.set(toolCallId, toolIndex);
+      return { toolIndex, isNewTool: true };
+    };
+
+    const emitToolCallStart = (controller, toolCallId, toolName, toolIndex) => {
+      const startChunk = {
+        id: responseId,
+        object: "chat.completion.chunk",
+        created,
+        model,
+        choices: [{
+          index: 0,
+          delta: {
+            ...(chunkIndex === 0 ? { role: "assistant" } : {}),
+            tool_calls: [{
+              index: toolIndex,
+              id: toolCallId,
+              type: "function",
+              function: {
+                name: toolName,
+                arguments: ""
+              }
+            }]
+          },
+          finish_reason: null
+        }]
+      };
+      chunkIndex++;
+      controller.enqueue(encodeSSE(`data: ${JSON.stringify(startChunk)}\n\n`));
+    };
+
+    const emitToolCallArguments = (controller, toolIndex, argumentsStr) => {
+      const argsChunk = {
+        id: responseId,
+        object: "chat.completion.chunk",
+        created,
+        model,
+        choices: [{
+          index: 0,
+          delta: {
+            tool_calls: [{
+              index: toolIndex,
+              function: {
+                arguments: argumentsStr
+              }
+            }]
+          },
+          finish_reason: null
+        }]
+      };
+      chunkIndex++;
+      controller.enqueue(encodeSSE(`data: ${JSON.stringify(argsChunk)}\n\n`));
+    };
+
+    const failInvalidToolCall = (controller, message) => {
+      emitKiroToolCallValidationError(controller, state, message);
+      buffer = new Uint8Array(0);
+    };
+
+    const flushPendingWrapperToolCalls = (controller) => {
+      if (state.pendingWrapperToolCalls.size === 0) return true;
+
+      for (const toolCall of state.pendingWrapperToolCalls.values()) {
+        const toolInput = getBufferedKiroToolInput(toolCall);
+        try {
+          validateKiroToolCallWrapperInput(toolInput);
+        } catch (error) {
+          failInvalidToolCall(controller, error.message);
+          return false;
+        }
+
+        const { toolIndex } = getOrAssignToolIndex(toolCall.toolCallId);
+        const argumentsStr = typeof toolInput === "string" ? toolInput : JSON.stringify(toolInput);
+        toolCall.toolIndex = toolIndex;
+        emitToolCallStart(controller, toolCall.toolCallId, toolCall.toolName, toolIndex);
+        if (argumentsStr) {
+          emitToolCallArguments(controller, toolIndex, argumentsStr);
+        }
+      }
+
+      state.pendingWrapperToolCalls.clear();
+      return true;
+    };
+
+    const transformChunk = async (chunk, controller) => {
+        if (state.invalidToolCall) return;
+        // Track output so we can emit a keepalive if this frame yields no chunk.
         const enqueueCountBefore = chunkIndex;
         // Append to buffer
         const newBuffer = new Uint8Array(buffer.length + chunk.length);
@@ -219,7 +431,7 @@ export class KiroExecutor extends BaseExecutor {
               }]
             };
             chunkIndex++;
-            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\n`));
+            controller.enqueue(encodeSSE(`data: ${JSON.stringify(chunk)}\n\n`));
           }
 
           // Handle reasoningContentEvent (Kiro thinking / reasoning)
@@ -253,7 +465,7 @@ export class KiroExecutor extends BaseExecutor {
               };
               chunkIndex++;
               state.reasoningChunkCount++;
-              controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\n`));
+              controller.enqueue(encodeSSE(`data: ${JSON.stringify(chunk)}\n\n`));
             }
           }
 
@@ -271,7 +483,7 @@ export class KiroExecutor extends BaseExecutor {
               }]
             };
             chunkIndex++;
-            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\n`));
+            controller.enqueue(encodeSSE(`data: ${JSON.stringify(chunk)}\n\n`));
           }
 
           // Handle toolUseEvent
@@ -281,43 +493,44 @@ export class KiroExecutor extends BaseExecutor {
             const toolUses = Array.isArray(toolUse) ? toolUse : [toolUse];
 
             for (const singleToolUse of toolUses) {
-              const toolCallId = singleToolUse.toolUseId || `call_${Date.now()}`;
-              const toolName = singleToolUse.name || "";
+              let toolName;
+              try {
+                toolName = validateKiroToolName(singleToolUse);
+              } catch (error) {
+                failInvalidToolCall(controller, error.message);
+                return;
+              }
+
+              const toolCallId = getToolCallId(singleToolUse);
               const toolInput = singleToolUse.input;
 
-              let toolIndex;
-              const isNewTool = !state.seenToolIds.has(toolCallId);
+              if (toolName === KIRO_TOOL_CALL_WRAPPER) {
+                let toolCall = state.pendingWrapperToolCalls.get(toolCallId);
+                if (!toolCall) {
+                  if (state.seenToolIds.has(toolCallId)) {
+                    failInvalidToolCall(controller, "Invalid Kiro tool_call payload: duplicate toolUseId reused by wrapper");
+                    return;
+                  }
+                  toolCall = { toolCallId, toolName };
+                  state.pendingWrapperToolCalls.set(toolCallId, toolCall);
+                }
+                try {
+                  appendBufferedKiroToolInput(toolCall, toolInput);
+                } catch (error) {
+                  failInvalidToolCall(controller, error.message);
+                  return;
+                }
+                continue;
+              }
 
+              if (state.pendingWrapperToolCalls.has(toolCallId)) {
+                failInvalidToolCall(controller, "Invalid Kiro tool_call payload: mixed wrapper and direct tool fragments");
+                return;
+              }
+
+              const { toolIndex, isNewTool } = getOrAssignToolIndex(toolCallId);
               if (isNewTool) {
-                toolIndex = state.toolCallIndex++;
-                state.seenToolIds.set(toolCallId, toolIndex);
-
-                const startChunk = {
-                  id: responseId,
-                  object: "chat.completion.chunk",
-                  created,
-                  model,
-                  choices: [{
-                    index: 0,
-                    delta: {
-                      ...(chunkIndex === 0 ? { role: "assistant" } : {}),
-                      tool_calls: [{
-                        index: toolIndex,
-                        id: toolCallId,
-                        type: "function",
-                        function: {
-                          name: toolName,
-                          arguments: ""
-                        }
-                      }]
-                    },
-                    finish_reason: null
-                  }]
-                };
-                chunkIndex++;
-                controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(startChunk)}\n\n`));
-              } else {
-                toolIndex = state.seenToolIds.get(toolCallId);
+                emitToolCallStart(controller, toolCallId, toolName, toolIndex);
               }
 
               if (toolInput !== undefined) {
@@ -331,32 +544,14 @@ export class KiroExecutor extends BaseExecutor {
                   continue;
                 }
 
-                const argsChunk = {
-                  id: responseId,
-                  object: "chat.completion.chunk",
-                  created,
-                  model,
-                  choices: [{
-                    index: 0,
-                    delta: {
-                      tool_calls: [{
-                        index: toolIndex,
-                        function: {
-                          arguments: argumentsStr
-                        }
-                      }]
-                    },
-                    finish_reason: null
-                  }]
-                };
-                chunkIndex++;
-                controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(argsChunk)}\n\n`));
+                emitToolCallArguments(controller, toolIndex, argumentsStr);
               }
             }
           }
 
           // Handle messageStopEvent
           if (eventType === "messageStopEvent") {
+            if (!flushPendingWrapperToolCalls(controller)) return;
             const chunk = {
               id: responseId,
               object: "chat.completion.chunk",
@@ -369,7 +564,7 @@ export class KiroExecutor extends BaseExecutor {
               }]
             };
             state.finishEmitted = true;
-            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\n`));
+            controller.enqueue(encodeSSE(`data: ${JSON.stringify(chunk)}\n\n`));
           }
 
           // Handle contextUsageEvent to extract contextUsagePercentage
@@ -415,6 +610,7 @@ export class KiroExecutor extends BaseExecutor {
 
           // Emit final chunk only after receiving BOTH meteringEvent AND contextUsageEvent
           if (state.hasMeteringEvent && state.hasContextUsage && !state.finishEmitted) {
+            if (!flushPendingWrapperToolCalls(controller)) return;
             state.finishEmitted = true;
 
             // Estimate tokens if not available from events
@@ -453,7 +649,7 @@ export class KiroExecutor extends BaseExecutor {
               finishChunk.usage = state.usage;
             }
 
-            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(finishChunk)}\n\n`));
+            controller.enqueue(encodeSSE(`data: ${JSON.stringify(finishChunk)}\n\n`));
           }
         }
 
@@ -464,11 +660,13 @@ export class KiroExecutor extends BaseExecutor {
         // No client chunk produced this frame — emit an SSE comment keepalive
                 // so the stall watchdog sees upstream activity (ignored by parser/client).
                 if (chunkIndex === enqueueCountBefore && !state.finishEmitted) {
-                  controller.enqueue(new TextEncoder().encode(": ka\n\n"));
+                  controller.enqueue(encodeSSE(": ka\n\n"));
                 }
-      },
+      };
 
-      flush(controller) {
+      const flushOutput = (controller) => {
+        if (state.invalidToolCall) return false;
+        if (!flushPendingWrapperToolCalls(controller)) return false;
         // Emit finish chunk if not already sent
         if (!state.finishEmitted) {
           state.finishEmitted = true;
@@ -483,19 +681,49 @@ export class KiroExecutor extends BaseExecutor {
               finish_reason: state.hasToolCalls ? "tool_calls" : "stop"
             }]
           };
-          controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(finishChunk)}\n\n`));
+          controller.enqueue(encodeSSE(`data: ${JSON.stringify(finishChunk)}\n\n`));
         }
 
         // Send final done message
-        controller.enqueue(new TextEncoder().encode(SSE_DONE));
-      }
-    });
+        if (!state.doneSent) {
+          state.doneSent = true;
+          controller.enqueue(encodeSSE(SSE_DONE));
+        }
+        return true;
+      };
 
-    // Pipe response body through transform stream
     if (!response.body) {
       return new Response(SSE_DONE, { status: response.status, headers: { "Content-Type": "text/event-stream" } });
     }
-    const transformedStream = response.body.pipeThrough(transformStream);
+    let reader;
+    const transformedStream = new ReadableStream({
+      async start(controller) {
+        reader = response.body.getReader();
+        try {
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+
+            await transformChunk(value, controller);
+            if (state.invalidToolCall) {
+              await reader.cancel("invalid_kiro_tool_call").catch(() => {});
+              return;
+            }
+          }
+
+          if (flushOutput(controller)) {
+            closeSSEController(controller);
+          }
+        } catch (error) {
+          if (state.invalidToolCall) return;
+          controller.error(error);
+        }
+      },
+
+      cancel(reason) {
+        return reader?.cancel(reason);
+      }
+    });
 
     return new Response(transformedStream, {
       status: response.status,
@@ -542,7 +770,7 @@ function parseEventFrame(data) {
       offset++;
       if (offset + nameLen > data.length) break;
 
-      const name = new TextDecoder().decode(data.slice(offset, offset + nameLen));
+      const name = sharedDecoder.decode(data.slice(offset, offset + nameLen));
       offset += nameLen;
 
       const headerType = data[offset];
@@ -553,7 +781,7 @@ function parseEventFrame(data) {
         offset += 2;
         if (offset + valueLen > data.length) break;
 
-        const value = new TextDecoder().decode(data.slice(offset, offset + valueLen));
+        const value = sharedDecoder.decode(data.slice(offset, offset + valueLen));
         offset += valueLen;
         headers[name] = value;
       } else {
@@ -567,7 +795,7 @@ function parseEventFrame(data) {
 
     let payload = null;
     if (payloadEnd > payloadStart) {
-      const payloadStr = new TextDecoder().decode(data.slice(payloadStart, payloadEnd));
+      const payloadStr = sharedDecoder.decode(data.slice(payloadStart, payloadEnd));
 
       // Skip empty or whitespace-only payloads
       if (!payloadStr || !payloadStr.trim()) {

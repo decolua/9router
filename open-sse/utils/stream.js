@@ -22,6 +22,49 @@ const STREAM_MODE = {
   PASSTHROUGH: "passthrough" // No translation, normalize output, extract usage
 };
 
+function normalizeStreamError(error) {
+  if (!error || typeof error !== "object") {
+    return {
+      message: String(error || "Upstream stream error"),
+      type: "server_error",
+      code: "stream_error"
+    };
+  }
+  return {
+    message: String(error.message || "Upstream stream error"),
+    type: String(error.type || "server_error"),
+    code: String(error.code || "stream_error")
+  };
+}
+
+function formatTranslatedStreamError(error, sourceFormat) {
+  const normalized = normalizeStreamError(error);
+
+  if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
+    const now = Math.floor(Date.now() / 1000);
+    const failed = {
+      type: "response.failed",
+      response: {
+        id: `resp_error_${Date.now()}`,
+        object: "response",
+        created_at: now,
+        status: "failed",
+        background: false,
+        error: normalized,
+        output: []
+      },
+      sequence_number: 0
+    };
+    return `event: response.failed\ndata: ${JSON.stringify(failed)}\n\ndata: [DONE]\n\n`;
+  }
+
+  if (sourceFormat === FORMATS.CLAUDE) {
+    return `event: error\ndata: ${JSON.stringify({ type: "error", error: normalized })}\n\ndata: [DONE]\n\n`;
+  }
+
+  return `data: ${JSON.stringify({ error: normalized })}\n\ndata: [DONE]\n\n`;
+}
+
 /**
  * Create unified SSE transform stream
  * @param {object} options
@@ -72,6 +115,7 @@ export function createSSEStream(options = {}) {
   let openAIResponsesTerminalSeen = false;
   let openAIResponsesDoneSent = false;
   let streamDoneSent = false;  // track duplicate [DONE] across transform + flush
+  let upstreamErrorForwarded = false;
 
   return new TransformStream({
     transform(chunk, controller) {
@@ -207,6 +251,18 @@ export function createSSEStream(options = {}) {
 
         const parsed = parseSSELine(trimmed, targetFormat);
         if (!parsed) continue;
+
+        if (upstreamErrorForwarded) continue;
+
+        if (parsed.error) {
+          const output = formatTranslatedStreamError(parsed.error, sourceFormat);
+          reqLogger?.appendConvertedChunk?.(output);
+          controller.enqueue(sharedEncoder.encode(output));
+          upstreamErrorForwarded = true;
+          streamDoneSent = true;
+          if (sourceFormat === FORMATS.OPENAI_RESPONSES) openAIResponsesDoneSent = true;
+          continue;
+        }
 
         // Responses API same-format passthrough: preserve event framing + track terminal state
         const isOpenAIResponsesStream = targetFormat === FORMATS.OPENAI_RESPONSES;
@@ -380,6 +436,11 @@ export function createSSEStream(options = {}) {
               thinking: accumulatedThinking
             }, usage, ttftAt);
           }
+          return;
+        }
+
+        if (upstreamErrorForwarded) {
+          appendRequestLog({ model, provider, connectionId, tokens: null, status: "FAILED STREAM_ERROR" }).catch(() => { });
           return;
         }
 
