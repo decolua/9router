@@ -395,6 +395,7 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
 
   const reduced = reduceResponsesEvent(accumulator, chunk);
   if (!reduced.accepted) return null;
+  updateToolStreamingState(state, reduced);
 
   const chunks = [];
   if (reduced.item?.type === RESPONSES_ITEM.MESSAGE) {
@@ -411,7 +412,7 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
   if (accumulator.finalized) {
     chunks.push(...finalizeResponsesChatStream(state, accumulator));
   } else {
-    chunks.push(...flushReadyTools(state, accumulator));
+    chunks.push(...flushReadyTools(state, accumulator, false, reduced));
   }
   return chunks.length > 0 ? chunks : null;
 }
@@ -440,7 +441,15 @@ function chatItemState(state, item) {
   const existing = [...new Set([...aliases].map(order => state.responsesChatItems.get(order)).filter(Boolean))];
   let chatItem = existing.find(candidate => candidate.announced) || existing[0];
   if (!chatItem) {
-    chatItem = { textFragments: [], argumentFragments: [], announced: false, nameSent: false, index: null };
+    chatItem = {
+      textFragments: [],
+      argumentFragments: [],
+      announced: false,
+      nameSent: false,
+      index: null,
+      canonicalIdentity: false,
+      incrementalSafe: true
+    };
   }
   for (const candidate of existing) {
     if (candidate === chatItem) continue;
@@ -449,7 +458,10 @@ function chatItemState(state, item) {
     chatItem.announced ||= candidate.announced;
     chatItem.nameSent ||= candidate.nameSent;
     chatItem.index ??= candidate.index;
+    chatItem.canonicalIdentity ||= candidate.canonicalIdentity;
+    chatItem.incrementalSafe = chatItem.incrementalSafe !== false && candidate.incrementalSafe !== false;
   }
+  if (existing.length > 1 || aliases.size > 1) chatItem.incrementalSafe = false;
   chatItem.textFragments = uniqueFragments(chatItem.textFragments);
   chatItem.argumentFragments = uniqueFragments(chatItem.argumentFragments);
   for (const order of aliases) state.responsesChatItems.set(order, chatItem);
@@ -495,11 +507,47 @@ function isExecutableToolItem(item) {
   return isToolItem(item) && typeof item.name === "string" && item.name.trim() !== "";
 }
 
+function isToolArgumentDelta(type) {
+  return type === "response.function_call_arguments.delta" ||
+    type === "response.custom_tool_call_input.delta";
+}
+
+function matchesToolIdentity(item, data) {
+  const aliases = new Set([item.id, item.callId].filter(Boolean));
+  const eventAliases = [data?.item_id, data?.call_id].filter(Boolean);
+  return eventAliases.length > 0 && eventAliases.every(alias => aliases.has(alias));
+}
+
+function updateToolStreamingState(state, reduced) {
+  if (!isToolItem(reduced.item)) return;
+  const chatItem = chatItemState(state, reduced.item);
+  const snapshot = reduced.data?.item;
+
+  if (reduced.type === "response.output_item.added" || reduced.type === "response.output_item.done") {
+    const itemId = reduced.data?.item_id || snapshot?.id;
+    const callId = reduced.data?.call_id || snapshot?.call_id;
+    chatItem.canonicalIdentity ||= Number.isInteger(reduced.item.outputIndex) &&
+      Boolean(itemId && callId && snapshot?.name);
+  } else if (isToolArgumentDelta(reduced.type) &&
+      (!chatItem.canonicalIdentity || !matchesToolIdentity(reduced.item, reduced.data))) {
+    // Arguments that cannot yet be tied to canonical metadata may be joined
+    // through a later alias bridge, which can prepend or reorder fragments.
+    chatItem.incrementalSafe = false;
+  }
+}
+
 function hasStableOutputOrder(items) {
   if (items.length === 0) return true;
   const indices = items.map(item => item.outputIndex);
   if (indices.every(index => index === null)) return true;
   if (indices.some(index => index === null)) return false;
+  const unique = [...new Set(indices)].sort((a, b) => a - b);
+  return unique.length === items.length && unique.every((index, position) => index === position);
+}
+
+function hasCanonicalOutputOrder(items) {
+  if (items.length === 0 || items.some(item => item.outputIndex === null)) return false;
+  const indices = items.map(item => item.outputIndex);
   const unique = [...new Set(indices)].sort((a, b) => a - b);
   return unique.length === items.length && unique.every((index, position) => index === position);
 }
@@ -538,15 +586,21 @@ function emitPendingTool(state, accumulator, item, force = false) {
   return [buildChunk(chatMetadata(state, accumulator), { tool_calls: [toolCall] })];
 }
 
-function flushReadyTools(state, accumulator, force = false) {
+function flushReadyTools(state, accumulator, force = false, reduced = null) {
   const items = getResponsesItems(accumulator);
   const tools = items.filter(isToolItem);
   if (tools.length === 0) return [];
 
-  // A currently contiguous prefix can still be invalidated by a later item.
-  // Hold translated tools until the terminal event fixes the complete order.
-  if (!force) return [];
-  if (accumulator.outputOrderConflict || !hasStableOutputOrder(items)) return [];
+  if (accumulator.outputOrderConflict) return [];
+  if (force) {
+    if (!hasStableOutputOrder(items)) return [];
+  } else {
+    if (!isToolArgumentDelta(reduced?.type) || !hasCanonicalOutputOrder(items)) return [];
+    if (tools.some(item => {
+      const chatItem = chatItemState(state, item);
+      return !chatItem.canonicalIdentity || !chatItem.incrementalSafe;
+    })) return [];
+  }
 
   const chunks = [];
   for (const item of tools.filter(isExecutableToolItem)) {

@@ -2,6 +2,7 @@ import { convertResponsesStreamToJson } from "../../transformer/streamToJsonConv
 import { createErrorResult } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { FORMATS } from "../../translator/formats.js";
+import { GEMINI_FINISH, OPENAI_FINISH } from "../../translator/schema/index.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 
@@ -32,6 +33,34 @@ function pickAssistantMessageForChatCompletion(output) {
   }
   const last = messages[messages.length - 1];
   return { msgItem: last, textContent: textFromResponsesMessageItem(last) };
+}
+
+function responsesFinishReason(response, hasToolCalls = false) {
+  if (response?.status === "completed") {
+    return hasToolCalls ? OPENAI_FINISH.TOOL_CALLS : OPENAI_FINISH.STOP;
+  }
+  if (response?.status === "incomplete" && response.incomplete_details?.reason === "max_output_tokens") {
+    return OPENAI_FINISH.LENGTH;
+  }
+  return OPENAI_FINISH.STOP;
+}
+
+function responsesGeminiFinishReason(response) {
+  if (response?.status === "completed") return GEMINI_FINISH.STOP;
+  if (response?.status === "incomplete" && response.incomplete_details?.reason === "max_output_tokens") {
+    return GEMINI_FINISH.MAX_TOKENS;
+  }
+  return null;
+}
+
+function responsesDiagnostic(response) {
+  const error = response?.error;
+  if (error) return `[Error] ${error.message || JSON.stringify(error)}`;
+  const incompleteReason = response?.incomplete_details?.reason;
+  if (response?.status === "incomplete" && incompleteReason && incompleteReason !== "max_output_tokens") {
+    return `[Incomplete] ${incompleteReason}`;
+  }
+  return "";
 }
 
 /**
@@ -127,15 +156,18 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
       saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, silent: true });
       if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
 
-      const { msgItem, textContent } = pickAssistantMessageForChatCompletion(jsonResponse.output);
+      const { textContent } = pickAssistantMessageForChatCompletion(jsonResponse.output);
+      const diagnostic = responsesDiagnostic(jsonResponse);
+      const responseContent = `${textContent || ""}${diagnostic}`;
+      const responseFinish = responsesFinishReason(jsonResponse);
       const totalLatency = Date.now() - requestStartTime;
 
       saveRequestDetail(buildRequestDetail({
         ...ctx,
         latency: { ttft: totalLatency, total: totalLatency },
         tokens: { prompt_tokens: usage.input_tokens || 0, completion_tokens: usage.output_tokens || 0 },
-        response: { content: textContent, thinking: null, finish_reason: jsonResponse.status || "unknown" },
-        status: "success"
+        response: { content: responseContent, thinking: null, finish_reason: responseFinish },
+        status: jsonResponse.status === "completed" ? "success" : "error"
       }, { endpoint: clientRawRequest?.endpoint || null })).catch(() => {});
 
       // Client is Responses API → return as-is
@@ -161,19 +193,24 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
       const hasToolCalls = toolCalls.length > 0;
 
       if (sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI) {
+        const candidate = {
+          content: { role: "model", parts: [{ text: responseContent }] },
+          index: 0
+        };
+        const geminiFinishReason = responsesGeminiFinishReason(jsonResponse);
+        if (geminiFinishReason) candidate.finishReason = geminiFinishReason;
         finalResp = {
           response: {
-            candidates: [{ content: { role: "model", parts: [{ text: textContent || "" }] }, finishReason: "STOP", index: 0 }],
+            candidates: [candidate],
             usageMetadata: { promptTokenCount: inTokens, candidatesTokenCount: outTokens, totalTokenCount: inTokens + outTokens },
             modelVersion: model,
             responseId: jsonResponse.id || `resp_${Date.now()}`
           }
         };
       } else {
-        const message = { role: "assistant", content: textContent || (hasToolCalls ? null : "") };
+        const message = { role: "assistant", content: responseContent || (hasToolCalls ? null : "") };
         if (hasToolCalls) message.tool_calls = toolCalls;
-        const responseDone = jsonResponse.status === "completed" || jsonResponse.status === "done";
-        const finishReason = hasToolCalls ? "tool_calls" : (responseDone ? "stop" : (jsonResponse.status || "stop"));
+        const finishReason = responsesFinishReason(jsonResponse, hasToolCalls);
         finalResp = {
           id: jsonResponse.id || `chatcmpl-${Date.now()}`,
           object: "chat.completion",

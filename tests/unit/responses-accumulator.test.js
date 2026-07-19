@@ -392,6 +392,79 @@ describe("Responses accumulator P0 reconstruction", () => {
 });
 
 describe("Responses stream and forced non-stream parity", () => {
+  it("streams a canonical single tool's argument deltas without terminal replay", () => {
+    const state = { model: "gpt-p0", created: 123 };
+    const metadata = openaiResponsesToOpenAIResponse(event("response.output_item.added", {
+      output_index: 0,
+      item: { id: "fc_stream", type: "function_call", call_id: "call_stream", name: "search", arguments: "" }
+    }), state);
+    const first = openaiResponsesToOpenAIResponse(event("response.function_call_arguments.delta", {
+      output_index: 0, item_id: "fc_stream", call_id: "call_stream", delta: "{\"q\":"
+    }), state);
+    const second = openaiResponsesToOpenAIResponse(event("response.function_call_arguments.delta", {
+      output_index: 0, item_id: "fc_stream", call_id: "call_stream", delta: "\"router\"}"
+    }), state);
+    const terminal = openaiResponsesToOpenAIResponse(event("response.completed", {
+      response: { status: "completed", output: [] }
+    }), state);
+
+    expect(metadata).toBeNull();
+    expect(first[0].choices[0].delta.tool_calls[0]).toEqual({
+      index: 0,
+      id: "call_stream",
+      type: "function",
+      function: { name: "search", arguments: "{\"q\":" }
+    });
+    expect(second[0].choices[0].delta.tool_calls[0]).toEqual({
+      index: 0,
+      function: { arguments: "\"router\"}" }
+    });
+    expect(terminal).toHaveLength(1);
+    expect(terminal[0].choices[0].delta.tool_calls).toBeUndefined();
+    expect(terminal[0].choices[0].finish_reason).toBe("tool_calls");
+  });
+
+  it("buffers an interleaved arguments-before-metadata turn until identities are final", () => {
+    const state = { model: "gpt-p0", created: 123 };
+    const beforeMetadata = openaiResponsesToOpenAIResponse(event("response.function_call_arguments.delta", {
+      output_index: 1, item_id: "fc_b", call_id: "call_b", delta: "{\"b\":"
+    }), state);
+    const metadataA = openaiResponsesToOpenAIResponse(event("response.output_item.added", {
+      output_index: 0,
+      item: { id: "fc_a", type: "function_call", call_id: "call_a", name: "a", arguments: "" }
+    }), state);
+    const deltaA = openaiResponsesToOpenAIResponse(event("response.function_call_arguments.delta", {
+      output_index: 0, item_id: "fc_a", call_id: "call_a", delta: "{}"
+    }), state);
+    const metadataB = openaiResponsesToOpenAIResponse(event("response.output_item.added", {
+      output_index: 1,
+      item: { id: "fc_b", type: "function_call", call_id: "call_b", name: "b", arguments: "" }
+    }), state);
+    const deltaB = openaiResponsesToOpenAIResponse(event("response.function_call_arguments.delta", {
+      output_index: 1, item_id: "fc_b", call_id: "call_b", delta: "2}"
+    }), state);
+    const terminal = openaiResponsesToOpenAIResponse(event("response.completed", {
+      response: { status: "completed", output: [] }
+    }), state);
+
+    expect([beforeMetadata, metadataA, deltaA, metadataB, deltaB]).toEqual([null, null, null, null, null]);
+    expect(terminal.slice(0, -1).map(chunk => chunk.choices[0].delta.tool_calls[0])).toEqual([
+      {
+        index: 0,
+        id: "call_a",
+        type: "function",
+        function: { name: "a", arguments: "{}" }
+      },
+      {
+        index: 1,
+        id: "call_b",
+        type: "function",
+        function: { name: "b", arguments: "{\"b\":2}" }
+      }
+    ]);
+    expect(terminal.at(-1).choices[0].finish_reason).toBe("tool_calls");
+  });
+
   it("reconstructs the same text, reasoning, tools, status, and usage", async () => {
     const events = p0Events();
     const json = await convertResponsesStreamToJson(streamFromEvents(events));
