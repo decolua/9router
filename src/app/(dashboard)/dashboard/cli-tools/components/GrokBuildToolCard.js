@@ -59,11 +59,10 @@ export default function GrokBuildToolCard({
   }, [initialStatus]);
 
   useEffect(() => {
-    if (isExpanded && !grokStatus) {
-      checkStatus();
+    if (isExpanded) {
+      if (!grokStatus) checkStatus();
       fetchModelAliases();
     }
-    if (isExpanded) fetchModelAliases();
   }, [isExpanded]);
 
   const fetchModelAliases = async () => {
@@ -203,6 +202,8 @@ api_key = "${keyToUse}"
               className="size-8 object-contain rounded-lg"
               sizes="32px"
               onError={(e) => { e.target.style.display = "none"; }}
+            loading="lazy"
+            decoding="async"
             />
           </div>
           <div className="min-w-0">
@@ -366,15 +367,17 @@ api_key = "${keyToUse}"
         </div>
       )}
 
-      <ModelSelectModal
-        isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onSelect={handleModelSelect}
-        selectedModel={selectedModel}
-        activeProviders={activeProviders}
-        modelAliases={modelAliases}
-        title="Select Model for Grok Build"
-      />
+      {modalOpen && (
+        <ModelSelectModal
+          isOpen={modalOpen}
+          onClose={() => setModalOpen(false)}
+          onSelect={handleModelSelect}
+          selectedModel={selectedModel}
+          activeProviders={activeProviders}
+          modelAliases={modelAliases}
+          title="Select Model for Grok Build"
+        />
+      )}
 
       <ManualConfigModal
         isOpen={showManualConfigModal}
