@@ -1,3 +1,5 @@
+import { GROK_CLI_BASE_URL } from "../../config/grokCli.js";
+
 export default {
   id: "xai",
   priority: 280,
@@ -25,6 +27,12 @@ export default {
     clientId: "b1a00492-073a-47ea-816f-4c329264a828",
     tokenUrl: "https://auth.x.ai/oauth2/token",
     refreshUrl: "https://auth.x.ai/oauth2/token",
+    // xAI OAuth grants include grok-cli:access, so the same token can read
+    // the billing and subscription endpoints used by the official Grok CLI.
+    usage: {
+      url: `${GROK_CLI_BASE_URL}/billing?format=credits`,
+      userUrl: `${GROK_CLI_BASE_URL}/user?include=subscription`,
+    },
   },
   models: [
     { id: "grok-4", name: "Grok 4" },
@@ -43,5 +51,8 @@ export default {
     defaultModel: "grok-4.20-reasoning",
     endpoint: "https://api.x.ai/v1/responses",
     pricingUrl: "https://x.ai/api#pricing",
+  },
+  features: {
+    usage: true,
   },
 };

@@ -2,6 +2,7 @@
 
 ## Features
 - **xAI**: Grok Imagine video generation (`/v1/videos`) + CLI
+- **xAI**: show OAuth account plan and available credits in Quota Tracker
 - **CLI tools**: Grok Build setup — writes `[model.9router]` to `~/.grok/config.toml`
 - **GitHub Copilot**: route Claude models through Copilot's native `/v1/messages`
 - **Kiro**: add GPT-5.6 model family (#2596)
