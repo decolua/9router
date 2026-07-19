@@ -114,14 +114,23 @@ export function getModelLockKey(model) {
 }
 
 /**
+ * Get the active lock expiry for a specific model on one connection.
+ */
+export function getModelLockUntil(connection, model) {
+  if (!connection) return null;
+  const key = getModelLockKey(model);
+  const expiry = connection[key] || connection[MODEL_LOCK_ALL];
+  const expiryMs = expiry ? new Date(expiry).getTime() : NaN;
+  if (!Number.isFinite(expiryMs) || expiryMs <= Date.now()) return null;
+  return new Date(expiryMs).toISOString();
+}
+
+/**
  * Check if a model lock on a connection is still active.
  * Reads flat field `modelLock_${model}` (or `modelLock___all` when model=null).
  */
 export function isModelLockActive(connection, model) {
-  const key = getModelLockKey(model);
-  const expiry = connection[key] || connection[MODEL_LOCK_ALL];
-  if (!expiry) return false;
-  return new Date(expiry).getTime() > Date.now();
+  return getModelLockUntil(connection, model) !== null;
 }
 
 /**
