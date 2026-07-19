@@ -4,6 +4,7 @@ import {
   getProviderCredentials,
   markAccountUnavailable,
   clearAccountError,
+  classifySessionAffinityFailure,
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
@@ -200,11 +201,14 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   const excludeConnectionIds = new Set();
   let lastError = null;
   let lastStatus = null;
+  let affinityFailure = null;
 
   while (true) {
     const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, {
       sessionId: routingSessionId,
+      affinityFailure,
     });
+    affinityFailure = null;
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
@@ -283,6 +287,14 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);
 
     if (shouldFallback) {
+      const classifiedFailure = classifySessionAffinityFailure(result.status, result.error);
+      affinityFailure = {
+        ...classifiedFailure,
+        mode: classifiedFailure.mode === "hard-rebind" && credentials._sessionAffinity?.selectedFromAffinity
+          ? "hard-rebind"
+          : "soft-escape",
+        connectionId: credentials.connectionId,
+      };
       log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} UNAVAILABLE (${result.status}) → NEXT ACCOUNT`);
       excludeConnectionIds.add(credentials.connectionId);
       lastError = result.error;

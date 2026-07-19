@@ -1,43 +1,88 @@
+import { createHash } from "crypto";
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { MEMORY_CONFIG } from "open-sse/config/runtimeConfig.js";
+import { getModelQuotaFamily, getModelUpstreamId, PROVIDER_ID_TO_ALIAS } from "open-sse/config/providerModels.js";
+import { resolveKiroModel } from "open-sse/config/kiroConstants.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
 let selectionMutex = Promise.resolve();
 const sessionAffinityState = new Map();
-const MAX_SESSION_AFFINITIES = 5000;
 
-function normalizeSessionAffinityId(value) {
+function sessionAffinityDigest(value) {
   if (typeof value !== "string") return null;
   const v = value.trim();
   if (!v || v.length > 256) return null;
-  return v;
+  return createHash("sha256").update(v).digest("hex");
 }
 
-function sessionAffinityKey(providerId, sessionId) {
-  return `${providerId}:${sessionId}`;
+function canonicalSessionAffinitySlot(providerId, model) {
+  const requestedModel = typeof model === "string" && model.trim() ? model.trim() : "__all";
+  // Thinking effort is request metadata, not part of the upstream model/account
+  // capability slot. Normalize it before both registry and synthetic-alias lookup.
+  const canonicalRequestedModel = requestedModel.replace(/\([^()]+\)\s*$/, "").trim() || requestedModel;
+  const providerAlias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
+  let upstreamModel = getModelUpstreamId(providerAlias, canonicalRequestedModel) || canonicalRequestedModel;
+  if (providerId === "kiro") upstreamModel = resolveKiroModel(upstreamModel).upstream;
+  const quotaFamily = getModelQuotaFamily(providerAlias, canonicalRequestedModel);
+  return quotaFamily ? `${upstreamModel}#${quotaFamily}` : upstreamModel;
 }
 
-function rememberSessionAffinity(providerId, sessionId, connectionId) {
-  if (!providerId || !sessionId || !connectionId) return;
-  if (sessionAffinityState.size >= MAX_SESSION_AFFINITIES) {
+function sessionAffinityContext(providerId, model, sessionId) {
+  const digest = sessionAffinityDigest(sessionId);
+  if (!providerId || !digest) return null;
+  const slot = canonicalSessionAffinitySlot(providerId, model);
+  return { digest, slot, key: `${providerId}:${slot}:${digest}` };
+}
+
+function cleanupExpiredSessionAffinities(now = Date.now()) {
+  for (const [key, entry] of sessionAffinityState) {
+    if (now - entry.lastUsed > MEMORY_CONFIG.sessionTtlMs) sessionAffinityState.delete(key);
+  }
+}
+
+function rememberSessionAffinity(context, connectionId, now = Date.now()) {
+  if (!context || !connectionId) return;
+  cleanupExpiredSessionAffinities(now);
+  sessionAffinityState.delete(context.key);
+  while (sessionAffinityState.size >= MEMORY_CONFIG.sessionAffinityMaxSize) {
     sessionAffinityState.delete(sessionAffinityState.keys().next().value);
   }
-  sessionAffinityState.set(sessionAffinityKey(providerId, sessionId), {
-    connectionId,
-    lastUsed: Date.now(),
-  });
+  sessionAffinityState.set(context.key, { connectionId, lastUsed: now });
 }
 
-function getSessionAffinity(providerId, sessionId) {
-  if (!providerId || !sessionId) return null;
-  const entry = sessionAffinityState.get(sessionAffinityKey(providerId, sessionId));
-  if (entry) entry.lastUsed = Date.now();
-  return entry?.connectionId || null;
+function getSessionAffinity(context, now = Date.now()) {
+  if (!context) return { connectionId: null, missReason: "no_session" };
+  const entry = sessionAffinityState.get(context.key);
+  if (!entry) return { connectionId: null, missReason: "new_session" };
+  if (now - entry.lastUsed > MEMORY_CONFIG.sessionTtlMs) {
+    sessionAffinityState.delete(context.key);
+    return { connectionId: null, previousConnectionId: entry.connectionId, missReason: "expired" };
+  }
+  entry.lastUsed = now;
+  sessionAffinityState.delete(context.key);
+  sessionAffinityState.set(context.key, entry);
+  return { connectionId: entry.connectionId, missReason: null };
+}
+
+function deleteSessionAffinity(context, expectedConnectionId) {
+  if (!context) return false;
+  const entry = sessionAffinityState.get(context.key);
+  if (!entry || (expectedConnectionId && entry.connectionId !== expectedConnectionId)) return false;
+  sessionAffinityState.delete(context.key);
+  return true;
+}
+
+function logSessionAffinity(provider, event, context, reason, fromConnectionId, toConnectionId) {
+  const transition = fromConnectionId
+    ? ` account=${fromConnectionId}->${toConnectionId || "none"}`
+    : ` account=${toConnectionId || "none"}`;
+  const write = event === "hit" || (event === "miss" && reason !== "expired") ? log.debug : log.info;
+  write("AUTH", `${provider} | affinity ${event} session=${context.digest} slot=${context.slot} reason=${reason}${transition}`);
 }
 
 export function resetProviderSessionAffinity() {
@@ -45,14 +90,39 @@ export function resetProviderSessionAffinity() {
 }
 
 const affinityCleanup = setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of sessionAffinityState) {
-    if (now - entry.lastUsed > MEMORY_CONFIG.sessionTtlMs) {
-      sessionAffinityState.delete(key);
-    }
-  }
+  cleanupExpiredSessionAffinities();
 }, MEMORY_CONFIG.sessionCleanupIntervalMs);
 if (affinityCleanup.unref) affinityCleanup.unref();
+
+const SOFT_AFFINITY_STATUSES = new Set([408, 409, 423, 425, 429, 500, 502, 503, 504]);
+
+export function classifySessionAffinityFailure(status, errorText) {
+  const statusCode = Number(status);
+  if (SOFT_AFFINITY_STATUSES.has(statusCode)) {
+    if (statusCode === 429) return { mode: "soft-escape", reason: "rate_limited" };
+    if (statusCode === 408 || statusCode === 504) return { mode: "soft-escape", reason: "timeout" };
+    if (statusCode === 423) return { mode: "soft-escape", reason: "locked" };
+    return { mode: "soft-escape", reason: "transient_upstream" };
+  }
+  if (statusCode === 401 || statusCode === 403) return { mode: "hard-rebind", reason: "credential_rejected" };
+  if (statusCode === 402) return { mode: "hard-rebind", reason: "quota_exhausted" };
+  if (statusCode === 404 || statusCode === 406) return { mode: "hard-rebind", reason: "unsupported_capability" };
+
+  const message = typeof errorText === "string" ? errorText.toLowerCase() : "";
+  if (/unsupported|not supported|model not found|capability/.test(message)) {
+    return { mode: "hard-rebind", reason: "unsupported_capability" };
+  }
+  if (/invalid (api )?key|invalid credential|credential.*disabled|account.*disabled|no credentials/.test(message)) {
+    return { mode: "hard-rebind", reason: "credential_unavailable" };
+  }
+  if (/quota (exhausted|depleted)|insufficient quota|billing.*exhausted/.test(message)) {
+    return { mode: "hard-rebind", reason: "quota_exhausted" };
+  }
+  if (/rate limit|too many requests|busy|locked|timeout|timed out|capacity|overloaded/.test(message)) {
+    return { mode: "soft-escape", reason: "transient_pressure" };
+  }
+  return { mode: "soft-escape", reason: "transient_unknown" };
+}
 
 /**
  * Get provider credentials from localDb
@@ -67,7 +137,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     ? excludeConnectionIds
     : (excludeConnectionIds ? new Set([excludeConnectionIds]) : new Set());
   const preferredConnectionId = options?.preferredConnectionId || null;
-  const sessionId = normalizeSessionAffinityId(options?.sessionId);
+  const sessionId = options?.sessionId;
+  const affinityFailure = options?.affinityFailure || null;
   // Acquire mutex to prevent race conditions
   const currentMutex = selectionMutex;
   let resolveMutex;
@@ -78,6 +149,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
 
     // Resolve alias to provider ID (e.g., "kc" -> "kilocode")
     const providerId = resolveProviderId(provider);
+    const affinityContext = sessionAffinityContext(providerId, model, sessionId);
 
     // Inject a virtual connection for no-auth free providers (with optional proxy pool from settings)
     if (FREE_PROVIDERS[providerId]?.noAuth) {
@@ -107,14 +179,54 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     }
 
     const connections = await getProviderConnections({ provider: providerId, isActive: true });
+    let settings = null;
+    let providerOverride = null;
+    let strategy = null;
+    let affinityLookup = null;
+    let affinityTransition = null;
+    if (affinityContext) {
+      settings = await getSettings();
+      providerOverride = (settings.providerStrategies || {})[providerId] || {};
+      strategy = providerOverride.fallbackStrategy || settings.fallbackStrategy || "fill-first";
+      if (strategy === "round-robin") {
+        affinityLookup = getSessionAffinity(affinityContext);
+        if (
+          affinityFailure?.mode === "hard-rebind" &&
+          affinityLookup.connectionId === affinityFailure.connectionId &&
+          deleteSessionAffinity(affinityContext, affinityFailure.connectionId)
+        ) {
+          affinityTransition = {
+            event: "hard rebind",
+            reason: affinityFailure.reason,
+            fromConnectionId: affinityFailure.connectionId,
+          };
+          affinityLookup = { connectionId: null, missReason: affinityFailure.reason };
+        }
+
+        if (affinityLookup.connectionId && !connections.some((c) => c.id === affinityLookup.connectionId)) {
+          deleteSessionAffinity(affinityContext, affinityLookup.connectionId);
+          affinityTransition = {
+            event: "hard rebind",
+            reason: "account_unavailable",
+            fromConnectionId: affinityLookup.connectionId,
+          };
+          affinityLookup = { connectionId: null, missReason: "account_unavailable" };
+        }
+      }
+    }
     log.debug("AUTH", `${provider} | total connections: ${connections.length}, excludeIds: ${excludeSet.size > 0 ? [...excludeSet].join(",") : "none"}, model: ${model || "any"}`);
 
     if (connections.length === 0) {
+      if (affinityTransition) {
+        logSessionAffinity(provider, affinityTransition.event, affinityContext, affinityTransition.reason, affinityTransition.fromConnectionId, null);
+      }
       log.warn("AUTH", `No credentials for ${provider}`);
       return null;
     }
 
-    // Filter out model-locked and excluded connections
+    // Model locks are persisted cooldown timestamps, not acquire/release locks.
+    // Waiting while holding the selection mutex would serialize unrelated requests,
+    // so locked sticky accounts use a request-local soft escape instead of waiting.
     const availableConnections = connections.filter(c => {
       if (excludeSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
@@ -132,6 +244,9 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     });
 
     if (availableConnections.length === 0) {
+      if (affinityTransition) {
+        logSessionAffinity(provider, affinityTransition.event, affinityContext, affinityTransition.reason, affinityTransition.fromConnectionId, null);
+      }
       // Find earliest lock expiry across all connections for retry timing
       const lockedConns = connections.filter(c => isModelLockActive(c, model));
       const expiries = lockedConns.map(c => getEarliestModelLockUntil(c)).filter(Boolean);
@@ -151,10 +266,9 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return null;
     }
 
-    const settings = await getSettings();
-    // Per-provider strategy overrides global setting
-    const providerOverride = (settings.providerStrategies || {})[providerId] || {};
-    const strategy = providerOverride.fallbackStrategy || settings.fallbackStrategy || "fill-first";
+    if (!settings) settings = await getSettings();
+    if (!providerOverride) providerOverride = (settings.providerStrategies || {})[providerId] || {};
+    if (!strategy) strategy = providerOverride.fallbackStrategy || settings.fallbackStrategy || "fill-first";
 
     let connection;
     // Pin to preferred connection if specified and available
@@ -165,8 +279,17 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       }
     }
     if (connection) {
-      if (strategy === "round-robin" && sessionId) {
-        rememberSessionAffinity(providerId, sessionId, connection.id);
+      if (strategy === "round-robin" && affinityContext) {
+        const boundConnectionId = affinityLookup?.connectionId || null;
+        if (boundConnectionId && boundConnectionId !== connection.id) {
+          logSessionAffinity(provider, "soft escape", affinityContext, "preferred_account", boundConnectionId, connection.id);
+        } else if (boundConnectionId) {
+          logSessionAffinity(provider, "hit", affinityContext, "preferred_account", null, connection.id);
+        } else {
+          rememberSessionAffinity(affinityContext, connection.id);
+          const transition = affinityTransition || { event: "miss", reason: "preferred_account" };
+          logSessionAffinity(provider, transition.event, affinityContext, transition.reason, transition.fromConnectionId, connection.id);
+        }
       }
       // skip strategy
     } else if (strategy === "round-robin") {
@@ -182,20 +305,31 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         return sortedByOldest[0];
       };
 
-      if (sessionId) {
-        const stickyConnectionId = getSessionAffinity(providerId, sessionId);
+      if (affinityContext) {
+        const stickyConnectionId = affinityLookup?.connectionId || null;
         connection = stickyConnectionId
           ? availableConnections.find((c) => c.id === stickyConnectionId)
           : null;
 
         if (connection) {
-          log.debug("AUTH", `${provider} | session-sticky ${sessionId.slice(0, 8)} → ${connection.id?.slice(0, 8)}`);
+          logSessionAffinity(provider, "hit", affinityContext, "bound_account_available", null, connection.id);
           await updateProviderConnection(connection.id, {
             lastUsedAt: new Date().toISOString()
           });
         } else {
           connection = pickOldest();
-          rememberSessionAffinity(providerId, sessionId, connection.id);
+          if (stickyConnectionId) {
+            const reason = affinityFailure?.reason || (excludeSet.has(stickyConnectionId) ? "request_excluded" : "temporary_model_lock");
+            logSessionAffinity(provider, "soft escape", affinityContext, reason, stickyConnectionId, connection.id);
+          } else {
+            rememberSessionAffinity(affinityContext, connection.id);
+            const transition = affinityTransition || {
+              event: "miss",
+              reason: affinityLookup?.missReason || "new_session",
+              fromConnectionId: affinityLookup?.previousConnectionId,
+            };
+            logSessionAffinity(provider, transition.event, affinityContext, transition.reason, transition.fromConnectionId, connection.id);
+          }
           await updateProviderConnection(connection.id, {
             lastUsedAt: new Date().toISOString(),
             consecutiveUseCount: 1
@@ -259,6 +393,12 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         vercelRelayUrl: resolvedProxy.vercelRelayUrl || "",
       },
       connectionId: connection.id,
+      _sessionAffinity: affinityContext ? {
+        digest: affinityContext.digest,
+        slot: affinityContext.slot,
+        boundConnectionId: sessionAffinityState.get(affinityContext.key)?.connectionId || null,
+        selectedFromAffinity: sessionAffinityState.get(affinityContext.key)?.connectionId === connection.id,
+      } : null,
       // Include current status for optimization check
       testStatus: connection.testStatus,
       lastError: connection.lastError,
