@@ -232,6 +232,32 @@ describe("parseGrokCliBilling", () => {
     const parsed = parseGrokCliBilling(ACTIVE_BILLING, SUPERGROK_USER);
     expect(parsed.plan).toBe("X Premium Plus");
   });
+
+  it("does not report paid subscription access as depleted on-demand credit", () => {
+    const parsed = parseGrokCliBilling(EXHAUSTED_BILLING, SUPERGROK_USER);
+    expect(parsed.plan).toBe("X Premium Plus");
+    expect(parsed.subscriptionAccess).toBe(true);
+    expect(parsed.quotas).toEqual({});
+    expect(parsed.exhausted).toBe(false);
+  });
+
+  it("maps current monthly fields and snake-case subscription tier", () => {
+    const parsed = parseGrokCliBilling({
+      monthlyLimit: { val: 1000 },
+      includedUsed: { val: 275 },
+      totalUsed: { val: 300 },
+      resetAt: "2026-08-01T00:00:00Z",
+    }, {
+      subscription_tier: "premium_plus",
+    });
+    expect(parsed.plan).toBe("Premium Plus");
+    expect(parsed.quotas["Monthly included"]).toMatchObject({
+      used: 275,
+      total: 1000,
+      remainingPercentage: 72.5,
+      resetAt: "2026-08-01T00:00:00.000Z",
+    });
+  });
 });
 
 describe("getUsageForProvider(grok-cli)", () => {
@@ -278,6 +304,8 @@ describe("getUsageForProvider(grok-cli)", () => {
     expect(billingCall[0]).toContain("format=credits");
     expect(billingCall[1].headers.Authorization).toBe("Bearer test-token");
     expect(billingCall[1].headers["x-xai-token-auth"]).toBe("xai-grok-cli");
+    expect(billingCall[1].headers["x-grok-client-version"]).toBe("0.2.99");
+    expect(billingCall[1].headers["x-grok-client-identifier"]).toBe("grok-shell");
     expect(billingCall[1].headers["x-userid"]).toBe(
       "d84768dd-224d-4052-ba49-0d336fa9160c",
     );
@@ -336,6 +364,25 @@ describe("getUsageForProvider(grok-cli)", () => {
     expect(usage.message).toBeUndefined();
     expect(usage.quotas["On-demand"].remainingPercentage).toBe(0);
     expect(usage.quotas["On-demand"].total).toBe(1);
+  });
+
+  it("reports active paid access when provider exposes no numeric quota", async () => {
+    proxyAwareFetch
+      .mockResolvedValueOnce(jsonResponse(EXHAUSTED_BILLING))
+      .mockResolvedValueOnce(jsonResponse({ config: {} }))
+      .mockResolvedValueOnce(jsonResponse({
+        ...USER_PROFILE,
+        subscriptionTier: "XPremiumPlus",
+      }));
+
+    const usage = await getUsageForProvider({
+      provider: "grok-cli",
+      accessToken: "test-token",
+    });
+
+    expect(usage.plan).toBe("X Premium Plus");
+    expect(usage.message).toMatch(/active.*numeric included quota/i);
+    expect(usage.quotas).toEqual({});
   });
 });
 
