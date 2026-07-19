@@ -203,4 +203,71 @@ describe("OAuth modal flow coordination", () => {
     expect(concurrentStopCount).toBe(1);
     expect(startedPools).toEqual(["pool-2"]);
   });
+
+  it("stops the fixed proxy with state received before React rerenders", async () => {
+    globalThis.fetch = vi.fn(async (url, options) => {
+      const target = String(url);
+      if (target.includes("/authorize")) {
+        const poolId = new URL(target).searchParams.get("proxyPoolId") || "initial";
+        return response({
+          authUrl: `https://auth.example/${poolId}`,
+          codeVerifier: `${poolId}-verifier`,
+          state: `${poolId}-state`,
+        });
+      }
+      if (target.includes("/start-proxy")) return response({ success: true, serverSide: true });
+      if (target.includes("/stop-proxy")) return response({ success: true });
+      throw new Error(`Unexpected request: ${target} ${options?.body || ""}`);
+    });
+    const tree = renderModal({ provider: "codex", authData: null });
+    const openEffect = harness.effects[1];
+    const select = findElement(tree, (node) => node.type?.name === "OAuthProxyPoolSelector");
+
+    openEffect();
+    await flushPromises();
+    await select.props.onChange({ target: { value: "pool-1" } });
+
+    const stopUrl = globalThis.fetch.mock.calls
+      .map(([url]) => String(url))
+      .find((url) => url.includes("/stop-proxy"));
+    expect(new URL(stopUrl, window.location.origin).searchParams.get("state")).toBe("initial-state");
+  });
+
+  it("cleans a stale fixed session that registers after the first stop", async () => {
+    const pendingStarts = [];
+    globalThis.fetch = vi.fn(async (url, options) => {
+      const target = String(url);
+      if (target.includes("/authorize")) {
+        const poolId = new URL(target).searchParams.get("proxyPoolId") || "initial";
+        return response({
+          authUrl: `https://auth.example/${poolId}`,
+          codeVerifier: `${poolId}-verifier`,
+          state: `${poolId}-state`,
+        });
+      }
+      if (target.includes("/start-proxy")) {
+        return await new Promise((resolve) => pendingStarts.push({ resolve }));
+      }
+      if (target.includes("/stop-proxy")) return response({ success: true });
+      throw new Error(`Unexpected request: ${target} ${options?.body || ""}`);
+    });
+    const tree = renderModal({ provider: "codex", authData: null });
+    const openEffect = harness.effects[1];
+    const select = findElement(tree, (node) => node.type?.name === "OAuthProxyPoolSelector");
+
+    openEffect();
+    await flushPromises();
+    const poolChange = select.props.onChange({ target: { value: "pool-1" } });
+    await flushPromises();
+    pendingStarts[0].resolve(response({ success: true, serverSide: true }));
+    await flushPromises();
+
+    const initialStops = globalThis.fetch.mock.calls
+      .map(([url]) => new URL(String(url), window.location.origin))
+      .filter((url) => url.pathname.endsWith("/stop-proxy") && url.searchParams.get("state") === "initial-state");
+    expect(initialStops).toHaveLength(2);
+
+    pendingStarts[1].resolve(response({ success: true, serverSide: true }));
+    await poolChange;
+  });
 });

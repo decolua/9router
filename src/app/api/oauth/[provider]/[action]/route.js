@@ -16,12 +16,14 @@ import {
   registerCodexSession,
   getCodexSessionStatus,
   clearCodexSession,
+  clearCodexSessions,
   startXaiProxy,
   stopXaiProxy,
   registerXaiSession,
   getXaiSessionContext,
   getXaiSessionStatus,
   clearXaiSession,
+  clearXaiSessions,
 } from "@/lib/oauth/utils/server";
 
 function withProxyPoolData(providerSpecificData, proxyPoolId) {
@@ -132,9 +134,11 @@ export async function GET(request, { params }) {
       const state = searchParams.get("state");
       if (provider === "xai") {
         if (state) clearXaiSession(state);
+        else clearXaiSessions();
         await stopXaiProxy();
       } else {
         if (state) clearCodexSession(state);
+        else clearCodexSessions();
         await stopCodexProxy();
       }
       return NextResponse.json({ success: true });

@@ -29,4 +29,9 @@ describe("Kiro social OAuth proxy UI wiring", () => {
     expect(modalSource).toContain('searchParams.set("proxyPoolId", selectedProxyPoolId)');
     expect(modalSource).toContain("proxyPoolId: selectedProxyPoolId");
   });
+
+  it("fences authorize and exchange work by flow generation", () => {
+    expect(modalSource).toContain("flowGenerationRef");
+    expect(modalSource).toContain("generation !== flowGenerationRef.current");
+  });
 });

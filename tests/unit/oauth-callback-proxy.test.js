@@ -149,9 +149,9 @@ describe("OAuth fixed-port callback proxy context", () => {
   });
 
   afterEach(async () => {
-    ["codex-state", "poll-state", "abandoned", "fresh", "first", "second", "stop-expired"]
+    ["codex-state", "poll-state", "abandoned", "fresh", "first", "second", "stop-expired", "orphan"]
       .forEach(clearCodexSession);
-    ["xai-state", "abandoned", "fresh", "first", "second", "stop-expired"]
+    ["xai-state", "abandoned", "fresh", "first", "second", "stop-expired", "orphan"]
       .forEach(clearXaiSession);
     httpMocks.deferClose = false;
     httpMocks.servers.forEach((server) => server.finishClose());
@@ -221,8 +221,7 @@ describe("OAuth fixed-port callback proxy context", () => {
     });
     expect(await startResponse.json()).toMatchObject({ success: true, serverSide: true });
     const session = provider === "codex" ? getCodexSessionStatus(state) : getXaiSessionStatus(state);
-    expect(session).toMatchObject({ proxyPoolId: "pool-1" });
-    expect(session).not.toHaveProperty("proxyOptions");
+    expect(session).toEqual({ status: "pending" });
 
     const callbackResponse = await httpMocks.servers.at(-1).request(
       `${new URL(callbackUrl).pathname}?code=auth-code&state=${state}`,
@@ -304,6 +303,48 @@ describe("OAuth fixed-port callback proxy context", () => {
     });
 
     expect(getCodexSessionStatus("codex-state")).toBeNull();
+  });
+
+  it.each([
+    ["codex", registerCodexSession, getCodexSessionStatus],
+    ["xai", registerXaiSession, getXaiSessionStatus],
+  ])("clears all %s sessions when stop-proxy has no state", async (provider, register, getStatus) => {
+    register({ state: "orphan", codeVerifier: "secret", redirectUri: "http://callback" });
+
+    await GET(new Request(`http://localhost/api/oauth/${provider}/stop-proxy`), {
+      params: Promise.resolve({ provider, action: "stop-proxy" }),
+    });
+
+    expect(getStatus("orphan")).toBeNull();
+  });
+
+  it.each([
+    ["codex", startCodexProxy, registerCodexSession],
+    ["xai", startXaiProxy, registerXaiSession],
+  ])("keeps the %s callback server alive for another pending session", async (_provider, start, register) => {
+    await start(20127);
+    register({ state: "first", codeVerifier: "first-secret", redirectUri: "http://callback" });
+    register({ state: "second", codeVerifier: "second-secret", redirectUri: "http://callback" });
+    const server = httpMocks.servers.at(-1);
+
+    await server.request("/callback?code=first-code&state=first");
+    expect(server.close).not.toHaveBeenCalled();
+
+    await server.request("/callback?code=second-code&state=second");
+    expect(mocks.exchangeTokens).toHaveBeenCalledTimes(2);
+    expect(server.close).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["codex", startCodexProxy],
+    ["xai", startXaiProxy],
+  ])("updates the %s legacy fallback app port while reusing its server", async (_provider, start) => {
+    await start(20127);
+    await start(20128);
+    const response = await httpMocks.servers.at(-1).request("/callback?code=legacy-code");
+
+    expect(response.status).toBe(302);
+    expect(response.headers.Location).toBe("http://localhost:20128/callback?code=legacy-code");
   });
 
   it("rejects xAI manual code proxy pool mismatch without exchanging tokens", async () => {

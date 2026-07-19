@@ -120,6 +120,7 @@ let codexProxyServer = null;
 let codexProxyTimeout = null;
 let codexProxyClosing = null;
 let codexProxyStarting = null;
+let codexProxyAppPort = null;
 
 const CODEX_PROXY_TIMEOUT_MS = 300000; // 5 minutes
 const CODEX_PORT = CODEX_CONFIG.fixedPort;
@@ -164,9 +165,17 @@ function getLiveSession(sessions, state) {
 
 function publicSessionStatus(session) {
   if (!session) return null;
-  const status = { ...session };
-  delete status.proxyOptions;
-  return status;
+  return {
+    status: session.status,
+    ...(session.connectionId ? { connectionId: session.connectionId } : {}),
+    ...(session.email ? { email: session.email } : {}),
+    ...(session.error ? { error: session.error } : {}),
+  };
+}
+
+function hasPendingSessions(sessions) {
+  pruneExpiredSessions(sessions);
+  return [...sessions.values()].some((session) => session.status === "pending");
 }
 
 /**
@@ -199,6 +208,10 @@ export function getCodexSessionStatus(state) {
  */
 export function clearCodexSession(state) {
   pendingExchanges.delete(state);
+}
+
+export function clearCodexSessions() {
+  pendingExchanges.clear();
 }
 
 function withProxyPoolData(providerSpecificData, proxyPoolId) {
@@ -237,6 +250,7 @@ function renderCodexResultPage(success, message) {
  */
 export async function startCodexProxy(appPort) {
   if (codexProxyClosing) await codexProxyClosing;
+  codexProxyAppPort = appPort;
   if (codexProxyServer) return { success: true };
   if (codexProxyStarting) return codexProxyStarting;
 
@@ -305,7 +319,7 @@ export async function startCodexProxy(appPort) {
       }
 
       // Mode B: legacy channel fallback — 302 redirect to app /callback
-      const redirectUrl = `http://localhost:${appPort}/callback${url.search}`;
+      const redirectUrl = `http://localhost:${codexProxyAppPort}/callback${url.search}`;
       res.writeHead(302, { Location: redirectUrl });
       res.end();
       stopCodexProxy();
@@ -313,7 +327,7 @@ export async function startCodexProxy(appPort) {
 
     server.listen(CODEX_PORT, "127.0.0.1", () => {
       codexProxyServer = server;
-      codexProxyTimeout = setTimeout(() => stopCodexProxy(), CODEX_PROXY_TIMEOUT_MS);
+      codexProxyTimeout = setTimeout(() => stopCodexProxy({ force: true }), CODEX_PROXY_TIMEOUT_MS);
       resolve({ success: true });
     });
 
@@ -336,8 +350,9 @@ export async function startCodexProxy(appPort) {
 /**
  * Stop the Codex proxy server and cleanup
  */
-export async function stopCodexProxy() {
+export async function stopCodexProxy({ force = false } = {}) {
   pruneExpiredSessions(pendingExchanges);
+  if (!force && hasPendingSessions(pendingExchanges)) return Promise.resolve();
   if (codexProxyTimeout) {
     clearTimeout(codexProxyTimeout);
     codexProxyTimeout = null;
@@ -353,6 +368,7 @@ export async function stopCodexProxy() {
   const server = codexProxyServer;
   codexProxyClosing = closeProxyServer(server).then(() => {
     if (codexProxyServer === server) codexProxyServer = null;
+    if (codexProxyServer === null) codexProxyAppPort = null;
     codexProxyClosing = null;
   });
   return codexProxyClosing;
@@ -368,6 +384,7 @@ let xaiProxyServer = null;
 let xaiProxyTimeout = null;
 let xaiProxyClosing = null;
 let xaiProxyStarting = null;
+let xaiProxyAppPort = null;
 const XAI_PROXY_TIMEOUT_MS = 300000; // 5 minutes
 const XAI_PROXY_PORT = 56121;
 const xaiPendingExchanges = new Map();
@@ -399,6 +416,10 @@ export function clearXaiSession(state) {
   xaiPendingExchanges.delete(state);
 }
 
+export function clearXaiSessions() {
+  xaiPendingExchanges.clear();
+}
+
 function renderXaiResultPage(success, message) {
   return renderCodexResultPage(success, message);
 }
@@ -410,6 +431,7 @@ function renderXaiResultPage(success, message) {
  */
 export async function startXaiProxy(appPort) {
   if (xaiProxyClosing) await xaiProxyClosing;
+  xaiProxyAppPort = appPort;
   if (xaiProxyServer) return { success: true };
   if (xaiProxyStarting) return xaiProxyStarting;
 
@@ -476,7 +498,7 @@ export async function startXaiProxy(appPort) {
       }
 
       // Mode B: legacy fallback redirect
-      const redirectUrl = `http://localhost:${appPort}/callback${url.search}`;
+      const redirectUrl = `http://localhost:${xaiProxyAppPort}/callback${url.search}`;
       res.writeHead(302, { Location: redirectUrl });
       res.end();
       stopXaiProxy();
@@ -484,7 +506,7 @@ export async function startXaiProxy(appPort) {
 
     server.listen(XAI_PROXY_PORT, "127.0.0.1", () => {
       xaiProxyServer = server;
-      xaiProxyTimeout = setTimeout(() => stopXaiProxy(), XAI_PROXY_TIMEOUT_MS);
+      xaiProxyTimeout = setTimeout(() => stopXaiProxy({ force: true }), XAI_PROXY_TIMEOUT_MS);
       resolve({ success: true });
     });
 
@@ -504,8 +526,9 @@ export async function startXaiProxy(appPort) {
   }
 }
 
-export async function stopXaiProxy() {
+export async function stopXaiProxy({ force = false } = {}) {
   pruneExpiredSessions(xaiPendingExchanges);
+  if (!force && hasPendingSessions(xaiPendingExchanges)) return Promise.resolve();
   if (xaiProxyTimeout) {
     clearTimeout(xaiProxyTimeout);
     xaiProxyTimeout = null;
@@ -521,6 +544,7 @@ export async function stopXaiProxy() {
   const server = xaiProxyServer;
   xaiProxyClosing = closeProxyServer(server).then(() => {
     if (xaiProxyServer === server) xaiProxyServer = null;
+    if (xaiProxyServer === null) xaiProxyAppPort = null;
     xaiProxyClosing = null;
   });
   return xaiProxyClosing;

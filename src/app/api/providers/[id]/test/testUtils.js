@@ -241,7 +241,7 @@ async function refreshOAuthToken(connection) {
     }
 
     if (provider === "codex" || provider === "grok-cli" || provider === "xai") {
-      return await refreshProviderCredentials(provider, connection, console);
+      return await refreshProviderCredentials(provider, connection, console, effectiveProxy);
     }
 
     if (provider === "claude") {

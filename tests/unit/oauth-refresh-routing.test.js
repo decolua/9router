@@ -1,4 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 const mocks = vi.hoisted(() => ({
   proxyAwareFetch: vi.fn(),
@@ -122,5 +124,14 @@ describe("proactive OAuth refresh routing", () => {
 
     expect(result?.accessToken).toBe("new-access");
     expect(lastProxyOptions(provider)).toEqual({ disableEnvProxy: true });
+  });
+
+  it("passes resolved pool context through manual provider tests", () => {
+    const source = readFileSync(fileURLToPath(new URL(
+      "../../src/app/api/providers/[id]/test/testUtils.js",
+      import.meta.url,
+    )), "utf8");
+
+    expect(source).toContain("refreshProviderCredentials(provider, connection, console, effectiveProxy)");
   });
 });

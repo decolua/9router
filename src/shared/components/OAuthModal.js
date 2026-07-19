@@ -25,6 +25,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const openedRef = useRef(false);
   const proxyStopPromiseRef = useRef(Promise.resolve());
   const poolChangePromiseRef = useRef(Promise.resolve());
+  const fixedProxyStateRef = useRef(null);
   const { copied, copy } = useCopyToClipboard();
 
   // State for client-only values to avoid hydration mismatch
@@ -32,11 +33,16 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const [placeholderUrl, setPlaceholderUrl] = useState("/callback?code=...");
   const callbackProcessedRef = useRef(false);
 
-  const stopFixedProxy = useCallback(() => {
+  const stopFixedProxy = useCallback((stateOverride = null) => {
     if (provider !== "codex" && provider !== "xai") return Promise.resolve();
-    const state = authData?.state;
+    const state = stateOverride || fixedProxyStateRef.current || authData?.state;
     const query = state ? `?state=${encodeURIComponent(state)}` : "";
-    const pending = fetch(`/api/oauth/${provider}/stop-proxy${query}`).catch(() => {});
+    const pending = fetch(`/api/oauth/${provider}/stop-proxy${query}`)
+      .then((response) => {
+        if (!state || fixedProxyStateRef.current === state) fixedProxyStateRef.current = null;
+        return response;
+      })
+      .catch(() => {});
     proxyStopPromiseRef.current = pending;
     return pending;
   }, [authData?.state, provider]);
@@ -265,6 +271,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       const data = await res.json();
       if (isStale()) return;
       if (!res.ok) throw new Error(data.error);
+      if (provider === "codex" || provider === "xai") fixedProxyStateRef.current = data.state;
       setAuthData({ ...data, redirectUri, codexServerSide: false, xaiServerSide: false });
 
       // Codex: start proxy with server-side session (auto-exchange) + fallback to channels
@@ -278,7 +285,10 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
             body: JSON.stringify({ appPort, state: data.state, codeVerifier: data.codeVerifier, redirectUri, proxyPoolId }),
           });
           const proxyData = await proxyRes.json();
-          if (isStale()) return;
+          if (isStale()) {
+            await stopFixedProxy(data.state);
+            return;
+          }
           codexProxyActive = proxyData.success;
           codexServerSide = !!proxyData.serverSide;
         } catch {
@@ -297,7 +307,10 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
             body: JSON.stringify({ appPort, state: data.state, codeVerifier: data.codeVerifier, redirectUri, proxyPoolId }),
           });
           const proxyData = await proxyRes.json();
-          if (isStale()) return;
+          if (isStale()) {
+            await stopFixedProxy(data.state);
+            return;
+          }
           xaiProxyActive = proxyData.success;
           xaiServerSide = !!proxyData.serverSide;
           if (!xaiProxyActive && proxyData.reason === "port_busy") {
@@ -353,7 +366,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setError(err.message);
       setStep("error");
     }
-  }, [provider, isLocalhost, startPolling, oauthMeta, idcConfig, selectedProxyPoolId]);
+  }, [provider, isLocalhost, startPolling, oauthMeta, idcConfig, selectedProxyPoolId, stopFixedProxy]);
 
   // Reset state and start OAuth when modal opens
   useEffect(() => {

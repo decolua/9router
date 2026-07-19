@@ -19,10 +19,14 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
   const [selectedProxyPoolId, setSelectedProxyPoolId] = useState("");
   const { copied, copy } = useCopyToClipboard();
   const openedRef = useRef(false);
+  const flowGenerationRef = useRef(0);
+  const authGenerationRef = useRef(0);
 
   // Reset auto-open guard when modal closes so it can re-open next session.
   useEffect(() => {
     if (!isOpen) {
+      flowGenerationRef.current += 1;
+      authGenerationRef.current = 0;
       openedRef.current = false;
     }
   }, [isOpen]);
@@ -31,6 +35,7 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
   useEffect(() => {
     if (!isOpen || !provider) return;
     if (!proxyPoolsReady) return;
+    const generation = ++flowGenerationRef.current;
     let cancelled = false;
 
     const initAuth = async () => {
@@ -43,13 +48,14 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
         if (selectedProxyPoolId) authorizeUrl.searchParams.set("proxyPoolId", selectedProxyPoolId);
         const res = await fetch(authorizeUrl.toString());
         const data = await res.json();
-        if (cancelled) return;
+        if (cancelled || generation !== flowGenerationRef.current) return;
 
         if (!res.ok) {
           throw new Error(data.error);
         }
 
         setAuthData(data);
+        authGenerationRef.current = generation;
         setAuthUrl(data.authUrl);
         setStep("input");
 
@@ -59,7 +65,7 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
           window.open(data.authUrl, "_blank");
         }
       } catch (err) {
-        if (cancelled) return;
+        if (cancelled || generation !== flowGenerationRef.current) return;
         setError(err.message);
         setStep("error");
       }
@@ -70,6 +76,8 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
   }, [isOpen, provider, proxyPoolsReady, selectedProxyPoolId]);
 
   const handleProxyPoolChange = (event) => {
+    flowGenerationRef.current += 1;
+    authGenerationRef.current = 0;
     openedRef.current = false;
     setAuthData(null);
     setAuthUrl("");
@@ -78,7 +86,11 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
   };
 
   const handleManualSubmit = async () => {
+    const generation = authGenerationRef.current;
     try {
+      if (!authData || generation !== flowGenerationRef.current) {
+        throw new Error("Authorization flow changed; restart sign-in");
+      }
       setError(null);
       
       // Parse callback URL - can be either kiro:// or http://localhost format
@@ -115,6 +127,7 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
       });
 
       const data = await res.json();
+      if (generation !== flowGenerationRef.current) return;
       if (!res.ok) throw new Error(data.error);
 
       setStep("success");
