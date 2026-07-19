@@ -4,6 +4,7 @@ import {
   refreshTokenByProvider,
 } from "./tokenRefresh.js";
 import { PROVIDER_OAUTH } from "../providers/index.js";
+import { normalizeExplicitProxyOptions } from "../utils/proxyFetch.js";
 
 // Single source: codex.oauth.maxRefreshAgeMs (8 days) — proactive refresh window
 export const CODEX_MAX_REFRESH_AGE_MS = PROVIDER_OAUTH["codex"]?.maxRefreshAgeMs;
@@ -148,17 +149,26 @@ export async function withCredentialRefreshLock(provider, credentials, refreshFn
 
 export function resolveRefreshProxyOptions(credentials, proxyOptions = null) {
   const psd = credentials?.providerSpecificData || {};
-  return proxyOptions || (
-    psd.connectionProxyEnabled || psd.vercelRelayUrl
+  const resolved = proxyOptions || {
+    connectionProxyEnabled: psd.connectionProxyEnabled === true,
+    connectionProxyUrl: psd.connectionProxyUrl || "",
+    connectionNoProxy: psd.connectionNoProxy || "",
+    vercelRelayUrl: psd.vercelRelayUrl || "",
+    strictProxy: psd.strictProxy === true,
+    ...(psd.proxyUnavailable === true
       ? {
-          connectionProxyEnabled: psd.connectionProxyEnabled === true,
-          connectionProxyUrl: psd.connectionProxyUrl || "",
-          connectionNoProxy: psd.connectionNoProxy || "",
-          vercelRelayUrl: psd.vercelRelayUrl || "",
-          strictProxy: psd.strictProxy === true,
+          proxyUnavailable: true,
+          proxyPoolId: psd.connectionProxyPoolId || psd.proxyPoolId || null,
         }
-      : null
-  );
+      : {}),
+  };
+
+  if (resolved.proxyUnavailable === true || resolved.source === "unavailable") {
+    const poolId = resolved.proxyPoolId || resolved.connectionProxyPoolId || "selected";
+    throw new Error(`Proxy pool ${poolId} is unavailable`);
+  }
+
+  return normalizeExplicitProxyOptions(resolved);
 }
 
 export async function refreshProviderCredentials(provider, credentials, log, proxyOptions = null) {

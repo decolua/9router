@@ -1,9 +1,35 @@
 import { getProxyPoolById } from "@/models";
 
+const ALLOWED_PROXY_SCHEMES = ["http:", "https:", "socks5:", "socks4:", "socks5h:", "socks4a:"];
+
 // Safely normalize any value into a trimmed string.
 function normalizeString(value) {
   if (value === undefined || value === null) return "";
   return String(value).trim();
+}
+
+function isValidProxyUrl(proxyUrl) {
+  if (!proxyUrl || /[\n\r`$]/.test(proxyUrl)) return false;
+  try {
+    const parsed = new URL(proxyUrl);
+    return Boolean(parsed.hostname) && ALLOWED_PROXY_SCHEMES.includes(parsed.protocol);
+  } catch {
+    return false;
+  }
+}
+
+function unavailableProxyConfig(proxyPoolId) {
+  return {
+    source: "unavailable",
+    proxyPoolId,
+    proxyPool: null,
+    proxyUnavailable: true,
+    connectionProxyEnabled: false,
+    connectionProxyUrl: "",
+    connectionNoProxy: "",
+    strictProxy: false,
+    vercelRelayUrl: "",
+  };
 }
 
 // ─── Proxy pool rotation state (in-memory) ─────────────────────────
@@ -66,14 +92,26 @@ function normalizeLegacyProxy(providerSpecificData = {}) {
 export async function resolveConnectionProxyConfig(
   providerSpecificData = {}
 ) {
-  try {
-    const proxyPoolIdRaw = normalizeString(
-      providerSpecificData?.proxyPoolId
-    );
+  const proxyPoolIdRaw = normalizeString(
+    providerSpecificData?.proxyPoolId
+  );
 
+  try {
     // "__none__" means explicitly disabled
-    const proxyPoolId =
-      proxyPoolIdRaw === "__none__" ? "" : proxyPoolIdRaw;
+    if (proxyPoolIdRaw === "__none__") {
+      return {
+        source: "none",
+        proxyPoolId: null,
+        proxyPool: null,
+        connectionProxyEnabled: false,
+        connectionProxyUrl: "",
+        connectionNoProxy: "",
+        strictProxy: false,
+        vercelRelayUrl: "",
+      };
+    }
+
+    const proxyPoolId = proxyPoolIdRaw;
 
     const legacy = normalizeLegacyProxy(providerSpecificData);
 
@@ -91,7 +129,7 @@ export async function resolveConnectionProxyConfig(
       const isValidPool =
         proxyPool &&
         proxyPool.isActive === true &&
-        proxyUrl;
+        isValidProxyUrl(proxyUrl);
 
       if (isValidPool) {
         /**
@@ -131,6 +169,8 @@ export async function resolveConnectionProxyConfig(
           strictProxy: proxyPool.strictProxy === true,
         };
       }
+
+      return unavailableProxyConfig(proxyPoolId);
     }
 
     /**
@@ -170,6 +210,8 @@ export async function resolveConnectionProxyConfig(
       "[resolveConnectionProxyConfig] Failed to resolve proxy config:",
       error
     );
+
+    if (proxyPoolIdRaw) return unavailableProxyConfig(proxyPoolIdRaw);
 
     return {
       source: "error",

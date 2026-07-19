@@ -8,6 +8,12 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
+  normalizeExplicitProxyOptions(proxyOptions) {
+    const hasProxy = proxyOptions?.connectionProxyEnabled === true && proxyOptions?.connectionProxyUrl;
+    return hasProxy || proxyOptions?.vercelRelayUrl || proxyOptions?.proxyUnavailable
+      ? proxyOptions
+      : { disableEnvProxy: true };
+  },
   proxyAwareFetch: mocks.proxyAwareFetch,
 }));
 

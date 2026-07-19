@@ -1,21 +1,10 @@
 import { PROVIDERS, PROVIDER_OAUTH } from "../../config/providers.js";
 import { OAUTH_ENDPOINTS, GITHUB_COPILOT, buildKimiHeaders } from "../../config/appConstants.js";
-import { proxyAwareFetch } from "../../utils/proxyFetch.js";
+import { normalizeExplicitProxyOptions as oauthRefreshProxyOptions, proxyAwareFetch } from "../../utils/proxyFetch.js";
 import { dedupRefresh } from "./dedup.js";
 import { buildExternalIdpRefreshParams } from "../../../src/lib/oauth/kiroExternalIdp.js";
 
 let _xaiServiceSingleton = null;
-
-function oauthRefreshProxyOptions(proxyOptions) {
-  if (proxyOptions?.disableEnvProxy === true) return proxyOptions;
-  const hasConnectionProxy = (
-    (proxyOptions?.connectionProxyEnabled === true || proxyOptions?.enabled === true) &&
-    !!String(proxyOptions?.connectionProxyUrl || proxyOptions?.url || "").trim()
-  );
-  return hasConnectionProxy || proxyOptions?.vercelRelayUrl
-    ? proxyOptions
-    : { disableEnvProxy: true };
-}
 
 export async function refreshXaiToken(refreshToken, log, proxyOptions = null) {
   if (!refreshToken) return null;

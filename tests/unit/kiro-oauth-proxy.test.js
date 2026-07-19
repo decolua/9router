@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
+  normalizeExplicitProxyOptions: (proxyOptions) => proxyOptions,
   proxyAwareFetch: mocks.proxyAwareFetch,
 }));
 vi.mock("../../src/lib/oauth/providers.js", () => ({

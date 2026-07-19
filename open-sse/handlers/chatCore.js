@@ -30,6 +30,7 @@ import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { extractThinking } from "../translator/concerns/thinkingUnified.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
+import { normalizeExplicitProxyOptions, redactProxyUrlForLog } from "../utils/proxyFetch.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -256,33 +257,29 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     log, provider, model, reqTag
   });
 
-  const proxyOptions = {
-    connectionProxyEnabled: credentials?.providerSpecificData?.connectionProxyEnabled === true,
-    connectionProxyUrl: credentials?.providerSpecificData?.connectionProxyUrl || "",
-    connectionNoProxy: credentials?.providerSpecificData?.connectionNoProxy || "",
-    vercelRelayUrl: credentials?.providerSpecificData?.vercelRelayUrl || "",
-    strictProxy: credentials?.providerSpecificData?.strictProxy === true,
-  };
+  const credentialProxy = credentials?.providerSpecificData || {};
+  const proxyOptions = normalizeExplicitProxyOptions({
+    connectionProxyEnabled: credentialProxy.connectionProxyEnabled === true,
+    connectionProxyUrl: credentialProxy.connectionProxyUrl || "",
+    connectionNoProxy: credentialProxy.connectionNoProxy || "",
+    vercelRelayUrl: credentialProxy.vercelRelayUrl || "",
+    strictProxy: credentialProxy.strictProxy === true,
+    ...(credentialProxy.proxyUnavailable === true
+      ? {
+          proxyUnavailable: true,
+          proxyPoolId: credentialProxy.connectionProxyPoolId || credentialProxy.proxyPoolId || null,
+        }
+      : {}),
+  });
 
   if (proxyOptions.vercelRelayUrl) {
     const connectionName = credentials?.connectionName || credentials?.connectionId || "unknown";
     const poolId = credentials?.providerSpecificData?.connectionProxyPoolId || "none";
-    log?.info?.("PROXY", `${provider.toUpperCase()} | ${model} | conn=${connectionName} | pool=${poolId} | vercel-relay=${proxyOptions.vercelRelayUrl}`);
+    log?.info?.("PROXY", `${provider.toUpperCase()} | ${model} | conn=${connectionName} | pool=${poolId} | vercel-relay=${redactProxyUrlForLog(proxyOptions.vercelRelayUrl)}`);
   } else if (proxyOptions.connectionProxyEnabled && proxyOptions.connectionProxyUrl) {
-    let maskedProxyUrl = proxyOptions.connectionProxyUrl;
-    try {
-      const parsed = new URL(proxyOptions.connectionProxyUrl);
-      const host = parsed.hostname || "";
-      const port = parsed.port ? `:${parsed.port}` : "";
-      const protocol = parsed.protocol || "http:";
-      maskedProxyUrl = `${protocol}//${host}${port}`;
-    } catch {
-      // Keep raw if URL parsing fails
-    }
-
     const poolId = credentials?.providerSpecificData?.connectionProxyPoolId || "none";
     const connectionName = credentials?.connectionName || credentials?.connectionId || "unknown";
-    log?.info?.("PROXY", `${provider.toUpperCase()} | ${model} | conn=${connectionName} | pool=${poolId} | url=${maskedProxyUrl}`);
+    log?.info?.("PROXY", `${provider.toUpperCase()} | ${model} | conn=${connectionName} | pool=${poolId} | url=${redactProxyUrlForLog(proxyOptions.connectionProxyUrl)}`);
   }
 
   if (proxyOptions.connectionProxyEnabled && proxyOptions.connectionNoProxy) {

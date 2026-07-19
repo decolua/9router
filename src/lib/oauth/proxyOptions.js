@@ -4,7 +4,7 @@ import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 export async function proxyOptionsForPool(proxyPoolId) {
   if (!proxyPoolId || proxyPoolId === "__none__") return { disableEnvProxy: true };
   const proxyConfig = await resolveConnectionProxyConfig({ proxyPoolId });
-  if (!proxyConfig || proxyConfig.source === "none" || proxyConfig.source === "error") {
+  if (!proxyConfig || proxyConfig.proxyUnavailable === true || ["none", "error", "unavailable"].includes(proxyConfig.source)) {
     throw new Error(`Proxy pool ${proxyPoolId} is unavailable`);
   }
   return {
