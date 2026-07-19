@@ -20,6 +20,7 @@ export function useModelCaps() {
         for (const m of data.models || []) {
           if (!m.caps) continue;
           if (m.fullModel) full[m.fullModel] = m.caps;
+          if (m.routedModel) full[m.routedModel] = m.caps;
           if (m.model) id[m.model] = m.caps;
         }
         if (alive) { setByFull(full); setById(id); }
@@ -37,7 +38,13 @@ export function useModelCaps() {
     // Fallback: compute caps for dynamic models (passthrough/custom/suggested) not in static list
     const provider = key.includes("/") ? key.slice(0, key.indexOf("/")) : null;
     const c = getCapabilitiesForModel(provider, bare);
-    return { vision: c.vision, search: c.search, reasoning: c.reasoning };
+    return {
+      vision: c.vision,
+      search: c.search,
+      reasoning: c.reasoning,
+      contextWindow: c.contextWindow,
+      maxOutput: c.maxOutput,
+    };
   };
 
   return { getCaps };
