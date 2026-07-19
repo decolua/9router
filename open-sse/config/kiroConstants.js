@@ -109,6 +109,7 @@ export function resolveKiroThinkingBudget(body, headers, model) {
   const cfg = extractThinking(body);
   if (cfg) {
     if (cfg.mode === "none") return null;
+    if (cfg.mode === "level" && cfg.level === "disabled") return null;
     if (cfg.mode === "budget") return cfg.budget;
     if (cfg.mode === "level") return effortToBudget(cfg.level) ?? KIRO_THINKING_BUDGET_DEFAULT;
     return KIRO_THINKING_BUDGET_DEFAULT;
@@ -201,12 +202,8 @@ export function supportsKiroAdditionalModelRequestFields(model) {
 }
 
 export function usesKiroNativeGptEffort(body, model) {
-  if (resolveKiroEffortPath(model) !== "reasoning") return false;
-  const effort =
-    body?.output_config?.effort ??
-    body?.reasoning_effort ??
-    (typeof body?.reasoning === "object" ? body.reasoning?.effort : null);
-  return typeof effort === "string" && effort.trim().length > 0;
+  return resolveKiroEffortPath(model) === "reasoning"
+    && extractKiroGptEffortLevel(body) !== null;
 }
 
 export function buildKiroAdditionalModelRequestFieldsForModel(body, model) {

@@ -125,6 +125,34 @@ describe("Claude → Kiro (direct route)", () => {
     expect(out.systemPrompt || "").not.toContain("<max_thinking_length>");
   });
 
+  it.each(["auto", "minimal", "ultra"])(
+    "keeps the legacy thinking fallback for unsupported GPT-5.6 effort %s",
+    (effort) => {
+      const out = C2K({
+        output_config: { effort },
+        messages: [{ role: "user", content: "Use legacy thinking" }],
+      }, null, "gpt-5.6-sol");
+
+      expect(out.additionalModelRequestFields).toBeUndefined();
+      expect(out.systemPrompt).toContain("<thinking_mode>enabled</thinking_mode>");
+      expect(out.systemPrompt).toContain("<max_thinking_length>");
+    }
+  );
+
+  it.each(["none", "off", "disabled"])(
+    "keeps GPT-5.6 reasoning intentionally disabled for effort %s",
+    (effort) => {
+      const out = C2K({
+        output_config: { effort },
+        messages: [{ role: "user", content: "Do not reason" }],
+      }, null, "gpt-5.6-sol");
+
+      expect(out.additionalModelRequestFields).toBeUndefined();
+      expect(out.systemPrompt || "").not.toContain("<thinking_mode>");
+      expect(out.systemPrompt || "").not.toContain("<max_thinking_length>");
+    }
+  );
+
   it("keeps explicit Claude effort ahead of an injected OpenAI effort", () => {
     const out = C2K({
       output_config: { effort: "low" },

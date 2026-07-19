@@ -367,18 +367,37 @@ describe("openaiToKiroRequest", () => {
       expect(systemPromptOf(result)).not.toContain("<max_thinking_length>");
     });
 
-    it("does not forward unsupported GPT-5.6 effort values", () => {
-      const body = {
-        reasoning: { effort: "ultra" },
-        messages: [{ role: "user", content: "Unknown effort" }]
-      };
+    it.each(["auto", "minimal", "ultra"])(
+      "keeps the legacy thinking fallback for unsupported GPT-5.6 effort %s",
+      (effort) => {
+        const body = {
+          reasoning: { effort },
+          messages: [{ role: "user", content: "Use legacy thinking" }]
+        };
 
-      const result = openaiToKiroRequest("gpt-5.6-luna", body, true, {});
+        const result = openaiToKiroRequest("gpt-5.6-luna", body, true, {});
 
-      expect(result.additionalModelRequestFields).toBeUndefined();
-      expect(systemPromptOf(result)).not.toContain("<thinking_mode>");
-      expect(systemPromptOf(result)).not.toContain("<max_thinking_length>");
-    });
+        expect(result.additionalModelRequestFields).toBeUndefined();
+        expect(systemPromptOf(result)).toContain("<thinking_mode>enabled</thinking_mode>");
+        expect(systemPromptOf(result)).toContain("<max_thinking_length>");
+      }
+    );
+
+    it.each(["none", "off", "disabled"])(
+      "keeps GPT-5.6 reasoning intentionally disabled for effort %s",
+      (effort) => {
+        const body = {
+          reasoning: { effort },
+          messages: [{ role: "user", content: "Do not reason" }]
+        };
+
+        const result = openaiToKiroRequest("gpt-5.6-luna", body, true, {});
+
+        expect(result.additionalModelRequestFields).toBeUndefined();
+        expect(systemPromptOf(result)).not.toContain("<thinking_mode>");
+        expect(systemPromptOf(result)).not.toContain("<max_thinking_length>");
+      }
+    );
 
     it("keeps the thinking-alias fallback when GPT effort is blank", () => {
       const body = {
