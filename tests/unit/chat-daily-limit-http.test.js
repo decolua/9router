@@ -40,6 +40,7 @@ let unlimitedApiKey;
 let postChat;
 let FORMATS;
 let handleForcedSSEToJson;
+let translateRequest;
 
 function credentials(id = "connection-test") {
   return {
@@ -152,9 +153,10 @@ beforeAll(async () => {
   `);
 
   ({ FORMATS } = await import("../../open-sse/translator/formats.js"));
+  ({ translateRequest } = await import("../../open-sse/translator/index.js"));
   ({ handleForcedSSEToJson } = await import("../../open-sse/handlers/chatCore/sseToJsonHandler.js"));
   ({ POST: postChat } = await import("@/app/api/v1/chat/completions/route.js"));
-});
+}, 30_000);
 
 afterAll(() => {
   try { rawDb?.close?.(); } catch {}
@@ -447,6 +449,71 @@ describe("POST /v1/chat/completions daily token admission", () => {
     assertMutation(dispatchedBody);
     expect(rawDb.get("SELECT reservedTokens FROM apiKeyUsageReservations").reservedTokens)
       .toBe(Buffer.byteLength(JSON.stringify(dispatchedBody), "utf8") + outputTokens);
+  });
+
+  it("reserves one Caveman injection for Responses string input through translation", async () => {
+    await db.updateSettings({ cavemanEnabled: true, cavemanLevel: "full" });
+    const body = { model: "openai/gpt-4o", input: "hello", max_output_tokens: 1 };
+
+    const response = await postChat(new Request("http://localhost/v1/responses", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${limitedApiKey.key}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }));
+
+    expect(response.status).toBe(200);
+    const reservedBody = dispatchMocks.handleChatCore.mock.calls[0][0].body;
+    const translatedBody = translateRequest(
+      FORMATS.OPENAI_RESPONSES,
+      FORMATS.OPENAI,
+      "gpt-4o",
+      structuredClone(reservedBody),
+      true,
+      credentials(),
+      "openai",
+    );
+    const marker = "Respond like terse caveman.";
+    expect(translatedBody.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining(marker) });
+    expect(JSON.stringify(translatedBody).split(marker)).toHaveLength(2);
+    expect(rawDb.get("SELECT reservedTokens FROM apiKeyUsageReservations").reservedTokens)
+      .toBe(Buffer.byteLength(JSON.stringify(reservedBody), "utf8") + 1);
+  });
+
+  it("reserves one Ponytail injection with developer authority through Claude translation", async () => {
+    await db.updateSettings({ ponytailEnabled: true, ponytailLevel: "full" });
+    const body = {
+      model: "anthropic/claude-sonnet-4-20250514",
+      messages: [
+        { role: "developer", content: "Follow deployment policy." },
+        { role: "user", content: "hello" },
+      ],
+      max_tokens: 1,
+    };
+
+    const response = await postChat(new Request("http://localhost/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${limitedApiKey.key}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }));
+
+    expect(response.status).toBe(200);
+    const reservedBody = dispatchMocks.handleChatCore.mock.calls[0][0].body;
+    const translatedBody = translateRequest(
+      FORMATS.OPENAI,
+      FORMATS.CLAUDE,
+      "claude-sonnet-4-20250514",
+      structuredClone(reservedBody),
+      true,
+      credentials(),
+      "anthropic",
+    );
+    const marker = "You are a lazy senior developer.";
+    const systemText = translatedBody.system.map((part) => part.text).join("\n");
+    expect(systemText).toContain("Follow deployment policy.");
+    expect(systemText).toContain(marker);
+    expect(JSON.stringify(translatedBody).split(marker)).toHaveLength(2);
+    expect(rawDb.get("SELECT reservedTokens FROM apiKeyUsageReservations").reservedTokens)
+      .toBe(Buffer.byteLength(JSON.stringify(reservedBody), "utf8") + 1);
   });
 
   it("reuses one reservation across account fallback", async () => {

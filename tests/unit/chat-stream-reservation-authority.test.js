@@ -21,7 +21,7 @@ async function drainThrough(transform, input) {
       controller.close();
     },
   });
-  await new Response(source.pipeThrough(transform)).text();
+  return new Response(source.pipeThrough(transform)).text();
 }
 
 async function waitForUsageRow() {
@@ -456,4 +456,41 @@ describe("stream usage reservation authority", () => {
     expect(rawDb.get("SELECT id FROM apiKeyUsageReservations WHERE id = ?", [context.reservation.reservationId])).toBeUndefined();
     expect(rawDb.get("SELECT promptTokens, completionTokens FROM usageHistory")).toEqual({ promptTokens: 10, completionTokens: 5 });
   });
+
+  it.each(["response.completed", "response.done"])(
+    "passes through final buffered %s and reconciles its usage",
+    async (eventType) => {
+      const context = await createReservedStream(`responses-${eventType}-flush`);
+      const transform = createSSETransformStreamWithLogger(
+        FORMATS.OPENAI_RESPONSES,
+        FORMATS.OPENAI_RESPONSES,
+        "codex",
+        null,
+        null,
+        "gpt-5-codex",
+        "connection-test",
+        context.body,
+        context.onStreamComplete,
+        context.key.key,
+      );
+      const output = await drainThrough(transform, [
+        `event: ${eventType}`,
+        `data: ${JSON.stringify({
+          type: eventType,
+          response: {
+            id: "resp-final-buffered",
+            status: "completed",
+            usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+          },
+        })}`,
+      ].join("\n"));
+      await waitForUsageRow();
+
+      expect(output).toContain(`event: ${eventType}`);
+      expect(output).not.toContain("event: response.failed");
+      expect(output.match(/data: \[DONE\]/g)).toHaveLength(1);
+      expect(rawDb.get("SELECT id FROM apiKeyUsageReservations WHERE id = ?", [context.reservation.reservationId])).toBeUndefined();
+      expect(rawDb.get("SELECT promptTokens, completionTokens FROM usageHistory")).toEqual({ promptTokens: 10, completionTokens: 5 });
+    },
+  );
 });

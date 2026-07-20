@@ -36,6 +36,11 @@ function injectMessagesSystem(body, prompt) {
     return;
   }
 
+  if (typeof body.input === "string") {
+    body.instructions = prompt;
+    return;
+  }
+
   const arr = Array.isArray(body.messages) ? body.messages
     : Array.isArray(body.input) ? body.input
     : null;

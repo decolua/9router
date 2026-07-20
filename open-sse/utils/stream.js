@@ -387,15 +387,25 @@ export function createSSEStream(options = {}) {
           return;
         }
 
+        const keepsOpenAIResponsesFormat = targetFormat === FORMATS.OPENAI_RESPONSES && sourceFormat === FORMATS.OPENAI_RESPONSES;
         if (buffer.trim()) {
           const parsed = parseSSELine(buffer.trim());
           if (parsed && !parsed.done) {
+            const openAIResponsesEventName = targetFormat === FORMATS.OPENAI_RESPONSES
+              ? getOpenAIResponsesEventName(currentOpenAIResponsesEvent, parsed)
+              : null;
+            if (targetFormat === FORMATS.OPENAI_RESPONSES && isOpenAIResponsesTerminalEvent(openAIResponsesEventName, parsed)) {
+              openAIResponsesTerminalSeen = true;
+            }
             const extracted = extractUsage(parsed);
             if (extracted) {
               usage = mergeUsage(usage, extracted);
               state.usage = mergeUsage(state.usage, extracted);
             }
-            const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
+            const translated = keepsOpenAIResponsesFormat && openAIResponsesEventName
+              ? [{ event: openAIResponsesEventName, data: parsed }]
+              : translateResponse(targetFormat, sourceFormat, parsed, state);
+            currentOpenAIResponsesEvent = null;
 
             if (translated?._openaiIntermediate) {
               for (const item of translated._openaiIntermediate) {
@@ -434,7 +444,6 @@ export function createSSEStream(options = {}) {
         }
 
         // Synthesize response.failed if a Responses passthrough stream never reached a terminal event
-        const keepsOpenAIResponsesFormat = targetFormat === FORMATS.OPENAI_RESPONSES && sourceFormat === FORMATS.OPENAI_RESPONSES;
         if (keepsOpenAIResponsesFormat && !openAIResponsesTerminalSeen) {
           const failedOutput = formatIncompleteOpenAIResponsesStreamFailure();
           reqLogger?.appendConvertedChunk?.(failedOutput);
