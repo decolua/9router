@@ -1,7 +1,13 @@
 import { PROVIDERS, PROVIDER_OAUTH } from "../../config/providers.js";
 import { OAUTH_ENDPOINTS, GITHUB_COPILOT, buildKimiHeaders } from "../../config/appConstants.js";
+import {
+  AUTOCLAW_REFRESH_URL,
+  buildAutoClawAuthHeaders,
+  stripAutoClawBearerPrefix,
+} from "../../shared/autoclaw.js";
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import { dedupRefresh } from "./dedup.js";
+import { useCodexGoSession } from "../codexGo.js";
 import { buildExternalIdpRefreshParams } from "../../../src/lib/oauth/kiroExternalIdp.js";
 
 let _xaiServiceSingleton = null;
@@ -26,6 +32,60 @@ export async function refreshXaiToken(refreshToken, log) {
       if (msg.includes("invalid_grant") || msg.includes("invalid_request")) {
         return { error: "invalid_grant" };
       }
+      return null;
+    }
+  }, log);
+}
+
+export async function refreshAutoClawToken(refreshToken, providerSpecificData = {}, log, proxyOptions = null) {
+  if (!refreshToken) return null;
+  const deviceId = providerSpecificData?.deviceId || providerSpecificData?.device_id;
+  if (!deviceId) {
+    log?.warn?.("TOKEN_REFRESH", "AutoClaw refresh skipped: missing deviceId");
+    return null;
+  }
+
+  return dedupRefresh("autoclaw", refreshToken, async () => {
+    try {
+      const response = await proxyAwareFetch(AUTOCLAW_REFRESH_URL, {
+        method: "POST",
+        headers: buildAutoClawAuthHeaders(),
+        body: JSON.stringify({
+          source_id: "web",
+          device_id: deviceId,
+          refresh_token: stripAutoClawBearerPrefix(refreshToken),
+        }),
+      }, proxyOptions);
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        log?.error?.("TOKEN_REFRESH", "Failed to refresh AutoClaw token", {
+          status: response.status,
+          error: errorText,
+        });
+        return null;
+      }
+
+      const payload = await response.json().catch(() => null);
+      const data = payload?.data || {};
+      if (payload?.code !== 0 || !data.access_token) {
+        log?.error?.("TOKEN_REFRESH", "AutoClaw token refresh returned no token", {
+          code: payload?.code,
+          msg: payload?.msg || payload?.message,
+        });
+        return null;
+      }
+
+      return {
+        accessToken: data.access_token,
+        refreshToken: data.refresh_token || refreshToken,
+        expiresIn: Number(data.expires_in) > 0 ? Number(data.expires_in) : 24 * 60 * 60,
+        providerSpecificData: {
+          deviceId,
+        },
+      };
+    } catch (error) {
+      log?.error?.("TOKEN_REFRESH", `Network error refreshing AutoClaw token: ${error.message}`);
       return null;
     }
   }, log);
@@ -279,8 +339,23 @@ export function classifyOAuthRefreshError(errorText = "", status = 0) {
   return { status, code, description, permanent };
 }
 
-export async function refreshCodexToken(refreshToken, log) {
+export async function refreshCodexToken(refreshToken, log, providerSpecificData = {}) {
   if (!refreshToken) return null;
+  if (providerSpecificData?.authMethod === "codexgo") {
+    return dedupRefresh("codexgo", refreshToken, async () => {
+      try {
+        const tokens = await useCodexGoSession(refreshToken, log);
+        log?.info?.("TOKEN_REFRESH", "Successfully synced CodexGo session", {
+          hasNewAccessToken: !!tokens.accessToken,
+          expiresAt: tokens.expiresAt,
+        });
+        return tokens;
+      } catch (error) {
+        log?.error?.("TOKEN_REFRESH", `CodexGo session sync failed: ${error.message}`);
+        return null;
+      }
+    }, log);
+  }
   return dedupRefresh("codex", refreshToken, async () => {
     try {
       const response = await fetch(OAUTH_ENDPOINTS.openai.token, {
@@ -618,10 +693,11 @@ export async function refreshCopilotToken(githubAccessToken, log) {
 // CodeBuddy (Tencent) refresh — POST /v2/plugin/auth/token/refresh with the
 // refresh token carried in the X-Refresh-Token header (not a form body),
 // matching the official CodeBuddy CLI. Response: { code: 0, data: <token> }.
-export async function refreshCodebuddyToken(refreshToken, log) {
+export async function refreshCodebuddyToken(refreshToken, log, provider = "codebuddy-cn") {
   if (!refreshToken) return null;
-  return dedupRefresh("codebuddy-cn", refreshToken, async () => {
-    const oauth = PROVIDER_OAUTH["codebuddy-cn"] || {};
+  return dedupRefresh(provider, refreshToken, async () => {
+    const oauth = PROVIDER_OAUTH[provider] || {};
+    const domain = provider === "codebuddy" ? "www.codebuddy.ai" : "copilot.tencent.com";
     const response = await fetch(oauth.refreshUrl, {
       method: "POST",
       headers: {
@@ -629,7 +705,7 @@ export async function refreshCodebuddyToken(refreshToken, log) {
         Accept: "application/json",
         "User-Agent": oauth.userAgent,
         "X-Requested-With": "XMLHttpRequest",
-        "X-Domain": "copilot.tencent.com",
+        "X-Domain": domain,
         "X-Refresh-Token": refreshToken,
         "X-Auth-Refresh-Source": "plugin",
         "X-Product": "SaaS",

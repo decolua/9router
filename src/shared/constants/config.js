@@ -92,6 +92,17 @@ export const QUOTA_AUTOPING_CONFIG = {
   },
 };
 
+export const CLAUDE_AUTOPING_CONFIG = {
+  settingsKey: "claudeAutoPing",
+  tickIntervalMs: QUOTA_AUTOPING_CONFIG.tickIntervalMs,
+  pingLeadMs: QUOTA_AUTOPING_CONFIG.pingLeadMs,
+  refreshAheadMs: QUOTA_AUTOPING_CONFIG.refreshAheadMs,
+  fiveHourKey: QUOTA_AUTOPING_CONFIG.providers.claude.quotaKey,
+  pingModel: QUOTA_AUTOPING_CONFIG.providers.claude.pingModel,
+  pingText: QUOTA_AUTOPING_CONFIG.providers.claude.pingText,
+  pingMaxTokens: QUOTA_AUTOPING_CONFIG.providers.claude.pingMaxTokens,
+};
+
 // Re-export from providers.js for backward compatibility
 export {
   FREE_PROVIDERS,

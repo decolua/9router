@@ -82,6 +82,7 @@ export default function BulkImportCodexModal({ isOpen, onClose, onSuccess }) {
   };
 
   const failedItems = result?.results?.filter((r) => !r.ok) || [];
+  const submitDisabled = submitting || !jsonText.trim();
 
   return (
     <Modal isOpen={isOpen} title={translate("Bulk Add Codex Accounts")} onClose={handleClose}>
@@ -130,9 +131,11 @@ export default function BulkImportCodexModal({ isOpen, onClose, onSuccess }) {
           <Button
             onClick={handleSubmit}
             fullWidth
-            disabled={submitting || !jsonText.trim()}
+            disabled={submitDisabled}
           >
-            {submitting ? translate("Importing...") : translate("Import All")}
+            {submitting
+              ? translate("Importing...")
+              : translate("Import All")}
           </Button>
           <Button onClick={handleClose} variant="ghost" fullWidth disabled={submitting}>
             {translate("Close")}

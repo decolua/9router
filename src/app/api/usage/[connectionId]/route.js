@@ -160,10 +160,16 @@ export async function GET(request, { params }) {
         const result = await refreshAndUpdateCredentials(connection, false, proxyOptions);
         connection = result.connection;
       } catch (refreshError) {
-        console.error("[Usage API] Credential refresh failed:", refreshError);
-        return Response.json({
-          error: `Credential refresh failed: ${refreshError.message}`
-        }, { status: 401 });
+        const canUseCodeBuddyFallback = connection.provider === "codebuddy"
+          && (connection.providerSpecificData?.webCookie || connection.apiKey);
+        if (canUseCodeBuddyFallback) {
+          console.warn("[Usage API] CodeBuddy credential refresh failed; continuing with stored quota fallback:", refreshError.message);
+        } else {
+          console.error("[Usage API] Credential refresh failed:", refreshError);
+          return Response.json({
+            error: `Credential refresh failed: ${refreshError.message}`
+          }, { status: 401 });
+        }
       }
     }
 

@@ -6,8 +6,21 @@ import Modal from "@/shared/components/Modal";
 import Input from "@/shared/components/Input";
 import Button from "@/shared/components/Button";
 import Badge from "@/shared/components/Badge";
-import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
-import Select from "@/shared/components/Select";
+import Toggle from "@/shared/components/Toggle";
+import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { getCodexGoRefreshMeta, normalizeCodexGoRefreshConfig } from "@/lib/oauth/services/codexGoRefreshPolicy";
+
+function formatQuotaEntry(entry) {
+  if (!entry || typeof entry.remaining !== "number") return "unknown";
+  return `${entry.remaining}%${entry.resetAt ? ` reset ${new Date(entry.resetAt).toLocaleString()}` : ""}`;
+}
+
+function formatSnapshotCheckedAt(value) {
+  if (!value) return "never checked";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "never checked";
+  return date.toLocaleString();
+}
 
 export default function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
   const [formData, setFormData] = useState({
@@ -22,7 +35,11 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     organization: "",
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
-  const [region, setRegion] = useState("");
+  const [codexGoRefreshData, setCodexGoRefreshData] = useState({
+    hourlyLimit: 1,
+    autoEnabled: false,
+    thresholdRemainingPercent: 5,
+  });
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [validating, setValidating] = useState(false);
@@ -48,11 +65,10 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       if (connection.provider === "cloudflare-ai" && connection.providerSpecificData) {
         setCloudflareData({ accountId: connection.providerSpecificData.accountId || "" });
       }
-      // Load region for providers that support it (e.g. xiaomi-tokenplan)
-      const providerCfg = AI_PROVIDERS?.[connection.provider];
-      if (providerCfg?.regions) {
-        const savedRegion = connection.providerSpecificData?.region || providerCfg.defaultRegion || providerCfg.regions[0]?.id || "";
-        setRegion(savedRegion);
+      if (connection.provider === "codex" && connection.providerSpecificData?.authMethod === "codexgo") {
+        setCodexGoRefreshData(normalizeCodexGoRefreshConfig(connection.providerSpecificData));
+      } else {
+        setCodexGoRefreshData({ hourlyLimit: 1, autoEnabled: false, thresholdRemainingPercent: 5 });
       }
       setTestResult(null);
       setValidationResult(null);
@@ -62,16 +78,12 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   const isOAuth = connection?.authType === "oauth";
   const isAzure = connection?.provider === "azure";
   const isCloudflareAi = connection?.provider === "cloudflare-ai";
+  const isCodexGo = connection?.provider === "codex" && connection?.providerSpecificData?.authMethod === "codexgo";
+  const codexGoRefreshMeta = isCodexGo ? getCodexGoRefreshMeta(connection.providerSpecificData || {}) : null;
+  const codexGoQuotaSnapshot = codexGoRefreshMeta?.state?.lastQuotaSnapshot || null;
   const isCompatible = connection
     ? (isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider))
     : false;
-  const providerRegions = connection ? (AI_PROVIDERS?.[connection.provider]?.regions || null) : null;
-
-  // Build providerSpecificData for region-aware providers
-  const buildRegionSpecificData = () => {
-    if (providerRegions && region) return { ...((connection?.providerSpecificData) || {}), region };
-    return undefined;
-  };
 
   const handleTest = async () => {
     if (!connection?.provider) return;
@@ -101,7 +113,6 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           apiKey: formData.apiKey,
           ...(isAzure ? { providerSpecificData: azureData } : {}),
           ...(isCloudflareAi ? { providerSpecificData: cloudflareData } : {}),
-          ...(providerRegions ? { providerSpecificData: buildRegionSpecificData() } : {}),
         }),
       });
       const data = await res.json();
@@ -136,7 +147,6 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
                 apiKey: formData.apiKey,
                 ...(isAzure ? { providerSpecificData: azureData } : {}),
                 ...(isCloudflareAi ? { providerSpecificData: cloudflareData } : {}),
-                ...(providerRegions ? { providerSpecificData: buildRegionSpecificData() } : {}),
               }),
             });
             const data = await res.json();
@@ -167,9 +177,13 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       if (isCloudflareAi) {
         updates.providerSpecificData = { accountId: cloudflareData.accountId };
       }
-      // Persist updated region for region-aware providers
-      if (providerRegions && region) {
-        updates.providerSpecificData = buildRegionSpecificData();
+      if (isCodexGo) {
+        updates.providerSpecificData = {
+          ...(updates.providerSpecificData || {}),
+          codexGoRefreshConfig: normalizeCodexGoRefreshConfig({
+            codexGoRefreshConfig: codexGoRefreshData,
+          }),
+        };
       }
       
       await onSave(updates);
@@ -201,6 +215,51 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           value={formData.priority}
           onChange={(e) => setFormData({ ...formData, priority: Number.parseInt(e.target.value, 10) || 1 })}
         />
+
+        {isCodexGo && (
+          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+            <h3 className="font-semibold mb-3 text-sm">CodexGo Refresh</h3>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Input
+                label="Refresh/hour"
+                type="number"
+                min="1"
+                max="10"
+                value={codexGoRefreshData.hourlyLimit}
+                onChange={(e) => setCodexGoRefreshData({
+                  ...codexGoRefreshData,
+                  hourlyLimit: Number.parseInt(e.target.value, 10) || 1,
+                })}
+                hint="Default 1, max 10 refreshes per rolling hour."
+              />
+              <Input
+                label="Auto threshold %"
+                type="number"
+                min="0"
+                max="100"
+                value={codexGoRefreshData.thresholdRemainingPercent}
+                onChange={(e) => setCodexGoRefreshData({
+                  ...codexGoRefreshData,
+                  thresholdRemainingPercent: Number.parseFloat(e.target.value) || 0,
+                })}
+                hint="Auto refresh when session or weekly remaining is at/below this value."
+              />
+            </div>
+            <Toggle
+              className="mt-3"
+              checked={codexGoRefreshData.autoEnabled}
+              onChange={(autoEnabled) => setCodexGoRefreshData({ ...codexGoRefreshData, autoEnabled })}
+              label="Auto refresh"
+              description="Also auto-refreshes once when upstream Codex returns 429."
+            />
+            <div className="mt-3 rounded-lg bg-bg/60 p-3 text-xs text-text-muted">
+              <p className="mb-1 font-medium text-text-main">Quota snapshot</p>
+              <p>session: {formatQuotaEntry(codexGoQuotaSnapshot?.session)}</p>
+              <p>weekly: {formatQuotaEntry(codexGoQuotaSnapshot?.weekly)}</p>
+              <p>checked: {formatSnapshotCheckedAt(codexGoQuotaSnapshot?.checkedAt)}</p>
+            </div>
+          </div>
+        )}
 
         {!isOAuth && (
           <>
@@ -264,15 +323,6 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           </div>
         )}
 
-        {providerRegions && (
-          <Select
-            label="Region"
-            value={region}
-            onChange={(e) => setRegion(e.target.value)}
-            options={providerRegions.map((r) => ({ value: r.id, label: r.label }))}
-          />
-        )}
-
         {!isCompatible && !isAzure && !isCloudflareAi && (
           <div className="flex items-center gap-3">
             <Button onClick={handleTest} variant="secondary" disabled={testing}>
@@ -313,4 +363,3 @@ EditConnectionModal.propTypes = {
   onSave: PropTypes.func.isRequired,
   onClose: PropTypes.func.isRequired,
 };
-

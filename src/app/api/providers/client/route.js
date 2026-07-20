@@ -82,6 +82,7 @@ export async function GET(request) {
     const provider = searchParams.get("provider") || "all";
     const accountStatus = searchParams.get("accountStatus") || "all";
     const sort = searchParams.get("sort") || "priority";
+    const includeSummary = searchParams.get("includeSummary") === "1";
     const page = parsePositiveInt(searchParams.get("page"), 1);
     const pageSize = Math.min(parsePositiveInt(searchParams.get("pageSize"), DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE);
 
@@ -106,7 +107,7 @@ export async function GET(request) {
     const offset = (currentPage - 1) * pageSize;
     const pageConnections = sortedConnections.slice(offset, offset + pageSize).map(sanitize);
 
-    return NextResponse.json({
+    const payload = {
       connections: pageConnections,
       providerOptions,
       pagination: {
@@ -119,7 +120,13 @@ export async function GET(request) {
         eligibleConnections: eligibleConnections.length,
         providerFilteredConnections: providerFilteredConnections.length,
       },
-    });
+    };
+
+    if (includeSummary) {
+      payload.summaryConnections = sortedConnections.map(sanitize);
+    }
+
+    return NextResponse.json(payload);
   } catch (error) {
     console.log("Error fetching providers for client:", error);
     return NextResponse.json({ error: "Failed to fetch providers" }, { status: 500 });

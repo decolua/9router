@@ -6,6 +6,11 @@ const DEFAULT_BATCH_SIZE = 20;
 const DEFAULT_FLUSH_INTERVAL_MS = 5000;
 const DEFAULT_MAX_JSON_SIZE = 5 * 1024;
 const CONFIG_CACHE_TTL_MS = 5000;
+const MAX_FIELD_JSON_SIZE = 64 * 1024;
+const KIRO_MAX_FIELD_JSON_SIZE = 16 * 1024;
+const MIN_FIELD_JSON_SIZE = 1024;
+const MIN_BUFFER_LIMIT = 100;
+const MAX_BUFFER_LIMIT = 1000;
 
 let cachedConfig = null;
 let cachedConfigTs = 0;
@@ -42,6 +47,7 @@ async function getObservabilityConfig() {
 let writeBuffer = [];
 let flushTimer = null;
 let isFlushing = false;
+let hasWarnedBufferLimit = false;
 
 function sanitizeHeaders(headers) {
   if (!headers || typeof headers !== "object") return {};
@@ -60,12 +66,91 @@ function generateDetailId(model) {
   return `${timestamp}-${random}-${modelPart}`;
 }
 
-function truncateField(obj, maxSize) {
-  const str = JSON.stringify(obj || {});
-  if (str.length > maxSize) {
-    return { _truncated: true, _originalSize: str.length, _preview: str.substring(0, 200) };
+function safeStringify(value) {
+  const seen = new WeakSet();
+  return JSON.stringify(value ?? {}, (_key, nestedValue) => {
+    if (typeof nestedValue === "bigint") return nestedValue.toString();
+    if (nestedValue && typeof nestedValue === "object") {
+      if (seen.has(nestedValue)) return "[Circular]";
+      seen.add(nestedValue);
+    }
+    return nestedValue;
+  });
+}
+
+function getFieldSizeLimit(provider, configuredSize) {
+  const hardLimit = provider === "kiro" ? KIRO_MAX_FIELD_JSON_SIZE : MAX_FIELD_JSON_SIZE;
+  const normalizedSize = Number.isFinite(configuredSize) ? configuredSize : DEFAULT_MAX_JSON_SIZE;
+  return Math.max(MIN_FIELD_JSON_SIZE, Math.min(normalizedSize, hardLimit));
+}
+
+async function getApiKeyName(apiKey) {
+  if (!apiKey) return null;
+  try {
+    const { getApiKeys } = await import("./apiKeysRepo.js");
+    const key = (await getApiKeys()).find((item) => item.key === apiKey);
+    return key?.name || `${apiKey.slice(0, 8)}...`;
+  } catch {
+    return `${apiKey.slice(0, 8)}...`;
   }
-  return obj || {};
+}
+
+export function compactRequestDetail(detail, configuredMaxSize = DEFAULT_MAX_JSON_SIZE) {
+  const maxSize = getFieldSizeLimit(detail?.provider, configuredMaxSize);
+  const compactField = (value) => {
+    try {
+      const serialized = safeStringify(value);
+      if (serialized.length > maxSize) {
+        return {
+          _truncated: true,
+          _originalSize: serialized.length,
+          _preview: serialized.substring(0, 200),
+        };
+      }
+      return JSON.parse(serialized);
+    } catch (error) {
+      return {
+        _truncated: true,
+        _serializationError: error.message,
+      };
+    }
+  };
+
+  const request = detail?.request && typeof detail.request === "object"
+    ? { ...detail.request, headers: sanitizeHeaders(detail.request.headers) }
+    : detail?.request;
+
+  return {
+    id: detail?.id || generateDetailId(detail?.model),
+    provider: detail?.provider || null,
+    model: detail?.model || null,
+    connectionId: detail?.connectionId || null,
+    apiKeyName: detail?.apiKeyName || null,
+    timestamp: detail?.timestamp || new Date().toISOString(),
+    status: detail?.status || null,
+    latency: compactField(detail?.latency),
+    tokens: compactField(detail?.tokens),
+    request: compactField(request),
+    providerRequest: compactField(detail?.providerRequest),
+    providerResponse: compactField(detail?.providerResponse),
+    response: compactField(detail?.response),
+  };
+}
+
+function getBufferLimit(batchSize) {
+  return Math.min(MAX_BUFFER_LIMIT, Math.max(MIN_BUFFER_LIMIT, batchSize * 4));
+}
+
+function enqueueDetail(detail, config) {
+  const bufferLimit = getBufferLimit(config.batchSize);
+  if (writeBuffer.length >= bufferLimit) {
+    writeBuffer.splice(0, writeBuffer.length - bufferLimit + 1);
+    if (!hasWarnedBufferLimit) {
+      hasWarnedBufferLimit = true;
+      console.warn(`[requestDetailsRepo] Buffer limit reached (${bufferLimit}); dropping oldest observability records`);
+    }
+  }
+  writeBuffer.push(compactRequestDetail(detail, config.maxJsonSize));
 }
 
 async function flushToDatabase() {
@@ -73,53 +158,38 @@ async function flushToDatabase() {
   if (writeBuffer.length === 0) return;
   isFlushing = true;
   try {
-    // Drain entire buffer (loop in case more pushed during await)
-    while (writeBuffer.length > 0) {
-      const items = writeBuffer.splice(0, writeBuffer.length);
-      const db = await getAdapter();
-      const config = await getObservabilityConfig();
+    const config = await getObservabilityConfig();
+    const items = writeBuffer.splice(0, Math.max(1, config.batchSize));
+    const db = await getAdapter();
 
-      db.transaction(() => {
-        for (const item of items) {
-          if (!item.id) item.id = generateDetailId(item.model);
-          if (!item.timestamp) item.timestamp = new Date().toISOString();
-          if (item.request?.headers) item.request.headers = sanitizeHeaders(item.request.headers);
+    db.transaction(() => {
+      for (const item of items) {
+        db.run(
+          `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data`,
+          [item.id, item.timestamp, item.provider, item.model, item.connectionId, item.status, stringifyJson(item)]
+        );
+      }
 
-          const record = {
-            id: item.id,
-            provider: item.provider || null,
-            model: item.model || null,
-            connectionId: item.connectionId || null,
-            timestamp: item.timestamp,
-            status: item.status || null,
-            latency: item.latency || {},
-            tokens: item.tokens || {},
-            request: truncateField(item.request, config.maxJsonSize),
-            providerRequest: truncateField(item.providerRequest, config.maxJsonSize),
-            providerResponse: truncateField(item.providerResponse, config.maxJsonSize),
-            response: truncateField(item.response, config.maxJsonSize),
-            pxpipe: item.pxpipe || undefined,
-          };
-
-          db.run(
-            `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data`,
-            [record.id, record.timestamp, record.provider, record.model, record.connectionId, record.status, stringifyJson(record)]
-          );
-        }
-
-        const cnt = db.get(`SELECT COUNT(*) as c FROM requestDetails`);
-        if (cnt && cnt.c > config.maxRecords) {
-          db.run(
-            `DELETE FROM requestDetails WHERE id IN (SELECT id FROM requestDetails ORDER BY timestamp ASC LIMIT ?)`,
-            [cnt.c - config.maxRecords]
-          );
-        }
-      });
-    }
+      const cnt = db.get(`SELECT COUNT(*) as c FROM requestDetails`);
+      if (cnt && cnt.c > config.maxRecords) {
+        db.run(
+          `DELETE FROM requestDetails WHERE id IN (SELECT id FROM requestDetails ORDER BY timestamp ASC LIMIT ?)`,
+          [cnt.c - config.maxRecords]
+        );
+      }
+    });
   } catch (e) {
     console.error("[requestDetailsRepo] Batch write failed:", e);
   } finally {
     isFlushing = false;
+    if (writeBuffer.length === 0) {
+      hasWarnedBufferLimit = false;
+    } else if (!flushTimer) {
+      flushTimer = setTimeout(() => {
+        flushTimer = null;
+        flushToDatabase().catch(() => {});
+      }, 0);
+    }
   }
 }
 
@@ -127,10 +197,10 @@ export async function saveRequestDetail(detail) {
   const config = await getObservabilityConfig();
   if (!config.enabled) return;
 
-  writeBuffer.push(detail);
+  enqueueDetail({ ...detail, apiKeyName: detail?.apiKeyName || await getApiKeyName(detail?.apiKey) }, config);
 
-  // Trigger immediate flush if batch threshold reached.
-  // flushToDatabase() drains entire buffer in a loop, so all pushes during await are persisted.
+  // Trigger immediate flush at the threshold; remaining records are scheduled
+  // as another batch so sustained traffic cannot monopolize the event loop.
   if (writeBuffer.length >= config.batchSize) {
     if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
     flushToDatabase().catch((e) => console.error("[requestDetailsRepo] flush err:", e));

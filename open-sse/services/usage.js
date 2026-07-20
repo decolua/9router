@@ -10,10 +10,11 @@ import { getCodexUsage, consumeCodexRateLimitResetCredit, getCodexRateLimitReset
 export { consumeCodexRateLimitResetCredit, getCodexRateLimitResetCredits };
 import { getKiroUsage } from "./usage/kiro.js";
 import { getMiniMaxUsage } from "./usage/minimax.js";
+import { getCodeBuddyUsage } from "./usage/codebuddy.js";
 import { getCodeBuddyCnUsage } from "./usage/codebuddy-cn.js";
-import { getGrokCliUsage } from "./usage/grok-cli.js";
 import {
   getQwenUsage,
+  getAutoClawUsage,
   getIflowUsage,
   getOllamaUsage,
   getGlmUsage,
@@ -34,7 +35,9 @@ const USAGE_HANDLERS = {
   claude: (c) => getClaudeUsage(c.accessToken, c.proxyOptions),
   codex: (c) => getCodexUsage(c.accessToken, c.proxyOptions),
   kiro: (c) => getKiroUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
+  codebuddy: (c) => getCodeBuddyUsage(c.accessToken, c.providerSpecificData, c.proxyOptions, c.apiKey),
   qoder: (c) => getQoderUsage(c.accessToken, c.proxyOptions),
+  autoclaw: (c) => getAutoClawUsage(c.accessToken, c.proxyOptions),
   qwen: (c) => getQwenUsage(c.accessToken, c.providerSpecificData),
   iflow: (c) => getIflowUsage(c.accessToken),
   ollama: (c) => getOllamaUsage(c.accessToken),
@@ -44,7 +47,6 @@ const USAGE_HANDLERS = {
   "minimax-cn": (c) => getMiniMaxUsage(c.apiKey, c.provider, c.proxyOptions),
   "vercel-ai-gateway": (c) => getVercelAiGatewayUsage(c.apiKey, c.proxyOptions),
   "codebuddy-cn": (c) => getCodeBuddyCnUsage(c.accessToken, c.apiKey, c.providerSpecificData, c.proxyOptions),
-  "grok-cli": (c) => getGrokCliUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
 };
 
 export async function getUsageForProvider(connection, proxyOptions = null) {

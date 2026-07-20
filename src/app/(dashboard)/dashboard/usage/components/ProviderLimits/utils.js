@@ -98,6 +98,103 @@ export function filterQuotaStateByConnections(state, connections) {
   );
 }
 
+export async function runWithConcurrency(items = [], limit = 5, worker) {
+  if (!items.length) return;
+  const safeLimit = Math.max(1, Math.min(limit, items.length));
+  let nextIndex = 0;
+
+  await Promise.all(
+    Array.from({ length: safeLimit }, async () => {
+      while (nextIndex < items.length) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+        await worker(items[currentIndex], currentIndex);
+      }
+    }),
+  );
+}
+
+export function buildProviderQuotaSummaries(connections = [], quotaData = {}) {
+  const providers = new Map();
+
+  connections.forEach((connection) => {
+    const provider = connection?.provider || "unknown";
+    if (!providers.has(provider)) {
+      providers.set(provider, {
+        provider,
+        accountCount: 0,
+        quotaCount: 0,
+        unlimitedCount: 0,
+        unitTotals: new Map(),
+      });
+    }
+
+    const summary = providers.get(provider);
+    summary.accountCount += 1;
+
+    const quotas = quotaData?.[connection.id]?.quotas || [];
+    quotas.forEach((quota) => {
+      summary.quotaCount += 1;
+
+      const total = Number(quota?.total);
+      if (!Number.isFinite(total) || total <= 0) {
+        summary.unlimitedCount += 1;
+        return;
+      }
+
+      const unit = String(quota?.unit || "quota");
+      const label = String(quota?.name || unit);
+      const quotaKey = `${label}\u0000${unit}`;
+      const usedValue = Number(quota?.used);
+      const used = Number.isFinite(usedValue)
+        ? Math.min(total, Math.max(0, usedValue))
+        : 0;
+
+      if (!summary.unitTotals.has(quotaKey)) {
+        summary.unitTotals.set(quotaKey, { unit: label, used: 0, total: 0 });
+      }
+
+      const unitSummary = summary.unitTotals.get(quotaKey);
+      unitSummary.used += used;
+      unitSummary.total += total;
+    });
+  });
+
+  return Array.from(providers.values())
+    .map((summary) => {
+      const units = Array.from(summary.unitTotals.values())
+        .map((unitSummary) => {
+          const remaining = Math.max(0, unitSummary.total - unitSummary.used);
+          return {
+            unit: unitSummary.unit,
+            used: unitSummary.used,
+            total: unitSummary.total,
+            remaining,
+            remainingPercentage: unitSummary.total > 0
+              ? Math.round((remaining / unitSummary.total) * 100)
+              : 0,
+          };
+        });
+
+      return {
+        provider: summary.provider,
+        accountCount: summary.accountCount,
+        quotaCount: summary.quotaCount,
+        unlimitedCount: summary.unlimitedCount,
+        units,
+      };
+    })
+    .sort((a, b) => a.provider.localeCompare(b.provider));
+}
+
+export function formatProviderQuotaSummaryValue(unitSummary = {}) {
+  const used = Number(unitSummary.used);
+  const total = Number(unitSummary.total);
+  const safeUsed = Number.isFinite(used) ? used : 0;
+  const safeTotal = Number.isFinite(total) ? total : 0;
+  return `${safeUsed.toLocaleString()} / ${safeTotal.toLocaleString()}`;
+}
+
 export function getConnectionsPageRange(pagination) {
   if (!pagination.total) {
     return { start: 0, end: 0 };
@@ -192,6 +289,22 @@ export function getQuotaCache() {
     console.error("Error reading quota cache:", error);
     return {};
   }
+}
+
+export function getQuotaCacheEntriesForConnections(connections = []) {
+  const cache = getQuotaCache();
+  const connectionIds = new Set(
+    connections.map((connection) => connection?.id).filter(Boolean),
+  );
+
+  return Object.fromEntries(
+    Object.entries(cache).filter(
+      ([connectionId, quotaEntry]) =>
+        connectionIds.has(connectionId)
+        && quotaEntry
+        && typeof quotaEntry === "object",
+    ),
+  );
 }
 
 export function setQuotaCache(connectionId, quotaEntry) {
@@ -300,30 +413,6 @@ export function getRemainingPercentage(quota) {
   return calculatePercentage(quota?.used, quota?.total);
 }
 
-export function getQuotaVisibilityKey(quota) {
-  if (!quota || typeof quota !== "object") return "";
-  return String(quota.modelKey || quota.name || "").trim();
-}
-
-function getProviderHiddenQuotaSet(provider, quotaVisibility) {
-  const hidden = quotaVisibility?.[provider]?.hidden;
-  return new Set(Array.isArray(hidden) ? hidden.map(String) : []);
-}
-
-export function filterQuotasByVisibility(provider, quotas = [], quotaVisibility = {}) {
-  if (!Array.isArray(quotas) || quotas.length === 0) return [];
-  const hidden = getProviderHiddenQuotaSet(provider, quotaVisibility);
-  if (hidden.size === 0) return quotas;
-  return quotas.filter((quota) => !hidden.has(getQuotaVisibilityKey(quota)));
-}
-
-export function getHiddenQuotaRows(provider, quotas = [], quotaVisibility = {}) {
-  if (!Array.isArray(quotas) || quotas.length === 0) return [];
-  const hidden = getProviderHiddenQuotaSet(provider, quotaVisibility);
-  if (hidden.size === 0) return [];
-  return quotas.filter((quota) => hidden.has(getQuotaVisibilityKey(quota)));
-}
-
 /**
  * Parse provider-specific quota structures into normalized array
  * @param {string} provider - Provider name (github, antigravity, codex, kiro, claude)
@@ -344,6 +433,7 @@ export function parseQuotaData(provider, data) {
               name,
               used: quota.used || 0,
               total: quota.total || 0,
+              unit: quota.unit,
               resetAt: quota.resetAt || null,
             });
           });
@@ -433,6 +523,7 @@ export function parseQuotaData(provider, data) {
               name,
               used: quota.used || 0,
               total: quota.total || 0,
+              unit: quota.unit,
               resetAt: quota.resetAt || null,
             });
           });
@@ -457,41 +548,6 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
-      case "codebuddy-cn":
-        // CodeBuddy CN mixes recurring refill packs ("Monthly"/"Weekly"/...)
-        // with one-shot bonus packs ("Bonus Pack N"). Forward `recurring`
-        // so the UI can show "Expires in" for bonus packs (whose resetAt is
-        // a hard expiry, not a refresh) instead of "Reset in".
-        if (data.quotas) {
-          Object.entries(data.quotas).forEach(([name, quota]) => {
-            normalizedQuotas.push({
-              name,
-              used: quota.used || 0,
-              total: quota.total || 0,
-              resetAt: quota.resetAt || null,
-              recurring: quota.recurring !== false,
-            });
-          });
-        }
-        break;
-
-      case "grok-cli":
-        // Grok Build credits (on-demand window + prepaid balance).
-        // Do NOT forward absolute `remaining` — getRemainingPercentage treats
-        // it as a 0–100 percentage (same as Qoder). Use remainingPercentage.
-        if (data.quotas) {
-          Object.entries(data.quotas).forEach(([name, quota]) => {
-            normalizedQuotas.push({
-              name,
-              used: quota.used || 0,
-              total: quota.total || 0,
-              resetAt: quota.resetAt || null,
-              remainingPercentage: quota.remainingPercentage,
-            });
-          });
-        }
-        break;
-
       default:
         // Generic fallback for unknown providers
         if (data.quotas) {
@@ -500,6 +556,7 @@ export function parseQuotaData(provider, data) {
               name,
               used: quota.used || 0,
               total: quota.total || 0,
+              unit: quota.unit,
               resetAt: quota.resetAt || null,
             });
           });

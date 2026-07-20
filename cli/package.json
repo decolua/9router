@@ -44,5 +44,6 @@
   "devDependencies": {
     "esbuild": "^0.25.12",
     "nodemon": "^3.1.14"
-  }
+  },
+  "comment_browser_automation": "Browser automation packages and binaries are NOT resolved from the Next bundle. They live in ~/.9router/automation-runtime and are warmed by hooks/postinstall.js, then self-healed on first automation launch."
 }

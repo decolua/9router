@@ -26,6 +26,7 @@ import {
   CLINEPASS_CONFIG,
   GITLAB_CONFIG,
   CODEBUDDY_CONFIG,
+  CODEBUDDY_CN_CONFIG,
   KIMCHI_CONFIG,
   GROK_CLI_CONFIG,
   getOAuthClientMetadata,
@@ -59,6 +60,78 @@ async function discoverXaiEndpoints() {
   } catch { /* fall through to static fallback */ }
   cachedXaiDiscovery = { authorizeUrl: XAI_CONFIG.authorizeUrl, tokenUrl: XAI_CONFIG.tokenUrl };
   return cachedXaiDiscovery;
+}
+
+function createCodeBuddyDeviceProvider(config, domain) {
+  return {
+    config,
+    flowType: "device_code",
+    requestDeviceCode: async (providerConfig) => {
+      const response = await fetch(`${providerConfig.stateUrl}?platform=${providerConfig.platform}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "User-Agent": providerConfig.userAgent,
+          "X-Requested-With": "XMLHttpRequest",
+          "X-Domain": domain,
+          "X-No-Authorization": "true",
+          "X-No-User-Id": "true",
+          "X-Product": "SaaS",
+        },
+        body: "{}",
+      });
+      if (!response.ok) throw new Error(`CodeBuddy state request failed: ${await response.text()}`);
+      const data = await response.json();
+      if (data.code !== 0 || !data.data?.state || !data.data?.authUrl) {
+        throw new Error(`CodeBuddy state error: ${data.msg || "missing state/authUrl"}`);
+      }
+      return {
+        device_code: data.data.state,
+        verification_uri: data.data.authUrl,
+        user_code: "",
+        interval: providerConfig.pollInterval / 1000,
+        _isCodeBuddy: true,
+      };
+    },
+    pollToken: async (providerConfig, deviceCode) => {
+      const response = await fetch(`${providerConfig.tokenUrl}?state=${encodeURIComponent(deviceCode)}`, {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          "User-Agent": providerConfig.userAgent,
+          "X-Requested-With": "XMLHttpRequest",
+          "X-Domain": domain,
+          "X-No-Authorization": "true",
+          "X-No-User-Id": "true",
+          "X-No-Enterprise-Id": "true",
+          "X-No-Department-Info": "true",
+          "X-Product": "SaaS",
+        },
+      });
+      if (!response.ok) return { ok: false, data: { error: "request_failed" } };
+      const data = await response.json();
+      if (data.code === 0 && data.data?.accessToken) {
+        return {
+          ok: true,
+          data: {
+            access_token: data.data.accessToken,
+            refresh_token: data.data.refreshToken || "",
+            token_type: data.data.tokenType || "Bearer",
+            expires_in: data.data.expiresIn,
+          },
+        };
+      }
+      if (data.code === 11217) return { ok: true, data: { error: "authorization_pending" } };
+      return { ok: false, data: { error: data.msg || "unknown_error" } };
+    },
+    mapTokens: (tokens) => ({
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      expiresIn: tokens.expires_in || 86400,
+      providerSpecificData: {},
+    }),
+  };
 }
 
 // Provider configurations
@@ -1391,154 +1464,12 @@ const PROVIDERS = {
     }),
   },
 
-  // CodeBuddy (Tencent) - Browser OAuth Polling Flow
+  // CodeBuddy - Browser OAuth Polling Flow
   // 1. POST stateUrl → get { state, authUrl }
   // 2. Open authUrl in browser
   // 3. Poll tokenUrl with state until success (code 0) or timeout
-  "codebuddy-cn": {
-    config: CODEBUDDY_CONFIG,
-    flowType: "device_code",
-    requestDeviceCode: async (config) => {
-      const response = await fetch(`${config.stateUrl}?platform=${config.platform}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-          "User-Agent": config.userAgent,
-          "X-Requested-With": "XMLHttpRequest",
-          "X-Domain": "copilot.tencent.com",
-          "X-No-Authorization": "true",
-          "X-No-User-Id": "true",
-          "X-Product": "SaaS",
-        },
-        body: "{}",
-      });
-      if (!response.ok) throw new Error(`CodeBuddy state request failed: ${await response.text()}`);
-      const data = await response.json();
-      if (data.code !== 0 || !data.data?.state || !data.data?.authUrl) {
-        throw new Error(`CodeBuddy state error: ${data.msg || "missing state/authUrl"}`);
-      }
-      return {
-        device_code: data.data.state,
-        verification_uri: data.data.authUrl,
-        user_code: "",
-        interval: config.pollInterval / 1000,
-        _isCodeBuddy: true,
-      };
-    },
-    pollToken: async (config, deviceCode) => {
-      // CodeBuddy polls the token endpoint via GET with the state as a query
-      // param (not POST/body) — matches the official CLI's /v2/plugin/auth/token?state=...
-      const response = await fetch(`${config.tokenUrl}?state=${encodeURIComponent(deviceCode)}`, {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-          "User-Agent": config.userAgent,
-          "X-Requested-With": "XMLHttpRequest",
-          "X-Domain": "copilot.tencent.com",
-          "X-No-Authorization": "true",
-          "X-No-User-Id": "true",
-          "X-No-Enterprise-Id": "true",
-          "X-No-Department-Info": "true",
-          "X-Product": "SaaS",
-        },
-      });
-      if (!response.ok) return { ok: false, data: { error: "request_failed" } };
-      const data = await response.json();
-      // code 11217 = pending (RetryFetchToken), code 0 = success
-      if (data.code === 0 && data.data?.accessToken) {
-        return {
-          ok: true,
-          data: {
-            access_token: data.data.accessToken,
-            refresh_token: data.data.refreshToken || "",
-            token_type: data.data.tokenType || "Bearer",
-            expires_in: data.data.expiresIn,
-          },
-        };
-      }
-      if (data.code === 11217) return { ok: true, data: { error: "authorization_pending" } };
-      return { ok: false, data: { error: data.msg || "unknown_error" } };
-    },
-    mapTokens: (tokens) => ({
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      expiresIn: tokens.expires_in || 86400,
-      providerSpecificData: {},
-    }),
-  },
-
-  kimchi: {
-    config: KIMCHI_CONFIG,
-    flowType: "browser_token",
-    buildAuthUrl: (config, redirectUri, state) => {
-      const baseUrl = (config.webAppUrl || "https://app.kimchi.dev").replace(/\/+$/, "");
-      const params = new URLSearchParams({
-        callback: redirectUri,
-        state,
-      });
-      return `${baseUrl}/cli-auth?${params.toString()}`;
-    },
-    exchangeToken: async (config, token) => {
-      const accessToken = String(token || "").trim();
-      if (!accessToken) {
-        throw new Error("Missing Kimchi token");
-      }
-
-      const validationUrl = config.validationUrl || "https://api.cast.ai/v1/llm/openai/supported-providers";
-      const validationRes = await fetch(validationUrl, {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
-      if (!validationRes.ok) {
-        throw new Error(`Kimchi token validation failed: ${validationRes.status}`);
-      }
-
-      let userInfo = {};
-      if (config.userInfoUrl) {
-        try {
-          const userRes = await fetch(config.userInfoUrl, {
-            method: "GET",
-            headers: {
-              Accept: "application/json",
-              Authorization: `Bearer ${accessToken}`,
-            },
-          });
-          if (userRes.ok) {
-            userInfo = await userRes.json();
-          }
-        } catch {
-          userInfo = {};
-        }
-      }
-
-      return {
-        access_token: accessToken,
-        token_type: "Bearer",
-        _kimchiUser: userInfo,
-      };
-    },
-    mapTokens: (tokens) => {
-      const user = tokens._kimchiUser || {};
-      const userId = user.id ? String(user.id) : "";
-      const username = user.username || "";
-      const email = user.email || (userId ? `kimchi-user-${userId}` : null);
-      return {
-        accessToken: tokens.access_token,
-        refreshToken: null,
-        email,
-        displayName: user.name || username || null,
-        providerSpecificData: {
-          authMethod: "browser_token",
-          userId,
-          username,
-        },
-      };
-    },
-  },
+  codebuddy: createCodeBuddyDeviceProvider(CODEBUDDY_CONFIG, "www.codebuddy.ai"),
+  "codebuddy-cn": createCodeBuddyDeviceProvider(CODEBUDDY_CN_CONFIG, "copilot.tencent.com"),
 };
 
 /**

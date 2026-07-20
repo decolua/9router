@@ -4,6 +4,11 @@
 
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import { U } from "./shared.js";
+import {
+  AUTOCLAW_WALLET_URL,
+  buildAutoClawAuthHeaders,
+  normalizeAutoClawBearerToken,
+} from "../../shared/autoclaw.js";
 
 // GLM quota endpoints (region-aware) — url from registry transport.usage
 const GLM_QUOTA_URLS = {
@@ -41,6 +46,50 @@ export async function getIflowUsage(accessToken) {
     return { message: "iFlow connected. Usage tracked per request." };
   } catch (error) {
     return { message: "Unable to fetch iFlow usage." };
+  }
+}
+
+export async function getAutoClawUsage(accessToken, proxyOptions = null) {
+  if (!accessToken) {
+    return { message: "AutoClaw usage unavailable: no access token" };
+  }
+
+  try {
+    const headers = buildAutoClawAuthHeaders();
+    headers.authorization = normalizeAutoClawBearerToken(accessToken);
+    const response = await proxyAwareFetch(AUTOCLAW_WALLET_URL, {
+      method: "GET",
+      headers,
+    }, proxyOptions);
+
+    if (!response.ok) {
+      return { message: `AutoClaw connected. Wallet fetch returned ${response.status}.` };
+    }
+
+    const payload = await response.json().catch(() => null);
+    if (!payload || payload.code !== 0) {
+      return {
+        plan: "AutoClaw",
+        message: payload?.msg || payload?.message || "AutoClaw wallet response did not contain a balance.",
+        quotas: {},
+      };
+    }
+
+    const balance = Number(payload?.data?.total_balance);
+    const points = Number.isFinite(balance) ? balance : 0;
+    return {
+      plan: "AutoClaw",
+      quotas: {
+        points: {
+          used: 0,
+          total: points,
+          remaining: points,
+          unit: "points",
+        },
+      },
+    };
+  } catch (error) {
+    return { message: `AutoClaw connected. Unable to fetch wallet balance: ${error.message}` };
   }
 }
 

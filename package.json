@@ -12,7 +12,8 @@
     "build:bun": "bun --bun next build --webpack",
     "start:bun": "bun ./.next/standalone/server.js",
     "cli:pack": "npm --prefix cli run pack:cli",
-    "cli:publish": "npm --prefix cli run publish:cli"
+    "cli:publish": "npm --prefix cli run publish:cli",
+    "postinstall": "node cli/hooks/postinstall.js"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -44,7 +45,8 @@
     "sql.js": "^1.14.1",
     "undici": "^7.19.2",
     "uuid": "^13.0.0",
-    "zustand": "^5.0.10"
+    "zustand": "^5.0.10",
+    "playwright": "^1.54.2"
   },
   "optionalDependencies": {
     "better-sqlite3": "^12.6.2"

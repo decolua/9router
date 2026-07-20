@@ -13,6 +13,7 @@ import {
   refreshGoogleToken as _refreshGoogleToken,
   refreshQwenToken as _refreshQwenToken,
   refreshCodexToken as _refreshCodexToken,
+  refreshAutoClawToken as _refreshAutoClawToken,
   refreshIflowToken as _refreshIflowToken,
   refreshGitHubToken as _refreshGitHubToken,
   refreshCopilotToken as _refreshCopilotToken,
@@ -44,8 +45,11 @@ export const refreshGoogleToken = (refreshToken, clientId, clientSecret) =>
 export const refreshQwenToken = (refreshToken) =>
   _refreshQwenToken(refreshToken, log);
 
-export const refreshCodexToken = (refreshToken) =>
-  _refreshCodexToken(refreshToken, log);
+export const refreshCodexToken = (refreshToken, providerSpecificData) =>
+  _refreshCodexToken(refreshToken, log, providerSpecificData);
+
+export const refreshAutoClawToken = (refreshToken, providerSpecificData) =>
+  _refreshAutoClawToken(refreshToken, providerSpecificData, log);
 
 export const refreshIflowToken = (refreshToken) =>
   _refreshIflowToken(refreshToken, log);

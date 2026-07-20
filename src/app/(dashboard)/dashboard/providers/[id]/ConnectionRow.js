@@ -2,13 +2,32 @@
 
 import { useState, useEffect, useRef } from "react";
 import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/connectionStatus";
+import { canRefreshCodexGoConnection, getConnectionAuthDisplay } from "@/shared/utils/connectionAuthDisplay";
+import { formatCodexGoRefreshReason, getCodexGoRefreshMeta } from "@/lib/oauth/services/codexGoRefreshPolicy";
 import PropTypes from "prop-types";
 import { Badge, Toggle, Tooltip } from "@/shared/components";
 import CooldownTimer from "./CooldownTimer";
 
-export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null }) {
+function formatDuration(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) return "now";
+  const totalSeconds = Math.ceil(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes >= 60) return `${Math.ceil(minutes / 60)}h`;
+  if (minutes > 0) return `${minutes}m`;
+  return `${seconds}s`;
+}
+
+function formatShortTime(value) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return null;
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, onCodexGoRefresh = null, codexGoRefreshing = false, oneByOneStatus = null, autoPing = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
+  const [codexGoNowMs, setCodexGoNowMs] = useState(() => Date.now());
   const proxyDropdownRef = useRef(null);
 
   const proxyPoolMap = new Map((proxyPools || []).map((pool) => [pool.id, pool]));
@@ -23,9 +42,6 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
       : hasLegacyProxy
         ? `Legacy: ${connection.providerSpecificData?.connectionProxyUrl}`
         : "";
-  const autoPingTooltip = autoPing?.provider === "codex"
-    ? "Auto-starts the next 5h Codex window after reset by sending a tiny gpt-5.5 request. Consumes a small amount of quota."
-    : "When your 5h quota runs out, auto-sends a request the moment it resets so a new window starts right away.";
 
   let maskedProxyUrl = "";
   if (boundProxyPool?.proxyUrl || connection.providerSpecificData?.connectionProxyUrl) {
@@ -69,11 +85,30 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
     }
   };
 
-  const rowAuthType = connection.authType || (isOAuth ? "oauth" : "apikey");
-  const isOAuthConnection = rowAuthType === "oauth";
-  const isCookieConnection = rowAuthType === "cookie";
-  const authIcon = isCookieConnection ? "cookie" : isOAuthConnection ? "lock" : "key";
-  const authLabel = isOAuthConnection ? "OAuth" : isCookieConnection ? "Cookie" : "API Key";
+  const {
+    authIcon,
+    authLabel,
+    isOAuthConnection,
+    isCookieConnection,
+  } = getConnectionAuthDisplay(connection, isOAuth);
+  const showCodexGoRefresh = canRefreshCodexGoConnection(connection) && typeof onCodexGoRefresh === "function";
+  const codexGoRefresh = showCodexGoRefresh
+    ? getCodexGoRefreshMeta(connection.providerSpecificData || {}, codexGoNowMs)
+    : null;
+  const codexGoRefreshExhausted = codexGoRefresh?.window?.exhausted === true;
+  const codexGoNextIn = codexGoRefreshExhausted && codexGoRefresh?.window?.nextRefreshAt
+    ? formatDuration(new Date(codexGoRefresh.window.nextRefreshAt).getTime() - codexGoNowMs)
+    : null;
+  const codexGoLastRefreshTime = formatShortTime(codexGoRefresh?.state?.lastRefreshAt);
+  const codexGoLastRefreshText = codexGoLastRefreshTime
+    ? `${codexGoLastRefreshTime} (${formatCodexGoRefreshReason(codexGoRefresh.state.lastRefreshReason)})`
+    : null;
+  const codexGoSyncDisabled = codexGoRefreshing;
+  const codexGoRefreshTooltip = codexGoSyncDisabled
+    ? "CodexGo refresh is already running"
+    : codexGoRefreshExhausted
+      ? `Over hourly target; refresh still allowed${codexGoNextIn ? `, next slot in ${codexGoNextIn}` : ""}`
+      : "Create a fresh CodexGo-backed Codex session";
   const displayName = connection.name?.trim()
     || connection.email?.trim()
     || connection.displayName?.trim()
@@ -83,6 +118,12 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
     : connection.name?.trim() && connection.displayName?.trim() && connection.name.trim() !== connection.displayName.trim()
       ? connection.displayName.trim()
       : null;
+
+  useEffect(() => {
+    if (!showCodexGoRefresh) return;
+    const interval = setInterval(() => setCodexGoNowMs(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [showCodexGoRefresh]);
 
   // Use useState + useEffect for impure Date.now() to avoid calling during render
   const [isCooldown, setIsCooldown] = useState(false);
@@ -170,6 +211,14 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             <Badge variant="default" size="sm">
               {authLabel}
             </Badge>
+            {showCodexGoRefresh && codexGoRefresh && (
+              <Badge variant={codexGoRefreshExhausted ? "error" : "default"} size="sm">
+                Refresh {codexGoRefresh.window.used}/{codexGoRefresh.window.limit}
+              </Badge>
+            )}
+            {showCodexGoRefresh && codexGoNextIn && (
+              <span className="text-xs text-text-muted">next slot in {codexGoNextIn}</span>
+            )}
             {hasAnyProxy && (
               <Badge variant={proxyBadgeVariant} size="sm">
                 Proxy
@@ -208,10 +257,15 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
               )}
             </div>
           )}
+          {showCodexGoRefresh && (
+            <div className="mt-1 text-[11px] text-text-muted">
+              {codexGoLastRefreshText ? <>Last refresh: {codexGoLastRefreshText}</> : "Never refreshed"}
+            </div>
+          )}
         </div>
       </div>
       <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end">
-        <div className="grid flex-1 grid-cols-3 gap-1 sm:flex sm:flex-none">
+        <div className={`grid flex-1 ${showCodexGoRefresh ? "grid-cols-4" : "grid-cols-3"} gap-1 sm:flex sm:flex-none`}>
           {/* Proxy button with inline dropdown */}
           {(proxyPools || []).length > 0 && (
             <div className="relative" ref={proxyDropdownRef}>
@@ -247,13 +301,27 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             </div>
           )}
           {autoPing && (
-            <Tooltip text={autoPingTooltip}>
+            <Tooltip text="When your 5h quota runs out, auto-sends a request the moment it resets so a new window starts right away.">
               <button
                 onClick={() => autoPing.onToggle(!autoPing.on)}
                 className={`flex w-full flex-col items-center rounded px-2 py-1 transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${autoPing.on ? "text-primary" : "text-text-muted hover:text-primary"}`}
               >
                 <span className="material-symbols-outlined text-[18px]">bolt</span>
                 <span className="text-[10px] leading-tight">Auto-ping</span>
+              </button>
+            </Tooltip>
+          )}
+          {showCodexGoRefresh && (
+            <Tooltip text={codexGoRefreshTooltip}>
+              <button
+                onClick={onCodexGoRefresh}
+                disabled={codexGoRefreshing}
+                className="flex w-full flex-col items-center rounded px-2 py-1 text-text-muted transition-colors hover:bg-black/5 hover:text-primary disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-white/5"
+              >
+                <span className="material-symbols-outlined text-[18px]">
+                  {codexGoRefreshing ? "progress_activity" : "sync"}
+                </span>
+                <span className="text-[10px] leading-tight">Sync</span>
               </button>
             </Tooltip>
           )}
@@ -306,6 +374,8 @@ ConnectionRow.propTypes = {
   onUpdateProxy: PropTypes.func,
   onEdit: PropTypes.func.isRequired,
   onDelete: PropTypes.func.isRequired,
+  onCodexGoRefresh: PropTypes.func,
+  codexGoRefreshing: PropTypes.bool,
   oneByOneStatus: PropTypes.shape({
     state: PropTypes.string,
     error: PropTypes.string,
@@ -313,6 +383,5 @@ ConnectionRow.propTypes = {
   autoPing: PropTypes.shape({
     on: PropTypes.bool,
     onToggle: PropTypes.func,
-    provider: PropTypes.string,
   }),
 };
