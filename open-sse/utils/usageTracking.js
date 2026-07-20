@@ -4,6 +4,9 @@
 
 import { FORMATS } from "../translator/formats.js";
 
+// Legacy per-chunk usage console line; off by default (superseded by "📊 done")
+const DEBUG_USAGE = process.env.LOG_USAGE_VERBOSE === "1";
+
 // ANSI color codes
 export const COLORS = {
   reset: "\x1b[0m",
@@ -164,24 +167,38 @@ export function canonicalizeUsage(usage) {
   const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
   const completion = num(usage.completion_tokens ?? usage.output_tokens);
   const reasoning = num(usage.reasoning_tokens);
-  const cacheCreation = num(usage.cache_creation_input_tokens);
+  // Fall back to the nested prompt_tokens_details.cache_creation_tokens shape
+  // (buildUsage()'s OpenAI-forwarding format) when the top-level field is
+  // absent, so callers that pass a buildUsage() object through don't silently
+  // drop cache_creation.
+  const cacheCreation = num(usage.cache_creation_input_tokens ?? usage.prompt_tokens_details?.cache_creation_tokens);
 
   let prompt = num(usage.prompt_tokens ?? usage.input_tokens);
   let cached;
 
-  // Claude path: prompt excludes cache; cache_read_input_tokens is separate.
-  if (usage.cache_read_input_tokens !== undefined) {
+  // Claude path: prompt excludes cache; cache_read_input_tokens and/or
+  // cache_creation_input_tokens are separate. A cache-miss "first write" only
+  // carries cache_creation_input_tokens (no cache_read_input_tokens yet), so
+  // check both fields — otherwise a first-write request falls through to the
+  // OpenAI passthrough branch below and cache_creation never gets folded in.
+  // Guard on the absence of `cached_tokens`: our own canonical output always
+  // sets that key (even to 0), so re-running canonicalizeUsage on an already-
+  // folded result takes the passthrough branch instead of folding again.
+  if (usage.cached_tokens === undefined &&
+      (usage.cache_read_input_tokens !== undefined || usage.cache_creation_input_tokens !== undefined)) {
     cached = num(usage.cache_read_input_tokens);
     prompt = prompt + cached + cacheCreation;
   } else {
-    // OpenAI/Gemini path: prompt already includes cached_tokens.
+    // OpenAI/Gemini path (or already-canonical input): prompt already includes cached_tokens.
     cached = num(usage.cached_tokens);
   }
 
   const result = {
     prompt_tokens: prompt,
     completion_tokens: completion,
-    total_tokens: usage.total_tokens !== undefined ? num(usage.total_tokens) : prompt + completion,
+    // Recompute rather than pass through: when the fold branch ran above,
+    // an upstream total_tokens (cache-exclusive) would otherwise be stale.
+    total_tokens: prompt + completion,
     cached_tokens: cached,
     cache_creation_input_tokens: cacheCreation,
   };
@@ -218,6 +235,19 @@ export function hasValidUsage(usage) {
  */
 export function extractUsage(chunk) {
   if (!chunk || typeof chunk !== "object") return null;
+
+  // Claude format (message_start event): carries input_tokens + cache_read +
+  // cache_creation. message_delta later carries only the final output_tokens,
+  // so callers must MERGE (mergeUsage), not overwrite, to keep cache counts.
+  if (chunk.type === "message_start" && chunk.message?.usage && typeof chunk.message.usage === "object") {
+    const u = chunk.message.usage;
+    return normalizeUsage({
+      prompt_tokens: u.input_tokens || 0,
+      completion_tokens: u.output_tokens || 0,
+      cache_read_input_tokens: u.cache_read_input_tokens,
+      cache_creation_input_tokens: u.cache_creation_input_tokens
+    });
+  }
 
   // Claude format (message_delta event)
   if (chunk.type === "message_delta" && chunk.usage && typeof chunk.usage === "object") {
@@ -278,6 +308,27 @@ export function extractUsage(chunk) {
   }
 
   return null;
+}
+
+// Field-wise max-merge of two usage objects. Anthropic splits usage across
+// events: message_start has real input+cache (output is a placeholder 1),
+// message_delta has the real cumulative output (input/cache absent). Max keeps
+// the meaningful value from each without clobbering. Idempotent for other
+// providers that emit a single complete usage object.
+export function mergeUsage(prev, next) {
+  if (!prev) return next || null;
+  if (!next) return prev;
+  const merged = { ...prev };
+  for (const [k, v] of Object.entries(next)) {
+    // typeof NaN === "number" — guard with Number.isFinite so one malformed
+    // chunk can't poison the whole accumulation (Math.max(x, NaN) is NaN).
+    if (typeof v === "number" && Number.isFinite(v)) {
+      merged[k] = Math.max(typeof merged[k] === "number" ? merged[k] : 0, v);
+    } else if (v && typeof v === "object") {
+      merged[k] = v; // nested details objects: take latest
+    }
+  }
+  return merged;
 }
 
 /**
@@ -352,6 +403,10 @@ export function estimateUsage(body, contentLength, targetFormat = FORMATS.OPENAI
  */
 export function logUsage(provider, usage, model = null, connectionId = null, apiKey = null) {
   if (!usage || typeof usage !== "object") return;
+
+  // Console output moved to the unified "📊 done" line (streamingHandler). Kept as
+  // a no-op hook so callers stay unchanged; usage persistence happens via saveUsageStats.
+  if (!DEBUG_USAGE) return;
 
   const p = provider?.toUpperCase() || "UNKNOWN";
 

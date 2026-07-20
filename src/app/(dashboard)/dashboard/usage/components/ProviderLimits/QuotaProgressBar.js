@@ -69,12 +69,17 @@ export default function QuotaProgressBar({
   used = 0,
   total = 0,
   unlimited = false,
-  resetTime = null
+  resetTime = null,
+  recurring = true,
 }) {
   const colors = getColorClasses(percentage);
   const countdown = formatResetTime(resetTime);
   const resetDisplay = formatResetTimeDisplay(resetTime);
-  
+
+  // recurring defaults true. One-shot packs (e.g. CodeBuddy CN bonus packs)
+  // set recurring:false: resetTime is a hard expiry, so word it as "expires".
+  const resetWord = recurring ? "Reset" : "Expires";
+
   // percentage is already remaining percentage (from ProviderLimitCard)
   const remaining = percentage;
   
@@ -111,7 +116,7 @@ export default function QuotaProgressBar({
         {countdown !== "-" && (
           <div className="flex items-center gap-1">
             <span>•</span>
-            <span className="font-medium">Reset in {countdown}</span>
+            <span className="font-medium">{resetWord} in {countdown}</span>
           </div>
         )}
       </div>
@@ -119,7 +124,7 @@ export default function QuotaProgressBar({
       {/* Reset time display */}
       {resetDisplay && (
         <div className="text-xs text-text-muted/70">
-          Reset at {resetDisplay}
+          {resetWord} at {resetDisplay}
         </div>
       )}
     </div>

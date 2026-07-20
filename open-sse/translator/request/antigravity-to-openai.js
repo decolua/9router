@@ -138,12 +138,14 @@ function convertContent(content) {
 
     // Text with thoughtSignature = regular text after thinking
     if (part.thoughtSignature && part.text !== undefined) {
-      textParts.push({ type: OPENAI_BLOCK.TEXT, text: part.text });
+      if (part.text) {
+        textParts.push({ type: OPENAI_BLOCK.TEXT, text: part.text });
+      }
       continue;
     }
 
     // Regular text
-    if (part.text !== undefined) {
+    if (part.text !== undefined && part.text !== "") {
       textParts.push({ type: OPENAI_BLOCK.TEXT, text: part.text });
     }
 
@@ -180,8 +182,22 @@ function convertContent(content) {
     }
   }
 
-  // Content with only functionResponses → return array of tool messages
+  // Content with functionResponses — return array of tool result messages,
+  // plus an assistant message for any co-located tool calls / text.
   if (toolResults.length > 0) {
+    if (toolCalls.length > 0 || textParts.length > 0 || reasoningContent) {
+      const assistantMsg = { role: ROLE.ASSISTANT };
+      if (textParts.length > 0) {
+        assistantMsg.content = collapseTextParts(textParts);
+      }
+      if (reasoningContent) {
+        assistantMsg.reasoning_content = reasoningContent;
+      }
+      if (toolCalls.length > 0) {
+        assistantMsg.tool_calls = toolCalls;
+      }
+      return [...toolResults, assistantMsg];
+    }
     return toolResults;
   }
 

@@ -103,13 +103,23 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
     }
   }
 
-  // Normalize thinking to the target provider-native format (config-driven, capability-aware)
-  applyThinking(targetFormat, model, result, provider, thinkingIntent);
+  // Normalize thinking to the target provider-native format (config-driven, capability-aware).
+  // Kiro's GenerateAssistantResponse request does not accept the generic top-level
+  // `thinking` field; its translators map thinking intent to KAS-compatible
+  // systemPrompt/additionalModelRequestFields instead.
+  const kiroThinkingMappedByTranslator =
+    targetFormat === FORMATS.KIRO &&
+    (sourceFormat === FORMATS.OPENAI || sourceFormat === FORMATS.CLAUDE);
+  if (!kiroThinkingMappedByTranslator) {
+    applyThinking(targetFormat, model, result, provider, thinkingIntent);
+  }
 
   // Always normalize to clean OpenAI format when target is OpenAI
   // This handles hybrid requests (e.g., OpenAI messages + Claude tools)
   if (targetFormat === FORMATS.OPENAI) {
-    result = filterToOpenAIFormat(result);
+    result = filterToOpenAIFormat(result, {
+      preserveCacheControl: !!PROVIDERS[provider]?.quirks?.preserveCacheControl,
+    });
   }
 
   // Final step: prepare request for Claude format endpoints

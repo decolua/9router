@@ -154,10 +154,6 @@ export async function POST(request) {
       if (!node) {
         return NextResponse.json({ error: "Custom Embedding node not found" }, { status: 404 });
       }
-      const existingConnections = await getProviderConnections({ provider });
-      if (existingConnections.length > 0) {
-        return NextResponse.json({ error: "Only one connection is allowed for this Custom Embedding node" }, { status: 400 });
-      }
       providerSpecificData = {
         prefix: node.prefix,
         baseUrl: node.baseUrl,

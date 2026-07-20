@@ -26,21 +26,16 @@ export class KiroExecutor extends BaseExecutor {
     // exactly like an OAuth access token, but with an extra `tokentype: API_KEY`
     // header so CodeWhisperer treats it as a long-lived API key rather than an
     // OIDC/social access token. Mirrors the Kiro IDE headless-auth behavior.
+    // Enterprise / Microsoft Entra (external_idp) tokens are OAuth access tokens,
+    // but CodeWhisperer requires TokenType=EXTERNAL_IDP to bind them to profiles.
     const authMethod = credentials?.providerSpecificData?.authMethod;
     const isApiKey = authMethod === "api_key";
-    // External IdP tokens (Microsoft Entra ID / Azure AD via SSO) must be
-    // tagged with `tokentype: EXTERNAL_IDP` on every CodeWhisperer call
-    // (data plane, ListAvailableModels, usage). Without it, upstream rejects
-    // the request as "The bearer token included in the request is invalid".
     const isExternalIdp = authMethod === "external_idp";
 
     const apiKey = credentials?.apiKey || (isApiKey ? credentials?.accessToken : null);
     if (isApiKey && apiKey) {
       headers["Authorization"] = `Bearer ${apiKey}`;
       headers["tokentype"] = "API_KEY";
-    } else if (isExternalIdp && credentials.accessToken) {
-      headers["Authorization"] = `Bearer ${credentials.accessToken}`;
-      headers["tokentype"] = "EXTERNAL_IDP";
     } else if (credentials.accessToken) {
       headers["Authorization"] = `Bearer ${credentials.accessToken}`;
       if (isExternalIdp) {
@@ -69,9 +64,22 @@ export class KiroExecutor extends BaseExecutor {
   getOrderedBaseUrls(credentials) {
     const baseUrls = this.getBaseUrls();
     const authMethod = credentials?.providerSpecificData?.authMethod;
-    const isCodeWhispererSurface = authMethod === "api_key" || authMethod === "external_idp";
+    // IAM Identity Center (idc) tokens are AWS SSO access tokens — the same
+    // family as external_idp/api_key. The kiro.dev gateway rejects them with
+    // 403 "bearer token invalid", so they must hit the CodeWhisperer
+    // *.amazonaws.com surface, and in the region the token was minted in
+    // (the baseUrls are hardcoded us-east-1).
+    const isCodeWhispererSurface =
+      authMethod === "api_key" || authMethod === "external_idp" || authMethod === "idc";
     if (!isCodeWhispererSurface) return baseUrls;
-    const amazon = baseUrls.filter((u) => u.includes("amazonaws.com"));
+
+    const region = (credentials?.providerSpecificData?.region || "us-east-1").trim();
+    const regionalize = (u) =>
+      region && region !== "us-east-1" && u.includes("amazonaws.com")
+        ? u.replace(/([a-z]+)\.[a-z0-9-]+\.amazonaws\.com/, `$1.${region}.amazonaws.com`)
+        : u;
+
+    const amazon = baseUrls.filter((u) => u.includes("amazonaws.com")).map(regionalize);
     const others = baseUrls.filter((u) => !u.includes("amazonaws.com"));
     return amazon.length > 0 ? [...amazon, ...others] : baseUrls;
   }
@@ -127,7 +135,8 @@ export class KiroExecutor extends BaseExecutor {
       hasReasoningContent: false,
       reasoningChunkCount: 0,
       toolCallIndex: 0,
-      seenToolIds: new Map()
+      seenToolIds: new Map(),
+      inThinking: false
     };
 
     const transformStream = new TransformStream({
@@ -164,7 +173,36 @@ export class KiroExecutor extends BaseExecutor {
 
           // Handle assistantResponseEvent
           if (eventType === "assistantResponseEvent" && event.payload?.content) {
-            const content = event.payload.content;
+            let content = event.payload.content;
+
+            // Kiro Claude models can leak <thinking> blocks into the content stream.
+            // We strip these literal tags to prevent duplication, as the reasoning 
+            // is already routed correctly via reasoningContentEvent.
+            if (state.inThinking) {
+              if (content.includes("</thinking>")) {
+                state.inThinking = false;
+                const after = content.split("</thinking>").slice(1).join("</thinking>");
+                content = after.startsWith("\n") ? after.substring(1) : after;
+              } else {
+                content = ""; // Drop entirely while inside thinking block
+              }
+            } else if (content.includes("<thinking>")) {
+              state.inThinking = true;
+              if (content.includes("</thinking>")) {
+                state.inThinking = false;
+                const before = content.split("<thinking>")[0];
+                const after = content.split("</thinking>").slice(1).join("</thinking>");
+                content = before + (after.startsWith("\n") ? after.substring(1) : after);
+              } else {
+                content = content.split("<thinking>")[0];
+              }
+            }
+
+            if (!content && state.hasReasoningContent) {
+              // If we stripped everything, skip emitting an empty content chunk
+              continue;
+            }
+
             state.totalContentLength += content.length;
 
             const chunk = {
@@ -365,7 +403,11 @@ export class KiroExecutor extends BaseExecutor {
                   completion_tokens: outputTokens,
                   total_tokens: inputTokens + outputTokens
                 };
-                if (cachedTokens > 0) state.usage.cached_tokens = cachedTokens;
+                // Kiro is Claude-backed: inputTokens EXCLUDES cache (Claude convention),
+                // not inclusive like OpenAI's cached_tokens. Emit cache_read_input_tokens
+                // (not cached_tokens) so canonicalizeUsage takes the Claude fold path and
+                // correctly adds cache back into prompt_tokens instead of undercharging.
+                if (cachedTokens > 0) state.usage.cache_read_input_tokens = cachedTokens;
                 if (cacheCreationInputTokens > 0) state.usage.cache_creation_input_tokens = cacheCreationInputTokens;
               }
             }

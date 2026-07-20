@@ -7,21 +7,27 @@ import {
   Handle,
   Position,
   Controls,
+  BaseEdge,
+  getBezierPath,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
+import { getProviderIconSrc, markProviderIconMissing } from "@/shared/utils/providerIcon";
 
 // Force-stop FE animation if a provider stays active longer than this
 const FE_ACTIVE_TIMEOUT_MS = 60000;
 const FE_ACTIVE_TICK_MS = 1000;
 
+// Kame + electric particles along active edges
+const KAME_PARTICLE_COUNT = 6;
+const SPARK_COUNT = 5;
+
 function getProviderConfig(providerId) {
   return AI_PROVIDERS[providerId] || { color: "#6b7280", name: providerId };
 }
 
-// Use local provider images from /public/providers/
 function getProviderImageUrl(providerId) {
-  return `/providers/${providerId}.png`;
+  return getProviderIconSrc(providerId);
 }
 
 // Custom provider node - rectangle with image + name
@@ -47,8 +53,19 @@ function ProviderNode({ data }) {
         className="w-8 h-8 rounded-md flex items-center justify-center shrink-0"
         style={{ backgroundColor: `${color}15` }}
       >
-        {!imgError ? (
-          <img src={imageUrl} alt={label} className="w-6 h-6 rounded-sm object-contain" onError={() => setImgError(true)} />
+        {imageUrl && !imgError ? (
+          <img
+            src={imageUrl}
+            alt={label}
+            className="w-6 h-6 rounded-sm object-contain"
+            loading="lazy"
+            decoding="async"
+            onError={() => {
+              const m = imageUrl?.match(/^\/providers\/([^/]+)\.png$/i);
+              if (m) markProviderIconMissing(m[1]);
+              setImgError(true);
+            }}
+          />
         ) : (
           <span className="text-sm font-bold" style={{ color }}>{textIcon}</span>
         )}
@@ -77,19 +94,34 @@ ProviderNode.propTypes = {
   data: PropTypes.object.isRequired,
 };
 
-// Center 9Router node
+// Center 9Router node — pulse/glow on card only (no expanding rings)
 function RouterNode({ data }) {
+  const powering = (data.activeCount || 0) > 0;
   return (
-    <div className="flex items-center justify-center px-5 py-3 rounded-xl border-2 border-primary bg-primary/5 shadow-md min-w-[130px]">
+    <div
+      className={`relative z-[1] flex items-center justify-center px-5 py-3 rounded-xl border-2 min-w-[130px] ${
+        powering
+          ? "topology-router-core border-yellow-300 bg-gradient-to-br from-primary/30 via-yellow-400/20 to-cyan-400/25"
+          : "border-primary bg-primary/5 shadow-md"
+      }`}
+    >
       <Handle type="source" position={Position.Top} id="top" className="!bg-transparent !border-0 !w-0 !h-0" />
       <Handle type="source" position={Position.Bottom} id="bottom" className="!bg-transparent !border-0 !w-0 !h-0" />
       <Handle type="source" position={Position.Left} id="left" className="!bg-transparent !border-0 !w-0 !h-0" />
       <Handle type="source" position={Position.Right} id="right" className="!bg-transparent !border-0 !w-0 !h-0" />
 
-      <img src="/favicon.svg" alt="9Router" className="w-6 h-6 mr-2" />
-      <span className="text-sm font-bold text-primary">9Router</span>
+      <img
+        src="/favicon.svg"
+        alt="9Router"
+        className={`w-6 h-6 mr-2 ${powering ? "topology-router-icon" : ""}`}
+        loading="lazy"
+        decoding="async"
+      />
+      <span className={`text-sm font-bold ${powering ? "topology-router-label text-yellow-300" : "text-primary"}`}>
+        9Router
+      </span>
       {data.activeCount > 0 && (
-        <span className="ml-2 px-1.5 py-0.5 rounded-full bg-primary text-white text-xs font-bold">
+        <span className="ml-2 px-1.5 py-0.5 rounded-full bg-yellow-400 text-black text-xs font-bold topology-router-badge">
           {data.activeCount}
         </span>
       )}
@@ -101,7 +133,131 @@ RouterNode.propTypes = {
   data: PropTypes.object.isRequired,
 };
 
+// Active: electric kame beam (multi-layer stroke + sparks). Idle/last/error: solid BaseEdge.
+function TopologyEdge({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+  style = {},
+  data,
+}) {
+  const [edgePath] = getBezierPath({
+    sourceX,
+    sourceY,
+    sourcePosition,
+    targetX,
+    targetY,
+    targetPosition,
+  });
+  const active = !!data?.active;
+  const stroke = style.stroke || "var(--color-border)";
+  const filterId = `topo-electric-${id}`;
+
+  if (!active) {
+    return <BaseEdge id={id} path={edgePath} style={{ ...style, stroke }} />;
+  }
+
+  return (
+    <g className="topology-edge-electric">
+      <defs>
+        <filter id={filterId} x="-40%" y="-40%" width="180%" height="180%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="2" result="noise">
+            <animate attributeName="baseFrequency" values="0.8;1.4;0.8" dur="0.25s" repeatCount="indefinite" />
+          </feTurbulence>
+          <feDisplacementMap in="SourceGraphic" in2="noise" scale="3.5" xChannelSelector="R" yChannelSelector="G" />
+        </filter>
+      </defs>
+      {/* Outer electric halo */}
+      <path
+        d={edgePath}
+        fill="none"
+        stroke="#22d3ee"
+        strokeWidth={10}
+        strokeOpacity={0.35}
+        strokeLinecap="round"
+        filter={`url(#${filterId})`}
+        className="topology-edge-halo"
+      />
+      {/* Mid plasma */}
+      <path
+        d={edgePath}
+        fill="none"
+        stroke="#4ade80"
+        strokeWidth={5}
+        strokeOpacity={0.85}
+        strokeLinecap="round"
+        filter={`url(#${filterId})`}
+        className="topology-edge-plasma"
+      />
+      {/* Hot white core */}
+      <BaseEdge
+        id={id}
+        path={edgePath}
+        style={{ stroke: "#f8fafc", strokeWidth: 2.2, opacity: 1 }}
+        className="topology-edge-kame"
+      />
+      {/* Energy orbs */}
+      {Array.from({ length: KAME_PARTICLE_COUNT }, (_, i) => (
+        <circle
+          key={`${id}-p-${i}`}
+          r={i % 2 === 0 ? 4 : 2.5}
+          fill={i % 3 === 0 ? "#fde047" : i % 3 === 1 ? "#67e8f9" : "#fff"}
+          opacity={0.95}
+          style={{ filter: "drop-shadow(0 0 4px #22d3ee)" }}
+        >
+          <animateMotion
+            dur={`${0.4 + i * 0.08}s`}
+            repeatCount="indefinite"
+            path={edgePath}
+            begin={`${i * 0.09}s`}
+          />
+        </circle>
+      ))}
+      {/* Electric sparks (short-lived blink along path) */}
+      {Array.from({ length: SPARK_COUNT }, (_, i) => (
+        <circle
+          key={`${id}-s-${i}`}
+          r={1.8}
+          fill="#e0f2fe"
+          opacity={0}
+        >
+          <animate
+            attributeName="opacity"
+            values="0;1;0;0;1;0"
+            dur={`${0.35 + (i % 3) * 0.1}s`}
+            begin={`${i * 0.07}s`}
+            repeatCount="indefinite"
+          />
+          <animateMotion
+            dur={`${0.28 + i * 0.05}s`}
+            repeatCount="indefinite"
+            path={edgePath}
+            begin={`${i * 0.11}s`}
+          />
+        </circle>
+      ))}
+    </g>
+  );
+}
+
+TopologyEdge.propTypes = {
+  id: PropTypes.string,
+  sourceX: PropTypes.number,
+  sourceY: PropTypes.number,
+  targetX: PropTypes.number,
+  targetY: PropTypes.number,
+  sourcePosition: PropTypes.string,
+  targetPosition: PropTypes.string,
+  style: PropTypes.object,
+  data: PropTypes.object,
+};
+
 const nodeTypes = { provider: ProviderNode, router: RouterNode };
+const edgeTypes = { topology: TopologyEdge };
 
 // Place N nodes evenly along an ellipse around the router center.
 function buildLayout(providers, activeSet, lastSet, errorSet) {
@@ -135,9 +291,9 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
     draggable: false,
   });
 
-  const edgeStyle = (active, last, error, color) => {
+  const edgeStyle = (active, last, error) => {
     if (error) return { stroke: "#ef4444", strokeWidth: 2.5, opacity: 0.9 };
-    if (active) return { stroke: "#22c55e", strokeWidth: 2.5, opacity: 0.9 };
+    if (active) return { stroke: "#22d3ee", strokeWidth: 3.5, opacity: 1 };
     if (last) return { stroke: "#f59e0b", strokeWidth: 2, opacity: 0.7 };
     return { stroke: "var(--color-border)", strokeWidth: 1, opacity: 0.3 };
   };
@@ -183,12 +339,15 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
 
     edges.push({
       id: `e-${nodeId}`,
+      type: "topology",
       source: "router",
       sourceHandle,
       target: nodeId,
       targetHandle,
-      animated: active,
-      style: edgeStyle(active, last, error, config.color),
+      // Built-in animated uses stroke-dasharray (CPU-heavy); use particle beam instead
+      animated: false,
+      data: { active },
+      style: edgeStyle(active, last, error),
     });
   });
 
@@ -241,7 +400,7 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
 
   const { nodes, edges } = useMemo(
     () => buildLayout(providers, activeSet, lastSet, errorSet),
-    [providers, activeSet, lastKey, errorKey]
+    [providers, activeSet, lastSet, errorSet]
   );
 
   // Stable key — only remount when provider list changes
@@ -289,6 +448,7 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           fitView
           fitViewOptions={fitOpts}
           minZoom={0.1}
