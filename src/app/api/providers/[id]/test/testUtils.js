@@ -75,7 +75,8 @@ const OAUTH_TEST_CONFIG = {
     authPrefix: "Bearer ",
     refreshable: false,
   },
-  "kimi-coding": { checkExpiry: true, refreshable: false },
+  kimi: { checkExpiry: true, refreshable: true },
+  "kimi-coding": { checkExpiry: true, refreshable: true },
   cursor: { tokenExists: true },
   kilocode: {
     url: `${KILOCODE_CONFIG.apiBaseUrl}/api/profile`,

@@ -300,6 +300,30 @@ export function getRemainingPercentage(quota) {
   return calculatePercentage(quota?.used, quota?.total);
 }
 
+export function getQuotaVisibilityKey(quota) {
+  if (!quota || typeof quota !== "object") return "";
+  return String(quota.modelKey || quota.name || "").trim();
+}
+
+function getProviderHiddenQuotaSet(provider, quotaVisibility) {
+  const hidden = quotaVisibility?.[provider]?.hidden;
+  return new Set(Array.isArray(hidden) ? hidden.map(String) : []);
+}
+
+export function filterQuotasByVisibility(provider, quotas = [], quotaVisibility = {}) {
+  if (!Array.isArray(quotas) || quotas.length === 0) return [];
+  const hidden = getProviderHiddenQuotaSet(provider, quotaVisibility);
+  if (hidden.size === 0) return quotas;
+  return quotas.filter((quota) => !hidden.has(getQuotaVisibilityKey(quota)));
+}
+
+export function getHiddenQuotaRows(provider, quotas = [], quotaVisibility = {}) {
+  if (!Array.isArray(quotas) || quotas.length === 0) return [];
+  const hidden = getProviderHiddenQuotaSet(provider, quotaVisibility);
+  if (hidden.size === 0) return [];
+  return quotas.filter((quota) => hidden.has(getQuotaVisibilityKey(quota)));
+}
+
 /**
  * Parse provider-specific quota structures into normalized array
  * @param {string} provider - Provider name (github, antigravity, codex, kiro, claude)

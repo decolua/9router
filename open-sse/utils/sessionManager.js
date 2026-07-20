@@ -13,6 +13,7 @@ import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
 
 // Runtime storage: Key = connectionId, Value = { sessionId, lastUsed }
 const runtimeSessionStore = new Map();
+const continuationStore = new Map();
 
 // Periodically evict entries that haven't been used within TTL
 const cleanupInterval = setInterval(() => {
@@ -80,6 +81,7 @@ export function generateBinaryStyleId() {
 export function clearSessionStore() {
     runtimeSessionStore.clear();
     assistantSessionStore.clear();
+    continuationStore.clear();
 }
 
 // Conversation-stable session store: Key = hash(scope+assistant text), Value = { sessionId, lastUsed }
@@ -87,9 +89,10 @@ const assistantSessionStore = new Map();
 const ASSISTANT_MIN_LEN = 50;
 const ASSISTANT_CAP_LEN = 50;
 const MAX_ASSISTANT_SESSIONS = 5000;
+const MAX_CONTINUATION_SESSIONS = 5000;
 
 // Client headers/body fields that carry an upstream session id (priority order)
-const SESSION_HEADER_KEYS = ["x-session-id", "session-id", "session_id", "x-amp-thread-id", "x-client-request-id"];
+const SESSION_HEADER_KEYS = ["x-session-id", "session-id", "session_id", "x-amp-thread-id"];
 const CLAUDE_CODE_SESSION_RE = /_session_([a-f0-9-]+)$/;
 
 function sha16(text) {
@@ -131,7 +134,7 @@ function extractAntigravitySession(body) {
     return m ? normalizeSessionId(m[1]) : null;
 }
 
-function extractClientSessionId(headers, body) {
+function extractClientSessionId(headers, body, scope = "") {
     const claude = extractClaudeCodeSession(body?.metadata?.user_id);
     if (claude) return `claude:${claude}`;
     const antigravity = extractAntigravitySession(body);
@@ -140,18 +143,25 @@ function extractClientSessionId(headers, body) {
         const v = headerValue(headers, key);
         if (v) return v;
     }
+    const requestId = scope === "kiro" ? null : headerValue(headers, "x-client-request-id");
+    if (requestId) return requestId;
     const fromBody =
         normalizeSessionId(body?.prompt_cache_key) ||
         normalizeSessionId(body?.session_id) ||
         normalizeSessionId(body?.conversation_id) ||
-        normalizeSessionId(body?.metadata?.user_id);
+        (scope === "kiro" ? null : normalizeSessionId(body?.metadata?.user_id));
     return fromBody || null;
+}
+
+function requestMessages(body) {
+    if (Array.isArray(body?.messages)) return body.messages;
+    if (Array.isArray(body?.input)) return body.input;
+    return [];
 }
 
 // Accumulate assistant text from OpenAI/Responses-style input/messages (cap-limited)
 function accumulateAssistantText(body) {
-    const items = Array.isArray(body?.input) ? body.input
-        : Array.isArray(body?.messages) ? body.messages : null;
+    const items = requestMessages(body);
     if (!items) return "";
     let text = "";
     for (const item of items) {
@@ -193,16 +203,39 @@ function assistantTextSessionId(scope, body) {
  * @param {string} [opts.connectionId] - Connection identifier (fallback scope)
  * @param {string} [opts.workspaceId] - Provider workspace id (account-wide fallback)
  * @param {string} [opts.scope] - Provider scope to isolate cache keys across providers
- * @returns {string} A stable session id
+ * @returns {{sessionId: string, ephemeral: boolean}} A session id plus whether it is one-shot
  */
-export function resolveSessionId({ headers, body, connectionId, workspaceId, scope = "" } = {}) {
-    const client = extractClientSessionId(headers, body);
-    if (client) return client;
-    const fromAssistant = assistantTextSessionId(`${scope}:${connectionId || ""}`, body);
-    if (fromAssistant) return fromAssistant;
+export function resolveSessionIdentity({ headers, body, connectionId, workspaceId, scope = "" } = {}) {
+    const client = extractClientSessionId(headers, body, scope);
+    if (client) return { sessionId: client, ephemeral: false };
+    const fromAssistant = scope === "kiro" ? null : assistantTextSessionId(`${scope}:${connectionId || ""}`, body);
+    if (fromAssistant) return { sessionId: fromAssistant, ephemeral: false };
     const ws = normalizeSessionId(workspaceId);
-    if (ws) return ws;
-    return deriveSessionId(connectionId);
+    if (ws) return { sessionId: ws, ephemeral: false };
+    if (scope === "kiro") return { sessionId: generateBinaryStyleId(), ephemeral: true };
+    return { sessionId: deriveSessionId(connectionId), ephemeral: false };
+}
+
+export function resolveSessionId(opts = {}) {
+    return resolveSessionIdentity(opts).sessionId;
+}
+
+export function resolveContinuationId({ sessionId, connectionId, scope = "", ephemeral = false } = {}) {
+    if (ephemeral) return crypto.randomUUID();
+    const key = `${scope}:${connectionId || ""}:${sessionId || ""}`;
+    const existing = continuationStore.get(key);
+    if (existing) {
+        existing.lastUsed = Date.now();
+        continuationStore.delete(key);
+        continuationStore.set(key, existing);
+        return existing.continuationId;
+    }
+    const continuationId = crypto.randomUUID();
+    if (continuationStore.size >= MAX_CONTINUATION_SESSIONS) {
+        continuationStore.delete(continuationStore.keys().next().value);
+    }
+    continuationStore.set(key, { continuationId, lastUsed: Date.now() });
+    return continuationId;
 }
 
 // Capture session id from request body + credentials (envelope still intact here)
@@ -226,6 +259,9 @@ const assistantCleanup = setInterval(() => {
     const now = Date.now();
     for (const [key, entry] of assistantSessionStore) {
         if (now - entry.lastUsed > MEMORY_CONFIG.sessionTtlMs) assistantSessionStore.delete(key);
+    }
+    for (const [key, entry] of continuationStore) {
+        if (now - entry.lastUsed > MEMORY_CONFIG.sessionTtlMs) continuationStore.delete(key);
     }
 }, MEMORY_CONFIG.sessionCleanupIntervalMs);
 if (assistantCleanup.unref) assistantCleanup.unref();
