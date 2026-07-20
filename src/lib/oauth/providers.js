@@ -20,7 +20,7 @@ import {
   KIRO_CONFIG,
   assertValidAwsRegion,
   CURSOR_CONFIG,
-  KIMI_CODING_CONFIG,
+  KIMI_CONFIG,
   KILOCODE_CONFIG,
   CLINE_CONFIG,
   CLINEPASS_CONFIG,
@@ -350,10 +350,20 @@ const PROVIDERS = {
         .join(" ")
         .trim() || null;
 
+      const expiresAt = tokens.expires_in
+        ? new Date(Date.now() + tokens.expires_in * 1000).toISOString()
+        : null;
+
       return {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token || null,
         expiresIn: tokens.expires_in,
+        // Surface an absolute expiry so the proactive refresh path
+        // (shouldRefreshCredentials / checkAndRefreshToken) can refresh the
+        // xAI token before it silently expires ~40-45 min after login.
+        // Without this, only the reactive 401 path in chatCore would refresh,
+        // causing intermittent "token expired" failures for Grok CLI.
+        expiresAt,
         scope: tokens.scope,
         // Top-level for dashboard connection cards
         email: email || undefined,
@@ -1071,13 +1081,22 @@ const PROVIDERS = {
     }),
   },
 
-  "kimi-coding": {
-    config: KIMI_CODING_CONFIG,
+  // Kimi Code device flow (CLIProxyAPI internal/auth/kimi). Id is `kimi`;
+  // `kimi-coding` remains an alias key so old UI/API routes still resolve.
+  kimi: {
+    config: KIMI_CONFIG,
     flowType: "device_code",
     requestDeviceCode: async (config) => {
+      const { buildKimiHeaders } = await import("open-sse/config/appConstants.js");
+      const deviceId = crypto.randomUUID();
+      const headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+        ...buildKimiHeaders(deviceId),
+      };
       const response = await fetch(config.deviceCodeUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+        headers,
         body: new URLSearchParams({ client_id: config.clientId }),
       });
       if (!response.ok) {
@@ -1085,21 +1104,30 @@ const PROVIDERS = {
         throw new Error(`Device code request failed: ${error}`);
       }
       const data = await response.json();
+      const authorizeDeviceUrl = config.authorizeDeviceUrl || "https://www.kimi.com/code/authorize_device";
       return {
         device_code: data.device_code,
         user_code: data.user_code,
-        verification_uri: data.verification_uri || "https://www.kimi.com/code/authorize_device",
+        verification_uri: data.verification_uri || authorizeDeviceUrl,
         verification_uri_complete:
           data.verification_uri_complete ||
-          `https://www.kimi.com/code/authorize_device?user_code=${data.user_code}`,
+          `${authorizeDeviceUrl}?user_code=${data.user_code}`,
         expires_in: data.expires_in,
         interval: data.interval || 5,
+        _kimiDeviceId: deviceId,
       };
     },
-    pollToken: async (config, deviceCode) => {
+    pollToken: async (config, deviceCode, _codeVerifier, extraData) => {
+      const { buildKimiHeaders } = await import("open-sse/config/appConstants.js");
+      const deviceId = extraData?._kimiDeviceId;
+      const headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+        ...buildKimiHeaders(deviceId),
+      };
       const response = await fetch(config.tokenUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+        headers,
         body: new URLSearchParams({
           grant_type: "urn:ietf:params:oauth:grant-type:device_code",
           client_id: config.clientId,
@@ -1109,19 +1137,26 @@ const PROVIDERS = {
       let data;
       try {
         data = await response.json();
-      } catch (e) {
-        const text = await response.text();
-        data = { error: "invalid_response", error_description: text };
+      } catch {
+        data = { error: "invalid_response", error_description: "non-json token response" };
       }
-      return { ok: response.ok, data };
+      // CLIProxyAPI: Kimi returns 200 for pending states with error field
+      if (data.error === "authorization_pending" || data.error === "slow_down") {
+        return { ok: true, data };
+      }
+      if (data.access_token && deviceId) data._kimiDeviceId = deviceId;
+      return { ok: response.ok || !!data.access_token || !!data.error, data };
     },
     mapTokens: (tokens) => ({
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
       expiresIn: tokens.expires_in,
+      providerSpecificData: {
+        authMethod: "device_code",
+        ...(tokens._kimiDeviceId ? { deviceId: tokens._kimiDeviceId } : {}),
+      },
     }),
   },
-
   kilocode: {
     config: KILOCODE_CONFIG,
     flowType: "device_code",
@@ -1510,7 +1545,9 @@ const PROVIDERS = {
  * Get provider handler
  */
 export function getProvider(name) {
-  const provider = PROVIDERS[name];
+  // Legacy kimi-coding → kimi (dual-auth merge)
+  const key = name === "kimi-coding" ? "kimi" : name;
+  const provider = PROVIDERS[key];
   if (!provider) {
     throw new Error(`Unknown provider: ${name}`);
   }

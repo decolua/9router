@@ -138,21 +138,21 @@ describe("openai ↔ responses multi-turn reasoning", () => {
 });
 
 describe("GrokCliExecutor multi-turn input", () => {
-  it("keeps reasoning items (incl. encrypted_content) and strips only server message ids", () => {
+  it("keeps native Grok reasoning and item ids", () => {
     _resetGrokCliTurnStore();
     const executor = new GrokCliExecutor();
     const body = {
       model: "grok-4.5",
       input: [
         { type: "message", role: "system", content: "You are Grok" },
-        { type: "message", role: "user", content: "hi", id: "msg_server_prev" },
+        { type: "message", role: "user", content: "hi", id: "msg_3e3f6187-892a-96db-893b-904eff019e19" },
         {
           type: "reasoning",
-          id: "rs_server_prev",
+          id: "rs_3e3f6187-892a-96db-893b-904eff019e19",
           summary: [{ type: "summary_text", text: "prior plan" }],
           encrypted_content: "enc_from_cli",
         },
-        { type: "message", role: "assistant", content: "hello", id: "msg_server_asst" },
+        { type: "message", role: "assistant", content: "hello", id: "msg_4e3f6187-892a-96db-893b-904eff019e19" },
         { type: "message", role: "user", content: "again" },
       ],
       include: ["reasoning.encrypted_content"],
@@ -166,14 +166,13 @@ describe("GrokCliExecutor multi-turn input", () => {
     expect(reasoning).toHaveLength(1);
     expect(reasoning[0].encrypted_content).toBe("enc_from_cli");
     expect(reasoning[0].summary?.[0]?.text).toBe("prior plan");
-    // server id stripped from reasoning item, content kept
-    expect(reasoning[0].id).toBeUndefined();
+    expect(reasoning[0].id).toBe("rs_3e3f6187-892a-96db-893b-904eff019e19");
 
     // system preserved (not developer)
     expect(out.input[0].role).toBe("system");
-    // message server ids stripped
+    // Native Grok IDs are required for encrypted continuity.
     for (const item of out.input) {
-      if (item.type === "message") expect(item.id).toBeUndefined();
+      if (item.type === "message" && item.id) expect(item.id).toMatch(/^msg_[0-9a-f-]{36}$/);
     }
     expect(out.include).toContain("reasoning.encrypted_content");
     expect(out.store).toBe(false);
