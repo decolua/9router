@@ -10,7 +10,6 @@ import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
-import { openAIResponsesBodyToClaude, openAIResponsesBodyToOpenAI } from "../../translator/response/openai-responses-nonstream.js";
 
 function parseToolArguments(value) {
   if (!value) return {};
@@ -63,21 +62,7 @@ function openAICompletionToClaudeMessage(responseBody) {
 }
 
 /**
- * Translate non-streaming response body from upstream format → client format.
- *
- * `targetFormat` is what the **client** asked for (i.e. the source format the
- * client sent). `sourceFormat` is the format the upstream returned in. When
- * they differ, we convert.
- *
- * Most branches translate into OpenAI chat.completion shape (the legacy
- * default). The OPENAI_RESPONSES branch is an exception: it returns whichever
- * shape the client actually requested — Claude body when the client sent
- * Claude, OpenAI chat when the client sent OpenAI — so the caller receives a
- * body matching their original request, including a usage object (some
- * clients validate `usage.input_tokens`).
- *
- * Streaming responses go through translateResponse() — this function only
- * handles non-streaming JSON bodies.
+ * Translate non-streaming response body from provider format → OpenAI format.
  */
 export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat) {
   if (targetFormat === sourceFormat) return responseBody;
@@ -85,15 +70,6 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
     return openAICompletionToClaudeMessage(responseBody);
   }
   if (targetFormat === FORMATS.OPENAI) return responseBody;
-
-  // OpenAI Responses API JSON body → requested client format.
-  // Streaming goes through translateResponse(); non-streaming needs an explicit
-  // body-level conversion so clients always receive the shape they requested,
-  // including a usage object (some clients validate `usage.input_tokens`).
-  if (targetFormat === FORMATS.OPENAI_RESPONSES) {
-    if (sourceFormat === FORMATS.CLAUDE) return openAIResponsesBodyToClaude(responseBody);
-    if (sourceFormat === FORMATS.OPENAI) return openAIResponsesBodyToOpenAI(responseBody);
-  }
 
   // Gemini / Antigravity
   if (targetFormat === FORMATS.GEMINI || targetFormat === FORMATS.ANTIGRAVITY || targetFormat === FORMATS.GEMINI_CLI || targetFormat === FORMATS.VERTEX) {
@@ -270,26 +246,28 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     : responseBody;
   const isClaudeMessageResponse = sourceFormat === FORMATS.CLAUDE && translatedResponse?.type === "message";
 
-  const isOpenAIChatResponse = Array.isArray(translatedResponse?.choices);
-
-  if (isOpenAIChatResponse) {
-    // Fix finish_reason for tool_calls: some providers return non-standard values (e.g. "other")
-    if (translatedResponse.choices?.[0]) {
-      const choice = translatedResponse.choices[0];
-      const msg = choice.message;
-      const hasToolCalls = Array.isArray(msg?.tool_calls) && msg.tool_calls.length > 0;
-      if (hasToolCalls && choice.finish_reason !== "tool_calls") {
-        choice.finish_reason = "tool_calls";
-      }
+  // Fix finish_reason for tool_calls: some providers return non-standard values (e.g. "other")
+  if (translatedResponse?.choices?.[0]) {
+    const choice = translatedResponse.choices[0];
+    const msg = choice.message;
+    const hasToolCalls = Array.isArray(msg?.tool_calls) && msg.tool_calls.length > 0;
+    if (hasToolCalls && choice.finish_reason !== "tool_calls") {
+      choice.finish_reason = "tool_calls";
     }
+  }
 
-    // Ensure OpenAI-required fields only for OpenAI Chat-shaped responses.
+  // Ensure OpenAI-required fields
+  if (!isClaudeMessageResponse) {
     if (!translatedResponse.object) translatedResponse.object = "chat.completion";
     if (!translatedResponse.created) translatedResponse.created = Math.floor(Date.now() / 1000);
+  }
 
-    // Strip Azure-specific fields.
+  // Strip Azure-specific fields
+  if (!isClaudeMessageResponse) {
     delete translatedResponse.prompt_filter_results;
-    for (const choice of translatedResponse.choices) delete choice.content_filter_results;
+    if (translatedResponse?.choices) {
+      for (const choice of translatedResponse.choices) delete choice.content_filter_results;
+    }
   }
 
   if (translatedResponse?.usage) {
