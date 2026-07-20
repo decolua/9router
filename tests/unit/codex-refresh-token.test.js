@@ -152,7 +152,8 @@ describe("Codex Refresh Token", () => {
       expect(getRefreshLeadMs("claude")).toBe(4 * 60 * 60 * 1000);       // 4 hours
       expect(getRefreshLeadMs("iflow")).toBe(24 * 60 * 60 * 1000);       // 24 hours
       expect(getRefreshLeadMs("qwen")).toBe(20 * 60 * 1000);             // 20 minutes
-      expect(getRefreshLeadMs("kimi-coding")).toBe(5 * 60 * 1000);       // 5 minutes
+      expect(getRefreshLeadMs("kimi")).toBe(5 * 60 * 1000);              // 5 minutes
+      expect(getRefreshLeadMs("kimi-coding")).toBe(5 * 60 * 1000);       // legacy alias
       expect(getRefreshLeadMs("antigravity")).toBe(5 * 60 * 1000);       // 5 minutes
     });
 
