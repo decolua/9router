@@ -72,3 +72,17 @@ ecosystem.config.*
 scripts/agSniffer/*
 gitbooks/*
 gitbook/README.md
+
+# Refactor backup reference (do not bundle/lint)
+open-sse.old/
+.graphifyignore
+graphify-out/*
+
+# Local-only working dirs (notes, vendored repos, scripts, skills)
+.claude/
+.docs/
+.repo/
+.script/
+.codegraph/
+.PR/
+.next-analyze/*

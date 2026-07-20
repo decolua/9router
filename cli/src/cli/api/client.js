@@ -410,6 +410,14 @@ async function updateSettings(data) {
   return makeRequest("PATCH", "/api/settings", data);
 }
 
+/**
+ * Reset dashboard password to default (clears stored hash server-side)
+ * @returns {Promise<Object>} { success }
+ */
+async function resetPassword() {
+  return makeRequest("POST", "/api/auth/reset-password");
+}
+
 // ============================================================================
 // MODELS API
 // ============================================================================
@@ -528,6 +536,7 @@ module.exports = {
   // Settings
   getSettings,
   updateSettings,
+  resetPassword,
   
   // Tunnel
   getTunnelStatus,

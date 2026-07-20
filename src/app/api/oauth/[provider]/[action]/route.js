@@ -150,8 +150,17 @@ export async function GET(request, { params }) {
           }
         : undefined;
       
-      // Providers that don't use PKCE for device code
-      const noPkceDeviceProviders = ["github", "kiro", "kimi-coding", "kilocode", "codebuddy", "qoder"];
+      // Providers that don't use PKCE for device code (Grok CLI HAR: plain device_code, no challenge)
+      const noPkceDeviceProviders = [
+        "github",
+        "kiro",
+        "kimi",
+        "kimi-coding",
+        "kilocode",
+        "codebuddy-cn",
+        "qoder",
+        "grok-cli",
+      ];
       let deviceData;
       if (noPkceDeviceProviders.includes(provider)) {
         deviceData = await requestDeviceCode(provider, undefined, deviceOptions);
@@ -232,8 +241,8 @@ export async function POST(request, { params }) {
         });
       }
 
-      // Cline uses authorization_code without PKCE
-      const noPkceExchangeProviders = ["cline"];
+      // Cline and ClinePass use authorization_code without PKCE. Kimchi returns a browser token.
+      const noPkceExchangeProviders = ["cline", "clinepass", "kimchi"];
       if (!code || !redirectUri || (!codeVerifier && !noPkceExchangeProviders.includes(provider))) {
         return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
       }
@@ -271,10 +280,11 @@ export async function POST(request, { params }) {
       }
 
       // Providers that don't use PKCE for device code
-      const noPkceProviders = ["github", "kimi-coding", "kilocode", "codebuddy"];
+      const noPkceProviders = ["github", "kimi", "kimi-coding", "kilocode", "codebuddy-cn"];
       let result;
       if (noPkceProviders.includes(provider)) {
-        result = await pollForToken(provider, deviceCode);
+        // kimi needs extraData._kimiDeviceId for stable X-Msh-Device-Id (CLIProxyAPI parity)
+        result = await pollForToken(provider, deviceCode, null, extraData);
       } else if (provider === "kiro") {
         // Kiro needs extraData (clientId, clientSecret) from device code response
         result = await pollForToken(provider, deviceCode, null, extraData);
@@ -295,9 +305,10 @@ export async function POST(request, { params }) {
       }
 
       if (result.success) {
-        // Save to database
+        // Save to database (legacy kimi-coding OAuth → dual-auth kimi)
+        const providerId = provider === "kimi-coding" ? "kimi" : provider;
         const connection = await createProviderConnection({
-          provider,
+          provider: providerId,
           authType: "oauth",
           ...result.tokens,
           expiresAt: result.tokens.expiresIn 

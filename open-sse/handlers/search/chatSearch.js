@@ -2,6 +2,12 @@
  * Wrap chat-completions endpoints (with built-in web search) into the unified
  * /v1/search response format. Supports gemini, openai, xai, kimi, minimax, perplexity.
  */
+import { PROVIDER_MEDIA } from "../../providers/index.js";
+
+// Default search model + endpoint derive from registry searchViaChat (single source)
+const searchModel = (id) => PROVIDER_MEDIA[id]?.searchViaChat?.defaultModel;
+const searchEndpoint = (id, model) =>
+  (PROVIDER_MEDIA[id]?.searchViaChat?.endpoint || "").replace("{model}", model || "");
 
 const REQUEST_TIMEOUT_MS = 15000;
 const DEFAULT_MAX_RESULTS = 10;
@@ -43,9 +49,7 @@ function normalizeCitation(c) {
  */
 const CHAT_SEARCH_CONFIG = {
   gemini: {
-    endpoint: (model) =>
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-    defaultModel: "gemini-2.5-flash",
+    endpoint: (model) => searchEndpoint("gemini", model),
     buildBody: (query) => ({
       contents: [{ role: "user", parts: [{ text: query }] }],
       tools: [{ google_search: {} }]
@@ -70,8 +74,7 @@ const CHAT_SEARCH_CONFIG = {
   },
 
   openai: {
-    endpoint: () => "https://api.openai.com/v1/chat/completions",
-    defaultModel: "gpt-4o-mini",
+    endpoint: () => searchEndpoint("openai"),
     buildBody: (query, model) => {
       const body = {
         model,
@@ -105,8 +108,7 @@ const CHAT_SEARCH_CONFIG = {
   },
 
   xai: {
-    endpoint: () => "https://api.x.ai/v1/responses",
-    defaultModel: "grok-4.20-reasoning",
+    endpoint: () => searchEndpoint("xai"),
     buildBody: (query, model) => ({
       model,
       input: [{ role: "user", content: query }],
@@ -145,8 +147,7 @@ const CHAT_SEARCH_CONFIG = {
   },
 
   kimi: {
-    endpoint: () => "https://api.moonshot.cn/v1/chat/completions",
-    defaultModel: "kimi-k2.5",
+    endpoint: () => searchEndpoint("kimi"),
     buildBody: (query, model) => ({
       model,
       messages: [{ role: "user", content: query }],
@@ -195,8 +196,7 @@ const CHAT_SEARCH_CONFIG = {
   },
 
   minimax: {
-    endpoint: () => "https://api.minimaxi.com/v1/text/chatcompletion_v2",
-    defaultModel: "MiniMax-M2.7",
+    endpoint: () => searchEndpoint("minimax"),
     buildBody: (query, model) => ({
       model,
       messages: [{ role: "user", content: query }],
@@ -254,8 +254,7 @@ const CHAT_SEARCH_CONFIG = {
   },
 
   perplexity: {
-    endpoint: () => "https://api.perplexity.ai/chat/completions",
-    defaultModel: "sonar",
+    endpoint: () => searchEndpoint("perplexity"),
     buildBody: (query, model) => ({
       model,
       messages: [{ role: "user", content: query }]
@@ -271,6 +270,53 @@ const CHAT_SEARCH_CONFIG = {
       const citations = Array.isArray(raw)
         ? raw.map(normalizeCitation).filter(Boolean)
         : [];
+      const tokens = data?.usage?.total_tokens || 0;
+      return { text, citations, tokens };
+    }
+  },
+
+  "perplexity-agent": {
+    endpoint: () => searchEndpoint("perplexity-agent"),
+    buildBody: (query, model) => ({
+      model,
+      input: query,
+      tools: [{ type: "web_search" }]
+    }),
+    buildHeaders: (token) => ({
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`
+    }),
+    extractAnswer: (data) => {
+      const output = Array.isArray(data?.output) ? data.output : [];
+      let text = "";
+      const citations = [];
+      for (const item of output) {
+        const parts = Array.isArray(item?.content) ? item.content : [];
+        for (const p of parts) {
+          if (typeof p?.text === "string") text += p.text;
+          const anns = Array.isArray(p?.annotations) ? p.annotations : [];
+          for (const a of anns) {
+            const c = normalizeCitation(a?.url ? a : a?.url_citation);
+            if (c) citations.push(c);
+          }
+        }
+        const results = Array.isArray(item?.results) ? item.results : [];
+        for (const r of results) {
+          const url = r?.url || r?.link;
+          if (!url) continue;
+          citations.push({
+            url,
+            title: r?.title || "",
+            snippet: r?.snippet || ""
+          });
+        }
+      }
+      if (!citations.length && Array.isArray(data?.citations)) {
+        for (const c of data.citations) {
+          const n = normalizeCitation(c);
+          if (n) citations.push(n);
+        }
+      }
       const tokens = data?.usage?.total_tokens || 0;
       return { text, citations, tokens };
     }
@@ -324,7 +370,7 @@ export async function handleChatSearch({
     Number.isFinite(maxResults) && maxResults > 0
       ? Math.floor(maxResults)
       : DEFAULT_MAX_RESULTS;
-  const useModel = model || cfg.defaultModel;
+  const useModel = model || searchModel(provider);
   const url = cfg.endpoint(useModel);
   const body = cfg.buildBody(query, useModel);
   const headers = cfg.buildHeaders(token);

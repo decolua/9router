@@ -5,9 +5,8 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import crypto from "crypto";
-import { DEFAULT_PLUGINS, LOCAL_STDIO_PLUGINS, ALLOWED_MCP_COMMANDS, buildManagedMcpServers } from "@/shared/constants/coworkPlugins";
+import { DEFAULT_PLUGINS, LOCAL_STDIO_PLUGINS, buildManagedMcpServers } from "@/shared/constants/coworkPlugins";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
-import { DATA_DIR } from "@/lib/dataDir";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 
 const APP_PORT = UPDATER_CONFIG.appPort;
@@ -117,10 +116,14 @@ const get1pRoot = () => {
 const get1pConfigPath = () => path.join(get1pRoot(), "claude_desktop_config.json");
 
 const read1pConfig = async () => {
-  try { return JSON.parse(await fs.readFile(get1pConfigPath(), "utf-8")) || {}; }
-  catch (error) {
-    if (error.code === "ENOENT") return {};
-    throw error;
+  try {
+    const content = await fs.readFile(get1pConfigPath(), "utf-8");
+    // Tolerate JSONC (trailing commas) and treat unparseable files as empty config
+    // rather than throwing a 500 that the UI misreads as "tool not installed".
+    const stripped = content.replace(/,(\s*[}\]])/g, "$1");
+    return JSON.parse(stripped) || {};
+  } catch (error) {
+    return {};
   }
 };
 
@@ -180,17 +183,8 @@ const buildCustomEntries = (customPlugins) => {
   if (!Array.isArray(customPlugins)) return [];
   const out = [];
   for (const p of customPlugins) {
-    if (!p?.name) continue;
-    if (p.url) {
-      out.push({ name: p.name, url: p.url, transport: p.transport || "sse", custom: true });
-    } else if (p.command) {
-      out.push({
-        name: p.name,
-        url: `http://localhost:${APP_PORT}/api/mcp/${encodeURIComponent(p.name)}/sse`,
-        transport: "sse",
-        custom: true,
-      });
-    }
+    if (!p?.name || !p?.url) continue;
+    out.push({ name: p.name, url: p.url, transport: p.transport || "sse", custom: true });
   }
   return out;
 };
@@ -203,10 +197,14 @@ const checkInstalled = async () => {
 };
 
 const readJson = async (filePath) => {
-  try { return JSON.parse(await fs.readFile(filePath, "utf-8")); }
-  catch (error) {
-    if (error.code === "ENOENT") return null;
-    throw error;
+  try {
+    const content = await fs.readFile(filePath, "utf-8");
+    // Tolerate JSONC (trailing commas) and treat unparseable files as "no config"
+    // rather than throwing a 500 that the UI misreads as "tool not installed".
+    const stripped = content.replace(/,(\s*[}\]])/g, "$1");
+    return JSON.parse(stripped);
+  } catch (error) {
+    return null;
   }
 };
 
@@ -311,8 +309,6 @@ export async function GET() {
 }
 
 export async function POST(request) {
-  // Cowork disabled: spawns arbitrary processes (RCE risk).
-  return NextResponse.json({ error: "Cowork is disabled" }, { status: 403 });
   try {
     const { baseUrl, apiKey, models, plugins, localPlugins, customPlugins } = await request.json();
 
@@ -327,29 +323,8 @@ export async function POST(request) {
     // Respect empty array (user toggled all off); fallback to defaults only when undefined.
     const pluginsArray = Array.isArray(plugins) ? plugins : DEFAULT_PLUGINS;
     const localPluginNames = Array.isArray(localPlugins) ? localPlugins : [];
-    const customPluginsArray = Array.isArray(customPlugins) ? customPlugins : [];
-
-    // Register custom stdio plugins into bridge + persist for restart survival.
-    if (customPluginsArray.length > 0) {
-      const { registerCustomPlugin } = require("@/lib/mcp/stdioSseBridge");
-      const stdioCustoms = customPluginsArray
-        .filter((p) => p && typeof p.command === "string" && p.command.trim())
-        .filter((p) => ALLOWED_MCP_COMMANDS.has(path.basename(p.command)))
-        .map((p) => ({
-          name: String(p.name || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64),
-          command: p.command,
-          args: Array.isArray(p.args) ? p.args.map(String) : [],
-        }))
-        .filter((p) => p.name);
-      for (const p of stdioCustoms) {
-        try { registerCustomPlugin(p); } catch { /* skip invalid */ }
-      }
-      try {
-        const dir = path.join(DATA_DIR, "mcp");
-        await fs.mkdir(dir, { recursive: true });
-        await fs.writeFile(path.join(dir, "customPlugins.json"), JSON.stringify(stdioCustoms, null, 2));
-      } catch { /* ignore */ }
-    }
+    // Only URL-based custom plugins allowed (no stdio command spawning).
+    const customPluginsArray = (Array.isArray(customPlugins) ? customPlugins : []).filter((p) => p?.url);
 
     const bridgeEntries = await injectAuthHeaders(buildLocalBridgeEntries(localPluginNames));
     const customEntries = await injectAuthHeaders(buildCustomEntries(customPluginsArray));

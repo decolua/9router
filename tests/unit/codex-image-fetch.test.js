@@ -9,24 +9,40 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+
+// Mock DNS so the SSRF guard treats example.com as public.
+vi.mock("node:dns/promises", () => ({ lookup: async () => ({ address: "93.184.216.34" }) }));
+
 import { CodexExecutor } from "../../open-sse/executors/codex.js";
 import * as proxyFetchModule from "../../open-sse/utils/proxyFetch.js";
 
 const IMAGE_1MB_BYTES = 1024 * 1024;
 const REMOTE_URL = "https://example.com/big.jpg";
 const DATA_URI = "data:image/png;base64,iVBORw0KGgo=";
+// JPEG magic bytes (FF D8 FF) so magic-byte verification passes.
+const JPEG_MAGIC = [0xff, 0xd8, 0xff];
 
 function makeImageBuffer(sizeBytes) {
   const buf = new Uint8Array(sizeBytes);
-  for (let i = 0; i < sizeBytes; i++) buf[i] = i & 0xff;
-  return buf.buffer;
+  for (let i = 0; i < JPEG_MAGIC.length; i++) buf[i] = JPEG_MAGIC[i];
+  for (let i = JPEG_MAGIC.length; i < sizeBytes; i++) buf[i] = i & 0xff;
+  return buf;
 }
 
-function mockImageFetch(sizeBytes, mimeType = "image/jpeg") {
+// Mock a streaming Response body (getReader) as the hardened fetcher expects.
+function mockImageFetch(sizeBytes) {
+  const bytes = makeImageBuffer(sizeBytes);
   return {
     ok: true,
-    headers: { get: (k) => (k === "Content-Type" ? mimeType : null) },
-    arrayBuffer: async () => makeImageBuffer(sizeBytes),
+    body: {
+      getReader() {
+        let sent = false;
+        return {
+          read: async () => sent ? { done: true } : (sent = true, { done: false, value: bytes }),
+          cancel: async () => {},
+        };
+      },
+    },
   };
 }
 
