@@ -14,6 +14,7 @@ export const ACCOUNT_FILTER_OPTIONS = [
   { value: "all", label: "All accounts" },
   { value: "active", label: "Active" },
   { value: "inactive", label: "Turned off" },
+  { value: "available", label: "Available" },
 ];
 export const QUOTA_SORT_OPTIONS = [
   { value: "default", label: "Default quota order" },
@@ -116,6 +117,14 @@ export function getConnectionsEmptyMessage(totals, providerFilter, accountFilter
         "Connect to providers with OAuth to track your API quota limits and usage.",
     };
   }
+  if (accountFilter === "available") {
+    return {
+      icon: "filter_alt_off",
+      title: "No Available Accounts On This Page",
+      description:
+        "No accounts with remaining quota on this page. Try another page, or switch the filter back to All accounts.",
+    };
+  }
   if (!totals.providerFilteredConnections) {
     return {
       icon: "filter_alt_off",
@@ -132,6 +141,87 @@ export function getConnectionsEmptyMessage(totals, providerFilter, accountFilter
     description:
       "Try moving to another page or refreshing the current filters.",
   };
+}
+
+/**
+ * Classify whether a connection still has usable quota on the current page.
+ * Returns "available" | "empty" | "unknown".
+ * Unknown covers loading, errors, message-only, and missing quota payloads.
+ */
+export function classifyConnectionAvailability(
+  connection,
+  quotaEntry,
+  { loading = false, error = null } = {},
+) {
+  if (loading) return "unknown";
+  if (error) return "unknown";
+  if (!quotaEntry) return "unknown";
+
+  const quotas = Array.isArray(quotaEntry.quotas) ? quotaEntry.quotas : [];
+  if (quotas.length === 0) {
+    // Message-only or empty payload — do not treat as available.
+    return "unknown";
+  }
+
+  let hasFiniteConstraint = false;
+  let hasExplicitUnlimited = false;
+  let hasDepleted = false;
+  let hasPositiveRemaining = false;
+
+  for (const quota of quotas) {
+    if (!quota || typeof quota !== "object") continue;
+    if (quota.availabilityRelevant === false) continue;
+
+    if (quota.unlimited === true) {
+      hasExplicitUnlimited = true;
+      continue;
+    }
+
+    const total = Number(quota.total);
+    if (!Number.isFinite(total) || total <= 0) {
+      // 0/0 without unlimited is unknown for that row.
+      continue;
+    }
+
+    hasFiniteConstraint = true;
+    const remaining = getRemainingPercentage(quota);
+    if (remaining <= DEPLETED_QUOTA_THRESHOLD) {
+      hasDepleted = true;
+    } else {
+      hasPositiveRemaining = true;
+    }
+  }
+
+  if (hasDepleted) return "empty";
+  if (hasExplicitUnlimited || hasPositiveRemaining) return "available";
+  if (hasFiniteConstraint) return "empty";
+  return "unknown";
+}
+
+export function isConnectionAvailable(connection, quotaEntry, meta) {
+  return classifyConnectionAvailability(connection, quotaEntry, meta) === "available";
+}
+
+export function isConnectionEmpty(connection, quotaEntry, meta) {
+  return classifyConnectionAvailability(connection, quotaEntry, meta) === "empty";
+}
+
+export function getDayBarValue(bar) {
+  if (!bar || typeof bar !== "object") return 0;
+  if (bar.tokens != null) return Number(bar.tokens) || 0;
+  return Number(bar.requests) || 0;
+}
+
+export function getUsageMaxFromDayBars(dayBarsById = {}) {
+  let max = 1;
+  for (const bars of Object.values(dayBarsById || {})) {
+    if (!Array.isArray(bars)) continue;
+    for (const bar of bars) {
+      const val = getDayBarValue(bar);
+      if (val > max) max = val;
+    }
+  }
+  return max;
 }
 
 export function sortRequestFromExpiringFirst(expiringFirst) {
