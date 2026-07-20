@@ -43,8 +43,19 @@ export class GeminiCLIExecutor extends BaseExecutor {
       const details = parsed?.error?.details;
       if (Array.isArray(details)) {
         for (const d of details) {
+          if (d?.["@type"] === "type.googleapis.com/google.rpc.ErrorInfo" && d?.metadata?.quotaResetTimeStamp) {
+            const time = new Date(d.metadata.quotaResetTimeStamp).getTime();
+            if (!isNaN(time) && time > Date.now()) {
+              base.resetsAtMs = time;
+              break;
+            }
+          }
           if (d?.["@type"] === "type.googleapis.com/google.rpc.RetryInfo" && d?.retryDelay) {
             base.retryAfter = d.retryDelay;
+            const seconds = parseFloat(d.retryDelay);
+            if (!isNaN(seconds) && seconds > 0) {
+              base.resetsAtMs = Date.now() + (seconds * 1000);
+            }
             break;
           }
         }

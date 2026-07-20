@@ -27,6 +27,7 @@ const navItems = [
   { href: "/dashboard/token-saver", label: "Token Saver", icon: "savings" },
   // { href: "/dashboard/pxpipe", label: "PXPIPE", icon: "image" },
   { href: "/dashboard/cli-tools", label: "CLI Tools", icon: "terminal" },
+  { href: "/dashboard/automation", label: "Automation", icon: "smart_toy" },
 ];
 
 const debugItems = [
@@ -164,16 +165,16 @@ export default function Sidebar({ onClose }) {
               href={item.href}
               onClick={onClose}
               className={cn(
-                "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
+                "flex items-center gap-3 px-3 py-1 rounded-md border transition-all duration-300 group",
                 isActive(item.href)
-                  ? "bg-primary/10 text-primary"
-                  : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+                  ? "bg-brand-500/10 text-brand-500 border-brand-500/15"
+                  : "text-text-muted border-transparent hover:bg-surface-2/65 hover:text-text-main hover:border-border/30"
               )}
             >
               <span
                 className={cn(
-                  "material-symbols-outlined text-[18px]",
-                  isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
+                  "material-symbols-outlined text-[18px] transition-colors duration-300",
+                  isActive(item.href) ? "fill-1 text-brand-500" : "group-hover:text-brand-500"
                 )}
               >
                 {item.icon}
@@ -192,10 +193,10 @@ export default function Sidebar({ onClose }) {
             <button
               onClick={() => setMediaOpen((v) => !v)}
               className={cn(
-                "w-full flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
+                "w-full flex items-center gap-3 px-3 py-1 rounded-md border transition-all duration-300 group",
                 pathname.startsWith("/dashboard/media-providers")
-                  ? "bg-primary/10 text-primary"
-                  : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+                  ? "bg-brand-500/10 text-brand-500 border-brand-500/15"
+                  : "text-text-muted border-transparent hover:bg-surface-2/65 hover:text-text-main hover:border-border/30"
               )}
             >
               <span className="material-symbols-outlined text-[18px]">perm_media</span>
@@ -212,10 +213,10 @@ export default function Sidebar({ onClose }) {
                     href={`/dashboard/media-providers/${kind.id}`}
                     onClick={onClose}
                     className={cn(
-                      "flex items-center gap-3 px-4 py-1 rounded-lg transition-all group",
+                      "flex items-center gap-3 px-4 py-1 rounded-md border transition-all duration-300 group",
                       pathname.startsWith(`/dashboard/media-providers/${kind.id}`)
-                        ? "bg-primary/10 text-primary"
-                        : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+                        ? "bg-brand-500/10 text-brand-500 border-brand-500/15"
+                        : "text-text-muted border-transparent hover:bg-surface-2/65 hover:text-text-main hover:border-border/30"
                     )}
                   >
                     <span className="material-symbols-outlined text-[16px]">{kind.icon}</span>
@@ -227,10 +228,10 @@ export default function Sidebar({ onClose }) {
                   href={COMBINED_WEB_ITEM.href}
                   onClick={onClose}
                   className={cn(
-                    "flex items-center gap-3 px-4 py-1 rounded-lg transition-all group",
+                    "flex items-center gap-3 px-4 py-1 rounded-md border transition-all duration-300 group",
                     pathname.startsWith(COMBINED_WEB_ITEM.href)
-                      ? "bg-primary/10 text-primary"
-                      : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+                      ? "bg-brand-500/10 text-brand-500 border-brand-500/15"
+                      : "text-text-muted border-transparent hover:bg-surface-2/65 hover:text-text-main hover:border-border/30"
                   )}
                 >
                   <span className="material-symbols-outlined text-[16px]">{COMBINED_WEB_ITEM.icon}</span>
@@ -245,16 +246,16 @@ export default function Sidebar({ onClose }) {
                 href={item.href}
                 onClick={onClose}
                 className={cn(
-                  "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
+                  "flex items-center gap-3 px-3 py-1 rounded-md border transition-all duration-300 group",
                   isActive(item.href)
-                    ? "bg-primary/10 text-primary"
-                    : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+                    ? "bg-brand-500/10 text-brand-500 border-brand-500/15"
+                    : "text-text-muted border-transparent hover:bg-surface-2/65 hover:text-text-main hover:border-border/30"
                 )}
               >
                 <span
                   className={cn(
-                    "material-symbols-outlined text-[18px]",
-                    isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
+                    "material-symbols-outlined text-[18px] transition-colors duration-300",
+                    isActive(item.href) ? "fill-1 text-brand-500" : "group-hover:text-brand-500"
                   )}
                 >
                   {item.icon}
@@ -272,16 +273,16 @@ export default function Sidebar({ onClose }) {
                   href={item.href}
                   onClick={onClose}
                   className={cn(
-                    "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
+                    "flex items-center gap-3 px-3 py-1 rounded-md border transition-all duration-300 group",
                     isActive(item.href)
-                      ? "bg-primary/10 text-primary"
-                      : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+                      ? "bg-brand-500/10 text-brand-500 border-brand-500/15"
+                      : "text-text-muted border-transparent hover:bg-surface-2/65 hover:text-text-main hover:border-border/30"
                   )}
                 >
                   <span
                     className={cn(
-                      "material-symbols-outlined text-[18px]",
-                      isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
+                      "material-symbols-outlined text-[18px] transition-colors duration-300",
+                      isActive(item.href) ? "fill-1 text-brand-500" : "group-hover:text-brand-500"
                     )}
                   >
                     {item.icon}
@@ -295,11 +296,11 @@ export default function Sidebar({ onClose }) {
             <button
               onClick={() => setShowRemoteModal(true)}
               className={cn(
-                "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group w-full",
-                "text-text-muted hover:bg-surface-2 hover:text-text-main"
+                "flex items-center gap-3 px-3 py-1 rounded-md border transition-all duration-300 group w-full",
+                "text-text-muted border-transparent hover:bg-surface-2/65 hover:text-text-main hover:border-border/30"
               )}
             >
-              <span className="material-symbols-outlined text-[18px] group-hover:text-primary transition-colors">
+              <span className="material-symbols-outlined text-[18px] transition-colors duration-300 group-hover:text-brand-500">
                 computer
               </span>
               <span className="text-[13px] font-medium">Remote</span>
@@ -310,16 +311,16 @@ export default function Sidebar({ onClose }) {
               href="/dashboard/profile"
               onClick={onClose}
               className={cn(
-                "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
+                "flex items-center gap-3 px-3 py-1 rounded-md border transition-all duration-300 group",
                 isActive("/dashboard/profile")
-                  ? "bg-primary/10 text-primary"
-                  : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+                  ? "bg-brand-500/10 text-brand-500 border-brand-500/15"
+                  : "text-text-muted border-transparent hover:bg-surface-2/65 hover:text-text-main hover:border-border/30"
               )}
             >
               <span
                 className={cn(
-                  "material-symbols-outlined text-[18px]",
-                  isActive("/dashboard/profile") ? "fill-1" : "group-hover:text-primary transition-colors"
+                  "material-symbols-outlined text-[18px] transition-colors duration-300",
+                  isActive("/dashboard/profile") ? "fill-1 text-brand-500" : "group-hover:text-brand-500"
                 )}
               >
                 settings

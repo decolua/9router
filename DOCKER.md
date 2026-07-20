@@ -19,6 +19,30 @@ docker run -d \
 
 App listens on port `20128`. Open: http://localhost:20128
 
+## Docker Compose
+
+Alternatively, you can run it using Docker Compose. Create a `docker-compose.yml` file:
+
+```yaml
+services:
+  9router:
+    image: decolua/9router:latest
+    container_name: 9router
+    restart: unless-stopped
+    ports:
+      - "20128:20128"
+    volumes:
+      - ~/.9router:/app/data
+    environment:
+      - DATA_DIR=/app/data
+```
+
+Start the container in the background:
+
+```bash
+docker compose up -d
+```
+
 ## Manage container
 
 ```bash
@@ -106,13 +130,34 @@ docker rm -f 9router
 
 ## Build image locally (test)
 
-```bash
-cd app && docker build -t 9router .
+**Step 1. Buat image nya**
 
-docker run --rm -p 20128:20128 \
-  -v "$HOME/.9router:/app/data" \
-  -e DATA_DIR=/app/data \
-  9router
+```bash
+docker build -t 9router .
+```
+
+**Step 2. Setup `docker-compose.yml`**
+
+Create a `docker-compose.yml` file to test the locally built image:
+
+```yaml
+services:
+  9router:
+    image: 9router
+    container_name: 9router-local
+    restart: unless-stopped
+    ports:
+      - "20128:20128"
+    volumes:
+      - ~/.9router-local:/app/data
+    environment:
+      - DATA_DIR=/app/data
+```
+
+Start the container in the background:
+
+```bash
+docker compose up -d
 ```
 
 ## Publish (automatic via CI)

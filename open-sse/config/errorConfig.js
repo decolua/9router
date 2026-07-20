@@ -38,13 +38,14 @@ export const BACKOFF_CONFIG = {
 // Default cooldown for transient/unknown errors
 export const TRANSIENT_COOLDOWN_MS = 30 * 1000;
 
-// Hard cap for provider-reported rate limit cooldown (e.g. codex resets_at can be 5-6h)
-export const MAX_RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
+// Hard cap for provider-reported rate limit cooldown (e.g. codex/antigravity/kiro resets_at can be 95h+ or next month)
+export const MAX_RATE_LIMIT_COOLDOWN_MS = 32 * 24 * 60 * 60 * 1000;
 
 // Cooldown durations (ms)
 const COOLDOWN = {
   long: 2 * 60 * 1000,
   short: 5 * 1000,
+  exhausted: 24 * 60 * 60 * 1000, // 24 hours
 };
 
 /**
@@ -58,6 +59,16 @@ const COOLDOWN = {
  */
 export const ERROR_RULES = [
   // --- Text-based rules (checked first, order = priority) ---
+  { text: "exhausted",                cooldownMs: COOLDOWN.exhausted },
+  { text: "insufficient credits",     cooldownMs: COOLDOWN.exhausted },
+  { text: "1076",                     cooldownMs: COOLDOWN.exhausted },
+  { text: "only available on paid plans", cooldownMs: COOLDOWN.exhausted },
+  { text: "failed to capture weavy firebase id token", cooldownMs: COOLDOWN.exhausted },
+  { text: "trial version is not yet", cooldownMs: COOLDOWN.exhausted },
+  { text: "neurons",                  cooldownMs: COOLDOWN.exhausted }, // CF Workers AI daily quota
+  { text: "daily free allocation",    cooldownMs: COOLDOWN.exhausted }, // CF Workers AI daily quota
+  { text: "upgrade to cloudflare",    cooldownMs: COOLDOWN.exhausted }, // CF Workers AI paid plan prompt
+  { text: "4006",                     cooldownMs: COOLDOWN.exhausted }, // CF Workers AI error code
   { text: "no credentials",           cooldownMs: COOLDOWN.long },
   { text: "request not allowed",      cooldownMs: COOLDOWN.short },
   { text: "improperly formed request", cooldownMs: COOLDOWN.long },

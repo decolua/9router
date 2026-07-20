@@ -50,6 +50,10 @@ export default {
     { id: "@cf/runwayml/stable-diffusion-v1-5-inpainting", name: "Stable Diffusion v1.5 Inpainting", params: ["size"], capabilities: ["edit","mask"], kind: "image" },
     { id: "@cf/stabilityai/stable-diffusion-xl-base-1.0", name: "SDXL Base 1.0", params: ["size"], kind: "image" },
   ],
+  features: {
+    usage: true,
+    usageApikey: true,
+  },
   serviceKinds: ["llm","image"],
   imageConfig: { baseUrl: "https://api.cloudflare.com/client/v4/accounts" },
 };

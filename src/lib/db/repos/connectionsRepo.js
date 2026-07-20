@@ -259,3 +259,22 @@ export async function cleanupProviderConnections() {
   });
   return cleaned;
 }
+
+export async function deleteProviderConnectionByEmailAndProvider(email, provider) {
+  const db = await getAdapter();
+  let ok = false;
+  db.transaction(() => {
+    const rows = db.all(
+      `SELECT id FROM providerConnections WHERE provider = ? AND (LOWER(email) = LOWER(?) OR LOWER(name) = LOWER(?))`,
+      [provider, email, email]
+    );
+    for (const row of rows) {
+      db.run(`DELETE FROM providerConnections WHERE id = ?`, [row.id]);
+      ok = true;
+    }
+    if (ok) {
+      reorderInTx(db, provider);
+    }
+  });
+  return ok;
+}

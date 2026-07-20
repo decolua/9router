@@ -25,9 +25,9 @@ export default function Card({
   return (
     <div
       className={cn(
-        "bg-surface border border-border-subtle",
-        elev ? "rounded-[14px] shadow-[var(--shadow-elev)]" : "rounded-[14px] shadow-[var(--shadow-soft)]",
-        hover && "hover:shadow-[var(--shadow-warm)] hover:border-brand-500/30 transition-all cursor-pointer",
+        "bg-surface border border-border-subtle transition-all duration-300",
+        elev ? "rounded-[12px] shadow-[var(--shadow-elev)]" : "rounded-[12px] shadow-[var(--shadow-soft)]",
+        hover && "hover:shadow-[0_0_20px_-5px_rgba(229,106,74,0.15)] hover:border-brand-500/25 cursor-pointer dark:bg-gradient-to-b dark:from-surface dark:to-surface-2/20",
         paddings[padding],
         className
       )}
@@ -62,8 +62,8 @@ Card.Section = function CardSection({ children, className, ...props }) {
   return (
     <div
       className={cn(
-        "p-4 rounded-[10px]",
-        "bg-bg border border-border-subtle",
+        "p-4 rounded-lg",
+        "bg-bg-alt border border-border-subtle/70",
         className
       )}
       {...props}

@@ -114,6 +114,56 @@ export class AntigravityExecutor extends BaseExecutor {
     super("antigravity", PROVIDERS.antigravity);
   }
 
+  parseError(response, bodyText) {
+    const base = super.parseError(response, bodyText);
+
+    let errorJson = null;
+    try {
+      errorJson = bodyText ? JSON.parse(bodyText) : null;
+    } catch {}
+
+    const errorMessage = this.extractErrorMessage(errorJson, bodyText);
+    base.message = errorMessage || base.message;
+
+    // 1. Try to parse resetsAtMs from headers
+    let retryMs = this.parseRetryHeaders(response.headers);
+
+    // 2. Try to parse resetsAtMs from Google API error details (JSON)
+    if (!retryMs && errorJson) {
+      const details = errorJson?.error?.details;
+      if (Array.isArray(details)) {
+        for (const d of details) {
+          if (d?.["@type"] === "type.googleapis.com/google.rpc.ErrorInfo" && d?.metadata?.quotaResetTimeStamp) {
+            const time = new Date(d.metadata.quotaResetTimeStamp).getTime();
+            if (!isNaN(time) && time > Date.now()) {
+              retryMs = time - Date.now();
+              break;
+            }
+          }
+          if (d?.["@type"] === "type.googleapis.com/google.rpc.RetryInfo" && d?.retryDelay) {
+            const seconds = parseFloat(d.retryDelay);
+            if (!isNaN(seconds) && seconds > 0) {
+              retryMs = seconds * 1000;
+            }
+            break;
+          }
+        }
+      }
+    }
+
+    // 3. Try to parse from error message text using regex
+    if (!retryMs) {
+      retryMs = this.parseRetryFromErrorMessage(errorMessage);
+    }
+
+    // If we resolved a retry delay, set resetsAtMs on the error object
+    if (retryMs && retryMs > 0) {
+      base.resetsAtMs = Date.now() + retryMs;
+    }
+
+    return base;
+  }
+
   buildUrl(model, stream, urlIndex = 0) {
     const baseUrls = this.getBaseUrls();
     const baseUrl = baseUrls[urlIndex] || baseUrls[0];
@@ -347,10 +397,11 @@ export class AntigravityExecutor extends BaseExecutor {
 
   // Parse retry time from Antigravity error message body
   // Format: "Your quota will reset after 2h7m23s" or "1h30m" or "45m" or "30s"
+  // Format 2: "Resets in 133h10m19s"
   parseRetryFromErrorMessage(errorMessage) {
     if (!errorMessage || typeof errorMessage !== "string") return null;
 
-    const match = errorMessage.match(/reset after (\d+h)?(\d+m)?(\d+s)?/i);
+    const match = errorMessage.match(/(?:reset after|resets in) (\d+h)?(\d+m)?(\d+s)?/i);
     if (!match) return null;
 
     let totalMs = 0;

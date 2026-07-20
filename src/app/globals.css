@@ -85,21 +85,21 @@
   --color-primary: #E56A4A;
   --color-primary-hover: #cc5236;
 
-  /* Surfaces (dark - Claude-like neutral warm) */
-  --color-bg: #1a1a1a;
-  --color-bg-alt: #1F1F1E;
-  --color-surface: #262626;
-  --color-surface-2: #303030;
-  --color-surface-3: #3a3a3a;
-  --color-sidebar: rgba(30, 30, 30, 0.85);
+  /* Surfaces (dark - Vercel/Linear futuristic dark) */
+  --color-bg: #050505;
+  --color-bg-alt: #0a0a0a;
+  --color-surface: #0e0e0e;
+  --color-surface-2: #161616;
+  --color-surface-3: #222222;
+  --color-sidebar: rgba(10, 10, 10, 0.8);
 
-  --color-border: #333333;
-  --color-border-subtle: #2a2a2a;
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-border-subtle: rgba(255, 255, 255, 0.04);
 
-  --color-text: #ededed;
-  --color-text-main: #ededed;
-  --color-text-muted: #9ca3af;
-  --color-text-subtle: #6b7280;
+  --color-text: #f5f5f5;
+  --color-text-main: #f5f5f5;
+  --color-text-muted: #8e8e93;
+  --color-text-subtle: #505055;
 
   --color-danger: #ef4444;
   --color-success: #22c55e;
@@ -280,7 +280,7 @@ input, textarea {
   background: rgba(255, 255, 255, 0.72);
 }
 .dark .bg-vibrancy {
-  background: rgba(38, 38, 38, 0.72);
+  background: rgba(10, 10, 10, 0.6);
 }
 
 /* macOS Traffic Lights */
@@ -366,6 +366,26 @@ button:disabled,
 }
 .animate-border-glow { animation: border-glow 2s ease-in-out infinite; }
 
+@keyframes subtle-glow {
+  0%, 100% {
+    box-shadow: 0 0 12px -3px rgba(229, 106, 74, 0.12), inset 0 1px 0 0 rgba(255, 255, 255, 0.02);
+  }
+  50% {
+    box-shadow: 0 0 24px -3px rgba(229, 106, 74, 0.22), inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+  }
+}
+.animate-subtle-glow { animation: subtle-glow 4s ease-in-out infinite; }
+
+.card-futuristic {
+  background: radial-gradient(800px circle at var(--x, 0px) var(--y, 0px), rgba(229, 106, 74, 0.06), transparent 40%), var(--color-surface);
+  position: relative;
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+.card-futuristic:hover {
+  border-color: rgba(229, 106, 74, 0.25);
+  box-shadow: 0 0 20px -5px rgba(229, 106, 74, 0.15);
+}
+
 @keyframes slideInFromRight {
   from { transform: translateX(100%); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
@@ -439,7 +459,11 @@ button:disabled,
   opacity: 0.08;
 }
 .dark .landing-grid {
-  opacity: 0.04;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 32px 32px;
+  opacity: 0.8;
 }
 
 /* Topology: router card pulse (no flying rings) + electric edge beam */

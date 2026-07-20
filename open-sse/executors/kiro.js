@@ -1088,6 +1088,32 @@ export class KiroExecutor extends BaseExecutor {
     });
   }
 
+  parseError(response, bodyText) {
+    const base = super.parseError(response, bodyText);
+    if (!bodyText) return base;
+
+    try {
+      const parsed = JSON.parse(bodyText);
+      const isMonthlyLimit = response.status === 402 ||
+                             parsed.reason === "MONTHLY_REQUEST_COUNT" ||
+                             (parsed.message && parsed.message.includes("MONTHLY_REQUEST_COUNT"));
+
+      if (isMonthlyLimit) {
+        const now = new Date();
+        const nextMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+        base.resetsAtMs = nextMonth.getTime();
+      }
+    } catch (e) {
+      if (response.status === 402) {
+        const now = new Date();
+        const nextMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+        base.resetsAtMs = nextMonth.getTime();
+      }
+    }
+
+    return base;
+  }
+
   async refreshCredentials(credentials, log, proxyOptions = null) {
     if (!credentials.refreshToken) return null;
 

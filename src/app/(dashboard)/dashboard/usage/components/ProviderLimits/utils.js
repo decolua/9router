@@ -350,6 +350,20 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
+      case "cloudflare-ai":
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              resetAt: quota.resetAt || null,
+              unit: quota.unit || "neurons",
+            });
+          });
+        }
+        break;
+
       case "antigravity":
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([modelKey, quota]) => {

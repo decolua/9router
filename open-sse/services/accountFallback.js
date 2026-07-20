@@ -133,7 +133,7 @@ export function getEarliestModelLockUntil(connection) {
   let earliest = null;
   const now = Date.now();
   for (const [key, val] of Object.entries(connection)) {
-    if (!key.startsWith(MODEL_LOCK_PREFIX) || !val) continue;
+    if ((!key.startsWith(MODEL_LOCK_PREFIX) && !key.startsWith(MODEL_GROUP_LOCK_PREFIX)) || !val) continue;
     const t = new Date(val).getTime();
     if (t <= now) continue;
     if (!earliest || t < earliest) earliest = t;
@@ -155,9 +155,59 @@ export function buildModelLockUpdate(model, cooldownMs) {
 export function buildClearModelLocksUpdate(connection) {
   const cleared = {};
   for (const key of Object.keys(connection)) {
-    if (key.startsWith(MODEL_LOCK_PREFIX)) cleared[key] = null;
+    if (key.startsWith(MODEL_LOCK_PREFIX) || key.startsWith(MODEL_GROUP_LOCK_PREFIX)) cleared[key] = null;
   }
   return cleared;
+}
+
+// ─── Group Lock (quota family) ────────────────────────────────────────────────
+// Prefix for model-group lock flat fields on connection record.
+// Only used for providers whose models declare quotaFamily (e.g. Antigravity).
+// Falls back gracefully: providers without quotaFamily never set/check this prefix.
+
+/** Prefix for group lock flat fields */
+export const MODEL_GROUP_LOCK_PREFIX = "modelGroupLock_";
+
+/** Build the flat field key for a group lock */
+export function getGroupLockKey(quotaFamily) {
+  return `${MODEL_GROUP_LOCK_PREFIX}${quotaFamily}`;
+}
+
+/**
+ * Check if a group lock on a connection is still active.
+ * Reads flat field `modelGroupLock_${quotaFamily}`.
+ * Returns false immediately if quotaFamily is falsy or "normal"
+ * (non-grouped models are never group-locked).
+ */
+export function isGroupLockActive(connection, quotaFamily) {
+  if (!quotaFamily || quotaFamily === "normal") return false;
+  const key = getGroupLockKey(quotaFamily);
+  const expiry = connection[key];
+  if (!expiry) return false;
+  return new Date(expiry).getTime() > Date.now();
+}
+
+/**
+ * Build update object to set a group lock on a connection.
+ * Returns empty object if quotaFamily is falsy or "normal"
+ * so it is always safe to spread into any update.
+ */
+export function buildGroupLockUpdate(quotaFamily, cooldownMs) {
+  if (!quotaFamily || quotaFamily === "normal") return {};
+  const key = getGroupLockKey(quotaFamily);
+  return { [key]: new Date(Date.now() + cooldownMs).toISOString() };
+}
+
+/**
+ * Collect all modelGroupLock_* keys from a connection that belong
+ * to the given quotaFamily and should be cleared on success.
+ * Returns an object { [key]: null } ready to spread into updateProviderConnection.
+ */
+export function buildClearGroupLockUpdate(connection, quotaFamily) {
+  if (!quotaFamily || quotaFamily === "normal") return {};
+  const key = getGroupLockKey(quotaFamily);
+  if (!(key in connection)) return {};
+  return { [key]: null };
 }
 
 /**

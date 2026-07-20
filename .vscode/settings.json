@@ -1,4 +1,10 @@
 {
+  "search.exclude": {
+    "**/go-9router": true
+  },
+  "files.exclude": {
+    "**/go-9router": true
+  },
   "css.lint.unknownAtRules": "ignore",
   "sonarlint.rules": {
     "css:S4662": {

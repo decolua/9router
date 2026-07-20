@@ -152,10 +152,68 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_rd_conn ON requestDetails(connectionId)",
     ],
   },
+  codebuddyAccounts: {
+    columns: {
+      id: "INTEGER PRIMARY KEY AUTOINCREMENT",
+      email: "TEXT NOT NULL",
+      password: "TEXT NOT NULL",
+      profileDir: "TEXT",
+      ammailAlias: "TEXT",
+      signupMethod: "TEXT DEFAULT 'google'",
+      apiKey: "TEXT",
+      apiKeyStatus: "TEXT DEFAULT 'pending'",
+      lastError: "TEXT",
+      lastRunAt: "INTEGER",
+      createdAt: "TEXT NOT NULL",
+      provider: "TEXT DEFAULT 'codebuddy'",
+      canvaEnrolled: "INTEGER DEFAULT 0",
+    },
+    unique: ["email", "provider"],
+    indexes: ["CREATE INDEX IF NOT EXISTS idx_cba_email ON codebuddyAccounts(email)"],
+  },
+  codebuddyJobs: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      type: "TEXT NOT NULL",
+      status: "TEXT DEFAULT 'queued'",
+      count: "INTEGER DEFAULT 0",
+      completed: "INTEGER DEFAULT 0",
+      success: "INTEGER DEFAULT 0",
+      failed: "INTEGER DEFAULT 0",
+      progress: "INTEGER DEFAULT 0",
+      resultsJson: "TEXT NOT NULL DEFAULT '[]'",
+      createdAt: "TEXT NOT NULL",
+      startedAt: "INTEGER",
+      finishedAt: "INTEGER",
+    },
+  },
+  ammailOtps: {
+    columns: {
+      id: "INTEGER PRIMARY KEY AUTOINCREMENT",
+      address: "TEXT NOT NULL",
+      alias: "TEXT NOT NULL",
+      domain: "TEXT",
+      sender: "TEXT",
+      subject: "TEXT",
+      otpCode: "TEXT",
+      verifyUrl: "TEXT",
+      bodyText: "TEXT",
+      bodyHtml: "TEXT",
+      messageShortId: "TEXT",
+      rawEventJson: "TEXT",
+      receivedAt: "INTEGER NOT NULL",
+      usedAt: "INTEGER DEFAULT 0",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_ammail_otps_address_received ON ammailOtps(address, receivedAt DESC)",
+      "CREATE INDEX IF NOT EXISTS idx_ammail_otps_used ON ammailOtps(usedAt, receivedAt DESC)",
+    ],
+  },
 };
 
 export function buildCreateTableSql(name, def) {
   const cols = Object.entries(def.columns).map(([k, v]) => `${k} ${v}`);
   if (def.primaryKey) cols.push(def.primaryKey);
+  if (def.unique) cols.push(`UNIQUE(${def.unique.join(", ")})`);
   return `CREATE TABLE IF NOT EXISTS ${name} (${cols.join(", ")})`;
 }

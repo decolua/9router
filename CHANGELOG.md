@@ -1,3 +1,12 @@
+# v0.6.0 (2026-07-09)
+
+## Features
+- **Cloudflare Automation**: Port automatic account creation, browser automation settings panel, proxy pool testing, and Ammail temp mail inbox client.
+- **Quota Tracker**: Implement Cloudflare Workers AI quota/limits mechanism and threshold exhaustion handling.
+- **Automation Logging**: Implement granular file-based step and error logging. Passed `--log-file` to Python signup process, exposed logs via GET endpoint `/api/automation/codebuddy/[id]`, and designed a terminal-style real-time logs modal in the dashboard UI.
+- **Fixes**: Implement dynamic Python binary path detection (`getPythonExecutable()`) to automatically toggle between macOS host Homebrew installations (`/opt/homebrew/bin/python3`) and Docker container virtualenvs (`/app/.venv`) to resolve spawn exit code `-2` failures. Pin Playwright dependency to version `1.58.0` in both host virtual environment and Docker configurations to fix browser viewport `isMobile` protocol scheme skew errors. Automatically append an exclamation mark (`!`) to registration passwords lacking special characters to satisfy Cloudflare security policy. Add real-time email verification polling wait checks (detecting error `1211`) to prompt users to verify emails in real-time. Sniff request and response headers (`x-cross-site-security`) to support direct API token creation bypasses. Copy `src/automation` folder to the runner image inside `Dockerfile` to ensure runtime standalone compatibility. Add stderr logging stream listeners in Next.js backend runner spawns to output full traceback details on failure. Fix Playwright WebSocket heartbeat timeouts during verification loops by replacing synchronous `time.sleep` with `page.wait_for_timeout`. Resolve strict mode violations in template selection by narrowing locators. Optimize Account Resources selection by focusing the React Select input element and implementing a DOM-tree walking React Fiber properties injection fallback. Capture the `x-atok` token from sniffer streams and pass it alongside CSRF tokens to API request fallbacks to resolve 403 authorization failures.
+
+
 # v0.5.40 (2026-07-20)
 
 ## Features
@@ -81,6 +90,7 @@
 - **i18n(zh-CN)**: complete Chinese translations for all UI strings (#2436)
 - **API**: caching for tunnel and version status endpoints
 - **Perf**: faster dev startup and lighter bundle
+>>>>>>> master
 
 # v0.5.20 (2026-07-07)
 
