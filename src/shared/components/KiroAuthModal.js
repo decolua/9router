@@ -50,9 +50,9 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
             });
           }
         } else {
-          setError(data.error || "Could not auto-detect token");
+          setError("Could not auto-detect token. Try again.");
         }
-      } catch (err) {
+      } catch {
         setError("Failed to auto-detect token");
       } finally {
         setAutoDetecting(false);
@@ -99,8 +99,8 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
 
       // Success - notify parent to refresh connections
       onMethodSelect("import");
-    } catch (err) {
-      setError(err.message);
+    } catch {
+      setError("Kiro token import failed. Check the token and try again.");
     } finally {
       setImporting(false);
     }
@@ -129,8 +129,8 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
       }
 
       onMethodSelect("import-cli-proxy");
-    } catch (err) {
-      setError(err.message);
+    } catch {
+      setError("CLIProxyAPI import failed. Check the JSON and try again.");
     } finally {
       setImporting(false);
     }
@@ -171,8 +171,8 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
 
       // Success - notify parent to refresh connections
       onMethodSelect("api-key");
-    } catch (err) {
-      setError(err.message);
+    } catch {
+      setError("API key validation failed. Check the key and try again.");
     } finally {
       setImporting(false);
     }

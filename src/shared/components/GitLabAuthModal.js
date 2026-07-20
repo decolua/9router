@@ -73,8 +73,8 @@ export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClo
       if (!res.ok) throw new Error(data.error || "Authentication failed");
       onSuccess?.();
       handleClose();
-    } catch (err) {
-      setError(err.message);
+    } catch {
+      setError("GitLab authentication failed. Check credentials and try again.");
     } finally {
       setLoading(false);
     }

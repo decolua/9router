@@ -46,6 +46,7 @@ import OAuthModal from "../../src/shared/components/OAuthModal.js";
 import KiroSocialOAuthModal from "../../src/shared/components/KiroSocialOAuthModal.js";
 import KiroOAuthWrapper from "../../src/shared/components/KiroOAuthWrapper.js";
 import GitLabAuthModal from "../../src/shared/components/GitLabAuthModal.js";
+import KiroAuthModal from "../../src/shared/components/KiroAuthModal.js";
 
 const originalFetch = globalThis.fetch;
 const credentialError = "exchange failed at https://user:password@provider.test/callback?code=SECRET-CODE&refresh_token=SECRET-REFRESH";
@@ -146,6 +147,34 @@ function renderKiroModal({
     harness.refs[2].current = 1;
   }
   return tree;
+}
+
+function renderKiroAuthModal({
+  selectedMethod = "import",
+  refreshToken = "refresh-token",
+  cliProxyJson = "{}",
+  apiKey = "api-key",
+} = {}) {
+  harness.effects = [];
+  harness.refs = [];
+  harness.refIndex = 0;
+  harness.stateIndex = 0;
+  harness.stateSetters = [];
+  harness.stateValues = [
+    selectedMethod,
+    "",
+    "us-east-1",
+    refreshToken,
+    cliProxyJson,
+    apiKey,
+    "us-east-1",
+    null,
+    false,
+    false,
+    false,
+    null,
+  ];
+  return KiroAuthModal({ isOpen: true, onMethodSelect: vi.fn(), onClose: vi.fn() });
 }
 
 describe("OAuth modal flow coordination", () => {
@@ -252,6 +281,66 @@ describe("OAuth modal flow coordination", () => {
     });
 
     expect(tree.props.proxyPoolsReady).toBe(false);
+  });
+
+  it("sanitizes GitLab PAT API errors before displaying them", async () => {
+    harness.effects = [];
+    harness.refs = [];
+    harness.refIndex = 0;
+    harness.stateIndex = 0;
+    harness.stateSetters = [];
+    harness.stateValues = [
+      "pat",
+      "https://gitlab.com",
+      "",
+      "",
+      "pat-token",
+      false,
+      null,
+      false,
+      null,
+    ];
+    globalThis.fetch = vi.fn().mockResolvedValue(response({ error: credentialError }, false));
+    const tree = GitLabAuthModal({
+      isOpen: true,
+      providerInfo: { name: "GitLab" },
+      onClose: vi.fn(),
+    });
+    const connectButton = findElement(tree, (node) => node.props?.children === "Connect");
+
+    await connectButton.props.onClick();
+
+    const message = harness.stateSetters[6].mock.calls.at(-1)[0];
+    expect(message).toMatch(/failed|try again/i);
+    for (const part of credentialParts) expect(message).not.toContain(part);
+  });
+
+  it("sanitizes Kiro auto-import API errors before displaying them", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(response({ found: false, error: credentialError }));
+    renderKiroAuthModal();
+
+    harness.effects[0]();
+    await flushPromises();
+
+    const message = harness.stateSetters[7].mock.calls.at(-1)[0];
+    expect(message).toMatch(/auto-detect|try again/i);
+    for (const part of credentialParts) expect(message).not.toContain(part);
+  });
+
+  it.each([
+    ["import", "Import Token"],
+    ["import-cli-proxy", "Import CLIProxyAPI JSON"],
+    ["api-key", "Add API Key"],
+  ])("sanitizes Kiro %s API errors before displaying them", async (selectedMethod, buttonText) => {
+    globalThis.fetch = vi.fn().mockResolvedValue(response({ error: credentialError }, false));
+    const tree = renderKiroAuthModal({ selectedMethod });
+    const submitButton = findElement(tree, (node) => node.props?.children === buttonText);
+
+    await submitButton.props.onClick();
+
+    const message = harness.stateSetters[7].mock.calls.at(-1)[0];
+    expect(message).toMatch(/failed|try again/i);
+    for (const part of credentialParts) expect(message).not.toContain(part);
   });
 
   it("sanitizes popup callback errors before displaying them", async () => {
