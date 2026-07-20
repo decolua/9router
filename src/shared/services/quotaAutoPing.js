@@ -296,3 +296,18 @@ export function startQuotaAutoPing() {
   g.interval = setInterval(() => { runQuotaAutoPingTick().catch(() => {}); }, C.tickIntervalMs);
   if (g.interval.unref) g.interval.unref();
 }
+
+export function stopQuotaAutoPing() {
+  if (!g.interval) return;
+  clearInterval(g.interval);
+  g.interval = null;
+  console.log("[AutoPing] scheduler stopped");
+}
+
+export function configureQuotaAutoPing(settings) {
+  const enabled = Object.values(C.providers).some((providerConfig) =>
+    Object.values(settings?.[providerConfig.settingsKey]?.connections || {}).some(Boolean)
+  );
+  if (enabled) startQuotaAutoPing();
+  else stopQuotaAutoPing();
+}
