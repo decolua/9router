@@ -151,7 +151,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setStep("success");
       onSuccess?.();
     } catch (err) {
-      setError(err.message);
+      setError(sanitizeOAuthError(err));
       setStep("error");
     }
   }, [authData, provider, onSuccess]);
@@ -170,7 +170,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setStep("success");
       onSuccess?.();
     } catch (err) {
-      setError(err.message);
+      setError(sanitizeOAuthError(err));
       setStep("error");
     }
   }, [authData, onSuccess]);
@@ -223,7 +223,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       } catch (err) {
         if (generation !== flowGenerationRef.current) return;
         if (devicePollFlowRef.current === flowId) devicePollFlowRef.current = null;
-        setError(err.message);
+        setError(sanitizeOAuthError(err));
         setStep("error");
         setPolling(false);
         return;
@@ -422,7 +422,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       }
     } catch (err) {
       if (isStale()) return;
-      setError(err.message);
+      setError(sanitizeOAuthError(err));
       setStep("error");
     }
   }, [provider, isLocalhost, startPolling, oauthMeta, idcConfig, selectedProxyPoolId, stopFixedProxy, cancelAuthorizationFlow]);
@@ -472,7 +472,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         } catch (err) {
           if (generation !== flowGenerationRef.current) return;
           setPolling(false);
-          setError(err.message);
+          setError(sanitizeOAuthError(err));
           setStep("error");
         }
       });
@@ -654,7 +654,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
       await exchangeTokens(token || code, state);
     } catch (err) {
-      setError(err.message);
+      setError(sanitizeOAuthError(err));
       setStep("error");
     }
   };

@@ -296,12 +296,56 @@ describe("OAuth modal flow coordination", () => {
     for (const part of credentialParts) expect(message).not.toContain(part);
   });
 
+  it("sanitizes authorize API errors before displaying them", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(response({ error: credentialError }, false));
+    renderModal();
+
+    harness.effects[1]();
+    await flushPromises();
+
+    const message = harness.stateSetters[3].mock.calls.at(-1)[0];
+    expect(message).toMatch(/restart sign-in|try again/i);
+    for (const part of credentialParts) expect(message).not.toContain(part);
+  });
+
+  it("sanitizes token exchange API errors before displaying them", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(response({ error: credentialError }, false));
+    const tree = renderModal({
+      step: "input",
+      authData: { state: "callback-state" },
+      callbackUrl: "http://localhost:20127/callback?state=callback-state&code=code",
+    });
+    const connectButton = findElement(tree, (node) => node.props?.children === "Connect");
+
+    await connectButton.props.onClick();
+
+    const message = harness.stateSetters[3].mock.calls.at(-1)[0];
+    expect(message).toMatch(/restart sign-in|try again/i);
+    for (const part of credentialParts) expect(message).not.toContain(part);
+  });
+
   it("sanitizes Kiro callback errors before displaying them", async () => {
     const callbackUrl = `kiro://kiro.kiroAgent/authenticate-success?state=callback-state&error=provider_error&error_description=${encodeURIComponent(credentialError)}`;
     const tree = renderKiroModal({
       step: "input",
       authData: { state: "callback-state" },
       callbackUrl,
+    });
+    const connectButton = findElement(tree, (node) => node.props?.children === "Connect");
+
+    await connectButton.props.onClick();
+
+    const message = harness.stateSetters[4].mock.calls.at(-1)[0];
+    expect(message).toMatch(/restart sign-in|try again/i);
+    for (const part of credentialParts) expect(message).not.toContain(part);
+  });
+
+  it("sanitizes Kiro exchange API errors before displaying them", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(response({ error: credentialError }, false));
+    const tree = renderKiroModal({
+      step: "input",
+      authData: { state: "callback-state" },
+      callbackUrl: "kiro://kiro.kiroAgent/authenticate-success?state=callback-state&code=code",
     });
     const connectButton = findElement(tree, (node) => node.props?.children === "Connect");
 
