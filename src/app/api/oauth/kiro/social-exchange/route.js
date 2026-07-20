@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
+import { sanitizeOAuthError } from "open-sse/utils/oauthError.js";
 import { KiroService } from "@/lib/oauth/services/kiro";
 import { createProviderConnection } from "@/models";
 import { ensureOutboundProxyInitialized } from "@/lib/network/initOutboundProxy";
-import { proxyOptionsForPool } from "@/lib/oauth/proxyOptions";
+import {
+  claimAuthorizationFlow,
+  clearAuthorizationFlow,
+  isAuthorizationFlowCurrent,
+} from "@/lib/oauth/utils/server";
 
 /**
  * POST /api/oauth/kiro/social-exchange
@@ -11,9 +16,9 @@ import { proxyOptionsForPool } from "@/lib/oauth/proxyOptions";
  */
 export async function POST(request) {
   try {
-    const { code, codeVerifier, provider, proxyPoolId } = await request.json();
+    const { code, state, provider } = await request.json();
 
-    if (!code || !codeVerifier) {
+    if (!code || !state) {
       return NextResponse.json(
         { error: "Missing required fields" },
         { status: 400 }
@@ -27,47 +32,63 @@ export async function POST(request) {
       );
     }
 
-    await ensureOutboundProxyInitialized();
-    const proxyOptions = await proxyOptionsForPool(proxyPoolId);
-    const kiroService = new KiroService();
+    const flow = claimAuthorizationFlow("kiro-social", provider, state);
+    if (!flow) {
+      return NextResponse.json(
+        { error: "OAuth flow state is invalid, expired, or already used" },
+        { status: 409 },
+      );
+    }
 
-    // Exchange code for tokens (redirect_uri handled internally)
-    const tokenData = await kiroService.exchangeSocialCode(
-      code,
-      codeVerifier,
-      proxyOptions,
-    );
+    try {
+      await ensureOutboundProxyInitialized();
+      const kiroService = new KiroService();
 
-    // Extract email from JWT if available
-    const email = kiroService.extractEmailFromJWT(tokenData.accessToken);
+      // Exchange code for tokens (redirect_uri handled internally)
+      const tokenData = await kiroService.exchangeSocialCode(
+        code,
+        flow.codeVerifier,
+        flow.proxyOptions,
+      );
 
-    // Save to database
-    const connection = await createProviderConnection({
-      provider: "kiro",
-      authType: "oauth",
-      accessToken: tokenData.accessToken,
-      refreshToken: tokenData.refreshToken,
-      expiresAt: new Date(Date.now() + tokenData.expiresIn * 1000).toISOString(),
-      email: email || null,
-      providerSpecificData: {
-        profileArn: tokenData.profileArn,
-        authMethod: provider, // "google" or "github"
-        provider: provider.charAt(0).toUpperCase() + provider.slice(1),
-        ...(proxyPoolId && proxyPoolId !== "__none__" ? { proxyPoolId } : {}),
-      },
-      testStatus: "active",
-    });
+      if (!isAuthorizationFlowCurrent("kiro-social", provider, state, flow.identity)) {
+        return NextResponse.json({ error: "OAuth flow was cancelled" }, { status: 409 });
+      }
 
-    return NextResponse.json({
-      success: true,
-      connection: {
-        id: connection.id,
-        provider: connection.provider,
-        email: connection.email,
-      },
-    });
+      // Extract email from JWT if available
+      const email = kiroService.extractEmailFromJWT(tokenData.accessToken);
+
+      // Save to database
+      const connection = await createProviderConnection({
+        provider: "kiro",
+        authType: "oauth",
+        accessToken: tokenData.accessToken,
+        refreshToken: tokenData.refreshToken,
+        expiresAt: new Date(Date.now() + tokenData.expiresIn * 1000).toISOString(),
+        email: email || null,
+        providerSpecificData: {
+          profileArn: tokenData.profileArn,
+          authMethod: provider,
+          provider: provider.charAt(0).toUpperCase() + provider.slice(1),
+          ...(flow.proxyPoolId && flow.proxyPoolId !== "__none__" ? { proxyPoolId: flow.proxyPoolId } : {}),
+        },
+        testStatus: "active",
+      });
+
+      return NextResponse.json({
+        success: true,
+        connection: {
+          id: connection.id,
+          provider: connection.provider,
+          email: connection.email,
+        },
+      });
+    } finally {
+      clearAuthorizationFlow("kiro-social", provider, state, flow.identity);
+    }
   } catch (error) {
-    console.log("Kiro social exchange error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const publicError = sanitizeOAuthError(error);
+    console.log("Kiro social exchange error:", publicError);
+    return NextResponse.json({ error: publicError }, { status: 500 });
   }
 }

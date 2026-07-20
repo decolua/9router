@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   createProviderConnection: vi.fn(),
   ensureOutboundProxyInitialized: vi.fn(),
   exchangeTokens: vi.fn(),
+  generateAuthData: vi.fn(),
   pollForToken: vi.fn(),
   resolveConnectionProxyConfig: vi.fn(),
 }));
@@ -83,7 +84,7 @@ vi.mock("http", () => ({ default: { createServer: httpMocks.createServer } }));
 vi.mock("open-sse/utils/proxyFetch.js", () => ({}));
 vi.mock("../../src/lib/oauth/providers.js", () => ({
   exchangeTokens: mocks.exchangeTokens,
-  generateAuthData: vi.fn(),
+  generateAuthData: mocks.generateAuthData,
   getProvider: vi.fn(),
   pollForToken: mocks.pollForToken,
   requestDeviceCode: vi.fn(),
@@ -99,6 +100,7 @@ vi.mock("@/lib/network/connectionProxy", () => ({
 }));
 
 import { GET, POST } from "../../src/app/api/oauth/[provider]/[action]/route.js";
+import { proxyOptionsForPool } from "../../src/lib/oauth/proxyOptions.js";
 import {
   clearCodexSession,
   clearCodexSessions,
@@ -114,11 +116,22 @@ import {
   stopXaiProxy,
 } from "../../src/lib/oauth/utils/server.js";
 
-function startProxy(provider, body) {
+async function startProxy(provider, body) {
+  if (body.state && body.codeVerifier && body.redirectUri) {
+    const context = {
+      state: body.state,
+      codeVerifier: body.codeVerifier,
+      redirectUri: body.redirectUri,
+      proxyPoolId: body.proxyPoolId || "",
+      proxyOptions: await proxyOptionsForPool(body.proxyPoolId),
+    };
+    if (provider === "xai") registerXaiSession(context);
+    else registerCodexSession(context);
+  }
   return POST(new Request(`http://localhost/api/oauth/${provider}/start-proxy`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ appPort: body.appPort, state: body.state }),
   }), {
     params: Promise.resolve({ provider, action: "start-proxy" }),
   });
@@ -131,6 +144,14 @@ describe("OAuth fixed-port callback proxy context", () => {
     httpMocks.deferListen = false;
     httpMocks.servers.length = 0;
     mocks.ensureOutboundProxyInitialized.mockResolvedValue(true);
+    mocks.generateAuthData.mockResolvedValue({
+      authUrl: "https://auth.example/authorize",
+      state: "codex-state",
+      codeVerifier: "secret-verifier",
+      codeChallenge: "challenge",
+      redirectUri: "http://localhost:1455/auth/callback",
+      flowType: "authorization_code_pkce",
+    });
     mocks.resolveConnectionProxyConfig.mockResolvedValue({
       source: "pool",
       connectionProxyEnabled: true,
@@ -138,6 +159,7 @@ describe("OAuth fixed-port callback proxy context", () => {
       connectionNoProxy: "",
       vercelRelayUrl: "",
       strictProxy: true,
+      disableEnvProxy: true,
     });
     mocks.exchangeTokens.mockResolvedValue({
       accessToken: "access-token",
@@ -152,19 +174,17 @@ describe("OAuth fixed-port callback proxy context", () => {
   });
 
   afterEach(async () => {
-    ["codex-state", "poll-state", "abandoned", "fresh", "first", "second", "stop-expired", "orphan"]
-      .forEach(clearCodexSession);
-    ["xai-state", "abandoned", "fresh", "first", "second", "stop-expired", "orphan"]
-      .forEach(clearXaiSession);
+    clearCodexSessions();
+    clearXaiSessions();
     httpMocks.deferClose = false;
     httpMocks.servers.forEach((server) => server.finishClose());
-    await stopCodexProxy();
-    await stopXaiProxy();
+    await stopCodexProxy({ force: true });
+    await stopXaiProxy({ force: true });
     vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
-  it("registers PKCE sessions only through POST JSON", async () => {
+  it("registers fixed-port PKCE server-side during authorize", async () => {
     const queryUrl = new URL("http://localhost/api/oauth/codex/start-proxy");
     queryUrl.searchParams.set("app_port", "20127");
     queryUrl.searchParams.set("state", "codex-state");
@@ -177,11 +197,16 @@ describe("OAuth fixed-port callback proxy context", () => {
     expect(getResponse.status).toBe(400);
     expect(httpMocks.servers).toHaveLength(0);
 
+    const authorizeResponse = await GET(new Request(
+      "http://localhost/api/oauth/codex/authorize?redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback",
+    ), {
+      params: Promise.resolve({ provider: "codex", action: "authorize" }),
+    });
+    expect(await authorizeResponse.json()).not.toHaveProperty("codeVerifier");
+
     const postResponse = await startProxy("codex", {
       appPort: "20127",
       state: "codex-state",
-      codeVerifier: "secret-verifier",
-      redirectUri: "http://localhost:1455/auth/callback",
     });
     expect(await postResponse.json()).toMatchObject({ success: true, serverSide: true });
     expect(httpMocks.servers).toHaveLength(1);
@@ -243,6 +268,7 @@ describe("OAuth fixed-port callback proxy context", () => {
         connectionNoProxy: "",
         vercelRelayUrl: "",
         strictProxy: true,
+        disableEnvProxy: true,
       },
     );
     expect(mocks.createProviderConnection).toHaveBeenCalledWith(expect.objectContaining({
@@ -281,7 +307,11 @@ describe("OAuth fixed-port callback proxy context", () => {
     });
     await httpMocks.servers.at(-1).request("/auth/callback?code=auth-code&state=poll-state");
 
-    const response = await GET(new Request("http://localhost/api/oauth/codex/poll-status?state=poll-state"), {
+    const response = await POST(new Request("http://localhost/api/oauth/codex/poll-status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ state: "poll-state" }),
+    }), {
       params: Promise.resolve({ provider: "codex", action: "poll-status" }),
     });
 
@@ -290,6 +320,64 @@ describe("OAuth fixed-port callback proxy context", () => {
       connectionId: "connection-1",
       email: "user@example.com",
     });
+  });
+
+  it("rejects state in GET status query strings", async () => {
+    registerCodexSession({
+      state: "poll-state",
+      codeVerifier: "secret-verifier",
+      redirectUri: "http://localhost:1455/auth/callback",
+    });
+
+    const response = await GET(new Request(
+      "http://localhost/api/oauth/codex/poll-status?state=poll-state",
+    ), {
+      params: Promise.resolve({ provider: "codex", action: "poll-status" }),
+    });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("reads status state only from a POST JSON body", async () => {
+    registerCodexSession({
+      state: "poll-state",
+      codeVerifier: "secret-verifier",
+      redirectUri: "http://localhost:1455/auth/callback",
+    });
+
+    const response = await POST(new Request("http://localhost/api/oauth/codex/poll-status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ state: "poll-state" }),
+    }), {
+      params: Promise.resolve({ provider: "codex", action: "poll-status" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ status: "pending" });
+  });
+
+  it("refuses missing or mismatched stop state while a fixed flow is active", async () => {
+    await startCodexProxy(20127);
+    registerCodexSession({
+      state: "codex-state",
+      codeVerifier: "secret-verifier",
+      redirectUri: "http://localhost:1455/auth/callback",
+    });
+
+    for (const body of [{}, { state: "wrong-state" }]) {
+      const response = await POST(new Request("http://localhost/api/oauth/codex/stop-proxy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }), {
+        params: Promise.resolve({ provider: "codex", action: "stop-proxy" }),
+      });
+      expect(response.status).toBe(409);
+    }
+
+    expect(getCodexSessionStatus("codex-state")).toEqual({ status: "pending" });
+    expect(httpMocks.servers.at(-1).close).not.toHaveBeenCalled();
   });
 
   it("clears the pending session named by stop-proxy", async () => {
@@ -301,7 +389,11 @@ describe("OAuth fixed-port callback proxy context", () => {
     });
     expect(getCodexSessionStatus("codex-state")).not.toBeNull();
 
-    await GET(new Request("http://localhost/api/oauth/codex/stop-proxy?state=codex-state"), {
+    await POST(new Request("http://localhost/api/oauth/codex/stop-proxy", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ state: "codex-state" }),
+    }), {
       params: Promise.resolve({ provider: "codex", action: "stop-proxy" }),
     });
 
@@ -316,10 +408,15 @@ describe("OAuth fixed-port callback proxy context", () => {
     register({ state: "orphan", codeVerifier: "secret", redirectUri: "http://callback" });
     const server = httpMocks.servers.at(-1);
 
-    await GET(new Request(`http://localhost/api/oauth/${provider}/stop-proxy`), {
+    const response = await POST(new Request(`http://localhost/api/oauth/${provider}/stop-proxy`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    }), {
       params: Promise.resolve({ provider, action: "stop-proxy" }),
     });
 
+    expect(response.status).toBe(409);
     expect(getStatus("orphan")).toEqual({ status: "pending" });
     expect(server.close).not.toHaveBeenCalled();
   });
@@ -327,19 +424,24 @@ describe("OAuth fixed-port callback proxy context", () => {
   it.each([
     ["codex", registerCodexSession, getCodexSessionStatus, clearCodexSessions],
     ["xai", registerXaiSession, getXaiSessionStatus, clearXaiSessions],
-  ])("bounds %s sessions and retains newer active state", (_provider, register, getStatus, clearSessions) => {
+  ])("refuses new %s sessions at capacity without evicting active state", (_provider, register, getStatus, clearSessions) => {
     try {
-      for (let index = 0; index <= 128; index += 1) {
-        register({
+      for (let index = 0; index < 128; index += 1) {
+        expect(register({
           state: `bounded-session-${index}`,
           codeVerifier: `verifier-${index}`,
           redirectUri: "http://callback",
-        });
+        })).toBe(true);
       }
+      expect(register({
+        state: "bounded-session-128",
+        codeVerifier: "verifier-128",
+        redirectUri: "http://callback",
+      })).toBe(false);
 
-      expect(getStatus("bounded-session-0")).toBeNull();
-      expect(getStatus("bounded-session-1")).toEqual({ status: "pending" });
-      expect(getStatus("bounded-session-128")).toEqual({ status: "pending" });
+      expect(getStatus("bounded-session-0")).toEqual({ status: "pending" });
+      expect(getStatus("bounded-session-127")).toEqual({ status: "pending" });
+      expect(getStatus("bounded-session-128")).toBeNull();
     } finally {
       clearSessions();
     }
@@ -411,6 +513,26 @@ describe("OAuth fixed-port callback proxy context", () => {
   });
 
   it.each([
+    ["codex", startCodexProxy, registerCodexSession, clearCodexSession],
+    ["xai", startXaiProxy, registerXaiSession, clearXaiSession],
+  ])("does not persist a cancelled %s callback after exchange completes", async (_provider, start, register, clear) => {
+    let releaseExchange;
+    mocks.exchangeTokens.mockImplementation(() => new Promise((resolve) => {
+      releaseExchange = resolve;
+    }));
+    await start(20127);
+    register({ state: "late-cancel", codeVerifier: "secret", redirectUri: "http://callback" });
+
+    const callback = httpMocks.servers.at(-1).request("/callback?code=late-code&state=late-cancel");
+    await vi.waitFor(() => expect(mocks.exchangeTokens).toHaveBeenCalledTimes(1));
+    clear("late-cancel");
+    releaseExchange({ accessToken: "late-token", refreshToken: "late-refresh" });
+    await callback;
+
+    expect(mocks.createProviderConnection).not.toHaveBeenCalled();
+  });
+
+  it.each([
     ["codex", startCodexProxy, registerCodexSession],
     ["xai", startXaiProxy, registerXaiSession],
   ])("rejects unknown %s callback state while server-side session exists", async (_provider, start, register) => {
@@ -457,35 +579,48 @@ describe("OAuth fixed-port callback proxy context", () => {
     expect(mocks.createProviderConnection).not.toHaveBeenCalled();
   });
 
-  it("bounds cancellation tombstones and retains newer cancellation", async () => {
+  it("refuses cancellation admission at capacity without evicting active tombstones", async () => {
+    const provider = "capacity-device";
+    const afterPriorTtl = Date.now() + 15 * 60 * 1000 + 1;
+    vi.spyOn(Date, "now").mockReturnValue(afterPriorTtl);
     mocks.pollForToken.mockResolvedValue({
       success: false,
       error: "authorization_pending",
       pending: true,
     });
-    for (let index = 0; index <= 256; index += 1) {
-      const response = await POST(new Request("http://localhost/api/oauth/qwen/cancel-poll", {
+    for (let index = 0; index < 256; index += 1) {
+      const response = await POST(new Request(`http://localhost/api/oauth/${provider}/cancel-poll`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ flowId: `bounded-flow-${index}` }),
       }), {
-        params: Promise.resolve({ provider: "qwen", action: "cancel-poll" }),
+        params: Promise.resolve({ provider, action: "cancel-poll" }),
       });
       expect(response.status).toBe(200);
     }
+    const rejected = await POST(new Request(`http://localhost/api/oauth/${provider}/cancel-poll`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ flowId: "bounded-flow-256" }),
+    }), {
+      params: Promise.resolve({ provider, action: "cancel-poll" }),
+    });
 
-    const poll = (flowId) => POST(new Request("http://localhost/api/oauth/qwen/poll", {
+    const poll = (flowId) => POST(new Request(`http://localhost/api/oauth/${provider}/poll`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ deviceCode: "device-code", codeVerifier: "verifier", flowId }),
     }), {
-      params: Promise.resolve({ provider: "qwen", action: "poll" }),
+      params: Promise.resolve({ provider, action: "poll" }),
     });
     const oldest = await poll("bounded-flow-0");
-    const newest = await poll("bounded-flow-256");
+    const newest = await poll("bounded-flow-255");
+    const refused = await poll("bounded-flow-256");
 
-    expect(oldest.status).toBe(200);
+    expect(rejected.status).toBe(503);
+    expect(oldest.status).toBe(409);
     expect(newest.status).toBe(409);
+    expect(refused.status).toBe(200);
     expect(mocks.pollForToken).toHaveBeenCalledTimes(1);
   });
 
@@ -555,8 +690,9 @@ describe("OAuth fixed-port callback proxy context", () => {
     const callback = await httpMocks.servers.at(-1).request(
       `${callbackPath}?code=callback-code&state=${state}`,
     );
-    const statusResponse = await GET(new Request(
-      `http://localhost/api/oauth/${provider}/poll-status?state=${state}`,
+    const statusResponse = await POST(new Request(
+      `http://localhost/api/oauth/${provider}/poll-status`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ state }) },
     ), {
       params: Promise.resolve({ provider, action: "poll-status" }),
     });
@@ -631,6 +767,7 @@ describe("OAuth fixed-port callback proxy context", () => {
       connectionNoProxy: "",
       vercelRelayUrl: "",
       strictProxy: true,
+      disableEnvProxy: true,
     });
   });
 
@@ -804,7 +941,11 @@ describe("OAuth fixed-port callback proxy context", () => {
     httpMocks.deferClose = true;
     let settled = false;
 
-    const responsePromise = GET(new Request("http://localhost/api/oauth/codex/stop-proxy"), {
+    const responsePromise = POST(new Request("http://localhost/api/oauth/codex/stop-proxy", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    }), {
       params: Promise.resolve({ provider: "codex", action: "stop-proxy" }),
     }).then((response) => {
       settled = true;

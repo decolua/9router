@@ -2,6 +2,8 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { getPermittedOAuthOpenerOrigins } from "@/lib/oauth/callbackOrigins";
+import { sanitizeOAuthError } from "open-sse/utils/oauthError.js";
 
 /**
  * OAuth Callback Page Content
@@ -21,55 +23,18 @@ function CallbackContent() {
       code,
       token,
       state,
-      error,
-      errorDescription,
-      fullUrl: window.location.href,
+      error: error ? sanitizeOAuthError(error) : null,
+      errorDescription: errorDescription ? sanitizeOAuthError(errorDescription) : null,
     };
 
-    let relayed = false;
-
-    // Trusted origins that may receive this callback. The OAuth code/state
-    // must only be relayed to the dashboard window we expect to be the opener
-    // (same origin) or the Codex helper that listens on a fixed loopback port.
-    // Any other origin is treated as hostile (drive-by attacker that opened
-    // the popup against the well-known redirect_uri to phish the code).
-    const expectedOrigins = [
-      window.location.origin, // Same origin (for most providers)
-      "http://localhost:1455", // Codex specific port
-    ];
-
-    // Method 1: postMessage to opener (popup mode)
-    // Send once per expected origin. The browser delivers the message only
-    // when the opener's origin matches the targetOrigin we pass — using "*"
-    // here would leak the code/state to any opener (e.g. an attacker page
-    // that opened this URL in a popup), so iterate over the allowlist.
     if (window.opener) {
-      for (const origin of expectedOrigins) {
+      for (const origin of getPermittedOAuthOpenerOrigins(window.location.origin)) {
         try {
           window.opener.postMessage({ type: "oauth_callback", data: callbackData }, origin);
-          relayed = true;
-        } catch (e) {
-          console.log("postMessage failed:", e);
+        } catch {
+          console.log("OAuth callback opener message failed");
         }
       }
-    }
-
-    // Method 2: BroadcastChannel (same origin tabs)
-    try {
-      const channel = new BroadcastChannel("oauth_callback");
-      channel.postMessage(callbackData);
-      channel.close();
-      relayed = true;
-    } catch (e) {
-      console.log("BroadcastChannel failed:", e);
-    }
-
-    // Method 3: localStorage event (fallback)
-    try {
-      localStorage.setItem("oauth_callback", JSON.stringify({ ...callbackData, timestamp: Date.now() }));
-      relayed = true;
-    } catch (e) {
-      console.log("localStorage failed:", e);
     }
 
     if (!(code || token || error)) {
@@ -77,6 +42,7 @@ function CallbackContent() {
       return;
     }
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- callback result is consumed once on mount
     setStatus("success");
     setTimeout(() => {
       window.close();

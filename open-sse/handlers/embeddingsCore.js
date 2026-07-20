@@ -15,6 +15,7 @@ export async function handleEmbeddingsCore({
   modelInfo,
   credentials,
   log,
+  proxyOptions = null,
   onCredentialsRefreshed,
   onRequestSuccess,
 }) {
@@ -54,6 +55,7 @@ export async function handleEmbeddingsCore({
       method: "POST",
       headers,
       body: JSON.stringify(requestBody),
+      proxyOptions,
     });
   } catch (error) {
     const errMsg = formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
@@ -69,7 +71,7 @@ export async function handleEmbeddingsCore({
       providerResponse.status === HTTP_STATUS.FORBIDDEN)
   ) {
     const newCredentials = await refreshWithRetry(
-      () => executor.refreshCredentials(credentials, log),
+      () => executor.refreshCredentials(credentials, log, proxyOptions),
       3,
       log
     );
@@ -86,6 +88,7 @@ export async function handleEmbeddingsCore({
           method: "POST",
           headers: retryHeaders,
           body: JSON.stringify(requestBody),
+          proxyOptions,
         });
       } catch {
         log?.warn?.("TOKEN", `${provider.toUpperCase()} | retry after refresh failed`);

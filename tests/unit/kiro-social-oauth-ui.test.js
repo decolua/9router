@@ -23,11 +23,18 @@ describe("Kiro social OAuth proxy UI wiring", () => {
     expect(socialBranch).not.toContain("<Modal");
   });
 
-  it("reuses proxy selector and carries selected pool through both requests", () => {
+  it("reuses proxy selector and sends selected pool only during authorize", () => {
     expect(modalSource).toContain("<OAuthProxyPoolSelector");
     expect(modalSource).toContain("if (!proxyPoolsReady) return");
     expect(modalSource).toContain('searchParams.set("proxyPoolId", selectedProxyPoolId)');
-    expect(modalSource).toContain("proxyPoolId: selectedProxyPoolId");
+    const exchangeStart = modalSource.indexOf('fetch("/api/oauth/kiro/social-exchange"');
+    const exchange = modalSource.slice(
+      exchangeStart,
+      modalSource.indexOf("const data = await res.json()", exchangeStart),
+    );
+    expect(exchange).not.toContain("codeVerifier");
+    expect(exchange).not.toContain("proxyPoolId");
+    expect(exchange).toContain("state");
   });
 
   it("fences authorize and exchange work by flow generation", () => {

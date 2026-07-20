@@ -35,9 +35,10 @@ describe("Kiro OAuth proxy propagation", () => {
     const proxyOptions = {
       connectionProxyEnabled: true,
       connectionProxyUrl: "http://proxy.test:8080",
-      connectionNoProxy: "localhost",
+      connectionNoProxy: "",
       vercelRelayUrl: "",
       strictProxy: true,
+      disableEnvProxy: true,
     };
     await refreshProviderCredentials("kiro", {
       connectionId: "kiro-proxied-refresh",
@@ -46,9 +47,10 @@ describe("Kiro OAuth proxy propagation", () => {
         authMethod: "social",
         connectionProxyEnabled: true,
         connectionProxyUrl: "http://proxy.test:8080",
-        connectionNoProxy: "localhost",
+        connectionNoProxy: "",
         proxyPoolId: "pool-1",
         strictProxy: true,
+        disableEnvProxy: true,
       },
     }, null);
 

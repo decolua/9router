@@ -84,6 +84,7 @@ export async function handleVideoProxyCore({
   signal,
   timeoutMs = VIDEO_FETCH_TIMEOUT_MS,
   log,
+  proxyOptions = null,
   onCredentialsRefreshed,
 }) {
   const config = getVideoConfig(provider);
@@ -104,6 +105,7 @@ export async function handleVideoProxyCore({
       headers: buildHeaders({ token, contentType: method === "POST" ? contentType : null, idempotencyKey: method === "POST" ? idempotencyKey : null }),
       body: method === "POST" ? rawBody : undefined,
       signal: fetchSignal,
+      proxyOptions,
     });
 
   let upstream;
@@ -124,7 +126,7 @@ export async function handleVideoProxyCore({
   ) {
     let refreshed = null;
     try {
-      refreshed = await refreshTokenByProvider(provider, credentials, log);
+      refreshed = await refreshTokenByProvider(provider, credentials, log, proxyOptions);
     } catch (error) {
       log?.warn?.("TOKEN", `${provider} | video refresh error: ${sanitizeSecrets(error.message, credentials)}`);
     }

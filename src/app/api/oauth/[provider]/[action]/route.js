@@ -1,4 +1,5 @@
 import "open-sse/utils/proxyFetch.js";
+import { sanitizeOAuthError } from "open-sse/utils/oauthError.js";
 import { NextResponse } from "next/server";
 import { 
   getProvider, 
@@ -14,18 +15,26 @@ import {
   startCodexProxy,
   stopCodexProxy,
   registerCodexSession,
+  claimCodexSession,
+  isCodexSessionCurrent,
   getCodexSessionStatus,
   clearCodexSession,
   startXaiProxy,
   stopXaiProxy,
   registerXaiSession,
   claimXaiSession,
+  isXaiSessionCurrent,
   getXaiSessionStatus,
   clearXaiSession,
+  registerAuthorizationFlow,
+  claimAuthorizationFlow,
+  isAuthorizationFlowCurrent,
+  clearAuthorizationFlow,
 } from "@/lib/oauth/utils/server";
 
 const DEVICE_POLL_CANCELLATION_TTL_MS = 15 * 60 * 1000;
 const DEVICE_POLL_CANCELLATION_MAX_ENTRIES = 256;
+const PUBLIC_DEVICE_ERROR_CODES = new Set(["authorization_pending", "slow_down", "expired_token", "access_denied"]);
 const cancelledDevicePolls = new Map();
 
 function normalizeFlowId(value) {
@@ -47,11 +56,11 @@ function devicePollKey(provider, flowId) {
 function rememberCancelledDevicePoll(provider, flowId, now = Date.now()) {
   pruneCancelledDevicePolls(now);
   const key = devicePollKey(provider, flowId);
-  cancelledDevicePolls.delete(key);
-  while (cancelledDevicePolls.size >= DEVICE_POLL_CANCELLATION_MAX_ENTRIES) {
-    cancelledDevicePolls.delete(cancelledDevicePolls.keys().next().value);
+  if (!cancelledDevicePolls.has(key) && cancelledDevicePolls.size >= DEVICE_POLL_CANCELLATION_MAX_ENTRIES) {
+    return false;
   }
   cancelledDevicePolls.set(key, now + DEVICE_POLL_CANCELLATION_TTL_MS);
+  return true;
 }
 
 function isDevicePollCancelled(provider, flowId) {
@@ -75,6 +84,24 @@ function withProxyPoolData(providerSpecificData, proxyPoolId) {
   };
 }
 
+function claimOAuthSession(provider, state) {
+  if (provider === "codex") return claimCodexSession(state);
+  if (provider === "xai") return claimXaiSession(state);
+  return claimAuthorizationFlow("oauth", provider, state);
+}
+
+function isOAuthSessionCurrent(provider, state, identity) {
+  if (provider === "codex") return isCodexSessionCurrent(state, identity);
+  if (provider === "xai") return isXaiSessionCurrent(state, identity);
+  return isAuthorizationFlowCurrent("oauth", provider, state, identity);
+}
+
+function clearOAuthSession(provider, state, identity) {
+  if (provider === "codex") return clearCodexSession(state, identity);
+  if (provider === "xai") return clearXaiSession(state, identity);
+  return clearAuthorizationFlow("oauth", provider, state, identity);
+}
+
 async function completeXaiManualCode(code, state, session) {
   if (!session) {
     throw new Error("xAI OAuth session not found; restart the login flow and paste the code again");
@@ -91,6 +118,9 @@ async function completeXaiManualCode(code, state, session) {
       undefined,
       session.proxyOptions
     );
+    if (!isXaiSessionCurrent(state, session.identity)) {
+      throw new Error("OAuth flow was cancelled");
+    }
     const connection = await createProviderConnection({
       provider: "xai",
       authType: "oauth",
@@ -101,7 +131,7 @@ async function completeXaiManualCode(code, state, session) {
         : null,
       testStatus: "active",
     });
-    clearXaiSession(state);
+    clearXaiSession(state, session.identity);
     await stopXaiProxy();
     return {
       id: connection.id,
@@ -110,7 +140,7 @@ async function completeXaiManualCode(code, state, session) {
       displayName: connection.displayName,
     };
   } catch (err) {
-    clearXaiSession(state);
+    clearXaiSession(state, session.identity);
     await stopXaiProxy();
     throw err;
   }
@@ -136,52 +166,31 @@ export async function GET(request, { params }) {
       const reservedParams = new Set(["redirect_uri", "proxyPoolId"]);
       const meta = {};
       searchParams.forEach((value, key) => { if (!reservedParams.has(key)) meta[key] = value; });
+      const proxyOptions = await proxyOptionsForPool(proxyPoolId);
       const authData = await generateAuthData(
         provider,
         redirectUri,
         Object.keys(meta).length ? meta : undefined,
-        await proxyOptionsForPool(proxyPoolId)
+        proxyOptions
       );
-      return NextResponse.json(authData);
-    }
-
-    if (action === "poll-status") {
-      if (!["codex", "xai"].includes(provider)) {
-        return NextResponse.json({ error: "Poll only supported for codex/xai" }, { status: 400 });
+      const context = {
+        state: authData.state,
+        codeVerifier: authData.codeVerifier,
+        redirectUri,
+        proxyPoolId: proxyPoolId || "",
+        proxyOptions,
+        meta: Object.keys(meta).length ? meta : undefined,
+      };
+      const registered = provider === "codex"
+        ? registerCodexSession(context)
+        : provider === "xai"
+          ? registerXaiSession(context)
+          : registerAuthorizationFlow({ kind: "oauth", provider, ...context });
+      if (!registered) {
+        return NextResponse.json({ error: "OAuth flow capacity reached; retry later" }, { status: 503 });
       }
-      const state = searchParams.get("state");
-      if (!state) {
-        return NextResponse.json({ error: "Missing state" }, { status: 400 });
-      }
-      const session = provider === "xai" ? getXaiSessionStatus(state) : getCodexSessionStatus(state);
-      if (!session) return NextResponse.json({ status: "unknown" });
-      if (session.status === "done" || session.status === "error") {
-        const payload = {
-          status: session.status,
-          ...(session.connectionId ? { connectionId: session.connectionId } : {}),
-          ...(session.email ? { email: session.email } : {}),
-          ...(session.error ? { error: session.error } : {}),
-        };
-        if (provider === "xai") clearXaiSession(state);
-        else clearCodexSession(state);
-        return NextResponse.json(payload);
-      }
-      return NextResponse.json({ status: session.status });
-    }
-
-    if (action === "stop-proxy") {
-      if (!["codex", "xai"].includes(provider)) {
-        return NextResponse.json({ error: "Proxy only supported for codex/xai" }, { status: 400 });
-      }
-      const state = searchParams.get("state");
-      if (provider === "xai") {
-        if (state) clearXaiSession(state);
-        await stopXaiProxy({ orphanOnly: !state });
-      } else {
-        if (state) clearCodexSession(state);
-        await stopCodexProxy({ orphanOnly: !state });
-      }
-      return NextResponse.json({ success: true });
+      const { codeVerifier: _codeVerifier, codeChallenge: _codeChallenge, redirectUri: _redirectUri, ...publicAuthData } = authData;
+      return NextResponse.json(publicAuthData);
     }
 
     if (action === "device-code") {
@@ -233,8 +242,9 @@ export async function GET(request, { params }) {
 
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   } catch (error) {
-    console.log("OAuth GET error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const publicError = sanitizeOAuthError(error);
+    console.log("OAuth GET error:", publicError);
+    return NextResponse.json({ error: publicError }, { status: 500 });
   }
 }
 
@@ -256,12 +266,49 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: "Invalid or empty request body" }, { status: 400 });
     }
 
+    if (action === "poll-status") {
+      if (!["codex", "xai"].includes(provider)) {
+        return NextResponse.json({ error: "Poll only supported for codex/xai" }, { status: 400 });
+      }
+      const state = normalizeFlowId(body.state);
+      if (!state) return NextResponse.json({ error: "Missing or invalid state" }, { status: 400 });
+      const session = provider === "xai" ? getXaiSessionStatus(state) : getCodexSessionStatus(state);
+      if (!session) return NextResponse.json({ status: "unknown" });
+      if (session.status === "done" || session.status === "error") {
+        if (provider === "xai") clearXaiSession(state);
+        else clearCodexSession(state);
+      }
+      return NextResponse.json(session);
+    }
+
+    if (action === "stop-proxy") {
+      if (!["codex", "xai"].includes(provider)) {
+        return NextResponse.json({ error: "Proxy only supported for codex/xai" }, { status: 400 });
+      }
+      const state = body.state === undefined || body.state === null ? "" : normalizeFlowId(body.state);
+      const getStatus = provider === "xai" ? getXaiSessionStatus : getCodexSessionStatus;
+      const clearSession = provider === "xai" ? clearXaiSession : clearCodexSession;
+      const stopProxy = provider === "xai" ? stopXaiProxy : stopCodexProxy;
+      if (state) {
+        if (!getStatus(state)) {
+          return NextResponse.json({ error: "OAuth flow state does not match an active session" }, { status: 409 });
+        }
+        clearSession(state);
+        await stopProxy();
+      } else if (!await stopProxy({ orphanOnly: true })) {
+        return NextResponse.json({ error: "OAuth flow state is required" }, { status: 409 });
+      }
+      return NextResponse.json({ success: true });
+    }
+
     if (action === "cancel-poll") {
       const flowId = normalizeFlowId(body.flowId);
       if (!flowId) {
         return NextResponse.json({ error: "Missing or invalid flow ID" }, { status: 400 });
       }
-      rememberCancelledDevicePoll(provider, flowId);
+      if (!rememberCancelledDevicePoll(provider, flowId)) {
+        return NextResponse.json({ error: "OAuth cancellation capacity reached; retry later" }, { status: 503 });
+      }
       return NextResponse.json({ success: true });
     }
 
@@ -269,7 +316,8 @@ export async function POST(request, { params }) {
       if (!["codex", "xai"].includes(provider)) {
         return NextResponse.json({ error: "Proxy only supported for codex/xai" }, { status: 400 });
       }
-      const { appPort, state, codeVerifier, redirectUri, proxyPoolId } = body;
+      const { appPort } = body;
+      const state = normalizeFlowId(body.state);
       if (appPort === undefined || appPort === null || appPort === "") {
         return NextResponse.json({ error: "Missing app_port" }, { status: 400 });
       }
@@ -281,50 +329,104 @@ export async function POST(request, { params }) {
       if (!Number.isInteger(appPortNumber) || appPortNumber < 1 || appPortNumber > 65535) {
         return NextResponse.json({ error: "Invalid app_port" }, { status: 400 });
       }
-      const proxyOptions = await proxyOptionsForPool(proxyPoolId);
+      if (!state) return NextResponse.json({ error: "Missing or invalid state" }, { status: 400 });
+      const session = provider === "xai" ? getXaiSessionStatus(state) : getCodexSessionStatus(state);
+      if (!session || session.status !== "pending") {
+        return NextResponse.json({ error: "OAuth flow state does not match an active session" }, { status: 409 });
+      }
       const result = provider === "xai"
         ? await startXaiProxy(appPortNumber)
         : await startCodexProxy(appPortNumber);
-      let serverSide = false;
-      if (result.success && state && codeVerifier && redirectUri) {
-        serverSide = provider === "xai"
-          ? registerXaiSession({ state, codeVerifier, redirectUri, proxyPoolId, proxyOptions })
-          : registerCodexSession({ state, codeVerifier, redirectUri, proxyPoolId, proxyOptions });
-      }
+      const serverSide = result.success === true;
       return NextResponse.json({ ...result, serverSide });
     }
 
     if (action === "exchange") {
-      const { code, redirectUri, codeVerifier, state, meta, proxyPoolId } = body;
+      const code = typeof body.code === "string" ? body.code.trim() : "";
+      const state = normalizeFlowId(body.state);
+      if (!code) return NextResponse.json({ error: "Missing authorization code" }, { status: 400 });
+      if (!state) return NextResponse.json({ error: "Missing or invalid state" }, { status: 400 });
+      const session = claimOAuthSession(provider, state);
+      if (!session) {
+        return NextResponse.json({ error: "OAuth flow state is invalid, expired, or already used" }, { status: 409 });
+      }
+      const { redirectUri, codeVerifier, meta, proxyPoolId, proxyOptions } = session;
 
-      // Detect if "code" is actually a raw JWT access token (starts with eyJ)
-      if (code && code.startsWith("eyJ") && code.includes(".")) {
-        const { extractCodexAccountInfo } = await import("@/lib/oauth/providers");
-        const info = extractCodexAccountInfo(code);
+      try {
+        // Detect if "code" is actually a raw JWT access token (starts with eyJ)
+        if (code.startsWith("eyJ") && code.includes(".")) {
+          const { extractCodexAccountInfo } = await import("@/lib/oauth/providers");
+          const info = extractCodexAccountInfo(code);
 
         // Also decode JWT directly for ChatGPT website tokens which use
         // top-level account_id/plan_type instead of nested openai auth claims
-        let directPayload = {};
-        try {
-          const b64 = code.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
-          const padded = b64 + "=".repeat((4 - b64.length % 4) % 4);
-          directPayload = JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
-        } catch {}
+          let directPayload = {};
+          try {
+            const b64 = code.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+            const padded = b64 + "=".repeat((4 - b64.length % 4) % 4);
+            directPayload = JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+          } catch {}
 
-        const accountId = info.chatgptAccountId || directPayload.account_id;
-        const planType = info.chatgptPlanType || directPayload.plan_type;
-        const email = info.email || directPayload.email;
+          const accountId = info.chatgptAccountId || directPayload.account_id;
+          const planType = info.chatgptPlanType || directPayload.plan_type;
+          const email = info.email || directPayload.email;
 
-        const providerSpecificData = withProxyPoolData({ authMethod: "access_token" }, proxyPoolId);
-        if (accountId) providerSpecificData.chatgptAccountId = accountId;
-        if (planType) providerSpecificData.chatgptPlanType = planType;
+          const providerSpecificData = withProxyPoolData({ authMethod: "access_token" }, proxyPoolId);
+          if (accountId) providerSpecificData.chatgptAccountId = accountId;
+          if (planType) providerSpecificData.chatgptPlanType = planType;
 
+          if (!isOAuthSessionCurrent(provider, state, session.identity)) {
+            return NextResponse.json({ error: "OAuth flow was cancelled" }, { status: 409 });
+          }
+          const connection = await createProviderConnection({
+            provider,
+            authType: "access_token",
+            accessToken: code,
+            email: email || null,
+            providerSpecificData,
+            testStatus: "active",
+          });
+
+          return NextResponse.json({
+            success: true,
+            connection: {
+              id: connection.id,
+              provider: connection.provider,
+              email: connection.email,
+              displayName: connection.displayName,
+            }
+          });
+        }
+
+        // Cline and ClinePass use authorization_code without PKCE. Kimchi returns a browser token.
+        const noPkceExchangeProviders = ["cline", "clinepass", "kimchi"];
+        if (!redirectUri || (!codeVerifier && !noPkceExchangeProviders.includes(provider))) {
+          return NextResponse.json({ error: "OAuth flow context is incomplete" }, { status: 409 });
+        }
+
+        // Exchange code for tokens (meta carries provider-specific params, e.g. gitlab clientId/baseUrl)
+        const tokenData = await exchangeTokens(
+          provider,
+          code,
+          redirectUri,
+          codeVerifier,
+          state,
+          meta,
+          proxyOptions
+        );
+
+        if (!isOAuthSessionCurrent(provider, state, session.identity)) {
+          return NextResponse.json({ error: "OAuth flow was cancelled" }, { status: 409 });
+        }
+        // Save to database
         const connection = await createProviderConnection({
           provider,
-          authType: "access_token",
-          accessToken: code,
-          email: email || null,
-          providerSpecificData,
+          authType: "oauth",
+          ...tokenData,
+          providerSpecificData: withProxyPoolData(tokenData.providerSpecificData, proxyPoolId),
+          expiresAt: tokenData.expiresIn
+            ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString()
+            : null,
           testStatus: "active",
         });
 
@@ -337,46 +439,9 @@ export async function POST(request, { params }) {
             displayName: connection.displayName,
           }
         });
+      } finally {
+        clearOAuthSession(provider, state, session.identity);
       }
-
-      // Cline and ClinePass use authorization_code without PKCE. Kimchi returns a browser token.
-      const noPkceExchangeProviders = ["cline", "clinepass", "kimchi"];
-      if (!code || !redirectUri || (!codeVerifier && !noPkceExchangeProviders.includes(provider))) {
-        return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
-      }
-
-      // Exchange code for tokens (meta carries provider-specific params, e.g. gitlab clientId/baseUrl)
-      const tokenData = await exchangeTokens(
-        provider,
-        code,
-        redirectUri,
-        codeVerifier,
-        state,
-        meta,
-        await proxyOptionsForPool(proxyPoolId)
-      );
-
-      // Save to database
-      const connection = await createProviderConnection({
-        provider,
-        authType: "oauth",
-        ...tokenData,
-        providerSpecificData: withProxyPoolData(tokenData.providerSpecificData, proxyPoolId),
-        expiresAt: tokenData.expiresIn 
-          ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString() 
-          : null,
-        testStatus: "active",
-      });
-
-      return NextResponse.json({ 
-        success: true, 
-        connection: {
-          id: connection.id,
-          provider: connection.provider,
-          email: connection.email,
-          displayName: connection.displayName,
-        }
-      });
     }
 
     if (action === "poll") {
@@ -447,8 +512,12 @@ export async function POST(request, { params }) {
       
       return NextResponse.json({
         success: false,
-        error: result.error,
-        errorDescription: result.errorDescription,
+        error: PUBLIC_DEVICE_ERROR_CODES.has(result.error)
+          ? result.error
+          : result.error ? sanitizeOAuthError(result.error) : result.error,
+        errorDescription: result.errorDescription
+          ? sanitizeOAuthError(result.errorDescription)
+          : result.errorDescription,
         pending: isPending,
       });
     }
@@ -460,12 +529,18 @@ export async function POST(request, { params }) {
       const { code, state, proxyPoolId } = body;
       const sessionState = String(state || "").trim();
       const session = claimXaiSession(sessionState);
+      if (!session) {
+        return NextResponse.json(
+          { error: "xAI OAuth flow state is invalid, expired, or already used" },
+          { status: 409 },
+        );
+      }
       const suppliedProxyPoolId = proxyPoolId && proxyPoolId !== "__none__" ? String(proxyPoolId) : null;
       const sessionProxyPoolId = session?.proxyPoolId && session.proxyPoolId !== "__none__"
         ? String(session.proxyPoolId)
         : null;
       if (proxyPoolId !== undefined && suppliedProxyPoolId !== sessionProxyPoolId) {
-        clearXaiSession(sessionState);
+        clearXaiSession(sessionState, session.identity);
         await stopXaiProxy();
         return NextResponse.json({ error: "Proxy pool does not match xAI OAuth session" }, { status: 400 });
       }
@@ -479,7 +554,8 @@ export async function POST(request, { params }) {
 
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   } catch (error) {
-    console.log("OAuth POST error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const publicError = sanitizeOAuthError(error);
+    console.log("OAuth POST error:", publicError);
+    return NextResponse.json({ error: publicError }, { status: 500 });
   }
 }

@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
+import { sanitizeOAuthError } from "open-sse/utils/oauthError.js";
 import { generatePKCE } from "@/lib/oauth/utils/pkce";
 import { KiroService } from "@/lib/oauth/services/kiro";
 import { ensureOutboundProxyInitialized } from "@/lib/network/initOutboundProxy";
 import { proxyOptionsForPool } from "@/lib/oauth/proxyOptions";
+import { registerAuthorizationFlow } from "@/lib/oauth/utils/server";
 
 /**
  * GET /api/oauth/kiro/social-authorize
@@ -23,7 +25,7 @@ export async function GET(request) {
     }
 
     await ensureOutboundProxyInitialized();
-    await proxyOptionsForPool(proxyPoolId);
+    const proxyOptions = await proxyOptionsForPool(proxyPoolId);
 
     // Generate PKCE for social auth
     const { codeVerifier, codeChallenge, state } = generatePKCE();
@@ -35,16 +37,25 @@ export async function GET(request) {
       state
     );
 
+    if (!registerAuthorizationFlow({
+      kind: "kiro-social",
+      provider,
+      state,
+      codeVerifier,
+      proxyPoolId: proxyPoolId || "",
+      proxyOptions,
+    })) {
+      return NextResponse.json({ error: "OAuth flow capacity reached; retry later" }, { status: 503 });
+    }
+
     return NextResponse.json({
       authUrl,
       state,
-      codeVerifier,
-      codeChallenge,
       provider,
-      proxyPoolId: proxyPoolId || "",
     });
   } catch (error) {
-    console.log("Kiro social authorize error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const publicError = sanitizeOAuthError(error);
+    console.log("Kiro social authorize error:", publicError);
+    return NextResponse.json({ error: publicError }, { status: 500 });
   }
 }

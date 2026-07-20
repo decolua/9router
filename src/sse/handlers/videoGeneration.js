@@ -10,7 +10,7 @@ import { getModelInfo } from "../services/model.js";
 import { handleVideoProxyCore, getVideoConfig, sanitizeSecrets } from "open-sse/handlers/videoCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
-import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
+import { updateProviderCredentials, checkAndRefreshToken, resolveRefreshProxyOptions } from "../services/tokenRefresh.js";
 import * as log from "../utils/logger.js";
 
 // Video generation is xAI-only today; requests without a provider prefix
@@ -131,7 +131,8 @@ export async function handleVideoCreate(request, action) {
       return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
     }
 
-    const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
+    const proxyOptions = resolveRefreshProxyOptions(credentials);
+    const refreshedCredentials = await checkAndRefreshToken(provider, credentials, proxyOptions);
 
     const result = await handleVideoProxyCore({
       provider,
@@ -142,6 +143,7 @@ export async function handleVideoCreate(request, action) {
       credentials: refreshedCredentials,
       signal: request.signal,
       log,
+      proxyOptions,
       onCredentialsRefreshed: async (newCreds) => {
         await updateProviderCredentials(credentials.connectionId, {
           accessToken: newCreds.accessToken,
@@ -193,7 +195,8 @@ export async function handleVideoGet(request, requestId) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
   }
 
-  const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
+  const proxyOptions = resolveRefreshProxyOptions(credentials);
+  const refreshedCredentials = await checkAndRefreshToken(provider, credentials, proxyOptions);
 
   const result = await handleVideoProxyCore({
     provider,
@@ -201,6 +204,7 @@ export async function handleVideoGet(request, requestId) {
     credentials: refreshedCredentials,
     signal: request.signal,
     log,
+    proxyOptions,
     onCredentialsRefreshed: async (newCreds) => {
       await updateProviderCredentials(credentials.connectionId, {
         accessToken: newCreds.accessToken,

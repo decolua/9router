@@ -48,20 +48,28 @@ import { POST } from "../../src/app/api/oauth/kiro/social-exchange/route.js";
 const proxyOptions = {
   connectionProxyEnabled: true,
   connectionProxyUrl: "http://proxy.test:8080",
-  connectionNoProxy: "localhost",
+  connectionNoProxy: "",
   vercelRelayUrl: "",
   strictProxy: true,
+  disableEnvProxy: true,
 };
 
-function exchangeRequest(proxyPoolId = "pool-1") {
+function authorizeRequest(proxyPoolId = "pool-1") {
+  const url = new URL("http://localhost/api/oauth/kiro/social-authorize");
+  url.searchParams.set("provider", "google");
+  if (proxyPoolId) url.searchParams.set("proxyPoolId", proxyPoolId);
+  return GET(new Request(url));
+}
+
+function exchangeRequest(overrides = {}) {
   return new Request("http://localhost/api/oauth/kiro/social-exchange", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       code: "social-code",
-      codeVerifier: "verifier",
+      state: "state",
       provider: "google",
-      proxyPoolId,
+      ...overrides,
     }),
   });
 }
@@ -106,6 +114,8 @@ describe("Kiro social OAuth proxy routing", () => {
     expect(response.status).toBe(200);
     expect(mocks.ensureOutboundProxyInitialized).toHaveBeenCalledTimes(1);
     expect(mocks.resolveConnectionProxyConfig).toHaveBeenCalledWith({ proxyPoolId: "pool-1" });
+    expect(await response.clone().json()).not.toHaveProperty("codeVerifier");
+    expect((await POST(exchangeRequest())).status).toBe(200);
   });
 
   it("fails closed when selected social OAuth pool is unavailable", async () => {
@@ -120,6 +130,8 @@ describe("Kiro social OAuth proxy routing", () => {
   });
 
   it("uses selected pool for social token exchange and persists its id", async () => {
+    await authorizeRequest();
+    mocks.resolveConnectionProxyConfig.mockRejectedValue(new Error("pool changed"));
     const response = await POST(exchangeRequest());
 
     expect(response.status).toBe(200);
@@ -129,8 +141,9 @@ describe("Kiro social OAuth proxy routing", () => {
     }));
   });
 
-  it("uses explicit Direct routing for social token exchange", async () => {
-    const response = await POST(exchangeRequest(""));
+  it("uses captured explicit Direct routing for social token exchange", async () => {
+    await authorizeRequest("");
+    const response = await POST(exchangeRequest());
 
     expect(response.status).toBe(200);
     expect(mocks.resolveConnectionProxyConfig).not.toHaveBeenCalled();
@@ -139,5 +152,33 @@ describe("Kiro social OAuth proxy routing", () => {
       "verifier",
       { disableEnvProxy: true },
     );
+  });
+
+  it("rejects mismatched and already-consumed social state", async () => {
+    await authorizeRequest();
+
+    expect((await POST(exchangeRequest({ state: "wrong-state" }))).status).toBe(409);
+    expect((await POST(exchangeRequest())).status).toBe(200);
+    expect((await POST(exchangeRequest())).status).toBe(409);
+    expect(mocks.exchangeSocialCode).toHaveBeenCalledTimes(1);
+    expect(mocks.createProviderConnection).toHaveBeenCalledTimes(1);
+  });
+
+  it("sanitizes credential-bearing social exchange errors in API and logs", async () => {
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await authorizeRequest();
+    mocks.exchangeSocialCode.mockRejectedValue(new Error(
+      "https://user:password@provider.test/token?code=SECRET-CODE&refresh_token=SECRET-REFRESH body=SECRET-BODY",
+    ));
+
+    const response = await POST(exchangeRequest());
+    const body = await response.json();
+    const logged = consoleSpy.mock.calls.flat().map(String).join(" ");
+
+    expect(response.status).toBe(500);
+    for (const secret of ["user", "password", "SECRET-CODE", "SECRET-REFRESH", "SECRET-BODY"]) {
+      expect(body.error).not.toContain(secret);
+      expect(logged).not.toContain(secret);
+    }
   });
 });

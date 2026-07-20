@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import PropTypes from "prop-types";
 import { Modal, Button, Input } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { sanitizeOAuthError } from "open-sse/utils/oauthError.js";
 import OAuthProxyPoolSelector from "./OAuthProxyPoolSelector";
 
 /**
@@ -111,7 +112,7 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
       }
 
       if (errorParam) {
-        throw new Error(url.searchParams.get("error_description") || errorParam);
+        throw new Error(sanitizeOAuthError(url.searchParams.get("error_description") || errorParam));
       }
 
       if (!code) {
@@ -124,10 +125,8 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           code,
-          codeVerifier: authData.codeVerifier,
           state,
           provider,
-          proxyPoolId: selectedProxyPoolId,
         }),
       });
 

@@ -9,8 +9,6 @@ import { normalizeExplicitProxyOptions } from "../utils/proxyFetch.js";
 // Single source: codex.oauth.maxRefreshAgeMs (8 days) — proactive refresh window
 export const CODEX_MAX_REFRESH_AGE_MS = PROVIDER_OAUTH["codex"]?.maxRefreshAgeMs;
 
-const refreshLocks = new Map();
-
 function parseTimeMs(value) {
   if (value === undefined || value === null || value === "") return null;
   if (typeof value === "number") {
@@ -121,32 +119,6 @@ export function mergeRefreshedCredentials(provider, currentCredentials, refreshe
   return next;
 }
 
-function getRefreshLockKey(provider, credentials) {
-  const stableId =
-    credentials?.connectionId ||
-    credentials?.id ||
-    credentials?.email ||
-    credentials?.name ||
-    credentials?.refreshToken?.slice?.(-16) ||
-    "default";
-  return `${provider}:${stableId}`;
-}
-
-export async function withCredentialRefreshLock(provider, credentials, refreshFn) {
-  const key = getRefreshLockKey(provider, credentials);
-  const existing = refreshLocks.get(key);
-  if (existing) return existing;
-
-  const pending = Promise.resolve()
-    .then(refreshFn)
-    .finally(() => {
-      refreshLocks.delete(key);
-    });
-
-  refreshLocks.set(key, pending);
-  return pending;
-}
-
 export function resolveRefreshProxyOptions(credentials, proxyOptions = null) {
   const psd = credentials?.providerSpecificData || {};
   const resolved = proxyOptions || {
@@ -155,6 +127,7 @@ export function resolveRefreshProxyOptions(credentials, proxyOptions = null) {
     connectionNoProxy: psd.connectionNoProxy || "",
     vercelRelayUrl: psd.vercelRelayUrl || "",
     strictProxy: psd.strictProxy === true,
+    disableEnvProxy: psd.disableEnvProxy === true,
     ...(psd.proxyUnavailable === true
       ? {
           proxyUnavailable: true,
@@ -175,8 +148,6 @@ export async function refreshProviderCredentials(provider, credentials, log, pro
   if (!credentials) return null;
   const effectiveProxyOptions = resolveRefreshProxyOptions(credentials, proxyOptions);
 
-  return withCredentialRefreshLock(provider, credentials, async () => {
-    const refreshed = await refreshTokenByProvider(provider, credentials, log, effectiveProxyOptions);
-    return mergeRefreshedCredentials(provider, credentials, refreshed);
-  });
+  const refreshed = await refreshTokenByProvider(provider, credentials, log, effectiveProxyOptions);
+  return mergeRefreshedCredentials(provider, credentials, refreshed);
 }

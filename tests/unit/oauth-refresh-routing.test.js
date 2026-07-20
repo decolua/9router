@@ -31,9 +31,10 @@ const originalFetch = globalThis.fetch;
 const selectedProxyOptions = {
   connectionProxyEnabled: true,
   connectionProxyUrl: "http://proxy.test:8080",
-  connectionNoProxy: "localhost",
+  connectionNoProxy: "",
   vercelRelayUrl: "",
   strictProxy: true,
+  disableEnvProxy: true,
 };
 
 const providers = [
@@ -139,5 +140,29 @@ describe("proactive OAuth refresh routing", () => {
     )), "utf8");
 
     expect(source).toContain("refreshProviderCredentials(provider, connection, console, effectiveProxy)");
+  });
+
+  it("sanitizes credential-bearing provider bodies in refresh logs", async () => {
+    const log = { error: vi.fn(), info: vi.fn(), warn: vi.fn() };
+    const raw = "https://user:password@provider.test/token?code=LOG-CODE&access_token=LOG-ACCESS&refresh_token=LOG-REFRESH body=LOG-BODY";
+    globalThis.fetch.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      text: async () => raw,
+    });
+
+    await refreshProviderCredentials(
+      "codex",
+      credentialsFor("codex", "sanitized-log", false),
+      log,
+      { disableEnvProxy: true },
+    );
+
+    const output = log.error.mock.calls.flat().map((value) => (
+      typeof value === "string" ? value : JSON.stringify(value)
+    )).join(" ");
+    for (const secret of ["user", "password", "LOG-CODE", "LOG-ACCESS", "LOG-REFRESH", "LOG-BODY"]) {
+      expect(output).not.toContain(secret);
+    }
   });
 });

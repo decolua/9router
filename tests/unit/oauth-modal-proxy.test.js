@@ -25,7 +25,10 @@ describe("OAuth modal proxy selection", () => {
   it("tracks close shutdown and waits for it before any restart", () => {
     expect(source).toContain("proxyStopPromiseRef.current = pending");
     expect(source).toContain("await proxyStopPromiseRef.current");
-    expect(source).toContain("state=${encodeURIComponent(state)}");
+    const stop = section("const stopFixedProxy", "const cancelDevicePoll");
+    expect(stop).toContain('method: "POST"');
+    expect(stop).toContain("body: JSON.stringify({ state })");
+    expect(stop).not.toContain("?state=");
   });
 
   it("sends fixed-port PKCE sessions in POST bodies", () => {
@@ -48,5 +51,13 @@ describe("OAuth modal proxy selection", () => {
 
     expect(callback).toContain("state !== authData.state");
     expect(callback).toContain("OAuth state mismatch");
+  });
+
+  it("posts fixed callback status state in JSON", () => {
+    const polling = section("// Fixed-port server-side mode", "// Listen for OAuth callback");
+
+    expect(polling).toContain('method: "POST"');
+    expect(polling).toContain("body: JSON.stringify({ state: authData.state })");
+    expect(polling).not.toContain("?state=");
   });
 });

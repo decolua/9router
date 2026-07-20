@@ -64,6 +64,7 @@ function renderModal({
   provider = "claude",
   step = "waiting",
   authData = null,
+  callbackUrl = "",
   selectedProxyPoolId = "",
   proxyPools = [{ id: "pool-1", name: "Pool 1" }, { id: "pool-2", name: "Pool 2" }],
 } = {}) {
@@ -72,7 +73,7 @@ function renderModal({
   harness.stateValues = [
     step,
     authData,
-    "",
+    callbackUrl,
     step === "error" ? "failed" : null,
     false,
     null,
@@ -211,6 +212,43 @@ describe("OAuth modal flow coordination", () => {
     expect(deviceCodeRequests).toHaveLength(1);
   });
 
+  it.each(["http", "network"])("does not start a replacement when fixed stop has a %s failure", async (failure) => {
+    globalThis.fetch = vi.fn(async (url) => {
+      const target = String(url);
+      if (target.includes("/stop-proxy")) {
+        if (failure === "network") throw new Error("stop network failed");
+        return response({ error: "Stop failed" }, false);
+      }
+      if (target.includes("/authorize")) {
+        return response({ authUrl: "https://auth.example", state: "new-state" });
+      }
+      throw new Error(`Unexpected request: ${target}`);
+    });
+    const tree = renderModal({ provider: "codex", authData: { state: "old-state" } });
+    const select = findElement(tree, (node) => node.type?.name === "OAuthProxyPoolSelector");
+
+    await select.props.onChange({ target: { value: "pool-1" } });
+    await flushPromises();
+
+    expect(globalThis.fetch.mock.calls.some(([url]) => String(url).includes("/authorize"))).toBe(false);
+  });
+
+  it("does not retry a fixed flow when stop fails", async () => {
+    globalThis.fetch = vi.fn(async (url) => {
+      const target = String(url);
+      if (target.includes("/stop-proxy")) return response({ error: "Stop failed" }, false);
+      if (target.includes("/authorize")) return response({ authUrl: "https://auth.example", state: "new-state" });
+      throw new Error(`Unexpected request: ${target}`);
+    });
+    const tree = renderModal({ provider: "codex", step: "error", authData: { state: "old-state" } });
+    const retryButton = findElement(tree, (node) => node.props?.children === "Try Again");
+
+    await retryButton.props.onClick();
+    await flushPromises();
+
+    expect(globalThis.fetch.mock.calls.some(([url]) => String(url).includes("/authorize"))).toBe(false);
+  });
+
   it("serializes rapid pool changes and starts only latest flow", async () => {
     const pendingStops = [];
     globalThis.fetch = vi.fn(async (url, options) => {
@@ -244,11 +282,11 @@ describe("OAuth modal flow coordination", () => {
     pendingStops[1]?.resolve(response({ success: true }));
     await Promise.all([firstChange, secondChange]);
 
-    const startedPools = globalThis.fetch.mock.calls
+    const startedStates = globalThis.fetch.mock.calls
       .filter(([url]) => String(url).includes("/start-proxy"))
-      .map(([, options]) => JSON.parse(options.body).proxyPoolId);
+      .map(([, options]) => JSON.parse(options.body).state);
     expect(concurrentStopCount).toBe(1);
-    expect(startedPools).toEqual(["pool-2"]);
+    expect(startedStates).toEqual(["pool-2-state"]);
   });
 
   it("stops the fixed proxy with state received before React rerenders", async () => {
@@ -274,10 +312,25 @@ describe("OAuth modal flow coordination", () => {
     await flushPromises();
     await select.props.onChange({ target: { value: "pool-1" } });
 
-    const stopUrl = globalThis.fetch.mock.calls
-      .map(([url]) => String(url))
-      .find((url) => url.includes("/stop-proxy"));
-    expect(new URL(stopUrl, window.location.origin).searchParams.get("state")).toBe("initial-state");
+    const stopCall = globalThis.fetch.mock.calls
+      .find(([url]) => String(url).includes("/stop-proxy"));
+    expect(JSON.parse(stopCall[1].body).state).toBe("initial-state");
+  });
+
+  it("uses server-owned state when exchanging a raw token", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(response({ success: true }));
+    const tree = renderModal({
+      provider: "codex",
+      step: "input",
+      authData: { state: "server-state" },
+      callbackUrl: "eyJhbGciOiJub25lIn0.payload.signature",
+    });
+    const connectButton = findElement(tree, (node) => node.props?.children === "Connect");
+
+    await connectButton.props.onClick();
+
+    const exchangeCall = globalThis.fetch.mock.calls.find(([url]) => String(url).endsWith("/exchange"));
+    expect(JSON.parse(exchangeCall[1].body).state).toBe("server-state");
   });
 
   it("cleans a stale fixed session that registers after the first stop", async () => {
@@ -310,8 +363,9 @@ describe("OAuth modal flow coordination", () => {
     await flushPromises();
 
     const initialStops = globalThis.fetch.mock.calls
-      .map(([url]) => new URL(String(url), window.location.origin))
-      .filter((url) => url.pathname.endsWith("/stop-proxy") && url.searchParams.get("state") === "initial-state");
+      .filter(([url]) => String(url).includes("/stop-proxy"))
+      .map(([, options]) => JSON.parse(options.body).state)
+      .filter((state) => state === "initial-state");
     expect(initialStops).toHaveLength(2);
 
     pendingStarts[1].resolve(response({ success: true, serverSide: true }));

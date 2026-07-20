@@ -164,6 +164,7 @@ describe("handleVideoProxyCore", () => {
 
     const credentials = { accessToken: "tok-OLD", refreshToken: "ref-OLD" };
     const onCredentialsRefreshed = vi.fn();
+    const proxyOptions = { disableEnvProxy: true };
 
     const result = await handleVideoProxyCore({
       provider: "xai",
@@ -172,11 +173,14 @@ describe("handleVideoProxyCore", () => {
       contentType: "application/json",
       credentials,
       onCredentialsRefreshed,
+      proxyOptions,
     });
 
     expect(result.success).toBe(true);
     expect(refreshTokenByProvider).toHaveBeenCalledTimes(1);
+    expect(refreshTokenByProvider).toHaveBeenCalledWith("xai", credentials, undefined, proxyOptions);
     expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(global.fetch.mock.calls.every((call) => call[1].proxyOptions === proxyOptions)).toBe(true);
     expect(global.fetch.mock.calls[1][1].headers.Authorization).toBe("Bearer tok-NEW");
     expect(onCredentialsRefreshed).toHaveBeenCalledWith(expect.objectContaining({ accessToken: "tok-NEW" }));
     expect(await result.response.json()).toEqual({ request_id: "req-after-refresh" });

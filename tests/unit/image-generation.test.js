@@ -158,6 +158,7 @@ describe("handleImageGenerationCore", () => {
 
   it("generates image with NanoBanana format", async () => {
     vi.useFakeTimers();
+    const proxyOptions = { disableEnvProxy: true };
     global.fetch
       .mockResolvedValueOnce(
         new Response(
@@ -182,12 +183,14 @@ describe("handleImageGenerationCore", () => {
       modelInfo: { provider: "nanobanana", model: "nanobanana-flash" },
       credentials: { apiKey: "test-key" },
       log: null,
+      proxyOptions,
     });
 
     await vi.advanceTimersByTimeAsync(1500);
     const result = await pending;
 
     expect(result.success).toBe(true);
+    expect(global.fetch.mock.calls.every((call) => call[1].proxyOptions === proxyOptions)).toBe(true);
     const fetchCall = global.fetch.mock.calls[0];
     const requestBody = JSON.parse(fetchCall[1].body);
     expect(requestBody.type).toBe("TEXTTOIAMGE");
@@ -445,6 +448,7 @@ describe("handleImageGenerationCore", () => {
   });
 
   it("resolves Cloudflare img2img and inpainting URL inputs before sending", async () => {
+    const proxyOptions = { disableEnvProxy: true };
     global.fetch
       .mockResolvedValueOnce(new Response(new Uint8Array([1, 2, 3]), { status: 200, headers: { "Content-Type": "image/png" } }))
       .mockResolvedValueOnce(new Response(new Uint8Array([4, 5, 6]), { status: 200, headers: { "Content-Type": "image/png" } }))
@@ -468,11 +472,13 @@ describe("handleImageGenerationCore", () => {
         providerSpecificData: { accountId: "cf-account" },
       },
       log: null,
+      proxyOptions,
     });
 
     expect(result.success).toBe(true);
-    expect(global.fetch).toHaveBeenNthCalledWith(1, "https://example.com/source.png");
-    expect(global.fetch).toHaveBeenNthCalledWith(2, "https://example.com/mask.png");
+    expect(global.fetch).toHaveBeenNthCalledWith(1, "https://example.com/source.png", { proxyOptions });
+    expect(global.fetch).toHaveBeenNthCalledWith(2, "https://example.com/mask.png", { proxyOptions });
+    expect(global.fetch.mock.calls[2][1].proxyOptions).toBe(proxyOptions);
 
     const providerCall = global.fetch.mock.calls[2];
     expect(providerCall[0]).toBe("https://api.cloudflare.com/client/v4/accounts/cf-account/ai/run/@cf/runwayml/stable-diffusion-v1-5-inpainting");

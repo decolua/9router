@@ -1,6 +1,7 @@
 import { PROVIDERS, PROVIDER_OAUTH } from "../../config/providers.js";
 import { OAUTH_ENDPOINTS, GITHUB_COPILOT, buildKimiHeaders } from "../../config/appConstants.js";
 import { normalizeExplicitProxyOptions as oauthRefreshProxyOptions, proxyAwareFetch } from "../../utils/proxyFetch.js";
+import { sanitizeOAuthError } from "../../utils/oauthError.js";
 import { dedupRefresh } from "./dedup.js";
 import { buildExternalIdpRefreshParams } from "../../../src/lib/oauth/kiroExternalIdp.js";
 
@@ -23,7 +24,7 @@ export async function refreshXaiToken(refreshToken, log, proxyOptions = null) {
         idToken: tokens.id_token,
       };
     } catch (e) {
-      log?.warn?.("TOKEN_REFRESH", `xai refresh failed: ${e?.message || e}`);
+      log?.warn?.("TOKEN_REFRESH", `xai refresh failed: ${sanitizeOAuthError(e)}`);
       const msg = String(e?.message || "");
       if (msg.includes("invalid_grant") || msg.includes("invalid_request")) {
         return { error: "invalid_grant" };
@@ -69,7 +70,7 @@ export async function refreshAccessToken(provider, refreshToken, credentials, lo
       const errorText = await response.text();
       log?.error?.("TOKEN_REFRESH", `Failed to refresh token for ${provider}`, {
         status: response.status,
-        error: errorText,
+        error: sanitizeOAuthError(errorText),
       });
       return null;
     }
@@ -89,7 +90,7 @@ export async function refreshAccessToken(provider, refreshToken, credentials, lo
     };
   } catch (error) {
     log?.error?.("TOKEN_REFRESH", `Error refreshing token for ${provider}`, {
-      error: error.message,
+      error: sanitizeOAuthError(error),
     });
     return null;
   }
@@ -127,7 +128,7 @@ export async function refreshKimiToken(refreshToken, credentials, log, proxyOpti
         const errorText = await response.text();
         log?.error?.("TOKEN_REFRESH", `Failed to refresh token for kimi`, {
           status: response.status,
-          error: errorText,
+          error: sanitizeOAuthError(errorText),
         });
         return null;
       }
@@ -138,7 +139,7 @@ export async function refreshKimiToken(refreshToken, credentials, log, proxyOpti
         expiresIn: tokens.expires_in,
       };
     } catch (error) {
-      log?.error?.("TOKEN_REFRESH", `Error refreshing token for kimi`, { error: error.message });
+      log?.error?.("TOKEN_REFRESH", "Error refreshing token for kimi", { error: sanitizeOAuthError(error) });
       return null;
     }
   }, log, proxyOptions);
@@ -165,7 +166,7 @@ export async function refreshClaudeOAuthToken(refreshToken, log, proxyOptions = 
 
     if (!response.ok) {
       const errorText = await response.text();
-      log?.error?.("TOKEN_REFRESH", "Failed to refresh Claude OAuth token", { status: response.status, error: errorText });
+      log?.error?.("TOKEN_REFRESH", "Failed to refresh Claude OAuth token", { status: response.status, error: sanitizeOAuthError(errorText) });
       return null;
     }
 
@@ -173,7 +174,7 @@ export async function refreshClaudeOAuthToken(refreshToken, log, proxyOptions = 
     log?.info?.("TOKEN_REFRESH", "Successfully refreshed Claude OAuth token", { hasNewAccessToken: !!tokens.access_token, expiresIn: tokens.expires_in });
     return { accessToken: tokens.access_token, refreshToken: tokens.refresh_token || refreshToken, expiresIn: tokens.expires_in };
   } catch (error) {
-    log?.error?.("TOKEN_REFRESH", `Network error refreshing Claude token: ${error.message}`);
+    log?.error?.("TOKEN_REFRESH", `Network error refreshing Claude token: ${sanitizeOAuthError(error)}`);
     return null;
   }
   }, log, proxyOptions);
@@ -201,7 +202,7 @@ export async function refreshGoogleToken(refreshToken, clientId, clientSecret, l
 
     if (!response.ok) {
       const errorText = await response.text();
-      log?.error?.("TOKEN_REFRESH", "Failed to refresh Google token", { status: response.status, error: errorText });
+      log?.error?.("TOKEN_REFRESH", "Failed to refresh Google token", { status: response.status, error: sanitizeOAuthError(errorText) });
       return null;
     }
 
@@ -209,7 +210,7 @@ export async function refreshGoogleToken(refreshToken, clientId, clientSecret, l
     log?.info?.("TOKEN_REFRESH", "Successfully refreshed Google token", { hasNewAccessToken: !!tokens.access_token, expiresIn: tokens.expires_in });
     return { accessToken: tokens.access_token, refreshToken: tokens.refresh_token || refreshToken, expiresIn: tokens.expires_in };
   } catch (error) {
-    log?.error?.("TOKEN_REFRESH", `Network error refreshing Google token: ${error.message}`);
+    log?.error?.("TOKEN_REFRESH", `Network error refreshing Google token: ${sanitizeOAuthError(error)}`);
     return null;
   }
   }, log, proxyOptions);
@@ -257,12 +258,12 @@ export async function refreshQwenToken(refreshToken, log, proxyOptions = null) {
       const errorText = await response.text().catch(() => "");
       log?.warn?.("TOKEN_REFRESH", `Error with Qwen endpoint`, {
         status: response.status,
-        error: errorText,
+        error: sanitizeOAuthError(errorText),
       });
     }
   } catch (error) {
     log?.warn?.("TOKEN_REFRESH", `Network error trying Qwen endpoint`, {
-      error: error.message,
+      error: sanitizeOAuthError(error),
     });
   }
 
@@ -317,15 +318,15 @@ export async function refreshCodexToken(refreshToken, log, proxyOptions = null) 
         if (failure.permanent) {
           log?.error?.("TOKEN_REFRESH", "Codex refresh token already used or invalid. Re-auth required.", {
             status: response.status,
-            code: failure.code,
+            code: sanitizeOAuthError(failure.code),
           });
           return { error: "unrecoverable_refresh_error", code: failure.code };
         }
 
         log?.error?.("TOKEN_REFRESH", "Failed to refresh Codex token", {
           status: response.status,
-          error: errorText,
-          code: failure.code,
+          error: sanitizeOAuthError(errorText),
+          code: sanitizeOAuthError(failure.code),
           permanent: failure.permanent,
         });
         return null;
@@ -347,7 +348,7 @@ export async function refreshCodexToken(refreshToken, log, proxyOptions = null) 
         expiresIn: tokens.expires_in,
       };
     } catch (error) {
-      log?.error?.("TOKEN_REFRESH", `Network error refreshing Codex token: ${error.message}`);
+      log?.error?.("TOKEN_REFRESH", `Network error refreshing Codex token: ${sanitizeOAuthError(error)}`);
       return null;
     }
   }, log, proxyOptions);
@@ -377,7 +378,7 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
     try {
       refreshRequest = buildExternalIdpRefreshParams(refreshToken, providerSpecificData);
     } catch (error) {
-      log?.warn?.("TOKEN_REFRESH", `Invalid Kiro external_idp refresh config: ${error.message}`);
+      log?.warn?.("TOKEN_REFRESH", `Invalid Kiro external_idp refresh config: ${sanitizeOAuthError(error)}`);
       return null;
     }
 
@@ -394,7 +395,7 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
       const errorText = await response.text();
       log?.error?.("TOKEN_REFRESH", "Failed to refresh Kiro external_idp token", {
         status: response.status,
-        error: errorText,
+        error: sanitizeOAuthError(errorText),
       });
       return null;
     }
@@ -439,7 +440,7 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
       const errorText = await response.text();
       log?.error?.("TOKEN_REFRESH", "Failed to refresh Kiro AWS token", {
         status: response.status,
-        error: errorText,
+        error: sanitizeOAuthError(errorText),
       });
       return null;
     }
@@ -475,7 +476,7 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
     const errorText = await response.text();
     log?.error?.("TOKEN_REFRESH", "Failed to refresh Kiro social token", {
       status: response.status,
-      error: errorText,
+      error: sanitizeOAuthError(errorText),
     });
     return null;
   }
@@ -522,7 +523,7 @@ export async function refreshIflowToken(refreshToken, log, proxyOptions = null) 
     const errorText = await response.text();
     log?.error?.("TOKEN_REFRESH", "Failed to refresh iFlow token", {
       status: response.status,
-      error: errorText,
+      error: sanitizeOAuthError(errorText),
     });
     return null;
   }
@@ -570,7 +571,7 @@ export async function refreshGitHubToken(refreshToken, log, proxyOptions = null)
     const errorText = await response.text();
     log?.error?.("TOKEN_REFRESH", "Failed to refresh GitHub token", {
       status: response.status,
-      error: errorText,
+      error: sanitizeOAuthError(errorText),
     });
     return null;
   }
@@ -612,7 +613,7 @@ export async function refreshCopilotToken(githubAccessToken, log, proxyOptions =
       const errorText = await response.text();
       log?.error?.("TOKEN_REFRESH", "Failed to refresh Copilot token", {
         status: response.status,
-        error: errorText
+        error: sanitizeOAuthError(errorText)
       });
       return null;
     }
@@ -630,7 +631,7 @@ export async function refreshCopilotToken(githubAccessToken, log, proxyOptions =
     };
   } catch (error) {
     log?.error?.("TOKEN_REFRESH", "Error refreshing Copilot token", {
-      error: error.message
+      error: sanitizeOAuthError(error)
     });
     return null;
   }
@@ -665,7 +666,7 @@ export async function refreshCodebuddyToken(refreshToken, log, proxyOptions = nu
       const errorText = await response.text();
       log?.error?.("TOKEN_REFRESH", "Failed to refresh CodeBuddy token", {
         status: response.status,
-        error: errorText,
+        error: sanitizeOAuthError(errorText),
       });
       return null;
     }
@@ -674,7 +675,7 @@ export async function refreshCodebuddyToken(refreshToken, log, proxyOptions = nu
     if (data.code !== 0 || !data.data?.accessToken) {
       log?.error?.("TOKEN_REFRESH", "CodeBuddy token refresh returned no token", {
         code: data.code,
-        msg: data.msg,
+        msg: sanitizeOAuthError(data.msg),
       });
       return null;
     }

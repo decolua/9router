@@ -7,6 +7,10 @@ const source = readFileSync(fileURLToPath(new URL(
   "../../open-sse/services/tokenRefresh/dedup.js",
   import.meta.url,
 )), "utf8");
+const managerSource = readFileSync(fileURLToPath(new URL(
+  "../../open-sse/services/oauthCredentialManager.js",
+  import.meta.url,
+)), "utf8");
 
 describe("refresh result deduplication", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -27,6 +31,13 @@ describe("refresh result deduplication", () => {
     expect(source).toContain('createHash("sha256")');
     expect(source).toContain("pruneRefreshDedupCache");
     expect(source).not.toContain("`${provider}:${oldToken}`");
+  });
+
+  it("uses only bounded proxy-aware inner refresh deduplication", () => {
+    expect(managerSource).not.toContain("refreshLocks");
+    expect(managerSource).not.toContain("withCredentialRefreshLock");
+    expect(source).toContain("REFRESH_DEDUP_MAX_ENTRIES");
+    expect(source).toContain("refreshRouteContext(proxyOptions)");
   });
 
   it("expires cached refresh results", async () => {

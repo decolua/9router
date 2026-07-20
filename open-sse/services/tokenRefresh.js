@@ -1,5 +1,6 @@
 import { PROVIDERS } from "../config/providers.js";
 import { OAUTH_ENDPOINTS, REFRESH_LEAD_MS } from "../config/appConstants.js";
+import { sanitizeOAuthError } from "../utils/oauthError.js";
 import {
   refreshXaiToken,
   refreshAccessToken,
@@ -68,7 +69,7 @@ export function parseVertexSaJson(apiKey) {
 // Cache Vertex tokens keyed by service account email { token, expiresAt }
 const vertexTokenCache = new Map();
 
-export async function refreshVertexToken(saJson, log) {
+export async function refreshVertexToken(saJson, log, proxyOptions = null) {
   const cacheKey = saJson.client_email;
   const cached = vertexTokenCache.get(cacheKey);
 
@@ -97,11 +98,12 @@ export async function refreshVertexToken(saJson, log) {
         grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
         assertion: jwt,
       }),
+      proxyOptions,
     });
 
     if (!res.ok) {
       const err = await res.text();
-      log?.error?.("TOKEN_REFRESH", `Vertex token mint failed: ${err}`);
+      log?.error?.("TOKEN_REFRESH", `Vertex token mint failed: ${sanitizeOAuthError(err)}`);
       return null;
     }
 
@@ -113,7 +115,7 @@ export async function refreshVertexToken(saJson, log) {
 
     return { accessToken: access_token, expiresAt };
   } catch (error) {
-    log?.error?.("TOKEN_REFRESH", `Vertex token error: ${error.message}`);
+    log?.error?.("TOKEN_REFRESH", `Vertex token error: ${sanitizeOAuthError(error)}`);
     return null;
   }
 }
@@ -256,7 +258,7 @@ export async function refreshWithRetry(refreshFn, maxRetries = 3, log = null) {
       const result = await refreshFn();
       if (result) return result;
     } catch (error) {
-      log?.warn?.("TOKEN_REFRESH", `Attempt ${attempt + 1}/${maxRetries} failed: ${error.message}`);
+      log?.warn?.("TOKEN_REFRESH", `Attempt ${attempt + 1}/${maxRetries} failed: ${sanitizeOAuthError(error)}`);
     }
   }
 

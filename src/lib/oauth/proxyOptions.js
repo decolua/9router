@@ -10,8 +10,9 @@ export async function proxyOptionsForPool(proxyPoolId) {
   return {
     connectionProxyEnabled: proxyConfig.connectionProxyEnabled === true,
     connectionProxyUrl: proxyConfig.connectionProxyUrl || "",
-    connectionNoProxy: proxyConfig.connectionNoProxy || "",
+    connectionNoProxy: "",
     vercelRelayUrl: proxyConfig.vercelRelayUrl || "",
-    strictProxy: proxyConfig.strictProxy === true,
+    strictProxy: true,
+    disableEnvProxy: true,
   };
 }
