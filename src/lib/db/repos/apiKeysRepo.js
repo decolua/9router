@@ -19,7 +19,7 @@ function rowToKey(row) {
 
 function normalizeDailyLimitTokens(value) {
   if (value === undefined) return undefined;
-  if (value === null || value === "") return null;
+  if (value === null || (typeof value === "string" && value.trim() === "")) return null;
   const limit = Number(value);
   if (!Number.isSafeInteger(limit) || limit < 0) throw new Error("dailyLimitTokens must be a non-negative integer");
   return limit;
@@ -43,20 +43,19 @@ function toBoundedTokens(value) {
   return Math.min(MAX_STATUS_TOKENS, Math.floor(tokens));
 }
 
-function getCommittedTokens(db, key, now) {
-  return toBoundedTokens(db.get(
-    `SELECT COALESCE(SUM(COALESCE(promptTokens, 0) + COALESCE(completionTokens, 0) + COALESCE(json_extract(tokens, '$.reasoning_tokens'), 0)), 0) AS usedTokens
-     FROM usageHistory WHERE apiKey = ? AND timestamp >= ?`,
-    [key, getLocalDayStartIso(now)]
-  )?.usedTokens);
-}
-
-function getReservedTokens(db, apiKeyId, nowIso) {
-  return toBoundedTokens(db.get(
-    `SELECT COALESCE(SUM(reservedTokens), 0) AS reservedTokens
-     FROM apiKeyUsageReservations WHERE apiKeyId = ? AND expiresAt > ?`,
-    [apiKeyId, nowIso]
-  )?.reservedTokens);
+function getUsageTotals(db, key, apiKeyId, now) {
+  const row = db.get(
+    `SELECT
+       (SELECT TOTAL(MAX(COALESCE(promptTokens, 0), 0) + MAX(COALESCE(completionTokens, 0), 0) + MAX(COALESCE(json_extract(tokens, '$.reasoning_tokens'), 0), 0))
+        FROM usageHistory WHERE apiKey = ? AND timestamp >= ?) AS usedTokens,
+       (SELECT TOTAL(MAX(reservedTokens, 0))
+        FROM apiKeyUsageReservations WHERE apiKeyId = ? AND expiresAt > ?) AS reservedTokens`,
+    [key, getLocalDayStartIso(now), apiKeyId, new Date(now).toISOString()]
+  );
+  return {
+    usedTokens: toBoundedTokens(row?.usedTokens),
+    reservedTokens: toBoundedTokens(row?.reservedTokens),
+  };
 }
 
 function getRemainingTokens(limitTokens, usedTokens, reservedTokens) {
@@ -168,8 +167,7 @@ export async function reserveApiKeyUsage(key, requestedTokens, now = new Date())
       return unenforcedReservationStatus(requestedTokens, resetAt);
     }
 
-    const usedTokens = getCommittedTokens(db, key, nowDate);
-    const activeReservedTokens = getReservedTokens(db, row.id, nowIso);
+    const { usedTokens, reservedTokens: activeReservedTokens } = getUsageTotals(db, key, row.id, nowDate);
     const remainingBeforeRequest = getRemainingTokens(limitTokens, usedTokens, activeReservedTokens);
     const accepted = requestedTokens <= remainingBeforeRequest;
     const reservationId = accepted ? uuidv4() : null;
@@ -212,8 +210,7 @@ export async function getApiKeyUsageLimitStatus(key, now = new Date()) {
   const limit = normalizeDailyLimitTokens(row.dailyLimitTokens);
   if (limit === null || limit === undefined) return { enforced: false, exceeded: false };
   const nowDate = new Date(now);
-  const usedTokens = getCommittedTokens(db, key, nowDate);
-  const reservedTokens = getReservedTokens(db, row.id, nowDate.toISOString());
+  const { usedTokens, reservedTokens } = getUsageTotals(db, key, row.id, nowDate);
   const remainingTokens = getRemainingTokens(limit, usedTokens, reservedTokens);
   return {
     enforced: true,

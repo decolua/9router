@@ -46,6 +46,17 @@ describe("chat usage reservation estimate", () => {
     expect(estimateChatUsageReservation(body)).toBe(expectedTotal(body, 1_524));
   });
 
+  it("reserves the deterministic 32000-token tool output minimum", () => {
+    const body = {
+      model: "openai/gpt-4o",
+      messages: [],
+      max_tokens: 1,
+      tools: [{ type: "function", function: { name: "lookup", parameters: { type: "object" } } }],
+    };
+
+    expect(estimateChatUsageReservation(body)).toBe(expectedTotal(body, 32_000));
+  });
+
   it("ignores invalid output values and falls back to 64000", () => {
     const body = {
       max_tokens: 0,

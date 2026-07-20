@@ -5,6 +5,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 
 import { SCHEMA_VERSION, TABLES } from "@/lib/db/schema.js";
 
+vi.mock("@/shared/utils/machineId", () => ({
+  getConsistentMachineId: vi.fn(async () => "machine-test"),
+}));
+
 function getExpectedResetAt(now) {
   const reset = new Date(now);
   reset.setHours(24, 0, 0, 0);
@@ -142,6 +146,47 @@ describe("API key usage reservation admission", () => {
     });
   });
 
+  it("reads committed and reserved totals from one status snapshot", async () => {
+    const key = await db.createApiKey("limited", "machine-test", 1_000);
+    const now = new Date("2026-07-19T12:00:00.000Z");
+    const reservation = await db.reserveApiKeyUsage(key.key, 60, now);
+    const { createBetterSqliteAdapter } = await import("@/lib/db/adapters/betterSqliteAdapter.js");
+    const secondConnection = createBetterSqliteAdapter(path.join(tempDir, "db", "data.sqlite"));
+    const originalGet = rawDb.get.bind(rawDb);
+    let reconciled = false;
+    rawDb.get = (sql, params = []) => {
+      const result = originalGet(sql, params);
+      if (!reconciled && sql.includes("FROM usageHistory WHERE apiKey")) {
+        reconciled = true;
+        secondConnection.transaction(() => {
+          secondConnection.run("DELETE FROM apiKeyUsageReservations WHERE id = ?", [reservation.reservationId]);
+          secondConnection.run(
+            `INSERT INTO usageHistory(timestamp, apiKey, promptTokens, completionTokens, tokens)
+             VALUES(?, ?, ?, ?, ?)`,
+            [now.toISOString(), key.key, 40, 20, "{}"],
+          );
+        });
+      }
+      return result;
+    };
+
+    try {
+      expect(await db.getApiKeyUsageLimitStatus(key.key, now)).toMatchObject({
+        usedTokens: 0,
+        reservedTokens: 60,
+        remainingTokens: 940,
+      });
+    } finally {
+      rawDb.get = originalGet;
+      secondConnection.close();
+    }
+    expect(await db.getApiKeyUsageLimitStatus(key.key, now)).toMatchObject({
+      usedTokens: 60,
+      reservedTokens: 0,
+      remainingTokens: 940,
+    });
+  });
+
   it("does not reserve for unlimited, inactive, or missing keys", async () => {
     const unlimited = await db.createApiKey("unlimited", "machine-test");
     const inactive = await db.createApiKey("inactive", "machine-test", 100);
@@ -161,6 +206,35 @@ describe("API key usage reservation admission", () => {
       });
     }
     expect(rawDb.get("SELECT COUNT(*) AS count FROM apiKeyUsageReservations").count).toBe(0);
+  });
+
+  it("treats whitespace-only repository limits as unlimited", async () => {
+    const created = await db.createApiKey("blank-create", "machine-test", "   \t");
+    expect(created.dailyLimitTokens).toBeNull();
+    expect(await db.reserveApiKeyUsage(created.key, 10)).toMatchObject({
+      enforced: false,
+      accepted: true,
+      limitTokens: null,
+    });
+
+    const limited = await db.createApiKey("blank-update", "machine-test", 100);
+    const updated = await db.updateApiKey(limited.id, { dailyLimitTokens: "\n  " });
+    expect(updated.dailyLimitTokens).toBeNull();
+    expect((await db.getApiKeyById(limited.id)).dailyLimitTokens).toBeNull();
+  });
+
+  it("treats a whitespace-only API limit as unlimited", async () => {
+    const { POST } = await import("@/app/api/keys/route.js");
+    const response = await POST(new Request("http://localhost/api/keys", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "blank-api", dailyLimitTokens: "   " }),
+    }));
+
+    expect(response.status).toBe(201);
+    const payload = await response.json();
+    expect(payload.dailyLimitTokens).toBeNull();
+    expect((await db.getApiKeyById(payload.id)).dailyLimitTokens).toBeNull();
   });
 
   it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1, "1", null])(
@@ -224,6 +298,32 @@ describe("API key usage reservation admission", () => {
     }
   });
 
+  it("bounds committed usage after aggregate exceeds SQLite integer range", async () => {
+    const key = await db.createApiKey("limited", "machine-test", Number.MAX_SAFE_INTEGER);
+    const timestamp = new Date().toISOString();
+    rawDb.transaction(() => {
+      for (let index = 0; index < 1_025; index += 1) {
+        rawDb.run(
+          `INSERT INTO usageHistory(timestamp, apiKey, promptTokens, completionTokens, tokens)
+           VALUES(?, ?, ?, ?, ?)`,
+          [timestamp, key.key, Number.MAX_SAFE_INTEGER, 0, "{}"],
+        );
+      }
+    });
+
+    expect(await db.getApiKeyUsageLimitStatus(key.key)).toMatchObject({
+      usedTokens: Number.MAX_SAFE_INTEGER,
+      reservedTokens: 0,
+      remainingTokens: 0,
+      exceeded: true,
+    });
+    expect(await db.reserveApiKeyUsage(key.key, 1)).toMatchObject({
+      accepted: false,
+      usedTokens: Number.MAX_SAFE_INTEGER,
+      remainingTokens: 0,
+    });
+  });
+
   it("atomically records actual usage and deletes its reservation", async () => {
     const key = await db.createApiKey("limited", "machine-test", 1_000);
     const now = new Date("2026-07-19T12:00:00.000Z");
@@ -254,24 +354,83 @@ describe("API key usage reservation admission", () => {
     });
   });
 
-  it("deletes a matching reservation when usage is a duplicate", async () => {
+  it("keeps a replay of one reservation idempotent", async () => {
     const key = await db.createApiKey("limited", "machine-test", 1_000);
-    const timestamp = "2026-07-19T12:00:00.000Z";
+    const reservation = await db.reserveApiKeyUsage(key.key, 100);
     const entry = {
       provider: "openai",
       model: "gpt-4o",
       connectionId: "connection-test",
       apiKey: key.key,
-      timestamp,
       tokens: { prompt_tokens: 10, completion_tokens: 5 },
     };
-    await db.saveRequestUsage(entry);
-    const reservation = await db.reserveApiKeyUsage(key.key, 100, new Date(timestamp));
-
+    await db.saveRequestUsage({ ...entry, usageReservationId: reservation.reservationId });
+    await new Promise((resolve) => setTimeout(resolve, 5));
     await db.saveRequestUsage({ ...entry, usageReservationId: reservation.reservationId });
 
     expect(rawDb.get("SELECT COUNT(*) AS count FROM usageHistory").count).toBe(1);
     expect(rawDb.get("SELECT COUNT(*) AS count FROM apiKeyUsageReservations").count).toBe(0);
+    const stored = rawDb.get("SELECT tokens, meta FROM usageHistory");
+    const requestIdentity = JSON.parse(stored.meta).requestIdentity;
+    expect(requestIdentity).toEqual(expect.any(String));
+    expect(requestIdentity).not.toContain(reservation.reservationId);
+    expect(stored.tokens).not.toContain(reservation.reservationId);
+    expect(await db.getUsageHistory()).toEqual([
+      expect.not.objectContaining({ requestIdentity: expect.anything(), usageReservationId: expect.anything() }),
+    ]);
+  });
+
+  it("charges distinct reservations with identical same-millisecond usage", async () => {
+    const key = await db.createApiKey("limited", "machine-test", 1_000);
+    const now = new Date("2026-07-19T12:00:00.000Z");
+    const first = await db.reserveApiKeyUsage(key.key, 100, now);
+    const second = await db.reserveApiKeyUsage(key.key, 100, now);
+    const entry = {
+      provider: "openai",
+      model: "gpt-4o",
+      connectionId: "connection-test",
+      apiKey: key.key,
+      timestamp: now.toISOString(),
+      tokens: { prompt_tokens: 10, completion_tokens: 5 },
+    };
+
+    await db.saveRequestUsage({ ...entry, usageReservationId: first.reservationId });
+    await db.saveRequestUsage({ ...entry, usageReservationId: second.reservationId });
+
+    expect(rawDb.get("SELECT COUNT(*) AS count FROM usageHistory").count).toBe(2);
+    expect(rawDb.get("SELECT COUNT(*) AS count FROM apiKeyUsageReservations").count).toBe(0);
+    expect(await db.getApiKeyUsageLimitStatus(key.key, now)).toMatchObject({
+      usedTokens: 30,
+      reservedTokens: 0,
+      remainingTokens: 970,
+    });
+  });
+
+  it.each([
+    ["cross-key", "sk-owner-a", "sk-other-b"],
+    ["same-prefix", "sk-sameprefix-111", "sk-sameprefix-222"],
+  ])("does not reconcile a %s reservation/key mismatch", async (_name, firstKey, secondKey) => {
+    const first = await db.createApiKey("first", "machine-test", 1_000);
+    const second = await db.createApiKey("second", "machine-test", 1_000);
+    await db.updateApiKey(first.id, { key: firstKey });
+    await db.updateApiKey(second.id, { key: secondKey });
+    const firstReservation = await db.reserveApiKeyUsage(firstKey, 100);
+    const secondReservation = await db.reserveApiKeyUsage(secondKey, 100);
+
+    await db.saveRequestUsage({
+      provider: "openai",
+      model: "gpt-4o",
+      apiKey: firstKey,
+      usageReservationId: secondReservation.reservationId,
+      tokens: { prompt_tokens: 10, completion_tokens: 5 },
+    });
+
+    expect(rawDb.all("SELECT id FROM apiKeyUsageReservations ORDER BY id").map(({ id }) => id).sort()).toEqual(
+      [firstReservation.reservationId, secondReservation.reservationId].sort(),
+    );
+    expect(rawDb.get("SELECT COUNT(*) AS count FROM usageHistory WHERE apiKey = ?", [firstKey]).count).toBe(1);
+    expect(await db.getApiKeyUsageLimitStatus(firstKey)).toMatchObject({ usedTokens: 15, reservedTokens: 100 });
+    expect(await db.getApiKeyUsageLimitStatus(secondKey)).toMatchObject({ usedTokens: 0, reservedTokens: 100 });
   });
 
   it("rolls back reservation deletion when usage insertion fails", async () => {
@@ -299,6 +458,33 @@ describe("API key usage reservation admission", () => {
     rawDb.exec("DROP TRIGGER fail_usage_insert");
   });
 
+  it.each([
+    ["negative prompt", { prompt_tokens: -1, completion_tokens: 5 }],
+    ["fractional completion", { prompt_tokens: 5, completion_tokens: 1.5 }],
+    ["unsafe reasoning", { prompt_tokens: 5, completion_tokens: 5, reasoning_tokens: Number.MAX_SAFE_INTEGER + 1 }],
+    ["negative nested reasoning", { prompt_tokens: 5, completion_tokens: 5, completion_tokens_details: { reasoning_tokens: -1 } }],
+  ])("keeps reservations for invalid authoritative %s usage", async (_name, tokens) => {
+    const key = await db.createApiKey("limited", "machine-test", 1_000);
+    const reservation = await db.reserveApiKeyUsage(key.key, 100);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      await db.saveRequestUsage({
+        provider: "openai",
+        model: "gpt-4o",
+        apiKey: key.key,
+        usageReservationId: reservation.reservationId,
+        tokens,
+      });
+
+      expect(rawDb.get("SELECT id FROM apiKeyUsageReservations WHERE id = ?", [reservation.reservationId])).toBeDefined();
+      expect(rawDb.get("SELECT COUNT(*) AS count FROM usageHistory").count).toBe(0);
+      expect(errorSpy).toHaveBeenCalledWith("Failed to save usage stats:", expect.any(Error));
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it("deletes API-key reservations with the key", async () => {
     const key = await db.createApiKey("limited", "machine-test", 100);
     await db.reserveApiKeyUsage(key.key, 100);
@@ -306,6 +492,19 @@ describe("API key usage reservation admission", () => {
     expect(await db.deleteApiKey(key.id)).toBe(true);
     expect(rawDb.get("SELECT COUNT(*) AS count FROM apiKeys").count).toBe(0);
     expect(rawDb.get("SELECT COUNT(*) AS count FROM apiKeyUsageReservations").count).toBe(0);
+  });
+
+  it("clears reservations during full import before reusing API-key IDs", async () => {
+    const key = await db.createApiKey("limited", "machine-test", 100);
+    await db.reserveApiKeyUsage(key.key, 100);
+    const payload = await db.exportDb();
+
+    expect(payload).not.toHaveProperty("apiKeyUsageReservations");
+    await db.importDb(payload);
+
+    expect((await db.getApiKeyById(key.id))?.key).toBe(key.key);
+    expect(rawDb.get("SELECT COUNT(*) AS count FROM apiKeyUsageReservations").count).toBe(0);
+    expect(await db.getApiKeyUsageLimitStatus(key.key)).toMatchObject({ reservedTokens: 0, remainingTokens: 100 });
   });
 
   it("rolls back reservation deletion when API-key deletion fails", async () => {

@@ -1,4 +1,4 @@
-import { DEFAULT_MAX_TOKENS } from "open-sse/config/runtimeConfig.js";
+import { DEFAULT_MAX_TOKENS, DEFAULT_MIN_TOKENS } from "open-sse/config/runtimeConfig.js";
 
 const THINKING_OUTPUT_HEADROOM = 1_024;
 
@@ -23,6 +23,9 @@ export function estimateChatUsageReservation(body) {
   const thinkingBudget = positiveSafeInteger(body?.thinking?.budget_tokens);
   if (thinkingBudget !== null) {
     outputCandidates.push(checkedAdd(thinkingBudget, THINKING_OUTPUT_HEADROOM));
+  }
+  if (Array.isArray(body?.tools) && body.tools.length > 0) {
+    outputCandidates.push(DEFAULT_MIN_TOKENS);
   }
 
   const outputTokens = outputCandidates.length > 0 ? Math.max(...outputCandidates) : DEFAULT_MAX_TOKENS;

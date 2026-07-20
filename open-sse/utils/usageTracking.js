@@ -166,7 +166,10 @@ export function canonicalizeUsage(usage) {
 
   const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
   const completion = num(usage.completion_tokens ?? usage.output_tokens);
-  const reasoning = num(usage.reasoning_tokens);
+  const reasoningSource = usage.reasoning_tokens
+    ?? usage.completion_tokens_details?.reasoning_tokens
+    ?? usage.output_tokens_details?.reasoning_tokens;
+  const reasoning = num(reasoningSource);
   // Fall back to the nested prompt_tokens_details.cache_creation_tokens shape
   // (buildUsage()'s OpenAI-forwarding format) when the top-level field is
   // absent, so callers that pass a buildUsage() object through don't silently
@@ -202,7 +205,8 @@ export function canonicalizeUsage(usage) {
     cached_tokens: cached,
     cache_creation_input_tokens: cacheCreation,
   };
-  if (reasoning > 0) result.reasoning_tokens = reasoning;
+  if (reasoningSource !== undefined) result.reasoning_tokens = reasoning;
+  if (usage.estimated === true) result.estimated = true;
   return result;
 }
 

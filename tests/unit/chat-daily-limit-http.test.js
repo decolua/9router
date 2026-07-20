@@ -38,6 +38,8 @@ let limitedApiKey;
 let rawDb;
 let unlimitedApiKey;
 let postChat;
+let FORMATS;
+let handleForcedSSEToJson;
 
 function credentials(id = "connection-test") {
   return {
@@ -74,6 +76,41 @@ function failureResult(status = 400, error = "upstream failed") {
   };
 }
 
+function forcedResponsesFailure(kind) {
+  if (kind === "conversion throw") {
+    return new Response(new ReadableStream({
+      pull() {
+        throw new Error("forced conversion failure");
+      },
+    }), { headers: { "content-type": "text/event-stream" } });
+  }
+
+  const events = kind === "response.failed"
+    ? [
+        "event: response.failed",
+        `data: ${JSON.stringify({ response: { id: "resp-failed", status: "failed" } })}`,
+        "",
+      ]
+    : kind === "completed as incomplete"
+      ? [
+          "event: response.completed",
+          `data: ${JSON.stringify({
+            response: {
+              id: "resp-incomplete",
+              status: "incomplete",
+              usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+            },
+          })}`,
+          "",
+        ]
+    : [
+        "event: response.created",
+        `data: ${JSON.stringify({ response: { id: "resp-incomplete", status: "in_progress" } })}`,
+        "",
+      ];
+  return new Response(events.join("\n"), { headers: { "content-type": "text/event-stream" } });
+}
+
 beforeAll(async () => {
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-chat-limit-"));
   process.env.DATA_DIR = tempDir;
@@ -99,6 +136,8 @@ beforeAll(async () => {
       BEGIN INSERT INTO reservationAudit(action, reservationId) VALUES('delete', OLD.id); END;
   `);
 
+  ({ FORMATS } = await import("../../open-sse/translator/formats.js"));
+  ({ handleForcedSSEToJson } = await import("../../open-sse/handlers/chatCore/sseToJsonHandler.js"));
   ({ POST: postChat } = await import("@/app/api/v1/chat/completions/route.js"));
 });
 
@@ -125,6 +164,7 @@ beforeEach(async () => {
   tokenMocks.updateProviderCredentials.mockReset().mockResolvedValue(undefined);
   rawDb.run("DELETE FROM apiKeyUsageReservations");
   rawDb.run("DELETE FROM reservationAudit");
+  await db.updateApiKey(limitedApiKey.id, { dailyLimitTokens: 1_000_000 });
   await db.updateSettings({ comboStrategy: "fallback", comboStrategies: {} });
 });
 
@@ -152,6 +192,71 @@ describe("POST /v1/chat/completions daily token admission", () => {
     expect(authMocks.getProviderCredentials).not.toHaveBeenCalled();
     expect(dispatchMocks.handleChatCore).not.toHaveBeenCalled();
     expect(rawDb.get("SELECT COUNT(*) AS count FROM reservationAudit").count).toBe(0);
+  });
+
+  it("rejects a low-token tool request using its effective 32000-token output budget", async () => {
+    const body = {
+      model: "openai/gpt-4o",
+      messages: [],
+      max_tokens: 1,
+      tools: [{ type: "function", function: { name: "lookup", parameters: { type: "object" } } }],
+    };
+    const effectiveEstimate = Buffer.byteLength(JSON.stringify(body), "utf8") + 32_000;
+    await db.updateApiKey(limitedApiKey.id, { dailyLimitTokens: effectiveEstimate - 1 });
+
+    const response = await postChat(new Request("http://localhost/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${limitedApiKey.key}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }));
+
+    expect(response.status).toBe(429);
+    expect(authMocks.getProviderCredentials).not.toHaveBeenCalled();
+    expect(dispatchMocks.handleChatCore).not.toHaveBeenCalled();
+    expect(rawDb.get("SELECT COUNT(*) AS count FROM reservationAudit").count).toBe(0);
+  });
+
+  it("measures alias input bytes from the exact resolved dispatch body", async () => {
+    const body = { model: "a", messages: [], max_tokens: 1 };
+    const resolvedModel = "provider-with-long-name/model-with-long-name";
+    const originalEstimate = Buffer.byteLength(JSON.stringify(body), "utf8") + 1;
+    const resolvedEstimate = Buffer.byteLength(JSON.stringify({ ...body, model: resolvedModel }), "utf8") + 1;
+    expect(resolvedEstimate).toBeGreaterThan(originalEstimate);
+    await db.updateApiKey(limitedApiKey.id, { dailyLimitTokens: originalEstimate });
+    modelMocks.getModelInfo.mockResolvedValue({
+      provider: "provider-with-long-name",
+      model: "model-with-long-name",
+    });
+
+    const response = await postChat(new Request("http://localhost/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${limitedApiKey.key}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }));
+
+    expect(response.status).toBe(429);
+    expect(authMocks.getProviderCredentials).not.toHaveBeenCalled();
+    expect(dispatchMocks.handleChatCore).not.toHaveBeenCalled();
+  });
+
+  it("measures combo-member input bytes from the exact resolved dispatch body", async () => {
+    const body = { model: "c", messages: [], max_tokens: 1 };
+    const member = "provider-with-long-name/model-with-long-name";
+    const originalEstimate = Buffer.byteLength(JSON.stringify(body), "utf8") + 1;
+    const resolvedEstimate = Buffer.byteLength(JSON.stringify({ ...body, model: member }), "utf8") + 1;
+    expect(resolvedEstimate).toBeGreaterThan(originalEstimate);
+    await db.updateApiKey(limitedApiKey.id, { dailyLimitTokens: originalEstimate });
+    modelMocks.getComboModels.mockImplementation(async (modelStr) => (modelStr === "c" ? [member] : null));
+
+    const response = await postChat(new Request("http://localhost/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${limitedApiKey.key}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }));
+
+    expect(response.status).toBe(429);
+    expect(authMocks.getProviderCredentials).not.toHaveBeenCalled();
+    expect(dispatchMocks.handleChatCore).not.toHaveBeenCalled();
   });
 
   it("allows an unlimited active key to reach account selection and dispatch", async () => {
@@ -300,4 +405,50 @@ describe("POST /v1/chat/completions daily token admission", () => {
       { action: "delete" },
     ]);
   });
+
+  it.each(["response.failed", "incomplete close", "completed as incomplete", "conversion throw"])(
+    "releases a forced Responses reservation for $0",
+    async (failureKind) => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      dispatchMocks.handleChatCore.mockImplementation(async (options) => handleForcedSSEToJson({
+        providerResponse: forcedResponsesFailure(failureKind),
+        sourceFormat: FORMATS.OPENAI_RESPONSES,
+        provider: options.modelInfo.provider,
+        model: options.modelInfo.model,
+        body: options.body,
+        stream: false,
+        translatedBody: null,
+        finalBody: null,
+        requestStartTime: Date.now(),
+        connectionId: options.connectionId,
+        apiKey: options.apiKey,
+        usageReservationId: options.usageReservationId,
+        clientRawRequest: options.clientRawRequest,
+        onRequestSuccess: options.onRequestSuccess,
+        trackDone: () => {},
+        appendLog: () => {},
+        reqTag: "request-test",
+        log: null,
+      }));
+
+      try {
+        const response = await postChat(new Request("http://localhost/v1/chat/completions", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${limitedApiKey.key}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ model: "codex/gpt-5-codex", messages: [], max_tokens: 1 }),
+        }));
+
+        expect(response.status).toBe(502);
+        expect(authMocks.clearAccountError).not.toHaveBeenCalled();
+        expect(authMocks.markAccountUnavailable).toHaveBeenCalledTimes(1);
+        expect(rawDb.get("SELECT COUNT(*) AS count FROM apiKeyUsageReservations").count).toBe(0);
+        expect(rawDb.all("SELECT action FROM reservationAudit")).toEqual([
+          { action: "insert" },
+          { action: "delete" },
+        ]);
+      } finally {
+        errorSpy.mockRestore();
+      }
+    },
+  );
 });

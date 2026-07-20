@@ -65,6 +65,9 @@ async function initAdapter() {
 
   if (!state.logged) {
     console.log(`[DB] Driver: ${adapter.driver} | file: ${DATA_FILE}`);
+    if (adapter.transactionScope === "process") {
+      console.warn("[DB] sql.js transactions persist before return but coordinate only within one process; use a native SQLite adapter for multi-process routing");
+    }
     state.logged = true;
   }
 

@@ -185,11 +185,12 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   }
 
   const { provider, model } = modelInfo;
+  const resolvedBody = { ...body, model: `${provider}/${model}` };
   let usageReservationId = null;
   if (apiKey) {
     let requestedTokens;
     try {
-      requestedTokens = estimateChatUsageReservation(body);
+      requestedTokens = estimateChatUsageReservation(resolvedBody);
     } catch (error) {
       log.warn("AUTH", error.message);
       return errorResponse(HTTP_STATUS.BAD_REQUEST, error.message);
@@ -254,7 +255,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       const chatSettings = await getSettings();
       const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
       const result = await handleChatCore({
-        body: { ...body, model: `${provider}/${model}` },
+        body: resolvedBody,
         modelInfo: { provider, model },
         credentials: refreshedCredentials,
         log,

@@ -120,6 +120,13 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
   if (isCodexResponsesApi) {
     try {
       const jsonResponse = await convertResponsesStreamToJson(providerResponse.body);
+      if (jsonResponse.status !== "completed") {
+        appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+        const message = jsonResponse.status === "failed"
+          ? "Streaming response failed before completion"
+          : "Streaming response ended before completion";
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, message);
+      }
       if (onRequestSuccess) await onRequestSuccess();
 
       const usage = jsonResponse.usage || {};

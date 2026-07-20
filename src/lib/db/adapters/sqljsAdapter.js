@@ -19,12 +19,15 @@ export async function createSqlJsAdapter(filePath) {
 
   let dirty = false;
   let saveTimer = null;
+  let transactionDepth = 0;
   const SAVE_DEBOUNCE_MS = 100;
 
   function persist() {
     const data = db.export();
     fs.writeFileSync(filePath, Buffer.from(data));
     dirty = false;
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = null;
   }
 
   function scheduleSave() {
@@ -87,14 +90,22 @@ export async function createSqlJsAdapter(filePath) {
 
   function transaction(fn) {
     const sp = `sp_${Math.random().toString(36).slice(2)}`;
+    const outermost = transactionDepth === 0;
     db.exec(`SAVEPOINT ${sp}`);
+    transactionDepth += 1;
+    let released = false;
     try {
       const result = fn();
       db.exec(`RELEASE ${sp}`);
-      scheduleSave();
+      transactionDepth -= 1;
+      released = true;
+      if (outermost) persist();
       return result;
     } catch (e) {
-      try { db.exec(`ROLLBACK TO ${sp}`); db.exec(`RELEASE ${sp}`); } catch {}
+      if (!released) {
+        try { db.exec(`ROLLBACK TO ${sp}`); db.exec(`RELEASE ${sp}`); } catch {}
+        transactionDepth -= 1;
+      }
       throw e;
     }
   }
@@ -111,5 +122,5 @@ export async function createSqlJsAdapter(filePath) {
   process.on("SIGINT", flush);
   process.on("SIGTERM", flush);
 
-  return { driver: "sql.js", run, get, all, exec, transaction, close, raw: db };
+  return { driver: "sql.js", transactionScope: "process", run, get, all, exec, transaction, close, raw: db };
 }
