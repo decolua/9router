@@ -1,7 +1,11 @@
 // Ensure proxyFetch is loaded to patch globalThis.fetch
 import "open-sse/index.js";
 
-import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
+import {
+  getDailyConnectionUsage,
+  getProviderConnectionById,
+  updateProviderConnection,
+} from "@/lib/localDb";
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
@@ -180,6 +184,29 @@ export async function GET(request, { params }) {
       } catch (retryError) {
         console.warn(`[Usage] ${connection.provider}: force refresh failed: ${retryError.message}`);
       }
+    }
+
+    if (
+      connection.provider === "grok-cli" &&
+      usage?.message?.includes("does not expose a numeric included quota")
+    ) {
+      const daily = await getDailyConnectionUsage(connection.id);
+      const total = 800;
+      usage = {
+        plan: usage.plan || null,
+        quotas: {
+          "Daily use": {
+            used: daily.requests,
+            total,
+            remainingPercentage: Math.max(
+              0,
+              ((total - daily.requests) / total) * 100,
+            ),
+            resetAt: daily.resetAt,
+            unlimited: false,
+          },
+        },
+      };
     }
 
     return Response.json(usage);
