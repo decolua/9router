@@ -29,6 +29,7 @@ import {
   GROK_CLI_USER_AGENT,
   GROK_CLI_VERSION,
 } from "../../config/grokCli.js";
+import { sanitizeOAuthError } from "../../utils/oauthError.js";
 
 const USAGE = U("grok-cli");
 const BILLING_URL = USAGE.url || "https://cli-chat-proxy.grok.com/v1/billing?format=credits";
@@ -288,9 +289,7 @@ export async function getGrokCliUsage(accessToken, providerSpecificData = null, 
     }
 
     if (!billingRes.ok) {
-      const errText = await billingRes.text().catch(() => "");
-      const trimmed = errText ? `: ${errText.slice(0, 200)}` : "";
-      return { message: `Grok CLI billing API error (${billingRes.status})${trimmed}` };
+      return { message: `Grok CLI billing API error (${billingRes.status}).` };
     }
 
     const billing = await billingRes.json().catch(() => null);
@@ -323,6 +322,6 @@ export async function getGrokCliUsage(accessToken, providerSpecificData = null, 
       quotas: parsed.quotas,
     };
   } catch (error) {
-    return { message: `Grok CLI usage error: ${error.message}` };
+    return { message: `Grok CLI usage error: ${sanitizeOAuthError(error)}`.slice(0, 240) };
   }
 }

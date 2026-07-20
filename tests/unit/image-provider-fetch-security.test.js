@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const harness = vi.hoisted(() => ({
   agents: [],
+  executorExecute: vi.fn(),
   lookup: vi.fn(),
   proxyAgents: [],
 }));
@@ -32,17 +33,27 @@ vi.mock("undici", () => ({
     async close() {}
   },
 }));
+vi.mock("../../open-sse/executors/index.js", () => ({
+  getExecutor: () => ({ execute: (...args) => harness.executorExecute(...args) }),
+}));
 
 import { decodeBase64Image, urlToBase64 } from "../../open-sse/handlers/imageProviders/_base.js";
+import { handleImageGenerationCore } from "../../open-sse/handlers/imageGenerationCore.js";
+import antigravity from "../../open-sse/handlers/imageProviders/antigravity.js";
 import blackForestLabs from "../../open-sse/handlers/imageProviders/blackForestLabs.js";
 import cloudflareAi from "../../open-sse/handlers/imageProviders/cloudflareAi.js";
 import falAi from "../../open-sse/handlers/imageProviders/falAi.js";
 import huggingface from "../../open-sse/handlers/imageProviders/huggingface.js";
 import nanobanana from "../../open-sse/handlers/imageProviders/nanobanana.js";
 import runwayml from "../../open-sse/handlers/imageProviders/runwayml.js";
+import {
+  MAX_IMAGE_BYTES,
+  MAX_REMOTE_JSON_BYTES,
+} from "../../open-sse/config/mediaConfig.js";
 
 const originalFetch = globalThis.fetch;
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const MAX_IMAGE_JSON_BYTES = Math.ceil(MAX_IMAGE_BYTES * 4 / 3) + MAX_REMOTE_JSON_BYTES;
 const proxyRoute = {
   connectionProxyEnabled: true,
   connectionProxyUrl: "http://proxy-user:proxy-password@proxy.test:8080",
@@ -62,6 +73,7 @@ describe("image provider remote fetch security", () => {
     vi.clearAllMocks();
     harness.agents.length = 0;
     harness.proxyAgents.length = 0;
+    harness.executorExecute.mockReset();
     harness.lookup.mockResolvedValue([{ address: "93.184.216.34", family: 4 }]);
     globalThis.fetch = vi.fn().mockResolvedValue(new Response(PNG, {
       status: 200,
@@ -238,6 +250,47 @@ describe("image provider remote fetch security", () => {
     const response = jsonResponse({ result: { image: "value" }, padding: "x".repeat(1024 * 1024) });
 
     await expect(cloudflareAi.parseResponse(response)).rejects.toThrow(/large|bytes|size/i);
+  });
+
+  it.each([
+    ["success JSON", 200, MAX_IMAGE_JSON_BYTES + 1],
+    ["error text", 502, MAX_REMOTE_JSON_BYTES + 1],
+  ])("bounds Antigravity %s responses", async (_name, status, declaredBytes) => {
+    harness.executorExecute.mockResolvedValue({
+      response: new Response(JSON.stringify({ candidates: [] }), {
+        status,
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": String(declaredBytes),
+        },
+      }),
+    });
+
+    await expect(antigravity.executeViaExecutor(
+      "gemini-3-pro-image-preview",
+      { prompt: "bounded" },
+      { accessToken: "token" },
+    )).rejects.toThrow(/large|bytes|size/i);
+  });
+
+  it.each([
+    ["invalid", Buffer.from("not an image").toString("base64")],
+    ["oversized", Buffer.alloc(MAX_IMAGE_BYTES + 1).toString("base64")],
+  ])("rejects %s Antigravity base64 in non-binary output", async (_name, b64) => {
+    harness.executorExecute.mockResolvedValue({
+      response: jsonResponse({
+        candidates: [{ content: { parts: [{ inlineData: { data: b64 } }] } }],
+      }),
+    });
+
+    const result = await handleImageGenerationCore({
+      body: { prompt: "unsafe image" },
+      modelInfo: { provider: "antigravity", model: "gemini-3-pro-image-preview" },
+      credentials: { accessToken: "token" },
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
   });
 
   it.each([

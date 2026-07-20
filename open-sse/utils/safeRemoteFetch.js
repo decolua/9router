@@ -34,9 +34,11 @@ for (const [network, prefix] of [
 ]) blockedIpv4Addresses.addSubnet(network, prefix, "ipv4");
 const blockedIpv6Addresses = new BlockList();
 for (const [network, prefix] of [
+  ["::", 96],
   ["::", 128],
   ["::1", 128],
   ["::ffff:0:0", 96],
+  ["::ffff:0:0:0", 96],
   ["64:ff9b::", 96],
   ["64:ff9b:1::", 48],
   ["100::", 64],

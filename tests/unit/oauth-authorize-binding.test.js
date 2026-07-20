@@ -30,7 +30,11 @@ vi.mock("@/lib/network/connectionProxy", () => ({
 }));
 
 import { GET, POST } from "../../src/app/api/oauth/[provider]/[action]/route.js";
-import { clearAuthorizationFlow } from "../../src/lib/oauth/utils/server.js";
+import {
+  claimAuthorizationFlow,
+  clearAuthorizationFlow,
+  registerAuthorizationFlow,
+} from "../../src/lib/oauth/utils/server.js";
 
 const proxyOptions = {
   connectionProxyEnabled: true,
@@ -74,6 +78,16 @@ function exchange(state, overrides = {}) {
     }),
   }), {
     params: Promise.resolve({ provider: "claude", action: "exchange" }),
+  });
+}
+
+function cancel(state, { provider = "claude", kind = "oauth" } = {}) {
+  return POST(new Request(`http://localhost/api/oauth/${provider}/cancel`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ state, kind }),
+  }), {
+    params: Promise.resolve({ provider, action: "cancel" }),
   });
 }
 
@@ -143,6 +157,34 @@ describe("dynamic OAuth server-owned authorization records", () => {
     expect(mocks.createProviderConnection).toHaveBeenCalledTimes(1);
   });
 
+  it("cancels pending dynamic authorization before a late popup exchange", async () => {
+    await authorize("binding-cancelled");
+
+    const cancelResponse = await cancel("binding-cancelled");
+    const exchangeResponse = await exchange("binding-cancelled");
+
+    expect(cancelResponse.status).toBe(200);
+    expect(exchangeResponse.status).toBe(409);
+    expect(mocks.exchangeTokens).not.toHaveBeenCalled();
+    expect(mocks.createProviderConnection).not.toHaveBeenCalled();
+  });
+
+  it("cancels Kiro social authorization in its own flow namespace", async () => {
+    expect(registerAuthorizationFlow({
+      kind: "kiro-social",
+      provider: "google",
+      state: "social-cancelled",
+      codeVerifier: "social-verifier",
+    })).toBe(true);
+
+    const cancelResponse = await cancel("social-cancelled", { provider: "google", kind: "kiro-social" });
+    const claimed = claimAuthorizationFlow("kiro-social", "google", "social-cancelled");
+    if (claimed) clearAuthorizationFlow("kiro-social", "google", "social-cancelled", claimed.identity);
+
+    expect(cancelResponse.status).toBe(200);
+    expect(claimed).toBeNull();
+  });
+
   it("rechecks dynamic flow identity during delayed DB admission", async () => {
     await authorize("binding-db-admission");
     let releaseAdmission;
@@ -156,10 +198,11 @@ describe("dynamic OAuth server-owned authorization records", () => {
 
     const request = exchange("binding-db-admission");
     await vi.waitFor(() => expect(mocks.createProviderConnection).toHaveBeenCalledTimes(1));
-    clearAuthorizationFlow("oauth", "claude", "binding-db-admission");
+    const cancelResponse = await cancel("binding-db-admission");
     releaseAdmission();
     const response = await request;
 
+    expect(cancelResponse.status).toBe(200);
     expect(response.status).toBe(409);
     expect(persisted).toBe(false);
   });

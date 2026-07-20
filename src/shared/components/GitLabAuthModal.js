@@ -18,7 +18,7 @@ function getRedirectUri() {
  * - OAuth (PKCE): requires OAuth App Client ID (and optional Client Secret)
  * - PAT: requires Personal Access Token
  */
-export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClose, proxyPools = [], proxyPoolsReady = true }) {
+export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClose, proxyPools = [], proxyPoolsReady = false }) {
   const [mode, setMode] = useState(null); // null | "oauth" | "pat"
   const [baseUrl, setBaseUrl] = useState(GITLAB_COM);
   const [clientId, setClientId] = useState("");

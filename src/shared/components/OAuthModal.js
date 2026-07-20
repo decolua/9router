@@ -29,6 +29,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const poolChangePromiseRef = useRef(Promise.resolve());
   const fixedProxyStateRef = useRef(undefined);
   const fixedProxyStopRef = useRef(null);
+  const authorizationStateRef = useRef(null);
+  const authorizationCancelRef = useRef(null);
   const devicePollFlowRef = useRef(null);
   const deviceCancelRef = useRef(null);
   const closePromiseRef = useRef(null);
@@ -91,6 +93,30 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       if (deviceCancelRef.current?.promise === pending) deviceCancelRef.current = null;
     });
     deviceCancelRef.current = { flowId, promise: pending };
+    return pending;
+  }, [provider]);
+
+  const cancelAuthorizationFlow = useCallback((stateOverride) => {
+    if (!provider || provider === "codex" || provider === "xai") return Promise.resolve();
+    const state = stateOverride === undefined ? authorizationStateRef.current : stateOverride;
+    if (!state) return Promise.resolve();
+    if (authorizationCancelRef.current?.state === state) return authorizationCancelRef.current.promise;
+
+    let pending;
+    pending = fetch(`/api/oauth/${provider}/cancel`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ state }),
+    }).then(async (response) => {
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to cancel authorization");
+      }
+      if (authorizationStateRef.current === state) authorizationStateRef.current = null;
+    }).finally(() => {
+      if (authorizationCancelRef.current?.promise === pending) authorizationCancelRef.current = null;
+    });
+    authorizationCancelRef.current = { state, promise: pending };
     return pending;
   }, [provider]);
 
@@ -175,6 +201,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
         const data = await res.json();
         if (generation !== flowGenerationRef.current) return;
+        if (!res.ok) {
+          throw new Error(sanitizeOAuthError(data.errorDescription || data.error || "Device authorization failed"));
+        }
 
         if (data.success) {
           if (devicePollFlowRef.current === flowId) devicePollFlowRef.current = null;
@@ -292,9 +321,16 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       }
       const res = await fetch(authorizeUrl.toString());
       const data = await res.json();
-      if (isStale()) return;
+      if (isStale()) {
+        if (res.ok && data.state) {
+          if (provider === "codex" || provider === "xai") await stopFixedProxy(data.state);
+          else await cancelAuthorizationFlow(data.state);
+        }
+        return;
+      }
       if (!res.ok) throw new Error(data.error);
       if (provider === "codex" || provider === "xai") fixedProxyStateRef.current = data.state;
+      else authorizationStateRef.current = data.state;
       setAuthData({ ...data, redirectUri, codexServerSide: false, xaiServerSide: false });
 
       // Codex: start proxy with server-side session (auto-exchange) + fallback to channels
@@ -389,7 +425,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setError(err.message);
       setStep("error");
     }
-  }, [provider, isLocalhost, startPolling, oauthMeta, idcConfig, selectedProxyPoolId, stopFixedProxy]);
+  }, [provider, isLocalhost, startPolling, oauthMeta, idcConfig, selectedProxyPoolId, stopFixedProxy, cancelAuthorizationFlow]);
 
   // Reset state and start OAuth when modal opens
   useEffect(() => {
@@ -425,6 +461,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         try {
           await cancelDevicePoll();
           await stopFixedProxy();
+          await cancelAuthorizationFlow(authData?.state);
           if (generation !== flowGenerationRef.current) return;
           setAuthData(null);
           setCallbackUrl("");
@@ -516,12 +553,13 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
   // Listen for OAuth callback via multiple methods
   useEffect(() => {
-    if (!authData) return;
+    if (!isOpen || !authData) return;
+    const generation = flowGenerationRef.current;
     callbackProcessedRef.current = false; // Reset when authData changes
 
     // Handler for callback data - only process once
     const handleCallback = async (data) => {
-      if (callbackProcessedRef.current) return; // Already processed
+      if (generation !== flowGenerationRef.current || callbackProcessedRef.current) return;
 
       const { code, token, state, error: callbackError, errorDescription } = data;
 
@@ -559,7 +597,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     return () => {
       window.removeEventListener("message", handleMessage);
     };
-  }, [authData, exchangeTokens, provider]);
+  }, [authData, exchangeTokens, isOpen, provider]);
 
   // Handle manual URL input
   const handleManualSubmit = async () => {
@@ -633,6 +671,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       try {
         await cancelDevicePoll();
         await stopFixedProxy();
+        await cancelAuthorizationFlow(authData?.state);
         closeCompletedRef.current = true;
         onClose();
       } catch (err) {
@@ -644,7 +683,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     });
     closePromiseRef.current = pending;
     return pending;
-  }, [cancelDevicePoll, onClose, stopFixedProxy]);
+  }, [authData?.state, cancelAuthorizationFlow, cancelDevicePoll, onClose, stopFixedProxy]);
 
   if (!provider || !providerInfo) return null;
   const isXaiProvider = provider === "xai";

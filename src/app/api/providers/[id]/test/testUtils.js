@@ -15,6 +15,7 @@ import {
 } from "@/lib/oauth/constants/oauth";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
 import { normalizeExplicitProxyOptions, proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
+import { sanitizeOAuthError } from "open-sse/utils/oauthError.js";
 
 const SHARED_OAUTH_REFRESH_PROVIDERS = new Set([
   "gemini-cli",
@@ -613,12 +614,12 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "ollama": {
-        const res = await fetch("https://ollama.com/api/tags", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetchWithConnectionProxy("https://ollama.com/api/tags", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "ollama-local": {
         const host = resolveOllamaLocalHost(connection);
-        const res = await fetch(`${host}/api/tags`);
+        const res = await fetchWithConnectionProxy(`${host}/api/tags`, {}, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : `Ollama not reachable at ${host}` };
       }
       case "deepgram": {
@@ -719,7 +720,7 @@ export async function testSingleConnection(id) {
   if (effectiveProxy.connectionProxyEnabled && effectiveProxy.connectionProxyUrl && !effectiveProxy.vercelRelayUrl) {
     const proxyResult = await testProxyUrl({ proxyUrl: effectiveProxy.connectionProxyUrl });
     if (!proxyResult.ok) {
-      const proxyError = proxyResult.error || `Proxy test failed with status ${proxyResult.status}`;
+      const proxyError = sanitizeOAuthError(proxyResult.error || `Proxy test failed with status ${proxyResult.status}`);
       await updateProviderConnection(id, {
         testStatus: "error",
         lastError: proxyError,
@@ -739,14 +740,17 @@ export async function testSingleConnection(id) {
   }
 
   const latencyMs = Date.now() - start;
+  const publicError = result.valid
+    ? result.warning || result.error || null
+    : sanitizeOAuthError(result.error);
 
   // Soft success (e.g. Grok CLI 402 spending-limit): credentials are good, account is
   // out of credits. Keep testStatus active; surface the message as lastError so the
   // dashboard can show a warning without marking the connection broken.
-  const softWarning = result.valid && (result.warning || result.error);
+  const softWarning = result.valid && publicError;
   const updateData = {
     testStatus: result.valid ? "active" : "error",
-    lastError: result.valid ? (softWarning || null) : result.error,
+    lastError: result.valid ? (softWarning || null) : publicError,
     lastErrorAt: result.valid
       ? softWarning
         ? new Date().toISOString()
@@ -775,5 +779,5 @@ export async function testSingleConnection(id) {
 
   await updateProviderConnection(id, updateData);
 
-  return { valid: result.valid, error: result.error, refreshed: !!result.refreshed, latencyMs, testedAt: new Date().toISOString() };
+  return { valid: result.valid, error: publicError, refreshed: !!result.refreshed, latencyMs, testedAt: new Date().toISOString() };
 }

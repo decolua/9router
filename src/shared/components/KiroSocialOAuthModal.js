@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
 import { Modal, Button, Input } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
@@ -22,6 +22,33 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
   const openedRef = useRef(false);
   const flowGenerationRef = useRef(0);
   const authGenerationRef = useRef(0);
+  const authorizationStateRef = useRef(null);
+  const authorizationCancelRef = useRef(null);
+  const closePromiseRef = useRef(null);
+  const closeCompletedRef = useRef(false);
+
+  const cancelAuthorizationFlow = useCallback((stateOverride) => {
+    const state = stateOverride === undefined ? authorizationStateRef.current : stateOverride;
+    if (!state) return Promise.resolve();
+    if (authorizationCancelRef.current?.state === state) return authorizationCancelRef.current.promise;
+
+    let pending;
+    pending = fetch(`/api/oauth/${provider}/cancel`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ state, kind: "kiro-social" }),
+    }).then(async (response) => {
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to cancel authorization");
+      }
+      if (authorizationStateRef.current === state) authorizationStateRef.current = null;
+    }).finally(() => {
+      if (authorizationCancelRef.current?.promise === pending) authorizationCancelRef.current = null;
+    });
+    authorizationCancelRef.current = { state, promise: pending };
+    return pending;
+  }, [provider]);
 
   // Reset auto-open guard when modal closes so it can re-open next session.
   useEffect(() => {
@@ -29,6 +56,8 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
       flowGenerationRef.current += 1;
       authGenerationRef.current = 0;
       openedRef.current = false;
+    } else {
+      closeCompletedRef.current = false;
     }
   }, [isOpen]);
 
@@ -49,13 +78,17 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
         if (selectedProxyPoolId) authorizeUrl.searchParams.set("proxyPoolId", selectedProxyPoolId);
         const res = await fetch(authorizeUrl.toString());
         const data = await res.json();
-        if (cancelled || generation !== flowGenerationRef.current) return;
+        if (cancelled || generation !== flowGenerationRef.current) {
+          if (res.ok && data.state) await cancelAuthorizationFlow(data.state);
+          return;
+        }
 
         if (!res.ok) {
           throw new Error(data.error);
         }
 
         setAuthData(data);
+        authorizationStateRef.current = data.state;
         authGenerationRef.current = generation;
         setAuthUrl(data.authUrl);
         setStep("input");
@@ -74,16 +107,22 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
 
     initAuth();
     return () => { cancelled = true; };
-  }, [isOpen, provider, proxyPoolsReady, selectedProxyPoolId]);
+  }, [cancelAuthorizationFlow, isOpen, provider, proxyPoolsReady, selectedProxyPoolId]);
 
-  const handleProxyPoolChange = (event) => {
+  const handleProxyPoolChange = async (event) => {
     flowGenerationRef.current += 1;
     authGenerationRef.current = 0;
     openedRef.current = false;
-    setAuthData(null);
-    setAuthUrl("");
-    setCallbackUrl("");
-    setSelectedProxyPoolId(event.target.value);
+    try {
+      await cancelAuthorizationFlow(authData?.state);
+      setAuthData(null);
+      setAuthUrl("");
+      setCallbackUrl("");
+      setSelectedProxyPoolId(event.target.value);
+    } catch (err) {
+      setError(sanitizeOAuthError(err?.message));
+      setStep("error");
+    }
   };
 
   const handleManualSubmit = async () => {
@@ -134,6 +173,7 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
       if (generation !== flowGenerationRef.current) return;
       if (!res.ok) throw new Error(data.error);
 
+      authorizationStateRef.current = null;
       setStep("success");
       onSuccess?.();
     } catch (err) {
@@ -142,10 +182,32 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
     }
   };
 
+  const handleClose = useCallback(() => {
+    if (closeCompletedRef.current) return Promise.resolve();
+    if (closePromiseRef.current) return closePromiseRef.current;
+    flowGenerationRef.current += 1;
+
+    let pending;
+    pending = (async () => {
+      try {
+        await cancelAuthorizationFlow(authData?.state);
+        closeCompletedRef.current = true;
+        onClose();
+      } catch (err) {
+        setError(sanitizeOAuthError(err?.message));
+        setStep("error");
+      }
+    })().finally(() => {
+      if (closePromiseRef.current === pending) closePromiseRef.current = null;
+    });
+    closePromiseRef.current = pending;
+    return pending;
+  }, [authData?.state, cancelAuthorizationFlow, onClose]);
+
   const providerName = provider === "google" ? "Google" : "GitHub";
 
   return (
-    <Modal isOpen={isOpen} title={`Connect Kiro via ${providerName}`} onClose={onClose} size="lg">
+    <Modal isOpen={isOpen} title={`Connect Kiro via ${providerName}`} onClose={handleClose} size="lg">
       <div className="flex flex-col gap-4">
         <OAuthProxyPoolSelector
           value={selectedProxyPoolId}
@@ -206,7 +268,7 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
               <Button onClick={handleManualSubmit} fullWidth disabled={!callbackUrl}>
                 Connect
               </Button>
-              <Button onClick={onClose} variant="ghost" fullWidth>
+              <Button onClick={handleClose} variant="ghost" fullWidth>
                 Cancel
               </Button>
             </div>
@@ -223,7 +285,7 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
             <p className="text-sm text-text-muted mb-4">
               Your Kiro account via {providerName} has been connected.
             </p>
-            <Button onClick={onClose} fullWidth>
+            <Button onClick={handleClose} fullWidth>
               Done
             </Button>
           </div>
@@ -241,7 +303,7 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
               <Button onClick={() => setStep("input")} variant="secondary" fullWidth>
                 Try Again
               </Button>
-              <Button onClick={onClose} variant="ghost" fullWidth>
+              <Button onClick={handleClose} variant="ghost" fullWidth>
                 Cancel
               </Button>
             </div>

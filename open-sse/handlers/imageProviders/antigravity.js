@@ -2,6 +2,8 @@
 // envelope (project, model, requestType, sessionId) and auth headers.
 import { nowSec } from "./_base.js";
 import { getExecutor } from "../../executors/index.js";
+import { readBoundedJsonResponse, readBoundedResponse } from "../../utils/safeRemoteFetch.js";
+import { MAX_IMAGE_JSON_BYTES, MAX_REMOTE_JSON_BYTES } from "../../config/mediaConfig.js";
 
 // Convert image input (data URI or raw base64) to Gemini inlineData part
 function resolveImageInput(input) {
@@ -53,11 +55,11 @@ export default {
     });
 
     if (!result.response.ok) {
-      const text = await result.response.text();
+      const text = (await readBoundedResponse(result.response, MAX_REMOTE_JSON_BYTES)).toString("utf8");
       throw new Error(text || `HTTP ${result.response.status}`);
     }
 
-    return result.response.json();
+    return readBoundedJsonResponse(result.response, MAX_IMAGE_JSON_BYTES);
   },
 
   normalize: (responseBody, prompt) => {

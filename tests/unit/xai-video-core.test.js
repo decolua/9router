@@ -20,6 +20,7 @@ vi.mock("open-sse/services/tokenRefresh.js", () => ({
 import { handleVideoProxyCore, getVideoConfig, sanitizeSecrets, VIDEO_ACTIONS } from "open-sse/handlers/videoCore.js";
 import { refreshTokenByProvider } from "open-sse/services/tokenRefresh.js";
 import { PROVIDER_MEDIA, PROVIDER_MODELS } from "open-sse/providers/index.js";
+import { MAX_REMOTE_JSON_BYTES } from "open-sse/config/mediaConfig.js";
 
 const originalFetch = global.fetch;
 
@@ -267,6 +268,23 @@ describe("handleVideoProxyCore", () => {
     expect(result.error).not.toContain("sk-secret-token-value-123456");
     expect(result.error).not.toContain("tok-SECRETSECRET");
     expect(result.error).toContain("[redacted]");
+  });
+
+  it.each([200, 502])("rejects oversized video response bodies with status %s", async (status) => {
+    global.fetch.mockResolvedValueOnce(new Response("x".repeat(MAX_REMOTE_JSON_BYTES + 1), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    }));
+
+    const result = await handleVideoProxyCore({
+      provider: "xai",
+      requestId: "req-large",
+      credentials: { accessToken: "tok" },
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(result.error).toMatch(/large|size|bytes/i);
   });
 
   it("maps client aborts to 408 without retrying", async () => {

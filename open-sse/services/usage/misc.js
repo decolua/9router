@@ -3,6 +3,7 @@
  */
 
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
+import { sanitizeOAuthError } from "../../utils/oauthError.js";
 import { U } from "./shared.js";
 
 // GLM quota endpoints (region-aware) — url from registry transport.usage
@@ -156,9 +157,7 @@ export async function getVercelAiGatewayUsage(apiKey, proxyOptions = null) {
     }
 
     if (!response.ok) {
-      const errorText = await response.text().catch(() => "");
-      const trimmed = errorText ? `: ${errorText.slice(0, 200)}` : "";
-      return { message: `Vercel AI Gateway credits API error (${response.status})${trimmed}` };
+      return { message: `Vercel AI Gateway credits API error (${response.status}).` };
     }
 
     const data = await response.json();
@@ -202,7 +201,7 @@ export async function getVercelAiGatewayUsage(apiKey, proxyOptions = null) {
       },
     };
   } catch (error) {
-    return { message: `Vercel AI Gateway error: ${error.message}` };
+    return { message: `Vercel AI Gateway error: ${sanitizeOAuthError(error)}`.slice(0, 240) };
   }
 }
 

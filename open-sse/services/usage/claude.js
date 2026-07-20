@@ -5,6 +5,7 @@
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import { ANTHROPIC_API_VERSION } from "../../providers/shared.js";
 import { U, parseResetTime } from "./shared.js";
+import { sanitizeOAuthError } from "../../utils/oauthError.js";
 
 // Claude API config (urls from registry, apiVersion is header logic kept here)
 const CLAUDE_CONFIG = {
@@ -90,7 +91,7 @@ export async function getClaudeUsage(accessToken, proxyOptions = null) {
     console.warn(`[Claude Usage] OAuth endpoint returned ${oauthResponse.status}, falling back to legacy`);
     return await getClaudeUsageLegacy(accessToken, proxyOptions);
   } catch (error) {
-    return { message: `Claude connected. Unable to fetch usage: ${error.message}` };
+    return { message: `Claude connected. Unable to fetch usage: ${sanitizeOAuthError(error)}`.slice(0, 240) };
   }
 }
 
@@ -142,6 +143,6 @@ async function getClaudeUsageLegacy(accessToken, proxyOptions = null) {
 
     return { message: "Claude connected. Usage API requires admin permissions." };
   } catch (error) {
-    return { message: `Claude connected. Unable to fetch usage: ${error.message}` };
+    return { message: `Claude connected. Unable to fetch usage: ${sanitizeOAuthError(error)}`.slice(0, 240) };
   }
 }

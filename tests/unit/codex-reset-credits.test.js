@@ -219,6 +219,33 @@ describe("Codex reset credits", () => {
     );
   });
 
+  it("sanitizes reset-credit provider messages", async () => {
+    const secret = "https://user:password@provider.test/reset?access_token=SECRET-TOKEN";
+    mocks.getProviderConnectionById.mockResolvedValue({
+      id: "conn_1",
+      provider: "codex",
+      authType: "access_token",
+      accessToken: "token",
+      providerSpecificData: {},
+    });
+    mocks.consumeCodexRateLimitResetCredit.mockResolvedValue({
+      ok: false,
+      noCredit: false,
+      status: 502,
+      code: "provider_error",
+      windowsReset: 0,
+      message: secret,
+    });
+
+    const { POST } = await import("../../src/app/api/usage/[connectionId]/codex-reset-credits/route.js");
+    const response = await POST(new Request("http://localhost/api/usage/conn_1/codex-reset-credits", { method: "POST" }), {
+      params: Promise.resolve({ connectionId: "conn_1" }),
+    });
+    const output = JSON.stringify(await response.json());
+
+    for (const value of ["user", "password", "SECRET-TOKEN"]) expect(output).not.toContain(value);
+  });
+
   it("rejects an unavailable pool before refresh or reset-credit I/O", async () => {
     mocks.getProviderConnectionById.mockResolvedValue({
       id: "conn_1",

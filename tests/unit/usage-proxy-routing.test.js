@@ -118,4 +118,17 @@ describe("usage route proxy lifecycle", () => {
     expect(response.status).toBe(500);
     for (const value of ["user", "password", "SECRET-TOKEN"]) expect(output).not.toContain(value);
   });
+
+  it("sanitizes nested usage messages before returning them", async () => {
+    const secret = "Usage error: https://user:password@provider.test/usage?access_token=SECRET-TOKEN";
+    mocks.getUsageForProvider.mockResolvedValue({ message: secret });
+    const { GET } = await import("../../src/app/api/usage/[connectionId]/route.js");
+
+    const response = await GET(new Request("http://localhost/api/usage/conn-1"), {
+      params: Promise.resolve({ connectionId: "conn-1" }),
+    });
+    const output = JSON.stringify(await response.json());
+
+    for (const value of ["user", "password", "SECRET-TOKEN"]) expect(output).not.toContain(value);
+  });
 });

@@ -75,6 +75,9 @@ export async function handleImageGenerationCore({
       if (onRequestSuccess) await onRequestSuccess();
       const normalized = adapter.normalize(responseBody, body.prompt);
       const finalBody = (normalized.created && Array.isArray(normalized.data)) ? normalized : responseBody;
+      for (const image of finalBody.data || []) {
+        if (Object.prototype.hasOwnProperty.call(image || {}, "b64_json")) decodeBase64Image(image.b64_json);
+      }
 
       if (binaryOutput) {
         return { success: true, response: await buildBinaryImageResponse(finalBody, proxyOptions) };

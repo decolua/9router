@@ -259,8 +259,8 @@ export async function GET(request, { params }) {
 // POST actions: start-proxy, exchange, poll, manual-code
 export async function POST(request, { params }) {
   try {
-    await ensureOutboundProxyInitialized();
     const { provider, action } = await params;
+    if (action !== "cancel") await ensureOutboundProxyInitialized();
     if (action === "start-proxy") {
       const mediaType = (request.headers.get("content-type") || "").split(";", 1)[0].trim().toLowerCase();
       if (mediaType !== "application/json" && !mediaType.endsWith("+json")) {
@@ -272,6 +272,20 @@ export async function POST(request, { params }) {
       body = await request.json();
     } catch {
       return NextResponse.json({ error: "Invalid or empty request body" }, { status: 400 });
+    }
+
+    if (action === "cancel") {
+      const state = normalizeFlowId(body.state);
+      const kind = body.kind === undefined ? "oauth" : body.kind;
+      if (!state) return NextResponse.json({ error: "Missing or invalid state" }, { status: 400 });
+      if (!["oauth", "kiro-social"].includes(kind)) {
+        return NextResponse.json({ error: "Invalid OAuth flow kind" }, { status: 400 });
+      }
+      if (kind === "kiro-social" && !["google", "github"].includes(provider)) {
+        return NextResponse.json({ error: "Invalid Kiro social provider" }, { status: 400 });
+      }
+      clearAuthorizationFlow(kind, provider, state);
+      return NextResponse.json({ success: true });
     }
 
     if (action === "poll-status") {

@@ -44,7 +44,9 @@ function getResponseForConsumeResult(result, redeemRequestId) {
     code: result.code || "unknown_response",
     reset: false,
     windows_reset: result.windowsReset,
-    message: result.message || "Codex reset credit consume returned an unexpected response.",
+    message: result.message
+      ? sanitizeOAuthError(result.message)
+      : "Codex reset credit consume returned an unexpected response.",
   }, { status: result.status >= 400 && result.status < 500 ? result.status : 502 });
 }
 

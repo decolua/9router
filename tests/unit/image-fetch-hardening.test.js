@@ -52,6 +52,17 @@ describe("fetchImageAsBase64 hardening", () => {
     expect(await fetchImageAsBase64("http://x/y.png")).toBeNull();
   });
 
+  it.each([
+    "::2",
+    "::ffff:0:7f00:1",
+  ])("SSRF: rejects reserved IPv6 address %s", async (address) => {
+    lookupMock.mockResolvedValue({ address });
+    globalThis.fetch = vi.fn();
+
+    expect(await fetchImageAsBase64("http://x/y.png")).toBeNull();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
   it("accepts valid PNG from public host", async () => {
     mockFetchOnce(PNG);
     const r = await fetchImageAsBase64("https://example.com/a.png");

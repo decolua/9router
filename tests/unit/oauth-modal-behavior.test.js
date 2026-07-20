@@ -35,6 +35,7 @@ vi.mock("@/shared/components", () => ({
   Button: function Button() {},
   Input: function Input() {},
   Modal: function Modal() {},
+  OAuthModal: function OAuthModal() {},
 }));
 
 vi.mock("@/shared/hooks/useCopyToClipboard", () => ({
@@ -43,6 +44,8 @@ vi.mock("@/shared/hooks/useCopyToClipboard", () => ({
 
 import OAuthModal from "../../src/shared/components/OAuthModal.js";
 import KiroSocialOAuthModal from "../../src/shared/components/KiroSocialOAuthModal.js";
+import KiroOAuthWrapper from "../../src/shared/components/KiroOAuthWrapper.js";
+import GitLabAuthModal from "../../src/shared/components/GitLabAuthModal.js";
 
 const originalFetch = globalThis.fetch;
 const credentialError = "exchange failed at https://user:password@provider.test/callback?code=SECRET-CODE&refresh_token=SECRET-REFRESH";
@@ -121,6 +124,7 @@ function renderKiroModal({
   authData = null,
   callbackUrl = "",
   omitProxyPoolsReady = false,
+  onClose = vi.fn(),
 } = {}) {
   harness.effects = [];
   harness.refs = [];
@@ -132,8 +136,8 @@ function renderKiroModal({
     isOpen: true,
     provider: "google",
     onSuccess: vi.fn(),
-    onClose: vi.fn(),
-    proxyPools: [],
+    onClose,
+    proxyPools: [{ id: "pool-1", name: "Pool 1" }],
   };
   if (!omitProxyPoolsReady) props.proxyPoolsReady = true;
   const tree = KiroSocialOAuthModal(props);
@@ -206,6 +210,48 @@ describe("OAuth modal flow coordination", () => {
     await flushPromises();
 
     expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("defaults Kiro wrapper pool readiness to false", () => {
+    harness.effects = [];
+    harness.refs = [];
+    harness.refIndex = 0;
+    harness.stateIndex = 0;
+    harness.stateValues = ["builder-id", null, null];
+
+    const tree = KiroOAuthWrapper({
+      isOpen: true,
+      providerInfo: { name: "Kiro" },
+      onClose: vi.fn(),
+    });
+
+    expect(tree.props.proxyPoolsReady).toBe(false);
+  });
+
+  it("defaults GitLab wrapper pool readiness to false", () => {
+    harness.effects = [];
+    harness.refs = [];
+    harness.refIndex = 0;
+    harness.stateIndex = 0;
+    harness.stateValues = [
+      "oauth",
+      "https://gitlab.com",
+      "client-id",
+      "",
+      "",
+      false,
+      null,
+      true,
+      { baseUrl: "https://gitlab.com", clientId: "client-id" },
+    ];
+
+    const tree = GitLabAuthModal({
+      isOpen: true,
+      providerInfo: { name: "GitLab" },
+      onClose: vi.fn(),
+    });
+
+    expect(tree.props.proxyPoolsReady).toBe(false);
   });
 
   it("sanitizes popup callback errors before displaying them", async () => {
@@ -399,6 +445,108 @@ describe("OAuth modal flow coordination", () => {
     finishCancellation(response({ success: true }));
     await Promise.all([firstClose, secondClose]);
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels dynamic authorization and rejects stale popup completion on close", async () => {
+    const popup = {};
+    const onClose = vi.fn();
+    globalThis.fetch = vi.fn(async (url) => {
+      const target = String(url);
+      if (target.endsWith("/cancel")) return response({ success: true });
+      if (target.endsWith("/exchange")) return response({ success: true });
+      throw new Error(`Unexpected request: ${target}`);
+    });
+    const tree = renderModal({
+      authData: { state: "dynamic-state" },
+      isLocalhost: true,
+      onClose,
+    });
+    harness.refs[0].current = popup;
+    harness.effects.at(-1)();
+    const messageHandler = window.addEventListener.mock.calls.find(([type]) => type === "message")[1];
+
+    await tree.props.onClose();
+    messageHandler({
+      source: popup,
+      origin: window.location.origin,
+      data: {
+        type: "oauth_callback",
+        data: { state: "dynamic-state", code: "late-code" },
+      },
+    });
+    await flushPromises();
+
+    const cancelCalls = globalThis.fetch.mock.calls.filter(([url]) => String(url).endsWith("/cancel"));
+    expect(cancelCalls).toHaveLength(1);
+    expect(JSON.parse(cancelCalls[0][1].body)).toEqual({ state: "dynamic-state" });
+    expect(globalThis.fetch.mock.calls.some(([url]) => String(url).endsWith("/exchange"))).toBe(false);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels Kiro social authorization before closing", async () => {
+    const onClose = vi.fn();
+    globalThis.fetch = vi.fn().mockResolvedValue(response({ success: true }));
+    const tree = renderKiroModal({
+      step: "input",
+      authData: { state: "social-close-state" },
+      onClose,
+    });
+
+    await tree.props.onClose();
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "/api/oauth/google/cancel",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ state: "social-close-state", kind: "kiro-social" }),
+      }),
+    );
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels Kiro social authorization before changing pools", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(response({ success: true }));
+    const tree = renderKiroModal({
+      step: "input",
+      authData: { state: "social-pool-state" },
+    });
+    const select = findElement(tree, (node) => node.type?.name === "OAuthProxyPoolSelector");
+
+    await select.props.onChange({ target: { value: "pool-1" } });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "/api/oauth/google/cancel",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ state: "social-pool-state", kind: "kiro-social" }),
+      }),
+    );
+  });
+
+  it("stops device polling on a non-2xx JSON response", async () => {
+    vi.useFakeTimers();
+    globalThis.fetch = vi.fn(async (url) => {
+      const target = String(url);
+      if (target.includes("/device-code")) {
+        return response({
+          flowId: "device-flow",
+          expires_in: 60,
+          interval: 1,
+          verification_uri: "https://auth.example/device",
+        });
+      }
+      if (target.endsWith("/poll")) return response({ error: "server_failure" }, false);
+      throw new Error(`Unexpected request: ${target}`);
+    });
+    renderModal({ provider: "github" });
+
+    harness.effects[1]();
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(harness.stateSetters[0]).toHaveBeenCalledWith("error");
+    expect(harness.stateSetters[6]).toHaveBeenCalledWith(false);
+    expect(globalThis.fetch.mock.calls.filter(([url]) => String(url).endsWith("/poll"))).toHaveLength(1);
   });
 
   it("surfaces fixed close failure without closing", async () => {

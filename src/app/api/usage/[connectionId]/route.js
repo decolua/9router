@@ -177,6 +177,10 @@ export async function GET(request, { params }) {
       }
     }
 
+    if (typeof usage?.message === "string" && /error|unable|failed/i.test(usage.message)) {
+      usage = { ...usage, message: sanitizeOAuthError(usage.message) };
+    }
+
     return Response.json(usage);
   } catch (error) {
     const provider = connection?.provider ?? "unknown";

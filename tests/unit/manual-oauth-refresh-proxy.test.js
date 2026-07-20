@@ -142,4 +142,91 @@ describe("manual OAuth test refresh routing", () => {
     expect(mocks.proxyAwareFetch).toHaveBeenCalledTimes(2);
     expect(mocks.proxyAwareFetch.mock.calls.every((call) => call[2] === effectiveProxy)).toBe(true);
   });
+
+  it.each([
+    ["ollama", "https://ollama.com/api/tags"],
+    ["ollama-local", "http://127.0.0.1:11434/api/tags"],
+  ])("uses selected proxy for %s provider tests", async (provider, expectedUrl) => {
+    const providerConnection = {
+      id: `${provider}-test`,
+      provider,
+      authType: "apikey",
+      apiKey: "api-key",
+      providerSpecificData: provider === "ollama-local" ? { baseUrl: "http://127.0.0.1:11434" } : {},
+    };
+    mocks.getProviderConnectionById.mockResolvedValue(providerConnection);
+
+    const result = await testSingleConnection(providerConnection.id);
+
+    expect(result.valid).toBe(true);
+    expect(mocks.proxyAwareFetch).toHaveBeenCalledWith(expectedUrl, expect.any(Object), effectiveProxy);
+  });
+
+  it("keeps explicit Direct semantics for Ollama provider tests", async () => {
+    const directRoute = { source: "none", disableEnvProxy: true };
+    mocks.getProviderConnectionById.mockResolvedValue({
+      id: "ollama-direct",
+      provider: "ollama",
+      authType: "apikey",
+      apiKey: "api-key",
+      providerSpecificData: {},
+    });
+    mocks.resolveConnectionProxyConfig.mockResolvedValue(directRoute);
+
+    await testSingleConnection("ollama-direct");
+
+    expect(mocks.proxyAwareFetch).toHaveBeenCalledWith(
+      "https://ollama.com/api/tags",
+      expect.any(Object),
+      { disableEnvProxy: true },
+    );
+  });
+
+  it("fails closed when an Ollama test route is unavailable", async () => {
+    const unavailableRoute = {
+      source: "unavailable",
+      proxyPoolId: "missing-pool",
+      proxyUnavailable: true,
+      disableEnvProxy: true,
+    };
+    mocks.getProviderConnectionById.mockResolvedValue({
+      id: "ollama-unavailable",
+      provider: "ollama",
+      authType: "apikey",
+      apiKey: "api-key",
+      providerSpecificData: { proxyPoolId: "missing-pool" },
+    });
+    mocks.resolveConnectionProxyConfig.mockResolvedValue(unavailableRoute);
+    mocks.proxyAwareFetch.mockRejectedValue(new Error("Selected proxy is unavailable"));
+
+    const result = await testSingleConnection("ollama-unavailable");
+
+    expect(result.valid).toBe(false);
+    expect(mocks.proxyAwareFetch).toHaveBeenCalledWith(
+      "https://ollama.com/api/tags",
+      expect.any(Object),
+      unavailableRoute,
+    );
+  });
+
+  it("sanitizes provider test errors before persistence and publication", async () => {
+    const secret = "https://user:password@proxy.test/probe?access_token=SECRET-TOKEN";
+    mocks.getProviderConnectionById.mockResolvedValue({
+      id: "ollama-error",
+      provider: "ollama",
+      authType: "apikey",
+      apiKey: "api-key",
+      providerSpecificData: {},
+    });
+    globalThis.fetch.mockRejectedValue(new Error(secret));
+    mocks.proxyAwareFetch.mockRejectedValue(new Error(secret));
+
+    const result = await testSingleConnection("ollama-error");
+    const persisted = mocks.updateProviderConnection.mock.calls.at(-1)[1].lastError;
+
+    for (const value of ["user", "password", "SECRET-TOKEN"]) {
+      expect(result.error).not.toContain(value);
+      expect(persisted).not.toContain(value);
+    }
+  });
 });

@@ -2,6 +2,8 @@ import { createErrorResult } from "../utils/error.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { refreshTokenByProvider } from "../services/tokenRefresh.js";
 import { PROVIDER_MEDIA } from "../providers/index.js";
+import { MAX_REMOTE_JSON_BYTES } from "../config/mediaConfig.js";
+import { readBoundedResponse } from "../utils/safeRemoteFetch.js";
 
 // Upstream fetch deadline for video job submission/polling (the job itself is
 // async upstream — this only bounds the HTTP round-trip, not video rendering).
@@ -147,7 +149,15 @@ export async function handleVideoProxyCore({
     }
   }
 
-  const bodyText = await upstream.text().catch(() => "");
+  let bodyText;
+  try {
+    bodyText = (await readBoundedResponse(upstream, MAX_REMOTE_JSON_BYTES)).toString("utf8");
+  } catch (error) {
+    return createErrorResult(
+      HTTP_STATUS.BAD_GATEWAY,
+      sanitizeSecrets(`[${provider}] ${error.message || "Video upstream response is invalid"}`, credentials),
+    );
+  }
 
   if (!upstream.ok) {
     const message = sanitizeSecrets(bodyText || `HTTP ${upstream.status}`, credentials);
