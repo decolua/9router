@@ -6,13 +6,50 @@ import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
+import { DEFAULT_PLUGINS } from "@/shared/constants/coworkPlugins";
 
 const execAsync = promisify(exec);
+
+// Exa MCP def — reuse from coworkPlugins (DRY).
+const EXA_PLUGIN = DEFAULT_PLUGINS.find((p) => p.name === "exa");
+const buildExaMcpEntry = () => ({
+  type: EXA_PLUGIN.transport,
+  url: EXA_PLUGIN.url,
+});
 
 // Get claude settings path based on OS
 const getClaudeSettingsPath = () => {
   const homeDir = os.homedir();
   return path.join(homeDir, ".claude", "settings.json");
+};
+
+// Claude Code CLI reads mcpServers from ~/.claude.json (NOT settings.json).
+const getClaudeJsonPath = () => path.join(os.homedir(), ".claude.json");
+
+const readClaudeJson = async () => {
+  try {
+    const content = await fs.readFile(getClaudeJsonPath(), "utf-8");
+    return JSON.parse(content.replace(/,(\s*[}\]])/g, "$1"));
+  } catch {
+    return null;
+  }
+};
+
+const writeClaudeJsonMcp = async (mcpServers) => {
+  const filePath = getClaudeJsonPath();
+  let data = {};
+  try {
+    data = JSON.parse(await fs.readFile(filePath, "utf-8"));
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  if (mcpServers && Object.keys(mcpServers).length > 0) {
+    data.mcpServers = { ...(data.mcpServers || {}), ...mcpServers };
+  } else if (data.mcpServers) {
+    delete data.mcpServers.exa;
+    if (Object.keys(data.mcpServers).length === 0) delete data.mcpServers;
+  }
+  await fs.writeFile(filePath, JSON.stringify(data, null, 2));
 };
 
 
@@ -65,11 +102,13 @@ export async function GET() {
 
     const settings = await readSettings();
     const has9Router = !!(settings?.env?.ANTHROPIC_BASE_URL);
+    const claudeJson = await readClaudeJson();
 
     return NextResponse.json({
       installed: true,
       settings: settings,
       has9Router: has9Router,
+      exaMcpEnabled: !!claudeJson?.mcpServers?.exa,
       settingsPath: getClaudeSettingsPath(),
     });
   } catch (error) {
@@ -84,7 +123,7 @@ export async function GET() {
 // POST - Backup old fields and write new settings
 export async function POST(request) {
   try {
-    const { env } = await request.json();
+    const { env, exaMcpEnabled } = await request.json();
     
     if (!env || typeof env !== "object") {
       return NextResponse.json(
@@ -129,6 +168,11 @@ export async function POST(request) {
 
     // Write new settings
     await fs.writeFile(settingsPath, JSON.stringify(newSettings, null, 2));
+
+    // Exa MCP toggle — write to ~/.claude.json (CLI reads mcpServers from here).
+    if (EXA_PLUGIN) {
+      await writeClaudeJsonMcp(exaMcpEnabled ? { exa: buildExaMcpEntry() } : null);
+    }
 
     return NextResponse.json({
       success: true,
@@ -185,6 +229,9 @@ export async function DELETE() {
       }
     }
 
+    // Remove injected MCP servers (Exa) from ~/.claude.json
+    await writeClaudeJsonMcp(null);
+
     // Write updated settings
     await fs.writeFile(settingsPath, JSON.stringify(currentSettings, null, 2));
 
@@ -200,4 +247,3 @@ export async function DELETE() {
     );
   }
 }
-
