@@ -2,8 +2,7 @@ import { DEFAULT_MAX_TOKENS, DEFAULT_MIN_TOKENS } from "open-sse/config/runtimeC
 import { PROVIDERS } from "open-sse/config/providers.js";
 import { getModelTargetFormat, PROVIDER_ID_TO_ALIAS } from "open-sse/config/providerModels.js";
 import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
-import { FORMATS } from "open-sse/translator/formats.js";
-import { adjustMaxTokens } from "open-sse/translator/formats/maxTokens.js";
+import { getTranslatedMaxTokens } from "open-sse/translator/formats/maxTokens.js";
 
 const THINKING_OUTPUT_HEADROOM = 1_024;
 
@@ -22,10 +21,8 @@ function getTranslatedOutputCeiling(body, provider, model) {
   if (!provider) return null;
   const alias = PROVIDER_ID_TO_ALIAS[provider] || provider;
   const targetFormat = getModelTargetFormat(alias, model) || PROVIDERS[provider]?.format;
-  if (targetFormat === FORMATS.CURSOR) return DEFAULT_MIN_TOKENS;
-  if (targetFormat !== FORMATS.CLAUDE) return null;
   const modelCeiling = getCapabilitiesForModel(null, model).maxOutput || undefined;
-  return positiveSafeInteger(adjustMaxTokens(body, modelCeiling));
+  return positiveSafeInteger(getTranslatedMaxTokens(targetFormat, body, modelCeiling));
 }
 
 export function estimateChatUsageReservation(body, { provider, model } = {}) {

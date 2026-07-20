@@ -1,6 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { openaiToClaudeRequest } from "../../open-sse/translator/request/openai-to-claude.js";
-import { openaiToCursorRequest } from "../../open-sse/translator/request/openai-to-cursor.js";
 
 let estimateChatUsageReservation;
 try {
@@ -68,11 +66,8 @@ describe("chat usage reservation estimate", () => {
       max_output_tokens: 3,
       generationConfig: { maxOutputTokens: 4 },
     };
-    const translated = openaiToCursorRequest("cursor-model", body, true, null);
-
-    expect(translated.max_tokens).toBe(32_000);
     expect(estimateChatUsageReservation(body, { provider: "cursor", model: "cursor-model" }))
-      .toBe(expectedTotal(body, translated.max_tokens));
+      .toBe(expectedTotal(body, 32_000));
   });
 
   it("reserves Claude's translated 64000 default when max_tokens is absent", () => {
@@ -83,11 +78,8 @@ describe("chat usage reservation estimate", () => {
       max_output_tokens: 2,
       generationConfig: { maxOutputTokens: 3 },
     };
-    const translated = openaiToClaudeRequest("claude-sonnet-4-20250514", body, true);
-
-    expect(translated.max_tokens).toBe(64_000);
     expect(estimateChatUsageReservation(body, { provider: "anthropic", model: "claude-sonnet-4-20250514" }))
-      .toBe(expectedTotal(body, translated.max_tokens));
+      .toBe(expectedTotal(body, 64_000));
   });
 
   it("keeps Claude's low explicit max_tokens when translation keeps it", () => {
@@ -96,11 +88,30 @@ describe("chat usage reservation estimate", () => {
       messages: [],
       max_tokens: 7,
     };
-    const translated = openaiToClaudeRequest("claude-sonnet-4-20250514", body, true);
-
-    expect(translated.max_tokens).toBe(7);
     expect(estimateChatUsageReservation(body, { provider: "anthropic", model: "claude-sonnet-4-20250514" }))
-      .toBe(expectedTotal(body, translated.max_tokens));
+      .toBe(expectedTotal(body, 7));
+  });
+
+  it.each([
+    [
+      "Kiro",
+      "kiro",
+      "claude-sonnet-4.6",
+      { max_tokens: 1, max_completion_tokens: 2, max_output_tokens: 3 },
+      32_000,
+    ],
+    [
+      "CommandCode",
+      "commandcode",
+      "deepseek/deepseek-v4-pro",
+      { max_completion_tokens: 1, generationConfig: { maxOutputTokens: 2 } },
+      64_000,
+    ],
+  ])("reserves %s's effective translated output ceiling", (_name, provider, model, fields, outputTokens) => {
+    const body = { model: `${provider}/${model}`, messages: [], ...fields };
+
+    expect(estimateChatUsageReservation(body, { provider, model }))
+      .toBe(expectedTotal(body, outputTokens));
   });
 
   it("ignores invalid output values and falls back to 64000", () => {

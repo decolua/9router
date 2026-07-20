@@ -4,6 +4,7 @@
  */
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
+import { getTranslatedMaxTokens } from "../formats/maxTokens.js";
 import { v4 as uuidv4 } from "uuid";
 import { applyKiroSessionReplay } from "../../utils/kiroSessionReplay.js";
 import { resolveContinuationId, resolveSessionIdentity } from "../../utils/sessionManager.js";
@@ -521,7 +522,7 @@ function convertMessages(messages, tools, model) {
 export function openaiToKiroRequest(model, body, stream, credentials) {
   const messages = body.messages || [];
   const tools = body.tools || [];
-  const maxTokens = 32000;
+  const maxTokens = getTranslatedMaxTokens(FORMATS.KIRO, body);
   const temperature = body.temperature;
   const topP = body.top_p;
 

@@ -1,7 +1,7 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { CLAUDE_SYSTEM_PROMPT } from "../../config/appConstants.js";
-import { adjustMaxTokens } from "../formats/maxTokens.js";
+import { getTranslatedMaxTokens } from "../formats/maxTokens.js";
 import { safeParseJSON } from "../concerns/json.js";
 import { parseDataUri } from "../concerns/image.js";
 import { extractTextContent } from "../formats/gemini.js";
@@ -22,7 +22,7 @@ export function openaiToClaudeRequest(model, body, stream) {
   const modelCeiling = getCapabilitiesForModel(null, model).maxOutput || undefined;
   const result = {
     model: model,
-    max_tokens: adjustMaxTokens(body, modelCeiling),
+    max_tokens: getTranslatedMaxTokens(FORMATS.CLAUDE, body, modelCeiling),
     stream: stream
   };
 
@@ -380,4 +380,3 @@ export { openaiToClaudeRequestForAntigravity };
 
 // Register
 register(FORMATS.OPENAI, FORMATS.CLAUDE, openaiToClaudeRequest, null);
-

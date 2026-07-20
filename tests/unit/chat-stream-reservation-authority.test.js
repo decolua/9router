@@ -37,6 +37,68 @@ async function waitForUsageAttempt() {
   await new Promise((resolve) => setTimeout(resolve, 50));
 }
 
+async function createReservedStream(name) {
+  const key = await db.createApiKey(name, "machine-test", 100);
+  const reservation = await db.reserveApiKeyUsage(key.key, 50);
+  const body = { model: "openai/gpt-4o", messages: [], stream: true };
+  const { onStreamComplete } = buildOnStreamComplete({
+    provider: "openai",
+    model: "gpt-4o",
+    connectionId: "connection-test",
+    apiKey: key.key,
+    usageReservationId: reservation.reservationId,
+    requestStartTime: Date.now(),
+    body,
+    stream: true,
+    clientRawRequest: { endpoint: "/v1/chat/completions" },
+  });
+  return { body, key, onStreamComplete, reservation };
+}
+
+function openAiUsageStream(usage) {
+  return [
+    `data: ${JSON.stringify({ id: "chatcmpl-authority", choices: [{ index: 0, delta: { content: "answer" }, finish_reason: null }] })}`,
+    "",
+    `data: ${JSON.stringify({ id: "chatcmpl-authority", choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage })}`,
+    "",
+    "data: [DONE]",
+    "",
+  ].join("\n");
+}
+
+function responsesUsageStream(usage) {
+  return [
+    "event: response.completed",
+    `data: ${JSON.stringify({ type: "response.completed", response: { id: "resp-authority", status: "completed", usage } })}`,
+    "",
+    "data: [DONE]",
+    "",
+  ].join("\n");
+}
+
+async function drainOpenAiUsage(context, usage) {
+  const transform = createPassthroughStreamWithLogger(
+    "openai", null, "gpt-4o", "connection-test", context.body, context.onStreamComplete, context.key.key,
+  );
+  await drainThrough(transform, openAiUsageStream(usage));
+}
+
+async function drainResponsesUsage(context, usage) {
+  const transform = createSSETransformStreamWithLogger(
+    FORMATS.OPENAI_RESPONSES,
+    FORMATS.OPENAI_RESPONSES,
+    "codex",
+    null,
+    null,
+    "gpt-5-codex",
+    "connection-test",
+    context.body,
+    context.onStreamComplete,
+    context.key.key,
+  );
+  await drainThrough(transform, responsesUsageStream(usage));
+}
+
 beforeAll(async () => {
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-stream-authority-"));
   process.env.DATA_DIR = tempDir;
@@ -220,72 +282,63 @@ describe("stream usage reservation authority", () => {
     });
   });
 
-  it.each([
-    ["top-level", { prompt_tokens: "bad", completion_tokens: 5 }],
-    ["nested", { prompt_tokens: 5, completion_tokens: 5, completion_tokens_details: { reasoning_tokens: "bad" } }],
-  ])("keeps the reservation for malformed %s authoritative usage", async (_name, tokens) => {
-    const key = await db.createApiKey(`malformed-${_name}`, "machine-test", 100);
-    const reservation = await db.reserveApiKeyUsage(key.key, 50);
+  it("keeps the reservation when real stream normalization sees malformed top-level usage", async () => {
+    const context = await createReservedStream("malformed-stream-top-level");
 
-    saveUsageStats({
-      provider: "openai",
-      model: "gpt-4o",
-      tokens,
-      apiKey: key.key,
-      usageReservationId: reservation.reservationId,
-      silent: true,
+    await drainOpenAiUsage(context, { prompt_tokens: "bad", completion_tokens: 5 });
+    await waitForUsageRow();
+
+    expect(rawDb.get("SELECT id FROM apiKeyUsageReservations WHERE id = ?", [context.reservation.reservationId])).toBeDefined();
+    expect(JSON.parse(rawDb.get("SELECT tokens FROM usageHistory").tokens)).toMatchObject({ estimated: true });
+  });
+
+  it("keeps the reservation when Responses stream normalization sees malformed nested usage", async () => {
+    const context = await createReservedStream("malformed-stream-nested");
+
+    await drainResponsesUsage(context, {
+      input_tokens: 10,
+      output_tokens: 5,
+      output_tokens_details: { reasoning_tokens: "bad" },
     });
     await waitForUsageAttempt();
 
-    expect(rawDb.get("SELECT id FROM apiKeyUsageReservations WHERE id = ?", [reservation.reservationId])).toBeDefined();
+    expect(rawDb.get("SELECT id FROM apiKeyUsageReservations WHERE id = ?", [context.reservation.reservationId])).toBeDefined();
     expect(rawDb.get("SELECT COUNT(*) AS count FROM usageHistory").count).toBe(0);
   });
 
-  it("reconciles explicit authoritative all-zero usage exactly once", async () => {
-    const key = await db.createApiKey("all-zero", "machine-test", 100);
-    const reservation = await db.reserveApiKeyUsage(key.key, 50);
-    const entry = {
-      provider: "openai",
-      model: "gpt-4o",
-      tokens: { prompt_tokens: 0, completion_tokens: 0 },
-      apiKey: key.key,
-      usageReservationId: reservation.reservationId,
-      silent: true,
-    };
+  it("reconciles explicit authoritative all-zero streaming usage exactly once", async () => {
+    const context = await createReservedStream("all-zero-stream");
+    const usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
 
-    saveUsageStats(entry);
+    await drainOpenAiUsage(context, usage);
     await waitForUsageRow();
-    saveUsageStats(entry);
+    await drainOpenAiUsage(context, usage);
     await waitForUsageAttempt();
 
-    expect(rawDb.get("SELECT id FROM apiKeyUsageReservations WHERE id = ?", [reservation.reservationId])).toBeUndefined();
+    expect(rawDb.get("SELECT id FROM apiKeyUsageReservations WHERE id = ?", [context.reservation.reservationId])).toBeUndefined();
     expect(rawDb.get("SELECT COUNT(*) AS count FROM usageHistory").count).toBe(1);
-    expect(rawDb.get("SELECT promptTokens, completionTokens FROM usageHistory")).toEqual({
+    expect(rawDb.get("SELECT promptTokens, completionTokens, tokens FROM usageHistory")).toMatchObject({
       promptTokens: 0,
       completionTokens: 0,
     });
-    expect(await db.getApiKeyUsageLimitStatus(key.key)).toMatchObject({
+    expect(JSON.parse(rawDb.get("SELECT tokens FROM usageHistory").tokens)).not.toHaveProperty("estimated");
+    expect(await db.getApiKeyUsageLimitStatus(context.key.key)).toMatchObject({
       usedTokens: 0,
       reservedTokens: 0,
       remainingTokens: 100,
     });
   });
 
-  it("keeps the reservation when authoritative usage has no token components", async () => {
-    const key = await db.createApiKey("empty-usage", "machine-test", 100);
-    const reservation = await db.reserveApiKeyUsage(key.key, 50);
+  it.each([
+    ["total-only", { total_tokens: 15 }],
+    ["cache-only", { input_tokens_details: { cached_tokens: 15 } }],
+  ])("keeps the reservation for unsupported %s Responses stream authority", async (_name, usage) => {
+    const context = await createReservedStream(`partial-${_name}`);
 
-    saveUsageStats({
-      provider: "openai",
-      model: "gpt-4o",
-      tokens: {},
-      apiKey: key.key,
-      usageReservationId: reservation.reservationId,
-      silent: true,
-    });
+    await drainResponsesUsage(context, usage);
     await waitForUsageAttempt();
 
-    expect(rawDb.get("SELECT id FROM apiKeyUsageReservations WHERE id = ?", [reservation.reservationId])).toBeDefined();
+    expect(rawDb.get("SELECT id FROM apiKeyUsageReservations WHERE id = ?", [context.reservation.reservationId])).toBeDefined();
     expect(rawDb.get("SELECT COUNT(*) AS count FROM usageHistory").count).toBe(0);
   });
 });

@@ -29,7 +29,7 @@ function processSSEMessage(msg, state) {
     state.items.set(parsed.output_index ?? 0, parsed.item);
   } else if (eventType === "response.completed" || eventType === "response.done") {
     const responseStatus = parsed.response?.status;
-    state.status = eventType === "response.done" || !responseStatus || responseStatus === "completed" || responseStatus === "done"
+    state.status = !responseStatus || responseStatus === "completed" || responseStatus === "done"
       ? "completed"
       : responseStatus;
     if (parsed.response?.usage) {

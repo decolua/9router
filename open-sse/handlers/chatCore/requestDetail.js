@@ -1,6 +1,6 @@
 import { saveRequestUsage, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { COLORS } from "../../utils/stream.js";
-import { canonicalizeUsage } from "../../utils/usageTracking.js";
+import { canonicalizeUsage, hasValidUsage } from "../../utils/usageTracking.js";
 
 const OPTIONAL_PARAMS = [
   "temperature", "top_p", "top_k",
@@ -93,33 +93,8 @@ export function formatDoneLine({ usage, latency }) {
   return `DONE ${latency?.total ?? 0}ms${ttftStr} · ${inStr} · OUT ${outTok}`;
 }
 
-function hasValidAuthoritativeUsage(tokens) {
-  if (!tokens || typeof tokens !== "object" || Array.isArray(tokens)) return false;
-  const values = [
-    tokens.prompt_tokens,
-    tokens.input_tokens,
-    tokens.completion_tokens,
-    tokens.output_tokens,
-    tokens.reasoning_tokens,
-    tokens.total_tokens,
-    tokens.cached_tokens,
-    tokens.cache_read_input_tokens,
-    tokens.cache_creation_input_tokens,
-    tokens.prompt_tokens_details?.cached_tokens,
-    tokens.prompt_tokens_details?.cache_creation_tokens,
-    tokens.completion_tokens_details?.reasoning_tokens,
-    tokens.output_tokens_details?.reasoning_tokens,
-  ];
-  let present = false;
-  return values.every((value) => {
-    if (value === undefined) return true;
-    present = true;
-    return Number.isSafeInteger(value) && value >= 0;
-  }) && present;
-}
-
 export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, usageReservationId, endpoint, label = "USAGE", silent = false }) {
-  if (!hasValidAuthoritativeUsage(tokens)) return;
+  if (!hasValidUsage(tokens)) return;
 
   const normalized = canonicalizeUsage(tokens);
   if (!normalized) return;

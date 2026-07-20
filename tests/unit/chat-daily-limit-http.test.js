@@ -85,6 +85,21 @@ function forcedResponsesFailure(kind) {
     }), { headers: { "content-type": "text/event-stream" } });
   }
 
+  if (kind === "done as failed" || kind === "done as incomplete") {
+    const status = kind === "done as failed" ? "failed" : "incomplete";
+    return new Response([
+      "event: response.done",
+      `data: ${JSON.stringify({
+        response: {
+          id: `resp-${status}`,
+          status,
+          usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+        },
+      })}`,
+      "",
+    ].join("\n"), { headers: { "content-type": "text/event-stream" } });
+  }
+
   const events = kind === "response.failed"
     ? [
         "event: response.failed",
@@ -245,6 +260,25 @@ describe("POST /v1/chat/completions daily token admission", () => {
       max_output_tokens: 2,
     };
     const effectiveEstimate = Buffer.byteLength(JSON.stringify(body), "utf8") + 64_000;
+    await db.updateApiKey(limitedApiKey.id, { dailyLimitTokens: effectiveEstimate - 1 });
+
+    const response = await postChat(new Request("http://localhost/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${limitedApiKey.key}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }));
+
+    expect(response.status).toBe(429);
+    expect(authMocks.getProviderCredentials).not.toHaveBeenCalled();
+    expect(dispatchMocks.handleChatCore).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["Kiro", "kiro/claude-sonnet-4.6", { max_tokens: 1, max_completion_tokens: 2 }, 32_000],
+    ["CommandCode", "commandcode/deepseek/deepseek-v4-pro", { max_completion_tokens: 1 }, 64_000],
+  ])("rejects %s low-token candidates using its translated ceiling", async (_name, model, fields, outputTokens) => {
+    const body = { model, messages: [], ...fields };
+    const effectiveEstimate = Buffer.byteLength(JSON.stringify(body), "utf8") + outputTokens;
     await db.updateApiKey(limitedApiKey.id, { dailyLimitTokens: effectiveEstimate - 1 });
 
     const response = await postChat(new Request("http://localhost/v1/chat/completions", {
@@ -448,7 +482,14 @@ describe("POST /v1/chat/completions daily token admission", () => {
     ]);
   });
 
-  it.each(["response.failed", "incomplete close", "completed as incomplete", "conversion throw"])(
+  it.each([
+    "response.failed",
+    "incomplete close",
+    "completed as incomplete",
+    "done as failed",
+    "done as incomplete",
+    "conversion throw",
+  ])(
     "releases a forced Responses reservation for $0",
     async (failureKind) => {
       const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
