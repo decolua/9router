@@ -219,6 +219,7 @@ describe("Kiro terminal integrity recovery", () => {
   it.each([
     "接下來我只再確認部署結果。",
     "我會重新抓取最新日誌並確認結果。",
+    "目前證據顯示只在 **03:48:30–03:49:00 TPE** 出現少量 NonKA 504；主池 106/106、副池 50/50，且兩池都沒有重啟。最後補查 504 access log，確認 host／路徑與是否為集中流量。",
     "Next I'll verify the deployment logs.",
     "Let me check the remaining failures."
   ])("repairs conservative future-action final: %s", async (progress) => {
@@ -240,6 +241,14 @@ describe("Kiro terminal integrity recovery", () => {
     "我會檢查版本。版本是 1.2.3。",
     "接下來請你先批准部署，我會等待你的確認。",
     "已完成驗證，所有測試均通過。",
+    "目前證據顯示只有少量 504，且主副池均未重啟。",
+    "目前證據顯示只有少量 504。最後補查結果顯示沒有集中流量。",
+    "目前證據顯示只有少量 504。最後補查，結果顯示沒有集中流量。",
+    "目前證據顯示只有少量 504。最後補查：結果顯示沒有集中流量。",
+    "目前證據顯示只有少量 504。最後補查 504 access log，結果顯示沒有集中流量。",
+    "目前證據顯示只有少量 504。最後補查 504 access log，確認 host／路徑與有無集中流量：無集中流量。",
+    "目前證據顯示只有少量 504。最後補查 504 access log，確認 host／路徑與是否為集中流量（答案是否定的）。",
+    "目前證據顯示只有少量 504。最後補充兩點已確認的結果。",
     "The verification is complete and all tests passed."
   ])("does not retry legitimate final: %s", async (finalText) => {
     fetchMock.mockResolvedValueOnce(response([
