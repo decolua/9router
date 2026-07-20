@@ -1,4 +1,4 @@
-import { nowSec, urlToBase64 } from "./_base.js";
+import { decodeBase64Image, nowSec, readBoundedJsonResponse, readImageResponse, urlToBase64, validateImageBuffer } from "./_base.js";
 import { PROVIDER_MEDIA } from "../../providers/index.js";
 
 const BASE_URL = PROVIDER_MEDIA["cloudflare-ai"]?.imageConfig?.baseUrl;
@@ -37,26 +37,20 @@ function getDimensions(body) {
 
 async function resolveImageInput(value, proxyOptions) {
   if (Array.isArray(value)) {
-    return { bytes: value, b64: Buffer.from(value).toString("base64") };
+    const buffer = validateImageBuffer(value);
+    return { bytes: Array.from(buffer), b64: buffer.toString("base64") };
   }
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
   if (/^https?:\/\//i.test(trimmed)) {
     const b64 = await urlToBase64(trimmed, proxyOptions);
-    return { bytes: base64ToBytes(b64), b64 };
+    return { bytes: Array.from(decodeBase64Image(b64)), b64 };
   }
   const match = /^data:image\/[^;]+;base64,(.+)$/i.exec(trimmed);
   const b64 = match ? match[1] : trimmed;
-  return { bytes: base64ToBytes(b64), b64 };
-}
-
-function base64ToBytes(value) {
-  try {
-    return Array.from(Buffer.from(value, "base64"));
-  } catch {
-    return value;
-  }
+  const buffer = decodeBase64Image(b64);
+  return { bytes: Array.from(buffer), b64: buffer.toString("base64") };
 }
 
 function addOptionalFields(target, body, append) {
@@ -164,14 +158,14 @@ export default {
   async parseResponse(response) {
     const contentType = (response.headers.get("Content-Type") || "").toLowerCase();
     if (contentType.startsWith("image/")) {
-      const buf = await response.arrayBuffer();
+      const buf = await readImageResponse(response);
       return {
         created: nowSec(),
-        data: [{ b64_json: Buffer.from(buf).toString("base64") }],
+        data: [{ b64_json: buf.toString("base64") }],
       };
     }
 
-    const json = await response.json();
+    const json = await readBoundedJsonResponse(response);
     return normalizeCloudflareResponse(json);
   },
 

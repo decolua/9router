@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 
 const REFRESH_RESULT_TTL_MS = 10_000;
-const REFRESH_IN_FLIGHT_TTL_MS = 60_000;
 const REFRESH_DEDUP_MAX_ENTRIES = 256;
 const refreshDedupCache = new Map();
 let refreshDedupCleanupTimer = null;
@@ -29,7 +28,7 @@ function refreshDedupKey(provider, oldToken, proxyOptions) {
 }
 
 function entryDeadline(entry) {
-  return entry.promise ? entry.staleAt : entry.expiresAt;
+  return entry.promise ? Infinity : entry.expiresAt;
 }
 
 function pruneRefreshDedupCache(now = Date.now()) {
@@ -47,6 +46,7 @@ function scheduleRefreshDedupCleanup() {
   for (const entry of refreshDedupCache.values()) {
     deadline = Math.min(deadline, entryDeadline(entry));
   }
+  if (!Number.isFinite(deadline)) return;
   refreshDedupCleanupTimer = setTimeout(() => {
     refreshDedupCleanupTimer = null;
     pruneRefreshDedupCache();
@@ -56,9 +56,11 @@ function scheduleRefreshDedupCleanup() {
 }
 
 function makeRoomForRefresh() {
-  while (refreshDedupCache.size >= REFRESH_DEDUP_MAX_ENTRIES) {
-    refreshDedupCache.delete(refreshDedupCache.keys().next().value);
+  for (const [key, entry] of refreshDedupCache) {
+    if (refreshDedupCache.size < REFRESH_DEDUP_MAX_ENTRIES) break;
+    if (!entry.promise) refreshDedupCache.delete(key);
   }
+  return refreshDedupCache.size < REFRESH_DEDUP_MAX_ENTRIES;
 }
 
 export async function dedupRefresh(provider, oldToken, fn, log, proxyOptions = null) {
@@ -79,8 +81,10 @@ export async function dedupRefresh(provider, oldToken, fn, log, proxyOptions = n
     return hit.result;
   }
 
-  makeRoomForRefresh();
-  const entry = { promise: null, staleAt: now + REFRESH_IN_FLIGHT_TTL_MS };
+  if (!makeRoomForRefresh()) {
+    throw new Error("Refresh capacity reached; retry later");
+  }
+  const entry = { promise: null };
   const promise = Promise.resolve()
     .then(fn)
     .then((result) => {

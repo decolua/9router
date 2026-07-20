@@ -120,10 +120,10 @@ export async function refreshVertexToken(saJson, log, proxyOptions = null) {
   }
 }
 
-function vertexRefreshHandler(c, log) {
+function vertexRefreshHandler(c, log, proxyOptions) {
   const saJson = parseVertexSaJson(c.apiKey);
   if (!saJson) return null;
-  return refreshVertexToken(saJson, log);
+  return refreshVertexToken(saJson, log, proxyOptions);
 }
 
 const REFRESH_HANDLERS = {

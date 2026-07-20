@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
   exchangeTokens: vi.fn(),
   generateAuthData: vi.fn(),
   pollForToken: vi.fn(),
+  requestDeviceCode: vi.fn(),
+  getProvider: vi.fn(),
   resolveConnectionProxyConfig: vi.fn(),
 }));
 
@@ -13,9 +15,9 @@ vi.mock("open-sse/utils/proxyFetch.js", () => ({}));
 vi.mock("../../src/lib/oauth/providers.js", () => ({
   exchangeTokens: mocks.exchangeTokens,
   generateAuthData: mocks.generateAuthData,
-  getProvider: vi.fn(),
+  getProvider: mocks.getProvider,
   pollForToken: mocks.pollForToken,
-  requestDeviceCode: vi.fn(),
+  requestDeviceCode: mocks.requestDeviceCode,
 }));
 vi.mock("@/models", () => ({
   createProviderConnection: mocks.createProviderConnection,
@@ -28,6 +30,7 @@ vi.mock("@/lib/network/connectionProxy", () => ({
 }));
 
 import { GET, POST } from "../../src/app/api/oauth/[provider]/[action]/route.js";
+import { clearAuthorizationFlow } from "../../src/lib/oauth/utils/server.js";
 
 const proxyOptions = {
   connectionProxyEnabled: true,
@@ -78,6 +81,7 @@ describe("dynamic OAuth server-owned authorization records", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.ensureOutboundProxyInitialized.mockResolvedValue(true);
+    mocks.getProvider.mockReturnValue({ flowType: "device_code" });
     mocks.resolveConnectionProxyConfig.mockResolvedValue({ source: "pool", ...proxyOptions });
     mocks.exchangeTokens.mockResolvedValue({
       accessToken: "access-token",
@@ -119,9 +123,12 @@ describe("dynamic OAuth server-owned authorization records", () => {
       { clientId: "original-client" },
       proxyOptions,
     );
-    expect(mocks.createProviderConnection).toHaveBeenCalledWith(expect.objectContaining({
-      providerSpecificData: expect.objectContaining({ proxyPoolId: "pool-1" }),
-    }));
+    expect(mocks.createProviderConnection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerSpecificData: expect.objectContaining({ proxyPoolId: "pool-1" }),
+      }),
+      expect.objectContaining({ beforePersist: expect.any(Function) }),
+    );
   });
 
   it("consumes authorization state once", async () => {
@@ -134,6 +141,27 @@ describe("dynamic OAuth server-owned authorization records", () => {
     expect(second.status).toBe(409);
     expect(mocks.exchangeTokens).toHaveBeenCalledTimes(1);
     expect(mocks.createProviderConnection).toHaveBeenCalledTimes(1);
+  });
+
+  it("rechecks dynamic flow identity during delayed DB admission", async () => {
+    await authorize("binding-db-admission");
+    let releaseAdmission;
+    let persisted = false;
+    mocks.createProviderConnection.mockImplementation(async (_data, options) => {
+      await new Promise((resolve) => { releaseAdmission = resolve; });
+      if (options?.beforePersist?.() === false) throw new Error("OAuth flow was cancelled");
+      persisted = true;
+      return { id: "late-connection", provider: "claude" };
+    });
+
+    const request = exchange("binding-db-admission");
+    await vi.waitFor(() => expect(mocks.createProviderConnection).toHaveBeenCalledTimes(1));
+    clearAuthorizationFlow("oauth", "claude", "binding-db-admission");
+    releaseAdmission();
+    const response = await request;
+
+    expect(response.status).toBe(409);
+    expect(persisted).toBe(false);
   });
 
   it("rejects missing or mismatched state before exchange", async () => {
@@ -185,10 +213,20 @@ describe("dynamic OAuth server-owned authorization records", () => {
         "?code=POLL-CODE&refresh_token=POLL-REFRESH",
     });
 
+    mocks.generateAuthData.mockResolvedValueOnce({ codeVerifier: "device-verifier", codeChallenge: "device-challenge" });
+    mocks.requestDeviceCode.mockResolvedValueOnce({
+      device_code: "device-code",
+      user_code: "CODE",
+      verification_uri: "https://provider.test/device",
+    });
+    const started = await GET(new Request("http://localhost/api/oauth/github/device-code"), {
+      params: Promise.resolve({ provider: "github", action: "device-code" }),
+    });
+    const { flowId } = await started.json();
     const response = await POST(new Request("http://localhost/api/oauth/github/poll", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ deviceCode: "device-code" }),
+      body: JSON.stringify({ flowId }),
     }), {
       params: Promise.resolve({ provider: "github", action: "poll" }),
     });
@@ -205,10 +243,20 @@ describe("dynamic OAuth server-owned authorization records", () => {
       error: "https://error-user:error-password@provider.test/callback?code=ERROR-CODE",
     });
 
+    mocks.generateAuthData.mockResolvedValueOnce({ codeVerifier: "device-verifier", codeChallenge: "device-challenge" });
+    mocks.requestDeviceCode.mockResolvedValueOnce({
+      device_code: "device-code",
+      user_code: "CODE",
+      verification_uri: "https://provider.test/device",
+    });
+    const started = await GET(new Request("http://localhost/api/oauth/github/device-code"), {
+      params: Promise.resolve({ provider: "github", action: "device-code" }),
+    });
+    const { flowId } = await started.json();
     const response = await POST(new Request("http://localhost/api/oauth/github/poll", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ deviceCode: "device-code" }),
+      body: JSON.stringify({ flowId }),
     }), {
       params: Promise.resolve({ provider: "github", action: "poll" }),
     });

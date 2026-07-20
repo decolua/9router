@@ -10,6 +10,12 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+const dnsMocks = vi.hoisted(() => ({ lookup: vi.fn() }));
+vi.mock("node:dns/promises", () => ({
+  lookup: (...args) => dnsMocks.lookup(...args),
+}));
+
 import { handleImageGenerationCore } from "../../open-sse/handlers/imageGenerationCore.js";
 
 const originalFetch = global.fetch;
@@ -17,6 +23,7 @@ const originalFetch = global.fetch;
 describe("handleImageGenerationCore", () => {
   beforeEach(() => {
     global.fetch = vi.fn();
+    dnsMocks.lookup.mockResolvedValue([{ address: "93.184.216.34", family: 4 }]);
   });
 
   afterEach(() => {
@@ -190,21 +197,22 @@ describe("handleImageGenerationCore", () => {
     const result = await pending;
 
     expect(result.success).toBe(true);
-    expect(global.fetch.mock.calls.every((call) => call[1].proxyOptions === proxyOptions)).toBe(true);
     const fetchCall = global.fetch.mock.calls[0];
+    expect(fetchCall[1].proxyOptions).toBe(proxyOptions);
     const requestBody = JSON.parse(fetchCall[1].body);
     expect(requestBody.type).toBe("TEXTTOIAMGE");
     expect(requestBody.numImages).toBe(2);
     expect(requestBody.image_size).toBe("9:16");
-    expect(global.fetch).toHaveBeenNthCalledWith(
-      2,
-      "https://api.nanobananaapi.ai/api/v1/nanobanana/record-info?taskId=task-123",
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          Authorization: "Bearer test-key",
-        }),
-      })
+    const pollCall = global.fetch.mock.calls[1];
+    expect(String(pollCall[0])).toBe(
+      "https://api.nanobananaapi.ai/api/v1/nanobanana/record-info?taskId=task-123"
     );
+    expect(pollCall[1]).toEqual(expect.objectContaining({
+      dispatcher: expect.anything(),
+      headers: expect.objectContaining({ Authorization: "Bearer test-key" }),
+      proxyOptions: { disableEnvProxy: true },
+      redirect: "manual",
+    }));
 
     const responseBody = await result.response.json();
     expect(responseBody.data[0].url).toBe("https://example.com/nanobanana.png");
@@ -449,9 +457,11 @@ describe("handleImageGenerationCore", () => {
 
   it("resolves Cloudflare img2img and inpainting URL inputs before sending", async () => {
     const proxyOptions = { disableEnvProxy: true };
+    const sourceImage = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1]);
+    const maskImage = Buffer.from([0x89, 0x50, 0x4e, 0x47, 2]);
     global.fetch
-      .mockResolvedValueOnce(new Response(new Uint8Array([1, 2, 3]), { status: 200, headers: { "Content-Type": "image/png" } }))
-      .mockResolvedValueOnce(new Response(new Uint8Array([4, 5, 6]), { status: 200, headers: { "Content-Type": "image/png" } }))
+      .mockResolvedValueOnce(new Response(sourceImage, { status: 200, headers: { "Content-Type": "image/png" } }))
+      .mockResolvedValueOnce(new Response(maskImage, { status: 200, headers: { "Content-Type": "image/png" } }))
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({ result: { image: "base64inpaint" }, success: true }),
@@ -476,18 +486,63 @@ describe("handleImageGenerationCore", () => {
     });
 
     expect(result.success).toBe(true);
-    expect(global.fetch).toHaveBeenNthCalledWith(1, "https://example.com/source.png", { proxyOptions });
-    expect(global.fetch).toHaveBeenNthCalledWith(2, "https://example.com/mask.png", { proxyOptions });
+    expect(global.fetch.mock.calls[0][0].toString()).toBe("https://example.com/source.png");
+    expect(global.fetch.mock.calls[1][0].toString()).toBe("https://example.com/mask.png");
+    expect(global.fetch.mock.calls[0][1]).toEqual(expect.objectContaining({
+      redirect: "manual",
+      dispatcher: expect.any(Object),
+    }));
+    expect(global.fetch.mock.calls[1][1]).toEqual(expect.objectContaining({
+      redirect: "manual",
+      dispatcher: expect.any(Object),
+    }));
     expect(global.fetch.mock.calls[2][1].proxyOptions).toBe(proxyOptions);
 
     const providerCall = global.fetch.mock.calls[2];
     expect(providerCall[0]).toBe("https://api.cloudflare.com/client/v4/accounts/cf-account/ai/run/@cf/runwayml/stable-diffusion-v1-5-inpainting");
     const requestBody = JSON.parse(providerCall[1].body);
-    expect(requestBody.image).toEqual([1, 2, 3]);
-    expect(requestBody.image_b64).toBe(Buffer.from([1, 2, 3]).toString("base64"));
-    expect(requestBody.mask).toEqual([4, 5, 6]);
-    expect(requestBody.mask_image).toEqual([4, 5, 6]);
-    expect(requestBody.mask_b64).toBe(Buffer.from([4, 5, 6]).toString("base64"));
+    expect(requestBody.image).toEqual([...sourceImage]);
+    expect(requestBody.image_b64).toBe(sourceImage.toString("base64"));
+    expect(requestBody.mask).toEqual([...maskImage]);
+    expect(requestBody.mask_image).toEqual([...maskImage]);
+    expect(requestBody.mask_b64).toBe(maskImage.toString("base64"));
+  });
+
+  it.each([
+    ["invalid", Buffer.from("not an image").toString("base64")],
+    ["oversized", Buffer.alloc(10 * 1024 * 1024 + 1).toString("base64")],
+  ])("rejects %s provider base64 before binary output", async (_name, b64) => {
+    global.fetch.mockResolvedValueOnce(new Response(JSON.stringify({
+      created: 123,
+      data: [{ b64_json: b64 }],
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+
+    const result = await handleImageGenerationCore({
+      body: { prompt: "unsafe image" },
+      modelInfo: { provider: "openai", model: "dall-e-3" },
+      credentials: { apiKey: "test-key" },
+      binaryOutput: true,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+  });
+
+  it("bounds default provider JSON results", async () => {
+    global.fetch.mockResolvedValueOnce(new Response(JSON.stringify({
+      created: 123,
+      data: [],
+      padding: "x".repeat(1024 * 1024),
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+
+    const result = await handleImageGenerationCore({
+      body: { prompt: "bounded result" },
+      modelInfo: { provider: "openai", model: "dall-e-3" },
+      credentials: { apiKey: "test-key" },
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
   });
 
   it("handles provider error responses", async () => {

@@ -13,7 +13,10 @@ const managerSource = readFileSync(fileURLToPath(new URL(
 )), "utf8");
 
 describe("refresh result deduplication", () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
 
   it("does not cache a null refresh result", async () => {
     const refresh = vi.fn()
@@ -41,8 +44,8 @@ describe("refresh result deduplication", () => {
   });
 
   it("expires cached refresh results", async () => {
-    const now = 1_800_000_000_000;
-    vi.spyOn(Date, "now").mockReturnValue(now);
+    vi.useFakeTimers();
+    const now = Date.now();
     const refresh = vi.fn()
       .mockResolvedValueOnce({ accessToken: "first-token" })
       .mockResolvedValueOnce({ accessToken: "second-token" });
@@ -50,7 +53,7 @@ describe("refresh result deduplication", () => {
     await expect(dedupRefresh("expiry-result", "expiry-token", refresh)).resolves.toEqual({
       accessToken: "first-token",
     });
-    vi.mocked(Date.now).mockReturnValue(now + 10_001);
+    vi.setSystemTime(now + 10_001);
     await expect(dedupRefresh("expiry-result", "expiry-token", refresh)).resolves.toEqual({
       accessToken: "second-token",
     });
@@ -100,9 +103,36 @@ describe("refresh result deduplication", () => {
     expect(proxiedRefresh).toHaveBeenCalledTimes(1);
   });
 
-  it("replaces stale in-flight refresh without letting it overwrite newer result", async () => {
-    const now = 1_800_000_000_000;
-    vi.spyOn(Date, "now").mockReturnValue(now);
+  it("never evicts an active refresh when every cache slot is live", async () => {
+    const releases = [];
+    const refreshers = Array.from({ length: 256 }, (_, index) => vi.fn(() => new Promise((resolve) => {
+      releases[index] = () => resolve({ accessToken: `live-token-${index}` });
+    })));
+    const inFlight = refreshers.map((refresh, index) => (
+      dedupRefresh(`live-provider-${index}`, `live-refresh-${index}`, refresh)
+    ));
+    await Promise.resolve();
+    expect(refreshers.every((refresh) => refresh.mock.calls.length === 1)).toBe(true);
+
+    const overflow = vi.fn().mockResolvedValue({ accessToken: "overflow-token" });
+    await expect(dedupRefresh("overflow-provider", "overflow-refresh", overflow))
+      .rejects.toThrow(/capacity|retry later/i);
+    expect(overflow).not.toHaveBeenCalled();
+
+    const duplicate = vi.fn().mockResolvedValue({ accessToken: "duplicate-token" });
+    const duplicateResult = dedupRefresh("live-provider-0", "live-refresh-0", duplicate);
+    await Promise.resolve();
+    expect(duplicate).not.toHaveBeenCalled();
+
+    releases.forEach((release) => release());
+    await expect(duplicateResult).resolves.toEqual({ accessToken: "live-token-0" });
+    await Promise.all(inFlight);
+    expect(refreshers[0]).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps deduplicating an active refresh regardless of elapsed time", async () => {
+    vi.useFakeTimers();
+    const now = Date.now();
     let releaseOld;
     const oldRefresh = vi.fn(() => new Promise((resolve) => {
       releaseOld = () => resolve({ accessToken: "old-token" });
@@ -110,20 +140,20 @@ describe("refresh result deduplication", () => {
     const oldPromise = dedupRefresh("stale-provider", "stale-refresh", oldRefresh);
     await Promise.resolve();
 
-    vi.mocked(Date.now).mockReturnValue(now + 60_001);
-    const newRefresh = vi.fn().mockResolvedValue({ accessToken: "new-token" });
-    const newPromise = dedupRefresh("stale-provider", "stale-refresh", newRefresh);
+    vi.setSystemTime(now + 60_001);
+    const duplicateRefresh = vi.fn().mockResolvedValue({ accessToken: "duplicate-token" });
+    const duplicatePromise = dedupRefresh("stale-provider", "stale-refresh", duplicateRefresh);
     await Promise.resolve();
-    const newCallsBeforeRelease = newRefresh.mock.calls.length;
+    const duplicateCallsBeforeRelease = duplicateRefresh.mock.calls.length;
     releaseOld();
 
     await expect(oldPromise).resolves.toEqual({ accessToken: "old-token" });
-    await expect(newPromise).resolves.toEqual({ accessToken: "new-token" });
+    await expect(duplicatePromise).resolves.toEqual({ accessToken: "old-token" });
     const unexpectedRefresh = vi.fn().mockResolvedValue({ accessToken: "unexpected-token" });
     await expect(dedupRefresh("stale-provider", "stale-refresh", unexpectedRefresh)).resolves.toEqual({
-      accessToken: "new-token",
+      accessToken: "old-token",
     });
-    expect(newCallsBeforeRelease).toBe(1);
+    expect(duplicateCallsBeforeRelease).toBe(0);
     expect(unexpectedRefresh).not.toHaveBeenCalled();
   });
 });

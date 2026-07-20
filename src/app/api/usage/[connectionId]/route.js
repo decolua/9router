@@ -6,6 +6,7 @@ import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
+import { sanitizeOAuthError } from "open-sse/utils/oauthError.js";
 
 // Detect auth-expired messages returned by usage providers instead of throwing
 const AUTH_EXPIRED_PATTERNS = ["expired", "authentication", "unauthorized", "401", "re-authorize"];
@@ -144,15 +145,10 @@ export async function GET(request, { params }) {
       return Response.json({ message: "Usage not available for this connection" });
     }
 
-    // Resolve connection proxy config; force strictProxy=false so quota/refresh fall back to direct on failure
-    const proxyConfig = await resolveConnectionProxyConfig(connection.providerSpecificData);
-    const proxyOptions = {
-      connectionProxyEnabled: proxyConfig.connectionProxyEnabled === true,
-      connectionProxyUrl: proxyConfig.connectionProxyUrl || "",
-      connectionNoProxy: proxyConfig.connectionNoProxy || "",
-      vercelRelayUrl: proxyConfig.vercelRelayUrl || "",
-      strictProxy: false,
-    };
+    const proxyOptions = await resolveConnectionProxyConfig(connection.providerSpecificData);
+    if (proxyOptions?.proxyUnavailable === true || proxyOptions?.source === "unavailable") {
+      return Response.json({ error: "Selected proxy is unavailable. Choose another route and try again." }, { status: 503 });
+    }
 
     // Refresh credentials only for OAuth connections (apikey has no token refresh)
     if (isOAuth) {
@@ -160,10 +156,9 @@ export async function GET(request, { params }) {
         const result = await refreshAndUpdateCredentials(connection, false, proxyOptions);
         connection = result.connection;
       } catch (refreshError) {
-        console.error("[Usage API] Credential refresh failed:", refreshError);
-        return Response.json({
-          error: `Credential refresh failed: ${refreshError.message}`
-        }, { status: 401 });
+        const publicError = sanitizeOAuthError(refreshError);
+        console.error("[Usage API] Credential refresh failed:", publicError);
+        return Response.json({ error: publicError }, { status: 401 });
       }
     }
 
@@ -178,14 +173,15 @@ export async function GET(request, { params }) {
         connection = retryResult.connection;
         usage = await getUsageForProvider(connection, proxyOptions);
       } catch (retryError) {
-        console.warn(`[Usage] ${connection.provider}: force refresh failed: ${retryError.message}`);
+        console.warn(`[Usage] ${connection.provider}: force refresh failed: ${sanitizeOAuthError(retryError)}`);
       }
     }
 
     return Response.json(usage);
   } catch (error) {
     const provider = connection?.provider ?? "unknown";
-    console.warn(`[Usage] ${provider}: ${error.message}`);
-    return Response.json({ error: error.message }, { status: 500 });
+    const publicError = sanitizeOAuthError(error);
+    console.warn(`[Usage] ${provider}: ${publicError}`);
+    return Response.json({ error: publicError }, { status: 500 });
   }
 }

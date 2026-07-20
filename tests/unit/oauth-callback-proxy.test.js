@@ -5,7 +5,9 @@ const mocks = vi.hoisted(() => ({
   ensureOutboundProxyInitialized: vi.fn(),
   exchangeTokens: vi.fn(),
   generateAuthData: vi.fn(),
+  getProvider: vi.fn(),
   pollForToken: vi.fn(),
+  requestDeviceCode: vi.fn(),
   resolveConnectionProxyConfig: vi.fn(),
 }));
 
@@ -85,9 +87,9 @@ vi.mock("open-sse/utils/proxyFetch.js", () => ({}));
 vi.mock("../../src/lib/oauth/providers.js", () => ({
   exchangeTokens: mocks.exchangeTokens,
   generateAuthData: mocks.generateAuthData,
-  getProvider: vi.fn(),
+  getProvider: mocks.getProvider,
   pollForToken: mocks.pollForToken,
-  requestDeviceCode: vi.fn(),
+  requestDeviceCode: mocks.requestDeviceCode,
 }));
 vi.mock("@/models", () => ({
   createProviderConnection: mocks.createProviderConnection,
@@ -104,6 +106,7 @@ import { proxyOptionsForPool } from "../../src/lib/oauth/proxyOptions.js";
 import {
   clearCodexSession,
   clearCodexSessions,
+  clearDeviceAuthorizationFlows,
   clearXaiSession,
   clearXaiSessions,
   getCodexSessionStatus,
@@ -144,6 +147,7 @@ describe("OAuth fixed-port callback proxy context", () => {
     httpMocks.deferListen = false;
     httpMocks.servers.length = 0;
     mocks.ensureOutboundProxyInitialized.mockResolvedValue(true);
+    mocks.getProvider.mockReturnValue({ flowType: "device_code" });
     mocks.generateAuthData.mockResolvedValue({
       authUrl: "https://auth.example/authorize",
       state: "codex-state",
@@ -151,6 +155,12 @@ describe("OAuth fixed-port callback proxy context", () => {
       codeChallenge: "challenge",
       redirectUri: "http://localhost:1455/auth/callback",
       flowType: "authorization_code_pkce",
+    });
+    mocks.requestDeviceCode.mockResolvedValue({
+      device_code: "device-code",
+      user_code: "CODE",
+      verification_uri: "https://provider.test/device",
+      interval: 1,
     });
     mocks.resolveConnectionProxyConfig.mockResolvedValue({
       source: "pool",
@@ -175,6 +185,7 @@ describe("OAuth fixed-port callback proxy context", () => {
 
   afterEach(async () => {
     clearCodexSessions();
+    clearDeviceAuthorizationFlows();
     clearXaiSessions();
     httpMocks.deferClose = false;
     httpMocks.servers.forEach((server) => server.finishClose());
@@ -271,10 +282,13 @@ describe("OAuth fixed-port callback proxy context", () => {
         disableEnvProxy: true,
       },
     );
-    expect(mocks.createProviderConnection).toHaveBeenCalledWith(expect.objectContaining({
-      provider,
-      providerSpecificData: { authMethod: "oauth", proxyPoolId: "pool-1" },
-    }));
+    expect(mocks.createProviderConnection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider,
+        providerSpecificData: { authMethod: "oauth", proxyPoolId: "pool-1" },
+      }),
+      expect.objectContaining({ beforePersist: expect.any(Function) }),
+    );
   });
 
   it("bypasses proxy environment for direct fixed-port callbacks", async () => {
@@ -320,6 +334,60 @@ describe("OAuth fixed-port callback proxy context", () => {
       connectionId: "connection-1",
       email: "user@example.com",
     });
+  });
+
+  it.each([
+    ["codex", "/auth/callback"],
+    ["xai", "/callback"],
+  ])("retains terminal %s status until idempotent acknowledgement", async (provider, callbackPath) => {
+    const state = `retained-${provider}`;
+    await startProxy(provider, {
+      appPort: 20127,
+      state,
+      codeVerifier: "secret-verifier",
+      redirectUri: provider === "codex"
+        ? "http://localhost:1455/auth/callback"
+        : "http://127.0.0.1:56121/callback",
+    });
+    await httpMocks.servers.at(-1).request(`${callbackPath}?code=auth-code&state=${state}`);
+
+    const postAction = (action) => POST(new Request(`http://localhost/api/oauth/${provider}/${action}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ state }),
+    }), {
+      params: Promise.resolve({ provider, action }),
+    });
+    const first = await (await postAction("poll-status")).json();
+    const second = await (await postAction("poll-status")).json();
+    const acknowledged = await postAction("ack-status");
+    const afterAck = await (await postAction("poll-status")).json();
+    const repeatedAck = await postAction("ack-status");
+
+    expect(first.status).toBe("done");
+    expect(second).toEqual(first);
+    expect(acknowledged.status).toBe(200);
+    expect(afterAck).toEqual({ status: "unknown" });
+    expect(repeatedAck.status).toBe(200);
+  });
+
+  it("refuses to acknowledge a pending fixed callback", async () => {
+    registerCodexSession({
+      state: "pending-ack",
+      codeVerifier: "secret-verifier",
+      redirectUri: "http://localhost:1455/auth/callback",
+    });
+
+    const response = await POST(new Request("http://localhost/api/oauth/codex/ack-status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ state: "pending-ack" }),
+    }), {
+      params: Promise.resolve({ provider: "codex", action: "ack-status" }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(getCodexSessionStatus("pending-ack")).toEqual({ status: "pending" });
   });
 
   it("rejects state in GET status query strings", async () => {
@@ -533,6 +601,62 @@ describe("OAuth fixed-port callback proxy context", () => {
   });
 
   it.each([
+    ["codex", startCodexProxy, registerCodexSession, clearCodexSession, "/auth/callback"],
+    ["xai", startXaiProxy, registerXaiSession, clearXaiSession, "/callback"],
+  ])("rechecks %s identity during delayed DB admission", async (_provider, start, register, clear, callbackPath) => {
+    let releaseAdmission;
+    let persisted = false;
+    mocks.createProviderConnection.mockImplementation(async (_data, options) => {
+      await new Promise((resolve) => { releaseAdmission = resolve; });
+      if (options?.beforePersist?.() === false) throw new Error("OAuth flow was cancelled");
+      persisted = true;
+      return { id: "late-connection", provider: _provider };
+    });
+    await start(20127);
+    register({ state: "delayed-db", codeVerifier: "secret", redirectUri: "http://callback" });
+
+    const callback = httpMocks.servers.at(-1).request(`${callbackPath}?code=late-code&state=delayed-db`);
+    await vi.waitFor(() => expect(mocks.createProviderConnection).toHaveBeenCalledTimes(1));
+    clear("delayed-db");
+    releaseAdmission();
+    await callback;
+
+    expect(persisted).toBe(false);
+  });
+
+  it("rechecks xAI manual flow identity during delayed DB admission", async () => {
+    await startProxy("xai", {
+      appPort: 20127,
+      state: "manual-delayed-db",
+      codeVerifier: "secret-verifier",
+      redirectUri: "http://127.0.0.1:56121/callback",
+    });
+    let releaseAdmission;
+    let persisted = false;
+    mocks.createProviderConnection.mockImplementation(async (_data, options) => {
+      await new Promise((resolve) => { releaseAdmission = resolve; });
+      if (options?.beforePersist?.() === false) throw new Error("OAuth flow was cancelled");
+      persisted = true;
+      return { id: "late-connection", provider: "xai" };
+    });
+
+    const request = POST(new Request("http://localhost/api/oauth/xai/manual-code", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: "manual-code", state: "manual-delayed-db" }),
+    }), {
+      params: Promise.resolve({ provider: "xai", action: "manual-code" }),
+    });
+    await vi.waitFor(() => expect(mocks.createProviderConnection).toHaveBeenCalledTimes(1));
+    clearXaiSession("manual-delayed-db");
+    releaseAdmission();
+    const response = await request;
+
+    expect(response.status).toBe(409);
+    expect(persisted).toBe(false);
+  });
+
+  it.each([
     ["codex", startCodexProxy, registerCodexSession],
     ["xai", startXaiProxy, registerXaiSession],
   ])("rejects unknown %s callback state while server-side session exists", async (_provider, start, register) => {
@@ -551,11 +675,15 @@ describe("OAuth fixed-port callback proxy context", () => {
     mocks.pollForToken.mockImplementation(() => new Promise((resolve) => {
       releasePoll = resolve;
     }));
-    const flowId = "cancelled-flow";
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue("cancelled-flow");
+    const started = await GET(new Request("http://localhost/api/oauth/qwen/device-code"), {
+      params: Promise.resolve({ provider: "qwen", action: "device-code" }),
+    });
+    const { flowId } = await started.json();
     const pollResponse = POST(new Request("http://localhost/api/oauth/qwen/poll", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ deviceCode: "device-code", codeVerifier: "verifier", flowId }),
+      body: JSON.stringify({ flowId }),
     }), {
       params: Promise.resolve({ provider: "qwen", action: "poll" }),
     });
@@ -579,82 +707,64 @@ describe("OAuth fixed-port callback proxy context", () => {
     expect(mocks.createProviderConnection).not.toHaveBeenCalled();
   });
 
-  it("refuses cancellation admission at capacity without evicting active tombstones", async () => {
+  it("refuses device admission at capacity without evicting active flows", async () => {
     const provider = "capacity-device";
-    const afterPriorTtl = Date.now() + 15 * 60 * 1000 + 1;
-    vi.spyOn(Date, "now").mockReturnValue(afterPriorTtl);
+    let sequence = 0;
+    vi.spyOn(globalThis.crypto, "randomUUID").mockImplementation(() => `bounded-flow-${sequence++}`);
     mocks.pollForToken.mockResolvedValue({
       success: false,
       error: "authorization_pending",
       pending: true,
     });
-    for (let index = 0; index < 256; index += 1) {
-      const response = await POST(new Request(`http://localhost/api/oauth/${provider}/cancel-poll`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ flowId: `bounded-flow-${index}` }),
-      }), {
-        params: Promise.resolve({ provider, action: "cancel-poll" }),
+    for (let index = 0; index < 128; index += 1) {
+      const response = await GET(new Request(`http://localhost/api/oauth/${provider}/device-code`), {
+        params: Promise.resolve({ provider, action: "device-code" }),
       });
       expect(response.status).toBe(200);
     }
-    const rejected = await POST(new Request(`http://localhost/api/oauth/${provider}/cancel-poll`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ flowId: "bounded-flow-256" }),
-    }), {
-      params: Promise.resolve({ provider, action: "cancel-poll" }),
+    const rejected = await GET(new Request(`http://localhost/api/oauth/${provider}/device-code`), {
+      params: Promise.resolve({ provider, action: "device-code" }),
     });
 
     const poll = (flowId) => POST(new Request(`http://localhost/api/oauth/${provider}/poll`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ deviceCode: "device-code", codeVerifier: "verifier", flowId }),
+      body: JSON.stringify({ flowId }),
     }), {
       params: Promise.resolve({ provider, action: "poll" }),
     });
     const oldest = await poll("bounded-flow-0");
-    const newest = await poll("bounded-flow-255");
-    const refused = await poll("bounded-flow-256");
+    const newest = await poll("bounded-flow-127");
+    const refused = await poll("bounded-flow-128");
 
     expect(rejected.status).toBe(503);
-    expect(oldest.status).toBe(409);
-    expect(newest.status).toBe(409);
-    expect(refused.status).toBe(200);
-    expect(mocks.pollForToken).toHaveBeenCalledTimes(1);
+    expect(oldest.status).toBe(200);
+    expect(newest.status).toBe(200);
+    expect(refused.status).toBe(409);
+    expect(mocks.requestDeviceCode).toHaveBeenCalledTimes(128);
+    expect(mocks.pollForToken).toHaveBeenCalledTimes(2);
   });
 
-  it("expires cancellation tombstones after their TTL", async () => {
+  it("expires unconsumed device flows after their TTL", async () => {
     const now = 1_800_000_000_000;
     vi.spyOn(Date, "now").mockReturnValue(now);
-    await POST(new Request("http://localhost/api/oauth/qwen/cancel-poll", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ flowId: "expired-cancellation" }),
-    }), {
-      params: Promise.resolve({ provider: "qwen", action: "cancel-poll" }),
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue("expired-device-flow");
+    const started = await GET(new Request("http://localhost/api/oauth/qwen/device-code"), {
+      params: Promise.resolve({ provider: "qwen", action: "device-code" }),
     });
-    mocks.pollForToken.mockResolvedValue({
-      success: false,
-      error: "authorization_pending",
-      pending: true,
-    });
+    const { flowId } = await started.json();
     vi.mocked(Date.now).mockReturnValue(now + 15 * 60 * 1000 + 1);
 
     const response = await POST(new Request("http://localhost/api/oauth/qwen/poll", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        deviceCode: "device-code",
-        codeVerifier: "verifier",
-        flowId: "expired-cancellation",
-      }),
+      body: JSON.stringify({ flowId }),
     }), {
       params: Promise.resolve({ provider: "qwen", action: "poll" }),
     });
 
-    expect(response.status).toBe(200);
-    expect(mocks.pollForToken).toHaveBeenCalledTimes(1);
+    expect(response.status).toBe(409);
+    expect(mocks.pollForToken).not.toHaveBeenCalled();
   });
 
   it.each([

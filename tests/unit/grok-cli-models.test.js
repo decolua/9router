@@ -77,4 +77,37 @@ describe("Grok CLI live models", () => {
     expect(fetchFn.mock.calls[1][1].headers.Authorization).toBe("Bearer new-token");
     expect(fetchFn.mock.calls[1][1].headers["x-grok-client-version"]).toBe("0.2.99");
   });
+
+  it("sanitizes provider bodies returned as warnings", async () => {
+    const secret = "https://user:password@provider.test/models?access_token=SECRET-TOKEN";
+
+    const result = await resolveGrokCliModels({ accessToken: "token" }, {
+      fetchFn: vi.fn().mockResolvedValue(new Response(secret, { status: 500 })),
+    });
+
+    for (const value of ["user", "password", "SECRET-TOKEN"]) {
+      expect(result.warning).not.toContain(value);
+    }
+  });
+
+  it("sanitizes credential persistence errors before logging", async () => {
+    const secret = "https://user:password@provider.test/token?refresh_token=SECRET-REFRESH";
+    const fetchFn = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ error: "expired" }, 401))
+      .mockResolvedValueOnce(jsonResponse({ data: [{ id: "grok-build" }] }));
+    const log = { warn: vi.fn() };
+    refreshProviderCredentials.mockResolvedValue({ accessToken: "new-token" });
+
+    await resolveGrokCliModels({
+      accessToken: "old-token",
+      refreshToken: "refresh-token",
+    }, {
+      fetchFn,
+      log,
+      onCredentialsRefreshed: vi.fn(async () => { throw new Error(secret); }),
+    });
+    const output = log.warn.mock.calls.flat().map(String).join(" ");
+
+    for (const value of ["user", "password", "SECRET-REFRESH"]) expect(output).not.toContain(value);
+  });
 });

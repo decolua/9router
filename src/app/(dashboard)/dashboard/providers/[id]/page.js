@@ -287,6 +287,7 @@ export default function ProviderDetailPage() {
   }, [providerId]);
 
   const fetchConnections = useCallback(async () => {
+    setProxyPoolsReady(false);
     try {
       const [connectionsRes, nodesRes, proxyPoolsRes, settingsRes] = await Promise.all([
         fetch("/api/providers", { cache: "no-store" }),

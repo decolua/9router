@@ -73,6 +73,8 @@ export async function POST(request) {
           ...(flow.proxyPoolId && flow.proxyPoolId !== "__none__" ? { proxyPoolId: flow.proxyPoolId } : {}),
         },
         testStatus: "active",
+      }, {
+        beforePersist: () => isAuthorizationFlowCurrent("kiro-social", provider, state, flow.identity),
       });
 
       return NextResponse.json({
@@ -87,6 +89,9 @@ export async function POST(request) {
       clearAuthorizationFlow("kiro-social", provider, state, flow.identity);
     }
   } catch (error) {
+    if (error?.message === "OAuth flow was cancelled") {
+      return NextResponse.json({ error: "OAuth flow was cancelled" }, { status: 409 });
+    }
     const publicError = sanitizeOAuthError(error);
     console.log("Kiro social exchange error:", publicError);
     return NextResponse.json({ error: publicError }, { status: 500 });

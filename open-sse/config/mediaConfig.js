@@ -2,6 +2,7 @@
 
 // Max bytes accepted from a remote image fetch (reject larger to prevent memory DoS).
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10MB
+export const MAX_REMOTE_JSON_BYTES = 1024 * 1024; // 1MB
 
 // Fetch timeout for remote media.
 export const FETCH_TIMEOUT_MS = 10000;

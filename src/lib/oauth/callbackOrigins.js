@@ -12,7 +12,11 @@ function parseOrigin(value) {
 }
 
 function isLoopback(url) {
-  return LOOPBACK_HOSTS.has(url.hostname.toLowerCase());
+  return isOAuthLoopbackHostname(url.hostname);
+}
+
+export function isOAuthLoopbackHostname(hostname) {
+  return typeof hostname === "string" && LOOPBACK_HOSTS.has(hostname.toLowerCase());
 }
 
 export function isPermittedOAuthOpenerOrigin(candidateOrigin, dashboardOrigin) {

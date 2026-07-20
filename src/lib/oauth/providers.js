@@ -6,6 +6,7 @@
 // Ensure outbound fetch respects HTTP(S)_PROXY/ALL_PROXY in Node runtime
 import "open-sse/index.js";
 import crypto from "crypto";
+import { sanitizeOAuthError } from "open-sse/utils/oauthError.js";
 
 import { generatePKCE, generateState } from "./utils/pkce";
 import {
@@ -472,7 +473,7 @@ const PROVIDERS = {
           projectId = data.cloudaicompanionProject?.id || data.cloudaicompanionProject || "";
         }
       } catch (e) {
-        console.log("Failed to fetch project ID:", e);
+        console.log("Failed to fetch project ID:", sanitizeOAuthError(e));
       }
 
       return { userInfo, projectId };
@@ -571,7 +572,7 @@ const PROVIDERS = {
           }
         }
       } catch (e) {
-        console.log("Failed to load code assist:", e);
+        console.log("Failed to load code assist:", sanitizeOAuthError(e));
       }
 
       // Fire-and-forget onboarding — does not block DB save

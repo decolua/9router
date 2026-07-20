@@ -3,12 +3,28 @@ import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { getExecutor } from "../executors/index.js";
 import { getImageAdapter } from "./imageProviders/index.js";
-import { urlToBase64 } from "./imageProviders/_base.js";
+import { decodeBase64Image, detectImageMime, readBoundedJsonResponse, urlToBase64 } from "./imageProviders/_base.js";
 
 function serializeRequestBody(requestBody) {
   if (typeof FormData !== "undefined" && requestBody instanceof FormData) return requestBody;
   if (typeof requestBody === "string") return requestBody;
   return JSON.stringify(requestBody);
+}
+
+async function buildBinaryImageResponse(finalBody, proxyOptions) {
+  const first = finalBody.data?.[0];
+  let b64 = first?.b64_json;
+  if (!b64 && first?.url) b64 = await urlToBase64(first.url, proxyOptions);
+  const buffer = decodeBase64Image(b64);
+  const mime = detectImageMime(buffer);
+  const extension = mime === "image/jpeg" ? "jpg" : mime.split("/")[1];
+  return new Response(buffer, {
+    headers: {
+      "Content-Type": mime,
+      "Content-Disposition": `inline; filename="image.${extension}"`,
+      "Access-Control-Allow-Origin": "*",
+    },
+  });
 }
 
 /**
@@ -61,22 +77,7 @@ export async function handleImageGenerationCore({
       const finalBody = (normalized.created && Array.isArray(normalized.data)) ? normalized : responseBody;
 
       if (binaryOutput) {
-        const first = finalBody.data?.[0];
-        let b64 = first?.b64_json;
-        if (!b64 && first?.url) {
-          try { b64 = await urlToBase64(first.url, proxyOptions); } catch {}
-        }
-        if (b64) {
-          const buf = Buffer.from(b64, "base64");
-          const fmt = (body.output_format || "png").toLowerCase();
-          const mime = fmt === "jpeg" || fmt === "jpg" ? "image/jpeg" : fmt === "webp" ? "image/webp" : "image/png";
-          return {
-            success: true,
-            response: new Response(buf, {
-              headers: { "Content-Type": mime, "Content-Disposition": `inline; filename="image.${fmt === "jpeg" ? "jpg" : fmt}"`, "Access-Control-Allow-Origin": "*" },
-            }),
-          };
-        }
+        return { success: true, response: await buildBinaryImageResponse(finalBody, proxyOptions) };
       }
 
       return {
@@ -184,7 +185,7 @@ export async function handleImageGenerationCore({
         return { success: true, response: parsed.sseResponse };
       }
     } else {
-      parsed = await providerResponse.json();
+      parsed = await readBoundedJsonResponse(providerResponse);
     }
   } catch (parseError) {
     return createErrorResult(HTTP_STATUS.BAD_GATEWAY, parseError.message || `Invalid response from ${provider}`);
@@ -200,25 +201,10 @@ export async function handleImageGenerationCore({
 
   // Binary output: decode first b64_json (or fetch url) into raw bytes
   if (binaryOutput) {
-    const first = finalBody.data?.[0];
-    let b64 = first?.b64_json;
-    if (!b64 && first?.url) {
-      try { b64 = await urlToBase64(first.url, proxyOptions); } catch {}
-    }
-    if (b64) {
-      const buf = Buffer.from(b64, "base64");
-      const fmt = (body.output_format || "png").toLowerCase();
-      const mime = fmt === "jpeg" || fmt === "jpg" ? "image/jpeg" : fmt === "webp" ? "image/webp" : "image/png";
-      return {
-        success: true,
-        response: new Response(buf, {
-          headers: {
-            "Content-Type": mime,
-            "Content-Disposition": `inline; filename="image.${fmt === "jpeg" ? "jpg" : fmt}"`,
-            "Access-Control-Allow-Origin": "*",
-          },
-        }),
-      };
+    try {
+      return { success: true, response: await buildBinaryImageResponse(finalBody, proxyOptions) };
+    } catch {
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Provider returned an invalid image");
     }
   }
 

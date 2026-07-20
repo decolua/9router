@@ -1,5 +1,5 @@
 // Fal.ai — async submit + queue polling
-import { sleep, nowSec, sizeToAspectRatio, POLL_INTERVAL_MS, POLL_TIMEOUT_MS } from "./_base.js";
+import { fetchRemoteJson, readBoundedJsonResponse, sleep, nowSec, sizeToAspectRatio, POLL_INTERVAL_MS, POLL_TIMEOUT_MS } from "./_base.js";
 import { PROVIDER_MEDIA } from "../../providers/index.js";
 
 const BASE_URL = PROVIDER_MEDIA["fal-ai"]?.imageConfig?.baseUrl;
@@ -17,17 +17,18 @@ export default {
     if (body.image) req.image_url = body.image;
     return req;
   },
-  async parseResponse(response, { headers, proxyOptions }) {
-    const { status_url, response_url } = await response.json();
+  async parseResponse(response, { headers, proxyOptions, url }) {
+    const { status_url, response_url } = await readBoundedJsonResponse(response);
+    const expectedOrigin = new URL(url || BASE_URL).origin;
+    if (new URL(status_url).origin !== expectedOrigin || new URL(response_url).origin !== expectedOrigin) {
+      throw new Error("Fal polling URL origin is not allowed");
+    }
     const deadline = Date.now() + POLL_TIMEOUT_MS;
     while (Date.now() < deadline) {
       await sleep(POLL_INTERVAL_MS);
-      const r = await fetch(status_url, { headers, proxyOptions });
-      if (!r.ok) throw new Error(`Fal status ${r.status}`);
-      const s = await r.json();
+      const s = await fetchRemoteJson(status_url, { expectedOrigin, headers, proxyOptions });
       if (s.status === "COMPLETED") {
-        const fr = await fetch(response_url, { headers, proxyOptions });
-        return await fr.json();
+        return fetchRemoteJson(response_url, { expectedOrigin, headers, proxyOptions });
       }
       if (s.status === "FAILED") throw new Error(s.error || "Fal generation failed");
     }

@@ -10,21 +10,23 @@ import { sanitizeOAuthError } from "open-sse/utils/oauthError.js";
  */
 function CallbackContent() {
   const searchParams = useSearchParams();
-  const [status, setStatus] = useState("processing");
+  const code = searchParams.get("code");
+  const token = searchParams.get("token");
+  const state = searchParams.get("state");
+  const error = searchParams.get("error");
+  const errorDescription = searchParams.get("error_description");
+  const sanitizedError = error ? sanitizeOAuthError(error) : null;
+  const sanitizedErrorDescription = errorDescription ? sanitizeOAuthError(errorDescription) : null;
+  const errorMessage = sanitizedError || sanitizedErrorDescription;
+  const [status, setStatus] = useState(error ? "error" : (code || token ? "success" : "manual"));
 
   useEffect(() => {
-    const code = searchParams.get("code");
-    const token = searchParams.get("token");
-    const state = searchParams.get("state");
-    const error = searchParams.get("error");
-    const errorDescription = searchParams.get("error_description");
-
     const callbackData = {
       code,
       token,
       state,
-      error: error ? sanitizeOAuthError(error) : null,
-      errorDescription: errorDescription ? sanitizeOAuthError(errorDescription) : null,
+      error: sanitizedError,
+      errorDescription: sanitizedErrorDescription,
     };
 
     if (window.opener) {
@@ -37,18 +39,12 @@ function CallbackContent() {
       }
     }
 
-    if (!(code || token || error)) {
-      setTimeout(() => setStatus("manual"), 0);
-      return;
-    }
-
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- callback result is consumed once on mount
-    setStatus("success");
+    if (!(code || token || error)) return;
     setTimeout(() => {
       window.close();
-      setTimeout(() => setStatus("done"), 500);
+      if (!error) setTimeout(() => setStatus("done"), 500);
     }, 1500);
-  }, [searchParams]);
+  }, [code, error, sanitizedError, sanitizedErrorDescription, state, token]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-bg">
@@ -72,6 +68,16 @@ function CallbackContent() {
             <p className="text-text-muted">
               {status === "success" ? "This window will close automatically..." : "You can close this tab now."}
             </p>
+          </>
+        )}
+
+        {status === "error" && (
+          <>
+            <div className="size-16 mx-auto mb-4 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+              <span className="material-symbols-outlined text-3xl text-red-600">error</span>
+            </div>
+            <h1 className="text-xl font-semibold mb-2">Authorization Failed</h1>
+            <p className="text-text-muted">{errorMessage}</p>
           </>
         )}
 

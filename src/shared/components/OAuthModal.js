@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
 import { Modal, Button, Input } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
-import { isPermittedOAuthOpenerOrigin } from "@/lib/oauth/callbackOrigins";
+import { isOAuthLoopbackHostname, isPermittedOAuthOpenerOrigin } from "@/lib/oauth/callbackOrigins";
 import { sanitizeOAuthError } from "open-sse/utils/oauthError.js";
 import OAuthProxyPoolSelector from "./OAuthProxyPoolSelector";
 
@@ -13,7 +13,7 @@ import OAuthProxyPoolSelector from "./OAuthProxyPoolSelector";
  * - Localhost: Auto callback via popup message
  * - Remote: Manual paste callback URL
  */
-export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, onClose, oauthMeta, idcConfig, proxyPools = [], proxyPoolsReady = true }) {
+export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, onClose, oauthMeta, idcConfig, proxyPools = [], proxyPoolsReady = false }) {
   const [step, setStep] = useState("waiting"); // waiting | input | success | error
   const [authData, setAuthData] = useState(null);
   const [callbackUrl, setCallbackUrl] = useState("");
@@ -27,8 +27,12 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const openedRef = useRef(false);
   const proxyStopPromiseRef = useRef(Promise.resolve());
   const poolChangePromiseRef = useRef(Promise.resolve());
-  const fixedProxyStateRef = useRef(null);
+  const fixedProxyStateRef = useRef(undefined);
+  const fixedProxyStopRef = useRef(null);
   const devicePollFlowRef = useRef(null);
+  const deviceCancelRef = useRef(null);
+  const closePromiseRef = useRef(null);
+  const closeCompletedRef = useRef(false);
   const { copied, copy } = useCopyToClipboard();
 
   // State for client-only values to avoid hydration mismatch
@@ -38,8 +42,14 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
   const stopFixedProxy = useCallback((stateOverride = null) => {
     if (provider !== "codex" && provider !== "xai") return Promise.resolve();
-    const state = stateOverride || fixedProxyStateRef.current || authData?.state;
-    const pending = fetch(`/api/oauth/${provider}/stop-proxy`, {
+    const state = stateOverride || (
+      fixedProxyStateRef.current === undefined ? authData?.state : fixedProxyStateRef.current
+    );
+    if (!state) return Promise.resolve();
+    if (fixedProxyStopRef.current?.state === state) return fixedProxyStopRef.current.promise;
+
+    let pending;
+    pending = fetch(`/api/oauth/${provider}/stop-proxy`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ state }),
@@ -48,17 +58,26 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
           const data = await response.json().catch(() => ({}));
           throw new Error(data.error || "Failed to stop OAuth callback server");
         }
-        if (!state || fixedProxyStateRef.current === state) fixedProxyStateRef.current = null;
+        if (fixedProxyStateRef.current === state || fixedProxyStateRef.current === undefined) {
+          fixedProxyStateRef.current = null;
+        }
         return response;
+      })
+      .finally(() => {
+        if (fixedProxyStopRef.current?.promise === pending) fixedProxyStopRef.current = null;
       });
-    proxyStopPromiseRef.current = pending;
+    fixedProxyStopRef.current = { state, promise: pending };
+    proxyStopPromiseRef.current = pending.then(() => undefined, () => undefined);
     return pending;
   }, [authData?.state, provider]);
 
   const cancelDevicePoll = useCallback(() => {
     const flowId = devicePollFlowRef.current;
     if (!flowId) return Promise.resolve();
-    return fetch(`/api/oauth/${provider}/cancel-poll`, {
+    if (deviceCancelRef.current?.flowId === flowId) return deviceCancelRef.current.promise;
+
+    let pending;
+    pending = fetch(`/api/oauth/${provider}/cancel-poll`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ flowId }),
@@ -68,16 +87,18 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         throw new Error(data.error || "Failed to cancel device authorization");
       }
       if (devicePollFlowRef.current === flowId) devicePollFlowRef.current = null;
+    }).finally(() => {
+      if (deviceCancelRef.current?.promise === pending) deviceCancelRef.current = null;
     });
+    deviceCancelRef.current = { flowId, promise: pending };
+    return pending;
   }, [provider]);
 
   // Detect if running on localhost (client-side only)
   useEffect(() => {
     if (typeof window !== "undefined") {
       /* eslint-disable react-hooks/set-state-in-effect -- client-only values intentionally update after hydration */
-      setIsLocalhost(
-        window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
-      );
+      setIsLocalhost(isOAuthLoopbackHostname(window.location.hostname));
       setPlaceholderUrl(`${window.location.origin}/callback?code=...`);
       /* eslint-enable react-hooks/set-state-in-effect */
     }
@@ -129,7 +150,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   }, [authData, onSuccess]);
 
   // Poll for device code token
-  const startPolling = useCallback(async (deviceCode, codeVerifier, interval, extraData, deadlineMs, proxyPoolId, generation, flowId) => {
+  const startPolling = useCallback(async (flowId, interval, deadlineMs, generation) => {
     if (generation !== flowGenerationRef.current) return;
     setPolling(true);
     // Honor the upstream's expires_in when supplied (qoder sets 300s) so we
@@ -149,7 +170,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         const res = await fetch(`/api/oauth/${provider}/poll`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ deviceCode, codeVerifier, extraData, proxyPoolId, flowId }),
+          body: JSON.stringify({ flowId }),
         });
 
         const data = await res.json();
@@ -229,46 +250,22 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         if (!res.ok) throw new Error(data.error);
 
         setDeviceData(data);
+        if (!data.flowId) throw new Error("Device authorization flow was not created");
 
         // Auto-open verification URL in new tab
         const verifyUrl = data.verification_uri_complete || data.verification_uri;
         if (verifyUrl) window.open(verifyUrl, "_blank", "noopener,noreferrer");
 
-        // Pass extraData for Kiro (contains _clientId, _clientSecret) and
-        // Qoder (contains _qoderMachineId / _qoderNonce — needed so mapTokens
-        // can persist the machine id alongside the token).
-        const extraData = provider === "kiro"
-          ? {
-              _clientId: data._clientId,
-              _clientSecret: data._clientSecret,
-              _region: data._region,
-              _authMethod: data._authMethod,
-              _startUrl: data._startUrl,
-            }
-          : provider === "qoder"
-          ? {
-              _qoderNonce: data._qoderNonce,
-              _qoderMachineId: data._qoderMachineId,
-              _qoderVerifier: data.codeVerifier,
-            }
-          : (provider === "kimi" || provider === "kimi-coding")
-          ? { _kimiDeviceId: data._kimiDeviceId }
-          : null;
-        const flowId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-        devicePollFlowRef.current = flowId;
+        devicePollFlowRef.current = data.flowId;
         startPolling(
-          data.device_code,
-          data.codeVerifier,
+          data.flowId,
           data.interval || 5,
-          extraData,
           // Use the upstream's expires_in if present so we don't time out
           // before the device code itself (qoder gives 300s).
           Number.isFinite(data.expires_in) && data.expires_in > 0
             ? data.expires_in * 1000
             : undefined,
-          proxyPoolId,
           generation,
-          flowId,
         );
         return;
       }
@@ -401,6 +398,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       // Guard against StrictMode/effect re-runs auto-opening multiple tabs.
       if (openedRef.current) return;
       openedRef.current = true;
+      closeCompletedRef.current = false;
       setAuthData(null);
       setCallbackUrl("");
       setError(null);
@@ -410,13 +408,11 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setSelectedProxyPoolId("");
       startOAuthFlow("");
     } else if (!isOpen) {
-      // Abort polling and cleanup proxy when modal closes
+      // Cleanup is awaited by handleClose; this branch only invalidates stale async work.
       flowGenerationRef.current += 1;
       openedRef.current = false;
-      cancelDevicePoll().catch(() => {});
-      stopFixedProxy().catch(() => {});
     }
-  }, [isOpen, provider, startOAuthFlow, proxyPools, proxyPoolsReady, cancelDevicePoll, stopFixedProxy]);
+  }, [isOpen, provider, startOAuthFlow, proxyPools, proxyPoolsReady]);
 
   const restartOAuthFlow = (proxyPoolId) => {
     const generation = ++flowGenerationRef.current;
@@ -458,36 +454,57 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     const POLL_INTERVAL_MS = 1500;
     const MAX_ATTEMPTS = 200; // ~5 minutes
     let attempts = 0;
+    let terminalResult = null;
 
     const tick = async () => {
       if (cancelled || callbackProcessedRef.current) return;
       attempts += 1;
       try {
-        const res = await fetch(`/api/oauth/${pollProvider}/poll-status`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ state: authData.state }),
-        });
-        const data = await res.json();
-        if (cancelled || callbackProcessedRef.current) return;
-        if (data.status === "done") {
-          callbackProcessedRef.current = true;
-          setStep("success");
-          onSuccess?.();
-          return;
+        if (!terminalResult) {
+          const res = await fetch(`/api/oauth/${pollProvider}/poll-status`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ state: authData.state }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (cancelled || callbackProcessedRef.current) return;
+          if (!res.ok) {
+            callbackProcessedRef.current = true;
+            setError(sanitizeOAuthError(data.error || "Authentication status unavailable"));
+            setStep("error");
+            return;
+          }
+          if (data.status === "done" || data.status === "error") terminalResult = data;
         }
-        if (data.status === "error") {
+
+        if (terminalResult) {
+          const acknowledgement = await fetch(`/api/oauth/${pollProvider}/ack-status`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ state: authData.state }),
+          });
+          const acknowledgementData = await acknowledgement.json().catch(() => ({}));
+          if (!acknowledgement.ok) {
+            throw new Error(acknowledgementData.error || "Authentication acknowledgement failed");
+          }
+          if (cancelled || callbackProcessedRef.current) return;
           callbackProcessedRef.current = true;
-          setError(data.error || "Authentication failed");
-          setStep("error");
+          fixedProxyStateRef.current = null;
+          if (terminalResult.status === "done") {
+            setStep("success");
+            onSuccess?.();
+          } else {
+            setError(sanitizeOAuthError(terminalResult.error || "Authentication failed"));
+            setStep("error");
+          }
           return;
         }
       } catch {
-        // Network error, keep polling
+        // Network and acknowledgement errors retain local terminal state for retry.
       }
       if (attempts >= MAX_ATTEMPTS) {
         callbackProcessedRef.current = true;
-        setError("Authentication timeout");
+        setError(terminalResult ? "Authentication result acknowledgement timed out" : "Authentication timeout");
         setStep("error");
         return;
       }
@@ -606,10 +623,27 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
   // Clear session on modal close + cleanup proxy
   const handleClose = useCallback(() => {
+    if (closeCompletedRef.current) return Promise.resolve();
+    if (closePromiseRef.current) return closePromiseRef.current;
     flowGenerationRef.current += 1;
-    cancelDevicePoll().catch(() => {});
-    stopFixedProxy().catch(() => {});
-    onClose();
+    setPolling(false);
+
+    let pending;
+    pending = (async () => {
+      try {
+        await cancelDevicePoll();
+        await stopFixedProxy();
+        closeCompletedRef.current = true;
+        onClose();
+      } catch (err) {
+        setError(sanitizeOAuthError(err?.message));
+        setStep("error");
+      }
+    })().finally(() => {
+      if (closePromiseRef.current === pending) closePromiseRef.current = null;
+    });
+    closePromiseRef.current = pending;
+    return pending;
   }, [cancelDevicePoll, onClose, stopFixedProxy]);
 
   if (!provider || !providerInfo) return null;

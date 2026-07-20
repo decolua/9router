@@ -10,7 +10,7 @@ export default defineConfig({
     name: "test-jsx-in-js",
     enforce: "pre",
     transform(code, id) {
-      if (!/\/src\/shared\/components\/.*\.js$/.test(id)) return null;
+      if (!/\/src\/(?:shared\/components\/.*|app\/.*\/page)\.js$/.test(id)) return null;
       return transformWithOxc(code, id, { lang: "jsx", jsx: { runtime: "automatic" } });
     },
   }],

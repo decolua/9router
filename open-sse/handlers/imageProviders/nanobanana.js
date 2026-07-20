@@ -1,5 +1,5 @@
 // NanoBanana API — async submit + poll record-info
-import { sleep, nowSec, sizeToAspectRatio, POLL_INTERVAL_MS, POLL_TIMEOUT_MS } from "./_base.js";
+import { fetchRemoteJson, readBoundedJsonResponse, sleep, nowSec, sizeToAspectRatio, POLL_INTERVAL_MS, POLL_TIMEOUT_MS } from "./_base.js";
 import { PROVIDER_MEDIA } from "../../providers/index.js";
 
 const IMG_CFG = PROVIDER_MEDIA["nanobanana"]?.imageConfig || {};
@@ -35,7 +35,7 @@ export default {
   },
   // Async: parse submit → poll until SUCCESS, return raw poll data
   async parseResponse(response, { headers, proxyOptions }) {
-    const submitData = await response.json();
+    const submitData = await readBoundedJsonResponse(response);
     if (submitData.code !== 200) throw new Error(submitData.msg || "NanoBanana submit failed");
     const taskId = submitData.data?.taskId;
     if (!taskId) throw new Error("NanoBanana: no taskId returned");
@@ -43,9 +43,11 @@ export default {
     const deadline = Date.now() + POLL_TIMEOUT_MS;
     while (Date.now() < deadline) {
       await sleep(POLL_INTERVAL_MS);
-      const r = await fetch(pollUrl, { headers, proxyOptions });
-      if (!r.ok) throw new Error(`NanoBanana status ${r.status}`);
-      const s = await r.json();
+      const s = await fetchRemoteJson(pollUrl, {
+        expectedOrigin: new URL(POLL_BASE).origin,
+        headers,
+        proxyOptions,
+      });
       const flag = s.data?.successFlag;
       if (flag === 1) return s.data;
       if (flag === 2 || flag === 3) throw new Error(s.data?.errorMessage || "NanoBanana generation failed");

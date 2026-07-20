@@ -5,6 +5,7 @@ import { getProviderConnectionById } from "@/lib/localDb";
 import { consumeCodexRateLimitResetCredit, getCodexRateLimitResetCredits } from "open-sse/services/usage.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { refreshAndUpdateCredentials } from "../route.js";
+import { sanitizeOAuthError } from "open-sse/utils/oauthError.js";
 
 const AUTH_EXPIRED_PATTERNS = ["expired", "authentication", "unauthorized", "401", "re-authorize"];
 
@@ -63,14 +64,15 @@ async function getCodexConnection(connectionId) {
     return { response: Response.json({ error: "Codex reset credits require an OAuth or access-token connection." }, { status: 400 }) };
   }
 
-  const proxyConfig = await resolveConnectionProxyConfig(connection.providerSpecificData);
-  const proxyOptions = {
-    connectionProxyEnabled: proxyConfig.connectionProxyEnabled === true,
-    connectionProxyUrl: proxyConfig.connectionProxyUrl || "",
-    connectionNoProxy: proxyConfig.connectionNoProxy || "",
-    vercelRelayUrl: proxyConfig.vercelRelayUrl || "",
-    strictProxy: false,
-  };
+  const proxyOptions = await resolveConnectionProxyConfig(connection.providerSpecificData);
+  if (proxyOptions?.proxyUnavailable === true || proxyOptions?.source === "unavailable") {
+    return {
+      response: Response.json(
+        { error: "Selected proxy is unavailable. Choose another route and try again." },
+        { status: 503 },
+      ),
+    };
+  }
 
   return { connection, isOAuth, proxyOptions };
 }
@@ -80,8 +82,9 @@ async function refreshCodexConnection(connection, proxyOptions) {
     const result = await refreshAndUpdateCredentials(connection, false, proxyOptions);
     return { connection: result.connection };
   } catch (refreshError) {
-    console.error("[Codex Reset Credits API] Credential refresh failed:", refreshError);
-    return { response: Response.json({ error: `Credential refresh failed: ${refreshError.message}` }, { status: 401 }) };
+    const publicError = sanitizeOAuthError(refreshError);
+    console.error("[Codex Reset Credits API] Credential refresh failed:", publicError);
+    return { response: Response.json({ error: publicError }, { status: 401 }) };
   }
 }
 
@@ -113,8 +116,9 @@ export async function GET(_request, { params }) {
     return Response.json(result);
   } catch (error) {
     const provider = connection?.provider ?? "unknown";
-    console.warn(`[Codex Reset Credits] ${provider}: ${error.message}`);
-    return Response.json({ error: error.message }, { status: 500 });
+    const publicError = sanitizeOAuthError(error);
+    console.warn(`[Codex Reset Credits] ${provider}: ${publicError}`);
+    return Response.json({ error: publicError }, { status: 500 });
   }
 }
 
@@ -143,14 +147,15 @@ export async function POST(request, { params }) {
         connection = retryResult.connection;
         consumeResult = await consumeCodexRateLimitResetCredit(connection.accessToken, redeemRequestId, proxyOptions);
       } catch (retryError) {
-        console.warn(`[Codex Reset Credits] force refresh failed: ${retryError.message}`);
+        console.warn(`[Codex Reset Credits] force refresh failed: ${sanitizeOAuthError(retryError)}`);
       }
     }
 
     return getResponseForConsumeResult(consumeResult, redeemRequestId);
   } catch (error) {
     const provider = connection?.provider ?? "unknown";
-    console.warn(`[Codex Reset Credits] ${provider}: ${error.message}`);
-    return Response.json({ error: error.message }, { status: 500 });
+    const publicError = sanitizeOAuthError(error);
+    console.warn(`[Codex Reset Credits] ${provider}: ${publicError}`);
+    return Response.json({ error: publicError }, { status: 500 });
   }
 }

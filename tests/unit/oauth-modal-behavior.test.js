@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const harness = vi.hoisted(() => ({
   effects: [],
+  refs: [],
+  refIndex: 0,
   stateIndex: 0,
+  stateSetters: [],
   stateValues: [],
 }));
 
@@ -11,14 +14,20 @@ vi.mock("react", () => ({
   useEffect: (effect) => {
     harness.effects.push(effect);
   },
-  useRef: (initialValue) => ({ current: initialValue }),
+  useRef: (initialValue) => {
+    const index = harness.refIndex++;
+    if (!harness.refs[index]) harness.refs[index] = { current: initialValue };
+    return harness.refs[index];
+  },
   useId: () => "oauth-modal-test",
   useState: (initialValue) => {
     const index = harness.stateIndex++;
     const value = index < harness.stateValues.length
       ? harness.stateValues[index]
       : initialValue;
-    return [value, vi.fn()];
+    const setter = vi.fn();
+    harness.stateSetters[index] = setter;
+    return [value, setter];
   },
 }));
 
@@ -33,8 +42,11 @@ vi.mock("@/shared/hooks/useCopyToClipboard", () => ({
 }));
 
 import OAuthModal from "../../src/shared/components/OAuthModal.js";
+import KiroSocialOAuthModal from "../../src/shared/components/KiroSocialOAuthModal.js";
 
 const originalFetch = globalThis.fetch;
+const credentialError = "exchange failed at https://user:password@provider.test/callback?code=SECRET-CODE&refresh_token=SECRET-REFRESH";
+const credentialParts = ["user", "password", "SECRET-CODE", "SECRET-REFRESH"];
 
 function response(data, ok = true) {
   return { ok, json: async () => data };
@@ -66,10 +78,19 @@ function renderModal({
   authData = null,
   callbackUrl = "",
   selectedProxyPoolId = "",
+  isLocalhost = false,
   proxyPools = [{ id: "pool-1", name: "Pool 1" }, { id: "pool-2", name: "Pool 2" }],
+  isOpen = true,
+  onSuccess = vi.fn(),
+  onClose = vi.fn(),
+  preserveRefs = false,
+  omitProxyPoolsReady = false,
 } = {}) {
   harness.effects = [];
+  if (!preserveRefs) harness.refs = [];
+  harness.refIndex = 0;
   harness.stateIndex = 0;
+  harness.stateSetters = [];
   harness.stateValues = [
     step,
     authData,
@@ -79,19 +100,48 @@ function renderModal({
     null,
     false,
     selectedProxyPoolId,
-    false,
+    isLocalhost,
     "/callback?code=...",
   ];
 
-  return OAuthModal({
-    isOpen: true,
+  const props = {
+    isOpen,
     provider,
     providerInfo: { name: provider },
+    onSuccess,
+    onClose,
+    proxyPools,
+  };
+  if (!omitProxyPoolsReady) props.proxyPoolsReady = true;
+  return OAuthModal(props);
+}
+
+function renderKiroModal({
+  step = "loading",
+  authData = null,
+  callbackUrl = "",
+  omitProxyPoolsReady = false,
+} = {}) {
+  harness.effects = [];
+  harness.refs = [];
+  harness.refIndex = 0;
+  harness.stateIndex = 0;
+  harness.stateSetters = [];
+  harness.stateValues = [step, "https://auth.example", authData, callbackUrl, null, ""];
+  const props = {
+    isOpen: true,
+    provider: "google",
     onSuccess: vi.fn(),
     onClose: vi.fn(),
-    proxyPools,
-    proxyPoolsReady: true,
-  });
+    proxyPools: [],
+  };
+  if (!omitProxyPoolsReady) props.proxyPoolsReady = true;
+  const tree = KiroSocialOAuthModal(props);
+  if (authData) {
+    harness.refs[1].current = 1;
+    harness.refs[2].current = 1;
+  }
+  return tree;
 }
 
 describe("OAuth modal flow coordination", () => {
@@ -132,17 +182,127 @@ describe("OAuth modal flow coordination", () => {
     expect(authorizeUrl.searchParams.get("proxyPoolId")).toBe("pool-1");
   });
 
+  it("fails closed when OAuth modal pool readiness is omitted", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(response({
+      authUrl: "https://auth.example/authorize",
+      state: "state",
+    }));
+    renderModal({ omitProxyPoolsReady: true });
+
+    harness.effects[1]();
+    await flushPromises();
+
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when Kiro social modal pool readiness is omitted", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(response({
+      authUrl: "https://auth.example/authorize",
+      state: "state",
+    }));
+    renderKiroModal({ omitProxyPoolsReady: true });
+
+    harness.effects[1]();
+    await flushPromises();
+
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("sanitizes popup callback errors before displaying them", async () => {
+    const popup = {};
+    renderModal({ authData: { state: "callback-state" }, isLocalhost: true });
+    harness.refs[0].current = popup;
+    harness.effects.at(-1)();
+    const messageHandler = window.addEventListener.mock.calls.find(([type]) => type === "message")[1];
+
+    messageHandler({
+      source: popup,
+      origin: window.location.origin,
+      data: {
+        type: "oauth_callback",
+        data: {
+          state: "callback-state",
+          error: "provider_error",
+          errorDescription: credentialError,
+        },
+      },
+    });
+    await flushPromises();
+
+    const message = harness.stateSetters[3].mock.calls.at(-1)[0];
+    expect(message).toMatch(/restart sign-in|try again/i);
+    for (const part of credentialParts) expect(message).not.toContain(part);
+  });
+
+  it("sanitizes manual callback errors before displaying them", async () => {
+    const callbackUrl = `http://localhost:20127/callback?state=callback-state&error=provider_error&error_description=${encodeURIComponent(credentialError)}`;
+    const tree = renderModal({
+      step: "input",
+      authData: { state: "callback-state" },
+      callbackUrl,
+    });
+    const connectButton = findElement(tree, (node) => node.props?.children === "Connect");
+
+    await connectButton.props.onClick();
+
+    const message = harness.stateSetters[3].mock.calls.at(-1)[0];
+    expect(message).toMatch(/restart sign-in|try again/i);
+    for (const part of credentialParts) expect(message).not.toContain(part);
+  });
+
+  it("sanitizes Kiro callback errors before displaying them", async () => {
+    const callbackUrl = `kiro://kiro.kiroAgent/authenticate-success?state=callback-state&error=provider_error&error_description=${encodeURIComponent(credentialError)}`;
+    const tree = renderKiroModal({
+      step: "input",
+      authData: { state: "callback-state" },
+      callbackUrl,
+    });
+    const connectButton = findElement(tree, (node) => node.props?.children === "Connect");
+
+    await connectButton.props.onClick();
+
+    const message = harness.stateSetters[4].mock.calls.at(-1)[0];
+    expect(message).toMatch(/restart sign-in|try again/i);
+    for (const part of credentialParts) expect(message).not.toContain(part);
+  });
+
+  it("uses automatic callback UX on IPv6 loopback", async () => {
+    globalThis.window.location = {
+      hostname: "[::1]",
+      origin: "http://[::1]:20127",
+      port: "20127",
+      protocol: "http:",
+    };
+    globalThis.fetch = vi.fn().mockResolvedValue(response({
+      authUrl: "https://auth.example/authorize",
+      state: "ipv6-state",
+    }));
+    renderModal();
+
+    harness.effects[0]();
+    expect(harness.stateSetters[8]).toHaveBeenCalledWith(true);
+
+    globalThis.window.open.mockClear();
+    renderModal({ isLocalhost: true });
+    harness.effects[1]();
+    await flushPromises();
+
+    expect(globalThis.window.open).toHaveBeenCalledWith(
+      "https://auth.example/authorize",
+      "oauth_popup",
+      "width=600,height=700",
+    );
+    expect(globalThis.window.open).not.toHaveBeenCalledWith("https://auth.example/authorize", "_blank");
+  });
+
   it("keeps an old sleeping device poll cancelled after pool restart", async () => {
     vi.useFakeTimers();
-    vi.spyOn(globalThis.crypto, "randomUUID")
-      .mockReturnValueOnce("old-flow")
-      .mockReturnValueOnce("new-flow");
     globalThis.fetch = vi.fn(async (url, options) => {
       const target = String(url);
       if (target.includes("/device-code")) {
         const poolId = new URL(target).searchParams.get("proxyPoolId");
         return response({
-          device_code: poolId ? "new-device" : "old-device",
+          flowId: poolId ? "new-flow" : "old-flow",
           expires_in: 60,
           interval: 1,
           verification_uri: "https://auth.example/device",
@@ -166,27 +326,22 @@ describe("OAuth modal flow coordination", () => {
     await flushPromises();
     await vi.advanceTimersByTimeAsync(1_000);
 
-    const polledDevices = globalThis.fetch.mock.calls
+    const pollBodies = globalThis.fetch.mock.calls
       .filter(([url]) => String(url).endsWith("/poll"))
-      .map(([, options]) => JSON.parse(options.body).deviceCode);
+      .map(([, options]) => JSON.parse(options.body));
     const cancelledFlows = globalThis.fetch.mock.calls
       .filter(([url]) => String(url).includes("/cancel-poll"))
       .map(([, options]) => JSON.parse(options.body).flowId);
-    const polledFlows = globalThis.fetch.mock.calls
-      .filter(([url]) => String(url).endsWith("/poll"))
-      .map(([, options]) => JSON.parse(options.body).flowId);
-    expect(polledDevices).toEqual(["new-device"]);
     expect(cancelledFlows).toEqual(["old-flow"]);
-    expect(polledFlows).toEqual(["new-flow"]);
+    expect(pollBodies).toEqual([{ flowId: "new-flow" }]);
   });
 
   it("does not start a new pool flow when device cancellation fails", async () => {
-    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue("old-flow");
     globalThis.fetch = vi.fn(async (url) => {
       const target = String(url);
       if (target.includes("/device-code")) {
         return response({
-          device_code: "old-device",
+          flowId: "old-flow",
           expires_in: 60,
           interval: 30,
           verification_uri: "https://auth.example/device",
@@ -210,6 +365,151 @@ describe("OAuth modal flow coordination", () => {
       .map(([url]) => String(url))
       .filter((url) => url.includes("/device-code"));
     expect(deviceCodeRequests).toHaveLength(1);
+  });
+
+  it("awaits one device cancellation before closing", async () => {
+    let finishCancellation;
+    const onClose = vi.fn();
+    globalThis.fetch = vi.fn(async (url) => {
+      const target = String(url);
+      if (target.includes("/device-code")) {
+        return response({
+          flowId: "device-flow",
+          expires_in: 60,
+          interval: 30,
+          verification_uri: "https://auth.example/device",
+        });
+      }
+      if (target.includes("/cancel-poll")) {
+        return await new Promise((resolve) => { finishCancellation = resolve; });
+      }
+      throw new Error(`Unexpected request: ${target}`);
+    });
+    const tree = renderModal({ provider: "github", onClose });
+
+    harness.effects[1]();
+    await flushPromises();
+    const firstClose = tree.props.onClose();
+    const secondClose = tree.props.onClose();
+    await flushPromises();
+
+    expect(globalThis.fetch.mock.calls.filter(([url]) => String(url).includes("/cancel-poll"))).toHaveLength(1);
+    expect(onClose).not.toHaveBeenCalled();
+
+    finishCancellation(response({ success: true }));
+    await Promise.all([firstClose, secondClose]);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces fixed close failure without closing", async () => {
+    const onClose = vi.fn();
+    globalThis.fetch = vi.fn(async (url) => {
+      if (String(url).includes("/stop-proxy")) return response({ error: "Stop failed" }, false);
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    const tree = renderModal({ provider: "codex", authData: { state: "old-state" }, onClose });
+
+    await tree.props.onClose();
+    await flushPromises();
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(harness.stateSetters[3]).toHaveBeenCalledWith(
+      "OAuth token exchange failed. Restart sign-in and try again.",
+    );
+    expect(harness.stateSetters[0]).toHaveBeenCalledWith("error");
+  });
+
+  it("reopens after one settled fixed close without a duplicate stop failure", async () => {
+    const onClose = vi.fn();
+    let stopCalls = 0;
+    globalThis.fetch = vi.fn(async (url) => {
+      const target = String(url);
+      if (target.includes("/stop-proxy")) {
+        stopCalls += 1;
+        return stopCalls === 1
+          ? response({ success: true })
+          : response({ error: "Session already stopped" }, false);
+      }
+      if (target.includes("/authorize")) {
+        return response({ authUrl: "https://auth.example", state: "new-state" });
+      }
+      if (target.includes("/start-proxy")) return response({ success: true, serverSide: true });
+      throw new Error(`Unexpected request: ${target}`);
+    });
+    const openTree = renderModal({ provider: "codex", authData: { state: "old-state" }, onClose });
+
+    await openTree.props.onClose();
+    const closedTree = renderModal({
+      provider: "codex",
+      authData: { state: "old-state" },
+      isOpen: false,
+      onClose,
+      preserveRefs: true,
+    });
+    expect(closedTree).toBeTruthy();
+    harness.effects[1]();
+    await flushPromises();
+
+    renderModal({ provider: "codex", authData: null, onClose, preserveRefs: true });
+    harness.effects[1]();
+    await flushPromises();
+
+    expect(stopCalls).toBe(1);
+    expect(globalThis.fetch.mock.calls.some(([url]) => String(url).includes("/authorize"))).toBe(true);
+  });
+
+  it("surfaces non-2xx fixed status polling responses", async () => {
+    vi.useFakeTimers();
+    const onSuccess = vi.fn();
+    globalThis.fetch = vi.fn().mockResolvedValue(response({ error: "Status unavailable" }, false));
+    renderModal({
+      provider: "codex",
+      authData: { state: "fixed-state", codexServerSide: true },
+      onSuccess,
+    });
+
+    harness.effects[2]();
+    await vi.advanceTimersByTimeAsync(1_500);
+
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(harness.stateSetters[3]).toHaveBeenCalledWith(
+      "OAuth token exchange failed. Restart sign-in and try again.",
+    );
+    expect(harness.stateSetters[0]).toHaveBeenCalledWith("error");
+  });
+
+  it("retries terminal acknowledgement without polling or completing twice", async () => {
+    vi.useFakeTimers();
+    const onSuccess = vi.fn();
+    let acknowledgementAttempts = 0;
+    globalThis.fetch = vi.fn(async (url) => {
+      const target = String(url);
+      if (target.endsWith("/poll-status")) {
+        return response({ status: "done", connectionId: "connection-1" });
+      }
+      if (target.endsWith("/ack-status")) {
+        acknowledgementAttempts += 1;
+        return acknowledgementAttempts === 1
+          ? response({ error: "Acknowledgement unavailable" }, false)
+          : response({ success: true });
+      }
+      throw new Error(`Unexpected request: ${target}`);
+    });
+    renderModal({
+      provider: "codex",
+      authData: { state: "fixed-state", codexServerSide: true },
+      onSuccess,
+    });
+
+    harness.effects[2]();
+    await vi.advanceTimersByTimeAsync(1_500);
+    expect(onSuccess).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1_500);
+
+    expect(globalThis.fetch.mock.calls.filter(([url]) => String(url).endsWith("/poll-status"))).toHaveLength(1);
+    expect(globalThis.fetch.mock.calls.filter(([url]) => String(url).endsWith("/ack-status"))).toHaveLength(2);
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+    expect(harness.stateSetters[0]).toHaveBeenCalledWith("success");
   });
 
   it.each(["http", "network"])("does not start a replacement when fixed stop has a %s failure", async (failure) => {

@@ -128,6 +128,8 @@ const CODEX_PORT = CODEX_CONFIG.fixedPort;
 const PROXY_CLOSE_GRACE_MS = 30000;
 const OAUTH_SESSION_TTL_MS = 300000;
 const OAUTH_SESSION_MAX_ENTRIES = 128;
+const DEVICE_FLOW_TTL_MS = 15 * 60 * 1000;
+const DEVICE_FLOW_MAX_ENTRIES = 128;
 
 function closeProxyServer(server) {
   return new Promise((resolve) => {
@@ -154,6 +156,7 @@ function closeProxyServer(server) {
 // Pending exchange sessions keyed by state — used by server-side exchange mode
 const pendingExchanges = new Map();
 const authorizationFlows = new Map();
+const deviceAuthorizationFlows = new Map();
 
 function pruneExpiredSessions(sessions, now = Date.now()) {
   for (const [state, session] of sessions) {
@@ -216,6 +219,77 @@ export function isAuthorizationFlowCurrent(kind, provider, state, identity) {
 
 export function clearAuthorizationFlow(kind, provider, state, identity = null) {
   return clearSession(authorizationFlows, authorizationFlowKey(kind, provider, state), identity);
+}
+
+function deviceFlowKey(provider, flowId) {
+  return `${provider}:${flowId}`;
+}
+
+function pruneExpiredDeviceFlows(now = Date.now()) {
+  for (const [key, flow] of deviceAuthorizationFlows) {
+    if (flow.expiresAt <= now) deviceAuthorizationFlows.delete(key);
+  }
+}
+
+function getDeviceFlow(provider, flowId) {
+  pruneExpiredDeviceFlows();
+  return flowId ? deviceAuthorizationFlows.get(deviceFlowKey(provider, flowId)) || null : null;
+}
+
+export function reserveDeviceAuthorizationFlow({ provider, flowId, ...context }) {
+  pruneExpiredDeviceFlows();
+  const key = deviceFlowKey(provider, flowId);
+  if (!provider || !flowId || deviceAuthorizationFlows.has(key) || deviceAuthorizationFlows.size >= DEVICE_FLOW_MAX_ENTRIES) {
+    return null;
+  }
+  const flow = {
+    ...context,
+    provider,
+    flowId,
+    identity: Symbol("device-oauth-flow"),
+    status: "starting",
+    expiresAt: Date.now() + DEVICE_FLOW_TTL_MS,
+  };
+  deviceAuthorizationFlows.set(key, flow);
+  return { ...flow };
+}
+
+export function bindDeviceAuthorizationFlow(provider, flowId, identity, context) {
+  const flow = getDeviceFlow(provider, flowId);
+  if (!flow || flow.identity !== identity || flow.status !== "starting") return false;
+  Object.assign(flow, context, { status: "pending" });
+  return true;
+}
+
+export function claimDeviceAuthorizationFlow(provider, flowId) {
+  const flow = getDeviceFlow(provider, flowId);
+  if (!flow || flow.status !== "pending") return null;
+  flow.status = "polling";
+  return { ...flow };
+}
+
+export function releaseDeviceAuthorizationFlow(provider, flowId, identity) {
+  const flow = getDeviceFlow(provider, flowId);
+  if (!flow || flow.identity !== identity || flow.status !== "polling") return false;
+  flow.status = "pending";
+  return true;
+}
+
+export function isDeviceAuthorizationFlowCurrent(provider, flowId, identity) {
+  const flow = getDeviceFlow(provider, flowId);
+  return Boolean(flow && flow.identity === identity && flow.status === "polling");
+}
+
+export function clearDeviceAuthorizationFlow(provider, flowId, identity = null) {
+  const key = deviceFlowKey(provider, flowId);
+  const flow = deviceAuthorizationFlows.get(key);
+  if (!flow || (identity && flow.identity !== identity)) return false;
+  deviceAuthorizationFlows.delete(key);
+  return true;
+}
+
+export function clearDeviceAuthorizationFlows() {
+  deviceAuthorizationFlows.clear();
 }
 
 function publicSessionStatus(session) {
@@ -396,6 +470,8 @@ export async function startCodexProxy(appPort) {
               ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString()
               : null,
             testStatus: "active",
+          }, {
+            beforePersist: () => isCurrentSession(pendingExchanges, state, session.identity),
           });
 
           session.status = "done";
@@ -613,6 +689,8 @@ export async function startXaiProxy(appPort) {
               ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString()
               : null,
             testStatus: "active",
+          }, {
+            beforePersist: () => isCurrentSession(xaiPendingExchanges, state, session.identity),
           });
 
           session.status = "done";

@@ -11,7 +11,7 @@ import OAuthProxyPoolSelector from "./OAuthProxyPoolSelector";
  * Kiro Social OAuth Modal (Google/GitHub)
  * Handles manual callback URL flow for social login
  */
-export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onClose, proxyPools = [], proxyPoolsReady = true }) {
+export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onClose, proxyPools = [], proxyPoolsReady = false }) {
   const [step, setStep] = useState("loading"); // loading | input | success | error
   const [authUrl, setAuthUrl] = useState("");
   const [authData, setAuthData] = useState(null);

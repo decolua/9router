@@ -44,6 +44,7 @@ vi.mock("@/lib/network/connectionProxy", () => ({
 
 import { GET } from "../../src/app/api/oauth/kiro/social-authorize/route.js";
 import { POST } from "../../src/app/api/oauth/kiro/social-exchange/route.js";
+import { clearAuthorizationFlow } from "../../src/lib/oauth/utils/server.js";
 
 const proxyOptions = {
   connectionProxyEnabled: true,
@@ -136,9 +137,12 @@ describe("Kiro social OAuth proxy routing", () => {
 
     expect(response.status).toBe(200);
     expect(mocks.exchangeSocialCode).toHaveBeenCalledWith("social-code", "verifier", proxyOptions);
-    expect(mocks.createProviderConnection).toHaveBeenCalledWith(expect.objectContaining({
-      providerSpecificData: expect.objectContaining({ proxyPoolId: "pool-1" }),
-    }));
+    expect(mocks.createProviderConnection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerSpecificData: expect.objectContaining({ proxyPoolId: "pool-1" }),
+      }),
+      expect.objectContaining({ beforePersist: expect.any(Function) }),
+    );
   });
 
   it("uses captured explicit Direct routing for social token exchange", async () => {
@@ -162,6 +166,27 @@ describe("Kiro social OAuth proxy routing", () => {
     expect((await POST(exchangeRequest())).status).toBe(409);
     expect(mocks.exchangeSocialCode).toHaveBeenCalledTimes(1);
     expect(mocks.createProviderConnection).toHaveBeenCalledTimes(1);
+  });
+
+  it("rechecks social flow identity during delayed DB admission", async () => {
+    await authorizeRequest();
+    let releaseAdmission;
+    let persisted = false;
+    mocks.createProviderConnection.mockImplementation(async (_data, options) => {
+      await new Promise((resolve) => { releaseAdmission = resolve; });
+      if (options?.beforePersist?.() === false) throw new Error("OAuth flow was cancelled");
+      persisted = true;
+      return { id: "late-connection", provider: "kiro" };
+    });
+
+    const request = POST(exchangeRequest());
+    await vi.waitFor(() => expect(mocks.createProviderConnection).toHaveBeenCalledTimes(1));
+    clearAuthorizationFlow("kiro-social", "google", "state");
+    releaseAdmission();
+    const response = await request;
+
+    expect(response.status).toBe(409);
+    expect(persisted).toBe(false);
   });
 
   it("sanitizes credential-bearing social exchange errors in API and logs", async () => {

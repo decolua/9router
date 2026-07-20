@@ -30,43 +30,20 @@ import {
   claimAuthorizationFlow,
   isAuthorizationFlowCurrent,
   clearAuthorizationFlow,
+  reserveDeviceAuthorizationFlow,
+  bindDeviceAuthorizationFlow,
+  claimDeviceAuthorizationFlow,
+  releaseDeviceAuthorizationFlow,
+  isDeviceAuthorizationFlowCurrent,
+  clearDeviceAuthorizationFlow,
 } from "@/lib/oauth/utils/server";
 
-const DEVICE_POLL_CANCELLATION_TTL_MS = 15 * 60 * 1000;
-const DEVICE_POLL_CANCELLATION_MAX_ENTRIES = 256;
 const PUBLIC_DEVICE_ERROR_CODES = new Set(["authorization_pending", "slow_down", "expired_token", "access_denied"]);
-const cancelledDevicePolls = new Map();
 
 function normalizeFlowId(value) {
   if (typeof value !== "string") return "";
   const flowId = value.trim();
   return flowId && flowId.length <= 128 ? flowId : "";
-}
-
-function pruneCancelledDevicePolls(now = Date.now()) {
-  for (const [key, expiresAt] of cancelledDevicePolls) {
-    if (expiresAt <= now) cancelledDevicePolls.delete(key);
-  }
-}
-
-function devicePollKey(provider, flowId) {
-  return `${provider}:${flowId}`;
-}
-
-function rememberCancelledDevicePoll(provider, flowId, now = Date.now()) {
-  pruneCancelledDevicePolls(now);
-  const key = devicePollKey(provider, flowId);
-  if (!cancelledDevicePolls.has(key) && cancelledDevicePolls.size >= DEVICE_POLL_CANCELLATION_MAX_ENTRIES) {
-    return false;
-  }
-  cancelledDevicePolls.set(key, now + DEVICE_POLL_CANCELLATION_TTL_MS);
-  return true;
-}
-
-function isDevicePollCancelled(provider, flowId) {
-  if (!flowId) return false;
-  pruneCancelledDevicePolls();
-  return cancelledDevicePolls.has(devicePollKey(provider, flowId));
 }
 
 function cancelledPollResponse() {
@@ -75,6 +52,22 @@ function cancelledPollResponse() {
     error: "poll_cancelled",
     cancelled: true,
   }, { status: 409 });
+}
+
+const PUBLIC_DEVICE_FIELDS = [
+  "user_code",
+  "verification_uri",
+  "verification_uri_complete",
+  "interval",
+  "expires_in",
+];
+
+function publicDeviceData(deviceData, flowId) {
+  const result = { flowId };
+  for (const field of PUBLIC_DEVICE_FIELDS) {
+    if (deviceData?.[field] !== undefined) result[field] = deviceData[field];
+  }
+  return result;
 }
 
 function withProxyPoolData(providerSpecificData, proxyPoolId) {
@@ -130,6 +123,8 @@ async function completeXaiManualCode(code, state, session) {
         ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString()
         : null,
       testStatus: "active",
+    }, {
+      beforePersist: () => isXaiSessionCurrent(state, session.identity),
     });
     clearXaiSession(state, session.identity);
     await stopXaiProxy();
@@ -202,6 +197,16 @@ export async function GET(request, { params }) {
       const proxyPoolId = searchParams.get("proxyPoolId");
       const proxyOptions = await proxyOptionsForPool(proxyPoolId);
       const authData = await generateAuthData(provider, null, undefined, proxyOptions);
+      const flowId = crypto.randomUUID();
+      const reservedFlow = reserveDeviceAuthorizationFlow({
+        provider,
+        flowId,
+        proxyPoolId: proxyPoolId || "",
+        proxyOptions,
+      });
+      if (!reservedFlow) {
+        return NextResponse.json({ error: "OAuth flow capacity reached; retry later" }, { status: 503 });
+      }
       const startUrl = searchParams.get("start_url");
       const region = searchParams.get("region");
       const authMethod = searchParams.get("auth_method");
@@ -224,20 +229,23 @@ export async function GET(request, { params }) {
         "qoder",
         "grok-cli",
       ];
-      let deviceData;
-      if (noPkceDeviceProviders.includes(provider)) {
-        deviceData = await requestDeviceCode(provider, undefined, deviceOptions, proxyOptions);
-      } else {
-        // Qwen and other PKCE providers
-        deviceData = await requestDeviceCode(provider, authData.codeChallenge, deviceOptions, proxyOptions);
+      try {
+        const deviceData = noPkceDeviceProviders.includes(provider)
+          ? await requestDeviceCode(provider, undefined, deviceOptions, proxyOptions)
+          : await requestDeviceCode(provider, authData.codeChallenge, deviceOptions, proxyOptions);
+        const deviceCode = deviceData?.device_code || deviceData?.deviceCode;
+        if (!deviceCode || !bindDeviceAuthorizationFlow(provider, flowId, reservedFlow.identity, {
+          deviceCode,
+          codeVerifier: deviceData.codeVerifier || authData.codeVerifier || null,
+          extraData: deviceData,
+        })) {
+          throw new Error("Device authorization could not be started");
+        }
+        return NextResponse.json(publicDeviceData(deviceData, flowId));
+      } catch (error) {
+        clearDeviceAuthorizationFlow(provider, flowId, reservedFlow.identity);
+        throw error;
       }
-
-      return NextResponse.json({
-        ...deviceData,
-        // Prefer the verifier the provider's requestDeviceCode generated for
-        // itself (qoder rolls its own PKCE pair); fall back to the generic one.
-        codeVerifier: deviceData.codeVerifier || authData.codeVerifier,
-      });
     }
 
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
@@ -274,11 +282,23 @@ export async function POST(request, { params }) {
       if (!state) return NextResponse.json({ error: "Missing or invalid state" }, { status: 400 });
       const session = provider === "xai" ? getXaiSessionStatus(state) : getCodexSessionStatus(state);
       if (!session) return NextResponse.json({ status: "unknown" });
-      if (session.status === "done" || session.status === "error") {
-        if (provider === "xai") clearXaiSession(state);
-        else clearCodexSession(state);
-      }
       return NextResponse.json(session);
+    }
+
+    if (action === "ack-status") {
+      if (!["codex", "xai"].includes(provider)) {
+        return NextResponse.json({ error: "Acknowledgement only supported for codex/xai" }, { status: 400 });
+      }
+      const state = normalizeFlowId(body.state);
+      if (!state) return NextResponse.json({ error: "Missing or invalid state" }, { status: 400 });
+      const getStatus = provider === "xai" ? getXaiSessionStatus : getCodexSessionStatus;
+      const clearSession = provider === "xai" ? clearXaiSession : clearCodexSession;
+      const session = getStatus(state);
+      if (session && session.status !== "done" && session.status !== "error") {
+        return NextResponse.json({ error: "OAuth result is not ready" }, { status: 409 });
+      }
+      if (session) clearSession(state);
+      return NextResponse.json({ success: true });
     }
 
     if (action === "stop-proxy") {
@@ -306,9 +326,7 @@ export async function POST(request, { params }) {
       if (!flowId) {
         return NextResponse.json({ error: "Missing or invalid flow ID" }, { status: 400 });
       }
-      if (!rememberCancelledDevicePoll(provider, flowId)) {
-        return NextResponse.json({ error: "OAuth cancellation capacity reached; retry later" }, { status: 503 });
-      }
+      clearDeviceAuthorizationFlow(provider, flowId);
       return NextResponse.json({ success: true });
     }
 
@@ -385,6 +403,8 @@ export async function POST(request, { params }) {
             email: email || null,
             providerSpecificData,
             testStatus: "active",
+          }, {
+            beforePersist: () => isOAuthSessionCurrent(provider, state, session.identity),
           });
 
           return NextResponse.json({
@@ -428,6 +448,8 @@ export async function POST(request, { params }) {
             ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString()
             : null,
           testStatus: "active",
+        }, {
+          beforePersist: () => isOAuthSessionCurrent(provider, state, session.identity),
         });
 
         return NextResponse.json({
@@ -445,44 +467,37 @@ export async function POST(request, { params }) {
     }
 
     if (action === "poll") {
-      const { deviceCode, codeVerifier, extraData, proxyPoolId } = body;
-      const flowId = body.flowId === undefined ? "" : normalizeFlowId(body.flowId);
-
-      if (!deviceCode) {
-        return NextResponse.json({ error: "Missing device code" }, { status: 400 });
-      }
-      if (body.flowId !== undefined && !flowId) {
-        return NextResponse.json({ error: "Invalid flow ID" }, { status: 400 });
-      }
-      if (isDevicePollCancelled(provider, flowId)) return cancelledPollResponse();
+      const flowId = normalizeFlowId(body.flowId);
+      if (!flowId) return NextResponse.json({ error: "Missing or invalid flow ID" }, { status: 400 });
+      const flow = claimDeviceAuthorizationFlow(provider, flowId);
+      if (!flow) return cancelledPollResponse();
+      const { deviceCode, codeVerifier, extraData, proxyPoolId, proxyOptions } = flow;
 
       // Providers that don't use PKCE for device code
       const noPkceProviders = ["github", "kimi", "kimi-coding", "kilocode", "codebuddy-cn", "grok-cli"];
-      const proxyOptions = await proxyOptionsForPool(proxyPoolId);
       let result;
-      if (noPkceProviders.includes(provider)) {
-        // kimi needs extraData._kimiDeviceId for stable X-Msh-Device-Id (CLIProxyAPI parity)
-        result = await pollForToken(provider, deviceCode, null, extraData, proxyOptions);
-      } else if (provider === "kiro") {
-        // Kiro needs extraData (clientId, clientSecret) from device code response
-        result = await pollForToken(provider, deviceCode, null, extraData, proxyOptions);
-      } else if (provider === "qoder") {
-        // Qoder needs both the PKCE verifier (codeVerifier) and the machineId
-        // captured at device-code time (extraData._qoderMachineId) so
-        // mapTokens can persist it for COSY signing.
-        if (!codeVerifier) {
-          return NextResponse.json({ error: "Missing code verifier" }, { status: 400 });
+      try {
+        if (noPkceProviders.includes(provider) || provider === "kiro") {
+          result = await pollForToken(provider, deviceCode, null, extraData, proxyOptions);
+        } else if (provider === "qoder") {
+          if (!codeVerifier) {
+            clearDeviceAuthorizationFlow(provider, flowId, flow.identity);
+            return NextResponse.json({ error: "OAuth flow context is incomplete" }, { status: 409 });
+          }
+          result = await pollForToken(provider, deviceCode, codeVerifier, extraData, proxyOptions);
+        } else {
+          if (!codeVerifier) {
+            clearDeviceAuthorizationFlow(provider, flowId, flow.identity);
+            return NextResponse.json({ error: "OAuth flow context is incomplete" }, { status: 409 });
+          }
+          result = await pollForToken(provider, deviceCode, codeVerifier, null, proxyOptions);
         }
-        result = await pollForToken(provider, deviceCode, codeVerifier, extraData, proxyOptions);
-      } else {
-        // Qwen and other PKCE providers
-        if (!codeVerifier) {
-          return NextResponse.json({ error: "Missing code verifier" }, { status: 400 });
-        }
-        result = await pollForToken(provider, deviceCode, codeVerifier, null, proxyOptions);
+      } catch (error) {
+        releaseDeviceAuthorizationFlow(provider, flowId, flow.identity);
+        throw error;
       }
 
-      if (isDevicePollCancelled(provider, flowId)) return cancelledPollResponse();
+      if (!isDeviceAuthorizationFlowCurrent(provider, flowId, flow.identity)) return cancelledPollResponse();
 
       if (result.success) {
         // Save to database (legacy kimi-coding OAuth → dual-auth kimi)
@@ -496,7 +511,10 @@ export async function POST(request, { params }) {
             ? new Date(Date.now() + result.tokens.expiresIn * 1000).toISOString() 
             : null,
           testStatus: "active",
+        }, {
+          beforePersist: () => isDeviceAuthorizationFlowCurrent(provider, flowId, flow.identity),
         });
+        clearDeviceAuthorizationFlow(provider, flowId, flow.identity);
 
         return NextResponse.json({ 
           success: true, 
@@ -509,6 +527,8 @@ export async function POST(request, { params }) {
 
       // Still pending or error - don't create connection for pending states
       const isPending = result.pending || result.error === "authorization_pending" || result.error === "slow_down";
+      if (isPending) releaseDeviceAuthorizationFlow(provider, flowId, flow.identity);
+      else clearDeviceAuthorizationFlow(provider, flowId, flow.identity);
       
       return NextResponse.json({
         success: false,
@@ -554,6 +574,7 @@ export async function POST(request, { params }) {
 
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   } catch (error) {
+    if (error?.message === "OAuth flow was cancelled") return cancelledPollResponse();
     const publicError = sanitizeOAuthError(error);
     console.log("OAuth POST error:", publicError);
     return NextResponse.json({ error: publicError }, { status: 500 });

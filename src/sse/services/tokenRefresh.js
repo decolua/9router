@@ -28,6 +28,7 @@ import {
   resolveRefreshProxyOptions as _resolveRefreshProxyOptions,
   shouldRefreshCredentials as _shouldRefreshCredentials,
 } from "open-sse/services/oauthCredentialManager.js";
+import { sanitizeOAuthError } from "open-sse/utils/oauthError.js";
 
 export const TOKEN_EXPIRY_BUFFER_MS = BUFFER_MS;
 
@@ -129,26 +130,26 @@ function needsProjectId(provider) {
  * @param {string} connectionId
  * @param {string} accessToken
  */
-function _refreshProjectId(provider, connectionId, accessToken) {
+function _refreshProjectId(provider, connectionId, accessToken, proxyOptions) {
   if (!needsProjectId(provider) || !connectionId || !accessToken) return;
 
   // Evict the stale cached entry so getProjectIdForConnection does a real fetch
   invalidateProjectId(connectionId);
 
-  getProjectIdForConnection(connectionId, accessToken)
+  getProjectIdForConnection(connectionId, accessToken, proxyOptions)
     .then((projectId) => {
       if (!projectId) return;
       updateProviderCredentials(connectionId, { projectId }).catch((err) => {
         log.debug("TOKEN_REFRESH", "Failed to persist refreshed projectId", {
           connectionId,
-          error: err?.message ?? err,
+          error: sanitizeOAuthError(err),
         });
       });
     })
     .catch((err) => {
       log.debug("TOKEN_REFRESH", "Failed to fetch projectId after token refresh", {
         connectionId,
-        error: err?.message ?? err,
+        error: sanitizeOAuthError(err),
       });
     });
 }
@@ -264,7 +265,7 @@ export async function checkAndRefreshToken(provider, credentials, proxyOptions =
       };
 
       // Non-blocking: refresh projectId with the new access token
-      _refreshProjectId(provider, creds.connectionId, creds.accessToken);
+      _refreshProjectId(provider, creds.connectionId, creds.accessToken, refreshProxyOptions);
     }
   }
 

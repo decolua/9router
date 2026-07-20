@@ -99,12 +99,15 @@ function reorderInTx(db, providerId) {
   });
 }
 
-export async function createProviderConnection(data) {
+export async function createProviderConnection(data, { beforePersist } = {}) {
   const db = await getAdapter();
   const now = new Date().toISOString();
   let result;
 
   db.transaction(() => {
+    if (beforePersist && beforePersist() !== true) {
+      throw new Error("OAuth flow was cancelled");
+    }
     const all = db.all(`SELECT * FROM providerConnections WHERE provider = ?`, [data.provider]).map(rowToConn);
 
     let existing = null;

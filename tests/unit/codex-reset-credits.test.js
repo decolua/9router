@@ -33,10 +33,22 @@ vi.mock("open-sse/services/usage.js", () => ({
 }));
 
 describe("Codex reset credits", () => {
+  const directRoute = {
+    source: "none",
+    proxyPoolId: null,
+    proxyPool: null,
+    connectionProxyEnabled: false,
+    connectionProxyUrl: "",
+    connectionNoProxy: "",
+    strictProxy: false,
+    disableEnvProxy: true,
+    vercelRelayUrl: "",
+  };
+
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
-    mocks.resolveConnectionProxyConfig.mockResolvedValue({});
+    mocks.resolveConnectionProxyConfig.mockResolvedValue(directRoute);
   });
 
   it("returns normalized reset credit expiry details", async () => {
@@ -106,7 +118,18 @@ describe("Codex reset credits", () => {
       credits: [{ status: "available", grantedAt: "2026-06-18T00:25:18.000Z", expiresAt: "2026-07-18T00:25:18.000Z" }],
     };
     mocks.getProviderConnectionById.mockResolvedValue(connection);
-    mocks.resolveConnectionProxyConfig.mockResolvedValue({ connectionProxyEnabled: true, connectionProxyUrl: "http://proxy.local" });
+    const proxyRoute = {
+      source: "pool",
+      proxyPoolId: "pool-1",
+      proxyPool: { id: "pool-1" },
+      connectionProxyEnabled: true,
+      connectionProxyUrl: "http://proxy.local",
+      connectionNoProxy: "",
+      strictProxy: true,
+      disableEnvProxy: true,
+      vercelRelayUrl: "",
+    };
+    mocks.resolveConnectionProxyConfig.mockResolvedValue(proxyRoute);
     mocks.refreshAndUpdateCredentials.mockResolvedValue({ connection: refreshedConnection });
     mocks.getCodexRateLimitResetCredits.mockResolvedValue(resetCredits);
 
@@ -120,11 +143,11 @@ describe("Codex reset credits", () => {
     expect(mocks.refreshAndUpdateCredentials).toHaveBeenCalledWith(
       connection,
       false,
-      expect.objectContaining({ connectionProxyEnabled: true, connectionProxyUrl: "http://proxy.local", strictProxy: false }),
+      proxyRoute,
     );
     expect(mocks.getCodexRateLimitResetCredits).toHaveBeenCalledWith(
       "new-token",
-      expect.objectContaining({ connectionProxyEnabled: true, connectionProxyUrl: "http://proxy.local", strictProxy: false }),
+      proxyRoute,
       { workspaceId: "acct_123" },
     );
   });
@@ -192,7 +215,91 @@ describe("Codex reset credits", () => {
     expect(mocks.consumeCodexRateLimitResetCredit).toHaveBeenCalledWith(
       "token",
       expect.any(String),
-      expect.objectContaining({ strictProxy: false }),
+      directRoute,
     );
+  });
+
+  it("rejects an unavailable pool before refresh or reset-credit I/O", async () => {
+    mocks.getProviderConnectionById.mockResolvedValue({
+      id: "conn_1",
+      provider: "codex",
+      authType: "oauth",
+      accessToken: "token",
+      refreshToken: "refresh-token",
+      providerSpecificData: { proxyPoolId: "missing-pool" },
+    });
+    mocks.resolveConnectionProxyConfig.mockResolvedValue({
+      source: "unavailable",
+      proxyPoolId: "missing-pool",
+      proxyUnavailable: true,
+      strictProxy: true,
+      disableEnvProxy: true,
+    });
+
+    const { GET } = await import("../../src/app/api/usage/[connectionId]/codex-reset-credits/route.js");
+    const response = await GET(new Request("http://localhost/api/usage/conn_1/codex-reset-credits"), {
+      params: Promise.resolve({ connectionId: "conn_1" }),
+    });
+
+    expect(response.status).toBe(503);
+    expect(mocks.refreshAndUpdateCredentials).not.toHaveBeenCalled();
+    expect(mocks.getCodexRateLimitResetCredits).not.toHaveBeenCalled();
+  });
+
+  it("sanitizes nested credential refresh failures", async () => {
+    const secret = "https://user:password@provider.test/token?code=SECRET-CODE&refresh_token=SECRET-REFRESH";
+    mocks.getProviderConnectionById.mockResolvedValue({
+      id: "conn_1",
+      provider: "codex",
+      authType: "oauth",
+      accessToken: "token",
+      refreshToken: "refresh-token",
+      providerSpecificData: {},
+    });
+    mocks.refreshAndUpdateCredentials.mockRejectedValue(new Error(secret));
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { GET } = await import("../../src/app/api/usage/[connectionId]/codex-reset-credits/route.js");
+
+    const response = await GET(new Request("http://localhost/api/usage/conn_1/codex-reset-credits"), {
+      params: Promise.resolve({ connectionId: "conn_1" }),
+    });
+    const output = `${JSON.stringify(await response.json())} ${logged.mock.calls.flat().map(String).join(" ")}`;
+
+    expect(response.status).toBe(401);
+    for (const value of ["user", "password", "SECRET-CODE", "SECRET-REFRESH"]) {
+      expect(output).not.toContain(value);
+    }
+  });
+
+  it("sanitizes force-refresh failures before logging", async () => {
+    const secret = "https://user:password@provider.test/token?access_token=SECRET-TOKEN";
+    const connection = {
+      id: "conn_1",
+      provider: "codex",
+      authType: "oauth",
+      accessToken: "token",
+      refreshToken: "refresh-token",
+      providerSpecificData: {},
+    };
+    mocks.getProviderConnectionById.mockResolvedValue(connection);
+    mocks.refreshAndUpdateCredentials
+      .mockResolvedValueOnce({ connection })
+      .mockRejectedValueOnce(new Error(secret));
+    mocks.consumeCodexRateLimitResetCredit.mockResolvedValue({
+      ok: false,
+      status: 401,
+      code: "unauthorized",
+      message: "Unauthorized",
+      windowsReset: 0,
+    });
+    const logged = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { POST } = await import("../../src/app/api/usage/[connectionId]/codex-reset-credits/route.js");
+
+    await POST(new Request("http://localhost/api/usage/conn_1/codex-reset-credits", { method: "POST" }), {
+      params: Promise.resolve({ connectionId: "conn_1" }),
+    });
+    const output = logged.mock.calls.flat().map(String).join(" ");
+
+    for (const value of ["user", "password", "SECRET-TOKEN"]) expect(output).not.toContain(value);
   });
 });
