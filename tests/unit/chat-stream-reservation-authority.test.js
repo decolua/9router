@@ -99,6 +99,71 @@ async function drainResponsesUsage(context, usage) {
   await drainThrough(transform, responsesUsageStream(usage));
 }
 
+async function drainClaudeStartUsage(context, usage) {
+  const transform = createSSETransformStreamWithLogger(
+    FORMATS.CLAUDE,
+    FORMATS.OPENAI,
+    "anthropic",
+    null,
+    null,
+    "claude-sonnet-4-20250514",
+    "connection-test",
+    context.body,
+    context.onStreamComplete,
+    context.key.key,
+  );
+  await drainThrough(transform, [
+    "event: message_start",
+    `data: ${JSON.stringify({ type: "message_start", message: { usage } })}`,
+    "",
+  ].join("\n"));
+}
+
+async function drainClaudeCompletedUsage(context) {
+  const transform = createSSETransformStreamWithLogger(
+    FORMATS.CLAUDE,
+    FORMATS.OPENAI,
+    "anthropic",
+    null,
+    null,
+    "claude-sonnet-4-20250514",
+    "connection-test",
+    context.body,
+    context.onStreamComplete,
+    context.key.key,
+  );
+  await drainThrough(transform, [
+    "event: message_start",
+    `data: ${JSON.stringify({ type: "message_start", message: { usage: { input_tokens: 10 } } })}`,
+    "",
+    "event: message_delta",
+    `data: ${JSON.stringify({ type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 5 } })}`,
+  ].join("\n"));
+}
+
+async function forceResponsesUsage(context, usage) {
+  return handleForcedSSEToJson({
+    providerResponse: new Response(responsesUsageStream(usage), { headers: { "content-type": "text/event-stream" } }),
+    sourceFormat: FORMATS.OPENAI_RESPONSES,
+    provider: "codex",
+    model: "gpt-5-codex",
+    body: context.body,
+    stream: false,
+    translatedBody: null,
+    finalBody: null,
+    requestStartTime: Date.now(),
+    connectionId: "connection-test",
+    apiKey: context.key.key,
+    usageReservationId: context.reservation.reservationId,
+    clientRawRequest: { endpoint: "/v1/responses" },
+    onRequestSuccess: async () => {},
+    trackDone: () => {},
+    appendLog: () => {},
+    reqTag: "request-test",
+    log: null,
+  });
+}
+
 beforeAll(async () => {
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-stream-authority-"));
   process.env.DATA_DIR = tempDir;
@@ -340,5 +405,55 @@ describe("stream usage reservation authority", () => {
 
     expect(rawDb.get("SELECT id FROM apiKeyUsageReservations WHERE id = ?", [context.reservation.reservationId])).toBeDefined();
     expect(rawDb.get("SELECT COUNT(*) AS count FROM usageHistory").count).toBe(0);
+  });
+
+  it.each([
+    ["missing", undefined],
+    ["malformed", "invalid"],
+    ["total-only", { total_tokens: 15 }],
+    ["cache-only", { input_tokens_details: { cached_tokens: 15 } }],
+  ])("keeps the reservation for forced Responses %s usage authority", async (_name, usage) => {
+    const context = await createReservedStream(`forced-${_name}`);
+
+    const result = await forceResponsesUsage(context, usage);
+    await waitForUsageAttempt();
+
+    expect(result.success).toBe(true);
+    expect(rawDb.get("SELECT id FROM apiKeyUsageReservations WHERE id = ?", [context.reservation.reservationId])).toBeDefined();
+    expect(rawDb.get("SELECT COUNT(*) AS count FROM usageHistory").count).toBe(0);
+  });
+
+  it("reconciles forced Responses explicit all-zero usage", async () => {
+    const context = await createReservedStream("forced-zero");
+
+    const result = await forceResponsesUsage(context, { input_tokens: 0, output_tokens: 0, total_tokens: 0 });
+    await waitForUsageRow();
+
+    expect(result.success).toBe(true);
+    expect(rawDb.get("SELECT id FROM apiKeyUsageReservations WHERE id = ?", [context.reservation.reservationId])).toBeUndefined();
+    expect(rawDb.get("SELECT promptTokens, completionTokens FROM usageHistory")).toEqual({ promptTokens: 0, completionTokens: 0 });
+  });
+
+  it.each([
+    ["input-only", { input_tokens: 10 }],
+    ["placeholder-output", { input_tokens: 10, output_tokens: 1 }],
+  ])("keeps the reservation for a truncated Claude %s message_start", async (_name, usage) => {
+    const context = await createReservedStream(`claude-${_name}`);
+
+    await drainClaudeStartUsage(context, usage);
+    await waitForUsageAttempt();
+
+    expect(rawDb.get("SELECT id FROM apiKeyUsageReservations WHERE id = ?", [context.reservation.reservationId])).toBeDefined();
+    expect(rawDb.get("SELECT COUNT(*) AS count FROM usageHistory").count).toBe(0);
+  });
+
+  it("reconciles complete Claude split usage when the final event has no trailing newline", async () => {
+    const context = await createReservedStream("claude-complete-flush");
+
+    await drainClaudeCompletedUsage(context);
+    await waitForUsageRow();
+
+    expect(rawDb.get("SELECT id FROM apiKeyUsageReservations WHERE id = ?", [context.reservation.reservationId])).toBeUndefined();
+    expect(rawDb.get("SELECT promptTokens, completionTokens FROM usageHistory")).toEqual({ promptTokens: 10, completionTokens: 5 });
   });
 });

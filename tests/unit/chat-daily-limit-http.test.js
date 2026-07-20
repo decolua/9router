@@ -180,7 +180,13 @@ beforeEach(async () => {
   rawDb.run("DELETE FROM apiKeyUsageReservations");
   rawDb.run("DELETE FROM reservationAudit");
   await db.updateApiKey(limitedApiKey.id, { dailyLimitTokens: 1_000_000 });
-  await db.updateSettings({ comboStrategy: "fallback", comboStrategies: {} });
+  await db.updateSettings({
+    comboStrategy: "fallback",
+    comboStrategies: {},
+    providerThinking: {},
+    cavemanEnabled: false,
+    ponytailEnabled: false,
+  });
 });
 
 describe("POST /v1/chat/completions daily token admission", () => {
@@ -258,6 +264,26 @@ describe("POST /v1/chat/completions daily token admission", () => {
       messages: [],
       max_completion_tokens: 1,
       max_output_tokens: 2,
+    };
+    const effectiveEstimate = Buffer.byteLength(JSON.stringify(body), "utf8") + 64_000;
+    await db.updateApiKey(limitedApiKey.id, { dailyLimitTokens: effectiveEstimate - 1 });
+
+    const response = await postChat(new Request("http://localhost/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${limitedApiKey.key}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }));
+
+    expect(response.status).toBe(429);
+    expect(authMocks.getProviderCredentials).not.toHaveBeenCalled();
+    expect(dispatchMocks.handleChatCore).not.toHaveBeenCalled();
+  });
+
+  it("rejects a dynamic Anthropic-compatible provider using the translated 64000 default", async () => {
+    const body = {
+      model: "anthropic-compatible-team/claude-custom",
+      messages: [],
+      max_completion_tokens: 1,
     };
     const effectiveEstimate = Buffer.byteLength(JSON.stringify(body), "utf8") + 64_000;
     await db.updateApiKey(limitedApiKey.id, { dailyLimitTokens: effectiveEstimate - 1 });
@@ -372,6 +398,55 @@ describe("POST /v1/chat/completions daily token admission", () => {
     expect(usageReservationId).toEqual(expect.any(String));
     expect(rawDb.all("SELECT id FROM apiKeyUsageReservations")).toEqual([{ id: usageReservationId }]);
     expect(rawDb.all("SELECT action FROM reservationAudit")).toEqual([{ action: "insert" }]);
+  });
+
+  it.each([
+    {
+      name: "provider thinking",
+      settings: { providerThinking: { anthropic: { mode: "on" } } },
+      model: "anthropic/claude-sonnet-4-20250514",
+      outputTokens: 11_024,
+      assertMutation: (body) => expect(body.thinking).toEqual({ type: "enabled", budget_tokens: 10_000 }),
+    },
+    {
+      name: "Caveman",
+      settings: { cavemanEnabled: true, cavemanLevel: "full" },
+      model: "openai/gpt-4o",
+      outputTokens: 1,
+      assertMutation: (body) => expect(body.messages[0]).toMatchObject({
+        role: "system",
+        content: expect.stringContaining("Respond like terse caveman."),
+      }),
+    },
+    {
+      name: "Ponytail",
+      settings: { ponytailEnabled: true, ponytailLevel: "full" },
+      model: "openai/gpt-4o",
+      outputTokens: 1,
+      assertMutation: (body) => expect(body.messages[0]).toMatchObject({
+        role: "system",
+        content: expect.stringContaining("You are a lazy senior developer."),
+      }),
+    },
+  ])("reserves the exact post-$name body before account selection", async ({ settings, model, outputTokens, assertMutation }) => {
+    await db.updateSettings(settings);
+    authMocks.getProviderCredentials.mockImplementation(async () => {
+      expect(rawDb.get("SELECT id FROM apiKeyUsageReservations")).toBeDefined();
+      return credentials();
+    });
+    const body = { model, messages: [{ role: "user", content: "hello" }], max_tokens: 1 };
+
+    const response = await postChat(new Request("http://localhost/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${limitedApiKey.key}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }));
+
+    expect(response.status).toBe(200);
+    const dispatchedBody = dispatchMocks.handleChatCore.mock.calls[0][0].body;
+    assertMutation(dispatchedBody);
+    expect(rawDb.get("SELECT reservedTokens FROM apiKeyUsageReservations").reservedTokens)
+      .toBe(Buffer.byteLength(JSON.stringify(dispatchedBody), "utf8") + outputTokens);
   });
 
   it("reuses one reservation across account fallback", async () => {

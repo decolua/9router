@@ -159,6 +159,18 @@ export function hasThinkingConfig(body) {
   return !!(body.reasoning_effort || body.thinking?.type === "enabled");
 }
 
+export function applyProviderThinking(body, providerThinking) {
+  const mode = providerThinking?.mode;
+  if (!mode || mode === "auto") return body;
+  if (mode === "on" && !body.thinking) {
+    console.log("Injecting provider-level thinking config override: on");
+    return { ...body, thinking: { type: "enabled", budget_tokens: 10000 } };
+  }
+  if (mode === "off" && !body.thinking) return { ...body, thinking: { type: "disabled" } };
+  if (!body.reasoning_effort) return { ...body, reasoning_effort: mode };
+  return body;
+}
+
 // Normalize provider-native thinking config based on last message role.
 // OpenAI reasoning_effort is request-level and must survive tool-result turns.
 export function normalizeThinkingConfig(body) {

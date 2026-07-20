@@ -92,6 +92,19 @@ describe("chat usage reservation estimate", () => {
       .toBe(expectedTotal(body, 7));
   });
 
+  it("reserves a dynamic Anthropic-compatible provider's translated 64000 ceiling", () => {
+    const body = {
+      model: "anthropic-compatible-team/claude-custom",
+      messages: [],
+      max_completion_tokens: 1,
+    };
+
+    expect(estimateChatUsageReservation(body, {
+      provider: "anthropic-compatible-team",
+      model: "claude-custom",
+    })).toBe(expectedTotal(body, 64_000));
+  });
+
   it.each([
     [
       "Kiro",

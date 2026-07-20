@@ -280,7 +280,10 @@ export function createSSEStream(options = {}) {
 
         // Extract usage
         const extracted = extractUsage(parsed);
-        if (extracted) state.usage = mergeUsage(state.usage, extracted); // Keep original usage for logging
+        if (extracted) {
+          usage = mergeUsage(usage, extracted);
+          state.usage = mergeUsage(state.usage, extracted);
+        }
 
         // Responses same-format passthrough: re-emit with original event framing
         if (keepsOpenAIResponsesFormat && openAIResponsesEventName) {
@@ -315,13 +318,14 @@ export function createSSEStream(options = {}) {
 
             // Inject estimated usage if finish chunk has no valid usage
             const isFinishChunk = item.type === "message_delta" || item.choices?.[0]?.finish_reason;
-            if (state.finishReason && isFinishChunk && !hasValidUsage(item.usage) && totalContentLength > 0) {
+            if (state.finishReason && isFinishChunk && !hasValidUsage(usage) && totalContentLength > 0) {
               const estimated = estimateUsage(body, totalContentLength, sourceFormat);
               item.usage = filterUsageForFormat(estimated, sourceFormat); // Filter + already has buffer
+              usage = estimated;
               state.usage = estimated;
-            } else if (state.finishReason && isFinishChunk && state.usage) {
+            } else if (state.finishReason && isFinishChunk && hasValidUsage(usage)) {
               // Add buffer and filter usage for client (but keep original in state.usage for logging)
-              const buffered = addBufferToUsage(state.usage);
+              const buffered = addBufferToUsage(usage);
               item.usage = filterUsageForFormat(buffered, sourceFormat);
             }
 
@@ -386,6 +390,11 @@ export function createSSEStream(options = {}) {
         if (buffer.trim()) {
           const parsed = parseSSELine(buffer.trim());
           if (parsed && !parsed.done) {
+            const extracted = extractUsage(parsed);
+            if (extracted) {
+              usage = mergeUsage(usage, extracted);
+              state.usage = mergeUsage(state.usage, extracted);
+            }
             const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
 
             if (translated?._openaiIntermediate) {
@@ -441,12 +450,12 @@ export function createSSEStream(options = {}) {
           streamDoneSent = true;
         }
 
-        if (!hasValidUsage(state?.usage) && totalContentLength > 0) {
-          state.usage = estimateUsage(body, totalContentLength, sourceFormat);
+        if (!hasValidUsage(usage) && totalContentLength > 0) {
+          usage = estimateUsage(body, totalContentLength, sourceFormat);
         }
 
-        if (hasValidUsage(state?.usage)) {
-          logUsage(state.provider || targetFormat, state.usage, model, connectionId, apiKey);
+        if (hasValidUsage(usage)) {
+          logUsage(state.provider || targetFormat, usage, model, connectionId, apiKey);
         } else {
           appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
         }
@@ -455,7 +464,7 @@ export function createSSEStream(options = {}) {
           onStreamComplete({
             content: accumulatedContent,
             thinking: accumulatedThinking
-          }, state?.usage, ttftAt);
+          }, usage, ttftAt);
         }
       } catch (error) {
         console.log("Error in flush:", error);

@@ -155,10 +155,13 @@ const CHILD_SCRIPT = String.raw`
 import fs from "node:fs";
 import { pathToFileURL } from "node:url";
 
-const config = JSON.parse(process.argv[1]);
+const config = JSON.parse(process.argv.at(-1));
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 let adapter;
-if (config.adapter === "better-sqlite3") {
+if (config.adapter === "bun:sqlite") {
+  const { createBunSqliteAdapter } = await import(pathToFileURL(config.bunAdapter).href);
+  adapter = await createBunSqliteAdapter(config.dbFile);
+} else if (config.adapter === "better-sqlite3") {
   const { createBetterSqliteAdapter } = await import(pathToFileURL(config.betterAdapter).href);
   adapter = createBetterSqliteAdapter(config.dbFile);
 } else {
@@ -193,7 +196,11 @@ try {
 async function seedNativeDatabase(file) {
   let raw;
   let run;
-  try {
+  if (process.versions.bun) {
+    const { Database } = await import("bun:sqlite");
+    raw = new Database(file, { create: true });
+    run = (sql, params) => raw.prepare(sql).run(...params);
+  } else try {
     const { default: Database } = await import("better-sqlite3");
     raw = new Database(file);
     run = (sql, params) => raw.prepare(sql).run(params);
@@ -214,7 +221,10 @@ async function seedNativeDatabase(file) {
 }
 
 function spawnReservationWorker(config) {
-  const child = spawn(process.execPath, ["--experimental-loader", aliasLoader, "--input-type=module", "--eval", CHILD_SCRIPT, JSON.stringify(config)], {
+  const args = process.versions.bun
+    ? ["--eval", CHILD_SCRIPT, "--", JSON.stringify(config)]
+    : ["--experimental-loader", aliasLoader, "--input-type=module", "--eval", CHILD_SCRIPT, JSON.stringify(config)];
+  const child = spawn(process.execPath, args, {
     cwd: repoRoot,
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -259,7 +269,7 @@ async function waitForAllFiles(files, timeoutMs = 10_000) {
 }
 
 const nativeAdapterNames = adapterCases
-  .filter(({ transactionScope }) => transactionScope === "database" && !process.versions.bun)
+  .filter(({ transactionScope }) => transactionScope === "database")
   .map(({ name }) => name);
 
 describe("native separate-connection reservation contention", () => {
@@ -283,6 +293,7 @@ describe("native separate-connection reservation contention", () => {
           workerId: `${round}-${worker}`,
           repoFile: path.join(repoRoot, "src/lib/db/repos/apiKeysRepo.js"),
           betterAdapter: path.join(repoRoot, "src/lib/db/adapters/betterSqliteAdapter.js"),
+          bunAdapter: path.join(repoRoot, "src/lib/db/adapters/bunSqliteAdapter.js"),
           nodeAdapter: path.join(repoRoot, "src/lib/db/adapters/nodeSqliteAdapter.js"),
         }));
         const workers = [spawnReservationWorker(configs[0])];
