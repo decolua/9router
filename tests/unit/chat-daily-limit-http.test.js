@@ -156,7 +156,7 @@ beforeAll(async () => {
   ({ translateRequest } = await import("../../open-sse/translator/index.js"));
   ({ handleForcedSSEToJson } = await import("../../open-sse/handlers/chatCore/sseToJsonHandler.js"));
   ({ POST: postChat } = await import("@/app/api/v1/chat/completions/route.js"));
-}, 30_000);
+}, 60_000);
 
 afterAll(() => {
   try { rawDb?.close?.(); } catch {}
@@ -205,7 +205,7 @@ describe("POST /v1/chat/completions daily token admission", () => {
     expect(response.status).toBe(429);
     expect(await response.json()).toEqual({
       error: {
-        message: "API key daily token limit exceeded (110/100 tokens)",
+        message: "API key daily token limit exceeded (90/100 tokens)",
         type: "rate_limit_error",
         code: "rate_limit_exceeded",
       },

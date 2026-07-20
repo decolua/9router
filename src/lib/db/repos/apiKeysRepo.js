@@ -44,9 +44,10 @@ function toBoundedTokens(value) {
 }
 
 function getUsageTotals(db, key, apiKeyId, now) {
+  // reasoning_tokens is a completion subset; max also preserves reasoning-only usage records.
   const row = db.get(
     `SELECT
-       (SELECT TOTAL(MAX(COALESCE(promptTokens, 0), 0) + MAX(COALESCE(completionTokens, 0), 0) + MAX(COALESCE(json_extract(tokens, '$.reasoning_tokens'), 0), 0))
+       (SELECT TOTAL(MAX(COALESCE(promptTokens, 0), 0) + MAX(COALESCE(completionTokens, 0), COALESCE(json_extract(tokens, '$.reasoning_tokens'), 0), 0))
         FROM usageHistory WHERE apiKey = ? AND timestamp >= ?) AS usedTokens,
        (SELECT TOTAL(MAX(reservedTokens, 0))
         FROM apiKeyUsageReservations WHERE apiKeyId = ? AND expiresAt > ?) AS reservedTokens`,

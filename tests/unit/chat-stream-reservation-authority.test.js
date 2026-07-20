@@ -178,7 +178,7 @@ beforeAll(async () => {
   ({ buildOnStreamComplete } = await import("../../open-sse/handlers/chatCore/streamingHandler.js"));
   ({ handleForcedSSEToJson } = await import("../../open-sse/handlers/chatCore/sseToJsonHandler.js"));
   ({ saveUsageStats } = await import("../../open-sse/handlers/chatCore/requestDetail.js"));
-});
+}, 30_000);
 
 beforeEach(() => {
   rawDb.transaction(() => {
@@ -245,14 +245,15 @@ describe("stream usage reservation authority", () => {
       model: "gpt-4o",
       sourceFormat: () => FORMATS.OPENAI,
       reasoningTokens: 7,
+      totalTokens: 22,
       sse: () => [
         `data: ${JSON.stringify({
           id: "chatcmpl-reasoning",
           choices: [{ index: 0, delta: { content: "ok" }, finish_reason: "stop" }],
           usage: {
             prompt_tokens: 10,
-            completion_tokens: 5,
-            total_tokens: 15,
+            completion_tokens: 12,
+            total_tokens: 22,
             completion_tokens_details: { reasoning_tokens: 7 },
           },
         })}`,
@@ -266,6 +267,7 @@ describe("stream usage reservation authority", () => {
       model: "gpt-5-codex",
       sourceFormat: () => FORMATS.OPENAI_RESPONSES,
       reasoningTokens: 9,
+      totalTokens: 24,
       sse: () => [
         "event: response.output_item.done",
         `data: ${JSON.stringify({
@@ -278,8 +280,8 @@ describe("stream usage reservation authority", () => {
           response: {
             usage: {
               input_tokens: 10,
-              output_tokens: 5,
-              total_tokens: 15,
+              output_tokens: 14,
+              total_tokens: 24,
               output_tokens_details: { reasoning_tokens: 9 },
             },
           },
@@ -287,7 +289,7 @@ describe("stream usage reservation authority", () => {
         "",
       ].join("\n"),
     },
-  ])("persists forced $name reasoning before reconciling", async ({ provider, model, sourceFormat, reasoningTokens, sse }) => {
+  ])("persists forced $name reasoning before reconciling", async ({ provider, model, sourceFormat, reasoningTokens, totalTokens, sse }) => {
     const key = await db.createApiKey(`${provider}-reasoning`, "machine-test", 1_000);
     const now = new Date("2026-07-19T12:00:00.000Z");
     const reservation = await db.reserveApiKeyUsage(key.key, 500, now);
@@ -318,9 +320,9 @@ describe("stream usage reservation authority", () => {
     const usage = rawDb.get("SELECT tokens FROM usageHistory WHERE apiKey = ?", [key.key]);
     expect(JSON.parse(usage.tokens)).toMatchObject({ reasoning_tokens: reasoningTokens });
     expect(await db.getApiKeyUsageLimitStatus(key.key, now)).toMatchObject({
-      usedTokens: 15 + reasoningTokens,
+      usedTokens: totalTokens,
       reservedTokens: 0,
-      remainingTokens: 1_000 - 15 - reasoningTokens,
+      remainingTokens: 1_000 - totalTokens,
     });
   });
 

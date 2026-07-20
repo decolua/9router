@@ -75,12 +75,12 @@ describe("DB SQLite layer — public API parity", () => {
       provider: "openai",
       model: "gpt-4o",
       apiKey: k.key,
-      tokens: { prompt_tokens: 60, completion_tokens: 30, reasoning_tokens: 20, cost_usd: 0.2 },
+      tokens: { prompt_tokens: 60, completion_tokens: 30, total_tokens: 90, reasoning_tokens: 20, cost_usd: 0.2 },
     });
 
     status = await sqliteDb.getApiKeyUsageLimitStatus(k.key);
-    expect(status.usedTokens).toBe(110);
-    expect(status.exceeded).toBe(true);
+    expect(status.usedTokens).toBe(90);
+    expect(status.exceeded).toBe(false);
 
     await sqliteDb.updateApiKey(k.id, { dailyLimitTokens: null });
     status = await sqliteDb.getApiKeyUsageLimitStatus(k.key);

@@ -125,23 +125,23 @@ describe("API key usage reservation admission", () => {
       model: "gpt-4o",
       apiKey: key.key,
       timestamp: now.toISOString(),
-      tokens: { prompt_tokens: 100, completion_tokens: 50, reasoning_tokens: 50 },
+      tokens: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150, reasoning_tokens: 50 },
     });
 
     expect((await db.reserveApiKeyUsage(key.key, 500, now)).accepted).toBe(true);
-    expect(await db.reserveApiKeyUsage(key.key, 301, now)).toMatchObject({
+    expect(await db.reserveApiKeyUsage(key.key, 351, now)).toMatchObject({
       accepted: false,
-      usedTokens: 200,
+      usedTokens: 150,
       reservedTokens: 500,
-      remainingTokens: 300,
+      remainingTokens: 350,
     });
     expect(await db.getApiKeyUsageLimitStatus(key.key, now)).toEqual({
       enforced: true,
       exceeded: false,
-      usedTokens: 200,
+      usedTokens: 150,
       reservedTokens: 500,
       limitTokens: 1_000,
-      remainingTokens: 300,
+      remainingTokens: 350,
       resetAt: getExpectedResetAt(now),
     });
   });
@@ -335,7 +335,7 @@ describe("API key usage reservation admission", () => {
       apiKey: key.key,
       usageReservationId: reservation.reservationId,
       timestamp: now.toISOString(),
-      tokens: { prompt_tokens: 100, completion_tokens: 50, reasoning_tokens: 25 },
+      tokens: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150, reasoning_tokens: 25 },
     });
 
     expect(rawDb.get(
@@ -348,9 +348,9 @@ describe("API key usage reservation admission", () => {
     expect(usage.tokens).not.toContain(reservation.reservationId);
     expect(usage.meta).not.toContain(reservation.reservationId);
     expect(await db.getApiKeyUsageLimitStatus(key.key, now)).toMatchObject({
-      usedTokens: 175,
+      usedTokens: 150,
       reservedTokens: 0,
-      remainingTokens: 825,
+      remainingTokens: 850,
     });
   });
 

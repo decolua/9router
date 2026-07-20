@@ -83,12 +83,12 @@ describe.each(adapterCases)("forced $name reservation adapter", (adapterCase) =>
         apiKey: "sk-forced-adapter",
         usageReservationId: reservation.reservationId,
         timestamp: now.toISOString(),
-        tokens: { prompt_tokens: 100, completion_tokens: 50, reasoning_tokens: 25 },
+        tokens: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150, reasoning_tokens: 25 },
       });
       expect(await db.getApiKeyUsageLimitStatus("sk-forced-adapter", now)).toMatchObject({
-        usedTokens: 175,
+        usedTokens: 150,
         reservedTokens: 0,
-        remainingTokens: 825,
+        remainingTokens: 850,
       });
     } finally {
       try { adapter?.close?.(); } catch {}
