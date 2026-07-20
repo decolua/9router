@@ -8,8 +8,22 @@ import { U, parseResetTime, toFiniteNumber } from "./shared.js";
 // Codex (OpenAI) API config
 const CODEX_CONFIG = {
   usageUrl: U("codex").url,
+  resetCreditsUrl: U("codex").resetCreditsUrl,
   resetCreditsConsumeUrl: U("codex").resetCreditsConsumeUrl,
 };
+
+function toIsoDate(value) {
+  if (!value) return null;
+  const date = value instanceof Date
+    ? value
+    : new Date(typeof value === "number" && value < 1e12 ? value * 1000 : value);
+  const time = date.getTime();
+  return Number.isFinite(time) ? date.toISOString() : null;
+}
+
+function getCodexAccountId(providerSpecificData) {
+  return providerSpecificData?.workspaceId || providerSpecificData?.accountId || providerSpecificData?.chatgptAccountId || null;
+}
 
 function getCodexRateLimitBody(snapshot) {
   if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return null;
@@ -99,6 +113,48 @@ export async function getCodexUsage(accessToken, proxyOptions = null) {
   } catch (error) {
     throw new Error(`Failed to fetch Codex usage: ${error.message}`);
   }
+}
+
+export async function getCodexRateLimitResetCredits(accessToken, proxyOptions = null, providerSpecificData = null) {
+  if (!accessToken) {
+    throw new Error("No Codex access token available. Please re-authorize the connection.");
+  }
+
+  const accountId = getCodexAccountId(providerSpecificData);
+  const headers = {
+    "Authorization": `Bearer ${accessToken}`,
+    "Accept": "application/json",
+    "OpenAI-Beta": "codex-1",
+    "originator": "codex_cli_rs",
+  };
+  if (accountId) headers["ChatGPT-Account-ID"] = accountId;
+
+  const response = await proxyAwareFetch(CODEX_CONFIG.resetCreditsUrl, {
+    method: "GET",
+    headers,
+  }, proxyOptions);
+
+  let data = null;
+  try {
+    data = await response.json();
+  } catch {
+    data = null;
+  }
+
+  if (!response.ok) {
+    const message = data?.message || data?.error || data?.detail || `Codex reset credits API unavailable (${response.status}).`;
+    throw new Error(message);
+  }
+
+  const credits = Array.isArray(data?.credits) ? data.credits : [];
+  return {
+    availableCount: Math.max(0, toFiniteNumber(data?.available_count ?? data?.availableCount, 0)),
+    credits: credits.map((credit) => ({
+      status: String(credit?.status || "unknown"),
+      grantedAt: toIsoDate(credit?.granted_at ?? credit?.grantedAt),
+      expiresAt: toIsoDate(credit?.expires_at ?? credit?.expiresAt),
+    })),
+  };
 }
 
 // Consume one Codex rate-limit reset credit (irreversible, spends 1 credit)

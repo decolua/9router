@@ -150,6 +150,33 @@ export function normalizeClaudePassthrough(body, model = "") {
     }
   }
 
+  // 3. Drop thinking blocks whose signature is not Claude's (combo mixes models,
+  // so foreign signatures leak into history and Anthropic rejects them).
+  const thinkingEnabled = body.thinking?.type === "enabled";
+  if (Array.isArray(body.messages)) {
+    for (const msg of body.messages) {
+      if (msg.role !== ROLE.ASSISTANT || !Array.isArray(msg.content)) continue;
+      let hasToolUse = false;
+      let hasKeptThinking = false;
+      const kept = [];
+      for (const block of msg.content) {
+        if (block.type === CLAUDE_BLOCK.THINKING || block.type === CLAUDE_BLOCK.REDACTED_THINKING) {
+          if (isValidClaudeSignature(block.signature)) {
+            hasKeptThinking = true;
+            kept.push(block);
+          }
+          continue;
+        }
+        if (block.type === CLAUDE_BLOCK.TOOL_USE) hasToolUse = true;
+        kept.push(block);
+      }
+      msg.content = kept;
+      if (thinkingEnabled && !hasKeptThinking && hasToolUse) {
+        msg.content.unshift(buildThinkingPlaceholder("claude"));
+      }
+    }
+  }
+
   return body;
 }
 
@@ -165,10 +192,27 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
     delete body.output_config;
   }
 
-  // Clamp max_tokens to the model output ceiling (never above DEFAULT_MAX_TOKENS)
+  // Clamp max_tokens to the model's real output ceiling. Models whose caps
+  // declare a higher maxOutput (e.g. Opus 4.8 / Sonnet 4.6 = 128000) are allowed
+  // up to it, so max-effort thinking gets full budget; others fall back to the
+  // conservative 64000 default.
   if (body.max_tokens) {
-    const ceiling = Math.min(getCapabilitiesForModel(provider, body.model).maxOutput, DEFAULT_MAX_TOKENS);
+    const ceiling = getCapabilitiesForModel(provider, body.model).maxOutput || DEFAULT_MAX_TOKENS;
     if (body.max_tokens > ceiling) body.max_tokens = ceiling;
+
+    // Reconcile against thinking budget. applyThinking (thinkingUnified.js) runs
+    // AFTER adjustMaxTokens capped max_tokens, and the claude-budget format maps
+    // max effort → budget_tokens 128000 — larger than the clamped max_tokens.
+    // Anthropic requires max_tokens strictly greater than budget_tokens (else 400).
+    // Prefer raising max_tokens to preserve the requested thinking depth; if the
+    // budget alone meets/exceeds the ceiling, cap output and shrink the budget so
+    // some tokens remain for the answer.
+    if (body.thinking?.type === "enabled" && body.thinking.budget_tokens && body.thinking.budget_tokens >= body.max_tokens) {
+      body.max_tokens = Math.min(body.thinking.budget_tokens + 1024, ceiling);
+      if (body.thinking.budget_tokens >= body.max_tokens) {
+        body.thinking.budget_tokens = Math.max(1024, body.max_tokens - 1024);
+      }
+    }
   }
 
   // 1. System: remove all cache_control, add only to last block with ttl 1h

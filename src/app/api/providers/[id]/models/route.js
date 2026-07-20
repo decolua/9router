@@ -8,6 +8,8 @@ import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
+import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
+import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -236,6 +238,7 @@ const PROVIDER_MODELS_CONFIG = {
   xai: createOpenAIModelsConfig("https://api.x.ai/v1/models"),
   mistral: createOpenAIModelsConfig("https://api.mistral.ai/v1/models"),
   perplexity: createOpenAIModelsConfig("https://api.perplexity.ai/v1/models"),
+  "perplexity-agent": createOpenAIModelsConfig("https://api.perplexity.ai/v1/models"),
   together: createOpenAIModelsConfig("https://api.together.xyz/v1/models"),
   fireworks: createOpenAIModelsConfig("https://api.fireworks.ai/inference/v1/models"),
   cerebras: createOpenAIModelsConfig("https://api.cerebras.ai/v1/models"),
@@ -367,6 +370,35 @@ const PROVIDER_MODELS_CONFIG = {
       parseFn: parseGeminiCliModels,
       errorLabel: "Failed to fetch Gemini CLI models"
     })
+  },
+  "grok-cli": {
+    customResolver: async (connection) => {
+      const proxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
+      const result = await resolveGrokCliModels({
+        ...connection,
+        connectionId: connection.id,
+      }, {
+        log: console,
+        proxyOptions: {
+          connectionProxyEnabled: proxy.connectionProxyEnabled === true,
+          connectionProxyUrl: proxy.connectionProxyUrl || "",
+          connectionNoProxy: proxy.connectionNoProxy || "",
+          vercelRelayUrl: proxy.vercelRelayUrl || "",
+          strictProxy: proxy.strictProxy === true,
+        },
+        onCredentialsRefreshed: async (refreshed) => {
+          await updateProviderCredentials(connection.id, {
+            ...refreshed,
+            existingProviderSpecificData: connection.providerSpecificData || {},
+          });
+        },
+      });
+      if (result.models.length) return result;
+      return {
+        models: getStaticProviderModels("grok-cli"),
+        warning: result.warning || "Grok CLI returned no live models; using static catalog.",
+      };
+    },
   },
   "ollama-local": {
     customResolver: async (connection) => {

@@ -36,11 +36,10 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
   }, [initialStatus]);
 
   useEffect(() => {
-    if (isExpanded && !status) {
-      checkStatus();
+    if (isExpanded) {
+      if (!status) checkStatus();
       fetchModelAliases();
     }
-    if (isExpanded) fetchModelAliases();
   }, [isExpanded]);
 
   // Pre-fill from existing config
@@ -184,7 +183,7 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
       <div className="flex items-start justify-between gap-3 hover:cursor-pointer sm:items-center" onClick={onToggle}>
         <div className="flex min-w-0 items-center gap-3">
           <div className="size-8 flex items-center justify-center shrink-0">
-            <Image src="/providers/copilot.png" alt={tool.name} width={32} height={32} className="size-8 object-contain rounded-lg" sizes="32px" onError={(e) => { e.target.style.display = "none"; }} />
+            <Image src="/providers/copilot.png" alt={tool.name} width={32} height={32} className="size-8 object-contain rounded-lg" sizes="32px" onError={(e) => { e.target.style.display = "none"; }} loading="lazy" decoding="async" />
           </div>
           <div className="min-w-0">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -290,27 +289,29 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
         </div>
       )}
 
-      <ModelSelectModal
-        isOpen={modalOpen}
-        onClose={() => {
-          setModalOpen(false);
-          saveModels(selectedModelsRef.current);
-        }}
-        onSelect={(model) => {
-          if (!selectedModels.includes(model.value)) {
-            setSelectedModels([...selectedModels, model.value]);
-          }
-        }}
-        onDeselect={(model) => {
-          setSelectedModels(selectedModels.filter(m => m !== model.value));
-        }}
-        selectedModel={null}
-        activeProviders={activeProviders}
-        modelAliases={modelAliases}
-        addedModelValues={selectedModels}
-        closeOnSelect={false}
-        title="Add Model for GitHub Copilot"
-      />
+      {modalOpen && (
+        <ModelSelectModal
+          isOpen={modalOpen}
+          onClose={() => {
+            setModalOpen(false);
+            saveModels(selectedModelsRef.current);
+          }}
+          onSelect={(model) => {
+            if (!selectedModels.includes(model.value)) {
+              setSelectedModels([...selectedModels, model.value]);
+            }
+          }}
+          onDeselect={(model) => {
+            setSelectedModels(selectedModels.filter(m => m !== model.value));
+          }}
+          selectedModel={null}
+          activeProviders={activeProviders}
+          modelAliases={modelAliases}
+          addedModelValues={selectedModels}
+          closeOnSelect={false}
+          title="Add Model for GitHub Copilot"
+        />
+      )}
 
       <ManualConfigModal
         isOpen={showManualConfigModal}

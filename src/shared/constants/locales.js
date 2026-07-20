@@ -33,4 +33,5 @@ export const LOCALE_FLAGS = {
   "fi": "🇫🇮",
   "da": "🇩🇰",
   "no": "🇳🇴",
+  "fa": "🇮🇷",
 };

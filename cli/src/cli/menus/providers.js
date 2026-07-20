@@ -78,6 +78,7 @@ const PROVIDER_MODELS = {
     { id: "grok-code-fast-1" },
   ],
   kr: [
+    { id: "claude-sonnet-5" },
     { id: "claude-sonnet-4.5" },
     { id: "claude-haiku-4.5" },
   ],
@@ -130,7 +131,7 @@ const APIKEY_PROVIDERS = {
   openrouter: { id: "openrouter", name: "OpenRouter" },
   glm: { id: "glm", name: "GLM Coding" },
   minimax: { id: "minimax", name: "Minimax Coding" },
-  kimi: { id: "kimi", name: "Kimi Coding" },
+  kimi: { id: "kimi", name: "Kimi" },
   openai: { id: "openai", name: "OpenAI" },
   anthropic: { id: "anthropic", name: "Anthropic" },
   gemini: { id: "gemini", name: "Gemini" },
