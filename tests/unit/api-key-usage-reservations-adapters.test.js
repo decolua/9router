@@ -122,6 +122,33 @@ describe("sql.js reservation durability", () => {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
   });
+
+  it("persists a released reservation before returning", async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-sqljs-release-durable-"));
+    let adapter;
+    let observer;
+    try {
+      const prepared = await prepareForcedAdapter(
+        { name: "sql.js", create: createSqlJsAdapter, transactionScope: "process" },
+        tempDir,
+      );
+      ({ adapter } = prepared);
+      adapter.run(
+        "INSERT INTO apiKeys(id, key, name, machineId, isActive, dailyLimitTokens, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?)",
+        ["key-id", "sk-sqljs-release", "forced", "machine-test", 1, 1_000, "2026-07-19T12:00:00.000Z"],
+      );
+      const reservation = await prepared.db.reserveApiKeyUsage("sk-sqljs-release", 600, new Date("2026-07-19T12:00:00.000Z"));
+
+      expect(await prepared.db.releaseApiKeyUsageReservation(reservation.reservationId)).toBe(true);
+      observer = await createSqlJsAdapter(prepared.file);
+
+      expect(observer.get("SELECT id FROM apiKeyUsageReservations WHERE id = ?", [reservation.reservationId])).toBeUndefined();
+    } finally {
+      try { observer?.close?.(); } catch {}
+      try { adapter?.close?.(); } catch {}
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
 });
 
 const CHILD_SCRIPT = String.raw`

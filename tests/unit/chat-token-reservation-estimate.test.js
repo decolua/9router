@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { openaiToClaudeRequest } from "../../open-sse/translator/request/openai-to-claude.js";
+import { openaiToCursorRequest } from "../../open-sse/translator/request/openai-to-cursor.js";
 
 let estimateChatUsageReservation;
 try {
@@ -55,6 +57,50 @@ describe("chat usage reservation estimate", () => {
     };
 
     expect(estimateChatUsageReservation(body)).toBe(expectedTotal(body, 32_000));
+  });
+
+  it("reserves Cursor's translated 32000-token ceiling for low explicit candidates", () => {
+    const body = {
+      model: "cursor/cursor-model",
+      messages: [],
+      max_tokens: 1,
+      max_completion_tokens: 2,
+      max_output_tokens: 3,
+      generationConfig: { maxOutputTokens: 4 },
+    };
+    const translated = openaiToCursorRequest("cursor-model", body, true, null);
+
+    expect(translated.max_tokens).toBe(32_000);
+    expect(estimateChatUsageReservation(body, { provider: "cursor", model: "cursor-model" }))
+      .toBe(expectedTotal(body, translated.max_tokens));
+  });
+
+  it("reserves Claude's translated 64000 default when max_tokens is absent", () => {
+    const body = {
+      model: "anthropic/claude-sonnet-4-20250514",
+      messages: [],
+      max_completion_tokens: 1,
+      max_output_tokens: 2,
+      generationConfig: { maxOutputTokens: 3 },
+    };
+    const translated = openaiToClaudeRequest("claude-sonnet-4-20250514", body, true);
+
+    expect(translated.max_tokens).toBe(64_000);
+    expect(estimateChatUsageReservation(body, { provider: "anthropic", model: "claude-sonnet-4-20250514" }))
+      .toBe(expectedTotal(body, translated.max_tokens));
+  });
+
+  it("keeps Claude's low explicit max_tokens when translation keeps it", () => {
+    const body = {
+      model: "anthropic/claude-sonnet-4-20250514",
+      messages: [],
+      max_tokens: 7,
+    };
+    const translated = openaiToClaudeRequest("claude-sonnet-4-20250514", body, true);
+
+    expect(translated.max_tokens).toBe(7);
+    expect(estimateChatUsageReservation(body, { provider: "anthropic", model: "claude-sonnet-4-20250514" }))
+      .toBe(expectedTotal(body, translated.max_tokens));
   });
 
   it("ignores invalid output values and falls back to 64000", () => {

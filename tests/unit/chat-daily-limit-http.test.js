@@ -216,6 +216,48 @@ describe("POST /v1/chat/completions daily token admission", () => {
     expect(rawDb.get("SELECT COUNT(*) AS count FROM reservationAudit").count).toBe(0);
   });
 
+  it("rejects Cursor low-token candidates using the translated 32000 ceiling", async () => {
+    const body = {
+      model: "cursor/cursor-model",
+      messages: [],
+      max_tokens: 1,
+      max_completion_tokens: 2,
+    };
+    const effectiveEstimate = Buffer.byteLength(JSON.stringify(body), "utf8") + 32_000;
+    await db.updateApiKey(limitedApiKey.id, { dailyLimitTokens: effectiveEstimate - 1 });
+
+    const response = await postChat(new Request("http://localhost/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${limitedApiKey.key}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }));
+
+    expect(response.status).toBe(429);
+    expect(authMocks.getProviderCredentials).not.toHaveBeenCalled();
+    expect(dispatchMocks.handleChatCore).not.toHaveBeenCalled();
+  });
+
+  it("rejects Claude low alternate candidates using the translated 64000 default", async () => {
+    const body = {
+      model: "anthropic/claude-sonnet-4-20250514",
+      messages: [],
+      max_completion_tokens: 1,
+      max_output_tokens: 2,
+    };
+    const effectiveEstimate = Buffer.byteLength(JSON.stringify(body), "utf8") + 64_000;
+    await db.updateApiKey(limitedApiKey.id, { dailyLimitTokens: effectiveEstimate - 1 });
+
+    const response = await postChat(new Request("http://localhost/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${limitedApiKey.key}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }));
+
+    expect(response.status).toBe(429);
+    expect(authMocks.getProviderCredentials).not.toHaveBeenCalled();
+    expect(dispatchMocks.handleChatCore).not.toHaveBeenCalled();
+  });
+
   it("measures alias input bytes from the exact resolved dispatch body", async () => {
     const body = { model: "a", messages: [], max_tokens: 1 };
     const resolvedModel = "provider-with-long-name/model-with-long-name";

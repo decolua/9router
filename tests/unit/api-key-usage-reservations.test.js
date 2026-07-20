@@ -507,6 +507,46 @@ describe("API key usage reservation admission", () => {
     expect(await db.getApiKeyUsageLimitStatus(key.key)).toMatchObject({ reservedTokens: 0, remainingTokens: 100 });
   });
 
+  it.each([-1, 1.5, Number.MAX_SAFE_INTEGER + 1])(
+    "rejects imported daily limit %s before changing database state",
+    async (dailyLimitTokens) => {
+      const key = await db.createApiKey("keep-key", "machine-test", 100);
+      const reservation = await db.reserveApiKeyUsage(key.key, 50);
+      await db.updateSettings({ cavemanEnabled: true });
+      await db.setModelAlias("keep-alias", "openai/gpt-4o");
+      const snapshot = () => ({
+        settings: rawDb.all("SELECT * FROM settings ORDER BY id"),
+        apiKeys: rawDb.all("SELECT * FROM apiKeys ORDER BY id"),
+        reservations: rawDb.all("SELECT * FROM apiKeyUsageReservations ORDER BY id"),
+        aliases: rawDb.all("SELECT * FROM kv WHERE scope = 'modelAliases' ORDER BY key"),
+      });
+      const before = snapshot();
+      const payload = await db.exportDb();
+      payload.apiKeys[0].dailyLimitTokens = dailyLimitTokens;
+      const transactionSpy = vi.spyOn(rawDb, "transaction");
+
+      try {
+        await expect(db.importDb(payload)).rejects.toThrow("dailyLimitTokens must be a non-negative integer");
+        expect(transactionSpy).not.toHaveBeenCalled();
+      } finally {
+        transactionSpy.mockRestore();
+      }
+
+      expect(snapshot()).toEqual(before);
+      expect(rawDb.get("SELECT id FROM apiKeyUsageReservations WHERE id = ?", [reservation.reservationId])).toBeDefined();
+    },
+  );
+
+  it("normalizes a blank imported daily limit to unlimited", async () => {
+    const key = await db.createApiKey("blank-import", "machine-test", 100);
+    const payload = await db.exportDb();
+    payload.apiKeys[0].dailyLimitTokens = " \n\t ";
+
+    await db.importDb(payload);
+
+    expect((await db.getApiKeyById(key.id)).dailyLimitTokens).toBeNull();
+  });
+
   it("rolls back reservation deletion when API-key deletion fails", async () => {
     const key = await db.createApiKey("limited", "machine-test", 100);
     await db.reserveApiKeyUsage(key.key, 100);

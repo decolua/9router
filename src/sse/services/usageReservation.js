@@ -1,4 +1,9 @@
 import { DEFAULT_MAX_TOKENS, DEFAULT_MIN_TOKENS } from "open-sse/config/runtimeConfig.js";
+import { PROVIDERS } from "open-sse/config/providers.js";
+import { getModelTargetFormat, PROVIDER_ID_TO_ALIAS } from "open-sse/config/providerModels.js";
+import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { FORMATS } from "open-sse/translator/formats.js";
+import { adjustMaxTokens } from "open-sse/translator/formats/maxTokens.js";
 
 const THINKING_OUTPUT_HEADROOM = 1_024;
 
@@ -13,7 +18,17 @@ function positiveSafeInteger(value) {
   return Number.isSafeInteger(value) && value > 0 ? value : null;
 }
 
-export function estimateChatUsageReservation(body) {
+function getTranslatedOutputCeiling(body, provider, model) {
+  if (!provider) return null;
+  const alias = PROVIDER_ID_TO_ALIAS[provider] || provider;
+  const targetFormat = getModelTargetFormat(alias, model) || PROVIDERS[provider]?.format;
+  if (targetFormat === FORMATS.CURSOR) return DEFAULT_MIN_TOKENS;
+  if (targetFormat !== FORMATS.CLAUDE) return null;
+  const modelCeiling = getCapabilitiesForModel(null, model).maxOutput || undefined;
+  return positiveSafeInteger(adjustMaxTokens(body, modelCeiling));
+}
+
+export function estimateChatUsageReservation(body, { provider, model } = {}) {
   const outputCandidates = [
     body?.max_tokens,
     body?.max_completion_tokens,
@@ -27,6 +42,8 @@ export function estimateChatUsageReservation(body) {
   if (Array.isArray(body?.tools) && body.tools.length > 0) {
     outputCandidates.push(DEFAULT_MIN_TOKENS);
   }
+  const translatedOutputCeiling = getTranslatedOutputCeiling(body, provider, model);
+  if (translatedOutputCeiling !== null) outputCandidates.push(translatedOutputCeiling);
 
   const outputTokens = outputCandidates.length > 0 ? Math.max(...outputCandidates) : DEFAULT_MAX_TOKENS;
   const inputBytes = Buffer.byteLength(JSON.stringify(body), "utf8");

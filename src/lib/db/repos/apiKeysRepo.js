@@ -17,7 +17,7 @@ function rowToKey(row) {
   };
 }
 
-function normalizeDailyLimitTokens(value) {
+export function normalizeDailyLimitTokens(value) {
   if (value === undefined) return undefined;
   if (value === null || (typeof value === "string" && value.trim() === "")) return null;
   const limit = Number(value);
@@ -198,8 +198,10 @@ export async function reserveApiKeyUsage(key, requestedTokens, now = new Date())
 export async function releaseApiKeyUsageReservation(id) {
   if (!id) return false;
   const db = await getAdapter();
-  const result = db.run(`DELETE FROM apiKeyUsageReservations WHERE id = ?`, [id]);
-  return (result?.changes ?? 0) > 0;
+  return db.transaction(() => {
+    const result = db.run(`DELETE FROM apiKeyUsageReservations WHERE id = ?`, [id]);
+    return (result?.changes ?? 0) > 0;
+  });
 }
 
 export async function getApiKeyUsageLimitStatus(key, now = new Date()) {
