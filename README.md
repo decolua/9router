@@ -97,6 +97,47 @@ Claude Code/Codex/OpenClaw/Cursor/Cline Settings:
 
 **That's it!** Start coding with FREE AI models.
 
+### Connect a CLI from another computer
+
+If 9Router is self-hosted on a server, run the client-side setup script on the
+computer where Claude Code, Codex, or OpenCode is installed. It configures that
+computer only; it does not install or start another 9Router server.
+
+The easiest option is Dashboard -> CLI Tools -> select a supported tool ->
+The Dashboard detects the client OS. Windows downloads a double-clickable
+`install-9router-<tool>.bat`, macOS downloads a `.command` installer, and Linux
+copies one install command to run in a terminal. The endpoint, tool, selected
+model, and selected API key are included, so installation requires no additional
+input. The generated file or copied command contains the API key and should be
+deleted from Downloads and shell history after use.
+Endpoint selection prefers Cloudflare Tunnel, then Tailscale, then the host used
+to open the Dashboard.
+
+```bash
+curl -fsSLo /tmp/9router-connect.sh \
+  https://router.example.com/9router-connect.sh
+bash /tmp/9router-connect.sh \
+  --tool claude \
+  --url https://router.example.com \
+  --model kr/claude-sonnet-4.5
+```
+
+The script prompts for the API key without displaying it. Use `--tool codex`
+or `--tool opencode` for those clients. It validates the key and model through
+`/v1/models`, preserves unrelated settings, creates a timestamped backup, and
+requires HTTPS for non-local endpoints by default. Bash, `curl`, and `python3`
+are required.
+
+For non-interactive setup, use environment variables instead of putting secrets
+in the download URL:
+
+```bash
+NINEROUTER_URL=https://router.example.com \
+NINEROUTER_KEY=sk_your_key \
+NINEROUTER_MODEL=kr/claude-sonnet-4.5 \
+bash /tmp/9router-connect.sh --tool opencode
+```
+
 **Alternative: run from source (this repository):**
 
 This repository package is private (`9router-app`), so source/Docker execution is the expected local development path.
