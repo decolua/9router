@@ -3,11 +3,11 @@ import {
   markAccountUnavailable,
   clearAccountError,
   extractApiKey,
-  isValidApiKey,
+  resolveApiKeyId,
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo } from "../services/model.js";
-import { handleVideoProxyCore, getVideoConfig, sanitizeSecrets } from "open-sse/handlers/videoCore.js";
+import { handleVideoProxyCore, getVideoConfig, sanitizeSecrets, VIDEO_ACTIONS } from "open-sse/handlers/videoCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
@@ -30,12 +30,13 @@ const CREATE_ROTATION_STATUSES = new Set([
 async function validateRequestApiKey(request) {
   const apiKey = extractApiKey(request);
   const settings = await getSettings();
+  let apiKeyId = null;
   if (settings.requireApiKey) {
     if (!apiKey) return { error: errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key") };
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) return { error: errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key") };
+    apiKeyId = await resolveApiKeyId(apiKey);
+    if (!apiKeyId) return { error: errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key") };
   }
-  return { apiKey };
+  return { apiKey, apiKeyId };
 }
 
 /**
@@ -95,9 +96,21 @@ function withConnectionHeader(response, connectionId) {
 export async function handleVideoCreate(request, action) {
   const auth = await validateRequestApiKey(request);
   if (auth.error) return auth.error;
+  if (!VIDEO_ACTIONS.has(action)) {
+    return errorResponse(HTTP_STATUS.BAD_REQUEST, `Unknown video action: ${action}`);
+  }
 
   const bodyInfo = await readForwardableBody(request);
   if (bodyInfo.error) return bodyInfo.error;
+  if (!bodyInfo.raw.length) {
+    return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing video payload");
+  }
+  if (
+    bodyInfo.contentType.includes("application/json")
+    && (typeof bodyInfo.parsed?.model !== "string" || !bodyInfo.parsed.model.trim())
+  ) {
+    return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
+  }
 
   const resolved = await resolveVideoProvider(bodyInfo.parsed);
   if (resolved.error) return resolved.error;
@@ -107,6 +120,7 @@ export async function handleVideoCreate(request, action) {
       request,
       body: bodyInfo.parsed || {},
       apiKey: auth.apiKey,
+      apiKeyId: auth.apiKeyId,
       endpoint: new URL(request.url).pathname,
     });
   }
@@ -192,12 +206,15 @@ export async function handleVideoGet(request, requestId) {
   const auth = await validateRequestApiKey(request);
   if (auth.error) return auth.error;
 
-  if (!requestId) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing video request id");
+  if (typeof requestId !== "string" || !requestId.trim()) {
+    return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing video request id");
+  }
   if (auth.apiKey) {
     await trackApiKeyClientActivity({
       request,
       body: { requestId },
       apiKey: auth.apiKey,
+      apiKeyId: auth.apiKeyId,
       endpoint: new URL(request.url).pathname,
     });
   }

@@ -2,7 +2,7 @@ import { handleChat } from "@/sse/handlers/chat.js";
 import {
   clearAccountError,
   getProviderCredentials,
-  isValidApiKey,
+  resolveApiKeyId,
   markAccountUnavailable,
 } from "@/sse/services/auth.js";
 import { getSettings } from "@/lib/localDb";
@@ -179,20 +179,20 @@ function buildGeminiNativeUrl(requestUrl, model, action) {
 }
 
 async function validateGeminiNativeClientKey(request) {
-  const settings = await getSettings();
-  if (!settings.requireApiKey) return null;
-
   const apiKey = extractGeminiClientApiKey(request);
+  const settings = await getSettings();
+  if (!settings.requireApiKey) return { apiKey, apiKeyId: null };
+
   if (!apiKey) {
-    return Response.json({ error: { message: "Missing API key" } }, { status: 401 });
+    return { error: Response.json({ error: { message: "Missing API key" } }, { status: 401 }) };
   }
 
-  const valid = await isValidApiKey(apiKey);
-  if (!valid) {
-    return Response.json({ error: { message: "Invalid API key" } }, { status: 401 });
+  const apiKeyId = await resolveApiKeyId(apiKey);
+  if (!apiKeyId) {
+    return { error: Response.json({ error: { message: "Invalid API key" } }, { status: 401 }) };
   }
 
-  return null;
+  return { apiKey, apiKeyId };
 }
 
 function buildGeminiNativeAuthHeaders(credentials) {
@@ -237,19 +237,19 @@ function getSafeGeminiNativeErrorText(error) {
 }
 
 async function forwardGeminiNativeRequest(request, body, model, action) {
-  const authError = await validateGeminiNativeClientKey(request);
-  if (authError) return authError;
+  const auth = await validateGeminiNativeClientKey(request);
+  if (auth.error) return auth.error;
 
   const modelId = normalizeGeminiNativeModel(model);
   if (!GEMINI_NATIVE_MODEL_PATTERN.test(modelId)) {
     return Response.json({ error: { message: "Invalid model" } }, { status: 400 });
   }
-  const apiKey = extractGeminiClientApiKey(request);
-  if (apiKey) {
+  if (auth.apiKey) {
     await trackApiKeyClientActivity({
       request,
       body,
-      apiKey,
+      apiKey: auth.apiKey,
+      apiKeyId: auth.apiKeyId,
       endpoint: new URL(request.url).pathname,
     });
   }

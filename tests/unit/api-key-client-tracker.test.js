@@ -25,7 +25,10 @@ describe("API key client activity tracker", () => {
     vi.clearAllMocks();
     mocks.getActiveApiKeyId.mockResolvedValue("key-id");
     mocks.getIdentity.mockResolvedValue({ fingerprint: "fingerprint" });
-    mocks.record.mockResolvedValue({ apiKeyId: "key-id", fingerprint: "fingerprint" });
+    mocks.record.mockImplementation(async (apiKeyId, identity) => ({
+      apiKeyId,
+      fingerprint: identity.fingerprint,
+    }));
   });
 
   it("resolves a valid key and enqueues sanitized identity metadata", async () => {
@@ -38,6 +41,23 @@ describe("API key client activity tracker", () => {
 
     expect(mocks.record).toHaveBeenCalledWith(
       "key-id",
+      { fingerprint: "fingerprint" },
+      "/v1/responses",
+    );
+  });
+
+  it("uses an already-resolved API key ID without another lookup", async () => {
+    await expect(trackApiKeyClientActivity({
+      request,
+      body: { model: "test/model" },
+      apiKey: "client-secret",
+      apiKeyId: "resolved-key-id",
+      endpoint: "/v1/responses",
+    })).resolves.toEqual({ apiKeyId: "resolved-key-id", fingerprint: "fingerprint" });
+
+    expect(mocks.getActiveApiKeyId).not.toHaveBeenCalled();
+    expect(mocks.record).toHaveBeenCalledWith(
+      "resolved-key-id",
       { fingerprint: "fingerprint" },
       "/v1/responses",
     );

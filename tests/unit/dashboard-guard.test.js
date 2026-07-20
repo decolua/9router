@@ -127,6 +127,16 @@ describe("dashboard guard public LLM API access", () => {
     expect(response).toBe(mocks.nextResponse);
   });
 
+  it("rejects a hostile domain with a 127-prefixed Origin hostname", async () => {
+    const response = await proxy(request("/v1/responses", {
+      origin: "http://127.attacker.example",
+      "x-9r-real-ip": "127.0.0.1",
+      "x-9r-request-proof": REQUEST_PROOF,
+    }));
+
+    expect(response.status).toBe(401);
+  });
+
   it("rejects remote beta public LLM API without API key", async () => {
     const response = await proxy(request("/v1beta/models", { host: "router.example.com" }));
 

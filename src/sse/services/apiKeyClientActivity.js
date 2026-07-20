@@ -11,15 +11,15 @@ function warnTrackingFailure() {
   console.warn("[AUTH] API key client activity update failed; inference continues");
 }
 
-export async function trackApiKeyClientActivity({ request, body, apiKey, endpoint }) {
-  if (!apiKey) return null;
+export async function trackApiKeyClientActivity({ request, body, apiKey, apiKeyId, endpoint }) {
+  if (!apiKey && !apiKeyId) return null;
   try {
-    const apiKeyId = await getActiveApiKeyId(apiKey);
-    if (!apiKeyId) return null;
+    const resolvedApiKeyId = apiKeyId || await getActiveApiKeyId(apiKey);
+    if (!resolvedApiKeyId) return null;
     const identity = await getApiKeyClientIdentity(request, body);
     if (!identity) return null;
     return await recordApiKeyClientRequest(
-      apiKeyId,
+      resolvedApiKeyId,
       identity,
       endpoint || new URL(request.url).pathname,
     );

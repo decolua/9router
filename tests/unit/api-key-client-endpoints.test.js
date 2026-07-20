@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
     const auth = request.headers.get("authorization");
     return auth?.startsWith("Bearer ") ? auth.slice(7) : null;
   }),
-  isValidApiKey: vi.fn(async () => true),
+  resolveApiKeyId: vi.fn(async () => "key-id"),
   getProviderCredentials: vi.fn(async () => null),
   getModelInfo: vi.fn(async (model) => {
     if (String(model).startsWith("invalid")) return { provider: null, model: null };
@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
     return { provider, model: rest.join("/") || model };
   }),
   getComboModels: vi.fn(async () => null),
+  handleBypassRequest: vi.fn(() => null),
 }));
 
 vi.mock("open-sse/index.js", () => ({}));
@@ -24,7 +25,7 @@ vi.mock("@/sse/services/apiKeyClientActivity.js", () => ({
 }));
 vi.mock("@/sse/services/auth.js", () => ({
   extractApiKey: mocks.extractApiKey,
-  isValidApiKey: mocks.isValidApiKey,
+  resolveApiKeyId: mocks.resolveApiKeyId,
   getProviderCredentials: mocks.getProviderCredentials,
   markAccountUnavailable: vi.fn(async () => ({ shouldFallback: false })),
   clearAccountError: vi.fn(async () => {}),
@@ -57,8 +58,11 @@ vi.mock("open-sse/services/combo.js", () => ({
   handleFusionChat: vi.fn(),
 }));
 vi.mock("open-sse/utils/claudeHeaderCache.js", () => ({ cacheClaudeHeaders: vi.fn() }));
-vi.mock("open-sse/utils/bypassHandler.js", () => ({ handleBypassRequest: vi.fn(() => null) }));
+vi.mock("open-sse/utils/bypassHandler.js", () => ({
+  handleBypassRequest: mocks.handleBypassRequest,
+}));
 vi.mock("open-sse/handlers/videoCore.js", () => ({
+  VIDEO_ACTIONS: new Set(["generations", "edits", "extensions"]),
   getVideoConfig: vi.fn((provider) => provider === "xai" ? {} : null),
   handleVideoProxyCore: vi.fn(),
   sanitizeSecrets: (value) => value,
@@ -97,6 +101,11 @@ const sttRequest = ({ includeFile = true, apiKey = "valid-key" } = {}) => {
   });
 };
 
+const emptyVideoRequest = () => new Request("https://router.test/v1/videos/generations", {
+  method: "POST",
+  headers: { Authorization: "Bearer valid-key" },
+});
+
 const validCases = [
   ["chat", () => handleChat(jsonRequest("/v1/chat/completions", { model: "test/model" }))],
   ["messages", () => handleChat(jsonRequest("/v1/messages", { model: "test/model" }))],
@@ -126,23 +135,31 @@ const malformedCases = [
   ["search", () => handleSearch(jsonRequest("/v1/search", { provider: "test" }))],
   ["web fetch", () => handleFetch(jsonRequest("/v1/web/fetch", { provider: "test", url: "not-a-url" }))],
   ["video create", () => handleVideoCreate(jsonRequest("/v1/videos/generations", { model: "invalid/model" }), "generations")],
+  ["video create without payload", () => handleVideoCreate(emptyVideoRequest(), "generations")],
+  ["video create without model", () => handleVideoCreate(jsonRequest("/v1/videos/generations", { prompt: "hello" }), "generations")],
+  ["video create with unknown action", () => handleVideoCreate(jsonRequest("/v1/videos/generations", { model: "xai/video" }), "unknown")],
   ["video poll", () => handleVideoGet(new Request("https://router.test/v1/videos/", {
     headers: { Authorization: "Bearer valid-key" },
   }), "")],
+  ["video poll with whitespace ID", () => handleVideoGet(new Request("https://router.test/v1/videos/%20", {
+    headers: { Authorization: "Bearer valid-key" },
+  }), "   ")],
 ];
 
 describe("API-key client endpoint admission", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getSettings.mockResolvedValue({ requireApiKey: true });
-    mocks.isValidApiKey.mockResolvedValue(true);
+    mocks.resolveApiKeyId.mockResolvedValue("key-id");
     mocks.getProviderCredentials.mockResolvedValue(null);
     mocks.getComboModels.mockResolvedValue(null);
+    mocks.handleBypassRequest.mockReturnValue(null);
   });
 
   it.each(validCases)("tracks one admitted %s request", async (_name, invoke) => {
     await invoke();
     expect(mocks.track).toHaveBeenCalledTimes(1);
+    expect(mocks.track).toHaveBeenCalledWith(expect.objectContaining({ apiKeyId: "key-id" }));
   });
 
   it.each(malformedCases)("tracks zero malformed %s requests", async (_name, invoke) => {
@@ -150,8 +167,16 @@ describe("API-key client endpoint admission", () => {
     expect(mocks.track).not.toHaveBeenCalled();
   });
 
+  it.each(["warmup", "naming"])("tracks a synthetic %s chat success", async () => {
+    mocks.handleBypassRequest.mockReturnValue({ response: new Response("synthetic") });
+
+    await handleChat(jsonRequest("/v1/chat/completions", { model: "test/model" }));
+
+    expect(mocks.track).toHaveBeenCalledTimes(1);
+  });
+
   it("tracks zero requests carrying an invalid API key", async () => {
-    mocks.isValidApiKey.mockResolvedValue(false);
+    mocks.resolveApiKeyId.mockResolvedValue(null);
     await handleChat(jsonRequest("/v1/chat/completions", { model: "test/model" }, "invalid-key"));
     expect(mocks.track).not.toHaveBeenCalled();
   });

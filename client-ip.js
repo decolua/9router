@@ -56,7 +56,8 @@ function parseForwardedFor(value) {
 }
 
 function isLoopback(ip) {
-  return ip === "::1" || ip.startsWith("127.");
+  const normalized = normalizeIp(ip);
+  return normalized === "::1" || normalized.startsWith("127.");
 }
 
 function resolveTrustedClientIp({ socketIp, headers = {}, trustProxy = false }) {
