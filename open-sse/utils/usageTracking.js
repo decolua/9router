@@ -168,6 +168,7 @@ export function canonicalizeUsage(usage) {
     ?? usage.completion_tokens_details?.reasoning_tokens
     ?? usage.output_tokens_details?.reasoning_tokens;
   const reasoning = num(reasoningSource);
+  const reportedTotal = num(usage.total_tokens);
   // Fall back to the nested prompt_tokens_details.cache_creation_tokens shape
   // (buildUsage()'s OpenAI-forwarding format) when the top-level field is
   // absent, so callers that pass a buildUsage() object through don't silently
@@ -175,6 +176,11 @@ export function canonicalizeUsage(usage) {
   const cacheCreation = num(usage.cache_creation_input_tokens ?? usage.prompt_tokens_details?.cache_creation_tokens);
 
   let prompt = num(usage.prompt_tokens ?? usage.input_tokens);
+  const reasoningIsSeparate = reasoning > 0
+    && reportedTotal >= prompt + completion + reasoning;
+  const canonicalCompletion = reasoningIsSeparate
+    ? completion + reasoning
+    : Math.max(completion, reasoning);
   let cached;
 
   // Claude path: prompt excludes cache; cache_read_input_tokens and/or
@@ -196,10 +202,10 @@ export function canonicalizeUsage(usage) {
 
   const result = {
     prompt_tokens: prompt,
-    completion_tokens: completion,
+    completion_tokens: canonicalCompletion,
     // Recompute rather than pass through: when the fold branch ran above,
     // an upstream total_tokens (cache-exclusive) would otherwise be stale.
-    total_tokens: prompt + completion,
+    total_tokens: prompt + canonicalCompletion,
     cached_tokens: cached,
     cache_creation_input_tokens: cacheCreation,
   };

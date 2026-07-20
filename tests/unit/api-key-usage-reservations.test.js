@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SCHEMA_VERSION, TABLES } from "@/lib/db/schema.js";
+import { canonicalizeUsage } from "../../open-sse/utils/usageTracking.js";
 
 vi.mock("@/shared/utils/machineId", () => ({
   getConsistentMachineId: vi.fn(async () => "machine-test"),
@@ -143,6 +144,28 @@ describe("API key usage reservation admission", () => {
       limitTokens: 1_000,
       remainingTokens: 350,
       resetAt: getExpectedResetAt(now),
+    });
+  });
+
+  it("counts Gemini candidate and thought output once", async () => {
+    const key = await db.createApiKey("gemini-limited", "machine-test", 1_000);
+    const now = new Date("2026-07-19T12:00:00.000Z");
+    await db.saveRequestUsage({
+      provider: "gemini",
+      model: "gemini-2.5-pro",
+      apiKey: key.key,
+      timestamp: now.toISOString(),
+      tokens: canonicalizeUsage({
+        prompt_tokens: 100,
+        completion_tokens: 40,
+        total_tokens: 150,
+        reasoning_tokens: 10,
+      }),
+    });
+
+    expect(await db.getApiKeyUsageLimitStatus(key.key, now)).toMatchObject({
+      usedTokens: 150,
+      remainingTokens: 850,
     });
   });
 

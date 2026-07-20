@@ -49,6 +49,18 @@ describe("canonicalizeUsage", () => {
     expect(out.reasoning_tokens).toBe(40);
   });
 
+  it("folds separately reported Gemini thoughts into completion", () => {
+    const out = canonicalizeUsage({
+      prompt_tokens: 100,
+      completion_tokens: 40,
+      total_tokens: 150,
+      reasoning_tokens: 10,
+    });
+    expect(out.completion_tokens).toBe(50);
+    expect(out.total_tokens).toBe(150);
+    expect(out.reasoning_tokens).toBe(10);
+  });
+
   it("handles no-cache usage", () => {
     const out = canonicalizeUsage({ prompt_tokens: 100, completion_tokens: 50 });
     expect(out.prompt_tokens).toBe(100);
