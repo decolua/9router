@@ -1,3 +1,23 @@
+# v0.5.40 (2026-07-20)
+
+## Features
+- **i18n**: add Khmer (km) translations
+- **CLI tools**: configure Grok Build subagent models
+- **Kimi**: merge OAuth into dual-auth provider, add K3 / K2.7 models
+- **Dashboard**: ProviderTopology flow animation
+
+## Fixes
+- **DB**: resolve better-sqlite3 parameter binding crash
+- **Translator**: pass `service_tier` through OpenAI → Responses conversion
+- **Kiro**: map GPT-5.6 reasoning effort fields
+- **Kiro**: validate terminal streams before emitting output
+- **Kiro**: map GPT reasoning effort fields
+- **Codex**: current `client_version` + refresh-aware model sync
+- **Alicode-intl**: split into Coding Plan + Model Studio providers
+- **Cursor**: HTTP/2 AgentService support + version bump 3.12.17
+- **Dashboard**: cut duplicate API/icon spam, lazy-load provider assets
+
+
 # v0.5.35 (2026-07-16)
 
 ## Features
