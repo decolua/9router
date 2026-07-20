@@ -307,7 +307,10 @@ export function extractApiKey(request) {
     return xApiKey;
   }
 
-  return null;
+  const googleApiKey = request.headers.get("x-goog-api-key");
+  if (googleApiKey) return googleApiKey;
+
+  return new URL(request.url).searchParams.get("key");
 }
 
 /**

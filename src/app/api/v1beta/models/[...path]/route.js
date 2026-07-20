@@ -9,6 +9,7 @@ import { getSettings } from "@/lib/localDb";
 import { PROVIDER_MODELS } from "@/shared/constants/models";
 import { GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS } from "open-sse/config/runtimeConfig.js";
 import { initTranslators } from "open-sse/translator/index.js";
+import { trackApiKeyClientActivity } from "@/sse/services/apiKeyClientActivity.js";
 
 let initialized = false;
 const GEMINI_NATIVE_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
@@ -242,6 +243,15 @@ async function forwardGeminiNativeRequest(request, body, model, action) {
   const modelId = normalizeGeminiNativeModel(model);
   if (!GEMINI_NATIVE_MODEL_PATTERN.test(modelId)) {
     return Response.json({ error: { message: "Invalid model" } }, { status: 400 });
+  }
+  const apiKey = extractGeminiClientApiKey(request);
+  if (apiKey) {
+    await trackApiKeyClientActivity({
+      request,
+      body,
+      apiKey,
+      endpoint: new URL(request.url).pathname,
+    });
   }
   const excludeConnectionIds = new Set();
   const bodyText = JSON.stringify(body);

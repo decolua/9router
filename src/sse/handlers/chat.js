@@ -8,8 +8,9 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
-import { getSettings, recordApiKeyClientRequest } from "@/lib/localDb";
-import { getApiKeyClientIdentity } from "@/lib/apiKeyClientIdentity";
+import { getSettings } from "@/lib/localDb";
+import { getSafeRequestHeaders } from "@/lib/requestOrigin";
+import { trackApiKeyClientActivity } from "../services/apiKeyClientActivity.js";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
@@ -44,8 +45,10 @@ export async function handleChat(request, clientRawRequest = null) {
     clientRawRequest = {
       endpoint: url.pathname,
       body,
-      headers: Object.fromEntries(request.headers.entries())
+      headers: getSafeRequestHeaders(request),
     };
+  } else {
+    clientRawRequest = { ...clientRawRequest, headers: getSafeRequestHeaders(request) };
   }
   cacheClaudeHeaders(clientRawRequest.headers);
 
@@ -77,20 +80,6 @@ export async function handleChat(request, clientRawRequest = null) {
     }
   }
 
-  if (apiKey) {
-    try {
-      const identity = await getApiKeyClientIdentity(request, body);
-      const trackedClient = await recordApiKeyClientRequest(
-        apiKey,
-        identity,
-        clientRawRequest?.endpoint,
-      );
-      if (trackedClient && clientRawRequest) clientRawRequest.apiKeyClient = trackedClient;
-    } catch (error) {
-      log.warn("AUTH", `Failed to record API key client: ${error.message}`);
-    }
-  }
-
   if (!modelStr) {
     log.warn("CHAT", "Missing model");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
@@ -101,9 +90,23 @@ export async function handleChat(request, clientRawRequest = null) {
   const bypassResponse = handleBypassRequest(body, modelStr, userAgent, !!settings.ccFilterNaming);
   if (bypassResponse) return bypassResponse.response || bypassResponse;
 
+  let admitted = false;
+  const admitRequest = async () => {
+    if (admitted || !apiKey) return;
+    admitted = true;
+    const trackedClient = await trackApiKeyClientActivity({
+      request,
+      body,
+      apiKey,
+      endpoint: clientRawRequest?.endpoint,
+    });
+    if (trackedClient && clientRawRequest) clientRawRequest.apiKeyClient = trackedClient;
+  };
+
   // Check if model is a combo (has multiple models with fallback)
   const comboModels = await getComboModels(modelStr);
   if (comboModels) {
+    await admitRequest();
     // Check for combo-specific strategy first, fallback to global
     const comboStrategies = settings.comboStrategies || {};
     const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
@@ -143,19 +146,27 @@ export async function handleChat(request, clientRawRequest = null) {
   }
 
   // Single model request
-  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey);
+  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey, admitRequest);
 }
 
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
+async function handleSingleModelChat(
+  body,
+  modelStr,
+  clientRawRequest = null,
+  request = null,
+  apiKey = null,
+  admitRequest = null,
+) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
   if (!modelInfo.provider) {
     const comboModels = await getComboModels(modelStr);
     if (comboModels) {
+      await admitRequest?.();
       const chatSettings = await getSettings();
       // Check for combo-specific strategy first, fallback to global
       const comboStrategies = chatSettings.comboStrategies || {};
@@ -199,6 +210,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   }
 
   const { provider, model } = modelInfo;
+  await admitRequest?.();
 
   // Routing shown in the unified "▶" line (client model → provider/model)
 

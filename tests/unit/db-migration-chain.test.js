@@ -97,4 +97,23 @@ describe("Schema migrations", () => {
     const idx = db2.all(`PRAGMA index_list(providerNodes)`).map(i => i.name);
     expect(idx).toContain("idx_pn_type");
   });
+
+  it("uses the lastSeen polling index for bounded period reads", async () => {
+    const { getAdapter } = await import("@/lib/db/driver.js");
+    const db = await getAdapter();
+    const indexes = db.all(`PRAGMA index_list(apiKeyClients)`).map((index) => index.name);
+    const plan = db.all(
+      `EXPLAIN QUERY PLAN
+       SELECT c.*, k.name
+       FROM apiKeyClients c
+       JOIN apiKeys k ON k.id = c.apiKeyId
+       WHERE c.lastSeen >= ?
+       ORDER BY c.lastSeen DESC
+       LIMIT 2001`,
+      [new Date(0).toISOString()],
+    ).map((step) => step.detail).join(" ");
+
+    expect(indexes).toContain("idx_akc_last");
+    expect(plan).toContain("idx_akc_last");
+  });
 });

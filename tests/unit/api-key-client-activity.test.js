@@ -27,7 +27,7 @@ afterAll(() => {
 describe("API key client activity", () => {
   it("records clients, attributes token usage, and reports active-key risk", async () => {
     const key = await dbApi.createApiKey("desktop-key", "machine-1");
-    const first = await dbApi.recordApiKeyClientRequest(key.key, {
+    const first = await dbApi.recordApiKeyClientRequest(key.id, {
       fingerprint: "a".repeat(32),
       clientLabel: "home-pc",
       clientFamily: "codex",
@@ -35,7 +35,7 @@ describe("API key client activity", () => {
       ipSource: "cloudflare-worker",
     }, "/v1/responses");
 
-    await dbApi.recordApiKeyClientRequest(key.key, {
+    await dbApi.recordApiKeyClientRequest(key.id, {
       fingerprint: "a".repeat(32),
       clientLabel: "home-pc",
       clientFamily: "codex",
@@ -54,7 +54,7 @@ describe("API key client activity", () => {
       },
     });
 
-    await dbApi.recordApiKeyClientRequest(key.key, {
+    await dbApi.recordApiKeyClientRequest(key.id, {
       fingerprint: "b".repeat(32),
       clientLabel: "work-pc",
       clientFamily: "codex",
@@ -62,6 +62,7 @@ describe("API key client activity", () => {
       ipSource: "cloudflare",
     }, "/v1/responses");
 
+    await dbApi.flushApiKeyClientActivity();
     const activity = await dbApi.getApiKeyClientActivity("24h");
     expect(activity.clients).toHaveLength(2);
     expect(activity.summaries).toEqual([expect.objectContaining({
@@ -74,7 +75,7 @@ describe("API key client activity", () => {
     const home = activity.clients.find((client) => client.clientLabel === "home-pc");
     expect(home).toEqual(expect.objectContaining({
       seenRequests: 2,
-      requests: 1,
+      successfulRequests: 1,
       promptTokens: 100,
       completionTokens: 20,
       reasoningTokens: 5,

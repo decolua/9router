@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
+import { clearPendingApiKeyClientActivity } from "./apiKeyClientsRepo.js";
 
 function rowToKey(row) {
   if (!row) return null;
@@ -56,6 +57,7 @@ export async function updateApiKey(id, data) {
       `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ? WHERE id = ?`,
       [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, id]
     );
+    if (!merged.isActive) clearPendingApiKeyClientActivity(id);
     result = merged;
   });
   return result;
@@ -63,6 +65,7 @@ export async function updateApiKey(id, data) {
 
 export async function deleteApiKey(id) {
   const db = await getAdapter();
+  clearPendingApiKeyClientActivity(id);
   let res;
   db.transaction(() => {
     db.run(`DELETE FROM apiKeyClients WHERE apiKeyId = ?`, [id]);
@@ -72,8 +75,12 @@ export async function deleteApiKey(id) {
 }
 
 export async function validateApiKey(key) {
+  return Boolean(await getActiveApiKeyId(key));
+}
+
+export async function getActiveApiKeyId(key) {
+  if (!key) return null;
   const db = await getAdapter();
-  const row = db.get(`SELECT isActive FROM apiKeys WHERE key = ?`, [key]);
-  if (!row) return false;
-  return row.isActive === 1 || row.isActive === true;
+  const row = db.get(`SELECT id FROM apiKeys WHERE key = ? AND isActive = 1`, [key]);
+  return row?.id || null;
 }

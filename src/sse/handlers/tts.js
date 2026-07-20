@@ -10,6 +10,7 @@ import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { handleComboChat } from "open-sse/services/combo.js";
 import * as log from "../utils/logger.js";
+import { trackApiKeyClientActivity } from "../services/apiKeyClientActivity.js";
 
 // Derived from providers.js: any TTS provider not noAuth requires stored credentials
 const CREDENTIALED_PROVIDERS = new Set(
@@ -30,11 +31,11 @@ export async function handleTts(request) {
   const modelStr = body.model;
   const responseFormat = url.searchParams.get("response_format") || "mp3"; // mp3 (default) | json
   const language = body.language || ""; // Optional language hint (currently used by Gemini)
+  const apiKey = extractApiKey(request);
   log.request("POST", `${url.pathname} | ${modelStr} | format=${responseFormat}${language ? ` | lang=${language}` : ""}`);
 
   const settings = await getSettings();
   if (settings.requireApiKey) {
-    const apiKey = extractApiKey(request);
     if (!apiKey) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
     const valid = await isValidApiKey(apiKey);
     if (!valid) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
@@ -46,6 +47,9 @@ export async function handleTts(request) {
   // Combo expansion: model may be a combo name → run fallback/round-robin across models
   const comboModels = await getComboModels(modelStr);
   if (comboModels) {
+    if (apiKey) {
+      await trackApiKeyClientActivity({ request, body, apiKey, endpoint: url.pathname });
+    }
     const comboStrategies = settings.comboStrategies || {};
     const comboStrategy = comboStrategies[modelStr]?.fallbackStrategy || settings.comboStrategy || "fallback";
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
@@ -61,11 +65,16 @@ export async function handleTts(request) {
     });
   }
 
-  return handleSingleModelTts(body, modelStr, responseFormat, language);
+  const modelInfo = await getModelInfo(modelStr);
+  if (!modelInfo.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
+  if (apiKey) {
+    await trackApiKeyClientActivity({ request, body, apiKey, endpoint: url.pathname });
+  }
+  return handleSingleModelTts(body, modelStr, responseFormat, language, modelInfo);
 }
 
-async function handleSingleModelTts(body, modelStr, responseFormat, language) {
-  const modelInfo = await getModelInfo(modelStr);
+async function handleSingleModelTts(body, modelStr, responseFormat, language, resolvedModelInfo = null) {
+  const modelInfo = resolvedModelInfo || await getModelInfo(modelStr);
   if (!modelInfo.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
 
   const { provider, model } = modelInfo;

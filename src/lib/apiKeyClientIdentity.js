@@ -1,7 +1,10 @@
 import crypto from "node:crypto";
 import net from "node:net";
-import { detectClientTool } from "open-sse/utils/clientDetector.js";
 import { getPrivateMachineId } from "@/shared/utils/machineId";
+import { getTrustedRequestOrigin, isLoopbackAddress } from "@/lib/requestOrigin";
+import clientIp from "../../client-ip.js";
+
+const { normalizeIp } = clientIp;
 
 const CLIENT_ID_PATTERN = /^[A-Za-z0-9._:@-]{1,64}$/;
 
@@ -12,18 +15,34 @@ export function normalizeClientId(value) {
 }
 
 export function maskClientNetwork(value) {
-  if (!value || net.isIP(value) === 0) return "Unknown";
-  if (value === "127.0.0.1" || value === "::1") return "Local";
-  if (net.isIP(value) === 4) {
-    const parts = value.split(".");
+  const ip = normalizeIp(value);
+  if (!ip) return "Unknown";
+  if (isLoopbackAddress(ip)) return "Local";
+  if (net.isIP(ip) === 4) {
+    const parts = ip.split(".");
     return `${parts[0]}.${parts[1]}.${parts[2]}.*`;
   }
-  const prefix = value.split(":").filter(Boolean).slice(0, 3).join(":");
-  return `${prefix || "ipv6"}::*`;
+  const [left = "", right = ""] = ip.split("::");
+  const leftParts = left ? left.split(":") : [];
+  const rightParts = right ? right.split(":") : [];
+  const parts = ip.includes("::")
+    ? [...leftParts, ...Array(8 - leftParts.length - rightParts.length).fill("0"), ...rightParts]
+    : leftParts;
+  return `${parts.slice(0, 3).join(":")}::*`;
 }
 
 function getClientFamily(headers, body) {
-  const detected = detectClientTool(headers, body);
+  const ua = String(headers["user-agent"] || "").toLowerCase();
+  const xApp = String(headers["x-app"] || "").toLowerCase();
+  const intent = String(headers["openai-intent"] || "").toLowerCase();
+  const initiator = String(headers["x-initiator"] || "").toLowerCase();
+  let detected = null;
+  if (body.userAgent === "antigravity") detected = "antigravity";
+  else if (ua.includes("githubcopilotchat") || intent === "conversation-panel" || initiator === "user") detected = "github-copilot";
+  else if (ua.includes("claude-cli") || ua.includes("claude-code") || xApp === "cli") detected = "claude";
+  else if (ua.includes("gemini-cli")) detected = "gemini-cli";
+  else if (ua.includes("codex-cli") || ua.includes("codex_cli_rs") || ua.includes("codex_exec")) detected = "codex";
+  else if (ua.includes("deepseek-tui")) detected = "deepseek-tui";
   if (detected) return detected;
   const product = String(headers["user-agent"] || "")
     .trim()
@@ -37,7 +56,8 @@ function getClientFamily(headers, body) {
 export async function getApiKeyClientIdentity(request, body = {}) {
   const headers = Object.fromEntries(request.headers.entries());
   const clientId = normalizeClientId(headers["x-9router-client-id"]);
-  const ip = headers["x-9r-real-ip"] || "";
+  const origin = getTrustedRequestOrigin(request);
+  const ip = origin?.ip || "";
   if (!clientId && net.isIP(ip) === 0) return null;
 
   const clientFamily = getClientFamily(headers, body);
@@ -56,6 +76,6 @@ export async function getApiKeyClientIdentity(request, body = {}) {
     clientLabel: clientId || clientFamily,
     clientFamily,
     maskedNetwork: maskClientNetwork(ip),
-    ipSource: headers["x-9r-ip-source"] || "unknown",
+    ipSource: origin?.source || "unknown",
   };
 }

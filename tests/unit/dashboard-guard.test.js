@@ -35,6 +35,8 @@ vi.mock("@/lib/auth/dashboardSession", () => ({
 
 const { proxy, __test__ } = await import("../../src/dashboardGuard.js");
 
+const REQUEST_PROOF = "test-request-proof";
+
 function request(pathname, headers = {}) {
   const normalizedHeaders = new Headers(headers);
   return {
@@ -52,33 +54,49 @@ describe("dashboard guard public LLM API access", () => {
     mocks.validateApiKey.mockResolvedValue(false);
     mocks.getConsistentMachineId.mockResolvedValue("cli-token");
     mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+    process.env.NINE_ROUTER_REQUEST_PROOF = REQUEST_PROOF;
   });
 
-  it("allows loopback public LLM API without API key", async () => {
+  it("rejects bare loopback Host without a stamped request proof", async () => {
     const response = await proxy(request("/v1/chat/completions", { host: "localhost:20128" }));
 
-    expect(response).toBe(mocks.nextResponse);
+    expect(response.status).toBe(401);
     expect(mocks.validateApiKey).not.toHaveBeenCalled();
   });
 
-  it("rejects remote Host-spoof when real peer IP is non-loopback", async () => {
+  it("rejects fake loopback internal headers without a valid proof", async () => {
     const response = await proxy(request("/v1/chat/completions", {
       host: "localhost",
-      "x-9r-real-ip": "10.204.111.34",
+      "x-9r-real-ip": "127.0.0.1",
+      "x-9r-request-proof": "attacker-proof",
     }));
 
     expect(response.status).toBe(401);
     expect(response.body.error).toBe("API key required for remote API access");
   });
 
-  it("allows loopback peer IP regardless of Host", async () => {
+  it("allows a directly connected loopback peer stamped by custom-server", async () => {
     const response = await proxy(request("/v1/chat/completions", {
-      host: "localhost:20128",
+      host: "router.invalid",
       "x-9r-real-ip": "127.0.0.1",
+      "x-9r-ip-source": "socket",
+      "x-9r-request-proof": REQUEST_PROOF,
     }));
 
     expect(response).toBe(mocks.nextResponse);
     expect(mocks.validateApiKey).not.toHaveBeenCalled();
+  });
+
+  it("rejects a proved loopback socket when proxy headers were present", async () => {
+    const response = await proxy(request("/v1/chat/completions", {
+      host: "localhost:20128",
+      "x-9r-real-ip": "127.0.0.1",
+      "x-9r-ip-source": "socket",
+      "x-9r-via-proxy": "1",
+      "x-9r-request-proof": REQUEST_PROOF,
+    }));
+
+    expect(response.status).toBe(401);
   });
 
   it("rejects remote rewritten public LLM API without API key", async () => {
@@ -88,11 +106,25 @@ describe("dashboard guard public LLM API access", () => {
     expect(response.body.error).toBe("API key required for remote API access");
   });
 
-  it("allows loopback rewritten public LLM API without API key", async () => {
-    const response = await proxy(request("/api/v1/chat/completions", { host: "localhost:20128" }));
+  it("allows proved loopback rewritten public LLM API without API key", async () => {
+    const response = await proxy(request("/api/v1/chat/completions", {
+      host: "localhost:20128",
+      "x-9r-real-ip": "::1",
+      "x-9r-request-proof": REQUEST_PROOF,
+    }));
 
     expect(response).toBe(mocks.nextResponse);
     expect(mocks.validateApiKey).not.toHaveBeenCalled();
+  });
+
+  it("allows a proved loopback request with an IPv6 loopback Origin", async () => {
+    const response = await proxy(request("/v1/responses", {
+      origin: "http://[::1]:20128",
+      "x-9r-real-ip": "::1",
+      "x-9r-request-proof": REQUEST_PROOF,
+    }));
+
+    expect(response).toBe(mocks.nextResponse);
   });
 
   it("rejects remote beta public LLM API without API key", async () => {
@@ -195,6 +227,7 @@ describe("dashboard guard local-only access", () => {
     mocks.validateApiKey.mockResolvedValue(false);
     mocks.getConsistentMachineId.mockResolvedValue("cli-token");
     mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+    process.env.NINE_ROUTER_REQUEST_PROOF = REQUEST_PROOF;
   });
 
   it("rejects local-only route from non-loopback host without CLI token", async () => {
@@ -222,6 +255,8 @@ describe("dashboard guard local-only access", () => {
     const response = await proxy(request("/api/cli-tools/antigravity-mitm", {
       host: "localhost:20128",
       origin: "http://localhost:20128",
+      "x-9r-real-ip": "127.0.0.1",
+      "x-9r-request-proof": REQUEST_PROOF,
     }));
 
     expect(response).toBe(mocks.nextResponse);
@@ -243,6 +278,8 @@ describe("dashboard guard local-only access", () => {
     const response = await proxy(request("/api/cli-tools/antigravity-mitm", {
       host: "localhost:20128",
       origin: "http://evil.example.com",
+      "x-9r-real-ip": "127.0.0.1",
+      "x-9r-request-proof": REQUEST_PROOF,
     }));
 
     expect(response.status).toBe(403);

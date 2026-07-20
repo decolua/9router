@@ -1,6 +1,7 @@
 // Public API barrel — all DB functions
 import { getAdapter } from "./driver.js";
 import { stringifyJson, parseJson } from "./helpers/jsonCol.js";
+import { clearAllPendingApiKeyClientActivity } from "./repos/apiKeyClientsRepo.js";
 
 // Settings
 export {
@@ -29,11 +30,14 @@ export {
 
 // API keys
 export {
-  getApiKeys, getApiKeyById, createApiKey, updateApiKey, deleteApiKey, validateApiKey,
+  getApiKeys, getApiKeyById, createApiKey, updateApiKey, deleteApiKey,
+  validateApiKey, getActiveApiKeyId,
 } from "./repos/apiKeysRepo.js";
 
 export {
-  recordApiKeyClientRequest, getApiKeyClientActivity,
+  recordApiKeyClientRequest, flushApiKeyClientActivity,
+  clearPendingApiKeyClientActivity, clearAllPendingApiKeyClientActivity,
+  getApiKeyClientActivity,
 } from "./repos/apiKeyClientsRepo.js";
 
 // Combos
@@ -102,6 +106,7 @@ export async function importDb(payload) {
     throw new Error("Invalid database payload");
   }
   const db = await getAdapter();
+  clearAllPendingApiKeyClientActivity();
 
   db.transaction(() => {
     // Wipe all tables (keep _meta)

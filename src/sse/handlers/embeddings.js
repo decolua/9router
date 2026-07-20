@@ -12,6 +12,7 @@ import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
+import { trackApiKeyClientActivity } from "../services/apiKeyClientActivity.js";
 
 /**
  * Handle embeddings request for the SSE/Next.js server.
@@ -72,6 +73,9 @@ export async function handleEmbeddings(request) {
   }
 
   const { provider, model } = modelInfo;
+  if (apiKey) {
+    await trackApiKeyClientActivity({ request, body, apiKey, endpoint: url.pathname });
+  }
 
   if (modelStr !== `${provider}/${model}`) {
     log.info("ROUTING", `${modelStr} → ${provider}/${model}`);

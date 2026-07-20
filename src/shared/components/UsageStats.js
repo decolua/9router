@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef, useReducer } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { FREE_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers";
 
@@ -19,6 +19,10 @@ import dynamic from "next/dynamic";
 const ProviderTopology = dynamic(() => import("@/app/(dashboard)/dashboard/usage/components/ProviderTopology"), { ssr: false });
 import UsageChart from "@/app/(dashboard)/dashboard/usage/components/UsageChart";
 import ApiKeyClientsTable from "@/app/(dashboard)/dashboard/usage/components/ApiKeyClientsTable";
+import {
+  createClientActivityState,
+  reduceClientActivity,
+} from "@/app/(dashboard)/dashboard/usage/components/apiKeyClientState";
 
 function timeAgo(timestamp) {
   const diff = Math.floor((Date.now() - new Date(timestamp)) / 1000);
@@ -214,8 +218,11 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   const [fetching, setFetching] = useState(false);
   const [tableView, setTableView] = useState("model");
   const [viewMode, setViewMode] = useState("costs");
-  const [clientActivity, setClientActivity] = useState({ clients: [], summaries: [] });
-  const [clientsLoading, setClientsLoading] = useState(false);
+  const [clientActivity, dispatchClientActivity] = useReducer(
+    reduceClientActivity,
+    undefined,
+    createClientActivityState,
+  );
   const [providers, setProviders] = useState([]);
   const [periodLocal, setPeriodLocal] = useState("today");
   const isInitialLoad = useRef(true);
@@ -286,17 +293,16 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
     let timer = null;
 
     const loadClients = async () => {
-      setClientsLoading(true);
+      dispatchClientActivity({ type: "start", period });
       try {
         const response = await fetch(`/api/usage/clients?period=${period}`, { cache: "no-store" });
-        if (!response.ok) return;
+        if (!response.ok) throw new Error("Client activity request failed");
         const data = await response.json();
-        if (!cancelled) setClientActivity(data);
+        if (!cancelled) dispatchClientActivity({ type: "success", period, data });
       } catch {
-        // Keep last successful snapshot.
+        if (!cancelled) dispatchClientActivity({ type: "failure", period });
       } finally {
         if (!cancelled) {
-          setClientsLoading(false);
           timer = setTimeout(loadClients, 30000);
         }
       }
@@ -308,6 +314,10 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       if (timer) clearTimeout(timer);
     };
   }, [period, tableView]);
+
+  const visibleClientActivity = clientActivity.requestedPeriod === period
+    ? clientActivity
+    : { ...createClientActivityState(), requestedPeriod: period, loading: true };
 
   // SSE connection - real-time updates for activeRequests + recentRequests only
   useEffect(() => {
@@ -545,9 +555,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
           </div>}
         </div>
         {tableView === "apiClients" ? (
-          clientsLoading && clientActivity.clients.length === 0
-            ? spinner
-            : <ApiKeyClientsTable {...clientActivity} />
+          <ApiKeyClientsTable {...visibleClientActivity} />
         ) : loading ? spinner : activeTableConfig && (
           <UsageTable
             title=""
