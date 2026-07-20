@@ -21,7 +21,7 @@ export default function ToolSummaryCard({ toolId, tool, status }) {
           <div className="flex items-center gap-3">
             <div className="size-8 flex items-center justify-center shrink-0">
               {tool.image ? (
-                <Image src={tool.image} alt={tool.name} width={32} height={32} className="size-8 object-contain rounded-lg" sizes="32px" onError={(e) => { e.target.style.display = "none"; }} />
+                <Image src={tool.image} alt={tool.name} width={32} height={32} className="size-8 object-contain rounded-lg" sizes="32px" onError={(e) => { e.target.style.display = "none"; }} loading="lazy" decoding="async" />
               ) : tool.icon ? (
                 <span className="material-symbols-outlined text-[28px]" style={{ color: tool.color }}>{tool.icon}</span>
               ) : null}
