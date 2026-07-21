@@ -163,6 +163,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         "github",
         "qwen",
         "kiro",
+        "kimi",
         "kimi-coding",
         "kilocode",
         "codebuddy-cn",
@@ -208,6 +209,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
               _qoderMachineId: data._qoderMachineId,
               _qoderVerifier: data.codeVerifier,
             }
+          : (provider === "kimi" || provider === "kimi-coding")
+          ? { _kimiDeviceId: data._kimiDeviceId }
           : null;
         startPolling(
           data.device_code,

@@ -48,6 +48,48 @@ export default function ModelSelectModal({
   const [providerNodes, setProviderNodes] = useState([]);
   const [customModels, setCustomModels] = useState([]);
   const [disabledModels, setDisabledModels] = useState({});
+  const [cursorModels, setCursorModels] = useState([]);
+
+  // Cursor exposes the usable catalog per account. Keep the static catalog only
+  // as a fallback, since it quickly becomes stale and different accounts can
+  // have different model entitlements.
+  const cursorConnectionIds = useMemo(
+    () => activeProviders
+      .filter((provider) => provider.provider === "cursor" && provider.id)
+      .map((provider) => provider.id),
+    [activeProviders],
+  );
+
+  useEffect(() => {
+    if (!isOpen || cursorConnectionIds.length === 0) {
+      setCursorModels([]);
+      return undefined;
+    }
+
+    let cancelled = false;
+    Promise.all(cursorConnectionIds.map(async (connectionId) => {
+      const response = await fetch(`/api/providers/${connectionId}/models`, { cache: "no-store" });
+      if (!response.ok) return [];
+      const data = await response.json();
+      return Array.isArray(data.models) ? data.models : [];
+    }))
+      .then((modelLists) => {
+        if (cancelled) return;
+        const seen = new Set();
+        setCursorModels(modelLists.flat().filter((model) => {
+          if (!model?.id || seen.has(model.id)) return false;
+          seen.add(model.id);
+          return true;
+        }));
+      })
+      .catch((error) => {
+        // Do not hide the static fallback when the account catalog is unavailable.
+        console.warn("Unable to load Cursor models for selector:", error);
+        if (!cancelled) setCursorModels([]);
+      });
+
+    return () => { cancelled = true; };
+  }, [isOpen, cursorConnectionIds]);
 
   const fetchCombos = async () => {
     try {
@@ -280,7 +322,9 @@ export default function ModelSelectModal({
           hasModels: mergedModels.length > 0,
         };
       } else {
-        const hardcodedModels = getModelsByProviderId(providerId);
+        const hardcodedModels = providerId === "cursor" && cursorModels.length > 0
+          ? cursorModels
+          : getModelsByProviderId(providerId);
         const hardcodedIds = new Set(hardcodedModels.map((m) => m.id));
 
         // Custom models: if no hardcoded models (e.g. openrouter), show all aliases for this provider
@@ -349,7 +393,7 @@ export default function ModelSelectModal({
     });
 
     return groups;
-  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, activeProviders]);
+  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, activeProviders, cursorModels]);
 
   // Filter combos by search query (and hide combos when kindFilter is set — combos are LLM-only by design)
   const filteredCombos = useMemo(() => {
