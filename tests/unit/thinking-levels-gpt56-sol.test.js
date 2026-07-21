@@ -2,10 +2,9 @@ import { describe, it, expect } from "vitest";
 import { getThinkingLevels } from "../../open-sse/providers/thinkingLevels.js";
 
 describe("getThinkingLevels", () => {
-  it("adds max for gpt-5.6-sol on codex", () => {
-    const levels = getThinkingLevels("codex", "gpt-5.6-sol");
-    expect(levels).toContain("max");
-    expect(levels).toContain("xhigh");
+  it.each(["sol", "terra", "luna"])("adds max for gpt-5.6-%s on codex", (variant) => {
+    const levels = getThinkingLevels("codex", `gpt-5.6-${variant}`);
+    expect(levels).toEqual(["none", "low", "medium", "high", "xhigh", "max"]);
     expect(levels).not.toContain("ultra");
   });
 
@@ -14,7 +13,7 @@ describe("getThinkingLevels", () => {
     expect(levels).toEqual(["low", "medium", "high", "xhigh"]);
   });
 
-  it("does not add max for other gpt-5.6 models", () => {
+  it("does not add max for legacy gpt models", () => {
     const levels = getThinkingLevels("codex", "gpt-5.5");
     expect(levels || []).not.toContain("max");
   });

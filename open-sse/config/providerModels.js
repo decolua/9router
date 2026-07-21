@@ -2,7 +2,14 @@ import { PROVIDERS } from "./providers.js";
 import REGISTRY from "../providers/registry/index.js";
 // PROVIDER_MODELS now built from providers/registry (transport + models co-located)
 import { PROVIDER_MODELS } from "../providers/index.js";
-import { modelQuotaFamily, modelStrip, modelTargetFormat, normalizeModelId } from "../providers/models/schema.js";
+import {
+  modelQuotaFamily,
+  modelReasoningEfforts,
+  modelReasoningModes,
+  modelStrip,
+  modelTargetFormat,
+  normalizeModelId,
+} from "../providers/models/schema.js";
 import { CODEX_REVIEW_SUFFIX } from "../providers/models/helpers.js";
 
 export { PROVIDER_MODELS };
@@ -81,6 +88,16 @@ export function getModelUpstreamId(aliasOrId, modelId) {
 export function getModelQuotaFamily(aliasOrId, modelId) {
   const models = PROVIDER_MODELS[aliasOrId];
   return modelQuotaFamily(findModel(models, modelId, aliasOrId));
+}
+
+export function getModelReasoningEfforts(aliasOrId, modelId) {
+  const models = PROVIDER_MODELS[aliasOrId];
+  return modelReasoningEfforts(findModel(models, modelId, aliasOrId));
+}
+
+export function getModelReasoningModes(aliasOrId, modelId) {
+  const models = PROVIDER_MODELS[aliasOrId];
+  return modelReasoningModes(findModel(models, modelId, aliasOrId));
 }
 
 // OAuth short aliases — derived from registry `alias` (single source). everything else: alias = id.

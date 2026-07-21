@@ -7,7 +7,7 @@ import {
 } from "../services/oauthCredentialManager.js";
 import { normalizeResponsesInput } from "../translator/formats/responsesApi.js";
 import { fetchImageAsBase64 } from "../translator/concerns/image.js";
-import { getModelUpstreamId } from "../config/providerModels.js";
+import { getModelReasoningEfforts, getModelUpstreamId } from "../config/providerModels.js";
 import { DEFAULT_RETRY_CONFIG, HTTP_STATUS, resolveRetryEntry } from "../config/runtimeConfig.js";
 import { dbg } from "../utils/debugLog.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
@@ -124,8 +124,24 @@ function resolveCacheSessionId(body, credentials) {
   });
 }
 
-function normalizeReasoningEffort(value) {
-  return value === "max" ? "xhigh" : value;
+const CODEX_REASONING_EFFORT_SUFFIXES = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+function splitReasoningEffortSuffix(modelId) {
+  if (typeof modelId !== "string") return { modelId, effort: null };
+  for (const effort of CODEX_REASONING_EFFORT_SUFFIXES) {
+    const suffix = `-${effort}`;
+    if (modelId.endsWith(suffix)) {
+      return { modelId: modelId.slice(0, -suffix.length), effort };
+    }
+  }
+  return { modelId, effort: null };
+}
+
+function normalizeReasoningEffort(value, supportedEfforts, modelId) {
+  if (!value) return value;
+  if (!supportedEfforts) return value === "max" ? "xhigh" : value;
+  if (supportedEfforts.includes(value)) return value;
+  throw new Error(`Unsupported reasoning effort "${value}" for Codex model "${modelId}"`);
 }
 
 function findNestedMessage(value, depth = 0) {
@@ -422,30 +438,24 @@ export class CodexExecutor extends BaseExecutor {
       body.prompt_cache_key = this._currentSessionId;
     }
 
-    // Map virtual Codex review models to the upstream Codex model before suffix parsing.
-    body.model = getModelUpstreamId("cx", body.model || model);
-
-    // Extract thinking level from model name suffix
+    // Extract thinking level from the requested model before resolving virtual aliases.
     // e.g., gpt-5.3-codex-high → high, gpt-5.3-codex → medium (default)
-    const effortLevels = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
-    let modelEffort = null;
-    for (const level of effortLevels) {
-      if (body.model.endsWith(`-${level}`)) {
-        modelEffort = level;
-        // Strip suffix from model name for actual API call
-        body.model = body.model.replace(`-${level}`, '');
-        break;
-      }
-    }
+    const requested = splitReasoningEffortSuffix(body.model || model);
+    const supportedEfforts = getModelReasoningEfforts("cx", requested.modelId);
+    body.model = getModelUpstreamId("cx", requested.modelId);
 
     // Priority: explicit reasoning.effort > reasoning_effort param > model suffix > default (medium)
-    if (!body.reasoning) {
-      const effort = normalizeReasoningEffort(body.reasoning_effort || modelEffort || 'low');
-      body.reasoning = { effort, summary: "auto" };
-    } else {
-      body.reasoning.effort = normalizeReasoningEffort(body.reasoning.effort);
-      if (!body.reasoning.summary) body.reasoning.summary = "auto";
-    }
+    const explicitEffort = body.reasoning && typeof body.reasoning === "object"
+      ? body.reasoning.effort
+      : null;
+    const effort = normalizeReasoningEffort(
+      explicitEffort || body.reasoning_effort || requested.effort || "low",
+      supportedEfforts,
+      requested.modelId,
+    );
+    if (!body.reasoning || typeof body.reasoning !== "object") body.reasoning = {};
+    body.reasoning.effort = effort;
+    if (!body.reasoning.summary) body.reasoning.summary = "auto";
     delete body.reasoning_effort;
 
     // Include reasoning encrypted content (required by Codex backend for reasoning models)

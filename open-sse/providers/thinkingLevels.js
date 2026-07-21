@@ -2,12 +2,13 @@
 // Reuses capabilities.js (thinkingFormat/canDisable) so this file only maps format→levels (DRY).
 import { getCapabilitiesForModel } from "./capabilities.js";
 import { matchPattern } from "./pricing.js";
+import { getModelReasoningEfforts, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 
 // Shared level sets (deduped) — verified against provider docs + wire in thinkingUnified.applyFormat.
 const L = {
   base: ["none", "low", "medium", "high"],                          // qwen, step, hunyuan, gemini-budget
   onOff: ["none", "thinking"],                                      // zai (binary), minimax (adaptive)
-  openai: ["none", "minimal", "low", "medium", "high", "xhigh"],    // GPT-5.x / o-series (no "max")
+  openai: ["none", "minimal", "low", "medium", "high", "xhigh"],    // GPT-5.x / o-series; per-model metadata may add max
   levelMax: ["none", "low", "medium", "high", "max"],               // claude-adaptive, kimi
   budgetX: ["none", "low", "medium", "high", "xhigh", "max"],       // claude-budget
   gemini: ["minimal", "low", "medium", "high"],                     // gemini-3 thinkingLevel (no disable)
@@ -32,8 +33,6 @@ const FORMAT_LEVELS = {
 
 // Model-name pattern overrides (glob, first match wins) — more precise than format default.
 const PATTERN_THINKING = [
-  // gpt-5.6-sol accepts max (maps to xhigh on wire); live probe rejected ultra.
-  { pattern: "*gpt-5.6-sol*", levels: ["none", "minimal", "low", "medium", "high", "xhigh", "max"] },
   { pattern: "*codex*", levels: ["low", "medium", "high", "xhigh"] }, // codex cannot disable thinking
 ];
 
@@ -41,8 +40,10 @@ const PATTERN_THINKING = [
 export function getThinkingLevels(provider, model) {
   const caps = getCapabilitiesForModel(provider, model);
   if (!caps.reasoning) return null;
+  const alias = PROVIDER_ID_TO_ALIAS[provider] || provider;
+  const configured = getModelReasoningEfforts(alias, model);
   const hit = PATTERN_THINKING.find((p) => matchPattern(p.pattern, model));
-  let levels = hit?.levels || FORMAT_LEVELS[caps.thinkingFormat] || L.base;
+  let levels = configured || hit?.levels || FORMAT_LEVELS[caps.thinkingFormat] || L.base;
   if (caps.thinkingCanDisable === false) levels = levels.filter((l) => l !== "none");
   return levels;
 }

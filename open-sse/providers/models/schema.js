@@ -14,7 +14,9 @@ export const MODEL_DEFAULTS = {
   kind: "llm",
   quotaFamily: "normal",
   strip: [],
-  targetFormat: null
+  targetFormat: null,
+  reasoningEfforts: null,
+  reasoningModes: null,
 };
 
 // Normalize a registry model entry: accept terse "id" string, fill name via regex when omitted.
@@ -37,4 +39,10 @@ export function modelStrip(model) {
 }
 export function modelTargetFormat(model) {
   return model?.targetFormat || MODEL_DEFAULTS.targetFormat;
+}
+export function modelReasoningEfforts(model) {
+  return Array.isArray(model?.reasoningEfforts) ? model.reasoningEfforts : MODEL_DEFAULTS.reasoningEfforts;
+}
+export function modelReasoningModes(model) {
+  return Array.isArray(model?.reasoningModes) ? model.reasoningModes : MODEL_DEFAULTS.reasoningModes;
 }
