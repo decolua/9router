@@ -30,7 +30,9 @@ export function extractUsageFromResponse(responseBody) {
       prompt_tokens: responseBody.usage.input_tokens || 0,
       completion_tokens: responseBody.usage.output_tokens || 0,
       cache_read_input_tokens: responseBody.usage.cache_read_input_tokens,
-      cache_creation_input_tokens: responseBody.usage.cache_creation_input_tokens
+      cache_creation_input_tokens: responseBody.usage.cache_creation_input_tokens,
+      cached_tokens: responseBody.usage.input_tokens_details?.cached_tokens,
+      reasoning_tokens: responseBody.usage.output_tokens_details?.reasoning_tokens
     };
   }
 
@@ -82,6 +84,7 @@ export function formatDoneLine({ usage, latency }) {
   const outTok = u.completion_tokens ?? u.output_tokens ?? 0;
   const cacheRead = u.cache_read_input_tokens ?? u.cached_tokens ?? u.prompt_tokens_details?.cached_tokens ?? 0;
   const cacheCreate = u.cache_creation_input_tokens ?? 0;
+  const reasoning = u.reasoning_tokens ?? u.output_tokens_details?.reasoning_tokens ?? u.completion_tokens_details?.reasoning_tokens ?? 0;
   let inStr = `IN ${inTok}`;
   if (cacheRead || cacheCreate) {
     const parts = [];
@@ -90,7 +93,8 @@ export function formatDoneLine({ usage, latency }) {
     inStr += ` (CACHE ${parts.join(" ")})`;
   }
   const ttftStr = latency?.ttft ? ` · TTFT ${latency.ttft}ms` : "";
-  return `DONE ${latency?.total ?? 0}ms${ttftStr} · ${inStr} · OUT ${outTok}`;
+  const reasoningStr = reasoning ? ` · REASONING ${reasoning}` : "";
+  return `DONE ${latency?.total ?? 0}ms${ttftStr} · ${inStr} · OUT ${outTok}${reasoningStr}`;
 }
 
 export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, endpoint, label = "USAGE", silent = false }) {

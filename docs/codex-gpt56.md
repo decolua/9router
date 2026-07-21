@@ -120,6 +120,31 @@ Normal `/responses` and `/responses/compact` requests are routed independently.
 The fork has unit coverage for the Pro compact request shape; backend acceptance
 must still be confirmed with the account and Codex rollout used in production.
 
+## Controlled live-validation status
+
+The fork's automated gate validates the request shapes, alias resolution,
+fallback behavior, redacted route trace, TOML parsing, and production build. It
+does not contain a ChatGPT test account, so it does not claim live entitlement
+or backend acceptance for any of these six treatments:
+
+| Treatment | Automated wire test | Isolated account smoke |
+| --- | --- | --- |
+| Standard / Medium | Covered | Required |
+| Standard / XHigh | Covered | Required |
+| Standard / Max | Covered | Required |
+| Pro / Medium | Covered | Required |
+| Pro / XHigh | Covered | Required |
+| Pro / Max | Covered | Required |
+
+Run that matrix with one non-critical account, a temporary 9Router data
+directory, the same minimal prompt, and the same output limit. Stop on the first
+entitlement or unexpected-usage error. Record status, latency, input tokens,
+output tokens, reasoning tokens, and whether the endpoint was `responses` or
+`compact`. The `CODEX_ROUTE` log contains only bounded routing fields; the
+normal completion line adds `REASONING <tokens>` when the upstream reports it.
+Do not copy prompts, authorization headers, OAuth tokens, or encrypted reasoning
+into the validation report.
+
 See the current Codex documentation for
 [custom model providers](https://learn.chatgpt.com/docs/config-file/config-advanced#custom-model-providers),
 [profiles](https://learn.chatgpt.com/docs/config-file/config-advanced#profiles),

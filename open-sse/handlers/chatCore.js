@@ -6,7 +6,7 @@ import { normalizeClaudePassthrough } from "../translator/formats/claude.js";
 import { createStreamController } from "../utils/streamHandler.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
-import { getModelTargetFormat, getModelStrip, getModelUpstreamId, getModelType, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
+import { getModelReasoningMode, getModelTargetFormat, getModelStrip, getModelUpstreamId, getModelType, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { PROVIDERS } from "../config/providers.js";
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
 import { HTTP_STATUS, TOKEN_SAVER_HEADER } from "../config/runtimeConfig.js";
@@ -30,6 +30,22 @@ import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { extractThinking } from "../translator/concerns/thinkingUnified.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
+import { FALLBACK_SCOPE_REQUEST, normalizeFallbackScope } from "../services/fallbackScope.js";
+import { formatCodexDecisionLog } from "../utils/codexObservability.js";
+
+function logCodexDecision({ log, provider, model, upstreamModel, requestBody, upstreamBody, compact, status, fallbackScope }) {
+  if (provider !== "codex" || !log?.info) return;
+  log.info("CODEX_ROUTE", formatCodexDecisionLog({
+    requestedModel: model,
+    upstreamModel,
+    requestBody,
+    upstreamBody,
+    aliasMode: getModelReasoningMode("cx", model),
+    compact,
+    status,
+    fallbackScope,
+  }));
+}
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -143,7 +159,12 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     translatedBody = translateRequest(sourceFormat, targetFormat, upstreamModel, body, stream, credentials, provider, reqLogger, stripList, connectionId, clientTool);
     if (!translatedBody) {
       trackPendingRequest(model, provider, connectionId, false, true);
-      return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Failed to translate request for ${sourceFormat} → ${targetFormat}`);
+      return createErrorResult(
+        HTTP_STATUS.BAD_REQUEST,
+        `Failed to translate request for ${sourceFormat} → ${targetFormat}`,
+        undefined,
+        FALLBACK_SCOPE_REQUEST,
+      );
     }
     toolNameMap = translatedBody._toolNameMap;
     delete translatedBody._toolNameMap;
@@ -303,28 +324,45 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     providerResponseFormat = result.responseFormat || targetFormat;
     reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
   } catch (error) {
+    const aborted = error.name === "AbortError";
+    const numericErrorStatus = Number(error.status);
+    const errorStatus = aborted
+      ? 499
+      : (Number.isInteger(numericErrorStatus) && numericErrorStatus >= 400 && numericErrorStatus <= 599
+        ? numericErrorStatus
+        : HTTP_STATUS.BAD_GATEWAY);
+    const fallbackScope = aborted ? FALLBACK_SCOPE_REQUEST : normalizeFallbackScope(error.fallbackScope);
     trackPendingRequest(model, provider, connectionId, false, true);
-    appendRequestLog({ model, provider, connectionId, status: `FAILED ${error.name === "AbortError" ? 499 : HTTP_STATUS.BAD_GATEWAY}` }).catch(() => { });
+    appendRequestLog({ model, provider, connectionId, status: `FAILED ${errorStatus}` }).catch(() => { });
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId,
       latency: { ttft: 0, total: Date.now() - requestStartTime },
       tokens: { prompt_tokens: 0, completion_tokens: 0 },
       request: extractRequestConfig(body, stream),
       providerRequest: translatedBody || null,
-      response: { error: error.message || String(error), status: error.name === "AbortError" ? 499 : 502, thinking: null },
+      response: { error: error.message || String(error), status: errorStatus, thinking: null },
       pxpipe: pxpipeSummary,
       status: "error"
     })).catch(() => { });
 
-    if (error.name === "AbortError") {
+    logCodexDecision({
+      log, provider, model, upstreamModel,
+      requestBody: body,
+      upstreamBody: translatedBody,
+      compact: body?._compact === true,
+      status: errorStatus,
+      fallbackScope,
+    });
+
+    if (aborted) {
       streamController.handleError(error);
-      return createErrorResult(499, "Request aborted");
+      return createErrorResult(499, "Request aborted", undefined, FALLBACK_SCOPE_REQUEST);
     }
-    const errMsg = formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
+    const errMsg = formatProviderError(error, provider, model, errorStatus);
     if (log?.errorLine) {
-      log.errorLine(reqTag, "✗", `ERROR 502 · ${provider}/${model} · ${Date.now() - requestStartTime}ms\n    ${errMsg}${error.stack ? `\n    ${error.stack}` : ""}`);
+      log.errorLine(reqTag, "✗", `ERROR ${errorStatus} · ${provider}/${model} · ${Date.now() - requestStartTime}ms\n    ${errMsg}${error.stack ? `\n    ${error.stack}` : ""}`);
     }
-    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg);
+    return createErrorResult(errorStatus, errMsg, undefined, fallbackScope);
   }
 
   // Handle 401/403 - try token refresh (skip for noAuth providers)
@@ -356,7 +394,15 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Provider returned error
   if (!providerResponse.ok) {
     trackPendingRequest(model, provider, connectionId, false, true);
-    const { statusCode, message, resetsAtMs } = await parseUpstreamError(providerResponse, executor);
+    const { statusCode, message, resetsAtMs, fallbackScope } = await parseUpstreamError(providerResponse, executor);
+    logCodexDecision({
+      log, provider, model, upstreamModel,
+      requestBody: body,
+      upstreamBody: finalBody || translatedBody,
+      compact: body?._compact === true || providerUrl?.endsWith("/compact"),
+      status: statusCode,
+      fallbackScope,
+    });
     appendRequestLog({ model, provider, connectionId, status: `FAILED ${statusCode}` }).catch(() => { });
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId,
@@ -375,8 +421,16 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       log.errorLine(reqTag, "✗", `ERROR ${statusCode} · ${provider}/${model} · ${Date.now() - requestStartTime}ms${urlStr}\n    ${errMsg}`);
     }
     reqLogger.logError(new Error(message), finalBody || translatedBody);
-    return createErrorResult(statusCode, errMsg, resetsAtMs);
+    return createErrorResult(statusCode, errMsg, resetsAtMs, fallbackScope);
   }
+
+  logCodexDecision({
+    log, provider, model, upstreamModel,
+    requestBody: body,
+    upstreamBody: finalBody || translatedBody,
+    compact: body?._compact === true || providerUrl?.endsWith("/compact"),
+    status: providerResponse.status,
+  });
 
   const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log };
   const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => { });

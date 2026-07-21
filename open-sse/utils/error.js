@@ -1,4 +1,5 @@
 import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES } from "../config/errorConfig.js";
+import { FALLBACK_SCOPE_ACCOUNT, normalizeFallbackScope } from "../services/fallbackScope.js";
 
 /**
  * Build OpenAI-compatible error response body
@@ -53,7 +54,7 @@ export async function writeStreamError(writer, statusCode, message) {
  * Parse upstream provider error response
  * @param {Response} response - Fetch response from provider
  * @param {object} [executor] - Optional executor with parseError() override for provider-specific parsing
- * @returns {Promise<{statusCode: number, message: string, resetsAtMs?: number}>}
+ * @returns {Promise<{statusCode: number, message: string, resetsAtMs?: number, fallbackScope: "request"|"account"}>}
  */
 export async function parseUpstreamError(response, executor = null) {
   let bodyText = "";
@@ -69,7 +70,12 @@ export async function parseUpstreamError(response, executor = null) {
       const parsed = executor.parseError(response, bodyText);
       if (parsed && typeof parsed === "object") {
         const msg = parsed.message || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
-        return { statusCode: parsed.status || response.status, message: msg, resetsAtMs: parsed.resetsAtMs };
+        return {
+          statusCode: parsed.status || response.status,
+          message: msg,
+          resetsAtMs: parsed.resetsAtMs,
+          fallbackScope: normalizeFallbackScope(parsed.fallbackScope),
+        };
       }
     } catch { /* fall through to default parsing */ }
   }
@@ -85,7 +91,7 @@ export async function parseUpstreamError(response, executor = null) {
   const messageStr = typeof message === "string" ? message : JSON.stringify(message);
   const finalMessage = messageStr || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
 
-  return { statusCode: response.status, message: finalMessage };
+  return { statusCode: response.status, message: finalMessage, fallbackScope: FALLBACK_SCOPE_ACCOUNT };
 }
 
 /**
@@ -93,14 +99,16 @@ export async function parseUpstreamError(response, executor = null) {
  * @param {number} statusCode - HTTP status code
  * @param {string} message - Error message
  * @param {number} [resetsAtMs] - Optional precise cooldown expiry (ms epoch) for provider-specific quota errors
- * @returns {{ success: false, status: number, error: string, response: Response, resetsAtMs?: number }}
+ * @param {"request"|"account"} [fallbackScope="account"] - Whether another account could help
+ * @returns {{ success: false, status: number, error: string, response: Response, resetsAtMs?: number, fallbackScope: "request"|"account" }}
  */
-export function createErrorResult(statusCode, message, resetsAtMs) {
+export function createErrorResult(statusCode, message, resetsAtMs, fallbackScope = FALLBACK_SCOPE_ACCOUNT) {
   return {
     success: false,
     status: statusCode,
     error: message,
     resetsAtMs,
+    fallbackScope: normalizeFallbackScope(fallbackScope),
     response: errorResponse(statusCode, message)
   };
 }

@@ -14,6 +14,7 @@ import {
   getModelUpstreamId,
 } from "../config/providerModels.js";
 import { DEFAULT_RETRY_CONFIG, HTTP_STATUS, resolveRetryEntry } from "../config/runtimeConfig.js";
+import { FALLBACK_SCOPE_ACCOUNT, FALLBACK_SCOPE_REQUEST } from "../services/fallbackScope.js";
 import { dbg } from "../utils/debugLog.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 
@@ -28,6 +29,13 @@ const CODEX_SSE_USER_OUTPUT_PATTERNS = [
 ];
 const CODEX_SSE_PEEK_BYTES = 256 * 1024;
 const CODEX_MODEL_CAPACITY_MESSAGE = "Selected model is at capacity. Please try a different model.";
+const CODEX_REQUEST_SCOPE_STATUSES = new Set([400, 404, 422]);
+const CODEX_REQUEST_SCOPE_PATTERNS = [
+  /(?:unsupported|invalid).*(?:reasoning|effort|mode|model)/i,
+  /(?:reasoning|effort|mode|model).*(?:unsupported|invalid|not available|not supported|does not support)/i,
+  /(?:entitlement|subscription|plan).*(?:pro|reasoning|model)/i,
+  /(?:pro|reasoning|model).*(?:entitlement|subscription|plan|required|access)/i,
+];
 
 // Server-generated item id prefixes that Codex /responses cannot resolve when store=false
 const SERVER_ID_PATTERN = /^(rs|fc|resp|msg)_/;
@@ -142,17 +150,32 @@ function splitReasoningEffortSuffix(modelId) {
   return { modelId, effort: null };
 }
 
+export function classifyCodexFallbackScope(status, message = "") {
+  if (CODEX_REQUEST_SCOPE_STATUSES.has(Number(status))) return FALLBACK_SCOPE_REQUEST;
+  if (Number(status) === 403 && CODEX_REQUEST_SCOPE_PATTERNS.some((pattern) => pattern.test(String(message)))) {
+    return FALLBACK_SCOPE_REQUEST;
+  }
+  return FALLBACK_SCOPE_ACCOUNT;
+}
+
+function codexRequestError(message) {
+  const error = new Error(message);
+  error.status = HTTP_STATUS.BAD_REQUEST;
+  error.fallbackScope = FALLBACK_SCOPE_REQUEST;
+  return error;
+}
+
 function normalizeReasoningEffort(value, supportedEfforts, modelId) {
   if (!value) return value;
   if (!supportedEfforts) return value === "max" ? "xhigh" : value;
   if (supportedEfforts.includes(value)) return value;
-  throw new Error(`Unsupported reasoning effort "${value}" for Codex model "${modelId}"`);
+  throw codexRequestError(`Unsupported reasoning effort "${value}" for Codex model "${modelId}"`);
 }
 
 function normalizeReasoningMode(value, supportedModes, modelId) {
   if (value == null || value === "") return null;
   if (!supportedModes || supportedModes.includes(value)) return value;
-  throw new Error(`Unsupported reasoning mode "${value}" for Codex model "${modelId}"`);
+  throw codexRequestError(`Unsupported reasoning mode "${value}" for Codex model "${modelId}"`);
 }
 
 function findNestedMessage(value, depth = 0) {
@@ -404,12 +427,16 @@ export class CodexExecutor extends BaseExecutor {
             resetsAtMs = now + err.resets_in_seconds * 1000;
           }
           if (resetsAtMs) {
-            return { status: 429, message: err.message || bodyText, resetsAtMs };
+            return { status: 429, message: err.message || bodyText, resetsAtMs, fallbackScope: FALLBACK_SCOPE_ACCOUNT };
           }
         }
       } catch { /* fall through to default */ }
     }
-    return super.parseError(response, bodyText);
+    const parsed = super.parseError(response, bodyText);
+    return {
+      ...parsed,
+      fallbackScope: classifyCodexFallbackScope(parsed.status || response.status, parsed.message || bodyText),
+    };
   }
 
   /**
@@ -457,7 +484,9 @@ export class CodexExecutor extends BaseExecutor {
 
     // Extract thinking level from the requested model before resolving virtual aliases.
     // e.g., gpt-5.3-codex-high → high, gpt-5.3-codex → medium (default)
-    const requested = splitReasoningEffortSuffix(body.model || model);
+    // `body.model` may already be the upstream id because chatCore resolves
+    // virtual models before dispatch. Keep the route-level model for metadata.
+    const requested = splitReasoningEffortSuffix(model || body.model);
     const supportedEfforts = getModelReasoningEfforts("cx", requested.modelId);
     const supportedModes = getModelReasoningModes("cx", requested.modelId);
     const aliasMode = getModelReasoningMode("cx", requested.modelId);

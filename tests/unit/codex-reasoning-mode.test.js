@@ -34,6 +34,17 @@ describe("Codex GPT-5.6 reasoning modes", () => {
     expect(body.reasoning).toEqual({ effort: "xhigh", mode: "standard", summary: "auto" });
   });
 
+  it("keeps alias metadata when chatCore has already resolved body.model", () => {
+    const executor = new CodexExecutor();
+    const body = executor.transformRequest("gpt-5.6-sol-pro", {
+      model: "gpt-5.6-sol",
+      input: "Reply only OK",
+      reasoning_effort: "max",
+    }, true, {});
+    expect(body.model).toBe("gpt-5.6-sol");
+    expect(body.reasoning).toEqual({ effort: "max", summary: "auto", mode: "pro" });
+  });
+
   it("preserves an explicit Pro mode on a base model", () => {
     const { body } = transform("gpt-5.6-terra", {
       reasoning: { effort: "max", mode: "pro" },
