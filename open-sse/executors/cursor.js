@@ -288,10 +288,6 @@ export class CursorExecutor extends BaseExecutor {
     const machineId = credentials.providerSpecificData?.machineId;
     const ghostMode = credentials.providerSpecificData?.ghostMode !== false;
 
-    if (!machineId) {
-      throw new Error("Machine ID is required for Cursor API");
-    }
-
     return buildCursorHeaders(accessToken, machineId, ghostMode);
   }
 

@@ -45,7 +45,7 @@ export async function POST(request) {
       authType: "oauth",
       accessToken: tokenData.accessToken,
       refreshToken: null, // Cursor doesn't have public refresh endpoint
-      expiresAt: new Date(Date.now() + tokenData.expiresIn * 1000).toISOString(),
+      expiresAt: tokenData.expiresAt,
       email: userInfo?.email || null,
       providerSpecificData: {
         machineId: tokenData.machineId,
