@@ -19,6 +19,9 @@ export default {
     baseUrl: "https://api.githubcopilot.com/chat/completions",
     responsesUrl: "https://api.githubcopilot.com/responses",
     messagesUrl: "https://api.githubcopilot.com/v1/messages",
+    countTokensUrl: "https://api.githubcopilot.com/v1/messages/count_tokens",
+    countTokensPreflightRatio: 0.5,
+    countTokensTimeoutMs: 10000,
     headers: {
       "copilot-integration-id": "vscode-chat",
       "editor-version": "vscode/1.110.0",

@@ -48,6 +48,22 @@ describe("getCapabilitiesForModel", () => {
     expect(getCapabilitiesForModel("kiro", "claude-sonnet-5-thinking-agentic")).toMatchObject(claudeSonnet5Expected);
   });
 
+  it("keeps Copilot Claude prompt and output limits provider-specific", () => {
+    for (const model of ["claude-fable-5", "claude-opus-4.8"]) {
+      expect(getCapabilitiesForModel("github", model)).toMatchObject({
+        contextWindow: 264000,
+        maxPrompt: 200000,
+        maxOutput: 64000,
+        thinkingFormat: "claude-adaptive",
+        reasoning: true,
+      });
+    }
+    expect(getCapabilitiesForModel("kiro", "claude-opus-4.8")).toMatchObject({
+      contextWindow: 1000000,
+      maxOutput: 128000,
+    });
+  });
+
   it("reports Kiro GPT 5.6 models with the Kiro 272k context window", () => {
     expect(getCapabilitiesForModel("kiro", "gpt-5.6-sol")).toMatchObject(kiroGpt56Expected);
     expect(getCapabilitiesForModel("kiro", "openai/gpt-5.6-sol")).toMatchObject(kiroGpt56Expected);
