@@ -17,6 +17,7 @@ export const MODEL_DEFAULTS = {
   targetFormat: null,
   reasoningEfforts: null,
   reasoningModes: null,
+  reasoningMode: null,
 };
 
 // Normalize a registry model entry: accept terse "id" string, fill name via regex when omitted.
@@ -45,4 +46,7 @@ export function modelReasoningEfforts(model) {
 }
 export function modelReasoningModes(model) {
   return Array.isArray(model?.reasoningModes) ? model.reasoningModes : MODEL_DEFAULTS.reasoningModes;
+}
+export function modelReasoningMode(model) {
+  return typeof model?.reasoningMode === "string" ? model.reasoningMode : MODEL_DEFAULTS.reasoningMode;
 }

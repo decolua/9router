@@ -5,6 +5,7 @@ import { PROVIDER_MODELS } from "../providers/index.js";
 import {
   modelQuotaFamily,
   modelReasoningEfforts,
+  modelReasoningMode,
   modelReasoningModes,
   modelStrip,
   modelTargetFormat,
@@ -98,6 +99,11 @@ export function getModelReasoningEfforts(aliasOrId, modelId) {
 export function getModelReasoningModes(aliasOrId, modelId) {
   const models = PROVIDER_MODELS[aliasOrId];
   return modelReasoningModes(findModel(models, modelId, aliasOrId));
+}
+
+export function getModelReasoningMode(aliasOrId, modelId) {
+  const models = PROVIDER_MODELS[aliasOrId];
+  return modelReasoningMode(findModel(models, modelId, aliasOrId));
 }
 
 // OAuth short aliases — derived from registry `alias` (single source). everything else: alias = id.

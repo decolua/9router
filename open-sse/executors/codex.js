@@ -7,7 +7,12 @@ import {
 } from "../services/oauthCredentialManager.js";
 import { normalizeResponsesInput } from "../translator/formats/responsesApi.js";
 import { fetchImageAsBase64 } from "../translator/concerns/image.js";
-import { getModelReasoningEfforts, getModelUpstreamId } from "../config/providerModels.js";
+import {
+  getModelReasoningEfforts,
+  getModelReasoningMode,
+  getModelReasoningModes,
+  getModelUpstreamId,
+} from "../config/providerModels.js";
 import { DEFAULT_RETRY_CONFIG, HTTP_STATUS, resolveRetryEntry } from "../config/runtimeConfig.js";
 import { dbg } from "../utils/debugLog.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
@@ -144,6 +149,12 @@ function normalizeReasoningEffort(value, supportedEfforts, modelId) {
   throw new Error(`Unsupported reasoning effort "${value}" for Codex model "${modelId}"`);
 }
 
+function normalizeReasoningMode(value, supportedModes, modelId) {
+  if (value == null || value === "") return null;
+  if (!supportedModes || supportedModes.includes(value)) return value;
+  throw new Error(`Unsupported reasoning mode "${value}" for Codex model "${modelId}"`);
+}
+
 function findNestedMessage(value, depth = 0) {
   if (!value || depth > 6 || typeof value === "string") return null;
   if (Array.isArray(value)) {
@@ -204,6 +215,7 @@ export class CodexExecutor extends BaseExecutor {
   constructor() {
     super("codex", PROVIDERS.codex);
     this._currentSessionId = null;
+    this._isCompact = false;
   }
 
   /**
@@ -267,6 +279,9 @@ export class CodexExecutor extends BaseExecutor {
   }
 
   async execute(args) {
+    // BaseExecutor resolves the URL before calling transformRequest(), so capture
+    // the endpoint choice here to keep normal and compact requests independent.
+    this._isCompact = !!args.body?._compact;
     const imgCount = Array.isArray(args.body?.input) ? args.body.input.reduce((n, it) => n + (Array.isArray(it.content) ? it.content.filter(c => c.type === "image_url").length : 0), 0) : 0;
     const inputLen = Array.isArray(args.body?.input) ? args.body.input.length : 0;
     dbg("CODEX", `execute start | inputItems=${inputLen} | images=${imgCount} | sessionId=${this._currentSessionId || "pending"}`);
@@ -402,7 +417,9 @@ export class CodexExecutor extends BaseExecutor {
    * Image fetching is handled separately in prefetchImages() so this stays sync.
    */
   transformRequest(model, body, stream, credentials) {
-    this._isCompact = !!body._compact;
+    if (Object.prototype.hasOwnProperty.call(body, "_compact")) {
+      this._isCompact = !!body._compact;
+    }
     delete body._compact;
     // Resolve conversation-stable session_id (priority: body → assistant-text → workspace → machine)
     this._currentSessionId = resolveCacheSessionId(body, credentials);
@@ -442,6 +459,8 @@ export class CodexExecutor extends BaseExecutor {
     // e.g., gpt-5.3-codex-high → high, gpt-5.3-codex → medium (default)
     const requested = splitReasoningEffortSuffix(body.model || model);
     const supportedEfforts = getModelReasoningEfforts("cx", requested.modelId);
+    const supportedModes = getModelReasoningModes("cx", requested.modelId);
+    const aliasMode = getModelReasoningMode("cx", requested.modelId);
     body.model = getModelUpstreamId("cx", requested.modelId);
 
     // Priority: explicit reasoning.effort > reasoning_effort param > model suffix > default (medium)
@@ -457,6 +476,16 @@ export class CodexExecutor extends BaseExecutor {
     body.reasoning.effort = effort;
     if (!body.reasoning.summary) body.reasoning.summary = "auto";
     delete body.reasoning_effort;
+
+    // Mode and effort are independent axes. An explicit client mode wins over
+    // virtual-alias metadata; Standard remains the upstream default when omitted.
+    const mode = normalizeReasoningMode(
+      body.reasoning.mode || aliasMode,
+      supportedModes,
+      requested.modelId,
+    );
+    if (mode) body.reasoning.mode = mode;
+    else delete body.reasoning.mode;
 
     // Include reasoning encrypted content (required by Codex backend for reasoning models)
     if (body.reasoning && body.reasoning.effort && body.reasoning.effort !== 'none') {

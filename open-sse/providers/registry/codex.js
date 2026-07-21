@@ -53,10 +53,13 @@ export default {
   },
   models: [
     { id: "gpt-5.6-sol", name: "GPT 5.6 Sol", ...GPT_56_REASONING },
+    { id: "gpt-5.6-sol-pro", name: "GPT 5.6 Sol Pro", upstreamModelId: "gpt-5.6-sol", reasoningMode: "pro", ...GPT_56_REASONING },
     { id: "gpt-5.6-sol-review", name: "GPT 5.6 Sol Review", upstreamModelId: "gpt-5.6-sol", quotaFamily: "review", ...GPT_56_REASONING },
     { id: "gpt-5.6-terra", name: "GPT 5.6 Terra", ...GPT_56_REASONING },
+    { id: "gpt-5.6-terra-pro", name: "GPT 5.6 Terra Pro", upstreamModelId: "gpt-5.6-terra", reasoningMode: "pro", ...GPT_56_REASONING },
     { id: "gpt-5.6-terra-review", name: "GPT 5.6 Terra Review", upstreamModelId: "gpt-5.6-terra", quotaFamily: "review", ...GPT_56_REASONING },
     { id: "gpt-5.6-luna", name: "GPT 5.6 Luna", ...GPT_56_REASONING },
+    { id: "gpt-5.6-luna-pro", name: "GPT 5.6 Luna Pro", upstreamModelId: "gpt-5.6-luna", reasoningMode: "pro", ...GPT_56_REASONING },
     { id: "gpt-5.6-luna-review", name: "GPT 5.6 Luna Review", upstreamModelId: "gpt-5.6-luna", quotaFamily: "review", ...GPT_56_REASONING },
     { id: "gpt-5.5", name: "GPT 5.5" },
     { id: "gpt-5.5-review", name: "GPT 5.5 Review", upstreamModelId: "gpt-5.5", quotaFamily: "review" },
