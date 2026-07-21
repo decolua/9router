@@ -7,8 +7,8 @@
   
   **Connect All AI Code Tools (Claude Code, Cursor, Antigravity, Copilot, Codex, Gemini, OpenCode, Cline, OpenClaw...) to 40+ AI Providers & 100+ Models.**
   
-  [![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
-  [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
+  [![npm fork](https://img.shields.io/npm/v/%40loldlm1%2F9router.svg)](https://www.npmjs.com/package/@loldlm1/9router)
+  [![Fork downloads](https://img.shields.io/npm/dm/%40loldlm1%2F9router.svg)](https://www.npmjs.com/package/@loldlm1/9router)
   [![Docker Pulls](https://img.shields.io/docker/pulls/decolua/9router.svg?logo=docker&label=Docker%20pulls)](https://hub.docker.com/r/decolua/9router)
   [![GHCR](https://img.shields.io/badge/GHCR-decolua%2F9router-blue?logo=github)](https://github.com/decolua/9router/pkgs/container/9router)
   [![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/decolua/9router/blob/main/LICENSE)
@@ -20,6 +20,15 @@
 [🇻🇳 Tiếng Việt](./i18n/README.vi.md) • [🇨🇳 中文](./i18n/README.zh-CN.md) • [🇯🇵 日本語](./i18n/README.ja-JP.md) • [🇷🇺 Русский](./i18n/README.ru.md) • [🇹🇭 ไทย](./i18n/README.th.md) • [🇮🇷 فارسی](./i18n/README.fa_IR.md)
 
 </div>
+
+---
+
+> [!IMPORTANT]
+> This maintained fork adds GPT-5.6 reasoning and Pro-mode support while tracking
+> `decolua/9router`. Install the scoped npm package with
+> `npm install -g @loldlm1/9router`. The upstream Docker images shown below do
+> not include fork-only changes; build an image from this repository until a
+> separate fork image channel is published.
 
 ---
 
@@ -76,7 +85,7 @@ Result: Never stop coding, minimal cost + 20-40% token savings via RTK
 **1. Install globally:**
 
 ```bash
-npm install -g 9router
+npm install -g @loldlm1/9router
 9router
 ```
 

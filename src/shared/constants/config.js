@@ -15,9 +15,13 @@ export const GITHUB_CONFIG = {
 
 // Updater configuration
 export const UPDATER_CONFIG = {
-  npmPackageName: "9router",
-  installCmd: "npm i -g 9router",
-  installCmdLatest: "npm i -g 9router@latest --prefer-online",
+  npmPackageName: "@loldlm1/9router",
+  upstreamNpmPackageName: "9router",
+  npmRegistryBaseUrl: "https://registry.npmjs.org",
+  installCmd: "npm i -g @loldlm1/9router",
+  installCmdLatest: "npm i -g @loldlm1/9router@latest --prefer-online",
+  versionCacheTtlMs: 3600000,
+  registryRequestTimeoutMs: 4000,
   shutdownCountdownSec: 3,
   exitDelayMs: 500,
   statusPort: 20129,

@@ -6,6 +6,7 @@ const fs = require("fs");
 const https = require("https");
 const net = require("net");
 const os = require("os");
+const semver = require("semver");
 
 // Poll until the server accepts TCP connections on port, or timeout — avoids blind fixed waits.
 function waitServerReady(port, { timeoutMs = 15000, intervalMs = 150 } = {}) {
@@ -89,8 +90,9 @@ try { ensureSqliteRuntime({ silent: true }); } catch {}
 try { ensureTrayRuntime({ silent: true }); } catch {}
 
 // Configuration constants
-const APP_NAME = pkg.name; // Use from package.json
-const INSTALL_CMD_LATEST = `npm i -g ${APP_NAME}@latest --prefer-online`;
+const PACKAGE_NAME = pkg.name;
+const APP_NAME = Object.keys(pkg.bin || {})[0] || "9router";
+const INSTALL_CMD_LATEST = `npm i -g ${PACKAGE_NAME}@latest --prefer-online`;
 
 const DEFAULT_PORT = 20128;
 const DEFAULT_HOST = "0.0.0.0";
@@ -173,17 +175,6 @@ if (skipUpdate && !trayMode && !process.stdin.isTTY) {
 
 // Always use Node.js runtime with absolute path
 const RUNTIME = process.execPath;
-
-// Compare semver versions: returns 1 if a > b, -1 if a < b, 0 if equal
-function compareVersions(a, b) {
-  const partsA = a.split(".").map(Number);
-  const partsB = b.split(".").map(Number);
-  for (let i = 0; i < 3; i++) {
-    if (partsA[i] > partsB[i]) return 1;
-    if (partsA[i] < partsB[i]) return -1;
-  }
-  return 0;
-}
 
 // Get app data dir (matches app/src/lib/dataDir.js convention)
 function getAppDataDir() {
@@ -482,13 +473,21 @@ function checkForUpdate() {
       resolve(version);
     };
 
-    const req = https.get(`https://registry.npmjs.org/${pkg.name}/latest`, { timeout: 3000 }, (res) => {
+    const registryUrl = `https://registry.npmjs.org/${encodeURIComponent(PACKAGE_NAME)}/latest`;
+    const req = https.get(registryUrl, { timeout: 3000 }, (res) => {
       let data = "";
       res.on("data", chunk => data += chunk);
       res.on("end", () => {
         try {
           const latest = JSON.parse(data);
-          if (latest.version && compareVersions(latest.version, pkg.version) > 0) {
+          const latestPrerelease = semver.prerelease(latest.version);
+          if (
+            semver.valid(latest.version) &&
+            latestPrerelease?.[0] === "fork" &&
+            latestPrerelease.length >= 2 &&
+            semver.valid(pkg.version) &&
+            semver.gt(latest.version, pkg.version)
+          ) {
             done(latest.version);
           } else {
             done(null);

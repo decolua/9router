@@ -51,7 +51,7 @@ export default function Sidebar({ onClose }) {
   const [enableTranslator, setEnableTranslator] = useState(false);
   const { copied, copy } = useCopyToClipboard(2000);
 
-  const INSTALL_CMD = UPDATER_CONFIG.installCmdLatest;
+  const installCmd = updateInfo?.installCommand || UPDATER_CONFIG.installCmdLatest;
 
   useEffect(() => {
     fetch("/api/settings")
@@ -64,7 +64,9 @@ export default function Sidebar({ onClose }) {
   useEffect(() => {
     fetch("/api/version")
       .then(res => res.json())
-      .then(data => { if (data.hasUpdate) setUpdateInfo(data); })
+      .then(data => {
+        if (data.forkUpdateAvailable || data.upstreamUpdatePending) setUpdateInfo(data);
+      })
       .catch(() => {});
   }, []);
 
@@ -83,8 +85,8 @@ export default function Sidebar({ onClose }) {
 
   // Triggered by Copy button inside ManualUpdatePanel: copy + countdown + shutdown
   const handleCopyAndShutdown = async () => {
-    try { await navigator.clipboard.writeText(INSTALL_CMD); } catch { /* clipboard blocked */ }
-    copy(INSTALL_CMD);
+    try { await navigator.clipboard.writeText(installCmd); } catch { /* clipboard blocked */ }
+    copy(installCmd);
     let remaining = UPDATER_CONFIG.shutdownCountdownSec;
     setShutdownCountdown(remaining);
     const timer = setInterval(() => {
@@ -130,28 +132,40 @@ export default function Sidebar({ onClose }) {
               <span className="text-xs text-text-muted">v{APP_CONFIG.version}</span>
             </div>
           </Link>
-          {updateInfo && (
-            <div className="flex flex-col gap-1.5 rounded p-1 -m-1">
+          {updateInfo?.forkUpdateAvailable && (
+            <div className="flex flex-col gap-1.5 rounded p-1 -m-1" aria-live="polite">
               <span className="text-xs font-semibold text-green-600 dark:text-amber-500">
-                ↑ New version available: v{updateInfo.latestVersion}
+                ↑ Fork update ready: v{updateInfo.forkLatestVersion}
               </span>
               <div className="flex items-center gap-2">
                 <button
+                  type="button"
                   onClick={() => setShowUpdateModal(true)}
+                  aria-label={`Update the 9Router fork to version ${updateInfo.forkLatestVersion}`}
                   className="px-2 py-1 rounded bg-green-600 hover:bg-green-700 dark:bg-amber-500 dark:hover:bg-amber-600 text-white text-[11px] font-semibold transition-colors cursor-pointer"
                 >
-                  Update now
+                  Update fork
                 </button>
                 <button
-                  onClick={() => copy(INSTALL_CMD)}
-                  title="Copy install command"
+                  type="button"
+                  onClick={() => copy(installCmd)}
+                  title="Copy fork install command"
+                  aria-label="Copy fork install command"
                   className="flex-1 text-left hover:opacity-80 transition-opacity cursor-pointer min-w-0"
                 >
                   <code className="block text-[10px] text-green-600/80 dark:text-amber-400/70 font-mono truncate">
-                    {copied ? "✓ copied!" : INSTALL_CMD}
+                    {copied ? "✓ copied!" : installCmd}
                   </code>
                 </button>
               </div>
+            </div>
+          )}
+          {updateInfo?.upstreamUpdatePending && (
+            <div
+              className="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-700 dark:text-amber-300"
+              role="status"
+            >
+              Upstream v{updateInfo.upstreamLatestVersion} is awaiting fork integration. No official-package update will be offered.
             </div>
           )}
         </div>
@@ -340,7 +354,7 @@ export default function Sidebar({ onClose }) {
         onClose={() => setShowUpdateModal(false)}
         onConfirm={handleUpdate}
         title="Update 9Router"
-        message={`Show install command for v${updateInfo?.latestVersion || ""}? You can copy it and shutdown to install manually.`}
+        message={`Show the scoped fork install command for v${updateInfo?.forkLatestVersion || ""}? You can copy it and shutdown to install manually.`}
         confirmText="Show Command"
         cancelText="Cancel"
         variant="primary"
@@ -351,8 +365,8 @@ export default function Sidebar({ onClose }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-6">
           {isUpdating ? (
             <ManualUpdatePanel
-              latestVersion={updateInfo?.latestVersion}
-              installCmd={INSTALL_CMD}
+              latestVersion={updateInfo?.forkLatestVersion}
+              installCmd={installCmd}
               copied={copied}
               onCopyAndShutdown={handleCopyAndShutdown}
               onCancel={handleCancelUpdate}

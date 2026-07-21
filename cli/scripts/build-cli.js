@@ -3,6 +3,7 @@
 const fs = require("fs");
 const path = require("path");
 const { execSync } = require("child_process");
+const semver = require("semver");
 
 const cliDir = path.resolve(__dirname, "..");
 const appDir = path.resolve(cliDir, "..");
@@ -90,6 +91,14 @@ fs.mkdirSync(path.join(buildHomeDir, "AppData", "Local"), { recursive: true });
 // Step 0: Sync version from app/cli/package.json to app/package.json
 console.log("0️⃣  Syncing version to app/package.json...");
 const cliPkg = JSON.parse(fs.readFileSync(path.join(cliDir, "package.json"), "utf8"));
+if (!semver.valid(cliPkg.version)) {
+  console.error(`❌ Invalid CLI SemVer: ${cliPkg.version}`);
+  process.exit(1);
+}
+if (process.env.NINEROUTER_RELEASE_VERSION && cliPkg.version !== process.env.NINEROUTER_RELEASE_VERSION) {
+  console.error(`❌ Release version mismatch: expected ${process.env.NINEROUTER_RELEASE_VERSION}, got ${cliPkg.version}`);
+  process.exit(1);
+}
 const appPkgPath = path.join(appDir, "package.json");
 const appPkg = JSON.parse(fs.readFileSync(appPkgPath, "utf8"));
 if (appPkg.version !== cliPkg.version) {
