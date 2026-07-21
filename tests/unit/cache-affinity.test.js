@@ -48,14 +48,16 @@ describe("cache affinity state", () => {
       fingerprint: "client-secret",
       sessionId: "session-secret",
     });
+    const sessionWithoutClient = createCacheAffinityScope({ ...base, sessionId: "session-secret" });
     const client = createCacheAffinityScope({ ...base, fingerprint: "client-secret" });
     const apiKey = createCacheAffinityScope(base);
 
     expect(session.level).toBe("session");
+    expect(sessionWithoutClient.level).toBe("session");
     expect(client.level).toBe("client");
     expect(apiKey.level).toBe("api-key");
-    expect(new Set([session.key, client.key, apiKey.key]).size).toBe(3);
-    expect(JSON.stringify([session, client, apiKey])).not.toMatch(/sk-secret|client-secret|session-secret/);
+    expect(new Set([session.key, sessionWithoutClient.key, client.key, apiKey.key]).size).toBe(4);
+    expect(JSON.stringify([session, sessionWithoutClient, client, apiKey])).not.toMatch(/sk-secret|client-secret|session-secret/);
   });
 
   it("isolates provider and model and rejects incomplete inputs", () => {

@@ -40,9 +40,9 @@ export function createCacheAffinityScope({ provider, model, apiKey, fingerprint,
 
   const client = normalized(fingerprint);
   const session = normalized(sessionId);
-  const level = session && client ? "session" : client ? "client" : "api-key";
+  const level = session ? "session" : client ? "client" : "api-key";
   const identity = level === "session"
-    ? [session, client, key]
+    ? [session, ...(client ? [client] : []), key]
     : level === "client"
       ? [client, key]
       : [key];
@@ -87,4 +87,3 @@ export function rememberCacheAffinity(scope, connectionId, now = Date.now()) {
 export function clearCacheAffinity() {
   entries.clear();
 }
-
