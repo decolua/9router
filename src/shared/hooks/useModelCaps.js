@@ -13,6 +13,7 @@ function buildMaps(models) {
   for (const m of models || []) {
     if (!m.caps) continue;
     if (m.fullModel) byFull[m.fullModel] = m.caps;
+    if (m.routedModel) byFull[m.routedModel] = m.caps;
     if (m.model) byId[m.model] = m.caps;
   }
   return { byFull, byId };
@@ -44,7 +45,13 @@ function resolveCaps(byFull, byId, key) {
   if (byId[bare]) return byId[bare];
   const provider = key.includes("/") ? key.slice(0, key.indexOf("/")) : null;
   const c = getCapabilitiesForModel(provider, bare);
-  return { vision: c.vision, search: c.search, reasoning: c.reasoning };
+  return {
+    vision: c.vision,
+    search: c.search,
+    reasoning: c.reasoning,
+    contextWindow: c.contextWindow,
+    maxOutput: c.maxOutput,
+  };
 }
 
 export function useModelCaps() {
