@@ -40,9 +40,9 @@ export function createBetterSqliteAdapter(filePath) {
 
   return {
     driver: "better-sqlite3",
-    run(sql, params = []) { return prepare(sql).run(params); },
-    get(sql, params = []) { return prepare(sql).get(params); },
-    all(sql, params = []) { return prepare(sql).all(params); },
+    run(sql, params = []) { return prepare(sql).run(...params); },
+    get(sql, params = []) { return prepare(sql).get(...params); },
+    all(sql, params = []) { return prepare(sql).all(...params); },
     exec(sql) { return db.exec(sql); },
     transaction(fn) { return db.transaction(fn)(); },
     checkpoint() { try { db.pragma("wal_checkpoint(TRUNCATE)"); } catch {} },

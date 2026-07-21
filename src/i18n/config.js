@@ -20,6 +20,7 @@ export const LOCALES = [
   "uk",
   "tl",
   "id",
+  "km",
   "th",
   "hi",
   "bn",
@@ -60,6 +61,7 @@ export const LOCALE_NAMES = {
   tl: "Tagalog",
   id: "Indonesia",
   th: "ไทย",
+  km: "ខ្មែរ",
   hi: "हिन्दी",
   bn: "বাংলা",
   ur: "اردو",
@@ -140,6 +142,9 @@ export function normalizeLocale(locale) {
   }
   if (locale === "th") {
     return "th";
+  }
+  if (locale === "km") {
+    return "km";
   }
   if (locale === "hi") {
     return "hi";
