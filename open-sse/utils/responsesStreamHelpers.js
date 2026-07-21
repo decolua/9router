@@ -6,6 +6,7 @@ import { formatSSE } from "./streamHelpers.js";
 const OPENAI_RESPONSES_TERMINAL_EVENTS = new Set([
   "response.completed",
   "response.done",
+  "response.incomplete",
   "response.failed",
   "error"
 ]);
@@ -20,7 +21,16 @@ export function isOpenAIResponsesTerminalEvent(eventName, chunk) {
   const type = getOpenAIResponsesEventName(eventName, chunk);
   if (OPENAI_RESPONSES_TERMINAL_EVENTS.has(type)) return true;
   const status = chunk?.response?.status;
-  return status === "completed" || status === "failed";
+  return status === "completed" || status === "incomplete" || status === "failed";
+}
+
+export function isOpenAIResponsesSuccessfulTerminalEvent(eventName, chunk) {
+  const type = getOpenAIResponsesEventName(eventName, chunk);
+  if (type === "response.completed" || type === "response.done" || type === "response.incomplete") {
+    return true;
+  }
+  const status = chunk?.response?.status;
+  return status === "completed" || status === "incomplete";
 }
 
 const sharedEncoder = new TextEncoder();

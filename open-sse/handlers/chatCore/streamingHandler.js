@@ -43,15 +43,7 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
 /**
  * Handle streaming response — pipe provider SSE through transform stream to client.
  */
-export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, streamController, onStreamComplete, streamDetailId, pxpipe, reqTag, log }) {
-  if (onRequestSuccess) {
-    Promise.resolve()
-      .then(onRequestSuccess)
-      .catch(err => {
-        console.error("[ChatCore] onRequestSuccess failed:", err?.message || err);
-      });
-  }
-
+export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, reqLogger, toolNameMap, streamController, onStreamComplete, onStreamError, streamDetailId, pxpipe, reqTag, log }) {
   // When upstream returns HTML/text instead of SSE (e.g. Cloudflare 5xx error
   // page), piping it through the SSE transform stream causes Next.js
   // "failed to pipe response" and crashes the chat router. Read the body,
@@ -69,7 +61,9 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     const status = providerResponse.status || 502;
     if (log?.errorLine) log.errorLine(reqTag, "✗", `BLOCKED ${status} · ${provider}/${model} · non-SSE (${upstreamContentType})\n    ${shortMsg}`);
     else console.warn(`[STREAM] ${provider} | ${model} | blocked pipe: ${shortMsg} [${status}]`);
-    streamController?.handleError?.(new Error(`upstream non-SSE: ${status}`));
+    const error = new Error(`upstream non-SSE: ${status}`);
+    onStreamError?.(error);
+    streamController?.handleError?.(error);
     return {
       success: false,
       response: new Response(JSON.stringify({ error: { message: `[${status}]: ${shortMsg}` } }), {
@@ -110,10 +104,41 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
 /**
  * Build onStreamComplete callback for streaming usage tracking.
  */
-export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest, pxpipe, reqTag, log }) {
+export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest, onRequestSuccess, pxpipe, reqTag, log }) {
   const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+  let detailFinalized = false;
 
-  const onStreamComplete = (contentObj, usage, ttftAt) => {
+  const persistTerminalDetail = (detail) => {
+    if (detailFinalized) return false;
+    detailFinalized = true;
+    saveRequestDetail(buildRequestDetail({
+      provider, model, connectionId,
+      request: extractRequestConfig(body, stream),
+      providerRequest: finalBody || translatedBody || null,
+      pxpipe,
+      ...detail,
+    }, { id: streamDetailId })).catch(err => {
+      console.error("[RequestDetail] Failed to update streaming content:", err.message);
+    });
+    return true;
+  };
+
+  const onStreamError = (error) => {
+    const aborted = error?.name === "AbortError";
+    persistTerminalDetail({
+      latency: { ttft: 0, total: Date.now() - requestStartTime },
+      tokens: { prompt_tokens: 0, completion_tokens: 0 },
+      providerResponse: null,
+      response: { error: aborted ? "Stream aborted" : "Stream failed", status: aborted ? 499 : 502, thinking: null },
+      status: "error",
+    });
+  };
+
+  const onStreamComplete = (contentObj, usage, ttftAt, { terminalSuccess = true } = {}) => {
+    if (!terminalSuccess) {
+      onStreamError(new Error("stream ended without a successful terminal event"));
+      return;
+    }
     const latency = {
       ttft: ttftAt ? ttftAt - requestStartTime : Date.now() - requestStartTime,
       total: Date.now() - requestStartTime
@@ -121,24 +146,27 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
     const safeContent = contentObj?.content || "[Empty streaming response]";
     const safeThinking = contentObj?.thinking || null;
 
-    saveRequestDetail(buildRequestDetail({
-      provider, model, connectionId,
+    const persisted = persistTerminalDetail({
       latency,
       tokens: usage || { prompt_tokens: 0, completion_tokens: 0 },
-      request: extractRequestConfig(body, stream),
-      providerRequest: finalBody || translatedBody || null,
       providerResponse: safeContent,
       response: { content: safeContent, thinking: safeThinking, type: "streaming" },
-      pxpipe,
       status: "success"
-    }, { id: streamDetailId })).catch(err => {
-      console.error("[RequestDetail] Failed to update streaming content:", err.message);
     });
+    if (!persisted) return;
+
+    if (onRequestSuccess) {
+      Promise.resolve()
+        .then(onRequestSuccess)
+        .catch(err => {
+          console.error("[ChatCore] onRequestSuccess failed:", err?.message || err);
+        });
+    }
 
     // Persist stream usage to DB (no console line; the "📊 done" line below is authoritative)
     saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, label: "STREAM USAGE", silent: true });
     if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency }));
   };
 
-  return { onStreamComplete, streamDetailId };
+  return { onStreamComplete, onStreamError, streamDetailId };
 }

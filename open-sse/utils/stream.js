@@ -3,7 +3,12 @@ import { FORMATS } from "../translator/formats.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
-import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
+import {
+  formatIncompleteOpenAIResponsesStreamFailure,
+  getOpenAIResponsesEventName,
+  isOpenAIResponsesSuccessfulTerminalEvent,
+  isOpenAIResponsesTerminalEvent,
+} from "./responsesStreamHelpers.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
 import { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER } from "./sseConstants.js";
@@ -13,6 +18,28 @@ export { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER };
 
 // sharedEncoder is stateless — safe to share across streams
 const sharedEncoder = new TextEncoder();
+
+function getTerminalOutcome(chunk, eventName = null, { requireResponsesTerminal = false } = {}) {
+  if (!chunk || typeof chunk !== "object") return null;
+  const responseEvent = getOpenAIResponsesEventName(eventName, chunk);
+  if (isOpenAIResponsesTerminalEvent(responseEvent, chunk)) {
+    return isOpenAIResponsesSuccessfulTerminalEvent(responseEvent, chunk) ? "success" : "failure";
+  }
+  if (requireResponsesTerminal) return null;
+  if (chunk.type === "error" || chunk.error) return "failure";
+  if (
+    chunk.done === true ||
+    chunk.type === "message_stop" ||
+    chunk.type === "finish" ||
+    chunk.messageStopEvent ||
+    chunk.delta?.stop_reason ||
+    chunk.choices?.some((choice) => choice?.finish_reason != null) ||
+    chunk.candidates?.some((candidate) => candidate?.finishReason)
+  ) {
+    return "success";
+  }
+  return null;
+}
 
 /**
  * Stream modes
@@ -72,6 +99,15 @@ export function createSSEStream(options = {}) {
   let openAIResponsesTerminalSeen = false;
   let openAIResponsesDoneSent = false;
   let streamDoneSent = false;  // track duplicate [DONE] across transform + flush
+  let responsesStreamSeen = false;
+  let successfulTerminalSeen = false;
+  let failedTerminalSeen = false;
+
+  const observeTerminal = (chunk, eventName = null, requireResponsesTerminal = false) => {
+    const outcome = getTerminalOutcome(chunk, eventName, { requireResponsesTerminal });
+    if (outcome === "success") successfulTerminalSeen = true;
+    if (outcome === "failure") failedTerminalSeen = true;
+  };
 
   return new TransformStream({
     transform(chunk, controller) {
@@ -97,15 +133,25 @@ export function createSSEStream(options = {}) {
         if (mode === STREAM_MODE.TRANSLATE && targetFormat === FORMATS.OPENAI_RESPONSES && trimmed.startsWith("event:")) {
           currentOpenAIResponsesEvent = trimmed.slice(6).trim();
         }
+        if (trimmed.startsWith("event: response.")) responsesStreamSeen = true;
 
         // Passthrough mode: normalize and forward
         if (mode === STREAM_MODE.PASSTHROUGH) {
           let output;
           let injectedUsage = false;
 
+          if (trimmed === "data: [DONE]") {
+            streamDoneSent = true;
+            if (!responsesStreamSeen) successfulTerminalSeen = true;
+          }
+
           if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
             try {
               const parsed = JSON.parse(trimmed.slice(5).trim());
+              if (typeof parsed?.type === "string" && parsed.type.startsWith("response.")) {
+                responsesStreamSeen = true;
+              }
+              observeTerminal(parsed, null, responsesStreamSeen);
 
               const idFixed = fixInvalidId(parsed);
 
@@ -218,6 +264,7 @@ export function createSSEStream(options = {}) {
         if (isOpenAIResponsesStream && isOpenAIResponsesTerminalEvent(openAIResponsesEventName, parsed)) {
           openAIResponsesTerminalSeen = true;
         }
+        observeTerminal(parsed, openAIResponsesEventName, isOpenAIResponsesStream);
 
         // For Ollama: done=true is the final chunk with finish_reason/usage, must translate
         // For other formats: done=true is the [DONE] sentinel, skip
@@ -228,6 +275,7 @@ export function createSSEStream(options = {}) {
             reqLogger?.appendConvertedChunk?.(failedOutput);
             controller.enqueue(sharedEncoder.encode(failedOutput));
             openAIResponsesTerminalSeen = true;
+            failedTerminalSeen = true;
             sseEmittedCount++;
           }
 
@@ -356,7 +404,10 @@ export function createSSEStream(options = {}) {
             usage = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
           }
 
-          if (hasValidUsage(usage)) {
+          const terminalSuccess = successfulTerminalSeen && !failedTerminalSeen;
+          if (!terminalSuccess) {
+            appendRequestLog({ model, provider, connectionId, tokens: null, status: "FAILED 502" }).catch(() => { });
+          } else if (hasValidUsage(usage)) {
             logUsage(provider, usage, model, connectionId, apiKey);
           } else {
             appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
@@ -378,15 +429,22 @@ export function createSSEStream(options = {}) {
             onStreamComplete({
               content: accumulatedContent,
               thinking: accumulatedThinking
-            }, usage, ttftAt);
+            }, usage, ttftAt, { terminalSuccess });
           }
           return;
         }
 
         if (buffer.trim()) {
-          const parsed = parseSSELine(buffer.trim());
-          if (parsed && !parsed.done) {
-            const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
+            const parsed = parseSSELine(buffer.trim());
+            if (parsed && !parsed.done) {
+              const openAIResponsesEventName = targetFormat === FORMATS.OPENAI_RESPONSES
+                ? getOpenAIResponsesEventName(currentOpenAIResponsesEvent, parsed)
+                : null;
+              if (targetFormat === FORMATS.OPENAI_RESPONSES && isOpenAIResponsesTerminalEvent(openAIResponsesEventName, parsed)) {
+                openAIResponsesTerminalSeen = true;
+              }
+              observeTerminal(parsed, openAIResponsesEventName, targetFormat === FORMATS.OPENAI_RESPONSES);
+              const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
 
             if (translated?._openaiIntermediate) {
               for (const item of translated._openaiIntermediate) {
@@ -431,6 +489,7 @@ export function createSSEStream(options = {}) {
           reqLogger?.appendConvertedChunk?.(failedOutput);
           controller.enqueue(sharedEncoder.encode(failedOutput));
           openAIResponsesTerminalSeen = true;
+          failedTerminalSeen = true;
         }
 
         if (keepsOpenAIResponsesFormat && !openAIResponsesDoneSent && !streamDoneSent) {
@@ -445,7 +504,10 @@ export function createSSEStream(options = {}) {
           state.usage = estimateUsage(body, totalContentLength, sourceFormat);
         }
 
-        if (hasValidUsage(state?.usage)) {
+        const terminalSuccess = successfulTerminalSeen && !failedTerminalSeen;
+        if (!terminalSuccess) {
+          appendRequestLog({ model, provider, connectionId, tokens: null, status: "FAILED 502" }).catch(() => { });
+        } else if (hasValidUsage(state?.usage)) {
           logUsage(state.provider || targetFormat, state.usage, model, connectionId, apiKey);
         } else {
           appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
@@ -455,7 +517,7 @@ export function createSSEStream(options = {}) {
           onStreamComplete({
             content: accumulatedContent,
             thinking: accumulatedThinking
-          }, state?.usage, ttftAt);
+          }, state?.usage, ttftAt, { terminalSuccess });
         }
       } catch (error) {
         console.log("Error in flush:", error);
