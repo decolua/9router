@@ -3,8 +3,27 @@ import { OAUTH_ENDPOINTS, GITHUB_COPILOT, buildKimiHeaders } from "../../config/
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import { dedupRefresh } from "./dedup.js";
 import { buildExternalIdpRefreshParams } from "../../../src/lib/oauth/kiroExternalIdp.js";
+import { CursorService } from "../../../src/lib/oauth/services/cursor.js";
 
-let _xaiServiceSingleton = null;
+export async function refreshCursorToken(refreshToken, log) {
+  if (!refreshToken) return null;
+  return dedupRefresh("cursor", refreshToken, async () => {
+    try {
+      const tokens = await new CursorService().refreshToken(refreshToken);
+      log?.info?.("TOKEN_REFRESH", "Successfully refreshed Cursor token", {
+        hasNewAccessToken: !!tokens.accessToken,
+        hasNewRefreshToken: !!tokens.refreshToken,
+        expiresIn: tokens.expiresIn,
+      });
+      return tokens;
+    } catch (error) {
+      log?.warn?.("TOKEN_REFRESH", `Cursor refresh failed: ${error?.message || error}`);
+      return null;
+    }
+  }, log);
+}
+
+
 export async function refreshXaiToken(refreshToken, log) {
   if (!refreshToken) return null;
   return dedupRefresh("xai", refreshToken, async () => {

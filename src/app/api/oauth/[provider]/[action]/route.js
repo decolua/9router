@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { NextResponse } from "next/server";
 import { 
   getProvider, 
@@ -7,6 +8,7 @@ import {
   pollForToken 
 } from "@/lib/oauth/providers";
 import { createProviderConnection } from "@/models";
+import { CursorService } from "@/lib/oauth/services/cursor";
 import {
   startCodexProxy,
   stopCodexProxy,
@@ -20,6 +22,18 @@ import {
   clearXaiSession,
 } from "@/lib/oauth/utils/server";
 
+const cursorSessions = new Map();
+const CURSOR_SESSION_LIMIT = 100;
+
+function cleanupCursorSessions() {
+  const cutoff = Date.now() - 5 * 60 * 1000;
+  for (const [state, session] of cursorSessions) {
+    if (session.createdAt < cutoff) cursorSessions.delete(state);
+  }
+  while (cursorSessions.size >= CURSOR_SESSION_LIMIT) {
+    cursorSessions.delete(cursorSessions.keys().next().value);
+  }
+}
 async function completeXaiManualCode(code, state) {
   const session = state ? getXaiSessionStatus(state) : null;
   if (!session) {
@@ -70,6 +84,19 @@ export async function GET(request, { params }) {
   try {
     const { provider, action } = await params;
     const { searchParams } = new URL(request.url);
+
+    if (action === "authorize" && provider === "cursor") {
+      cleanupCursorSessions();
+      const authData = new CursorService().getAuthorizationData(searchParams.get("mode") || "login");
+      const state = crypto.randomUUID();
+      cursorSessions.set(state, { ...authData, createdAt: Date.now() });
+      return NextResponse.json({
+        authUrl: authData.authUrl,
+        state,
+        flowType: "authorization_code_pkce",
+        expiresIn: authData.expiresIn,
+      });
+    }
 
     if (action === "authorize") {
       const redirectUri = searchParams.get("redirect_uri") || "http://localhost:8080/callback";
@@ -194,6 +221,37 @@ export async function POST(request, { params }) {
       body = await request.json();
     } catch {
       return NextResponse.json({ error: "Invalid or empty request body" }, { status: 400 });
+    }
+
+    if (action === "poll" && provider === "cursor") {
+      cleanupCursorSessions();
+      const session = cursorSessions.get(body.state);
+      if (!session) {
+        return NextResponse.json({ success: false, error: "cursor_session_expired" }, { status: 400 });
+      }
+      const cursorService = new CursorService();
+      const result = await cursorService.pollToken(session.uuid, session.verifier);
+      if (!result.success) return NextResponse.json(result);
+      const tokenData = cursorService.mapTokens(
+        result.tokens.accessToken,
+        result.tokens.refreshToken,
+      );
+      const connection = await createProviderConnection({
+        provider: "cursor",
+        authType: "oauth",
+        ...tokenData,
+        testStatus: "active",
+      });
+      cursorSessions.delete(body.state);
+      return NextResponse.json({
+        success: true,
+        connection: {
+          id: connection.id,
+          provider: connection.provider,
+          email: connection.email,
+          displayName: connection.displayName,
+        },
+      });
     }
 
     if (action === "exchange") {

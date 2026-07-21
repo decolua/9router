@@ -117,7 +117,12 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         const res = await fetch(`/api/oauth/${provider}/poll`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ deviceCode, codeVerifier, extraData }),
+          body: JSON.stringify({
+            deviceCode,
+            codeVerifier,
+            extraData,
+            ...(provider === "cursor" ? { state: deviceCode } : {}),
+          }),
         });
 
         const data = await res.json();
@@ -156,7 +161,20 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     try {
       setError(null);
 
-      // Device code flow providers (must match oauth providers with flowType: "device_code")
+      if (provider === "cursor") {
+        setIsDeviceCode(true);
+        setStep("waiting");
+        const res = await fetch(`/api/oauth/cursor/authorize?redirect_uri=${encodeURIComponent(window.location.origin + "/callback")}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        setAuthData(data);
+        setDeviceData({ verification_uri: data.authUrl, user_code: "" });
+        if (data.authUrl) window.open(data.authUrl, "_blank", "noopener,noreferrer");
+        startPolling(data.state, null, 2, null, (data.expiresIn || 300) * 1000);
+        return;
+      }
+
+      // Device code flow providers
       const deviceCodeProviders = [
         "github",
         "qwen",
@@ -650,18 +668,20 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
                   </Button>
                 </div>
               </div>
-              <div className="bg-primary/10 p-4 rounded-lg">
-                <p className="text-xs text-text-muted mb-1">Your Code</p>
-                <div className="flex items-center justify-center gap-2">
-                  <p className="text-2xl font-mono font-bold text-primary">{deviceData.user_code}</p>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    icon={copied === "user_code" ? "check" : "content_copy"}
-                    onClick={() => copy(deviceData.user_code, "user_code")}
-                  />
+              {deviceData.user_code && (
+                <div className="bg-primary/10 p-4 rounded-lg">
+                  <p className="text-xs text-text-muted mb-1">Your Code</p>
+                  <div className="flex items-center justify-center gap-2">
+                    <p className="text-2xl font-mono font-bold text-primary">{deviceData.user_code}</p>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      icon={copied === "user_code" ? "check" : "content_copy"}
+                      onClick={() => copy(deviceData.user_code, "user_code")}
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
             {polling && (
               <div className="flex items-center justify-center gap-2 text-sm text-text-muted">

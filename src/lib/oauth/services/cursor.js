@@ -1,178 +1,184 @@
+import crypto from "crypto";
 import { CURSOR_CONFIG } from "../constants/oauth.js";
 
-/**
- * Cursor IDE OAuth Service
- * Supports Import Token method from Cursor IDE's local SQLite database
- *
- * Token Location:
- * - Linux: ~/.config/Cursor/User/globalStorage/state.vscdb
- * - macOS: /Users/<user>/Library/Application Support/Cursor/User/globalStorage/state.vscdb
- * - Windows: %APPDATA%\Cursor\User\globalStorage\state.vscdb
- *
- * Database Keys:
- * - cursorAuth/accessToken: The access token
- * - storage.serviceMachineId: Machine ID for checksum
- */
+const REFRESH_TIMEOUT_MS = 15000;
+const REFRESH_ATTEMPTS = 3;
+const REFRESH_RETRY_BASE_MS = 300;
+const EXPIRY_SKEW_MS = 5 * 60 * 1000;
+const FALLBACK_TTL_MS = 60 * 60 * 1000;
+const CURSOR_USER_AGENT = "Cursor/3.12.29";
+
+function decodeJwtPayload(token) {
+  const parts = typeof token === "string" ? token.split(".") : [];
+  if (parts.length !== 3 || !parts[1]) return null;
+  try {
+    return JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function tokenExpiresAt(token) {
+  const payload = decodeJwtPayload(token);
+  if (typeof payload?.exp === "number") {
+    return payload.exp * 1000 - EXPIRY_SKEW_MS;
+  }
+  return Date.now() + FALLBACK_TTL_MS;
+}
+
+function retryDelay(attempt) {
+  const exponential = REFRESH_RETRY_BASE_MS * 2 ** attempt;
+  return Math.floor(exponential * (0.8 + Math.random() * 0.4));
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export class CursorService {
   constructor() {
     this.config = CURSOR_CONFIG;
   }
 
-  /**
-   * Generate Cursor checksum (jyh cipher)
-   * Algorithm: XOR timestamp bytes with rolling key (initial 165), then base64 encode
-   * Format: {encoded_timestamp},{machineId}
-   */
-  generateChecksum(machineId) {
-    const timestamp = Math.floor(Date.now() / 1000).toString();
-    let key = 165;
-    const encoded = [];
-
-    for (let i = 0; i < timestamp.length; i++) {
-      const charCode = timestamp.charCodeAt(i);
-      encoded.push(charCode ^ key);
-      key = (key + charCode) & 0xff; // Rolling key update
-    }
-
-    const base64Encoded = Buffer.from(encoded).toString("base64");
-    return `${base64Encoded},${machineId}`;
-  }
-
-  /**
-   * Build request headers for Cursor API
-   */
-  buildHeaders(accessToken, machineId, ghostMode = false) {
-    const checksum = this.generateChecksum(machineId);
-
+  getAuthorizationData(mode = "login") {
+    const verifier = crypto.randomBytes(32).toString("base64url");
+    const challenge = crypto.createHash("sha256").update(verifier).digest("base64url");
+    const uuid = crypto.randomUUID();
+    const query = new URLSearchParams({
+      challenge,
+      uuid,
+      mode,
+      supportsSelectedTeamLogin: "true",
+    });
     return {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/connect+proto",
-      "Connect-Protocol-Version": "1",
-      "x-cursor-client-version": this.config.clientVersion,
-      "x-cursor-client-type": this.config.clientType,
-      "x-cursor-client-os": this.detectOS(),
-      "x-cursor-client-arch": this.detectArch(),
-      "x-cursor-client-device-type": "desktop",
-      "x-cursor-checksum": checksum,
-      "x-ghost-mode": ghostMode ? "true" : "false",
+      authUrl: `${this.config.loginUrl}?${query.toString()}`,
+      uuid,
+      verifier,
+      expiresIn: 300,
     };
   }
 
-  /**
-   * Detect OS for headers
-   */
-  detectOS() {
-    if (typeof process !== "undefined") {
-      const platform = process.platform;
-      if (platform === "win32") return "windows";
-      if (platform === "darwin") return "macos";
-      return "linux";
+  async pollToken(uuid, verifier, signal) {
+    if (!uuid || !verifier) throw new Error("Cursor OAuth session is incomplete");
+    const query = new URLSearchParams({ uuid, verifier });
+    const response = await fetch(`${this.config.pollUrl}?${query.toString()}`, {
+      headers: {
+        Accept: "application/json",
+        "User-Agent": CURSOR_USER_AGENT,
+        "x-cursor-client-type": this.config.clientType,
+        "x-ghost-mode": "implicit-false",
+        "x-new-onboarding-completed": "false",
+        traceparent: `00-${crypto.randomBytes(16).toString("hex")}-${crypto.randomBytes(8).toString("hex")}-01`,
+      },
+      signal,
+    });
+    if (response.status === 404) {
+      return { success: false, pending: true, error: "authorization_pending" };
     }
-    return "linux";
+    if (!response.ok) {
+      throw new Error(`Cursor OAuth polling failed with HTTP ${response.status}`);
+    }
+    const data = await response.json();
+    if (!data.accessToken || !data.refreshToken) {
+      throw new Error("Cursor OAuth response was missing tokens");
+    }
+    return { success: true, tokens: data };
   }
 
-  /**
-   * Detect architecture for headers
-   */
-  detectArch() {
-    if (typeof process !== "undefined") {
-      const arch = process.arch;
-      if (arch === "x64") return "x86_64";
-      if (arch === "arm64") return "aarch64";
-      return arch;
+  async refreshToken(refreshToken) {
+    if (!refreshToken || typeof refreshToken !== "string") {
+      throw new Error("Cursor refresh token is required");
     }
-    return "x86_64";
+    let lastError;
+    for (let attempt = 0; attempt < REFRESH_ATTEMPTS; attempt += 1) {
+      try {
+        const response = await fetch(this.config.refreshUrl, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${refreshToken}`,
+            "Content-Type": "application/json",
+          },
+          body: "{}",
+          signal: AbortSignal.timeout(REFRESH_TIMEOUT_MS),
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (!data.accessToken) {
+            throw new Error("Cursor refresh response was missing an access token");
+          }
+          return this.mapTokens(data.accessToken, data.refreshToken || refreshToken);
+        }
+        if (response.status !== 429 && response.status < 500) {
+          const error = new Error(`Cursor token refresh failed with HTTP ${response.status}`);
+          error.retryable = false;
+          throw error;
+        }
+        lastError = new Error(`Cursor token refresh failed with HTTP ${response.status}`);
+      } catch (error) {
+        if (error.retryable === false) throw error;
+        lastError = error;
+      }
+      if (attempt < REFRESH_ATTEMPTS - 1) await sleep(retryDelay(attempt));
+    }
+    throw lastError || new Error("Cursor token refresh failed");
   }
 
-  /**
-   * Validate and import token from Cursor IDE
-   * Note: We skip API validation because Cursor API uses complex protobuf format.
-   * Token will be validated when actually used for requests.
-   * @param {string} accessToken - Access token from state.vscdb
-   * @param {string} machineId - Machine ID from state.vscdb
-   */
+  mapTokens(accessToken, refreshToken, machineId = null, authMethod = "oauth") {
+    const expiresAt = tokenExpiresAt(accessToken);
+    const userInfo = this.extractUserInfo(accessToken);
+    return {
+      accessToken,
+      refreshToken,
+      ...(machineId ? { machineId } : {}),
+      expiresAt: new Date(expiresAt).toISOString(),
+      expiresIn: Math.max(1, Math.floor((expiresAt - Date.now()) / 1000)),
+      email: userInfo?.email || null,
+      providerSpecificData: {
+        authMethod,
+        ...(machineId ? { machineId } : {}),
+        ...(userInfo?.userId ? { userId: userInfo.userId } : {}),
+      },
+    };
+  }
+
   async validateImportToken(accessToken, machineId) {
-    // Basic validation
     if (!accessToken || typeof accessToken !== "string") {
       throw new Error("Access token is required");
     }
-
     if (!machineId || typeof machineId !== "string") {
       throw new Error("Machine ID is required");
     }
-
-    // Token format validation (Cursor tokens are typically long strings)
     if (accessToken.length < 50) {
       throw new Error("Invalid token format. Token appears too short.");
     }
-
-    // Machine ID format validation (should be UUID-like)
     const uuidRegex = /^[a-f0-9-]{32,}$/i;
     if (!uuidRegex.test(machineId.replace(/-/g, ""))) {
       throw new Error("Invalid machine ID format. Expected UUID format.");
     }
+    return this.mapTokens(accessToken, null, machineId, "imported");
+  }
 
-    // Note: We don't validate against API because Cursor uses complex protobuf.
-    // Token will be validated when used for actual requests.
-
+  extractUserInfo(accessToken) {
+    const payload = decodeJwtPayload(accessToken);
+    if (!payload) return null;
+    const email = typeof payload.email === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email)
+      ? payload.email
+      : null;
     return {
-      accessToken,
-      machineId,
-      expiresIn: 86400, // Cursor tokens typically last 24 hours
-      authMethod: "imported",
+      email,
+      userId: payload.sub || payload.user_id || null,
     };
   }
 
-  /**
-   * Extract user info from token if possible
-   * Cursor tokens may contain encoded user info
-   */
-  extractUserInfo(accessToken) {
-    try {
-      // Try to decode as JWT
-      const parts = accessToken.split(".");
-      if (parts.length === 3) {
-        let payload = parts[1];
-        while (payload.length % 4) {
-          payload += "=";
-        }
-        const decoded = JSON.parse(
-          Buffer.from(payload.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString()
-        );
-        return {
-          email: decoded.email || decoded.sub,
-          userId: decoded.sub || decoded.user_id,
-        };
-      }
-    } catch {
-      // Token is not a JWT, that's okay
-    }
-
-    return null;
-  }
-
-  /**
-   * Get token storage path instructions for user
-   */
   getTokenStorageInstructions() {
     return {
-      title: "How to get your Cursor token",
+      title: "How to import your existing Cursor session",
       steps: [
-        "1. Open Cursor IDE and make sure you're logged in",
-        "2. Find the state.vscdb file:",
-        `   - Linux: ${this.config.tokenStoragePaths.linux}`,
-        `   - macOS: ${this.config.tokenStoragePaths.macos}`,
-        `   - Windows: ${this.config.tokenStoragePaths.windows}`,
-        "3. Open the database with SQLite browser or CLI:",
-        "   sqlite3 state.vscdb \"SELECT value FROM itemTable WHERE key='cursorAuth/accessToken'\"",
-        "4. Also get the machine ID:",
-        "   sqlite3 state.vscdb \"SELECT value FROM itemTable WHERE key='storage.serviceMachineId'\"",
-        "5. Paste both values in the form below",
-      ],
-      alternativeMethod: [
-        "Or use this one-liner to get both values:",
-        "sqlite3 state.vscdb \"SELECT key, value FROM itemTable WHERE key IN ('cursorAuth/accessToken', 'storage.serviceMachineId')\"",
+        "Open Cursor IDE and make sure you're logged in",
+        `Linux: ${this.config.tokenStoragePaths.linux}`,
+        `macOS: ${this.config.tokenStoragePaths.macos}`,
+        `Windows: ${this.config.tokenStoragePaths.windows}`,
+        "Read cursorAuth/accessToken and storage.serviceMachineId from itemTable",
       ],
     };
   }

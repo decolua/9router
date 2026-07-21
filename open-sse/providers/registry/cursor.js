@@ -50,6 +50,10 @@ export default {
     agentNonPrivacyEndpoint: "https://agentn.api5.cursor.sh",
     clientVersion: "3.12.17",
     clientType: "ide",
+    loginUrl: "https://cursor.com/loginDeepControl",
+    pollUrl: "https://api2.cursor.sh/auth/poll",
+    refreshUrl: "https://api2.cursor.sh/auth/exchange_user_api_key",
+    refreshLeadMs: 5 * 60 * 1000,
     dbKeys: {
       accessToken: "cursorAuth/accessToken",
       machineId: "storage.serviceMachineId",
