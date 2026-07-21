@@ -5,13 +5,16 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { v4 as uuidv4 } from "uuid";
-import { resolveSessionId } from "../../utils/sessionManager.js";
+import { applyKiroSessionReplay } from "../../utils/kiroSessionReplay.js";
+import { resolveContinuationId, resolveSessionIdentity } from "../../utils/sessionManager.js";
 import {
   resolveKiroModel,
   resolveKiroThinkingBudget,
   buildThinkingSystemPrefix,
   KIRO_AGENTIC_SYSTEM_PROMPT,
-  resolveDefaultProfileArn
+  resolveDefaultProfileArn,
+  buildKiroAdditionalModelRequestFieldsForModel,
+  usesKiroNativeGptEffort
 } from "../../config/kiroConstants.js";
 import { parseDataUri } from "../concerns/image.js";
 import { DEFAULT_IMAGE_MIME } from "../schema/index.js";
@@ -509,12 +512,10 @@ function convertMessages(messages, tools, model) {
  *    Kiro's 2-3 minute server timeout. The suffix is stripped before being
  *    sent upstream.
  *
- * 2. Thinking / reasoning. Kiro does not accept `thinking.type` or
- *    `reasoning_effort` natively. The only way to enable reasoning is to
- *    inject `<thinking_mode>enabled</thinking_mode>` into the user content
- *    sent upstream. Detection covers Anthropic-Beta header, Claude API
+ * 2. Thinking / reasoning. Detection covers Anthropic-Beta header, Claude API
  *    `thinking`, OpenAI `reasoning_effort`, AMP/Cursor magic tags, and model
- *    name hints.
+ *    name hints. Supported models receive Kiro's schema-specific effort fields;
+ *    legacy prompt tags remain only for models that need them.
  */
 export function openaiToKiroRequest(model, body, stream, credentials) {
   const messages = body.messages || [];
@@ -525,6 +526,8 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
 
   const { upstream: upstreamModel, agentic } = resolveKiroModel(model);
   const thinkingBudget = resolveKiroThinkingBudget(body, credentials?.rawHeaders, model);
+  const additionalModelRequestFields = buildKiroAdditionalModelRequestFieldsForModel(body, upstreamModel);
+  const usesNativeGptEffort = usesKiroNativeGptEffort(body, upstreamModel);
 
   const { history, currentMessage } = convertMessages(messages, tools, upstreamModel);
 
@@ -546,46 +549,72 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
     ? (credentials?.providerSpecificData?.profileArn || "")
     : (credentials?.providerSpecificData?.profileArn || resolveDefaultProfileArn(authMethod));
 
-  let finalContent = currentMessage?.userInputMessage?.content || "";
-
   const timestamp = new Date().toISOString();
 
-  // Build the system-prompt prefix that goes ABOVE the user message body.
-  // Order: thinking_mode tag first (so Kiro sees it before any user text),
-  // then context/timestamp marker, then optional agentic chunked-write prompt.
-  const prefixParts = [];
-  if (thinkingBudget !== null) {
-    prefixParts.push(buildThinkingSystemPrefix(thinkingBudget));
+  // Kiro CLI/KAS sends these as top-level systemPrompt. Keep a content fallback
+  // too because the CodeWhisperer surface does not always enforce top-level
+  // systemPrompt for direct calls.
+  const systemPromptParts = [];
+  if (thinkingBudget !== null && !usesNativeGptEffort) {
+    systemPromptParts.push(buildThinkingSystemPrefix(thinkingBudget));
   }
-  prefixParts.push(`[Context: Current time is ${timestamp}]`);
   if (agentic) {
-    prefixParts.push(KIRO_AGENTIC_SYSTEM_PROMPT);
+    systemPromptParts.push(KIRO_AGENTIC_SYSTEM_PROMPT);
   }
-  finalContent = `${prefixParts.join("\n\n")}\n\n${finalContent}`;
+  const systemPrompt = systemPromptParts.filter(Boolean).join("\n\n");
+  const currentTimeContext = `[Context: Current time is ${timestamp}]`;
+  const contentPrefix = [systemPrompt, currentTimeContext].filter(Boolean).join("\n\n");
+
+  const sessionIdentity = resolveSessionIdentity({ headers: credentials?.rawHeaders, body, connectionId: credentials?.connectionId, scope: "kiro" });
+  const conversationId = sessionIdentity.sessionId;
+  const continuationId = resolveContinuationId({
+    sessionId: conversationId,
+    connectionId: credentials?.connectionId,
+    scope: "kiro",
+    ephemeral: sessionIdentity.ephemeral,
+  });
+  const replay = applyKiroSessionReplay({
+    conversationId,
+    connectionId: credentials?.connectionId,
+    modelId: upstreamModel,
+    systemPrompt,
+    contentPrefix,
+    currentContentPrefix: currentTimeContext,
+    history,
+    currentMessage,
+  });
+  const replayCurrent = replay.currentMessage?.userInputMessage || {};
 
   const payload = {
     conversationState: {
       chatTriggerType: "MANUAL",
-      conversationId: resolveSessionId({ headers: credentials?.rawHeaders, body, connectionId: credentials?.connectionId, scope: "kiro" }),
+      conversationId,
+      agentContinuationId: continuationId,
+      agentTaskType: "vibe",
       currentMessage: {
         userInputMessage: {
-          content: finalContent,
+          content: replayCurrent.content || "",
           modelId: upstreamModel,
           origin: "AI_EDITOR",
-          ...(currentMessage?.userInputMessage?.images?.length > 0 && {
-            images: currentMessage.userInputMessage.images
+          ...(replayCurrent.images?.length > 0 && {
+            images: replayCurrent.images
           }),
-          ...(currentMessage?.userInputMessage?.userInputMessageContext && {
-            userInputMessageContext: currentMessage.userInputMessage.userInputMessageContext
+          ...(replayCurrent.userInputMessageContext && {
+            userInputMessageContext: replayCurrent.userInputMessageContext
           })
         }
       },
-      history: history
-    }
+      history: replay.history
+    },
+    agentMode: "vibe",
   };
 
   if (profileArn) {
     payload.profileArn = profileArn;
+  }
+  if (systemPrompt) payload.systemPrompt = systemPrompt;
+  if (additionalModelRequestFields) {
+    payload.additionalModelRequestFields = additionalModelRequestFields;
   }
 
   if (maxTokens || temperature !== undefined || topP !== undefined) {
