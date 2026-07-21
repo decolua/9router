@@ -106,11 +106,12 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
  */
 export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest, onRequestSuccess, pxpipe, reqTag, log }) {
   const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
-  let detailFinalized = false;
+  let terminalStatus = null;
 
-  const persistTerminalDetail = (detail) => {
-    if (detailFinalized) return false;
-    detailFinalized = true;
+  const persistTerminalDetail = (detail, { successOverridesError = false } = {}) => {
+    if (terminalStatus === "success") return false;
+    if (terminalStatus === "error" && !successOverridesError) return false;
+    terminalStatus = detail.status;
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId,
       request: extractRequestConfig(body, stream),
@@ -134,7 +135,7 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
     });
   };
 
-  const onStreamComplete = (contentObj, usage, ttftAt, { terminalSuccess = true } = {}) => {
+  const onStreamComplete = (contentObj, usage, ttftAt, { terminalSuccess = false } = {}) => {
     if (!terminalSuccess) {
       onStreamError(new Error("stream ended without a successful terminal event"));
       return;
@@ -152,7 +153,7 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
       providerResponse: safeContent,
       response: { content: safeContent, thinking: safeThinking, type: "streaming" },
       status: "success"
-    });
+    }, { successOverridesError: true });
     if (!persisted) return;
 
     if (onRequestSuccess) {

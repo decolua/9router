@@ -11,6 +11,26 @@ const OPENAI_RESPONSES_TERMINAL_EVENTS = new Set([
   "error"
 ]);
 
+const SUCCESS_TERMINAL_REASONS = new Set([
+  "stop", "end_turn", "max_tokens", "length", "tool_use", "tool_calls",
+  "function_call", "stop_sequence", "pause_turn", "refusal", "content_filter",
+  "completed", "complete", "done", "finish", "finished", "safety", "recitation",
+  "language", "other", "blocklist", "prohibited_content", "spii",
+  "malformed_function_call", "image_safety", "image_prohibited_content", "no_image",
+  "unexpected_tool_call", "too_many_tool_calls",
+]);
+const FAILED_TERMINAL_REASONS = new Set([
+  "abort", "aborted", "cancelled", "canceled", "error", "failed",
+]);
+
+export function getStopReasonOutcome(reason) {
+  if (typeof reason !== "string" || !reason.trim()) return null;
+  const normalized = reason.trim().toLowerCase();
+  if (FAILED_TERMINAL_REASONS.has(normalized)) return "failure";
+  if (SUCCESS_TERMINAL_REASONS.has(normalized)) return "success";
+  return null;
+}
+
 export function getOpenAIResponsesEventName(eventName, chunk) {
   if (eventName) return eventName;
   if (chunk && typeof chunk.type === "string") return chunk.type;

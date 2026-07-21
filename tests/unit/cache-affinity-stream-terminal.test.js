@@ -17,7 +17,13 @@ const {
 const {
   buildOnStreamComplete,
 } = await import("../../open-sse/handlers/chatCore/streamingHandler.js");
-const { createStreamController } = await import("../../open-sse/utils/streamHandler.js");
+const {
+  handleForcedSSEToJson,
+} = await import("../../open-sse/handlers/chatCore/sseToJsonHandler.js");
+const {
+  createDisconnectAwareStream,
+  createStreamController,
+} = await import("../../open-sse/utils/streamHandler.js");
 
 function completionContext(onRequestSuccess = vi.fn()) {
   return {
@@ -69,7 +75,7 @@ describe("stream terminal success", () => {
     );
   });
 
-  it("does not run success side effects when cancel wins a flush race", async () => {
+  it("does not run success side effects when cancel precedes an incomplete flush", async () => {
     const onRequestSuccess = vi.fn();
     const { onStreamComplete, onStreamError } = buildOnStreamComplete(completionContext(onRequestSuccess));
 
@@ -79,7 +85,7 @@ describe("stream terminal success", () => {
       { content: "late" },
       { prompt_tokens: 3, completion_tokens: 1 },
       Date.now(),
-      { terminalSuccess: true },
+      { terminalSuccess: false },
     );
     await Promise.resolve();
 
@@ -89,6 +95,66 @@ describe("stream terminal success", () => {
     expect(usageDbMocks.saveRequestDetail).toHaveBeenCalledWith(
       expect.objectContaining({ status: "error" }),
     );
+  });
+
+  it("lets an explicit successful terminal override an earlier client cancel", async () => {
+    const onRequestSuccess = vi.fn();
+    const { onStreamComplete, onStreamError } = buildOnStreamComplete(completionContext(onRequestSuccess));
+
+    onStreamError(new DOMException("cancelled", "AbortError"));
+    onStreamComplete(
+      { content: "complete" },
+      { prompt_tokens: 3, completion_tokens: 1 },
+      Date.now(),
+      { terminalSuccess: true },
+    );
+    await Promise.resolve();
+
+    expect(onRequestSuccess).toHaveBeenCalledTimes(1);
+    expect(usageDbMocks.saveRequestUsage).toHaveBeenCalledTimes(1);
+    expect(usageDbMocks.saveRequestDetail).toHaveBeenCalledTimes(2);
+    expect(usageDbMocks.saveRequestDetail).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: "success" }),
+    );
+  });
+
+  it("finalizes a parsed terminal when the client cancels before transform flush", async () => {
+    const onStreamComplete = vi.fn();
+    const onDisconnect = vi.fn();
+    const transform = createPassthroughStreamWithLogger(
+      "github", null, "claude-fable-5", "account-a", {}, onStreamComplete,
+    );
+    const encoder = new TextEncoder();
+    const upstream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode('data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}\n\n'));
+      },
+    });
+    const streamController = createStreamController({ onDisconnect });
+    const output = createDisconnectAwareStream(
+      {
+        readable: upstream.pipeThrough(transform),
+        writable: { getWriter: () => ({ abort: () => Promise.resolve() }) },
+      },
+      streamController,
+      null,
+      transform.terminalState,
+    );
+    const reader = output.getReader();
+
+    const first = await reader.read();
+    expect(new TextDecoder().decode(first.value)).toContain('"finish_reason":"stop"');
+    await reader.cancel("client_closed");
+    await Promise.resolve();
+
+    expect(onStreamComplete).toHaveBeenCalledTimes(1);
+    expect(onStreamComplete).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.anything(),
+      expect.any(Number),
+      { terminalSuccess: true },
+    );
+    expect(onDisconnect).not.toHaveBeenCalled();
   });
 
   it("reports successful and failed Responses terminals accurately", async () => {
@@ -161,5 +227,123 @@ describe("stream terminal success", () => {
       { terminalSuccess: false },
       { terminalSuccess: true },
     ]);
+  });
+
+  it("emits response.failed when a Responses passthrough stream closes without a terminal", async () => {
+    const metadata = [];
+    const incomplete = createPassthroughStreamWithLogger(
+      "codex",
+      null,
+      "gpt-5.6-sol",
+      "account-a",
+      { input: [] },
+      (_content, _usage, _ttftAt, terminal) => metadata.push(terminal),
+    );
+
+    const output = await drain(incomplete, [
+      "event: response.output_text.delta",
+      'data: {"type":"response.output_text.delta","delta":"partial"}',
+      "",
+    ].join("\n"));
+
+    expect(output).toContain("event: response.failed");
+    expect(output.indexOf("event: response.failed")).toBeLessThan(output.indexOf("data: [DONE]"));
+    expect(output.match(/data: \[DONE\]/g)).toHaveLength(1);
+    expect(metadata).toEqual([{ terminalSuccess: false }]);
+  });
+
+  it("parses trailing passthrough terminals and rejects cancelled reasons", async () => {
+    const metadata = [];
+    const callback = (_content, _usage, _ttftAt, terminal) => metadata.push(terminal);
+    const trailing = createPassthroughStreamWithLogger(
+      "github", null, "claude-fable-5", "account-a", {}, callback,
+    );
+    const cancelled = createPassthroughStreamWithLogger(
+      "github", null, "claude-fable-5", "account-a", {}, callback,
+    );
+
+    await drain(trailing, 'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}');
+    await drain(cancelled, 'data: {"choices":[{"delta":{},"finish_reason":"cancelled"}]}\n\n');
+
+    expect(metadata).toEqual([
+      { terminalSuccess: true },
+      { terminalSuccess: false },
+    ]);
+  });
+
+  it("recognizes Claude, Gemini, and Antigravity successful terminal events", async () => {
+    const metadata = [];
+    const callback = (_content, _usage, _ttftAt, terminal) => metadata.push(terminal);
+    const claude = createPassthroughStreamWithLogger(
+      "github", null, "claude-fable-5", "account-a", {}, callback,
+    );
+    const gemini = createPassthroughStreamWithLogger(
+      "gemini", null, "gemini-2.5-pro", "account-b", {}, callback,
+    );
+    const antigravity = createPassthroughStreamWithLogger(
+      "antigravity", null, "gemini-2.5-pro", "account-c", {}, callback,
+    );
+
+    await drain(claude, 'data: {"type":"message_stop"}\n\n');
+    await drain(gemini, 'data: {"candidates":[{"finishReason":"STOP"}]}\n\n');
+    await drain(antigravity, 'data: {"response":{"candidates":[{"finishReason":"STOP"}]}}\n\n');
+
+    expect(metadata).toEqual([
+      { terminalSuccess: true },
+      { terminalSuccess: true },
+      { terminalSuccess: true },
+    ]);
+  });
+
+  it("rejects failed or unterminated forced Responses streams and accepts incomplete terminals", async () => {
+    const onRequestSuccess = vi.fn();
+    const base = {
+      sourceFormat: FORMATS.OPENAI_RESPONSES,
+      provider: "codex",
+      model: "gpt-5.6-sol",
+      body: { input: [] },
+      stream: true,
+      requestStartTime: Date.now(),
+      connectionId: "account-a",
+      apiKey: "sk-test",
+      clientRawRequest: { endpoint: "/v1/responses" },
+      onRequestSuccess,
+      trackDone: vi.fn(),
+      appendLog: vi.fn(),
+      log: { line: vi.fn() },
+    };
+    const failed = await handleForcedSSEToJson({
+      ...base,
+      providerResponse: new Response([
+        "event: response.failed",
+        'data: {"type":"response.failed","response":{"status":"failed"}}',
+        "",
+        "",
+      ].join("\n"), { headers: { "content-type": "text/event-stream" } }),
+    });
+    const unterminated = await handleForcedSSEToJson({
+      ...base,
+      providerResponse: new Response([
+        "event: response.output_text.delta",
+        'data: {"type":"response.output_text.delta","delta":"partial"}',
+        "",
+        "",
+      ].join("\n"), { headers: { "content-type": "text/event-stream" } }),
+    });
+    const incomplete = await handleForcedSSEToJson({
+      ...base,
+      providerResponse: new Response([
+        "event: response.incomplete",
+        'data: {"type":"response.incomplete","response":{"status":"incomplete","output":[],"usage":{"input_tokens":2,"output_tokens":1,"total_tokens":3}}}',
+        "",
+        "",
+      ].join("\n"), { headers: { "content-type": "text/event-stream" } }),
+    });
+
+    expect(failed.success).toBe(false);
+    expect(unterminated.success).toBe(false);
+    expect(incomplete.success).toBe(true);
+    expect(onRequestSuccess).toHaveBeenCalledTimes(1);
+    expect(usageDbMocks.saveRequestUsage).toHaveBeenCalledTimes(1);
   });
 });
