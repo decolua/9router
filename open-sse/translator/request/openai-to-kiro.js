@@ -13,7 +13,8 @@ import {
   buildThinkingSystemPrefix,
   KIRO_AGENTIC_SYSTEM_PROMPT,
   resolveDefaultProfileArn,
-  buildKiroAdditionalModelRequestFieldsForModel
+  buildKiroAdditionalModelRequestFieldsForModel,
+  usesKiroNativeGptEffort
 } from "../../config/kiroConstants.js";
 import { parseDataUri } from "../concerns/image.js";
 import { DEFAULT_IMAGE_MIME } from "../schema/index.js";
@@ -511,12 +512,10 @@ function convertMessages(messages, tools, model) {
  *    Kiro's 2-3 minute server timeout. The suffix is stripped before being
  *    sent upstream.
  *
- * 2. Thinking / reasoning. Kiro does not accept `thinking.type` or
- *    `reasoning_effort` natively. The only way to enable reasoning is to
- *    inject `<thinking_mode>enabled</thinking_mode>` into the user content
- *    sent upstream. Detection covers Anthropic-Beta header, Claude API
+ * 2. Thinking / reasoning. Detection covers Anthropic-Beta header, Claude API
  *    `thinking`, OpenAI `reasoning_effort`, AMP/Cursor magic tags, and model
- *    name hints.
+ *    name hints. Supported models receive Kiro's schema-specific effort fields;
+ *    legacy prompt tags remain only for models that need them.
  */
 export function openaiToKiroRequest(model, body, stream, credentials) {
   const messages = body.messages || [];
@@ -527,6 +526,8 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
 
   const { upstream: upstreamModel, agentic } = resolveKiroModel(model);
   const thinkingBudget = resolveKiroThinkingBudget(body, credentials?.rawHeaders, model);
+  const additionalModelRequestFields = buildKiroAdditionalModelRequestFieldsForModel(body, upstreamModel);
+  const usesNativeGptEffort = usesKiroNativeGptEffort(body, upstreamModel);
 
   const { history, currentMessage } = convertMessages(messages, tools, upstreamModel);
 
@@ -554,7 +555,7 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
   // too because the CodeWhisperer surface does not always enforce top-level
   // systemPrompt for direct calls.
   const systemPromptParts = [];
-  if (thinkingBudget !== null) {
+  if (thinkingBudget !== null && !usesNativeGptEffort) {
     systemPromptParts.push(buildThinkingSystemPrefix(thinkingBudget));
   }
   if (agentic) {
@@ -612,7 +613,6 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
     payload.profileArn = profileArn;
   }
   if (systemPrompt) payload.systemPrompt = systemPrompt;
-  const additionalModelRequestFields = buildKiroAdditionalModelRequestFieldsForModel(body, upstreamModel);
   if (additionalModelRequestFields) {
     payload.additionalModelRequestFields = additionalModelRequestFields;
   }
