@@ -1,8 +1,3 @@
-# Unreleased
-
-## Features
-- **Remote CLI setup**: provide zero-prompt, OS-aware Windows BAT, macOS command, and Linux one-line installers with the selected API key embedded, preferring Cloudflare Tunnel then Tailscale for remote endpoints
-
 # v0.5.35 (2026-07-16)
 
 ## Features
