@@ -8,26 +8,26 @@ Không gian làm việc của Agent **9router** trong hệ thống OpenClaw.
 
 AI Router & Token Saver — kết nối các công cụ lập trình CLI với hơn 40 nhà cung cấp AI.
 
-| Thuộc tính | Giá trị |
-|------------|---------|
-| **Kho lưu trữ** | `git@github.com:diepxuan/9router.git` |
-| **Dashboard** | `http://localhost:20128` |
+| Thuộc tính            | Giá trị                                                                 |
+| --------------------- | ----------------------------------------------------------------------- |
+| **Kho lưu trữ**       | `git@github.com:diepxuan/9router.git`                                   |
+| **Dashboard**         | `http://9router.diepxuan.corp:3000/`                                    |
 | **Tập hợp công nghệ** | Next.js ^16.1.6, React 19, Express.js 5, SQLite, Zustand, TailwindCSS 4 |
 
 ---
 
 ## 2. Các File Định danh
 
-| File | Mô tả |
-|------|-------|
-| `SOUL.md` | Bản sắc cốt lõi, phong cách, chuyên môn |
-| `IDENTITY.md` | Con trỏ định danh + cấu hình |
-| `AGENTS.md` | Giao thức làm việc, boot sequence, kỷ luật Git |
+| File           | Mô tả                                                  |
+| -------------- | ------------------------------------------------------ |
+| `SOUL.md`      | Bản sắc cốt lõi, phong cách, chuyên môn                |
+| `IDENTITY.md`  | Con trỏ định danh + cấu hình                           |
+| `AGENTS.md`    | Giao thức làm việc, boot sequence, kỷ luật Git         |
 | `BOOTSTRAP.md` | Giao thức khởi tạo session (cho aiagent và agent khác) |
-| `TOOLS.md` | Dev quick reference (commands, paths, providers) |
-| `HEARTBEAT.md` | Điều khiển heartbeat task |
-| `memory/` | Thư mục nhật ký hàng ngày |
-| `docs/` | Tài liệu cập nhật (UPDATE-YYYY-MM-DD.md) |
+| `TOOLS.md`     | Dev quick reference (commands, paths, providers)       |
+| `HEARTBEAT.md` | Điều khiển heartbeat task                              |
+| `memory/`      | Thư mục nhật ký hàng ngày                              |
+| `docs/`        | Tài liệu cập nhật (UPDATE-YYYY-MM-DD.md)               |
 
 ---
 
@@ -41,28 +41,11 @@ AI Router & Token Saver — kết nối các công cụ lập trình CLI với h
 
 ---
 
-## 4. Lệnh thường dùng
-
-```bash
-cd /root/.openclaw/workspace/projects/9router
-
-# Phát triển
-npm run dev          # Server phát triển Next.js (cổng 20128)
-npm run build        # Build sản phẩm
-npm start            # Chạy server sản phẩm
-
-# Docker
-docker build -t 9router .
-```
-
----
-
 ## 5. Cấu hình Agent (openclaw.json)
 
-| Thuộc tính | Giá trị |
-|------------|---------|
-| ID | 9router |
-| Workspace | `/root/.openclaw/workspace/projects/9router` |
-| Agent Dir | `/root/.openclaw/agents/9router/agent` |
-| Memory Search | enabled |
-| Model | `9router/openclaw-coder` (mặc định) |
+| Thuộc tính    | Giá trị                             |
+| ------------- | ----------------------------------- |
+| ID            | 9router                             |
+| Workspace     | `/data/9router`                     |
+| Memory Search | enabled                             |
+| Model         | `9router/openclaw-coder` (mặc định) |

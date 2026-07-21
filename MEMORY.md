@@ -10,7 +10,7 @@
 |------------|---------|
 | Kho lưu trữ | diepxuan/9router |
 | Phiên bản hiện tại | v0.4.66 (29/05/2026) |
-| Dashboard | http://localhost:20128 |
+| Dashboard | http://9router.diepxuan.corp:3000/ |
 | Triển khai | CapRover (Docker) |
 
 ---
@@ -23,7 +23,7 @@
 - Vị trí: `src/services/rtk/`
 
 ### Proxy & Fallback
-- Cổng Proxy: 20128.
+- Cổng Proxy: 3000 (chỉ định bởi Sếp, 2026-07-21). Tài liệu upstream mặc định ghi 20128 — đã đồng bộ sang URL/port Sếp chỉ định.
 - Chuỗi Fallback: Subscription $\rightarrow$ Cheap $\rightarrow$ Free, đảm bảo không gián đoạn (zero downtime).
 - Thời gian chờ (Timeout stall): 30 giây (từ v0.4.66).
 
@@ -62,8 +62,9 @@
 
 | Vấn đề | Trạng thái | Ghi chú |
 |-------|--------|-------|
-| CHANGELOG bị ngắt quãng | Chưa xử lý | Chỉ có từ v0.3.96, thiếu các phiên bản trước đó. |
+| CHANGELOG bị ngắt quãng | Không còn áp dụng | Fork đã chuyển sang dùng `docs/CUSTOM-FEATURES-MERGE-CHECKLIST.md` làm changelog duy nhất (theo AGENTS.md §7). `CHANGELOG.md` giữ nguyên bản upstream làm tham chiếu. |
 | Tài liệu Identity trùng lặp | Đã xử lý | SOUL + IDENTITY trùng lặp 60% — đã refactor (PR #31). |
+| Workspace `.git` read-only | Đã ghi nhận (2026-07-21) | `.git` mount `ro` trong môi trường dev hiện tại — mọi thao tác tạo nhánh/commit/cherry-pick cần Sếp phê duyệt. Xem AGENTS.md §11 Sandbox & Escalation. |
 
 ---
 

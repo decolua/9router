@@ -12,8 +12,9 @@
 1. Đọc `SOUL.md` — Xác nhận bản sắc.
 2. Đọc `IDENTITY.md` — Xác định vai trò + quyền hạn.
 3. Đọc `USER.md` — Xác định Sếp.
-4. Đọc nhật ký hôm nay và hôm qua (`memory/YYYY-MM-DD.md`).
-5. Nếu là **MAIN SESSION**: đọc `MEMORY.md` (root workspace).
+4. Đọc `TOOLS.md` — ghi chú môi trường local + Sandbox & Escalation (phân biệt lệnh Read-only / Ghi local / Ghi cần hỏi Sếp)
+5. Đọc nhật ký hôm nay và hôm qua (`memory/YYYY-MM-DD.md`).
+6. Nếu là **MAIN SESSION**: đọc `MEMORY.md` (root workspace).
 
 > **TUYỆT ĐỐI KHÔNG BỎ QUA boot sequence. KHÔNG hành động khi chưa nắm đủ ngữ cảnh.**
 
@@ -170,3 +171,80 @@ Mục đích: giúp các agent/session khác (kể cả aiagent hoặc session m
 ---
 
 _Giao thức này kết hợp AGENTS.md + BOOTSTRAP.md. Không cần đọc BOOTSTRAP.md riêng biệt._
+
+## 11. Sandbox & Escalation (tham khảo `diepxuan/portal` TOOLS.md)
+
+> Mục đích: chuẩn hoá cách agent phân biệt lệnh read-only, ghi local trong workspace, và ghi cần xin phép Sếp. Tránh tự ý retry khi lệnh fail do sandbox/permission.
+
+### Phạm vi mặc định
+
+- Workspace làm việc: `/data/9router` (worktree rw).
+- Thư mục `.git`: mount riêng, có thể là `ro` tuỳ môi trường. Không có quyền ghi `.git` ⇒ không thể tạo nhánh, commit, cherry-pick, rebase local.
+- Mọi thao tác ngoài workspace hoặc cần nâng quyền đều thuộc nhóm **cần xin phép Sếp**.
+
+### Phân nhóm lệnh
+
+**Read-only — chạy luôn, không hỏi:**
+
+- `cat`, `head`, `tail`, `less`, `wc`, `file`, `nl`, `stat` — đọc file.
+- `ls`, `find`, `tree`, `du` — duyệt filesystem.
+- `grep`, `rg`, `ag`, `awk`, `sed -n` — search/filter.
+- `diff`, `cmp` — so sánh file.
+- `git status`, `git log`, `git show`, `git diff`, `git branch -a`, `git remote -v`, `git ls-files`, `git ls-tree` — git read-only.
+- `curl` GET (không mutate), `node --version` — phi chuẩn.
+- `date`, `whoami`, `pwd`, `echo`.
+
+**Ghi local trong workspace `/data/9router` hoặc `/tmp` — chạy luôn (khi `.git` cho phép):**
+
+- `mkdir`, `cp`, `mv`, `sed -i`, `write`, `apply_patch` trong `/data/9router` hoặc `/tmp`.
+- `git checkout -b <new-branch>` (local), `git add`, `git commit`, `git mv`.
+- `npm run build`, `npm run lint`, `npm test` — khi task yêu cầu.
+- `node --check <file>` — cú pháp check.
+
+**Ghi cần xin phép Sếp (chỉ chạy khi có approval rõ ràng):**
+
+- `git push origin <feature-branch>` — chỉ khi Sếp nói "push đi" / "em tạo PR đi".
+- `gh pr create`, `gh pr edit`, `gh pr merge <N>`, `gh pr close <N>` — workflow GitHub; chỉ khi Sếp cho lệnh rõ ràng.
+  - **Quy tắc merge:** dùng `gh pr merge <N> --repo <owner/repo> --squash --delete-branch` (KHÔNG `git merge` local + `gh pr close` — sẽ mất attribution và audit trail).
+- `git push origin main` — push trực tiếp lên main.
+- `git reset --hard`, `git checkout -- <file>`, `git clean -fd` — phá dữ liệu local.
+- `git push --force`, `git push --force-with-lease` — force push.
+- `rm` file lớn, `rm -rf` ngoài `/tmp/` hoặc ngoài workspace.
+- Lệnh ghi ra ngoài `/data/9router` và `/tmp/`.
+- Lệnh cần network ra ngoài GitHub: `npm install`, `composer install`, `git fetch/pull/push` khi sandbox chặn, gọi API mutation bên ngoài.
+- Lệnh mở GUI/browser/app ngoài terminal.
+- Migration/write DB ngoài phạm vi task.
+- Lệnh start/stop/restart dev server (`npm run start`, `./dev.sh start|stop`) — chỉ khi Sếp yêu cầu rõ ràng (xem thêm mục 12).
+
+### Khi lệnh fail do sandbox / network / permission
+
+Quy tắc bắt buộc:
+
+1. **DỪNG**, không tự ý retry bằng cách thêm flag hay né sandbox.
+2. **Báo cáo Sếp:** lệnh đã chạy, exit code, stderr/output quan trọng, nghi vấn nguyên nhân.
+3. **Sau khi được phép:** chỉ chạy đúng lệnh/phạm vi đã xin. Không dùng approval cho hành động khác rộng hơn.
+4. **Báo lại kết quả** sau khi chạy.
+
+### Cách xin phép khi chạy tool
+
+- Với tool runtime hiện tại: đặt `sandbox_permissions` = `require_escalated` và viết `justification` ngắn gọn cho Sếp.
+- Không tự ý tìm cách né sandbox (không `chmod`, không `chown`, không bind-mount tự phát, không `sudo`).
+- Nếu không có cơ chế approval, dừng và hỏi Sếp trực tiếp.
+
+## 12. Dev Server & Self-Update
+
+- Workspace có `dev.sh` (root, 242 dòng) quản lý VM dev env, hosts entry, systemd service.
+- Agent KHÔNG tự ý chạy `./dev.sh start|stop|restart` trừ khi Sếp yêu cầu.
+- Tự động check cập nhật upstream: tắt theo `next.config.mjs` (sửa `NEXT_DISABLE_UPDATE_CHECK=1` khi triển khai). Không bật lại trừ khi Sếp duyệt.
+- Khi cần verify UI/browser, dùng domain local `http://9router.diepxuan.corp` thay cho `http://localhost:20128`.
+
+## 13. Khi nào PHẢI escalate ngay (không chờ lệnh fail)
+
+| Tình huống                                     | Hành động                      |
+| ---------------------------------------------- | ------------------------------ |
+| `.git` không thể ghi (zfs `ro`, lock, ...)     | Báo Sếp ngay, không tự remount |
+| Proxy ngừng hoạt động > 5 phút                 | Báo Sếp NGAY                   |
+| Token / API key lộ / commit nhầm secret        | Báo Sếp NGAY, rollback ngay    |
+| Lỗi ảnh hưởng > 1 người dùng                   | Báo Sếp NGAY                   |
+| Trước khi push lên `main` / merge / force-push | Xin phép rõ ràng               |
+| Trước khi xoá nhánh đã có trên remote          | Xin phép rõ ràng               |

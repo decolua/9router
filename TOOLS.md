@@ -9,59 +9,49 @@
 ## 1. Môi trường (Development)
 
 - **Workspace:** `/root/.openclaw/workspace/projects/9router/`
-- **Dashboard:** `http://localhost:20128`
-- **Cổng Proxy:** `20128`
+- **Dashboard:** `http://9router.diepxuan.corp:3000/`
+- **Cổng Proxy:** `3000` (chỉ định bởi Sếp, 2026-07-21)
 - **Node:** v22.22.2
 
-## 2. Lệnh nhanh (Quick Commands)
+## 2. Thư mục chính (Key Directories)
 
-```bash
-npm run dev                # Next.js dev (port 20128)
-npm run build              # Production build
-npm start                  # Production server
-docker build -t 9router .  # Build Docker image
-docker run -p 20128:20128 9router
-```
+| Path                | Mô tả                                             |
+| ------------------- | ------------------------------------------------- |
+| `src/`              | Source code                                       |
+| `src/app/api/`      | API routes (proxy, providers)                     |
+| `src/diepxuan/`     | Fork extension layer (custom feature của fork)    |
+| `open-sse/`         | SSE engine (base + `open-sse/diepxuan/` cho fork) |
+| `docs/`             | Tài liệu (UPDATE-_.md, CUSTOM-FEATURES-_.md)      |
+| `scripts/diepxuan/` | Script kiểm tra custom feature sau rebase         |
 
-## 3. Thư mục chính (Key Directories)
-
-| Path | Mô tả |
-|------|-------|
-| `src/` | Source code |
-| `src/app/api/` | API routes (proxy, providers) |
-| `src/diepxuan/` | Fork extension layer (custom feature của fork) |
-| `open-sse/` | SSE engine (base + `open-sse/diepxuan/` cho fork) |
-| `docs/` | Tài liệu (UPDATE-*.md, CUSTOM-FEATURES-*.md) |
-| `scripts/diepxuan/` | Script kiểm tra custom feature sau rebase |
-
-## 4. Providers
+## 3. Providers
 
 - **Auth profile trong openclaw:** `9router`
-- **Base URL:** `http://localhost:20128/v1`
+- **Base URL:** `http://9router.diepxuan.corp:3000/v1`
 - **Models:** openclaw-coder, openclaw-data, openclaw-free
 
-## 5. Cơ sở dữ liệu (Database)
+## 4. Cơ sở dữ liệu (Database)
 
 - SQLite: `better-sqlite3` (chính), `sql.js` (fallback)
 - Runtime-generated, **không commit**
 - `DATA_DIR` mặc định: `~/.9router`
 
-## 6. Triển khai (Deployment)
+## 5. Triển khai (Deployment)
 
 - Docker + CapRover
 - File cấu hình: `captain-definition`, `diepxuan.config.mjs`
 - Đồng bộ runtime về host: `bash scripts/sync.sh`
 
-## 7. Kiểm thử (Testing)
+## 6. Kiểm thử (Testing)
 
-| Mục tiêu | Cách kiểm |
-|----------|-----------|
+| Mục tiêu        | Cách kiểm                                         |
+| --------------- | ------------------------------------------------- |
 | RTK compression | Verify không mất context, nén chính xác tuyệt đối |
-| Fallback | Provider fail → next provider, không gián đoạn |
-| Quota | Tracking chính xác, auto-refresh đúng timing |
-| Multi-account | Round-robin phân phối đều |
+| Fallback        | Provider fail → next provider, không gián đoạn    |
+| Quota           | Tracking chính xác, auto-refresh đúng timing      |
+| Multi-account   | Round-robin phân phối đều                         |
 
-## 8. Build & verify sau mỗi thay đổi
+## 7. Build & verify sau mỗi thay đổi
 
 ```bash
 # 1. Kiểm tra custom feature còn nguyên (chạy nhanh, ~5s)
@@ -74,11 +64,12 @@ npm run build
 ```
 
 Script check manifest dựa trên `docs/custom-features.manifest.json` — 11 features, 314+ check, gồm:
+
 - File tồn tại / pattern xuất hiện
 - `node --check` syntax
 - Phát hiện conflict marker còn sót sau rebase
 
-## 9. Rebase upstream (master)
+## 8. Rebase upstream (master)
 
 Mỗi lần upstream `decolua/9router` master có commit mới:
 
@@ -97,21 +88,21 @@ npm run build
 
 Nếu script báo FAIL, **dừng lại**, phân tích root cause, không push cho tới khi fix.
 
-## 10. Smoke runtime (sau khi cần xác nhận sâu)
+## 9. Smoke runtime (sau khi cần xác nhận sâu)
 
 Chỉ chạy khi build PASS nhưng nghi ngờ hook runtime hỏng:
 
 ```bash
 npm run start &                                     # Khởi động server
-curl -sS http://localhost:20128/api/health
-curl -sS http://localhost:20128/api/v1/models | jq .
+curl -sS http://9router.diepxuan.corp:3000/api/health
+curl -sS http://9router.diepxuan.corp:3000/api/v1/models | jq .
 ```
 
-Port chuẩn local: `20128`. Override bằng `PORT=<...>` nếu cần.
+Port chuẩn local: `3000`. Override bằng `PORT=<...>` nếu cần.
 
 Smoke test theo feature: xem `docs/CUSTOM-FEATURES-MERGE-CHECKLIST.md` mục 11.
 
-## 11. Commit & Push
+## 10. Commit & Push
 
 Theo `AGENTS.md` §3 + `.git-checklist.md`:
 
@@ -123,15 +114,17 @@ Theo `AGENTS.md` §3 + `.git-checklist.md`:
 - Sau khi Sếp merge PR: cleanup local branch đã lỗi thời.
 
 Trước khi push:
+
 ```bash
 git status --short --branch
 git diff --cached
 git log --oneline -5
 ```
 
-## 12. Khi nào tạo tài liệu
+## 11. Khi nào tạo tài liệu
 
 Theo `AGENTS.md` §7, tạo hoặc cập nhật `docs/UPDATE-YYYY-MM-DD.md` khi:
+
 - Thêm provider mới.
 - Thay đổi logic nén RTK.
 - Sửa fallback routing.
@@ -140,18 +133,18 @@ Theo `AGENTS.md` §7, tạo hoặc cập nhật `docs/UPDATE-YYYY-MM-DD.md` khi:
 
 Đồng thời cập nhật `CHANGELOG.md` cho mọi thay đổi.
 
-## 13. Tham chiếu (Reference)
+## 12. Tham chiếu (Reference)
 
-| File | Mục đích |
-|------|---------|
-| `AGENTS.md` | Giao thức làm việc, boot sequence, kỷ luật Git |
-| `MEMORY.md` | Bộ nhớ chiến lược dài hạn (chỉ MAIN SESSION) |
-| `AGENT_WORKSPACE.md` | Quick reference workspace |
-| `SOUL.md` | Bản sắc cốt lõi |
-| `IDENTITY.md` | Con trỏ định danh + cấu hình |
-| `USER.md` | Hồ sơ Sếp |
-| `docs/CUSTOM-FEATURES-MERGE-CHECKLIST.md` | Checklist rebase upstream, manifest script |
-| `CHANGELOG.md` | Lịch sử phiên bản |
-| `DOCKER.md` | Hướng dẫn Docker |
-| `README.md` | Giới thiệu dự án |
-| `memory/YYYY-MM-DD.md` | Nhật ký hàng ngày |
+| File                                      | Mục đích                                       |
+| ----------------------------------------- | ---------------------------------------------- |
+| `AGENTS.md`                               | Giao thức làm việc, boot sequence, kỷ luật Git |
+| `MEMORY.md`                               | Bộ nhớ chiến lược dài hạn (chỉ MAIN SESSION)   |
+| `AGENT_WORKSPACE.md`                      | Quick reference workspace                      |
+| `SOUL.md`                                 | Bản sắc cốt lõi                                |
+| `IDENTITY.md`                             | Con trỏ định danh + cấu hình                   |
+| `USER.md`                                 | Hồ sơ Sếp                                      |
+| `docs/CUSTOM-FEATURES-MERGE-CHECKLIST.md` | Checklist rebase upstream, manifest script     |
+| `CHANGELOG.md`                            | Lịch sử phiên bản                              |
+| `DOCKER.md`                               | Hướng dẫn Docker                               |
+| `README.md`                               | Giới thiệu dự án                               |
+| `memory/YYYY-MM-DD.md`                    | Nhật ký hàng ngày                              |
