@@ -100,7 +100,10 @@ export async function enableTunnel(localPort = 20128) {
     console.log("[Tunnel] enable success");
     return { success: true, tunnelUrl, shortId, publicUrl };
   } catch (e) {
-    console.error(`[Tunnel] enable error: ${e.message}`);
+    // Suppress noise when spawn was deliberately killed (restart/disable superseded it)
+    if (!/cloudflared killed|tunnel cancelled/.test(e.message)) {
+      console.error(`[Tunnel] enable error: ${e.message}`);
+    }
     throw e;
   } finally {
     svc.spawnInProgress = false;

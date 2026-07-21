@@ -46,7 +46,15 @@ export function recordSuccess(ip) {
 }
 
 export function getClientIp(request) {
-  const xff = request.headers.get("x-forwarded-for");
-  if (xff) return xff.split(",")[0].trim();
-  return request.headers.get("x-real-ip") || "unknown";
+  // Trusted: set from TCP socket by custom-server.js (client cannot spoof).
+  const realIp = request.headers.get("x-9r-real-ip");
+  if (realIp) return realIp;
+  // Behind a trusted reverse proxy that overwrites XFF with the real client IP.
+  if (process.env.TRUST_PROXY === "true") {
+    const xff = request.headers.get("x-forwarded-for");
+    if (xff) return xff.split(",")[0].trim();
+  }
+  // Direct exposure without custom-server: single bucket so spoofed XFF
+  // rotation cannot escape the limiter.
+  return "unknown";
 }

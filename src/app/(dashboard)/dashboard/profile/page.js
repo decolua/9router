@@ -2,12 +2,29 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Card, Button, Toggle, Input } from "@/shared/components";
+import Modal, { ConfirmModal } from "@/shared/components/Modal";
+import LanguageSwitcher from "@/shared/components/LanguageSwitcher";
 import { useTheme } from "@/shared/hooks/useTheme";
 import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
+import { LOCALE_COOKIE, normalizeLocale } from "@/i18n/config";
+import { LOCALE_FLAGS } from "@/shared/constants/locales";
+
+function getLocaleFromCookie() {
+  if (typeof document === "undefined") return "en";
+  const cookie = document.cookie
+    .split(";")
+    .find((c) => c.trim().startsWith(`${LOCALE_COOKIE}=`));
+  const value = cookie ? decodeURIComponent(cookie.split("=")[1]) : "en";
+  return normalizeLocale(value);
+}
 
 export default function ProfilePage() {
   const { theme, setTheme, isDark } = useTheme();
+  const [locale, setLocale] = useState("en");
+  const [langOpen, setLangOpen] = useState(false);
+  const [shutdownOpen, setShutdownOpen] = useState(false);
+  const [isShuttingDown, setIsShuttingDown] = useState(false);
   const [settings, setSettings] = useState({ fallbackStrategy: "fill-first" });
   const [loading, setLoading] = useState(true);
   const [passwords, setPasswords] = useState({ current: "", new: "", confirm: "" });
@@ -15,6 +32,8 @@ export default function ProfilePage() {
   const [passLoading, setPassLoading] = useState(false);
   const [dbLoading, setDbLoading] = useState(false);
   const [dbStatus, setDbStatus] = useState({ type: "", message: "" });
+  const [dbAuth, setDbAuth] = useState({ open: false, mode: "", password: "" });
+  const pendingImportRef = useRef(null);
   const [oidcForm, setOidcForm] = useState({
     authMode: "password",
     oidcIssuerUrl: "",
@@ -38,6 +57,10 @@ export default function ProfilePage() {
   const [proxyStatus, setProxyStatus] = useState({ type: "", message: "" });
   const [proxyLoading, setProxyLoading] = useState(false);
   const [proxyTestLoading, setProxyTestLoading] = useState(false);
+
+  useEffect(() => {
+    setLocale(getLocaleFromCookie());
+  }, [langOpen]);
 
   useEffect(() => {
     fetch("/api/settings")
@@ -448,11 +471,13 @@ export default function ProfilePage() {
     }
   };
 
-  const handleExportDatabase = async () => {
+  const handleExportDatabase = async (password) => {
     setDbLoading(true);
     setDbStatus({ type: "", message: "" });
     try {
-      const res = await fetch("/api/settings/database");
+      const res = await fetch("/api/settings/database", {
+        headers: { "x-9r-password": password },
+      });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Failed to export database");
@@ -479,13 +504,19 @@ export default function ProfilePage() {
     }
   };
 
-  const handleImportDatabase = async (event) => {
+  const handleImportDatabase = (event) => {
     const file = event.target.files?.[0];
+    if (importFileRef.current) importFileRef.current.value = "";
     if (!file) return;
-
-    setDbLoading(true);
+    pendingImportRef.current = file;
     setDbStatus({ type: "", message: "" });
+    setDbAuth({ open: true, mode: "import", password: "" });
+  };
 
+  const runImportDatabase = async (password) => {
+    const file = pendingImportRef.current;
+    if (!file) return;
+    setDbLoading(true);
     try {
       const raw = await file.text();
       const payload = JSON.parse(raw);
@@ -493,7 +524,7 @@ export default function ProfilePage() {
       const res = await fetch("/api/settings/database", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ ...payload, password }),
       });
 
       const data = await res.json().catch(() => ({}));
@@ -506,14 +537,42 @@ export default function ProfilePage() {
     } catch (err) {
       setDbStatus({ type: "error", message: err.message || "Invalid backup file" });
     } finally {
-      if (importFileRef.current) {
-        importFileRef.current.value = "";
-      }
+      pendingImportRef.current = null;
       setDbLoading(false);
     }
   };
 
+  // Confirm password modal, then run export or import.
+  const handleDbAuthConfirm = async () => {
+    const { mode, password } = dbAuth;
+    setDbAuth({ open: false, mode: "", password: "" });
+    if (mode === "export") await handleExportDatabase(password);
+    else if (mode === "import") await runImportDatabase(password);
+  };
+
   const observabilityEnabled = settings.enableObservability === true;
+
+  const handleShutdown = async () => {
+    setIsShuttingDown(true);
+    try {
+      await fetch("/api/version/shutdown", { method: "POST" });
+    } catch (e) {
+      // Expected to fail as server shuts down; ignore error
+    }
+    setIsShuttingDown(false);
+    setShutdownOpen(false);
+  };
+
+  const handleLogout = async () => {
+    try {
+      const res = await fetch("/api/auth/logout", { method: "POST" });
+      if (res.ok) {
+        window.location.assign("/login");
+      }
+    } catch (err) {
+      console.error("Failed to logout:", err);
+    }
+  };
 
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-0">
@@ -562,7 +621,7 @@ export default function ProfilePage() {
               <Button
                 variant="secondary"
                 icon="download"
-                onClick={handleExportDatabase}
+                onClick={() => setDbAuth({ open: true, mode: "export", password: "" })}
                 loading={dbLoading}
                 className="w-full sm:w-auto"
               >
@@ -591,6 +650,24 @@ export default function ProfilePage() {
               </p>
             )}
           </div>
+        </Card>
+
+        {/* Language */}
+        <Card>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="size-10 rounded-lg bg-blue-500/10 text-blue-500 flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-[20px]">language</span>
+            </div>
+            <h3 className="text-base sm:text-lg font-semibold">Language</h3>
+          </div>
+          <button
+            onClick={() => setLangOpen(true)}
+            className="flex items-center justify-between w-full p-3 rounded-lg bg-bg border border-border hover:border-primary/50 transition-colors"
+            data-i18n-skip="true"
+          >
+            <span className="text-sm text-text-muted">Display language</span>
+            <span className="text-2xl">{LOCALE_FLAGS[locale] || "🌐"}</span>
+          </button>
         </Card>
 
         {/* Security */}
@@ -1024,12 +1101,82 @@ export default function ProfilePage() {
           </div>
         </Card>
 
+        {/* Account actions */}
+        <div className="flex flex-col sm:flex-row gap-2">
+          <Button
+            variant="outline"
+            fullWidth
+            icon="power_settings_new"
+            onClick={() => setShutdownOpen(true)}
+            className="text-red-500 border-red-200 hover:bg-red-50 hover:border-red-300"
+          >
+            Shutdown
+          </Button>
+          <Button
+            variant="outline"
+            fullWidth
+            icon="logout"
+            onClick={handleLogout}
+          >
+            Logout
+          </Button>
+        </div>
+
         {/* App Info */}
         <div className="text-center text-xs sm:text-sm text-text-muted py-4">
           <p>{APP_CONFIG.name} v{APP_CONFIG.version}</p>
           <p className="mt-1">Local Mode - All data stored on your machine</p>
         </div>
       </div>
+
+      <LanguageSwitcher
+        hideTrigger
+        isOpen={langOpen}
+        onClose={(next) => {
+          setLangOpen(false);
+          setLocale(next);
+        }}
+      />
+      <ConfirmModal
+        isOpen={shutdownOpen}
+        onClose={() => setShutdownOpen(false)}
+        onConfirm={handleShutdown}
+        title="Close Proxy"
+        message="Are you sure you want to close the proxy server?"
+        confirmText="Close"
+        cancelText="Cancel"
+        variant="danger"
+        loading={isShuttingDown}
+      />
+
+      <Modal
+        isOpen={dbAuth.open}
+        onClose={() => setDbAuth({ open: false, mode: "", password: "" })}
+        title="Confirm Password"
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setDbAuth({ open: false, mode: "", password: "" })} disabled={dbLoading}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={handleDbAuthConfirm} loading={dbLoading} disabled={!dbAuth.password}>
+              Confirm
+            </Button>
+          </>
+        }
+      >
+        <p className="text-text-muted mb-3 text-sm">
+          Enter your current password to {dbAuth.mode === "export" ? "export" : "import"} the database.
+        </p>
+        <Input
+          type="password"
+          value={dbAuth.password}
+          onChange={(e) => setDbAuth((s) => ({ ...s, password: e.target.value }))}
+          onKeyDown={(e) => { if (e.key === "Enter" && dbAuth.password) handleDbAuthConfirm(); }}
+          placeholder="Current password"
+          autoFocus
+        />
+      </Modal>
     </div>
   );
 }

@@ -30,9 +30,6 @@ export {
 // Services
 export { 
   detectFormat, 
-  getProviderConfig, 
-  buildProviderUrl, 
-  buildProviderHeaders, 
   getTargetFormat 
 } from "./services/provider.js";
 
@@ -58,6 +55,14 @@ export {
   getAccessToken,
   refreshTokenByProvider
 } from "./services/tokenRefresh.js";
+
+export {
+  CODEX_MAX_REFRESH_AGE_MS,
+  shouldRefreshCredentials,
+  refreshProviderCredentials,
+  mergeRefreshedCredentials,
+  mergeProviderSpecificData,
+} from "./services/oauthCredentialManager.js";
 
 // Handlers
 export { handleChatCore, isTokenExpiringSoon } from "./handlers/chatCore.js";

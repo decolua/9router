@@ -7,8 +7,8 @@ const { generateRootCA, loadRootCA, generateLeafCert } = require("./rootCA");
  * Generate Root CA certificate (one-time setup)
  * This replaces the old static wildcard cert approach
  */
-async function generateCert() {
-  return await generateRootCA();
+function generateCert() {
+  return generateRootCA();
 }
 
 /**

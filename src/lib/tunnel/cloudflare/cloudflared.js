@@ -185,6 +185,7 @@ async function _ensureCloudflared() {
 
 let cloudflaredProcess = null;
 let unexpectedExitHandler = null;
+let intentionalKill = false; // suppress unexpected-exit callback during deliberate kill
 
 /** Register a callback to be called when cloudflared exits unexpectedly after connecting */
 export function setUnexpectedExitHandler(handler) {
@@ -261,6 +262,7 @@ export async function spawnCloudflared(tunnelToken) {
         return;
       }
       // Watchdog (initializeApp) handles recovery — no auto-reconnect here
+      if (intentionalKill) { intentionalKill = false; return; }
       if (wasConnected && unexpectedExitHandler) unexpectedExitHandler();
     });
   });
@@ -372,6 +374,14 @@ export async function spawnQuickTunnel(localPort, onUrlUpdate) {
     child.on("exit", (code, signal) => {
       cloudflaredProcess = null;
       clearPid();
+      // Deliberate kill (restart/disable) — exit silently, no error noise
+      if (intentionalKill) {
+        intentionalKill = false;
+        clearTimeout(timeout);
+        cleanup();
+        if (!resolved) { resolved = true; reject(new Error("cloudflared killed")); }
+        return;
+      }
       console.log(`[Tunnel] cloudflared exit code=${code} signal=${signal}`);
       if (!resolved) {
         resolved = true;
@@ -408,6 +418,7 @@ function killCloudflaredByPort(port) {
 }
 
 export function killCloudflared(localPort) {
+  intentionalKill = true;
   if (cloudflaredProcess) {
     try {
       cloudflaredProcess.kill();

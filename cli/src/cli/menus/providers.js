@@ -55,6 +55,7 @@ const PROVIDER_MODELS = {
   ag: [
     { id: "gemini-3-flash-agent" },
     { id: "gemini-3.5-flash-low" },
+    { id: "gemini-3.5-flash-extra-low" },
     { id: "gemini-pro-agent" },
     { id: "gemini-3.1-pro-low" },
     { id: "claude-sonnet-4-6" },
@@ -77,6 +78,7 @@ const PROVIDER_MODELS = {
     { id: "grok-code-fast-1" },
   ],
   kr: [
+    { id: "claude-sonnet-5" },
     { id: "claude-sonnet-4.5" },
     { id: "claude-haiku-4.5" },
   ],
@@ -129,7 +131,7 @@ const APIKEY_PROVIDERS = {
   openrouter: { id: "openrouter", name: "OpenRouter" },
   glm: { id: "glm", name: "GLM Coding" },
   minimax: { id: "minimax", name: "Minimax Coding" },
-  kimi: { id: "kimi", name: "Kimi Coding" },
+  kimi: { id: "kimi", name: "Kimi" },
   openai: { id: "openai", name: "OpenAI" },
   anthropic: { id: "anthropic", name: "Anthropic" },
   gemini: { id: "gemini", name: "Gemini" },
