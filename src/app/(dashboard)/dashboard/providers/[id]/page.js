@@ -14,7 +14,6 @@ import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { translate } from "@/i18n/runtime";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
-import { updateProviderStrategy } from "@/shared/utils/providerStrategies";
 import ModelRow from "./ModelRow";
 import PassthroughModelsSection from "./PassthroughModelsSection";
 import CompatibleModelsSection from "./CompatibleModelsSection";
@@ -81,6 +80,8 @@ export default function ProviderDetailPage() {
   const [oneByOneResults, setOneByOneResults] = useState({});
   const [oneByOneSummary, setOneByOneSummary] = useState(null);
   const stopOneByOneRef = useRef(false);
+  const providerStrategySaveQueueRef = useRef(Promise.resolve());
+  const providerStrategySaveVersionRef = useRef(0);
   const [importingQoderModels, setImportingQoderModels] = useState(false);
   const { copied, copy } = useCopyToClipboard();
 
@@ -365,50 +366,50 @@ export default function ProviderDetailPage() {
     }
   };
 
-  const saveProviderStrategy = async (strategy, stickyLimit, cacheAffinityEnabled = providerCacheAffinity) => {
-    try {
-      setProviderStrategyError("");
-      const settingsRes = await fetch("/api/settings", { cache: "no-store" });
-      if (!settingsRes.ok) throw new Error("Failed to load provider settings");
-      const settingsData = settingsRes.ok ? await settingsRes.json() : {};
-      const current = settingsData.providerStrategies || {};
-      const updated = updateProviderStrategy(current, providerId, {
-        strategy,
-        stickyLimit,
-        cacheAffinityEnabled,
-      });
-
+  const saveProviderStrategy = (strategy, stickyLimit, cacheAffinityEnabled = providerCacheAffinity) => {
+    const version = ++providerStrategySaveVersionRef.current;
+    setProviderStrategyError("");
+    const operation = providerStrategySaveQueueRef.current.then(async () => {
       const saveRes = await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ providerStrategies: updated }),
+        body: JSON.stringify({
+          providerStrategyPatch: { providerId, strategy, stickyLimit, cacheAffinityEnabled },
+        }),
       });
       if (!saveRes.ok) throw new Error("Failed to save provider settings");
-      return true;
-    } catch (error) {
-      console.log("Error saving provider strategy:", error);
-      setProviderStrategyError(error.message || "Failed to save provider settings");
-      return false;
-    }
+    });
+    providerStrategySaveQueueRef.current = operation.catch(() => {});
+    return operation.then(
+      () => ({ saved: true, isLatest: version === providerStrategySaveVersionRef.current }),
+      (error) => {
+        console.log("Error saving provider strategy:", error);
+        const isLatest = version === providerStrategySaveVersionRef.current;
+        if (isLatest) setProviderStrategyError(error.message || "Failed to save provider settings");
+        return { saved: false, isLatest };
+      },
+    );
   };
 
-  const handleRoundRobinToggle = (enabled) => {
+  const handleRoundRobinToggle = async (enabled) => {
     const strategy = enabled ? "round-robin" : null;
     const sticky = enabled ? (providerStickyLimit || "1") : providerStickyLimit;
     if (enabled && !providerStickyLimit) setProviderStickyLimit("1");
     setProviderStrategy(strategy);
-    saveProviderStrategy(strategy, sticky);
+    const { saved, isLatest } = await saveProviderStrategy(strategy, sticky);
+    if (!saved && isLatest) await fetchConnections();
   };
 
-  const handleStickyLimitChange = (value) => {
+  const handleStickyLimitChange = async (value) => {
     setProviderStickyLimit(value);
-    saveProviderStrategy("round-robin", value);
+    const { saved, isLatest } = await saveProviderStrategy("round-robin", value);
+    if (!saved && isLatest) await fetchConnections();
   };
 
   const handleCacheAffinityToggle = async (enabled) => {
     setProviderCacheAffinity(enabled);
-    const saved = await saveProviderStrategy(providerStrategy, providerStickyLimit, enabled);
-    if (!saved) setProviderCacheAffinity(!enabled);
+    const { saved, isLatest } = await saveProviderStrategy(providerStrategy, providerStickyLimit, enabled);
+    if (!saved && isLatest) await fetchConnections();
   };
 
   const saveThinkingConfig = async (mode) => {

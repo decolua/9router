@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/connectionStatus";
 import PropTypes from "prop-types";
 import { Card, Badge, Button, Modal, Select, Toggle, EditConnectionModal, ConfirmModal } from "@/shared/components";
-import { updateProviderStrategy } from "@/shared/utils/providerStrategies";
 
 // ── CooldownTimer ──────────────────────────────────────────────
 function CooldownTimer({ until }) {
@@ -306,6 +305,8 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
   const [providerStrategy, setProviderStrategy] = useState(null);
   const [providerStickyLimit, setProviderStickyLimit] = useState("1");
   const [confirmState, setConfirmState] = useState(null);
+  const providerStrategySaveQueueRef = useRef(Promise.resolve());
+  const providerStrategySaveVersionRef = useRef(0);
 
   const fetch_ = useCallback(async () => {
     try {
@@ -328,14 +329,38 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
 
   useEffect(() => { fetch_(); }, [fetch_]);
 
-  const saveStrategy = async (strategy, stickyLimit) => {
-    try {
-      const res = await fetch("/api/settings", { cache: "no-store" });
-      const data = res.ok ? await res.json() : {};
-      const current = data.providerStrategies || {};
-      const updated = updateProviderStrategy(current, providerId, { strategy, stickyLimit });
-      await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ providerStrategies: updated }) });
-    } catch (e) { console.log("saveStrategy error:", e); }
+  const saveStrategy = (strategy, stickyLimit) => {
+    const version = ++providerStrategySaveVersionRef.current;
+    const operation = providerStrategySaveQueueRef.current.then(async () => {
+      const saveRes = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ providerStrategyPatch: { providerId, strategy, stickyLimit } }),
+      });
+      if (!saveRes.ok) throw new Error("Failed to save provider settings");
+    });
+    providerStrategySaveQueueRef.current = operation.catch(() => {});
+    return operation.then(
+      () => ({ saved: true, isLatest: version === providerStrategySaveVersionRef.current }),
+      (error) => {
+        console.log("saveStrategy error:", error);
+        return { saved: false, isLatest: version === providerStrategySaveVersionRef.current };
+      },
+    );
+  };
+
+  const handleRoundRobinToggle = async (enabled) => {
+    const strategy = enabled ? "round-robin" : null;
+    setProviderStrategy(strategy);
+    if (enabled && !providerStickyLimit) setProviderStickyLimit("1");
+    const { saved, isLatest } = await saveStrategy(strategy, enabled ? (providerStickyLimit || "1") : providerStickyLimit);
+    if (!saved && isLatest) await fetch_();
+  };
+
+  const handleStickyLimitChange = async (value) => {
+    setProviderStickyLimit(value);
+    const { saved, isLatest } = await saveStrategy("round-robin", value);
+    if (!saved && isLatest) await fetch_();
   };
 
   const handleSwapPriority = async (i1, i2) => {
@@ -404,19 +429,14 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
             <Toggle
               aria-label="Round Robin"
               checked={providerStrategy === "round-robin"}
-              onChange={(enabled) => {
-                const strategy = enabled ? "round-robin" : null;
-                setProviderStrategy(strategy);
-                if (enabled && !providerStickyLimit) setProviderStickyLimit("1");
-                saveStrategy(strategy, enabled ? (providerStickyLimit || "1") : providerStickyLimit);
-              }}
+              onChange={handleRoundRobinToggle}
             />
             {providerStrategy === "round-robin" && (
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="text-xs text-text-muted">Sticky:</span>
                 <input
                   type="number" min={1} value={providerStickyLimit}
-                  onChange={(e) => { setProviderStickyLimit(e.target.value); saveStrategy("round-robin", e.target.value); }}
+                  onChange={(e) => handleStickyLimitChange(e.target.value)}
                   className="w-16 px-2 py-1 text-xs border border-border rounded-md bg-background focus:outline-none focus:border-primary"
                 />
               </div>

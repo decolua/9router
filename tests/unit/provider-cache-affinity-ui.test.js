@@ -14,6 +14,10 @@ const toggleSource = fs.readFileSync(
   new URL("../../src/shared/components/Toggle.js", import.meta.url),
   "utf8",
 );
+const settingsRepoSource = fs.readFileSync(
+  new URL("../../src/lib/db/repos/settingsRepo.js", import.meta.url),
+  "utf8",
+);
 
 describe("provider cache affinity control", () => {
   it("preserves unrelated and omitted provider settings", () => {
@@ -49,9 +53,24 @@ describe("provider cache affinity control", () => {
     expect(pageSource).toContain("onChange={handleCacheAffinityToggle}");
   });
 
-  it("uses the preserving helper from every provider strategy control", () => {
-    expect(pageSource).toContain("updateProviderStrategy(current, providerId");
-    expect(cardSource).toContain("updateProviderStrategy(current, providerId");
+  it("uses an atomic provider patch instead of saving a stale full map", () => {
+    expect(pageSource).toContain("providerStrategyPatch: {");
+    expect(cardSource).toContain("providerStrategyPatch: {");
+    expect(settingsRepoSource).toContain("const { providerStrategyPatch, ...plainUpdates }");
+    expect(pageSource).not.toContain("body: JSON.stringify({ providerStrategies: updated })");
+    expect(cardSource).not.toContain("body: JSON.stringify({ providerStrategies: updated })");
+  });
+
+  it("serializes saves and only rolls back the latest request", () => {
+    expect(pageSource).toContain("providerStrategySaveQueueRef");
+    expect(cardSource).toContain("providerStrategySaveQueueRef");
+    expect(pageSource).toContain("!saved && isLatest");
+    expect(cardSource).toContain("!saved && isLatest");
+  });
+
+  it("refetches confirmed strategy state when the latest save fails", () => {
+    expect(pageSource).toContain("if (!saved && isLatest) await fetchConnections()");
+    expect(cardSource).toContain("if (!saved && isLatest) await fetch_()");
   });
 
   it("forwards accessible switch names", () => {
