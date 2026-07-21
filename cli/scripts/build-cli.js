@@ -101,6 +101,8 @@ if (appPkg.version !== cliPkg.version) {
 }
 
 // Step 1: Build app with Next.js (workspace tracing root → traced node_modules in standalone).
+// Persistent build caches can retain modules from another linked worktree.
+if (fs.existsSync(buildDistDir)) fs.rmSync(buildDistDir, { recursive: true, force: true });
 console.log("1️⃣  Building Next.js app...");
 try {
   execSync("npm run build", {
