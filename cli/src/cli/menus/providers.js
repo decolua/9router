@@ -53,6 +53,9 @@ const PROVIDER_MODELS = {
     { id: "glm-4.7" },
   ],
   ag: [
+    { id: "gemini-3.6-flash-high" },
+    { id: "gemini-3.6-flash-medium" },
+    { id: "gemini-3.6-flash-low" },
     { id: "gemini-3-flash-agent" },
     { id: "gemini-3.5-flash-low" },
     { id: "gemini-3.5-flash-extra-low" },
