@@ -25,6 +25,31 @@ describe("Codex fast tier and capacity handling", () => {
     expect(body.reasoning.effort).toBe("xhigh");
   });
 
+  it.each(["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"])(
+    "preserves max reasoning for %s",
+    (model) => {
+      const executor = new CodexExecutor();
+      const body = executor.transformRequest(model, {
+        model,
+        input: "hi",
+        reasoning_effort: "max",
+      }, true, {});
+
+      expect(body.reasoning.effort).toBe("max");
+    },
+  );
+
+  it("parses and preserves the GPT-5.6 max model suffix", () => {
+    const executor = new CodexExecutor();
+    const body = executor.transformRequest("gpt-5.6-sol-max", {
+      model: "gpt-5.6-sol-max",
+      input: "hi",
+    }, true, {});
+
+    expect(body.model).toBe("gpt-5.6-sol");
+    expect(body.reasoning.effort).toBe("max");
+  });
+
   it("uses ChatGPT workspace header fallback", () => {
     const executor = new CodexExecutor();
     const headers = executor.buildHeaders({

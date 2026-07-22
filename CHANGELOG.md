@@ -1,3 +1,9 @@
+# Unreleased
+
+## Fixes
+- **Codex/OpenAI**: preserve GPT-5.6 `max` reasoning effort instead of downgrading it to `xhigh`
+
+
 # v0.5.40 (2026-07-20)
 
 ## Features

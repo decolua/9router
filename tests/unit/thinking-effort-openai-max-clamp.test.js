@@ -2,11 +2,8 @@ import { describe, expect, it } from "vitest";
 import { applyThinking } from "../../open-sse/translator/concerns/thinkingUnified.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
 
-// Regression: Claude Code sends thinking effort "max" (its top level). When
-// 9router routes to an OpenAI-format provider, applyThinking() case "openai"
-// must clamp "max"→"xhigh" because OpenAI's reasoning_effort enum has no "max"
-// (L.openai caps at "xhigh"). Without the clamp, upstream returns HTTP 400
-// "max effort not support". See open-sse/providers/thinkingLevels.js:10.
+// Regression: Claude Code sends thinking effort "max" (its top level). Older
+// OpenAI-format models reject it, while GPT-5.6 accepts it as a distinct level.
 describe("applyThinking (openai): clamp max effort to xhigh", () => {
   it("client output_config.effort:\"max\" → reasoning_effort:\"xhigh\" (not \"max\")", () => {
     const body = { output_config: { effort: "max" } };
@@ -19,6 +16,20 @@ describe("applyThinking (openai): clamp max effort to xhigh", () => {
     const out = applyThinking(FORMATS.OPENAI, "gpt-5", body, "openai");
     expect(out.reasoning_effort).toBe("xhigh");
   });
+
+  it.each([
+    ["openai", "gpt-5.6"],
+    ["openai", "gpt-5.6-sol"],
+    ["codex", "gpt-5.6-sol"],
+    ["codex", "gpt-5.6-terra"],
+    ["codex", "gpt-5.6-luna"],
+  ])(
+    "%s/%s preserves max directly",
+    (provider, model) => {
+      const out = applyThinking(FORMATS.OPENAI, model, { reasoning_effort: "max" }, provider);
+      expect(out.reasoning_effort).toBe("max");
+    },
+  );
 
   it("\"xhigh\" passes through unchanged (highest valid OpenAI level)", () => {
     const body = { reasoning_effort: "xhigh" };

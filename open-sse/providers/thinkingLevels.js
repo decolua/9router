@@ -30,10 +30,13 @@ const FORMAT_LEVELS = {
   step: L.base,
 };
 
+const GPT_56_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+
 // Model-name pattern overrides (glob, first match wins) — more precise than format default.
 const PATTERN_THINKING = [
-  // gpt-5.6-sol accepts max (maps to xhigh on wire); live probe rejected ultra.
-  { pattern: "*gpt-5.6-sol*", levels: ["none", "minimal", "low", "medium", "high", "xhigh", "max"] },
+  // OpenAI API and Codex GPT-5.6 models accept max directly; older models cap at xhigh.
+  { providers: ["openai", "codex"], pattern: "*gpt-5.6", levels: GPT_56_LEVELS },
+  { providers: ["openai", "codex"], pattern: "*gpt-5.6-*", levels: GPT_56_LEVELS },
   { pattern: "*codex*", levels: ["low", "medium", "high", "xhigh"] }, // codex cannot disable thinking
 ];
 
@@ -41,8 +44,14 @@ const PATTERN_THINKING = [
 export function getThinkingLevels(provider, model) {
   const caps = getCapabilitiesForModel(provider, model);
   if (!caps.reasoning) return null;
-  const hit = PATTERN_THINKING.find((p) => matchPattern(p.pattern, model));
+  const hit = PATTERN_THINKING.find((p) =>
+    (!p.providers || p.providers.includes(provider)) && matchPattern(p.pattern, model)
+  );
   let levels = hit?.levels || FORMAT_LEVELS[caps.thinkingFormat] || L.base;
   if (caps.thinkingCanDisable === false) levels = levels.filter((l) => l !== "none");
   return levels;
+}
+
+export function supportsThinkingLevel(provider, model, level) {
+  return getThinkingLevels(provider, model)?.includes(level) === true;
 }
