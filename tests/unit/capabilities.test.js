@@ -43,4 +43,29 @@ describe("getCapabilitiesForModel", () => {
     expect(getCapabilitiesForModel("kiro", "gpt-5.6-luna-agentic")).toMatchObject(kiroGpt56Expected);
     expect(getCapabilitiesForModel("kiro", "gpt-5.6-sol-thinking-agentic")).toMatchObject(kiroGpt56Expected);
   });
+
+  // Anthropic rejects thinking.type "enabled" on 4.6+ generation models outright, so a
+  // budget format turns every thinking request into a 400. Fable/Mythos are newer than
+  // 4.6 and must follow the adaptive rule.
+  it("reports Claude Fable / Mythos as adaptive-thinking models", () => {
+    for (const provider of ["github", "claude"]) {
+      expect(getCapabilitiesForModel(provider, "claude-fable-5").thinkingFormat).toBe("claude-adaptive");
+      expect(getCapabilitiesForModel(provider, "claude-mythos-1").thinkingFormat).toBe("claude-adaptive");
+    }
+  });
+
+  // Live provider catalogs ship claude-* variants ahead of the static model lists;
+  // anything falling through to the generic "*claude*sonnet*" pattern gets the 4.5-era
+  // budget format and breaks.
+  it("keeps unlisted Sonnet 5 variants on the adaptive format", () => {
+    expect(getCapabilitiesForModel("github", "claude-sonnet-5.1").thinkingFormat).toBe("claude-adaptive");
+    expect(getCapabilitiesForModel("github", "claude-sonnet-5-preview").thinkingFormat).toBe("claude-adaptive");
+  });
+
+  // 4.5 and older stay on the budget format — they reject output_config.effort.
+  it("keeps pre-4.6 Claude models on the budget format", () => {
+    expect(getCapabilitiesForModel("github", "claude-haiku-4.5").thinkingFormat).toBe("claude-budget");
+    expect(getCapabilitiesForModel("github", "claude-sonnet-4.5").thinkingFormat).toBe("claude-budget");
+    expect(getCapabilitiesForModel("github", "claude-opus-4.5").thinkingFormat).toBe("claude-budget");
+  });
 });
