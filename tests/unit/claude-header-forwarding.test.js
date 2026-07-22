@@ -159,6 +159,26 @@ describe("DefaultExecutor.buildHeaders() — claude provider", () => {
     expect(headers["x-stainless-os"]).toBe("MacOS");
   });
 
+  it("preserves incoming context-1m beta flags when overlaying cached Claude headers", async () => {
+    vi.resetModules();
+    const cache = await import("open-sse/utils/claudeHeaderCache.js");
+    cache.cacheClaudeHeaders({
+      "user-agent": "claude-code/2.1.217 node/24.3.0",
+      "anthropic-beta": "claude-code-20250219,context-1m-2025-08-07,oauth-2025-04-20",
+      "anthropic-version": "2023-06-01",
+      "x-app": "cli",
+    });
+    const mod = await import("open-sse/executors/default.js");
+    const DefaultExecutor = mod.DefaultExecutor || mod.default;
+    const executor = new DefaultExecutor("claude");
+    const headers = executor.buildHeaders({ apiKey: "sk-test" }, true);
+
+    const betaFlags = (headers["anthropic-beta"] || "").split(",").map((s) => s.trim()).filter(Boolean);
+    expect(betaFlags).toContain("context-1m-2025-08-07");
+    expect(betaFlags).toContain("claude-code-20250219");
+    expect(betaFlags).toContain("oauth-2025-04-20");
+  });
+
   it("removes conflicting Title-Case static keys when cached lowercase keys exist", () => {
     const executor = new DefaultExecutor("claude");
     const headers = executor.buildHeaders({ apiKey: "sk-test" }, true);
