@@ -99,18 +99,27 @@ function collectBodyRaw(req) {
 // Extract model from URL path (Gemini), body (OpenAI/Anthropic), or Kiro conversationState
 function extractModel(url, body) {
   const urlMatch = url.match(/\/models\/([^/:]+)/);
-  if (urlMatch) return urlMatch[1];
+  const urlModel = urlMatch?.[1] || null;
   
   // Skip parsing if body is binary (AWS EventStream, Protocol Buffers, etc.)
-  if (isBinaryData(body)) return null;
+  if (isBinaryData(body)) return urlModel;
   
   try {
     const parsed = JSON.parse(body.toString());
     if (parsed.conversationState) {
       return parsed.conversationState.currentMessage?.userInputMessage?.modelId || null;
     }
-    return parsed.model || null;
-  } catch { return null; }
+    const model = urlModel || parsed.model || null;
+    if (String(model).replace(/^models\//, "") === "gemini-3.6-flash-tiered") {
+      const rawLevel = parsed.request?.generationConfig?.thinkingConfig?.thinkingLevel
+        || parsed.generationConfig?.thinkingConfig?.thinkingLevel;
+      const level = ["high", "medium", "low"].includes(String(rawLevel).toLowerCase())
+        ? String(rawLevel).toLowerCase()
+        : "medium";
+      return `gemini-3.6-flash-${level}`;
+    }
+    return model;
+  } catch { return urlModel; }
 }
 
 // Detect binary data vs JSON text

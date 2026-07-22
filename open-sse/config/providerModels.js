@@ -2,7 +2,7 @@ import { PROVIDERS } from "./providers.js";
 import REGISTRY from "../providers/registry/index.js";
 // PROVIDER_MODELS now built from providers/registry (transport + models co-located)
 import { PROVIDER_MODELS } from "../providers/index.js";
-import { modelQuotaFamily, modelStrip, modelTargetFormat, normalizeModelId } from "../providers/models/schema.js";
+import { modelQuotaFamily, modelStrip, modelTargetFormat, modelThinkingLevel, normalizeModelId } from "../providers/models/schema.js";
 import { CODEX_REVIEW_SUFFIX } from "../providers/models/helpers.js";
 
 export { PROVIDER_MODELS };
@@ -70,8 +70,15 @@ export function getModelUpstreamId(aliasOrId, modelId) {
   const baseId = suffix ? modelId.slice(0, sufMatch.index).trim() : modelId;
   const models = PROVIDER_MODELS[aliasOrId];
   const found = findModel(models, baseId, aliasOrId);
-  if (found?.upstreamModelId) return found.upstreamModelId + suffix;
-  if (found?.id) return found.id + suffix;
+  const resolvedId = found?.upstreamModelId || found?.id;
+  if (resolvedId) {
+    // Picker variants that share one wire model pin their tier via `thinkingLevel`
+    // (see antigravity gemini-3.6-flash-*). Emit it as the same "(level)" suffix a
+    // client can send, so applyThinking resolves both through one path. An explicit
+    // client suffix wins over the pin.
+    const pinned = modelThinkingLevel(found);
+    return resolvedId + (suffix || (pinned ? `(${pinned})` : ""));
+  }
   if (aliasOrId === "cx" && typeof baseId === "string" && baseId.endsWith(CODEX_REVIEW_SUFFIX)) {
     return baseId.slice(0, -CODEX_REVIEW_SUFFIX.length) + suffix;
   }
