@@ -113,6 +113,13 @@ const KIRO_GPT_5_6_CAPABILITIES = { vision: true, reasoning: true, search: true,
 const CODEX_GPT_56_SOL_CAPS  = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 372000, maxOutput: 128000 };
 const CODEX_GPT_56_DEFAULT_CAPS = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 };
 
+// The 4.6+ Claude generation: adaptive thinking, 1M context, 128k output. Shared by the
+// patterns below so an unlisted variant (claude-opus-4.8-fast, anthropic/claude-sonnet-5,
+// …) inherits the family's real limits instead of dropping to the 200k/64k floor —
+// maxOutput is a clamp ceiling (translator/formats/claude.js), so a stale value silently
+// caps these models at half their output budget.
+const CLAUDE_4_6_PLUS_CAPABILITIES = { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 };
+
 /**
  * Provider-specific capability overrides. Keyed by provider alias/id.
  */
@@ -180,18 +187,18 @@ export const PROVIDER_CAPABILITIES = {
  */
 export const PATTERN_CAPABILITIES = [
   // ── Claude (4.6+ = adaptive thinking; older/haiku = budget) ──────
-  { pattern: "*claude*opus-4.6*",   caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive" } },
-  { pattern: "*claude*opus-4.7*",   caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive" } },
-  { pattern: "*claude*opus-4.8*",   caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive" } },
-  { pattern: "*claude*sonnet-4.6*", caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive" } },
-  { pattern: "*claude*sonnet-4.7*", caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive" } },
-  { pattern: "*claude*sonnet-5*",   caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive" } },
+  { pattern: "*claude*opus-4.6*",   caps: CLAUDE_4_6_PLUS_CAPABILITIES },
+  { pattern: "*claude*opus-4.7*",   caps: CLAUDE_4_6_PLUS_CAPABILITIES },
+  { pattern: "*claude*opus-4.8*",   caps: CLAUDE_4_6_PLUS_CAPABILITIES },
+  { pattern: "*claude*sonnet-4.6*", caps: CLAUDE_4_6_PLUS_CAPABILITIES },
+  { pattern: "*claude*sonnet-4.7*", caps: CLAUDE_4_6_PLUS_CAPABILITIES },
+  { pattern: "*claude*sonnet-5*",   caps: CLAUDE_4_6_PLUS_CAPABILITIES },
   // fable / mythos are newer than 4.6, so they follow the 4.6+ adaptive rule above.
   // Anthropic rejects thinking.type "enabled" on them outright ("... is not supported
   // for this model. Use thinking.type.adaptive and output_config.effort"), so a budget
   // format makes every thinking request 400.
-  { pattern: "*claude*fable*",  caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 } },
-  { pattern: "*claude*mythos*", caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 } },
+  { pattern: "*claude*fable*",  caps: CLAUDE_4_6_PLUS_CAPABILITIES },
+  { pattern: "*claude*mythos*", caps: CLAUDE_4_6_PLUS_CAPABILITIES },
   { pattern: "*claude*haiku*",  caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget" } },
   { pattern: "*claude*opus*",   caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget" } },
   { pattern: "*claude*sonnet*", caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget" } },

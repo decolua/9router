@@ -22,6 +22,9 @@ describe("Claude Opus 1M context capabilities", () => {
     "claude-opus-4-7",
     "claude-opus-4.7",
     "claude-opus-4-6",
+    // serving-speed variant, present in Copilot's live catalog but in no static list —
+    // upstream reports the same limits and even resolves it to claude-opus-4-8
+    "claude-opus-4.8-fast",
   ]) {
     it(`resolves ${model} to a 1M context window`, () => {
       expect(getCapabilitiesForModel("cc", model)).toMatchObject(expected);
