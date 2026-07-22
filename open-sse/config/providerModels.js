@@ -4,6 +4,7 @@ import REGISTRY from "../providers/registry/index.js";
 import { PROVIDER_MODELS } from "../providers/index.js";
 import { modelQuotaFamily, modelStrip, modelTargetFormat, normalizeModelId } from "../providers/models/schema.js";
 import { CODEX_REVIEW_SUFFIX } from "../providers/models/helpers.js";
+import { stripRecognizedContextSuffix } from "../services/model.js";
 
 export { PROVIDER_MODELS };
 
@@ -27,11 +28,12 @@ const DOT_VERSION_PROVIDERS = new Set(["kr", "kiro"]);
 // ("claude-sonnet-4-5" ~= "claude-sonnet-4.5"). Other providers use exact match only.
 function findModel(models, modelId, aliasOrId) {
   if (!models) return undefined;
-  const found = models.find(m => m.id === modelId);
+  const rawModelId = stripRecognizedContextSuffix(modelId);
+  const found = models.find(m => m.id === modelId) || models.find(m => m.id === rawModelId);
   if (found) return found;
   if (!DOT_VERSION_PROVIDERS.has(aliasOrId)) return undefined;
-  const normalized = normalizeModelId(modelId);
-  if (normalized === modelId) return undefined;
+  const normalized = normalizeModelId(rawModelId);
+  if (normalized === rawModelId) return undefined;
   return models.find(m => m.id === normalized);
 }
 
@@ -67,7 +69,7 @@ export function getModelUpstreamId(aliasOrId, modelId) {
   // the result so downstream applyThinking still sees the suffix (body.model is stripped separately).
   const sufMatch = typeof modelId === "string" ? modelId.match(/\([^()]+\)\s*$/) : null;
   const suffix = sufMatch ? sufMatch[0] : "";
-  const baseId = suffix ? modelId.slice(0, sufMatch.index).trim() : modelId;
+  const baseId = stripRecognizedContextSuffix(suffix ? modelId.slice(0, sufMatch.index).trim() : modelId);
   const models = PROVIDER_MODELS[aliasOrId];
   const found = findModel(models, baseId, aliasOrId);
   if (found?.upstreamModelId) return found.upstreamModelId + suffix;

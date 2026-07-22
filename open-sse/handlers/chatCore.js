@@ -30,6 +30,7 @@ import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { extractThinking } from "../translator/concerns/thinkingUnified.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
+import { stripRecognizedContextSuffix } from "../services/model.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -136,7 +137,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   let toolNameMap;
   if (passthrough) {
     log?.debug?.("PASSTHROUGH", `${clientTool} → ${provider} | native lossless`);
-    translatedBody = { ...body, model: stripThinkingSuffix(upstreamModel) };
+    translatedBody = { ...body, model: stripRecognizedContextSuffix(stripThinkingSuffix(upstreamModel)) };
     // Normalize newer Cowork/CC beta shapes (adaptive thinking, mid-conversation system) the API rejects
     if (clientTool === "claude") normalizeClaudePassthrough(translatedBody, translatedBody.model);
   } else {
@@ -147,7 +148,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     }
     toolNameMap = translatedBody._toolNameMap;
     delete translatedBody._toolNameMap;
-    translatedBody.model = stripThinkingSuffix(upstreamModel);
+    translatedBody.model = stripRecognizedContextSuffix(stripThinkingSuffix(upstreamModel));
   }
 
   // Dedupe duplicate built-in tools when equivalent MCP tools are present (Claude clients only).

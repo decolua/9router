@@ -1,6 +1,6 @@
 // Re-export from open-sse with localDb integration
 import { getModelAliases, getComboByName, getProviderNodes } from "@/lib/localDb";
-import { parseModel as parseModelCore, resolveModelAliasFromMap, getModelInfoCore } from "open-sse/services/model.js";
+import { parseModel as parseModelCore, resolveModelAliasFromMap, getModelInfoCore, stripRecognizedContextSuffix } from "open-sse/services/model.js";
 import REGISTRY from "open-sse/providers/registry/index.js";
 
 // Local provider alias overrides (HMR-friendly, applied on top of open-sse map)
@@ -69,10 +69,12 @@ export async function getModelInfo(modelStr) {
   // Check if this is a combo name before resolving as alias
   // This prevents combo names from being incorrectly routed to providers
   const combo = await getComboByName(parsed.model);
-  if (combo) {
+  const baseComboName = stripRecognizedContextSuffix(parsed.model);
+  const matchedCombo = combo || (baseComboName !== parsed.model ? await getComboByName(baseComboName) : null);
+  if (matchedCombo) {
     // Return null provider to signal this should be handled as combo
     // The caller (handleChat) will detect this and handle it as combo
-    return { provider: null, model: parsed.model };
+    return { provider: null, model: matchedCombo.name };
   }
 
   return getModelInfoCore(modelStr, getModelAliases);
@@ -87,8 +89,10 @@ export async function getComboModels(modelStr) {
   if (modelStr.includes("/")) return null;
 
   const combo = await getComboByName(modelStr);
-  if (combo && combo.models && combo.models.length > 0) {
-    return combo.models;
+  const baseModelStr = stripRecognizedContextSuffix(modelStr);
+  const matchedCombo = combo || (baseModelStr !== modelStr ? await getComboByName(baseModelStr) : null);
+  if (matchedCombo && matchedCombo.models && matchedCombo.models.length > 0) {
+    return matchedCombo.models;
   }
   return null;
 }
