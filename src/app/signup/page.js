@@ -4,6 +4,14 @@ import { useState, useEffect, Suspense } from "react";
 import { Card, Button, Input } from "@/shared/components";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { getClientOrgSlug, orgScopedPath } from "@/lib/org/clientOrgPath.js";
+
+function orgAuthHeaders(extra = {}, orgSlug = "") {
+  const slug = getClientOrgSlug() || String(orgSlug || "").trim().toLowerCase();
+  const headers = { ...extra };
+  if (slug) headers["x-ebr-org-slug"] = slug;
+  return headers;
+}
 
 function SignupForm() {
   const [email, setEmail] = useState("");
@@ -13,6 +21,7 @@ function SignupForm() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [signupMode, setSignupMode] = useState("invite");
+  const [orgSlug] = useState(() => getClientOrgSlug() || "");
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -20,31 +29,38 @@ function SignupForm() {
     const token = searchParams.get("token");
     if (token) setInviteToken(token);
 
-    fetch("/api/auth/status")
+    fetch(orgScopedPath("/api/auth/status"), {
+      cache: "no-store",
+      headers: orgAuthHeaders({}, orgSlug),
+    })
       .then((r) => r.json())
       .then((data) => {
         setSignupMode(data.signupMode || "invite");
-        if (data.currentUser) {
-          router.push("/dashboard");
+        // Stay on signup when accepting an invite so a logged-in admin
+        // (or wrong account) does not skip the invite form.
+        if (data.currentUser && !token) {
+          router.push(orgScopedPath("/dashboard"));
         }
       })
       .catch(() => {});
-  }, [router, searchParams]);
+  }, [router, searchParams, orgSlug]);
 
   const handleSignup = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError("");
 
+    const slug = getClientOrgSlug() || orgSlug.trim().toLowerCase();
+
     try {
-      const res = await fetch("/api/auth/signup", {
+      const res = await fetch(orgScopedPath("/api/auth/signup"), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: orgAuthHeaders({ "Content-Type": "application/json" }, slug),
         body: JSON.stringify({ email, name, password, inviteToken: inviteToken || undefined }),
       });
       const data = await res.json();
       if (res.ok) {
-        router.push("/dashboard");
+        router.push(orgScopedPath("/dashboard"));
         router.refresh();
       } else {
         setError(data.error || "Signup failed");
@@ -103,7 +119,10 @@ function SignupForm() {
             </Button>
 
             <p className="text-xs text-center text-text-muted">
-              Already have an account? <Link href="/login" className="text-primary hover:underline">Sign in</Link>
+              Already have an account?{" "}
+              <Link href={orgScopedPath("/login")} className="text-primary hover:underline">
+                Sign in
+              </Link>
             </p>
           </form>
         </Card>
