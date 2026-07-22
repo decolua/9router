@@ -67,6 +67,12 @@ export const DEFAULT_MIN_TOKENS = 32000;
 
 export const TOKEN_SAVER_HEADER = "x-9router-token-saver";
 
+// Opt-out for reasoning_content on non-streaming responses. Send "off" to get the
+// pre-#517 behaviour (field dropped whenever content is non-empty) for clients whose
+// JSON parser rejects the non-standard field. Env STRIP_REASONING_CONTENT flips the
+// default for a whole deployment. See utils/reasoningVisibility.js.
+export const REASONING_HEADER = "x-9router-reasoning";
+
 // Retry config for 429 responses (legacy - kept for backward compatibility)
 export const RETRY_CONFIG = {
   maxAttempts: 2,
