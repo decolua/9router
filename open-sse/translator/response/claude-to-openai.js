@@ -145,6 +145,24 @@ export function claudeToOpenAIResponse(chunk, state) {
 
         if (cacheReadTokens > 0) state.usage.cache_read_input_tokens = cacheReadTokens;
         if (cacheCreationTokens > 0) state.usage.cache_creation_input_tokens = cacheCreationTokens;
+
+        // Thinking tokens ride on message_delta only. Anthropic reports them as
+        // usage.output_tokens_details.thinking_tokens; carry the count through so the
+        // OpenAI usage can expose it. For models whose thinking TEXT is withheld
+        // upstream (Copilot's 4.7+ Claude shims) this is the only signal that
+        // reasoning happened at all.
+        const thinkingTokens = typeof chunk.usage.output_tokens_details?.thinking_tokens === "number"
+          ? chunk.usage.output_tokens_details.thinking_tokens
+          : prev.output_tokens_details?.thinking_tokens;
+        if (typeof thinkingTokens === "number") {
+          state.usage.output_tokens_details = { thinking_tokens: thinkingTokens };
+          // stream.js hands state.usage to filterUsageForFormat before the client sees
+          // it, and that filter only passes OpenAI field names — output_tokens_details
+          // is a Claude name and gets dropped. Mirror the count under both OpenAI
+          // spellings so it actually reaches the client.
+          state.usage.reasoning_tokens = thinkingTokens;
+          state.usage.completion_tokens_details = { reasoning_tokens: thinkingTokens };
+        }
       }
 
       if (chunk.delta?.stop_reason) {
@@ -158,7 +176,8 @@ export function claudeToOpenAIResponse(chunk, state) {
             input_tokens: state.usage.input_tokens || 0,
             output_tokens: state.usage.output_tokens || 0,
             cache_read_input_tokens: state.usage.cache_read_input_tokens,
-            cache_creation_input_tokens: state.usage.cache_creation_input_tokens
+            cache_creation_input_tokens: state.usage.cache_creation_input_tokens,
+            output_tokens_details: state.usage.output_tokens_details
           }, "claude");
         }
 
