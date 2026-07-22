@@ -1,5 +1,12 @@
 import { ANTIGRAVITY_IDE_BASE_URL, ANTIGRAVITY_IDE_USER_AGENT, ANTIGRAVITY_OAUTH_CLIENT } from "../shared.js";
 
+// Gemini 3.6 ships as ONE wire model whose effort is chosen per request via
+// generationConfig.thinkingConfig.thinkingLevel — unlike 3.5/3.1, which expose a
+// separate wire id per tier. The three ids below are picker variants over that
+// single model: `upstreamModelId` is what goes on the wire, `thinkingLevel` pins
+// the tier. Sending a tier id (gemini-3.6-flash-medium) upstream 404s.
+const GEMINI_36_FLASH_WIRE_ID = "gemini-3.6-flash-tiered";
+
 export default {
   id: "antigravity",
   priority: 20,
@@ -44,6 +51,9 @@ export default {
     clientSecret: "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",
   },
   models: [
+    { id: "gemini-3.6-flash-high", name: "Gemini 3.6 Flash (High)", upstreamModelId: GEMINI_36_FLASH_WIRE_ID, thinkingLevel: "high" },
+    { id: "gemini-3.6-flash-medium", name: "Gemini 3.6 Flash (Medium)", upstreamModelId: GEMINI_36_FLASH_WIRE_ID, thinkingLevel: "medium" },
+    { id: "gemini-3.6-flash-low", name: "Gemini 3.6 Flash (Low)", upstreamModelId: GEMINI_36_FLASH_WIRE_ID, thinkingLevel: "low" },
     { id: "gemini-3-flash-agent", name: "Gemini 3.5 Flash (High)" },
     { id: "gemini-3.5-flash-low", name: "Gemini 3.5 Flash (Medium)" },
     { id: "gemini-3.5-flash-extra-low", name: "Gemini 3.5 Flash (Low)" },

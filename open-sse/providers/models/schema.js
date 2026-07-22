@@ -14,7 +14,8 @@ export const MODEL_DEFAULTS = {
   kind: "llm",
   quotaFamily: "normal",
   strip: [],
-  targetFormat: null
+  targetFormat: null,
+  thinkingLevel: null
 };
 
 // Normalize a registry model entry: accept terse "id" string, fill name via regex when omitted.
@@ -37,4 +38,9 @@ export function modelStrip(model) {
 }
 export function modelTargetFormat(model) {
   return model?.targetFormat || MODEL_DEFAULTS.targetFormat;
+}
+// Effort tier pinned by the model entry, for picker variants that share one wire
+// model (e.g. antigravity gemini-3.6-flash-*). null = follow the client's request.
+export function modelThinkingLevel(model) {
+  return model?.thinkingLevel || MODEL_DEFAULTS.thinkingLevel;
 }
