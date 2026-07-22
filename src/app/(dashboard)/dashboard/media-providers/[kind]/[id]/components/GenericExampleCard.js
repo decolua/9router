@@ -9,6 +9,12 @@ import { Row, KIND_EXAMPLE_CONFIG } from "./exampleShared";
 
 const CLOUDFLARE_TEST_IMAGE_URL = "https://pub-1fb693cb11cc46b2b2f656f51e015a2c.r2.dev/dog.png";
 const CLOUDFLARE_TEST_MASK_URL = "https://pub-1fb693cb11cc46b2b2f656f51e015a2c.r2.dev/dog-mask.png";
+const MULTI_REFERENCE_IMAGE_MODELS = new Set([
+  "antigravity/gemini-3.1-flash-image",
+  "codex/gpt-5.5-image",
+  "codex/gpt-5.4-image",
+  "codex/gpt-5.3-image",
+]);
 
 function getImageEditDefaults(providerId, modelId) {
   if (providerId !== "cloudflare-ai") return {};
@@ -28,6 +34,56 @@ function toImagePreviewSrc(value) {
   return `data:image/png;base64,${trimmed}`;
 }
 
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("Failed to read image"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function createRefId() {
+  return globalThis.crypto?.randomUUID?.() || `ref_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
+function summarizeImageValue(value) {
+  if (typeof value !== "string" || !value.startsWith("data:image/")) return value;
+
+  const separatorIndex = value.indexOf(",");
+  const mimeEndIndex = value.indexOf(";");
+  const mime = mimeEndIndex > 5 ? value.slice(5, mimeEndIndex) : "image";
+  const encodedLength = separatorIndex >= 0 ? value.length - separatorIndex - 1 : value.length;
+  return `<${mime} base64 hidden: ${encodedLength.toLocaleString("en-US")} chars>`;
+}
+
+function isPlausibleReferenceImage(value) {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  if (!trimmed) return false;
+  if (/^https?:\/\//i.test(trimmed)) return true;
+
+  const dataUrl = trimmed.match(/^data:image\/[^;]+;base64,([\s\S]+)$/i);
+  const base64 = (dataUrl?.[1] || trimmed).replace(/\s+/g, "");
+  return base64.length >= 8
+    && base64.length % 4 !== 1
+    && /^[A-Za-z0-9+/]+={0,2}$/.test(base64);
+}
+
+function compactRequestBody(body) {
+  return {
+    ...body,
+    ...(body.image ? { image: summarizeImageValue(body.image) } : {}),
+    ...(Array.isArray(body.images) ? { images: body.images.map(summarizeImageValue) } : {}),
+    ...(body.mask_image ? { mask_image: summarizeImageValue(body.mask_image) } : {}),
+  };
+}
+
+function buildCurlSnippet({ method, endpoint, apiPath, headers, body, wantBinary }) {
+  return `curl -X ${method} ${endpoint}${apiPath} \\
+  ${headers.replace(/\\\n  /g, "\\\n  ")} \\
+  -d '${JSON.stringify(body)}'${wantBinary ? " \\\n  --output image.png" : ""}`;
+}
+
 export function GenericExampleCard({ providerId, kind }) {
   const providerAlias = getProviderAlias(providerId);
   const resolvedId = resolveProviderId(providerAlias);
@@ -44,11 +100,14 @@ export function GenericExampleCard({ providerId, kind }) {
   const allowManualModel = needsModel && kindModels.length === 0;
   const [selectedModel, setSelectedModel] = useState(kindModels[0]?.id ?? "");
   const selectedModelObj = kindModels.find((m) => m.id === selectedModel);
-  const supportsEdit = !!selectedModelObj?.capabilities?.includes("edit");
+  const modelCapabilityKey = `${resolvedId}/${selectedModel}`;
+  const supportsMultipleRefs = !!selectedModelObj?.capabilities?.includes("multiImage") || MULTI_REFERENCE_IMAGE_MODELS.has(modelCapabilityKey);
+  const supportsEdit = !!selectedModelObj?.capabilities?.includes("edit") || supportsMultipleRefs;
   const supportsMask = !!selectedModelObj?.capabilities?.includes("mask");
 
   const [input, setInput] = useState(safeExConfig.defaultInput || "");
   const [refImage, setRefImage] = useState("");
+  const [refImages, setRefImages] = useState([]);
   const [maskImage, setMaskImage] = useState("");
   const [extraValues, setExtraValues] = useState(() =>
     (safeExConfig.extraFields || []).reduce((acc, f) => { acc[f.key] = f.default ?? ""; return acc; }, {})
@@ -99,9 +158,19 @@ export function GenericExampleCard({ providerId, kind }) {
     ? safeProviderAlias
     : (selectedModel ? `${safeProviderAlias}/${selectedModel}` : (allowManualModel ? "" : safeProviderAlias));
   const imageEditDefaults = getImageEditDefaults(providerId, selectedModel);
-  const effectiveRefImage = refImage.trim() || imageEditDefaults.image || "";
+  const activeRefImages = supportsMultipleRefs ? refImages : refImages.slice(0, 1);
+  const suppliedRefImages = [
+    ...(refImage.trim() ? [refImage.trim()] : []),
+    ...activeRefImages.map((image) => image.dataUrl).filter(Boolean),
+  ];
+  const effectiveRefImages = suppliedRefImages.length > 0
+    ? suppliedRefImages
+    : (imageEditDefaults.image ? [imageEditDefaults.image] : []);
+  const effectiveRefImage = effectiveRefImages[0] || "";
   const effectiveMaskImage = maskImage.trim() || imageEditDefaults.mask_image || "";
-  const refImagePreviewSrc = toImagePreviewSrc(effectiveRefImage);
+  const refImagePreviewSrc = toImagePreviewSrc(
+    refImage.trim() || (suppliedRefImages.length === 0 ? imageEditDefaults.image : "")
+  );
   const maskImagePreviewSrc = toImagePreviewSrc(effectiveMaskImage);
 
   // Build request body with optional extra fields (only non-empty values)
@@ -116,8 +185,23 @@ export function GenericExampleCard({ providerId, kind }) {
     [exConfig.bodyKey]: input,
     ...exConfig.extraBody,
     ...extraBodyFromFields,
-    ...(supportsEdit && effectiveRefImage ? { image: effectiveRefImage } : {}),
+    ...(supportsEdit && supportsMultipleRefs && effectiveRefImages.length > 1 ? { images: effectiveRefImages } : {}),
+    ...(supportsEdit && (!supportsMultipleRefs || effectiveRefImages.length === 1) && effectiveRefImage ? { image: effectiveRefImage } : {}),
     ...(supportsMask && effectiveMaskImage ? { mask_image: effectiveMaskImage } : {}),
+  };
+
+  const handleRefFiles = async (event) => {
+    const files = Array.from(event.target.files || []).filter((file) => file.type.startsWith("image/"));
+    event.target.value = "";
+    if (files.length === 0) return;
+
+    const converted = await Promise.all(files.map(async (file) => ({
+      id: createRefId(),
+      name: file.name,
+      dataUrl: await fileToDataUrl(file),
+    })));
+    setRefImages((current) => supportsMultipleRefs ? [...current, ...converted] : converted.slice(0, 1));
+    if (!supportsMultipleRefs) setRefImage("");
   };
 
   // Streaming supported for codex image (Plus/Pro accounts) — disabled when binary output requested
@@ -125,12 +209,33 @@ export function GenericExampleCard({ providerId, kind }) {
   const useStreaming = kind === "image" && providerId === "codex" && !wantBinary;
   const apiPathWithQuery = `${apiPath}${wantBinary ? "?response_format=binary" : ""}`;
   const headersPreview = `-H "Content-Type: application/json" \\\n  -H "Authorization: Bearer ${apiKey || "YOUR_KEY"}"${pinnedConnectionId ? ` \\\n  -H "x-connection-id: ${pinnedConnectionId}"` : ""}${useStreaming ? ` \\\n  -H "Accept: text/event-stream"` : ""}`;
-  const curlSnippet = `curl -X ${kindConfig.endpoint.method} ${endpoint}${apiPathWithQuery} \\
-  ${headersPreview.replace(/\\\n  /g, "\\\n  ")} \\
-  -d '${JSON.stringify(requestBody)}'${wantBinary ? " \\\n  --output image.png" : ""}`;
+  const curlPreview = buildCurlSnippet({
+    method: kindConfig.endpoint.method,
+    endpoint,
+    apiPath: apiPathWithQuery,
+    headers: headersPreview,
+    body: compactRequestBody(requestBody),
+    wantBinary,
+  });
+
+  const handleCopyCurl = () => {
+    copyCurl(buildCurlSnippet({
+      method: kindConfig.endpoint.method,
+      endpoint,
+      apiPath: apiPathWithQuery,
+      headers: headersPreview,
+      body: requestBody,
+      wantBinary,
+    }));
+  };
 
   const handleRun = async () => {
     if (!input.trim() || !modelFull) return;
+    const invalidReferenceIndex = effectiveRefImages.findIndex((image) => !isPlausibleReferenceImage(image));
+    if (invalidReferenceIndex >= 0) {
+      setError(`Reference image ${invalidReferenceIndex + 1} is invalid. Use an image URL or attach an image file.`);
+      return;
+    }
     setRunning(true);
     setError("");
     setResult(null);
@@ -149,6 +254,14 @@ export function GenericExampleCard({ providerId, kind }) {
         headers,
         body: JSON.stringify(body),
       });
+      const servedConnectionId = res.headers.get("x-connection-id") || "";
+      const servedConnection = connections.find((connection) => connection.id === servedConnectionId);
+      const servedConnectionLabel = servedConnection
+        ? (servedConnection.email || servedConnection.name || servedConnection.id.slice(0, 8))
+        : (servedConnectionId ? servedConnectionId.slice(0, 8) : "");
+      const connectionResult = servedConnectionId
+        ? { connectionId: servedConnectionId, connectionLabel: servedConnectionLabel }
+        : {};
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         setError(data?.error?.message || data?.error || `HTTP ${res.status}`);
@@ -160,7 +273,7 @@ export function GenericExampleCard({ providerId, kind }) {
         const blob = await res.blob();
         const objUrl = URL.createObjectURL(blob);
         setBinaryImageUrl(objUrl);
-        setResult({ data: { binary: true, mime: ctype, size: blob.size }, latencyMs: Date.now() - start });
+        setResult({ data: { binary: true, mime: ctype, size: blob.size }, latencyMs: Date.now() - start, ...connectionResult });
         return;
       }
       const isSse = ctype.includes("text/event-stream");
@@ -196,11 +309,11 @@ export function GenericExampleCard({ providerId, kind }) {
         }
         const latencyMs = Date.now() - start;
         if (streamErr) { setError(streamErr); return; }
-        if (finalData) setResult({ data: finalData, latencyMs });
+        if (finalData) setResult({ data: finalData, latencyMs, ...connectionResult });
       } else {
         const data = await res.json();
         const latencyMs = Date.now() - start;
-        setResult({ data, latencyMs });
+        setResult({ data, latencyMs, ...connectionResult });
       }
     } catch (e) {
       setError(e.message || "Network error");
@@ -322,14 +435,17 @@ export function GenericExampleCard({ providerId, kind }) {
           </div>
         </Row>
 
-        {/* Reference image (only for edit-capable image models) */}
+        {/* Reference images (only for edit-capable image models) */}
         {supportsEdit && (
-          <Row label="Ref Image (URL)">
+          <Row label={supportsMultipleRefs ? "Reference Images" : "Ref Image"}>
             <div className="flex flex-col gap-2">
               <div className="relative">
                 <input
                   value={refImage}
-                  onChange={(e) => setRefImage(e.target.value)}
+                  onChange={(e) => {
+                    setRefImage(e.target.value);
+                    if (!supportsMultipleRefs) setRefImages([]);
+                  }}
                   placeholder={imageEditDefaults.image || "https://example.com/source.png"}
                   className="w-full px-3 py-1.5 pr-7 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
                 />
@@ -343,6 +459,17 @@ export function GenericExampleCard({ providerId, kind }) {
                   </button>
                 )}
               </div>
+              <label className="flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-dashed border-border px-3 py-2 text-xs text-text-muted transition-colors hover:border-primary hover:text-primary">
+                <span className="material-symbols-outlined text-[16px]">add_photo_alternate</span>
+                {supportsMultipleRefs ? "Attach one or more images" : "Attach image"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple={supportsMultipleRefs}
+                  onChange={handleRefFiles}
+                  className="hidden"
+                />
+              </label>
               {refImagePreviewSrc && (
                 <img
                   src={refImagePreviewSrc}
@@ -353,6 +480,35 @@ export function GenericExampleCard({ providerId, kind }) {
                 loading="lazy"
                 decoding="async"
                 />
+              )}
+              {activeRefImages.length > 0 && (
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {activeRefImages.map((image) => (
+                    <div key={image.id} className="group relative overflow-hidden rounded-lg border border-border bg-sidebar">
+                      <img
+                        src={image.dataUrl}
+                        alt={image.name}
+                        className="h-28 w-full object-cover"
+                        loading="lazy"
+                        decoding="async"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setRefImages((current) => current.filter((item) => item.id !== image.id))}
+                        className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/65 text-white transition hover:bg-black"
+                        aria-label={`Remove ${image.name}`}
+                      >
+                        <span className="material-symbols-outlined text-[15px]">close</span>
+                      </button>
+                      <span className="block truncate px-2 py-1.5 text-[11px] text-text-muted">{image.name}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {supportsMultipleRefs && effectiveRefImages.length > 0 && (
+                <p className="text-[11px] text-text-muted">
+                  {effectiveRefImages.length === 1 ? "Request uses image" : `Request uses images[] with ${effectiveRefImages.length} references`}
+                </p>
               )}
             </div>
           </Row>
@@ -449,7 +605,7 @@ export function GenericExampleCard({ providerId, kind }) {
             <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">Request</span>
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
               <button
-                onClick={() => copyCurl(curlSnippet)}
+                onClick={handleCopyCurl}
                 className="inline-flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors"
               >
                 <span className="material-symbols-outlined text-[14px]">{copiedCurl ? "check" : "content_copy"}</span>
@@ -467,7 +623,12 @@ export function GenericExampleCard({ providerId, kind }) {
               </button>
             </div>
           </div>
-          <pre className="bg-sidebar rounded-lg px-3 py-2.5 text-xs font-mono text-text-main overflow-x-auto whitespace-pre-wrap break-all">{curlSnippet}</pre>
+          <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-sidebar px-3 py-2.5 font-mono text-xs text-text-main">{curlPreview}</pre>
+          {(requestBody.image || requestBody.images || requestBody.mask_image) && (
+            <p className="mt-1.5 text-[11px] text-text-muted">
+              Base64 is hidden in the preview. Copy and Run still include the full image payload.
+            </p>
+          )}
         </div>
 
         {/* Streaming progress */}
@@ -504,7 +665,7 @@ export function GenericExampleCard({ providerId, kind }) {
         <div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-1.5">
             <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">
-              Response {result && <span className="font-normal normal-case">&#9889; {result.latencyMs}ms</span>}
+              Response {result && <span className="font-normal normal-case">&#9889; {result.latencyMs}ms{result.connectionLabel ? ` | account: ${result.connectionLabel}` : ""}</span>}
             </span>
             {result && (
               <button

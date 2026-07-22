@@ -360,6 +360,12 @@ export function parseQuotaData(provider, data) {
               total: quota.total || 0,
               resetAt: quota.resetAt || null,
               remainingPercentage: quota.remainingPercentage,
+              runtimeLimited: quota.runtimeLimited === true,
+              runtimeLimitLabel: quota.runtimeLimitLabel,
+              runtimeLimitReason: quota.runtimeLimitReason,
+              runtimeActionUrl: quota.runtimeActionUrl,
+              percentageOnly: quota.percentageOnly === true,
+              quotaNote: quota.quotaNote,
             });
           });
         }

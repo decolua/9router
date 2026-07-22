@@ -28,7 +28,7 @@ export const SKILLS = [
   {
     id: "9router-image",
     name: "Image Generation",
-    description: "Text-to-image via DALL-E, Imagen, FLUX, MiniMax, SDWebUI…",
+    description: "Generate and edit images with single or multiple references via Codex, Antigravity, DALL-E, Imagen, FLUX, and more.",
     endpoint: "/v1/images/generations",
     icon: "image",
   },

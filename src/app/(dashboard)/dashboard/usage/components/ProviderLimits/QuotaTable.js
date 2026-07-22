@@ -172,6 +172,26 @@ export default function QuotaTable({
                       <span className={`${nameText} font-medium text-text-primary truncate`}>
                         {quota.name}
                       </span>
+                      {quota.runtimeLimited && (
+                        quota.runtimeActionUrl ? (
+                          <a
+                            href={quota.runtimeActionUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="shrink-0 rounded bg-amber-500/15 px-1 py-0.5 text-[9px] font-medium text-amber-600 underline decoration-dotted underline-offset-2 dark:text-amber-400"
+                            title={quota.runtimeLimitReason || "Verify this Google account, then retry the model."}
+                          >
+                            {quota.runtimeLimitLabel || "account blocked"}
+                          </a>
+                        ) : (
+                          <span
+                            className="shrink-0 rounded bg-amber-500/15 px-1 py-0.5 text-[9px] font-medium text-amber-600 dark:text-amber-400"
+                            title={quota.runtimeLimitReason || "The provider runtime rejected this model even though the quota endpoint still reports capacity."}
+                          >
+                            {quota.runtimeLimitLabel || "runtime limit"}
+                          </span>
+                        )
+                      )}
                     </div>
                   </td>
 
@@ -188,7 +208,13 @@ export default function QuotaTable({
 
                       <div className={`flex items-center justify-between ${compact ? "text-[10px]" : "text-xs"}`}>
                         <span className="text-text-muted">
-                          {quota.used.toLocaleString()} / {quota.total > 0 ? quota.total.toLocaleString() : "∞"}
+                          {quota.percentageOnly ? (
+                            <span title={quota.quotaNote || "The provider does not expose an absolute request count."}>
+                              count unavailable
+                            </span>
+                          ) : (
+                            <>{quota.used.toLocaleString()} / {quota.total > 0 ? quota.total.toLocaleString() : "∞"}</>
+                          )}
                         </span>
                         <span className={`font-medium ${colors.text}`}>
                           {quota.remaining}%
