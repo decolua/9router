@@ -85,9 +85,13 @@ export async function handleImageGenerationCore({
         }),
       };
     } catch (error) {
-      const errMsg = formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
+      const statusCode = Number(error?.statusCode || error?.status) || HTTP_STATUS.BAD_GATEWAY;
+      const errMsg = formatProviderError(error, provider, model, statusCode);
       log?.debug?.("IMAGE", `Executor error: ${errMsg}`);
-      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg);
+      return {
+        ...createErrorResult(statusCode, errMsg, error?.resetsAtMs),
+        retryable: error?.retryable !== false,
+      };
     }
   }
 
@@ -100,7 +104,10 @@ export async function handleImageGenerationCore({
     requestBody = await adapter.buildBody(model, body);
     headers = adapter.buildHeaders(credentials, requestBody, model, body);
   } catch (error) {
-    return createErrorResult(HTTP_STATUS.BAD_REQUEST, error.message || `Invalid ${provider} image request`);
+    return {
+      ...createErrorResult(HTTP_STATUS.BAD_REQUEST, error.message || `Invalid ${provider} image request`),
+      retryable: false,
+    };
   }
 
   log?.debug?.("IMAGE", `${provider.toUpperCase()} | ${model} | prompt="${body.prompt.slice(0, 50)}..."`);

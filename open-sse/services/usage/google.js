@@ -120,20 +120,24 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
   try {
     // Fetch subscription info once — reuse for both projectId and plan
     const subscriptionInfo = await getAntigravitySubscriptionInfo(accessToken, proxyOptions);
-    const projectId = subscriptionInfo?.cloudaicompanionProject || null;
+    const projectId = normalizeCloudCodeProjectId(providerSpecificData?.projectId)
+      || normalizeCloudCodeProjectId(subscriptionInfo?.cloudaicompanionProject);
+
+    const requestHeaders = {
+      "Authorization": `Bearer ${accessToken}`,
+      "User-Agent": ANTIGRAVITY_CONFIG.userAgent,
+      "Content-Type": "application/json",
+      "X-Client-Name": "antigravity",
+      "X-Client-Version": ANTIGRAVITY_IDE_VERSION,
+    };
+    const requestBody = JSON.stringify({
+      ...(projectId ? { project: projectId } : {})
+    });
 
     const response = await fetchWithTimeout(ANTIGRAVITY_CONFIG.quotaApiUrl, {
       method: "POST",
-      headers: {
-        "Authorization": `Bearer ${accessToken}`,
-        "User-Agent": ANTIGRAVITY_CONFIG.userAgent,
-        "Content-Type": "application/json",
-        "X-Client-Name": "antigravity",
-        "X-Client-Version": ANTIGRAVITY_IDE_VERSION,
-      },
-      body: JSON.stringify({
-        ...(projectId ? { project: projectId } : {})
-      }),
+      headers: requestHeaders,
+      body: requestBody,
     }, 10000, proxyOptions);
 
     if (response.status === 403) {
@@ -200,6 +204,10 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
           total,
           resetAt: parseResetTime(info.quotaInfo.resetTime),
           remainingPercentage,
+          percentageOnly: true,
+          quotaNote: modelKey === "gemini-3.1-flash-image"
+            ? "Google does not expose the exact remaining image-generation count."
+            : "Google exposes this quota as a percentage, not an absolute request count.",
           unlimited: false,
           displayName: info.displayName || modelKey,
         };

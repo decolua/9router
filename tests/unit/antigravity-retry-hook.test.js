@@ -28,6 +28,37 @@ describe("antigravity computeRetryDelay hook (D3)", () => {
     expect(await ag.computeRetryDelay(r, 1)).toBe(3000);
   });
 
+  it("preserves the exact Google quota reset timestamp for account cooldown", () => {
+    const resetAt = "2099-07-22T07:06:58Z";
+    const parsed = ag.parseError({ status: 429 }, JSON.stringify({
+      error: {
+        code: 429,
+        message: "You have exhausted your capacity on this model.",
+        details: [{ metadata: { quotaResetTimeStamp: resetAt } }],
+      },
+    }));
+
+    expect(parsed).toMatchObject({
+      status: 429,
+      message: "You have exhausted your capacity on this model.",
+      resetsAtMs: Date.parse(resetAt),
+    });
+  });
+
+  it("converts Google RetryInfo into an absolute account cooldown", () => {
+    const before = Date.now();
+    const parsed = ag.parseError({ status: 429 }, JSON.stringify({
+      error: {
+        code: 429,
+        message: "Rate limited",
+        details: [{ retryDelay: "7200.5s" }],
+      },
+    }));
+
+    expect(parsed.resetsAtMs).toBeGreaterThanOrEqual(before + 7_200_500);
+    expect(parsed.resetsAtMs).toBeLessThanOrEqual(Date.now() + 7_200_500);
+  });
+
   it("exponential backoff for 429 when no retry info", async () => {
     expect(await ag.computeRetryDelay(res(429), 1)).toBe(Math.min(1000 * 2 ** 1, MAX));
     expect(await ag.computeRetryDelay(res(429), 3)).toBe(Math.min(1000 * 2 ** 3, MAX));
@@ -97,5 +128,28 @@ describe("antigravity computeRetryDelay hook (D3)", () => {
 
     expect(out.requestId).toMatch(/^agent\/[0-9a-f-]{36}\/\d{13}\/[0-9a-f-]{36}\/\d+$/);
     expect(out.request.generationConfig.maxOutputTokens).toBe(64000);
+  });
+
+  it("preserves multiple inline reference images for image generation", () => {
+    const out = ag.transformRequest("gemini-3.1-flash-image", {
+      contents: [{
+        role: "user",
+        parts: [
+          { inlineData: { mimeType: "image/png", data: "AAAA" } },
+          { inlineData: { mimeType: "image/jpeg", data: "BBBB" } },
+          { text: "Combine them" },
+        ],
+      }],
+    }, false, { projectId: "project-1", connectionId: "conn-1" });
+
+    expect(out.request.contents[0].parts).toEqual([
+      { inlineData: { mimeType: "image/png", data: "AAAA" } },
+      { inlineData: { mimeType: "image/jpeg", data: "BBBB" } },
+      { text: "Combine them" },
+    ]);
+    expect(out.request.generationConfig.responseModalities).toEqual(["TEXT", "IMAGE"]);
+    expect(out.requestType).toBe("image_gen");
+    expect(antigravity.models.find((model) => model.id === "gemini-3.1-flash-image")?.capabilities)
+      .toEqual(expect.arrayContaining(["edit", "multiImage"]));
   });
 });

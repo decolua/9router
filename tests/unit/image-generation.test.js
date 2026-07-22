@@ -11,6 +11,8 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { handleImageGenerationCore } from "../../open-sse/handlers/imageGenerationCore.js";
+import { getExecutor } from "../../open-sse/executors/index.js";
+import { PROVIDER_MODELS } from "../../open-sse/providers/index.js";
 
 const originalFetch = global.fetch;
 
@@ -21,6 +23,7 @@ describe("handleImageGenerationCore", () => {
 
   afterEach(() => {
     global.fetch = originalFetch;
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
@@ -334,6 +337,7 @@ describe("handleImageGenerationCore", () => {
         prompt: "A green square",
         size: "1024x1024",
         output_format: "png",
+        images: ["data:image/png;base64,/9j/4AAQ"],
       },
       modelInfo: { provider: "codex", model: "gpt-5.5-image" },
       credentials: {
@@ -362,9 +366,166 @@ describe("handleImageGenerationCore", () => {
     expect(requestBody.tools).toEqual([
       { type: "image_generation", output_format: "png", size: "1024x1024" },
     ]);
+    expect(requestBody.tool_choice).toBe("required");
+    expect(requestBody.input[0].content).toEqual(expect.arrayContaining([
+      { type: "input_image", image_url: "data:image/jpeg;base64,/9j/4AAQ", detail: "high" },
+    ]));
 
     const responseBody = await result.response.json();
     expect(responseBody.data[0].b64_json).toBe("base64codeximage");
+  });
+
+  it("routes GPT Image 2 through the Codex image tool model", async () => {
+    global.fetch.mockResolvedValueOnce(
+      new Response(
+        [
+          "event: response.output_item.done",
+          'data: {"item":{"type":"image_generation_call","result":"base64gptimage2"}}',
+          "",
+          "",
+        ].join("\n"),
+        { status: 200, headers: { "Content-Type": "text/event-stream" } }
+      )
+    );
+
+    const result = await handleImageGenerationCore({
+      body: {
+        prompt: "Combine the references",
+        size: "1024x1024",
+        quality: "high",
+        output_format: "png",
+        output_compression: 80,
+        images: [
+          "data:image/png;base64,/9j/4AAQ",
+          "data:image/png;base64,iVBORw0KGgo",
+        ],
+      },
+      modelInfo: { provider: "codex", model: "gpt-image-2" },
+      credentials: {
+        accessToken: "codex-token",
+        providerSpecificData: { chatgptAccountId: "account-123" },
+      },
+      log: null,
+    });
+
+    expect(result.success).toBe(true);
+    const requestBody = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect(requestBody.model).toBe("gpt-5.4-mini");
+    expect(requestBody.tools).toEqual([{
+      type: "image_generation",
+      action: "edit",
+      model: "gpt-image-2",
+      output_format: "png",
+      size: "1024x1024",
+      quality: "high",
+      output_compression: 80,
+    }]);
+    expect(requestBody.tool_choice).toEqual({ type: "image_generation" });
+    expect(requestBody.reasoning).toEqual({ effort: "medium", summary: "auto" });
+    expect(requestBody.input[0].content.filter((item) => item.type === "input_image")).toHaveLength(2);
+
+    const responseBody = await result.response.json();
+    expect(responseBody.data[0].b64_json).toBe("base64gptimage2");
+  });
+
+  it("rejects text accidentally placed in Codex images[] before calling upstream", async () => {
+    const result = await handleImageGenerationCore({
+      body: {
+        prompt: "A cute cat wearing a hat",
+        images: [
+          "This is prompt text, not an image",
+          "data:image/png;base64,iVBORw0KGgo=",
+        ],
+      },
+      modelInfo: { provider: "codex", model: "gpt-image-2" },
+      credentials: {
+        accessToken: "codex-token",
+        providerSpecificData: { chatgptAccountId: "account-123" },
+      },
+      log: null,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(400);
+    expect(result.error).toContain("images[0]");
+    expect(result.error).toContain("image URL");
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("registers entitled Codex image tool candidates as image models", () => {
+    for (const modelId of ["gpt-image-1.5", "gpt-image-2"]) {
+      const model = PROVIDER_MODELS.cx.find((item) => item.id === modelId);
+      expect(model?.kind).toBe("image");
+      expect(model?.capabilities).toEqual(expect.arrayContaining(["text2img", "edit", "multiImage"]));
+    }
+  });
+
+  it("forwards multiple reference images to Antigravity image generation", async () => {
+    const executor = getExecutor("antigravity");
+    const execute = vi.spyOn(executor, "execute").mockResolvedValue({
+      response: new Response(JSON.stringify({
+        candidates: [{ content: { parts: [{ inlineData: { mimeType: "image/png", data: "generated-image" } }] } }],
+      }), { status: 200, headers: { "Content-Type": "application/json" } }),
+    });
+
+    const result = await handleImageGenerationCore({
+      body: {
+        prompt: "Combine these references",
+        images: [
+          "data:image/png;base64,/9j/4AAQ",
+          "data:image/jpeg;base64,BBBB",
+        ],
+      },
+      modelInfo: { provider: "antigravity", model: "gemini-3.1-flash-image" },
+      credentials: { accessToken: "ag-token", projectId: "project-1" },
+      log: null,
+    });
+
+    expect(result.success).toBe(true);
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({
+      model: "gemini-3.1-flash-image",
+      stream: false,
+      body: {
+        contents: [{
+          role: "user",
+          parts: [
+            { inlineData: { mimeType: "image/jpeg", data: "/9j/4AAQ" } },
+            { inlineData: { mimeType: "image/jpeg", data: "BBBB" } },
+            { text: expect.stringContaining("Combine these references") },
+          ],
+        }],
+      },
+    }));
+
+    const responseBody = await result.response.json();
+    expect(responseBody.data[0].b64_json).toBe("generated-image");
+  });
+
+  it("preserves Antigravity quota status and reset time", async () => {
+    const resetAt = "2099-07-22T07:06:58Z";
+    const executor = getExecutor("antigravity");
+    vi.spyOn(executor, "execute").mockResolvedValue({
+      response: new Response(JSON.stringify({
+        error: {
+          code: 429,
+          message: "You have exhausted your capacity on this model.",
+          status: "RESOURCE_EXHAUSTED",
+          details: [{ metadata: { quotaResetTimeStamp: resetAt } }],
+        },
+      }), { status: 429, headers: { "Content-Type": "application/json" } }),
+    });
+
+    const result = await handleImageGenerationCore({
+      body: { prompt: "test" },
+      modelInfo: { provider: "antigravity", model: "gemini-3.1-flash-image" },
+      credentials: { accessToken: "ag-token", projectId: "project-1" },
+      log: null,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(429);
+    expect(result.resetsAtMs).toBe(Date.parse(resetAt));
+    expect(result.error).toContain("RESOURCE_EXHAUSTED");
   });
 
   it("generates image with Cloudflare Workers AI JSON response", async () => {

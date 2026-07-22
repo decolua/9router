@@ -1,86 +1,158 @@
 ---
 name: 9router-image
-description: Generate images via 9Router /v1/images/generations using OpenAI / Gemini Imagen / DALL-E / FLUX / MiniMax / SDWebUI / ComfyUI / Codex models. Use when the user wants to create, generate, draw, or render an image, picture, or text-to-image (txt2img).
+description: Generate and edit images through 9Router's OpenAI-compatible /v1/images/generations endpoint, including text-to-image, image-to-image, one or multiple reference images, Codex GPT Image, and Antigravity Gemini image models. Use when the user asks to create, draw, render, edit, combine, restyle, or test images through 9Router, or needs help diagnosing invalid image payloads, blank outputs, quota limits, or account failover.
 ---
 
-# 9Router — Image Generation
+# 9Router Image Generation
 
-Requires `NINEROUTER_URL` (and `NINEROUTER_KEY` if auth enabled). See https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router/SKILL.md for setup.
+Require `NINEROUTER_URL` and, when API-key protection is enabled, `NINEROUTER_KEY`. Read the setup skill at https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router/SKILL.md when either value is missing.
 
-## Discover
+## Discover models
 
 ```bash
-curl $NINEROUTER_URL/v1/models/image | jq '.data[].id'
-# Per-model params/options (size enum, quality enum, capabilities like edit)
-curl "$NINEROUTER_URL/v1/models/info?id=openai/dall-e-3"
+curl "$NINEROUTER_URL/v1/models/image" | jq '.data[].id'
+curl "$NINEROUTER_URL/v1/models/info?id=cx/gpt-image-2"
 ```
+
+Inspect model capabilities before attaching references. Prefer models advertising `edit` and `multiImage` for image-to-image work.
+
+Important image-edit models include:
+
+- `cx/gpt-image-2` and `cx/gpt-image-1.5`: Codex/ChatGPT image tools; require an entitled Plus/Pro account.
+- `cx/gpt-5.5-image`, `cx/gpt-5.4-image`, and `cx/gpt-5.3-image`: Codex image-generation routes.
+- `ag/gemini-3.1-flash-image`: Antigravity text-to-image and multi-reference editing.
 
 ## Endpoint
 
-`POST $NINEROUTER_URL/v1/images/generations`
+Send requests to:
 
-| Field | Required | Notes |
+```text
+POST $NINEROUTER_URL/v1/images/generations
+```
+
+Use these common fields:
+
+| Field | Required | Purpose |
 |---|---|---|
-| `model` | yes | from `/v1/models/image` |
-| `prompt` | yes | image description |
-| `n` | no | count (provider-dependent) |
-| `size` | no | `1024x1024`, `1792x1024`, ... |
-| `quality` | no | `standard` / `hd` (OpenAI) |
-| `response_format` | no | `url` (default) or `b64_json` |
+| `model` | yes | Provider/model ID from `/v1/models/image` |
+| `prompt` | yes | Describe the final image or edit |
+| `image` | no | One reference: HTTP(S) URL, image data URL, or raw image base64 |
+| `images` | no | Multiple references using an array of valid image values |
+| `size` | no | Model-specific size such as `1024x1024` or `auto` |
+| `quality` | no | Model-specific quality such as `high`, `standard`, or `auto` |
+| `background` | no | Usually `opaque`, `transparent`, or `auto` |
+| `image_detail` | no | Reference detail, commonly `high` |
+| `output_format` | no | Commonly `png`, `jpeg`, or `webp` |
+| `n` | no | Requested count; many providers still return one image |
 
-Add query `?response_format=binary` to receive raw image bytes (handy for saving file).
+Add `?response_format=binary` to receive raw image bytes. Otherwise accept either `data[].url` or `data[].b64_json` in the JSON response.
 
-## Examples
+## Keep prompt and references separate
 
-Save to file (binary):
+Put instructions only in `prompt`. Put only images in `image` or `images[]`.
+
+Correct:
+
+```json
+{
+  "model": "cx/gpt-image-2",
+  "prompt": "Create one contact sheet using all three references",
+  "images": [
+    "data:image/jpeg;base64,...",
+    "data:image/png;base64,...",
+    "https://example.com/reference.webp"
+  ]
+}
+```
+
+Incorrect:
+
+```json
+{
+  "prompt": "A cat",
+  "images": ["Count how many images I attached", "data:image/png;base64,..."]
+}
+```
+
+9Router validates base64 syntax and image signatures before calling Codex. Invalid client payloads return HTTP 400 without consuming provider quota, rotating accounts, or creating a cooldown.
+
+## Attach local files
+
+Use JavaScript to avoid manually copying large base64 strings:
+
+```js
+import fs from "node:fs";
+
+const dataUrl = (path, mime) =>
+  `data:${mime};base64,${fs.readFileSync(path).toString("base64")}`;
+
+const response = await fetch(`${process.env.NINEROUTER_URL}/v1/images/generations`, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    ...(process.env.NINEROUTER_KEY
+      ? { Authorization: `Bearer ${process.env.NINEROUTER_KEY}` }
+      : {}),
+  },
+  body: JSON.stringify({
+    model: "ag/gemini-3.1-flash-image",
+    prompt: "Combine both references into one clearly visible poster",
+    images: [
+      dataUrl("reference-1.jpg", "image/jpeg"),
+      dataUrl("reference-2.png", "image/png"),
+    ],
+    output_format: "png",
+  }),
+});
+
+const result = await response.json();
+if (!response.ok) throw new Error(result.error?.message || `HTTP ${response.status}`);
+fs.writeFileSync("out.png", Buffer.from(result.data[0].b64_json, "base64"));
+```
+
+Do not print full base64 payloads or responses. Log image count, byte length, MIME type, dimensions, or a shortened placeholder instead.
+
+## Prompt image edits explicitly
+
+Describe one visible final composition. For multiple references, state that every reference must be used.
+
+Use a prompt such as:
+
+```text
+Create one high-contrast contact sheet using all 3 attached reference images.
+Preserve each reference in a separate bordered panel.
+Add the title "3 reference images".
+Use an opaque background and do not produce a blank or low-contrast image.
+```
+
+Do not use image generation merely to ask how many images the model can see. Use a multimodal chat endpoint for counting, OCR, or image analysis. Image generation creates a new image and may interpret analysis-style prompts as an ambiguous visual edit.
+
+## Handle Codex streaming
+
+Codex image routes support SSE when the request sends:
+
+```http
+Accept: text/event-stream
+```
+
+Handle `progress`, `partial_image`, `done`, and `error` events. Omit the SSE `Accept` header when a normal JSON response is easier. The successful `done` result contains the OpenAI-compatible image response.
+
+## Handle failures
+
+- HTTP 400 mentioning `images[index]`: fix or remove that array entry. Never retry the same invalid payload against another account.
+- HTTP 429 with a reset timestamp: let 9Router lock only that account/model until the exact reset time and automatically try another eligible account.
+- All accounts limited: respect the earliest reported reset time instead of repeatedly retrying.
+- Antigravity `VALIDATION_REQUIRED` / HTTP 403: verify or reconnect that Google account; other accounts may still serve the request.
+- Near-white output with valid references: verify the output is not transparent, then rewrite the prompt as an explicit composition and use `background: "opaque"`, a concrete size, and higher quality.
+
+The successful response includes `x-connection-id`, which identifies the account that actually served the image after fallback.
+
+## Save binary output
 
 ```bash
 curl -X POST "$NINEROUTER_URL/v1/images/generations?response_format=binary" \
   -H "Authorization: Bearer $NINEROUTER_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"gemini/gemini-3-pro-image-preview","prompt":"watercolor mountains at sunrise","size":"1024x1024"}' \
+  -d '{"model":"ag/gemini-3.1-flash-image","prompt":"watercolor mountains at sunrise"}' \
   --output out.png
 ```
-
-JS (URL response):
-
-```js
-const r = await fetch(`${process.env.NINEROUTER_URL}/v1/images/generations`, {
-  method: "POST",
-  headers: { "Authorization": `Bearer ${process.env.NINEROUTER_KEY}`, "Content-Type": "application/json" },
-  body: JSON.stringify({ model: "gemini/gemini-3-pro-image-preview", prompt: "neon city", size: "1024x1024" }),
-});
-const { data } = await r.json();
-console.log(data[0].url || data[0].b64_json.slice(0, 40));
-```
-
-## Response shape
-
-JSON (default `response_format=url`):
-```json
-{ "created": 1735000000, "data": [{ "url": "https://..." }] }
-```
-
-`response_format=b64_json`:
-```json
-{ "created": 1735000000, "data": [{ "b64_json": "iVBORw0KGgo..." }] }
-```
-
-Query `?response_format=binary` returns raw image bytes (Content-Type `image/png` or `image/jpeg`).
-
-## Provider quirks
-
-Common fields above work everywhere. These add/override:
-
-| Provider | Extra/changed fields | Notes |
-|---|---|---|
-| `openai`, `minimax`, `openrouter`, `recraft` | `quality`, `style`, `response_format` | Standard OpenAI shape |
-| `gemini` (nano-banana) | — | Only `prompt`; ignores `size`/`n` |
-| `codex` (gpt-5.4-image) | `image`, `images[]`, `image_detail`, `output_format`, `background` | SSE stream; **ChatGPT Plus/Pro required** |
-| `huggingface` | — | Only `prompt`; returns single image |
-| `nanobanana` | `image`, `images[]` (edit mode) | `size` → aspect ratio; async polling |
-| `fal-ai` | `image` (img2img) | `n` → `num_images`; `size` → ratio; async |
-| `stability-ai` | `style` (preset), `output_format` | `size` → `aspect_ratio` |
-| `black-forest-labs` (FLUX) | `image` (ref) | `size` → exact `width`/`height`; async |
-| `runwayml` | `image` (ref) | `size` → ratio; async; video models exist |
-| `sdwebui`, `comfyui` | — | Localhost noAuth (`:7860` / `:8188`) |

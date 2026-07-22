@@ -27,4 +27,43 @@ describe("Antigravity usage headers", () => {
       expect(options.headers).not.toHaveProperty("x-request-source");
     }
   });
+
+  it("checks quota for the same stored project used by generation", async () => {
+    const { getAntigravityUsage } = await import("../../open-sse/services/usage/google.js");
+
+    await getAntigravityUsage("access-token", { projectId: "stored-project" });
+
+    const quotaCall = proxyAwareFetch.mock.calls.find(([url]) => url.includes(":fetchAvailableModels"));
+    expect(JSON.parse(quotaCall[1].body)).toEqual({ project: "stored-project" });
+  });
+
+  it("marks Antigravity quota as percentage-only because Google exposes no absolute count", async () => {
+    proxyAwareFetch
+      .mockImplementationOnce(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ cloudaicompanionProject: "project-1", currentTier: { name: "Pro" } }),
+      }))
+      .mockImplementationOnce(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          models: {
+            "gemini-3.1-flash-image": {
+              displayName: "Gemini 3.1 Flash Image",
+              quotaInfo: { remainingFraction: 1, resetTime: "2026-07-22T09:40:57Z" },
+            },
+          },
+        }),
+      }));
+
+    const { getAntigravityUsage } = await import("../../open-sse/services/usage/google.js");
+    const usage = await getAntigravityUsage("access-token", {});
+
+    expect(usage.quotas["gemini-3.1-flash-image"]).toMatchObject({
+      remainingPercentage: 100,
+      percentageOnly: true,
+      quotaNote: "Google does not expose the exact remaining image-generation count.",
+    });
+  });
 });

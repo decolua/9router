@@ -2,6 +2,7 @@
 import { randomUUID } from "node:crypto";
 import { nowSec } from "./_base.js";
 import { PROVIDERS } from "../../config/providers.js";
+import { detectImageMime, encodeDataUri, parseDataUri } from "../../translator/concerns/image.js";
 
 const CODEX_RESPONSES_URL = PROVIDERS["codex"].baseUrl;
 const CODEX_USER_AGENT = "codex_cli_rs/0.136.0";
@@ -9,6 +10,8 @@ const CODEX_VERSION = "0.136.0";
 const CODEX_ORIGINATOR = "codex_cli_rs";
 const CODEX_MODEL_SUFFIX = "-image";
 const CODEX_REF_DETAIL = "high";
+const CODEX_IMAGES_MAIN_MODEL = "gpt-5.4-mini";
+const CODEX_TOOL_IMAGE_MODELS = new Set(["gpt-image-1.5", "gpt-image-2"]);
 
 function decodeAccountId(idToken) {
   try {
@@ -27,10 +30,48 @@ function stripImageSuffix(model) {
   return model.endsWith(CODEX_MODEL_SUFFIX) ? model.slice(0, -CODEX_MODEL_SUFFIX.length) : model;
 }
 
-function toDataUrl(input) {
-  if (!input || typeof input !== "string") return null;
-  if (/^data:image\//i.test(input) || /^https?:\/\//i.test(input)) return input;
-  return `data:image/png;base64,${input}`;
+function resolveCodexImageModels(model) {
+  if (CODEX_TOOL_IMAGE_MODELS.has(model)) {
+    return { responsesModel: CODEX_IMAGES_MAIN_MODEL, toolModel: model };
+  }
+  return { responsesModel: stripImageSuffix(model), toolModel: null };
+}
+
+function decodeBase64Image(input) {
+  const normalized = String(input || "").replace(/\s+/g, "");
+  if (!normalized || normalized.length % 4 === 1 || !/^[A-Za-z0-9+/]+={0,2}$/.test(normalized)) {
+    return null;
+  }
+
+  const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
+  const buffer = Buffer.from(padded, "base64");
+  if (!buffer.length) return null;
+
+  const canonical = buffer.toString("base64").replace(/=+$/, "");
+  if (canonical !== normalized.replace(/=+$/, "")) return null;
+
+  const mimeType = detectImageMime(buffer);
+  return mimeType ? { base64: buffer.toString("base64"), mimeType } : null;
+}
+
+function toDataUrl(input, label) {
+  if (!input || typeof input !== "string") {
+    throw new Error(`Invalid reference image at ${label}. Use an image URL, image data URL, or raw image base64.`);
+  }
+
+  const trimmed = input.trim();
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+
+  const parsed = parseDataUri(trimmed);
+  if (parsed?.mimeType?.startsWith("image/")) {
+    const decoded = decodeBase64Image(parsed.base64);
+    if (decoded) return encodeDataUri(decoded.mimeType, decoded.base64);
+  }
+
+  const decoded = decodeBase64Image(trimmed);
+  if (decoded) return encodeDataUri(decoded.mimeType, decoded.base64);
+
+  throw new Error(`Invalid reference image at ${label}. Use an image URL, image data URL, or raw image base64.`);
 }
 
 function buildContent(prompt, refs, detail = CODEX_REF_DETAIL) {
@@ -163,25 +204,37 @@ export default {
   },
   buildBody: (model, body) => {
     const refs = [];
-    if (Array.isArray(body.images)) body.images.forEach((i) => { const u = toDataUrl(i); if (u) refs.push(u); });
-    const single = toDataUrl(body.image);
-    if (single) refs.push(single);
+    if (Array.isArray(body.images)) {
+      body.images.forEach((image, index) => refs.push(toDataUrl(image, `images[${index}]`)));
+    }
+    if (body.image != null && body.image !== "") {
+      refs.push(toDataUrl(body.image, "image"));
+    }
     const detail = body.image_detail || CODEX_REF_DETAIL;
+    const { responsesModel, toolModel } = resolveCodexImageModels(model);
     const imgTool = { type: "image_generation", output_format: (body.output_format || "png").toLowerCase() };
+    if (toolModel) {
+      imgTool.action = refs.length > 0 ? "edit" : "generate";
+      imgTool.model = toolModel;
+    }
     if (body.size && body.size !== "") imgTool.size = body.size;
     if (body.quality && body.quality !== "") imgTool.quality = body.quality;
     if (body.background && body.background !== "") imgTool.background = body.background;
+    if (body.moderation) imgTool.moderation = body.moderation;
+    if (Number.isFinite(Number(body.output_compression))) imgTool.output_compression = Number(body.output_compression);
+    if (Number.isFinite(Number(body.partial_images))) imgTool.partial_images = Number(body.partial_images);
     return {
-      model: stripImageSuffix(model),
+      model: responsesModel,
       instructions: "",
       input: [{ type: "message", role: "user", content: buildContent(body.prompt, refs, detail) }],
       tools: [imgTool],
-      tool_choice: "auto",
+      // /images/generations must produce an image even when the prompt could be answered as text.
+      tool_choice: toolModel ? { type: "image_generation" } : "required",
       parallel_tool_calls: false,
       prompt_cache_key: randomUUID(),
       stream: true,
       store: false,
-      reasoning: null,
+      reasoning: toolModel ? { effort: "medium", summary: "auto" } : null,
     };
   },
   // Custom: codex parses SSE → either pipe to client or collect b64

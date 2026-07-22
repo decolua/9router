@@ -1,7 +1,12 @@
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
-import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
-import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
+import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil, getModelLockKey } from "open-sse/services/accountFallback.js";
+import {
+  extractAntigravityValidationUrl,
+  getModelErrorCodeKey,
+  getModelErrorKey,
+  isAntigravityValidationRequired,
+} from "open-sse/services/antigravityRuntime.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import * as log from "../utils/logger.js";
 
@@ -215,20 +220,36 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
 
   // Provider-specific precise cooldown (e.g. codex usage_limit_reached resets_at) overrides backoff
   let shouldFallback, cooldownMs, newBackoffLevel;
+  let preciseResetAtMs = null;
   if (resetsAtMs && resetsAtMs > Date.now()) {
     shouldFallback = true;
-    cooldownMs = Math.min(resetsAtMs - Date.now(), MAX_RATE_LIMIT_COOLDOWN_MS);
+    preciseResetAtMs = resetsAtMs;
+    cooldownMs = resetsAtMs - Date.now();
     newBackoffLevel = 0;
   } else {
     ({ shouldFallback, cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel));
   }
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
 
-  const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
-  const lockUpdate = buildModelLockUpdate(model, cooldownMs);
+  const reason = typeof errorText === "string" ? errorText.slice(0, 240) : "Provider error";
+  const lockUpdate = preciseResetAtMs
+    ? { [getModelLockKey(model)]: new Date(preciseResetAtMs).toISOString() }
+    : buildModelLockUpdate(model, cooldownMs);
+  const modelErrorUpdate = {
+    [getModelErrorKey(model)]: reason,
+    [getModelErrorCodeKey(model)]: status,
+  };
+  const validationRequired = provider === "antigravity" && isAntigravityValidationRequired(errorText);
+  const validationUrl = validationRequired ? extractAntigravityValidationUrl(errorText) : null;
 
   await updateProviderConnection(connectionId, {
     ...lockUpdate,
+    ...modelErrorUpdate,
+    ...(validationRequired ? {
+      antigravityValidationRequired: true,
+      antigravityValidationUrl: validationUrl,
+      antigravityValidationAt: new Date().toISOString(),
+    } : {}),
     testStatus: "unavailable",
     lastError: reason,
     errorCode: status,
@@ -262,7 +283,7 @@ export async function clearAccountError(connectionId, currentConnection, model =
   const now = Date.now();
   const allLockKeys = Object.keys(conn).filter(k => k.startsWith("modelLock_"));
 
-  if (!conn.testStatus && !conn.lastError && allLockKeys.length === 0) return;
+  if (!conn.testStatus && !conn.lastError && allLockKeys.length === 0 && !conn.antigravityValidationRequired) return;
 
   // Keys to clear: current model's lock + all expired locks
   const keysToClear = allLockKeys.filter(k => {
@@ -272,7 +293,7 @@ export async function clearAccountError(connectionId, currentConnection, model =
     return expiry && new Date(expiry).getTime() <= now;   // expired
   });
 
-  if (keysToClear.length === 0 && conn.testStatus !== "unavailable" && !conn.lastError) return;
+  if (keysToClear.length === 0 && conn.testStatus !== "unavailable" && !conn.lastError && !conn.antigravityValidationRequired) return;
 
   // Check if any active locks remain after clearing
   const remainingActiveLocks = allLockKeys.filter(k => {
@@ -281,7 +302,21 @@ export async function clearAccountError(connectionId, currentConnection, model =
     return expiry && new Date(expiry).getTime() > now;
   });
 
-  const clearObj = Object.fromEntries(keysToClear.map(k => [k, null]));
+  const clearObj = {};
+  for (const key of keysToClear) {
+    clearObj[key] = null;
+    const lockedModel = key.slice("modelLock_".length) || "__all";
+    clearObj[getModelErrorKey(lockedModel)] = null;
+    clearObj[getModelErrorCodeKey(lockedModel)] = null;
+  }
+
+  if (conn.provider === "antigravity" && conn.antigravityValidationRequired) {
+    Object.assign(clearObj, {
+      antigravityValidationRequired: null,
+      antigravityValidationUrl: null,
+      antigravityValidationAt: null,
+    });
+  }
 
   // Only reset error state if no active locks remain
   if (remainingActiveLocks.length === 0) {

@@ -142,13 +142,17 @@ export class AntigravityExecutor extends BaseExecutor {
       // Strip model name suffixes for the actual API model name
       const cleanModel = model.replace(/-(\d+)x(\d+)$/, "");
 
-      // Build simplified contents — text-only, merge all user messages
+      // Keep prompt text and reference-image parts; discard unsupported generation parts.
       const contents = [];
       const srcContents = body.request?.contents || body.contents || [];
       for (const c of srcContents) {
-        const textParts = (c.parts || []).filter(p => p.text !== undefined).map(p => ({ text: p.text }));
-        if (textParts.length > 0) {
-          contents.push({ role: c.role || "user", parts: textParts });
+        const parts = (c.parts || []).filter((part) => (
+          part?.text !== undefined ||
+          (part?.inlineData?.data && part?.inlineData?.mimeType) ||
+          (part?.fileData?.fileUri && part?.fileData?.mimeType)
+        ));
+        if (parts.length > 0) {
+          contents.push({ role: c.role || "user", parts });
         }
       }
 
@@ -167,6 +171,7 @@ export class AntigravityExecutor extends BaseExecutor {
           topP: 0.95,
           topK: 40,
           maxOutputTokens: 8192,
+          responseModalities: ["TEXT", "IMAGE"],
           imageConfig,
         },
         sessionId,
@@ -359,6 +364,52 @@ export class AntigravityExecutor extends BaseExecutor {
     if (match[3]) totalMs += parseInt(match[3]) * 1000; // seconds
 
     return totalMs > 0 ? totalMs : null;
+  }
+
+  parseError(response, bodyText = "") {
+    let errorJson = null;
+    try {
+      errorJson = bodyText ? JSON.parse(bodyText) : null;
+    } catch {
+      // Keep the raw body as the fallback message.
+    }
+
+    const status = response?.status || errorJson?.error?.code || HTTP_STATUS.BAD_GATEWAY;
+    if (status !== HTTP_STATUS.RATE_LIMITED) return null;
+
+    const now = Date.now();
+    let resetsAtMs = null;
+    for (const detail of errorJson?.error?.details || []) {
+      const resetTimestamp = detail?.metadata?.quotaResetTimeStamp;
+      const parsedTimestamp = resetTimestamp ? Date.parse(resetTimestamp) : NaN;
+      if (Number.isFinite(parsedTimestamp) && parsedTimestamp > now) {
+        resetsAtMs = parsedTimestamp;
+        break;
+      }
+
+      const retryDelay = detail?.retryDelay || detail?.metadata?.quotaResetDelay;
+      const delayMatch = typeof retryDelay === "string"
+        ? retryDelay.match(/^(\d+(?:\.\d+)?)s$/)
+        : null;
+      if (delayMatch) {
+        const delayMs = Number(delayMatch[1]) * 1000;
+        if (Number.isFinite(delayMs) && delayMs > 0) {
+          resetsAtMs = now + delayMs;
+          break;
+        }
+      }
+    }
+
+    const message = errorJson?.error?.message
+      || errorJson?.message
+      || bodyText
+      || `Upstream error: ${status}`;
+    if (!resetsAtMs) {
+      const retryMs = this.parseRetryFromErrorMessage(message);
+      if (retryMs) resetsAtMs = now + retryMs;
+    }
+
+    return { status, message, resetsAtMs };
   }
 
   extractErrorMessage(errorJson, bodyText = "") {

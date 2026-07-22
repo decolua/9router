@@ -17,6 +17,28 @@ import * as log from "../utils/logger.js";
 // Providers that don't require credentials (noAuth)
 const NO_AUTH_PROVIDERS = new Set(["sdwebui", "comfyui"]);
 
+function withConnectionMetadata(response, credentials) {
+  if (!response || !credentials?.connectionId) return response;
+
+  const headers = new Headers(response.headers);
+  headers.set("x-connection-id", credentials.connectionId);
+
+  const exposed = new Set(
+    (headers.get("Access-Control-Expose-Headers") || "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean)
+  );
+  exposed.add("x-connection-id");
+  headers.set("Access-Control-Expose-Headers", [...exposed].join(", "));
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 /**
  * Handle image generation request
  * @param {Request} request
@@ -126,9 +148,19 @@ async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutpu
       }
     });
 
-    if (result.success) return result.response;
+    if (result.success) return withConnectionMetadata(result.response, credentials);
 
-    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model);
+    // Invalid client payloads are account-independent; do not rotate or lock credentials.
+    if (result.retryable === false) return result.response;
+
+    const { shouldFallback } = await markAccountUnavailable(
+      credentials.connectionId,
+      result.status,
+      result.error,
+      provider,
+      model,
+      result.resetsAtMs
+    );
 
     if (shouldFallback) {
       excludeConnectionIds.add(credentials.connectionId);
