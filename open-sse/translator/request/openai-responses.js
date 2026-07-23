@@ -12,6 +12,75 @@ import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM } from "../schema/index.js";
 // Responses API enforces max 64 chars on call_id (#393)
 const MAX_CALL_ID_LEN = 64;
 const clampCallId = (id) => (typeof id === "string" && id.length > MAX_CALL_ID_LEN ? id.substring(0, MAX_CALL_ID_LEN) : id);
+const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
+
+function chatResponseFormatToResponsesFormat(responseFormat) {
+  if (!responseFormat || typeof responseFormat !== "object" || Array.isArray(responseFormat)) return null;
+
+  if (responseFormat.type === "json_object") {
+    return { type: "json_object" };
+  }
+
+  if (
+    responseFormat.type !== "json_schema" ||
+    !responseFormat.json_schema ||
+    typeof responseFormat.json_schema !== "object" ||
+    Array.isArray(responseFormat.json_schema)
+  ) {
+    return null;
+  }
+
+  const source = responseFormat.json_schema;
+  const format = { type: "json_schema" };
+  for (const key of ["name", "description", "schema", "strict"]) {
+    if (hasOwn(source, key)) format[key] = source[key];
+  }
+  return format;
+}
+
+function responsesFormatToChatResponseFormat(textFormat) {
+  if (!textFormat || typeof textFormat !== "object" || Array.isArray(textFormat)) return null;
+
+  if (textFormat.type === "json_object") {
+    return { type: "json_object" };
+  }
+
+  if (textFormat.type !== "json_schema") return null;
+
+  const jsonSchema = {};
+  for (const key of ["name", "description", "schema", "strict"]) {
+    if (hasOwn(textFormat, key)) jsonSchema[key] = textFormat[key];
+  }
+  return { type: "json_schema", json_schema: jsonSchema };
+}
+
+function applyChatStructuredOutputToResponses(result, body) {
+  const sourceText =
+    body.text && typeof body.text === "object" && !Array.isArray(body.text)
+      ? { ...body.text }
+      : null;
+  const hasNativeFormat = sourceText && hasOwn(sourceText, "format");
+  const mappedFormat = chatResponseFormatToResponsesFormat(body.response_format);
+
+  if (sourceText || mappedFormat) {
+    result.text = sourceText || {};
+    if (!hasNativeFormat && mappedFormat) result.text.format = mappedFormat;
+  }
+  delete result.response_format;
+}
+
+function applyResponsesStructuredOutputToChat(result, body) {
+  const textFormat =
+    body.text && typeof body.text === "object" && !Array.isArray(body.text)
+      ? body.text.format
+      : null;
+  const mappedFormat = responsesFormatToChatResponseFormat(textFormat);
+
+  if (!hasOwn(result, "response_format") && mappedFormat) {
+    result.response_format = mappedFormat;
+  }
+  delete result.text;
+}
 
 /**
  * Convert OpenAI Responses API request to OpenAI Chat Completions format
@@ -195,6 +264,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
     delete result.max_output_tokens;
   }
 
+  applyResponsesStructuredOutputToChat(result, body);
   delete result.input;
   delete result.instructions;
   delete result.include;
@@ -260,7 +330,11 @@ function buildReasoningInputItem(msg) {
  */
 export function openaiToOpenAIResponsesRequest(model, body, stream, credentials) {
   // Body already in Responses API format (e.g. Cursor CLI calling /chat/completions with input[])
-  if (body.input) return { ...body, model, stream: true };
+  if (body.input) {
+    const result = { ...body, model, stream: true };
+    applyChatStructuredOutputToResponses(result, body);
+    return result;
+  }
 
   const result = {
     model,
@@ -381,6 +455,7 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
   if (body.reasoning !== undefined) result.reasoning = body.reasoning;
   if (body.reasoning_effort !== undefined) result.reasoning = { effort: body.reasoning_effort, summary: "auto" };
   if (body.service_tier !== undefined) result.service_tier = body.service_tier;
+  applyChatStructuredOutputToResponses(result, body);
 
   return result;
 }
