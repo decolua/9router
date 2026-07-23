@@ -99,6 +99,11 @@ import p96 from "./xiaomi-mimo.js";
 import p97 from "./xiaomi-tokenplan.js";
 import p98 from "./youcom.js";
 import p99 from "./alims-intl.js";
+import p100 from "./codebuddy-intl.js";
+import p101 from "./workbuddy.js";
+import p102 from "./trae.js";
+import p103 from "./zed.js";
+import p104 from "./windsurf.js";
 
 export default [
   p0,
@@ -201,4 +206,9 @@ export default [
   p97,
   p98,
   p99,
+  p100,
+  p101,
+  p102,
+  p103,
+  p104,
 ];
