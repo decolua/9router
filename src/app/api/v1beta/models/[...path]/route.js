@@ -9,6 +9,7 @@ import { getSettings } from "@/lib/localDb";
 import { PROVIDER_MODELS } from "@/shared/constants/models";
 import { GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS } from "open-sse/config/runtimeConfig.js";
 import { initTranslators } from "open-sse/translator/index.js";
+import { parseErrorBody, parseProviderResetTime } from "open-sse/utils/error.js";
 
 let initialized = false;
 const GEMINI_NATIVE_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
@@ -312,7 +313,9 @@ async function forwardGeminiNativeRequest(request, body, model, action) {
         status,
         errorText,
         "gemini",
-        modelId
+        modelId,
+        null,
+        { isUpstreamError: false },
       );
 
       if (shouldFallback) {
@@ -341,12 +344,15 @@ async function forwardGeminiNativeRequest(request, body, model, action) {
     }
 
     const errorText = await upstreamResponse.text();
+    const parsedError = parseErrorBody(errorText);
     const { shouldFallback } = await markAccountUnavailable(
       credentials.connectionId,
       upstreamResponse.status,
-      errorText,
+      parsedError.message,
       "gemini",
-      modelId
+      modelId,
+      parseProviderResetTime(upstreamResponse, errorText) || null,
+      { errorCode: parsedError.code, isUpstreamError: true },
     );
 
     if (shouldFallback) {

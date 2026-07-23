@@ -1,5 +1,6 @@
 // OpenRouter TTS — via chat completions + audio modality (SSE stream)
 import { PROVIDER_MEDIA } from "../../providers/index.js";
+import { throwUpstreamError } from "./_base.js";
 
 const TTS_CFG = PROVIDER_MEDIA["openrouter"]?.ttsConfig || {};
 
@@ -40,10 +41,7 @@ export default {
       }),
     });
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err?.error?.message || `OpenRouter TTS failed: ${res.status}`);
-    }
+    if (!res.ok) await throwUpstreamError(res);
 
     // Parse SSE stream, accumulate base64 audio chunks
     const chunks = [];

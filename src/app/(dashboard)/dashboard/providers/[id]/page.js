@@ -792,12 +792,16 @@ export default function ProviderDetailPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
       });
+      const data = await res.json();
       if (res.ok) {
         await fetchConnections();
         setShowEditModal(false);
+        return {};
       }
+      return { error: data.error || "Failed to update connection" };
     } catch (error) {
       console.log("Error updating connection:", error);
+      return { error: "Failed to update connection" };
     }
   };
 

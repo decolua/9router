@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { parseProviderResetTime } from "../../utils/error.js";
 
 function hexToBase64(audioHex) {
   const clean = typeof audioHex === "string" ? audioHex.trim() : "";
@@ -45,11 +46,13 @@ export default async function minimaxTts({ baseUrl, apiKey, text, modelId, voice
   const statusCode = Number(baseResp.status_code ?? baseResp.statusCode ?? 0);
   const statusMessage = baseResp.status_msg || baseResp.statusMsg || data.message || "";
 
-  if (!res.ok) {
-    throw new Error(statusMessage || rawText || `MiniMax TTS error (${res.status})`);
-  }
-  if (statusCode !== 0) {
-    throw new Error(statusMessage || "MiniMax TTS upstream error");
+  if (!res.ok || statusCode !== 0) {
+    const error = new Error(statusMessage || rawText || `MiniMax TTS error (${res.status})`);
+    error.status = res.status;
+    error.errorCode = statusCode || null;
+    error.resetsAtMs = parseProviderResetTime(res, rawText) || undefined;
+    error.isUpstreamError = true;
+    throw error;
   }
 
   return {

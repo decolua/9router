@@ -123,6 +123,35 @@ describe("DB Concurrency — atomic safety", () => {
     expect(after.refreshToken).toBe("rt-initial"); // base preserved
   });
 
+  it("stale success does not clear a newer cooldown lock", async () => {
+    const conn = await db.createProviderConnection({
+      provider: "cooldown-race", authType: "apikey", name: "race", apiKey: "test",
+    });
+    const expired = new Date(Date.now() - 1_000).toISOString();
+    await db.updateProviderConnection(conn.id, {
+      testStatus: "unavailable",
+      lastError: "old error",
+      lastCooldownUntil: expired,
+      "modelLock_gpt-5": expired,
+    });
+    const stale = await db.getProviderConnectionById(conn.id);
+    const activeUntil = new Date(Date.now() + 60_000).toISOString();
+    await db.updateProviderConnection(conn.id, {
+      testStatus: "unavailable",
+      lastError: "new error",
+      lastCooldownUntil: activeUntil,
+      "modelLock_gpt-5": activeUntil,
+    });
+
+    const { clearAccountError } = await import("@/sse/services/auth.js");
+    await clearAccountError(conn.id, { _connection: stale }, "gpt-5");
+
+    const after = await db.getProviderConnectionById(conn.id);
+    expect(after["modelLock_gpt-5"]).toBe(activeUntil);
+    expect(after.lastCooldownUntil).toBe(activeUntil);
+    expect(after.lastError).toBe("new error");
+  });
+
   it("addCustomModel race: parallel duplicate adds → only 1 inserted", async () => {
     const N = 30;
     const promises = [];

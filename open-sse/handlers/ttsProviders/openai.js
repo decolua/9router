@@ -1,6 +1,7 @@
 // OpenAI TTS — model format: "tts-model/voice"
 import { Buffer } from "node:buffer";
 import { PROVIDER_MEDIA } from "../../providers/index.js";
+import { throwUpstreamError } from "./_base.js";
 
 const DEFAULT_TTS_MODEL = PROVIDER_MEDIA["openai"]?.ttsConfig?.defaultModel;
 
@@ -23,10 +24,7 @@ export default {
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${credentials.apiKey}` },
       body: JSON.stringify({ model: ttsModel, voice, input: text }),
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err?.error?.message || `OpenAI TTS failed: ${res.status}`);
-    }
+    if (!res.ok) await throwUpstreamError(res);
     const buf = await res.arrayBuffer();
     return { base64: Buffer.from(buf).toString("base64"), format: "mp3" };
   },

@@ -10,6 +10,7 @@
 import { buildSearchRequest } from "./callers.js";
 import { normalizeSearchResponse } from "./normalizers.js";
 import { handleChatSearch } from "./chatSearch.js";
+import { parseErrorBody, parseProviderResetTime } from "../../utils/error.js";
 
 const GLOBAL_TIMEOUT_MS = 15000;
 const NON_RETRIABLE = new Set([400, 401, 403, 404]);
@@ -43,11 +44,14 @@ function jsonResponse(payload, status = 200) {
 }
 
 /** Wrap an error result with a Response object so the auth wrapper can return it directly. */
-function errorResult(status, error) {
+function errorResult(status, error, meta = {}) {
   return {
     success: false,
     status,
     error,
+    errorCode: meta.errorCode ?? null,
+    isUpstreamError: meta.isUpstreamError === true,
+    resetsAtMs: meta.resetsAtMs,
     response: jsonResponse({ error: { message: error, code: status } }, status)
   };
 }
@@ -104,8 +108,16 @@ async function tryDedicatedProvider({ provider, providerConfig, body, credential
     clearTimeout(timer);
     if (!resp.ok) {
       const errText = await resp.text().catch(() => "");
+      const parsed = parseErrorBody(errText);
       log?.error?.("SEARCH", `${provider.id} ${resp.status}: ${errText.slice(0, 200)}`);
-      return { success: false, status: resp.status, error: `${provider.id} returned ${resp.status}: ${errText.slice(0, 200)}` };
+      return {
+        success: false,
+        status: resp.status,
+        error: `${provider.id} returned ${resp.status}: ${(parsed.message || errText).slice(0, 200)}`,
+        errorCode: parsed.code,
+        isUpstreamError: true,
+        resetsAtMs: parseProviderResetTime(resp, errText) || undefined,
+      };
     }
     const data = await resp.json();
     const normalized = normalizeSearchResponse(provider.id, data, params.query, params.searchType);
@@ -197,5 +209,5 @@ export async function handleSearchCore({ body, provider, providerConfig, credent
     if (fallback.success) return successResult(fallback.data);
   }
 
-  return errorResult(result.status || 502, result.error || "Search failed");
+  return errorResult(result.status || 502, result.error || "Search failed", result);
 }

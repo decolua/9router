@@ -1,5 +1,6 @@
 // Shared TTS helpers
 import { Buffer } from "node:buffer";
+import { parseUpstreamError } from "../../utils/error.js";
 
 export const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36";
 
@@ -16,13 +17,13 @@ export async function responseToBase64(res, defaultFormat = "mp3") {
 }
 
 export async function throwUpstreamError(res) {
-  const text = await res.text().catch(() => "");
-  let msg = `Upstream error (${res.status})`;
-  try {
-    const parsed = JSON.parse(text);
-    msg = parsed?.error?.message || parsed?.message || parsed?.detail?.message || (typeof parsed?.detail === "string" ? parsed.detail : null) || text || msg;
-  } catch { msg = text || msg; }
-  throw new Error(msg);
+  const parsed = await parseUpstreamError(res);
+  const error = new Error(parsed.message);
+  error.status = parsed.statusCode;
+  error.errorCode = parsed.errorCode;
+  error.resetsAtMs = parsed.resetsAtMs;
+  error.isUpstreamError = true;
+  throw error;
 }
 
 // Parse `model` string as "modelId/voiceId" — match against known model list (longest prefix wins)
