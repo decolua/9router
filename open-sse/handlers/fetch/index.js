@@ -49,7 +49,10 @@ function truncate(text, max) {
 }
 
 function parseJinaTitle(text) {
-  const m = String(text || "").match(/^\s*#\s+(.+)$/m);
+  const source = String(text || "");
+  const metadataTitle = source.match(/^\s*Title:\s*(.+)$/mi);
+  if (metadataTitle) return metadataTitle[1].trim();
+  const m = source.match(/^\s*#\s+(.+)$/m);
   return m ? m[1].trim() : null;
 }
 
@@ -151,11 +154,14 @@ async function runFirecrawl({ url, fmt, timeoutMs, apiKey, maxCharacters, costPe
 }
 
 async function runJina({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery, startedAt }) {
-  const target = `https://r.jina.ai/${encodeURIComponent(url)}`;
   const upstreamStart = Date.now();
-  const r = await tryFetch(target, {
-    method: "GET",
-    headers: apiKey ? { authorization: `Bearer ${apiKey}` } : {}
+  const r = await tryFetch("https://r.jina.ai/", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {})
+    },
+    body: JSON.stringify({ url })
   }, timeoutMs);
 
   if (!r.ok) {
