@@ -9,6 +9,7 @@ import {
   getProviderCapacityVersion,
   hasAccountCapacity,
   reserveAccountSlot,
+  setProviderAdmissionConfig,
   waitForProviderCapacity,
 } from "./accountAdmission.js";
 import * as log from "../utils/logger.js";
@@ -260,6 +261,7 @@ export async function acquireProviderCredentials(
     );
     admissionConfig = resolveProviderAdmissionConfig(undefined);
   }
+  setProviderAdmissionConfig(providerId, admissionConfig);
 
   if (!admissionConfig.enabled) {
     return {

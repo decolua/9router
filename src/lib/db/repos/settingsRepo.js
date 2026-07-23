@@ -95,6 +95,51 @@ export async function updateSettings(updates) {
   return mergeWithDefaults(next);
 }
 
+export async function updateProviderStrategy(providerId, patch) {
+  if (typeof providerId !== "string" || !providerId) {
+    throw new TypeError("providerId must be a non-empty string");
+  }
+  if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
+    throw new TypeError("provider strategy patch must be an object");
+  }
+
+  const db = await getAdapter();
+  let nextOverride;
+  db.transaction(() => {
+    const row = db.get(`SELECT data FROM settings WHERE id = 1`);
+    const current = row ? parseJson(row.data, {}) : {};
+    const providerStrategies =
+      current.providerStrategies &&
+      typeof current.providerStrategies === "object" &&
+      !Array.isArray(current.providerStrategies)
+        ? Object.assign(Object.create(null), current.providerStrategies)
+        : Object.create(null);
+    const existing =
+      providerStrategies[providerId] &&
+      typeof providerStrategies[providerId] === "object" &&
+      !Array.isArray(providerStrategies[providerId])
+        ? { ...providerStrategies[providerId] }
+        : {};
+
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === null) delete existing[key];
+      else if (value !== undefined) existing[key] = value;
+    }
+
+    if (Object.keys(existing).length === 0) delete providerStrategies[providerId];
+    else providerStrategies[providerId] = existing;
+
+    const next = { ...current, providerStrategies };
+    db.run(
+      `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
+      [stringifyJson(next)]
+    );
+    nextOverride = providerStrategies[providerId] || {};
+  });
+
+  return nextOverride;
+}
+
 export async function isCloudEnabled() {
   const settings = await getSettings();
   return settings.cloudEnabled === true;

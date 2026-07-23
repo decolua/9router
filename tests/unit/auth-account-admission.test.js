@@ -106,7 +106,13 @@ describe("admission-aware credential acquisition", () => {
 
     second.lease.release();
     third.lease.release();
-    expect(getAdmissionSnapshot()).toEqual({ providers: {} });
+    expect(getAdmissionSnapshot().providers.codex).toMatchObject({
+      enabled: true,
+      active: 0,
+      queued: 0,
+      accountCount: 0,
+      capacity: 0,
+    });
   });
 
   it("rejects locally instead of exceeding capacity when queueing is disabled", async () => {
@@ -128,7 +134,13 @@ describe("admission-aware credential acquisition", () => {
     });
 
     first.lease.release();
-    expect(getAdmissionSnapshot()).toEqual({ providers: {} });
+    expect(getAdmissionSnapshot().providers.codex).toMatchObject({
+      enabled: true,
+      active: 0,
+      queued: 0,
+      accountCount: 0,
+      capacity: 0,
+    });
   });
 
   it("preserves the legacy path with a no-op lease when disabled", async () => {
@@ -148,6 +160,12 @@ describe("admission-aware credential acquisition", () => {
 
     expect(result.credentials).toBeNull();
     expect(result.lease.release()).toBe(false);
-    expect(getAdmissionSnapshot()).toEqual({ providers: {} });
+    expect(getAdmissionSnapshot().providers.codex).toMatchObject({
+      enabled: true,
+      active: 0,
+      queued: 0,
+      accountCount: 0,
+      capacity: 0,
+    });
   });
 });

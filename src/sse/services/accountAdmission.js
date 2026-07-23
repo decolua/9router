@@ -1,5 +1,6 @@
 const providerStates = new Map();
 const providerVersions = new Map();
+const admissionListeners = new Set();
 
 export class AccountAdmissionError extends Error {
   constructor(reason, message, { retryAfterMs = null } = {}) {
@@ -33,6 +34,8 @@ function getOrCreateProviderState(providerId) {
       accounts: new Map(),
       queue: [],
       version: providerVersions.get(providerId) || 0,
+      config: null,
+      rejected: 0,
     };
     providerStates.set(providerId, state);
   }
@@ -40,8 +43,22 @@ function getOrCreateProviderState(providerId) {
 }
 
 function cleanupProviderState(providerId, state) {
-  if (state.accounts.size === 0 && state.queue.length === 0) {
+  if (
+    state.accounts.size === 0 &&
+    state.queue.length === 0 &&
+    state.config?.enabled !== true
+  ) {
     providerStates.delete(providerId);
+  }
+}
+
+function emitAdmissionChange() {
+  for (const listener of admissionListeners) {
+    try {
+      listener();
+    } catch {
+      // Observability listeners must never affect request admission.
+    }
   }
 }
 
@@ -60,23 +77,43 @@ function settleWaiter(providerId, state, waiter, settle, value) {
   }
   settle(value);
   cleanupProviderState(providerId, state);
+  emitAdmissionChange();
 }
 
 function wakeNextWaiter(providerId, state) {
   const waiter = state.queue[0];
   if (!waiter) {
     cleanupProviderState(providerId, state);
-    return;
+    return false;
   }
   settleWaiter(providerId, state, waiter, waiter.resolve, {
     reason: "capacity_changed",
     version: state.version,
   });
+  return true;
 }
 
 export function getProviderCapacityVersion(providerId) {
   requireId(providerId, "providerId");
   return providerVersions.get(providerId) || 0;
+}
+
+export function setProviderAdmissionConfig(providerId, config) {
+  requireId(providerId, "providerId");
+  if (!config || typeof config !== "object" || Array.isArray(config)) {
+    throw new TypeError("config must be an object");
+  }
+
+  const state = getOrCreateProviderState(providerId);
+  const previous = JSON.stringify(state.config);
+  state.config = {
+    enabled: config.enabled === true,
+    maxInFlightPerAccount: config.maxInFlightPerAccount,
+    maxQueueSize: config.maxQueueSize,
+    queueTimeoutMs: config.queueTimeoutMs,
+  };
+  cleanupProviderState(providerId, state);
+  if (previous !== JSON.stringify(state.config)) emitAdmissionChange();
 }
 
 export function getAccountInFlight(providerId, connectionId) {
@@ -100,6 +137,10 @@ export function reserveAccountSlot(providerId, connectionId, maxInFlightPerAccou
   if (current >= maxInFlightPerAccount) return null;
 
   state.accounts.set(connectionId, current + 1);
+  if (state.config) {
+    state.config.maxInFlightPerAccount = maxInFlightPerAccount;
+  }
+  emitAdmissionChange();
   let released = false;
 
   return Object.freeze({
@@ -116,7 +157,7 @@ export function reserveAccountSlot(providerId, connectionId, maxInFlightPerAccou
 
       activeState.version += 1;
       providerVersions.set(providerId, activeState.version);
-      wakeNextWaiter(providerId, activeState);
+      if (!wakeNextWaiter(providerId, activeState)) emitAdmissionChange();
       return true;
     },
   });
@@ -151,7 +192,9 @@ export function waitForProviderCapacity(providerId, {
     });
   }
   if (state.queue.length >= maxQueueSize) {
+    state.rejected += 1;
     cleanupProviderState(providerId, state);
+    emitAdmissionChange();
     return Promise.reject(new AccountAdmissionError(
       "queue_full",
       "Provider admission queue is full",
@@ -184,6 +227,7 @@ export function waitForProviderCapacity(providerId, {
     if (signal) signal.addEventListener("abort", waiter.abortListener, { once: true });
 
     waiter.timer = setTimeout(() => {
+      state.rejected += 1;
       settleWaiter(
         providerId,
         state,
@@ -198,6 +242,7 @@ export function waitForProviderCapacity(providerId, {
     }, queueTimeoutMs);
 
     state.queue.push(waiter);
+    emitAdmissionChange();
   });
 }
 
@@ -207,12 +252,33 @@ export function getAdmissionSnapshot() {
     let active = 0;
     for (const count of state.accounts.values()) active += count;
     providers[providerId] = {
+      enabled: state.config?.enabled === true,
       active,
       queued: state.queue.length,
+      rejected: state.rejected,
       accountCount: state.accounts.size,
+      capacity: state.config?.enabled === true
+        ? state.accounts.size * state.config.maxInFlightPerAccount
+        : null,
+      maxInFlightPerAccount: state.config?.maxInFlightPerAccount ?? null,
+      maxQueueSize: state.config?.maxQueueSize ?? null,
+      queueTimeoutMs: state.config?.queueTimeoutMs ?? null,
     };
   }
   return { providers };
+}
+
+export function subscribeAdmissionChanges(listener) {
+  if (typeof listener !== "function") {
+    throw new TypeError("listener must be a function");
+  }
+  admissionListeners.add(listener);
+  let subscribed = true;
+  return () => {
+    if (!subscribed) return false;
+    subscribed = false;
+    return admissionListeners.delete(listener);
+  };
 }
 
 export function __resetAccountAdmissionForTests() {
@@ -229,4 +295,5 @@ export function __resetAccountAdmissionForTests() {
   }
   providerStates.clear();
   providerVersions.clear();
+  admissionListeners.clear();
 }

@@ -8,6 +8,7 @@ import {
   getProviderCapacityVersion,
   hasAccountCapacity,
   reserveAccountSlot,
+  setProviderAdmissionConfig,
   waitForProviderCapacity,
 } from "../../src/sse/services/accountAdmission.js";
 
@@ -81,6 +82,10 @@ describe("account admission", () => {
       reason: "queue_full",
       retryAfterMs: 1000,
     });
+    expect(getAdmissionSnapshot().providers.codex).toMatchObject({
+      queued: 1,
+      rejected: 1,
+    });
 
     active.release();
     await queued;
@@ -107,6 +112,7 @@ describe("account admission", () => {
     expect(getAdmissionSnapshot().providers.codex).toMatchObject({
       active: 1,
       queued: 0,
+      rejected: 1,
     });
 
     active.release();
@@ -174,6 +180,18 @@ describe("account admission", () => {
   });
 
   it("isolates providers and reports only aggregate counts", () => {
+    setProviderAdmissionConfig("codex", {
+      enabled: true,
+      maxInFlightPerAccount: 2,
+      maxQueueSize: 10,
+      queueTimeoutMs: 1000,
+    });
+    setProviderAdmissionConfig("github", {
+      enabled: true,
+      maxInFlightPerAccount: 1,
+      maxQueueSize: 5,
+      queueTimeoutMs: 2000,
+    });
     const codexA = reserveAccountSlot("codex", "secret-account-a", 2);
     const codexB = reserveAccountSlot("codex", "secret-account-b", 2);
     const github = reserveAccountSlot("github", "secret-account-c", 1);
@@ -181,8 +199,28 @@ describe("account admission", () => {
     const snapshot = getAdmissionSnapshot();
     expect(snapshot).toEqual({
       providers: {
-        codex: { active: 2, queued: 0, accountCount: 2 },
-        github: { active: 1, queued: 0, accountCount: 1 },
+        codex: {
+          enabled: true,
+          active: 2,
+          queued: 0,
+          rejected: 0,
+          accountCount: 2,
+          capacity: 4,
+          maxInFlightPerAccount: 2,
+          maxQueueSize: 10,
+          queueTimeoutMs: 1000,
+        },
+        github: {
+          enabled: true,
+          active: 1,
+          queued: 0,
+          rejected: 0,
+          accountCount: 1,
+          capacity: 1,
+          maxInFlightPerAccount: 1,
+          maxQueueSize: 5,
+          queueTimeoutMs: 2000,
+        },
       },
     });
     expect(JSON.stringify(snapshot)).not.toContain("secret-account");
@@ -190,6 +228,11 @@ describe("account admission", () => {
     codexA.release();
     codexB.release();
     github.release();
-    expect(getAdmissionSnapshot()).toEqual({ providers: {} });
+    expect(getAdmissionSnapshot()).toMatchObject({
+      providers: {
+        codex: { active: 0, queued: 0, accountCount: 0, capacity: 0 },
+        github: { active: 0, queued: 0, accountCount: 0, capacity: 0 },
+      },
+    });
   });
 });

@@ -2,6 +2,10 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/connectionStatus";
+import {
+  PROVIDER_ADMISSION_DEFAULTS,
+  PROVIDER_ADMISSION_LIMITS,
+} from "@/shared/config/providerAdmission";
 import PropTypes from "prop-types";
 import { Card, Badge, Button, Modal, Select, Toggle, EditConnectionModal, ConfirmModal } from "@/shared/components";
 
@@ -304,6 +308,14 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
   const [selectedConnection, setSelectedConnection] = useState(null);
   const [providerStrategy, setProviderStrategy] = useState(null);
   const [providerStickyLimit, setProviderStickyLimit] = useState("1");
+  const [admissionForm, setAdmissionForm] = useState({
+    enabled: PROVIDER_ADMISSION_DEFAULTS.enabled,
+    maxInFlightPerAccount: String(PROVIDER_ADMISSION_DEFAULTS.maxInFlightPerAccount),
+    maxQueueSize: String(PROVIDER_ADMISSION_DEFAULTS.maxQueueSize),
+    queueTimeoutMs: String(PROVIDER_ADMISSION_DEFAULTS.queueTimeoutMs),
+  });
+  const [admissionSaving, setAdmissionSaving] = useState(false);
+  const [admissionError, setAdmissionError] = useState("");
   const [confirmState, setConfirmState] = useState(null);
 
   const fetch_ = useCallback(async () => {
@@ -321,6 +333,19 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
       const override = (settingsData.providerStrategies || {})[providerId] || {};
       setProviderStrategy(override.fallbackStrategy || null);
       setProviderStickyLimit(override.stickyRoundRobinLimit != null ? String(override.stickyRoundRobinLimit) : "1");
+      const admission = {
+        ...PROVIDER_ADMISSION_DEFAULTS,
+        ...(override.admission && typeof override.admission === "object"
+          ? override.admission
+          : {}),
+      };
+      setAdmissionForm({
+        enabled: admission.enabled === true,
+        maxInFlightPerAccount: String(admission.maxInFlightPerAccount),
+        maxQueueSize: String(admission.maxQueueSize),
+        queueTimeoutMs: String(admission.queueTimeoutMs),
+      });
+      setAdmissionError("");
     } catch (e) { console.log("ConnectionsCard fetch error:", e); }
     finally { setLoading(false); }
   }, [providerId]);
@@ -329,17 +354,85 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
 
   const saveStrategy = async (strategy, stickyLimit) => {
     try {
-      const res = await fetch("/api/settings", { cache: "no-store" });
-      const data = res.ok ? await res.json() : {};
-      const current = data.providerStrategies || {};
-      const override = {};
-      if (strategy) override.fallbackStrategy = strategy;
-      if (strategy === "round-robin" && stickyLimit !== "") override.stickyRoundRobinLimit = Number(stickyLimit) || 3;
-      const updated = { ...current };
-      if (Object.keys(override).length === 0) delete updated[providerId];
-      else updated[providerId] = override;
-      await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ providerStrategies: updated }) });
-    } catch (e) { console.log("saveStrategy error:", e); }
+      const res = await fetch(
+        `/api/settings/provider-strategies/${encodeURIComponent(providerId)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fallbackStrategy: strategy || null,
+            stickyRoundRobinLimit:
+              strategy === "round-robin"
+                ? Number(stickyLimit) || 1
+                : null,
+          }),
+        },
+      );
+      if (!res.ok) await fetch_();
+    } catch (e) {
+      console.log("saveStrategy error:", e);
+      await fetch_();
+    }
+  };
+
+  const admissionValues = {
+    maxInFlightPerAccount: Number(admissionForm.maxInFlightPerAccount),
+    maxQueueSize: Number(admissionForm.maxQueueSize),
+    queueTimeoutMs: Number(admissionForm.queueTimeoutMs),
+  };
+  const admissionFormValid = Object.entries(admissionValues).every(([field, value]) => {
+    const limits = PROVIDER_ADMISSION_LIMITS[field];
+    const rawValue = admissionForm[field];
+    return (
+      typeof rawValue === "string" &&
+      rawValue.trim() !== "" &&
+      Number.isInteger(value) &&
+      value >= limits.min &&
+      value <= limits.max
+    );
+  });
+
+  const saveAdmission = async () => {
+    if (!admissionFormValid || admissionSaving) return;
+
+    setAdmissionSaving(true);
+    setAdmissionError("");
+    try {
+      const res = await fetch(
+        `/api/settings/provider-strategies/${encodeURIComponent(providerId)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            admission: {
+              enabled: admissionForm.enabled,
+              ...admissionValues,
+            },
+          }),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        setAdmissionError(data.error || "Unable to save request admission settings.");
+        return;
+      }
+
+      const confirmed = {
+        ...PROVIDER_ADMISSION_DEFAULTS,
+        ...(data.strategy?.admission || {}),
+      };
+      setAdmissionForm({
+        enabled: confirmed.enabled === true,
+        maxInFlightPerAccount: String(confirmed.maxInFlightPerAccount),
+        maxQueueSize: String(confirmed.maxQueueSize),
+        queueTimeoutMs: String(confirmed.queueTimeoutMs),
+      });
+    } catch (error) {
+      console.log("saveAdmission error:", error);
+      setAdmissionError("Unable to save request admission settings.");
+    } finally {
+      setAdmissionSaving(false);
+    }
   };
 
   const handleSwapPriority = async (i1, i2) => {
@@ -423,6 +516,118 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
                   className="w-16 px-2 py-1 text-xs border border-border rounded-md bg-background focus:outline-none focus:border-primary"
                 />
               </div>
+            )}
+          </div>
+        </div>
+
+        <div className="mb-4 rounded-lg border border-border bg-black/[0.015] p-3 dark:bg-white/[0.015]">
+          <div className="flex flex-col gap-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-medium">Request Admission</h3>
+                <p className="mt-0.5 text-xs text-text-muted">
+                  Process-local limits; each account receives its own active-request ceiling.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  id={`${providerId}-admission-enabled`}
+                  type="checkbox"
+                  checked={admissionForm.enabled}
+                  onChange={(event) => {
+                    setAdmissionForm((current) => ({
+                      ...current,
+                      enabled: event.target.checked,
+                    }));
+                    setAdmissionError("");
+                  }}
+                  className="size-4 rounded border-border accent-brand-500"
+                />
+                <label htmlFor={`${providerId}-admission-enabled`} className="text-xs text-text-muted">
+                  Enabled
+                </label>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div>
+                <label htmlFor={`${providerId}-admission-in-flight`} className="mb-1 block text-xs text-text-muted">
+                  In flight per account
+                </label>
+                <input
+                  id={`${providerId}-admission-in-flight`}
+                  type="number"
+                  min={PROVIDER_ADMISSION_LIMITS.maxInFlightPerAccount.min}
+                  max={PROVIDER_ADMISSION_LIMITS.maxInFlightPerAccount.max}
+                  value={admissionForm.maxInFlightPerAccount}
+                  onChange={(event) => {
+                    setAdmissionForm((current) => ({
+                      ...current,
+                      maxInFlightPerAccount: event.target.value,
+                    }));
+                    setAdmissionError("");
+                  }}
+                  className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm focus:border-primary focus:outline-none"
+                />
+              </div>
+              <div>
+                <label htmlFor={`${providerId}-admission-queue-size`} className="mb-1 block text-xs text-text-muted">
+                  Maximum queue size
+                </label>
+                <input
+                  id={`${providerId}-admission-queue-size`}
+                  type="number"
+                  min={PROVIDER_ADMISSION_LIMITS.maxQueueSize.min}
+                  max={PROVIDER_ADMISSION_LIMITS.maxQueueSize.max}
+                  value={admissionForm.maxQueueSize}
+                  onChange={(event) => {
+                    setAdmissionForm((current) => ({
+                      ...current,
+                      maxQueueSize: event.target.value,
+                    }));
+                    setAdmissionError("");
+                  }}
+                  className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm focus:border-primary focus:outline-none"
+                />
+              </div>
+              <div>
+                <label htmlFor={`${providerId}-admission-timeout`} className="mb-1 block text-xs text-text-muted">
+                  Queue timeout (ms)
+                </label>
+                <input
+                  id={`${providerId}-admission-timeout`}
+                  type="number"
+                  min={PROVIDER_ADMISSION_LIMITS.queueTimeoutMs.min}
+                  max={PROVIDER_ADMISSION_LIMITS.queueTimeoutMs.max}
+                  value={admissionForm.queueTimeoutMs}
+                  onChange={(event) => {
+                    setAdmissionForm((current) => ({
+                      ...current,
+                      queueTimeoutMs: event.target.value,
+                    }));
+                    setAdmissionError("");
+                  }}
+                  className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm focus:border-primary focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-text-muted">
+                Settings apply to this provider in the current 9router process.
+              </p>
+              <Button
+                size="sm"
+                onClick={saveAdmission}
+                disabled={!admissionFormValid || admissionSaving}
+              >
+                {admissionSaving ? "Saving..." : "Save admission"}
+              </Button>
+            </div>
+            {admissionError && (
+              <p role="alert" className="text-xs text-red-500">
+                {admissionError}
+              </p>
             )}
           </div>
         </div>

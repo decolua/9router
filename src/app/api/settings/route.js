@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSettings, updateSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
+import { validateProviderAdmissionConfig } from "@/shared/config/providerAdmission.js";
 import { resetComboRotation } from "open-sse/services/combo.js";
 import bcrypt from "bcryptjs";
 
@@ -13,6 +14,44 @@ const SETTINGS_RESPONSE_HEADERS = {
 
 // Secrets must never be mass-assigned from request body (CWE-915)
 const PROTECTED_SETTING_KEYS = ["password", "mitmSudoEncrypted"];
+
+function validateProviderStrategies(providerStrategies) {
+  if (
+    !providerStrategies ||
+    typeof providerStrategies !== "object" ||
+    Array.isArray(providerStrategies)
+  ) {
+    return { ok: false, error: "providerStrategies must be an object" };
+  }
+
+  const normalized = Object.create(null);
+  for (const [providerId, override] of Object.entries(providerStrategies)) {
+    if (!override || typeof override !== "object" || Array.isArray(override)) {
+      normalized[providerId] = override;
+      continue;
+    }
+
+    const nextOverride = { ...override };
+    if (Object.prototype.hasOwnProperty.call(nextOverride, "admission")) {
+      if (nextOverride.admission === null) {
+        delete nextOverride.admission;
+      } else {
+        const result = validateProviderAdmissionConfig(nextOverride.admission);
+        if (!result.ok) {
+          return {
+            ok: false,
+            error: result.errors[0].message,
+            errors: result.errors,
+          };
+        }
+        nextOverride.admission = result.value;
+      }
+    }
+    normalized[providerId] = nextOverride;
+  }
+
+  return { ok: true, value: normalized };
+}
 
 export async function GET() {
   try {
@@ -74,6 +113,17 @@ export async function PATCH(request) {
       if (!body.oidcClientSecret || !String(body.oidcClientSecret).trim()) {
         delete body.oidcClientSecret;
       }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "providerStrategies")) {
+      const result = validateProviderStrategies(body.providerStrategies);
+      if (!result.ok) {
+        return NextResponse.json(
+          { error: result.error, errors: result.errors || [] },
+          { status: 400 },
+        );
+      }
+      body.providerStrategies = result.value;
     }
 
     const settings = await updateSettings(body);

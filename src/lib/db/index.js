@@ -4,7 +4,8 @@ import { stringifyJson, parseJson } from "./helpers/jsonCol.js";
 
 // Settings
 export {
-  getSettings, updateSettings, isCloudEnabled, getCloudUrl, exportSettings,
+  getSettings, updateSettings, updateProviderStrategy,
+  isCloudEnabled, getCloudUrl, exportSettings,
 } from "./repos/settingsRepo.js";
 
 // Provider connections
