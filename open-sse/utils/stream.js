@@ -251,6 +251,16 @@ export function createSSEStream(options = {}) {
           totalContentLength += parsed.delta.thinking.length;
           accumulatedThinking += parsed.delta.thinking;
         }
+
+        // Ollama native format
+        if (typeof parsed.message?.content === "string" && parsed.message.content) {
+          totalContentLength += parsed.message.content.length;
+          accumulatedContent += parsed.message.content;
+        }
+        if (typeof parsed.message?.thinking === "string" && parsed.message.thinking) {
+          totalContentLength += parsed.message.thinking.length;
+          accumulatedThinking += parsed.message.thinking;
+        }
         
         // OpenAI format - content
         if (parsed.choices?.[0]?.delta?.content) {
