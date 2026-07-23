@@ -350,6 +350,8 @@ export function GenericExampleCard({ providerId, kind }) {
                   className="max-h-40 rounded-lg border border-border object-contain bg-sidebar"
                   onError={(e) => { e.currentTarget.style.display = "none"; }}
                   onLoad={(e) => { e.currentTarget.style.display = "block"; }}
+                loading="lazy"
+                decoding="async"
                 />
               )}
             </div>
@@ -383,6 +385,8 @@ export function GenericExampleCard({ providerId, kind }) {
                   className="max-h-40 rounded-lg border border-border object-contain bg-sidebar"
                   onError={(e) => { e.currentTarget.style.display = "none"; }}
                   onLoad={(e) => { e.currentTarget.style.display = "block"; }}
+                loading="lazy"
+                decoding="async"
                 />
               )}
             </div>
@@ -487,6 +491,8 @@ export function GenericExampleCard({ providerId, kind }) {
               src={`data:image/png;base64,${partialImage.b64_json}`}
               alt="Partial"
               className="max-w-full rounded-lg border border-border mt-1.5 opacity-80"
+            loading="lazy"
+            decoding="async"
             />
           </div>
         )}
@@ -529,6 +535,8 @@ export function GenericExampleCard({ providerId, kind }) {
                 src={binaryImageUrl || (result?.data?.data?.[0]?.b64_json ? `data:image/png;base64,${result.data.data[0].b64_json}` : result?.data?.data?.[0]?.url)}
                 alt="Generated"
                 className="max-w-full rounded-lg border border-border"
+              loading="lazy"
+              decoding="async"
               />
             </div>
           )}

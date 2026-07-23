@@ -1265,22 +1265,24 @@ export default function ProviderLimits() {
                   />
                 )}
                 {hiddenQuotaRows.length > 0 && (
-                  <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-black/5 pt-2 text-[10px] text-text-muted dark:border-white/5">
-                    <span className="material-symbols-outlined text-[14px]">
+                  <div className="mt-2 flex min-w-0 items-center gap-1 border-t border-black/5 pt-2 text-[10px] text-text-muted dark:border-white/5">
+                    <span className="material-symbols-outlined shrink-0 text-[14px]">
                       visibility_off
                     </span>
-                    <span>Hidden:</span>
-                    {hiddenQuotaRows.map((quotaRow) => (
-                      <button
-                        key={getQuotaVisibilityKey(quotaRow)}
-                        type="button"
-                        onClick={() => handleShowQuota(conn.provider, quotaRow)}
-                        className="rounded-md border border-black/10 px-1.5 py-0.5 transition-colors hover:bg-black/5 hover:text-text-primary dark:border-white/10 dark:hover:bg-white/5"
-                        title="Show this quota row"
-                      >
-                        {quotaRow.name}
-                      </button>
-                    ))}
+                    <span className="shrink-0">Hidden:</span>
+                    <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap">
+                      {hiddenQuotaRows.map((quotaRow) => (
+                        <button
+                          key={getQuotaVisibilityKey(quotaRow)}
+                          type="button"
+                          onClick={() => handleShowQuota(conn.provider, quotaRow)}
+                          className="shrink-0 rounded-md border border-black/10 px-1.5 py-0.5 transition-colors hover:bg-black/5 hover:text-text-primary dark:border-white/10 dark:hover:bg-white/5"
+                          title="Show this quota row"
+                        >
+                          {quotaRow.name}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
