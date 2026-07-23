@@ -31,7 +31,6 @@ const executors = {
   qoder: new QoderExecutor(),
   kiro: new KiroExecutor(),
   kimchi: new KimchiExecutor(),
-  codex: new CodexExecutor(),
   cursor: new CursorExecutor(),
   cu: new CursorExecutor(), // Alias for cursor
   vertex: new VertexExecutor("vertex"),
@@ -52,16 +51,23 @@ const executors = {
   "codebuddy-cn": new CodeBuddyExecutor(),
 };
 
+// Codex keeps request-specific session and compact-route state while executing.
+// Construct it per dispatch so overlapping requests cannot share that state.
+const executorFactories = {
+  codex: () => new CodexExecutor(),
+};
+
 const defaultCache = new Map();
 
 export function getExecutor(provider) {
+  if (executorFactories[provider]) return executorFactories[provider]();
   if (executors[provider]) return executors[provider];
   if (!defaultCache.has(provider)) defaultCache.set(provider, new DefaultExecutor(provider));
   return defaultCache.get(provider);
 }
 
 export function hasSpecializedExecutor(provider) {
-  return !!executors[provider];
+  return !!executorFactories[provider] || !!executors[provider];
 }
 
 export { BaseExecutor } from "./base.js";
