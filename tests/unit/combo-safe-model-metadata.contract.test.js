@@ -106,7 +106,7 @@ describe("proposed safe Combo /v1/models metadata contract", () => {
     expect(combo).not.toHaveProperty("representativeModel");
   });
 
-  it.fails("projects only capabilities safe across every resolved Combo leaf", async () => {
+  it("projects only capabilities safe across every resolved Combo leaf", async () => {
     const caps = await aggregateCombo(state.comboModels);
 
     expect(caps).toMatchObject({
@@ -118,7 +118,7 @@ describe("proposed safe Combo /v1/models metadata contract", () => {
     });
   });
 
-  it.fails("resolves nested Combos to leaves before applying conservative floors", async () => {
+  it("resolves nested Combos to leaves before applying conservative floors", async () => {
     const caps = await aggregateCombo(["nested-combo"], {
       "nested-combo": ["provider/model-a", "provider/model-b"],
     });
@@ -132,7 +132,7 @@ describe("proposed safe Combo /v1/models metadata contract", () => {
     });
   });
 
-  it.fails.each([
+  it.each([
     ["cyclic nested membership", ["nested-a"], { "nested-a": ["nested-b"], "nested-b": ["nested-a"] }, undefined],
     ["a missing member", ["provider/missing"], {}, undefined],
     [
@@ -154,7 +154,7 @@ describe("proposed safe Combo /v1/models metadata contract", () => {
     expect(combo).not.toHaveProperty("contextWindow");
   });
 
-  it.fails("adds conservative public metadata to the logical Combo entry", async () => {
+  it("adds conservative public metadata to the logical Combo entry", async () => {
     const combo = await comboEntry(await modelsResponse());
 
     expect(combo.contextWindow).toBeGreaterThan(0);
@@ -165,7 +165,7 @@ describe("proposed safe Combo /v1/models metadata contract", () => {
     }));
   });
 
-  it.fails("returns a strong ETag and honors If-None-Match with 304", async () => {
+  it("returns a strong ETag and honors If-None-Match with 304", async () => {
     const first = await modelsResponse();
     const etag = first.headers.get("etag");
     expect(etag).toMatch(/^"sha256:[a-f0-9]{64}"$/);
@@ -176,7 +176,7 @@ describe("proposed safe Combo /v1/models metadata contract", () => {
     expect(await conditional.text()).toBe("");
   });
 
-  it.fails.each([
+  it.each([
     ["a comma-separated validator list", (etag) => `\"unrelated\", ${etag}`],
     ["a weak validator", (etag) => `W/${etag}`],
     ["the wildcard", () => "*"],
@@ -191,7 +191,7 @@ describe("proposed safe Combo /v1/models metadata contract", () => {
     expect(await conditional.text()).toBe("");
   });
 
-  it.fails("canonicalizes equivalent public model ordering to stable bytes and ETag", async () => {
+  it("canonicalizes equivalent public model ordering to stable bytes and ETag", async () => {
     const first = await modelsResponse();
     const firstBody = await first.text();
     const firstTag = first.headers.get("etag");
@@ -207,7 +207,7 @@ describe("proposed safe Combo /v1/models metadata contract", () => {
     expect(secondTag).toMatch(/^"sha256:[a-f0-9]{64}"$/);
   });
 
-  it.fails("changes the opaque validator when private routing membership changes", async () => {
+  it("changes the opaque validator when private routing membership changes", async () => {
     const first = await modelsResponse();
     const firstPayload = await first.clone().json();
     const firstTag = first.headers.get("etag");
@@ -224,7 +224,7 @@ describe("proposed safe Combo /v1/models metadata contract", () => {
     expect(secondTag).not.toContain("provider/model-b");
   });
 
-  it.fails("uses an injectable HMAC key and cannot be reproduced by raw membership hashing", async () => {
+  it("uses an injectable HMAC key and cannot be reproduced by raw membership hashing", async () => {
     const route = await import("../../src/app/api/v1/models/route.js");
     expect(route.createModelsValidator).toBeTypeOf("function");
     const publicModels = [{ id: "coding-pro", object: "model", owned_by: "combo" }];

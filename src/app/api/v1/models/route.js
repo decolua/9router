@@ -1,3 +1,5 @@
+import { createHash, createHmac, randomBytes } from "node:crypto";
+
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS, getModelKind } from "@/shared/constants/models";
 import {
   AI_PROVIDERS,
@@ -16,7 +18,11 @@ import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
-import { capabilitiesFromServiceKind, getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import {
+  aggregateComboCapabilities,
+  capabilitiesFromServiceKind,
+  getCapabilitiesForModel,
+} from "open-sse/providers/capabilities.js";
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
@@ -118,6 +124,7 @@ const INTERNAL_MODELS_FETCH_HEADER = "x-9r-internal-models-fetch";
 
 // LLM kind sentinel — combos/models with no explicit kind default to LLM
 const LLM_KIND = "llm";
+const MODELS_REVISION_KEY = randomBytes(32);
 
 // Map per-model `type` field (in PROVIDER_MODELS) to service kind.
 // Models without `type` are treated as LLM.
@@ -224,7 +231,7 @@ function comboMatchesKinds(combo, kindFilter) {
  * Build OpenAI-format models list filtered by service kinds.
  * @param {string[]} kindFilter - List of service kinds to include (e.g. ["llm"], ["webSearch","webFetch"]).
  */
-export async function buildModelsList(kindFilter, options = {}) {
+async function buildModelsListWithState(kindFilter, options = {}) {
   // When this header is present, the /v1/models request came from another
   // 9router instance's fetchCompatibleModelIds — skip dynamic fetch to break
   // cross-instance recursive loops.
@@ -500,7 +507,64 @@ export async function buildModelsList(kindFilter, options = {}) {
     dedupedModels.push(model);
   }
 
-  return dedupedModels;
+  const comboLookup = Object.fromEntries(combos.map((combo) => [combo.name, combo.models]));
+  const publicModels = new Map(dedupedModels.map((model) => [model.id, model]));
+  for (const combo of combos) {
+    const entry = publicModels.get(combo.name);
+    if (!entry || !Array.isArray(combo.models)) continue;
+    const capabilities = aggregateComboCapabilities(combo.models, {
+      comboLookup,
+      resolveCapabilities: (modelId) => publicModels.get(modelId)?.capabilities || null,
+    });
+    if (!capabilities) continue;
+    entry.capabilities = capabilities;
+    entry.contextWindow = capabilities.contextWindow;
+  }
+
+  return { models: dedupedModels, combos };
+}
+
+export async function buildModelsList(kindFilter, options = {}) {
+  return (await buildModelsListWithState(kindFilter, options)).models;
+}
+
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function compareStrings(a, b) {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+function canonicalModels(models) {
+  return [...models].sort((a, b) => compareStrings(String(a.id), String(b.id)));
+}
+
+export function createModelsValidator({ publicModels, combos, revisionKey }) {
+  if (!Array.isArray(publicModels) || !Array.isArray(combos) || !Buffer.isBuffer(revisionKey) || revisionKey.length < 32) {
+    throw new TypeError("Models validator requires model arrays and a 32-byte revision key");
+  }
+  const privateMembership = [...combos]
+    .map(({ name, models }) => ({ name, models }))
+    .sort((a, b) => compareStrings(String(a.name), String(b.name)));
+  const privateRevision = createHmac("sha256", revisionKey)
+    .update(canonicalJson(privateMembership))
+    .digest("hex");
+  const digest = createHash("sha256")
+    .update(canonicalJson([canonicalModels(publicModels), privateRevision]))
+    .digest("hex");
+  return `"sha256:${digest}"`;
+}
+
+export function ifNoneMatchMatches(header, etag) {
+  return String(header || "").split(",").some((candidate) => {
+    const tag = candidate.trim();
+    return tag === "*" || tag.replace(/^W\//, "") === etag;
+  });
 }
 
 /**
@@ -524,10 +588,18 @@ export async function GET(request) {
   try {
     // Detect cross-instance recursive /models fetch (another 9router fetching our /models)
     const skipDynamicFetch = request?.headers?.get(INTERNAL_MODELS_FETCH_HEADER) === "1";
-    const data = await buildModelsList([LLM_KIND], { skipDynamicFetch });
-    return Response.json({ object: "list", data }, {
-      headers: { "Access-Control-Allow-Origin": "*" },
-    });
+    const { models, combos } = await buildModelsListWithState([LLM_KIND], { skipDynamicFetch });
+    const data = canonicalModels(models);
+    const etag = createModelsValidator({ publicModels: data, combos, revisionKey: MODELS_REVISION_KEY });
+    const headers = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Expose-Headers": "ETag",
+      ETag: etag,
+    };
+    if (ifNoneMatchMatches(request?.headers?.get("If-None-Match"), etag)) {
+      return new Response(null, { status: 304, headers });
+    }
+    return Response.json({ object: "list", data }, { headers });
   } catch (error) {
     console.log("Error fetching models:", error);
     return Response.json(

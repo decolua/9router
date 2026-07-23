@@ -1,8 +1,8 @@
 # Safe logical Combo metadata proposal
 
-Status: proposal only. Production changes are intentionally deferred because
-[PR #2242](https://github.com/decolua/9router/pull/2242) already modifies the
-same capability helper and `/v1/models` route.
+Status: implemented as the conservative projection and conditional-cache gap
+around [PR #2242](https://github.com/decolua/9router/pull/2242). That PR remains
+the owner of physical-model capability discovery.
 
 ## Upstream overlap checked
 
@@ -48,7 +48,7 @@ than guessing from its name.
 - input modalities and request features: intersection across every leaf;
 - `contextWindow`: minimum verified window across every leaf;
 - `maxOutput`: minimum verified output limit across every leaf;
-- reasoning format/range: publish only when all leaves agree;
+- reasoning format/range: omit until an exact-agreement projection is defined;
 - unknown capability values: fail closed and omit the aggregate.
 
 This matches fallback semantics: advertised input must remain valid whichever
@@ -72,15 +72,14 @@ equivalent public ordering is byte/ETag stable, membership changes invalidate,
 and neither raw membership hashes nor a small model-name dictionary reproduce
 the HMAC-backed validator.
 
-`tests/unit/combo-safe-model-metadata.contract.test.js` records the desired
-behavior. Its `it.fails` cases are executable evidence of current gaps; remove
-`.fails` only after implementation.
+`tests/unit/combo-safe-model-metadata.contract.test.js` records the behavior and
+passes without expected-failure markers.
 
 ## Merge strategy
 
-Offer the conservative rules and tests to #2242 first. Land ETag behavior as a
-small follow-up PR after the aggregation shape stabilizes, so the route does not
-carry two competing Combo projections.
+Keep physical-model capability discovery in #2242. This change owns only
+recursive conservative aggregation, public projection, canonical response
+ordering, and privacy-preserving conditional ETags.
 
 Provider catalog freshness is a separate source-of-truth concern. See
 `OPENAI_CODEX_REMOTE_CATALOG_ISSUE.md` for the non-duplicate OpenAI/Codex issue
