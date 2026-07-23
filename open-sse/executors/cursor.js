@@ -1,8 +1,11 @@
 import { BaseExecutor } from "./base.js";
-import { PROVIDERS } from "../config/providers.js";
+import { PROVIDERS, PROVIDER_OAUTH } from "../config/providers.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import {
   generateCursorBody,
+  encodeField,
+  wrapConnectRPCFrame,
+  decodeMessage,
   parseConnectRPCFrame,
   extractTextFromResponse
 } from "../utils/cursorProtobuf.js";
@@ -13,6 +16,7 @@ import { chatChunkSse } from "../utils/sse.js";
 import { FORMATS } from "../translator/formats.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import zlib from "zlib";
+import crypto from "crypto";
 
 // Detect cloud environment
 const isCloudEnv = () => {
@@ -37,6 +41,130 @@ const COMPRESS_FLAG = {
   TRAILER: 0x02,
   GZIP_TRAILER: 0x03
 };
+
+const AGENT_RUN_PATH = "/agent.v1.AgentService/Run";
+const PROTOBUF_LEN = 2;
+const PROTOBUF_VARINT = 0;
+
+function concatBuffers(...parts) {
+  const length = parts.reduce((total, part) => total + part.length, 0);
+  const result = new Uint8Array(length);
+  let offset = 0;
+  for (const part of parts) {
+    result.set(part, offset);
+    offset += part.length;
+  }
+  return result;
+}
+
+const agentString = (field, value) => encodeField(field, PROTOBUF_LEN, value);
+const agentMessage = (field, value) => encodeField(field, PROTOBUF_LEN, value);
+const agentBool = (field, value) => encodeField(field, PROTOBUF_VARINT, value ? 1 : 0);
+
+function textFromContent(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter((part) => part?.type === "text" && typeof part.text === "string")
+    .map((part) => part.text)
+    .join("\n");
+}
+
+function isAgentTextRequest(body) {
+  // Many compatible clients always attach their built-in tool schemas, even
+  // for a normal text turn. Cursor's retired ChatService rejects those
+  // requests; AgentService can still answer the text turn, so ignore schemas
+  // here. A real tool-call/result conversation is kept on the legacy path
+  // until its AgentService tool protocol is implemented.
+  return Array.isArray(body?.messages) && body.messages.every((message) => {
+    if (message?.tool_calls?.length || message?.role === "tool") return false;
+    return typeof message?.content === "string"
+      || Array.isArray(message?.content) && message.content.every((part) => part?.type === "text");
+  });
+}
+
+function encodeHistoryMessage(message) {
+  const content = textFromContent(message?.content);
+  if (!content) return null;
+
+  // ConversationHistoryMessage.user / .assistant -> repeated content -> text.
+  const text = agentString(1, content);
+  if (message.role === "assistant") {
+    return agentMessage(2, agentMessage(1, agentMessage(1, text)));
+  }
+  return agentMessage(1, agentMessage(1, agentMessage(1, text)));
+}
+
+function buildAgentRunFrame(messages, model) {
+  const system = messages
+    .filter((message) => message?.role === "system")
+    .map((message) => textFromContent(message.content))
+    .filter(Boolean)
+    .join("\n\n");
+  const chatMessages = messages.filter((message) => message?.role !== "system");
+  const currentIndex = [...chatMessages].map((message) => message?.role).lastIndexOf("user");
+  const current = currentIndex >= 0 ? chatMessages[currentIndex] : chatMessages.at(-1);
+  const history = chatMessages
+    .slice(0, currentIndex >= 0 ? currentIndex : -1)
+    .map(encodeHistoryMessage)
+    .filter(Boolean);
+  const userText = textFromContent(current?.content) || "Continue.";
+
+  // agent.v1.UserMessageAction.user_message and its optional history.
+  const userMessage = concatBuffers(
+    agentString(1, userText),
+    agentString(2, crypto.randomUUID()),
+  );
+  const conversationHistory = history.length
+    ? concatBuffers(...history.map((entry) => agentMessage(1, entry)))
+    : null;
+  const userAction = concatBuffers(
+    agentMessage(1, userMessage),
+    ...(conversationHistory ? [agentMessage(7, conversationHistory)] : []),
+  );
+  const conversationAction = agentMessage(1, userAction);
+  const requestedModel = concatBuffers(agentString(1, model), agentBool(7, true));
+  const runRequest = concatBuffers(
+    // An empty ConversationStateStructure starts a fresh local agent session.
+    agentMessage(1, new Uint8Array()),
+    agentMessage(2, conversationAction),
+    ...(system ? [agentString(8, system)] : []),
+    agentMessage(9, requestedModel),
+  );
+
+  // agent.v1.AgentClientMessage.run_request.
+  return wrapConnectRPCFrame(agentMessage(1, runRequest));
+}
+
+function extractAgentString(message, field) {
+  const value = message?.get(field)?.[0]?.value;
+  return value ? Buffer.from(value).toString("utf8") : "";
+}
+
+function decodeAgentFrames(buffer, onFrame) {
+  let pending = Buffer.from(buffer || []);
+  while (pending.length >= 5) {
+    const flags = pending[0];
+    const length = pending.readUInt32BE(1);
+    if (pending.length < 5 + length) break;
+    let payload = pending.subarray(5, 5 + length);
+    pending = pending.subarray(5 + length);
+    if (flags & COMPRESS_FLAG.GZIP) {
+      payload = zlib.gunzipSync(payload);
+    }
+    if (!(flags & COMPRESS_FLAG.TRAILER)) onFrame(payload);
+  }
+  return pending;
+}
+
+function createRequestContextResponse() {
+  // AgentService asks every run for client context. 9router has no IDE file
+  // context, so acknowledge with an empty RequestContext.
+  const requestContextSuccess = agentMessage(1, new Uint8Array());
+  const requestContextResult = agentMessage(1, requestContextSuccess);
+  const execClientMessage = agentMessage(10, requestContextResult);
+  return wrapConnectRPCFrame(agentMessage(2, execClientMessage));
+}
 
 const CURSOR_STREAM_DEBUG = process.env.CURSOR_STREAM_DEBUG === "1";
 const debugLog = (...args) => {
@@ -253,7 +381,293 @@ export class CursorExecutor extends BaseExecutor {
     });
   }
 
+  /**
+   * AgentService (agent.api5.cursor.sh) is HTTP/2-only. Node's fetch/undici speaks
+   * HTTP/1.1 and fails with HTTPParserError on the h2 preface — use http2 duplex.
+   */
+  openAgentHttp2Stream(url, headers, signal) {
+    if (!http2) {
+      throw new Error("HTTP/2 is required for Cursor AgentService (endpoint is h2-only)");
+    }
+
+    const urlObj = new URL(url);
+    const client = http2.connect(`https://${urlObj.host}`);
+    const chunkQueue = [];
+    let waiting = null;
+    let ended = false;
+    let streamError = null;
+    let req = null;
+
+    const wake = (result) => {
+      if (!waiting) return;
+      const resolve = waiting;
+      waiting = null;
+      resolve(result);
+    };
+
+    const fail = (error) => {
+      if (streamError) return;
+      streamError = error;
+      ended = true;
+      wake(null);
+    };
+
+    const close = () => {
+      try { req?.destroy(); } catch {}
+      try { client.close(); } catch {}
+    };
+
+    client.on("error", fail);
+
+    req = client.request({
+      ":method": "POST",
+      ":path": urlObj.pathname,
+      ":authority": urlObj.host,
+      ":scheme": "https",
+      ...headers,
+    });
+
+    req.on("error", fail);
+    req.on("data", (chunk) => {
+      if (waiting) wake({ value: chunk, done: false });
+      else chunkQueue.push(chunk);
+    });
+    req.on("end", () => {
+      ended = true;
+      wake({ value: undefined, done: true });
+    });
+
+    if (signal) {
+      const onAbort = () => {
+        fail(new Error("Request aborted"));
+        close();
+      };
+      if (signal.aborted) onAbort();
+      else signal.addEventListener("abort", onAbort, { once: true });
+    }
+
+    const responseHeaders = new Promise((resolve, reject) => {
+      const onEarlyError = (error) => reject(error);
+      client.once("error", onEarlyError);
+      req.once("error", onEarlyError);
+      req.once("response", (hdrs) => {
+        client.off("error", onEarlyError);
+        req.off("error", onEarlyError);
+        resolve(hdrs);
+      });
+    });
+
+    return {
+      responseHeaders,
+      write(frame) {
+        if (req && !req.destroyed) req.write(Buffer.from(frame));
+      },
+      end() {
+        try { if (req && !req.destroyed) req.end(); } catch {}
+      },
+      close,
+      async read() {
+        if (chunkQueue.length) return { value: chunkQueue.shift(), done: false };
+        if (ended) {
+          if (streamError) throw streamError;
+          return { value: undefined, done: true };
+        }
+        const result = await new Promise((resolve) => { waiting = resolve; });
+        if (streamError) throw streamError;
+        return result || { value: undefined, done: true };
+      },
+    };
+  }
+
+  async executeAgent({ model, body, stream, credentials, signal }) {
+    const agentEndpoint = PROVIDER_OAUTH.cursor?.agentEndpoint;
+    if (!agentEndpoint) throw new Error("Cursor AgentService endpoint is not configured");
+
+    const url = `${agentEndpoint}${AGENT_RUN_PATH}`;
+    const headers = this.buildHeaders(credentials);
+    const requestController = new AbortController();
+    if (signal?.addEventListener) {
+      signal.addEventListener("abort", () => requestController.abort(signal.reason), { once: true });
+    }
+
+    let session;
+    try {
+      session = this.openAgentHttp2Stream(url, headers, requestController.signal);
+      session.write(buildAgentRunFrame(body.messages || [], model));
+    } catch (error) {
+      throw new Error(`Cursor AgentService request failed: ${error.message}`);
+    }
+
+    let responseHeaders;
+    try {
+      responseHeaders = await session.responseHeaders;
+    } catch (error) {
+      session.close();
+      throw new Error(`Cursor AgentService request failed: ${error.message}`);
+    }
+
+    const status = Number(responseHeaders[":status"] || 0);
+    if (status !== 200) {
+      let errorText = "";
+      try {
+        while (true) {
+          const { done, value } = await session.read();
+          if (done) break;
+          errorText += Buffer.from(value).toString("utf8");
+        }
+      } catch {}
+      session.close();
+      return {
+        response: new Response(JSON.stringify({
+          error: { message: `Cursor AgentService ${status}: ${errorText || "request failed"}`, type: "api_error" },
+        }), { status: status || HTTP_STATUS.SERVER_ERROR, headers: { "Content-Type": "application/json" } }),
+        url,
+        headers,
+        transformedBody: body,
+        responseFormat: FORMATS.OPENAI,
+      };
+    }
+
+    // The Claude SSE translator derives Anthropic's message ID by stripping
+    // `chatcmpl-`. Keep the remaining ID in Anthropic's required `msg_` form
+    // so strict clients such as Claude Code accept the completed stream.
+    const responseId = `chatcmpl-msg_${Date.now()}`;
+    const created = Math.floor(Date.now() / 1000);
+    let pending = Buffer.alloc(0);
+    let finished = false;
+
+    const consume = async (onEvent) => {
+      try {
+        while (!finished) {
+          const { done, value } = await session.read();
+          if (done) break;
+          pending = Buffer.concat([pending, Buffer.from(value)]);
+          pending = decodeAgentFrames(pending, (payload) => {
+            const serverMessage = decodeMessage(payload);
+
+            // agent.v1.AgentServerMessage.interaction_update
+            if (serverMessage.has(1)) {
+              const update = decodeMessage(serverMessage.get(1)[0].value);
+              if (update.has(1)) {
+                const textDelta = extractAgentString(decodeMessage(update.get(1)[0].value), 1);
+                if (textDelta) onEvent({ type: "text", value: textDelta });
+              }
+              // Cursor's AgentService emits internal reasoning without the
+              // cryptographic signature required by Anthropic thinking blocks.
+              // Forwarding it makes strict Anthropic clients (Claude Code)
+              // discard or wait on an otherwise complete response. Keep the
+              // reasoning upstream-only and emit the normal answer text.
+              if (update.has(14)) {
+                finished = true;
+                onEvent({ type: "done" });
+              }
+            }
+
+            // AgentService requests IDE context before producing a response.
+            // Return an empty context; 9router is not coupled to an editor.
+            if (serverMessage.has(2)) {
+              const execRequest = decodeMessage(serverMessage.get(2)[0].value);
+              if (execRequest.has(10)) {
+                session.write(createRequestContextResponse());
+              } else {
+                finished = true;
+                onEvent({ type: "error", value: "Cursor AgentService requested an unsupported IDE tool" });
+                onEvent({ type: "done" });
+              }
+            }
+          });
+        }
+      } finally {
+        try { session.end(); } catch {}
+        try { session.close(); } catch {}
+        if (!finished) onEvent({ type: "done" });
+      }
+    };
+
+    if (stream === false) {
+      let content = "";
+      let reasoning = "";
+      let agentError = null;
+      await consume((event) => {
+        if (event.type === "text") content += event.value;
+        else if (event.type === "thinking") reasoning += event.value;
+        else if (event.type === "error") agentError = event.value;
+      });
+      if (agentError) {
+        return {
+          response: new Response(JSON.stringify({ error: { message: agentError, type: "api_error" } }), {
+            status: HTTP_STATUS.BAD_REQUEST,
+            headers: { "Content-Type": "application/json" },
+          }),
+          url,
+          headers,
+          transformedBody: body,
+          responseFormat: FORMATS.OPENAI,
+        };
+      }
+      return {
+        response: new Response(JSON.stringify({
+          id: responseId,
+          object: "chat.completion",
+          created,
+          model,
+          choices: [{ index: 0, message: { role: "assistant", content: content || null, ...(reasoning ? { reasoning_content: reasoning } : {}) }, finish_reason: "stop" }],
+          usage: estimateUsage(body, content.length, FORMATS.OPENAI),
+        }), { headers: { "Content-Type": "application/json" } }),
+        url,
+        headers,
+        transformedBody: body,
+        responseFormat: FORMATS.OPENAI,
+      };
+    }
+
+    const encoder = new TextEncoder();
+    const responseStream = new ReadableStream({
+      start(controller) {
+        consume((event) => {
+          if (event.type === "text") {
+            controller.enqueue(encoder.encode(chatChunkSse({ id: responseId, created, model, delta: { content: event.value } })));
+          } else if (event.type === "thinking") {
+            controller.enqueue(encoder.encode(chatChunkSse({ id: responseId, created, model, delta: { reasoning_content: event.value } })));
+          } else if (event.type === "error") {
+            controller.enqueue(encoder.encode(chatChunkSse({ id: responseId, created, model, delta: { content: `\n[${event.value}]` } })));
+          } else if (event.type === "done") {
+            controller.enqueue(encoder.encode(chatChunkSse({ id: responseId, created, model, delta: {}, finishReason: "stop" })));
+            controller.enqueue(encoder.encode(SSE_DONE));
+            controller.close();
+          }
+        }).catch((error) => controller.error(error));
+      },
+      cancel() {
+        requestController.abort();
+      },
+    });
+
+    return {
+      response: new Response(responseStream, { headers: SSE_HEADERS }),
+      url,
+      headers,
+      transformedBody: body,
+      responseFormat: FORMATS.OPENAI,
+    };
+  }
+
   async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
+    if (isAgentTextRequest(body)) {
+      try {
+        return await this.executeAgent({ model, body, stream, credentials, signal });
+      } catch (error) {
+        return {
+          response: new Response(JSON.stringify({
+            error: { message: error.message, type: "connection_error", code: "" },
+          }), { status: HTTP_STATUS.SERVER_ERROR, headers: { "Content-Type": "application/json" } }),
+          url: `${PROVIDER_OAUTH.cursor?.agentEndpoint || ""}${AGENT_RUN_PATH}`,
+          headers: {},
+          transformedBody: body,
+        };
+      }
+    }
+
     const url = this.buildUrl();
     const headers = this.buildHeaders(credentials);
     const transformedBody = this.transformRequest(model, body, stream, credentials);

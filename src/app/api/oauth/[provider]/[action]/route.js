@@ -154,6 +154,7 @@ export async function GET(request, { params }) {
       const noPkceDeviceProviders = [
         "github",
         "kiro",
+        "kimi",
         "kimi-coding",
         "kilocode",
         "codebuddy-cn",
@@ -279,10 +280,11 @@ export async function POST(request, { params }) {
       }
 
       // Providers that don't use PKCE for device code
-      const noPkceProviders = ["github", "kimi-coding", "kilocode", "codebuddy-cn"];
+      const noPkceProviders = ["github", "kimi", "kimi-coding", "kilocode", "codebuddy-cn"];
       let result;
       if (noPkceProviders.includes(provider)) {
-        result = await pollForToken(provider, deviceCode);
+        // kimi needs extraData._kimiDeviceId for stable X-Msh-Device-Id (CLIProxyAPI parity)
+        result = await pollForToken(provider, deviceCode, null, extraData);
       } else if (provider === "kiro") {
         // Kiro needs extraData (clientId, clientSecret) from device code response
         result = await pollForToken(provider, deviceCode, null, extraData);
@@ -303,9 +305,10 @@ export async function POST(request, { params }) {
       }
 
       if (result.success) {
-        // Save to database
+        // Save to database (legacy kimi-coding OAuth → dual-auth kimi)
+        const providerId = provider === "kimi-coding" ? "kimi" : provider;
         const connection = await createProviderConnection({
-          provider,
+          provider: providerId,
           authType: "oauth",
           ...result.tokens,
           expiresAt: result.tokens.expiresIn 

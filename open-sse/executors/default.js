@@ -38,7 +38,8 @@ function applyAuth(headers, desc, credentials) {
 
 // Provider-specific header quirks kept as small hooks (not pure auth).
 const HEADER_HOOKS = {
-  kimiHeaders: (h) => Object.assign(h, buildKimiHeaders()),
+  // Stable device_id from OAuth connection (CLIProxyAPI KimiTokenStorage.DeviceID)
+  kimiHeaders: (h, c) => Object.assign(h, buildKimiHeaders(c?.providerSpecificData?.deviceId)),
   clineHeaders: (h, c) => Object.assign(h, buildClineHeaders(c.apiKey || c.accessToken)),
   kilocodeOrg: (h, c) => { if (c.providerSpecificData?.orgId) h["X-Kilocode-OrganizationID"] = c.providerSpecificData.orgId; },
   claudeOverlay: (h) => {
@@ -227,7 +228,8 @@ export class DefaultExecutor extends BaseExecutor {
       kiro: () => this.refreshKiro(credentials.refreshToken, proxyOptions),
       cline: () => this.refreshCline(credentials.refreshToken, proxyOptions),
       clinepass: () => this.refreshCline(credentials.refreshToken, proxyOptions),
-      "kimi-coding": () => this.refreshKimiCoding(credentials.refreshToken, proxyOptions),
+      kimi: () => this.refreshKimi(credentials, proxyOptions),
+      "kimi-coding": () => this.refreshKimi(credentials, proxyOptions),
       kilocode: () => this.refreshKilocode(credentials.refreshToken, proxyOptions)
     };
 
@@ -307,16 +309,20 @@ export class DefaultExecutor extends BaseExecutor {
     return { accessToken, refreshToken: data?.refreshToken || refreshToken, expiresIn };
   }
 
-  async refreshKimiCoding(refreshToken, proxyOptions = null) {
-    const kimiHeaders = buildKimiHeaders();
-    const response = await proxyAwareFetch(PROVIDERS["kimi-coding"].refreshUrl, {
+  // CLIProxyAPI DeviceFlowClient.RefreshToken — form body + X-Msh-* headers + stable device_id
+  async refreshKimi(credentials, proxyOptions = null) {
+    const refreshToken = credentials.refreshToken;
+    const cfg = PROVIDERS.kimi || PROVIDERS["kimi-coding"];
+    if (!cfg?.refreshUrl || !cfg?.clientId) return null;
+    const kimiHeaders = buildKimiHeaders(credentials?.providerSpecificData?.deviceId);
+    const response = await proxyAwareFetch(cfg.refreshUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
         "Accept": "application/json",
         ...kimiHeaders
       },
-      body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken, client_id: PROVIDERS["kimi-coding"].clientId })
+      body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken, client_id: cfg.clientId })
     }, proxyOptions);
     if (!response.ok) return null;
     const tokens = await response.json();
