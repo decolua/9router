@@ -34,6 +34,14 @@ const ACTION_FIXTURES = [
     "custom tool output",
     "event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"custom_tool_call\",\"name\":\"shell\",\"call_id\":\"call-b\"}}\n\n",
   ],
+  [
+    "Chat Completions text",
+    "data: {\"choices\":[{\"delta\":{\"content\":\"ready\"}}]}\n\n",
+  ],
+  [
+    "Messages tool use",
+    "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"content_block\":{\"type\":\"tool_use\",\"name\":\"lookup\"}}\n\n",
+  ],
 ];
 
 function trackReaderOwnership(response) {
@@ -73,7 +81,7 @@ afterEach(() => {
 });
 
 describe("proposed Combo pre-action streaming contract", () => {
-  it.fails("falls back when a successful SSE response terminates before an action", async () => {
+  it("falls back when a successful SSE response terminates before an action", async () => {
     const tried = [];
     const response = await runCombo(async (_body, model) => {
       tried.push(model);
@@ -86,7 +94,7 @@ describe("proposed Combo pre-action streaming contract", () => {
     expect(await response.text()).toContain("fallback");
   });
 
-  it.fails("does not resolve before the first action and replays the exact prefix once", async () => {
+  it("does not resolve before the first action and replays the exact prefix once", async () => {
     let timer;
     const prefix = ": keep-alive\n\n";
     const action = actionEvent("ready");
@@ -113,7 +121,7 @@ describe("proposed Combo pre-action streaming contract", () => {
     expect(await response.text()).toBe(prefix + action);
   });
 
-  it.fails("acquires one reader before commit and never clones or tees the response", async () => {
+  it("acquires one reader before commit and never clones or tees the response", async () => {
     let timer;
     const prefix = ": preflight\n\n";
     const action = actionEvent("owned");
@@ -146,7 +154,7 @@ describe("proposed Combo pre-action streaming contract", () => {
     expect(body).toBe(prefix + action);
   });
 
-  it.fails("forwards downstream cancellation after commit to the same upstream reader", async () => {
+  it("forwards downstream cancellation after commit to the same upstream reader", async () => {
     let upstreamCancellations = 0;
     const upstream = new Response(new ReadableStream({
       start(controller) {
@@ -169,7 +177,7 @@ describe("proposed Combo pre-action streaming contract", () => {
     expect(upstreamCancellations).toBe(1);
   });
 
-  it.fails("falls back when the upstream reader errors before an action", async () => {
+  it("falls back when the upstream reader errors before an action", async () => {
     const tried = [];
     const response = await runCombo(async (_body, model) => {
       tried.push(model);
@@ -186,7 +194,7 @@ describe("proposed Combo pre-action streaming contract", () => {
     expect(await response.text()).toContain("fallback");
   });
 
-  it.fails.each(ACTION_FIXTURES)(
+  it.each(ACTION_FIXTURES)(
     "treats %s as a commit point without clone/tee and replays its prefix exactly",
     async (_label, action) => {
       let timer;
@@ -218,7 +226,7 @@ describe("proposed Combo pre-action streaming contract", () => {
     },
   );
 
-  it.fails("bounds bytes buffered before the first action and falls back", async () => {
+  it("bounds bytes buffered before the first action and falls back", async () => {
     process.env.COMBO_RESPONSE_PREFLIGHT_MAX_BYTES = "8";
     const tried = [];
     const response = await runCombo(async (_body, model) => {
@@ -236,7 +244,7 @@ describe("proposed Combo pre-action streaming contract", () => {
     }
   });
 
-  it.fails("times out and cancels a stream stalled before its first action", async () => {
+  it("times out and cancels a stream stalled before its first action", async () => {
     process.env.COMBO_RESPONSE_FIRST_ACTION_TIMEOUT_MS = "10";
     const tried = [];
     let cancellations = 0;
@@ -267,7 +275,7 @@ describe("proposed Combo pre-action streaming contract", () => {
       return new Response(new ReadableStream({
         start(controller) {
           controller.enqueue(encoder.encode(actionEvent("committed")));
-          controller.error(new Error("late upstream failure"));
+          setTimeout(() => controller.error(new Error("late upstream failure")), 0);
         },
       }), { headers: { "Content-Type": "text/event-stream" } });
     });

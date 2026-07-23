@@ -1,7 +1,7 @@
 # Combo pre-action streaming fallback proposal
 
-Status: proposal only. Production changes are intentionally deferred because
-active pull requests overlap the same control point.
+Status: implemented as a single-reader bounded pre-action guard. Active pull
+requests still overlap the same control point and should converge on one owner.
 
 ## Upstream overlap checked
 
@@ -46,13 +46,13 @@ and inject it into `handleComboChat`. This lets active timeout work converge on
 one cancellation owner instead of layering `clone()` and `Promise.race` around
 the same stream.
 
-`tests/unit/combo-preaction-streaming.contract.test.js` records the desired
-behavior, including pre-action read errors and text/refusal/function/custom-tool
-commit fixtures. The `it.fails` cases are executable evidence of gaps on current
-`upstream/master`; remove `.fails` only as each production behavior lands.
+`tests/unit/combo-preaction-streaming.contract.test.js` records the behavior,
+including pre-action read errors and Responses, Chat Completions, and Messages
+text/refusal/function/custom-tool commit fixtures. It passes without
+expected-failure markers.
 
 ## Merge strategy
 
-Coordinate with #1395, #576, and #2646 before implementation. Prefer one focused
-stream-ownership PR, or have those authors reuse the shared pre-action helper.
-Do not merge parallel readers or independent timers at different layers.
+Coordinate with #1395, #576, and #2646 before merge. Prefer this focused stream
+owner or have those branches reuse the helper. Do not merge parallel readers or
+independent timers at different layers.
