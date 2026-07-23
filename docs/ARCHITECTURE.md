@@ -1,6 +1,6 @@
 # 9Router Architecture
 
-_Last updated: 2026-02-06_
+_Last updated: 2026-07-23_
 
 ## Executive Summary
 
@@ -13,6 +13,7 @@ Core capabilities:
 - Request/response translation across provider formats
 - Model combo fallback (multi-model sequence)
 - Account-level fallback (multi-account per provider)
+- Optional process-local, per-account admission and bounded queueing
 - OAuth + API-key provider connection management
 - Local persistence for providers, keys, aliases, combos, settings, pricing
 - Usage/cost tracking and request logging
@@ -129,6 +130,8 @@ Main flow modules:
 - Format detection/provider config: `open-sse/services/provider.js`
 - Model parse/resolve: `src/sse/services/model.js`, `open-sse/services/model.js`
 - Account fallback logic: `open-sse/services/accountFallback.js`
+- Account admission: `src/sse/services/accountAdmission.js`
+- Response lease lifecycle: `open-sse/utils/responseLifecycle.js`
 - Translation registry: `open-sse/translator/index.js`
 - Stream transformations: `open-sse/utils/stream.js`, `open-sse/utils/streamHandler.js`
 - Usage extraction/normalization: `open-sse/utils/usageTracking.js`
@@ -184,8 +187,9 @@ sequenceDiagram
         Chat->>Chat: iterate combo models (handleComboChat)
     end
 
-    Chat->>Auth: getProviderCredentials(provider)
-    Auth-->>Chat: active account + tokens/api key
+    Chat->>Auth: acquireProviderCredentials(provider)
+    Auth->>Auth: select account and reserve slot atomically
+    Auth-->>Chat: active account + tokens/api key + lease
 
     Chat->>Core: handleChatCore(body, modelInfo, credentials)
     Core->>Core: detect source format
@@ -203,9 +207,43 @@ sequenceDiagram
 
     Core->>Stream: translate/normalize stream to client format
     Stream-->>Client: SSE chunks / JSON response
+    Stream->>Auth: release lease on EOF, cancel, or error
 
     Stream->>Usage: extract usage + persist history/log
 ```
+
+## Account Admission and Lease Lifecycle
+
+Admission is an optional provider-level control. It is disabled by default.
+When enabled, `src/sse/services/accountAdmission.js` maintains per-account
+active leases and a bounded provider FIFO queue in the current process.
+
+```mermaid
+flowchart TD
+    A[New provider acquisition] --> B{Eligible account has capacity?}
+    B -- Yes --> C[Select and reserve atomically]
+    B -- No --> D{Queue has space?}
+    D -- No --> E[Local 429]
+    D -- Yes --> F[Wait for release]
+    F --> B
+    C --> G[Refresh and dispatch]
+    G --> H{Attempt succeeds?}
+    H -- No --> I[Release before fallback]
+    H -- Yes --> J[Bind lease to response body]
+    J --> K[EOF, cancel, or stream error]
+    K --> L[Idempotent release]
+```
+
+The active upstream bound for one process is the eligible account count
+multiplied by `maxInFlightPerAccount`. Queue-full and queue-timeout outcomes are
+local request-scoped `429` responses and do not mark an account unavailable.
+Existing leases drain when configuration changes.
+
+This component is deliberately not a cross-replica coordinator. Every process
+has independent counters and queues, so the setting must not be interpreted as
+a global account limit in a multi-process deployment. See
+`docs/codex-structured-outputs-and-concurrency.md` for the configuration,
+response contract, observability fields, and operational warning.
 
 ## Combo + Account Fallback Flow
 
@@ -426,14 +464,20 @@ flowchart LR
 - `src/app/api/combos*`: fallback combo management
 - `src/app/api/pricing`: pricing overrides for cost calculation
 - `src/app/api/usage/*`: usage and logs APIs
+- `src/app/api/settings/provider-strategies/[providerId]`: atomic
+  provider-scoped fallback and admission settings
 - `src/app/api/sync/*` + `src/app/api/cloud/*`: cloud sync and cloud-facing helpers
 - `src/app/api/cli-tools/*`: local CLI config writers/checkers
 
 ### Routing and Execution Core
 
 - `src/sse/handlers/chat.js`: request parse, combo handling, account selection loop
+- `src/sse/services/accountAdmission.js`: process-local leases, bounded queue,
+  timeout/abort handling, and aggregate snapshots
 - `open-sse/handlers/chatCore.js`: translation, executor dispatch, retry/refresh handling, stream setup
 - `open-sse/executors/*`: provider-specific network and format behavior
+- `open-sse/utils/responseLifecycle.js`: release binding for response EOF,
+  downstream cancellation, and stream errors
 
 ### Translation Registry and Format Converters
 
@@ -488,6 +532,8 @@ Translations are selected dynamically based on source payload shape and provider
 - provider account cooldown on transient/rate/auth errors
 - account fallback before failing request
 - combo model fallback when current model/provider path is exhausted
+- optional per-account active-request ceiling with bounded local FIFO queue
+- local admission overflow/timeout responses do not alter account cooldown
 
 ## 2) Token Expiry
 
@@ -519,6 +565,8 @@ Runtime visibility sources:
 - textual request status log in `log.txt`
 - optional deep request/translation logs under `logs/` when `ENABLE_REQUEST_LOGS=true`
 - dashboard usage endpoints (`/api/usage/*`) for UI consumption
+- aggregate admission state on the usage stream: configured limits, active
+  leases, queued waiters, local rejections, and observed capacity
 
 ## Security-Sensitive Boundaries
 
