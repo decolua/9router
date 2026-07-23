@@ -5,6 +5,7 @@ import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/c
 import PropTypes from "prop-types";
 import { Badge, Toggle, Tooltip } from "@/shared/components";
 import CooldownTimer from "./CooldownTimer";
+import ErrorCooldownSummary from "@/shared/components/ErrorCooldownSummary";
 
 export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
@@ -85,14 +86,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
       : null;
 
   // Use useState + useEffect for impure Date.now() to avoid calling during render
-  const [isCooldown, setIsCooldown] = useState(false);
-
-  // Get earliest model lock timestamp (useEffect handles the Date.now() comparison)
-  const modelLockUntil = Object.entries(connection)
-    .filter(([k]) => k.startsWith("modelLock_"))
-    .map(([, v]) => v)
-    .filter(v => !!v)
-    .sort()[0] || null;
+  const [cooldownUntil, setCooldownUntil] = useState(null);
 
   useEffect(() => {
     const checkCooldown = () => {
@@ -101,17 +95,19 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
         .map(([, v]) => v)
         .filter(v => v && new Date(v).getTime() > Date.now())
         .sort()[0] || null;
-      setIsCooldown(!!until);
+      setCooldownUntil(until);
     };
 
     checkCooldown();
-    const interval = modelLockUntil ? setInterval(checkCooldown, 1000) : null;
+    const hasModelLocks = Object.entries(connection).some(([key, value]) => key.startsWith("modelLock_") && value);
+    const interval = hasModelLocks ? setInterval(checkCooldown, 1000) : null;
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [modelLockUntil]);
+  }, [connection]);
 
   // Determine effective status (override unavailable if cooldown expired)
+  const isCooldown = !!cooldownUntil;
   const effectiveStatus = (connection.testStatus === "unavailable" && !isCooldown)
     ? "active"  // Cooldown expired u2192 treat as active
     : connection.testStatus;
@@ -175,7 +171,8 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                 Proxy
               </Badge>
             )}
-            {isCooldown && connection.isActive !== false && <CooldownTimer until={modelLockUntil} />}
+            {isCooldown && connection.isActive !== false && <CooldownTimer until={cooldownUntil} />}
+            {isCooldown && connection.isActive !== false && <ErrorCooldownSummary connection={connection} />}
             {connection.lastError && connection.isActive !== false && (
               <span className="max-w-full truncate text-xs text-red-500 sm:max-w-[300px]" title={connection.lastError}>
                 {connection.lastError}

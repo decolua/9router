@@ -119,9 +119,9 @@ export function getModelLockKey(model) {
  */
 export function isModelLockActive(connection, model) {
   const key = getModelLockKey(model);
-  const expiry = connection[key] || connection[MODEL_LOCK_ALL];
-  if (!expiry) return false;
-  return new Date(expiry).getTime() > Date.now();
+  const now = Date.now();
+  return [connection[key], connection[MODEL_LOCK_ALL]]
+    .some((expiry) => expiry && new Date(expiry).getTime() > now);
 }
 
 /**
@@ -144,9 +144,11 @@ export function getEarliestModelLockUntil(connection) {
 /**
  * Build update object to set a model lock on a connection.
  */
-export function buildModelLockUpdate(model, cooldownMs) {
+export function buildModelLockUpdate(model, cooldownMs, connection = null, now = Date.now()) {
   const key = getModelLockKey(model);
-  return { [key]: new Date(Date.now() + cooldownMs).toISOString() };
+  const requestedUntil = now + cooldownMs;
+  const currentUntil = connection?.[key] ? new Date(connection[key]).getTime() : 0;
+  return { [key]: new Date(Math.max(requestedUntil, currentUntil || 0)).toISOString() };
 }
 
 /**

@@ -36,9 +36,12 @@ function injectMessagesSystem(body, prompt) {
     return;
   }
 
-  const arr = Array.isArray(body.messages) ? body.messages
-    : Array.isArray(body.input) ? body.input
-    : null;
+  if (Array.isArray(body.input)) {
+    body.instructions = prompt;
+    return;
+  }
+
+  const arr = Array.isArray(body.messages) ? body.messages : null;
   if (!arr) return;
 
   const idx = arr.findIndex(m => m && (m.role === "system" || m.role === "developer"));

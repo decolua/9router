@@ -116,5 +116,8 @@ describe("MiniMax TTS", () => {
     expect(result.success).toBe(false);
     expect(result.status).toBe(502);
     expect(result.error).toContain("insufficient quota");
+    expect(result.errorCode).toBe(1008);
+    expect(result.upstreamStatus).toBe(200);
+    expect(result.isUpstreamError).toBe(true);
   });
 });

@@ -77,19 +77,28 @@ export async function POST(request) {
     await Promise.all(
       connections
         .filter((connection) => connection[lockKey])
-        .map((connection) =>
-          updateProviderConnection(connection.id, {
+        .map((connection) => {
+          const remainingUntil = Object.entries(connection)
+            .filter(([key, value]) => key !== lockKey && key.startsWith(MODEL_LOCK_PREFIX) && value && new Date(value).getTime() > Date.now())
+            .map(([, value]) => value)
+            .sort()
+            .at(-1) || null;
+          return updateProviderConnection(connection.id, {
             [lockKey]: null,
-            ...(connection.testStatus === "unavailable"
+            lastCooldownUntil: remainingUntil,
+            lastCooldownRule: null,
+            lastCooldownSource: null,
+            ...(!remainingUntil && connection.testStatus === "unavailable"
               ? {
                   testStatus: "active",
                   lastError: null,
                   lastErrorAt: null,
                   backoffLevel: 0,
+                  upstreamErrorCode: null,
                 }
               : {}),
-          }),
-        ),
+          });
+        }),
     );
 
     return NextResponse.json({ ok: true });

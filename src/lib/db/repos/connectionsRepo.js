@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { buildClearModelLocksUpdate } from "open-sse/services/accountFallback.js";
 
 const OPTIONAL_FIELDS = [
   "displayName", "email", "globalPriority", "defaultModel",
@@ -65,6 +66,21 @@ function deriveConnectionName(data, fallbackName) {
       || fallbackName;
   }
   return fallbackName;
+}
+
+function clearCooldownAfterCredentialReplacement(connection) {
+  const cleared = {
+    ...buildClearModelLocksUpdate(connection),
+    testStatus: "active",
+    lastError: null,
+    lastErrorAt: null,
+    backoffLevel: 0,
+    upstreamErrorCode: null,
+    lastCooldownRule: null,
+    lastCooldownSource: null,
+    lastCooldownUntil: null,
+  };
+  return cleared;
 }
 
 export async function getProviderConnections(filter = {}) {
@@ -148,6 +164,9 @@ export async function createProviderConnection(data) {
 
     if (existing) {
       const merged = { ...existing, ...data, updatedAt: now };
+      const credentialReplaced = ["apiKey", "accessToken", "refreshToken", "idToken"]
+        .some((key) => data[key] && data[key] !== existing[key]);
+      if (credentialReplaced) Object.assign(merged, clearCooldownAfterCredentialReplacement(existing));
       upsert(db, merged);
       result = merged;
       return;
@@ -196,9 +215,23 @@ export async function updateProviderConnection(id, data) {
     const row = db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
     if (!row) { result = null; return; }
     const existing = rowToConn(row);
-    const merged = { ...existing, ...data, updatedAt: new Date().toISOString() };
+    const nextData = typeof data === "function" ? data(existing) : data;
+    if (!nextData) { result = existing; return; }
+    const safeData = { ...nextData };
+    if (safeData.lastCooldownUntil !== undefined) {
+      for (const [key, value] of Object.entries(safeData)) {
+        if (!key.startsWith("modelLock_") || !value || !existing[key]) continue;
+        if (new Date(existing[key]).getTime() > new Date(value).getTime()) safeData[key] = existing[key];
+      }
+    }
+    const setsModelLock = Object.entries(safeData).some(([key, value]) => key.startsWith("modelLock_") && value);
+    if (setsModelLock && existing.lastCooldownUntil && safeData.lastCooldownUntil
+      && new Date(existing.lastCooldownUntil).getTime() > new Date(safeData.lastCooldownUntil).getTime()) {
+      safeData.lastCooldownUntil = existing.lastCooldownUntil;
+    }
+    const merged = { ...existing, ...safeData, updatedAt: new Date().toISOString() };
     upsert(db, merged);
-    if (data.priority !== undefined) reorderInTx(db, existing.provider);
+    if (safeData.priority !== undefined) reorderInTx(db, existing.provider);
     result = merged;
   });
   return result;

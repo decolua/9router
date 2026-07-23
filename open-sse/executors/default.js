@@ -8,6 +8,8 @@ import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { stripUnsupportedParams } from "../translator/concerns/paramSupport.js";
 
+const CODEX_RESPONSES_USER_AGENT = "codex_cli_rs/0.136.0";
+
 // Auth header descriptors — derived from registry transport.auth, fallback to hardcoded defaults.
 const BEARER = { combined: true, header: "Authorization", scheme: "bearer" };
 const XAPIKEY = { combined: true, header: "x-api-key", scheme: "raw" };
@@ -164,6 +166,9 @@ export class DefaultExecutor extends BaseExecutor {
   buildHeaders(credentials, stream = true) {
     const rt = credentials?.runtimeTransport;
     const headers = { "Content-Type": "application/json", ...(rt ? rt.headers : this.config.headers) };
+    if (this.provider?.startsWith?.("openai-compatible-responses-")) {
+      headers["User-Agent"] = CODEX_RESPONSES_USER_AGENT;
+    }
     const desc = rt?.auth || AUTH_DESCRIPTORS[this.provider] || this.resolveAuthDescriptor();
     // Hooks run BEFORE auth so dynamic overlays (claude cached headers) can't clobber the token.
     for (const hook of desc.hooks || []) HEADER_HOOKS[hook]?.(headers, credentials);

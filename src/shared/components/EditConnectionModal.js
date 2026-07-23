@@ -8,6 +8,11 @@ import Button from "@/shared/components/Button";
 import Badge from "@/shared/components/Badge";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import Select from "@/shared/components/Select";
+import ErrorCooldownPolicyForm, {
+  createErrorCooldownPolicyDraft,
+  serializeErrorCooldownPolicyDraft,
+} from "@/shared/components/ErrorCooldownPolicyForm";
+import { normalizeErrorCooldownPolicy } from "open-sse/services/errorCooldownPolicy.js";
 
 export default function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
   const [formData, setFormData] = useState({
@@ -28,6 +33,9 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [clearingCooldown, setClearingCooldown] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [errorCooldownPolicy, setErrorCooldownPolicy] = useState(() => createErrorCooldownPolicyDraft());
 
   useEffect(() => {
     if (connection) {
@@ -56,6 +64,8 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       }
       setTestResult(null);
       setValidationResult(null);
+      setSaveError("");
+      setErrorCooldownPolicy(createErrorCooldownPolicyDraft(connection.errorCooldownPolicy));
     }
   }, [connection]);
 
@@ -65,6 +75,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   const isCompatible = connection
     ? (isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider))
     : false;
+  const hasCooldownRecord = !!connection?.lastCooldownUntil;
   const providerRegions = connection ? (AI_PROVIDERS?.[connection.provider]?.regions || null) : null;
 
   // Build providerSpecificData for region-aware providers
@@ -115,11 +126,20 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
 
   const handleSubmit = async () => {
     if (!connection) return;
+    setSaveError("");
     setSaving(true);
     try {
+      let normalizedPolicy;
+      try {
+        normalizedPolicy = normalizeErrorCooldownPolicy(serializeErrorCooldownPolicyDraft(errorCooldownPolicy));
+      } catch (error) {
+        setSaveError(error.message);
+        return;
+      }
       const updates = {
         name: formData.name,
         priority: formData.priority,
+        errorCooldownPolicy: normalizedPolicy,
       };
       if (!isOAuth && formData.apiKey) {
         updates.apiKey = formData.apiKey;
@@ -172,7 +192,8 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         updates.providerSpecificData = buildRegionSpecificData();
       }
       
-      await onSave(updates);
+      const result = await onSave(updates);
+      if (result?.error) setSaveError(result.error);
     } finally {
       setSaving(false);
     }
@@ -181,7 +202,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   if (!connection) return null;
 
   return (
-    <Modal isOpen={isOpen} title="Edit Connection" onClose={onClose}>
+    <Modal isOpen={isOpen} title="Edit Connection" onClose={onClose} size="xl">
       <div className="flex flex-col gap-4">
         <Input
           label="Name"
@@ -273,6 +294,29 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           />
         )}
 
+        <ErrorCooldownPolicyForm connectionId={connection.id} value={errorCooldownPolicy} onChange={setErrorCooldownPolicy} />
+
+        {hasCooldownRecord && (
+          <Button
+            type="button"
+            variant="secondary"
+            loading={clearingCooldown}
+            onClick={async () => {
+              setSaveError("");
+              setClearingCooldown(true);
+              try {
+                const result = await onSave({ clearCooldown: true });
+                if (result?.error) setSaveError(result.error);
+              }
+              finally { setClearingCooldown(false); }
+            }}
+          >
+            <span>Clear</span> · <span>Error cooldown</span>
+          </Button>
+        )}
+
+        {saveError && <p className="text-sm text-red-500">{saveError}</p>}
+
         {!isCompatible && !isAzure && !isCloudflareAi && (
           <div className="flex items-center gap-3">
             <Button onClick={handleTest} variant="secondary" disabled={testing}>
@@ -305,6 +349,8 @@ EditConnectionModal.propTypes = {
     authType: PropTypes.string,
     provider: PropTypes.string,
     providerSpecificData: PropTypes.object,
+    errorCooldownPolicy: PropTypes.object,
+    lastCooldownUntil: PropTypes.string,
   }),
   proxyPools: PropTypes.arrayOf(PropTypes.shape({
     id: PropTypes.string,
@@ -313,4 +359,3 @@ EditConnectionModal.propTypes = {
   onSave: PropTypes.func.isRequired,
   onClose: PropTypes.func.isRequired,
 };
-

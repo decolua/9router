@@ -432,6 +432,7 @@ export default function ProviderLimits() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(formData),
         });
+        const data = await res.json();
         if (res.ok) {
           await fetchConnections();
           setShowEditModal(false);
@@ -439,9 +440,12 @@ export default function ProviderLimits() {
           if (USAGE_SUPPORTED_PROVIDERS.includes(provider)) {
             await fetchQuota(connectionId, provider);
           }
+          return {};
         }
+        return { error: data.error || "Failed to update connection" };
       } catch (error) {
         console.error("Error saving connection:", error);
+        return { error: "Failed to update connection" };
       }
     },
     [selectedConnection, fetchConnections, fetchQuota],

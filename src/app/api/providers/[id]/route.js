@@ -5,6 +5,8 @@ import {
   updateProviderConnection,
   deleteProviderConnection,
 } from "@/models";
+import { normalizeErrorCooldownPolicy } from "open-sse/services/errorCooldownPolicy.js";
+import { buildClearModelLocksUpdate } from "open-sse/services/accountFallback.js";
 
 function normalizeProxyConfig(body = {}) {
   const hasAnyProxyField =
@@ -59,6 +61,21 @@ function shouldMergeProviderSpecificData(existing, incoming, hasLegacyProxy, has
   return existing !== undefined || incoming !== undefined || hasLegacyProxy || hasProxyPoolField;
 }
 
+function buildClearCooldownUpdate(connection) {
+  const update = {
+    ...buildClearModelLocksUpdate(connection),
+    testStatus: "active",
+    lastError: null,
+    lastErrorAt: null,
+    backoffLevel: 0,
+    upstreamErrorCode: null,
+    lastCooldownRule: null,
+    lastCooldownSource: null,
+    lastCooldownUntil: null,
+  };
+  return update;
+}
+
 // GET /api/providers/[id] - Get single connection
 export async function GET(request, { params }) {
   try {
@@ -98,7 +115,9 @@ export async function PUT(request, { params }) {
       testStatus,
       lastError,
       lastErrorAt,
-      providerSpecificData
+      providerSpecificData,
+      errorCooldownPolicy,
+      clearCooldown,
     } = body;
 
     const existing = await getProviderConnectionById(id);
@@ -126,6 +145,18 @@ export async function PUT(request, { params }) {
     if (testStatus !== undefined) updateData.testStatus = testStatus;
     if (lastError !== undefined) updateData.lastError = lastError;
     if (lastErrorAt !== undefined) updateData.lastErrorAt = lastErrorAt;
+    if (errorCooldownPolicy !== undefined) {
+      try {
+        updateData.errorCooldownPolicy = normalizeErrorCooldownPolicy(errorCooldownPolicy);
+      } catch (error) {
+        return NextResponse.json({ error: error.message }, { status: 400 });
+      }
+    }
+
+    if (apiKey && existing.authType === "apikey" && apiKey !== existing.apiKey) {
+      Object.assign(updateData, buildClearCooldownUpdate(existing));
+    }
+    if (clearCooldown === true) Object.assign(updateData, buildClearCooldownUpdate(existing));
 
     if (
       shouldMergeProviderSpecificData(

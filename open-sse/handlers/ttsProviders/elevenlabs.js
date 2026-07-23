@@ -1,5 +1,6 @@
 // ElevenLabs TTS — voice id with optional model_id prefix
 import { Buffer } from "node:buffer";
+import { throwUpstreamError } from "./_base.js";
 
 const VOICES_TTL = 24 * 60 * 60 * 1000;
 const _voicesCache = new Map(); // by API key
@@ -37,10 +38,7 @@ export default {
         voice_settings: { stability: 0.5, similarity_boost: 0.75 },
       }),
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err?.detail?.message || `ElevenLabs TTS failed: ${res.status}`);
-    }
+    if (!res.ok) await throwUpstreamError(res);
     const buf = await res.arrayBuffer();
     if (buf.byteLength < 1024) throw new Error("ElevenLabs TTS returned empty audio");
     return { base64: Buffer.from(buf).toString("base64"), format: "mp3" };

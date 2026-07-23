@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/connectionStatus";
 import PropTypes from "prop-types";
 import { Card, Badge, Button, Modal, Select, Toggle, EditConnectionModal, ConfirmModal } from "@/shared/components";
+import ErrorCooldownSummary from "@/shared/components/ErrorCooldownSummary";
 
 // ── CooldownTimer ──────────────────────────────────────────────
 function CooldownTimer({ until }) {
@@ -33,7 +34,7 @@ CooldownTimer.propTypes = { until: PropTypes.string.isRequired };
 function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
-  const [isCooldown, setIsCooldown] = useState(false);
+  const [cooldownUntil, setCooldownUntil] = useState(null);
   const proxyDropdownRef = useRef(null);
 
   const proxyPoolMap = new Map((proxyPools || []).map((p) => [p.id, p]));
@@ -59,21 +60,18 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
   const noProxyText = boundProxyPool?.noProxy || connection.providerSpecificData?.connectionNoProxy || "";
   const proxyBadgeVariant = boundProxyPool?.isActive === true ? "success" : (boundProxyPoolId || hasLegacyProxy) ? "error" : "default";
 
-  const modelLockUntil = Object.entries(connection)
-    .filter(([k]) => k.startsWith("modelLock_"))
-    .map(([, v]) => v).filter(Boolean).sort()[0] || null;
-
   useEffect(() => {
     const check = () => {
       const until = Object.entries(connection)
         .filter(([k]) => k.startsWith("modelLock_"))
         .map(([, v]) => v).filter(v => v && new Date(v).getTime() > Date.now()).sort()[0] || null;
-      setIsCooldown(!!until);
+      setCooldownUntil(until);
     };
     check();
-    const t = modelLockUntil ? setInterval(check, 1000) : null;
+    const hasModelLocks = Object.entries(connection).some(([key, value]) => key.startsWith("modelLock_") && value);
+    const t = hasModelLocks ? setInterval(check, 1000) : null;
     return () => { if (t) clearInterval(t); };
-  }, [modelLockUntil]);
+  }, [connection]);
 
   useEffect(() => {
     if (!showProxyDropdown) return;
@@ -85,6 +83,7 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
     return () => document.removeEventListener("mousedown", handler);
   }, [showProxyDropdown]);
 
+  const isCooldown = !!cooldownUntil;
   const effectiveStatus = connection.testStatus === "unavailable" && !isCooldown ? "active" : connection.testStatus;
 
   const getStatusVariant = () => getConnectionStatusVariant(connection.isActive, effectiveStatus);
@@ -118,7 +117,8 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
               {connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}
             </Badge>
             {hasAnyProxy && <Badge variant={proxyBadgeVariant} size="sm">Proxy</Badge>}
-            {isCooldown && connection.isActive !== false && <CooldownTimer until={modelLockUntil} />}
+            {isCooldown && connection.isActive !== false && <CooldownTimer until={cooldownUntil} />}
+            {isCooldown && connection.isActive !== false && <ErrorCooldownSummary connection={connection} />}
             {connection.lastError && connection.isActive !== false && (
               <span className="text-xs text-red-500 truncate max-w-[300px]" title={connection.lastError}>{connection.lastError}</span>
             )}
@@ -392,8 +392,10 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
   const handleUpdateConnection = async (formData) => {
     try {
       const res = await fetch(`/api/providers/${selectedConnection.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(formData) });
-      if (res.ok) { await fetch_(); setShowEditModal(false); }
-    } catch (e) { console.log("update connection error:", e); }
+      const data = await res.json();
+      if (res.ok) { await fetch_(); setShowEditModal(false); return {}; }
+      return { error: data.error || "Failed to update connection" };
+    } catch (e) { console.log("update connection error:", e); return { error: "Failed to update connection" }; }
   };
 
   if (loading) return <Card><div className="h-20 animate-pulse bg-black/5 rounded-lg" /></Card>;

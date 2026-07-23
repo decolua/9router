@@ -38,3 +38,13 @@ describe("applyThinking (openai): clamp max effort to xhigh", () => {
     expect(out.reasoning_effort).toBe("xhigh");
   });
 });
+
+describe("applyThinking (openai-responses): preserve native reasoning shape", () => {
+  it("writes reasoning.effort instead of chat reasoning_effort", () => {
+    const body = { reasoning: { effort: "xhigh" } };
+    const out = applyThinking(FORMATS.OPENAI_RESPONSES, "gpt-5", body, "openai-compatible-responses-test");
+
+    expect(out.reasoning).toEqual({ effort: "xhigh" });
+    expect(out.reasoning_effort).toBeUndefined();
+  });
+});

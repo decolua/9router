@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { createErrorResult } from "../utils/error.js";
+import { createErrorResult, parseUpstreamError } from "../utils/error.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 
 // Build auth headers from sttConfig + token
@@ -25,11 +25,8 @@ function resolveAudioContentType(file) {
 }
 
 async function upstreamError(res) {
-  let txt = "";
-  try { txt = await res.text(); } catch {}
-  let msg = txt || `Upstream error (${res.status})`;
-  try { const j = JSON.parse(txt); msg = j?.error?.message || j?.error || j?.message || msg; } catch {}
-  return createErrorResult(res.status, typeof msg === "string" ? msg : JSON.stringify(msg));
+  const { statusCode, message, errorCode, resetsAtMs } = await parseUpstreamError(res);
+  return createErrorResult(statusCode, message, resetsAtMs, { errorCode, isUpstreamError: true });
 }
 
 // Deepgram: raw binary POST + model query param
