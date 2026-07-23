@@ -1,12 +1,13 @@
 import "open-sse/index.js";
 
 import {
-  getProviderCredentials,
+  acquireProviderCredentials,
   markAccountUnavailable,
   clearAccountError,
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
+import { isAccountAdmissionError } from "../services/accountAdmission.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
@@ -14,7 +15,8 @@ import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
 import { appendPxpipeEvent } from "@/lib/pxpipe/events.js";
-import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
+import { admissionErrorResponse, errorResponse, unavailableResponse } from "open-sse/utils/error.js";
+import { bindResponseLifecycle } from "open-sse/utils/responseLifecycle.js";
 import { handleComboChat, handleFusionChat } from "open-sse/services/combo.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
@@ -197,7 +199,22 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    let acquisition;
+    try {
+      acquisition = await acquireProviderCredentials(
+        provider,
+        excludeConnectionIds,
+        model,
+        { signal: request?.signal },
+      );
+    } catch (error) {
+      if (!isAccountAdmissionError(error)) throw error;
+      if (error.reason === "request_aborted") {
+        return errorResponse(499, "Request aborted while waiting for provider capacity");
+      }
+      return admissionErrorResponse(error.reason, error.retryAfterMs);
+    }
+    const { credentials, lease } = acquisition;
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
@@ -215,62 +232,78 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
     }
 
-    // Account selection shown in the unified "▶" line (acc:...)
-    const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
+    let result;
+    try {
+      // Account selection shown in the unified "▶" line (acc:...)
+      const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
 
-    // Ensure real project ID is available for providers that need it (P0 fix: cold miss)
-    if ((provider === "antigravity" || provider === "gemini-cli") && !refreshedCredentials.projectId) {
-      const pid = await getProjectIdForConnection(credentials.connectionId, refreshedCredentials.accessToken);
-      if (pid) {
-        refreshedCredentials.projectId = pid;
-        // Persist to DB in background so subsequent requests have it immediately
-        updateProviderCredentials(credentials.connectionId, { projectId: pid }).catch(() => { });
+      // Ensure real project ID is available for providers that need it (P0 fix: cold miss)
+      if ((provider === "antigravity" || provider === "gemini-cli") && !refreshedCredentials.projectId) {
+        const pid = await getProjectIdForConnection(credentials.connectionId, refreshedCredentials.accessToken);
+        if (pid) {
+          refreshedCredentials.projectId = pid;
+          // Persist to DB in background so subsequent requests have it immediately
+          updateProviderCredentials(credentials.connectionId, { projectId: pid }).catch(() => { });
+        }
+      }
+
+      // Use shared chatCore
+      const chatSettings = await getSettings();
+      const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
+      result = await handleChatCore({
+        body: { ...body, model: `${provider}/${model}` },
+        modelInfo: { provider, model },
+        credentials: refreshedCredentials,
+        log,
+        clientRawRequest,
+        connectionId: credentials.connectionId,
+        userAgent,
+        apiKey,
+        ccFilterNaming: !!chatSettings.ccFilterNaming,
+        rtkEnabled: !!chatSettings.rtkEnabled,
+        headroomEnabled: !!chatSettings.headroomEnabled,
+        headroomUrl: chatSettings.headroomUrl || DEFAULT_HEADROOM_URL,
+        headroomCompressUserMessages: !!chatSettings.headroomCompressUserMessages,
+        cavemanEnabled: !!chatSettings.cavemanEnabled,
+        cavemanLevel: chatSettings.cavemanLevel || "full",
+        ponytailEnabled: !!chatSettings.ponytailEnabled,
+        ponytailLevel: chatSettings.ponytailLevel || "full",
+        pxpipeEnabled: !!chatSettings.pxpipeEnabled,
+        pxpipeMinChars: chatSettings.pxpipeMinChars,
+        pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs,
+        // Lazily warms the in-process module on first use; null when not installed (fail-open)
+        pxpipeTransform: chatSettings.pxpipeEnabled ? await getPxpipeTransform() : null,
+        onPxpipeEvent: appendPxpipeEvent,
+        providerThinking,
+        // Detect source format by endpoint + body
+        sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
+        onCredentialsRefreshed: async (newCreds) => {
+          await updateProviderCredentials(credentials.connectionId, {
+            ...newCreds,
+            existingProviderSpecificData: credentials.providerSpecificData,
+            testStatus: "active"
+          });
+        },
+        onRequestSuccess: async () => {
+          await clearAccountError(credentials.connectionId, credentials, model);
+        }
+      });
+    } catch (error) {
+      lease.release();
+      throw error;
+    }
+
+    if (result.success) {
+      try {
+        return bindResponseLifecycle(result.response, () => lease.release());
+      } catch (error) {
+        lease.release();
+        throw error;
       }
     }
 
-    // Use shared chatCore
-    const chatSettings = await getSettings();
-    const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
-    const result = await handleChatCore({
-      body: { ...body, model: `${provider}/${model}` },
-      modelInfo: { provider, model },
-      credentials: refreshedCredentials,
-      log,
-      clientRawRequest,
-      connectionId: credentials.connectionId,
-      userAgent,
-      apiKey,
-      ccFilterNaming: !!chatSettings.ccFilterNaming,
-      rtkEnabled: !!chatSettings.rtkEnabled,
-      headroomEnabled: !!chatSettings.headroomEnabled,
-      headroomUrl: chatSettings.headroomUrl || DEFAULT_HEADROOM_URL,
-      headroomCompressUserMessages: !!chatSettings.headroomCompressUserMessages,
-      cavemanEnabled: !!chatSettings.cavemanEnabled,
-      cavemanLevel: chatSettings.cavemanLevel || "full",
-      ponytailEnabled: !!chatSettings.ponytailEnabled,
-      ponytailLevel: chatSettings.ponytailLevel || "full",
-      pxpipeEnabled: !!chatSettings.pxpipeEnabled,
-      pxpipeMinChars: chatSettings.pxpipeMinChars,
-      pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs,
-      // Lazily warms the in-process module on first use; null when not installed (fail-open)
-      pxpipeTransform: chatSettings.pxpipeEnabled ? await getPxpipeTransform() : null,
-      onPxpipeEvent: appendPxpipeEvent,
-      providerThinking,
-      // Detect source format by endpoint + body
-      sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
-      onCredentialsRefreshed: async (newCreds) => {
-        await updateProviderCredentials(credentials.connectionId, {
-          ...newCreds,
-          existingProviderSpecificData: credentials.providerSpecificData,
-          testStatus: "active"
-        });
-      },
-      onRequestSuccess: async () => {
-        await clearAccountError(credentials.connectionId, credentials, model);
-      }
-    });
-
-    if (result.success) return result.response;
+    // A failed attempt must free its account before request-scoped return or fallback.
+    lease.release();
 
     if (isRequestScopedFallback(result.fallbackScope)) {
       log.warn("FALLBACK", `REQUEST ERROR (${result.status}) · ${provider}/${model} · account rotation skipped`);

@@ -3,7 +3,7 @@ import { CodexExecutor, classifyCodexFallbackScope } from "../../open-sse/execut
 import { createErrorResult, parseUpstreamError } from "../../open-sse/utils/error.js";
 
 const authMocks = vi.hoisted(() => ({
-  getProviderCredentials: vi.fn(),
+  acquireProviderCredentials: vi.fn(),
   markAccountUnavailable: vi.fn(),
   clearAccountError: vi.fn(),
   extractApiKey: vi.fn(() => null),
@@ -53,6 +53,13 @@ function account(id) {
   return { connectionId: id, connectionName: id, accessToken: `token-${id}` };
 }
 
+function acquisition(id) {
+  return {
+    credentials: account(id),
+    lease: { release: vi.fn(() => true) },
+  };
+}
+
 describe("Codex deterministic reasoning fallback", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -96,7 +103,8 @@ describe("Codex deterministic reasoning fallback", () => {
   });
 
   it("returns a request-scoped error without locking or rotating accounts", async () => {
-    authMocks.getProviderCredentials.mockResolvedValue(account("conn-1"));
+    const selected = acquisition("conn-1");
+    authMocks.acquireProviderCredentials.mockResolvedValue(selected);
     chatCoreMock.mockResolvedValue(createErrorResult(
       400,
       "Unsupported reasoning mode pro",
@@ -107,23 +115,29 @@ describe("Codex deterministic reasoning fallback", () => {
     const response = await handleChat(request());
 
     expect(response.status).toBe(400);
-    expect(authMocks.getProviderCredentials).toHaveBeenCalledTimes(1);
+    expect(authMocks.acquireProviderCredentials).toHaveBeenCalledTimes(1);
+    expect(selected.lease.release).toHaveBeenCalledTimes(1);
     expect(authMocks.markAccountUnavailable).not.toHaveBeenCalled();
   });
 
   it("keeps account fallback for quota errors", async () => {
-    authMocks.getProviderCredentials
-      .mockResolvedValueOnce(account("conn-1"))
-      .mockResolvedValueOnce(account("conn-2"));
+    const first = acquisition("conn-1");
+    const second = acquisition("conn-2");
+    authMocks.acquireProviderCredentials
+      .mockResolvedValueOnce(first)
+      .mockResolvedValueOnce(second);
     authMocks.markAccountUnavailable.mockResolvedValue({ shouldFallback: true, cooldownMs: 1000 });
     chatCoreMock
       .mockResolvedValueOnce(createErrorResult(429, "usage_limit_reached", undefined, "account"))
       .mockResolvedValueOnce({ success: true, response: new Response("ok", { status: 200 }) });
 
     const response = await handleChat(request());
+    await response.text();
 
     expect(response.status).toBe(200);
-    expect(authMocks.getProviderCredentials).toHaveBeenCalledTimes(2);
+    expect(authMocks.acquireProviderCredentials).toHaveBeenCalledTimes(2);
+    expect(first.lease.release).toHaveBeenCalledTimes(1);
+    expect(second.lease.release).toHaveBeenCalledTimes(1);
     expect(authMocks.markAccountUnavailable).toHaveBeenCalledWith(
       "conn-1",
       429,

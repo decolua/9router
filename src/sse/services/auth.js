@@ -4,10 +4,37 @@ import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLock
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { isRequestScopedFallback } from "open-sse/services/fallbackScope.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
+import { resolveProviderAdmissionConfig } from "@/shared/config/providerAdmission.js";
+import {
+  getProviderCapacityVersion,
+  hasAccountCapacity,
+  reserveAccountSlot,
+  waitForProviderCapacity,
+} from "./accountAdmission.js";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
 let selectionMutex = Promise.resolve();
+let admissionSelectionMutex = Promise.resolve();
+
+const NOOP_ADMISSION_LEASE = Object.freeze({
+  release: () => false,
+});
+
+async function withAdmissionSelectionMutex(callback) {
+  const currentMutex = admissionSelectionMutex;
+  let resolveMutex;
+  admissionSelectionMutex = new Promise((resolve) => {
+    resolveMutex = resolve;
+  });
+
+  try {
+    await currentMutex;
+    return await callback();
+  } finally {
+    resolveMutex?.();
+  }
+}
 
 /**
  * Get provider credentials from localDb
@@ -105,6 +132,17 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return null;
     }
 
+    const connectionPredicate =
+      typeof options?.connectionPredicate === "function"
+        ? options.connectionPredicate
+        : null;
+    const selectableConnections = connectionPredicate
+      ? availableConnections.filter((connection) => connectionPredicate(connection))
+      : availableConnections;
+    if (selectableConnections.length === 0) {
+      return { allAtCapacity: true };
+    }
+
     const settings = await getSettings();
     // Per-provider strategy overrides global setting
     const providerOverride = (settings.providerStrategies || {})[providerId] || {};
@@ -113,7 +151,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     let connection;
     // Pin to preferred connection if specified and available
     if (preferredConnectionId) {
-      connection = availableConnections.find((c) => c.id === preferredConnectionId);
+      connection = selectableConnections.find((c) => c.id === preferredConnectionId);
       if (connection) {
         log.info("AUTH", `${provider} | pinned to ${connection.id?.slice(0, 8)} (${connection.name || connection.email || "unnamed"})`);
       }
@@ -124,7 +162,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       const stickyLimit = providerOverride.stickyRoundRobinLimit || settings.stickyRoundRobinLimit || 3;
 
       // Sort by lastUsed (most recent first) to find current candidate
-      const byRecency = [...availableConnections].sort((a, b) => {
+      const byRecency = [...selectableConnections].sort((a, b) => {
         if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
         if (!a.lastUsedAt) return 1;
         if (!b.lastUsedAt) return -1;
@@ -144,7 +182,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         });
       } else {
         // Pick the least recently used (excluding current if possible)
-        const sortedByOldest = [...availableConnections].sort((a, b) => {
+        const sortedByOldest = [...selectableConnections].sort((a, b) => {
           if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
           if (!a.lastUsedAt) return -1;
           if (!b.lastUsedAt) return 1;
@@ -161,7 +199,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       }
     } else {
       // Default: fill-first (already sorted by priority in getProviderConnections)
-      connection = availableConnections[0];
+      connection = selectableConnections[0];
     }
 
     const resolvedProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
@@ -195,6 +233,107 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     };
   } finally {
     if (resolveMutex) resolveMutex();
+  }
+}
+
+/**
+ * Select credentials and atomically reserve provider/account capacity.
+ * Admission is opt-in per provider; disabled providers preserve the legacy path.
+ */
+export async function acquireProviderCredentials(
+  provider,
+  excludeConnectionIds = null,
+  model = null,
+  options = {},
+) {
+  const providerId = resolveProviderId(provider);
+  const settings = await getSettings();
+  const providerOverride = (settings.providerStrategies || {})[providerId] || {};
+  let admissionConfig;
+
+  try {
+    admissionConfig = resolveProviderAdmissionConfig(providerOverride.admission);
+  } catch (error) {
+    log.warn(
+      "AUTH",
+      `${providerId} | invalid admission config; admission disabled: ${error.message}`,
+    );
+    admissionConfig = resolveProviderAdmissionConfig(undefined);
+  }
+
+  if (!admissionConfig.enabled) {
+    return {
+      credentials: await getProviderCredentials(
+        provider,
+        excludeConnectionIds,
+        model,
+        options,
+      ),
+      lease: NOOP_ADMISSION_LEASE,
+    };
+  }
+
+  while (true) {
+    const selection = await withAdmissionSelectionMutex(async () => {
+      const capacityVersion = getProviderCapacityVersion(providerId);
+      const credentials = await getProviderCredentials(
+        provider,
+        excludeConnectionIds,
+        model,
+        {
+          ...options,
+          connectionPredicate: (connection) => hasAccountCapacity(
+            providerId,
+            connection.id,
+            admissionConfig.maxInFlightPerAccount,
+          ),
+        },
+      );
+
+      if (credentials?.allAtCapacity) {
+        return { saturated: true, capacityVersion };
+      }
+      if (!credentials || credentials.allRateLimited) {
+        return {
+          saturated: false,
+          credentials,
+          lease: NOOP_ADMISSION_LEASE,
+        };
+      }
+
+      const connectionId = credentials.connectionId || credentials.id;
+      if (!connectionId) {
+        log.warn("AUTH", `${providerId} | selected credentials have no connection ID; admission bypassed`);
+        return {
+          saturated: false,
+          credentials,
+          lease: NOOP_ADMISSION_LEASE,
+        };
+      }
+
+      const lease = reserveAccountSlot(
+        providerId,
+        connectionId,
+        admissionConfig.maxInFlightPerAccount,
+      );
+      if (!lease) {
+        return {
+          saturated: true,
+          capacityVersion: getProviderCapacityVersion(providerId),
+        };
+      }
+
+      return { saturated: false, credentials, lease };
+    });
+
+    if (!selection.saturated) return selection;
+
+    await waitForProviderCapacity(providerId, {
+      afterVersion: selection.capacityVersion,
+      maxQueueSize: admissionConfig.maxQueueSize,
+      queueTimeoutMs: admissionConfig.queueTimeoutMs,
+      signal: options.signal || null,
+    });
   }
 }
 

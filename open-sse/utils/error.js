@@ -38,6 +38,31 @@ export function errorResponse(statusCode, message) {
   });
 }
 
+export function admissionErrorResponse(reason, retryAfterMs = null) {
+  const message = reason === "queue_timeout"
+    ? "Timed out waiting for local provider capacity"
+    : "Local provider admission queue is full";
+  const retryAfterSeconds = Math.max(
+    1,
+    Math.ceil((Number(retryAfterMs) || 1000) / 1000),
+  );
+
+  return new Response(JSON.stringify({
+    error: {
+      message,
+      type: "rate_limit_error",
+      code: "local_admission_limit",
+    },
+  }), {
+    status: 429,
+    headers: {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Retry-After": String(retryAfterSeconds),
+    },
+  });
+}
+
 /**
  * Write error to SSE stream (for streaming)
  * @param {WritableStreamDefaultWriter} writer - Stream writer
