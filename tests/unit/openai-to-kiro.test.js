@@ -424,6 +424,31 @@ describe("openaiToKiroRequest", () => {
       expect(result.additionalModelRequestFields).toBeUndefined();
     });
 
+    it.each([
+      ["claude-sonnet-4.5-thinking-agentic(high)", "claude-sonnet-4.5"],
+      ["glm-5-thinking-agentic(medium)", "glm-5"],
+    ])("normalizes unsupported Kiro intensity suffix for %s", (model, upstream) => {
+      const result = openaiToKiroRequest(model, {
+        messages: [{ role: "user", content: "hello" }],
+      }, true, {});
+
+      expect(result.conversationState.currentMessage.userInputMessage.modelId).toBe(upstream);
+      expect(result.additionalModelRequestFields).toBeUndefined();
+      expect(systemPromptOf(result)).toContain("CHUNKED WRITE PROTOCOL");
+    });
+
+    it("maps a supported Kiro Claude intensity suffix to native effort fields", () => {
+      const result = openaiToKiroRequest("claude-sonnet-5-thinking-agentic(high)", {
+        messages: [{ role: "user", content: "hello" }],
+      }, true, {});
+
+      expect(result.conversationState.currentMessage.userInputMessage.modelId).toBe("claude-sonnet-5");
+      expect(result.additionalModelRequestFields).toEqual({
+        thinking: { type: "adaptive", display: "summarized" },
+        output_config: { effort: "high" },
+      });
+    });
+
     it("does not send additionalModelRequestFields for date-suffixed Claude 4 model ids", () => {
       const body = {
         reasoning_effort: "high",

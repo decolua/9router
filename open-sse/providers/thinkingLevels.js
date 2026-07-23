@@ -2,6 +2,7 @@
 // Reuses capabilities.js (thinkingFormat/canDisable) so this file only maps format→levels (DRY).
 import { getCapabilitiesForModel } from "./capabilities.js";
 import { matchPattern } from "./pricing.js";
+import { resolveKiroEffortPath } from "../config/kiroConstants.js";
 
 // Shared level sets (deduped) — verified against provider docs + wire in thinkingUnified.applyFormat.
 const L = {
@@ -39,6 +40,7 @@ const PATTERN_THINKING = [
 
 // Returns valid thinking levels for a model, or null when the model has no reasoning.
 export function getThinkingLevels(provider, model) {
+  if (provider === "kiro" && resolveKiroEffortPath(model) === null) return null;
   const caps = getCapabilitiesForModel(provider, model);
   if (!caps.reasoning) return null;
   const hit = PATTERN_THINKING.find((p) => matchPattern(p.pattern, model));

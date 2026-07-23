@@ -27,7 +27,8 @@ import { FORMATS } from "../formats.js";
 import { applyKiroSessionReplay } from "../../utils/kiroSessionReplay.js";
 import { resolveContinuationId, resolveSessionIdentity } from "../../utils/sessionManager.js";
 import {
-  resolveKiroModel,
+  resolveKiroModelIntent,
+  applyKiroThinkingOverride,
   resolveKiroThinkingBudget,
   buildThinkingSystemPrefix,
   KIRO_AGENTIC_SYSTEM_PROMPT,
@@ -389,10 +390,12 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
   const temperature = body.temperature;
   const topP = body.top_p;
 
-  const { upstream: upstreamModel, agentic } = resolveKiroModel(model);
-  const thinkingBudget = resolveKiroThinkingBudget(body, credentials?.rawHeaders, model);
-  const additionalModelRequestFields = buildKiroAdditionalModelRequestFieldsForModel(body, upstreamModel);
-  const usesNativeGptEffort = usesKiroNativeGptEffort(body, upstreamModel);
+  const modelIntent = resolveKiroModelIntent(model);
+  const { upstream: upstreamModel, agentic } = modelIntent;
+  const thinkingBody = applyKiroThinkingOverride(body, modelIntent.thinkingOverride);
+  const thinkingBudget = resolveKiroThinkingBudget(thinkingBody, credentials?.rawHeaders, modelIntent.model);
+  const additionalModelRequestFields = buildKiroAdditionalModelRequestFieldsForModel(thinkingBody, upstreamModel);
+  const usesNativeGptEffort = usesKiroNativeGptEffort(thinkingBody, upstreamModel);
 
   // Guard 1: no client tools → flatten all tool interactions to text.
   if (!clientProvidedTools) {

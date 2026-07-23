@@ -15,7 +15,7 @@
  * fiction. The suffix is stripped before the request leaves this process.
  */
 
-import { extractThinking } from "../translator/concerns/thinkingUnified.js";
+import { extractThinking, parseSuffix } from "../translator/concerns/thinkingUnified.js";
 import { effortToBudget } from "../translator/concerns/thinking.js";
 
 export const KIRO_AGENTIC_SUFFIX = "-agentic";
@@ -39,6 +39,39 @@ export function resolveDefaultProfileArn(authMethod) {
 }
 
 export const KIRO_THINKING_BUDGET_DEFAULT = 16000;
+
+/**
+ * Resolve a Kiro model after consuming the generic model(level) suffix.
+ * The suffix is a 9router request override, not part of Kiro's upstream model id.
+ */
+export function resolveKiroModelIntent(model) {
+  const { cleanModel, override } = parseSuffix(model);
+  return {
+    model: cleanModel,
+    ...resolveKiroModel(cleanModel),
+    thinkingOverride: override,
+  };
+}
+
+/** Apply a parsed model(level) override without mutating the caller's body. */
+export function applyKiroThinkingOverride(body, override) {
+  if (!override) return body;
+
+  const next = { ...body };
+  if (override.mode === "budget") {
+    delete next.output_config;
+    delete next.reasoning_effort;
+    delete next.reasoning;
+    next.thinking = { type: "enabled", budget_tokens: override.budget };
+    return next;
+  }
+
+  next.output_config = {
+    ...(body.output_config || {}),
+    effort: override.mode === "level" ? override.level : override.mode,
+  };
+  return next;
+}
 
 export const KIRO_AGENTIC_SYSTEM_PROMPT = `
 # CRITICAL: CHUNKED WRITE PROTOCOL (MANDATORY)
