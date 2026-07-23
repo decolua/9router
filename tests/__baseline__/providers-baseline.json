@@ -25,7 +25,7 @@
   },
   "antigravity": {
     "baseUrls": [
-      "https://cloudcode-pa.googleapis.com"
+      "https://daily-cloudcode-pa.googleapis.com"
     ],
     "format": "antigravity",
     "headers": {

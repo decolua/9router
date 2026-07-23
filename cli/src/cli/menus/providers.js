@@ -53,6 +53,9 @@ const PROVIDER_MODELS = {
     { id: "glm-4.7" },
   ],
   ag: [
+    { id: "gemini-3.6-flash-high" },
+    { id: "gemini-3.6-flash-medium" },
+    { id: "gemini-3.6-flash-low" },
     { id: "gemini-3-flash-agent" },
     { id: "gemini-3.5-flash-low" },
     { id: "gemini-3.5-flash-extra-low" },
@@ -95,6 +98,8 @@ const PROVIDER_MODELS = {
     { id: "claude-3-5-sonnet-20241022" },
   ],
   gemini: [
+    { id: "gemini-3.6-flash" },
+    { id: "gemini-3.5-flash-lite" },
     { id: "gemini-3-pro-preview" },
     { id: "gemini-2.5-pro" },
     { id: "gemini-2.5-flash" },

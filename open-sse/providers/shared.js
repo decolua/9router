@@ -58,7 +58,7 @@ export const ANTHROPIC_COMPAT_BASE = "https://api.anthropic.com/v1";
 // Keep this static even when 9router runs on Linux: the provider profile is
 // intentionally matching the IDE client, not the server host.
 export const ANTIGRAVITY_IDE_VERSION = "2.1.1";
-export const ANTIGRAVITY_IDE_BASE_URL = "https://cloudcode-pa.googleapis.com";
+export const ANTIGRAVITY_IDE_BASE_URL = "https://daily-cloudcode-pa.googleapis.com";
 export const ANTIGRAVITY_IDE_USER_AGENT = `antigravity/ide/${ANTIGRAVITY_IDE_VERSION} darwin/arm64`;
 
 // Antigravity OAuth client credentials (public CLI client — duplicated in usage.js + src/lib/oauth)

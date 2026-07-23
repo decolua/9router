@@ -4,7 +4,6 @@ import REGISTRY from "../providers/registry/index.js";
 import { PROVIDER_MODELS } from "../providers/index.js";
 import { modelQuotaFamily, modelStrip, modelTargetFormat, normalizeModelId } from "../providers/models/schema.js";
 import { CODEX_REVIEW_SUFFIX } from "../providers/models/helpers.js";
-
 export { PROVIDER_MODELS };
 
 
@@ -70,8 +69,13 @@ export function getModelUpstreamId(aliasOrId, modelId) {
   const baseId = suffix ? modelId.slice(0, sufMatch.index).trim() : modelId;
   const models = PROVIDER_MODELS[aliasOrId];
   const found = findModel(models, baseId, aliasOrId);
-  if (found?.upstreamModelId) return found.upstreamModelId + suffix;
-  if (found?.id) return found.id + suffix;
+  const resolvedId = found?.upstreamModelId || found?.id;
+  if (resolvedId) {
+    const presetMatch = resolvedId.match(/\([^()]+\)\s*$/);
+    const presetSuffix = presetMatch?.[0] || "";
+    const resolvedBase = presetSuffix ? resolvedId.slice(0, presetMatch.index).trim() : resolvedId;
+    return resolvedBase + (suffix || presetSuffix);
+  }
   if (aliasOrId === "cx" && typeof baseId === "string" && baseId.endsWith(CODEX_REVIEW_SUFFIX)) {
     return baseId.slice(0, -CODEX_REVIEW_SUFFIX.length) + suffix;
   }
