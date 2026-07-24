@@ -1,5 +1,7 @@
 import { DefaultExecutor } from "./default.js";
 
+const GPT5_OR_REASONING_MODEL = /(?:^|[/_-])(?:gpt-5|o(?:1|3|4))(?:[._-]|$)/i;
+
 export class AzureExecutor extends DefaultExecutor {
   constructor() {
     super("azure");
@@ -52,6 +54,31 @@ export class AzureExecutor extends DefaultExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
-    return body;
+    if (
+      !body ||
+      typeof body !== "object" ||
+      Array.isArray(body) ||
+      !GPT5_OR_REASONING_MODEL.test(String(model || ""))
+    ) {
+      return body;
+    }
+
+    const transformed = { ...body };
+
+    if (transformed.max_completion_tokens === undefined && transformed.max_tokens !== undefined) {
+      transformed.max_completion_tokens = transformed.max_tokens;
+    }
+    delete transformed.max_tokens;
+
+    if (transformed.temperature !== undefined && transformed.temperature !== 1) {
+      delete transformed.temperature;
+    }
+
+    const usesFunctionTools = transformed.tools?.some((tool) => tool?.type === "function");
+    if (transformed.reasoning_effort === "none" || usesFunctionTools) {
+      delete transformed.reasoning_effort;
+    }
+
+    return transformed;
   }
 }
