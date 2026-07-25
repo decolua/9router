@@ -5,6 +5,7 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
+import { authorizeApiKeyRequest } from "../services/apiKeyPolicy.js";
 import { getSettings, getCombos } from "@/lib/localDb";
 import { AI_PROVIDERS, resolveProviderId } from "@/shared/constants/providers.js";
 import { handleSearchCore } from "open-sse/handlers/search/index.js";
@@ -99,6 +100,9 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey, 
     log.warn("SEARCH", "Unknown provider", { provider: providerInput });
     return errorResponse(HTTP_STATUS.BAD_REQUEST, `Unknown provider: ${providerInput}`);
   }
+
+  const policy = await authorizeApiKeyRequest(request, { model: `${resolvedProvider.alias || providerId}/search`, body });
+  if (policy.error) return policy.error;
 
   const providerConfig = resolvedProvider.searchConfig;
   const supportsSearch = !!providerConfig || !!resolvedProvider.searchViaChat;

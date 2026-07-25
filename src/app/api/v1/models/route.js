@@ -5,7 +5,8 @@ import {
   isAnthropicCompatibleProvider,
   isOpenAICompatibleProvider,
 } from "@/shared/constants/providers";
-import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
+import { getProviderConnections, getCombos, getCustomModels, getModelAliases, getApiKeyByValue, getSettings } from "@/lib/localDb";
+import { extractApiKey } from "@/sse/services/auth.js";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
@@ -500,7 +501,10 @@ export async function buildModelsList(kindFilter, options = {}) {
     dedupedModels.push(model);
   }
 
-  return dedupedModels;
+  const apiKey = options.apiKey;
+  const allowedModels = apiKey?.allowedModels;
+  if (!Array.isArray(allowedModels) || allowedModels.length === 0) return dedupedModels;
+  return dedupedModels.filter((model) => allowedModels.includes(model.id));
 }
 
 /**
@@ -524,7 +528,9 @@ export async function GET(request) {
   try {
     // Detect cross-instance recursive /models fetch (another 9router fetching our /models)
     const skipDynamicFetch = request?.headers?.get(INTERNAL_MODELS_FETCH_HEADER) === "1";
-    const data = await buildModelsList([LLM_KIND], { skipDynamicFetch });
+    const policy = await getModelListPolicy(request);
+    if (policy.error) return Response.json({ error: { message: "Invalid API key", type: "authentication_error" } }, { status: 401, headers: { "Access-Control-Allow-Origin": "*" } });
+    const data = await buildModelsList([LLM_KIND], { skipDynamicFetch, apiKey: policy.key });
     return Response.json({ object: "list", data }, {
       headers: { "Access-Control-Allow-Origin": "*" },
     });
@@ -535,4 +541,19 @@ export async function GET(request) {
       { status: 500 }
     );
   }
+}
+
+async function getModelListKey(request) {
+  const keyValue = extractApiKey(request);
+  if (!keyValue) return { present: false, key: null };
+  const key = await getApiKeyByValue(keyValue);
+  const expired = key?.expiresAt && new Date(key.expiresAt).getTime() <= Date.now();
+  return { present: true, key: key?.isActive && !expired ? key : null };
+}
+
+export async function getModelListPolicy(request) {
+  const settings = await getSettings();
+  const result = await getModelListKey(request);
+  if ((settings.requireApiKey && !result.key) || (result.present && !result.key)) return { error: true };
+  return { key: result.key };
 }

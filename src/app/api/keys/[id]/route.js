@@ -1,14 +1,34 @@
 import { NextResponse } from "next/server";
 import { deleteApiKey, getApiKeyById, updateApiKey } from "@/lib/localDb";
 
-// GET /api/keys/[id] - Get single key
+function parsePolicy(body) {
+  const data = {};
+  if (body.isActive !== undefined) data.isActive = body.isActive === true;
+  if (body.expiresAt !== undefined) {
+    if (body.expiresAt && Number.isNaN(new Date(body.expiresAt).getTime())) throw new Error("Expiration must be a valid date");
+    data.expiresAt = body.expiresAt || null;
+  }
+  if (body.tokenLimit !== undefined) {
+    const tokenLimit = body.tokenLimit === "" || body.tokenLimit == null ? null : Number(body.tokenLimit);
+    if (tokenLimit != null && (!Number.isSafeInteger(tokenLimit) || tokenLimit < 1)) throw new Error("Token limit must be a positive whole number");
+    data.tokenLimit = tokenLimit;
+  }
+  if (body.tokenLimitIncrement !== undefined) {
+    const increment = Number(body.tokenLimitIncrement);
+    if (!Number.isSafeInteger(increment) || increment < 1) throw new Error("Token addition must be a positive whole number");
+    data.tokenLimitIncrement = increment;
+  }
+  if (body.allowedModels !== undefined) {
+    if (!Array.isArray(body.allowedModels)) throw new Error("Allowed models must be an array");
+    data.allowedModels = body.allowedModels;
+  }
+  return data;
+}
+
 export async function GET(request, { params }) {
   try {
-    const { id } = await params;
-    const key = await getApiKeyById(id);
-    if (!key) {
-      return NextResponse.json({ error: "Key not found" }, { status: 404 });
-    }
+    const key = await getApiKeyById((await params).id);
+    if (!key) return NextResponse.json({ error: "Key not found" }, { status: 404 });
     return NextResponse.json({ key });
   } catch (error) {
     console.log("Error fetching key:", error);
@@ -16,40 +36,23 @@ export async function GET(request, { params }) {
   }
 }
 
-// PUT /api/keys/[id] - Update key
 export async function PUT(request, { params }) {
   try {
-    const { id } = await params;
-    const body = await request.json();
-    const { isActive } = body;
-
-    const existing = await getApiKeyById(id);
-    if (!existing) {
-      return NextResponse.json({ error: "Key not found" }, { status: 404 });
-    }
-
-    const updateData = {};
-    if (isActive !== undefined) updateData.isActive = isActive;
-
-    const updated = await updateApiKey(id, updateData);
-
+    const id = (await params).id;
+    if (!await getApiKeyById(id)) return NextResponse.json({ error: "Key not found" }, { status: 404 });
+    const updated = await updateApiKey(id, parsePolicy(await request.json()));
     return NextResponse.json({ key: updated });
   } catch (error) {
+    const status = /Token limit|Token addition|Cannot add tokens|Expiration|Allowed models/.test(error.message) ? 400 : 500;
     console.log("Error updating key:", error);
-    return NextResponse.json({ error: "Failed to update key" }, { status: 500 });
+    return NextResponse.json({ error: status === 400 ? error.message : "Failed to update key" }, { status });
   }
 }
 
-// DELETE /api/keys/[id] - Delete API key
 export async function DELETE(request, { params }) {
   try {
-    const { id } = await params;
-
-    const deleted = await deleteApiKey(id);
-    if (!deleted) {
-      return NextResponse.json({ error: "Key not found" }, { status: 404 });
-    }
-
+    const deleted = await deleteApiKey((await params).id);
+    if (!deleted) return NextResponse.json({ error: "Key not found" }, { status: 404 });
     return NextResponse.json({ message: "Key deleted successfully" });
   } catch (error) {
     console.log("Error deleting key:", error);

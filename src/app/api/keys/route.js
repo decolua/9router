@@ -4,7 +4,15 @@ import { getConsistentMachineId } from "@/shared/utils/machineId";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/keys - List API keys
+function parsePolicy(body) {
+  const expiresAt = body.expiresAt || null;
+  const tokenLimit = body.tokenLimit === "" || body.tokenLimit == null ? null : Number(body.tokenLimit);
+  if (tokenLimit != null && (!Number.isSafeInteger(tokenLimit) || tokenLimit < 1)) throw new Error("Token limit must be a positive whole number");
+  if (expiresAt && Number.isNaN(new Date(expiresAt).getTime())) throw new Error("Expiration must be a valid date");
+  if (body.allowedModels != null && !Array.isArray(body.allowedModels)) throw new Error("Allowed models must be an array");
+  return { expiresAt, tokenLimit, allowedModels: body.allowedModels };
+}
+
 export async function GET() {
   try {
     const keys = await getApiKeys();
@@ -15,28 +23,16 @@ export async function GET() {
   }
 }
 
-// POST /api/keys - Create new API key
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { name } = body;
-
-    if (!name) {
-      return NextResponse.json({ error: "Name is required" }, { status: 400 });
-    }
-
-    // Always get machineId from server
+    if (!body.name?.trim()) return NextResponse.json({ error: "Name is required" }, { status: 400 });
     const machineId = await getConsistentMachineId();
-    const apiKey = await createApiKey(name, machineId);
-
-    return NextResponse.json({
-      key: apiKey.key,
-      name: apiKey.name,
-      id: apiKey.id,
-      machineId: apiKey.machineId,
-    }, { status: 201 });
+    const apiKey = await createApiKey(body.name.trim(), machineId, parsePolicy(body));
+    return NextResponse.json({ key: apiKey.key, name: apiKey.name, id: apiKey.id, machineId: apiKey.machineId }, { status: 201 });
   } catch (error) {
+    const status = /Token limit|Expiration|Allowed models/.test(error.message) ? 400 : 500;
     console.log("Error creating key:", error);
-    return NextResponse.json({ error: "Failed to create key" }, { status: 500 });
+    return NextResponse.json({ error: status === 400 ? error.message : "Failed to create key" }, { status });
   }
 }

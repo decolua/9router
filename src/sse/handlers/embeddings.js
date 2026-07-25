@@ -5,6 +5,7 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
+import { authorizeApiKeyRequest } from "../services/apiKeyPolicy.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo } from "../services/model.js";
 import { handleEmbeddingsCore } from "open-sse/handlers/embeddingsCore.js";
@@ -72,6 +73,8 @@ export async function handleEmbeddings(request) {
   }
 
   const { provider, model } = modelInfo;
+  const policy = await authorizeApiKeyRequest(request, { model: `${provider}/${model}`, body });
+  if (policy.error) return policy.error;
 
   if (modelStr !== `${provider}/${model}`) {
     log.info("ROUTING", `${modelStr} → ${provider}/${model}`);

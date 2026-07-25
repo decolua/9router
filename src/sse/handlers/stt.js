@@ -3,6 +3,7 @@ import {
   getProviderCredentials, markAccountUnavailable,
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
+import { authorizeApiKeyRequest } from "../services/apiKeyPolicy.js";
 import { getModelInfo } from "../services/model.js";
 import { handleSttCore } from "open-sse/handlers/sttCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -38,11 +39,12 @@ export async function handleStt(request) {
 
   if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   if (!formData.get("file")) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: file");
-
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
 
   const { provider, model } = modelInfo;
+  const policy = await authorizeApiKeyRequest(request, { model: `${provider}/${model}` });
+  if (policy.error) return policy.error;
   log.info("ROUTING", `Provider: ${provider}, Model: ${model}`);
 
   // noAuth providers
