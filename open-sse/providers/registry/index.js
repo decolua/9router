@@ -52,9 +52,10 @@ import p49 from "./jina-ai.js";
 import p50 from "./jina-reader.js";
 import p51 from "./kilocode.js";
 import p52 from "./kimchi.js";
-import p53 from "./kimi-coding.js";
-import p54 from "./kimi.js";
-import p55 from "./kiro.js";
+import p53 from "./kimi.js";
+import p54 from "./kiro.js";
+// kimi-coding was merged into kimi.js upstream
+const p55 = p53;
 import p56 from "./linkup.js";
 import p57 from "./local-device.js";
 import p58 from "./mimo-free.js";
