@@ -12,7 +12,8 @@ const API_KEY = process.env.AG_KEY;
 const TIMEOUT_MS = 90000;
 
 // All antigravity models (from providers/registry/antigravity.js)
-const AG_MODELS = [
+const ANTIGRAVITY_MODELS = [
+  "ag/gemini-3.6-flash",
   "ag/gemini-3-flash-agent",
   "ag/gemini-3.5-flash-low",
   "ag/gemini-3.5-flash-extra-low",
