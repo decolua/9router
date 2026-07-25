@@ -30,3 +30,13 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+
+# Docker compose files
+docker-compose*.yml
+Dockerfile*
+
+# Documentation and tests
+README.md
+tests/
+docs/
+cli/
