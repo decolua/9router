@@ -124,6 +124,16 @@ export const KIMCHI_CONFIG = { ...PROVIDER_OAUTH["kimchi"] };
 // Endpoint: cli-chat-proxy.grok.com — same client_id as xai, different flow + scopes
 export const GROK_CLI_CONFIG = { ...PROVIDER_OAUTH["grok-cli"] };
 
+// Zed Hosted AI — import user_id + access_token from Zed Editor, mint llm_token
+export const ZED_CONFIG = {
+  ...PROVIDER_OAUTH["zed"],
+  tokenStoragePaths: {
+    linux: "~/.local/share/zed/ (or libsecret keyring)",
+    macos: "macOS Keychain (zed)",
+    windows: "Windows Credential Manager",
+  },
+};
+
 // OAuth timeout (5 minutes)
 export const OAUTH_TIMEOUT = 300000;
 
@@ -149,4 +159,5 @@ export const PROVIDERS = {
   CODEBUDDY: "codebuddy-cn",
   KIMCHI: "kimchi",
   GROK_CLI: "grok-cli",
+  ZED: "zed",
 };

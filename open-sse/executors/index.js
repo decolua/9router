@@ -8,6 +8,7 @@ import { KiroExecutor } from "./kiro.js";
 import { KimchiExecutor } from "./kimchi.js";
 import { CodexExecutor } from "./codex.js";
 import { CursorExecutor } from "./cursor.js";
+import { ZedExecutor } from "./zed.js";
 import { VertexExecutor } from "./vertex.js";
 import { QwenExecutor } from "./qwen.js";
 import { OpenCodeExecutor } from "./opencode.js";
@@ -34,6 +35,7 @@ const executors = {
   codex: new CodexExecutor(),
   cursor: new CursorExecutor(),
   cu: new CursorExecutor(), // Alias for cursor
+  zed: new ZedExecutor(),
   vertex: new VertexExecutor("vertex"),
   "vertex-partner": new VertexExecutor("vertex-partner"),
   qwen: new QwenExecutor(),
@@ -75,6 +77,7 @@ export { KiroExecutor } from "./kiro.js";
 export { KimchiExecutor } from "./kimchi.js";
 export { CodexExecutor } from "./codex.js";
 export { CursorExecutor } from "./cursor.js";
+export { ZedExecutor } from "./zed.js";
 export { VertexExecutor } from "./vertex.js";
 export { DefaultExecutor } from "./default.js";
 export { QwenExecutor } from "./qwen.js";

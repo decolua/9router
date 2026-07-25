@@ -17,6 +17,7 @@ import {
   CLINE_CONFIG,
   KILOCODE_CONFIG,
   KIMCHI_CONFIG,
+  ZED_CONFIG,
 } from "@/lib/oauth/constants/oauth";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
 
@@ -126,6 +127,15 @@ const OAUTH_TEST_CONFIG = {
     softFailMessage: {
       402: "Connected, but Grok Build credits are exhausted (spending limit). Add credits or upgrade SuperGrok.",
     },
+  },
+  // Zed Hosted AI — probe /models with Bearer llm_token (no inference quota).
+  zed: {
+    url: `${(ZED_CONFIG.apiEndpoint || "https://cloud.zed.dev").replace(/\/$/, "")}${ZED_CONFIG.modelsPath || "/models"}`,
+    method: "GET",
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    extraHeaders: { Accept: "application/json" },
+    refreshable: true,
   },
 };
 
@@ -240,7 +250,7 @@ async function refreshOAuthToken(connection) {
       return { accessToken: data.access_token, expiresIn: data.expires_in, refreshToken: data.refresh_token || refreshToken };
     }
 
-    if (provider === "codex" || provider === "grok-cli" || provider === "xai") {
+    if (provider === "codex" || provider === "grok-cli" || provider === "xai" || provider === "zed") {
       return await refreshProviderCredentials(provider, connection, console);
     }
 

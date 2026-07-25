@@ -668,3 +668,64 @@ export async function refreshCodebuddyToken(refreshToken, log) {
     };
   }, log);
 }
+
+/**
+ * Refresh Zed Hosted AI LLM bearer token via POST /client/llm_tokens.
+ * `refreshToken` here is the Zed user access_token; userId lives in providerSpecificData.
+ */
+export async function refreshZedToken(refreshToken, credentials, log) {
+  const userId = credentials?.providerSpecificData?.userId;
+  const zedAccessToken =
+    credentials?.providerSpecificData?.zedAccessToken || refreshToken;
+  const organizationId = credentials?.providerSpecificData?.organizationId;
+  if (!userId || !zedAccessToken) {
+    log?.warn?.("TOKEN_REFRESH", "Zed refresh missing userId or access token");
+    return null;
+  }
+
+  return dedupRefresh(`zed:${userId}`, zedAccessToken, async () => {
+    const base = (PROVIDERS.zed?.baseUrl || PROVIDER_OAUTH.zed?.apiEndpoint || "https://cloud.zed.dev").replace(
+      /\/$/,
+      "",
+    );
+    const path = PROVIDER_OAUTH.zed?.llmTokensPath || "/client/llm_tokens";
+    const body = organizationId ? { organization_id: organizationId } : {};
+    const res = await proxyAwareFetch(`${base}${path}`, {
+      method: "POST",
+      headers: {
+        Authorization: `${userId} ${zedAccessToken}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      log?.error?.("TOKEN_REFRESH", `Zed LLM token refresh failed (${res.status}): ${text.slice(0, 200)}`);
+      return null;
+    }
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      return null;
+    }
+    const raw = data?.token;
+    const token =
+      typeof raw === "string"
+        ? raw
+        : raw && typeof raw === "object"
+          ? raw["0"] || raw.token || Object.values(raw)[0]
+          : null;
+    if (!token) return null;
+    return {
+      accessToken: token,
+      refreshToken: zedAccessToken,
+      expiresIn: 3600,
+      providerSpecificData: {
+        llmToken: token,
+        lastLlmTokenAt: new Date().toISOString(),
+      },
+    };
+  }, log);
+}

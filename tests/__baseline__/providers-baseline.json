@@ -1,6 +1,6 @@
 {
   "alicode-intl": {
-    "baseUrl": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",
+    "baseUrl": "https://coding-intl.dashscope.aliyuncs.com/v1/chat/completions",
     "headers": {},
     "quirks": {
       "preserveCacheControl": true
@@ -880,5 +880,15 @@
       "preserveCacheControl": true
     },
     "format": "openai"
+  },
+  "zed": {
+    "baseUrl": "https://cloud.zed.dev",
+    "chatPath": "/completions",
+    "format": "zed",
+    "headers": {
+      "Content-Type": "application/json",
+      "x-zed-client-supports-status-messages": "true",
+      "x-zed-client-supports-x-ai": "true"
+    }
   }
 }

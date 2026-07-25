@@ -28,6 +28,7 @@ import {
   CODEBUDDY_CONFIG,
   KIMCHI_CONFIG,
   GROK_CLI_CONFIG,
+  ZED_CONFIG,
   getOAuthClientMetadata,
 } from "./constants/oauth";
 import { XAI_CONFIG, XAI_PKCE_VERIFIER_BYTES } from "./constants/xai";
@@ -1076,6 +1077,23 @@ const PROVIDERS = {
       expiresIn: tokens.expiresIn || 86400,
       providerSpecificData: {
         machineId: tokens.machineId,
+        authMethod: "imported",
+      },
+    }),
+  },
+
+  zed: {
+    config: ZED_CONFIG,
+    flowType: "import_token",
+    // Zed Hosted AI — import user_id + access_token; mint llm_token via /client/llm_tokens
+    mapTokens: (tokens) => ({
+      accessToken: tokens.llmToken || tokens.accessToken,
+      refreshToken: tokens.zedAccessToken || tokens.accessToken,
+      expiresIn: tokens.expiresIn || 3600,
+      providerSpecificData: {
+        userId: tokens.userId,
+        zedAccessToken: tokens.zedAccessToken || tokens.accessToken,
+        organizationId: tokens.organizationId || null,
         authMethod: "imported",
       },
     }),
