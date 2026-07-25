@@ -31,10 +31,68 @@ export async function refreshXaiToken(refreshToken, log) {
   }, log);
 }
 
+// Per-provider refresh variants for the generic path. Keys not listed fall back
+// to the default form-encoded OAuth2 refresh with client_id + client_secret.
+const REFRESH_PROFILES = {
+  claude: {
+    bodyFormat: "json",
+    includeClientSecret: false,
+    url: () => OAUTH_ENDPOINTS.anthropic.token,
+    dedupKey: "claude",
+  },
+  qwen: {
+    url: () => OAUTH_ENDPOINTS.qwen.token,
+    dedupKey: "qwen",
+    parse: (tokens) => tokens.resource_url ? { providerSpecificData: { resourceUrl: tokens.resource_url } } : {},
+  },
+  iflow: {
+    url: () => OAUTH_ENDPOINTS.iflow.token,
+    dedupKey: "iflow",
+    extraHeaders: (creds, cfg) => ({
+      Authorization: `Basic ${btoa(`${cfg.clientId}:${cfg.clientSecret}`)}`,
+    }),
+  },
+  github: {
+    url: () => OAUTH_ENDPOINTS.github.token,
+    dedupKey: "github",
+    includeClientSecret: (cfg) => !!cfg?.clientSecret,
+  },
+  kimi: {
+    dedupKey: "kimi",
+    extraHeaders: (creds) => buildKimiHeaders(creds?.providerSpecificData?.deviceId),
+  },
+};
+
+function resolveRefreshUrl(provider, config, profile) {
+  if (profile?.url) {
+    try { return profile.url(); } catch { /* fall through */ }
+  }
+  return config?.refreshUrl || PROVIDER_OAUTH[provider]?.tokenUrl || null;
+}
+
+function buildRefreshBody(profile, config, refreshToken) {
+  const fmt = profile?.bodyFormat === "json" ? "json" : "form";
+  const includeSecret = profile?.includeClientSecret === undefined
+    ? true
+    : typeof profile.includeClientSecret === "function"
+      ? profile.includeClientSecret(config)
+      : profile.includeClientSecret;
+  const payload = {
+    grant_type: "refresh_token",
+    refresh_token: refreshToken,
+    client_id: config.clientId,
+  };
+  if (includeSecret && config.clientSecret) payload.client_secret = config.clientSecret;
+  if (fmt === "json") return { format: "json", body: JSON.stringify(payload) };
+  return { format: "form", body: new URLSearchParams(payload) };
+}
+
 export async function refreshAccessToken(provider, refreshToken, credentials, log) {
   const config = PROVIDERS[provider];
+  const profile = REFRESH_PROFILES[provider] || {};
+  const url = resolveRefreshUrl(provider, config, profile);
 
-  if (!config || !config.refreshUrl) {
+  if (!config || !url) {
     log?.warn?.("TOKEN_REFRESH", `No refresh URL configured for provider: ${provider}`);
     return null;
   }
@@ -44,21 +102,17 @@ export async function refreshAccessToken(provider, refreshToken, credentials, lo
     return null;
   }
 
-  return dedupRefresh(provider, refreshToken, async () => {
+  const dedupKey = profile.dedupKey || provider;
+
+  return dedupRefresh(dedupKey, refreshToken, async () => {
   try {
-    const response = await fetch(config.refreshUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Accept: "application/json",
-      },
-      body: new URLSearchParams({
-        grant_type: "refresh_token",
-        refresh_token: refreshToken,
-        client_id: config.clientId,
-        client_secret: config.clientSecret,
-      }),
-    });
+    const { format: bodyFormat, body } = buildRefreshBody(profile, config, refreshToken);
+    const headers = {
+      "Content-Type": bodyFormat === "json" ? "application/json" : "application/x-www-form-urlencoded",
+      Accept: "application/json",
+      ...(profile.extraHeaders ? (profile.extraHeaders(credentials, config) || {}) : {}),
+    };
+    const response = await fetch(url, { method: "POST", headers, body });
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -81,6 +135,7 @@ export async function refreshAccessToken(provider, refreshToken, credentials, lo
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token || refreshToken,
       expiresIn: tokens.expires_in,
+      ...(profile.parse ? (profile.parse(tokens) || {}) : {}),
     };
   } catch (error) {
     log?.error?.("TOKEN_REFRESH", `Error refreshing token for ${provider}`, {
@@ -92,82 +147,14 @@ export async function refreshAccessToken(provider, refreshToken, credentials, lo
 }
 
 // CLIProxyAPI DeviceFlowClient.RefreshToken: form body (no client_secret) + X-Msh-* headers
+// Delegate to refreshAccessToken("kimi", ...) — profile carries the X-Msh headers.
 export async function refreshKimiToken(refreshToken, credentials, log) {
-  const config = PROVIDERS.kimi;
-  if (!config?.refreshUrl || !config?.clientId) {
-    log?.warn?.("TOKEN_REFRESH", "No Kimi refresh URL/clientId configured");
-    return null;
-  }
-  if (!refreshToken) return null;
-
-  return dedupRefresh("kimi", refreshToken, async () => {
-    try {
-      const headers = {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Accept: "application/json",
-        ...buildKimiHeaders(credentials?.providerSpecificData?.deviceId),
-      };
-      const response = await fetch(config.refreshUrl, {
-        method: "POST",
-        headers,
-        body: new URLSearchParams({
-          grant_type: "refresh_token",
-          refresh_token: refreshToken,
-          client_id: config.clientId,
-        }),
-      });
-      if (!response.ok) {
-        const errorText = await response.text();
-        log?.error?.("TOKEN_REFRESH", `Failed to refresh token for kimi`, {
-          status: response.status,
-          error: errorText,
-        });
-        return null;
-      }
-      const tokens = await response.json();
-      return {
-        accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token || refreshToken,
-        expiresIn: tokens.expires_in,
-      };
-    } catch (error) {
-      log?.error?.("TOKEN_REFRESH", `Error refreshing token for kimi`, { error: error.message });
-      return null;
-    }
-  }, log);
+  return refreshAccessToken("kimi", refreshToken, credentials, log);
 }
 
+// Claude OAuth: JSON body, client_id only. Delegate to refreshAccessToken("claude", ...).
 export async function refreshClaudeOAuthToken(refreshToken, log) {
-  if (!refreshToken) return null;
-  return dedupRefresh("claude", refreshToken, async () => {
-  try {
-    const response = await fetch(OAUTH_ENDPOINTS.anthropic.token, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        grant_type: "refresh_token",
-        refresh_token: refreshToken,
-        client_id: PROVIDERS.claude.clientId,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      log?.error?.("TOKEN_REFRESH", "Failed to refresh Claude OAuth token", { status: response.status, error: errorText });
-      return null;
-    }
-
-    const tokens = await response.json();
-    log?.info?.("TOKEN_REFRESH", "Successfully refreshed Claude OAuth token", { hasNewAccessToken: !!tokens.access_token, expiresIn: tokens.expires_in });
-    return { accessToken: tokens.access_token, refreshToken: tokens.refresh_token || refreshToken, expiresIn: tokens.expires_in };
-  } catch (error) {
-    log?.error?.("TOKEN_REFRESH", `Network error refreshing Claude token: ${error.message}`);
-    return null;
-  }
-  }, log);
+  return refreshAccessToken("claude", refreshToken, {}, log);
 }
 
 export async function refreshGoogleToken(refreshToken, clientId, clientSecret, log) {
@@ -204,58 +191,9 @@ export async function refreshGoogleToken(refreshToken, clientId, clientSecret, l
   }, log);
 }
 
+// Qwen: form body + clientId, surfaces resource_url. Delegate to refreshAccessToken("qwen", ...).
 export async function refreshQwenToken(refreshToken, log) {
-  if (!refreshToken) return null;
-  return dedupRefresh("qwen", refreshToken, async () => {
-  const endpoint = OAUTH_ENDPOINTS.qwen.token;
-
-  try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Accept: "application/json",
-      },
-      body: new URLSearchParams({
-        grant_type: "refresh_token",
-        refresh_token: refreshToken,
-        client_id: PROVIDERS.qwen.clientId,
-      }),
-    });
-
-    if (response.status === 200) {
-      const tokens = await response.json();
-
-      log?.info?.("TOKEN_REFRESH", "Successfully refreshed Qwen token", {
-        hasNewAccessToken: !!tokens.access_token,
-        hasNewRefreshToken: !!tokens.refresh_token,
-        expiresIn: tokens.expires_in,
-      });
-
-      return {
-        accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token || refreshToken,
-        expiresIn: tokens.expires_in,
-        providerSpecificData: tokens.resource_url
-          ? { resourceUrl: tokens.resource_url }
-          : undefined,
-      };
-    } else {
-      const errorText = await response.text().catch(() => "");
-      log?.warn?.("TOKEN_REFRESH", `Error with Qwen endpoint`, {
-        status: response.status,
-        error: errorText,
-      });
-    }
-  } catch (error) {
-    log?.warn?.("TOKEN_REFRESH", `Network error trying Qwen endpoint`, {
-      error: error.message,
-    });
-  }
-
-  log?.error?.("TOKEN_REFRESH", "Failed to refresh Qwen token");
-  return null;
-  }, log);
+  return refreshAccessToken("qwen", refreshToken, {}, log);
 }
 
 export function classifyOAuthRefreshError(errorText = "", status = 0) {
@@ -480,95 +418,14 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
   }, log);
 }
 
+// iFlow: Basic Auth + client_id+client_secret in body. Delegate to refreshAccessToken("iflow", ...).
 export async function refreshIflowToken(refreshToken, log) {
-  if (!refreshToken) return null;
-  return dedupRefresh("iflow", refreshToken, async () => {
-  const basicAuth = btoa(`${PROVIDERS.iflow.clientId}:${PROVIDERS.iflow.clientSecret}`);
-
-  const response = await fetch(OAUTH_ENDPOINTS.iflow.token, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Accept: "application/json",
-      Authorization: `Basic ${basicAuth}`,
-    },
-    body: new URLSearchParams({
-      grant_type: "refresh_token",
-      refresh_token: refreshToken,
-      client_id: PROVIDERS.iflow.clientId,
-      client_secret: PROVIDERS.iflow.clientSecret,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    log?.error?.("TOKEN_REFRESH", "Failed to refresh iFlow token", {
-      status: response.status,
-      error: errorText,
-    });
-    return null;
-  }
-
-  const tokens = await response.json();
-
-  log?.info?.("TOKEN_REFRESH", "Successfully refreshed iFlow token", {
-    hasNewAccessToken: !!tokens.access_token,
-    hasNewRefreshToken: !!tokens.refresh_token,
-    expiresIn: tokens.expires_in,
-  });
-
-  return {
-    accessToken: tokens.access_token,
-    refreshToken: tokens.refresh_token || refreshToken,
-    expiresIn: tokens.expires_in,
-  };
-  }, log);
+  return refreshAccessToken("iflow", refreshToken, {}, log);
 }
 
+// GitHub: optional client_secret. Delegate to refreshAccessToken("github", ...).
 export async function refreshGitHubToken(refreshToken, log) {
-  if (!refreshToken) return null;
-  return dedupRefresh("github", refreshToken, async () => {
-  const params = {
-    grant_type: "refresh_token",
-    refresh_token: refreshToken,
-    client_id: PROVIDERS.github.clientId,
-  };
-  if (PROVIDERS.github.clientSecret) {
-    params.client_secret = PROVIDERS.github.clientSecret;
-  }
-
-  const response = await fetch(OAUTH_ENDPOINTS.github.token, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Accept: "application/json",
-    },
-    body: new URLSearchParams(params),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    log?.error?.("TOKEN_REFRESH", "Failed to refresh GitHub token", {
-      status: response.status,
-      error: errorText,
-    });
-    return null;
-  }
-
-  const tokens = await response.json();
-
-  log?.info?.("TOKEN_REFRESH", "Successfully refreshed GitHub token", {
-    hasNewAccessToken: !!tokens.access_token,
-    hasNewRefreshToken: !!tokens.refresh_token,
-    expiresIn: tokens.expires_in,
-  });
-
-  return {
-    accessToken: tokens.access_token,
-    refreshToken: tokens.refresh_token || refreshToken,
-    expiresIn: tokens.expires_in,
-  };
-  }, log);
+  return refreshAccessToken("github", refreshToken, {}, log);
 }
 
 export async function refreshCopilotToken(githubAccessToken, log) {
@@ -720,60 +577,8 @@ export async function refreshCodebuddyIntlToken(refreshToken, log) {
   }, log);
 }
 
-export async function refreshWorkbuddyToken(refreshToken, log) {
-  if (!refreshToken) return null;
-  return dedupRefresh("workbuddy", refreshToken, async () => {
-    const oauth = PROVIDER_OAUTH["workbuddy"] || {};
-    const response = await fetch(oauth.refreshUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        "User-Agent": oauth.userAgent,
-        "X-Requested-With": "XMLHttpRequest",
-        "X-Domain": "www.codebuddy.cn",
-        "X-Refresh-Token": refreshToken,
-        "X-Auth-Refresh-Source": "plugin",
-        "X-Product": "SaaS",
-      },
-      body: "{}",
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      log?.error?.("TOKEN_REFRESH", "Failed to refresh WorkBuddy token", {
-        status: response.status,
-        error: errorText,
-      });
-      return null;
-    }
-
-    const data = await response.json();
-    if (data.code !== 0 || !data.data?.accessToken) {
-      log?.error?.("TOKEN_REFRESH", "WorkBuddy token refresh returned no token", {
-        code: data.code,
-        msg: data.msg,
-      });
-      return null;
-    }
-
-    log?.info?.("TOKEN_REFRESH", "Successfully refreshed WorkBuddy token", {
-      hasNewAccessToken: !!data.data.accessToken,
-      hasNewRefreshToken: !!data.data.refreshToken,
-      expiresIn: data.data.expiresIn,
-    });
-
-    return {
-      accessToken: data.data.accessToken,
-      refreshToken: data.data.refreshToken || refreshToken,
-      expiresIn: data.data.expiresIn,
-    };
-  }, log);
-}
-
 // Trae refresh — POST ExchangeToken with JSON body {ClientID, RefreshToken, ClientSecret, UserID}.
 // Response: {Result: {AccessToken, RefreshToken, TokenType, ExpiresAt}}.
-// Source: cockpit-tools/src-tauri/src/modules/trae_oauth.rs (TRAE_EXCHANGE_TOKEN_PATH).
 export async function refreshTraeToken(refreshToken, credentials, log) {
   if (!refreshToken) return null;
   const oauth = PROVIDER_OAUTH.trae || {};

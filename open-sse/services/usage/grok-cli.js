@@ -198,6 +198,21 @@ export function parseGrokCliBilling(billing, user = null) {
     };
   }
 
+  // SuperGrok weekly shared-pool usage (subscription tier). creditUsagePercent is
+  // the single total used %; productUsage is a breakdown legend, NOT independent
+  // quotas — never split it into separate bars.
+  const usedPct = unwrapVal(
+    config.creditUsagePercent ?? config.credit_usage_percent ?? root.creditUsagePercent,
+    NaN,
+  );
+  if (Number.isFinite(usedPct) && usedPct >= 0) {
+    quotas["Weekly SuperGrok"] = makeQuota({
+      used: Math.max(0, Math.min(100, usedPct)),
+      total: 100,
+      resetAt: periodEnd,
+    });
+  }
+
   // Opportunistic richer credit envelopes (future / other account types)
   const creditBags = [
     root.credits,

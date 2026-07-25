@@ -113,6 +113,43 @@ describe("parseGrokCliBilling", () => {
     expect(parsed.exhausted).toBe(false);
   });
 
+  it("maps creditUsagePercent to a single Weekly SuperGrok bar (not productUsage)", () => {
+    const parsed = parseGrokCliBilling(
+      {
+        config: {
+          currentPeriod: {
+            type: "USAGE_PERIOD_TYPE_WEEKLY",
+            start: "2026-07-17T12:42:26.494595+00:00",
+            end: "2026-07-24T12:42:26.494595+00:00",
+          },
+          creditUsagePercent: 99.0,
+          onDemandCap: { val: 0 },
+          onDemandUsed: { val: 0 },
+          productUsage: [
+            { product: "GrokBuild", usagePercent: 97.0 },
+            { product: "GrokImagine", usagePercent: 2.0 },
+          ],
+          isUnifiedBillingUser: true,
+          prepaidBalance: { val: 0 },
+          billingPeriodStart: "2026-07-17T12:42:26.494595+00:00",
+          billingPeriodEnd: "2026-07-24T12:42:26.494595+00:00",
+        },
+      },
+      { subscriptionTier: "XPremiumPlus", hasGrokCodeAccess: true },
+    );
+    // Single shared-pool bar from creditUsagePercent
+    expect(parsed.quotas["Weekly SuperGrok"]).toMatchObject({
+      used: 99,
+      total: 100,
+      remainingPercentage: 1,
+      resetAt: "2026-07-24T12:42:26.494Z",
+      unlimited: false,
+    });
+    // productUsage must NOT become independent quota bars
+    expect(Object.keys(parsed.quotas)).toEqual(["Weekly SuperGrok"]);
+    expect(parsed.exhausted).toBe(false);
+  });
+
   it("maps current monthly fields and snake-case subscription tier", () => {
     const parsed = parseGrokCliBilling({
       monthlyLimit: { val: 1000 },

@@ -1,6 +1,7 @@
 // Windsurf provider registry — Firebase+Codeium+Devin auth chain.
-// Chat transport is Codeium protobuf gRPC-Web: endpoint + schema are GUESS,
-// the cockpit-tools source only documents auth/quota (SeatManagement) paths.
+// Chat = Codeium gRPC-web protobuf:
+//   POST {base}  Content-Type: application/grpc-web+proto
+//   Service: exa.language_server_pb.LanguageServerService / GetChatMessage
 export default {
   id: "windsurf",
   alias: "ws",
@@ -17,19 +18,16 @@ export default {
   hasOAuth: true,
   authModes: ["oauth", "apikey"],
 
-  // TODO(chat): Codeium ServerService protobuf schema unknown — endpoint is a guess.
   transport: {
-    // GUESS: Codeium chat lives under /exa.server_pb.ServerService/GetChatMessage.
-    baseUrl: "https://server.codeium.com/exa.server_pb.ServerService/GetChatMessage",
-    format: "windsurf",
+    baseUrl: "https://server.codeium.com/exa.language_server_pb.LanguageServerService/GetChatMessage",
+    format: "openai",
     headers: {
-      "Content-Type": "application/proto",
-      "Connect-Protocol-Version": "1",
-      "ideName": "Windsurf",
-      "extensionName": "codeium.windsurf",
+      "Content-Type": "application/grpc-web+proto",
+      "Accept": "application/grpc-web+proto",
+      "X-Grpc-Web": "1",
     },
-    // Bearer of apiKey (sk-ws-... / Firebase-derived / Devin session) — Connect-Protocol scheme unverified.
-    auth: { combined: true, header: "Authorization" },
+    // apiKey (sk-ws-... or Firebase-derived) as Bearer + in protobuf Metadata.api_key.
+    auth: { combined: true, header: "Authorization", scheme: "Bearer" },
   },
 
   // Auth chain (4 terminal paths, all yield apiKey):
@@ -52,9 +50,8 @@ export default {
   },
 
   // Catalog verified against model_configs_v2.bin from Devin CLI (2026.5.x).
-  // Source: OmniRoute registry (guanxiaol/WindsurfPoolAPI). Dot-notation ids; the
-  // executor MODEL_ALIAS_MAP would map these to Windsurf modelUid once proto chat
-  // is implemented. contextLength dropped — 9router schema uses id+name only.
+  // Dot-notation ids; the executor MODEL_ALIAS_MAP maps these to Windsurf modelUid.
+  // contextLength dropped — 9router schema uses id+name only.
   models: [
     // Cognition / SWE
     { id: "swe-1.6-fast", name: "SWE-1.6 Fast" },

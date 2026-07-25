@@ -1,7 +1,8 @@
 // Trae (ByteDance marscode) provider registry entry.
-// Auth + exchange URLs verified from cockpit-tools/src-tauri/src/modules/trae_oauth.rs.
-// Region origins verified from trae_account.rs lines 63-66.
-// Chat endpoint path /cloudide/api/v3/trae/Chat is GUESSED (TODO verify upstream).
+// Chat = SOLO remote agent API:
+//   POST {base}/chat_sessions → {data:{chat_session_id, message_id}}
+//   GET  {base}/chat_sessions/{id}/events?reply_to_message_id=... → SSE
+//   Auth: Authorization: Cloud-IDE-JWT <jwt>
 export default {
   id: "trae",
   alias: "tr",
@@ -20,21 +21,19 @@ export default {
     notice: { signupUrl: "https://www.trae.ai" },
   },
   transport: {
-    // IDE flow (cockpit-tools verified): x-cloudide-token auth, OpenAI-shaped SSE.
-    baseUrl: "https://api.marscode.com/cloudide/api/v3/trae/Chat",
+    // SOLO remote agent base — verified working chat endpoint.
+    baseUrl: "https://core-normal.trae.ai/api/remote/v1",
     format: "openai",
     headers: {
-      "x-app-version": "3.5.54",
-      "x-app-type": "stable",
-      "x-env": "production",
-      "client_id": "ono9krqynydwx5",
-      "User-Agent": "Trae/1.0.0 antigravity-cockpit-tools",
+      "X-Trae-Client-Type": "web",
+      "X-Preferenced-Language": "en",
+      "Referer": "https://solo.trae.ai/",
     },
-    // Auth: x-cloudide-token + Authorization: Bearer — injected by executor buildHeaders.
+    // Auth: Cloud-IDE-JWT scheme on Authorization — injected by executor buildHeaders.
     auth: {
       combined: true,
-      header: "x-cloudide-token",
-      scheme: "raw",
+      header: "Authorization",
+      scheme: "Cloud-IDE-JWT",
     },
     usage: {
       url: "https://api.marscode.com/cloudide/api/v3/trae/GetUserInfo",
@@ -61,7 +60,7 @@ export default {
     // Trae refresh uses custom JSON body, not OAuth form — handled by refresh.js, not config-driven.
     refresh: { encoding: "json" },
   },
-  // Model catalog sourced from OmniRoute (IDE flow, core-normal.trae.ai).
+  // Model catalog (IDE flow, core-normal.trae.ai).
   models: [
     { id: "auto", name: "Auto (Server Picks)" },
     { id: "work", name: "Work (Fast)" },
