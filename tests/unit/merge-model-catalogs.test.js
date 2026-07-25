@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mergeModelCatalogs } from "../../src/shared/utils/mergeModelCatalogs.js";
 
 describe("mergeModelCatalogs", () => {
-  it("keeps static models and adds Copilot live-only models once", () => {
+  it("keeps static models and adds any provider's live-only models once", () => {
     const staticModels = [
       { id: "gpt-5.2", name: "GPT 5.2" },
       { id: "gpt-4o", name: "Static GPT-4o" },
@@ -16,6 +16,12 @@ describe("mergeModelCatalogs", () => {
       { id: "gpt-5.2", name: "GPT 5.2" },
       { id: "gpt-4o", name: "Static GPT-4o" },
       { id: "copilot-search-a", name: "Copilot Search A" },
+    ]);
+  });
+
+  it("keeps entries from a live catalog when the static catalog is empty", () => {
+    expect(mergeModelCatalogs([], [{ id: "account-only-model", name: "Account Only" }])).toEqual([
+      { id: "account-only-model", name: "Account Only" },
     ]);
   });
 
