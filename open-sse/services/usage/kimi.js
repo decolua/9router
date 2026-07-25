@@ -20,14 +20,16 @@ import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import { U, parseResetTime, toFiniteNumber } from "./shared.js";
 
 // Kimi reports the rolling 5h session allowance as a 300-minute window.
-const SESSION_WINDOW_MINUTES = 300;
-const WEEKLY_WINDOW_MINUTES = 7 * 24 * 60;
+const MINUTES_PER_HOUR = 60;
+const MINUTES_PER_DAY = 24 * MINUTES_PER_HOUR;
+const SESSION_WINDOW_MINUTES = 5 * MINUTES_PER_HOUR;
+const WEEKLY_WINDOW_MINUTES = 7 * MINUTES_PER_DAY;
 const WEEKLY_NAME = "weekly (7d)";
 
 const WINDOW_UNIT_MINUTES = {
   TIME_UNIT_MINUTE: 1,
-  TIME_UNIT_HOUR: 60,
-  TIME_UNIT_DAY: 1440,
+  TIME_UNIT_HOUR: MINUTES_PER_HOUR,
+  TIME_UNIT_DAY: MINUTES_PER_DAY,
 };
 
 function normalizeQuota(detail) {
@@ -48,8 +50,8 @@ function windowMinutes(window) {
 }
 
 function formatSpan(minutes) {
-  if (minutes % 1440 === 0) return `${minutes / 1440}d`;
-  if (minutes % 60 === 0) return `${minutes / 60}h`;
+  if (minutes % MINUTES_PER_DAY === 0) return `${minutes / MINUTES_PER_DAY}d`;
+  if (minutes % MINUTES_PER_HOUR === 0) return `${minutes / MINUTES_PER_HOUR}h`;
   return `${minutes}m`;
 }
 
@@ -109,7 +111,7 @@ export async function getKimiUsage(accessToken, providerSpecificData, proxyOptio
     }
 
     if (Object.keys(quotas).length === 0) {
-      return { message: "Kimi connected. Unable to parse quota data.", quotas };
+      return { message: "Kimi connected. Unable to parse quota data." };
     }
 
     return { plan: "Kimi Code", quotas };
