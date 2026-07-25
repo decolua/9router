@@ -54,151 +54,68 @@ import p51 from "./kilocode.js";
 import p52 from "./kimchi.js";
 import p53 from "./kimi.js";
 import p54 from "./kiro.js";
-import p55 from "./linkup.js";
-import p56 from "./local-device.js";
-import p57 from "./mimo-free.js";
-import p58 from "./minimax-cn.js";
-import p59 from "./minimax.js";
-import p60 from "./mistral.js";
-import p61 from "./mmf.js";
-import p62 from "./nanobanana.js";
-import p63 from "./nebius.js";
-import p64 from "./nvidia.js";
-import p65 from "./ollama-local.js";
-import p66 from "./ollama.js";
-import p67 from "./openai.js";
-import p68 from "./opencode-go.js";
-import p69 from "./opencode.js";
-import p70 from "./openrouter.js";
-import p71 from "./perplexity-web.js";
-import p72 from "./perplexity.js";
-import p73 from "./perplexity-agent.js";
-import p74 from "./playht.js";
-import p75 from "./qoder.js";
-import p76 from "./qwen.js";
-import p77 from "./recraft.js";
-import p78 from "./runwayml.js";
-import p79 from "./sdwebui.js";
-import p80 from "./searchapi.js";
-import p81 from "./searxng.js";
-import p82 from "./serper.js";
-import p83 from "./siliconflow.js";
-import p84 from "./stability-ai.js";
-import p85 from "./tavily.js";
-import p86 from "./together.js";
-import p87 from "./topaz.js";
-import p88 from "./tortoise.js";
-import p89 from "./venice.js";
-import p90 from "./vercel-ai-gateway.js";
-import p91 from "./vertex-partner.js";
-import p92 from "./vertex.js";
-import p93 from "./volcengine-ark.js";
-import p94 from "./voyage-ai.js";
-import p95 from "./xai.js";
-import p96 from "./xiaomi-mimo.js";
-import p97 from "./xiaomi-tokenplan.js";
-import p98 from "./youcom.js";
-import p99 from "./alims-intl.js";
+// kimi-coding was merged into kimi.js upstream
+const p55 = p53;
+import p56 from "./linkup.js";
+import p57 from "./local-device.js";
+import p58 from "./mimo-free.js";
+import p59 from "./minimax-cn.js";
+import p60 from "./minimax.js";
+import p61 from "./mistral.js";
+import p62 from "./mmf.js";
+import p63 from "./nanobanana.js";
+import p64 from "./nebius.js";
+import p65 from "./nvidia.js";
+import p66 from "./ollama-local.js";
+import p67 from "./ollama.js";
+import p68 from "./openai.js";
+import p69 from "./opencode-go.js";
+import p70 from "./opencode.js";
+import p71 from "./openrouter.js";
+import p72 from "./perplexity-web.js";
+import p73 from "./perplexity.js";
+import p74 from "./perplexity-agent.js";
+import p75 from "./playht.js";
+import p76 from "./qoder.js";
+import p77 from "./qwen.js";
+import p78 from "./recraft.js";
+import p79 from "./runwayml.js";
+import p80 from "./sdwebui.js";
+import p81 from "./searchapi.js";
+import p82 from "./searxng.js";
+import p83 from "./serper.js";
+import p84 from "./siliconflow.js";
+import p85 from "./stability-ai.js";
+import p86 from "./tavily.js";
+import p87 from "./together.js";
+import p88 from "./topaz.js";
+import p89 from "./tortoise.js";
+import p90 from "./venice.js";
+import p91 from "./vercel-ai-gateway.js";
+import p92 from "./vertex-partner.js";
+import p93 from "./vertex.js";
+import p94 from "./volcengine-ark.js";
+import p95 from "./voyage-ai.js";
+import p96 from "./xai.js";
+import p97 from "./xiaomi-mimo.js";
+import p98 from "./xiaomi-tokenplan.js";
+import p99 from "./youcom.js";
+import p100 from "./routerai.js";
+import p101 from "./ai21.js";
+import p102 from "./sambanova.js";
+import p103 from "./scaleway.js";
+import p104 from "./upstage.js";
 
 export default [
-  p0,
-  p1,
-  p2,
-  p3,
-  p4,
-  p5,
-  p6,
-  p7,
-  p8,
-  p9,
-  p10,
-  p11,
-  p12,
-  p13,
-  p14,
-  p15,
-  p16,
-  p17,
-  p18,
-  p19,
-  p20,
-  p21,
-  p22,
-  p23,
-  p24,
-  p25,
-  p26,
-  p27,
-  p28,
-  p29,
-  p30,
-  p31,
-  p32,
-  p33,
-  p34,
-  p35,
-  p36,
-  p37,
-  p38,
-  p39,
-  p40,
-  p41,
-  p42,
-  p43,
-  p44,
-  p45,
-  p46,
-  p47,
-  p48,
-  p49,
-  p50,
-  p51,
-  p52,
-  p53,
-  p54,
-  p55,
-  p56,
-  p57,
-  p58,
-  p59,
-  p60,
-  p61,
-  p62,
-  p63,
-  p64,
-  p65,
-  p66,
-  p67,
-  p68,
-  p69,
-  p70,
-  p71,
-  p72,
-  p73,
-  p74,
-  p75,
-  p76,
-  p77,
-  p78,
-  p79,
-  p80,
-  p81,
-  p82,
-  p83,
-  p84,
-  p85,
-  p86,
-  p87,
-  p88,
-  p89,
-  p90,
-  p91,
-  p92,
-  p93,
-  p94,
-  p95,
-  p96,
-  p97,
-  p98,
-  p99,
+  p0, p1, p2, p3, p4, p5, p6, p7, p8, p9,
+  p10, p11, p12, p13, p14, p15, p16, p17, p18, p19,
+  p20, p21, p22, p23, p24, p25, p26, p27, p28, p29,
+  p30, p31, p32, p33, p34, p35, p36, p37, p38, p39,
+  p40, p41, p42, p43, p44, p45, p46, p47, p48, p49,
+  p50, p51, p52, p53, p54, p55, p56, p57, p58, p59,
+  p60, p61, p62, p63, p64, p65, p66, p67, p68, p69,
+  p70, p71, p72, p73, p74, p75, p76, p77, p78, p79,
+  p80, p81, p82, p83, p84, p85, p86, p87, p88, p89,
+  p90, p91, p92, p93, p94, p95, p96, p97, p98, p99,
+  p100, p101, p102, p103, p104
 ];

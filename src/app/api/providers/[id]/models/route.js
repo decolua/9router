@@ -259,7 +259,29 @@ const PROVIDER_MODELS_CONFIG = {
   // OpenAI-compatible API key providers
   deepseek: createOpenAIModelsConfig("https://api.deepseek.com/models"),
   groq: createOpenAIModelsConfig("https://api.groq.com/openai/v1/models"),
-  xai: createOpenAIModelsConfig("https://api.x.ai/v1/models"),
+  sambanova: createOpenAIModelsConfig("https://api.sambanova.ai/v1/models"),
+  scaleway: createOpenAIModelsConfig("https://api.scaleway.ai/v1/models"),
+  ai21: createOpenAIModelsConfig("https://api.ai21.com/studio/v1/models"),
+  upstage: createOpenAIModelsConfig("https://api.upstage.ai/v1/models"),
+  xai: {
+    customResolver: async (connection) => {
+      const url = "https://api.x.ai/v1/models";
+      const response = await fetch(url, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${connection.apiKey}`,
+        },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        return { models: parseOpenAIStyleModels(data) };
+      }
+      // xAI returns 403 for valid keys with no credits — fall back to static registry models
+      console.log("xAI models API returned " + response.status + ", falling back to static list");
+      return { models: [], warning: "Using static model list — xAI API requires credits to fetch models" };
+    }
+  },
   mistral: createOpenAIModelsConfig("https://api.mistral.ai/v1/models"),
   perplexity: createOpenAIModelsConfig("https://api.perplexity.ai/v1/models"),
   "perplexity-agent": createOpenAIModelsConfig("https://api.perplexity.ai/v1/models"),

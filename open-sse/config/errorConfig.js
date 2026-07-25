@@ -73,6 +73,10 @@ export const ERROR_RULES = [
   { status: 403, cooldownMs: COOLDOWN.long },
   { status: 404, cooldownMs: COOLDOWN.long },
   { status: 429, backoff: true },
+  { status: 500, cooldownMs: TRANSIENT_COOLDOWN_MS },
+  { status: 502, cooldownMs: TRANSIENT_COOLDOWN_MS },
+  { status: 503, cooldownMs: TRANSIENT_COOLDOWN_MS },
+  { status: 504, cooldownMs: TRANSIENT_COOLDOWN_MS },
 ];
 
 // Backward compat: COOLDOWN_MS object (used by index.js re-export)

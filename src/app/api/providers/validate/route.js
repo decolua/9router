@@ -354,6 +354,10 @@ export async function POST(request) {
         case "deepseek":
         case "groq":
         case "xai":
+        case "sambanova":
+        case "scaleway":
+        case "ai21":
+        case "upstage":
         case "mistral":
         case "perplexity":
         case "together":

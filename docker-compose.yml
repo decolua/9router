@@ -1,30 +1,54 @@
+name: 9router
+
 services:
-  9router:
-    image: decolua/9router:latest
-    container_name: 9router
-    restart: always
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
     ports:
       - "20128:20128"
-    volumes:
-      - 9router-data:/app/data
-    env_file:
-      - .env
     environment:
-      DATA_DIR: /app/data
-      PORT: "20128"
-      HOSTNAME: "0.0.0.0"
-      NODE_ENV: production
-      HEADROOM_URL: http://headroom:8787
-    depends_on:
-      - headroom
-
-  headroom:
-    image: ghcr.io/chopratejas/headroom:latest
-    container_name: headroom
-    restart: always
-    ports:
-      - "8787:8787"
+      - NODE_ENV=production
+      - PORT=20128
+      - HOSTNAME=0.0.0.0
+      - NEXT_TELEMETRY_DISABLED=1
+      # Ollama на хост-машине — доступ из контейнера
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      # Memory limit для Node (4GB контейнер → 3.2GB куча)
+      - NODE_OPTIONS=--max-old-space-size=3276 --enable-source-maps
+    env_file:
+      # Ключи провайдеров из .env файла (если есть)
+      - path: .env
+        required: false
+    extra_hosts:
+      # Для Linux: host.docker.internal → хост-машина
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Данные БД (укажите свой путь или используйте именованный volume)
+      - 9router-data:/app/data
+    restart: unless-stopped
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:20128/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "4"
+        reservations:
+          memory: 512M
+          cpus: "1"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   9router-data:
-    name: 9router-data
+  9router-logs:

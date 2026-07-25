@@ -158,7 +158,7 @@ describe("GET /api/oauth/cursor/auto-import", () => {
 
   // ── Backwards-compatible: linux/win32 keep original single-path logic ─
 
-  it("linux uses single hardcoded path and original error message", async () => {
+  it("linux uses default paths and returns descriptive error with checked locations", async () => {
     Object.defineProperty(process, "platform", { value: "linux", writable: true });
     vi.mocked(fsPromises.access).mockRejectedValue(new Error("ENOENT"));
     mockDbInstance.__throwOnConstruct = true;
@@ -166,19 +166,21 @@ describe("GET /api/oauth/cursor/auto-import", () => {
     const response = await GET();
 
     expect(response.body.found).toBe(false);
-    expect(response.body.error).toBe(
-      "Cursor database not found. Make sure Cursor IDE is installed and you are logged in."
-    );
-    // fs/promises.access should NOT have been called (linux skips probing)
-    expect(fsPromises.access).not.toHaveBeenCalled();
+    expect(response.body.error).toContain("Cursor database not found. Checked locations:");
+    expect(response.body.error).toContain(".config/Cursor/User/globalStorage/state.vscdb");
+    expect(response.body.error).toContain(".config/cursor/User/globalStorage/state.vscdb");
+    // fs/promises.access should have been called for each candidate
+    expect(fsPromises.access).toHaveBeenCalled();
   });
 
-  it("unsupported platform returns 400", async () => {
+  it("unsupported platform falls back to default linux paths", async () => {
     Object.defineProperty(process, "platform", { value: "freebsd", writable: true });
+    vi.mocked(fsPromises.access).mockRejectedValue(new Error("ENOENT"));
 
     const response = await GET();
 
-    expect(response.status).toBe(400);
-    expect(response.body.error).toBe("Unsupported platform");
+    expect(response.body.found).toBe(false);
+    expect(response.body.error).toContain("Cursor database not found. Checked locations:");
+    expect(response.body.error).toContain(".config/Cursor/User/globalStorage/state.vscdb");
   });
 });

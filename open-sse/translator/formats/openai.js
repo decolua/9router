@@ -54,6 +54,12 @@ export function filterToOpenAIFormat(body, opts = {}) {
         filteredContent.push({ type: OPENAI_BLOCK.TEXT, text: "" });
       }
       
+      // Flatten text-only arrays to string (join with newline)
+      const textParts = filteredContent.filter(p => p.type === "text");
+      if (textParts.length === filteredContent.length && textParts.length > 0) {
+        return { ...msg, content: textParts.map(p => p.text).join("\n") };
+      }
+      
       return { ...msg, content: filteredContent };
     }
     

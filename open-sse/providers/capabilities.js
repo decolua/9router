@@ -334,3 +334,19 @@ export function getCapabilitiesForModel(provider, model) {
   // 4. Floor
   return { ...DEFAULT_CAPABILITIES };
 }
+
+/**
+ * Get capabilities for a "provider/model" string (combo model format)
+ * @param {string} modelStr - e.g. "opencode/north-mini-code-free"
+ * @returns {object} full capabilities object
+ */
+export function getCapabilitiesForModelString(modelStr) {
+  if (!modelStr || typeof modelStr !== 'string') return { ...DEFAULT_CAPABILITIES };
+  const slash = modelStr.indexOf('/');
+  if (slash > 0) {
+    const provider = modelStr.slice(0, slash);
+    const model = modelStr.slice(slash + 1);
+    return getCapabilitiesForModel(provider, model);
+  }
+  return getCapabilitiesForModel('', modelStr);
+}

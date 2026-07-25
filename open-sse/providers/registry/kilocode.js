@@ -13,39 +13,64 @@ export default {
       signupUrl: "https://kilocode.ai",
     },
   },
-  category: "oauth",
+  category: "custom",
   transport: {
-    baseUrl: "https://api.kilo.ai/api/openrouter/chat/completions",
+    // Перенаправляем базовый URL на ваш локальный шлюз 9router
+    baseUrl: "http://localhost:20128/v1/chat/completions",
     headers: {},
     auth: {
       combined: true,
       header: "Authorization",
       scheme: "bearer",
-      hooks: [
-        "kilocodeOrg",
-      ],
+      // Ваш рабочий токен оркестратора
+      token: "sk-1cf548be0804e556-r2phva-9d993e27"
     },
   },
   models: [
-    { id: "anthropic/claude-sonnet-4-20250514", name: "Claude Sonnet 4" },
-    { id: "anthropic/claude-opus-4-20250514", name: "Claude Opus 4" },
-    { id: "google/gemini-2.5-pro", name: "Gemini 2.5 Pro" },
-    { id: "google/gemini-2.5-flash", name: "Gemini 2.5 Flash" },
-    { id: "openai/gpt-4.1", name: "GPT-4.1" },
-    { id: "openai/o3", name: "o3" },
+    // Сохраняем облачные модели, которые идут через ваш RouterAI
     { id: "deepseek/deepseek-chat", name: "DeepSeek Chat" },
     { id: "deepseek/deepseek-reasoner", name: "DeepSeek Reasoner" },
+    
+    // ДОБАВЛЯЕМ ВСЕ ВАШИ ЛОКАЛЬНЫЕ МОДЕЛИ ИЗ OLLAMA:
+    
+    // 1. Модель со зрением для моментального распознавания скриншотов по Ctrl+V
+    { 
+      id: "ollama/llama3.2-vision:11b", 
+      name: "Llama 3.2 Vision (Локальные глаза)",
+      capabilities: ["vision", "chat"],
+      contextWindow: 16384 // Ограничиваем до 16k под картинки, чтобы не забивать RAM
+    },
+    // 2. Ваш главный локальный кодер для VS Code
+    { 
+      id: "ollama/qwen3-coder:30b", 
+      name: "Qwen 3 Coder (30B MoE)",
+      capabilities: ["code", "chat", "debug"],
+      contextWindow: 65536 // Даем полные 64k контекста для кода
+    },
+    // 3. Флагманская текстовая модель для сложной логики
+    { 
+      id: "ollama/qwen3.6:35b", 
+      name: "Qwen 3.6 (35B Архитектор)",
+      capabilities: ["chat", "plan"],
+      contextWindow: 65536
+    },
+    // 4. Легкий агент для фоновой работы
+    { 
+      id: "ollama/hermes3:8b", 
+      name: "Hermes 3 (8B Агент)",
+      capabilities: ["chat", "agent"],
+      contextWindow: 32768
+    }
   ],
-  // Kilo Code proxies the OpenRouter catalog (334 models at time of writing),
-  // so the hardcoded list above is only a fallback. Surfacing the full catalog
-  // requires a fetcher + passthroughModels, matching how openrouter.js is set up.
-  // Without these, only the 8 hardcoded models appear in the combo model picker,
-  // hiding dynamic models like cohere/north-mini-code:free and poolside/laguna-m.1:free.
-  modelsFetcher: { url: "https://api.kilo.ai/api/gateway/models", type: "openrouter-free" },
-  passthroughModels: true,
-  oauth: {
-    apiBaseUrl: "https://api.kilo.ai",
-    initiateUrl: "https://api.kilo.ai/api/device-auth/codes",
-    pollUrlBase: "https://api.kilo.ai/api/device-auth/codes",
+  
+  // Перенаправляем динамический сборщик каталога на ваш локальный шлюз
+  modelsFetcher: { 
+    url: "http://localhost:20128/v1/models", 
+    type: "openrouter-free" 
   },
+  
+  // СТРОГО FALSE: отключаем проброс встроенного платного хлама Kilo и старых кэшей
+  passthroughModels: false, 
+  
+  oauth: null // Полностью выключаем внешнюю авторизацию и платные подписки
 };

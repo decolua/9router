@@ -33,7 +33,7 @@ function maskKey(key) {
 function formatDate(date) {
   const d = new Date(date);
   if (isNaN(d.getTime())) {
-    return "Invalid Date";
+    return "Неверная дата";
   }
 
   const year = d.getFullYear();
@@ -101,17 +101,17 @@ function getRelativeTime(date) {
   const diffYear = Math.floor(diffDay / 365);
 
   if (diffSec < 60) {
-    return "just now";
+    return "только что";
   } else if (diffMin < 60) {
-    return `${diffMin} minute${diffMin > 1 ? "s" : ""} ago`;
+    return `${diffMin} мин. назад`;
   } else if (diffHour < 24) {
-    return `${diffHour} hour${diffHour > 1 ? "s" : ""} ago`;
+    return `${diffHour} ч. назад`;
   } else if (diffDay < 30) {
-    return `${diffDay} day${diffDay > 1 ? "s" : ""} ago`;
+    return `${diffDay} дн. назад`;
   } else if (diffMonth < 12) {
-    return `${diffMonth} month${diffMonth > 1 ? "s" : ""} ago`;
+    return `${diffMonth} мес. назад`;
   } else {
-    return `${diffYear} year${diffYear > 1 ? "s" : ""} ago`;
+    return `${diffYear} г. назад`;
   }
 }
 

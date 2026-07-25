@@ -16,5 +16,6 @@
     "javascript:S3776": {
       "level": "off"
     }
-  }
+  },
+  "git.ignoreLimitWarning": true
 }

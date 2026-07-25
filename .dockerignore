@@ -13,20 +13,60 @@ out
 build
 dist
 coverage
+.pnpm
 
 # Runtime data and logs
 data
 logs
+backup-data
 
 # Local env files (inject at runtime via --env-file or -e)
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env*
+!env.example
 
 # Debug logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+
+# Cline / other projects in workspace
+cline-russian
+gitbook
+images
+skills
+autonomous
+tester
+mcp-switch-model
+data-home
+add-cline.json
+add-ollama.json
+add-routerai.json
+add-router-node.json
+add-router-node.ps1
+add-routerai-provider.ps1
+add-vercel-provider.ps1
+add-vercel-provider-no-prompt.ps1
+check-providers.ps1
+add-vercel-fix.ps1
+ollama-proxy.js
+*.bat
+*.ps1
+*.py
+README*
+LICENSE
+CHANGELOG*
+DOCKER.md
+SECURITY_README.md
+install-russian.sh
+start.sh
+setup.sh
+setup.bat
+switch-mode.*
+tmux.bat
+worktree.bat
+current-mode.bat
+all-mode.bat
+cf-mode.bat
+fast-mode.bat
+free-mode.bat

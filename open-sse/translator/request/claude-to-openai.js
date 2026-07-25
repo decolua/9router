@@ -231,6 +231,14 @@ function convertClaudeMessage(msg) {
 
     // Return content
     if (parts.length > 0) {
+      // Flatten text-only arrays to string (join with newline)
+      const textParts = parts.filter(p => p.type === "text");
+      if (textParts.length === parts.length && textParts.length > 0) {
+        return {
+          role,
+          content: textParts.map(p => p.text).join("\n")
+        };
+      }
       return {
         role,
         content: collapseTextParts(parts)

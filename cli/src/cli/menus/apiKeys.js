@@ -13,42 +13,42 @@ const { getEndpoint } = require("../utils/endpoint");
  */
 function displayApiKeys(keys, port) {
   console.log("┌─────────────────────────────────────────────────────────┐");
-  console.log("│  🔑 API Keys Management                                 │");
+  console.log("│  🔑 Управление ключами API                              │");
   console.log("├─────────────────────────────────────────────────────────┤");
   // Note: This function is legacy, endpoint shown in menu header instead
   console.log("│                                                          │");
   
   if (keys.length === 0) {
-    console.log("│  No API keys found.                                     │");
+    console.log("│  Ключи API не найдены.                                  │");
   } else {
-    console.log(`│  Your API Keys (${keys.length}):${" ".repeat(42 - String(keys.length).length)}│`);
+    console.log(`│  Ваши ключи API (${keys.length}):${" ".repeat(42 - String(keys.length).length)}│`);
     
     keys.forEach((key, index) => {
       console.log("│                                                          │");
       console.log(`│  ${index + 1}. ${key.name}${" ".repeat(52 - String(index + 1).length - key.name.length)}│`);
       
       const maskedKey = maskKey(key.key);
-      console.log(`│     Key: ${maskedKey}${" ".repeat(47 - maskedKey.length)}│`);
+      console.log(`│     Ключ: ${maskedKey}${" ".repeat(47 - maskedKey.length)}│`);
       
       const created = formatDate(key.createdAt);
-      console.log(`│     Created: ${created}${" ".repeat(43 - created.length)}│`);
+      console.log(`│     Создан: ${created}${" ".repeat(43 - created.length)}│`);
       
       if (key.lastUsedAt) {
         const lastUsed = getRelativeTime(key.lastUsedAt);
-        console.log(`│     Last used: ${lastUsed}${" ".repeat(41 - lastUsed.length)}│`);
+        console.log(`│     Использован: ${lastUsed}${" ".repeat(41 - lastUsed.length)}│`);
       } else {
-        console.log("│     Last used: Never                                    │");
+        console.log("│     Использован: Никогда                                │");
       }
     });
   }
   
   console.log("│                                                          │");
-  console.log("│  Actions:                                               │");
-  console.log("│  1. Create New API Key                                  │");
-  console.log("│  2. View Full Key (by number)                           │");
-  console.log("│  3. Copy Key to Clipboard (by number)                   │");
-  console.log("│  4. Delete Key (by number)                              │");
-  console.log("│  0. ← Back to Main Menu                                 │");
+  console.log("│  Действия:                                              │");
+  console.log("│  1. Создать новый ключ API                              │");
+  console.log("│  2. Показать полный ключ (по номеру)                    │");
+  console.log("│  3. Скопировать ключ в буфер (по номеру)                │");
+  console.log("│  4. Удалить ключ (по номеру)                            │");
+  console.log("│  0. ← Назад в главное меню                              │");
   console.log("└─────────────────────────────────────────────────────────┘");
 }
 
@@ -57,13 +57,13 @@ function displayApiKeys(keys, port) {
  * @returns {Promise<boolean>} Success status
  */
 async function handleCreateKey() {
-  console.log("\n📝 Create New API Key");
+  console.log("\n📝 Создать новый ключ API");
   console.log("─".repeat(30));
   
-  const name = await prompt("Enter key name: ");
+  const name = await prompt("Введите имя ключа: ");
   
   if (!name) {
-    showStatus("Key name cannot be empty", "error");
+    showStatus("Имя ключа не может быть пустым", "error");
     await pause();
     return false;
   }
@@ -71,23 +71,23 @@ async function handleCreateKey() {
   const result = await api.createApiKey(name);
   
   if (!result.success) {
-    showStatus(`Failed to create key: ${result.error}`, "error");
+    showStatus(`Ошибка создания ключа: ${result.error}`, "error");
     await pause();
     return false;
   }
   
-  console.log("\n✅ API Key created successfully!");
-  console.log("\n⚠️  IMPORTANT: Save this key now. You won't be able to see it again!");
-  console.log(`\nKey: ${result.data.key}`);
-  console.log(`Name: ${result.data.name}`);
+  console.log("\n✅ Ключ API успешно создан!");
+  console.log("\n⚠️  ВАЖНО: Сохраните ключ сейчас. Вы не сможете увидеть его снова!");
+  console.log(`\nКлюч: ${result.data.key}`);
+  console.log(`Имя: ${result.data.name}`);
   console.log(`ID: ${result.data.id}`);
   
-  const shouldCopy = await confirm("\nCopy key to clipboard?");
+  const shouldCopy = await confirm("\nСкопировать ключ в буфер обмена?");
   if (shouldCopy) {
     if (copyToClipboard(result.data.key)) {
-      showStatus("Key copied to clipboard!", "success");
+      showStatus("Ключ скопирован в буфер обмена!", "success");
     } else {
-      showStatus("Failed to copy to clipboard", "error");
+      showStatus("Не удалось скопировать в буфер обмена", "error");
     }
   }
   
@@ -100,17 +100,17 @@ async function handleCreateKey() {
  * @param {Object} key - API key object
  */
 async function handleViewFullKey(key) {
-  console.log("\n🔍 Full API Key");
+  console.log("\n🔍 Полный ключ API");
   console.log("─".repeat(30));
-  console.log(`Name: ${key.name}`);
-  console.log(`Key: ${key.key}`);
+  console.log(`Имя: ${key.name}`);
+  console.log(`Ключ: ${key.key}`);
   console.log(`ID: ${key.id}`);
-  console.log(`Created: ${formatDate(key.createdAt)}`);
+  console.log(`Создан: ${formatDate(key.createdAt)}`);
   
   if (key.lastUsedAt) {
-    console.log(`Last used: ${getRelativeTime(key.lastUsedAt)}`);
+    console.log(`Использован: ${getRelativeTime(key.lastUsedAt)}`);
   } else {
-    console.log("Last used: Never");
+    console.log("Использован: Никогда");
   }
   
   await pause();
@@ -122,9 +122,9 @@ async function handleViewFullKey(key) {
  */
 async function handleCopyKey(key) {
   if (copyToClipboard(key.key)) {
-    showStatus(`Key "${key.name}" copied to clipboard!`, "success");
+    showStatus(`Ключ "${key.name}" скопирован в буфер обмена!`, "success");
   } else {
-    showStatus("Failed to copy to clipboard", "error");
+    showStatus("Не удалось скопировать в буфер обмена", "error");
   }
   await pause();
 }
@@ -135,15 +135,15 @@ async function handleCopyKey(key) {
  * @returns {Promise<boolean>} Success status
  */
 async function handleDeleteKey(key) {
-  console.log(`\n⚠️  Delete API Key: ${key.name}`);
+  console.log(`\n⚠️  Удалить ключ API: ${key.name}`);
   console.log("─".repeat(30));
-  console.log(`Key: ${maskKey(key.key)}`);
-  console.log(`Created: ${formatDate(key.createdAt)}`);
+  console.log(`Ключ: ${maskKey(key.key)}`);
+  console.log(`Создан: ${formatDate(key.createdAt)}`);
   
-  const confirmed = await confirm("\nAre you sure you want to delete this key?");
+  const confirmed = await confirm("\nВы уверены, что хотите удалить этот ключ?");
   
   if (!confirmed) {
-    showStatus("Deletion cancelled", "info");
+    showStatus("Удаление отменено", "info");
     await pause();
     return false;
   }
@@ -151,12 +151,12 @@ async function handleDeleteKey(key) {
   const result = await api.deleteApiKey(key.id);
   
   if (!result.success) {
-    showStatus(`Failed to delete key: ${result.error}`, "error");
+    showStatus(`Не удалось удалить ключ: ${result.error}`, "error");
     await pause();
     return false;
   }
   
-  showStatus("API key deleted successfully", "success");
+  showStatus("Ключ API успешно удалён", "success");
   await pause();
   return true;
 }
@@ -172,17 +172,17 @@ async function showKeyActions(key, port, breadcrumb = []) {
   await showMenuWithBack({
     title: `🔑 ${key.name}`,
     breadcrumb: [...breadcrumb, key.name],
-    headerContent: `Name: ${key.name}\nKey: ${key.key}\nEndpoint: ${endpoint}`,
+    headerContent: `Имя: ${key.name}\nКлюч: ${key.key}\nАдрес: ${endpoint}`,
     items: [
       {
-        label: "Copy to Clipboard",
+        label: "Копировать в буфер обмена",
         action: async () => {
           await handleCopyKey(key);
           return true;
         }
       },
       {
-        label: "Delete Key",
+        label: "Удалить ключ",
         action: async () => {
           await handleDeleteKey(key);
           return false; // Exit after delete
@@ -202,14 +202,14 @@ async function showApiKeysMenu(port, breadcrumb = []) {
   
   const { endpoint } = await getEndpoint(port);
   await showListMenu({
-    title: "🔑 API Keys Management",
+    title: "🔑 Управление ключами API",
     breadcrumb,
-    headerContent: `Endpoint: ${endpoint}`,
+    headerContent: `Адрес: ${endpoint}`,
     fetchItems: async () => {
       const result = await api.getApiKeys();
       if (!result.success) {
         clearScreen();
-        showStatus(`Failed to fetch API keys: ${result.error}`, "error");
+        showStatus(`Не удалось получить ключи API: ${result.error}`, "error");
         await pause();
         return null;
       }
@@ -220,7 +220,7 @@ async function showApiKeysMenu(port, breadcrumb = []) {
       await showKeyActions(key, port, breadcrumb);
     },
     createAction: {
-      label: "Create New API Key",
+      label: "Создать новый ключ API",
       action: async () => {
         await handleCreateKey();
       }

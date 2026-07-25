@@ -19,6 +19,8 @@ import { handleComboChat, handleFusionChat } from "open-sse/services/combo.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
+import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { estimateInputTokens } from "open-sse/utils/usageTracking.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
@@ -116,14 +118,16 @@ export async function handleChat(request, clientRawRequest = null) {
 
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
     log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
-    return handleComboChat({
+      return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, 1),
       log,
       comboName: modelStr,
       comboStrategy,
-      comboStickyLimit
+      comboStickyLimit,
+      ruBypassEnabled: settings.ruBypassEnabled === true,
+      request,
     });
   }
 
@@ -134,11 +138,11 @@ export async function handleChat(request, clientRawRequest = null) {
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, comboDepth = 0) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
-  if (!modelInfo.provider) {
+  if (!modelInfo.provider && comboDepth < 2) {
     const comboModels = await getComboModels(modelStr);
     if (comboModels) {
       const chatSettings = await getSettings();
@@ -158,7 +162,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
               const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
               cleanRawReq = { ...clientRawRequest, body: cleanBody };
             }
-            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, comboDepth + 1);
           },
           log,
           comboName: modelStr,
@@ -176,7 +180,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         log,
         comboName: modelStr,
         comboStrategy,
-        comboStickyLimit
+        comboStickyLimit,
+        request,
       });
     }
     log.warn("CHAT", "Invalid model format", { model: modelStr });
@@ -187,6 +192,17 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
   // Routing shown in the unified "▶" line (client model → provider/model)
 
+  // Pre-check context length against model capacity
+  const estimatedTokens = estimateInputTokens(body);
+  const caps = getCapabilitiesForModel(provider, model);
+  const contextWindow = caps?.contextWindow || 0;
+  if (estimatedTokens > 0 && contextWindow > 0 && estimatedTokens > contextWindow) {
+    log.warn("CONTEXT", `Prompt ~${estimatedTokens}t exceeds ${provider}/${model} (${contextWindow}t)`);
+    return errorResponse(HTTP_STATUS.BAD_REQUEST,
+      `[${provider}/${model}] context too small. Prompt ~${estimatedTokens}t, model limit ${contextWindow}t. ` +
+      `Use a combo name or specify a model with >=${estimatedTokens}t context window.`);
+  }
+
   // Extract userAgent from request
   const userAgent = request?.headers?.get("user-agent") || "";
 
@@ -194,8 +210,15 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   const excludeConnectionIds = new Set();
   let lastError = null;
   let lastStatus = null;
+  let retryCount = 0;
+  const MAX_CREDENTIAL_RETRIES = 10;
 
   while (true) {
+    retryCount++;
+    if (retryCount > MAX_CREDENTIAL_RETRIES) {
+      log.warn("FALLBACK", `Exceeded max credential retries (${MAX_CREDENTIAL_RETRIES}) for ${provider}/${model}`);
+      return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "Max retries exceeded");
+    }
     const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
 
     // All accounts unavailable

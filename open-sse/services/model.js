@@ -8,6 +8,56 @@ const MEDIA_ONLY_ALIASES = {
   "jina-ai": "jina-ai",
   polly: "aws-polly",
   "aws-polly": "aws-polly",
+  // Free-tier providers (synced from OmniRoute)
+  agentrouter: "agentrouter",
+  aimlapi: "aimlapi",
+  aiml: "aimlapi",
+  novita: "novita",
+  modal: "modal",
+  mdl: "modal",
+  reka: "reka",
+  nlpcloud: "nlpcloud",
+  nlpc: "nlpcloud",
+  bazaarlink: "bazaarlink",
+  bzl: "bazaarlink",
+  completions: "completions",
+  cpl: "completions",
+  enally: "enally",
+  enly: "enally",
+  freetheai: "freetheai",
+  fta: "freetheai",
+  llm7: "llm7",
+  lepton: "lepton",
+  kluster: "kluster",
+  ai21: "ai21",
+  "inference-net": "inference-net",
+  inet: "inference-net",
+  predibase: "predibase",
+  bytez: "bytez",
+  morph: "morph",
+  longcat: "longcat",
+  lc: "longcat",
+  puter: "puter",
+  pu: "puter",
+  uncloseai: "uncloseai",
+  unc: "uncloseai",
+  scaleway: "scaleway",
+  scw: "scaleway",
+  deepinfra: "deepinfra",
+  sambanova: "sambanova",
+  samba: "sambanova",
+  nscale: "nscale",
+  baseten: "baseten",
+  publicai: "publicai",
+  "nous-research": "nous-research",
+  nous: "nous-research",
+  glhf: "glhf",
+  bb: "blackbox",
+  blackbox: "blackbox",
+  // RouterAI
+  routerai: "routerai",
+  rai: "routerai",
+  rtr: "routerai",
 };
 
 const ALIAS_TO_PROVIDER_ID = { ...MEDIA_ONLY_ALIASES };
@@ -32,7 +82,8 @@ export function resolveProviderAlias(aliasOrId) {
  * Parse model string: "alias/model" or "provider/model" or just alias
  */
 export function parseModel(modelStr) {
-  if (!modelStr) {
+  // Guard: modelStr must be a string
+  if (typeof modelStr !== "string" || !modelStr) {
     return { provider: null, model: null, isAlias: false, providerAlias: null };
   }
 
@@ -128,7 +179,7 @@ const MODEL_PREFIX_PROVIDERS = [
   [/^gemini-/, "gemini"],
   [/^gpt-/, "openai"],
   [/^o[134]/, "openai"],
-  [/^deepseek-/, "openrouter"],
+  [/^deepseek-/, "routerai"],
 ];
 
 /**

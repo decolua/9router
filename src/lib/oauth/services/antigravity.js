@@ -5,6 +5,8 @@ import { getServerCredentials } from "../config/index.js";
 import { startLocalServer } from "../utils/server.js";
 import { spinner as createSpinner } from "../utils/ui.js";
 
+const FETCH_TIMEOUT_MS = 15_000;
+
 /**
  * Antigravity OAuth Service
  * Uses standard OAuth2 Authorization Code flow (similar to Gemini)
@@ -37,6 +39,7 @@ export class AntigravityService {
   async exchangeCode(code, redirectUri) {
     const response = await fetch(this.config.tokenUrl, {
       method: "POST",
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
         Accept: "application/json",
@@ -63,6 +66,7 @@ export class AntigravityService {
    */
   async getUserInfo(accessToken) {
     const response = await fetch(`${this.config.userInfoUrl}?alt=json`, {
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       headers: {
         Authorization: `Bearer ${accessToken}`,
         Accept: "application/json",
@@ -104,6 +108,7 @@ export class AntigravityService {
   async loadCodeAssist(accessToken) {
     const response = await fetch(this.config.loadCodeAssistEndpoint, {
       method: "POST",
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       headers: this.getApiHeaders(accessToken),
       body: JSON.stringify({ metadata: this.getMetadata() }),
     });
@@ -141,6 +146,7 @@ export class AntigravityService {
   async onboardUser(accessToken, projectId, tierId) {
     const response = await fetch(this.config.onboardUserEndpoint, {
       method: "POST",
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       headers: this.getApiHeaders(accessToken),
       body: JSON.stringify({ tierId, metadata: this.getMetadata() }),
     });
@@ -200,6 +206,7 @@ export class AntigravityService {
 
     const response = await fetch(`${server}/api/cli/providers/antigravity`, {
       method: "POST",
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,

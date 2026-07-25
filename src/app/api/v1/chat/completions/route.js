@@ -26,10 +26,12 @@ export async function OPTIONS() {
   });
 }
 
-export async function POST(request) {  
-  // Fallback to local handling
+export async function POST(request) {
+  // Clone the request so the body isn't consumed by ensureInitialized
+  const cloned = request.clone ? request.clone() : request;
+  
   await ensureInitialized();
   
-  return await handleChat(request);
+  return await handleChat(cloned);
 }
 

@@ -58,12 +58,12 @@ async function prompt(question) {
 
 async function select(question, options) {
   console.log(question);
-  options.forEach((opt, i) => console.log(`  ${i + 1}. ${opt}`));
+  options.forEach((opt, i) => { console.log(`  ${i + 1}. ${opt}`); });
   while (true) {
-    const answer = await prompt("\nSelect option (number): ");
+    const answer = await prompt("\nВыберите опцию (номер): ");
     const num = parseInt(answer, 10);
     if (!isNaN(num) && num >= 1 && num <= options.length) return num - 1;
-    console.log(`Invalid selection. Please enter a number between 1 and ${options.length}`);
+    console.log(`Неверный выбор. Введите число от 1 до ${options.length}`);
   }
 }
 
@@ -73,11 +73,11 @@ async function confirm(question) {
     const lower = answer.toLowerCase();
     if (lower === "y" || lower === "yes") return true;
     if (lower === "n" || lower === "no") return false;
-    console.log("Please answer 'y' or 'n'");
+    console.log("Пожалуйста, ответьте 'y' или 'n'");
   }
 }
 
-async function pause(message = "Press Enter to continue...") {
+async function pause(message = "Нажмите Enter для продолжения...") {
   return suspendRawFor(() => new Promise((resolve) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     rl.question(message, () => { rl.close(); resolve(); });

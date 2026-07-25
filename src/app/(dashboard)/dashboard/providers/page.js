@@ -298,7 +298,6 @@ export default function ProvidersPage() {
     .filter(
       ([, info]) =>
         !info.hidden &&
-        (info.serviceKinds ?? ["llm"]).includes("llm") &&
         matchSearch(info.name),
     )
     .sort(([ka, a], [kb, b]) => {

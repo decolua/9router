@@ -17,7 +17,15 @@ export function getComboModelsFromData(modelStr, combosData) {
   
   const combo = combos.find(c => c.name === modelStr);
   if (combo && combo.models && combo.models.length > 0) {
-    return combo.models;
+    // Normalize: combo models can be strings or objects {provider, connectionId, model, priority}
+    return combo.models.map(m => {
+      if (typeof m === 'string') return m;
+      if (typeof m === 'object' && m.model) {
+        if (m.provider) return `${m.provider}/${m.model}`;
+        return m.model;
+      }
+      return String(m);
+    });
   }
   return null;
 }

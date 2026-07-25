@@ -22,17 +22,17 @@ function renderHeader(port, keys, tunnel) {
   const tunnelEnabled = tunnel && tunnel.enabled === true;
   const lines = [];
   if (tunnelEnabled && tunnel.publicUrl) {
-    lines.push(`Endpoint: ${COLORS.green}${tunnel.publicUrl}/v1${COLORS.reset}`);
-    lines.push(`Tunnel:   ${COLORS.green}ON${COLORS.reset} ${COLORS.dim}(${tunnel.shortId})${COLORS.reset}`);
+    lines.push(`Адрес:    ${COLORS.green}${tunnel.publicUrl}/v1${COLORS.reset}`);
+    lines.push(`Туннель:  ${COLORS.green}ВКЛ${COLORS.reset} ${COLORS.dim}(${tunnel.shortId})${COLORS.reset}`);
   } else {
-    lines.push(`Endpoint: http://localhost:${port}/v1`);
-    lines.push(`Tunnel:   ${COLORS.red}OFF${COLORS.reset} ${COLORS.dim}(local only)${COLORS.reset}`);
+    lines.push(`Адрес:    http://localhost:${port}/v1`);
+    lines.push(`Туннель:  ${COLORS.red}ВЫКЛ${COLORS.reset} ${COLORS.dim}(только локально)${COLORS.reset}`);
   }
   if (!keys || keys.length === 0) {
-    lines.push(`Key:      ${COLORS.dim}No API keys yet${COLORS.reset}`);
+    lines.push(`Ключ:     ${COLORS.dim}Ключи API не найдены${COLORS.reset}`);
   } else {
-    lines.push(`Key:      ${COLORS.cyan}${keys[0].key}${COLORS.reset}`);
-    keys.slice(1).forEach(k => lines.push(`          ${COLORS.cyan}${k.key}${COLORS.reset}`));
+    lines.push(`Ключ:     ${COLORS.cyan}${keys[0].key}${COLORS.reset}`);
+    keys.slice(1).forEach(k => { lines.push(`          ${COLORS.cyan}${k.key}${COLORS.reset}`); });
   }
   return lines.join("\n");
 }
@@ -56,7 +56,7 @@ async function refreshHeaderBg(port) {
 function getHeader(port) {
   // Kick off background refresh; return cache (or placeholder on first call).
   refreshHeaderBg(port);
-  return cachedHeader || `Endpoint: http://localhost:${port}/v1\nTunnel:   ${COLORS.dim}...${COLORS.reset}\nKey:      ${COLORS.dim}...${COLORS.reset}`;
+  return cachedHeader || `Адрес:    http://localhost:${port}/v1\nТуннель:  ${COLORS.dim}...${COLORS.reset}\nКлюч:     ${COLORS.dim}...${COLORS.reset}`;
 }
 
 /**
@@ -79,42 +79,42 @@ async function startTerminalUI(port) {
     headerContent: () => getHeader(port),
     items: [
       {
-        label: "Providers",
+        label: "Провайдеры",
         action: async () => {
-          await showProvidersMenu([...basePath, "Providers"]);
+          await showProvidersMenu([...basePath, "Провайдеры"]);
           return true; // Continue
         }
       },
       {
-        label: "API Keys",
+        label: "Ключи API",
         action: async () => {
-          await showApiKeysMenu(port, [...basePath, "API Keys"]);
+          await showApiKeysMenu(port, [...basePath, "Ключи API"]);
           return true;
         }
       },
       {
-        label: "Combos",
+        label: "Комбинации",
         action: async () => {
-          await showCombosMenu([...basePath, "Combos"]);
+          await showCombosMenu([...basePath, "Комбинации"]);
           return true;
         }
       },
       {
-        label: "CLI Tools",
+        label: "Инструменты CLI",
         action: async () => {
-          await showCliToolsMenu(port, [...basePath, "CLI Tools"]);
+          await showCliToolsMenu(port, [...basePath, "Инструменты CLI"]);
           return true;
         }
       },
       {
-        label: "Settings",
+        label: "Настройки",
         action: async () => {
-          await showSettingsMenu([...basePath, "Settings"]);
+          await showSettingsMenu([...basePath, "Настройки"]);
           return true;
         }
       }
     ],
-    backLabel: "← Back to Interface Menu"
+    backLabel: "← Назад к меню выбора интерфейса"
   });
 }
 

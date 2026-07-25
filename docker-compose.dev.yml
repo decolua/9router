@@ -1,0 +1,27 @@
+services:
+  9router:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dev
+    container_name: 9router-dev
+    ports:
+      - "20128:20128"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./src:/app/src
+      - ./public:/app/public
+      - ./next.config.mjs:/app/next.config.mjs
+      - ./package.json:/app/package.json
+      - ./postcss.config.mjs:/app/postcss.config.mjs
+      - ./data:/app/data
+      - ./data-home:/app/data-home
+      - ./.env:/app/.env
+      # Node modules отдельно — не перетирать контейнерные
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - PORT=20128
+    command: npm run dev
+    restart: unless-stopped

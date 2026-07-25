@@ -38,6 +38,15 @@ export async function resolveModelAlias(alias) {
 export async function getModelInfo(modelStr) {
   const parsed = parseModel(modelStr);
 
+  // Only check combo for unprefixed model names (not provider/model format)
+  // This avoids circular combo resolution when combo models use prefixed names
+  if (!modelStr.includes("/")) {
+    const combo = await getComboByName(parsed.model);
+    if (combo) {
+      return { provider: null, model: parsed.model };
+    }
+  }
+
   if (!parsed.isAlias) {
     // Provider-node prefixes are user-defined. They must not override built-in
     // provider ids/aliases such as `cf`, `cloudflare-ai`, `openai`, or `hf`.
@@ -60,22 +69,48 @@ export async function getModelInfo(modelStr) {
         return { provider: matchedEmbedding.id, model: parsed.model };
       }
     }
+
+    // Try alias resolution as fallback for provider/model format
+    // This allows aliasing models like "deepseek/deepseek-v4-flash" which
+    // get parsed as provider/model but need to be redirected to another provider
+    const aliases = await getModelAliases();
+
+    // Check if full model string (e.g. "deepseek/deepseek-v4-flash") has an alias
+    if (aliases && aliases[modelStr]) {
+      const resolved = resolveModelAliasFromMap(modelStr, aliases);
+      if (resolved) return resolved;
+    }
+
+    // Check if just the model part (e.g. "deepseek-v4-flash") has an alias
+    if (aliases && aliases[parsed.model]) {
+      const resolved = resolveModelAliasFromMap(parsed.model, aliases);
+      if (resolved) return resolved;
+    }
+
     return {
       provider: parsed.provider,
       model: parsed.model
     };
   }
 
-  // Check if this is a combo name before resolving as alias
-  // This prevents combo names from being incorrectly routed to providers
-  const combo = await getComboByName(parsed.model);
-  if (combo) {
-    // Return null provider to signal this should be handled as combo
-    // The caller (handleChat) will detect this and handle it as combo
-    return { provider: null, model: parsed.model };
-  }
-
   return getModelInfoCore(modelStr, getModelAliases);
+}
+
+/**
+ * Build a mapping from provider name/id/connectionId to node prefix.
+ * Used to normalize combo model objects into routable "prefix/model" strings.
+ */
+async function buildProviderPrefixMap() {
+  const map = {};
+  const allNodes = await getProviderNodes();
+  for (const node of allNodes) {
+    if (!node.prefix) continue;
+    // Map by node ID
+    if (node.id) map[node.id] = node.prefix;
+    // Map by node name (case-insensitive)
+    if (node.name) map[node.name.toLowerCase()] = node.prefix;
+  }
+  return map;
 }
 
 /**
@@ -83,12 +118,33 @@ export async function getModelInfo(modelStr) {
  * @returns {Promise<string[]|null>} Array of models or null if not a combo
  */
 export async function getComboModels(modelStr) {
-  // Only check if it's not in provider/model format
-  if (modelStr.includes("/")) return null;
+  // If model comes with provider prefix (e.g. "9router/free-mix"),
+  // extract just the model name for combo lookup
+  const comboName = modelStr.includes("/") ? modelStr.split("/").pop() : modelStr;
 
-  const combo = await getComboByName(modelStr);
+  const combo = await getComboByName(comboName);
   if (combo && combo.models && combo.models.length > 0) {
-    return combo.models;
+    // Build prefix map to resolve provider names/IDs to routable prefixes
+    const prefixMap = await buildProviderPrefixMap();
+
+    // Normalize: combo models can be strings or objects {provider, connectionId, model, priority}
+    // Must build "prefix/model" format for proper routing through getModelInfo
+    return combo.models.map(m => {
+      if (typeof m === 'string') return m;
+      if (typeof m === 'object' && m.model) {
+        // Try to find the node prefix for this provider
+        const providerKey = m.provider;
+        if (providerKey) {
+          // Try direct match (by ID) then case-insensitive name match
+          const prefix = prefixMap[providerKey] || prefixMap[providerKey.toLowerCase()];
+          if (prefix) return `${prefix}/${m.model}`;
+          // Fallback: use provider ID directly (may be node ID)
+          return `${providerKey}/${m.model}`;
+        }
+        return m.model;
+      }
+      return String(m);
+    });
   }
   return null;
 }

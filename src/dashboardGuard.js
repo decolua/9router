@@ -29,6 +29,9 @@ const PUBLIC_API_PATHS = [
   "/api/auth/oidc",
   "/api/version",
   "/api/settings/require-login",
+  "/api/orchestrator/ping-all",
+  "/api/orchestrator",
+  "/api/orchestrator/stats",
 ];
 
 // Public top-level prefixes (LLM API endpoints with their own API key auth).
@@ -63,6 +66,7 @@ const PROTECTED_API_PATHS = [
   "/api/mcp",
   "/api/translator",
   "/api/tunnel",
+  "/api/orchestrator",
 ];
 
 // Routes that spawn child processes or read host secrets — restrict to localhost.
@@ -99,7 +103,12 @@ export function isLocalRequest(request) {
   // Trusted peer IP from TCP socket (custom-server.js); unspoofable. Primary anchor for "local".
   const realIp = request.headers.get("x-9r-real-ip");
   if (realIp) {
-    if (!isLoopbackHostname(realIp)) return false;
+    if (!isLoopbackHostname(realIp)) {
+      // Docker port mapping: realIp is a container gateway (e.g. 172.17.0.1),
+      // but Host: localhost means the request originates from the host machine.
+      // Fall back to Host-based check.
+      if (!isLoopbackHostname(request.headers.get("host"))) return false;
+    }
   } else if (!isLoopbackHostname(request.headers.get("host"))) {
     // Fallback for bare server.js (dev) without custom-server: legacy Host-based check.
     return false;

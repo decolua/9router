@@ -83,6 +83,27 @@ const nextConfig = {
       {
         source: "/v1",
         destination: "/api/v1"
+      },
+      // Direct OpenAI-compatible paths (without /v1 prefix)
+      {
+        source: "/chat/completions",
+        destination: "/api/v1/chat/completions"
+      },
+      {
+        source: "/messages",
+        destination: "/api/v1/messages"
+      },
+      {
+        source: "/embeddings",
+        destination: "/api/v1/embeddings"
+      },
+      {
+        source: "/models",
+        destination: "/api/v1/models"
+      },
+      {
+        source: "/responses",
+        destination: "/api/v1/responses"
       }
     ];
   }
