@@ -1,6 +1,6 @@
 {
   "alicode-intl": {
-    "baseUrl": "https://coding-intl.dashscope.aliyuncs.com/v1/chat/completions",
+    "baseUrl": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",
     "headers": {},
     "quirks": {
       "preserveCacheControl": true
@@ -19,18 +19,17 @@
     "baseUrl": "https://api.anthropic.com/v1/messages",
     "format": "claude",
     "headers": {
-      "Anthropic-Version": "2023-06-01",
+      "anthropic-version": "2023-06-01",
       "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14"
     }
   },
   "antigravity": {
     "baseUrls": [
-      "https://daily-cloudcode-pa.googleapis.com",
-      "https://daily-cloudcode-pa.sandbox.googleapis.com"
+      "https://cloudcode-pa.googleapis.com"
     ],
     "format": "antigravity",
     "headers": {
-      "User-Agent": "antigravity/1.107.0 darwin/arm64"
+      "User-Agent": "antigravity/ide/2.1.1 darwin/arm64"
     },
     "retry": {
       "429": {
@@ -232,7 +231,7 @@
       "Content-Type": "application/connect+proto",
       "User-Agent": "connect-es/1.6.1"
     },
-    "clientVersion": "3.1.0"
+    "clientVersion": "3.12.17"
   },
   "deepgram": {
     "baseUrl": "https://api.deepgram.com/v1/listen",
@@ -269,6 +268,11 @@
         }
       }
     ]
+  },
+  "featherless": {
+    "baseUrl": "https://api.featherless.ai/v1/chat/completions",
+    "validateUrl": "https://api.featherless.ai/v1/models",
+    "format": "openai"
   },
   "fireworks": {
     "baseUrl": "https://api.fireworks.ai/inference/v1/chat/completions",
@@ -307,6 +311,7 @@
   "github": {
     "baseUrl": "https://api.githubcopilot.com/chat/completions",
     "responsesUrl": "https://api.githubcopilot.com/responses",
+    "messagesUrl": "https://api.githubcopilot.com/v1/messages",
     "headers": {
       "copilot-integration-id": "vscode-chat",
       "editor-version": "vscode/1.110.0",
@@ -398,17 +403,18 @@
     "modelsUrl": "https://cli-chat-proxy.grok.com/v1/models",
     "userUrl": "https://cli-chat-proxy.grok.com/v1/user",
     "billingUrl": "https://cli-chat-proxy.grok.com/v1/billing",
-    "clientVersion": "0.2.93",
-    "clientIdentifier": "grok-pager",
+    "clientVersion": "0.2.99",
+    "clientIdentifier": "grok-shell",
     "tokenAuth": "xai-grok-cli",
     "headers": {
-      "User-Agent": "grok-pager/0.2.93 grok-shell/0.2.93 (linux; x86_64)",
-      "x-xai-token-auth": "xai-grok-cli",
-      "x-grok-client-identifier": "grok-pager",
-      "x-grok-client-version": "0.2.93",
-      "x-authenticateresponse": "authenticate-response"
+      "User-Agent": "grok-shell/0.2.99 (linux; x86_64)",
+      "x-grok-client-identifier": "grok-shell",
+      "x-grok-client-version": "0.2.99"
     },
-    "compactionAt": 400000,
+    "usage": {
+      "url": "https://cli-chat-proxy.grok.com/v1/billing?format=credits",
+      "userUrl": "https://cli-chat-proxy.grok.com/v1/user?include=subscription"
+    },
     "retry": {
       "429": {
         "attempts": 2,
@@ -477,7 +483,7 @@
       "scheme": "bearer"
     }
   },
-  "kimi-coding": {
+  "kimi": {
     "baseUrl": "https://api.kimi.com/coding/v1/messages",
     "format": "claude",
     "urlSuffix": "?beta=true",
@@ -524,45 +530,6 @@
           "hooks": [
             "kimiHeaders"
           ]
-        }
-      }
-    ]
-  },
-  "kimi": {
-    "baseUrl": "https://api.kimi.com/coding/v1/messages",
-    "format": "claude",
-    "urlSuffix": "?beta=true",
-    "headers": {
-      "Anthropic-Version": "2023-06-01",
-      "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14"
-    },
-    "auth": {
-      "combined": true,
-      "header": "x-api-key",
-      "scheme": "raw"
-    },
-    "transports": [
-      {
-        "format": "openai",
-        "baseUrl": "https://api.kimi.com/coding/v1/chat/completions",
-        "auth": {
-          "combined": true,
-          "header": "Authorization",
-          "scheme": "bearer"
-        }
-      },
-      {
-        "format": "claude",
-        "baseUrl": "https://api.kimi.com/coding/v1/messages",
-        "urlSuffix": "?beta=true",
-        "headers": {
-          "Anthropic-Version": "2023-06-01",
-          "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14"
-        },
-        "auth": {
-          "combined": true,
-          "header": "x-api-key",
-          "scheme": "raw"
         }
       }
     ]
@@ -774,6 +741,11 @@
     "validateUrl": "https://api.perplexity.ai/models",
     "format": "openai"
   },
+  "perplexity-agent": {
+    "baseUrl": "https://api.perplexity.ai/v1/responses",
+    "validateUrl": "https://api.perplexity.ai/v1/models",
+    "format": "openai-responses"
+  },
   "qoder": {
     "baseUrl": "https://api3.qoder.sh/algo/api/v2/service/pro/sse/agent_chat_generation",
     "headers": {},
@@ -900,5 +872,13 @@
         }
       }
     ]
+  },
+  "alims-intl": {
+    "baseUrl": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",
+    "headers": {},
+    "quirks": {
+      "preserveCacheControl": true
+    },
+    "format": "openai"
   }
 }
