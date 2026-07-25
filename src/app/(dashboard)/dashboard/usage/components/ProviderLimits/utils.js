@@ -380,6 +380,7 @@ export function parseQuotaData(provider, data) {
         break;
 
       case "kiro":
+      case "kimi":
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([quotaType, quota]) => {
             normalizedQuotas.push({
