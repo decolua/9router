@@ -190,6 +190,7 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*claude*opus-4.6*",   caps: CLAUDE_4_6_PLUS_CAPABILITIES },
   { pattern: "*claude*opus-4.7*",   caps: CLAUDE_4_6_PLUS_CAPABILITIES },
   { pattern: "*claude*opus-4.8*",   caps: CLAUDE_4_6_PLUS_CAPABILITIES },
+  { pattern: "*claude*opus-5*",     caps: CLAUDE_4_6_PLUS_CAPABILITIES },
   { pattern: "*claude*sonnet-4.6*", caps: CLAUDE_4_6_PLUS_CAPABILITIES },
   { pattern: "*claude*sonnet-4.7*", caps: CLAUDE_4_6_PLUS_CAPABILITIES },
   { pattern: "*claude*sonnet-5*",   caps: CLAUDE_4_6_PLUS_CAPABILITIES },

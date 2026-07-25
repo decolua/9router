@@ -36,6 +36,18 @@ describe("getCapabilitiesForModel", () => {
     expect(getCapabilitiesForModel("kiro", "claude-sonnet-5-thinking-agentic")).toMatchObject(claudeSonnet5Expected);
   });
 
+  // Opus 5 shipped after the 4.8 patterns were written and fell through to the generic
+  // "*claude*opus*" entry, so every thinking request 400'd on the budget shape and
+  // max_tokens was clamped to the 64k floor.
+  it("reports Claude Opus 5 as a 1M adaptive-thinking model", () => {
+    for (const model of [
+      "claude-opus-5", "anthropic/claude-opus-5", "claude-opus-5-thinking",
+      "claude-opus-5-agentic", "claude-opus-5-20260724",
+    ]) {
+      expect(getCapabilitiesForModel("github", model)).toMatchObject(claudeSonnet5Expected);
+    }
+  });
+
   it("reports Kiro GPT 5.6 models with the Kiro 272k context window", () => {
     expect(getCapabilitiesForModel("kiro", "gpt-5.6-sol")).toMatchObject(kiroGpt56Expected);
     expect(getCapabilitiesForModel("kiro", "openai/gpt-5.6-sol")).toMatchObject(kiroGpt56Expected);
@@ -85,7 +97,7 @@ describe("4.6+ Claude limits reach unlisted variants", () => {
   it("covers variants of every 4.6+ family", () => {
     for (const model of [
       "claude-sonnet-5.1", "claude-sonnet-4.6-preview", "claude-opus-4.7-fast",
-      "anthropic/claude-opus-4.6", "claude-fable-5-preview",
+      "anthropic/claude-opus-4.6", "claude-fable-5-preview", "claude-opus-5-fast",
     ]) {
       expect(getCapabilitiesForModel("github", model)).toMatchObject(family);
     }
