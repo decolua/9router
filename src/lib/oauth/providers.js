@@ -350,10 +350,20 @@ const PROVIDERS = {
         .join(" ")
         .trim() || null;
 
+      const expiresAt = tokens.expires_in
+        ? new Date(Date.now() + tokens.expires_in * 1000).toISOString()
+        : null;
+
       return {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token || null,
         expiresIn: tokens.expires_in,
+        // Surface an absolute expiry so the proactive refresh path
+        // (shouldRefreshCredentials / checkAndRefreshToken) can refresh the
+        // xAI token before it silently expires ~40-45 min after login.
+        // Without this, only the reactive 401 path in chatCore would refresh,
+        // causing intermittent "token expired" failures for Grok CLI.
+        expiresAt,
         scope: tokens.scope,
         // Top-level for dashboard connection cards
         email: email || undefined,

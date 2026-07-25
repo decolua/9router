@@ -47,6 +47,19 @@ const { ensureSqliteRuntime, buildEnvWithRuntime } = require("./hooks/sqliteRunt
 const { ensureTrayRuntime } = require("./hooks/trayRuntime");
 const args = process.argv.slice(2);
 
+// Subcommands (`9router xai video …`) run against an already-running gateway
+// and bypass the launcher flow (no runtime self-heal, no server spawn).
+if (args[0] === "xai" && args[1] === "video") {
+  const { run } = require("./src/cli/commands/xaiVideo");
+  run(args.slice(2))
+    .then((code) => process.exit(code))
+    .catch((err) => {
+      console.error(`❌ ${err?.message || err}`);
+      process.exit(1);
+    });
+  return;
+}
+
 // Self-heal SQLite runtime deps (sql.js + better-sqlite3) into ~/.9router/runtime
 // so the server can resolve them via NODE_PATH. Best-effort — sql.js is required,
 // better-sqlite3 is optional. Logs to stderr only on failure.
@@ -119,6 +132,11 @@ for (let i = 0; i < args.length; i++) {
   --skip-update       Пропустить проверку обновлений
   -h, --help          Показать эту справку
   -v, --version       Показать версию
+
+Команды:
+  xai video --prompt "..." --output video.mp4
+                      Генерация видео Grok Imagine через запущенный шлюз
+                      (см.: ${APP_NAME} xai video --help)
 `);
     process.exit(0);
   } else if (args[i] === "--version" || args[i] === "-v") {

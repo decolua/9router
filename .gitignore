@@ -85,3 +85,14 @@ _*.py
 
 # Docker data volume
 /data-home/
+
+# Upstream v0.5.35
+.graphifyignore
+graphify-out/*
+.claude/
+.docs/
+.repo/
+.script/
+.codegraph/
+.PR/
+.next-analyze/*
