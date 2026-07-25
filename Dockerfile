@@ -3,19 +3,30 @@ ARG NODE_IMAGE=node:22-alpine
 FROM ${NODE_IMAGE} AS base
 WORKDIR /app
 
-FROM base AS builder
-
+# Stage: dependencies (cached layer — only rebuilds when package.json changes)
+FROM base AS deps
 RUN apk --no-cache upgrade && apk --no-cache add python3 make g++ linux-headers
-
-COPY package.json ./
+COPY package.json package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm \
-  npm install
+  --mount=type=cache,target=/app/node_modules \
+  npm ci
 
-COPY . ./
+# Stage: development (hot reload, debug tools)
+FROM base AS dev
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+EXPOSE 20128 9229
+CMD ["npm", "run", "dev"]
+
+# Stage: build
+FROM base AS build
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN npm run build
+RUN --mount=type=cache,target=/app/.next/cache npm run build
 
-FROM ${NODE_IMAGE} AS runner
+# Stage: production (minimal image)
+FROM ${NODE_IMAGE} AS production
 WORKDIR /app
 
 LABEL org.opencontainers.image.title="9router"
@@ -26,17 +37,17 @@ ENV HOSTNAME=0.0.0.0
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV DATA_DIR=/app/data
 
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/custom-server.js ./custom-server.js
-COPY --from=builder /app/open-sse ./open-sse
+COPY --from=build /app/public ./public
+COPY --from=build /app/.next/static ./.next/static
+COPY --from=build /app/.next/standalone ./
+COPY --from=build /app/custom-server.js ./custom-server.js
+COPY --from=build /app/open-sse ./open-sse
 # Next file tracing can omit sibling files; MITM runs server.js as a separate process.
-COPY --from=builder /app/src/mitm ./src/mitm
+COPY --from=build /app/src/mitm ./src/mitm
 # Standalone node_modules may omit deps only required by the MITM child process.
-COPY --from=builder /app/node_modules/node-forge ./node_modules/node-forge
+COPY --from=build /app/node_modules/node-forge ./node_modules/node-forge
 # Ensure `next` is available at runtime in case tracing did not include it.
-COPY --from=builder /app/node_modules/next ./node_modules/next
+COPY --from=build /app/node_modules/next ./node_modules/next
 
 RUN mkdir -p /app/data && chown -R node:node /app && \
   mkdir -p /app/data-home && chown node:node /app/data-home && \
@@ -48,6 +59,8 @@ RUN apk --no-cache upgrade && apk --no-cache add su-exec && \
   chmod +x /entrypoint.sh
 
 EXPOSE 20128
+HEALTHCHECK --interval=30s --timeout=3s \
+  CMD wget -qO- http://localhost:20128/dashboard || exit 1
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["node", "custom-server.js"]
