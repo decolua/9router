@@ -115,6 +115,73 @@ docker run --rm -p 20128:20128 \
   9router
 ```
 
+## Docker Compose (Production)
+
+Run all services with:
+
+```bash
+docker compose up -d
+```
+
+Services included:
+- **9router**: Main application (port 20128)
+- **headroom**: Token saver sidecar
+- **caddy**: Reverse proxy with automatic HTTPS (ports 80, 443)
+- **prometheus**: Metrics collection (port 9090)
+- **grafana**: Monitoring dashboards (port 3000, default password: admin)
+
+## Docker Compose (Development)
+
+For hot reload development:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+```
+
+Development mode:
+- Mounts source code for hot reload
+- Exposes debugger port (9229)
+- Disables Caddy, Prometheus, Grafana
+- Runs `npm run dev` instead of production build
+
+## Caddy Reverse Proxy
+
+Caddy provides automatic HTTPS and reverse proxying. Edit `Caddyfile` to configure:
+
+```caddyfile
+# Default: reverse proxy on port 80
+:80 {
+    reverse_proxy 9router:20128
+}
+
+# With domain (uncomment and configure)
+# example.com {
+#     reverse_proxy 9router:20128
+# }
+```
+
+## Prometheus + Grafana Monitoring
+
+Prometheus scrapes 9router metrics at `/api/metrics` every 10 seconds. Grafana provides dashboards for visualization.
+
+Access:
+- Prometheus: http://localhost:9090
+- Grafana: http://localhost:3000 (default password: admin)
+
+Configure `prometheus.yml` to adjust scrape intervals or targets.
+
+## CI/CD Pipeline
+
+GitHub Actions workflow (`.github/workflows/docker.yml`) builds and pushes images:
+
+- **Triggers**: Push to main/master, tags `v*`, pull requests
+- **Registry**: GHCR (`ghcr.io/${{ github.repository }}`)
+- **Security**: Trivy scans for CRITICAL/HIGH vulnerabilities before push
+- **Platforms**: linux/amd64 + linux/arm64
+- **Caching**: GitHub Actions cache for faster builds
+
+Fork-aware: Images push to `ghcr.io/<your-fork>/<repo>` automatically.
+
 ## Publish (automatic via CI)
 
 Push a git tag `v*` → GitHub Actions builds multi-platform (amd64+arm64) and pushes to:
@@ -129,4 +196,4 @@ node scripts/release.js "Release title" "Notes"
 git tag v0.4.x && git push origin v0.4.x
 ```
 
-Workflow: `app/.github/workflows/docker-publish.yml`
+Workflow: `.github/workflows/docker-publish.yml`
