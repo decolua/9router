@@ -14,19 +14,36 @@ export default {
   category: "apikey",
   authType: "apikey",
   serviceKinds: [
+    "webSearch",
     "webFetch"
   ],
-  fetchConfig: {
-    baseUrl: "https://api.firecrawl.dev/v1/scrape",
+  searchConfig: {
+    baseUrl: "https://api.firecrawl.dev/v2/search",
     method: "POST",
     authType: "apikey",
     authHeader: "bearer",
-    costPerQuery: 0.002,
-    freeMonthlyQuota: 500,
+    costPerQuery: 0.001,
+    freeMonthlyQuota: 1000,
+    searchTypes: [
+      "web",
+      "news"
+    ],
+    defaultMaxResults: 5,
+    maxMaxResults: 100,
+    timeoutMs: 15000,
+    cacheTTLMs: 300000
+  },
+  fetchConfig: {
+    baseUrl: "https://api.firecrawl.dev/v2/scrape",
+    method: "POST",
+    authType: "apikey",
+    authHeader: "bearer",
+    costPerQuery: 0.001,
+    freeMonthlyQuota: 1000,
     formats: [
       "markdown",
       "html",
-      "text"
+      "rawHtml"
     ],
     maxCharacters: 200000,
     timeoutMs: 30000

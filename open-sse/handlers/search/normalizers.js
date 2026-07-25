@@ -200,6 +200,34 @@ function normalizeSearxng(data, _query, _searchType) {
   return { results, totalResults: results.length };
 }
 
+function normalizeFirecrawlSearch(data, _query, searchType) {
+  const now = new Date().toISOString();
+
+  // v2 response: { success: true, data: { web: [...], news: [...], images: [...] } }
+  const dataObj = data?.data;
+  if (!dataObj || typeof dataObj !== "object") return { results: [], totalResults: 0 };
+
+  const useNews = searchType === "news" && Array.isArray(dataObj.news);
+  const items = useNews ? dataObj.news : (dataObj.web || []);
+
+  const results = items.map((item, idx) => {
+    // v2 web results: { title, description, url, markdown, ... }
+    // v2 news results: { title, snippet, url, date, markdown, ... }
+    const snippet = useNews ? (item.snippet || "") : (item.description || "");
+    const published_at = useNews ? (item.date || null) : null;
+    return makeResult("firecrawl", {
+      title: item.title || "",
+      url: item.url || "",
+      snippet,
+      published_at,
+      full_text: item.markdown || null,
+      text_format: item.markdown ? "markdown" : "text",
+    }, idx, now);
+  });
+
+  return { results, totalResults: results.length };
+}
+
 const NORMALIZERS = {
   "serper": normalizeSerper,
   "brave-search": normalizeBrave,
@@ -211,6 +239,7 @@ const NORMALIZERS = {
   "searchapi": normalizeSearchApi,
   "youcom": normalizeYouCom,
   "searxng": normalizeSearxng,
+  "firecrawl": normalizeFirecrawlSearch,
 };
 
 /**
