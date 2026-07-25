@@ -200,6 +200,44 @@ function normalizeSearxng(data, _query, _searchType) {
   return { results, totalResults: results.length };
 }
 
+function normalizeFirecrawlSearch(data, _query, searchType) {
+  const now = new Date().toISOString();
+
+  // v2 response: { success: true, data: { web: [...], news: [...], images: [...] } }
+  // Select the correct array based on searchType
+  const dataObj = data?.data;
+  if (!dataObj || typeof dataObj !== "object") return { results: [], totalResults: 0 };
+
+  let items;
+  if (Array.isArray(dataObj.news) && dataObj.news.length > 0 && searchType === "news") {
+    items = dataObj.news;
+  } else if (Array.isArray(dataObj.web) && dataObj.web.length > 0) {
+    items = dataObj.web;
+  } else if (Array.isArray(dataObj.news) && dataObj.news.length > 0) {
+    items = dataObj.news; // fallback to news if web is empty/missing
+  } else if (Array.isArray(dataObj.web)) {
+    items = dataObj.web; // empty web array — return empty
+  } else {
+    items = [];
+  }
+
+  const results = items.map((item, idx) => {
+    // v2 web results: { title, description, url, markdown, html, links, screenshot, metadata }
+    // v2 news results: { title, snippet, url, date, imageUrl, position, markdown, html, links, screenshot, metadata }
+    const isNews = "snippet" in item || "date" in item;
+    return makeResult("firecrawl", {
+      title: item.title || "",
+      url: item.url || "",
+      snippet: isNews ? (item.snippet || "") : (item.description || ""),
+      published_at: isNews ? (item.date || null) : (item.published_at || null),
+      full_text: item.markdown || null,
+      text_format: item.markdown ? "markdown" : "text",
+    }, idx, now);
+  });
+
+  return { results, totalResults: results.length };
+}
+
 const NORMALIZERS = {
   "serper": normalizeSerper,
   "brave-search": normalizeBrave,
@@ -211,6 +249,7 @@ const NORMALIZERS = {
   "searchapi": normalizeSearchApi,
   "youcom": normalizeYouCom,
   "searxng": normalizeSearxng,
+  "firecrawl": normalizeFirecrawlSearch,
 };
 
 /**

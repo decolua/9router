@@ -327,6 +327,55 @@ function buildSearxngRequest(config, params) {
   };
 }
 
+function buildFirecrawlSearchRequest(config, params) {
+  const { includes, excludes } = parseDomainFilter(params.domainFilter);
+  const body = {
+    query: params.query,
+    limit: params.maxResults,
+  };
+
+  // v2 flat schema — no searchOptions nesting
+  // Sources: explicitly set for both web and news
+  if (params.searchType === "news") {
+    body.sources = ["news"];
+  } else {
+    body.sources = ["web"];
+  }
+
+  // Domain filters (flat on body, mutually exclusive per v2 API)
+  if (includes.length) body.includeDomains = includes;
+  if (excludes.length) body.excludeDomains = excludes;
+
+  // Country (flat on body) — v2 has no `lang` field, only `country` and `location`
+  if (params.country) body.country = params.country;
+
+  // Time range (Firecrawl supports Google-style tbs parameter)
+  if (params.timeRange && params.timeRange !== "any") {
+    const tbsMap = { day: "qdr:d", week: "qdr:w", month: "qdr:m", year: "qdr:y" };
+    if (tbsMap[params.timeRange]) body.tbs = tbsMap[params.timeRange];
+  }
+
+  // Scrape options for content extraction (optional, controlled by contentOptions)
+  if (params.contentOptions?.full_page) {
+    body.scrapeOptions = {
+      formats: [params.contentOptions.format === "markdown" ? "markdown" : "html"],
+      onlyMainContent: true,
+    };
+  }
+
+  return {
+    url: resolveBaseUrl(config, params),
+    init: {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${params.token}`,
+      },
+      body: JSON.stringify(body),
+    },
+  };
+}
+
 // ── Dispatcher ──────────────────────────────────────────────────────────
 
 const BUILDERS = {
@@ -340,6 +389,7 @@ const BUILDERS = {
   "searchapi": buildSearchApiRequest,
   "youcom": buildYouComRequest,
   "searxng": buildSearxngRequest,
+  "firecrawl": buildFirecrawlSearchRequest,
 };
 
 /**
