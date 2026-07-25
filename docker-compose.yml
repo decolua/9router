@@ -1,6 +1,9 @@
 services:
   9router:
-    image: decolua/9router:latest
+    build:
+      context: .
+      target: production
+    image: ghcr.io/${GITHUB_REPOSITORY:-decolua/9router}:latest
     container_name: 9router
     restart: always
     ports:
@@ -14,17 +17,68 @@ services:
       PORT: "20128"
       HOSTNAME: "0.0.0.0"
       NODE_ENV: production
-      HEADROOM_URL: http://headroom:8787
     depends_on:
-      - headroom
+      headroom:
+        condition: service_started
+    networks:
+      - frontend
+      - backend
 
   headroom:
     image: ghcr.io/chopratejas/headroom:latest
     container_name: headroom
     restart: always
+    networks:
+      - backend
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    restart: always
     ports:
-      - "8787:8787"
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - frontend
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: always
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - backend
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: always
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_PASSWORD:-admin}"
+    networks:
+      - backend
 
 volumes:
   9router-data:
     name: 9router-data
+  caddy-data:
+  caddy-config:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  frontend:
+  backend:
