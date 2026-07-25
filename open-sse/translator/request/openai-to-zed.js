@@ -9,15 +9,10 @@ import { FORMATS } from "../formats.js";
 import { openaiToClaudeRequest } from "./openai-to-claude.js";
 import { openaiToGeminiRequest } from "./openai-to-gemini.js";
 import { openaiToOpenAIResponsesRequest } from "./openai-responses.js";
+import { resolveZedProvider } from "../../config/zedConstants.js";
 import crypto from "crypto";
 
-export function resolveZedProvider(model) {
-  const m = String(model || "").toLowerCase();
-  if (/(claude|anthropic)/i.test(m)) return "anthropic";
-  if (/(gemini|google)/i.test(m)) return "google";
-  if (/(grok|x[_-]?ai)/i.test(m)) return "x_ai";
-  return "open_ai";
-}
+export { resolveZedProvider };
 
 function randomId() {
   return crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;

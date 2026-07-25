@@ -1,13 +1,14 @@
 import { BaseExecutor } from "./base.js";
-import { PROVIDERS, PROVIDER_OAUTH } from "../config/providers.js";
+import { PROVIDERS } from "../config/providers.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
+import { ZED_CLIENT_VERSION } from "../config/zedConstants.js";
 import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
 import { chatChunkSse, sseChunk } from "../utils/sse.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { refreshZedToken } from "../services/tokenRefresh.js";
 import { openaiToZedRequest } from "../translator/request/openai-to-zed.js";
+import { CLAUDE_BLOCK, OPENAI_BLOCK, RESPONSES_ITEM } from "../translator/schema/index.js";
 import crypto from "crypto";
-
-const DEFAULT_ZED_VERSION = "1.6.3";
 
 /**
  * Zed Hosted AI executor
@@ -34,7 +35,7 @@ export class ZedExecutor extends BaseExecutor {
       "Content-Type": "application/json",
       Accept: stream ? "application/json, text/plain, */*" : "application/json",
       Authorization: `Bearer ${llmToken}`,
-      "x-zed-version": DEFAULT_ZED_VERSION,
+      "x-zed-version": ZED_CLIENT_VERSION,
       "x-zed-client-supports-status-messages": "true",
       "x-zed-client-supports-x-ai": "true",
       ...(this.config.headers || {}),
@@ -53,49 +54,16 @@ export class ZedExecutor extends BaseExecutor {
   }
 
   async refreshCredentials(credentials, log, proxyOptions = null) {
-    const psd = credentials?.providerSpecificData || {};
-    const userId = psd.userId;
-    const zedAccessToken = psd.zedAccessToken || credentials?.refreshToken;
-    const organizationId = psd.organizationId;
-    if (!userId || !zedAccessToken) {
+    // Delegate to shared refreshZedToken so HTTP + token unwrap stay single-sourced
+    // with tokenRefresh/providers.js (and dashboard refresh paths).
+    const zedAccessToken =
+      credentials?.providerSpecificData?.zedAccessToken || credentials?.refreshToken;
+    if (!credentials?.providerSpecificData?.userId || !zedAccessToken) {
       log?.warn?.("TOKEN_REFRESH", "Zed missing userId/zedAccessToken for LLM token refresh");
       return null;
     }
     try {
-      const base = (this.config.baseUrl || "https://cloud.zed.dev").replace(/\/$/, "");
-      const path = PROVIDER_OAUTH.zed?.llmTokensPath || "/client/llm_tokens";
-      const body = organizationId ? { organization_id: organizationId } : {};
-      const res = await proxyAwareFetch(`${base}${path}`, {
-        method: "POST",
-        headers: {
-          Authorization: `${userId} ${zedAccessToken}`,
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify(body),
-      }, proxyOptions);
-      const text = await res.text();
-      if (!res.ok) {
-        log?.error?.("TOKEN_REFRESH", `Zed LLM token refresh failed (${res.status}): ${text.slice(0, 200)}`);
-        return null;
-      }
-      const data = JSON.parse(text);
-      const raw = data?.token;
-      const token =
-        typeof raw === "string"
-          ? raw
-          : raw && typeof raw === "object"
-            ? raw["0"] || raw.token || Object.values(raw)[0]
-            : null;
-      if (!token) return null;
-      return {
-        accessToken: token,
-        expiresIn: 3600,
-        providerSpecificData: {
-          llmToken: token,
-          lastLlmTokenAt: new Date().toISOString(),
-        },
-      };
+      return await refreshZedToken(zedAccessToken, credentials, log, proxyOptions);
     } catch (err) {
       log?.error?.("TOKEN_REFRESH", `Zed LLM token refresh failed: ${err.message}`);
       return null;
@@ -191,7 +159,7 @@ export class ZedExecutor extends BaseExecutor {
 
     const decoder = new TextDecoder();
     let buffer = "";
-    const sseState = { id, created, model, roleSent: false };
+    const sseState = createSseState(id, created, model);
 
     const streamOut = new ReadableStream({
       async start(controller) {
@@ -215,7 +183,11 @@ export class ZedExecutor extends BaseExecutor {
             const sse = lineToOpenAiSse(buffer, sseState);
             if (sse?.chunk) push(sse.chunk);
           }
-          push(chatChunkSse({ id, created, model, delta: {}, finishReason: "stop" }));
+          if (!sseState.finished) {
+            const finishReason = sseState.hasToolCalls ? "tool_calls" : "stop";
+            push(chatChunkSse({ id, created, model, delta: {}, finishReason }));
+            sseState.finished = true;
+          }
           push(SSE_DONE);
           controller.close();
         } catch (err) {
@@ -240,16 +212,46 @@ export class ZedExecutor extends BaseExecutor {
     const created = Math.floor(Date.now() / 1000);
     let content = "";
     let finishReason = "stop";
+    const toolCalls = [];
+    const sseState = createSseState(id, created, model);
 
     for (const line of text.split("\n")) {
       for (const parsed of parseZedLine(line)) {
         const unwrapped = unwrapZedEvent(parsed);
         if (unwrapped.kind !== "event") continue;
-        const extracted = extractTextFromEvent(unwrapped.event);
+        const extracted = extractFromEvent(unwrapped.event, sseState);
         if (extracted.text) content += extracted.text;
+        if (extracted.tool_calls?.length) {
+          for (const tc of extracted.tool_calls) {
+            const existing = toolCalls.find((t) => t.index === tc.index);
+            if (existing) {
+              if (tc.function?.arguments) {
+                existing.function.arguments =
+                  (existing.function.arguments || "") + (tc.function.arguments || "");
+              }
+              if (tc.id) existing.id = tc.id;
+              if (tc.function?.name) existing.function.name = tc.function.name;
+            } else {
+              toolCalls.push({
+                index: tc.index ?? toolCalls.length,
+                id: tc.id,
+                type: tc.type || OPENAI_BLOCK.FUNCTION,
+                function: {
+                  name: tc.function?.name || "",
+                  arguments: tc.function?.arguments || "",
+                },
+              });
+            }
+          }
+        }
         if (extracted.finishReason) finishReason = extracted.finishReason;
       }
     }
+
+    if (toolCalls.length > 0 && finishReason === "stop") finishReason = "tool_calls";
+
+    const message = { role: "assistant", content: content || (toolCalls.length ? null : "") };
+    if (toolCalls.length) message.tool_calls = toolCalls;
 
     const completion = {
       id,
@@ -259,7 +261,7 @@ export class ZedExecutor extends BaseExecutor {
       choices: [
         {
           index: 0,
-          message: { role: "assistant", content },
+          message,
           finish_reason: finishReason,
         },
       ],
@@ -274,15 +276,33 @@ export class ZedExecutor extends BaseExecutor {
 
   jsonlTextToSSEResponse(text, model, id, created) {
     const chunks = [];
-    const sseState = { id, created, model, roleSent: false };
+    const sseState = createSseState(id, created, model);
     for (const line of text.split("\n")) {
       const sse = lineToOpenAiSse(line, sseState);
       if (sse?.chunk) chunks.push(sse.chunk);
     }
-    chunks.push(chatChunkSse({ id, created, model, delta: {}, finishReason: "stop" }));
+    if (!sseState.finished) {
+      const finishReason = sseState.hasToolCalls ? "tool_calls" : "stop";
+      chunks.push(chatChunkSse({ id, created, model, delta: {}, finishReason }));
+      sseState.finished = true;
+    }
     chunks.push(SSE_DONE);
     return new Response(chunks.join(""), { status: 200, headers: SSE_HEADERS });
   }
+}
+
+function createSseState(id, created, model) {
+  return {
+    id,
+    created,
+    model,
+    roleSent: false,
+    finished: false,
+    hasToolCalls: false,
+    toolCallIndex: 0,
+    // Anthropic block-index → OpenAI tool_call bookkeeping
+    toolCalls: new Map(),
+  };
 }
 
 function parseZedLine(line) {
@@ -332,10 +352,16 @@ function unwrapZedEvent(parsed) {
   return { kind: "event", event: parsed };
 }
 
-function extractTextFromEvent(event) {
-  if (!event || typeof event !== "object") return { text: "", finishReason: null };
+/**
+ * Extract OpenAI-compatible text / tool_calls / finish_reason from a nested
+ * Zed upstream event (OpenAI chat, Responses API, Gemini, or Anthropic).
+ */
+function extractFromEvent(event, state) {
+  if (!event || typeof event !== "object") {
+    return { text: "", finishReason: null, tool_calls: null, role: null };
+  }
 
-  // OpenAI chat.completion.chunk
+  // OpenAI chat.completion.chunk / message
   if (event.choices?.[0]) {
     const choice = event.choices[0];
     const delta = choice.delta || choice.message || {};
@@ -345,56 +371,183 @@ function extractTextFromEvent(event) {
         : Array.isArray(delta.content)
           ? delta.content.map((p) => p?.text || "").join("")
           : "";
-    return { text, finishReason: choice.finish_reason || null, role: delta.role };
+    const tool_calls = Array.isArray(delta.tool_calls) ? delta.tool_calls : null;
+    if (tool_calls?.length) state.hasToolCalls = true;
+    // Non-streaming message.tool_calls
+    if (!tool_calls && Array.isArray(choice.message?.tool_calls)) {
+      state.hasToolCalls = true;
+      return {
+        text,
+        finishReason: choice.finish_reason || "tool_calls",
+        tool_calls: choice.message.tool_calls,
+        role: delta.role,
+      };
+    }
+    return {
+      text,
+      finishReason: choice.finish_reason || null,
+      tool_calls,
+      role: delta.role,
+    };
   }
 
   // OpenAI Responses API streaming events
   if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
-    return { text: event.delta, finishReason: null };
+    return { text: event.delta, finishReason: null, tool_calls: null, role: null };
   }
   if (event.type === "response.output_text.delta" && typeof event.delta?.text === "string") {
-    return { text: event.delta.text, finishReason: null };
+    return { text: event.delta.text, finishReason: null, tool_calls: null, role: null };
+  }
+  if (
+    event.type === "response.output_item.added" &&
+    (event.item?.type === RESPONSES_ITEM.FUNCTION_CALL || event.item?.type === "custom_tool_call")
+  ) {
+    const item = event.item;
+    const idx = state.toolCallIndex++;
+    state.hasToolCalls = true;
+    state.toolCalls.set(item.id || idx, { index: idx, id: item.call_id || item.id });
+    return {
+      text: "",
+      finishReason: null,
+      tool_calls: [
+        {
+          index: idx,
+          id: item.call_id || item.id,
+          type: OPENAI_BLOCK.FUNCTION,
+          function: { name: item.name || "", arguments: "" },
+        },
+      ],
+      role: null,
+    };
+  }
+  if (
+    event.type === "response.function_call_arguments.delta" ||
+    event.type === "response.custom_tool_call_input.delta"
+  ) {
+    const argsDelta = event.delta || "";
+    const tracked = state.toolCalls.get(event.item_id) || { index: Math.max(0, state.toolCallIndex - 1) };
+    state.hasToolCalls = true;
+    return {
+      text: "",
+      finishReason: null,
+      tool_calls: [{ index: tracked.index, function: { arguments: argsDelta } }],
+      role: null,
+    };
   }
   if (event.type === "response.completed" || event.type === "response.done") {
-    return { text: "", finishReason: "stop" };
+    return {
+      text: "",
+      finishReason: state.hasToolCalls ? "tool_calls" : "stop",
+      tool_calls: null,
+      role: null,
+    };
   }
 
   // Gemini generateContent / stream chunks
   if (Array.isArray(event.candidates)) {
     let text = "";
+    const tool_calls = [];
     for (const c of event.candidates) {
       const parts = c?.content?.parts || [];
       for (const p of parts) {
         if (typeof p?.text === "string") text += p.text;
+        if (p?.functionCall) {
+          const fc = p.functionCall;
+          const idx = state.toolCallIndex++;
+          state.hasToolCalls = true;
+          tool_calls.push({
+            index: idx,
+            id: `${fc.name || "fn"}-${Date.now()}-${idx}`,
+            type: OPENAI_BLOCK.FUNCTION,
+            function: {
+              name: fc.name || "",
+              arguments: JSON.stringify(fc.args || {}),
+            },
+          });
+        }
       }
       if (c?.finishReason && c.finishReason !== "STOP" && c.finishReason !== "stop") {
-        return { text, finishReason: "stop" };
+        return {
+          text,
+          finishReason: tool_calls.length ? "tool_calls" : "stop",
+          tool_calls: tool_calls.length ? tool_calls : null,
+          role: null,
+        };
       }
     }
-    return { text, finishReason: null };
+    return {
+      text,
+      finishReason: null,
+      tool_calls: tool_calls.length ? tool_calls : null,
+      role: null,
+    };
   }
 
-  // Anthropic SSE event shapes
+  // Anthropic SSE — tool_use content blocks
+  if (event.type === "content_block_start") {
+    const block = event.content_block;
+    if (block?.type === CLAUDE_BLOCK.TOOL_USE) {
+      const toolCallIndex = state.toolCallIndex++;
+      const toolCall = {
+        index: toolCallIndex,
+        id: block.id,
+        type: OPENAI_BLOCK.FUNCTION,
+        function: { name: block.name || "", arguments: "" },
+      };
+      state.toolCalls.set(event.index, toolCall);
+      state.hasToolCalls = true;
+      return { text: "", finishReason: null, tool_calls: [toolCall], role: null };
+    }
+  }
+  if (event.type === "content_block_delta" && event.delta?.type === "input_json_delta") {
+    const toolCall = state.toolCalls.get(event.index);
+    if (toolCall && event.delta.partial_json) {
+      toolCall.function.arguments += event.delta.partial_json;
+      state.hasToolCalls = true;
+      return {
+        text: "",
+        finishReason: null,
+        tool_calls: [
+          {
+            index: toolCall.index,
+            id: toolCall.id,
+            function: { arguments: event.delta.partial_json },
+          },
+        ],
+        role: null,
+      };
+    }
+  }
   if (event.type === "content_block_delta" && event.delta?.text) {
-    return { text: event.delta.text, finishReason: null };
+    return { text: event.delta.text, finishReason: null, tool_calls: null, role: null };
   }
   if (event.type === "content_block_delta" && event.delta?.type === "text_delta") {
-    return { text: event.delta.text || "", finishReason: null };
+    return { text: event.delta.text || "", finishReason: null, tool_calls: null, role: null };
   }
   if (event.type === "message_delta" && event.delta?.stop_reason) {
-    return { text: "", finishReason: mapAnthropicStop(event.delta.stop_reason) };
+    return {
+      text: "",
+      finishReason: mapAnthropicStop(event.delta.stop_reason),
+      tool_calls: null,
+      role: null,
+    };
   }
   if (event.type === "message_stop") {
-    return { text: "", finishReason: "stop" };
+    return {
+      text: "",
+      finishReason: state.hasToolCalls ? "tool_calls" : "stop",
+      tool_calls: null,
+      role: null,
+    };
   }
   if (typeof event.text === "string") {
-    return { text: event.text, finishReason: null };
+    return { text: event.text, finishReason: null, tool_calls: null, role: null };
   }
   if (typeof event.delta?.text === "string") {
-    return { text: event.delta.text, finishReason: null };
+    return { text: event.delta.text, finishReason: null, tool_calls: null, role: null };
   }
 
-  return { text: "", finishReason: null };
+  return { text: "", finishReason: null, tool_calls: null, role: null };
 }
 
 function mapAnthropicStop(reason) {
@@ -415,13 +568,21 @@ function lineToOpenAiSse(line, state) {
     if (unwrapped.kind === "status") {
       const status = unwrapped.status;
       if (status === "StreamEnded" || status?.Failed || status === "failed") {
-        parts.push(chatChunkSse({
-          id,
-          created,
-          model,
-          delta: {},
-          finishReason: status?.Failed ? "stop" : null,
-        }));
+        if (!state.finished) {
+          const finishReason = status?.Failed
+            ? "stop"
+            : state.hasToolCalls
+              ? "tool_calls"
+              : "stop";
+          parts.push(chatChunkSse({
+            id,
+            created,
+            model,
+            delta: {},
+            finishReason: status?.Failed ? "stop" : finishReason,
+          }));
+          state.finished = true;
+        }
       }
       continue;
     }
@@ -429,22 +590,32 @@ function lineToOpenAiSse(line, state) {
     const event = unwrapped.event;
     if (!event || typeof event !== "object") continue;
 
+    // Pass through already-OpenAI chat.completion.chunk events unchanged
+    // (includes tool_calls deltas when Zed nests OpenAI-compatible streams).
     if (event.object === "chat.completion.chunk" && event.choices) {
+      const delta = event.choices[0]?.delta;
+      if (delta?.tool_calls?.length) state.hasToolCalls = true;
+      if (event.choices[0]?.finish_reason === "tool_calls") state.hasToolCalls = true;
+      if (event.choices[0]?.finish_reason) state.finished = true;
       parts.push(sseChunk(event));
       state.roleSent = true;
       continue;
     }
 
-    const extracted = extractTextFromEvent(event);
-    if (!state.roleSent && (extracted.text || extracted.role === "assistant")) {
+    const extracted = extractFromEvent(event, state);
+    if (!state.roleSent && (extracted.text || extracted.tool_calls || extracted.role === "assistant")) {
       parts.push(chatChunkSse({ id, created, model, delta: { role: "assistant" } }));
       state.roleSent = true;
     }
     if (extracted.text) {
       parts.push(chatChunkSse({ id, created, model, delta: { content: extracted.text } }));
     }
+    if (extracted.tool_calls?.length) {
+      parts.push(chatChunkSse({ id, created, model, delta: { tool_calls: extracted.tool_calls } }));
+    }
     if (extracted.finishReason) {
       parts.push(chatChunkSse({ id, created, model, delta: {}, finishReason: extracted.finishReason }));
+      state.finished = true;
     }
   }
 

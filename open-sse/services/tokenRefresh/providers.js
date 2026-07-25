@@ -1,5 +1,6 @@
 import { PROVIDERS, PROVIDER_OAUTH } from "../../config/providers.js";
 import { OAUTH_ENDPOINTS, GITHUB_COPILOT, buildKimiHeaders } from "../../config/appConstants.js";
+import { ZED_LLM_TOKEN_EXPIRES_IN } from "../../config/zedConstants.js";
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import { dedupRefresh } from "./dedup.js";
 import { buildExternalIdpRefreshParams } from "../../../src/lib/oauth/kiroExternalIdp.js";
@@ -672,8 +673,9 @@ export async function refreshCodebuddyToken(refreshToken, log) {
 /**
  * Refresh Zed Hosted AI LLM bearer token via POST /client/llm_tokens.
  * `refreshToken` here is the Zed user access_token; userId lives in providerSpecificData.
+ * Shared by tokenRefresh.js and ZedExecutor.refreshCredentials().
  */
-export async function refreshZedToken(refreshToken, credentials, log) {
+export async function refreshZedToken(refreshToken, credentials, log, proxyOptions = null) {
   const userId = credentials?.providerSpecificData?.userId;
   const zedAccessToken =
     credentials?.providerSpecificData?.zedAccessToken || refreshToken;
@@ -698,7 +700,7 @@ export async function refreshZedToken(refreshToken, credentials, log) {
         Accept: "application/json",
       },
       body: JSON.stringify(body),
-    });
+    }, proxyOptions);
     const text = await res.text();
     if (!res.ok) {
       log?.error?.("TOKEN_REFRESH", `Zed LLM token refresh failed (${res.status}): ${text.slice(0, 200)}`);
@@ -721,7 +723,7 @@ export async function refreshZedToken(refreshToken, credentials, log) {
     return {
       accessToken: token,
       refreshToken: zedAccessToken,
-      expiresIn: 3600,
+      expiresIn: ZED_LLM_TOKEN_EXPIRES_IN,
       providerSpecificData: {
         llmToken: token,
         lastLlmTokenAt: new Date().toISOString(),
