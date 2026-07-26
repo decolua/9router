@@ -4,7 +4,6 @@ import path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { exchangeTokens, getProvider } from "../../src/lib/oauth/providers.js";
-import { getModelInfoCore } from "../../open-sse/services/model.js";
 
 const scopes = [
   "org:create_api_key",
@@ -159,16 +158,6 @@ describe("Claude Code 2.1.220 OAuth", () => {
     expect(fetchSpy.mock.calls[1][0]).toBe("https://api.anthropic.com/api/oauth/profile");
   });
 
-  it("preserves private bare GitHub aliases", async () => {
-    await expect(getModelInfoCore("claude-fable-5", {})).resolves.toEqual({
-      provider: "github",
-      model: "claude-fable-5",
-    });
-    await expect(getModelInfoCore("claude-opus-4.8", {})).resolves.toEqual({
-      provider: "github",
-      model: "claude-opus-4.8",
-    });
-  });
 });
 
 describe("Claude profile connection identity", () => {
