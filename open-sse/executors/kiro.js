@@ -10,6 +10,7 @@ import { STREAM_FIRST_CHUNK_TIMEOUT_MS } from "../config/runtimeConfig.js";
 const KIRO_REPAIR_BUFFER_MAX_BYTES = 8 * 1024 * 1024;
 const KIRO_REPAIR_HEARTBEAT_MS = 10_000;
 const KIRO_SHORT_FINAL_MAX_CHARS = 800;
+const KIRO_ENDPOINT_FALLBACK_STATUSES = new Set([400, 401, 403, 404]);
 const EVENTSTREAM_MAX_MESSAGE_BYTES = 24 * 1024 * 1024;
 const EVENTSTREAM_MAX_HEADERS_BYTES = 128 * 1024;
 const KIRO_EVENT_TYPES = new Set([
@@ -250,14 +251,14 @@ export class KiroExecutor extends BaseExecutor {
   /**
    * Auth-aware endpoint ordering.
    *
-   * API-key Kiro connections store a raw CodeWhisperer credential (validated
-   * against codewhisperer.us-east-1.amazonaws.com via ListAvailableProfiles).
+   * API-key Kiro connections use the Amazon Q surface. The legacy
+   * codewhisperer.* GenerateAssistantResponse endpoint can authenticate the key
+   * but rejects the same valid payload with REQUEST_BODY_INVALID. Since a 400
+   * is terminal in BaseExecutor, putting CodeWhisperer first prevents the working
+   * q.* endpoint from ever being tried. Keep q.* first only for api_key accounts.
+   *
    * The Kiro IDE gateway (runtime.*.kiro.dev) expects Kiro OIDC/social tokens
-   * and rejects an `tokentype: API_KEY` token with 401/403 — which
-   * BaseExecutor.execute() returns immediately (only 429 / network errors fall
-   * through to the next host). So for api-key auth we must try the *.amazonaws.com
-   * CodeWhisperer hosts FIRST, mirroring the Kiro-Go reference fork which never
-   * routes api-key traffic through kiro.dev. External IdP enterprise tokens also
+   * and rejects TokenType=API_KEY. External IdP enterprise tokens instead
    * use the CodeWhisperer surface, with the `TokenType: EXTERNAL_IDP` header.
    * Other OAuth methods keep the default order (kiro.dev first) since their
    * tokens are what that gateway accepts.
@@ -282,12 +283,30 @@ export class KiroExecutor extends BaseExecutor {
 
     const amazon = baseUrls.filter((u) => u.includes("amazonaws.com")).map(regionalize);
     const others = baseUrls.filter((u) => !u.includes("amazonaws.com"));
+    if (authMethod === "api_key") {
+      const q = amazon.filter((u) => u.includes("://q."));
+      const remaining = amazon.filter((u) => !u.includes("://q."));
+      return q.length > 0
+        ? [...q, ...remaining, ...others]
+        : [...amazon, ...others];
+    }
+
     return amazon.length > 0 ? [...amazon, ...others] : baseUrls;
   }
 
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
     const baseUrls = this.getOrderedBaseUrls(credentials);
     return baseUrls[urlIndex] || baseUrls[0] || this.config.baseUrl;
+  }
+
+  // Kiro exposes the same operation through multiple auth surfaces. A 4xx from
+  // one surface can mean "credential not supported here" rather than a bad
+  // account or payload, so exhaust the remaining Kiro endpoints before the
+  // account layer applies cooldown/fallback. The last endpoint remains terminal.
+  shouldRetry(status, urlIndex) {
+    const hasFallback = urlIndex + 1 < this.getFallbackCount();
+    return super.shouldRetry(status, urlIndex)
+      || (hasFallback && KIRO_ENDPOINT_FALLBACK_STATUSES.has(status));
   }
 
   transformRequest(model, body, stream, credentials) {
