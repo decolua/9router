@@ -54,6 +54,26 @@ than guessing from its name.
 This matches fallback semantics: advertised input must remain valid whichever
 member ultimately handles the request.
 
+## Context-aware dispatch
+
+The public minimum is the portable client contract. Runtime preflight adds a
+second layer for requests that can still reach 9Router above that contract:
+
+- estimate input tokens with the existing format-neutral estimator;
+- add the largest requested output limit, or a conservative default allowance;
+- add a small context-error buffer;
+- preserve routing order while skipping members whose known window is smaller
+  than the estimated request budget;
+- keep members with unknown runtime capability metadata eligible for backward
+  compatibility, but never let unknown metadata contribute to the public
+  aggregate;
+- return `combo_context_window_exceeded` without provider dispatch when every
+  known member is undersized.
+
+This preflight is deliberately described as an estimate, not exact tokenizer
+proof. Providers use different tokenizers, so callers should still size and
+compact conversations against the logical Combo's advertised minimum window.
+
 ## Validator contract
 
 Return a strong standard `ETag` and expose it through CORS. Honor `If-None-Match`
@@ -72,15 +92,17 @@ equivalent public ordering is byte/ETag stable, membership changes invalidate,
 and neither raw membership hashes nor a small model-name dictionary reproduce
 the HMAC-backed validator.
 
-`tests/unit/combo-safe-model-metadata.contract.test.js` records the behavior and
-passes without expected-failure markers.
+`tests/unit/combo-safe-model-metadata.contract.test.js` and
+`tests/unit/combo-context-window.test.js` record the behavior and pass without
+expected-failure markers.
 
 ## Merge strategy
 
-Keep physical-model capability discovery in #2242. This change owns only
-recursive conservative aggregation, public projection, canonical response
-ordering, and privacy-preserving conditional ETags.
+Keep physical-model capability discovery in #2242. This change owns recursive
+conservative aggregation, context-aware eligibility, public projection,
+canonical response ordering, and privacy-preserving conditional ETags. It
+addresses the Combo context-routing requirement in #1089.
 
-Provider catalog freshness is a separate source-of-truth concern. See
-`OPENAI_CODEX_REMOTE_CATALOG_ISSUE.md` for the non-duplicate OpenAI/Codex issue
-draft and its explicit Codex Desktop boundary.
+Provider catalog freshness remains a separate source-of-truth concern. In
+particular, #2760 owns Claude Opus 5 and current Claude 4.6+ catalog limits; this
+change consumes capability metadata and does not duplicate that catalog work.

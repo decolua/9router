@@ -6,6 +6,7 @@ import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
+import { estimateInputTokens } from "../utils/usageTracking.js";
 
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
@@ -14,6 +15,74 @@ const HARD_CAPS = new Set(["vision", "pdf", "audioInput", "videoInput"]);
 // Prefixes used when flattening tool turns into plain prose for panel models.
 const TOOL_CALL_PREFIX = "[Called tools: ";
 const TOOL_RESULT_PREFIX = "[Tool result: ";
+const DEFAULT_OUTPUT_BUDGET = 4096;
+const CONTEXT_BUFFER_TOKENS = 2000;
+
+function requestedOutputBudget(body) {
+  const values = [
+    body?.max_output_tokens,
+    body?.max_completion_tokens,
+    body?.max_tokens,
+    body?.generationConfig?.maxOutputTokens,
+    body?.request?.generationConfig?.maxOutputTokens,
+  ]
+    .map(Number)
+    .filter((value) => Number.isFinite(value) && value >= 0);
+  return values.length > 0 ? Math.max(...values) : DEFAULT_OUTPUT_BUDGET;
+}
+
+/**
+ * Remove Combo members whose known context window cannot fit the estimated
+ * request budget. Unknown capability metadata stays eligible for backwards
+ * compatibility, but must not contribute to public Combo metadata.
+ *
+ * This is a conservative preflight guard, not exact tokenizer proof: providers
+ * use different tokenizers and estimateInputTokens is intentionally format
+ * neutral. The public minimum Combo context window remains the portable client
+ * contract.
+ */
+export function selectContextEligibleModels(
+  models,
+  body,
+  {
+    resolveCapabilities = getCapabilitiesForModel,
+    estimateTokens = estimateInputTokens,
+    bufferTokens = CONTEXT_BUFFER_TOKENS,
+  } = {},
+) {
+  if (!Array.isArray(models) || models.length === 0) {
+    return { models, skipped: [], requiredTokens: null };
+  }
+  const estimatedInput = Number(estimateTokens(body));
+  if (!Number.isFinite(estimatedInput) || estimatedInput <= 0) {
+    return { models, skipped: [], requiredTokens: null };
+  }
+  const normalizedBuffer = Number.isFinite(Number(bufferTokens))
+    ? Math.max(0, Number(bufferTokens))
+    : CONTEXT_BUFFER_TOKENS;
+  const requiredTokens = Math.ceil(
+    estimatedInput + requestedOutputBudget(body) + normalizedBuffer,
+  );
+  const eligible = [];
+  const skipped = [];
+
+  for (const modelId of models) {
+    const slash = typeof modelId === "string" ? modelId.indexOf("/") : -1;
+    const provider = slash > 0 ? modelId.slice(0, slash) : "";
+    const model = slash > 0 ? modelId.slice(slash + 1) : modelId;
+    const capabilities = resolveCapabilities(provider, model);
+    const contextWindow = Number(capabilities?.contextWindow);
+    if (!Number.isFinite(contextWindow) || contextWindow <= 0) {
+      eligible.push(modelId);
+    } else if (contextWindow >= requiredTokens) {
+      eligible.push(modelId);
+    } else {
+      skipped.push({ model: modelId, contextWindow });
+    }
+  }
+
+  return { models: eligible, skipped, requiredTokens };
+}
 
 // Flatten tool turns into prose so panel models keep the context but can't loop
 // on tools: drop the request's tools, turn tool/function results into assistant
@@ -226,7 +295,18 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
  * @returns {Promise<Response>}
  */
-export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true }) {
+export async function handleComboChat({
+  body,
+  models,
+  handleSingleModel,
+  log,
+  comboName,
+  comboStrategy,
+  comboStickyLimit = 1,
+  autoSwitch = true,
+  resolveCapabilities = getCapabilitiesForModel,
+  estimateTokens = estimateInputTokens,
+}) {
   // Apply rotation strategy if enabled
   let rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
 
@@ -240,6 +320,39 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       }
       rotatedModels = reordered;
     }
+  }
+
+  const contextEligibility = selectContextEligibleModels(rotatedModels, body, {
+    resolveCapabilities,
+    estimateTokens,
+  });
+  if (contextEligibility.skipped.length > 0) {
+    log.info(
+      "COMBO",
+      `context preflight skipped ${contextEligibility.skipped.length} undersized model(s)`,
+      { requiredTokensEstimate: contextEligibility.requiredTokens },
+    );
+  }
+  rotatedModels = contextEligibility.models;
+  if (rotatedModels.length === 0 && contextEligibility.skipped.length > 0) {
+    const largestContextWindow = Math.max(
+      ...contextEligibility.skipped.map(({ contextWindow }) => contextWindow),
+    );
+    log.warn("COMBO", "No model passed context preflight", {
+      requiredTokensEstimate: contextEligibility.requiredTokens,
+      largestContextWindow,
+    });
+    return new Response(
+      JSON.stringify({
+        error: {
+          code: "combo_context_window_exceeded",
+          message: "No Combo member has a known context window large enough for this request.",
+          required_tokens_estimate: contextEligibility.requiredTokens,
+          largest_context_window: largestContextWindow,
+        },
+      }),
+      { status: 400, headers: { "Content-Type": "application/json" } },
+    );
   }
   
   let lastError = null;
