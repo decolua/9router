@@ -6,6 +6,16 @@ use `<upstream>-fork.<build>`, for example `0.5.40-fork.1`.
 
 ## Local release artifact
 
+From a clean checkout, install the root and CLI build dependencies before
+packing. The CLI install is separate because the MITM bundler uses `esbuild`.
+`--ignore-scripts` prevents the CLI postinstall hook from touching any local
+`~/.9router` data while preparing a release:
+
+```sh
+npm ci --ignore-scripts --no-audit --no-fund
+(cd cli && npm ci --ignore-scripts --no-audit --no-fund)
+```
+
 Build a non-publishing tarball with an explicit build identifier:
 
 ```sh
@@ -18,6 +28,7 @@ Publishing additionally requires an explicit build identifier and npm approval:
 
 ```sh
 NINEROUTER_FORK_BUILD=1 npm run cli:publish
+npm view @loldlm1/9router version
 ```
 
 The scoped package is not considered installable until an approved release is

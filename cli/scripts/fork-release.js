@@ -3,7 +3,20 @@
 const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
-const { resolveForkVersion } = require("./fork-version");
+
+const cliDir = path.resolve(__dirname, "..");
+const appDir = path.resolve(cliDir, "..");
+const artifactDir = path.resolve(appDir, "..");
+
+function requireDependency(name, paths, installHint) {
+  try {
+    require.resolve(name, { paths });
+  } catch {
+    console.error(`Missing release dependency: ${name}`);
+    console.error(`Install release dependencies first: ${installHint}`);
+    process.exit(1);
+  }
+}
 
 const mode = process.argv[2];
 const supportedModes = new Set(["pack", "dry-run", "publish"]);
@@ -22,9 +35,14 @@ if (
   process.exit(1);
 }
 
-const cliDir = path.resolve(__dirname, "..");
-const appDir = path.resolve(cliDir, "..");
-const artifactDir = path.resolve(appDir, "..");
+// The release build uses dependencies from both the app and CLI manifests.
+// Fail before mutating temporary package versions when either set is absent.
+requireDependency("semver", [cliDir, appDir], "npm ci --ignore-scripts && (cd cli && npm ci --ignore-scripts)");
+requireDependency("esbuild", [cliDir], "(cd cli && npm ci --ignore-scripts)");
+requireDependency("next", [appDir], "npm ci --ignore-scripts");
+
+const { resolveForkVersion } = require("./fork-version");
+
 const cliPkgPath = path.join(cliDir, "package.json");
 const appPkgPath = path.join(appDir, "package.json");
 const originals = new Map([

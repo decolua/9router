@@ -37,9 +37,18 @@ The baseline failures above are not treated as fork regressions. New work must k
 Install all three independent dependency sets. In restricted environments, point npm's cache and 9Router data outside the home directory:
 
 ```bash
-npm install --cache /tmp/9router-npm-cache-root
+npm ci --cache /tmp/9router-npm-cache-root
 (cd tests && npm install --cache /tmp/9router-npm-cache-tests)
-(cd cli && npm install --cache /tmp/9router-npm-cache-cli)
+(cd cli && npm ci --cache /tmp/9router-npm-cache-cli)
+```
+
+For a release-only checkout, the root and CLI sets are sufficient. Use
+`--ignore-scripts` so installing the CLI build dependencies does not run its
+postinstall hook against the operator's existing `~/.9router` data:
+
+```bash
+npm ci --ignore-scripts --no-audit --no-fund
+(cd cli && npm ci --ignore-scripts --no-audit --no-fund)
 ```
 
 Run local-only checks without enabling `RUN_REAL`:
