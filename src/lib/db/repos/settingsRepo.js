@@ -39,6 +39,7 @@ const DEFAULT_SETTINGS = {
   headroomEnabled: false,
   headroomUrl: DEFAULT_HEADROOM_URL,
   headroomCompressUserMessages: false,
+  headroomToken: "",
   cavemanEnabled: false,
   cavemanLevel: "full",
   ponytailEnabled: false,

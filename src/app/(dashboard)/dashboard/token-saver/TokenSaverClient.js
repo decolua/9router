@@ -14,6 +14,7 @@ export default function TokenSaverClient() {
   const [rtkEnabled, setRtkEnabledState] = useState(true);
   const [headroomEnabled, setHeadroomEnabled] = useState(false);
   const [headroomUrl, setHeadroomUrl] = useState("http://localhost:8787");
+  const [headroomToken, setHeadroomToken] = useState("");
   const [headroomStatus, setHeadroomStatus] = useState({
     installed: false,
     running: false,
@@ -415,6 +416,7 @@ export default function TokenSaverClient() {
           setRtkEnabledState(data.rtkEnabled !== false);
           setHeadroomEnabled(!!data.headroomEnabled);
           setHeadroomUrl(data.headroomUrl || "http://localhost:8787");
+          setHeadroomToken(data.headroomToken || "");
           setCodeAware(data.headroomCodeAware === true);
           setKompress(data.headroomKompress !== false);
           setCavemanEnabled(!!data.cavemanEnabled);
@@ -817,6 +819,20 @@ export default function TokenSaverClient() {
             <p className="text-xs text-text-muted">
               Use a local proxy for Start/Stop, or an external Docker sidecar
               like http://headroom:8787.
+            </p>
+          </div>
+          <div className="flex flex-col gap-1">
+            <p className="text-sm font-medium">Bearer Token</p>
+            <Input
+              type="password"
+              value={headroomToken}
+              onChange={(e) => setHeadroomToken(e.target.value)}
+              onBlur={() => patchSetting({ headroomToken })}
+              placeholder="Optional — for authenticated endpoints"
+              className="font-mono text-sm"
+            />
+            <p className="text-xs text-text-muted">
+              Sets Authorization: Bearer &lt;token&gt; on compress requests. Leave empty for no auth.
             </p>
           </div>
           {headroomManaged ? (
