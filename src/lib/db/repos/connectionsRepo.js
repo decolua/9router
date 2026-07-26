@@ -57,6 +57,13 @@ function upsert(db, c) {
 }
 
 function deriveConnectionName(data, fallbackName) {
+  if (data.provider === "claude") {
+    const accountId = data.providerSpecificData?.accountId;
+    return data.email
+      || data.displayName
+      || (typeof accountId === "string" ? accountId.slice(0, 8) : null)
+      || fallbackName;
+  }
   if (data.provider === "github") {
     return data.providerSpecificData?.githubLogin
       || data.providerSpecificData?.githubEmail

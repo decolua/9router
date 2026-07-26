@@ -117,12 +117,43 @@ const PROVIDERS = {
 
       return await response.json();
     },
-    mapTokens: (tokens) => ({
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      expiresIn: tokens.expires_in,
-      scope: tokens.scope,
-    }),
+    postExchange: async (tokens, proxyOptions) => {
+      try {
+        const response = await fetch("https://api.anthropic.com/api/oauth/profile", {
+          headers: {
+            Authorization: `Bearer ${tokens.access_token}`,
+            "Content-Type": "application/json",
+            "Cache-Control": "no-cache",
+          },
+          signal: AbortSignal.timeout(10_000),
+          proxyOptions,
+        });
+        return { profile: response.ok ? await response.json() : null };
+      } catch {
+        return { profile: null };
+      }
+    },
+    mapTokens: (tokens, extra) => {
+      const account = extra?.profile?.account;
+      const organization = extra?.profile?.organization;
+      return {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresIn: tokens.expires_in,
+        scope: tokens.scope,
+        email: account?.email || null,
+        displayName: account?.display_name || null,
+        providerSpecificData: {
+          accountId: account?.uuid,
+          organizationId: organization?.uuid,
+          organizationType: organization?.organization_type,
+          hasClaudeMax: account?.has_claude_max,
+          hasClaudePro: account?.has_claude_pro,
+          rateLimitTier: organization?.rate_limit_tier,
+          subscriptionStatus: organization?.subscription_status,
+        },
+      };
+    },
   },
 
   codex: {
