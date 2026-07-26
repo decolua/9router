@@ -880,5 +880,18 @@
       "preserveCacheControl": true
     },
     "format": "openai"
+  },
+  "frontier-for-all": {
+    "baseUrl": "https://frontier-for-all.vercel.app/api/v1/chat/completions",
+    "validateUrl": "https://frontier-for-all.vercel.app/api/v1/models",
+    "retry": {
+      "429": {
+        "attempts": 3,
+        "delayMs": 3000
+      }
+    },
+    "format": "openai",
+    "clientId": "07b329d7-59a0-429d-8037-0f036b7b1efb",
+    "tokenUrl": "https://frontier-for-all.vercel.app/token"
   }
 }

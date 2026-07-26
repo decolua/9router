@@ -23,6 +23,7 @@ const resolved = {
     "grok-cli": PROVIDERS["grok-cli"]?.tokenUrl,
     cline: PROVIDERS.cline?.tokenUrl,
     kimi: PROVIDERS.kimi?.tokenUrl,
+    "frontier-for-all": PROVIDERS["frontier-for-all"]?.tokenUrl,
   },
   authUrls: {
     qwen: PROVIDERS.qwen?.authUrl,
@@ -34,6 +35,8 @@ const resolved = {
     kimi: PROVIDERS.kimi?.refreshUrl,
     xai: PROVIDERS.xai?.refreshUrl,
     "grok-cli": PROVIDERS["grok-cli"]?.tokenUrl,
+    // Frontier's refresh grant goes to the same /token endpoint
+    "frontier-for-all": PROVIDERS["frontier-for-all"]?.tokenUrl,
   },
   clientIds: {
     claude: PROVIDERS.claude?.clientId,
@@ -42,6 +45,7 @@ const resolved = {
     iflow: PROVIDERS.iflow?.clientId,
     kimi: PROVIDERS.kimi?.clientId,
     "grok-cli": PROVIDERS["grok-cli"]?.clientId,
+    "frontier-for-all": PROVIDERS["frontier-for-all"]?.clientId,
   },
 };
 const current = JSON.parse(JSON.stringify(resolved));

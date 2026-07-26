@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { getProviderConnectionById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
-import { GEMINI_CONFIG } from "@/lib/oauth/constants/oauth";
-import { refreshGoogleToken, refreshCodexToken, updateProviderCredentials } from "@/sse/services/tokenRefresh";
+import { GEMINI_CONFIG, FRONTIER_CONFIG } from "@/lib/oauth/constants/oauth";
+import { refreshGoogleToken, refreshCodexToken, refreshFrontierToken, updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
@@ -277,6 +277,19 @@ const PROVIDER_MODELS_CONFIG = {
   nvidia: createOpenAIModelsConfig("https://integrate.api.nvidia.com/v1/models"),
   assemblyai: createOpenAIModelsConfig("https://api.assemblyai.com/v1/models"),
   "vercel-ai-gateway": createOpenAIModelsConfig("https://ai-gateway.vercel.sh/v1/models"),
+  // Returns exactly one entry — the model this user picked for 9Router on their
+  // Frontier dashboard. Refresh-on-401 because Frontier access tokens last 1h.
+  "frontier-for-all": {
+    customResolver: buildOAuthResolver({
+      refreshFn: (conn) => refreshFrontierToken(conn.refreshToken),
+      fetchFn: (token) => fetch(FRONTIER_CONFIG.modelsUrl, {
+        method: "GET",
+        headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+      }),
+      parseFn: parseOpenAIStyleModels,
+      errorLabel: "Failed to fetch Frontier models",
+    }),
+  },
   kimchi: {
     customResolver: async (connection) => {
       const result = await resolveKimchiModels({

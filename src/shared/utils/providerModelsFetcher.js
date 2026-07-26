@@ -11,6 +11,8 @@ const cache = new Map(); // key: fetcher.url → { data, expiresAt }
  * @returns {Promise<Array<{ id: string, name: string, contextLength?: number }>>}
  */
 export async function fetchSuggestedModels(fetcher) {
+  // Static catalogue shipped in the registry (provider has no public models API).
+  if (fetcher?.type === "static") return fetcher.models || [];
   if (!fetcher?.url || !fetcher?.type) return [];
 
   const cached = cache.get(fetcher.url);

@@ -486,11 +486,15 @@ export default function ProviderDetailPage() {
   }, [providerId, connections]);
 
   // Fetch suggested models from provider's public API (if configured)
+  const modelsFetcher = (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId] || FREE_TIER_PROVIDERS[providerId])?.modelsFetcher;
+  // Provider-specific copy for the suggestion list and the Add Custom Model dialog
+  // (e.g. Frontier: a named model only applies once the user turns hints on).
+  const suggestedModelsLabel = modelsFetcher?.label;
+  const suggestedModelsNotice = modelsFetcher?.notice;
   useEffect(() => {
-    const fetcher = (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId] || FREE_TIER_PROVIDERS[providerId])?.modelsFetcher;
-    if (!fetcher) return;
-    fetchSuggestedModels(fetcher).then(setSuggestedModels);
-  }, [providerId]);
+    if (!modelsFetcher) return;
+    fetchSuggestedModels(modelsFetcher).then(setSuggestedModels);
+  }, [modelsFetcher]);
 
   const handleSetAlias = async (modelId, alias, providerAliasOverride = providerAlias) => {
     const fullModel = `${providerAliasOverride}/${modelId}`;
@@ -1197,7 +1201,15 @@ export default function ProviderDetailPage() {
           if (notAdded.length === 0) return null;
           return (
             <div className="w-full mt-2">
-              <p className="text-xs text-text-muted mb-2">Suggested free models (≥200k context):</p>
+              {suggestedModelsNotice && (
+                <p className="text-xs text-text-muted mb-2 flex items-start gap-1.5">
+                  <span className="material-symbols-outlined text-[13px] shrink-0 mt-px">info</span>
+                  <span>{suggestedModelsNotice}</span>
+                </p>
+              )}
+              <p className="text-xs text-text-muted mb-2">
+                {suggestedModelsLabel || "Suggested free models (≥200k context):"}
+              </p>
               <div className="flex flex-wrap gap-2">
                 {notAdded.map((m) => (
                   <button
@@ -1206,7 +1218,11 @@ export default function ProviderDetailPage() {
                       await handleAddCustomModel(m.id, "llm", providerStorageAlias);
                     }}
                     className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-black/10 dark:border-white/10 text-xs text-text-muted hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
-                    title={`${m.name} · ${(m.contextLength / 1000).toFixed(0)}k ctx`}
+                    title={
+                      m.contextLength
+                        ? `${m.name} · ${(m.contextLength / 1000).toFixed(0)}k ctx`
+                        : m.name
+                    }
                   >
                     <span className="material-symbols-outlined text-[13px]">add</span>
                     {m.id.split("/").pop()}
@@ -1761,6 +1777,7 @@ export default function ProviderDetailPage() {
           isOpen={showAddCustomModel}
           providerAlias={providerStorageAlias}
           providerDisplayAlias={providerDisplayAlias}
+          notice={suggestedModelsNotice}
           onSave={async (modelId) => {
             await handleAddCustomModel(modelId, "llm", providerStorageAlias);
             setShowAddCustomModel(false);

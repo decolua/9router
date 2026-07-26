@@ -17,6 +17,7 @@ import {
   CLINE_CONFIG,
   KILOCODE_CONFIG,
   KIMCHI_CONFIG,
+  FRONTIER_CONFIG,
 } from "@/lib/oauth/constants/oauth";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
 
@@ -125,6 +126,21 @@ const OAUTH_TEST_CONFIG = {
     acceptStatuses: [402],
     softFailMessage: {
       402: "Connected, but Grok Build credits are exhausted (spending limit). Add credits or upgrade SuperGrok.",
+    },
+  },
+  // Frontier for All — probe /api/v1/models (no inference, no provider quota).
+  "frontier-for-all": {
+    url: FRONTIER_CONFIG.modelsUrl,
+    method: "GET",
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    extraHeaders: { Accept: "application/json" },
+    refreshable: true,
+    // 402 = the user has connected no provider key on their Frontier dashboard.
+    // The token itself is valid, so keep the connection active and say what to fix.
+    acceptStatuses: [402],
+    softFailMessage: {
+      402: "Connected, but no provider key is set up on your Frontier dashboard. Connect one at frontier-for-all.vercel.app/dashboard.",
     },
   },
 };
@@ -240,7 +256,12 @@ async function refreshOAuthToken(connection) {
       return { accessToken: data.access_token, expiresIn: data.expires_in, refreshToken: data.refresh_token || refreshToken };
     }
 
-    if (provider === "codex" || provider === "grok-cli" || provider === "xai") {
+    if (
+      provider === "codex" ||
+      provider === "grok-cli" ||
+      provider === "xai" ||
+      provider === "frontier-for-all"
+    ) {
       return await refreshProviderCredentials(provider, connection, console);
     }
 

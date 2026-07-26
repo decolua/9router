@@ -124,6 +124,9 @@ export const KIMCHI_CONFIG = { ...PROVIDER_OAUTH["kimchi"] };
 // Endpoint: cli-chat-proxy.grok.com — same client_id as xai, different flow + scopes
 export const GROK_CLI_CONFIG = { ...PROVIDER_OAUTH["grok-cli"] };
 
+// Frontier for All OAuth Configuration (RFC 8628 Device Code Flow, public client)
+export const FRONTIER_CONFIG = { ...PROVIDER_OAUTH["frontier-for-all"] };
+
 // OAuth timeout (5 minutes)
 export const OAUTH_TIMEOUT = 300000;
 
@@ -149,4 +152,5 @@ export const PROVIDERS = {
   CODEBUDDY: "codebuddy-cn",
   KIMCHI: "kimchi",
   GROK_CLI: "grok-cli",
+  FRONTIER: "frontier-for-all",
 };
