@@ -18,6 +18,7 @@ export default {
   transport: {
     baseUrl: "https://integrate.api.nvidia.com/v1/chat/completions",
     validateUrl: "https://integrate.api.nvidia.com/v1/models",
+    quirks: { toolNameMaxLength: 64 },
   },
   models: [
     { id: "minimaxai/minimax-m2.7", name: "MiniMax M2.7" },
