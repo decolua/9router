@@ -104,6 +104,16 @@ import p100 from "./codebuddy-intl.js";
 // Re-enable by uncommenting both the import and the array entry below.
 // import p102 from "./trae.js";
 import p103 from "./zed.js";
+import p105 from "./api-airforce.js";
+import p106 from "./baidu.js";
+import p107 from "./bazaarlink.js";
+import p108 from "./bluesminds.js";
+import p109 from "./kilo-gateway.js";
+import p110 from "./llm7.js";
+import p111 from "./sambanova.js";
+import p112 from "./tencent.js";
+import p113 from "./morph.js";
+import p114 from "./devin-cli.js";
 // import p104 from "./windsurf.js";
 
 export default [
@@ -210,5 +220,15 @@ export default [
   p100,
   // p102, // trae — hidden, no tool calling
   p103,
+  p105,
+  p106,
+  p107,
+  p108,
+  p109,
+  p110,
+  p111,
+  p112,
+  p113,
+  p114,
   // p104, // windsurf — hidden, no tool calling
 ];

@@ -1,0 +1,42 @@
+export default {
+  id: "baidu",
+  alias: "qianfan",
+  aliases: ["qianfan", "ernie", "baidu-qianfan"],
+  uiAlias: "qianfan",
+  category: "apikey",
+  authType: "apikey",
+  authModes: ["apikey"],
+  display: {
+    name: "Baidu Qianfan",
+    icon: "search",
+    color: "#2932E1",
+    textIcon: "BD",
+    website: "https://cloud.baidu.com/product/qianfan.html",
+    notice: {
+      apiKeyUrl:
+        "https://console.bce.baidu.com/qianfan/ais/console/applicationConsole/application",
+    },
+  },
+  transport: {
+    baseUrl: "https://qianfan.baidubce.com/v2/chat/completions",
+    validateUrl: "https://qianfan.baidubce.com/v2/models",
+  },
+  models: [
+    { id: "ernie-5.1", name: "ERNIE 5.1" },
+    { id: "ernie-5.0", name: "ERNIE 5.0" },
+    { id: "ernie-x1.1", name: "ERNIE X1.1" },
+    { id: "ernie-4.5-turbo-128k", name: "ERNIE 4.5 Turbo 128K" },
+    { id: "ernie-4.5-turbo-32k", name: "ERNIE 4.5 Turbo 32K" },
+    { id: "ernie-4.5-turbo-vl", name: "ERNIE 4.5 Turbo VL" },
+    { id: "ernie-4.5-21b-a3b", name: "ERNIE 4.5 21B A3B" },
+    { id: "ernie-4.5-0.3b", name: "ERNIE 4.5 0.3B" },
+    { id: "ernie-4.0-8k", name: "ERNIE 4.0 8K" },
+    { id: "ernie-4.0-turbo-128k", name: "ERNIE 4.0 Turbo 128K" },
+    { id: "ernie-4.0-turbo-8k", name: "ERNIE 4.0 Turbo 8K" },
+    { id: "ernie-3.5-8k", name: "ERNIE 3.5 8K" },
+    { id: "ernie-speed-128k", name: "ERNIE Speed 128K" },
+    { id: "ernie-speed-8k", name: "ERNIE Speed 8K" },
+    { id: "ernie-lite-8k", name: "ERNIE Lite 8K" },
+    { id: "ernie-tiny-8k", name: "ERNIE Tiny 8K" },
+  ],
+};
