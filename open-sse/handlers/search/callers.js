@@ -327,6 +327,51 @@ function buildSearxngRequest(config, params) {
   };
 }
 
+function buildFirecrawlSearchRequest(config, params) {
+  const { includes, excludes } = parseDomainFilter(params.domainFilter);
+  const body = {
+    query: params.query,
+    limit: params.maxResults,
+  };
+
+  // v2 flat schema
+  if (params.searchType === "news") {
+    body.sources = ["news"];
+  } else {
+    body.sources = ["web"];
+  }
+
+  if (includes.length) body.includeDomains = includes;
+  if (excludes.length) body.excludeDomains = excludes;
+
+  if (params.country) body.country = params.country;
+
+  if (params.searchType !== "news" && params.timeRange && params.timeRange !== "any") {
+    const tbsMap = { day: "qdr:d", week: "qdr:w", month: "qdr:m", year: "qdr:y" };
+    if (tbsMap[params.timeRange]) body.tbs = tbsMap[params.timeRange];
+  }
+
+  // Scrape options for content extraction (optional, controlled by contentOptions)
+  if (params.contentOptions?.full_page) {
+    body.scrapeOptions = {
+      formats: [params.contentOptions.format === "markdown" ? "markdown" : "html"],
+      onlyMainContent: true,
+    };
+  }
+
+  return {
+    url: resolveBaseUrl(config, params),
+    init: {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${params.token}`,
+      },
+      body: JSON.stringify(body),
+    },
+  };
+}
+
 // ── Dispatcher ──────────────────────────────────────────────────────────
 
 const BUILDERS = {
@@ -340,6 +385,7 @@ const BUILDERS = {
   "searchapi": buildSearchApiRequest,
   "youcom": buildYouComRequest,
   "searxng": buildSearxngRequest,
+  "firecrawl": buildFirecrawlSearchRequest,
 };
 
 /**
