@@ -31,6 +31,16 @@ NINEROUTER_FORK_BUILD=1 npm run cli:publish
 npm view @loldlm1/9router version
 ```
 
+The npm account must authenticate with either a granular publish token that can
+bypass 2FA or a current one-time code. To avoid placing an OTP in shell history:
+
+```sh
+read -rsp "npm OTP: " NINEROUTER_NPM_OTP
+printf '\n'
+NPM_CONFIG_OTP="$NINEROUTER_NPM_OTP" NINEROUTER_FORK_BUILD=1 npm run cli:publish
+unset NINEROUTER_NPM_OTP
+```
+
 The release wrapper publishes the scoped fork build under the package's
 `latest` dist-tag. This keeps the unscoped upstream package untouched while
 allowing `npm install -g @loldlm1/9router` to resolve the newest fork build.

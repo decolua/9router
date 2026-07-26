@@ -100,4 +100,8 @@ Before preparing an upstream patch, branch directly from `upstream/master` and c
 
 Publishing npm packages, container images, or deployments always requires a protected manual approval. Upstream detection in the dashboard must never replace an installed fork build with the official unscoped package.
 
+The npm publisher must use either a granular token with publish permission and
+2FA bypass enabled or provide `NPM_CONFIG_OTP` for the current publish command.
+Never commit or log either credential.
+
 Rollback by installing a previously validated package version or reverting the single sprint commit. Preserve `~/.9router`; do not delete databases, runtime directories, or volumes as part of a routine rollback.
