@@ -1,6 +1,8 @@
 # v0.5.40 (2026-07-20)
 
 ## Features
+- **Frontier for All**: add provider — OAuth device-code login, OpenAI-compatible proxy, model chosen by the user on their Frontier dashboard
+- **Providers**: registry can ship a static suggested-model catalogue (`modelsFetcher.type: "static"`) with its own label/notice in the Add Custom Model dialog
 - **i18n**: add Khmer (km) translations
 - **CLI tools**: configure Grok Build subagent models
 - **Kimi**: merge OAuth into dual-auth provider, add K3 / K2.7 models

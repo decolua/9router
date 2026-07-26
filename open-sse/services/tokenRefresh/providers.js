@@ -258,6 +258,71 @@ export async function refreshQwenToken(refreshToken, log) {
   }, log);
 }
 
+/**
+ * Frontier for All refresh — public client, form-encoded, no client_secret.
+ *
+ * Refresh tokens ROTATE: every refresh retires the one we sent. Replaying a
+ * retired token makes Frontier revoke the entire family (access + refresh +
+ * every descendant of the original grant), because it cannot tell a buggy retry
+ * from a stolen token. So: dedupRefresh keeps refreshes serial, and any
+ * invalid_grant is reported as unrecoverable so the caller re-authorizes
+ * instead of retrying with a token that is now poison.
+ */
+export async function refreshFrontierToken(refreshToken, log) {
+  if (!refreshToken) return null;
+  return dedupRefresh("frontier-for-all", refreshToken, async () => {
+    try {
+      const response = await fetch(OAUTH_ENDPOINTS["frontier-for-all"].token, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          refresh_token: refreshToken,
+          client_id: PROVIDERS["frontier-for-all"].clientId,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        const failure = classifyOAuthRefreshError(errorText, response.status);
+        if (failure.permanent) {
+          log?.error?.("TOKEN_REFRESH", "Frontier refresh token rotated or revoked. Re-login required.", {
+            status: response.status,
+            code: failure.code,
+          });
+          return { error: "unrecoverable_refresh_error", code: failure.code };
+        }
+        log?.error?.("TOKEN_REFRESH", "Failed to refresh Frontier token", {
+          status: response.status,
+          error: errorText,
+        });
+        return null;
+      }
+
+      const tokens = await response.json();
+      log?.info?.("TOKEN_REFRESH", "Successfully refreshed Frontier token", {
+        hasNewAccessToken: !!tokens.access_token,
+        hasNewRefreshToken: !!tokens.refresh_token,
+        expiresIn: tokens.expires_in,
+      });
+
+      return {
+        accessToken: tokens.access_token,
+        // Persist the rotated token; falling back to the old one would poison
+        // the next refresh, so only do it when Frontier returned nothing new.
+        refreshToken: tokens.refresh_token || refreshToken,
+        expiresIn: tokens.expires_in,
+      };
+    } catch (error) {
+      log?.error?.("TOKEN_REFRESH", `Network error refreshing Frontier token: ${error.message}`);
+      return null;
+    }
+  }, log);
+}
+
 export function classifyOAuthRefreshError(errorText = "", status = 0) {
   let parsed = null;
   try {

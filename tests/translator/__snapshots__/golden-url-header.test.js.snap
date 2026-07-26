@@ -400,6 +400,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > fireworks → header
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > frontier-for-all → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > gemini → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -1051,6 +1070,13 @@ exports[`GOLDEN buildUrl (default executor providers) > fireworks → url (strea
 {
   "nonStream": "https://api.fireworks.ai/inference/v1/chat/completions",
   "stream": "https://api.fireworks.ai/inference/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > frontier-for-all → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://frontier-for-all.vercel.app/api/v1/chat/completions",
+  "stream": "https://frontier-for-all.vercel.app/api/v1/chat/completions",
 }
 `;
 

@@ -28,6 +28,7 @@ import {
   CODEBUDDY_CONFIG,
   KIMCHI_CONFIG,
   GROK_CLI_CONFIG,
+  FRONTIER_CONFIG,
   getOAuthClientMetadata,
 } from "./constants/oauth";
 import { XAI_CONFIG, XAI_PKCE_VERIFIER_BYTES } from "./constants/xai";
@@ -377,6 +378,103 @@ const PROVIDERS = {
           userId,
           hasGrokCodeAccess: extra?.user?.hasGrokCodeAccess ?? null,
           subscriptionTier: extra?.user?.subscriptionTier ?? null,
+        },
+      };
+    },
+  },
+
+  // Frontier for All — textbook RFC 8628 device flow (docs/partners.md).
+  // No PKCE on the device grant, no client secret (public client).
+  "frontier-for-all": {
+    config: FRONTIER_CONFIG,
+    flowType: "device_code",
+    requestDeviceCode: async (config) => {
+      const response = await fetch(config.deviceCodeUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+        body: new URLSearchParams({
+          client_id: config.clientId,
+          scope: config.scope,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Frontier device code request failed: ${error}`);
+      }
+
+      return await response.json();
+    },
+    pollToken: async (config, deviceCode) => {
+      const response = await fetch(config.deviceTokenUrl || config.tokenUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+        body: new URLSearchParams({
+          grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+          device_code: deviceCode,
+          client_id: config.clientId,
+        }),
+      });
+
+      let data;
+      try {
+        data = await response.json();
+      } catch {
+        const text = await response.text();
+        data = { error: "invalid_response", error_description: text };
+      }
+
+      // Pending states come back as 400 + error per RFC 8628
+      const pending = data?.error === "authorization_pending" || data?.error === "slow_down";
+      return { ok: response.ok || pending, data };
+    },
+    postExchange: async (tokens) => {
+      // GET /api/v1/models returns exactly one entry: the model this user picked
+      // for us. Surfacing it at login is how the user finds out up front that
+      // nothing is connected (402) or nothing qualifies (eligible:false).
+      try {
+        const res = await fetch(FRONTIER_CONFIG.modelsUrl, {
+          headers: {
+            Authorization: `Bearer ${tokens.access_token}`,
+            Accept: "application/json",
+          },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          return { model: data?.data?.[0] || null };
+        }
+      } catch {
+        /* non-fatal — the connection is valid regardless */
+      }
+      return { model: null };
+    },
+    mapTokens: (tokens, extra) => {
+      const model = extra?.model || null;
+      const frontier = model?.frontier || {};
+      return {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token || null,
+        expiresIn: tokens.expires_in,
+        // Access tokens live 1h; an absolute expiry lets the proactive refresh
+        // path rotate before the reactive 401 path has to.
+        expiresAt: tokens.expires_in
+          ? new Date(Date.now() + tokens.expires_in * 1000).toISOString()
+          : null,
+        scope: tokens.scope,
+        // No userinfo endpoint — the user's chosen model is the only identity
+        // Frontier exposes, and it is what distinguishes two connections.
+        displayName: model?.id ? `Frontier — ${model.id}` : undefined,
+        providerSpecificData: {
+          authMethod: "device_code",
+          resolvedModel: model?.id || null,
+          upstreamProvider: frontier.provider || null,
+          eligible: frontier.eligible ?? null,
         },
       };
     },
