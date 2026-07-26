@@ -210,6 +210,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [fetching, setFetching] = useState(false);
+  const [error, setError] = useState(null);
   const [tableView, setTableView] = useState("model");
   const [viewMode, setViewMode] = useState("costs");
   const [providers, setProviders] = useState([]);
@@ -218,6 +219,30 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   const hasLoadedStats = useRef(false);
   const period = periodProp ?? periodLocal;
   const setPeriod = setPeriodProp ?? setPeriodLocal;
+
+  async function fetchStats() {
+    setError(null);
+    if (isInitialLoad.current) {
+      isInitialLoad.current = false;
+      setLoading(true);
+    } else {
+      setFetching(true);
+    }
+
+    try {
+      const res = await fetch(`/api/usage/stats?period=${period}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      hasLoadedStats.current = true;
+      setStats((prev) => ({ ...prev, ...data }));
+    } catch (err) {
+      console.error("[UsageStats] Failed to fetch stats:", err);
+      setError(err);
+    } finally {
+      setLoading(false);
+      setFetching(false);
+    }
+  }
 
   // Fetch connected providers once, deduplicate by provider type
   // Always include noAuth free providers (e.g. opencode) regardless of connections
@@ -253,27 +278,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
 
   // Fetch filtered stats via REST when period changes
   useEffect(() => {
-    // First load: show full spinner; subsequent: show subtle fetching indicator
-    if (isInitialLoad.current) {
-      isInitialLoad.current = false;
-      setLoading(true);
-    } else {
-      setFetching(true);
-    }
-
-    fetch(`/api/usage/stats?period=${period}`)
-      .then((r) => r.ok ? r.json() : null)
-      .then((data) => {
-        if (data) {
-          hasLoadedStats.current = true;
-          setStats((prev) => ({ ...prev, ...data }));
-        }
-      })
-      .catch(() => {})
-      .finally(() => {
-        setLoading(false);
-        setFetching(false);
-      });
+    fetchStats();
   }, [period]);
 
   // SSE connection - real-time updates for activeRequests + recentRequests only
@@ -283,11 +288,10 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
     es.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
-        // Always merge only real-time fields, never overwrite full stats from REST
         setStats((prev) => {
-          if (!prev) return prev;
+          const base = prev || {};
           return {
-            ...prev,
+            ...base,
             activeRequests: data.activeRequests,
             recentRequests: data.recentRequests,
             errorProvider: data.errorProvider,
@@ -433,7 +437,20 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
     }
   }, [stats, tableView, sortBy, sortOrder]);
 
-  if (!stats && !loading) return <div className="text-text-muted">Failed to load usage statistics.</div>;
+  if (error && !stats && !loading) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 py-12 text-text-muted">
+        <span className="material-symbols-outlined text-[32px]">wifi_off_2</span>
+        <p>Failed to load usage statistics.</p>
+        <button
+          onClick={fetchStats}
+          className="rounded-lg border border-border bg-bg-subtle px-4 py-2 text-sm font-medium text-text-main hover:bg-bg-hover"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   const spinner = (
     <div className="flex items-center justify-center py-12 text-text-muted">
@@ -465,7 +482,12 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       )}
 
       {/* Overview cards */}
-      {loading ? spinner : <OverviewCards stats={stats} />}
+      {loading ? spinner : (((stats.totalRequests || 0) === 0 && !fetching && !error) ? (
+        <Card className="flex flex-col items-center justify-center gap-2 py-8 text-text-muted">
+          <span className="material-symbols-outlined text-[32px]">inbox</span>
+          <p className="text-sm">No usage recorded yet. Start using 9Router to see statistics here.</p>
+        </Card>
+      ) : <OverviewCards stats={stats} />)}
 
       {/* Provider topology + Recent Requests */}
       {loading ? spinner : (
