@@ -118,7 +118,14 @@ export async function createProviderConnection(data, { beforePersist } = {}) {
     const all = db.all(`SELECT * FROM providerConnections WHERE provider = ?`, [data.provider]).map(rowToConn);
 
     let existing = null;
-    if (data.authType === "oauth" && data.email) {
+    if (data.authType === "oauth" && data.provider === "claude") {
+      const incomingAccountId = data.providerSpecificData?.accountId;
+      if (incomingAccountId) {
+        existing = all.find(c =>
+          c.authType === "oauth" && c.providerSpecificData?.accountId === incomingAccountId
+        );
+      }
+    } else if (data.authType === "oauth" && data.email) {
       const incomingUsername = data.providerSpecificData?.username;
       const incomingWs = data.providerSpecificData?.chatgptAccountId;
       existing = all.find(c => {

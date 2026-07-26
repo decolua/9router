@@ -235,4 +235,66 @@ describe("Claude profile connection identity", () => {
     expect(fallback.name).toBe("Account 4");
     await expect(db.getProviderConnections({ provider: "claude" })).resolves.toHaveLength(4);
   });
+
+  it("deduplicates a Claude account UUID after its email changes", async () => {
+    const original = await db.createProviderConnection({
+      provider: "claude",
+      authType: "oauth",
+      accessToken: "stable-account-old-token",
+      email: "stable-old@example.test",
+      providerSpecificData: { accountId: "stable-account-id" },
+    });
+    const updated = await db.createProviderConnection({
+      provider: "claude",
+      authType: "oauth",
+      accessToken: "stable-account-new-token",
+      email: "stable-new@example.test",
+      providerSpecificData: { accountId: "stable-account-id" },
+    });
+
+    expect(updated.id).toBe(original.id);
+    expect(updated.email).toBe("stable-new@example.test");
+    expect(updated.accessToken).toBe("stable-account-new-token");
+  });
+
+  it("keeps different Claude account UUIDs with one email separate", async () => {
+    const first = await db.createProviderConnection({
+      provider: "claude",
+      authType: "oauth",
+      accessToken: "shared-email-first-token",
+      email: "shared@example.test",
+      providerSpecificData: { accountId: "shared-email-account-one" },
+    });
+    const second = await db.createProviderConnection({
+      provider: "claude",
+      authType: "oauth",
+      accessToken: "shared-email-second-token",
+      email: "shared@example.test",
+      providerSpecificData: { accountId: "shared-email-account-two" },
+    });
+
+    expect(second.id).not.toBe(first.id);
+  });
+
+  it("does not email-deduplicate Claude OAuth without an incoming account UUID", async () => {
+    const identified = await db.createProviderConnection({
+      provider: "claude",
+      authType: "oauth",
+      accessToken: "identified-token",
+      email: "missing-id@example.test",
+      providerSpecificData: { accountId: "identified-account-id" },
+    });
+    const unidentified = await db.createProviderConnection({
+      provider: "claude",
+      authType: "oauth",
+      accessToken: "unidentified-token",
+      email: "missing-id@example.test",
+    });
+
+    expect(unidentified.id).not.toBe(identified.id);
+    await expect(db.getProviderConnectionById(identified.id)).resolves.toMatchObject({
+      accessToken: "identified-token",
+      providerSpecificData: { accountId: "identified-account-id" },
+    });
+  });
 });
