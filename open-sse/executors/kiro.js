@@ -1,6 +1,10 @@
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
-import { resolveKiroModel } from "../config/kiroConstants.js";
+import {
+  KIRO_CODEWHISPERER_TARGET,
+  KIRO_ENDPOINT_FALLBACK_STATUSES,
+  resolveKiroModel,
+} from "../config/kiroConstants.js";
 import { v4 as uuidv4 } from "uuid";
 import { refreshKiroToken } from "../services/tokenRefresh.js";
 import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
@@ -10,7 +14,6 @@ import { STREAM_FIRST_CHUNK_TIMEOUT_MS } from "../config/runtimeConfig.js";
 const KIRO_REPAIR_BUFFER_MAX_BYTES = 8 * 1024 * 1024;
 const KIRO_REPAIR_HEARTBEAT_MS = 10_000;
 const KIRO_SHORT_FINAL_MAX_CHARS = 800;
-const KIRO_ENDPOINT_FALLBACK_STATUSES = new Set([400, 401, 403, 404]);
 const EVENTSTREAM_MAX_MESSAGE_BYTES = 24 * 1024 * 1024;
 const EVENTSTREAM_MAX_HEADERS_BYTES = 128 * 1024;
 const KIRO_EVENT_TYPES = new Set([
@@ -217,12 +220,17 @@ export class KiroExecutor extends BaseExecutor {
     super("kiro", PROVIDERS.kiro);
   }
 
-  buildHeaders(credentials, stream = true) {
+  buildHeaders(credentials, stream = true, url = "") {
     const headers = {
       ...this.config.headers,
       "Amz-Sdk-Request": "attempt=1; max=3",
       "Amz-Sdk-Invocation-Id": uuidv4()
     };
+    if (url.includes("://codewhisperer.")) {
+      headers["X-Amz-Target"] = KIRO_CODEWHISPERER_TARGET;
+    } else {
+      delete headers["X-Amz-Target"];
+    }
 
     // API-key auth: the key is stored as accessToken and sent as a bearer token
     // exactly like an OAuth access token, but with an extra `tokentype: API_KEY`
@@ -237,8 +245,8 @@ export class KiroExecutor extends BaseExecutor {
     const apiKey = credentials?.apiKey || (isApiKey ? credentials?.accessToken : null);
     if (isApiKey && apiKey) {
       headers["Authorization"] = `Bearer ${apiKey}`;
-      headers["tokentype"] = "API_KEY";
-    } else if (credentials.accessToken) {
+      headers["TokenType"] = "API_KEY";
+    } else if (credentials?.accessToken) {
       headers["Authorization"] = `Bearer ${credentials.accessToken}`;
       if (isExternalIdp) {
         headers["TokenType"] = "EXTERNAL_IDP";
@@ -299,10 +307,8 @@ export class KiroExecutor extends BaseExecutor {
     return baseUrls[urlIndex] || baseUrls[0] || this.config.baseUrl;
   }
 
-  // Kiro exposes the same operation through multiple auth surfaces. A 4xx from
-  // one surface can mean "credential not supported here" rather than a bad
-  // account or payload, so exhaust the remaining Kiro endpoints before the
-  // account layer applies cooldown/fallback. The last endpoint remains terminal.
+  // Retry only endpoint/auth-surface failures. Payload-invalid HTTP 400 must be
+  // terminal: sending the same malformed body to every surface cannot repair it.
   shouldRetry(status, urlIndex) {
     const hasFallback = urlIndex + 1 < this.getFallbackCount();
     return super.shouldRetry(status, urlIndex)

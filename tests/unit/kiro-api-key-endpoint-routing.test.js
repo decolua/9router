@@ -44,10 +44,24 @@ describe("Kiro auth-aware endpoint routing", () => {
     ]);
   });
 
-  it("tries remaining Kiro surfaces for endpoint-specific 4xx responses", () => {
-    expect(executor.shouldRetry(400, 0)).toBe(true);
+  it("retries only endpoint/auth-surface failures, not payload-invalid 400s", () => {
+    expect(executor.shouldRetry(400, 0)).toBe(false);
     expect(executor.shouldRetry(401, 1)).toBe(true);
     expect(executor.shouldRetry(403, 2)).toBe(false);
     expect(executor.shouldRetry(422, 0)).toBe(false);
+  });
+
+  it("builds endpoint-specific headers", () => {
+    const auth = { accessToken: "test-key", providerSpecificData: { authMethod: "api_key" } };
+    const qHeaders = executor.buildHeaders(auth, true, Q);
+    const codeWhispererHeaders = executor.buildHeaders(auth, true, CODEWHISPERER);
+    const runtimeHeaders = executor.buildHeaders(auth, true, RUNTIME);
+
+    expect(qHeaders.TokenType).toBe("API_KEY");
+    expect(qHeaders["X-Amz-Target"]).toBeUndefined();
+    expect(codeWhispererHeaders["X-Amz-Target"]).toBe(
+      "AmazonCodeWhispererStreamingService.GenerateAssistantResponse"
+    );
+    expect(runtimeHeaders["X-Amz-Target"]).toBeUndefined();
   });
 });
