@@ -31,6 +31,10 @@ NINEROUTER_FORK_BUILD=1 npm run cli:publish
 npm view @loldlm1/9router version
 ```
 
+The release wrapper publishes the scoped fork build under the package's
+`latest` dist-tag. This keeps the unscoped upstream package untouched while
+allowing `npm install -g @loldlm1/9router` to resolve the newest fork build.
+
 The scoped package is not considered installable until an approved release is
 visible through `npm view @loldlm1/9router version`. The Sprint 5 smoke test uses
 the generated tarball and a temporary npm prefix; it does not alter the real

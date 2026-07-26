@@ -89,7 +89,9 @@ try {
   } else if (mode === "dry-run") {
     run(npmCommand, ["pack", "--dry-run", "--json"]);
   } else {
-    run(npmCommand, ["publish", "--access", "public"]);
+    // This scoped package is independent from upstream, so latest can safely
+    // point to the newest maintained fork build despite its prerelease version.
+    run(npmCommand, ["publish", "--access", "public", "--tag", "latest"]);
   }
 } finally {
   for (const [file, contents] of originals) fs.writeFileSync(file, contents);

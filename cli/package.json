@@ -3,7 +3,7 @@
   "version": "0.5.40",
   "description": "Maintained 9Router CLI fork with GPT-5.6 reasoning support",
   "bin": {
-    "9router": "./cli.js"
+    "9router": "cli.js"
   },
   "files": [
     "cli.js",
