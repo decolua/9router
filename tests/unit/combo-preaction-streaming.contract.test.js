@@ -60,13 +60,13 @@ function trackReaderOwnership(response) {
   return stats;
 }
 
-async function runCombo(handleSingleModel) {
+async function runCombo(handleSingleModel, body = {
+  model: "coding-pro",
+  input: [{ role: "user", content: "Use the tool when useful" }],
+  tools: [{ type: "function", name: "lookup", parameters: { type: "object" } }],
+}) {
   return handleComboChat({
-    body: {
-      model: "coding-pro",
-      input: [{ role: "user", content: "Use the tool when useful" }],
-      tools: [{ type: "function", name: "lookup", parameters: { type: "object" } }],
-    },
+    body,
     models: ["provider/model-a", "provider/model-b"],
     comboName: "coding-pro",
     comboStrategy: "fallback",
@@ -225,6 +225,49 @@ describe("proposed Combo pre-action streaming contract", () => {
       expect(await response.text()).toBe(prefix + action);
     },
   );
+
+  it("falls back until the explicitly forced tool name appears", async () => {
+    const forcedBody = {
+      model: "coding-pro",
+      input: "Call lookup exactly once",
+      tools: [{ type: "custom", name: "lookup", description: "Look up a value" }],
+      tool_choice: { type: "custom", name: "lookup" },
+    };
+    const triedForProse = [];
+    const proseResponse = await runCombo(async (_body, model) => {
+      triedForProse.push(model);
+      return model === "provider/model-a"
+        ? sseResponse([actionEvent("I called lookup")])
+        : sseResponse([
+          "event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"custom_tool_call\",\"name\":\"lookup\",\"call_id\":\"call-ok\"}}\n\n",
+        ]);
+    }, forcedBody);
+    expect(triedForProse).toEqual(["provider/model-a", "provider/model-b"]);
+    expect(await proseResponse.text()).toContain("\"name\":\"lookup\"");
+
+    const triedForWrongTool = [];
+    const wrongToolResponse = await runCombo(async (_body, model) => {
+      triedForWrongTool.push(model);
+      return model === "provider/model-a"
+        ? sseResponse([
+          "event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"custom_tool_call\",\"name\":\"other\",\"call_id\":\"call-wrong\"}}\n\n",
+        ])
+        : sseResponse([
+          "event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"custom_tool_call\",\"name\":\"lookup\",\"call_id\":\"call-ok\"}}\n\n",
+        ]);
+    }, forcedBody);
+    expect(triedForWrongTool).toEqual(["provider/model-a", "provider/model-b"]);
+    expect(await wrongToolResponse.text()).toContain("\"name\":\"lookup\"");
+
+    const autoBody = { ...forcedBody, tool_choice: "auto" };
+    const triedForAuto = [];
+    const autoResponse = await runCombo(async (_body, model) => {
+      triedForAuto.push(model);
+      return sseResponse([actionEvent("visible prose")]);
+    }, autoBody);
+    expect(triedForAuto).toEqual(["provider/model-a"]);
+    expect(await autoResponse.text()).toContain("visible prose");
+  });
 
   it("bounds bytes buffered before the first action and falls back", async () => {
     process.env.COMBO_RESPONSE_PREFLIGHT_MAX_BYTES = "8";

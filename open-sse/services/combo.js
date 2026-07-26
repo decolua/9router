@@ -256,7 +256,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       
       // Success (2xx) - return response
       if (result.ok) {
-        const inspected = comboStrategy === "fallback" ? await inspectComboPreaction(result) : result;
+        const inspected = comboStrategy === "fallback" ? await inspectComboPreaction(result, body) : result;
         if (inspected) {
           log.info("COMBO", `Model ${modelStr} succeeded`);
           return inspected;

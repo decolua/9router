@@ -16,7 +16,40 @@ function parseFrame(frame) {
   }
 }
 
-function isAction(frame) {
+function forcedToolName(requestBody) {
+  const choice = requestBody?.tool_choice;
+  if (!choice || typeof choice !== "object" || Array.isArray(choice)) return "";
+  if (!["custom", "function", "tool"].includes(choice.type)) return "";
+  const name = choice.name || choice.function?.name;
+  return typeof name === "string" ? name.trim() : "";
+}
+
+function namedToolActionMatches(value, requiredName) {
+  if (!value || typeof value !== "object" || !requiredName) return false;
+  const name = value.name || value.function?.name;
+  return typeof name === "string" && name === requiredName;
+}
+
+function isForcedToolAction(frame, requiredName) {
+  const { event = "", payload } = frame || {};
+  if (!payload || !requiredName) return false;
+  if (event === "response.output_item.added" || event === "response.output_item.done") {
+    return namedToolActionMatches(payload.item, requiredName);
+  }
+  if (event === "content_block_start") {
+    return namedToolActionMatches(payload.content_block, requiredName);
+  }
+  if (event === "response.completed") {
+    return payload.response?.output?.some((item) => namedToolActionMatches(item, requiredName)) === true;
+  }
+  return payload.choices?.some((choice) => (
+    namedToolActionMatches(choice?.delta?.function_call, requiredName)
+    || choice?.delta?.tool_calls?.some((call) => namedToolActionMatches(call, requiredName))
+  )) === true;
+}
+
+function isAction(frame, requiredName = "") {
+  if (requiredName) return isForcedToolAction(frame, requiredName);
   const { event = "", payload } = frame || {};
   if ((event === "response.output_text.delta" || event === "response.refusal.delta") && payload?.delta) return true;
   if (event === "response.output_item.added" && ["function_call", "custom_tool_call"].includes(payload?.item?.type)) return true;
@@ -31,12 +64,12 @@ function isAction(frame) {
   )) === true;
 }
 
-function scanFrames(buffer) {
+function scanFrames(buffer, requiredName = "") {
   const separator = /\r\n\r\n|\n\n|\r\r/g;
   let start = 0;
   let actionable = false;
   for (let match = separator.exec(buffer); match; match = separator.exec(buffer)) {
-    actionable ||= isAction(parseFrame(buffer.slice(start, match.index)));
+    actionable ||= isAction(parseFrame(buffer.slice(start, match.index)), requiredName);
     start = match.index + match[0].length;
   }
   return { actionable, remainder: buffer.slice(start) };
@@ -74,7 +107,7 @@ function committedResponse(response, reader, prefix) {
   });
 }
 
-export async function inspectComboPreaction(response) {
+export async function inspectComboPreaction(response, requestBody) {
   if (!response?.body || !response.headers.get("content-type")?.toLowerCase().includes("text/event-stream")) {
     return response;
   }
@@ -86,6 +119,7 @@ export async function inspectComboPreaction(response) {
   let bytes = 0;
   let text = "";
   let timeoutId;
+  const requiredName = forcedToolName(requestBody);
   const timeout = new Promise((resolve) => {
     timeoutId = setTimeout(() => resolve({ timedOut: true }), firstActionTimeoutMs);
   });
@@ -105,7 +139,7 @@ export async function inspectComboPreaction(response) {
       prefix.push(result.value);
       bytes += result.value.byteLength;
       text += decoder.decode(result.value, { stream: true });
-      const scanned = scanFrames(text);
+      const scanned = scanFrames(text, requiredName);
       text = scanned.remainder;
       if (scanned.actionable) return committedResponse(response, reader, prefix);
       if (bytes > maxBytes) {
