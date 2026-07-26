@@ -275,10 +275,13 @@ describe("buildEmbeddingsUrl", () => {
       credentials: {},
     }));
 
-    const [url, init] = vi.mocked(fetch).mock.calls[0];
-    const sent = JSON.parse(init.body);
-    expect(url).toBe("http://localhost:11434/v1/embeddings");
-    expect(sent.model).toBe("nomic-embed-text");
+    expect(fetch).toHaveBeenCalledWith(
+      "http://localhost:11434/v1/embeddings",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ model: "nomic-embed-text", input: "Hello world", encoding_format: "float" }),
+      })
+    );
   });
 
   it("ollama-local custom host → respects baseUrl from providerSpecificData", async () => {
@@ -289,8 +292,10 @@ describe("buildEmbeddingsUrl", () => {
       credentials: { providerSpecificData: { baseUrl: "http://192.168.1.100:11434" } },
     }));
 
-    const [url] = vi.mocked(fetch).mock.calls[0];
-    expect(url).toBe("http://192.168.1.100:11434/v1/embeddings");
+    expect(fetch).toHaveBeenCalledWith(
+      "http://192.168.1.100:11434/v1/embeddings",
+      expect.anything()
+    );
   });
 
   it("ollama-local custom host with trailing slashes → strips trailing slashes cleanly", async () => {
@@ -301,8 +306,10 @@ describe("buildEmbeddingsUrl", () => {
       credentials: { providerSpecificData: { baseUrl: "http://192.168.1.100:11434///" } },
     }));
 
-    const [url] = vi.mocked(fetch).mock.calls[0];
-    expect(url).toBe("http://192.168.1.100:11434/v1/embeddings");
+    expect(fetch).toHaveBeenCalledWith(
+      "http://192.168.1.100:11434/v1/embeddings",
+      expect.anything()
+    );
   });
 
   it("openai-compatible-* without baseUrl → falls back to api.openai.com", async () => {
