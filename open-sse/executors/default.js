@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS, PROVIDER_OAUTH } from "../config/providers.js";
 import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE } from "../providers/shared.js";
@@ -7,6 +8,19 @@ import { getCachedClaudeHeaders } from "../utils/claudeHeaderCache.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { stripUnsupportedParams } from "../translator/concerns/paramSupport.js";
+
+const nvidiaToolCallId = (id) => /^[a-zA-Z0-9]{9}$/.test(id)
+  ? id
+  : createHash("sha256").update(id).digest("hex").slice(0, 9);
+
+function normalizeNvidiaToolCallIds(body) {
+  for (const message of body.messages || []) {
+    for (const toolCall of message.tool_calls || []) {
+      if (toolCall.id) toolCall.id = nvidiaToolCallId(toolCall.id);
+    }
+    if (message.tool_call_id) message.tool_call_id = nvidiaToolCallId(message.tool_call_id);
+  }
+}
 
 // Auth header descriptors — derived from registry transport.auth, fallback to hardcoded defaults.
 const BEARER = { combined: true, header: "Authorization", scheme: "bearer" };
@@ -86,6 +100,7 @@ export class DefaultExecutor extends BaseExecutor {
     const transformed = this.applyJsonSchemaFallback(body);
 
     if (transformed && typeof transformed === "object") {
+      if (this.provider === "nvidia") normalizeNvidiaToolCallIds(transformed);
       // quirk: some openai-compatible providers reject Anthropic's client_metadata field
       if (this.config.quirks?.dropClientMetadata) {
         delete transformed.client_metadata;

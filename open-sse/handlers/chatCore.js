@@ -28,6 +28,7 @@ import { compressWithPxpipe } from "../rtk/pxpipe.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
+import { normalizeOpenAIToolNames } from "../translator/concerns/toolCall.js";
 import { extractThinking } from "../translator/concerns/thinkingUnified.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 
@@ -148,6 +149,12 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     toolNameMap = translatedBody._toolNameMap;
     delete translatedBody._toolNameMap;
     translatedBody.model = stripThinkingSuffix(upstreamModel);
+  }
+
+  const toolNameMaxLength = PROVIDERS[provider]?.quirks?.toolNameMaxLength;
+  if (toolNameMaxLength && targetFormat === FORMATS.OPENAI) {
+    const aliases = normalizeOpenAIToolNames(translatedBody, toolNameMaxLength);
+    if (aliases.size) toolNameMap = new Map([...(toolNameMap || []), ...aliases]);
   }
 
   // Dedupe duplicate built-in tools when equivalent MCP tools are present (Claude clients only).
