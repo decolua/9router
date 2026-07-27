@@ -364,13 +364,14 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
   );
 }
 
-// Single-slot team roles (each resolves to one model; a fallback chain still
-// settable via the comboStrategies JSON). Reviewers are handled separately as a panel.
+// Single-slot team roles. Each takes an ordered fallback chain: the pipeline
+// tries the models left-to-right and uses the first that succeeds. Reviewers are
+// handled separately as a parallel panel.
 const TEAM_ROLES = [
-  { key: "planner", label: "Planner", icon: "map", hint: "Drafts the approach", defaultHint: "first model" },
-  { key: "worker", label: "Worker", icon: "engineering", hint: "Writes the answer", defaultHint: "first model" },
-  { key: "judge", label: "Judge", icon: "gavel", hint: "Scores & gates the loop", defaultHint: "first model" },
-  { key: "compressor", label: "Compressor", icon: "compress", hint: "Condenses the final reply", defaultHint: "judge" },
+  { key: "planner", label: "Planner", icon: "map", hint: "Drafts the approach" },
+  { key: "worker", label: "Worker", icon: "engineering", hint: "Writes the answer" },
+  { key: "judge", label: "Judge", icon: "gavel", hint: "Scores & gates the loop" },
+  { key: "compressor", label: "Compressor", icon: "compress", hint: "Condenses the final reply" },
 ];
 
 function TeamConfig({ combo, team, activeProviders = [], onSetTeam }) {
@@ -383,8 +384,11 @@ function TeamConfig({ combo, team, activeProviders = [], onSetTeam }) {
   const passThreshold = team.passThreshold ?? 8;
   const planReview = team.planReview ?? true;
 
-  const roleValue = (key) => (typeof team[key] === "string" ? team[key] : (Array.isArray(team[key]) ? team[key][0] : "")) || "";
-  const roleDefault = (role) => (role.key === "compressor" ? (roleValue("judge") || firstModel) : firstModel);
+  // A role is an ordered fallback chain. Normalise string | string[] | undefined -> array.
+  const roleChain = (key) => (Array.isArray(team[key]) ? team[key] : (typeof team[key] === "string" && team[key] ? [team[key]] : []));
+  const roleDefault = (role) => (role.key === "compressor" ? (roleChain("judge")[0] || firstModel) : firstModel);
+  const addToRole = (key, model) => { const c = roleChain(key); if (!c.includes(model)) onSetTeam({ [key]: [...c, model] }); };
+  const removeFromRole = (key, model) => onSetTeam({ [key]: roleChain(key).filter((m) => m !== model) });
 
   const toggleReviewer = (model) => {
     const next = reviewers.includes(model) ? reviewers.filter((m) => m !== model) : [...reviewers, model];
@@ -393,32 +397,41 @@ function TeamConfig({ combo, team, activeProviders = [], onSetTeam }) {
 
   return (
     <div className="mt-3 rounded-lg border border-black/5 bg-black/[0.02] p-3 dark:border-white/5 dark:bg-white/[0.02]">
-      <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-text-muted">Team roles</p>
+      <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-text-muted">Team roles</p>
+      <p className="mb-2 text-[11px] text-text-muted">Each role is a fallback chain — tried in order, first that works wins. Add a second model as a backup.</p>
 
-      {/* Single-slot roles */}
-      <div className="flex flex-wrap gap-2">
+      {/* Single-slot roles — ordered fallback chains */}
+      <div className="flex flex-col gap-2">
         {TEAM_ROLES.map((role) => {
-          const val = roleValue(role.key);
+          const chain = roleChain(role.key);
           return (
-            <div key={role.key} className="flex items-center gap-1.5">
-              <span className="text-[11px] font-medium text-text-muted" title={role.hint}>{role.label}</span>
+            <div key={role.key} className="flex min-w-0 flex-wrap items-center gap-1.5">
+              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-text-muted" title={role.hint}>
+                <span className="material-symbols-outlined text-[13px]">{role.icon}</span>{role.label}
+              </span>
+              {chain.length === 0 && (
+                <span className="font-mono text-[11px] italic text-text-muted">Auto — {roleDefault(role)}</span>
+              )}
+              {chain.map((model, i) => (
+                <span key={model} className="inline-flex max-w-[180px] items-center gap-1 rounded border border-primary/30 bg-primary/5 px-1.5 py-0.5 font-mono text-[11px] text-primary">
+                  {i > 0 && <span className="text-[9px] text-text-muted">↳</span>}
+                  <span className="truncate">{model}</span>
+                  <button
+                    onClick={() => removeFromRole(role.key, model)}
+                    className="rounded text-text-muted transition-colors hover:text-red-500"
+                    title={`Remove ${model} from ${role.label}`}
+                  >
+                    <span className="material-symbols-outlined text-[13px]">close</span>
+                  </button>
+                </span>
+              ))}
               <button
                 onClick={() => setRoleModalFor(role.key)}
-                className="inline-flex max-w-[180px] items-center gap-1 rounded border border-dashed border-primary/40 px-1.5 py-0.5 font-mono text-[11px] text-primary transition-colors hover:border-primary hover:bg-primary/5"
-                title={role.hint}
+                className="inline-flex items-center gap-0.5 rounded border border-dashed border-primary/40 px-1.5 py-0.5 text-[11px] text-primary transition-colors hover:border-primary hover:bg-primary/5"
+                title={`Add a model to ${role.label}`}
               >
-                <span className="material-symbols-outlined text-[13px]">{role.icon}</span>
-                <span className="truncate">{val || `Auto — ${roleDefault(role)}`}</span>
+                <span className="material-symbols-outlined text-[13px]">add</span>
               </button>
-              {val && (
-                <button
-                  onClick={() => onSetTeam({ [role.key]: "" })}
-                  className="rounded p-0.5 text-text-muted transition-colors hover:bg-red-500/10 hover:text-red-500"
-                  title={`Reset ${role.label} to Auto`}
-                >
-                  <span className="material-symbols-outlined text-[13px]">close</span>
-                </button>
-              )}
             </div>
           );
         })}
@@ -482,11 +495,11 @@ function TeamConfig({ combo, team, activeProviders = [], onSetTeam }) {
         <ModelSelectModal
           isOpen={!!roleModalFor}
           onClose={() => setRoleModalFor(null)}
-          onSelect={(m) => { onSetTeam({ [roleModalFor]: m?.value || "" }); setRoleModalFor(null); }}
+          onSelect={(m) => { if (m?.value) addToRole(roleModalFor, m.value); }}
           activeProviders={activeProviders}
-          title={`Select ${TEAM_ROLES.find((r) => r.key === roleModalFor)?.label || "Model"}`}
-          addedModelValues={roleValue(roleModalFor) ? [roleValue(roleModalFor)] : []}
-          closeOnSelect={true}
+          title={`Add model to ${TEAM_ROLES.find((r) => r.key === roleModalFor)?.label || "role"}`}
+          addedModelValues={roleChain(roleModalFor)}
+          closeOnSelect={false}
         />
       )}
     </div>
