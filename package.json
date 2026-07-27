@@ -54,7 +54,12 @@
     "@tailwindcss/postcss": "^4.1.18",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
-    "postcss": "^8.5.6",
+    "postcss": "^8.5.18",
     "tailwindcss": "^4"
+  },
+  "comment_overrides": "postcss: next pins a nested 8.4.31 (CVE-2026-45623, GHSA-r28c-9q8g-f849); sharp: next pulls 0.34.x (GHSA-f88m-g3jw-g9cj) — drop when next ships patched versions",
+  "overrides": {
+    "postcss": "^8.5.18",
+    "sharp": "^0.35.0"
   }
 }
