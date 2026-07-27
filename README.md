@@ -215,7 +215,13 @@ Default URLs:
       <b>🇻🇳 Tiếng Việt</b><br/>
       <sub>Hướng Dẫn Setup OpenClaw + 9Router: Tạo Bot Zalo AI Tự Động Từ A-Z<br/>by <a href="https://github.com/tuanminhhole">tuanminhhole</a></sub>
     </td>
-    <td align="center" width="320"></td>
+    <td align="center" width="320">
+      <a href="https://www.youtube.com/watch?v=GegI71YY4ms">
+        <img src="https://img.youtube.com/vi/GegI71YY4ms/maxresdefault.jpg" alt="Como Usar o 9Router: IA pra Programar Infinita e DE GRACA" width="300"/>
+      </a><br/>
+      <b>🇧🇷 Português</b><br/>
+      <sub>Como Usar o 9Router: IA pra Programar Infinita e DE GRAÇA<br/>by <a href="https://www.youtube.com/@kc1t">Kauã Miguel - Dev</a></sub>
+    </td>
     <td align="center" width="320"></td>
     <td align="center" width="320"></td>
   </tr>
