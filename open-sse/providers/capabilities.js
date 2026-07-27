@@ -125,6 +125,7 @@ export const PROVIDER_CAPABILITIES = {
   "github": {
     "claude-fable-5": GITHUB_CLAUDE_200K_CAPS,
     "claude-opus-4.8": GITHUB_CLAUDE_200K_CAPS,
+    "claude-opus-5": GITHUB_CLAUDE_200K_CAPS,
   },
   // NVIDIA NIM is OpenAI-compatible → rejects MiniMax/GLM native `thinking` field.
   // Force openai reasoning_effort format for its reasoning models. #issue

@@ -53,8 +53,8 @@ export default {
     // Note: routing to Copilot's Anthropic-native /v1/messages shim (see
     // executors/github.js) is decided by model-NAME pattern at request time, not by
     // a static targetFormat field here — Copilot's live model catalog (see
-    // services/copilotModels.js) regularly exposes claude-* models this static list
-    // hasn't caught up with yet (e.g. claude-opus-4.8), and a static per-entry
+    // services/copilotModels.js) can expose claude-* models before this static list
+    // catches up, and a static per-entry
     // targetFormat would silently miss those while also double-translating requests
     // for models that ARE listed here (chatCore.js would pre-translate to Claude
     // shape, then the executor would translate again). Keep these as plain entries.
@@ -64,6 +64,9 @@ export default {
     { id: "claude-sonnet-4.6", name: "Claude Sonnet 4.6" },
     { id: "claude-opus-4.6", name: "Claude Opus 4.6" },
     { id: "claude-opus-4.7", name: "Claude Opus 4.7" },
+    { id: "claude-opus-4.8", name: "Claude Opus 4.8" },
+    { id: "claude-opus-5", name: "Claude Opus 5" },
+    { id: "claude-fable-5", name: "Claude Fable 5" },
     { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
     { id: "gemini-3-flash-preview", name: "Gemini 3 Flash" },
     { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro" },
