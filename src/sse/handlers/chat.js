@@ -16,6 +16,7 @@ import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
 import { appendPxpipeEvent } from "@/lib/pxpipe/events.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { handleComboChat, handleFusionChat } from "open-sse/services/combo.js";
+import { handleTeamChat } from "open-sse/services/team.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
@@ -114,6 +115,25 @@ export async function handleChat(request, clientRawRequest = null) {
       });
     }
 
+    if (comboStrategy === "team") {
+      log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: team)`);
+      return handleTeamChat({
+        body,
+        models: comboModels,
+        handleSingleModel: (b, m, isInternal) => {
+          let cleanRawReq = clientRawRequest;
+          if (isInternal && clientRawRequest) {
+            const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
+            cleanRawReq = { ...clientRawRequest, body: cleanBody };
+          }
+          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+        },
+        log,
+        comboName: modelStr,
+        team: comboStrategies[modelStr]?.team,
+      });
+    }
+
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
     log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
     return handleComboChat({
@@ -164,6 +184,25 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
           comboName: modelStr,
           judgeModel: comboStrategies[modelStr]?.judgeModel,
           tuning: comboStrategies[modelStr]?.fusionTuning,
+        });
+      }
+
+      if (comboStrategy === "team") {
+        log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: team)`);
+        return handleTeamChat({
+          body,
+          models: comboModels,
+          handleSingleModel: (b, m, isInternal) => {
+            let cleanRawReq = clientRawRequest;
+            if (isInternal && clientRawRequest) {
+              const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
+              cleanRawReq = { ...clientRawRequest, body: cleanBody };
+            }
+            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+          },
+          log,
+          comboName: modelStr,
+          team: comboStrategies[modelStr]?.team,
         });
       }
 

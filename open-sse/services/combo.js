@@ -18,7 +18,7 @@ const TOOL_RESULT_PREFIX = "[Tool result: ";
 // Flatten tool turns into prose so panel models keep the context but can't loop
 // on tools: drop the request's tools, turn tool/function results into assistant
 // text, and inline assistant tool_calls names instead of the structured field.
-function flattenToolHistory(messages) {
+export function flattenToolHistory(messages) {
   return messages
     .filter((msg) => msg)
     .map((msg) => {
@@ -336,7 +336,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
  * Panel responses are already translated to the client format by chatCore, so the
  * leaf content→string step reuses the translator's own extractTextContent.
  */
-function extractPanelText(json) {
+export function extractPanelText(json) {
   if (!json || typeof json !== "object") return "";
 
   // OpenAI chat completion
@@ -374,7 +374,7 @@ function extractPanelText(json) {
  * Append a synthesized user turn to whichever message array the request format uses.
  * Preserves the original conversation + system prompt so the judge has full context.
  */
-function appendUserTurn(body, text) {
+export function appendUserTurn(body, text) {
   const next = { ...body };
   if (Array.isArray(body.messages)) {
     next.messages = [...body.messages, { role: "user", content: text }];
@@ -418,14 +418,14 @@ function buildJudgePrompt(answers) {
 }
 
 // Fusion tuning. Overridable per-combo via settings.comboStrategies[name].
-const FUSION_DEFAULTS = {
+export const FUSION_DEFAULTS = {
   minPanel: 2,             // answers needed before stragglers get a grace window
   stragglerGraceMs: 8000,  // wait this long for laggards once quorum is reached
   panelHardTimeoutMs: 90000, // absolute cap so one hung model can't stall forever
 };
 
 // Resolve a Response (or {__error}) within ms; the loser keeps running but is ignored.
-function withTimeout(promise, ms) {
+export function withTimeout(promise, ms) {
   return new Promise((resolve) => {
     const t = setTimeout(() => resolve({ __timeout: true }), ms);
     Promise.resolve(promise)
@@ -441,7 +441,7 @@ function withTimeout(promise, ms) {
  * still preferring a full panel when everyone is fast. Bounded by a hard timeout.
  * Returns a sparse array aligned to `calls` (undefined = not yet / dropped).
  */
-function collectPanel(calls, { minPanel, stragglerGraceMs, panelHardTimeoutMs }) {
+export function collectPanel(calls, { minPanel, stragglerGraceMs, panelHardTimeoutMs }) {
   return new Promise((resolve) => {
     const out = new Array(calls.length);
     let settled = 0;

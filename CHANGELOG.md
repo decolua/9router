@@ -1,3 +1,8 @@
+# Unreleased
+
+## Features
+- **Combo**: `team` strategy — one request runs an internal Planner → Worker → Reviewers → Judge → Compressor pipeline with a bounded feedback loop. Single-slot roles (planner/worker/judge/compressor) support fallback chains; reviewers run as a parallel panel. Configured per combo via `comboStrategies[name].team`.
+
 # v0.5.40 (2026-07-20)
 
 ## Features
