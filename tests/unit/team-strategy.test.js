@@ -21,7 +21,25 @@ function judgeResponse(score, feedback = "") {
   return okResponse(JSON.stringify({ score, feedback }));
 }
 
-const base = { messages: [{ role: "user", content: "Q" }], stream: true, tools: [{ name: "x" }] };
+// A streaming (SSE) Response stub: real Response whose body streams OpenAI-style chunks.
+function sseResponse(content) {
+  const body = `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\ndata: [DONE]\n\n`;
+  const stream = new ReadableStream({
+    start(c) { c.enqueue(new TextEncoder().encode(body)); c.close(); },
+  });
+  return new Response(stream, { status: 200, headers: { "Content-Type": "text/event-stream" } });
+}
+
+async function drain(res) {
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let out = "";
+  for (;;) { const { done, value } = await reader.read(); if (done) break; out += dec.decode(value); }
+  return out;
+}
+
+const base = { messages: [{ role: "user", content: "Q" }], stream: false, tools: [{ name: "x" }] };
+const baseStream = { ...base, stream: true };
 
 describe("team combo strategy", () => {
   it("answers directly with a single-model combo (nothing to orchestrate)", async () => {
@@ -70,7 +88,7 @@ describe("team combo strategy", () => {
     expect(res.ok).toBe(true);
   });
 
-  it("forces internal stages non-streaming with tools stripped, but the final compressor streams", async () => {
+  it("forces internal stages non-streaming with tools stripped; the compressor keeps the client's flags", async () => {
     const handleSingleModel = vi.fn(async (body, model, isInternal) => {
       if (model === "p/judge") return judgeResponse(10);
       if (model === "p/comp") return okResponse("FINAL");
@@ -78,7 +96,7 @@ describe("team combo strategy", () => {
     });
 
     await handleTeamChat({
-      body: base,
+      body: base, // non-streaming client request
       models: ["p/w"],
       handleSingleModel,
       log,
@@ -87,8 +105,8 @@ describe("team combo strategy", () => {
 
     for (const [body, model, isInternal] of handleSingleModel.mock.calls) {
       if (model === "p/comp") {
-        expect(body.stream).toBe(true);
-        expect(body.tools).toEqual([{ name: "x" }]);
+        expect(body.stream).toBe(false); // client didn't ask to stream
+        expect(body.tools).toEqual([{ name: "x" }]); // compressor keeps the client's tools
         expect(isInternal).toBeFalsy();
       } else {
         expect(body.stream).toBe(false);
@@ -96,6 +114,49 @@ describe("team combo strategy", () => {
         expect(isInternal).toBe(true);
       }
     }
+  });
+
+  it("streaming: emits an immediate heartbeat, then streams the compressed answer", async () => {
+    const handleSingleModel = vi.fn(async (body, model, isInternal) => {
+      if (model === "p/comp") { expect(body.stream).toBe(true); return sseResponse("FINAL"); }
+      if (model === "p/judge") return judgeResponse(9);
+      return okResponse("draft");
+    });
+
+    const res = await handleTeamChat({
+      body: baseStream,
+      models: ["p/w"],
+      handleSingleModel,
+      log,
+      team: { planner: "p/plan", worker: "p/w", reviewers: ["p/r1"], judge: "p/judge", compressor: "p/comp", planReview: false },
+    });
+
+    // First chunk is an SSE comment (heartbeat) delivered before the pipeline finishes.
+    const reader = res.body.getReader();
+    const first = new TextDecoder().decode((await reader.read()).value);
+    expect(first.startsWith(":")).toBe(true);
+
+    let rest = "";
+    const dec = new TextDecoder();
+    for (;;) { const { done, value } = await reader.read(); if (done) break; rest += dec.decode(value); }
+    expect(rest).toContain("FINAL");
+  });
+
+  it("streaming: falls back to the approved answer when the compressor is exhausted", async () => {
+    const handleSingleModel = vi.fn(async (body, model) => {
+      if (model === "p/comp") return errResponse(500);
+      if (model === "p/judge") return judgeResponse(9);
+      return okResponse("APPROVED");
+    });
+    const res = await handleTeamChat({
+      body: baseStream,
+      models: ["p/w"],
+      handleSingleModel,
+      log,
+      team: { worker: "p/w", reviewers: ["p/r1"], judge: "p/judge", compressor: "p/comp", planReview: false },
+    });
+    const text = await drain(res);
+    expect(text).toContain("APPROVED");
   });
 
   it("vets the plan with a plan-reviewer when planReview is on", async () => {

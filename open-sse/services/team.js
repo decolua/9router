@@ -185,6 +185,149 @@ function jsonResponse(payload, status) {
   });
 }
 
+// Heartbeat cadence for the streaming path (SSE comment lines — ignored by
+// every SSE parser, so they keep the connection warm without corrupting output).
+const HEARTBEAT_MS = 5000;
+
+/**
+ * Run the pipeline up to (not including) the compressor: plan → optional plan
+ * review → worker/reviewers/judge loop. Returns the approved answer, or an error
+ * descriptor. Never throws for a role failure (fail-open); degrades instead.
+ *
+ * @returns {Promise<{ answer: string } | { error: string, status: number }>}
+ */
+async function runToApproved({ internal, roles, cfg, maxIters, passThreshold, handleSingleModel, log }) {
+  // 1. Plan.
+  let plan = "";
+  const plannerRes = await callRole(roles.planner, appendUserTurn(internal, buildPlannerPrompt()), handleSingleModel, log, "planner");
+  plan = await readText(plannerRes);
+  if (!plan) log.warn("TEAM", "Planner produced no plan — worker will answer the raw prompt");
+
+  // 1b. Optional plan review.
+  if (plan && cfg.planReview) {
+    const reviewRes = await callRole(roles.planner, appendUserTurn(internal, buildPlanReviewPrompt(plan)), handleSingleModel, log, "plan-reviewer");
+    const revised = await readText(reviewRes);
+    if (revised) plan = revised;
+  }
+
+  // 2. Worker → Reviewers → Judge loop.
+  let best = null; // { answer, score }
+  let feedback = "";
+  for (let iter = 1; iter <= maxIters; iter++) {
+    const workerRes = await callRole(roles.worker, appendUserTurn(internal, buildWorkerPrompt(plan, feedback)), handleSingleModel, log, "worker");
+    const answer = await readText(workerRes);
+    if (!answer) {
+      log.warn("TEAM", `Worker produced nothing on iteration ${iter}`);
+      if (best) break; // keep the best prior iteration
+      return { error: "Team worker failed to produce an answer", status: 503 };
+    }
+
+    // Reviewers — parallel panel.
+    const tuning = FUSION_DEFAULTS;
+    const reviewCalls = roles.reviewers.map((m) =>
+      withTimeout(handleSingleModel(appendUserTurn(internal, buildReviewerPrompt(answer)), m, true), tuning.panelHardTimeoutMs));
+    const settled = await collectPanel(reviewCalls, { ...tuning, minPanel: Math.min(tuning.minPanel, roles.reviewers.length) });
+    const critiques = [];
+    for (const res of settled) {
+      if (!res || res.__timeout || res.__error || !res.ok) continue;
+      const text = await readText(res);
+      if (text) critiques.push(text);
+    }
+
+    // No usable critiques → accept this answer as-is (nothing to judge/refine).
+    if (critiques.length === 0) {
+      log.warn("TEAM", `No reviewer critiques on iteration ${iter} — accepting worker answer`);
+      best = { answer, score: passThreshold };
+      break;
+    }
+
+    // Judge synthesises a score + actionable feedback.
+    const judgeRes = await callRole(roles.judge, appendUserTurn(internal, buildSynthesisPrompt(answer, critiques)), handleSingleModel, log, "judge");
+    const verdict = parseVerdict(await readText(judgeRes));
+    log.info("TEAM", `Iteration ${iter}: score=${verdict.score} (pass>=${passThreshold})`);
+
+    if (!best || verdict.score > best.score) best = { answer, score: verdict.score };
+    if (verdict.score >= passThreshold) break;
+    feedback = verdict.feedback || "Improve correctness, completeness, and clarity.";
+  }
+
+  if (!best) return { error: "Team produced no answer", status: 503 };
+  return { answer: best.answer };
+}
+
+// Minimal OpenAI-style SSE for the streaming compressor-exhausted fallback.
+function openaiSSE(text) {
+  const chunk = (delta, finish) => `data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`;
+  return chunk({ role: "assistant", content: text }, null) + chunk({}, "stop") + "data: [DONE]\n\n";
+}
+
+/**
+ * Streaming team response: open an SSE stream now, heartbeat while the internal
+ * pipeline runs, then pipe the compressor's streamed body (or a fallback chunk).
+ * @returns {Response}
+ */
+function streamTeamResponse({ body, roles, run, handleSingleModel, log }) {
+  const enc = new TextEncoder();
+  const stream = new ReadableStream({
+    start(controller) {
+      let hb = null;
+      const ping = (msg) => { try { controller.enqueue(enc.encode(`: ${msg}\n\n`)); } catch { /* stream closed */ } };
+      ping("9router team: pipeline started");
+      hb = setInterval(() => ping("ping"), HEARTBEAT_MS);
+
+      (async () => {
+        try {
+          const result = await run();
+          if (hb) { clearInterval(hb); hb = null; }
+
+          if (result.error) {
+            ping(`team error: ${result.error}`);
+            controller.enqueue(enc.encode("data: [DONE]\n\n"));
+            controller.close();
+            return;
+          }
+
+          // Compressor — keeps the client's stream flag + tools, so its body is
+          // already correctly formatted SSE for the client's request format.
+          const compBody = { ...appendUserTurn(body, buildCompressorPrompt(result.answer)) };
+          let piped = false;
+          for (const model of roles.compressor) {
+            let res;
+            try {
+              res = await handleSingleModel(compBody, model, false);
+            } catch (e) {
+              log.warn("TEAM", `compressor ${model} threw`, { error: e?.message || String(e) });
+              continue;
+            }
+            if (res && res.ok && res.body) {
+              const reader = res.body.getReader();
+              for (;;) { const { done, value } = await reader.read(); if (done) break; controller.enqueue(value); }
+              piped = true;
+              break;
+            }
+            log.warn("TEAM", `compressor ${model} failed (status ${res?.status ?? 0})`);
+          }
+
+          if (!piped) {
+            log.warn("TEAM", "Compressor exhausted — streaming the approved answer uncompressed");
+            controller.enqueue(enc.encode(openaiSSE(result.answer)));
+          }
+          controller.close();
+        } catch (e) {
+          if (hb) clearInterval(hb);
+          log.warn("TEAM", "Team streaming pipeline crashed", { error: e?.message || String(e) });
+          try { controller.enqueue(enc.encode("data: [DONE]\n\n")); controller.close(); } catch { controller.error(e); }
+        }
+      })();
+    },
+  });
+
+  return new Response(stream, {
+    status: 200,
+    headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive" },
+  });
+}
+
 /**
  * Handle a team combo. See the file header for the pipeline.
  *
@@ -226,70 +369,22 @@ export async function handleTeamChat({ body, models, handleSingleModel, log, com
   log.info("TEAM", `Combo "${comboName}" | worker=[${roles.worker.join(",")}] reviewers=[${roles.reviewers.join(",")}] judge=[${roles.judge.join(",")}] maxIters=${maxIters} pass>=${passThreshold}`);
 
   const internal = internalBody(body);
+  const run = () => runToApproved({ internal, roles, cfg, maxIters, passThreshold, handleSingleModel, log });
 
-  // 1. Plan.
-  let plan = "";
-  const plannerRes = await callRole(roles.planner, appendUserTurn(internal, buildPlannerPrompt()), handleSingleModel, log, "planner");
-  plan = await readText(plannerRes);
-  if (!plan) log.warn("TEAM", "Planner produced no plan — worker will answer the raw prompt");
-
-  // 1b. Optional plan review.
-  if (plan && cfg.planReview) {
-    const reviewRes = await callRole(roles.planner, appendUserTurn(internal, buildPlanReviewPrompt(plan)), handleSingleModel, log, "plan-reviewer");
-    const revised = await readText(reviewRes);
-    if (revised) plan = revised;
+  // Streaming clients would otherwise see nothing until the compressor (~all
+  // stages are internal/silent) and abort on their first-byte timeout. Open the
+  // SSE stream immediately, heartbeat while the pipeline runs, then pipe the
+  // compressor's output.
+  if (body && body.stream) {
+    return streamTeamResponse({ body, roles, run, handleSingleModel, log });
   }
 
-  // 2. Worker → Reviewers → Judge loop.
-  let best = null; // { answer, score }
-  let feedback = "";
-  for (let iter = 1; iter <= maxIters; iter++) {
-    const workerRes = await callRole(roles.worker, appendUserTurn(internal, buildWorkerPrompt(plan, feedback)), handleSingleModel, log, "worker");
-    const answer = await readText(workerRes);
-    if (!answer) {
-      log.warn("TEAM", `Worker produced nothing on iteration ${iter}`);
-      if (best) break; // keep the best prior iteration
-      return jsonResponse({ error: { message: "Team worker failed to produce an answer" } }, 503);
-    }
+  // Non-streaming: run the pipeline, then the compressor as one blocking call.
+  const result = await run();
+  if (result.error) return jsonResponse({ error: { message: result.error } }, result.status);
 
-    // Reviewers — parallel panel.
-    const tuning = FUSION_DEFAULTS;
-    const reviewCalls = roles.reviewers.map((m) =>
-      withTimeout(handleSingleModel(appendUserTurn(internal, buildReviewerPrompt(answer)), m, true), tuning.panelHardTimeoutMs));
-    const settled = await collectPanel(reviewCalls, { ...tuning, minPanel: Math.min(tuning.minPanel, roles.reviewers.length) });
-    const critiques = [];
-    for (const res of settled) {
-      if (!res || res.__timeout || res.__error || !res.ok) continue;
-      const text = await readText(res);
-      if (text) critiques.push(text);
-    }
-
-    // No usable critiques → accept this answer as-is (nothing to judge/refine).
-    if (critiques.length === 0) {
-      log.warn("TEAM", `No reviewer critiques on iteration ${iter} — accepting worker answer`);
-      best = { answer, score: passThreshold };
-      break;
-    }
-
-    // Judge synthesises a score + actionable feedback.
-    const judgeRes = await callRole(roles.judge, appendUserTurn(internal, buildSynthesisPrompt(answer, critiques)), handleSingleModel, log, "judge");
-    const verdict = parseVerdict(await readText(judgeRes));
-    log.info("TEAM", `Iteration ${iter}: score=${verdict.score} (pass>=${passThreshold})`);
-
-    if (!best || verdict.score > best.score) best = { answer, score: verdict.score };
-    if (verdict.score >= passThreshold) break;
-    feedback = verdict.feedback || "Improve correctness, completeness, and clarity.";
-  }
-
-  if (!best) {
-    return jsonResponse({ error: { message: "Team produced no answer" } }, 503);
-  }
-
-  // 3. Compressor → the only client-facing, streamed call. Falls back to the
-  // approved answer verbatim if the compressor chain is exhausted.
-  const compBody = { ...appendUserTurn(body, buildCompressorPrompt(best.answer)) };
-  const chain = roles.compressor;
-  for (const model of chain) {
+  const compBody = { ...appendUserTurn(body, buildCompressorPrompt(result.answer)) };
+  for (const model of roles.compressor) {
     let res;
     try {
       res = await handleSingleModel(compBody, model, false);
@@ -303,6 +398,6 @@ export async function handleTeamChat({ body, models, handleSingleModel, log, com
 
   log.warn("TEAM", "Compressor exhausted — returning the approved answer uncompressed");
   return jsonResponse({
-    choices: [{ index: 0, message: { role: "assistant", content: best.answer }, finish_reason: "stop" }],
+    choices: [{ index: 0, message: { role: "assistant", content: result.answer }, finish_reason: "stop" }],
   }, 200);
 }
