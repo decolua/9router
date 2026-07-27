@@ -243,6 +243,7 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
   const current = strategy.fallbackStrategy || "fallback";
   const judge = strategy.judgeModel || "";
   const isFusion = current === "fusion";
+  const isTeam = current === "team";
 
   return (
     <Card padding="sm" className="group">
@@ -337,6 +338,16 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
         </div>
       </div>
 
+      {/* Team: per-role configuration */}
+      {isTeam && (
+        <TeamConfig
+          combo={combo}
+          team={strategy.team || {}}
+          activeProviders={activeProviders}
+          onSetTeam={(patch) => onSetStrategy({ team: { ...(strategy.team || {}), ...patch } })}
+        />
+      )}
+
       {/* Judge model picker (single-select; combo members make natural judges too) */}
       {showJudgeSelect && (
         <ModelSelectModal
@@ -350,6 +361,135 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
         />
       )}
     </Card>
+  );
+}
+
+// Single-slot team roles (each resolves to one model; a fallback chain still
+// settable via the comboStrategies JSON). Reviewers are handled separately as a panel.
+const TEAM_ROLES = [
+  { key: "planner", label: "Planner", icon: "map", hint: "Drafts the approach", defaultHint: "first model" },
+  { key: "worker", label: "Worker", icon: "engineering", hint: "Writes the answer", defaultHint: "first model" },
+  { key: "judge", label: "Judge", icon: "gavel", hint: "Scores & gates the loop", defaultHint: "first model" },
+  { key: "compressor", label: "Compressor", icon: "compress", hint: "Condenses the final reply", defaultHint: "judge" },
+];
+
+function TeamConfig({ combo, team, activeProviders = [], onSetTeam }) {
+  const [roleModalFor, setRoleModalFor] = useState(null); // role key or null
+  const models = combo.models || [];
+  const firstModel = models[0] || "first model";
+  // reviewers: array; empty/undefined => Auto (all combo models run as the panel)
+  const reviewers = Array.isArray(team.reviewers) ? team.reviewers : [];
+  const maxIters = team.maxIters ?? 2;
+  const passThreshold = team.passThreshold ?? 8;
+  const planReview = team.planReview ?? true;
+
+  const roleValue = (key) => (typeof team[key] === "string" ? team[key] : (Array.isArray(team[key]) ? team[key][0] : "")) || "";
+  const roleDefault = (role) => (role.key === "compressor" ? (roleValue("judge") || firstModel) : firstModel);
+
+  const toggleReviewer = (model) => {
+    const next = reviewers.includes(model) ? reviewers.filter((m) => m !== model) : [...reviewers, model];
+    onSetTeam({ reviewers: next });
+  };
+
+  return (
+    <div className="mt-3 rounded-lg border border-black/5 bg-black/[0.02] p-3 dark:border-white/5 dark:bg-white/[0.02]">
+      <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-text-muted">Team roles</p>
+
+      {/* Single-slot roles */}
+      <div className="flex flex-wrap gap-2">
+        {TEAM_ROLES.map((role) => {
+          const val = roleValue(role.key);
+          return (
+            <div key={role.key} className="flex items-center gap-1.5">
+              <span className="text-[11px] font-medium text-text-muted" title={role.hint}>{role.label}</span>
+              <button
+                onClick={() => setRoleModalFor(role.key)}
+                className="inline-flex max-w-[180px] items-center gap-1 rounded border border-dashed border-primary/40 px-1.5 py-0.5 font-mono text-[11px] text-primary transition-colors hover:border-primary hover:bg-primary/5"
+                title={role.hint}
+              >
+                <span className="material-symbols-outlined text-[13px]">{role.icon}</span>
+                <span className="truncate">{val || `Auto — ${roleDefault(role)}`}</span>
+              </button>
+              {val && (
+                <button
+                  onClick={() => onSetTeam({ [role.key]: "" })}
+                  className="rounded p-0.5 text-text-muted transition-colors hover:bg-red-500/10 hover:text-red-500"
+                  title={`Reset ${role.label} to Auto`}
+                >
+                  <span className="material-symbols-outlined text-[13px]">close</span>
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Reviewers panel (subset of combo models; empty = all) */}
+      <div className="mt-3">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[11px] font-medium text-text-muted" title="Fan out in parallel to critique the worker">Reviewers</span>
+          {reviewers.length === 0 && <span className="text-[11px] text-text-muted italic">Auto — all models</span>}
+        </div>
+        {models.length === 0 ? (
+          <p className="mt-1 text-[11px] italic text-text-muted">Add models to this combo to pick reviewers.</p>
+        ) : (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {models.map((model) => {
+              const on = reviewers.includes(model);
+              return (
+                <button
+                  key={model}
+                  onClick={() => toggleReviewer(model)}
+                  className={`rounded border px-1.5 py-0.5 font-mono text-[11px] transition-colors ${on ? "border-primary bg-primary/10 text-primary" : "border-black/10 text-text-muted hover:border-primary/40 dark:border-white/10"}`}
+                  title={on ? "Remove from reviewer panel" : "Add to reviewer panel"}
+                >
+                  {model}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Loop controls */}
+      <div className="mt-3 flex flex-wrap items-center gap-4">
+        <label className="flex items-center gap-1.5 text-[11px] font-medium text-text-muted">
+          Max iterations
+          <input
+            type="number" min={1} max={5} value={maxIters}
+            onChange={(e) => onSetTeam({ maxIters: Math.max(1, Number(e.target.value) || 1) })}
+            className="w-14 rounded border border-black/10 bg-transparent px-1.5 py-0.5 text-xs dark:border-white/10"
+          />
+        </label>
+        <label className="flex items-center gap-1.5 text-[11px] font-medium text-text-muted">
+          Pass threshold (0–10)
+          <input
+            type="number" min={0} max={10} value={passThreshold}
+            onChange={(e) => onSetTeam({ passThreshold: Math.min(10, Math.max(0, Number(e.target.value) || 0)) })}
+            className="w-14 rounded border border-black/10 bg-transparent px-1.5 py-0.5 text-xs dark:border-white/10"
+          />
+        </label>
+        <label className="flex items-center gap-1.5 text-[11px] font-medium text-text-muted">
+          <input
+            type="checkbox" checked={planReview}
+            onChange={(e) => onSetTeam({ planReview: e.target.checked })}
+          />
+          Review the plan
+        </label>
+      </div>
+
+      {roleModalFor && (
+        <ModelSelectModal
+          isOpen={!!roleModalFor}
+          onClose={() => setRoleModalFor(null)}
+          onSelect={(m) => { onSetTeam({ [roleModalFor]: m?.value || "" }); setRoleModalFor(null); }}
+          activeProviders={activeProviders}
+          title={`Select ${TEAM_ROLES.find((r) => r.key === roleModalFor)?.label || "Model"}`}
+          addedModelValues={roleValue(roleModalFor) ? [roleValue(roleModalFor)] : []}
+          closeOnSelect={true}
+        />
+      )}
+    </div>
   );
 }
 
