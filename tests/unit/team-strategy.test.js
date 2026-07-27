@@ -131,10 +131,13 @@ describe("team combo strategy", () => {
       team: { planner: "p/plan", worker: "p/w", reviewers: ["p/r1"], judge: "p/judge", compressor: "p/comp", planReview: false },
     });
 
-    // First chunk is an SSE comment (heartbeat) delivered before the pipeline finishes.
+    // First chunk is a real SSE data event (keep-alive) delivered before the
+    // pipeline finishes — strict clients ignore bare ": comment" lines, so the
+    // heartbeat must be a data chunk with an empty/role-only delta.
     const reader = res.body.getReader();
     const first = new TextDecoder().decode((await reader.read()).value);
-    expect(first.startsWith(":")).toBe(true);
+    expect(first).toContain("data:");
+    expect(first).not.toContain("FINAL");
 
     let rest = "";
     const dec = new TextDecoder();

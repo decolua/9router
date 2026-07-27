@@ -187,7 +187,7 @@ function jsonResponse(payload, status) {
 
 // Heartbeat cadence for the streaming path (SSE comment lines — ignored by
 // every SSE parser, so they keep the connection warm without corrupting output).
-const HEARTBEAT_MS = 5000;
+const HEARTBEAT_MS = 2500;
 
 /**
  * Run the pipeline up to (not including) the compressor: plan → optional plan
@@ -261,29 +261,53 @@ function openaiSSE(text) {
   return chunk({ role: "assistant", content: text }, null) + chunk({}, "stop") + "data: [DONE]\n\n";
 }
 
+// Keep-alive as a real OpenAI stream chunk with an empty (or role-only) delta.
+// Strict clients ignore bare ": comment" SSE lines and abort while waiting for a
+// real data event, so the heartbeat must be a data chunk. Empty deltas append
+// nothing to the rendered content.
+function keepAliveChunk(withRole) {
+  return `data: ${JSON.stringify({
+    id: "team-keepalive",
+    object: "chat.completion.chunk",
+    choices: [{ index: 0, delta: withRole ? { role: "assistant" } : {}, finish_reason: null }],
+  })}\n\n`;
+}
+
 /**
- * Streaming team response: open an SSE stream now, heartbeat while the internal
- * pipeline runs, then pipe the compressor's streamed body (or a fallback chunk).
+ * Streaming team response: open an SSE stream now, send real keep-alive data
+ * chunks while the internal pipeline runs, then pipe the compressor's streamed
+ * body (or a fallback chunk). Aborts the upstream and stops work if the client
+ * disconnects.
  * @returns {Response}
  */
 function streamTeamResponse({ body, roles, run, handleSingleModel, log }) {
   const enc = new TextEncoder();
+  let closed = false;      // client gone / stream finished — stop enqueuing
+  let hb = null;
+  let activeReader = null; // current compressor upstream reader, so cancel() can abort it
+
   const stream = new ReadableStream({
     start(controller) {
-      let hb = null;
-      const ping = (msg) => { try { controller.enqueue(enc.encode(`: ${msg}\n\n`)); } catch { /* stream closed */ } };
-      ping("9router team: pipeline started");
-      hb = setInterval(() => ping("ping"), HEARTBEAT_MS);
+      const safeEnqueue = (bytes) => {
+        if (closed) return false;
+        try { controller.enqueue(bytes); return true; }
+        catch { closed = true; return false; }
+      };
+      const finish = () => { if (hb) { clearInterval(hb); hb = null; } if (!closed) { closed = true; try { controller.close(); } catch { /* already closed */ } } };
+
+      // Immediate real data event + periodic empty-delta keep-alives.
+      safeEnqueue(enc.encode(keepAliveChunk(true)));
+      hb = setInterval(() => safeEnqueue(enc.encode(keepAliveChunk(false))), HEARTBEAT_MS);
 
       (async () => {
         try {
           const result = await run();
           if (hb) { clearInterval(hb); hb = null; }
+          if (closed) return; // client disconnected during the pipeline
 
           if (result.error) {
-            ping(`team error: ${result.error}`);
-            controller.enqueue(enc.encode("data: [DONE]\n\n"));
-            controller.close();
+            safeEnqueue(enc.encode("data: [DONE]\n\n"));
+            finish();
             return;
           }
 
@@ -292,6 +316,7 @@ function streamTeamResponse({ body, roles, run, handleSingleModel, log }) {
           const compBody = { ...appendUserTurn(body, buildCompressorPrompt(result.answer)) };
           let piped = false;
           for (const model of roles.compressor) {
+            if (closed) break;
             let res;
             try {
               res = await handleSingleModel(compBody, model, false);
@@ -300,25 +325,36 @@ function streamTeamResponse({ body, roles, run, handleSingleModel, log }) {
               continue;
             }
             if (res && res.ok && res.body) {
-              const reader = res.body.getReader();
-              for (;;) { const { done, value } = await reader.read(); if (done) break; controller.enqueue(value); }
+              activeReader = res.body.getReader();
+              for (;;) {
+                const { done, value } = await activeReader.read();
+                if (done) break;
+                if (!safeEnqueue(value)) break; // client gone — stop pumping
+              }
+              activeReader = null;
               piped = true;
               break;
             }
             log.warn("TEAM", `compressor ${model} failed (status ${res?.status ?? 0})`);
           }
 
-          if (!piped) {
+          if (!piped && !closed) {
             log.warn("TEAM", "Compressor exhausted — streaming the approved answer uncompressed");
-            controller.enqueue(enc.encode(openaiSSE(result.answer)));
+            safeEnqueue(enc.encode(openaiSSE(result.answer)));
           }
-          controller.close();
+          finish();
         } catch (e) {
-          if (hb) clearInterval(hb);
           log.warn("TEAM", "Team streaming pipeline crashed", { error: e?.message || String(e) });
-          try { controller.enqueue(enc.encode("data: [DONE]\n\n")); controller.close(); } catch { controller.error(e); }
+          finish();
         }
       })();
+    },
+    cancel(reason) {
+      // Client disconnected — stop heartbeats, halt the pipeline, drop the upstream.
+      closed = true;
+      if (hb) { clearInterval(hb); hb = null; }
+      if (activeReader) { try { activeReader.cancel(reason); } catch { /* noop */ } activeReader = null; }
+      log.info("TEAM", "Client disconnected — team stream cancelled");
     },
   });
 
