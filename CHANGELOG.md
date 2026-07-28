@@ -7,6 +7,7 @@
 - **Dashboard**: ProviderTopology flow animation
 
 ## Fixes
+- **Antigravity**: drop `stream_options` from non-streaming requests before calling Google `generateContent`
 - **DB**: resolve better-sqlite3 parameter binding crash
 - **Translator**: pass `service_tier` through OpenAI → Responses conversion
 - **Kiro**: map GPT-5.6 reasoning effort fields
