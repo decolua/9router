@@ -5,7 +5,7 @@
 import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { isModelCoolingDown, markModelCooldownFrom, modelCooldownRemaining } from "./modelCooldown.js";
 import { isQuotaExhausted, isQuotaExhaustion, markQuotaExhausted, quotaRemainingMs } from "./quotaState.js";
-import { recordModelFailure, recordModelSuccess } from "./modelHealth.js";
+import { demoteUnhealthy, recordModelFailure, recordModelSuccess } from "./modelHealth.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
@@ -306,6 +306,15 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       }
       rotatedModels = reordered;
     }
+  }
+
+  // Health-aware demotion, applied last so it wins over rotation but never over
+  // a capability requirement being unmet — sick models move to the back, none
+  // are dropped, so a combo whose models are all sick still tries them all.
+  const healthOrdered = demoteUnhealthy(rotatedModels);
+  if (healthOrdered !== rotatedModels) {
+    log.info("COMBO", `health demotion → trying ${healthOrdered[0]} first`);
+    rotatedModels = healthOrdered;
   }
   
   let lastError = null;
