@@ -16,7 +16,8 @@ const ALIAS_TOKENS = [
   "mistral","pplx","perplexity","together","fireworks","cerebras","cohere","nvidia","nebius",
   "siliconflow","hyp","hyperbolic","dg","deepgram","aai","assemblyai","nb","nanobanana","ch",
   "chutes","ark","volcengine-ark","byteplus","bpm","cursor","vx","vertex","vxp","vertex-partner",
-  "gw","grok-web","pw","perplexity-web","mimo","xiaomi-mimo","xmtp","xiaomi-tokenplan","cf",
+  "gw","grok-web","gcli","gb","grok-build","grok-cli","pw","perplexity-web","mimo","xiaomi-mimo",
+  "xmtp","xiaomi-tokenplan","cf",
   "cloudflare-ai","fal","fal-ai","stability","stability-ai","bfl","black-forest-labs","recraft",
   "topaz","runway","runwayml","jina","jina-ai","polly","aws-polly","bb","blackbox",
 ];

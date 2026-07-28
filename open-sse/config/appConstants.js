@@ -1,5 +1,7 @@
-import { platform, arch } from "os";
+import { platform, arch, hostname } from "os";
 import { PROVIDERS, PROVIDER_OAUTH } from "./providers.js";
+import { ANTIGRAVITY_IDE_USER_AGENT } from "../providers/shared.js";
+import { createRequire } from "module";
 
 // === Gemini CLI === derive từ registry gemini-cli.transport
 export const GEMINI_CLI_VERSION = PROVIDERS["gemini-cli"]?.cliVersion;
@@ -59,7 +61,7 @@ export function getPlatformEnum() {
 }
 
 export function getPlatformUserAgent() {
-  return `antigravity/1.104.0 ${platform()}/${arch()}`;
+  return ANTIGRAVITY_IDE_USER_AGENT;
 }
 
 export const CLIENT_METADATA = {
@@ -129,7 +131,7 @@ export const AG_DEFAULT_TOOLS = new Set([
 
 // Antigravity chat/stream headers
 export const ANTIGRAVITY_HEADERS = {
-  "User-Agent": `antigravity/1.107.0 ${platform()}/${arch()}`
+  "User-Agent": ANTIGRAVITY_IDE_USER_AGENT
 };
 
 // Cloud Code Assist API
@@ -170,12 +172,44 @@ export const OAUTH_ENDPOINTS = {
   github:    { token: PROVIDER_OAUTH["github"]?.tokenUrl, auth: PROVIDER_OAUTH["github"]?.authorizeUrl, deviceCode: PROVIDER_OAUTH["github"]?.deviceCodeUrl },
 };
 
-// Generate Kimi OAuth custom headers
-export function buildKimiHeaders() {
+let _appVersion;
+function getAppPackageVersion() {
+  if (_appVersion) return _appVersion;
+  try {
+    const require = createRequire(import.meta.url);
+    _appVersion = require("../../package.json").version || "0.0.0";
+  } catch {
+    _appVersion = process.env.npm_package_version || "0.0.0";
+  }
+  return _appVersion;
+}
+
+// Kimi Code OAuth / API headers (CLIProxyAPI internal/auth/kimi commonHeaders parity).
+// deviceId must stay stable per connection for the whole OAuth session.
+export function buildKimiHeaders(deviceId) {
+  const osName = platform();
+  const architecture = arch();
+  let deviceModel = `${osName} ${architecture}`;
+  if (osName === "darwin") deviceModel = `macOS ${architecture}`;
+  else if (osName === "win32") deviceModel = `Windows ${architecture}`;
+  else if (osName === "linux") deviceModel = `Linux ${architecture}`;
+
+  let deviceName = "unknown";
+  try {
+    deviceName = hostname() || "unknown";
+  } catch {
+    deviceName = "unknown";
+  }
+
+  const resolvedId = (typeof deviceId === "string" && deviceId.trim())
+    ? deviceId.trim()
+    : `kimi-${Date.now()}`;
+
   return {
     "X-Msh-Platform": "9router",
-    "X-Msh-Version": "2.1.2",
-    "X-Msh-Device-Model": typeof process !== "undefined" ? `${process.platform} ${process.arch}` : "unknown",
-    "X-Msh-Device-Id": `kimi-${Date.now()}`
+    "X-Msh-Version": getAppPackageVersion(),
+    "X-Msh-Device-Name": deviceName,
+    "X-Msh-Device-Model": deviceModel,
+    "X-Msh-Device-Id": resolvedId,
   };
 }

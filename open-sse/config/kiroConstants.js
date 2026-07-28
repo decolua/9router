@@ -8,8 +8,8 @@
  *   - `-agentic` model suffix detection + chunked-write system prompt
  *   - reasoning / thinking trigger detection (Anthropic-Beta header,
  *     Claude `thinking`, OpenAI `reasoning_effort`, AMP/Cursor magic tag)
- *   - the `<thinking_mode>enabled</thinking_mode>` system-prompt injection
- *     that turns Kiro reasoning on
+ *   - schema-specific native effort fields for supported GPT and Claude models
+ *   - legacy `<thinking_mode>` system-prompt injection for other models
  *
  * Kiro upstream does not advertise `-agentic` model IDs; they are a 9router
  * fiction. The suffix is stripped before the request leaves this process.
@@ -109,6 +109,7 @@ export function resolveKiroThinkingBudget(body, headers, model) {
   const cfg = extractThinking(body);
   if (cfg) {
     if (cfg.mode === "none") return null;
+    if (cfg.mode === "level" && cfg.level === "disabled") return null;
     if (cfg.mode === "budget") return cfg.budget;
     if (cfg.mode === "level") return effortToBudget(cfg.level) ?? KIRO_THINKING_BUDGET_DEFAULT;
     return KIRO_THINKING_BUDGET_DEFAULT;
@@ -129,6 +130,86 @@ export function resolveKiroThinkingBudget(body, headers, model) {
   }
 
   return null;
+}
+
+export function extractKiroEffortLevel(body) {
+  const effort =
+    body?.output_config?.effort ??
+    body?.reasoning_effort ??
+    (typeof body?.reasoning === "object" ? body.reasoning?.effort : null);
+  if (typeof effort !== "string") return null;
+  const normalized = effort.toLowerCase();
+  if (normalized === "none" || normalized === "off" || normalized === "disabled") return null;
+  if (normalized === "xhigh" || normalized === "max") return "high";
+  if (["low", "medium", "high"].includes(normalized)) return normalized;
+  return null;
+}
+
+function extractKiroGptEffortLevel(body) {
+  const effort =
+    body?.output_config?.effort ??
+    body?.reasoning_effort ??
+    (typeof body?.reasoning === "object" ? body.reasoning?.effort : null);
+  if (typeof effort !== "string") return null;
+  const normalized = effort.toLowerCase();
+  if (normalized === "max") return "xhigh";
+  // Kiro CLI does not advertise an explicit GPT "none" wire value; omit it.
+  if (["low", "medium", "high", "xhigh"].includes(normalized)) {
+    return normalized;
+  }
+  return null;
+}
+
+export function buildKiroAdditionalModelRequestFields(body, effortPath = "output_config") {
+  const effort = effortPath === "reasoning"
+    ? extractKiroGptEffortLevel(body)
+    : extractKiroEffortLevel(body);
+  if (!effort) return undefined;
+  if (effortPath === "reasoning") {
+    // Mirrors Kiro CLI/KAS buildEffortRequestFields("reasoning") for GPT.
+    return { reasoning: { effort } };
+  }
+  // Mirrors Kiro CLI/KAS buildEffortRequestFields("output_config").
+  return {
+    thinking: { type: "adaptive", display: "summarized" },
+    output_config: { effort },
+  };
+}
+
+export function resolveKiroEffortPath(model) {
+  if (typeof model !== "string") return null;
+  const normalized = model.toLowerCase().replace(/-/g, ".");
+  if (/(?:^|[/.])gpt[/.]5[/.]6(?:[/.]|$)/.test(normalized)) {
+    return "reasoning";
+  }
+  if (!normalized.includes("claude")) return null;
+  const match = normalized.match(/(?:^|[/.])claude(?:[/.][a-z]+)*[/.](\d+)(?:[/.](\d+))?(?:[/.]|$)/);
+  if (!match) return null;
+  const [, majorText, minorText] = match;
+  const major = Number(majorText);
+  const minor = minorText === undefined ? null : Number(minorText);
+  const dateSuffixMinor = minor !== null && minor >= 1000;
+  // Kiro rejected additionalModelRequestFields on legacy 4.5 models in live smoke.
+  // Default future Claude/Kiro models to supported so new model releases do not
+  // need a code allowlist update.
+  return major < 4 || (major === 4 && (minor === null || minor <= 5 || dateSuffixMinor))
+    ? null
+    : "output_config";
+}
+
+export function supportsKiroAdditionalModelRequestFields(model) {
+  return resolveKiroEffortPath(model) !== null;
+}
+
+export function usesKiroNativeGptEffort(body, model) {
+  return resolveKiroEffortPath(model) === "reasoning"
+    && extractKiroGptEffortLevel(body) !== null;
+}
+
+export function buildKiroAdditionalModelRequestFieldsForModel(body, model) {
+  const effortPath = resolveKiroEffortPath(model);
+  if (!effortPath) return undefined;
+  return buildKiroAdditionalModelRequestFields(body, effortPath);
 }
 
 /**

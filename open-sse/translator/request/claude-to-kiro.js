@@ -24,13 +24,16 @@
  */
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
-import { v4 as uuidv4 } from "uuid";
+import { applyKiroSessionReplay } from "../../utils/kiroSessionReplay.js";
+import { resolveContinuationId, resolveSessionIdentity } from "../../utils/sessionManager.js";
 import {
   resolveKiroModel,
   resolveKiroThinkingBudget,
   buildThinkingSystemPrefix,
   KIRO_AGENTIC_SYSTEM_PROMPT,
   resolveDefaultProfileArn,
+  buildKiroAdditionalModelRequestFieldsForModel,
+  usesKiroNativeGptEffort,
 } from "../../config/kiroConstants.js";
 import { DEFAULT_IMAGE_MIME } from "../schema/index.js";
 import { ROLE, CLAUDE_BLOCK } from "../schema/index.js";
@@ -363,6 +366,18 @@ function reconcileOrphanedToolResults(history, currentMessage) {
   }
 }
 
+function extractClaudeSystemText(system) {
+  if (!system) return "";
+  if (typeof system === "string") return system;
+  if (Array.isArray(system)) {
+    return system.map((s) => {
+      if (typeof s === "string") return s;
+      return s?.text || "";
+    }).filter(Boolean).join("\n");
+  }
+  return "";
+}
+
 /**
  * Build a Kiro payload directly from a Claude Messages API request body.
  */
@@ -376,6 +391,8 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
 
   const { upstream: upstreamModel, agentic } = resolveKiroModel(model);
   const thinkingBudget = resolveKiroThinkingBudget(body, credentials?.rawHeaders, model);
+  const additionalModelRequestFields = buildKiroAdditionalModelRequestFieldsForModel(body, upstreamModel);
+  const usesNativeGptEffort = usesKiroNativeGptEffort(body, upstreamModel);
 
   // Guard 1: no client tools → flatten all tool interactions to text.
   if (!clientProvidedTools) {
@@ -393,56 +410,85 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
     reconcileOrphanedToolResults(history, currentMessage);
   }
 
-  // API-key auth must never use the shared default ARN (403); OAuth/social fall back to it.
+  // api_key / idc / external_idp must never use the shared default ARN (belongs
+  // to another account → 403 "bearer token invalid"); OAuth/social fall back to it.
   const authMethod = credentials?.providerSpecificData?.authMethod;
-  const profileArn = authMethod === "api_key"
+  const accountBoundAuth =
+    authMethod === "api_key" || authMethod === "idc" || authMethod === "external_idp";
+  const profileArn = accountBoundAuth
     ? (credentials?.providerSpecificData?.profileArn || "")
     : (credentials?.providerSpecificData?.profileArn || resolveDefaultProfileArn(authMethod));
 
-  let finalContent = currentMessage?.userInputMessage?.content || "";
-
-  // System prompt → prepend to the user content.
-  if (body.system) {
-    let systemText = "";
-    if (typeof body.system === "string") {
-      systemText = body.system;
-    } else if (Array.isArray(body.system)) {
-      systemText = body.system.map((s) => s.text || "").join("\n");
-    }
-    if (systemText) finalContent = `${systemText}\n\n${finalContent}`;
-  }
-
-  // Prefix order: thinking_mode tag, timestamp marker, then agentic prompt.
+  // Kiro CLI/KAS sends system prompt as top-level `systemPrompt`. Keep a
+  // content fallback too because the CodeWhisperer surface does not always
+  // enforce top-level systemPrompt for direct calls.
   const timestamp = new Date().toISOString();
-  const prefixParts = [];
-  if (thinkingBudget !== null) prefixParts.push(buildThinkingSystemPrefix(thinkingBudget));
-  prefixParts.push(`[Context: Current time is ${timestamp}]`);
-  if (agentic) prefixParts.push(KIRO_AGENTIC_SYSTEM_PROMPT);
-  finalContent = `${prefixParts.join("\n\n")}\n\n${finalContent}`;
+  const systemPromptParts = [];
+  if (thinkingBudget !== null && !usesNativeGptEffort) {
+    systemPromptParts.push(buildThinkingSystemPrefix(thinkingBudget));
+  }
+  if (agentic) systemPromptParts.push(KIRO_AGENTIC_SYSTEM_PROMPT);
+  const systemInstruction = extractClaudeSystemText(body.system);
+  if (systemInstruction) systemPromptParts.push(systemInstruction);
+  const systemPrompt = systemPromptParts.filter(Boolean).join("\n\n");
+  const currentTimeContext = `[Context: Current time is ${timestamp}]`;
+  const contentPrefix = [systemPrompt, currentTimeContext].filter(Boolean).join("\n\n");
+
+  const sessionIdentity = resolveSessionIdentity({
+    headers: credentials?.rawHeaders,
+    body,
+    connectionId: credentials?.connectionId,
+    scope: "kiro",
+  });
+  const conversationId = sessionIdentity.sessionId;
+  const continuationId = resolveContinuationId({
+    sessionId: conversationId,
+    connectionId: credentials?.connectionId,
+    scope: "kiro",
+    ephemeral: sessionIdentity.ephemeral,
+  });
+  const replay = applyKiroSessionReplay({
+    conversationId,
+    connectionId: credentials?.connectionId,
+    modelId: upstreamModel,
+    systemPrompt,
+    contentPrefix,
+    currentContentPrefix: currentTimeContext,
+    history,
+    currentMessage,
+  });
+  const replayCurrent = replay.currentMessage?.userInputMessage || {};
+  const userInputMessage = {
+    content: replayCurrent.content || "",
+    modelId: upstreamModel,
+    origin: "AI_EDITOR",
+    ...(replayCurrent.userInputMessageContext && {
+      userInputMessageContext: replayCurrent.userInputMessageContext,
+    }),
+    ...(replayCurrent.images && {
+      images: replayCurrent.images,
+    }),
+  };
 
   const payload = {
     conversationState: {
       chatTriggerType: "MANUAL",
-      conversationId: uuidv4(),
+      conversationId,
+      agentContinuationId: continuationId,
+      agentTaskType: "vibe",
       currentMessage: {
-        userInputMessage: {
-          content: finalContent,
-          modelId: upstreamModel,
-          origin: "AI_EDITOR",
-          ...(currentMessage?.userInputMessage?.userInputMessageContext && {
-            userInputMessageContext:
-              currentMessage.userInputMessage.userInputMessageContext,
-          }),
-          ...(currentMessage?.userInputMessage?.images && {
-            images: currentMessage.userInputMessage.images,
-          }),
-        },
+        userInputMessage,
       },
-      history,
+      history: replay.history,
     },
+    agentMode: "vibe",
   };
 
   if (profileArn) payload.profileArn = profileArn;
+  if (systemPrompt) payload.systemPrompt = systemPrompt;
+  if (additionalModelRequestFields) {
+    payload.additionalModelRequestFields = additionalModelRequestFields;
+  }
 
   if (maxTokens || temperature !== undefined || topP !== undefined) {
     payload.inferenceConfig = {};
