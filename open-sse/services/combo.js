@@ -231,6 +231,52 @@ export function getComboModelsFromData(modelStr, combosData) {
   return null;
 }
 
+async function preflightSseResponse(response) {
+  const contentType = response.headers.get("content-type") || "";
+  if (!response.body || !contentType.toLowerCase().includes("text/event-stream")) return response;
+
+  const reader = response.body.getReader();
+  try {
+    let first;
+    do {
+      first = await reader.read();
+    } while (!first.done && (!first.value || first.value.byteLength === 0));
+
+    if (first.done) throw new Error("stream ended before first event");
+
+    let buffered = first.value;
+    return new Response(new ReadableStream({
+      async pull(controller) {
+        if (buffered) {
+          controller.enqueue(buffered);
+          buffered = null;
+          return;
+        }
+        try {
+          const { done, value } = await reader.read();
+          if (done) controller.close();
+          else controller.enqueue(value);
+        } catch (error) {
+          await reader.cancel(error).catch(() => {});
+          controller.error(error);
+        }
+      },
+      cancel(reason) {
+        return reader.cancel(reason);
+      }
+    }), {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers
+    });
+  } catch (error) {
+    await reader.cancel(error).catch(() => {});
+    const failure = new Error(error?.message || "SSE preflight failed", { cause: error });
+    failure.comboFallbackStatus = 502;
+    throw failure;
+  }
+}
+
 /**
  * Handle combo chat with fallback
  * @param {Object} options
@@ -270,10 +316,11 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
     try {
       const result = await handleSingleModel(body, modelStr);
       
-      // Success (2xx) - return response
+      // Success (2xx) - verify an SSE stream produces data before committing to it.
       if (result.ok) {
+        const ready = await preflightSseResponse(result);
         log.info("COMBO", `Model ${modelStr} succeeded`);
-        return result;
+        return ready;
       }
 
       // Extract error info from response
@@ -321,7 +368,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
     } catch (error) {
       // Catch unexpected exceptions to ensure fallback continues
       lastError = error.message || String(error);
-      if (!lastStatus) lastStatus = 500;
+      if (!lastStatus) lastStatus = error.comboFallbackStatus || 500;
       log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
     }
   }
