@@ -15,6 +15,9 @@
  */
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
+// Shared with openai-to-claude rather than copied: duplicating this filter is
+// exactly how it ended up missing from two of three response paths.
+import { filterEchoText, filterUserEcho } from "./openai-to-claude.js";
 
 function stopThinkingBlock(state, results) {
   if (!state.thinkingBlockStarted) return;
@@ -121,6 +124,15 @@ export function kiroToClaudeResponse(chunk, state) {
   }
 
   // Regular text content.
+  // Second →Claude path, so it needs the same echo guards openai-to-claude has:
+  // harness XML the model parroted back, and the user's own message returned
+  // verbatim. Filtering here rather than at the emit below keeps the block
+  // bookkeeping untouched when everything is dropped.
+  if (delta.content) {
+    const filtered = filterUserEcho(state, filterEchoText(state, delta.content));
+    if (!filtered) return results;
+    delta = { ...delta, content: filtered };
+  }
   if (delta.content) {
     stopThinkingBlock(state, results);
     if (!state.textBlockStarted) {

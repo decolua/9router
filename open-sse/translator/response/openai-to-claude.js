@@ -72,7 +72,7 @@ const ECHO_TAGS = ["instructions", "system-reminder", "task-notification", "comm
 // accumulated visible text rather than per chunk, because the regurgitation
 // only becomes recognisable once enough of it has arrived. Conservative by
 // design — see userEcho.js; a short quote of the user is never touched.
-function filterUserEcho(state, out) {
+export function filterUserEcho(state, out) {
   if (!out || !state.lastUserText || state.userEchoDropped) return out;
   state.echoSeen = (state.echoSeen || "") + out;
   if (!isUserEcho(state.echoSeen, state.lastUserText)) return out;
@@ -81,7 +81,7 @@ function filterUserEcho(state, out) {
   return "";
 }
 
-function filterEchoText(state, text) {
+export function filterEchoText(state, text) {
   let buf = (state.echoCarry || "") + text;
   state.echoCarry = "";
   let out = "";
