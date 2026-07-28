@@ -314,8 +314,12 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
 
     try {
-      const result = await handleSingleModel(body, modelStr);
-      
+      // Third arg is the cascade position (0 = first choice), recorded as
+      // usageHistory.chainDepth. handleFusionChat's callback uses a third arg
+      // for isPanel, but that is a separate closure — this one is only ever
+      // paired with handleComboChat's (b, m) callback.
+      const result = await handleSingleModel(body, modelStr, i);
+
       // Success (2xx) - verify an SSE stream produces data before committing to it.
       if (result.ok) {
         const ready = await preflightSseResponse(result);
