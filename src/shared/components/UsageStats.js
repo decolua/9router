@@ -56,6 +56,7 @@ function RecentRequests({ requests = [] }) {
               <tr className="border-b border-border">
                 <th className="py-1.5 text-left font-semibold text-text-muted w-2"></th>
                 <th className="py-1.5 text-left font-semibold text-text-muted">Model</th>
+                <th className="py-1.5 text-center font-semibold text-text-muted">Guard</th>
                 <th className="py-1.5 text-right font-semibold text-text-muted whitespace-nowrap">In / Out</th>
                 <th className="py-1.5 text-right font-semibold text-text-muted">When</th>
               </tr>
@@ -69,6 +70,14 @@ function RecentRequests({ requests = [] }) {
                       <span className={`block w-1.5 h-1.5 rounded-full ${ok ? "bg-success" : "bg-error"}`} />
                     </td>
                     <td className="py-1.5 font-mono truncate max-w-[120px]" title={r.model}>{r.model}</td>
+                    <td className="py-1.5 text-center">
+                      {r.convoy?.applied ? (
+                        <span className="inline-flex items-center gap-1 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] text-emerald-500" title={r.convoy.hits?.map((hit) => hit.ruleName).join(", ")}>
+                          <span className="material-symbols-outlined text-[12px]">filter_alt</span>
+                          {r.convoy.hits?.length || 0}
+                        </span>
+                      ) : <span className="text-text-muted">-</span>}
+                    </td>
                     <td className="py-1.5 text-right whitespace-nowrap">
                       <span className="text-primary">{fmt(r.promptTokens)}↑</span>
                       {" "}
@@ -213,6 +222,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   const [tableView, setTableView] = useState("model");
   const [viewMode, setViewMode] = useState("costs");
   const [providers, setProviders] = useState([]);
+  const [convoyRules, setConvoyRules] = useState([]);
   const [periodLocal, setPeriodLocal] = useState("today");
   const isInitialLoad = useRef(true);
   const hasLoadedStats = useRef(false);
@@ -249,6 +259,13 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
         setProviders([...unique, ...noAuthProviders]);
       })
       .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/convoy/rules")
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => setConvoyRules(data?.items || []))
+      .catch(() => setConvoyRules([]));
   }, []);
 
   // Fetch filtered stats via REST when period changes
@@ -475,6 +492,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
             activeRequests={stats.activeRequests || []}
             lastProvider={stats.recentRequests?.[0]?.provider || ""}
             errorProvider={stats.errorProvider || ""}
+            rules={convoyRules}
           />
           <RecentRequests requests={stats.recentRequests || []} />
         </div>

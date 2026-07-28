@@ -13,6 +13,9 @@ import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
+import { applyConvoyRules } from "@/lib/convoy/rulesEngine.js";
+import { getRules } from "@/lib/db/repos/rulesRepo.js";
+
 import { appendPxpipeEvent } from "@/lib/pxpipe/events.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { handleComboChat, handleFusionChat } from "open-sse/services/combo.js";
@@ -185,6 +188,27 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
   const { provider, model } = modelInfo;
 
+  let routedBody = body;
+  let routedRawRequest = clientRawRequest;
+  let convoy = { applied: false, provider, hits: [] };
+  try {
+    const rules = await getRules();
+    const result = applyConvoyRules(body, rules, provider);
+    routedBody = result.body;
+    convoy = {
+      applied: result.hits.length > 0,
+      provider,
+      hits: result.hits,
+    };
+    if (clientRawRequest) routedRawRequest = { ...clientRawRequest, body: routedBody, convoy };
+    if (result.hits.length > 0) {
+      const hitInfo = result.hits.map((hit) => `${hit.ruleName}(${hit.count})`).join(", ");
+      log.info("CONVOY", `[${provider}] Rules applied: ${hitInfo}`);
+    }
+  } catch (error) {
+    log.warn("CONVOY", `[${provider}] Rule engine error: ${error.message}`);
+  }
+
   // Routing shown in the unified "▶" line (client model → provider/model)
 
   // Extract userAgent from request
@@ -231,11 +255,12 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     const chatSettings = await getSettings();
     const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
     const result = await handleChatCore({
-      body: { ...body, model: `${provider}/${model}` },
+      body: { ...routedBody, model: `${provider}/${model}` },
       modelInfo: { provider, model },
       credentials: refreshedCredentials,
       log,
-      clientRawRequest,
+      clientRawRequest: routedRawRequest,
+      convoy,
       connectionId: credentials.connectionId,
       userAgent,
       apiKey,

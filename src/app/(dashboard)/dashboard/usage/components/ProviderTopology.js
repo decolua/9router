@@ -32,7 +32,7 @@ function getProviderImageUrl(providerId) {
 
 // Custom provider node - rectangle with image + name
 function ProviderNode({ data }) {
-  const { label, color, imageUrl, textIcon, active } = data;
+  const { label, color, imageUrl, textIcon, active, guardEnabled, guardHits } = data;
   const [imgError, setImgError] = useState(false);
   return (
     <div
@@ -84,6 +84,15 @@ function ProviderNode({ data }) {
         <span className="relative flex h-2 w-2 shrink-0">
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: color }} />
           <span className="relative inline-flex rounded-full h-2 w-2" style={{ backgroundColor: color }} />
+        </span>
+      )}
+      {guardEnabled && (
+        <span
+          className={`ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] ${guardHits > 0 ? "bg-emerald-500/20 text-emerald-500" : "bg-primary/10 text-primary"}`}
+          title={guardHits > 0 ? `${guardHits} Input Guard rule(s) applied` : "Input Guard enabled"}
+        >
+          <span className="material-symbols-outlined text-[12px]">filter_alt</span>
+          {guardHits > 0 ? guardHits : "On"}
         </span>
       )}
     </div>
@@ -260,7 +269,7 @@ const nodeTypes = { provider: ProviderNode, router: RouterNode };
 const edgeTypes = { topology: TopologyEdge };
 
 // Place N nodes evenly along an ellipse around the router center.
-function buildLayout(providers, activeSet, lastSet, errorSet) {
+function buildLayout(providers, activeSet, lastSet, errorSet, guardMap) {
   const nodeW = 180;
   const nodeH = 30;
   const routerW = 120;
@@ -310,6 +319,8 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
       imageUrl: getProviderImageUrl(p.provider),
       textIcon: config.textIcon || (p.provider || "?").slice(0, 2).toUpperCase(),
       active,
+      guardEnabled: !!guardMap[p.provider?.toLowerCase()]?.enabled,
+      guardHits: guardMap[p.provider?.toLowerCase()]?.hits || 0,
     };
 
     // Distribute evenly starting from top (−π/2), clockwise
@@ -354,7 +365,7 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
   return { nodes, edges };
 }
 
-export default function ProviderTopology({ providers = [], activeRequests = [], lastProvider = "", errorProvider = "" }) {
+export default function ProviderTopology({ providers = [], activeRequests = [], lastProvider = "", errorProvider = "", rules = [] }) {
   // Serialize to stable string keys so useMemo only re-runs when values actually change
   const activeKey = useMemo(
     () => activeRequests.map((r) => r.provider?.toLowerCase()).filter(Boolean).sort().join(","),
@@ -366,6 +377,19 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
   const rawActiveSet = useMemo(() => new Set(activeKey ? activeKey.split(",") : []), [activeKey]);
   const lastSet = useMemo(() => new Set(lastKey ? [lastKey] : []), [lastKey]);
   const errorSet = useMemo(() => new Set(errorKey ? [errorKey] : []), [errorKey]);
+  const guardMap = useMemo(() => {
+    const map = {};
+    for (const provider of providers) {
+      const id = provider.provider?.toLowerCase();
+      if (!id) continue;
+      const enabled = rules.some((rule) => rule.enabled && (!(rule.providerIds?.length) || rule.providerIds.includes(provider.provider)));
+      const hits = activeRequests
+        .filter((request) => request.provider?.toLowerCase() === id && request.convoy?.applied)
+        .reduce((sum, request) => sum + (request.convoy?.hits?.length || 0), 0);
+      map[id] = { enabled, hits };
+    }
+    return map;
+  }, [providers, rules, activeRequests]);
 
   // Track firstSeen per active provider; drop provider if running too long (BE stuck)
   const firstSeenRef = useRef({});
@@ -399,8 +423,8 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
   }, [rawActiveSet, tick]);
 
   const { nodes, edges } = useMemo(
-    () => buildLayout(providers, activeSet, lastSet, errorSet),
-    [providers, activeSet, lastSet, errorSet]
+    () => buildLayout(providers, activeSet, lastSet, errorSet, guardMap),
+    [providers, activeSet, lastSet, errorSet, guardMap]
   );
 
   // Stable key — only remount when provider list changes
@@ -484,4 +508,5 @@ ProviderTopology.propTypes = {
   })),
   lastProvider: PropTypes.string,
   errorProvider: PropTypes.string,
+  rules: PropTypes.array,
 };
