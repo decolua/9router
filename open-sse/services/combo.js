@@ -4,6 +4,8 @@
 
 import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { isModelCoolingDown, markModelCooldownFrom, modelCooldownRemaining } from "./modelCooldown.js";
+import { isQuotaExhausted, isQuotaExhaustion, markQuotaExhausted, quotaRemainingMs } from "./quotaState.js";
+import { recordModelFailure, recordModelSuccess } from "./modelHealth.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
@@ -315,6 +317,13 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
     // A model that told us to back off is skipped until its window elapses —
     // retrying it only spends a round trip to be told the same thing again.
     // Every model cooling down still falls through to the normal exhausted path.
+    // Quota exhaustion outlives a cooldown by hours — skip rather than spend a
+    // request rediscovering it. If every model is out, the loop still falls
+    // through to the existing exhausted path.
+    if (isQuotaExhausted(modelStr)) {
+      log.info("COMBO", `Skipping ${modelStr}, quota exhausted for ${Math.round(quotaRemainingMs(modelStr) / 60000)}m`);
+      continue;
+    }
     if (isModelCoolingDown(modelStr)) {
       log.info("COMBO", `Skipping ${modelStr}, cooling down for ${Math.round(modelCooldownRemaining(modelStr) / 1000)}s`);
       continue;
@@ -332,6 +341,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       if (result.ok) {
         const ready = await preflightSseResponse(result);
         log.info("COMBO", `Model ${modelStr} succeeded`);
+        recordModelSuccess(modelStr);
         return ready;
       }
 
@@ -360,6 +370,8 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
       // Remember it for subsequent requests, not just this cascade.
       markModelCooldownFrom(modelStr, retryAfter, cooldownMs);
+      if (isQuotaExhaustion(result.status, errorText)) markQuotaExhausted(modelStr);
+      recordModelFailure(modelStr);
 
       if (!shouldFallback) {
         log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
