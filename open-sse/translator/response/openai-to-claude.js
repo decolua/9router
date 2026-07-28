@@ -91,7 +91,16 @@ function filterEchoText(state, text) {
     let matched = false, partial = false;
     for (const tag of ECHO_TAGS) {
       const open = "<" + tag + ">";
-      if (buf.startsWith(open)) { state.echoDropTag = tag; buf = buf.slice(open.length); matched = true; break; }
+      if (buf.startsWith(open)) {
+        state.echoDropTag = tag;
+        buf = buf.slice(open.length);
+        matched = true;
+        // Echoing harness XML is a discipline strike. It never locks the model
+        // (only doubled-json counts toward the threshold) but it arms a nudge
+        // on this model's next request.
+        try { recordStrike(state.servingModel, "echo"); } catch { /* discipline must not break output */ }
+        break;
+      }
       if (open.startsWith(buf)) partial = true;
     }
     if (matched) continue;

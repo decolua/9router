@@ -22,6 +22,7 @@ import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.j
 import { dedupeTools } from "../utils/toolDeduper.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { injectPonytail } from "../rtk/ponytail.js";
+import { injectDisciplineNudge } from "../rtk/disciplineNudge.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
 import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, isHeadroomPhantomSavings } from "../rtk/headroom.js";
 import { compressWithPxpipe } from "../rtk/pxpipe.js";
@@ -258,6 +259,14 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (tokenSaverEnabled && ponytailEnabled && ponytailLevel) {
     injectPonytail(translatedBody, finalFormat, ponytailLevel);
     xf.push(`PONYTAIL:${ponytailLevel}`);
+  }
+
+  // Discipline nudge: one corrective line on the request that follows a
+  // malformed-output strike (doubled tool JSON, echoed harness XML). Armed by
+  // recordStrike, consumed once here — unconditional, since a model that just
+  // emitted garbage needs correcting whether or not token-saver is on.
+  if (injectDisciplineNudge(translatedBody, finalFormat, provider, model)) {
+    xf.push("NUDGE");
   }
 
   // PXPIPE: image bulky context (Claude-format bodies only), last saver before dispatch
