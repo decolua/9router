@@ -3,6 +3,7 @@ import { FORMATS } from "../formats.js";
 import { ROLE, CLAUDE_BLOCK, MODEL_FALLBACK } from "../schema/index.js";
 import { fromOpenAIFinish } from "../concerns/finishReason.js";
 import { extractReasoningText } from "../concerns/reasoning.js";
+import { recordStrike } from "../../utils/discipline.js";
 
 // Legacy "proxy_" prefix used by older request translators. Response strips it
 // defensively so tool names from such turns resolve back (e.g. proxy_Read → Read
@@ -10,8 +11,14 @@ import { extractReasoningText } from "../concerns/reasoning.js";
 // is then a no-op. Kept intentionally; do NOT couple to request's empty prefix.
 const CLAUDE_OAUTH_TOOL_PREFIX = "proxy_";
 
+function recordToolJsonStrike(state) {
+  const { shouldLock } = recordStrike(state.servingModel, "doubled-json");
+  if (!shouldLock) return;
+  try { state.onDisciplineLock?.("doubled-json"); } catch { /* discipline must not break output */ }
+}
+
 // Sanitize tool call arguments to fix bad params from non-Anthropic models
-function sanitizeToolArgs(toolName, argsJson) {
+function sanitizeToolArgs(state, toolName, argsJson, strikeRecorded = false) {
   try {
     const args = JSON.parse(argsJson);
     const name = toolName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)
@@ -24,8 +31,10 @@ function sanitizeToolArgs(toolName, argsJson) {
     // back-to-back ({...}{...}), which the client cannot parse. Halve and retry.
     const half = argsJson.length / 2;
     if (Number.isInteger(half) && argsJson.slice(0, half) === argsJson.slice(half)) {
-      return sanitizeToolArgs(toolName, argsJson.slice(0, half));
+      if (!strikeRecorded) recordToolJsonStrike(state);
+      return sanitizeToolArgs(state, toolName, argsJson.slice(0, half), true);
     }
+    if (!strikeRecorded) recordToolJsonStrike(state);
     return argsJson;
   }
 }
@@ -314,7 +323,7 @@ export function openaiToClaudeResponse(chunk, state) {
       // Emit buffered + sanitized args as single delta before stop
       const buffered = state.toolArgBuffers?.get(idx);
       if (buffered) {
-        const sanitized = sanitizeToolArgs(toolInfo.name, buffered);
+        const sanitized = sanitizeToolArgs(state, toolInfo.name, buffered);
         results.push({
           type: "content_block_delta",
           index: toolInfo.blockIndex,

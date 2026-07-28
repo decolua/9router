@@ -295,6 +295,15 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       },
       onRequestSuccess: async () => {
         await clearAccountError(credentials.connectionId, credentials, model);
+      },
+      onDisciplineLock: (kind) => {
+        markAccountUnavailable(
+          credentials.connectionId,
+          HTTP_STATUS.BAD_REQUEST,
+          `Malformed model output: ${kind}`,
+          provider,
+          model
+        ).catch((error) => log.warn("DISCIPLINE", `Failed to lock ${provider}/${model}: ${error.message}`));
       }
     });
 
