@@ -9,6 +9,9 @@ import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
 import { saveRequestDetail, appendRequestLog } from "@/lib/usageDb.js";
+import { scrubResponseBody } from "../../utils/echoScrub.js";
+import { extractLastUserText } from "../../utils/userEcho.js";
+import { recordStrike } from "../../utils/discipline.js";
 
 function textFromResponsesMessageItem(item) {
   if (!item?.content || !Array.isArray(item.content)) return "";
@@ -293,6 +296,14 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     const sseText = await providerResponse.text();
     const parsed = parseSSEToOpenAIResponse(sseText, model);
     if (!parsed) return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
+    // Third response path, same blind spot: the SSE arrives as chunks but is
+    // assembled into a JSON body here, so the streaming filter never saw it and
+    // the non-streaming one is not on this route either.
+    try {
+      if (scrubResponseBody(parsed, extractLastUserText(body))) {
+        recordStrike(provider && model ? `${provider}/${model}` : model, "echo");
+      }
+    } catch { /* scrubbing must never break a response */ }
     if (parsed.error) {
       return createErrorResult(
         HTTP_STATUS.BAD_GATEWAY,
