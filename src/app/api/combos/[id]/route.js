@@ -1,6 +1,20 @@
 import { NextResponse } from "next/server";
-import { getComboById, updateCombo, deleteCombo, getComboByName } from "@/lib/localDb";
+import { cookies } from "next/headers";
+import { getComboById, updateCombo, deleteCombo, getComboByName, getSettings } from "@/lib/localDb";
+import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
 import { resetComboRotation } from "open-sse/services/combo.js";
+
+// PUT/DELETE here rewrite or remove routing configuration and are reachable on
+// the public host; this app has no middleware.js, so nothing else guards them.
+// Same check /api/auth/oidc/test uses.
+async function canEditCombos() {
+  const settings = await getSettings();
+  if (settings.requireLogin === false) return true;
+  const cookieStore = await cookies();
+  return await verifyDashboardAuthToken(cookieStore.get("auth_token")?.value);
+}
+
+const unauthorized = () => NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
@@ -25,6 +39,7 @@ export async function GET(request, { params }) {
 // PUT /api/combos/[id] - Update combo
 export async function PUT(request, { params }) {
   try {
+    if (!(await canEditCombos())) return unauthorized();
     const { id } = await params;
     const body = await request.json();
     
@@ -63,6 +78,7 @@ export async function PUT(request, { params }) {
 // DELETE /api/combos/[id] - Delete combo
 export async function DELETE(request, { params }) {
   try {
+    if (!(await canEditCombos())) return unauthorized();
     const { id } = await params;
     const prev = await getComboById(id);
     const success = await deleteCombo(id);
