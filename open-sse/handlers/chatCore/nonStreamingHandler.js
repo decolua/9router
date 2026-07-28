@@ -10,6 +10,9 @@ import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, sav
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+import { scrubResponseBody } from "../../utils/echoScrub.js";
+import { extractLastUserText } from "../../utils/userEcho.js";
+import { recordStrike } from "../../utils/discipline.js";
 
 function parseToolArguments(value) {
   if (!value) return {};
@@ -324,6 +327,16 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   const translatedResponse = needsTranslation(targetFormat, sourceFormat)
     ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames)
     : responseBody;
+
+  // The streaming path filters echoed harness XML and user regurgitation as
+  // chunks arrive; this path had no filtering at all, so the same output was
+  // clean when streamed and dirty when not. A drop records a strike so the
+  // discipline nudge corrects the model rather than filtering it forever.
+  try {
+    if (scrubResponseBody(translatedResponse, extractLastUserText(body))) {
+      recordStrike(provider && model ? `${provider}/${model}` : model, "echo");
+    }
+  } catch { /* scrubbing must never break a response */ }
   const isClaudeMessageResponse = sourceFormat === FORMATS.CLAUDE && translatedResponse?.type === "message";
   // Responses-format translation produces a `object:"response"` body with no
   // `choices`; skip the Chat-Completions-specific post-processing below for it.
