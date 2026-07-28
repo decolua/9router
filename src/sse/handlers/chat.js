@@ -7,6 +7,8 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
+import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
+import { buildDisciplineLock } from "open-sse/utils/disciplineLock.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
@@ -296,15 +298,14 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       onRequestSuccess: async () => {
         await clearAccountError(credentials.connectionId, credentials, model);
       },
-      onDisciplineLock: (kind) => {
-        markAccountUnavailable(
-          credentials.connectionId,
-          HTTP_STATUS.BAD_REQUEST,
-          `Malformed model output: ${kind}`,
-          provider,
-          model
-        ).catch((error) => log.warn("DISCIPLINE", `Failed to lock ${provider}/${model}: ${error.message}`));
-      }
+      onDisciplineLock: buildDisciplineLock({
+        markAccountUnavailable,
+        connectionId: credentials.connectionId,
+        provider,
+        model,
+        status: HTTP_STATUS.BAD_REQUEST,
+        onError: (error) => log.warn("DISCIPLINE", `Failed to lock ${provider}/${model}: ${error.message}`)
+      })
     });
 
     if (result.success) return result.response;
