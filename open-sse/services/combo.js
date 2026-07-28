@@ -3,6 +3,7 @@
  */
 
 import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
+import { isModelCoolingDown, markModelCooldownFrom, modelCooldownRemaining } from "./modelCooldown.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
@@ -311,6 +312,13 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
 
   for (let i = 0; i < rotatedModels.length; i++) {
     const modelStr = rotatedModels[i];
+    // A model that told us to back off is skipped until its window elapses —
+    // retrying it only spends a round trip to be told the same thing again.
+    // Every model cooling down still falls through to the normal exhausted path.
+    if (isModelCoolingDown(modelStr)) {
+      log.info("COMBO", `Skipping ${modelStr}, cooling down for ${Math.round(modelCooldownRemaining(modelStr) / 1000)}s`);
+      continue;
+    }
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
 
     try {
@@ -350,6 +358,8 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
 
       // Check if should fallback to next model
       const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
+      // Remember it for subsequent requests, not just this cascade.
+      markModelCooldownFrom(modelStr, retryAfter, cooldownMs);
 
       if (!shouldFallback) {
         log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
