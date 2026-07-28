@@ -52,6 +52,55 @@ function isValidPdfPagesArg(filePath, pages) {
     /^\d+(?:-\d+)?$/.test(pages);
 }
 
+// Some models (gemini family observed) echo the client harness's XML wrapper
+// blocks (<instructions>, <system-reminder>, ...) verbatim into their visible
+// output. Models never legitimately emit these tags, so drop the whole block.
+// Streaming-safe: tags split across chunks are held in state.echoCarry.
+const ECHO_TAGS = ["instructions", "system-reminder", "task-notification", "command-message", "command-name"];
+
+function filterEchoText(state, text) {
+  let buf = (state.echoCarry || "") + text;
+  state.echoCarry = "";
+  let out = "";
+  while (buf.length) {
+    if (state.echoDropTag) {
+      const close = "</" + state.echoDropTag + ">";
+      const i = buf.indexOf(close);
+      if (i === -1) {
+        // hold a tail that could be the start of a split closing tag
+        state.echoCarry = buf.slice(Math.max(0, buf.length - (close.length - 1)));
+        return out;
+      }
+      buf = buf.slice(i + close.length);
+      state.echoDropTag = null;
+      continue;
+    }
+    const lt = buf.indexOf("<");
+    if (lt === -1) { out += buf; break; }
+    out += buf.slice(0, lt);
+    buf = buf.slice(lt);
+    let matched = false, partial = false;
+    for (const tag of ECHO_TAGS) {
+      const open = "<" + tag + ">";
+      if (buf.startsWith(open)) { state.echoDropTag = tag; buf = buf.slice(open.length); matched = true; break; }
+      if (open.startsWith(buf)) partial = true;
+    }
+    if (matched) continue;
+    if (partial) { state.echoCarry = buf; return out; }
+    out += "<";
+    buf = buf.slice(1);
+  }
+  return out;
+}
+
+// End of stream: an unclosed echo block is dropped; a held non-tag prefix is real text.
+function flushEchoText(state) {
+  const tail = state.echoDropTag ? "" : (state.echoCarry || "");
+  state.echoCarry = "";
+  state.echoDropTag = null;
+  return tail;
+}
+
 // Helper: stop thinking block if started
 function stopThinkingBlock(state, results) {
   if (!state.thinkingBlockStarted) return;
@@ -165,24 +214,27 @@ export function openaiToClaudeResponse(chunk, state) {
 
   // Handle regular content
   if (delta?.content) {
-    stopThinkingBlock(state, results);
+    const emitText = filterEchoText(state, delta.content);
+    if (emitText) {
+      stopThinkingBlock(state, results);
 
-    if (!state.textBlockStarted) {
-      state.textBlockIndex = state.nextBlockIndex++;
-      state.textBlockStarted = true;
-      state.textBlockClosed = false;
+      if (!state.textBlockStarted) {
+        state.textBlockIndex = state.nextBlockIndex++;
+        state.textBlockStarted = true;
+        state.textBlockClosed = false;
+        results.push({
+          type: "content_block_start",
+          index: state.textBlockIndex,
+          content_block: { type: CLAUDE_BLOCK.TEXT, text: "" }
+        });
+      }
+
       results.push({
-        type: "content_block_start",
+        type: "content_block_delta",
         index: state.textBlockIndex,
-        content_block: { type: CLAUDE_BLOCK.TEXT, text: "" }
+        delta: { type: "text_delta", text: emitText }
       });
     }
-
-    results.push({
-      type: "content_block_delta",
-      index: state.textBlockIndex,
-      delta: { type: "text_delta", text: delta.content }
-    });
   }
 
   // Tool calls
@@ -236,6 +288,25 @@ export function openaiToClaudeResponse(chunk, state) {
   // chunk — re-running this block would emit the buffered args a second time.
   if (choice.finish_reason && !state.finishHandled) {
     state.finishHandled = true;
+    // Flush any text held back by the echo filter (a non-tag "<..." prefix).
+    const echoTail = flushEchoText(state);
+    if (echoTail) {
+      if (!state.textBlockStarted) {
+        state.textBlockIndex = state.nextBlockIndex++;
+        state.textBlockStarted = true;
+        state.textBlockClosed = false;
+        results.push({
+          type: "content_block_start",
+          index: state.textBlockIndex,
+          content_block: { type: CLAUDE_BLOCK.TEXT, text: "" }
+        });
+      }
+      results.push({
+        type: "content_block_delta",
+        index: state.textBlockIndex,
+        delta: { type: "text_delta", text: echoTail }
+      });
+    }
     stopThinkingBlock(state, results);
     stopTextBlock(state, results);
 
