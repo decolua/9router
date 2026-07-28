@@ -4,6 +4,7 @@ import { ROLE, CLAUDE_BLOCK, MODEL_FALLBACK } from "../schema/index.js";
 import { fromOpenAIFinish } from "../concerns/finishReason.js";
 import { extractReasoningText } from "../concerns/reasoning.js";
 import { recordStrike } from "../../utils/discipline.js";
+import { isUserEcho } from "../../utils/userEcho.js";
 
 // Legacy "proxy_" prefix used by older request translators. Response strips it
 // defensively so tool names from such turns resolve back (e.g. proxy_Read → Read
@@ -66,6 +67,19 @@ function isValidPdfPagesArg(filePath, pages) {
 // output. Models never legitimately emit these tags, so drop the whole block.
 // Streaming-safe: tags split across chunks are held in state.echoCarry.
 const ECHO_TAGS = ["instructions", "system-reminder", "task-notification", "command-message", "command-name"];
+
+// A model repeating the user's own message back as its reply. Judged on the
+// accumulated visible text rather than per chunk, because the regurgitation
+// only becomes recognisable once enough of it has arrived. Conservative by
+// design — see userEcho.js; a short quote of the user is never touched.
+function filterUserEcho(state, out) {
+  if (!out || !state.lastUserText || state.userEchoDropped) return out;
+  state.echoSeen = (state.echoSeen || "") + out;
+  if (!isUserEcho(state.echoSeen, state.lastUserText)) return out;
+  state.userEchoDropped = true;
+  try { recordStrike(state.servingModel, "echo"); } catch { /* discipline must not break output */ }
+  return "";
+}
 
 function filterEchoText(state, text) {
   let buf = (state.echoCarry || "") + text;
@@ -232,7 +246,7 @@ export function openaiToClaudeResponse(chunk, state) {
 
   // Handle regular content
   if (delta?.content) {
-    const emitText = filterEchoText(state, delta.content);
+    const emitText = filterUserEcho(state, filterEchoText(state, delta.content));
     if (emitText) {
       stopThinkingBlock(state, results);
 

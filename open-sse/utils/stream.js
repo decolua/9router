@@ -3,6 +3,7 @@ import { FORMATS } from "../translator/formats.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
+import { extractLastUserText } from "./userEcho.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
@@ -67,6 +68,10 @@ export function createSSEStream(options = {}) {
     model,
     servingModel: provider && model ? `${provider}/${model}` : model,
     onDisciplineLock,
+    // For the user-echo guard: body is already in scope here, so the request's
+    // own last user turn travels with the stream state without touching any
+    // caller signature.
+    lastUserText: extractLastUserText(body),
   } : null;
 
   let totalContentLength = 0;
