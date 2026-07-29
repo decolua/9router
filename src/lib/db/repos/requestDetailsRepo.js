@@ -206,6 +206,20 @@ export async function getRequestDetailById(id, userId = null, orgId = null) {
   return row ? parseJson(row.data, null) : null;
 }
 
+export async function getDistinctProviders(orgId = null) {
+  const db = await getAdapter();
+  const scopedOrg = orgId || getRuntimeOrgId();
+  const conds = ["provider IS NOT NULL"];
+  const params = [];
+  if (scopedOrg) { conds.push("orgId = ?"); params.push(scopedOrg); }
+  const rows = await qAll(
+    db,
+    `SELECT DISTINCT provider FROM requestDetails WHERE ${conds.join(" AND ")} ORDER BY provider ASC`,
+    params,
+  );
+  return rows.map((r) => r.provider);
+}
+
 const _shutdownHandler = async () => {
   if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
   if (writeBuffer.length > 0) await flushToDatabase();
