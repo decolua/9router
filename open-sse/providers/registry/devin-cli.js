@@ -11,7 +11,7 @@ export default {
     website: "https://devin.ai",
     notice: {
       signupUrl: "https://cli.devin.ai",
-      text: "Install the Devin CLI and run `devin auth login` first. Spawns the `devin` binary via ACP/stdio — no API key field.",
+      text: "Install the Devin CLI and run `devin auth login` first. Spawns the `devin` binary via ACP/stdio — no API key field. Uses the default agent with built-in fs/shell tools (DEVIN_PERMISSION_MODE=bypass). Local use only. Set CLI_DEVIN_AGENT_TYPE=summarizer for a tool-less mode.",
     },
   },
   category: "free",
@@ -55,8 +55,8 @@ export default {
     { id: "gemini-3.1-pro-low", name: "Gemini 3.1 Pro Low", contextLength: 1000000 },
     { id: "gemini-3.0-flash-high", name: "Gemini 3 Flash High", contextLength: 1000000 },
     { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", contextLength: 1000000 },
-    { id: "deepseek-v4", name: "DeepSeek V4", contextLength: 64000 },
-    { id: "kimi-k2.6", name: "Kimi K2.6", contextLength: 131000 },
-    { id: "glm-5.1", name: "GLM-5.1", contextLength: 128000 },
+    { id: "deepseek-v4", name: "DeepSeek V4", contextLength: 1048576 },
+    { id: "kimi-k2.6", name: "Kimi K2.6", contextLength: 262144 },
+    { id: "glm-5.1", name: "GLM-5.1", contextLength: 204800 },
   ],
 };

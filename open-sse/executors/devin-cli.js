@@ -3,15 +3,18 @@
  * via the Agent Client Protocol (ACP) JSON-RPC 2.0 over stdio.
  *
  * Protocol flow:
- *   1. Spawn `devin acp --agent-type summarizer` (summarizer = no FS tools,
- *      pure text replies, safe for proxy use).
- *   2. Send: initialize → session/new (with model + cwd) → session/prompt.
- *   3. Receive: session/update notifications (streaming text deltas).
+ *   1. Spawn `devin acp` (default agent = full built-in tools: fs/shell/search).
+ *      Set CLI_DEVIN_AGENT_TYPE=summarizer for a tool-less, text-only mode.
+ *   2. Send: initialize → session/new (with model + cwd + mcpServers) → session/prompt.
+ *   3. Receive: session/update notifications (agent_message_chunk = reply text,
+ *      tool_call/tool_call_update = built-in tool invocations, surfaced as text).
+ *      When devin calls a client-tool from the exposed MCP ("Calling mcp_X from
+ *      clientTools"), it is bridged to an OpenAI tool_use and the turn ends.
  *   4. Emit deltas as OpenAI-compatible SSE chunks.
- *   5. Kill subprocess on [DONE] or error.
+ *   5. Kill subprocess on _cognition.ai/agent_stopped or error.
  *
- * Auth: credentials.apiKey / accessToken → WINDSURF_API_KEY env var passed to
- * devin. If unset, devin falls back to credentials stored by `devin auth login`.
+ * Auth: noAuth — the subprocess inherits the parent env and uses credentials
+ * stored by `devin auth login` (~/.local/share/devin/credentials.toml).
  *
  * Binary discovery: CLI_DEVIN_BIN env → PATH lookup → platform installer paths.
  */
@@ -60,11 +63,187 @@ function rpc(method, params, id) {
   return JSON.stringify(msg) + "\n";
 }
 
+// ─── Client-tools → MCP bridge ───────────────────────────────────────────────
+// devin only invokes built-in + MCP tools, not OpenAI function-calling schemas.
+// body.tools are exposed as a stdio MCP server "clientTools" so devin can call
+// them. When devin calls one, we emit OpenAI tool_use and end the turn; the
+// client executes and returns tool_result on the next request. That next request
+// re-spawns with the full history (including tool_calls + tool results) and
+// seeds the MCP server with those results so a re-call gets the real data.
+// Tool schemas via DEVIN_MCP_TOOLS; prior results via DEVIN_MCP_RESULTS.
+
+const CLIENT_TOOLS_MCP_SCRIPT = `
+import readline from "node:readline";
+const TOOLS = JSON.parse(process.env.DEVIN_MCP_TOOLS || "[]");
+const RESULTS = JSON.parse(process.env.DEVIN_MCP_RESULTS || "{}");
+const rl = readline.createInterface({ input: process.stdin });
+function send(o){ process.stdout.write(JSON.stringify(o) + "\\n"); }
+rl.on("line", (line) => {
+  let m; try { m = JSON.parse(line); } catch { return; }
+  if (m.method === "initialize") {
+    send({ jsonrpc: "2.0", id: m.id, result: { protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: "clientTools", version: "1.0" } } });
+  } else if (m.method === "tools/list") {
+    send({ jsonrpc: "2.0", id: m.id, result: { tools: TOOLS } });
+  } else if (m.method === "tools/call") {
+    const name = m.params?.name || "";
+    const seeded = RESULTS[name];
+    const text = seeded !== undefined
+      ? String(seeded)
+      : "(awaiting client tool_result)";
+    process.stderr.write("[client-tools] tool_call name=" + name + " seeded=" + (seeded !== undefined) + "\\n");
+    send({ jsonrpc: "2.0", id: m.id, result: { content: [{ type: "text", text }] } });
+  }
+});
+`.trimStart();
+
+function ensureClientToolsScript() {
+  const scriptPath = path.join(os.tmpdir(), "9router-devin-client-tools.mjs");
+  // Always rewrite so script upgrades land without a process restart.
+  fs.writeFileSync(scriptPath, CLIENT_TOOLS_MCP_SCRIPT);
+  return scriptPath;
+}
+
+// Map OpenAI tools ([{type:"function",function:{name,description,parameters}}])
+// to MCP tool declarations ([{name,description,inputSchema}]).
+// devin only discovers MCP tools whose name carries the `mcp_` prefix, so we
+// add it here and strip it back when bridging the call to the client.
+const MCP_TOOL_PREFIX = "mcp_";
+function toMcpToolName(name) {
+  return name.startsWith(MCP_TOOL_PREFIX) ? name : MCP_TOOL_PREFIX + name;
+}
+function fromMcpToolName(name) {
+  return name.startsWith(MCP_TOOL_PREFIX) ? name.slice(MCP_TOOL_PREFIX.length) : name;
+}
+
+function buildClientToolsMcp(tools, resultMap) {
+  const mcpTools = [];
+  for (const t of tools) {
+    if (!t) continue;
+    const f = t.function || t;
+    if (!f?.name) continue;
+    mcpTools.push({
+      name: toMcpToolName(f.name),
+      description: f.description || "",
+      inputSchema: f.parameters || f.input_schema || { type: "object", properties: {} },
+    });
+  }
+  if (!mcpTools.length) return null;
+  const env = { DEVIN_MCP_TOOLS: JSON.stringify(mcpTools) };
+  if (resultMap && Object.keys(resultMap).length) {
+    env.DEVIN_MCP_RESULTS = JSON.stringify(resultMap);
+  }
+  return {
+    command: process.execPath,
+    args: [ensureClientToolsScript()],
+    env,
+  };
+}
+
+// Extract tool_result content keyed by MCP tool name (mcp_<original>).
+// Walks messages: assistant.tool_calls id→name, role=tool tool_call_id→content.
+function extractClientToolResults(messages) {
+  const idToMcpName = new Map();
+  const results = {};
+  for (const m of messages) {
+    if (m?.role === "assistant" && Array.isArray(m.tool_calls)) {
+      for (const tc of m.tool_calls) {
+        const name = tc?.function?.name || tc?.name;
+        if (tc?.id && name) idToMcpName.set(tc.id, toMcpToolName(name));
+      }
+    }
+    // Claude-style tool_use blocks in content
+    if (m?.role === "assistant" && Array.isArray(m.content)) {
+      for (const b of m.content) {
+        if (b?.type === "tool_use" && b.id && b.name) {
+          idToMcpName.set(b.id, toMcpToolName(b.name));
+        }
+      }
+    }
+    if (m?.role === "tool" && m.tool_call_id) {
+      const mcpName = idToMcpName.get(m.tool_call_id);
+      if (mcpName) {
+        results[mcpName] =
+          typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? "");
+      }
+    }
+    // Claude-style tool_result blocks in user content
+    if (m?.role === "user" && Array.isArray(m.content)) {
+      for (const b of m.content) {
+        if (b?.type === "tool_result" && b.tool_use_id) {
+          const mcpName = idToMcpName.get(b.tool_use_id);
+          if (mcpName) {
+            const c = b.content;
+            results[mcpName] =
+              typeof c === "string" ? c : JSON.stringify(c ?? "");
+          }
+        }
+      }
+    }
+  }
+  return results;
+}
+
+// Resolve workspace cwd from client request (Codex/CLI env context, body fields).
+// Prefer an absolute existing path so agent file tools hit the user's project
+// instead of os.tmpdir() (which made relative create/delete inconsistent).
+function resolveWorkspaceCwd(body) {
+  const candidates = [];
+  const push = (v) => {
+    if (typeof v === "string" && v.trim()) candidates.push(v.trim());
+  };
+  push(body?.cwd);
+  push(body?.working_directory);
+  push(body?.workdir);
+  push(body?.workspace);
+  push(body?.metadata?.cwd);
+  push(body?.metadata?.working_directory);
+
+  const scanText = (text) => {
+    if (typeof text !== "string") return;
+    for (const m of text.matchAll(/<cwd>\s*([^<]+?)\s*<\/cwd>/gi)) push(m[1]);
+  };
+  const scanMessages = (msgs) => {
+    if (!Array.isArray(msgs)) return;
+    for (const msg of msgs) {
+      if (!msg) continue;
+      if (typeof msg.content === "string") scanText(msg.content);
+      else if (Array.isArray(msg.content)) {
+        for (const p of msg.content) {
+          if (typeof p === "string") scanText(p);
+          else if (p && typeof p === "object") {
+            scanText(p.text);
+            scanText(p.input_text);
+            scanText(p.content);
+          }
+        }
+      }
+      // Responses API input items
+      if (typeof msg === "string") scanText(msg);
+      if (msg.type === "message" && Array.isArray(msg.content)) {
+        for (const p of msg.content) scanText(p?.text || p?.input_text);
+      }
+    }
+  };
+  scanMessages(body?.messages);
+  scanMessages(body?.input);
+
+  for (const c of candidates) {
+    try {
+      if (path.isAbsolute(c) && fs.existsSync(c) && fs.statSync(c).isDirectory()) {
+        return c;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return os.tmpdir();
+}
+
 // ─── Multi-turn message → single prompt builder ─────────────────────────────
 
 function buildPromptText(messages) {
-  // Devin CLI (summarizer mode) receives a single text prompt.
-  // Inline the whole conversation so the model has full context.
+  // Inline the whole conversation so the model has full context, including
+  // prior tool_calls / tool_results so it can continue after a client round-trip.
   const lines = [];
   for (const m of messages) {
     const role = String(m.role || "user");
@@ -73,16 +252,39 @@ function buildPromptText(messages) {
       text = m.content;
     } else if (Array.isArray(m.content)) {
       for (const p of m.content) {
-        if (p && typeof p === "object" && p.type === "text") {
-          text += String(p.text || "");
+        if (!p || typeof p !== "object") continue;
+        if (p.type === "text") text += String(p.text || "");
+        else if (p.type === "tool_use") {
+          text += `\n[Tool call ${p.name} id=${p.id}]\n${JSON.stringify(p.input ?? {})}\n`;
+        } else if (p.type === "tool_result") {
+          const c =
+            typeof p.content === "string" ? p.content : JSON.stringify(p.content ?? "");
+          text += `\n[Tool result id=${p.tool_use_id}]\n${c}\n`;
         }
       }
+    }
+    // OpenAI tool_calls on assistant messages
+    if (role === "assistant" && Array.isArray(m.tool_calls) && m.tool_calls.length) {
+      const parts = m.tool_calls.map((tc) => {
+        const name = tc.function?.name || tc.name || "tool";
+        const args = tc.function?.arguments ?? tc.arguments ?? {};
+        const argStr = typeof args === "string" ? args : JSON.stringify(args);
+        return `[Tool call ${name} id=${tc.id}]\n${argStr}`;
+      });
+      text = [text, ...parts].filter(Boolean).join("\n\n");
+    }
+    // OpenAI role=tool messages
+    if (role === "tool") {
+      const c = typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? "");
+      text = `[Tool result id=${m.tool_call_id || ""}]\n${c}`;
     }
     if (!text.trim()) continue;
     if (role === "system") {
       lines.push(`[System]\n${text}`);
     } else if (role === "assistant") {
       lines.push(`[Assistant]\n${text}`);
+    } else if (role === "tool") {
+      lines.push(`[Tool]\n${text}`);
     } else {
       lines.push(`[User]\n${text}`);
     }
@@ -111,24 +313,108 @@ export class DevinCliExecutor extends BaseExecutor {
 
   async execute({ model, body, credentials, signal, log }) {
     const b = body ?? {};
-    const messages = Array.isArray(b.messages) ? b.messages : [];
+    const messages = Array.isArray(b.messages)
+      ? b.messages
+      : Array.isArray(b.input)
+        ? b.input
+        : [];
     const promptText = buildPromptText(messages);
-    const apiKey =
-      credentials.apiKey || credentials.accessToken || process.env.WINDSURF_API_KEY || "";
+    const workspaceCwd = resolveWorkspaceCwd(b);
     const devinBin = resolveDevinBin();
 
-    log?.info?.("DEVIN", `devin acp → model=${model}, bin=${devinBin}`);
+    log?.info?.(
+      "DEVIN",
+      `devin acp → model=${model}, bin=${devinBin}, cwd=${workspaceCwd}`
+    );
+
+    // Optional MCP servers via DEVIN_MCP_SERVERS (JSON object, devin config format):
+    //   {"echo":{"command":"/abs/node","args":["/srv/echo.js"],"env":{"K":"V"}}}
+    // Plus body.tools (OpenAI schema) → exposed as a "clientTools" MCP
+    // server so devin can invoke client-defined tools (bridged back in Phase 2).
+    // When any are present, a throwaway XDG_CONFIG_HOME holds devin/config.json so
+    // the agent auto-connects them (session/new mcpServers alone doesn't spawn
+    // them — see ACP mcp/connect, still unstable). Cleaned up on finish.
+    // NOTE: this replaces the user's global devin MCP config for the subprocess.
+    let mcpConfigDir = null;
+    const mcpServers = {};
+    const mcpJson = process.env.DEVIN_MCP_SERVERS?.trim();
+    if (mcpJson) {
+      try {
+        Object.assign(mcpServers, JSON.parse(mcpJson));
+      } catch (e) {
+        log?.info?.("DEVIN", `DEVIN_MCP_SERVERS parse failed: ${e.message}`);
+      }
+    }
+    const clientTools = Array.isArray(b.tools) ? b.tools.filter(Boolean) : [];
+    const clientToolResults = extractClientToolResults(messages);
+    const clientToolsMcp = buildClientToolsMcp(clientTools, clientToolResults);
+    const hasClientTools = !!clientToolsMcp;
+    if (clientToolsMcp) {
+      mcpServers["clientTools"] = clientToolsMcp;
+      const seeded = Object.keys(clientToolResults).length;
+      log?.info?.(
+        "DEVIN",
+        `exposing ${clientTools.length} client tool(s) as MCP` +
+          (seeded ? ` (seeded ${seeded} result(s))` : "")
+      );
+    }
+    if (Object.keys(mcpServers).length) {
+      try {
+        mcpConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), "devin-mcp-"));
+        const cfgDev = path.join(mcpConfigDir, "devin");
+        fs.mkdirSync(cfgDev, { recursive: true });
+        fs.writeFileSync(
+          path.join(cfgDev, "config.json"),
+          JSON.stringify({ mcpServers })
+        );
+        log?.info?.("DEVIN", `mcp config written → ${mcpConfigDir}`);
+      } catch (e) {
+        log?.info?.("DEVIN", `mcp config write failed: ${e.message}`);
+        mcpConfigDir = null;
+      }
+    }
+    const cleanupMcp = () => {
+      if (!mcpConfigDir) return;
+      try {
+        fs.rmSync(mcpConfigDir, { recursive: true, force: true });
+      } catch {
+        /* ignore */
+      }
+      mcpConfigDir = null;
+    };
 
     const sseStream = new ReadableStream({
       start(controller) {
         const enc = new TextEncoder();
         const emit = (data) => controller.enqueue(enc.encode(data));
 
+        // Inherit the parent environment so devin resolves stored CLI credentials
+        // (~/.local/share/devin/credentials.toml from `devin auth login`). Do NOT
+        // inject WINDSURF_API_KEY: this provider is noAuth, and a bogus/leaked key
+        // overrides stored creds and makes devin return -32000 "invalid api key".
         const env = { ...process.env };
-        if (apiKey) env.WINDSURF_API_KEY = apiKey;
+        // Auto-approve tool execution so the agent doesn't block waiting for a
+        // session/request_permission response we never send (default mode would
+        // hang the stream on the first shell/exec tool call). Override via env.
+        // WARNING: bypass lets the agent run shell/modify FS unattended — local only.
+        env.DEVIN_PERMISSION_MODE = process.env.DEVIN_PERMISSION_MODE || "bypass";
+        if (mcpConfigDir) env.XDG_CONFIG_HOME = mcpConfigDir;
 
-        const child = spawn(devinBin, ["acp", "--agent-type", "summarizer"], {
+        // Agent type: default (omitted) = full agent with built-in tools
+        // (fs/shell/search) so the model can actually perform tasks. Override to
+        // `summarizer` (no tools, text-only) via CLI_DEVIN_AGENT_TYPE for a safer,
+        // tool-less mode. WARNING: the default agent can run shell commands and
+        // modify the filesystem on the host running 9router — only expose locally.
+        const agentType = process.env.CLI_DEVIN_AGENT_TYPE?.trim();
+        const acpArgs = ["acp"];
+        if (agentType) acpArgs.push("--agent-type", agentType);
+
+        // Spawn in the client workspace cwd (from <cwd> env context) so built-in
+        // file tools create/delete relative paths in the user's project.
+        // MCP config still comes from XDG_CONFIG_HOME (throwaway), not project .devin/.
+        const child = spawn(devinBin, acpArgs, {
           env,
+          cwd: workspaceCwd,
           stdio: ["pipe", "pipe", "pipe"],
           // On Windows, devin.exe may need shell resolution
           shell: process.platform === "win32",
@@ -179,7 +465,80 @@ export class DevinCliExecutor extends BaseExecutor {
           return id;
         };
 
-        const finish = (error) => {
+        // Emit a content delta as an OpenAI-compatible SSE chunk (handles the
+        // leading role chunk once).
+        const emitDelta = (delta) => {
+          if (!roleEmitted) {
+            emit(
+              `data: ${JSON.stringify({
+                id: responseId,
+                object: "chat.completion.chunk",
+                created,
+                model,
+                choices: [{ index: 0, delta: { role: "assistant", content: "" }, finish_reason: null }],
+              })}\n\n`
+            );
+            roleEmitted = true;
+          }
+          totalText += delta;
+          emit(
+            `data: ${JSON.stringify({
+              id: responseId,
+              object: "chat.completion.chunk",
+              created,
+              model,
+              choices: [{ index: 0, delta: { content: delta }, finish_reason: null }],
+            })}\n\n`
+          );
+        };
+
+        // Emit an OpenAI tool_call delta (function calling). Ends the turn with
+        // finish_reason "tool_calls" so the client executes and returns tool_result.
+        let toolUseEmitted = false;
+        // ACP tool_call is upsert-by-id: the first event has title, a later update
+        // may only carry rawInput (title omitted). Track pending client-tool calls.
+        const pendingClientTools = new Map(); // toolCallId → original tool name
+        const emitToolUse = (toolName, args, toolCallId) => {
+          const argsStr = typeof args === "string" ? args : JSON.stringify(args ?? {});
+          if (!roleEmitted) {
+            emit(
+              `data: ${JSON.stringify({
+                id: responseId,
+                object: "chat.completion.chunk",
+                created,
+                model,
+                choices: [{ index: 0, delta: { role: "assistant", content: null }, finish_reason: null }],
+              })}\n\n`
+            );
+            roleEmitted = true;
+          }
+          emit(
+            `data: ${JSON.stringify({
+              id: responseId,
+              object: "chat.completion.chunk",
+              created,
+              model,
+              choices: [
+                {
+                  index: 0,
+                  delta: {
+                    tool_calls: [
+                      {
+                        index: 0,
+                        id: toolCallId,
+                        type: "function",
+                        function: { name: toolName, arguments: argsStr },
+                      },
+                    ],
+                  },
+                  finish_reason: null,
+                },
+              ],
+            })}\n\n`
+          );
+        };
+
+        const finish = (error, finishReason = "stop") => {
           if (finished) return;
           finished = true;
 
@@ -195,7 +554,7 @@ export class DevinCliExecutor extends BaseExecutor {
                 object: "chat.completion.chunk",
                 created,
                 model,
-                choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+                choices: [{ index: 0, delta: {}, finish_reason: finishReason }],
                 usage: {
                   prompt_tokens: Math.ceil(promptText.length / 4),
                   completion_tokens: Math.ceil(totalText.length / 4),
@@ -224,6 +583,7 @@ export class DevinCliExecutor extends BaseExecutor {
           killTimer.unref?.();
 
           controller.close();
+          cleanupMcp();
         };
 
         // ── stdout reader (NDJSON) ──────────────────────────────────────────
@@ -248,9 +608,13 @@ export class DevinCliExecutor extends BaseExecutor {
             // ── Initialize response ───────────────────────────────────────
             if (!initDone && msg.result !== undefined && !msg.method) {
               initDone = true;
-              // Create session: send session/new with model and a temp cwd
+              // Create session with the client workspace cwd so agent file tools
+              // resolve relative paths against the project (not /tmp).
+              // `mcpServers` is required by devin 3000.2.x (must be a sequence);
+              // omitting it returns -32602 "Invalid params: missing field mcpServers".
               sendRpc("session/new", {
-                cwd: process.cwd(),
+                cwd: workspaceCwd,
+                mcpServers: [],
                 model: model || undefined,
               });
               continue;
@@ -265,19 +629,72 @@ export class DevinCliExecutor extends BaseExecutor {
                 return;
               }
               sessionCreated = true;
-              // Send the prompt
+              // Send the prompt. devin 3000.2.x expects `prompt` (a sequence),
+              // not `content` — using `content` returns -32602 "missing field prompt".
               promptSent = true;
               sendRpc("session/prompt", {
                 sessionId,
-                content: [{ type: "text", text: promptText }],
+                prompt: [{ type: "text", text: promptText }],
               });
               continue;
             }
 
-            // ── session/prompt response (ack) ─────────────────────────────
+            // ── session/prompt response (ack / final result) ────────────
             if (sessionCreated && promptSent && msg.result !== undefined && !msg.method) {
-              // Acknowledged — streaming notifications will follow
+              // Devin 3000.2.x only resolves session/prompt with the final result
+              // (stopReason) after streaming completes. Streaming notifications are
+              // handled below; nothing to do here unless we never streamed.
+              if (!roleEmitted) {
+                const res = msg.result || undefined;
+                const content = extractResultText(res);
+                if (content) {
+                  totalText = content;
+                  emitDelta(content);
+                }
+                const stopReason = (res && res.stopReason) || "";
+                if (stopReason && stopReason !== "cancelled") {
+                  finish();
+                  return;
+                }
+              }
               continue;
+            }
+
+            // ── Permission requests → auto-approve the first allow option ──
+            // Devi asks before running shell/exec tools; as a headless proxy we
+            // grant once. (DEVIN_PERMISSION_MODE=bypass usually prevents these,
+            // but some tool kinds still prompt, so handle them here too.)
+            if (msg.method === "session/request_permission" && msg.id !== undefined) {
+              const options = msg.params?.options || [];
+              const allow =
+                options.find((o) => /allow/i.test(String(o.kind || ""))) || options[0];
+              if (allow) {
+                child.stdin.write(
+                  JSON.stringify({
+                    jsonrpc: "2.0",
+                    id: msg.id,
+                    result: { outcome: { outcome: "selected", optionId: allow.optionId } },
+                  }) + "\n"
+                );
+              }
+              continue;
+            }
+
+            // ── Agent stopped notification (devin 3000.2.x stop signal) ───
+            if (msg.method === "_cognition.ai/agent_stopped" || msg.method === "$/agent_stopped") {
+              const cause = msg.params?.cause;
+              if (cause === "error") {
+                // devin uses errorMessage on this notification (not message/error).
+                const errText =
+                  msg.params?.errorMessage ||
+                  msg.params?.message ||
+                  msg.params?.error ||
+                  "Devin agent error";
+                finish(String(errText));
+              } else {
+                finish();
+              }
+              return;
             }
 
             // ── Streaming notifications (session/update) ──────────────────
@@ -285,41 +702,48 @@ export class DevinCliExecutor extends BaseExecutor {
               const params = msg.params;
               if (!params) continue;
 
-              const type = params.type;
+              // devin 3000.2.x nests the payload under params.update.sessionUpdate;
+              // older devin used a flat params.type.
+              const update = params.update || {};
+              const type = update.sessionUpdate || params.type;
+              const contentField = update.content !== undefined ? update.content : params.content;
+              const deltaText =
+                typeof contentField === "string"
+                  ? contentField
+                  : contentField?.text ?? params.delta ?? params.text ?? "";
 
-              if (type === "message_delta" || type === "text_delta" || type === "content_delta") {
-                const delta =
-                  params.content || params.delta || params.text || "";
-                if (delta) {
-                  if (!roleEmitted) {
-                    emit(
-                      `data: ${JSON.stringify({
-                        id: responseId,
-                        object: "chat.completion.chunk",
-                        created,
-                        model,
-                        choices: [
-                          {
-                            index: 0,
-                            delta: { role: "assistant", content: "" },
-                            finish_reason: null,
-                          },
-                        ],
-                      })}\n\n`
-                    );
-                    roleEmitted = true;
-                  }
-                  totalText += delta;
-                  emit(
-                    `data: ${JSON.stringify({
-                      id: responseId,
-                      object: "chat.completion.chunk",
-                      created,
-                      model,
-                      choices: [{ index: 0, delta: { content: delta }, finish_reason: null }],
-                    })}\n\n`
-                  );
+              // ── Client-tool bridge: devin calling a tool from our exposed MCP ──
+              // ACP title shape: "Calling mcp_<name> from clientTools".
+              // tool_call is upsert-by-id: title may only appear on the first event,
+              // rawInput on a later tool_call_update. Track pending ids so we don't
+              // require both fields on the same notification.
+              if (
+                hasClientTools &&
+                !toolUseEmitted &&
+                (type === "tool_call" || type === "tool_call_update")
+              ) {
+                const tcId = update.toolCallId;
+                if (typeof update.title === "string" && update.title.startsWith("Calling mcp_") && /from clientTools\b/.test(update.title)) {
+                  const nameMatch = update.title.match(/^Calling (mcp_\S+)\b/);
+                  const mcpName = nameMatch ? nameMatch[1] : "";
+                  const origName = fromMcpToolName(mcpName);
+                  if (tcId && origName) pendingClientTools.set(tcId, origName);
                 }
+                const origName = tcId ? pendingClientTools.get(tcId) : null;
+                if (origName && update.rawInput) {
+                  toolUseEmitted = true;
+                  pendingClientTools.delete(tcId);
+                  emitToolUse(origName, update.rawInput, tcId || `call_${Date.now()}`);
+                  finish(null, "tool_calls");
+                  return;
+                }
+                continue;
+              }
+
+              if (type === "agent_message_chunk" || type === "message_delta" || type === "text_delta" || type === "content_delta") {
+                if (deltaText) emitDelta(deltaText);
+              } else if (type === "agent_thought_chunk") {
+                // Internal reasoning — not surfaced to the client.
               } else if (type === "message_stop" || type === "stop" || type === "done") {
                 finish();
                 return;
@@ -328,46 +752,6 @@ export class DevinCliExecutor extends BaseExecutor {
                 return;
               }
               continue;
-            }
-
-            // ── session/prompt final result (non-streaming path) ──────────
-            if (promptSent && msg.result !== undefined && !msg.method && !finished) {
-              const res = msg.result || undefined;
-              // Extract text from result if we haven't streamed anything yet
-              if (!roleEmitted && res) {
-                const content = extractResultText(res);
-                if (content) {
-                  emit(
-                    `data: ${JSON.stringify({
-                      id: responseId,
-                      object: "chat.completion.chunk",
-                      created,
-                      model,
-                      choices: [
-                        {
-                          index: 0,
-                          delta: { role: "assistant", content: "" },
-                          finish_reason: null,
-                        },
-                      ],
-                    })}\n\n`
-                  );
-                  totalText = content;
-                  emit(
-                    `data: ${JSON.stringify({
-                      id: responseId,
-                      object: "chat.completion.chunk",
-                      created,
-                      model,
-                      choices: [{ index: 0, delta: { content }, finish_reason: null }],
-                    })}\n\n`
-                  );
-                }
-              }
-              const stopReason = (res && res.stopReason) || "";
-              if (stopReason && stopReason !== "cancelled") {
-                finish();
-              }
             }
 
             // ── Error responses ───────────────────────────────────────────
@@ -389,6 +773,8 @@ export class DevinCliExecutor extends BaseExecutor {
             } else {
               finish();
             }
+          } else {
+            cleanupMcp();
           }
         });
 
@@ -412,7 +798,18 @@ export class DevinCliExecutor extends BaseExecutor {
       }),
       url: "devin://acp/stdio",
       headers: {},
-      transformedBody: { model, promptLength: body?.messages },
+      transformedBody: {
+        model,
+        cwd: workspaceCwd,
+        clientTools: clientTools.map((t) => t?.function?.name || t?.name).filter(Boolean),
+        clientToolResults: Object.keys(clientToolResults),
+        mcpServers: Object.keys(mcpServers),
+        promptLength: Array.isArray(body?.messages)
+          ? body.messages.length
+          : Array.isArray(body?.input)
+            ? body.input.length
+            : 0,
+      },
     };
   }
 }
