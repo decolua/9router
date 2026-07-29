@@ -20,6 +20,18 @@ describe("getCapabilitiesForModel", () => {
     search: true,
   };
 
+  it("reports Kiro Claude Opus 5 variants as 1M adaptive-thinking models", () => {
+    for (const model of [
+      "claude-opus-5",
+      "anthropic/claude-opus-5",
+      "claude-opus-5-thinking",
+      "claude-opus-5-agentic",
+      "claude-opus-5-thinking-agentic",
+    ]) {
+      expect(getCapabilitiesForModel("kiro", model)).toMatchObject(claudeSonnet5Expected);
+    }
+  });
+
   it("reports Kiro Claude Opus 4.8 as a 1M context model", () => {
     expect(getCapabilitiesForModel("kiro", "claude-opus-4.8").contextWindow).toBe(1000000);
     expect(getCapabilitiesForModel("kiro", "anthropic/claude-opus-4.8").contextWindow).toBe(1000000);
