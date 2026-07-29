@@ -9,6 +9,7 @@ import { applyKiroSessionReplay } from "../../utils/kiroSessionReplay.js";
 import { resolveContinuationId, resolveSessionIdentity } from "../../utils/sessionManager.js";
 import {
   resolveKiroModel,
+  toKiroModelId,
   resolveKiroThinkingBudget,
   buildThinkingSystemPrefix,
   KIRO_AGENTIC_SYSTEM_PROMPT,
@@ -524,7 +525,8 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
   const temperature = body.temperature;
   const topP = body.top_p;
 
-  const { upstream: upstreamModel, agentic } = resolveKiroModel(model);
+  const { upstream: rawUpstream, agentic } = resolveKiroModel(model);
+  const upstreamModel = toKiroModelId(rawUpstream);
   const thinkingBudget = resolveKiroThinkingBudget(body, credentials?.rawHeaders, model);
   const additionalModelRequestFields = buildKiroAdditionalModelRequestFieldsForModel(body, upstreamModel);
   const usesNativeGptEffort = usesKiroNativeGptEffort(body, upstreamModel);
