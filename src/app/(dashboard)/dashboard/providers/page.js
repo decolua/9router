@@ -277,6 +277,16 @@ export default function ProvidersPage() {
     }))
     .filter((p) => matchSearch(p.name));
 
+  // Dual-auth providers (oauth + apikey) store API keys as authType "apikey"
+  // (and sometimes "api_key"). Card stats must count both so totals match detail.
+  // kiro has no authModes in registry but accepts both (headless uses "api_key").
+  const dualAuthTypes = (info, key) => {
+    if (key === "kiro") return ["oauth", "apikey", "api_key"];
+    const modes = info?.authModes;
+    if (!Array.isArray(modes) || !modes.includes("apikey")) return "oauth";
+    return ["oauth", "apikey", "api_key"];
+  };
+
   const oauthEntries = sortByPriority(
     Object.entries(OAUTH_PROVIDERS).filter(([, info]) => !info.hidden && matchSearch(info.name)),
     "oauth",
@@ -424,16 +434,19 @@ export default function ProvidersPage() {
           </div>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
-          {oauthEntries.map(([key, info]) => (
-            <ProviderCard
-              key={key}
-              providerId={key}
-              provider={info}
-              stats={getProviderStats(key, "oauth")}
-              authType="oauth"
-              onToggle={(active) => handleToggleProvider(key, "oauth", active)}
-            />
-          ))}
+          {oauthEntries.map(([key, info]) => {
+            const authTypes = dualAuthTypes(info, key);
+            return (
+              <ProviderCard
+                key={key}
+                providerId={key}
+                provider={info}
+                stats={getProviderStats(key, authTypes)}
+                authType="oauth"
+                onToggle={(active) => handleToggleProvider(key, authTypes, active)}
+              />
+            );
+          })}
         </div>
       </div>
       )}
@@ -466,12 +479,9 @@ export default function ProvidersPage() {
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
           {freeEntries.map(([key, info]) => {
-            // Kiro accepts both OAuth and api-key connections; count/toggle both
-            // so the card total matches the provider detail page (#kiro-apikey).
-            // Kiro's headless api-key flow persists authType "api_key" (underscore),
-            // while generic apikey providers use "apikey" — include both spellings.
-            const freeAuthTypes =
-              key === "kiro" ? ["oauth", "apikey", "api_key"] : "oauth";
+            // Dual-auth (e.g. kiro): count/toggle oauth + apikey/api_key so the
+            // card total matches the provider detail page.
+            const freeAuthTypes = dualAuthTypes(info, key);
             return (
               <ProviderCard
                 key={key}
